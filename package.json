@@ -1,0 +1,8 @@
+{
+  "name": "expo-serve-device-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "example"
+  ]
+}
