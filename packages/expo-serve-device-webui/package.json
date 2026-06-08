@@ -1,13 +1,15 @@
 {
-  "name": "example",
-  "version": "1.0.0",
+  "name": "expo-serve-device-webui",
+  "version": "0.0.1-private",
   "main": "index.ts",
   "dependencies": {
+    "@expo/metro-runtime": "catalog:",
     "expo": "catalog:",
-    "expo-serve-device": "workspace:*",
     "expo-status-bar": "~56.0.4",
     "react": "catalog:",
-    "react-native": "catalog:"
+    "react-dom": "catalog:",
+    "react-native": "catalog:",
+    "react-native-web": "catalog:"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

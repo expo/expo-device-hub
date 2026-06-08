@@ -1,0 +1,24 @@
+{
+  "platforms": ["devtools"],
+  "devtools": {
+    "webpageRoot": "dist",
+    "cliExtensions": {
+      "description": "expo-serve-device CLI commands",
+      "entryPoint": "./cli/index.js",
+      "commands": [
+        {
+          "name": "greet",
+          "title": "Greet a device",
+          "environments": ["cli"],
+          "parameters": [
+            {
+              "name": "name",
+              "type": "text",
+              "description": "Name to greet"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

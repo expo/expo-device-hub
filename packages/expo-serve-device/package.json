@@ -1,24 +1,28 @@
 {
   "name": "expo-serve-device",
-  "version": "0.0.1",
-  "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
-    }
-  },
-  "files": [
-    "dist"
-  ],
+  "version": "0.1.0",
+  "description": "DevTools plugin for serving on device",
+  "sideEffects": false,
   "scripts": {
-    "build": "bun run build:js && bun run build:types",
-    "build:js": "bun build ./src/index.ts --outdir ./dist --format esm --target node",
-    "build:types": "tsc -p tsconfig.json --emitDeclarationOnly"
+    "build:all": "bun run web:export",
+    "clean": "rm -rf dist",
+    "web:dev": "cd ../expo-serve-device-webui && npx expo start -w",
+    "web:export": "./scripts/build-webui.js"
   },
-  "devDependencies": {
-    "typescript": "^5.5.0"
+  "keywords": [
+    "expo",
+    "devtools"
+  ],
+  "files": [
+    "cli",
+    "dist",
+    "expo-module.config.json"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "serve-sim": "*"
+  },
+  "peerDependencies": {
+    "expo": "*"
   }
 }

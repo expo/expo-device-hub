@@ -1,1 +1,17 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
 dist/
+web-build/
+build/
+
+# Metro
+.metro-health-check*
+
+# macOS
+.DS_Store
+
+# typescript
+*.tsbuildinfo
