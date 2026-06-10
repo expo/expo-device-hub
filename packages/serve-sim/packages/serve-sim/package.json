@@ -1,0 +1,79 @@
+{
+  "name": "serve-sim",
+  "version": "0.1.34",
+  "type": "module",
+  "author": {
+    "name": "Evan Bacon",
+    "email": "baconbrix@gmail.com",
+    "url": "https://evanbacon.dev"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/EvanBacon/serve-sim.git",
+    "directory": "packages/serve-sim"
+  },
+  "homepage": "https://github.com/EvanBacon/serve-sim#readme",
+  "bugs": {
+    "url": "https://github.com/EvanBacon/serve-sim/issues"
+  },
+  "bin": {
+    "serve-sim": "dist/serve-sim.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "dist/serve-sim.js",
+    "dist/middleware.js",
+    "dist/middleware.cjs",
+    "dist/simcam/libSimCameraInjector.dylib",
+    "dist/simcam/serve-sim-camera-helper",
+    "src/ax-shared.ts",
+    "src/ax.ts",
+    "src/middleware.ts",
+    "src/state.ts",
+    "bin/serve-sim-bin",
+    "Sources/SimCameraInjector/SimCameraInjector.m",
+    "Sources/SimCameraInjector/SimCam*.h",
+    "Sources/SimCameraInjector/SimCam*.m",
+    "Sources/SimCameraInjector/include/SimCamShared.h",
+    "Sources/SimCameraInjector/build.sh",
+    "Sources/SimCameraHelper/main.m",
+    "Sources/SimCameraHelper/build.sh"
+  ],
+  "exports": {
+    "./middleware": {
+      "require": "./dist/middleware.cjs",
+      "import": "./dist/middleware.js",
+      "types": "./src/middleware.ts"
+    },
+    "./state": {
+      "import": "./src/state.ts",
+      "types": "./src/state.ts"
+    }
+  },
+  "scripts": {
+    "build": "bun run build.ts",
+    "build:swift": "./build.sh",
+    "dev": "bun run dev.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/debug": "^4.1.13",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "debug": "^4.4.3",
+    "bun-plugin-tailwind": "^0.1.2",
+    "commander": "^14.0.1",
+    "preact": "^10.29.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "serve-sim-client": "workspace:*",
+    "tailwindcss": "^4.1.7",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "inspect-webkit": "^0.0.5"
+  }
+}

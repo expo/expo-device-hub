@@ -1,0 +1,21 @@
+{
+  "name": "serve-sim-repo",
+  "private": true,
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "bun run --filter '*' build",
+    "build:swift": "cd packages/serve-sim && ./build.sh",
+    "knip": "knip",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "knip": "^6.12.2",
+    "oxlint": "^1.63.0",
+    "typescript": "^6.0.3"
+  }
+}
