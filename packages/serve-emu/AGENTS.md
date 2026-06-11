@@ -1,0 +1,5 @@
+- Prefer kebab-case for all TS/JS files.
+- Streaming runs through the vendored scrcpy server (`vendor/scrcpy-server-v<VERSION>`). The version is pinned in `scripts/fetch-scrcpy.ts`; the wire protocol drifts between scrcpy majors, so bumping the version means re-validating `src/scrcpy.ts` against the new server.
+- Server protocol summary: open two sockets through `adb forward tcp:<port> localabstract:scrcpy_<scid>`; both prefix a 1-byte dummy. Video socket then yields 64-byte device name, 12-byte codec meta (codec_id, width, height BE), then frames of `[8B PTS BE (high bit = config), 4B size BE, N B Annex-B NALUs]`. Control socket consumes binary messages described in `src/input.ts`.
+- Default device target: the only booted device. If multiple, require `-s <serial>`.
+- Don't shell out to `adb shell input` — write directly to scrcpy's control socket; round-trip latency is ~5ms vs ~200ms.

@@ -5,6 +5,7 @@
     "packages": [
       "packages/*",
       "packages/serve-sim/packages/*",
+      "packages/serve-emu/packages/*",
       "example"
     ],
     "catalog": {

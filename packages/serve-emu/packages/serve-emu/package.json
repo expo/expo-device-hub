@@ -1,0 +1,63 @@
+{
+  "name": "serve-emu",
+  "version": "0.0.3",
+  "description": "The `npx serve` of Android devices — stream a booted emulator or attached device over a WebSocket H.264 feed decoded in the browser with WebCodecs.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "author": "jiunshinn",
+  "homepage": "https://github.com/jiunshinn/serve-emu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jiunshinn/serve-emu.git",
+    "directory": "packages/serve-emu"
+  },
+  "bugs": {
+    "url": "https://github.com/jiunshinn/serve-emu/issues"
+  },
+  "keywords": [
+    "android",
+    "emulator",
+    "adb",
+    "scrcpy",
+    "screen-mirror",
+    "remote-control",
+    "h264",
+    "webcodecs",
+    "bun"
+  ],
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "bin": {
+    "serve-emu": "./src/cli.ts"
+  },
+  "scripts": {
+    "setup": "bun run scripts/fetch-scrcpy.ts && bun run build:ui",
+    "dev": "bun --watch run src/cli.ts",
+    "dev:ui": "vite",
+    "start": "bun run src/cli.ts",
+    "build:ui": "vite build",
+    "build": "bun run build:ui",
+    "typecheck": "tsc --noEmit",
+    "typecheck:ui": "tsc -p src/ui --noEmit",
+    "prepublishOnly": "bun run build"
+  },
+  "files": [
+    "src",
+    "scripts",
+    "vendor",
+    "dist/ui",
+    "README.md",
+    "LICENSE"
+  ],
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}

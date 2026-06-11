@@ -1,0 +1,9 @@
+node_modules
+dist
+*.log
+.DS_Store
+.env*
+bun.lock
+*.bun-build
+packages/serve-emu/vendor/scrcpy-server-v*
+package-lock.json

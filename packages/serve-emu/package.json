@@ -1,0 +1,13 @@
+{
+  "name": "serve-emu-monorepo",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "dev": "bun run --filter serve-emu dev",
+    "build": "bun run --filter serve-emu build"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "@types/bun": "latest"
+  }
+}
