@@ -1,0 +1,22 @@
+{
+  "name": "expo-serve-sim",
+  "version": "0.1.0",
+  "description": "DevTools plugin that serves the serve-sim iOS Simulator preview from the Expo CLI",
+  "sideEffects": false,
+  "keywords": [
+    "expo",
+    "devtools",
+    "simulator"
+  ],
+  "files": [
+    "server",
+    "expo-module.config.json"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "serve-sim": "*"
+  },
+  "peerDependencies": {
+    "expo": "*"
+  }
+}

@@ -5,6 +5,7 @@
   "dependencies": {
     "expo": "catalog:",
     "expo-serve-device": "workspace:*",
+    "expo-serve-sim": "workspace:*",
     "expo-status-bar": "~56.0.4",
     "react": "catalog:",
     "react-native": "catalog:"
