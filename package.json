@@ -15,5 +15,9 @@
       "react-native": "0.85.3",
       "react-native-web": "^0.21.2"
     }
+  },
+  "patchedDependencies": {
+    "@expo/cli@56.1.14": "patches/@expo%2Fcli@56.1.14.patch",
+    "expo-modules-autolinking@56.0.15": "patches/expo-modules-autolinking@56.0.15.patch"
   }
 }
