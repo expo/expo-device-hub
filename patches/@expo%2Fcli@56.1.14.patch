@@ -1,3 +1,6 @@
+diff --git a/node_modules/@expo/cli/.bun-tag-6ada1df5a46defc b/.bun-tag-6ada1df5a46defc
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/node_modules/@expo/cli/.bun-tag-cc211044b41a67b1 b/.bun-tag-cc211044b41a67b1
 new file mode 100644
 index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
@@ -150,18 +153,19 @@ index 27e9112de52f81b482b3e911fc4f2bef31755645..1b7ee373842855d3b52321b482875a2a
 +{"version":3,"sources":["../../../../src/start/interface/startInterface.ts"],"sourcesContent":["import chalk from 'chalk';\n\nimport { KeyPressHandler } from './KeyPressHandler';\nimport type { StartOptions } from './commandsTable';\nimport { BLT, printHelp, printUsage } from './commandsTable';\nimport { DevServerManagerActions } from './interactiveActions';\nimport * as Log from '../../log';\nimport { openInEditorAsync } from '../../utils/editor';\nimport { AbortCommandError } from '../../utils/errors';\nimport { getAllSpinners, ora } from '../../utils/ora';\nimport { getProgressBar, setProgressBar } from '../../utils/progress';\nimport { addInteractionListener, pauseInteractions } from '../../utils/prompts';\nimport { WebSupportProjectPrerequisite } from '../doctor/web/WebSupportProjectPrerequisite';\nimport type { DevServerManager } from '../server/DevServerManager';\n\nconst debug = require('debug')('expo:start:interface:startInterface') as typeof console.log;\n\nconst CTRL_C = '\\u0003';\nconst CTRL_D = '\\u0004';\nconst CTRL_L = '\\u000C';\n\nconst PLATFORM_SETTINGS: Record<\n  string,\n  { name: string; key: 'android' | 'ios'; launchTarget: 'emulator' | 'simulator' }\n> = {\n  android: {\n    name: 'Android',\n    key: 'android',\n    launchTarget: 'emulator',\n  },\n  ios: {\n    name: 'iOS',\n    key: 'ios',\n    launchTarget: 'simulator',\n  },\n};\n\nexport async function startInterfaceAsync(\n  devServerManager: DevServerManager,\n  options: Pick<StartOptions, 'devClient' | 'platforms' | 'mcpServer' | 'dependencyCheckRef'>\n) {\n  // Spend one-tick waiting for the dependency check result\n  if (options.dependencyCheckRef) {\n    await Promise.race([options.dependencyCheckRef.promise, Promise.resolve(null)]);\n  }\n\n  const actions = new DevServerManagerActions(devServerManager, options);\n  const isWebSocketsEnabled = devServerManager.getDefaultDevServer()?.isTargetingNative();\n  const usageOptions = {\n    isWebSocketsEnabled,\n    devClient: devServerManager.options.devClient,\n    ...options,\n  };\n\n  await actions.printDevServerInfoAsync(usageOptions);\n\n  const onPressAsync = async (key: string) => {\n    // Auxillary commands all escape.\n    switch (key) {\n      case CTRL_C:\n      case CTRL_D: {\n        // Prevent terminal UI from accepting commands while the process is closing.\n        // Without this, fast typers will close the server then start typing their\n        // next command and have a bunch of unrelated things pop up.\n        pauseInteractions();\n\n        const spinners = getAllSpinners();\n        spinners.forEach((spinner) => {\n          spinner.fail();\n        });\n\n        const currentProgress = getProgressBar();\n        if (currentProgress) {\n          currentProgress.terminate();\n          setProgressBar(null);\n        }\n        const spinner = ora({ text: 'Stopping server', color: 'white' }).start();\n        try {\n          await devServerManager.stopAsync();\n          if (options.mcpServer) {\n            await options.mcpServer.closeAsync();\n          }\n          spinner.stopAndPersist({ text: 'Stopped server', symbol: `\\u203A` });\n          // @ts-ignore: Argument of type '\"SIGINT\"' is not assignable to parameter of type '\"disconnect\"'.\n          process.emit('SIGINT');\n\n          // TODO: Is this the right place to do this?\n          process.exit();\n        } catch (error) {\n          spinner.fail('Failed to stop server');\n          throw error;\n        }\n        break;\n      }\n      case CTRL_L:\n        return Log.clear();\n      case '?':\n        return printUsage(usageOptions, { verbose: true });\n    }\n\n    // Optionally enabled\n\n    if (isWebSocketsEnabled) {\n      switch (key) {\n        case 'm':\n          return actions.toggleDevMenu();\n        case 'M':\n          return actions.openMoreToolsAsync();\n      }\n    }\n\n    const { platforms = ['ios', 'android', 'web'] } = options;\n\n    if (['i', 'a'].includes(key.toLowerCase())) {\n      const platform = key.toLowerCase() === 'i' ? 'ios' : 'android';\n\n      const shouldPrompt = ['I', 'A'].includes(key);\n      if (shouldPrompt) {\n        Log.clear();\n      }\n\n      const server = devServerManager.getDefaultDevServer();\n      const settings = PLATFORM_SETTINGS[platform]!;\n\n      Log.log(`${BLT} Opening on ${settings.name}...`);\n\n      if (server.isTargetingNative() && !platforms.includes(settings.key)) {\n        Log.warn(\n          chalk`${settings.name} is disabled, enable it by adding {bold ${settings.key}} to the platforms array in your app.json or app.config.js`\n        );\n      } else {\n        try {\n          await server.openPlatformAsync(settings.launchTarget, { shouldPrompt });\n          printHelp();\n        } catch (error: any) {\n          if (!(error instanceof AbortCommandError)) {\n            Log.exception(error);\n          }\n        }\n      }\n      // Break out early.\n      return;\n    }\n\n    switch (key) {\n      case 's': {\n        Log.clear();\n        if (await devServerManager.toggleRuntimeMode()) {\n          usageOptions.devClient = devServerManager.options.devClient;\n          await actions.printDevServerInfoAsync(usageOptions);\n          return;\n        }\n        break;\n      }\n      case 'w': {\n        try {\n          await devServerManager.ensureProjectPrerequisiteAsync(WebSupportProjectPrerequisite);\n          if (!platforms.includes('web')) {\n            platforms.push('web');\n            options.platforms?.push('web');\n          }\n        } catch (e: any) {\n          Log.warn(e.message);\n          break;\n        }\n\n        const isDisabled = !platforms.includes('web');\n        if (isDisabled) {\n          debug('Web is disabled');\n          // Use warnings from the web support setup.\n          break;\n        }\n\n        // Ensure the Webpack dev server is running first\n        if (!devServerManager.getWebDevServer()) {\n          debug('Starting up webpack dev server');\n          await devServerManager.ensureWebDevServerRunningAsync();\n          // When this is the first time webpack is started, reprint the connection info.\n          await actions.printDevServerInfoAsync(usageOptions);\n        }\n\n        Log.log(`${BLT} Open in the web browser...`);\n        try {\n          await devServerManager.getWebDevServer()?.openPlatformAsync('desktop');\n          printHelp();\n        } catch (error: any) {\n          if (!(error instanceof AbortCommandError)) {\n            Log.exception(error);\n          }\n        }\n        break;\n      }\n      case 'c':\n        Log.clear();\n        await actions.printDevServerInfoAsync(usageOptions);\n        return;\n      case 'j':\n        return actions.openJsInspectorAsync();\n      case 'r':\n        return actions.reloadApp();\n      case 'o':\n        Log.log(`${BLT} Opening the editor...`);\n        return openInEditorAsync(devServerManager.projectRoot);\n    }\n  };\n\n  const keyPressHandler = new KeyPressHandler(onPressAsync);\n\n  const listener = keyPressHandler.createInteractionListener();\n\n  addInteractionListener(listener);\n\n  // Start observing...\n  keyPressHandler.startInterceptingKeyStrokes();\n}\n"],"names":["startInterfaceAsync","debug","require","CTRL_C","CTRL_D","CTRL_L","PLATFORM_SETTINGS","android","name","key","launchTarget","ios","devServerManager","options","dependencyCheckRef","Promise","race","promise","resolve","actions","DevServerManagerActions","isWebSocketsEnabled","getDefaultDevServer","isTargetingNative","usageOptions","devClient","printDevServerInfoAsync","onPressAsync","pauseInteractions","spinners","getAllSpinners","forEach","spinner","fail","currentProgress","getProgressBar","terminate","setProgressBar","ora","text","color","start","stopAsync","mcpServer","closeAsync","stopAndPersist","symbol","process","emit","exit","error","Log","clear","printUsage","verbose","toggleDevMenu","openMoreToolsAsync","platforms","includes","toLowerCase","platform","shouldPrompt","server","settings","log","BLT","warn","chalk","openPlatformAsync","printHelp","AbortCommandError","exception","toggleRuntimeMode","ensureProjectPrerequisiteAsync","WebSupportProjectPrerequisite","push","e","message","isDisabled","getWebDevServer","ensureWebDevServerRunningAsync","openJsInspectorAsync","reloadApp","openInEditorAsync","projectRoot","keyPressHandler","KeyPressHandler","listener","createInteractionListener","addInteractionListener","startInterceptingKeyStrokes"],"mappings":"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"}
 \ No newline at end of file
 diff --git a/build/src/start/server/DevToolsPlugin.js b/build/src/start/server/DevToolsPlugin.js
-index e54151dfc2a9b043fed9de793aacd7ebbe99337c..1794a162e5588e92be92145fe80cf330cfe7a939 100644
+index e54151dfc2a9b043fed9de793aacd7ebbe99337c..b7211c593a3f4518fc51898f8bf8be8088599d42 100644
 --- a/build/src/start/server/DevToolsPlugin.js
 +++ b/build/src/start/server/DevToolsPlugin.js
-@@ -36,6 +36,7 @@ class DevToolsPlugin {
+@@ -36,6 +36,8 @@ class DevToolsPlugin {
          this.plugin = plugin;
          this.projectRoot = projectRoot;
          this._executor = undefined;
 +        this._requestHandler = undefined;
++        this._upgradeHandler = undefined;
          const result = _DevToolsPluginschema.PluginSchema.safeParse(plugin);
          if (!result.success) {
              throw new Error(`Invalid plugin configuration: ${result.error.message}`, {
-@@ -48,6 +49,12 @@ class DevToolsPlugin {
+@@ -48,6 +50,12 @@ class DevToolsPlugin {
                  throw new Error(`webpageRoot (${plugin.webpageRoot}) is not inside packageRoot (${plugin.packageRoot}).`);
              }
          }
@@ -174,7 +178,7 @@ index e54151dfc2a9b043fed9de793aacd7ebbe99337c..1794a162e5588e92be92145fe80cf330
      }
      get packageName() {
          return this.plugin.packageName;
-@@ -56,13 +63,43 @@ class DevToolsPlugin {
+@@ -56,13 +64,62 @@ class DevToolsPlugin {
          return this.plugin.packageRoot;
      }
      get webpageEndpoint() {
@@ -208,6 +212,25 @@ index e54151dfc2a9b043fed9de793aacd7ebbe99337c..1794a162e5588e92be92145fe80cf330
 +            this._requestHandler = handler;
 +        }
 +        return this._requestHandler;
++    }
++    /**
++   * Lazily loads an optional WebSocket upgrade handler from the plugin's
++   * `serverEntryPoint`. A plugin that needs to serve WebSocket upgrades (which
++   * the fetch-based `requestHandler` cannot) exports a named `handleUpgrade`
++   * alongside its default handler: `handleUpgrade(req, socket, head) => boolean`,
++   * returning true when it has taken over the socket. The dev server forwards
++   * `/_expo/plugins/<name>/...` upgrades here when no exact websocket endpoint
++   * matches. Returns undefined when the plugin exports no such handler.
++   */ get upgradeHandler() {
++        if (!this.plugin.serverEntryPoint) {
++            return undefined;
++        }
++        if (this._upgradeHandler === undefined) {
++            const serverModule = require(maybeRealpath(this.plugin.serverEntryPoint));
++            const handler = (serverModule == null ? void 0 : serverModule.handleUpgrade) ?? (serverModule == null ? void 0 : serverModule.default == null ? void 0 : serverModule.default.handleUpgrade);
++            this._upgradeHandler = typeof handler === 'function' ? handler : null;
++        }
++        return this._upgradeHandler ?? undefined;
 +    }
 +    get cliBanner() {
 +        var _this_plugin;
@@ -280,6 +303,78 @@ index 82899dceaf798022f9a034d72076e1ada8892efe..25601db6bc94a707e804adbffe7a7715
 \ No newline at end of file
 +{"version":3,"sources":["../../../../src/start/server/DevToolsPluginManager.ts"],"sourcesContent":["import type { ModuleDescriptorDevTools } from 'expo-modules-autolinking/exports';\n\nimport { DevToolsPlugin } from './DevToolsPlugin';\nimport { Log } from '../../log';\n\nconst debug = require('debug')('expo:start:server:devtools');\n\nexport const DevToolsPluginEndpoint = '/_expo/plugins';\n\nexport default class DevToolsPluginManager {\n  private plugins: DevToolsPlugin[] | null = null;\n\n  constructor(private projectRoot: string) {}\n\n  public async queryPluginsAsync(): Promise<DevToolsPlugin[]> {\n    if (!this.plugins) {\n      this.plugins = await this.queryAutolinkedPluginsAsync(this.projectRoot);\n    }\n    return this.plugins;\n  }\n\n  public async queryPluginAsync(pluginName: string): Promise<DevToolsPlugin | null> {\n    const plugins = await this.queryPluginsAsync();\n    return plugins.find((p) => p.packageName === pluginName) ?? null;\n  }\n\n  public async queryPluginWebpageRootAsync(pluginName: string): Promise<string | null> {\n    const plugin = await this.queryPluginAsync(pluginName);\n    return plugin?.webpageRoot ?? null;\n  }\n\n  private async queryAutolinkedPluginsAsync(projectRoot: string): Promise<DevToolsPlugin[]> {\n    const autolinking: typeof import('expo/internal/unstable-autolinking-exports') = require('expo/internal/unstable-autolinking-exports');\n    const linker = autolinking.makeCachedDependenciesLinker({ projectRoot });\n    const revisions = await autolinking.scanExpoModuleResolutionsForPlatform(linker, 'devtools');\n    const { resolveModuleAsync } = autolinking.getLinkingImplementationForPlatform('devtools');\n    const plugins: ModuleDescriptorDevTools[] = (\n      await Promise.all(\n        Object.values(revisions).map((revision) => resolveModuleAsync(revision.name, revision))\n      )\n    ).filter((maybePlugin) => maybePlugin != null);\n    debug('Found autolinked plugins', plugins);\n    return plugins\n      .map((pluginInfo) => {\n        try {\n          return new DevToolsPlugin(pluginInfo, this.projectRoot);\n        } catch (error: any) {\n          Log.warn(\n            `Skipping plugin \"${pluginInfo.packageName}\": ${error.message ?? 'invalid configuration'}`\n          );\n          debug('Plugin validation error for %s: %O', pluginInfo.packageName, error);\n          return null;\n        }\n      })\n      .filter((p) => p != null) as DevToolsPlugin[];\n  }\n}\n"],"names":["DevToolsPluginEndpoint","DevToolsPluginManager","debug","require","projectRoot","plugins","queryPluginsAsync","queryAutolinkedPluginsAsync","queryPluginAsync","pluginName","find","p","packageName","queryPluginWebpageRootAsync","plugin","webpageRoot","autolinking","linker","makeCachedDependenciesLinker","revisions","scanExpoModuleResolutionsForPlatform","resolveModuleAsync","getLinkingImplementationForPlatform","Promise","all","Object","values","map","revision","name","filter","maybePlugin","pluginInfo","DevToolsPlugin","error","Log","warn","message"],"mappings":";;;;;;;;;;;QAOaA;eAAAA;;QAEb;eAAqBC;;;gCAPU;qBACX;AAEpB,MAAMC,QAAQC,QAAQ,SAAS;AAExB,MAAMH,yBAAyB;AAEvB,MAAMC;IAGnB,YAAY,AAAQG,WAAmB,CAAE;aAArBA,cAAAA;aAFZC,UAAmC;IAED;IAE1C,MAAaC,oBAA+C;QAC1D,IAAI,CAAC,IAAI,CAACD,OAAO,EAAE;YACjB,IAAI,CAACA,OAAO,GAAG,MAAM,IAAI,CAACE,2BAA2B,CAAC,IAAI,CAACH,WAAW;QACxE;QACA,OAAO,IAAI,CAACC,OAAO;IACrB;IAEA,MAAaG,iBAAiBC,UAAkB,EAAkC;QAChF,MAAMJ,UAAU,MAAM,IAAI,CAACC,iBAAiB;QAC5C,OAAOD,QAAQK,IAAI,CAAC,CAACC,IAAMA,EAAEC,WAAW,KAAKH,eAAe;IAC9D;IAEA,MAAaI,4BAA4BJ,UAAkB,EAA0B;QACnF,MAAMK,SAAS,MAAM,IAAI,CAACN,gBAAgB,CAACC;QAC3C,OAAOK,CAAAA,0BAAAA,OAAQC,WAAW,KAAI;IAChC;IAEA,MAAcR,4BAA4BH,WAAmB,EAA6B;QACxF,MAAMY,cAA2Eb,QAAQ;QACzF,MAAMc,SAASD,YAAYE,4BAA4B,CAAC;YAAEd;QAAY;QACtE,MAAMe,YAAY,MAAMH,YAAYI,oCAAoC,CAACH,QAAQ;QACjF,MAAM,EAAEI,kBAAkB,EAAE,GAAGL,YAAYM,mCAAmC,CAAC;QAC/E,MAAMjB,UAAsC,AAC1C,CAAA,MAAMkB,QAAQC,GAAG,CACfC,OAAOC,MAAM,CAACP,WAAWQ,GAAG,CAAC,CAACC,WAAaP,mBAAmBO,SAASC,IAAI,EAAED,WAC/E,EACAE,MAAM,CAAC,CAACC,cAAgBA,eAAe;QACzC7B,MAAM,4BAA4BG;QAClC,OAAOA,QACJsB,GAAG,CAAC,CAACK;YACJ,IAAI;gBACF,OAAO,IAAIC,8BAAc,CAACD,YAAY,IAAI,CAAC5B,WAAW;YACxD,EAAE,OAAO8B,OAAY;gBACnBC,QAAG,CAACC,IAAI,CACN,CAAC,iBAAiB,EAAEJ,WAAWpB,WAAW,CAAC,GAAG,EAAEsB,MAAMG,OAAO,IAAI,yBAAyB;gBAE5FnC,MAAM,sCAAsC8B,WAAWpB,WAAW,EAAEsB;gBACpE,OAAO;YACT;QACF,GACCJ,MAAM,CAAC,CAACnB,IAAMA,KAAK;IACxB;AACF"}
 \ No newline at end of file
+diff --git a/build/src/start/server/metro/instantiateMetro.js b/build/src/start/server/metro/instantiateMetro.js
+index 589990fb228170723e0703dca3fb0dde7f96b900..3f2c948a2e68fe97fbf4a46d5abeaa237a42ce71 100644
+--- a/build/src/start/server/metro/instantiateMetro.js
++++ b/build/src/start/server/metro/instantiateMetro.js
+@@ -378,10 +378,45 @@ async function instantiateMetroAsync(metroBundler, options, { isExporting, exp =
+         requestCert: tls.requestCert
+     } : undefined;
+     const watch = !isExporting && isWatchEnabled();
++    // Forward devtools-plugin WebSocket upgrades (e.g. serve-sim's `/exec-ws`)
++    // to a plugin's exported `handleUpgrade`. The fetch-based plugin request
++    // handler can't serve upgrades, and `websocketEndpoints` only matches exact
++    // paths, so unmatched `/_expo/plugins/<name>/...` upgrades would otherwise
++    // be destroyed. We resolve the plugin lazily: take ownership of the socket
++    // (return true) and destroy it ourselves if no plugin claims it.
++    const _devToolsPlugins = require("../DevToolsPluginManager");
++    const _pluginManagerForUpgrades = isExporting ? null : new _devToolsPlugins.default(projectRoot);
++    const onUnhandledUpgrade = isExporting ? undefined : (request, socket, head)=>{
++        let pathname;
++        try {
++            ({ pathname } = new URL(request.url ?? '/', 'http://localhost'));
++        } catch  {
++            return false;
++        }
++        const prefix = `${_devToolsPlugins.DevToolsPluginEndpoint}/`;
++        if (!pathname.startsWith(prefix)) {
++            return false;
++        }
++        (async ()=>{
++            try {
++                const parts = pathname.slice(prefix.length).split('/');
++                const name = parts[0][0] === '@' && parts.length > 1 ? `${parts[0]}/${parts[1]}` : parts[0];
++                const plugin = await _pluginManagerForUpgrades.queryPluginAsync(name);
++                const handler = plugin == null ? void 0 : plugin.upgradeHandler;
++                if (!handler || handler(request, socket, head) !== true) {
++                    socket.destroy();
++                }
++            } catch  {
++                socket.destroy();
++            }
++        })();
++        return true;
++    };
+     const { address, server, hmrServer, metro } = await (0, _createFileMapfork.replaceMetroFileMap)(()=>{
+         return (0, _runServerfork.runServer)(metroBundler, metroConfig, {
+             host: options.host,
+             websocketEndpoints,
++            onUnhandledUpgrade,
+             watch,
+             secureServerOptions
+         }, {
+diff --git a/build/src/start/server/metro/runServer-fork.js b/build/src/start/server/metro/runServer-fork.js
+index d3ac9dabe3a6302c2157047d20b24f3f4f4f7017..3f55101ac9e4191d3acaaa06f1daa8fe4ad66f99 100644
+--- a/build/src/start/server/metro/runServer-fork.js
++++ b/build/src/start/server/metro/runServer-fork.js
+@@ -61,7 +61,7 @@ function _interop_require_default(obj) {
+         default: obj
+     };
+ }
+-const runServer = async (_metroBundler, config, { hasReducedPerformance = false, host, onError, onReady, secureServerOptions, websocketEndpoints = {}, watch, waitForBundler = !!watch }, { mockServer })=>{
++const runServer = async (_metroBundler, config, { hasReducedPerformance = false, host, onError, onReady, secureServerOptions, websocketEndpoints = {}, onUnhandledUpgrade, watch, waitForBundler = !!watch }, { mockServer })=>{
+     // await earlyPortCheck(host, config.server.port);
+     // if (secure != null || secureCert != null || secureKey != null) {
+     //   // eslint-disable-next-line no-console
+@@ -158,7 +158,7 @@ const runServer = async (_metroBundler, config, { hasReducedPerformance = false,
+                         var _websocketEndpoints_pathname;
+                         (_websocketEndpoints_pathname = websocketEndpoints[pathname]) == null ? void 0 : _websocketEndpoints_pathname.emit('connection', ws, request);
+                     });
+-                } else {
++                } else if (!(onUnhandledUpgrade && onUnhandledUpgrade(request, socket, head))) {
+                     socket.destroy();
+                 }
+             });
 diff --git a/build/src/start/server/middleware/DevToolsPluginMiddleware.js b/build/src/start/server/middleware/DevToolsPluginMiddleware.js
 index 7d71eea106353ef2e53d38d7dedbca5efc0b163a..dc730f36870282b28e66b8168eb429d7c83c833b 100644
 --- a/build/src/start/server/middleware/DevToolsPluginMiddleware.js

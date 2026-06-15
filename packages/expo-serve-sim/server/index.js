@@ -266,3 +266,20 @@ module.exports = function handler(request) {
     }
   });
 };
+
+// ── WebSocket upgrade bridge ───────────────────────────────────────────────
+//
+// serve-sim's control channel (`<BASE>/exec-ws`) carries exec, simulator
+// settings, and the SSE side-channels over a single WebSocket — and the
+// client is WS-only with no HTTP fallback. The Expo CLI devtools-plugin
+// contract only routes fetch requests through the default export above; it
+// never forwards `upgrade` events. A patched @expo/cli looks for this named
+// export and hands matching upgrades here (with the full, un-stripped URL, so
+// it lines up with the `${BASE}/exec-ws` path simMiddleware matches on).
+//
+// Returns true when serve-sim claimed the socket, false when the path wasn't
+// ours (the CLI then destroys it). simMiddleware is the booted-state branch's
+// middleware; `handleUpgrade` is always present on it.
+module.exports.handleUpgrade = function handleUpgrade(req, socket, head) {
+  return middleware.handleUpgrade?.(req, socket, head) ?? false;
+};
