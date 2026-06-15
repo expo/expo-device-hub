@@ -11,6 +11,7 @@
       "dependencies": {
         "expo": "catalog:",
         "expo-serve-device": "workspace:*",
+        "expo-serve-emu": "workspace:*",
         "expo-serve-sim": "workspace:*",
         "expo-status-bar": "~56.0.4",
         "react": "catalog:",
@@ -46,6 +47,16 @@
       "devDependencies": {
         "@types/react": "~19.2.2",
         "typescript": "~6.0.3",
+      },
+    },
+    "packages/expo-serve-emu": {
+      "name": "expo-serve-emu",
+      "version": "0.1.0",
+      "dependencies": {
+        "serve-emu": "*",
+      },
+      "peerDependencies": {
+        "expo": "*",
       },
     },
     "packages/expo-serve-sim": {
@@ -922,6 +933,8 @@
     "expo-serve-device": ["expo-serve-device@workspace:packages/expo-serve-device"],
 
     "expo-serve-device-webui": ["expo-serve-device-webui@workspace:packages/expo-serve-device-webui"],
+
+    "expo-serve-emu": ["expo-serve-emu@workspace:packages/expo-serve-emu"],
 
     "expo-serve-sim": ["expo-serve-sim@workspace:packages/expo-serve-sim"],
 

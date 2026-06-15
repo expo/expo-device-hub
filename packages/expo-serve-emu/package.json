@@ -1,0 +1,23 @@
+{
+  "name": "expo-serve-emu",
+  "version": "0.1.0",
+  "description": "DevTools plugin that serves the serve-emu Android emulator preview from the Expo CLI",
+  "sideEffects": false,
+  "keywords": [
+    "expo",
+    "devtools",
+    "emulator",
+    "android"
+  ],
+  "files": [
+    "server",
+    "expo-module.config.json"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "serve-emu": "*"
+  },
+  "peerDependencies": {
+    "expo": "*"
+  }
+}
