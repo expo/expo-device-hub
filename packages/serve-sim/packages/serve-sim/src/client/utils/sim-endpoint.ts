@@ -27,6 +27,22 @@ declare global {
   }
 }
 
+/**
+ * Narrow an injected `__SIM_PREVIEW__` to a usable stream config. The
+ * middleware injects a minimal `{basePath, execToken}` when no helper is
+ * attached (the empty state still needs the exec token); treating that as a
+ * stream config mounts the simulator view with `url: undefined`, which
+ * fetches `/undefined/stream.avcc` and trips the no-frames watchdog instead
+ * of showing the device picker.
+ */
+export function streamConfigFrom(
+  raw: Window["__SIM_PREVIEW__"] | null | undefined,
+): NonNullable<Window["__SIM_PREVIEW__"]> | null {
+  return raw && typeof raw.device === "string" && typeof raw.url === "string"
+    ? raw
+    : null;
+}
+
 export function simEndpoint(path: string): string {
   // When __SIM_PREVIEW__ is injected we have the canonical base path. Without
   // it (BootEmptyState — no helper running yet) the page is still being served

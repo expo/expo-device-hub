@@ -30,6 +30,7 @@ import { DevicePicker } from "./components/device-picker";
 import { GridPanel } from "./components/grid-panel";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
+import { ScreenshotToast } from "./components/screenshot-toast";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
 import { ToolsPanel } from "./components/tools-panel";
 import { WebKitDevtoolsPanel } from "./components/webkit-devtools-panel";
@@ -37,6 +38,7 @@ import { useMediaDrop } from "./hooks/use-media-drop";
 import { useMjpegStream } from "./hooks/use-mjpeg-stream";
 import { useAvccStream } from "./hooks/use-avcc-stream";
 import { useResizableWidth } from "./hooks/use-resizable-width";
+import { useScreenshotToast } from "./hooks/use-screenshot-toast";
 import { useSimulatorResize } from "./hooks/use-simulator-resize";
 import { useUploadToasts } from "./hooks/use-upload-toasts";
 import { useWebKitDevtools } from "./hooks/use-webkit-devtools";
@@ -47,14 +49,14 @@ import {
 } from "./avcc-fallback";
 import { parseSimctlList, type SimDevice } from "./utils/devices";
 import { fileExtension } from "./utils/drop";
-import { execOnHost } from "./utils/exec";
+import { execOnHost, openHostEventStream } from "./utils/exec";
 import { hidUsageForCode } from "./utils/hid";
 import {
   DEVTOOLS_PANEL_WIDTH,
   GRID_PANEL_WIDTH,
   PANEL_WIDTH,
 } from "./utils/panel-widths";
-import { simEndpoint } from "./utils/sim-endpoint";
+import { simEndpoint, streamConfigFrom } from "./utils/sim-endpoint";
 import {
   SIMULATOR_RESIZE_DRAG_TRANSITION,
   SIMULATOR_RESIZE_LAYOUT_TRANSITION,
@@ -86,7 +88,7 @@ function previewConfigKey(config: PreviewConfig | null): string {
 }
 
 function App() {
-  const [config, setConfig] = useState<PreviewConfig | null>(() => window.__SIM_PREVIEW__ ?? null);
+  const [config, setConfig] = useState<PreviewConfig | null>(() => streamConfigFrom(window.__SIM_PREVIEW__));
   const [streaming, setStreaming] = useState(false);
   const [devices, setDevices] = useState<SimDevice[]>([]);
   const [devicesLoading, setDevicesLoading] = useState(false);
@@ -121,18 +123,24 @@ function App() {
     const applyConfig = (next: PreviewConfig | null) => {
       setConfig((prev) => {
         if (previewConfigKey(prev) === previewConfigKey(next)) return prev;
-        if (next) window.__SIM_PREVIEW__ = next;
-        else delete window.__SIM_PREVIEW__;
+        if (next) {
+          window.__SIM_PREVIEW__ = next;
+        } else if (window.__SIM_PREVIEW__) {
+          // Keep the minimal injection: the empty state still routes through
+          // simEndpoint (basePath) and authenticates /exec (execToken).
+          const { basePath, execToken } = window.__SIM_PREVIEW__;
+          window.__SIM_PREVIEW__ = { basePath, execToken } as Window["__SIM_PREVIEW__"];
+        }
         return next;
       });
     };
 
     // Server pushes the serve-sim state only when it actually changes (helper
     // boot/shutdown or device selection), so there's no polling loop here.
-    const es = new EventSource(eventsUrl);
+    const es = openHostEventStream(eventsUrl);
     es.onmessage = (event) => {
       try {
-        applyConfig(JSON.parse(event.data) as PreviewConfig | null);
+        applyConfig(streamConfigFrom(JSON.parse(event.data) as Window["__SIM_PREVIEW__"]));
       } catch {}
     };
     return () => es.close();
@@ -141,7 +149,7 @@ function App() {
   // Stream simctl logs into the browser console with colors + grouping
   useEffect(() => {
     if (!config?.logsEndpoint) return;
-    const es = new EventSource(config.logsEndpoint);
+    const es = openHostEventStream(config.logsEndpoint);
 
     const procColors = new Map<string, string>();
     const palette = [
@@ -481,7 +489,15 @@ function AppWithConfig({
 
   // Subscribe to app-state SSE.
   const [currentApp, setCurrentApp] = useState<{ bundleId: string; isReactNative: boolean; pid?: number } | null>(null);
-  const [panelOpen, setPanelOpen] = useState(false);
+  // Start with the tools panel open when the viewport has room for it beside
+  // the simulator (typical device frame ≈ 420px plus page/panel gutters);
+  // smaller windows keep it closed so the device isn't squeezed on load.
+  const [panelOpen, setPanelOpen] = useState(() => {
+    if (typeof window === "undefined") return false;
+    const stored = Number(window.localStorage.getItem("serve-sim:tools-panel-width"));
+    const panelWidth = Number.isFinite(stored) && stored > 0 ? stored : PANEL_WIDTH;
+    return window.innerWidth >= panelWidth + 480;
+  });
   const { width: toolsPanelWidth, onPointerDown: onToolsResize } = useResizableWidth(
     "serve-sim:tools-panel-width",
     PANEL_WIDTH,
@@ -515,7 +531,7 @@ function AppWithConfig({
     return () => window.removeEventListener("resize", onResize);
   }, []);
   useEffect(() => {
-    const es = new EventSource(config.appStateEndpoint ?? simEndpoint("appstate"));
+    const es = openHostEventStream(config.appStateEndpoint ?? simEndpoint("appstate"));
     let timer: ReturnType<typeof setTimeout> | null = null;
     es.onmessage = (e) => {
       try {
@@ -637,6 +653,7 @@ function AppWithConfig({
   }, [switching, config.device, setSwitching]);
 
   const uploads = useUploadToasts();
+  const screenshot = useScreenshotToast(config.device);
   const mediaDrop = useMediaDrop({
     exec: execOnHost,
     udid: config.device,
@@ -754,6 +771,10 @@ function AppWithConfig({
             <SimulatorToolbar.HomeButton
               onClick={(e) => { e.preventDefault(); onStreamButton("home"); }}
             />
+            <SimulatorToolbar.ScreenshotButton
+              title="Screenshot"
+              onClick={(e) => { e.preventDefault(); void screenshot.capture(); }}
+            />
             <AxToolbarButton
               overlayEnabled={axOverlayEnabled}
               streaming={streaming}
@@ -812,7 +833,10 @@ function AppWithConfig({
           {axOverlayEnabled && <AxDomOverlay />}
           {mediaDrop.isDragOver && (
             <div
-              className="absolute inset-0 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-accent bg-[rgba(99,102,241,0.12)] backdrop-blur-[2px] text-accent pointer-events-none z-20"
+              // No backdrop-blur here: the canvas underneath repaints every
+              // stream frame, and backdrop-filter forces a full re-blur per
+              // frame for the whole drag — the tint alone stays cheap.
+              className="absolute inset-0 flex flex-col items-center justify-center gap-2 border-2 border-dashed border-accent bg-[rgba(99,102,241,0.18)] text-accent pointer-events-none z-20"
               style={{ borderRadius: imgBorderRadius }}
             >
               <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -891,6 +915,18 @@ function AppWithConfig({
             );
           })}
         </div>
+      )}
+
+      {/* Screenshot pill — macOS-style "saved" popup: click reveals in Finder,
+          drag copies the file, and it animates out (timer pauses on hover). */}
+      {screenshot.toast && (
+        <ScreenshotToast
+          toast={screenshot.toast}
+          onReveal={screenshot.reveal}
+          onDismiss={screenshot.dismiss}
+          onPause={screenshot.pause}
+          onResume={screenshot.resume}
+        />
       )}
 
       {/* Right-edge sidebar rail. */}

@@ -38,6 +38,8 @@ import {
   StopGlyph,
   WalkGlyph,
 } from "./icons";
+import { CollapsibleSection } from "./components/collapsible-section";
+import { Select } from "./components/select";
 
 const TRAIL_MORPH_MS = 650;
 
@@ -317,42 +319,36 @@ export function LocationEmulationTool({
     : `${formatDistance(prepared.totalDistance)} total`;
 
   return (
-    <div className="bg-panel border border-white/8 rounded-[10px] flex flex-col gap-2.5 px-3 py-2">
-      <style>{HOVER_CSS}</style>
-      <button
-        type="button"
-        onClick={() => setOpen((v: boolean) => !v)}
-        className="lem-toggle grid [grid-template-columns:auto_1fr_auto] items-center gap-2 bg-transparent border-none text-white/90 py-2.5 px-1 -my-2 -mx-1 cursor-pointer w-[calc(100%+8px)] text-left min-h-[36px] leading-none"
-        aria-expanded={open}
-      >
-        <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none inline-flex items-center">Location</span>
-        <span className="text-[11px] text-white/55 font-mono inline-flex items-center gap-1.5 justify-self-end leading-none">
-          <span
-            className="size-1.5 rounded-full [transition:background_0.2s,box-shadow_0.2s]"
-            style={{
-              background: playing ? "#4ade80" : prepared.totalDistance > 0 ? "rgba(255,255,255,0.3)" : "transparent",
-              boxShadow: playing ? "0 0 6px rgba(74,222,128,0.7)" : "none",
-            }}
-          />
-          {headerStatus}
-        </span>
-        <Chevron open={open} />
-      </button>
-
-      {open && (
+    <CollapsibleSection
+      open={open}
+      onOpenChange={setOpen}
+      summaryClassName="grid [grid-template-columns:auto_1fr_auto] items-center gap-2 text-left"
+      summary={
         <>
+          <style>{HOVER_CSS}</style>
+          <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none inline-flex items-center">Location</span>
+          <span className="text-[11px] text-white/55 font-mono inline-flex items-center gap-1.5 justify-self-end leading-none">
+            <span
+              className="size-1.5 rounded-full [transition:background_0.2s,box-shadow_0.2s]"
+              style={{
+                background: playing ? "#4ade80" : prepared.totalDistance > 0 ? "rgba(255,255,255,0.3)" : "transparent",
+                boxShadow: playing ? "0 0 6px rgba(74,222,128,0.7)" : "none",
+              }}
+            />
+            {headerStatus}
+          </span>
+        </>
+      }
+    >
           <div className="flex flex-col gap-1">
             <div className="relative block">
-              <select
+              <Select
+                label="Trail"
                 value={trailId}
-                onChange={(e) => onTrailChange((e.target as HTMLSelectElement).value)}
-                className="lem-select appearance-none [-webkit-appearance:none] bg-white/[0.04] border border-white/8 rounded-md text-white/90 text-[12px] py-1.5 pr-[26px] pl-2 font-[inherit] cursor-pointer w-full [transition:background_0.12s,border-color_0.12s]"
-                aria-label="Trail"
-              >
-                {DEFAULT_TRAILS.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
-                ))}
-              </select>
+                onChange={onTrailChange}
+                options={DEFAULT_TRAILS.map((t) => ({ value: t.id, label: t.name }))}
+                className="lem-select bg-white/[0.04] border border-white/8 rounded-md text-white/90 text-[12px] py-1.5 pr-[26px] pl-2 w-full [transition:background_0.12s,border-color_0.12s]"
+              />
               <span className="absolute right-[9px] top-1/2 -translate-y-1/2 pointer-events-none flex items-center" aria-hidden="true">
                 <Chevron open={false} />
               </span>
@@ -429,9 +425,7 @@ export function LocationEmulationTool({
               {error}
             </div>
           )}
-        </>
-      )}
-    </div>
+    </CollapsibleSection>
   );
 }
 

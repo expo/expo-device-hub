@@ -8,13 +8,29 @@ import { join, resolve } from "path";
 import { STATE_DIR, stateFileForDevice, listStateFiles } from "./state";
 import { textToKeyEvents, UnsupportedCharacterError, sendKeyEventsToWs } from "./text-to-keys";
 import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
+import { killPortHolder } from "./ports";
 import { findBootedDevice, resolveDevice } from "./device";
 import { permissions } from "./permissions";
+import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";
 
 // `import.meta.dir` is Bun-only; resolve once via fileURLToPath so the bundled
 // CLI works under plain `node` too.
 const __dirname = dirnameOf(import.meta.url);
+
+// Stamped in at build time (see build.ts), mirroring __PREVIEW_HTML_B64__. In
+// the un-bundled dev run the define is absent, so fall back to reading the
+// package.json that sits next to the source / dist bin.
+declare const __SERVE_SIM_VERSION__: string | undefined;
+function resolveVersion(): string {
+  if (typeof __SERVE_SIM_VERSION__ === "string") return __SERVE_SIM_VERSION__;
+  try {
+    const pkg = JSON.parse(readFileSync(join(__dirname, "..", "package.json"), "utf-8"));
+    return typeof pkg.version === "string" ? pkg.version : "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 
 // Embed the Swift helper so `bun build --compile` produces a self-contained
 // `serve-sim` binary. In dev / the un-compiled ESM bin the returned path is a
@@ -267,32 +283,6 @@ function stopProcess(pid: number): void {
   while (Date.now() < deadline2) {
     try { process.kill(pid, 0); sleepSync(25); } catch { return; }
   }
-}
-
-/** Return PIDs currently holding a TCP port (excluding ourselves). */
-function getPortHolders(port: number): number[] {
-  try {
-    const output = execSync(`lsof -ti tcp:${port}`, { encoding: "utf-8", stdio: "pipe" }).trim();
-    if (!output) return [];
-    const myPid = process.pid;
-    return output
-      .split("\n")
-      .map((s) => parseInt(s, 10))
-      .filter((pid) => Number.isFinite(pid) && pid !== myPid);
-  } catch {
-    return [];
-  }
-}
-
-/** Kill whatever process is holding a given port. Logs the PIDs being killed. */
-function killPortHolder(port: number): void {
-  const pids = getPortHolders(port);
-  if (pids.length === 0) return;
-  console.log(`\x1b[90mPort ${port} busy, killing holder pid(s): ${pids.join(", ")}\x1b[0m`);
-  for (const pid of pids) {
-    try { process.kill(pid, "SIGKILL"); } catch {}
-  }
-  sleepSync(100);
 }
 
 function bootDevice(udid: string): void {
@@ -1848,6 +1838,7 @@ const program = new Command();
 program
   .name("serve-sim")
   .description("Stream iOS Simulator to the browser")
+  .version(resolveVersion(), "-v, --version", "Output the serve-sim version")
   .helpOption("-h, --help", "Show this help")
   // The default command: start the preview server (or stream / list / kill).
   .argument("[devices...]", "Simulator(s) to target (udid or name; default: booted)")
@@ -1977,5 +1968,13 @@ program
   .helpOption(false)
   .argument("[args...]")
   .action((args: string[]) => permissions(args));
+
+program
+  .command("ui")
+  .description("Get or set simulator-wide UI options (see `ui --help`)")
+  .allowUnknownOption(true)
+  .helpOption(false)
+  .argument("[args...]")
+  .action((args: string[]) => uiSettings(args));
 
 await program.parseAsync(process.argv);

@@ -38,7 +38,9 @@ export function useAvccStream({
   onError,
 }: UseAvccStreamOptions): void {
   useEffect(() => {
-    if (!enabled || !isAvccSupported()) return;
+    // The empty `url` guard matters: a device-less preview config would
+    // otherwise fetch a relative `undefined/stream.avcc` from the page origin.
+    if (!enabled || !url || !isAvccSupported()) return;
 
     const controller = new AbortController();
     let stopped = false;

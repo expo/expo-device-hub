@@ -24,6 +24,45 @@
   --font-system: -apple-system, system-ui, sans-serif;
 }
 
+/* The UI is dark-only, but UA-rendered chrome (select popups, scrollbars,
+   date inputs) defaults to the light scheme. Desktop Chrome masks this by
+   drawing select popups natively per the OS appearance; embedded webviews
+   render them in-page and follow the declared scheme, so without this they
+   show a white option list on the dark panel. */
+:root {
+  color-scheme: dark;
+}
+
+/* Collapsible tool sections (<details>) animate open/close height with a
+   CSS-only ::details-content transition. interpolate-size lets `height: auto`
+   participate in the transition; allow-discrete swaps content-visibility at the
+   keyframe boundaries so collapsed content stays out of the a11y tree. */
+@supports (interpolate-size: allow-keywords) {
+  :root {
+    interpolate-size: allow-keywords;
+  }
+}
+
+details.lem-section::details-content {
+  height: 0;
+  overflow: clip;
+  transition:
+    height 0.22s ease,
+    content-visibility 0.22s allow-discrete;
+}
+
+details.lem-section[open]::details-content {
+  height: auto;
+}
+
+/* The Chevron is the disclosure affordance; drop the native marker. */
+details.lem-section > summary {
+  list-style: none;
+}
+details.lem-section > summary::-webkit-details-marker {
+  display: none;
+}
+
 @keyframes grid-spin {
   to { transform: rotate(360deg); }
 }
@@ -31,6 +70,15 @@
 @keyframes serve-sim-toast-indeterminate {
   0%   { transform: translateX(-100%); }
   100% { transform: translateX(250%); }
+}
+
+@keyframes serve-sim-toast-pop-in {
+  from { opacity: 0; transform: translateY(12px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes serve-sim-toast-pop-out {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to   { opacity: 0; transform: translateY(8px) scale(0.96); }
 }
 .serve-sim-toast-indeterminate {
   animation: serve-sim-toast-indeterminate 1.1s ease-in-out infinite;
