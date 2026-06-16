@@ -10,6 +10,7 @@
       "version": "1.0.0",
       "dependencies": {
         "expo": "catalog:",
+        "expo-devtools-plugin-hello-world": "workspace:*",
         "expo-serve-device": "workspace:*",
         "expo-serve-emu": "workspace:*",
         "expo-serve-sim": "workspace:*",
@@ -20,6 +21,13 @@
       "devDependencies": {
         "@types/react": "~19.2.2",
         "typescript": "~6.0.3",
+      },
+    },
+    "packages/expo-devtools-plugin-hello-world": {
+      "name": "expo-devtools-plugin-hello-world",
+      "version": "0.0.0",
+      "peerDependencies": {
+        "expo": "*",
       },
     },
     "packages/expo-serve-device": {
@@ -917,6 +925,8 @@
     "expo-asset": ["expo-asset@56.0.16", "", { "dependencies": { "@expo/image-utils": "^0.10.1", "expo-constants": "~56.0.17" }, "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }, "sha512-iIxPo6C6+/d8JxGV74ZKZbIcCz2s8//dVl7oBAj124NcPMFhzdwycFBpMqq5LUxin+lVy5cCoEjv2LD8ulnkiQ=="],
 
     "expo-constants": ["expo-constants@56.0.17", "", { "dependencies": { "@expo/env": "~2.3.0" }, "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-bU8iU1+7cI7QzfGQVnz2C1nlbXD08YPwD6h8ZEuNspgUuD2prXfmrhrdLe1GjCPYGw4hB3BNjWPjpenNyyymfQ=="],
+
+    "expo-devtools-plugin-hello-world": ["expo-devtools-plugin-hello-world@workspace:packages/expo-devtools-plugin-hello-world"],
 
     "expo-file-system": ["expo-file-system@56.0.7", "", { "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-dcKzo8ShPloM7jgfnMcJStgQebhP8owVjCkNI/aX6NMFV1CYB8bxKGMdnzJ3mXk5nfaiW+F/lSKr2UIJ02WAUA=="],
 

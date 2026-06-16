@@ -1,0 +1,9 @@
+{
+  "platforms": ["devtools"],
+  "devtools": {
+    "webpageRoot": "dev-plugin-dist",
+    "serverEntryPoint": "dev-plugin-server.js",
+    "cliBanner": true,
+    "bannerTitle": "Hello World"
+  }
+}
