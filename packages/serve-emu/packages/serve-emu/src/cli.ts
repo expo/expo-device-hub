@@ -10,9 +10,9 @@ const { values } = parseArgs({
   options: {
     port: { type: "string", short: "p", default: "3300" },
     serial: { type: "string", short: "s" },
-    "max-fps": { type: "string", default: "60" },
+    "max-fps": { type: "string", default: "30" },
     "bit-rate": { type: "string", default: "8000000" },
-    "max-size": { type: "string", default: "1920" },
+    "max-size": { type: "string", default: "1024" },
     "key-frame-interval": { type: "string", default: "1" },
     avd: { type: "string" },
     "avd-list": { type: "boolean" },
@@ -45,11 +45,11 @@ Usage:
 Options:
   -p, --port <port>      Port to listen on (default: 3300)
   -s, --serial <serial>  adb device serial (defaults to the only booted device)
-      --max-fps <n>      Cap source frame rate (default: 60)
+      --max-fps <n>      Cap source frame rate (default: 30)
       --bit-rate <bps>   H.264 bit rate (default: 8000000)
       --max-size <px>    Cap longest screen edge in pixels; 0 = native, but many
                          emulators reject native resolutions above ~2560 so this
-                         defaults to 1920.
+                         defaults to 1024.
       --key-frame-interval <sec>
                          Ask the encoder for regular keyframes; 0 disables this
                          codec option (default: 1)
@@ -95,9 +95,9 @@ async function main() {
       })).serial
     : pickDevice(values.serial);
   const port = Number(values.port);
-  const maxFps = numberOption("max-fps", 60);
+  const maxFps = numberOption("max-fps", 30);
   const bitRate = numberOption("bit-rate", 8_000_000);
-  const maxSize = numberOption("max-size", 1920);
+  const maxSize = numberOption("max-size", 1024);
   const keyFrameInterval = numberOption("key-frame-interval", 1);
 
   const { server, stop: stopServer } = await startServer({

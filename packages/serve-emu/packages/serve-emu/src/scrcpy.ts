@@ -264,9 +264,9 @@ function parseVideoPreamble(buf: Buffer): {
 export async function startScrcpy(opts: StartOpts): Promise<ScrcpySession> {
   const jar = await ensureScrcpyServer();
   const { serial } = opts;
-  const maxFps = opts.maxFps ?? 60;
+  const maxFps = opts.maxFps ?? 30;
   const bitRate = opts.bitRate ?? 8_000_000;
-  const maxSize = opts.maxSize ?? 0;
+  const maxSize = opts.maxSize ?? 1024;
   const keyFrameInterval = opts.keyFrameInterval ?? 1;
   const scid = randomScid();
   let localPort: number | null = null;
