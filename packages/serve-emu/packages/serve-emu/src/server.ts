@@ -415,6 +415,9 @@ export async function startServer(opts: ServerOpts) {
     client.droppedFrames++;
     totalDroppedFrames++;
     client.awaitingKeyFrame = true;
+    console.warn(
+      `client ${client.id} backpressure: dropping frames until keyframe (buffered ${client.ws.getBufferedAmount()} B, ${client.droppedFrames} dropped)`,
+    );
     requestVideoReset("client backpressure");
   };
 
@@ -430,6 +433,9 @@ export async function startServer(opts: ServerOpts) {
 
     const buffered = client.ws.getBufferedAmount();
     if (buffered > CLOSE_CLIENT_BUFFERED_BYTES) {
+      console.warn(
+        `client ${client.id} too slow: closing (buffered ${buffered} B > ${CLOSE_CLIENT_BUFFERED_BYTES} B, ${client.droppedFrames} dropped)`,
+      );
       clients.delete(client);
       try {
         client.ws.close(1013, "client too slow");

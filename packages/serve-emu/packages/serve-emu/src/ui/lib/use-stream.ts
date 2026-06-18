@@ -20,8 +20,7 @@ type ApiInfo = {
 };
 
 const SOFT_DECODE_QUEUE_SIZE = 4;
-const HARD_DECODE_QUEUE_SIZE = 16;
-const DECODER_RESET_COOLDOWN_MS = 1500;
+const DECODER_RECOVERY_COOLDOWN_MS = 1500;
 const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 const FRAME_QUEUE_SIZE = 2;
 const FRAME_META_MAGIC = 0x53454d55; // "SEMU"
@@ -84,7 +83,7 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
     let frameQueueHead = 0;
     let frameQueueCount = 0;
     let renderRaf = 0;
-    let lastDecoderResetAt = 0;
+    let lastDecoderRecoveryAt = 0;
     let lastKeyframeRequestAt = 0;
     let droppingUntilKeyframe = false;
     let healthTimer: ReturnType<typeof setInterval> | null = null;
@@ -92,16 +91,38 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
     const setStatus = (s: string) =>
       setState((prev) => (prev.status === s ? prev : { ...prev, status: s }));
 
-    const resetDecoderQueue = () => {
-      if (!decoder || decoder.state === "closed") return;
-      const now = performance.now();
-      if (now - lastDecoderResetAt < DECODER_RESET_COOLDOWN_MS) return;
-      lastDecoderResetAt = now;
+    const clearFrameQueue = () => {
+      if (renderRaf) {
+        cancelAnimationFrame(renderRaf);
+        renderRaf = 0;
+      }
+      for (let i = 0; i < FRAME_QUEUE_SIZE; i++) {
+        frameQueue[i]?.close();
+        frameQueue[i] = null;
+      }
+      frameQueueHead = 0;
+      frameQueueCount = 0;
+    };
+
+    const closeDecoder = () => {
+      if (!decoder) return;
       try {
-        decoder.reset();
+        if (decoder.state !== "closed") decoder.close();
       } catch {}
+      decoder = null;
+    };
+
+    const beginDecoderRecovery = () => {
+      const now = performance.now();
+      if (now - lastDecoderRecoveryAt < DECODER_RECOVERY_COOLDOWN_MS && droppingUntilKeyframe) return;
+      lastDecoderRecoveryAt = now;
+      closeDecoder();
+      clearFrameQueue();
       sawKeyframe = false;
       frameIdx = 0;
+      droppingUntilKeyframe = true;
+      requestKeyframe();
+      setStatus("recovering video");
     };
 
     const requestKeyframe = () => {
@@ -143,14 +164,20 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
       }
     };
 
-    const ensureDecoder = (spsBytes: Uint8Array) => {
-      if (decoder && decoder.state !== "closed") return;
+    const ensureDecoder = (spsBytes: Uint8Array): boolean => {
+      if (decoder?.state === "configured") return true;
+      closeDecoder();
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext("2d", { alpha: false, desynchronized: true });
-      if (!canvas || !ctx) return;
+      if (!canvas || !ctx) return false;
       const codec = buildCodecString(spsBytes);
-      const dec = new VideoDecoder({
+      let dec: VideoDecoder;
+      dec = new VideoDecoder({
         output: (frame) => {
+          if (decoder !== dec) {
+            frame.close();
+            return;
+          }
           if (frameQueueCount >= FRAME_QUEUE_SIZE) {
             const tail = (frameQueueHead - frameQueueCount + FRAME_QUEUE_SIZE) % FRAME_QUEUE_SIZE;
             frameQueue[tail]?.close();
@@ -167,39 +194,52 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
         error: (e) => {
           console.error("VideoDecoder error", e);
           setStatus("decoder error");
+          if (decoder === dec) beginDecoderRecovery();
         },
       });
-      dec.configure({ codec, optimizeForLatency: true });
-      decoder = dec;
-      console.log("VideoDecoder configured:", codec);
+      try {
+        dec.configure({ codec, optimizeForLatency: true });
+        decoder = dec;
+        console.log("VideoDecoder configured:", codec);
+        return true;
+      } catch (e) {
+        console.error("VideoDecoder configure failed", e);
+        try {
+          dec.close();
+        } catch {}
+        setStatus("decoder config failed");
+        requestKeyframe();
+        return false;
+      }
     };
 
     const feedFrame = (raw: ArrayBuffer | Uint8Array) => {
       const packet = parseFramePacket(raw);
-      const needsScan = packet.isKey === null || (packet.isKey && (!decoder || decoder.state === "closed"));
+      const needsScan =
+        packet.isKey === null ||
+        (packet.isKey && (!decoder || decoder.state !== "configured" || droppingUntilKeyframe));
       const scanned = needsScan ? scanAU(packet.data) : null;
       const isKey = packet.isKey ?? scanned?.isKey ?? false;
       const spsBytes = scanned?.spsBytes ?? null;
-      if (spsBytes) ensureDecoder(spsBytes);
-      if (!decoder || decoder.state !== "configured") return;
+      if (spsBytes && !ensureDecoder(spsBytes)) return;
 
-      const queueSize = decoder.decodeQueueSize;
-      if (queueSize > HARD_DECODE_QUEUE_SIZE) {
-        resetDecoderQueue();
-        droppingUntilKeyframe = !isKey;
-        requestKeyframe();
+      if (droppingUntilKeyframe) {
         if (!isKey) return;
-      } else if (droppingUntilKeyframe) {
-        if (!isKey) {
+        if (!decoder || decoder.state !== "configured") {
+          requestKeyframe();
           return;
         }
         droppingUntilKeyframe = false;
-        resetDecoderQueue();
-      } else if (queueSize > SOFT_DECODE_QUEUE_SIZE) {
-        droppingUntilKeyframe = !isKey;
-        requestKeyframe();
-        if (!isKey) return;
-        resetDecoderQueue();
+      }
+
+      if (!decoder || decoder.state !== "configured") {
+        if (!isKey) requestKeyframe();
+        return;
+      }
+
+      if (decoder.decodeQueueSize > SOFT_DECODE_QUEUE_SIZE) {
+        beginDecoderRecovery();
+        return;
       }
 
       if (!sawKeyframe) {
@@ -208,6 +248,7 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
           return;
         }
         sawKeyframe = true;
+        setStatus("streaming");
       }
       try {
         decoder.decode(
@@ -220,6 +261,7 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
         frameIdx++;
       } catch (e) {
         console.error("decode failed", e);
+        beginDecoderRecovery();
       }
     };
 
@@ -297,16 +339,9 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
       try {
         wsRef.current?.close();
       } catch {}
-      if (renderRaf) cancelAnimationFrame(renderRaf);
-      for (let i = 0; i < FRAME_QUEUE_SIZE; i++) {
-        frameQueue[i]?.close();
-      }
-      frameQueueCount = 0;
-      try {
-        decoder?.close();
-      } catch {}
+      clearFrameQueue();
+      closeDecoder();
       wsRef.current = null;
-      decoder = null;
     };
   }, [canvasRef]);
 
