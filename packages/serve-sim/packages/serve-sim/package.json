@@ -58,8 +58,7 @@
   },
   "scripts": {
     "build": "bun run build.ts",
-    "build:swift": "./build.sh",
-    "dev": "bun run dev.ts"
+    "build:swift": "./build.sh"
   },
   "devDependencies": {
     "@types/bun": "latest",

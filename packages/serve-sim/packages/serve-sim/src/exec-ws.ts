@@ -1,9 +1,5 @@
 import { exec, type ExecException } from "child_process";
 import { createHash, timingSafeEqual } from "crypto";
-import { request as httpRequest, type IncomingMessage } from "http";
-import type { Socket } from "net";
-import type { Duplex } from "stream";
-import { WebSocketServer, type WebSocket } from "ws";
 
 // WebSocket control channel for the preview page. Browsers cap HTTP/1.1 at
 // six connections per origin, and every preview tab used to hold several
@@ -13,12 +9,10 @@ import { WebSocketServer, type WebSocket } from "ws";
 // subscriptions, so each tab needs just one pooled connection (the video
 // stream) plus this socket.
 //
-// Built on `ws` rather than hand-rolled RFC6455: under Bun, `node:http`
-// emits `upgrade` but raw 101 handshake writes to the socket never flush, so
-// manual framing silently breaks — Bun instead substitutes its own native
-// implementation for the `ws` module, which works. The client is
-// intentionally WS-only (no HTTP fallback): a broken channel must surface as
-// an error, not silent degradation.
+// The middleware owns the protocol below, but not the HTTP upgrade. Hosts pass
+// an already-accepted websocket into `handleWebSocket`; the bundled Node
+// runtime does that with `ws`, while other web runtimes can provide their own
+// socket object with the same small shape.
 //
 // Wire protocol (all JSON text frames):
 //   client → {token}                  first frame; must match the exec token
@@ -33,7 +27,19 @@ import { WebSocketServer, type WebSocket } from "ws";
 //   client → {unsub: sub}             cancel a subscription
 
 const AUTH_TIMEOUT_MS = 10_000;
-const MAX_MESSAGE_BYTES = 4 * 1024 * 1024;
+export const EXEC_WS_MAX_MESSAGE_BYTES = 4 * 1024 * 1024;
+
+const textDecoder = new TextDecoder();
+
+export interface ExecWebSocket {
+  readonly OPEN: number;
+  readonly readyState: number;
+  send(data: string): void;
+  close(): void;
+  on(event: "message", listener: (data: unknown) => void): void;
+  on(event: "error", listener: (error?: unknown) => void): void;
+  on(event: "close", listener: () => void): void;
+}
 
 function tokensMatch(a: string, b: string): boolean {
   // Hash both sides so the comparison is constant-time even when lengths differ.
@@ -55,6 +61,11 @@ interface ExecMessage {
 /** In-process handler for `{id, ui}` requests; resolves to the reply body. */
 export type UiRequestHandler = (payload: unknown) => Promise<Record<string, unknown>>;
 
+type SseRequestHandler = (
+  path: string,
+  websocketRequest: Request,
+) => Response | undefined | Promise<Response | undefined>;
+
 interface ExecChannelOptions {
   path: string;
   execToken: string;
@@ -62,11 +73,26 @@ interface ExecChannelOptions {
   ssePrefixes?: string[];
   /** In-process handler for `{id, ui}` simulator-settings requests. */
   onUiRequest?: UiRequestHandler;
+  /** Routes an authenticated subscription back through the owning middleware. */
+  onSseRequest?: SseRequestHandler;
+}
+
+function messageToString(data: unknown): string {
+  if (typeof data === "string") return data;
+  if (data instanceof ArrayBuffer) return textDecoder.decode(new Uint8Array(data));
+  if (ArrayBuffer.isView(data)) {
+    return textDecoder.decode(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+  }
+  return String(data);
+}
+
+function requestHost(request: Request): string {
+  return request.headers.get("host") ?? new URL(request.url).host;
 }
 
 function wireExecSocket(
-  ws: WebSocket,
-  serverPort: number | undefined,
+  ws: ExecWebSocket,
+  request: Request,
   opts: ExecChannelOptions,
 ): void {
   let authed = false;
@@ -80,7 +106,7 @@ function wireExecSocket(
   const authTimer = setTimeout(() => {
     if (!authed) ws.close();
   }, AUTH_TIMEOUT_MS);
-  authTimer.unref?.();
+  (authTimer as { unref?: () => void }).unref?.();
 
   const subscribe = (sub: number, path: string) => {
     if (subscriptions.has(sub)) return;
@@ -92,39 +118,61 @@ function wireExecSocket(
       send({ sub, end: true, error: "path not allowed" });
       return;
     }
-    // Loop the request back through our own HTTP server; server-to-self
-    // connections are not subject to the browser's per-origin pool.
-    if (!serverPort) {
-      send({ sub, end: true, error: "no local port" });
+    if (!opts.onSseRequest) {
+      send({ sub, end: true, error: "sse requests not supported" });
       return;
     }
-    const upstream = httpRequest(
-      {
-        host: "127.0.0.1",
-        port: serverPort,
-        path,
-        headers: { accept: "text/event-stream" },
+
+    let active = true;
+    let endSent = false;
+    let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+    const sendEnd = (error?: string) => {
+      if (endSent) return;
+      endSent = true;
+      send(error ? { sub, end: true, error } : { sub, end: true });
+    };
+    const subscription = {
+      destroy() {
+        active = false;
+        void reader?.cancel().catch(() => {});
       },
-      (res) => {
-        res.on("data", (chunk: Buffer) => send({ sub, data: chunk.toString("utf-8") }));
-        res.on("end", () => {
+    };
+    subscriptions.set(sub, subscription);
+
+    void (async () => {
+      try {
+        const response = await opts.onSseRequest!(path, request);
+        if (!active) return;
+        if (!response?.body) {
+          sendEnd();
+          return;
+        }
+        reader = response.body.getReader();
+        while (active) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          send({ sub, data: textDecoder.decode(value, { stream: true }) });
+        }
+      } catch {
+        if (active) sendEnd();
+        return;
+      } finally {
+        active = false;
+        if (reader) {
+          try { reader.releaseLock(); } catch {}
+        }
+        if (subscriptions.get(sub) === subscription) {
           subscriptions.delete(sub);
-          send({ sub, end: true });
-        });
-      },
-    );
-    upstream.on("error", () => {
-      subscriptions.delete(sub);
-      send({ sub, end: true });
-    });
-    upstream.end();
-    subscriptions.set(sub, { destroy: () => upstream.destroy() });
+          sendEnd();
+        }
+      }
+    })();
   };
 
   ws.on("message", (data) => {
     let msg: ExecMessage;
     try {
-      msg = JSON.parse(data.toString()) as ExecMessage;
+      msg = JSON.parse(messageToString(data)) as ExecMessage;
     } catch {
       return;
     }
@@ -184,44 +232,30 @@ function wireExecSocket(
 }
 
 /**
- * Upgrade handler for `<basePath>/exec-ws`. Returns true when the request was
- * for the exec channel (and the socket has been taken over), false when the
- * caller should handle (or destroy) the socket itself.
+ * Websocket handler for `<basePath>/exec-ws`. Returns true when the request was
+ * for the exec channel, false when the caller should close or route it.
  */
-export function createExecUpgradeHandler(opts: ExecChannelOptions) {
-  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_MESSAGE_BYTES });
-  return function handleUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer): boolean {
-    const rawUrl = req.url ?? "";
-    const qIndex = rawUrl.indexOf("?");
-    const url = qIndex === -1 ? rawUrl : rawUrl.slice(0, qIndex);
-    if (url !== opts.path && url !== `${opts.path}/`) return false;
+export function createExecWebSocketHandler(opts: ExecChannelOptions) {
+  return function handleWebSocket(request: Request, websocket: ExecWebSocket): boolean {
+    const url = new URL(request.url);
+    if (url.pathname !== opts.path && url.pathname !== `${opts.path}/`) return false;
 
     // Same-origin policy mirrors POST /exec: browsers always send Origin on
     // WebSocket upgrades, and a cross-origin page's Origin won't match Host.
-    const origin = req.headers.origin;
+    const origin = request.headers.get("origin");
     if (origin) {
       try {
-        if (new URL(origin).host !== req.headers.host) {
-          socket.destroy();
+        if (new URL(origin).host !== requestHost(request)) {
+          websocket.close();
           return true;
         }
       } catch {
-        socket.destroy();
+        websocket.close();
         return true;
       }
     }
 
-    // Port for SSE loopback requests: prefer the socket's own local port,
-    // fall back to the Host header (Bun's upgrade socket may not expose it).
-    let serverPort = (socket as Socket).localPort;
-    if (!serverPort) {
-      const hostPort = Number((req.headers.host ?? "").split(":")[1]);
-      if (Number.isFinite(hostPort) && hostPort > 0) serverPort = hostPort;
-    }
-
-    wss.handleUpgrade(req, socket, head, (ws) => {
-      wireExecSocket(ws, serverPort, opts);
-    });
+    wireExecSocket(websocket, request, opts);
     return true;
   };
 }

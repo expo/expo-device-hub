@@ -9,8 +9,9 @@
  *   dist/middleware.cjs   Thin CJS wrapper for the same
  *
  * The bin and middleware bundles target `node` so users without `bun` on
- * their PATH can still run `npx serve-sim` / mount the Connect middleware.
- * Runtime server and timing behavior is implemented with Node stdlib APIs.
+ * their PATH can still run `npx serve-sim` / mount the fetch-style middleware.
+ * Runtime HTTP and timing behavior is implemented with Node stdlib APIs; the
+ * Node WebSocket upgrade is accepted through the `ws` dependency.
  *
  * The preview HTML (bundled client.tsx + Preact + serve-sim-client, base64
  * encoded) is injected into every artifact that could need to serve the UI

@@ -20,7 +20,6 @@
         "src/client/client.tsx",
         "src/client/global.css",
         "build.ts",
-        "dev.ts",
         "scripts/build-trails.ts"
       ]
     },
