@@ -1,5 +1,6 @@
 import { exec, type ExecException } from "child_process";
 import { createHash, timingSafeEqual } from "crypto";
+import type { IncomingMessage } from "http";
 
 // WebSocket control channel for the preview page. Browsers cap HTTP/1.1 at
 // six connections per origin, and every preview tab used to hold several
@@ -63,7 +64,7 @@ export type UiRequestHandler = (payload: unknown) => Promise<Record<string, unkn
 
 type SseRequestHandler = (
   path: string,
-  websocketRequest: Request,
+  websocketRequest: IncomingMessage,
 ) => Response | undefined | Promise<Response | undefined>;
 
 interface ExecChannelOptions {
@@ -86,13 +87,13 @@ function messageToString(data: unknown): string {
   return String(data);
 }
 
-function requestHost(request: Request): string {
-  return request.headers.get("host") ?? new URL(request.url).host;
+function requestHost(req: IncomingMessage): string {
+  return req.headers.host ?? "";
 }
 
 function wireExecSocket(
   ws: ExecWebSocket,
-  request: Request,
+  req: IncomingMessage,
   opts: ExecChannelOptions,
 ): void {
   let authed = false;
@@ -141,7 +142,7 @@ function wireExecSocket(
 
     void (async () => {
       try {
-        const response = await opts.onSseRequest!(path, request);
+        const response = await opts.onSseRequest!(path, req);
         if (!active) return;
         if (!response?.body) {
           sendEnd();
@@ -236,16 +237,23 @@ function wireExecSocket(
  * for the exec channel, false when the caller should close or route it.
  */
 export function createExecWebSocketHandler(opts: ExecChannelOptions) {
-  return function handleWebSocket(request: Request, websocket: ExecWebSocket): boolean {
-    const url = new URL(request.url);
+  // NOTE(expo-cli): this takes the raw Node `IncomingMessage` from the `upgrade`
+  // event rather than a web `Request`. An `upgrade` has no paired
+  // `ServerResponse`, so the host can't build a `Request` via
+  // `convertRequest`/`createRequestListener` (their abort wiring needs the
+  // response). When this exec channel is upstreamed into the Expo CLI, the
+  // CLI's upgrade handling should be updated to pass the `IncomingMessage`
+  // through here the same way instead of synthesizing a `Request`.
+  return function handleWebSocket(req: IncomingMessage, websocket: ExecWebSocket): boolean {
+    const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     if (url.pathname !== opts.path && url.pathname !== `${opts.path}/`) return false;
 
     // Same-origin policy mirrors POST /exec: browsers always send Origin on
     // WebSocket upgrades, and a cross-origin page's Origin won't match Host.
-    const origin = request.headers.get("origin");
+    const origin = req.headers.origin;
     if (origin) {
       try {
-        if (new URL(origin).host !== requestHost(request)) {
+        if (new URL(origin).host !== requestHost(req)) {
           websocket.close();
           return true;
         }
@@ -255,7 +263,7 @@ export function createExecWebSocketHandler(opts: ExecChannelOptions) {
       }
     }
 
-    wireExecSocket(websocket, request, opts);
+    wireExecSocket(websocket, req, opts);
     return true;
   };
 }

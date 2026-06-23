@@ -1,11 +1,10 @@
 /** Node runtime helpers for the bundled CLI. */
 import { fileURLToPath } from "url";
 import { dirname } from "path";
-import { createServer as createHttpServer, type IncomingMessage, type ServerResponse } from "http";
+import { createServer as createHttpServer, type IncomingMessage } from "http";
 import { createServer as createNetServer } from "net";
-import { once } from "events";
-import { Readable } from "stream";
 import { WebSocketServer } from "ws";
+import { createRequestListener } from "@remix-run/node-fetch-server";
 import { EXEC_WS_MAX_MESSAGE_BYTES, type ExecWebSocket } from "./exec-ws";
 
 export function dirnameOf(metaUrl: string): string {
@@ -31,88 +30,17 @@ export interface PreviewServer {
   stop(force?: boolean): void;
 }
 
-type RequestInitWithDuplex = RequestInit & { duplex?: "half" };
-
 /** Fetch-style middleware signature, matching what `simMiddleware` returns. */
 type WebMiddleware = ((request: Request) => Response | undefined | Promise<Response | undefined>) & {
-  /** WebSocket hook (exec channel); returns true when handled. */
-  handleWebSocket?: (request: Request, websocket: ExecWebSocket) => boolean;
+  /**
+   * WebSocket hook (exec channel); returns true when handled. Receives the raw
+   * Node `IncomingMessage` from the `upgrade` event — an upgrade has no paired
+   * `ServerResponse`, so there's nothing to build a web `Request` from (its
+   * abort wiring needs the response), and the handler only reads the URL +
+   * headers (host/origin) anyway.
+   */
+  handleWebSocket?: (req: IncomingMessage, websocket: ExecWebSocket) => boolean;
 };
-
-function nodeRequestToWeb(req: IncomingMessage, res?: ServerResponse): Request {
-  const headers = new Headers();
-  for (const [key, value] of Object.entries(req.headers)) {
-    if (Array.isArray(value)) {
-      for (const item of value) headers.append(key, item);
-    } else if (value !== undefined) {
-      headers.set(key, value);
-    }
-  }
-
-  const host = headers.get("host") ?? "127.0.0.1";
-  const url = new URL(req.url ?? "/", `http://${host}`);
-  const controller = new AbortController();
-  res?.on("close", () => controller.abort());
-
-  const init: RequestInitWithDuplex = {
-    method: req.method,
-    headers,
-    signal: controller.signal,
-  };
-  if (req.method !== "GET" && req.method !== "HEAD") {
-    init.body = Readable.toWeb(req) as unknown as ReadableStream<Uint8Array>;
-    init.duplex = "half";
-  }
-  return new Request(url, init);
-}
-
-async function writeWebResponse(
-  originalReq: IncomingMessage,
-  res: ServerResponse,
-  response: Response | undefined,
-): Promise<void> {
-  if (!response) {
-    if (!res.headersSent) res.statusCode = 404;
-    res.end("Not found");
-    return;
-  }
-
-  const headers: Record<string, string> = {};
-  response.headers.forEach((value, key) => {
-    headers[key] = value;
-  });
-  res.writeHead(response.status, headers);
-  if (originalReq.method === "HEAD" || !response.body) {
-    res.end();
-    return;
-  }
-
-  const reader = response.body.getReader();
-  let closed = false;
-  const onClose = () => {
-    closed = true;
-    void reader.cancel().catch(() => {});
-  };
-  res.once("close", onClose);
-  try {
-    while (!closed) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (!res.write(Buffer.from(value))) {
-        await Promise.race([once(res, "drain"), once(res, "close")]);
-        if (closed || res.destroyed) break;
-      }
-    }
-    if (!res.destroyed) res.end();
-  } catch (error) {
-    if (!res.destroyed) {
-      res.destroy(error instanceof Error ? error : undefined);
-    }
-  } finally {
-    res.off("close", onClose);
-    reader.releaseLock();
-  }
-}
 
 /** Run a fetch-style middleware as an HTTP server. */
 export async function servePreview(opts: {
@@ -131,20 +59,16 @@ export async function servePreview(opts: {
     maxPayload: EXEC_WS_MAX_MESSAGE_BYTES,
   });
 
-  const server = createHttpServer((req, res) => {
-    void (async () => {
-      const request = nodeRequestToWeb(req, res);
+  // `createRequestListener` handles the Node ↔ web Request/Response bridge,
+  // including streaming bodies and aborting the request signal when the client
+  // disconnects (which tears down the SSE/MJPEG child processes). The
+  // middleware returns `undefined` for unclaimed routes; map that to a 404.
+  const server = createHttpServer(
+    createRequestListener(async (request) => {
       const response = await opts.middleware(request);
-      await writeWebResponse(req, res, response);
-    })().catch((error) => {
-      if (res.headersSent) {
-        if (!res.destroyed) res.destroy(error instanceof Error ? error : undefined);
-        return;
-      }
-      res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-      res.end(error instanceof Error ? error.message : "Internal Server Error");
-    });
-  });
+      return response ?? new Response("Not found", { status: 404 });
+    }),
+  );
   // The exec WebSocket channel keeps actions off the browser's per-origin
   // HTTP connection pool (which the streams below saturate with 2+ tabs).
   server.on("upgrade", (req, socket, head) => {
@@ -152,10 +76,9 @@ export async function servePreview(opts: {
       socket.destroy();
       return;
     }
-    const request = nodeRequestToWeb(req);
     wss.handleUpgrade(req, socket, head, (websocket) => {
       const handled = opts.middleware.handleWebSocket?.(
-        request,
+        req,
         websocket as unknown as ExecWebSocket,
       );
       if (!handled) websocket.close();

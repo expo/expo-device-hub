@@ -61,6 +61,7 @@
     "build:swift": "./build.sh"
   },
   "devDependencies": {
+    "@remix-run/node-fetch-server": "^0.13.3",
     "@types/bun": "latest",
     "@types/debug": "^4.1.13",
     "@types/react": "^19.0.0",

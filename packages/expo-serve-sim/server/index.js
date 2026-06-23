@@ -3,21 +3,20 @@
 /**
  * DevTools plugin server entry point.
  *
- * Expo CLI calls this default-exported handler for every request to
+ * Expo CLI calls the default-exported fetch handler for every request to
  * `/_expo/plugins/expo-serve-sim/*` with the plugin prefix stripped from the
  * URL, expecting a fetch `Response` back (or `null` to fall through to static
  * `webpageRoot` serving — this plugin has none, so `null` becomes a 404).
  *
- * serve-sim ships a Connect-style middleware `(req, res, next)` rather than a
- * fetch handler, so this file bridges the two: it fakes a Node
- * `IncomingMessage`/`ServerResponse` pair, runs `simMiddleware` against them,
- * and streams whatever the middleware writes back out as a `Response`. The
- * streaming bridge is what keeps serve-sim's SSE routes (`/logs`, `/ax`,
- * `/appstate`, `/api/events`) working through the fetch boundary.
+ * serve-sim ships a fetch-style middleware — `(request: Request) => Response` —
+ * so this file is a thin adapter: it re-adds the stripped plugin prefix to the
+ * request URL (so simMiddleware's route matching and the client-facing URLs it
+ * emits both line up with the path the browser loads the plugin under) and
+ * forwards the request straight through. The SSE routes (`/logs`, `/ax`,
+ * `/appstate`, `/api/events`) stream because the middleware returns streaming
+ * `Response` bodies that Expo CLI pipes back to the client unchanged.
  */
 
-const { Readable } = require('node:stream');
-const { EventEmitter } = require('node:events');
 const { spawn } = require('node:child_process');
 const { readdirSync } = require('node:fs');
 const { tmpdir } = require('node:os');
@@ -32,20 +31,6 @@ const { name: PACKAGE_NAME } = require('../package.json');
 // CLI strips the prefix before handing us the request (we re-add it below).
 const DEVTOOLS_PLUGINS_ENDPOINT = '/_expo/plugins';
 const BASE = `${DEVTOOLS_PLUGINS_ENDPOINT}/${PACKAGE_NAME}`;
-
-// Hop-by-hop headers are managed by Node's http layer on the real response;
-// carrying them across the fetch `Response` boundary is meaningless (and some
-// are rejected by `Headers`). Node will pick chunked encoding for SSE itself.
-const HOP_BY_HOP = new Set([
-  'connection',
-  'keep-alive',
-  'transfer-encoding',
-  'upgrade',
-  'proxy-authenticate',
-  'proxy-authorization',
-  'te',
-  'trailer',
-]);
 
 const middleware = simMiddleware({ basePath: BASE });
 
@@ -116,170 +101,51 @@ function ensureHelperSpawned() {
   });
 }
 
-function toBytes(chunk) {
-  return typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+/** Re-add the plugin prefix the CLI stripped, keeping method/headers/body/signal. */
+function withPluginPrefix(request) {
+  const url = new URL(request.url);
+  return new Request(`${url.origin}${BASE}${url.pathname}${url.search}`, request);
 }
 
-module.exports = function handler(request) {
+module.exports = async function handler(request) {
   ensureHelperSpawned();
-  return new Promise((resolve, reject) => {
-    const url = new URL(request.url);
-
-    // ── Fake Node IncomingMessage ──────────────────────────────────────────
-    const req = new EventEmitter();
-    // Re-add the plugin prefix the CLI stripped so route matching and the
-    // client-facing URLs simMiddleware generates both line up with the path
-    // the browser actually loads the plugin under.
-    req.url = `${BASE}${url.pathname}${url.search}`;
-    req.method = request.method;
-    req.headers = Object.fromEntries(request.headers);
-    if (!req.headers.host) {
-      req.headers.host = url.host;
-    }
-
-    // ── Fake Node ServerResponse backed by a web ReadableStream ────────────
-    const res = new EventEmitter();
-    res.statusCode = 200;
-    res.headersSent = false;
-    res.writableEnded = false;
-    const outHeaders = {};
-    let controller = null;
-    let resolved = false;
-
-    function sendHead() {
-      if (resolved) {
-        return;
-      }
-      resolved = true;
-      res.headersSent = true;
-      const headers = new Headers();
-      for (const [key, value] of Object.entries(outHeaders)) {
-        if (HOP_BY_HOP.has(key.toLowerCase())) {
-          continue;
-        }
-        headers.set(key, String(value));
-      }
-      // `start` runs synchronously during construction, so `controller` is set
-      // before this function returns and any subsequent enqueue is safe.
-      const body = new ReadableStream({
-        start(c) {
-          controller = c;
-        },
-        // The CLI pipes this body to the real client response; when that client
-        // disconnects the pipe is cancelled. Surface it to simMiddleware as a
-        // request `close` so it tears down its log/ax child processes.
-        cancel() {
-          res.writableEnded = true;
-          req.emit('aborted');
-          req.emit('close');
-        },
-      });
-      resolve(new Response(body, { status: res.statusCode, headers }));
-    }
-
-    res.setHeader = (key, value) => {
-      outHeaders[key] = value;
-      return res;
-    };
-    res.getHeader = (key) => outHeaders[key];
-    res.removeHeader = (key) => {
-      delete outHeaders[key];
-    };
-    res.writeHead = (statusCode, reasonOrHeaders, maybeHeaders) => {
-      res.statusCode = statusCode;
-      const headers =
-        reasonOrHeaders && typeof reasonOrHeaders === 'object' ? reasonOrHeaders : maybeHeaders;
-      if (headers) {
-        for (const key of Object.keys(headers)) {
-          outHeaders[key] = headers[key];
-        }
-      }
-      sendHead();
-      return res;
-    };
-    res.write = (chunk) => {
-      sendHead();
-      if (chunk != null && controller) {
-        controller.enqueue(toBytes(chunk));
-      }
-      return true;
-    };
-    res.end = (chunk) => {
-      sendHead();
-      if (chunk != null && controller) {
-        controller.enqueue(toBytes(chunk));
-      }
-      res.writableEnded = true;
-      if (controller) {
-        try {
-          controller.close();
-        } catch {
-          // already closed (e.g. client disconnected) — nothing to do
-        }
-      }
-      res.emit('finish');
-      res.emit('close');
-    };
-
-    function next(err) {
-      if (err) {
-        reject(err instanceof Error ? err : new Error(String(err)));
-        return;
-      }
-      // simMiddleware didn't claim this route — fall through to the CLI, which
-      // 404s since this plugin defines no webpageRoot.
-      if (!resolved) {
-        resolved = true;
-        resolve(null);
-      }
-    }
-
-    try {
-      middleware(req, res, next);
-    } catch (err) {
-      reject(err);
-      return;
-    }
-
-    // Feed the request body to simMiddleware's `data`/`end` listeners (POST
-    // routes such as /exec and /grid/api/*). Deferred to a microtask so the
-    // route handler — which ran synchronously above — has already attached its
-    // listeners before the first chunk is emitted.
-    if (request.method !== 'GET' && request.method !== 'HEAD') {
-      void (async () => {
-        try {
-          if (request.body) {
-            for await (const chunk of Readable.fromWeb(request.body)) {
-              req.emit('data', Buffer.from(chunk));
-            }
-          } else {
-            const buf = Buffer.from(await request.arrayBuffer());
-            if (buf.length) {
-              req.emit('data', buf);
-            }
-          }
-          req.emit('end');
-        } catch (err) {
-          req.emit('error', err);
-        }
-      })();
-    }
-  });
+  const response = await middleware(withPluginPrefix(request));
+  // `null`/`undefined` tells Expo CLI the route wasn't ours, so it falls
+  // through to static webpageRoot serving (this plugin has none → 404).
+  return response ?? null;
 };
 
-// ── WebSocket upgrade bridge ───────────────────────────────────────────────
+// ── WebSocket handlers ─────────────────────────────────────────────────────
 //
 // serve-sim's control channel (`<BASE>/exec-ws`) carries exec, simulator
-// settings, and the SSE side-channels over a single WebSocket — and the
-// client is WS-only with no HTTP fallback. The Expo CLI devtools-plugin
-// contract only routes fetch requests through the default export above; it
-// never forwards `upgrade` events. A patched @expo/cli looks for this named
-// export and hands matching upgrades here (with the full, un-stripped URL, so
-// it lines up with the `${BASE}/exec-ws` path simMiddleware matches on).
+// settings, and the SSE side-channels over a single WebSocket — and the client
+// is WS-only with no HTTP fallback. The Expo CLI devtools-plugin contract only
+// routes fetch requests through the default export above; it never forwards
+// `upgrade` events. A patched @expo/cli reads this `webSocketHandlers` map,
+// stands up a `ws` server per route mounted at `/_expo/plugins/<name>/<route>`,
+// and invokes the handler with the accepted socket on each connection.
 //
-// Returns true when serve-sim claimed the socket, false when the path wasn't
-// ours (the CLI then destroys it). simMiddleware is the booted-state branch's
-// middleware; `handleUpgrade` is always present on it.
-module.exports.handleUpgrade = function handleUpgrade(req, socket, head) {
-  return middleware.handleUpgrade?.(req, socket, head) ?? false;
+// `request` is the raw Node IncomingMessage whose URL is the full, un-stripped
+// path — which already lines up with the `${BASE}/exec-ws` path simMiddleware
+// matches on, so we just rebuild it as a fetch `Request`.
+
+function nodeRequestToWeb(request) {
+  const host = request.headers.host ?? 'localhost';
+  const url = new URL(request.url ?? '/', `http://${host}`);
+  const headers = new Headers();
+  for (const [key, value] of Object.entries(request.headers)) {
+    if (Array.isArray(value)) {
+      for (const item of value) headers.append(key, item);
+    } else if (value !== undefined) {
+      headers.set(key, value);
+    }
+  }
+  return new Request(url, { method: request.method ?? 'GET', headers });
+}
+
+module.exports.webSocketHandlers = {
+  '/exec-ws': (socket, request) => {
+    const handled = middleware.handleWebSocket?.(nodeRequestToWeb(request), socket);
+    if (!handled) socket.close();
+  },
 };

@@ -3,6 +3,7 @@ import { execSync, spawn, exec, execFile, type ChildProcess, type ExecException 
 import { tmpdir } from "os";
 import { join } from "path";
 import { createServer as createNetServer } from "net";
+import type { IncomingMessage } from "http";
 import { randomBytes, timingSafeEqual } from "crypto";
 import { createAxStreamerCache } from "./ax";
 import { debugMw } from "./debug";
@@ -1440,13 +1441,13 @@ export function simMiddleware(options?: SimMiddlewareOptions) {
       ],
       onUiRequest: handleUiRequest,
       onSseRequest(path, websocketRequest) {
-        const url = new URL(path, websocketRequest.url);
+        const url = new URL(path, `http://${websocketRequest.headers.host ?? "localhost"}`);
         return middleware(new Request(url, {
           headers: { accept: "text/event-stream" },
         }));
       },
     }),
   } satisfies {
-    handleWebSocket(request: Request, websocket: ExecWebSocket): boolean;
+    handleWebSocket(req: IncomingMessage, websocket: ExecWebSocket): boolean;
   });
 }
