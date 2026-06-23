@@ -8,13 +8,26 @@
     "devtools",
     "simulator"
   ],
+  "license": "MIT",
+  "os": [
+    "darwin"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
   "files": [
     "server",
-    "expo-module.config.json"
+    "vendor",
+    "expo-module.config.json",
+    "LICENSE",
+    "NOTICE"
   ],
-  "license": "MIT",
+  "scripts": {
+    "build": "bun run build.ts"
+  },
   "dependencies": {
-    "serve-sim": "*"
+    "inspect-webkit": "^0.0.5",
+    "ws": "^8.21.0"
   },
   "peerDependencies": {
     "expo": "*"

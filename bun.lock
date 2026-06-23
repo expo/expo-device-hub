@@ -71,7 +71,8 @@
       "name": "expo-serve-sim",
       "version": "0.1.0",
       "dependencies": {
-        "serve-sim": "*",
+        "inspect-webkit": "^0.0.5",
+        "ws": "^8.21.0",
       },
       "peerDependencies": {
         "expo": "*",

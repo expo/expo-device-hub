@@ -1,0 +1,13 @@
+expo-serve-sim
+Copyright (c) 2015-present 650 Industries, Inc. (aka Expo)
+
+This product bundles the following project:
+
+  serve-sim
+  Copyright 2026 Evan Bacon
+  https://github.com/EvanBacon/serve-sim
+  Licensed under the Apache License, Version 2.0.
+
+A packaged copy of serve-sim is vendored under vendor/serve-sim, produced by
+`npm pack` against its sources at build time. The full Apache License, Version
+2.0 text is included at vendor/serve-sim/LICENSE.

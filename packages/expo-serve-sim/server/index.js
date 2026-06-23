@@ -22,7 +22,9 @@ const { readdirSync } = require('node:fs');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
 
-const { simMiddleware } = require('serve-sim/middleware');
+// serve-sim is vendored under ../vendor/serve-sim at build time (see
+// ../build.ts), so we require the bundled copy rather than the npm package.
+const { simMiddleware } = require('../vendor/serve-sim/dist/middleware.cjs');
 const { name: PACKAGE_NAME } = require('../package.json');
 
 // Mirrors `DevToolsPluginEndpoint` in @expo/cli. The browser loads this plugin
@@ -61,9 +63,8 @@ function helperStateExists() {
 }
 
 function serveSimCliPath() {
-  // serve-sim's exports map doesn't expose package.json or the bin script, so
-  // locate the CLI bundle relative to the middleware entry — both live in dist/.
-  return path.join(path.dirname(require.resolve('serve-sim/middleware')), 'serve-sim.js');
+  // The vendored CLI bundle lives in the unpacked serve-sim package.
+  return path.join(__dirname, '..', 'vendor', 'serve-sim', 'dist', 'serve-sim.js');
 }
 
 function ensureHelperSpawned() {
