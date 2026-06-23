@@ -17,8 +17,8 @@
  *      (only on the first plugin request — nothing runs until the panel opens).
  *   2. Reverse-proxies HTTP (`handler`) to that process, streaming responses so
  *      serve-emu's SSE route (`/api/logcat`) and binary endpoints work.
- *   3. Proxies the H.264 video WebSocket (`/ws`) via a raw-socket tunnel in the
- *      `handleUpgrade` named export (a patched @expo/cli forwards upgrades here).
+ *   3. Proxies the H.264 video WebSocket (`/ws`) through the Expo DevTools
+ *      plugin `webSocketHandlers` interface.
  *   4. Rewrites the served `index.html` so the UI's absolute `/api`, `/ws`,
  *      `/health` URLs and its built asset paths resolve under the plugin prefix.
  *
@@ -26,11 +26,12 @@
  * clean `git am` with no conflicts in the vendored package.
  */
 
-const http = require('node:http');
 const net = require('node:net');
+const http = require('node:http');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { Readable } = require('node:stream');
+const WebSocket = require('ws');
 
 const { name: PACKAGE_NAME } = require('../package.json');
 
@@ -306,62 +307,133 @@ module.exports = async function handler(request) {
   return proxyHttp(request, port);
 };
 
-// ── WebSocket upgrade bridge ─────────────────────────────────────────────────
+// ── WebSocket bridge ─────────────────────────────────────────────────────────
 //
 // serve-emu streams its H.264 video and accepts gesture input over a single
-// WebSocket at `/ws`. The Expo CLI devtools-plugin contract only routes fetch
-// requests through the default export; a patched @expo/cli hands matching
-// `upgrade` events to this named export (with the full, un-stripped URL).
-//
-// There is no in-process middleware to delegate to here — serve-emu owns the
-// socket in its own Bun process — so we tunnel the raw upgrade through to it:
-// open a TCP connection to serve-emu, replay the HTTP upgrade request with the
-// plugin prefix stripped from the path, and pipe bytes both ways. Returns true
-// to claim the socket (the CLI destroys it if we return false).
-module.exports.handleUpgrade = function handleUpgrade(req, socket, head) {
-  let pathname;
-  let search;
+// WebSocket at `/ws`. Expo CLI owns the protocol upgrade and passes accepted
+// `ws` sockets to handlers exported from the plugin server module. serve-emu
+// still owns the actual Bun WebSocket in its child process, so this handler
+// opens a client WebSocket to that process and forwards frames both ways.
+function websocketUrlForRequest(request, port) {
+  const incoming = new URL(request.url || '/ws', 'http://localhost');
+  return `ws://127.0.0.1:${port}/ws${incoming.search}`;
+}
+
+function sendQueuedMessages(upstream, queue) {
+  for (const { data, isBinary } of queue.splice(0)) {
+    try {
+      upstream.send(data, { binary: isBinary });
+    } catch {
+      upstream.close(1011, 'upstream send failed');
+      return;
+    }
+  }
+}
+
+function closeCode(code) {
+  if (code === 1000 || (code >= 1001 && code <= 1014 && ![1004, 1005, 1006].includes(code))) {
+    return code;
+  }
+  if (code >= 3000 && code <= 4999) {
+    return code;
+  }
+  return 1011;
+}
+
+function closeReason(reason) {
+  const text = String(reason || '');
+  return Buffer.byteLength(text) <= 123 ? text : text.slice(0, 120);
+}
+
+function closePeer(peer, code, reason) {
   try {
-    const url = new URL(req.url, 'http://localhost');
-    pathname = url.pathname;
-    search = url.search;
+    if (peer.readyState === WebSocket.OPEN || peer.readyState === WebSocket.CONNECTING) {
+      peer.close(closeCode(code), closeReason(reason));
+    }
   } catch {
-    return false;
+    // The peer may already be closing; the paired socket will observe that via
+    // its own close/error event.
   }
-  if (!pathname.startsWith(`${BASE}/`)) {
-    return false;
-  }
-  const upstreamPath = pathname.slice(BASE.length) + search;
+}
 
-  // Kick a spawn if nothing is up yet; this socket gets destroyed and the UI
-  // reconnects once the HTTP side has the process ready.
-  if (!serverPort) {
-    ensureServerReady().catch(() => {});
-    socket.destroy();
-    return true;
-  }
+async function bridgeWebSocket(socket, request) {
+  const queuedClientMessages = [];
+  let upstream;
+  let closing = false;
 
-  const upstream = net.connect(serverPort, '127.0.0.1', () => {
-    let raw = `${req.method} ${upstreamPath} HTTP/1.1\r\n`;
-    for (let i = 0; i < req.rawHeaders.length; i += 2) {
-      const key = req.rawHeaders[i];
-      const value = req.rawHeaders[i + 1];
-      if (key.toLowerCase() === 'host') {
-        raw += `Host: 127.0.0.1:${serverPort}\r\n`;
-        continue;
+  const closeBoth = (code = 1000, reason = '') => {
+    if (closing) return;
+    closing = true;
+    closePeer(socket, code, reason);
+    if (upstream) closePeer(upstream, code, reason);
+  };
+
+  socket.on('message', (data, isBinary) => {
+    if (closing) return;
+    if (upstream?.readyState === WebSocket.OPEN) {
+      try {
+        upstream.send(data, { binary: isBinary });
+      } catch {
+        closeBoth(1011, 'upstream send failed');
       }
-      raw += `${key}: ${value}\r\n`;
+      return;
     }
-    raw += '\r\n';
-    upstream.write(raw);
-    if (head && head.length) {
-      upstream.write(head);
-    }
-    socket.pipe(upstream);
-    upstream.pipe(socket);
+    queuedClientMessages.push({ data, isBinary });
   });
 
-  upstream.on('error', () => socket.destroy());
-  socket.on('error', () => upstream.destroy());
-  return true;
+  socket.on('close', (code, reason) => {
+    closeBoth(code, reason.toString());
+  });
+  socket.on('error', () => {
+    closeBoth(1011, 'client socket error');
+  });
+
+  let port;
+  try {
+    port = await ensureServerReady();
+  } catch {
+    closeBoth(1011, 'serve-emu unavailable');
+    return;
+  }
+
+  if (closing) {
+    return;
+  }
+
+  upstream = new WebSocket(websocketUrlForRequest(request, port), {
+    headers: {
+      origin: `http://127.0.0.1:${port}`,
+    },
+  });
+  upstream.binaryType = 'arraybuffer';
+
+  upstream.on('open', () => {
+    if (closing) {
+      closePeer(upstream, 1000, '');
+      return;
+    }
+    sendQueuedMessages(upstream, queuedClientMessages);
+  });
+  upstream.on('message', (data, isBinary) => {
+    if (closing || socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    try {
+      socket.send(data, { binary: isBinary });
+    } catch {
+      closeBoth(1011, 'client send failed');
+    }
+  });
+  upstream.on('close', (code, reason) => {
+    closeBoth(code, reason.toString());
+  });
+  upstream.on('error', () => {
+    closeBoth(1011, 'upstream socket error');
+  });
+}
+
+module.exports.webSocketHandlers = {
+  '/ws': (socket, request) => {
+    void bridgeWebSocket(socket, request);
+  },
 };

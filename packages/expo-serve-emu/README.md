@@ -21,9 +21,10 @@ and acts as a thin bridge:
 2. **Reverse-proxies HTTP** to that process, streaming responses so the logcat
    SSE feed and binary endpoints (screenshots, APK upload) work through the
    fetch boundary.
-3. **Proxies the `/ws` WebSocket** (the H.264 video + gesture channel) through a
-   raw-socket tunnel in the exported `handleUpgrade`. A patched `@expo/cli`
-   forwards devtools-plugin upgrades to this named export.
+3. **Proxies the `/ws` WebSocket** (the H.264 video + gesture channel) through
+   the Expo DevTools plugin `webSocketHandlers` export. Expo CLI accepts the
+   browser socket, then this bridge opens a client socket to the Bun process and
+   forwards frames in both directions.
 4. **Rewrites the served `index.html`** so the UI's absolute `/api`, `/ws`, and
    `/health` URLs (and its built asset paths) resolve under the plugin prefix.
 

@@ -428,9 +428,10 @@ index 7d71eea..e4fa7b2 100644
 +   * response, so the request falls through to static `webpageRoot` serving.
 +   */ async handleWithPluginServerAsync(plugin, req, res, urlInPluginRoot) {
 +        const originalUrl = req.url;
++        let request;
 +        try {
 +            req.url = urlInPluginRoot;
-+            const request = (0, _http().convertRequest)(req, res);
++            request = (0, _http().convertRequest)(req, res);
 +            const response = await (plugin.requestHandler == null ? void 0 : plugin.requestHandler.call(plugin, request));
 +            if (response == null) {
 +                return false;
@@ -441,6 +442,9 @@ index 7d71eea..e4fa7b2 100644
 +            return true;
 +        } catch (error) {
 +            debug('DevTools plugin server request failed: %O', error);
++            if (res.headersSent || res.writableEnded || res.destroyed || (request == null ? void 0 : request.signal.aborted)) {
++                return true;
++            }
 +            res.statusCode = 500;
 +            res.setHeader('Content-Type', 'text/plain');
 +            res.end(`The DevTools plugin "${plugin.packageName}" failed to handle the request to "${urlInPluginRoot}": ` + `${(error == null ? void 0 : error.message) ?? error}. This is likely a bug in the plugin's server entry point ` + `(${plugin.serverEntryPoint}); report it to the plugin author.`);

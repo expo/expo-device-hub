@@ -62,6 +62,7 @@
       "version": "0.1.0",
       "dependencies": {
         "serve-emu": "*",
+        "ws": "^8.21.0",
       },
       "peerDependencies": {
         "expo": "*",
