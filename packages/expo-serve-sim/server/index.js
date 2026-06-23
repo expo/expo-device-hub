@@ -125,27 +125,18 @@ module.exports = async function handler(request) {
 // stands up a `ws` server per route mounted at `/_expo/plugins/<name>/<route>`,
 // and invokes the handler with the accepted socket on each connection.
 //
-// `request` is the raw Node IncomingMessage whose URL is the full, un-stripped
-// path — which already lines up with the `${BASE}/exec-ws` path simMiddleware
-// matches on, so we just rebuild it as a fetch `Request`.
-
-function nodeRequestToWeb(request) {
-  const host = request.headers.host ?? 'localhost';
-  const url = new URL(request.url ?? '/', `http://${host}`);
-  const headers = new Headers();
-  for (const [key, value] of Object.entries(request.headers)) {
-    if (Array.isArray(value)) {
-      for (const item of value) headers.append(key, item);
-    } else if (value !== undefined) {
-      headers.set(key, value);
-    }
-  }
-  return new Request(url, { method: request.method ?? 'GET', headers });
-}
+// `request` is the raw Node IncomingMessage from the upgrade (the patched CLI
+// stands the route up as a `ws` server in `noServer` mode and forwards the
+// `connection` event's `(socket, request)`). Its URL is the full, un-stripped
+// path — already lined up with the `${BASE}/exec-ws` path simMiddleware matches
+// on — and serve-sim's `handleWebSocket(req, socket)` reads the URL plus the
+// host/origin headers straight off the IncomingMessage (its same-origin guard
+// needs `req.headers.origin`/`host` as Node properties), so we forward the
+// IncomingMessage through unchanged rather than synthesizing a fetch `Request`.
 
 module.exports.webSocketHandlers = {
   '/exec-ws': (socket, request) => {
-    const handled = middleware.handleWebSocket?.(nodeRequestToWeb(request), socket);
+    const handled = middleware.handleWebSocket?.(request, socket);
     if (!handled) socket.close();
   },
 };
