@@ -1,3 +1,4 @@
+import { type DeviceLog } from '../device';
 import { Logo } from '../../components/Logo';
 import { SidebarToggle } from '../../components/SidebarToggle';
 import { DeviceSection } from './DeviceSection';
@@ -9,11 +10,14 @@ export function Sidebar({
   selectedId,
   onSelect,
   onToggle,
+  logs,
 }: {
   selectedId: string;
   onSelect: (id: string) => void;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */
   onToggle?: () => void;
+  /** Live device logs for the output panel. */
+  logs?: DeviceLog[];
 }) {
   return (
     <aside
@@ -46,7 +50,7 @@ export function Sidebar({
         selectedId={selectedId}
         onSelect={onSelect}
       />
-      <OutputSection />
+      <OutputSection logs={logs} />
     </aside>
   );
 }

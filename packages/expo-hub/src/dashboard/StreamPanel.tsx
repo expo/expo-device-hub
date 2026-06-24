@@ -1,3 +1,4 @@
+import { type DeviceClient } from '../device';
 import { bg } from '../../theme/tokens';
 import { type Device } from './data';
 import { PhoneFrame } from './PhoneFrame';
@@ -7,10 +8,12 @@ import { type ColorScheme } from './useColorScheme';
 /** Right panel: the selected device's stream and its controls, full height. */
 export function StreamPanel({
   device,
+  client,
   scheme,
   onToggleTheme,
 }: {
   device: Device;
+  client: DeviceClient;
   scheme: ColorScheme;
   onToggleTheme: () => void;
 }) {
@@ -29,8 +32,8 @@ export function StreamPanel({
         backgroundColor: bg.subtle,
         overflow: 'hidden',
       }}>
-      <PhoneFrame platform={device.platform} />
-      <StreamControls scheme={scheme} onToggleTheme={onToggleTheme} />
+      <PhoneFrame platform={device.platform} client={client} />
+      <StreamControls scheme={scheme} onToggleTheme={onToggleTheme} onHome={() => client.pressButton('home')} />
     </section>
   );
 }

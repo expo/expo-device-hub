@@ -309,6 +309,9 @@ export async function startServer(opts: ServerOpts) {
         "Content-Type": "text/event-stream; charset=utf-8",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive",
+        // Allow a cross-origin client (e.g. the Expo Hub dashboard served from a
+        // different dev-server port) to consume the logcat feed via EventSource.
+        "Access-Control-Allow-Origin": "*",
       },
     });
   };

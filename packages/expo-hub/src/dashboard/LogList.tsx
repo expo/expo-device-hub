@@ -1,6 +1,7 @@
 import { type CSSProperties } from 'react';
 
-import { logs } from './data';
+import { type DeviceLog } from '../device';
+import { text, textSize } from '../../theme/tokens';
 import { LogRow } from './LogRow';
 
 // An always-visible, styled scrollbar. Styling `::-webkit-scrollbar` opts out of
@@ -37,13 +38,17 @@ const scrollStyle: CSSProperties = {
 };
 
 /** Scrollable log output with an always-visible styled scrollbar. */
-export function LogList() {
+export function LogList({ logs = [] }: { logs?: DeviceLog[] }) {
   return (
     <div className="hub-log-scroll" style={scrollStyle}>
       <style>{SCROLLBAR_CSS}</style>
-      {logs.map((entry) => (
-        <LogRow key={entry.id} entry={entry} />
-      ))}
+      {logs.length === 0 ? (
+        <span style={{ ...textSize.xs, fontWeight: 500, color: text.tertiary, paddingLeft: 8 }}>
+          Waiting for device logs…
+        </span>
+      ) : (
+        logs.map((entry) => <LogRow key={entry.id} entry={entry} />)
+      )}
     </div>
   );
 }

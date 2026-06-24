@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 
 import { SidebarToggle } from '../components/SidebarToggle';
 import { bg, shadow, text } from '../theme/tokens';
+import { useActiveDeviceClient } from './device';
 import { allDevices, simulators } from './dashboard/data';
 import { Sidebar } from './dashboard/Sidebar';
 import { StreamPanel } from './dashboard/StreamPanel';
@@ -49,6 +50,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
 
   const selected = allDevices.find((device) => device.id === selectedId) ?? simulators[0];
 
+  // One shared connection to the selected device's serve-sim/serve-emu server.
+  // The stream (PhoneFrame), Home control, and logs panel all read from it.
+  const client = useActiveDeviceClient({ platform: selected.platform });
+
   return (
     <div
       className={scheme === 'dark' ? 'dark-theme' : undefined}
@@ -71,10 +76,11 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           selectedId={selectedId}
           onSelect={setSelectedId}
           onToggle={() => setSidebarOpen(false)}
+          logs={client.logs}
         />
       )}
 
-      <StreamPanel device={selected} scheme={scheme} onToggleTheme={toggle} />
+      <StreamPanel device={selected} client={client} scheme={scheme} onToggleTheme={toggle} />
 
       {/* Narrow + open: the sidebar overlays the stream with a backdrop. */}
       {sidebarOpen && narrow && (
@@ -96,6 +102,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               selectedId={selectedId}
               onSelect={setSelectedId}
               onToggle={() => setSidebarOpen(false)}
+              logs={client.logs}
             />
           </div>
         </>

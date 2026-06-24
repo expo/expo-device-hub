@@ -17,16 +17,19 @@ import { type ColorScheme } from './useColorScheme';
 export function StreamControls({
   scheme,
   onToggleTheme,
+  onHome,
 }: {
   scheme: ColorScheme;
   onToggleTheme: () => void;
+  /** Press the device Home button. */
+  onHome?: () => void;
 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 24 }}>
       <ControlButton icon={<RefreshIcon />} label="Reload" />
       {/* Theme uses the reusable Switch instead of an icon circle. */}
       <Switch checked={scheme === 'dark'} onChange={onToggleTheme} label="Theme" />
-      <ControlButton icon={<HomeIcon />} label="Home" variant="primary" />
+      <ControlButton icon={<HomeIcon />} label="Home" variant="primary" onClick={onHome} />
       <ControlButton icon={<CameraIcon />} label="Save" />
       {/* More opens a popup menu of device actions, nudged toward the right. */}
       <Dropdown
