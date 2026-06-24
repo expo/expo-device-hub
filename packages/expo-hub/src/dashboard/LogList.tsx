@@ -3,8 +3,10 @@ import { type CSSProperties } from 'react';
 import { logs } from './data';
 import { LogRow } from './LogRow';
 
-// A real, draggable native scrollbar styled to look like the macOS overlay
-// scrollbar: a rounded thumb with a small gutter, no visible track.
+// An always-visible, styled scrollbar. Styling `::-webkit-scrollbar` opts out of
+// the macOS overlay (auto-hiding) scrollbar in Chromium. We intentionally do NOT
+// set the standard `scrollbar-width` / `scrollbar-color` props: setting either
+// makes Chromium fall back to the standard auto-hiding overlay scrollbar.
 const SCROLLBAR_CSS = `
 .hub-log-scroll::-webkit-scrollbar { width: 12px; }
 .hub-log-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -13,6 +15,7 @@ const SCROLLBAR_CSS = `
   border-radius: 8px;
   border: 3px solid transparent;
   background-clip: padding-box;
+  min-height: 24px;
 }
 .hub-log-scroll::-webkit-scrollbar-thumb:hover {
   background-color: var(--expo-theme-border-default);
@@ -31,12 +34,9 @@ const scrollStyle: CSSProperties = {
   // adding a horizontal scrollbar.
   margin: '0 -8px',
   padding: '0 8px',
-  // Firefox
-  scrollbarWidth: 'thin',
-  scrollbarColor: 'var(--expo-theme-background-selected) transparent',
 };
 
-/** Scrollable log output with a styled native scrollbar. */
+/** Scrollable log output with an always-visible styled scrollbar. */
 export function LogList() {
   return (
     <div className="hub-log-scroll" style={scrollStyle}>
