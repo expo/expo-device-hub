@@ -1,0 +1,134 @@
+/*
+ * Tailwind v4 entry for Expo Hub — same PostCSS integration as the expo-agent
+ * web app (see postcss.config.mjs). We skip Tailwind's full preflight so it
+ * doesn't disturb the existing inline-styled UI, but we do include the small
+ * border/margin resets the ported components rely on.
+ *
+ * The @expo/styleguide semantic class names (bg-default, text-danger, …) are
+ * defined here as @utility rules mapped to the --expo-theme-* CSS variables
+ * from theme/theme.css, so Tailwind utilities follow the same light/dark theme
+ * as the rest of the app.
+ */
+@layer theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css';
+
+/* Dark mode follows the `.dark-theme` wrapper class used across Expo Hub. */
+@custom-variant dark (&:is(.dark-theme *));
+
+/* hover + focus, matching @expo/styleguide's `hocus:` variant. */
+@custom-variant hocus (&:is(:hover, :focus));
+
+@theme {
+  /* Match the Expo design-system radius scale (theme/tokens.ts). */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 16px;
+  --radius-2xl: 20px;
+  --radius-3xl: 24px;
+
+  /* Reuse the theme's shadow scale. */
+  --shadow-xs: var(--expo-theme-shadows-xs);
+  --shadow-sm: var(--expo-theme-shadows-sm);
+  --shadow-md: var(--expo-theme-shadows-md);
+  --shadow-lg: var(--expo-theme-shadows-lg);
+  --shadow-xl: var(--expo-theme-shadows-xl);
+
+  /* Dropdown open animations (names match the website Dropdown). */
+  --animate-slideUpAndFade: slideUpAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slideDownAndFade: slideDownAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slideLeftAndFade: slideLeftAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slideRightAndFade: slideRightAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The slice of Tailwind preflight the ported components rely on: borders start
+   at width 0 / style solid (so `border` / `border-r` show only where set), and
+   paragraphs have no default margin. */
+@layer base {
+  *,
+  ::before,
+  ::after {
+    border-width: 0;
+    border-style: solid;
+  }
+  p {
+    margin: 0;
+  }
+}
+
+/* Semantic color utilities mapped to the Expo theme variables. */
+@utility bg-default {
+  background-color: var(--expo-theme-background-default);
+}
+@utility bg-hover {
+  background-color: var(--expo-theme-background-hover);
+}
+@utility border-secondary {
+  border-color: var(--expo-theme-border-secondary);
+}
+@utility text-default {
+  color: var(--expo-theme-text-default);
+}
+@utility text-secondary {
+  color: var(--expo-theme-text-secondary);
+}
+@utility text-tertiary {
+  color: var(--expo-theme-text-tertiary);
+}
+@utility text-danger {
+  color: var(--expo-theme-text-danger);
+}
+@utility text-icon-default {
+  color: var(--expo-theme-icon-default);
+}
+@utility text-icon-danger {
+  color: var(--expo-theme-icon-danger);
+}
+
+/* styleguide z-index token used by the Dropdown content. */
+@utility z-overDialog-605 {
+  z-index: 605;
+}
+
+@keyframes slideUpAndFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes slideDownAndFade {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes slideLeftAndFade {
+  from {
+    opacity: 0;
+    transform: translateX(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+@keyframes slideRightAndFade {
+  from {
+    opacity: 0;
+    transform: translateX(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}

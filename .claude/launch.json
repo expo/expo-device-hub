@@ -1,0 +1,12 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "expo-hub",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "packages/expo-hub", "start"],
+      "port": 8081,
+      "autoPort": false
+    }
+  ]
+}

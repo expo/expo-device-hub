@@ -1,0 +1,482 @@
+/*
+ * Expo design tokens — ported from @expo/styleguide (universe website).
+ * Source of truth: @expo/styleguide v14.x  -> dist/expo-theme.css + @radix-ui/colors.
+ * Light theme is the default (:root); add `dark-theme` class on a wrapper for dark.
+ *
+ * Regenerate by re-running the assembly described in AGENTS.md. Do not hand-edit
+ * the color scale values below — they mirror Radix Colors exactly.
+ */
+
+/* ===== Radix color scales (sRGB) ===== */
+:root, .light, .light-theme {
+  --slate-1: #fcfcfd;
+  --slate-2: #f9f9fb;
+  --slate-3: #f0f0f3;
+  --slate-4: #e8e8ec;
+  --slate-5: #e0e1e6;
+  --slate-6: #d9d9e0;
+  --slate-7: #cdced6;
+  --slate-8: #b9bbc6;
+  --slate-9: #8b8d98;
+  --slate-10: #80838d;
+  --slate-11: #60646c;
+  --slate-12: #1c2024;
+}
+.dark, .dark-theme {
+  --slate-1: #111113;
+  --slate-2: #18191b;
+  --slate-3: #212225;
+  --slate-4: #272a2d;
+  --slate-5: #2e3135;
+  --slate-6: #363a3f;
+  --slate-7: #43484e;
+  --slate-8: #5a6169;
+  --slate-9: #696e77;
+  --slate-10: #777b84;
+  --slate-11: #b0b4ba;
+  --slate-12: #edeef0;
+}
+:root, .light, .light-theme {
+  --blue-1: #fbfdff;
+  --blue-2: #f4faff;
+  --blue-3: #e6f4fe;
+  --blue-4: #d5efff;
+  --blue-5: #c2e5ff;
+  --blue-6: #acd8fc;
+  --blue-7: #8ec8f6;
+  --blue-8: #5eb1ef;
+  --blue-9: #0090ff;
+  --blue-10: #0588f0;
+  --blue-11: #0d74ce;
+  --blue-12: #113264;
+}
+.dark, .dark-theme {
+  --blue-1: #0d1520;
+  --blue-2: #111927;
+  --blue-3: #0d2847;
+  --blue-4: #003362;
+  --blue-5: #004074;
+  --blue-6: #104d87;
+  --blue-7: #205d9e;
+  --blue-8: #2870bd;
+  --blue-9: #0090ff;
+  --blue-10: #3b9eff;
+  --blue-11: #70b8ff;
+  --blue-12: #c2e6ff;
+}
+:root, .light, .light-theme {
+  --green-1: #fbfefc;
+  --green-2: #f4fbf6;
+  --green-3: #e6f6eb;
+  --green-4: #d6f1df;
+  --green-5: #c4e8d1;
+  --green-6: #adddc0;
+  --green-7: #8eceaa;
+  --green-8: #5bb98b;
+  --green-9: #30a46c;
+  --green-10: #2b9a66;
+  --green-11: #218358;
+  --green-12: #193b2d;
+}
+.dark, .dark-theme {
+  --green-1: #0e1512;
+  --green-2: #121b17;
+  --green-3: #132d21;
+  --green-4: #113b29;
+  --green-5: #174933;
+  --green-6: #20573e;
+  --green-7: #28684a;
+  --green-8: #2f7c57;
+  --green-9: #30a46c;
+  --green-10: #33b074;
+  --green-11: #3dd68c;
+  --green-12: #b1f1cb;
+}
+:root, .light, .light-theme {
+  --amber-1: #fefdfb;
+  --amber-2: #fefbe9;
+  --amber-3: #fff7c2;
+  --amber-4: #ffee9c;
+  --amber-5: #fbe577;
+  --amber-6: #f3d673;
+  --amber-7: #e9c162;
+  --amber-8: #e2a336;
+  --amber-9: #ffc53d;
+  --amber-10: #ffba18;
+  --amber-11: #ab6400;
+  --amber-12: #4f3422;
+}
+.dark, .dark-theme {
+  --amber-1: #16120c;
+  --amber-2: #1d180f;
+  --amber-3: #302008;
+  --amber-4: #3f2700;
+  --amber-5: #4d3000;
+  --amber-6: #5c3d05;
+  --amber-7: #714f19;
+  --amber-8: #8f6424;
+  --amber-9: #ffc53d;
+  --amber-10: #ffd60a;
+  --amber-11: #ffca16;
+  --amber-12: #ffe7b3;
+}
+:root, .light, .light-theme {
+  --red-1: #fffcfc;
+  --red-2: #fff7f7;
+  --red-3: #feebec;
+  --red-4: #ffdbdc;
+  --red-5: #ffcdce;
+  --red-6: #fdbdbe;
+  --red-7: #f4a9aa;
+  --red-8: #eb8e90;
+  --red-9: #e5484d;
+  --red-10: #dc3e42;
+  --red-11: #ce2c31;
+  --red-12: #641723;
+}
+.dark, .dark-theme {
+  --red-1: #191111;
+  --red-2: #201314;
+  --red-3: #3b1219;
+  --red-4: #500f1c;
+  --red-5: #611623;
+  --red-6: #72232d;
+  --red-7: #8c333a;
+  --red-8: #b54548;
+  --red-9: #e5484d;
+  --red-10: #ec5d5e;
+  --red-11: #ff9592;
+  --red-12: #ffd1d9;
+}
+:root, .light, .light-theme {
+  --purple-1: #fefcfe;
+  --purple-2: #fbf7fe;
+  --purple-3: #f7edfe;
+  --purple-4: #f2e2fc;
+  --purple-5: #ead5f9;
+  --purple-6: #e0c4f4;
+  --purple-7: #d1afec;
+  --purple-8: #be93e4;
+  --purple-9: #8e4ec6;
+  --purple-10: #8347b9;
+  --purple-11: #8145b5;
+  --purple-12: #402060;
+}
+.dark, .dark-theme {
+  --purple-1: #18111b;
+  --purple-2: #1e1523;
+  --purple-3: #301c3b;
+  --purple-4: #3d224e;
+  --purple-5: #48295c;
+  --purple-6: #54346b;
+  --purple-7: #664282;
+  --purple-8: #8457aa;
+  --purple-9: #8e4ec6;
+  --purple-10: #9a5cd0;
+  --purple-11: #d19dff;
+  --purple-12: #ecd9fa;
+}
+
+/* ===== Semantic theme tokens (--expo-theme-*) ===== */
+:root {
+  --expo-color-white: #fff;
+  --expo-color-black: #000;
+
+  /* App Icon Backgrounds */
+  --expo-color-app-cyan: #07c0cb;
+  --expo-color-app-light-blue: #1e92c4;
+  --expo-color-app-dark-blue: #0b67af;
+  --expo-color-app-indigo: #4b50b2;
+  --expo-color-app-purple: #8945a3;
+  --expo-color-app-pink: #c04891;
+  --expo-color-app-orange: #e96d3c;
+  --expo-color-app-gold: #f38f2f;
+  --expo-color-app-yellow: #eebc01;
+  --expo-color-app-lime: #aabd04;
+  --expo-color-app-light-green: #6aa72a;
+  --expo-color-app-dark-green: #3a8e39;
+
+  /* Backgrounds */
+  --expo-theme-background-default: var(--expo-color-white);
+  --expo-theme-background-screen: var(--slate-1);
+  --expo-theme-background-subtle: var(--slate-2);
+  --expo-theme-background-element: var(--slate-3);
+  --expo-theme-background-hover: var(--slate-4);
+  --expo-theme-background-selected: var(--slate-5);
+  --expo-theme-background-overlay: var(--expo-color-white);
+  --expo-theme-background-success: var(--green-3);
+  --expo-theme-background-warning: var(--amber-3);
+  --expo-theme-background-danger: var(--red-3);
+  --expo-theme-background-info: var(--blue-3);
+  --expo-theme-background-preview: var(--purple-3);
+
+  /* Icons */
+  --expo-theme-icon-default: var(--slate-11);
+  --expo-theme-icon-secondary: var(--slate-10);
+  --expo-theme-icon-tertiary: var(--slate-9);
+  --expo-theme-icon-quaternary: var(--slate-8);
+  --expo-theme-icon-success: var(--green-10);
+  --expo-theme-icon-warning: var(--amber-11);
+  --expo-theme-icon-danger: var(--red-10);
+  --expo-theme-icon-info: var(--blue-10);
+  --expo-theme-icon-preview: var(--purple-10);
+
+  /* Text */
+  --expo-theme-text-default: var(--slate-12);
+  --expo-theme-text-secondary: var(--slate-11);
+  --expo-theme-text-tertiary: var(--slate-10);
+  --expo-theme-text-quaternary: var(--slate-9);
+  --expo-theme-text-link: var(--blue-11);
+  --expo-theme-text-success: var(--green-11);
+  --expo-theme-text-warning: var(--amber-11);
+  --expo-theme-text-danger: var(--red-11);
+  --expo-theme-text-info: var(--blue-11);
+  --expo-theme-text-preview: var(--purple-11);
+
+  /* Borders */
+  --expo-theme-border-default: var(--slate-6);
+  --expo-theme-border-secondary: var(--slate-5);
+  --expo-theme-border-success: var(--green-7);
+  --expo-theme-border-warning: var(--amber-7);
+  --expo-theme-border-danger: var(--red-7);
+  --expo-theme-border-info: var(--blue-7);
+  --expo-theme-border-preview: var(--purple-7);
+
+  /* Buttons */
+  --expo-theme-button-primary-background: var(--expo-color-black);
+  --expo-theme-button-primary-border: transparent;
+  --expo-theme-button-primary-hover: var(--slate-11);
+  --expo-theme-button-primary-icon: var(--expo-color-white);
+  --expo-theme-button-primary-text: var(--expo-color-white);
+  --expo-theme-button-primary-disabled-background: var(--slate-8);
+  --expo-theme-button-primary-disabled-border: transparent;
+  --expo-theme-button-primary-disabled-text: var(--expo-color-white);
+
+  --expo-theme-button-secondary-background: var(--slate-3);
+  --expo-theme-button-secondary-border: transparent;
+  --expo-theme-button-secondary-hover: var(--slate-5);
+  --expo-theme-button-secondary-icon: var(--slate-12);
+  --expo-theme-button-secondary-text: var(--slate-12);
+  --expo-theme-button-secondary-disabled-background: var(--slate-3);
+  --expo-theme-button-secondary-disabled-border: transparent;
+  --expo-theme-button-secondary-disabled-text: var(--slate-9);
+
+  --expo-theme-button-tertiary-background: transparent;
+  --expo-theme-button-tertiary-border: var(--slate-7);
+  --expo-theme-button-tertiary-hover: var(--slate-3);
+  --expo-theme-button-tertiary-icon: var(--slate-11);
+  --expo-theme-button-tertiary-text: var(--slate-12);
+  --expo-theme-button-tertiary-disabled-background: transparent;
+  --expo-theme-button-tertiary-disabled-border: var(--slate-6);
+  --expo-theme-button-tertiary-disabled-text: var(--slate-9);
+
+  --expo-theme-button-quaternary-background: transparent;
+  --expo-theme-button-quaternary-border: transparent;
+  --expo-theme-button-quaternary-hover: var(--slate-3);
+  --expo-theme-button-quaternary-icon: var(--slate-11);
+  --expo-theme-button-quaternary-text: var(--slate-12);
+  --expo-theme-button-quaternary-disabled-background: transparent;
+  --expo-theme-button-quaternary-disabled-border: transparent;
+  --expo-theme-button-quaternary-disabled-text: var(--slate-9);
+
+  --expo-theme-button-primary-destructive-background: var(--red-10);
+  --expo-theme-button-primary-destructive-border: transparent;
+  --expo-theme-button-primary-destructive-hover: var(--red-11);
+  --expo-theme-button-primary-destructive-icon: var(--red-3);
+  --expo-theme-button-primary-destructive-text: var(--expo-color-white);
+  --expo-theme-button-primary-destructive-disabled-background: var(--red-7);
+  --expo-theme-button-primary-destructive-disabled-border: transparent;
+  --expo-theme-button-primary-destructive-disabled-text: var(--expo-color-white);
+
+  --expo-theme-button-secondary-destructive-background: var(--expo-color-white);
+  --expo-theme-button-secondary-destructive-border: var(--red-7);
+  --expo-theme-button-secondary-destructive-hover: var(--red-3);
+  --expo-theme-button-secondary-destructive-icon: var(--red-9);
+  --expo-theme-button-secondary-destructive-text: var(--red-11);
+  --expo-theme-button-secondary-destructive-disabled-background: var(--expo-color-white);
+  --expo-theme-button-secondary-destructive-disabled-border: var(--red-5);
+  --expo-theme-button-secondary-destructive-disabled-text: var(--red-8);
+
+  --expo-theme-button-tertiary-destructive-background: transparent;
+  --expo-theme-button-tertiary-destructive-border: transparent;
+  --expo-theme-button-tertiary-destructive-hover: var(--red-3);
+  --expo-theme-button-tertiary-destructive-icon: var(--red-9);
+  --expo-theme-button-tertiary-destructive-text: var(--red-10);
+  --expo-theme-button-tertiary-destructive-disabled-background: transparent;
+  --expo-theme-button-tertiary-destructive-disabled-border: transparent;
+  --expo-theme-button-tertiary-destructive-disabled-text: var(--red-8);
+
+  /* Light shadows */
+  --expo-theme-shadows-none: 0 0 transparent;
+  --expo-theme-shadows-xs: 0 1px 3px rgba(0, 0, 0, 0.025),
+    0 1px 2px rgba(0, 0, 0, 0.05);
+  --expo-theme-shadows-sm: 0 3px 6px rgba(0, 0, 0, 0.08),
+    0 2px 4px rgba(0, 0, 0, 0.07);
+  --expo-theme-shadows-md: 0 10px 20px rgba(0, 0, 0, 0.1),
+    0 3px 6px rgba(0, 0, 0, 0.05);
+  --expo-theme-shadows-lg: 0 15px 25px rgba(0, 0, 0, 0.12),
+    0 5px 10px rgba(0, 0, 0, 0.05);
+  --expo-theme-shadows-xl: 0 20px 40px rgba(0, 0, 0, 0.15);
+
+}
+
+.dark-theme {
+  color-scheme: dark;
+
+  /* Backgrounds */
+  --expo-theme-background-default: var(--slate-1);
+  --expo-theme-background-screen: #0C0D0E;
+  --expo-theme-background-subtle: var(--slate-2);
+  --expo-theme-background-element: var(--slate-3);
+  --expo-theme-background-hover: var(--slate-4);
+  --expo-theme-background-selected: var(--slate-5);
+  --expo-theme-background-overlay: var(--slate-2);
+  --expo-theme-background-success: var(--green-3);
+  --expo-theme-background-warning: var(--amber-3);
+  --expo-theme-background-danger: var(--red-3);
+  --expo-theme-background-info: var(--blue-3);
+  --expo-theme-background-preview: var(--purple-3);
+
+  /* Icons */
+  --expo-theme-icon-default: var(--slate-11);
+  --expo-theme-icon-secondary: var(--slate-10);
+  --expo-theme-icon-tertiary: var(--slate-9);
+  --expo-theme-icon-quaternary: var(--slate-8);
+  --expo-theme-icon-success: var(--green-10);
+  --expo-theme-icon-warning: var(--amber-11);
+  --expo-theme-icon-danger: var(--red-10);
+  --expo-theme-icon-info: var(--blue-10);
+  --expo-theme-icon-preview: var(--purple-10);
+
+  /* Text */
+  --expo-theme-text-default: var(--slate-12);
+  --expo-theme-text-secondary: var(--slate-11);
+  --expo-theme-text-tertiary: var(--slate-10);
+  --expo-theme-text-quaternary: var(--slate-9);
+  --expo-theme-text-link: var(--blue-11);
+  --expo-theme-text-success: var(--green-11);
+  --expo-theme-text-warning: var(--amber-11);
+  --expo-theme-text-danger: var(--red-11);
+  --expo-theme-text-info: var(--blue-11);
+  --expo-theme-text-preview: var(--purple-11);
+
+  /* Borders */
+  --expo-theme-border-default: var(--slate-6);
+  --expo-theme-border-secondary: var(--slate-5);
+  --expo-theme-border-success: var(--green-7);
+  --expo-theme-border-warning: var(--amber-7);
+  --expo-theme-border-danger: var(--red-7);
+  --expo-theme-border-info: var(--blue-7);
+  --expo-theme-border-preview: var(--purple-7);
+
+  /* Buttons */
+  --expo-theme-button-primary-background: var(--expo-color-white);
+  --expo-theme-button-primary-border: transparent;
+  --expo-theme-button-primary-hover: hsl(from var(--expo-color-white) h s calc(l - 20));
+  --expo-theme-button-primary-icon: var(--slate-1);
+  --expo-theme-button-primary-text: var(--slate-1);
+  --expo-theme-button-primary-disabled-background: var(--slate-11);
+  --expo-theme-button-primary-disabled-border: transparent;
+  --expo-theme-button-primary-disabled-text: var(--slate-1);
+
+  --expo-theme-button-secondary-background: var(--slate-3);
+  --expo-theme-button-secondary-border: transparent;
+  --expo-theme-button-secondary-hover: var(--slate-5);
+  --expo-theme-button-secondary-icon: var(--slate-12);
+  --expo-theme-button-secondary-text: var(--expo-color-white);
+  --expo-theme-button-secondary-disabled-background: var(--slate-2);
+  --expo-theme-button-secondary-disabled-border: transparent;
+  --expo-theme-button-secondary-disabled-text: var(--slate-11);
+
+  --expo-theme-button-tertiary-background: transparent;
+  --expo-theme-button-tertiary-border: var(--slate-5);
+  --expo-theme-button-tertiary-hover: var(--slate-4);
+  --expo-theme-button-tertiary-icon: var(--slate-12);
+  --expo-theme-button-tertiary-text: var(--expo-color-white);
+  --expo-theme-button-tertiary-disabled-background: transparent;
+  --expo-theme-button-tertiary-disabled-border: var(--slate-7);
+  --expo-theme-button-tertiary-disabled-text: var(--slate-11);
+
+
+  --expo-theme-button-quaternary-background: transparent;
+  --expo-theme-button-quaternary-border: transparent;
+  --expo-theme-button-quaternary-hover: var(--slate-3);
+  --expo-theme-button-quaternary-icon: var(--slate-12);
+  --expo-theme-button-quaternary-text: var(--expo-color-white);
+  --expo-theme-button-quaternary-disabled-background: transparent;
+  --expo-theme-button-quaternary-disabled-border: transparent;
+  --expo-theme-button-quaternary-disabled-text: var(--slate-11);
+
+  --expo-theme-button-primary-destructive-background: hsl(from var(--red-8) h calc(s + 15) calc(l - 10));
+  --expo-theme-button-primary-destructive-border: transparent;
+  --expo-theme-button-primary-destructive-hover: hsl(from var(--red-7) h calc(s + 15) calc(l - 10));
+  --expo-theme-button-primary-destructive-icon: var(--red-12);
+  --expo-theme-button-primary-destructive-text: var(--expo-color-white);
+  --expo-theme-button-primary-destructive-disabled-background: var(--red-6);
+  --expo-theme-button-primary-destructive-disabled-border: transparent;
+  --expo-theme-button-primary-destructive-disabled-text: var(--red-12);
+
+  --expo-theme-button-secondary-destructive-background: var(--red-3);
+  --expo-theme-button-secondary-destructive-border: var(--red-7);
+  --expo-theme-button-secondary-destructive-hover: hsl(from var(--red-2) h calc(s + 15) l);
+  --expo-theme-button-secondary-destructive-icon: var(--red-9);
+  --expo-theme-button-secondary-destructive-text: var(--red-11);
+  --expo-theme-button-secondary-destructive-disabled-background: var(--red-2);
+  --expo-theme-button-secondary-destructive-disabled-border: var(--red-6);
+  --expo-theme-button-secondary-destructive-disabled-text: var(--red-10);
+
+  --expo-theme-button-tertiary-destructive-background: transparent;
+  --expo-theme-button-tertiary-destructive-border: transparent;
+  --expo-theme-button-tertiary-destructive-hover: var(--red-3);
+  --expo-theme-button-tertiary-destructive-icon: var(--red-10);
+  --expo-theme-button-tertiary-destructive-text: var(--red-11);
+  --expo-theme-button-tertiary-destructive-disabled-background: transparent;
+  --expo-theme-button-tertiary-destructive-disabled-border: transparent;
+  --expo-theme-button-tertiary-destructive-disabled-text: var(--red-9);
+
+  /* Dark shadows */
+  --expo-theme-shadows-none: 0 0 transparent;
+  --expo-theme-shadows-xs: 0 1px 3px rgba(0, 0, 0, 0.3),
+    0 1px 2px rgba(0, 0, 0, 0.3);
+  --expo-theme-shadows-sm: 0 3px 6px rgba(0, 0, 0, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.25);
+  --expo-theme-shadows-md: 0 10px 20px rgba(0, 0, 0, 0.25),
+    0 3px 6px rgba(0, 0, 0, 0.25);
+  --expo-theme-shadows-lg: 0 15px 25px rgba(0, 0, 0, 0.5),
+    0 5px 10px rgba(0, 0, 0, 0.25);
+  --expo-theme-shadows-xl: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* ===== Base typography & surface ===== */
+:root {
+  /* Fonts — match website (styles/globals.css) exactly. */
+  --expo-font-sans: 'Inter', -apple-system, 'system-ui', sans-serif;
+  --expo-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Radii — Tailwind preset borderRadius scale */
+  --expo-radius-xs: 2px;
+  --expo-radius-sm: 4px;
+  --expo-radius-md: 6px;
+  --expo-radius-lg: 8px;
+  --expo-radius-xl: 16px;
+  --expo-radius-2xl: 20px;
+  --expo-radius-3xl: 24px;
+  --expo-radius-full: 9999px;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--expo-theme-background-default);
+  color: var(--expo-theme-text-default);
+  font-family: var(--expo-font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  font-optical-sizing: auto;
+}
+
+code, pre, .monospace {
+  font-family: var(--expo-font-mono);
+}
+

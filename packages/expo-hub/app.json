@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "expo-hub",
+    "slug": "expo-hub",
+    "version": "1.0.0",
+    "platforms": ["web"],
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    }
+  }
+}
