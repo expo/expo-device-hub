@@ -388,7 +388,7 @@ index 7d71eea..e4fa7b2 100644
  class DevToolsPluginMiddleware extends _ExpoMiddleware.ExpoMiddleware {
      constructor(projectRoot, pluginManager){
          super(projectRoot, [
-@@ -52,18 +60,56 @@ class DevToolsPluginMiddleware extends _ExpoMiddleware.ExpoMiddleware {
+@@ -52,18 +60,60 @@ class DevToolsPluginMiddleware extends _ExpoMiddleware.ExpoMiddleware {
      }
      async handleRequestAsync(req, res) {
          (0, _assert().default)(req.headers.host, 'Request headers must include host');
