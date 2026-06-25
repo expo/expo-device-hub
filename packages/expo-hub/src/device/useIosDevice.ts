@@ -113,10 +113,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<ScreenSize | null>(null);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
+  // Logs are opt-in: nothing streams until the user attaches.
+  const [logsEnabled, setLogsEnabled] = useState(false);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   const [config, setConfig] = useState<ResolvedConfig | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  // Monotonic log id source, persisted across log-stream reconnects so ids stay
+  // unique even though lines are kept (the stream effect may re-run).
+  const logSeqRef = useRef(0);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
   // True while the in-flight single-finger drag began in the home-indicator band.
@@ -181,6 +186,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const name = BUTTON_NAME[button];
     if (name) ws.send(taggedJson(WS_MSG_BUTTON, { button: name }));
   }, []);
+
+  const attachLogs = useCallback(() => setLogsEnabled(true), []);
+  const detachLogs = useCallback(() => setLogsEnabled(false), []);
+  const clearLogs = useCallback(() => setLogs([]), []);
 
   // ── Resolve the connection: discover the helper + log/device routes via /api,
   //    falling back to treating baseUrl as a bare helper. ──
@@ -358,12 +367,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const execToken = config?.execToken ?? null;
   const logsPath = config?.logsPath ?? null;
   useEffect(() => {
-    setLogs([]);
-    if (!execWsUrl || !execToken || !logsPath) return;
+    // Off by default — only subscribe once the user has attached.
+    if (!logsEnabled || !execWsUrl || !execToken || !logsPath) return;
     let cancelled = false;
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let nextId = 1;
     let sseBuffer = '';
 
     const emit = (block: string) => {
@@ -379,7 +387,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (typeof parsed.eventMessage === 'string') message = parsed.eventMessage;
       } catch {}
       if (message) {
-        setLogs((prev) => [...prev, { id: `i${nextId++}`, source: 'syslog', message }].slice(-MAX_LOGS));
+        setLogs((prev) =>
+          [...prev, { id: `i${++logSeqRef.current}`, source: 'syslog', message }].slice(-MAX_LOGS),
+        );
       }
     };
 
@@ -430,7 +440,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         ws?.close();
       } catch {}
     };
-  }, [execWsUrl, execToken, logsPath]);
+  }, [logsEnabled, execWsUrl, execToken, logsPath]);
 
   // ── Running simulators (middleware /grid/api) ──
   const gridApiUrl = config?.gridApiUrl ?? null;
@@ -470,6 +480,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     fps: 0,
     devices,
     logs,
+    logsEnabled,
+    attachLogs,
+    detachLogs,
+    clearLogs,
     videoKind: 'img',
     attachVideo,
     sendTouch,

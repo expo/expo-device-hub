@@ -114,6 +114,17 @@ export interface DeviceClient {
   devices: RunningDevice[];
   /** Rolling buffer of recent log lines (best-effort; may be empty). */
   logs: DeviceLog[];
+  /**
+   * Whether the log stream is currently attached. Logs are **off by default** —
+   * nothing is collected until {@link attachLogs} is called.
+   */
+  logsEnabled: boolean;
+  /** Start streaming device logs (syslog / logcat). */
+  attachLogs: () => void;
+  /** Stop streaming device logs; keeps the lines already collected. */
+  detachLogs: () => void;
+  /** Drop all collected log lines. */
+  clearLogs: () => void;
 
   /** Element kind {@link DeviceScreen} should render for this client. */
   videoKind: VideoSurfaceKind;

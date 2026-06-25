@@ -90,7 +90,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           selectedId={selectedId}
           onSelect={setSelectedId}
           onToggle={() => setSidebarOpen(false)}
-          logs={client.logs}
+          client={client}
         />
       )}
 
@@ -120,7 +120,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               selectedId={selectedId}
               onSelect={setSelectedId}
               onToggle={() => setSidebarOpen(false)}
-              logs={client.logs}
+              client={client}
             />
           </div>
         </>

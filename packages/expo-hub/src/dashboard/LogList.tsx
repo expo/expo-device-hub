@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react';
+import { type CSSProperties, useEffect, useRef } from 'react';
 
 import { type DeviceLog } from '../device';
 import { text, textSize } from '../../theme/tokens';
@@ -35,16 +35,37 @@ const scrollStyle: CSSProperties = {
   // adding a horizontal scrollbar.
   margin: '0 -8px',
   padding: '0 8px',
+  // The rolling buffer trims lines off the top; without this the browser's
+  // scroll anchoring fights our tail-follow by nudging scrollTop on each trim.
+  overflowAnchor: 'none',
 };
 
-/** Scrollable log output with an always-visible styled scrollbar. */
-export function LogList({ logs = [] }: { logs?: DeviceLog[] }) {
+/**
+ * Scrollable log output with an always-visible styled scrollbar. Lines run
+ * oldest → newest (top → bottom); the view sticks to the tail as new lines
+ * arrive while the user is at the bottom.
+ */
+export function LogList({ logs = [], enabled = false }: { logs?: DeviceLog[]; enabled?: boolean }) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  // New lines arrive at the bottom; while attached we follow the tail so the
+  // newest line stays in view. The stream stops on Detach (lines are kept), so
+  // detaching is how you pause to scroll back through history.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [logs]);
+
+  const emptyMessage = enabled
+    ? 'Waiting for device logs…'
+    : 'Logs are paused. Press Attach to stream device logs.';
+
   return (
-    <div className="hub-log-scroll" style={scrollStyle}>
+    <div ref={scrollRef} className="hub-log-scroll" style={scrollStyle}>
       <style>{SCROLLBAR_CSS}</style>
       {logs.length === 0 ? (
         <span style={{ ...textSize.xs, fontWeight: 500, color: text.tertiary, paddingLeft: 8 }}>
-          Waiting for device logs…
+          {emptyMessage}
         </span>
       ) : (
         logs.map((entry) => <LogRow key={entry.id} entry={entry} />)

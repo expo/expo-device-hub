@@ -1,4 +1,4 @@
-import { type DeviceLog } from '../device';
+import { type DeviceClient } from '../device';
 import { Logo } from '../../components/Logo';
 import { SidebarToggle } from '../../components/SidebarToggle';
 import { type Device } from './data';
@@ -12,7 +12,7 @@ export function Sidebar({
   selectedId,
   onSelect,
   onToggle,
-  logs,
+  client,
 }: {
   /** Simulators to list — real iOS devices from the plugin server. */
   simulators: Device[];
@@ -22,8 +22,8 @@ export function Sidebar({
   onSelect: (id: string) => void;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */
   onToggle?: () => void;
-  /** Live device logs for the output panel. */
-  logs?: DeviceLog[];
+  /** Active device connection — feeds the logs panel and its controls. */
+  client?: DeviceClient;
 }) {
   return (
     <aside
@@ -56,7 +56,7 @@ export function Sidebar({
         selectedId={selectedId}
         onSelect={onSelect}
       />
-      <OutputSection logs={logs} />
+      <OutputSection client={client} />
     </aside>
   );
 }

@@ -60,14 +60,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [screen, setScreen] = useState<ScreenSize | null>(null);
   const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
+  // Logs are opt-in: nothing streams until the user attaches.
+  const [logsEnabled, setLogsEnabled] = useState(false);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
 
   const wsRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  // Monotonic log id source, persisted across logcat reconnects so ids stay
+  // unique even though lines are kept (the stream effect may re-run).
+  const logSeqRef = useRef(0);
 
   const attachVideo = useCallback((el: HTMLCanvasElement | HTMLImageElement | null) => {
     canvasRef.current = (el as HTMLCanvasElement) ?? null;
   }, []);
+
+  const attachLogs = useCallback(() => setLogsEnabled(true), []);
+  const detachLogs = useCallback(() => setLogsEnabled(false), []);
+  const clearLogs = useCallback(() => setLogs([]), []);
 
   const send = useCallback((message: Record<string, unknown>) => {
     const ws = wsRef.current;
@@ -307,14 +316,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, baseUrl]);
 
-  // ── Logcat (SSE, best-effort) ──
+  // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
-    if (!active || !baseUrl) {
-      setLogs([]);
-      return;
-    }
+    if (!logsEnabled || !active || !baseUrl) return;
     let source: EventSource | null = null;
-    let nextId = 1;
     try {
       source = new EventSource(new URL('/api/logcat', baseUrl).toString());
     } catch {
@@ -323,11 +328,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     source.addEventListener('log', (event) => {
       try {
         const data = JSON.parse((event as MessageEvent).data) as { line: string };
-        setLogs((prev) => [...prev, { id: `a${nextId++}`, source: 'logcat', message: data.line }].slice(-MAX_LOGS));
+        setLogs((prev) =>
+          [...prev, { id: `a${++logSeqRef.current}`, source: 'logcat', message: data.line }].slice(-MAX_LOGS),
+        );
       } catch {}
     });
     return () => source?.close();
-  }, [active, baseUrl]);
+  }, [logsEnabled, active, baseUrl]);
 
   // ── Running devices (best-effort) ──
   useEffect(() => {
@@ -368,6 +375,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     fps,
     devices,
     logs,
+    logsEnabled,
+    attachLogs,
+    detachLogs,
+    clearLogs,
     videoKind: 'canvas',
     attachVideo,
     sendTouch,
