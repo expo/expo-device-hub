@@ -32,6 +32,13 @@ const WS_MSG_TOUCH = 0x03;
 const WS_MSG_BUTTON = 0x04;
 const WS_TAG_SCREEN_CONFIG = 0x82;
 
+// A drag that *starts* in the bottom home-indicator band is tagged with this
+// edge so iOS routes it to the interactive swipe-to-home / app-switcher
+// recognizer (without it, a bottom-up drag is just a content scroll). Mirrors
+// serve-sim's HID_EDGE_BOTTOM + HOME_INDICATOR_BAND_NORM (bottom 7%).
+const HID_EDGE_BOTTOM = 3;
+const HOME_INDICATOR_BAND_NORM = 0.93;
+
 const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'ios', name: 'iPhone Simulator', platform: 'ios', current: true },
 ];
@@ -74,6 +81,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const wsRef = useRef<WebSocket | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
+  // True while the in-flight drag began in the home-indicator band.
+  const edgeGestureRef = useRef(false);
 
   // Point the <img> at the MJPEG stream (with a cache-buster so reconnects
   // restart the multipart response rather than reusing the dead one).
@@ -98,7 +107,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const sendTouch = useCallback((sample: TouchSample) => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(taggedJson(WS_MSG_TOUCH, { type: sample.phase, x: sample.x, y: sample.y }));
+
+    // Tag the whole gesture with edge=BOTTOM when it began in the home-indicator
+    // band, so the swipe-up-from-bottom home/app-switcher gesture is recognized.
+    let edge: number | undefined;
+    if (sample.phase === 'begin') {
+      edgeGestureRef.current = sample.y >= HOME_INDICATOR_BAND_NORM;
+      if (edgeGestureRef.current) edge = HID_EDGE_BOTTOM;
+    } else if (edgeGestureRef.current) {
+      edge = HID_EDGE_BOTTOM;
+      if (sample.phase === 'end') edgeGestureRef.current = false;
+    }
+
+    const payload =
+      edge === undefined
+        ? { type: sample.phase, x: sample.x, y: sample.y }
+        : { type: sample.phase, x: sample.x, y: sample.y, edge };
+    ws.send(taggedJson(WS_MSG_TOUCH, payload));
   }, []);
 
   const pressButton = useCallback((button: HardwareButton) => {
