@@ -76,7 +76,9 @@ export async function listAndroidEmulators(): Promise<HubDevice[]> {
 /** Derive an "Android <version>" label from a device's getprop / avdmanager fields. */
 function androidVersion(device: AndroidDevice): string {
   const release = device.properties['ro.build.version.release'];
-  if (release) return `Android ${release}`;
+  // Normalize a bare major version to one decimal place: "17" → "17.0", while
+  // "17.2" is left untouched.
+  if (release) return `Android ${/^\d+$/.test(release) ? `${release}.0` : release}`;
 
   const match = /Android\s+[\d.]+/.exec(device.properties['Based on'] ?? '');
   return match ? match[0] : 'Android';
