@@ -12,6 +12,7 @@
 
 export * from './types';
 export { DeviceScreen } from './DeviceScreen';
+export { displayScreen, streamGeometry } from './orientation';
 export { useIosDeviceClient } from './useIosDevice';
 export { useAndroidDeviceClient } from './useAndroidDevice';
 export { useActiveDeviceClient, type ActiveDeviceTarget } from './useActiveDeviceClient';

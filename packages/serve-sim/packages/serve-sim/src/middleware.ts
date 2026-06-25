@@ -710,6 +710,11 @@ function jsonResponse(value: unknown, init: ResponseInit = {}): Response {
   if (!headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
+  // Allow a cross-origin client (e.g. the Expo Hub dashboard on another
+  // dev-server port) to read these JSON routes (/api, /grid/api, …).
+  if (!headers.has("Access-Control-Allow-Origin")) {
+    headers.set("Access-Control-Allow-Origin", "*");
+  }
   return new Response(JSON.stringify(value), { ...init, headers });
 }
 
@@ -776,6 +781,9 @@ function sseResponse(setup: (sink: SseSink) => void | (() => void)): Response {
       "Cache-Control": "no-cache",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      // Allow a cross-origin client (Expo Hub on another dev-server port) to
+      // read the SSE side-channels (/logs, /ax, /appstate, /api/events).
+      "Access-Control-Allow-Origin": "*",
     },
   });
 }

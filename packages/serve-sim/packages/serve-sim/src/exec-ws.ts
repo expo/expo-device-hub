@@ -248,12 +248,20 @@ export function createExecWebSocketHandler(opts: ExecChannelOptions) {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
     if (url.pathname !== opts.path && url.pathname !== `${opts.path}/`) return false;
 
-    // Same-origin policy mirrors POST /exec: browsers always send Origin on
-    // WebSocket upgrades, and a cross-origin page's Origin won't match Host.
+    // Same-origin policy mirrors POST /exec, with a local-dev carve-out so a
+    // cross-origin localhost client (e.g. the Expo Hub dashboard on another
+    // dev-server port) can subscribe too. The per-session exec token still
+    // gates access either way.
     const origin = req.headers.origin;
     if (origin) {
       try {
-        if (new URL(origin).host !== requestHost(req)) {
+        const originUrl = new URL(origin);
+        const sameOrigin = originUrl.host === requestHost(req);
+        const localDev =
+          originUrl.hostname === "localhost" ||
+          originUrl.hostname === "127.0.0.1" ||
+          originUrl.hostname === "[::1]";
+        if (!sameOrigin && !localDev) {
           websocket.close();
           return true;
         }

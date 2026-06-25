@@ -30,10 +30,19 @@ export type DevicePlatform = 'ios' | 'android';
  */
 export type ConnectionStatus = 'idle' | 'connecting' | 'streaming' | 'error';
 
+/** Device orientation, as reported by serve-sim's stream config. */
+export type DeviceOrientation =
+  | 'portrait'
+  | 'portrait_upside_down'
+  | 'landscape_left'
+  | 'landscape_right';
+
 /** Native pixel size of the streamed screen — drives the PhoneFrame aspect ratio. */
 export interface ScreenSize {
   width: number;
   height: number;
+  /** Last known orientation, when the backend reports it (serve-sim). */
+  orientation?: DeviceOrientation;
 }
 
 /** A simulator/emulator the server reports as running. */
@@ -66,6 +75,13 @@ export interface TouchSample {
   x: number;
   /** 0..1 down the screen height. */
   y: number;
+}
+
+/** A two-finger gesture sample (pinch/pan). Both points are normalized 0..1. */
+export interface MultiTouchSample {
+  phase: 'begin' | 'move' | 'end';
+  a: { x: number; y: number };
+  b: { x: number; y: number };
 }
 
 export interface DeviceConnectionOptions {
@@ -109,6 +125,8 @@ export interface DeviceClient {
 
   /** Forward a normalized touch/drag to the device. */
   sendTouch: (sample: TouchSample) => void;
+  /** Forward a two-finger pinch/pan. Present only on backends that support it (serve-sim). */
+  sendMultiTouch?: (sample: MultiTouchSample) => void;
   /** Press a hardware button. */
   pressButton: (button: HardwareButton) => void;
 }

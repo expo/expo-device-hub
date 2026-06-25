@@ -2,7 +2,7 @@ import { type CSSProperties } from 'react';
 
 import androidPlaceholder from '../../assets/android-placeholder.png';
 import iosPlaceholder from '../../assets/simulator-placeholder.png';
-import { type DeviceClient, DeviceScreen } from '../device';
+import { type DeviceClient, DeviceScreen, displayScreen } from '../device';
 import { type Platform } from './data';
 
 // The bundler returns a URL string on web; guard for the native asset shape too.
@@ -40,9 +40,10 @@ export function PhoneFrame({ platform, client }: { platform: Platform; client?: 
   const isIos = platform === 'ios';
 
   // Prefer the live screen's aspect ratio once known, so the stream fills the
-  // frame 1:1 instead of being stretched to the placeholder's body ratio.
-  const ratio =
-    client?.screen && client.screen.height > 0 ? client.screen.width / client.screen.height : fallbackRatio;
+  // frame 1:1 instead of being stretched to the placeholder's body ratio. Uses
+  // the orientation-corrected (display) size so a rotated device shows landscape.
+  const display = client ? displayScreen(client.screen) : null;
+  const ratio = display && display.height > 0 ? display.width / display.height : fallbackRatio;
 
   // The container's width is the phone width; `cqw` on the child resolves
   // against it, so the radius is always `radiusFraction` of the rendered width.
