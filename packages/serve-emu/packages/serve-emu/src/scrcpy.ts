@@ -266,7 +266,7 @@ export async function startScrcpy(opts: StartOpts): Promise<ScrcpySession> {
   const { serial } = opts;
   const maxFps = opts.maxFps ?? 30;
   const bitRate = opts.bitRate ?? 8_000_000;
-  const maxSize = opts.maxSize ?? 1024;
+  const maxSize = opts.maxSize ?? 1280;
   const keyFrameInterval = opts.keyFrameInterval ?? 1;
   const scid = randomScid();
   let localPort: number | null = null;

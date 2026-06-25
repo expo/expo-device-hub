@@ -12,7 +12,10 @@ const { values } = parseArgs({
     serial: { type: "string", short: "s" },
     "max-fps": { type: "string", default: "30" },
     "bit-rate": { type: "string", default: "8000000" },
-    "max-size": { type: "string", default: "1024" },
+    // 1280 caps the long edge while staying a clean multiple for common
+    // 1080-wide devices (1080→576), so scrcpy doesn't pad the encode width and
+    // bake in black letterbox columns the way 1024 (→460.8, rounded to 464) did.
+    "max-size": { type: "string", default: "1280" },
     "key-frame-interval": { type: "string", default: "1" },
     avd: { type: "string" },
     "avd-list": { type: "boolean" },
@@ -49,7 +52,7 @@ Options:
       --bit-rate <bps>   H.264 bit rate (default: 8000000)
       --max-size <px>    Cap longest screen edge in pixels; 0 = native, but many
                          emulators reject native resolutions above ~2560 so this
-                         defaults to 1024.
+                         defaults to 1280.
       --key-frame-interval <sec>
                          Ask the encoder for regular keyframes; 0 disables this
                          codec option (default: 1)
@@ -97,7 +100,7 @@ async function main() {
   const port = Number(values.port);
   const maxFps = numberOption("max-fps", 30);
   const bitRate = numberOption("bit-rate", 8_000_000);
-  const maxSize = numberOption("max-size", 1024);
+  const maxSize = numberOption("max-size", 1280);
   const keyFrameInterval = numberOption("key-frame-interval", 1);
 
   const { server, stop: stopServer } = await startServer({
