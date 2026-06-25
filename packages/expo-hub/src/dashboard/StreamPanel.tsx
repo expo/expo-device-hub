@@ -33,7 +33,14 @@ export function StreamPanel({
         overflow: 'hidden',
       }}>
       <PhoneFrame platform={device.platform} client={client} />
-      <StreamControls scheme={scheme} onToggleTheme={onToggleTheme} onHome={() => client.pressButton('home')} />
+      <StreamControls
+        platform={device.platform}
+        scheme={scheme}
+        onToggleTheme={onToggleTheme}
+        onHome={() => client.pressButton('home')}
+        onBack={() => client.pressButton('back')}
+        onRecents={() => client.pressButton('recents')}
+      />
     </section>
   );
 }

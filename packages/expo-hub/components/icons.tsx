@@ -48,6 +48,31 @@ export function HomeIcon({ size = 20, color = 'currentColor', strokeWidth = 1.67
   );
 }
 
+export function BackIcon({ size = 18, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <path d="M19 12H5M12 19l-7-7 7-7" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function RecentsIcon({ size = 16, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <rect x="5" y="5" width="14" height="14" rx="2" stroke={color} strokeWidth={strokeWidth} />
+    </svg>
+  );
+}
+
+export function ThemeIcon({ size = 16, color = 'currentColor', strokeWidth = 1.5, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <circle cx="12" cy="12" r="9" stroke={color} strokeWidth={strokeWidth} />
+      <path d="M12 3a9 9 0 0 1 0 18Z" fill={color} />
+    </svg>
+  );
+}
+
 export function CameraIcon({ size = 16, color = 'currentColor', strokeWidth = 1.33, style }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
