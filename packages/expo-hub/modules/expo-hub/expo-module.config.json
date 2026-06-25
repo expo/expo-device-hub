@@ -1,0 +1,8 @@
+{
+  "platforms": ["devtools"],
+  "devtools": {
+    "cliBanner": true,
+    "bannerTitle": "Hub (Dev)",
+    "serverEntryPoint": "./server.mjs"
+  }
+}

@@ -1,17 +1,23 @@
 import { type DeviceLog } from '../device';
 import { Logo } from '../../components/Logo';
 import { SidebarToggle } from '../../components/SidebarToggle';
+import { type Device } from './data';
 import { DeviceSection } from './DeviceSection';
-import { emulators, simulators } from './data';
 import { OutputSection } from './OutputSection';
 
 /** Left column: simulators + emulators lists and the output tabs. */
 export function Sidebar({
+  simulators,
+  emulators,
   selectedId,
   onSelect,
   onToggle,
   logs,
 }: {
+  /** Simulators to list — real iOS devices from the plugin server. */
+  simulators: Device[];
+  /** Emulators to list. */
+  emulators: Device[];
   selectedId: string;
   onSelect: (id: string) => void;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */

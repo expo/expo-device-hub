@@ -1,0 +1,6 @@
+{
+  "name": "expo-hub",
+  "version": "0.0.0",
+  "description": "Expo DevTools plugin for Expo Hub.",
+  "private": true
+}

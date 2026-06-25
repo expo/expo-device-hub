@@ -8,10 +8,10 @@ import { useEffect, useState } from 'react';
 import { SidebarToggle } from '../components/SidebarToggle';
 import { bg, shadow, text } from '../theme/tokens';
 import { useActiveDeviceClient } from './device';
-import { allDevices, simulators } from './dashboard/data';
 import { Sidebar } from './dashboard/Sidebar';
 import { StreamPanel } from './dashboard/StreamPanel';
 import { useColorScheme } from './dashboard/useColorScheme';
+import { useDevices } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
 
 // Below this width the sidebar + device stream no longer fit side by side, so
@@ -29,7 +29,8 @@ const NARROW_MAX_WIDTH = 767;
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
   const { scheme, toggle } = useColorScheme();
-  const [selectedId, setSelectedId] = useState(simulators[0].id);
+  const { simulators, emulators } = useDevices();
+  const [selectedId, setSelectedId] = useState('');
   const narrow = useIsNarrow(NARROW_MAX_WIDTH);
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -48,11 +49,22 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     return () => root.classList.remove('dark-theme');
   }, [scheme]);
 
-  const selected = allDevices.find((device) => device.id === selectedId) ?? simulators[0];
+  // Once the device list loads (or changes), keep a valid selection — default to
+  // the first simulator. Selection only drives the sidebar highlight for now; it
+  // is not yet wired to the stream.
+  useEffect(() => {
+    const devices = [...simulators, ...emulators];
+    if (!devices.some((device) => device.id === selectedId)) {
+      setSelectedId(devices[0]?.id ?? '');
+    }
+  }, [simulators, emulators, selectedId]);
 
-  // One shared connection to the selected device's serve-sim/serve-emu server.
-  // The stream (PhoneFrame), Home control, and logs panel all read from it.
-  const client = useActiveDeviceClient({ platform: selected.platform });
+  const devices = [...simulators, ...emulators];
+  const selected = devices.find((device) => device.id === selectedId) ?? devices[0];
+
+  // One shared connection to the serve-sim/serve-emu server. Keyed by platform
+  // only — the list is intentionally not linked to the stream yet.
+  const client = useActiveDeviceClient({ platform: selected?.platform ?? 'ios' });
 
   return (
     <div
@@ -73,6 +85,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
       {/* Wide + open: the sidebar sits inline next to the stream. */}
       {sidebarOpen && !narrow && (
         <Sidebar
+          simulators={simulators}
+          emulators={emulators}
           selectedId={selectedId}
           onSelect={setSelectedId}
           onToggle={() => setSidebarOpen(false)}
@@ -80,7 +94,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         />
       )}
 
-      <StreamPanel device={selected} client={client} scheme={scheme} onToggleTheme={toggle} />
+      {selected && (
+        <StreamPanel device={selected} client={client} scheme={scheme} onToggleTheme={toggle} />
+      )}
 
       {/* Narrow + open: the sidebar overlays the stream with a backdrop. */}
       {sidebarOpen && narrow && (
@@ -99,6 +115,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               boxShadow: shadow.lg,
             }}>
             <Sidebar
+              simulators={simulators}
+              emulators={emulators}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onToggle={() => setSidebarOpen(false)}

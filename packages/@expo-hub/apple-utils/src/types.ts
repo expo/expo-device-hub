@@ -34,5 +34,7 @@ export interface AppleHardwareProperties {
   platform?: string;
   deviceType?: string;
   marketingName?: string;
+  /** `"simulated"` for Simulator devices, `"physical"` for real hardware. */
+  reality?: string;
   [key: string]: unknown;
 }
