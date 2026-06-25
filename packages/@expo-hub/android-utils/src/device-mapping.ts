@@ -67,7 +67,7 @@ export function toPhysicalDevice(device: ConnectedDevice): AndroidDevice {
   const properties = pickPhysicalProps(device.properties);
 
   return {
-    name: properties["ro.product.model"] ?? device.serial,
+    name: physicalDeviceName(properties, device.serial),
     type: "device",
     booted: true,
     serial: device.serial,
@@ -75,4 +75,13 @@ export function toPhysicalDevice(device: ConnectedDevice): AndroidDevice {
     properties,
     config: {},
   };
+}
+
+/** Build a display name like `"Google Pixel 6a"`, falling back to the serial. */
+function physicalDeviceName(properties: Record<string, string>, serial: string): string {
+  const manufacturer = properties["ro.product.manufacturer"];
+  const model = properties["ro.product.model"];
+  if (!model) return serial;
+
+  return manufacturer ? `${manufacturer} ${model}` : model;
 }

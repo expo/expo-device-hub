@@ -3,13 +3,15 @@
  *
  * iOS simulators are listed for real via `@expo-hub/apple-utils` (which shells
  * out to `devicectl`), filtered to those that are both *simulated* and *booted*.
- * Android emulators are still mocked here — they'll move to
- * `@expo-hub/android-utils` later, mirroring the iOS path.
+ * Android devices are listed via `@expo-hub/android-utils` (which shells out to
+ * `avdmanager` / `adb`), filtered to those currently *booted* — booted emulators
+ * plus connected physical devices.
  *
  * The returned shape mirrors `dashboard/data.ts`'s `Device`, so the DOM sidebar
  * can consume `/api/devices` directly.
  */
 
+import { type AndroidDevice, listDevices as listAndroidDevices } from '@expo-hub/android-utils';
 import { listDevices as listAppleDevices } from '@expo-hub/apple-utils';
 
 export type HubDevicePlatform = 'ios' | 'android';
@@ -55,21 +57,37 @@ export async function listIosSimulators(): Promise<HubDevice[]> {
 }
 
 /**
- * Android emulators. Mocked for now — to be replaced with
- * `@expo-hub/android-utils` later, the same way `listIosSimulators` uses
- * `@expo-hub/apple-utils`.
+ * Booted Android devices — emulators and connected physical devices — via
+ * `@expo-hub/android-utils` → `avdmanager` / `adb`.
  */
-export function listAndroidEmulators(): HubDevice[] {
-  return [
-    { id: 'pixel-9-pro', name: 'Pixel 9 Pro', version: 'Android 16', platform: 'android' },
-    { id: 'pixel-9a', name: 'Pixel 9a', version: 'Android 15', platform: 'android' },
-  ];
+export async function listAndroidEmulators(): Promise<HubDevice[]> {
+  const devices = await listAndroidDevices();
+
+  return devices
+    .filter((device) => device.booted)
+    .map((device) => ({
+      id: device.serial ?? device.name,
+      name: device.name,
+      version: androidVersion(device),
+      platform: 'android' as const,
+    }));
+}
+
+/** Derive an "Android <version>" label from a device's getprop / avdmanager fields. */
+function androidVersion(device: AndroidDevice): string {
+  const release = device.properties['ro.build.version.release'];
+  if (release) return `Android ${release}`;
+
+  const match = /Android\s+[\d.]+/.exec(device.properties['Based on'] ?? '');
+  return match ? match[0] : 'Android';
 }
 
 /** The full device list the dashboard sidebar renders. */
 export async function listDevices(): Promise<HubDeviceList> {
-  return {
-    simulators: await listIosSimulators(),
-    emulators: listAndroidEmulators(),
-  };
+  const [simulators, emulators] = await Promise.all([
+    listIosSimulators(),
+    listAndroidEmulators(),
+  ]);
+
+  return { simulators, emulators };
 }

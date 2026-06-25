@@ -104,7 +104,7 @@ describe("toPhysicalDevice", () => {
       }),
     );
     expect(device).toEqual({
-      name: "Pixel 6a",
+      name: "Google Pixel 6a",
       type: "device",
       booted: true,
       serial: "27151JEGR11854",
@@ -120,7 +120,15 @@ describe("toPhysicalDevice", () => {
     });
   });
 
+  test("uses the model alone when the manufacturer is unknown", () => {
+    expect(toPhysicalDevice(physical("abc", { "ro.product.model": "Pixel 6a" })).name).toBe(
+      "Pixel 6a",
+    );
+  });
+
   test("falls back to the serial when the model is unknown", () => {
-    expect(toPhysicalDevice(physical("27151JEGR11854", {})).name).toBe("27151JEGR11854");
+    expect(
+      toPhysicalDevice(physical("27151JEGR11854", { "ro.product.manufacturer": "Google" })).name,
+    ).toBe("27151JEGR11854");
   });
 });

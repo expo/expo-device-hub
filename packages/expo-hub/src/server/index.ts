@@ -10,7 +10,7 @@
  * Routes:
  *   GET /api/devices → { simulators, emulators }
  *     - simulators: booted iOS simulators via `@expo-hub/apple-utils`
- *     - emulators:  mocked Android entries (TODO: `@expo-hub/android-utils`)
+ *     - emulators:  booted Android devices (emulators + physical) via `@expo-hub/android-utils`
  *
  * Authored in TypeScript under `src/server/` and bundled to
  * `dist/server/index.mjs` by `scripts/build-plugin-server.ts` (Bun, single

@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo-hub/android-utils": "workspace:*",
     "@expo-hub/apple-utils": "workspace:*",
     "@expo/metro-runtime": "catalog:",
     "@radix-ui/react-dropdown-menu": "^2.1.16",
