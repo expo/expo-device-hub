@@ -2,6 +2,7 @@ import { join } from "node:path";
 
 const DEFAULT_SDK_SUBPATH = "Library/Android/sdk";
 const AVDMANAGER_SUBPATH = "cmdline-tools/latest/bin/avdmanager";
+const ADB_SUBPATH = "platform-tools/adb";
 
 /**
  * Resolve the Android SDK root from the environment.
@@ -27,6 +28,16 @@ export function avdmanagerPath(sdkRoot: string): string {
 /** Resolve the `avdmanager` path directly from the environment. */
 export function resolveAvdmanagerPath(env: NodeJS.ProcessEnv, homeDir: string): string {
   return avdmanagerPath(resolveSdkRoot(env, homeDir));
+}
+
+/** Build the absolute path to the `adb` binary inside an SDK root. */
+export function adbPath(sdkRoot: string): string {
+  return join(sdkRoot, ADB_SUBPATH);
+}
+
+/** Resolve the `adb` path directly from the environment. */
+export function resolveAdbPath(env: NodeJS.ProcessEnv, homeDir: string): string {
+  return adbPath(resolveSdkRoot(env, homeDir));
 }
 
 function nonEmpty(value: string | undefined): string | null {

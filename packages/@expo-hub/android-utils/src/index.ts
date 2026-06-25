@@ -1,2 +1,2 @@
 export { listDevices } from "./list-devices";
-export type { AndroidDevice } from "./types";
+export type { AndroidDevice, AndroidDeviceType } from "./types";

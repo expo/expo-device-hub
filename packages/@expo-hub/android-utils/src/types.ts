@@ -1,11 +1,26 @@
-/** A single Android Virtual Device reported by `avdmanager list avd`. */
+/** Whether an {@link AndroidDevice} is an emulator (AVD) or physical hardware. */
+export type AndroidDeviceType = "emulator" | "device";
+
+/**
+ * A single Android device: an emulator known to `avdmanager list avd`, or a
+ * physical device connected via `adb`.
+ */
 export interface AndroidDevice {
-  /** The AVD name (the `Name:` field), used to launch the emulator. */
+  /** AVD name (emulators) or the product model (physical devices). */
   name: string;
-  /** Absolute path to the `.avd` directory (the `Path:` field), if present. */
+  /** `"emulator"` for AVDs, `"device"` for physical hardware. */
+  type: AndroidDeviceType;
+  /** Whether the device is currently booted / connected (visible to `adb`). */
+  booted: boolean;
+  /** adb serial (e.g. `"emulator-5554"`) when booted; `null` otherwise. */
+  serial: string | null;
+  /** Absolute path to the `.avd` directory (emulators only), if present. */
   path: string | null;
-  /** All `key: value` fields parsed from the `avdmanager` output block. */
+  /**
+   * `avdmanager` block fields (emulators) or the curated `getprop` values
+   * (physical devices).
+   */
   properties: Record<string, string>;
-  /** Parsed `<path>/config.ini`; empty when it cannot be read. */
+  /** Parsed `<path>/config.ini` (emulators); empty for physical devices. */
   config: Record<string, string>;
 }

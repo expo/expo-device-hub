@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { avdmanagerPath, resolveAvdmanagerPath, resolveSdkRoot } from "../sdk-paths";
+import {
+  adbPath,
+  avdmanagerPath,
+  resolveAdbPath,
+  resolveAvdmanagerPath,
+  resolveSdkRoot,
+} from "../sdk-paths";
 
 const HOME = "/Users/test";
 
@@ -37,6 +43,20 @@ describe("resolveAvdmanagerPath", () => {
   test("combines SDK resolution with the binary subpath", () => {
     expect(resolveAvdmanagerPath({ ANDROID_HOME: "/sdk/home" }, HOME)).toBe(
       "/sdk/home/cmdline-tools/latest/bin/avdmanager",
+    );
+  });
+});
+
+describe("adbPath", () => {
+  test("appends the platform-tools binary subpath", () => {
+    expect(adbPath("/sdk")).toBe("/sdk/platform-tools/adb");
+  });
+});
+
+describe("resolveAdbPath", () => {
+  test("combines SDK resolution with the binary subpath", () => {
+    expect(resolveAdbPath({ ANDROID_HOME: "/sdk/home" }, HOME)).toBe(
+      "/sdk/home/platform-tools/adb",
     );
   });
 });
