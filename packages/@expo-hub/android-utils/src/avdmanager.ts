@@ -21,6 +21,20 @@ export async function runAvdmanagerListAvd(avdmanagerPath: string): Promise<stri
 }
 
 /**
+ * Run `avdmanager list device` and return its stdout, or `null` on failure.
+ * Never throws.
+ */
+export async function runAvdmanagerListDevice(avdmanagerPath: string): Promise<string | null> {
+  try {
+    const { stdout } = await execFileAsync(avdmanagerPath, ["list", "device"]);
+    return stdout;
+  } catch (error) {
+    console.error("[android-utils] Failed to run `avdmanager list device`:", error);
+    return null;
+  }
+}
+
+/**
  * Read and parse `<avdPath>/config.ini`. Returns an empty object when the path
  * is missing or the file cannot be read. Never throws.
  */
