@@ -1,11 +1,13 @@
 /**
  * Device discovery for the Expo Hub DevTools server.
  *
- * iOS simulators are listed for real via `@expo-hub/apple-utils` (which shells
- * out to `devicectl`), filtered to those that are both *simulated* and *booted*.
- * Android devices are listed via `@expo-hub/android-utils` (which shells out to
- * `avdmanager` / `adb`), filtered to those currently *booted* — booted emulators
- * plus connected physical devices.
+ * iOS simulators are listed via `@expo-hub/apple-utils` (which shells out to
+ * `devicectl`), filtered to those that are *simulated* — both booted and
+ * shut-down. Android devices are listed via `@expo-hub/android-utils` (which
+ * shells out to `avdmanager` / `adb`): every known AVD plus any connected
+ * physical device. Each device carries a `booted` flag, so the caller can show
+ * the running devices in the sidebar and offer the rest as "recent" devices to
+ * add (see `/api/devices?booted=true` in `index.ts`).
  *
  * The returned shape mirrors `dashboard/data.ts`'s `Device`, so the DOM sidebar
  * can consume `/api/devices` directly.
@@ -17,12 +19,14 @@ import { listDevices as listAppleDevices } from '@expo-hub/apple-utils';
 export type HubDevicePlatform = 'ios' | 'android';
 
 export interface HubDevice {
-  /** udid (iOS) / serial (Android). */
+  /** udid (iOS) / serial-or-AVD-name (Android). */
   id: string;
   name: string;
   /** e.g. "iOS 27.0" / "Android 16". */
   version: string;
   platform: HubDevicePlatform;
+  /** Whether the device is currently booted / running. */
+  booted: boolean;
 }
 
 export interface HubDeviceList {
@@ -30,16 +34,12 @@ export interface HubDeviceList {
   emulators: HubDevice[];
 }
 
-/** Booted iOS simulators, via `@expo-hub/apple-utils` → `devicectl`. */
+/** All iOS simulators (booted and shut-down), via `@expo-hub/apple-utils` → `devicectl`. */
 export async function listIosSimulators(): Promise<HubDevice[]> {
   const devices = await listAppleDevices();
 
   return devices
-    .filter(
-      (device) =>
-        device.hardwareProperties?.reality === 'simulated' &&
-        device.deviceProperties?.bootState === 'booted',
-    )
+    .filter((device) => device.hardwareProperties?.reality === 'simulated')
     .map((device) => {
       const id = device.hardwareProperties?.udid ?? device.identifier ?? '';
       const name =
@@ -52,25 +52,26 @@ export async function listIosSimulators(): Promise<HubDevice[]> {
         name,
         version: osVersion ? `${platform} ${osVersion}` : platform,
         platform: 'ios' as const,
+        booted: device.deviceProperties?.bootState === 'booted',
       };
     });
 }
 
 /**
- * Booted Android devices — emulators and connected physical devices — via
- * `@expo-hub/android-utils` → `avdmanager` / `adb`.
+ * All Android devices — every AVD plus connected physical devices — via
+ * `@expo-hub/android-utils` → `avdmanager` / `adb`. Shut-down AVDs are included
+ * (with `booted: false`) so they can be offered as recent devices.
  */
 export async function listAndroidEmulators(): Promise<HubDevice[]> {
   const devices = await listAndroidDevices();
 
-  return devices
-    .filter((device) => device.booted)
-    .map((device) => ({
-      id: device.serial ?? device.name,
-      name: device.name,
-      version: androidVersion(device),
-      platform: 'android' as const,
-    }));
+  return devices.map((device) => ({
+    id: device.serial ?? device.name,
+    name: device.name,
+    version: androidVersion(device),
+    platform: 'android' as const,
+    booted: device.booted,
+  }));
 }
 
 /** Derive an "Android <version>" label from a device's getprop / avdmanager fields. */
@@ -84,7 +85,7 @@ function androidVersion(device: AndroidDevice): string {
   return match ? match[0] : 'Android';
 }
 
-/** The full device list the dashboard sidebar renders. */
+/** Every known simulator and emulator/device, each tagged with its `booted` state. */
 export async function listDevices(): Promise<HubDeviceList> {
   const [simulators, emulators] = await Promise.all([
     listIosSimulators(),

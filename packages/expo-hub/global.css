@@ -41,6 +41,11 @@
   --animate-slideDownAndFade: slideDownAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-slideLeftAndFade: slideLeftAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
   --animate-slideRightAndFade: slideRightAndFade 150ms cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Dialog open/close animations (names match the website Dialog). */
+  --animate-fadeIn: fadeIn 150ms ease;
+  --animate-fadeOut: fadeOut 150ms ease;
+  --animate-largeSlideUpAndFadeIn: largeSlideUpAndFadeIn 200ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* The slice of Tailwind preflight the ported components rely on: borders start
@@ -92,6 +97,26 @@
   z-index: 605;
 }
 
+/* styleguide tokens the Dialog relies on (overlay/content z-index, surfaces, borders). */
+@utility bg-subtle {
+  background-color: var(--expo-theme-background-subtle);
+}
+@utility border-default {
+  border-color: var(--expo-theme-border-default);
+}
+@utility border-b-default {
+  border-bottom-color: var(--expo-theme-border-default);
+}
+@utility border-t-default {
+  border-top-color: var(--expo-theme-border-default);
+}
+@utility z-dialogOverlay-600 {
+  z-index: 600;
+}
+@utility z-dialogContent-601 {
+  z-index: 601;
+}
+
 @keyframes slideUpAndFade {
   from {
     opacity: 0;
@@ -131,4 +156,52 @@
     opacity: 1;
     transform: translateX(0);
   }
+}
+
+/* Dialog animations — the `animate-fadeIn/fadeOut/largeSlideUpAndFadeIn` utilities
+   (declared in @theme above) reference these keyframes. */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes fadeOut {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes largeSlideUpAndFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* Close button in the Dialog header — a quaternary icon button with a hover fill.
+   (Radix `DialogClose asChild` injects the close handler onto this plain button.) */
+.dialog-close-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-right: -8px;
+  border-radius: var(--expo-radius-md);
+  color: var(--expo-theme-icon-default);
+  background-color: transparent;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+.dialog-close-button:hover {
+  background-color: var(--expo-theme-background-element);
 }

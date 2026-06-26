@@ -4,32 +4,48 @@ import { DeviceListItem } from '../../components/DeviceListItem';
 import { PlusIcon } from '../../components/icons';
 import { bg, border, icon, radius, text, textSize } from '../../theme/tokens';
 import { type Device } from './data';
+import { RecentDevicesModal } from './RecentDevicesModal';
 
 /**
  * A titled, selectable list of devices (Simulators or Emulators) with an add
  * button. Selection is controlled by the parent so it can be shared across
- * sections — only one device is "open" at a time.
+ * sections — only one device is "open" at a time. The add button opens the
+ * "recent devices" picker; the chosen device is reported via `onAdd`.
  */
 export type DeviceSectionProps = {
   title: string;
   addLabel: string;
+  /** Header for the add-device modal, e.g. "Recent Simulators". */
+  modalTitle: string;
   /** Shown under the heading when the list is empty. */
   emptyLabel: string;
   devices: Device[];
+  /** Devices that could be added (the modal hides any already shown here). */
+  recent: Device[];
   selectedId: string;
   onSelect: (id: string) => void;
+  /** Called with the device chosen in the add-device modal. */
+  onAdd: (device: Device) => void;
 };
 
 export function DeviceSection({
   title,
   addLabel,
+  modalTitle,
   emptyLabel,
   devices,
+  recent,
   selectedId,
   onSelect,
+  onAdd,
 }: DeviceSectionProps) {
   const [addHovered, setAddHovered] = useState(false);
   const [addPressed, setAddPressed] = useState(false);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  // Don't offer devices that are already in this section's list.
+  const shownIds = new Set(devices.map((device) => device.id));
+  const candidates = recent.filter((device) => !shownIds.has(device.id));
 
   return (
     <section style={{ display: 'grid', gap: 12 }}>
@@ -38,6 +54,7 @@ export function DeviceSection({
         <button
           type="button"
           aria-label={addLabel}
+          onClick={() => setModalOpen(true)}
           onMouseEnter={() => setAddHovered(true)}
           onMouseLeave={() => {
             setAddHovered(false);
@@ -89,6 +106,14 @@ export function DeviceSection({
           ))
         )}
       </div>
+
+      <RecentDevicesModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={modalTitle}
+        devices={candidates}
+        onAdd={onAdd}
+      />
     </section>
   );
 }

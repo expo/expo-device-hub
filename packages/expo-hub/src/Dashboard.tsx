@@ -3,17 +3,24 @@
 import '../theme/theme.css';
 import '../global.css';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { SidebarToggle } from '../components/SidebarToggle';
 import { bg, shadow, text } from '../theme/tokens';
 import { useActiveDeviceClient } from './device';
+import { type Device } from './dashboard/data';
 import { EmptyState } from './dashboard/EmptyState';
 import { Sidebar } from './dashboard/Sidebar';
 import { StreamPanel } from './dashboard/StreamPanel';
 import { useColorScheme } from './dashboard/useColorScheme';
-import { useDevices } from './dashboard/useDevices';
+import { useDevices, useRecentDevices } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
+
+/** Append `extra` devices not already present in `base` (deduped by id). */
+function mergeById(base: Device[], extra: Device[]): Device[] {
+  const ids = new Set(base.map((device) => device.id));
+  return [...base, ...extra.filter((device) => !ids.has(device.id))];
+}
 
 // Below this width the sidebar + device stream no longer fit side by side, so
 // the sidebar collapses and becomes a toggleable overlay.
@@ -30,10 +37,31 @@ const NARROW_MAX_WIDTH = 767;
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
   const { scheme, toggle } = useColorScheme();
-  const { simulators, emulators } = useDevices();
+  const booted = useDevices();
+  const recent = useRecentDevices();
   const [selectedId, setSelectedId] = useState('');
+  // Devices the user added from a "recent devices" picker. UI-only for now: they
+  // join the sidebar list but aren't booted on the host.
+  const [added, setAdded] = useState<Device[]>([]);
   const narrow = useIsNarrow(NARROW_MAX_WIDTH);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+
+  // Merge booted devices (from the server) with any the user added, deduped by
+  // id and split back into the two sections by platform.
+  const simulators = useMemo(
+    () => mergeById(booted.simulators, added.filter((device) => device.platform === 'ios')),
+    [booted.simulators, added],
+  );
+  const emulators = useMemo(
+    () => mergeById(booted.emulators, added.filter((device) => device.platform === 'android')),
+    [booted.emulators, added],
+  );
+
+  // Add a device chosen in a picker and select it straight away.
+  function handleAddDevice(device: Device) {
+    setAdded((prev) => (prev.some((item) => item.id === device.id) ? prev : [...prev, device]));
+    setSelectedId(device.id);
+  }
 
   // Default to open on the wide layout, collapsed on the narrow one — but the
   // toggle lets the user close/open it at any width.
@@ -88,8 +116,11 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         <Sidebar
           simulators={simulators}
           emulators={emulators}
+          recentSimulators={recent.simulators}
+          recentEmulators={recent.emulators}
           selectedId={selectedId}
           onSelect={setSelectedId}
+          onAddDevice={handleAddDevice}
           onToggle={() => setSidebarOpen(false)}
           client={client}
         />
@@ -120,8 +151,11 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             <Sidebar
               simulators={simulators}
               emulators={emulators}
+              recentSimulators={recent.simulators}
+              recentEmulators={recent.emulators}
               selectedId={selectedId}
               onSelect={setSelectedId}
+              onAddDevice={handleAddDevice}
               onToggle={() => setSidebarOpen(false)}
               client={client}
             />

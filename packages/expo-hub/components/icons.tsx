@@ -20,6 +20,14 @@ export function PlusIcon({ size = 18, color = 'currentColor', strokeWidth = 1.5,
   );
 }
 
+export function CloseIcon({ size = 18, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <path d="M18 6 6 18M6 6l12 12" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function PhoneIcon({ size = 28, color = 'currentColor', strokeWidth = 1.5, style }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>

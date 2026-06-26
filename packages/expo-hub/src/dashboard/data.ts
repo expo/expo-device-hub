@@ -11,6 +11,8 @@ export type Device = {
   name: string;
   version: string;
   platform: Platform;
+  /** Whether the device is currently booted / running. */
+  booted: boolean;
 };
 
 export type LogEntry = {

@@ -9,15 +9,16 @@
  *
  * Routes:
  *   GET /api/devices → { simulators, emulators }
- *     - simulators: booted iOS simulators via `@expo-hub/apple-utils`
- *     - emulators:  booted Android devices (emulators + physical) via `@expo-hub/android-utils`
+ *     - all known simulators and emulators/devices, each with a `booted` flag.
+ *   GET /api/devices?booted=true → same shape, narrowed to booted devices only
+ *     (what the sidebar shows; the unfiltered list backs the "recent" picker).
  *
  * Authored in TypeScript under `src/server/` and bundled to
  * `dist/server/index.mjs` by `scripts/build-plugin-server.ts` (Bun, single
  * self-contained ESM file).
  */
 
-import { listDevices } from './devices';
+import { type HubDeviceList, listDevices } from './devices';
 
 const DEVICES_ROUTE = '/api/devices';
 
@@ -31,13 +32,23 @@ function jsonResponse(body: unknown): Response {
 }
 
 export default async function handler(request: Request): Promise<Response | null> {
-  const { pathname } = new URL(request.url);
+  const { pathname, searchParams } = new URL(request.url);
 
   if (pathname === DEVICES_ROUTE) {
-    return jsonResponse(await listDevices());
+    const devices = await listDevices();
+    const bootedOnly = searchParams.get('booted') === 'true' || searchParams.get('booted') === '1';
+    return jsonResponse(bootedOnly ? filterBooted(devices) : devices);
   }
 
   // Not one of our routes — returning null lets Expo CLI fall through to static
   // `webpageRoot` serving (this plugin has none, so it becomes a 404).
   return null;
+}
+
+/** Narrow a device list to the booted devices in each section. */
+function filterBooted(list: HubDeviceList): HubDeviceList {
+  return {
+    simulators: list.simulators.filter((device) => device.booted),
+    emulators: list.emulators.filter((device) => device.booted),
+  };
 }

@@ -9,8 +9,11 @@ import { OutputSection } from './OutputSection';
 export function Sidebar({
   simulators,
   emulators,
+  recentSimulators,
+  recentEmulators,
   selectedId,
   onSelect,
+  onAddDevice,
   onToggle,
   client,
 }: {
@@ -18,8 +21,14 @@ export function Sidebar({
   simulators: Device[];
   /** Emulators to list. */
   emulators: Device[];
+  /** Shut-down simulators offered in the "Recent Simulators" picker. */
+  recentSimulators: Device[];
+  /** Shut-down emulators offered in the "Recent Emulators" picker. */
+  recentEmulators: Device[];
   selectedId: string;
   onSelect: (id: string) => void;
+  /** Called with the device chosen in either add-device picker. */
+  onAddDevice: (device: Device) => void;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */
   onToggle?: () => void;
   /** Active device connection — feeds the logs panel and its controls. */
@@ -45,18 +54,24 @@ export function Sidebar({
       <DeviceSection
         title="Simulators"
         addLabel="Add simulator"
+        modalTitle="Recent Simulators"
         emptyLabel="No booted simulators. Use the + button to add one."
         devices={simulators}
+        recent={recentSimulators}
         selectedId={selectedId}
         onSelect={onSelect}
+        onAdd={onAddDevice}
       />
       <DeviceSection
         title="Emulators"
         addLabel="Add emulator"
+        modalTitle="Recent Emulators"
         emptyLabel="No booted emulators or devices. Use the + button to add one."
         devices={emulators}
+        recent={recentEmulators}
         selectedId={selectedId}
         onSelect={onSelect}
+        onAdd={onAddDevice}
       />
       <OutputSection client={client} />
     </aside>
