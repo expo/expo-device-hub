@@ -13,12 +13,21 @@ import { type Device } from './data';
 export type DeviceSectionProps = {
   title: string;
   addLabel: string;
+  /** Shown under the heading when the list is empty. */
+  emptyLabel: string;
   devices: Device[];
   selectedId: string;
   onSelect: (id: string) => void;
 };
 
-export function DeviceSection({ title, addLabel, devices, selectedId, onSelect }: DeviceSectionProps) {
+export function DeviceSection({
+  title,
+  addLabel,
+  emptyLabel,
+  devices,
+  selectedId,
+  onSelect,
+}: DeviceSectionProps) {
   const [addHovered, setAddHovered] = useState(false);
 
   return (
@@ -48,15 +57,30 @@ export function DeviceSection({ title, addLabel, devices, selectedId, onSelect }
       </div>
 
       <div style={{ display: 'grid', gap: 6 }}>
-        {devices.map((device) => (
-          <DeviceListItem
-            key={device.id}
-            name={device.name}
-            version={device.version}
-            selected={device.id === selectedId}
-            onClick={() => onSelect(device.id)}
-          />
-        ))}
+        {devices.length === 0 ? (
+          <p
+            style={{
+              ...textSize.sm,
+              color: text.secondary,
+              margin: 0,
+              padding: '12px 16px',
+              borderRadius: radius.xl,
+              border: `1px dashed ${border.default}`,
+              backgroundColor: bg.subtle,
+            }}>
+            {emptyLabel}
+          </p>
+        ) : (
+          devices.map((device) => (
+            <DeviceListItem
+              key={device.id}
+              name={device.name}
+              version={device.version}
+              selected={device.id === selectedId}
+              onClick={() => onSelect(device.id)}
+            />
+          ))
+        )}
       </div>
     </section>
   );

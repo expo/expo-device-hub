@@ -45,6 +45,7 @@ export function Sidebar({
       <DeviceSection
         title="Simulators"
         addLabel="Add simulator"
+        emptyLabel="No booted simulators. Use the + button to add one."
         devices={simulators}
         selectedId={selectedId}
         onSelect={onSelect}
@@ -52,6 +53,7 @@ export function Sidebar({
       <DeviceSection
         title="Emulators"
         addLabel="Add emulator"
+        emptyLabel="No booted emulators or devices. Use the + button to add one."
         devices={emulators}
         selectedId={selectedId}
         onSelect={onSelect}

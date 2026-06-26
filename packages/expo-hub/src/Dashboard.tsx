@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { SidebarToggle } from '../components/SidebarToggle';
 import { bg, shadow, text } from '../theme/tokens';
 import { useActiveDeviceClient } from './device';
+import { EmptyState } from './dashboard/EmptyState';
 import { Sidebar } from './dashboard/Sidebar';
 import { StreamPanel } from './dashboard/StreamPanel';
 import { useColorScheme } from './dashboard/useColorScheme';
@@ -94,8 +95,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         />
       )}
 
-      {selected && (
+      {selected ? (
         <StreamPanel device={selected} client={client} scheme={scheme} onToggleTheme={toggle} />
+      ) : (
+        <EmptyState />
       )}
 
       {/* Narrow + open: the sidebar overlays the stream with a backdrop. */}

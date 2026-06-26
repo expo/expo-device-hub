@@ -1,6 +1,7 @@
 /**
- * Mock data for the Expo Hub dashboard. The real Hub would feed these from the
- * dev server / connected simulators — here everything is static.
+ * Static data for the Expo Hub dashboard. The device lists are no longer mocked
+ * here — they come live from the plugin server via `useDevices`; this file now
+ * only holds the shared types and the static `logs` / `tabs` placeholders.
  */
 
 export type Platform = 'ios' | 'android';
@@ -20,18 +21,6 @@ export type LogEntry = {
 };
 
 export type TabKey = 'logs' | 'network' | 'settings';
-
-export const simulators: Device[] = [
-  { id: 'iphone-17-pro', name: 'iPhone 17 Pro', version: 'iOS 27.0', platform: 'ios' },
-  { id: 'iphone-ultra', name: 'iPhone Ultra', version: 'iOS 27.0', platform: 'ios' },
-];
-
-export const emulators: Device[] = [
-  { id: 'pixel-9-pro', name: 'Pixel 9 Pro', version: 'Android 16', platform: 'android' },
-  { id: 'pixel-9a', name: 'Pixel 9a', version: 'Android 15', platform: 'android' },
-];
-
-export const allDevices: Device[] = [...simulators, ...emulators];
 
 export const logs: LogEntry[] = [
   { id: '1', source: 'server', message: 'expo-image@2.4.0 - expected version: ~2.4.1' },

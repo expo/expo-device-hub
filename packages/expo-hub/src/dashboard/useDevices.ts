@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { emulators as fallbackEmulators, simulators as fallbackSimulators, type Device } from './data';
+import { type Device } from './data';
 
 /**
  * The Expo Hub DevTools plugin server (`src/server/`) exposes the live device
@@ -16,17 +16,17 @@ export type DeviceList = {
 };
 
 /**
- * Loads the device list from the plugin server, replacing the static mock data.
+ * Loads the live device list from the plugin server.
  *
  * The endpoint only exists when Hub runs as a DevTools plugin behind `@expo/cli`
  * (`dist/server/index.mjs`). When the dashboard is opened standalone (e.g.
- * `expo start --web` for design work) the fetch fails and we keep the static
- * `data.ts` lists as a fallback so the UI still renders.
+ * `expo start --web` for design work) the fetch fails and the lists stay empty,
+ * so the UI shows its empty state rather than mocked devices.
  */
 export function useDevices(): DeviceList {
   const [devices, setDevices] = useState<DeviceList>({
-    simulators: fallbackSimulators,
-    emulators: fallbackEmulators,
+    simulators: [],
+    emulators: [],
   });
 
   useEffect(() => {
@@ -39,8 +39,8 @@ export function useDevices(): DeviceList {
         const data = (await response.json()) as DeviceList;
         if (!cancelled) setDevices(data);
       } catch (error) {
-        // Keep the fallback list — the endpoint is absent outside the plugin.
-        console.warn('[expo-hub] Falling back to static device list:', error);
+        // Keep the empty list — the endpoint is absent outside the plugin.
+        console.warn('[expo-hub] No device endpoint, showing empty state:', error);
       }
     })();
 
