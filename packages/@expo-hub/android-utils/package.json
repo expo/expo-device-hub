@@ -1,7 +1,7 @@
 {
   "name": "@expo-hub/android-utils",
   "version": "0.1.0",
-  "description": "List Android devices, device profiles and installed system images via avdmanager / sdkmanager.",
+  "description": "List, create and boot Android emulators (devices, profiles, system images) via avdmanager / sdkmanager / emulator.",
   "license": "MIT",
   "files": [
     "dist",
