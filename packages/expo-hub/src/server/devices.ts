@@ -27,6 +27,14 @@ export interface HubDevice {
   platform: HubDevicePlatform;
   /** Whether the device is currently booted / running. */
   booted: boolean;
+  /**
+   * Epoch ms the device was last used — drives the "Recents" relative time
+   * ("18m ago", "2 days ago") in the add-device picker. MOCKED for now: neither
+   * `devicectl` nor `adb` reports a last-used timestamp, so we synthesize a
+   * plausible spread (see `withMockLastUsed`). Replace with a real signal (e.g.
+   * a persisted usage log) when one exists.
+   */
+  lastUsedAt?: number;
 }
 
 export interface HubDeviceList {
@@ -85,6 +93,34 @@ function androidVersion(device: AndroidDevice): string {
   return match ? match[0] : 'Android';
 }
 
+/**
+ * Mock "last used" offsets (ms before now) handed out, in order, to the
+ * shut-down devices in a list — so the picker shows a realistic spread of
+ * "18m ago / 1h ago / 2 days ago / 1 week ago" instead of every row reading the
+ * same. Booted devices are stamped with "now" instead. Remove once a real
+ * last-used signal exists.
+ */
+const MOCK_LAST_USED_OFFSETS_MS = [
+  18 * 60_000, // 18m ago
+  60 * 60_000, // 1h ago
+  2 * 24 * 60 * 60_000, // 2 days ago
+  7 * 24 * 60 * 60_000, // 1 week ago
+  3 * 60 * 60_000, // 3h ago
+  5 * 24 * 60 * 60_000, // 5 days ago
+];
+
+/** Stamp each device with a mock `lastUsedAt` (booted → now, others staggered). */
+function withMockLastUsed(devices: HubDevice[]): HubDevice[] {
+  const now = Date.now();
+  let shutDownIndex = 0;
+  return devices.map((device) => {
+    if (device.booted) return { ...device, lastUsedAt: now };
+    const offset =
+      MOCK_LAST_USED_OFFSETS_MS[shutDownIndex++ % MOCK_LAST_USED_OFFSETS_MS.length];
+    return { ...device, lastUsedAt: now - offset };
+  });
+}
+
 /** Every known simulator and emulator/device, each tagged with its `booted` state. */
 export async function listDevices(): Promise<HubDeviceList> {
   const [simulators, emulators] = await Promise.all([
@@ -92,5 +128,8 @@ export async function listDevices(): Promise<HubDeviceList> {
     listAndroidEmulators(),
   ]);
 
-  return { simulators, emulators };
+  return {
+    simulators: withMockLastUsed(simulators),
+    emulators: withMockLastUsed(emulators),
+  };
 }
