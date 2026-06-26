@@ -2,8 +2,10 @@ import { describe, expect, test } from "bun:test";
 import {
   adbPath,
   avdmanagerPath,
+  emulatorPath,
   resolveAdbPath,
   resolveAvdmanagerPath,
+  resolveEmulatorPath,
   resolveSdkmanagerPath,
   resolveSdkRoot,
   sdkmanagerPath,
@@ -59,6 +61,20 @@ describe("resolveSdkmanagerPath", () => {
   test("combines SDK resolution with the binary subpath", () => {
     expect(resolveSdkmanagerPath({ ANDROID_HOME: "/sdk/home" }, HOME)).toBe(
       "/sdk/home/cmdline-tools/latest/bin/sdkmanager",
+    );
+  });
+});
+
+describe("emulatorPath", () => {
+  test("appends the emulator binary subpath", () => {
+    expect(emulatorPath("/sdk")).toBe("/sdk/emulator/emulator");
+  });
+});
+
+describe("resolveEmulatorPath", () => {
+  test("combines SDK resolution with the binary subpath", () => {
+    expect(resolveEmulatorPath({ ANDROID_HOME: "/sdk/home" }, HOME)).toBe(
+      "/sdk/home/emulator/emulator",
     );
   });
 });

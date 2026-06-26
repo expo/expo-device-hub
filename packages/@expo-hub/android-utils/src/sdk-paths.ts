@@ -3,6 +3,7 @@ import { join } from "node:path";
 const DEFAULT_SDK_SUBPATH = "Library/Android/sdk";
 const AVDMANAGER_SUBPATH = "cmdline-tools/latest/bin/avdmanager";
 const SDKMANAGER_SUBPATH = "cmdline-tools/latest/bin/sdkmanager";
+const EMULATOR_SUBPATH = "emulator/emulator";
 const ADB_SUBPATH = "platform-tools/adb";
 
 /**
@@ -39,6 +40,16 @@ export function sdkmanagerPath(sdkRoot: string): string {
 /** Resolve the `sdkmanager` path directly from the environment. */
 export function resolveSdkmanagerPath(env: NodeJS.ProcessEnv, homeDir: string): string {
   return sdkmanagerPath(resolveSdkRoot(env, homeDir));
+}
+
+/** Build the absolute path to the `emulator` binary inside an SDK root. */
+export function emulatorPath(sdkRoot: string): string {
+  return join(sdkRoot, EMULATOR_SUBPATH);
+}
+
+/** Resolve the `emulator` path directly from the environment. */
+export function resolveEmulatorPath(env: NodeJS.ProcessEnv, homeDir: string): string {
+  return emulatorPath(resolveSdkRoot(env, homeDir));
 }
 
 /** Build the absolute path to the `adb` binary inside an SDK root. */

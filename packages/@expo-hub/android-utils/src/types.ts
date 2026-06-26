@@ -75,3 +75,39 @@ export interface AndroidSystemImage {
   /** Install location relative to the SDK root (e.g. `"system-images/android-34/..."`). */
   location: string;
 }
+
+/** Options for {@link createDevice} → `avdmanager create avd`. */
+export interface CreateDeviceOptions {
+  /** AVD name → `--name` (e.g. `"expo-emu-<host>-<index>"`). */
+  name: string;
+  /**
+   * System image package → `--package`
+   * (e.g. an {@link AndroidSystemImage.package}).
+   */
+  package: string;
+  /**
+   * Device profile id → `--device`
+   * (e.g. an {@link AndroidDeviceProfile.id} such as `"pixel_6"`). Required and
+   * must be non-empty: without it `avdmanager` falls back to an interactive
+   * prompt, so {@link createDevice} throws on an empty value.
+   */
+  device: string;
+  /** Overwrite an existing AVD of the same name (`--force`). Defaults to `false`. */
+  force?: boolean;
+}
+
+/** Options for {@link bootDevice} → `emulator -avd <name> -port <port>`. */
+export interface BootDeviceOptions {
+  /** AVD name to boot → `emulator -avd <name>`. */
+  name: string;
+  /** Console port → `emulator -port <port>`; the serial becomes `emulator-<port>`. */
+  port: number;
+}
+
+/** A freshly launched emulator returned by {@link bootDevice}. */
+export interface BootedDevice {
+  /** adb serial for the emulator, `emulator-<port>`. */
+  serial: string;
+  /** OS process id of the spawned emulator; `null` when unavailable. */
+  pid: number | null;
+}

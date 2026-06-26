@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { parseConfigIni } from "./parse-config-ini";
+import type { CreateDeviceOptions } from "./types";
 
 const execFileAsync = promisify(execFile);
 
@@ -30,6 +31,65 @@ export async function runAvdmanagerListDevice(avdmanagerPath: string): Promise<s
     return stdout;
   } catch (error) {
     console.error("[android-utils] Failed to run `avdmanager list device`:", error);
+    return null;
+  }
+}
+
+/**
+ * Throw if `device` is empty. A missing device makes `avdmanager` drop into its
+ * interactive "create a custom hardware profile?" prompt, which would hang.
+ */
+export function assertDevice(device: string): void {
+  // `!device` guards missing/empty; `.trim()` also rejects whitespace-only ids.
+  if (!device || !device.trim()) {
+    throw new Error('[android-utils] `device` is required to create an AVD (e.g. "pixel_6").');
+  }
+}
+
+/**
+ * Build the `avdmanager create avd` arguments from {@link CreateDeviceOptions}.
+ *
+ * Throws via {@link assertDevice} when `device` is empty.
+ */
+export function buildCreateAvdArgs(options: CreateDeviceOptions): string[] {
+  assertDevice(options.device);
+
+  const args = [
+    "create",
+    "avd",
+    "--name",
+    options.name,
+    "--package",
+    options.package,
+    "--device",
+    options.device,
+  ];
+
+  // `--force` goes last so it never splits a flag/value pair.
+  if (options.force) args.push("--force");
+
+  return args;
+}
+
+/**
+ * Run `avdmanager create avd …` and return its stdout, or `null` on failure.
+ *
+ * The required `--device` (see {@link CreateDeviceOptions}) keeps `avdmanager`
+ * non-interactive: it only prompts "Do you wish to create a custom hardware
+ * profile?" when no device is given. Throws if `device` is empty; returns
+ * `null` on any execution failure.
+ */
+export async function runAvdmanagerCreateAvd(
+  avdmanagerPath: string,
+  options: CreateDeviceOptions,
+): Promise<string | null> {
+  const args = buildCreateAvdArgs(options);
+
+  try {
+    const { stdout } = await execFileAsync(avdmanagerPath, args);
+    return stdout;
+  } catch (error) {
+    console.error("[android-utils] Failed to run `avdmanager create avd`:", error);
     return null;
   }
 }
