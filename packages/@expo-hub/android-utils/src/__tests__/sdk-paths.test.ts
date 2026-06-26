@@ -4,7 +4,9 @@ import {
   avdmanagerPath,
   resolveAdbPath,
   resolveAvdmanagerPath,
+  resolveSdkmanagerPath,
   resolveSdkRoot,
+  sdkmanagerPath,
 } from "../sdk-paths";
 
 const HOME = "/Users/test";
@@ -43,6 +45,20 @@ describe("resolveAvdmanagerPath", () => {
   test("combines SDK resolution with the binary subpath", () => {
     expect(resolveAvdmanagerPath({ ANDROID_HOME: "/sdk/home" }, HOME)).toBe(
       "/sdk/home/cmdline-tools/latest/bin/avdmanager",
+    );
+  });
+});
+
+describe("sdkmanagerPath", () => {
+  test("appends the cmdline-tools binary subpath", () => {
+    expect(sdkmanagerPath("/sdk")).toBe("/sdk/cmdline-tools/latest/bin/sdkmanager");
+  });
+});
+
+describe("resolveSdkmanagerPath", () => {
+  test("combines SDK resolution with the binary subpath", () => {
+    expect(resolveSdkmanagerPath({ ANDROID_HOME: "/sdk/home" }, HOME)).toBe(
+      "/sdk/home/cmdline-tools/latest/bin/sdkmanager",
     );
   });
 });

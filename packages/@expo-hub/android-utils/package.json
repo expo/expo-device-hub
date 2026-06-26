@@ -1,7 +1,7 @@
 {
   "name": "@expo-hub/android-utils",
   "version": "0.1.0",
-  "description": "List Android Virtual Devices via avdmanager, including parsed config.ini.",
+  "description": "List Android devices, device profiles and installed system images via avdmanager / sdkmanager.",
   "license": "MIT",
   "files": [
     "dist",
