@@ -29,6 +29,7 @@ export function DeviceSection({
   onSelect,
 }: DeviceSectionProps) {
   const [addHovered, setAddHovered] = useState(false);
+  const [addPressed, setAddPressed] = useState(false);
 
   return (
     <section style={{ display: 'grid', gap: 12 }}>
@@ -38,7 +39,12 @@ export function DeviceSection({
           type="button"
           aria-label={addLabel}
           onMouseEnter={() => setAddHovered(true)}
-          onMouseLeave={() => setAddHovered(false)}
+          onMouseLeave={() => {
+            setAddHovered(false);
+            setAddPressed(false);
+          }}
+          onMouseDown={() => setAddPressed(true)}
+          onMouseUp={() => setAddPressed(false)}
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -50,7 +56,8 @@ export function DeviceSection({
             border: `1px solid ${border.default}`,
             backgroundColor: addHovered ? bg.element : 'transparent',
             cursor: 'pointer',
-            transition: 'background-color 150ms ease',
+            transition: 'background-color 150ms ease, transform 100ms ease',
+            transform: addPressed ? 'scale(0.98)' : undefined,
           }}>
           <PlusIcon size={18} color={icon.secondary} />
         </button>

@@ -6,6 +6,7 @@ import { tabs, type TabKey } from './data';
 /** Logs / Network / Settings tab switcher for the selected simulator. */
 export function TabBar({ active, onChange }: { active: TabKey; onChange: (key: TabKey) => void }) {
   const [hovered, setHovered] = useState<TabKey | null>(null);
+  const [pressed, setPressed] = useState<TabKey | null>(null);
 
   return (
     <div style={{ display: 'flex', gap: 8 }}>
@@ -20,7 +21,8 @@ export function TabBar({ active, onChange }: { active: TabKey; onChange: (key: T
           color: selected || isHovered ? text.default : text.secondary,
           cursor: 'pointer',
           fontFamily: 'inherit',
-          transition: 'background-color 150ms ease, color 150ms ease',
+          transition: 'background-color 150ms ease, color 150ms ease, transform 100ms ease',
+          transform: pressed === tab.key ? 'scale(0.98)' : undefined,
           ...textSize.sm,
           fontWeight: 500,
         };
@@ -31,7 +33,12 @@ export function TabBar({ active, onChange }: { active: TabKey; onChange: (key: T
             style={style}
             onClick={() => onChange(tab.key)}
             onMouseEnter={() => setHovered(tab.key)}
-            onMouseLeave={() => setHovered(null)}>
+            onMouseLeave={() => {
+              setHovered(null);
+              setPressed(null);
+            }}
+            onMouseDown={() => setPressed(tab.key)}
+            onMouseUp={() => setPressed(null)}>
             {tab.label}
           </button>
         );

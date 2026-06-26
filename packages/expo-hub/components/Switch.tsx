@@ -16,6 +16,7 @@ export type SwitchProps = {
 
 export function Switch({ checked, onChange, label }: SwitchProps) {
   const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
 
   const circleStyle: CSSProperties = {
     display: 'flex',
@@ -38,7 +39,12 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
       aria-label={label}
       onClick={() => onChange?.(!checked)}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setPressed(false);
+      }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -49,6 +55,8 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
         background: 'none',
         cursor: 'pointer',
         fontFamily: 'inherit',
+        transition: 'transform 100ms ease',
+        transform: pressed ? 'scale(0.98)' : undefined,
       }}>
       <span style={circleStyle}>
         <span

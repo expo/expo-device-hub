@@ -15,6 +15,7 @@ export type DeviceListItemProps = {
 
 export function DeviceListItem({ name, version, selected = false, onClick }: DeviceListItemProps) {
   const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
 
   const style: CSSProperties = {
     display: 'flex',
@@ -29,7 +30,8 @@ export function DeviceListItem({ name, version, selected = false, onClick }: Dev
     cursor: 'pointer',
     textAlign: 'left',
     fontFamily: 'inherit',
-    transition: 'background-color 150ms ease',
+    transition: 'background-color 150ms ease, transform 100ms ease',
+    transform: pressed ? 'scale(0.98)' : undefined,
   };
 
   return (
@@ -39,7 +41,12 @@ export function DeviceListItem({ name, version, selected = false, onClick }: Dev
       onClick={onClick}
       aria-pressed={selected}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}>
+      onMouseLeave={() => {
+        setHovered(false);
+        setPressed(false);
+      }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}>
       <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{name}</span>
       <span style={{ ...textSize.sm, fontWeight: 500, color: text.secondary }}>{version}</span>
     </button>

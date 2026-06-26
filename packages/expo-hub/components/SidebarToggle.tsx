@@ -10,6 +10,7 @@ import { SidebarIcon } from './icons';
  */
 export function SidebarToggle({ onClick, floating = false }: { onClick: () => void; floating?: boolean }) {
   const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
 
   const style: CSSProperties = floating
     ? {
@@ -34,7 +35,12 @@ export function SidebarToggle({ onClick, floating = false }: { onClick: () => vo
       aria-label="Toggle sidebar"
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setPressed(false);
+      }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -42,7 +48,8 @@ export function SidebarToggle({ onClick, floating = false }: { onClick: () => vo
         padding: 0,
         cursor: 'pointer',
         boxSizing: 'border-box',
-        transition: 'background-color 150ms ease',
+        transition: 'background-color 150ms ease, transform 100ms ease',
+        transform: pressed ? 'scale(0.98)' : undefined,
         ...style,
       }}>
       <SidebarIcon size={20} color={icon.default} />

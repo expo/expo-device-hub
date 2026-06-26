@@ -23,8 +23,12 @@ export type ControlButtonProps = {
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
 export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
-  function ControlButton({ icon, label, variant = 'default', style, onMouseEnter, onMouseLeave, ...rest }, ref) {
+  function ControlButton(
+    { icon, label, variant = 'default', style, onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, ...rest },
+    ref
+  ) {
     const [hovered, setHovered] = useState(false);
+    const [pressed, setPressed] = useState(false);
     const primary = variant === 'primary';
     const diameter = primary ? 60 : 32;
 
@@ -53,7 +57,16 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
         }}
         onMouseLeave={(event) => {
           setHovered(false);
+          setPressed(false);
           onMouseLeave?.(event);
+        }}
+        onMouseDown={(event) => {
+          setPressed(true);
+          onMouseDown?.(event);
+        }}
+        onMouseUp={(event) => {
+          setPressed(false);
+          onMouseUp?.(event);
         }}
         style={{
           display: 'flex',
@@ -65,6 +78,8 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
           background: 'none',
           cursor: 'pointer',
           fontFamily: 'inherit',
+          transition: 'transform 100ms ease',
+          transform: pressed ? 'scale(0.98)' : undefined,
           ...style,
         }}
         {...rest}>

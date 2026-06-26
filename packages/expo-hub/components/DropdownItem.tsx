@@ -35,9 +35,10 @@ export function DropdownItem({
     <Item
       aria-disabled={disabled}
       className={cx(
-        'relative z-40 flex cursor-pointer items-center justify-between rounded-lg p-2 select-none',
+        'relative z-40 flex cursor-pointer items-center justify-between rounded-lg p-2 transition select-none',
         'hocus:bg-hover',
         'hover:outline-0',
+        !disabled && 'active:scale-98',
         disabled && 'cursor-default opacity-60 hocus:bg-default'
       )}
       onSelect={(event) => {
