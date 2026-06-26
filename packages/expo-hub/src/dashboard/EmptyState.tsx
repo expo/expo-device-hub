@@ -1,4 +1,4 @@
-import { PlusIcon } from '../../components/icons';
+import { PhoneIcon } from '../../components/icons';
 import { bg, border, heading, icon, radius, text, textSize } from '../../theme/tokens';
 
 /**
@@ -34,7 +34,7 @@ export function EmptyState() {
           border: `1px solid ${border.default}`,
           backgroundColor: bg.default,
         }}>
-        <PlusIcon size={28} color={icon.secondary} />
+        <PhoneIcon size={28} color={icon.secondary} />
       </div>
       <h2 style={{ ...heading.lg, color: text.default, margin: 0 }}>No booted devices</h2>
       <p style={{ ...textSize.sm, color: text.secondary, margin: 0, maxWidth: 320 }}>

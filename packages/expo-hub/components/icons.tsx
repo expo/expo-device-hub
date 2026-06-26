@@ -20,6 +20,15 @@ export function PlusIcon({ size = 18, color = 'currentColor', strokeWidth = 1.5,
   );
 }
 
+export function PhoneIcon({ size = 28, color = 'currentColor', strokeWidth = 1.5, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <rect x="6" y="2" width="12" height="20" rx="3" stroke={color} strokeWidth={strokeWidth} />
+      <path d="M10 18.5h4" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function RefreshIcon({ size = 16, color = 'currentColor', strokeWidth = 1.5, style }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
