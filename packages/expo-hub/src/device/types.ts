@@ -92,6 +92,11 @@ export interface DeviceConnectionOptions {
   baseUrl?: string | null;
   /** Tear the connection down when false. Defaults to true. */
   enabled?: boolean;
+  /**
+   * Which running device (udid/serial) to stream. serve-sim selects the matching
+   * helper via `/api?device=<udid>`; when omitted the first available is used.
+   */
+  device?: string | null;
 }
 
 /** Which element the implementation paints into. */

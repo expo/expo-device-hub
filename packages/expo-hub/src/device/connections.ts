@@ -1,21 +1,26 @@
 /**
  * Where Expo Hub looks for running serve-sim / serve-emu servers.
  *
- * Defaults match how the bundled CLIs are started for local testing:
- *   - serve-sim (middleware): `serve-sim --port 3200`  → http://localhost:3200
- *     (the iOS client discovers the streaming helper via this server's /api,
- *     same as the serve-sim web client; a bare helper URL also works in a
- *     reduced video-only mode.)
- *   - serve-emu:              `serve-emu --port 3300`   → http://localhost:3300
+ *   - iOS streams through the serve-sim **middleware**, which `expo-serve-sim`
+ *     mounts as a DevTools plugin on the *same dev-server origin* as the Hub
+ *     (`/_expo/plugins/expo-serve-sim`). No separate `serve-sim --port 3200`
+ *     process is needed — the iOS client discovers the helper via that plugin's
+ *     `/api`, lists/starts sims via its `/grid/api`, and a bare helper URL still
+ *     works in a reduced video-only mode.
+ *   - serve-emu (Android): `serve-emu --port 3300` → http://localhost:3300.
  *
- * Override at runtime (e.g. from the browser console in the Hub preview) without
- * a rebuild by setting `window.__EXPO_HUB_ENDPOINTS__ = { ios, android }`.
+ * Override at runtime (e.g. from the browser console in the Hub preview, or to
+ * point iOS at a standalone `serve-sim --port 3200`) without a rebuild by setting
+ * `window.__EXPO_HUB_ENDPOINTS__ = { ios, android }`.
  */
 
 import { type DevicePlatform } from './types';
 
+/** Same-origin path where the `expo-serve-sim` DevTools plugin is mounted. */
+export const SERVE_SIM_PLUGIN_PATH = '/_expo/plugins/expo-serve-sim';
+
 export const DEFAULT_ENDPOINTS: Record<DevicePlatform, string> = {
-  ios: 'http://localhost:3200',
+  ios: SERVE_SIM_PLUGIN_PATH,
   android: 'http://localhost:3300',
 };
 
@@ -25,10 +30,38 @@ declare global {
   }
 }
 
+/** Qualify a same-origin path with the current origin so `new URL(..)` against it
+ *  keeps the base path (a bare absolute path would be dropped). */
+function sameOrigin(path: string): string {
+  if (path.startsWith('http')) return path;
+  if (typeof window !== 'undefined' && window.location?.origin) {
+    return `${window.location.origin}${path}`;
+  }
+  return path;
+}
+
 /** Resolve the base URL for a device, preferring an explicit value, then the
- *  runtime override global, then the built-in default. */
+ *  runtime override global, then the built-in default. The iOS default is the
+ *  same-origin expo-serve-sim plugin path, qualified with the page origin. */
 export function endpointFor(platform: DevicePlatform, explicit?: string | null): string {
-  if (explicit) return explicit;
+  if (explicit) return sameOrigin(explicit);
   const override = typeof window !== 'undefined' ? window.__EXPO_HUB_ENDPOINTS__?.[platform] : undefined;
-  return override ?? DEFAULT_ENDPOINTS[platform];
+  return sameOrigin(override ?? DEFAULT_ENDPOINTS[platform]);
+}
+
+/**
+ * Start (boot if needed + attach a serve-sim helper to) an iOS simulator via the
+ * middleware grid. This is the **only** place the Hub boots a sim — it runs on an
+ * explicit user action (selecting/adding a device), never automatically. Requires
+ * `serve-sim` on PATH on the host (the middleware spawns `serve-sim --detach`).
+ */
+export async function startIosHelper(udid: string, explicit?: string | null): Promise<void> {
+  const base = endpointFor('ios', explicit).replace(/\/$/, '');
+  await fetch(`${base}/grid/api/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ udid }),
+    // A cold boot can take well over a minute; don't time out early.
+    signal: AbortSignal.timeout(190_000),
+  });
 }

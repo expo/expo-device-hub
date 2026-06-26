@@ -67,6 +67,7 @@
         "@radix-ui/react-dropdown-menu": "^2.1.16",
         "@radix-ui/react-visually-hidden": "^1.2.4",
         "expo": "catalog:",
+        "expo-serve-sim": "workspace:*",
         "react": "catalog:",
         "react-dom": "catalog:",
         "react-native": "catalog:",

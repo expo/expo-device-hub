@@ -7,6 +7,8 @@ export interface ActiveDeviceTarget {
   platform: DevicePlatform;
   /** Explicit server base URL; falls back to the platform default endpoint. */
   baseUrl?: string | null;
+  /** Which running device (udid/serial) to stream. */
+  device?: string | null;
 }
 
 /**
@@ -24,6 +26,7 @@ export function useActiveDeviceClient(target: ActiveDeviceTarget | null): Device
   const ios = useIosDeviceClient({
     baseUrl: iosActive ? endpointFor('ios', target?.baseUrl) : null,
     enabled: iosActive,
+    device: iosActive ? target?.device ?? null : null,
   });
   const android = useAndroidDeviceClient({
     baseUrl: androidActive ? endpointFor('android', target?.baseUrl) : null,

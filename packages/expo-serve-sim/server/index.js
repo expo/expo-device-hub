@@ -108,8 +108,28 @@ function withPluginPrefix(request) {
   return new Request(`${url.origin}${BASE}${url.pathname}${url.search}`, request);
 }
 
+/**
+ * True for the request that loads the preview HTML page itself (`GET {base}`),
+ * as opposed to the data/control routes (`/api`, `/grid/api`, `/exec-ws`, …).
+ * The CLI strips the plugin prefix before calling us, so the preview page
+ * arrives with pathname `/` (or empty).
+ */
+function isPreviewPageRequest(request) {
+  if (request.method !== 'GET') return false;
+  const { pathname } = new URL(request.url);
+  return pathname === '/' || pathname === '';
+}
+
 module.exports = async function handler(request) {
-  ensureHelperSpawned();
+  // Only auto-spawn a helper when a human opens the serve-sim preview page
+  // itself — never for the data/control routes. This keeps the standalone
+  // preview's open-and-it-just-works behavior while letting headless consumers
+  // (e.g. the Expo Hub dashboard) read state and drive the grid without
+  // silently booting a simulator; they start sims explicitly via the grid's
+  // POST /grid/api/start route.
+  if (isPreviewPageRequest(request)) {
+    ensureHelperSpawned();
+  }
   const response = await middleware(withPluginPrefix(request));
   // `null`/`undefined` tells Expo CLI the route wasn't ours, so it falls
   // through to static webpageRoot serving (this plugin has none → 404).

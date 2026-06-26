@@ -57,7 +57,11 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     [booted.emulators, added],
   );
 
-  // Add a device chosen in a picker and select it straight away.
+  // Add a device chosen in a picker and select it straight away. Selecting a
+  // device attaches its serve-sim helper on demand (see useIosDeviceClient):
+  // a booted sim just gets a stream daemon, while a shut-down one picked here is
+  // booted. This picker is the only path that boots a sim — the middleware never
+  // does so on its own.
   function handleAddDevice(device: Device) {
     setAdded((prev) => (prev.some((item) => item.id === device.id) ? prev : [...prev, device]));
     setSelectedId(device.id);
@@ -78,9 +82,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     return () => root.classList.remove('dark-theme');
   }, [scheme]);
 
-  // Once the device list loads (or changes), keep a valid selection — default to
-  // the first simulator. Selection only drives the sidebar highlight for now; it
-  // is not yet wired to the stream.
+  // Keep a valid selection — default to the first device once the list loads.
+  // Selecting a device streams it (its helper is attached on demand); the
+  // sidebar lists only booted devices, so the default selection streams an
+  // already-running sim and never boots anything.
   useEffect(() => {
     const devices = [...simulators, ...emulators];
     if (!devices.some((device) => device.id === selectedId)) {
@@ -91,9 +96,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const devices = [...simulators, ...emulators];
   const selected = devices.find((device) => device.id === selectedId) ?? devices[0];
 
-  // One shared connection to the serve-sim/serve-emu server. Keyed by platform
-  // only — the list is intentionally not linked to the stream yet.
-  const client = useActiveDeviceClient({ platform: selected?.platform ?? 'ios' });
+  // One shared connection to the serve-sim/serve-emu server, wired to the
+  // selected device. Null until the user picks one, so nothing connects (or
+  // boots) on load.
+  const client = useActiveDeviceClient(
+    selected ? { platform: selected.platform, device: selected.id } : null,
+  );
 
   return (
     <div

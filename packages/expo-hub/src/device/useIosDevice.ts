@@ -30,6 +30,7 @@ import {
   rawPointForDisplayPoint,
   streamGeometry,
 } from './orientation';
+import { startIosHelper } from './connections';
 import {
   type ConnectionStatus,
   type DeviceClient,
@@ -106,7 +107,7 @@ interface PreviewApi {
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true } = options;
+  const { baseUrl, enabled = true, device: targetDevice = null } = options;
   const active = enabled && !!baseUrl;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
@@ -193,6 +194,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Resolve the connection: discover the helper + log/device routes via /api,
   //    falling back to treating baseUrl as a bare helper. ──
+  //
+  // The Hub starts helpers explicitly (see `startIosHelper`) — it never boots a
+  // sim just by connecting. So when the middleware is reachable but no helper is
+  // attached yet (`/api` → null), we keep polling until the just-started helper
+  // comes up, then resolve its streaming config. Only an unreachable/absent
+  // route falls back to bare-helper mode.
   useEffect(() => {
     if (!active || !baseUrl) {
       setConfig(null);
@@ -200,8 +207,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
     setStatus('connecting');
     setError(null);
+
+    // `baseUrl` may carry a path prefix (the plugin mount), so join onto it
+    // rather than `new URL('/api', baseUrl)`, which would drop that prefix.
+    const apiUrl = `${baseUrl.replace(/\/$/, '')}/api${
+      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
+    }`;
 
     const helperFallback = (): ResolvedConfig => ({
       mode: 'helper',
@@ -214,39 +228,59 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       gridApiUrl: null,
     });
 
-    (async () => {
-      let resolved: ResolvedConfig | null = null;
-      try {
-        const res = await fetch(new URL('/api', baseUrl).toString(), {
-          signal: AbortSignal.timeout(3000),
-        });
-        if (res.ok) {
-          const c = (await res.json()) as PreviewApi | null;
-          if (c && c.url && c.device) {
-            const basePath = c.basePath ?? '';
-            resolved = {
-              mode: 'middleware',
-              streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
-              wsUrl: c.wsUrl ?? `${toWs(c.url)}/ws`,
-              device: c.device,
-              execWsUrl: toWs(new URL(`${basePath}/exec-ws`, baseUrl).toString()),
-              execToken: c.execToken ?? null,
-              logsPath: c.logsEndpoint ?? null,
-              gridApiUrl: new URL(c.gridApiEndpoint ?? '/grid/api', baseUrl).toString(),
-            };
-          }
-        }
-      } catch {
-        /* /api unreachable — fall back to bare-helper mode */
-      }
+    const toMiddleware = (c: PreviewApi): ResolvedConfig => {
+      const basePath = c.basePath ?? '';
+      return {
+        mode: 'middleware',
+        streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
+        wsUrl: c.wsUrl ?? `${toWs(c.url!)}/ws`,
+        device: c.device ?? null,
+        execWsUrl: toWs(new URL(`${basePath}/exec-ws`, baseUrl).toString()),
+        execToken: c.execToken ?? null,
+        logsPath: c.logsEndpoint ?? null,
+        gridApiUrl: new URL(c.gridApiEndpoint ?? '/grid/api', baseUrl).toString(),
+      };
+    };
+
+    // Ask the grid to attach a helper for this device at most once per effect
+    // run (i.e. per device). Resets whenever `targetDevice`/`baseUrl` change.
+    let startRequested = false;
+
+    const resolve = async () => {
       if (cancelled) return;
-      setConfig(resolved ?? helperFallback());
-    })();
+      try {
+        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(3000) });
+        if (!res.ok) {
+          // No middleware at this origin — treat baseUrl as a bare helper.
+          if (!cancelled) setConfig(helperFallback());
+          return;
+        }
+        const c = (await res.json()) as PreviewApi | null;
+        if (c && c.url && c.device) {
+          if (!cancelled) setConfig(toMiddleware(c));
+          return;
+        }
+        // Middleware reachable but no helper for this device yet. Ask the grid to
+        // start one (once): a booted sim just gets a stream daemon; a shut-down
+        // sim is booted. The middleware never does this on its own — only here,
+        // because the user selected this device. Then poll until it attaches.
+        if (targetDevice && !startRequested) {
+          startRequested = true;
+          void startIosHelper(targetDevice, baseUrl).catch(() => {});
+        }
+        if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
+      } catch {
+        // /api unreachable — fall back to bare-helper mode.
+        if (!cancelled) setConfig(helperFallback());
+      }
+    };
+    void resolve();
 
     return () => {
       cancelled = true;
+      if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [active, baseUrl]);
+  }, [active, baseUrl, targetDevice]);
 
   // ── MJPEG video (<img>) ──
   const streamUrl = config?.streamUrl ?? null;
