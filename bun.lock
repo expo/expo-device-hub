@@ -10,8 +10,6 @@
       "version": "1.0.0",
       "dependencies": {
         "expo": "catalog:",
-        "expo-devtools-plugin-hello-world": "workspace:*",
-        "expo-serve-device": "workspace:*",
         "expo-serve-emu": "workspace:*",
         "expo-serve-sim": "workspace:*",
         "expo-status-bar": "~56.0.4",
@@ -49,13 +47,6 @@
         "typescript": "^5.7.0",
       },
     },
-    "packages/expo-devtools-plugin-hello-world": {
-      "name": "expo-devtools-plugin-hello-world",
-      "version": "0.0.0",
-      "peerDependencies": {
-        "expo": "*",
-      },
-    },
     "packages/expo-hub": {
       "name": "expo-hub",
       "version": "1.0.0",
@@ -78,33 +69,6 @@
         "@types/react": "~19.2.2",
         "@types/react-dom": "~19.2.0",
         "tailwindcss": "^4.1.11",
-        "typescript": "~6.0.3",
-      },
-    },
-    "packages/expo-serve-device": {
-      "name": "expo-serve-device",
-      "version": "0.1.0",
-      "dependencies": {
-        "serve-sim": "*",
-      },
-      "peerDependencies": {
-        "expo": "*",
-      },
-    },
-    "packages/expo-serve-device-webui": {
-      "name": "expo-serve-device-webui",
-      "version": "0.0.1-private",
-      "dependencies": {
-        "@expo/metro-runtime": "catalog:",
-        "expo": "catalog:",
-        "expo-status-bar": "~56.0.4",
-        "react": "catalog:",
-        "react-dom": "catalog:",
-        "react-native": "catalog:",
-        "react-native-web": "catalog:",
-      },
-      "devDependencies": {
-        "@types/react": "~19.2.2",
         "typescript": "~6.0.3",
       },
     },
@@ -1252,8 +1216,6 @@
 
     "expo-constants": ["expo-constants@56.0.17", "", { "dependencies": { "@expo/env": "~2.3.0" }, "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-bU8iU1+7cI7QzfGQVnz2C1nlbXD08YPwD6h8ZEuNspgUuD2prXfmrhrdLe1GjCPYGw4hB3BNjWPjpenNyyymfQ=="],
 
-    "expo-devtools-plugin-hello-world": ["expo-devtools-plugin-hello-world@workspace:packages/expo-devtools-plugin-hello-world"],
-
     "expo-file-system": ["expo-file-system@56.0.7", "", { "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-dcKzo8ShPloM7jgfnMcJStgQebhP8owVjCkNI/aX6NMFV1CYB8bxKGMdnzJ3mXk5nfaiW+F/lSKr2UIJ02WAUA=="],
 
     "expo-font": ["expo-font@56.0.5", "", { "dependencies": { "fontfaceobserver": "^2.1.0" }, "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }, "sha512-WLoDu9hlEgPRKXJRR01HFLJ6Z2tFcORX/WFPRYBndmYc5kjQrFGH/j4BRaF3aBRPyYEAUXiUJybNLXkKCwEXQw=="],
@@ -1267,10 +1229,6 @@
     "expo-modules-core": ["expo-modules-core@56.0.15", "", { "dependencies": { "@expo/expo-modules-macros-plugin": "~0.0.9", "expo-modules-jsi": "~56.0.8", "invariant": "^2.2.4" }, "peerDependencies": { "react": "*", "react-native": "*", "react-native-worklets": "^0.7.4 || ^0.8.0" }, "optionalPeers": ["react-native-worklets"] }, "sha512-XOXuWjtUA/xF8VjMHoRTRxuAmrAeUv8QyASX3h/CpTNS58fOt3stV8EYW7BinJPJyqwV7BZoYV83iN0p2FzyZw=="],
 
     "expo-modules-jsi": ["expo-modules-jsi@56.0.8", "", { "peerDependencies": { "react-native": "*" } }, "sha512-tXqFU1MHrf7Ctq+Pw0qOeIPDFl1W51p9nRRZy9vVUn4GNuAk1Av0vrj0SGLvcxJvDf3aGwSzr8o8dgUsX5sG0g=="],
-
-    "expo-serve-device": ["expo-serve-device@workspace:packages/expo-serve-device"],
-
-    "expo-serve-device-webui": ["expo-serve-device-webui@workspace:packages/expo-serve-device-webui"],
 
     "expo-serve-emu": ["expo-serve-emu@workspace:packages/expo-serve-emu"],
 
@@ -2047,8 +2005,6 @@
     "expo-hub/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "expo-modules-autolinking/commander": ["commander@7.2.0", "", {}, "sha512-QrWXB+ZQSVPmIWIhtEO9H+gwHaMGYiF5ChvoJ+K9ZGHG/sVsa6yiesAD1GC/x46sET00Xlwo1u49RVVVzvcSkw=="],
-
-    "expo-serve-device-webui/typescript": ["typescript@6.0.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-y2TvuxSZPDyQakkFRPZHKFm+KKVqIisdg9/CZwm9ftvKXLP8NRWj38/ODjNbr43SsoXqNuAisEf1GdCxqWcdBw=="],
 
     "ext-list/mime-db": ["mime-db@1.54.0", "", {}, "sha512-aU5EJuIN2WDemCcAp2vFBfp/m4EAhWJnUNSSw0ixs7/kXbd6Pg64EmwJkNdFhB8aWt1sH2CTXrLxo/iAGV3oPQ=="],
 

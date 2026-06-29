@@ -4,8 +4,6 @@
   "main": "index.ts",
   "dependencies": {
     "expo": "catalog:",
-    "expo-devtools-plugin-hello-world": "workspace:*",
-    "expo-serve-device": "workspace:*",
     "expo-serve-emu": "workspace:*",
     "expo-serve-sim": "workspace:*",
     "expo-status-bar": "~56.0.4",
