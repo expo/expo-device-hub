@@ -21,7 +21,8 @@ import { SessionRecorder } from "./session-recorder.ts";
 import type { StreamSocket } from "./stream-socket.ts";
 
 export { fromBunSocket, fromWsSocket } from "./stream-socket.ts";
-export type { StreamSocket } from "./stream-socket.ts";
+export type { StreamSocket, WsWebSocketLike } from "./stream-socket.ts";
+export { pickDevice } from "./adb.ts";
 export type { ScrcpySession } from "./scrcpy.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));

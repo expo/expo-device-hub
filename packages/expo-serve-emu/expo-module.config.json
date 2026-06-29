@@ -3,6 +3,6 @@
   "devtools": {
     "cliBanner": true,
     "bannerTitle": "Emulator",
-    "serverEntryPoint": "server/index.js"
+    "serverEntryPoint": "dist/index.mjs"
   }
 }
