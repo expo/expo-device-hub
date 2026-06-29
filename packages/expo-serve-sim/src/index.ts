@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * DevTools plugin server entry point.
  *
@@ -17,15 +15,35 @@
  * `Response` bodies that Expo CLI pipes back to the client unchanged.
  */
 
-const { spawn } = require('node:child_process');
-const { readdirSync } = require('node:fs');
-const { tmpdir } = require('node:os');
-const path = require('node:path');
+import { spawn, type ChildProcess } from 'node:child_process';
+import { readdirSync } from 'node:fs';
+import type { IncomingMessage } from 'node:http';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// This file ships as ESM (compiled to .mjs), but it loads CommonJS artifacts:
+// the vendored serve-sim bundle and our own package.json. `createRequire`
+// keeps CJS resolution semantics (and avoids JSON import-attribute friction).
+const require = createRequire(import.meta.url);
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // serve-sim is vendored under ../vendor/serve-sim at build time (see
 // ../build.ts), so we require the bundled copy rather than the npm package.
 const { simMiddleware } = require('../vendor/serve-sim/dist/middleware.cjs');
 const { name: PACKAGE_NAME } = require('../package.json');
+
+/** A WebSocket connection — only the close path is used directly here. */
+interface CloseableSocket {
+  close(): void;
+}
+
+/** The serve-sim fetch middleware plus its optional WebSocket upgrade hook. */
+interface SimMiddleware {
+  (request: Request): Promise<Response | null | undefined>;
+  handleWebSocket?: (request: IncomingMessage, socket: CloseableSocket) => boolean | undefined;
+}
 
 // Mirrors `DevToolsPluginEndpoint` in @expo/cli. The browser loads this plugin
 // under `${DEVTOOLS_PLUGINS_ENDPOINT}/${PACKAGE_NAME}`, so simMiddleware has to
@@ -34,7 +52,7 @@ const { name: PACKAGE_NAME } = require('../package.json');
 const DEVTOOLS_PLUGINS_ENDPOINT = '/_expo/plugins';
 const BASE = `${DEVTOOLS_PLUGINS_ENDPOINT}/${PACKAGE_NAME}`;
 
-const middleware = simMiddleware({ basePath: BASE });
+const middleware: SimMiddleware = simMiddleware({ basePath: BASE });
 
 // ── Lazy helper spawn ─────────────────────────────────────────────────────
 //
@@ -52,7 +70,7 @@ const SPAWN_RETRY_COOLDOWN_MS = 30_000;
 let spawnInFlight = false;
 let lastSpawnFailureAt = 0;
 
-function helperStateExists() {
+function helperStateExists(): boolean {
   try {
     return readdirSync(SERVE_SIM_STATE_DIR).some(
       (f) => f.startsWith('server-') && f.endsWith('.json')
@@ -62,12 +80,12 @@ function helperStateExists() {
   }
 }
 
-function serveSimCliPath() {
+function serveSimCliPath(): string {
   // The vendored CLI bundle lives in the unpacked serve-sim package.
   return path.join(__dirname, '..', 'vendor', 'serve-sim', 'dist', 'serve-sim.js');
 }
 
-function ensureHelperSpawned() {
+function ensureHelperSpawned(): void {
   if (spawnInFlight || helperStateExists()) {
     return;
   }
@@ -75,7 +93,7 @@ function ensureHelperSpawned() {
     return;
   }
   spawnInFlight = true;
-  let child;
+  let child: ChildProcess;
   try {
     // Fire-and-forget: the CLI daemonizes the helper and exits. The preview
     // page picks the new state up by itself (the middleware's /appstate SSE
@@ -103,7 +121,7 @@ function ensureHelperSpawned() {
 }
 
 /** Re-add the plugin prefix the CLI stripped, keeping method/headers/body/signal. */
-function withPluginPrefix(request) {
+function withPluginPrefix(request: Request): Request {
   const url = new URL(request.url);
   return new Request(`${url.origin}${BASE}${url.pathname}${url.search}`, request);
 }
@@ -114,13 +132,13 @@ function withPluginPrefix(request) {
  * The CLI strips the plugin prefix before calling us, so the preview page
  * arrives with pathname `/` (or empty).
  */
-function isPreviewPageRequest(request) {
+function isPreviewPageRequest(request: Request): boolean {
   if (request.method !== 'GET') return false;
   const { pathname } = new URL(request.url);
   return pathname === '/' || pathname === '';
 }
 
-module.exports = async function handler(request) {
+export default async function handler(request: Request): Promise<Response | null> {
   // Only auto-spawn a helper when a human opens the serve-sim preview page
   // itself — never for the data/control routes. This keeps the standalone
   // preview's open-and-it-just-works behavior while letting headless consumers
@@ -134,7 +152,7 @@ module.exports = async function handler(request) {
   // `null`/`undefined` tells Expo CLI the route wasn't ours, so it falls
   // through to static webpageRoot serving (this plugin has none → 404).
   return response ?? null;
-};
+}
 
 // ── WebSocket handlers ─────────────────────────────────────────────────────
 //
@@ -155,8 +173,8 @@ module.exports = async function handler(request) {
 // needs `req.headers.origin`/`host` as Node properties), so we forward the
 // IncomingMessage through unchanged rather than synthesizing a fetch `Request`.
 
-module.exports.webSocketHandlers = {
-  '/exec-ws': (socket, request) => {
+export const webSocketHandlers = {
+  '/exec-ws': (socket: CloseableSocket, request: IncomingMessage) => {
     const handled = middleware.handleWebSocket?.(request, socket);
     if (!handled) socket.close();
   },

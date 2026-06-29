@@ -16,18 +16,27 @@
     "node": ">=18"
   },
   "files": [
-    "server",
+    "src",
+    "dist",
     "vendor",
     "expo-module.config.json",
     "LICENSE",
     "NOTICE"
   ],
   "scripts": {
-    "build": "bun run build.ts"
+    "build": "bun run build.ts && bun run build:server",
+    "build:server": "swc src/index.ts -o dist/index.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "inspect-webkit": "^0.0.5",
     "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@swc/cli": "^0.8.1",
+    "@swc/core": "^1.15.43",
+    "@types/node": "^25.6.2",
+    "typescript": "^5.7.0"
   },
   "peerDependencies": {
     "expo": "*"
