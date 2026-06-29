@@ -1,9 +1,9 @@
-# @expo-hub/apple-utils
+# @expo/hub-apple-utils
 
 List connected Apple devices via `devicectl`.
 
 ```ts
-import { listDevices } from "@expo-hub/apple-utils";
+import { listDevices } from "@expo/hub-apple-utils";
 
 const devices = await listDevices();
 ```

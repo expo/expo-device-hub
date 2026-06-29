@@ -3,7 +3,7 @@
  * dashboard composites in `./dashboard/*` to import from.
  *
  * Composites import from here (`../primitives`) rather than the package root
- * (`@expo-hub/components`) so the library never imports itself — a self-import
+ * (`@expo/hub-components`) so the library never imports itself — a self-import
  * would be circular (the root barrel re-exports the composites) and unresolvable
  * during the package's own build.
  */

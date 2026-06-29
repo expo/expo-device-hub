@@ -1,10 +1,10 @@
-# @expo-hub/android-utils
+# @expo/hub-android-utils
 
 List Android emulators (AVDs) and connected physical devices, with each AVD's
 parsed `config.ini` and a `booted` flag.
 
 ```ts
-import { listDevices } from "@expo-hub/android-utils";
+import { listDevices } from "@expo/hub-android-utils";
 
 const devices = await listDevices();
 // [{ name, type, booted, serial, path, properties, config }, ...]
@@ -38,7 +38,7 @@ import {
   listSystemImages,
   createDevice,
   bootDevice,
-} from "@expo-hub/android-utils";
+} from "@expo/hub-android-utils";
 
 // 1. Pick the inputs.
 const profiles = await listDeviceProfiles();

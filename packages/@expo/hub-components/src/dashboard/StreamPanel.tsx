@@ -1,6 +1,6 @@
 import { type ComponentType } from 'react';
 
-import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo-hub/client';
+import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo/hub-client';
 import { bg } from '../primitives';
 import { type ColorScheme, type Device } from './data';
 import { PhoneFrame } from './PhoneFrame';
@@ -19,9 +19,9 @@ export function StreamPanel({
   client: DeviceClient;
   scheme: ColorScheme;
   onToggleTheme: () => void;
-  /** Live-stream renderer, injected from `@expo-hub/client` by the consumer. */
+  /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** Orientation-corrected screen sizer, injected from `@expo-hub/client`. */
+  /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
 }) {
   return (

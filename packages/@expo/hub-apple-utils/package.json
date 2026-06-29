@@ -1,11 +1,14 @@
 {
-  "name": "@expo-hub/android-utils",
+  "name": "@expo/hub-apple-utils",
   "version": "0.1.0",
-  "description": "List, create and boot Android emulators (devices, profiles, system images) via avdmanager / sdkmanager / emulator.",
+  "description": "List connected Apple devices via devicectl.",
   "license": "MIT",
   "files": [
     "dist",
     "src"
+  ],
+  "os": [
+    "darwin"
   ],
   "type": "module",
   "main": "./dist/index.js",

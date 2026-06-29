@@ -1,11 +1,11 @@
 'use dom';
 
-import '@expo-hub/components/theme.css';
+import '@expo/hub-components/theme.css';
 import '../global.css';
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo-hub/client';
+import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo/hub-client';
 import {
   EmptyState,
   Sidebar,
@@ -15,7 +15,7 @@ import {
   shadow,
   text,
   type Device,
-} from '@expo-hub/components';
+} from '@expo/hub-components';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDevices, useRecentDevices } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';

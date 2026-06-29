@@ -1,4 +1,4 @@
-import { type DeviceClient } from '@expo-hub/client';
+import { type DeviceClient } from '@expo/hub-client';
 import { Logo, SidebarToggle } from '../primitives';
 import { type Device, type NewDeviceOptions } from './data';
 import { DeviceSection } from './DeviceSection';

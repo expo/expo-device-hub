@@ -1,6 +1,6 @@
 import { type ComponentType, type CSSProperties } from 'react';
 
-import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo-hub/client';
+import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo/hub-client';
 import { bg } from '../primitives';
 import { type Platform } from './data';
 
@@ -17,7 +17,7 @@ const CONFIG: Record<Platform, { ratio: number; radiusFraction: number; squircle
 /**
  * The selected device's screen. When a {@link DeviceClient} connection is active
  * (a serve-sim/serve-emu server is selected) it renders the live, interactive
- * `DeviceScreen` — injected by the consumer from `@expo-hub/client` so this
+ * `DeviceScreen` — injected by the consumer from `@expo/hub-client` so this
  * library stays free of a runtime dependency on it; otherwise it shows an empty
  * idle surface.
  *
@@ -34,9 +34,9 @@ export function PhoneFrame({
 }: {
   platform: Platform;
   client?: DeviceClient;
-  /** Live-stream renderer, injected from `@expo-hub/client` by the consumer. */
+  /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
-  /** Orientation-corrected screen sizer, injected from `@expo-hub/client`. */
+  /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
 }) {
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[platform];

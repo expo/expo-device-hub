@@ -1,5 +1,5 @@
 /**
- * `@expo-hub/components` — the dependency-free UI kit shared by Expo Hub and the
+ * `@expo/hub-components` — the dependency-free UI kit shared by Expo Hub and the
  * Expo dashboard website (`universe/server/website`).
  *
  * Components are ports of the website's `ui/components/*`, driving the same
@@ -13,7 +13,7 @@
  *     preset, or Expo Hub's `global.css`).
  *
  * The CSS variables themselves are not bundled here — import them from the
- * consumer's design system, or use the `@expo-hub/components/theme.css` copy.
+ * consumer's design system, or use the `@expo/hub-components/theme.css` copy.
  */
 
 // ── Components ──
@@ -42,7 +42,7 @@ export * from './theme/tokens';
 // ── Dashboard composites ──
 // These compose the primitives above into the Expo Hub dashboard layout. The
 // device stream is injected: `StreamPanel` / `PhoneFrame` take the `DeviceScreen`
-// component + `displayScreen` helper as props (typed from `@expo-hub/client`, a
+// component + `displayScreen` helper as props (typed from `@expo/hub-client`, a
 // types-only devDependency) so this library never imports the client at runtime.
 export { Sidebar } from './dashboard/Sidebar';
 export { StreamPanel } from './dashboard/StreamPanel';

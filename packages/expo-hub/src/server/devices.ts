@@ -1,20 +1,20 @@
 /**
  * Device discovery for the Expo Hub DevTools server.
  *
- * iOS simulators are listed via `@expo-hub/apple-utils` (which shells out to
+ * iOS simulators are listed via `@expo/hub-apple-utils` (which shells out to
  * `devicectl`), filtered to those that are *simulated* — both booted and
- * shut-down. Android devices are listed via `@expo-hub/android-utils` (which
+ * shut-down. Android devices are listed via `@expo/hub-android-utils` (which
  * shells out to `avdmanager` / `adb`): every known AVD plus any connected
  * physical device. Each device carries a `booted` flag, so the caller can show
  * the running devices in the sidebar and offer the rest as "recent" devices to
  * add (see `/api/devices?booted=true` in `index.ts`).
  *
- * The returned shape mirrors `@expo-hub/components`'s `Device` type, so the DOM
+ * The returned shape mirrors `@expo/hub-components`'s `Device` type, so the DOM
  * sidebar can consume `/api/devices` directly.
  */
 
-import { type AndroidDevice, listDevices as listAndroidDevices } from '@expo-hub/android-utils';
-import { listDevices as listAppleDevices } from '@expo-hub/apple-utils';
+import { type AndroidDevice, listDevices as listAndroidDevices } from '@expo/hub-android-utils';
+import { listDevices as listAppleDevices } from '@expo/hub-apple-utils';
 
 export type HubDevicePlatform = 'ios' | 'android';
 
@@ -42,7 +42,7 @@ export interface HubDeviceList {
   emulators: HubDevice[];
 }
 
-/** All iOS simulators (booted and shut-down), via `@expo-hub/apple-utils` → `devicectl`. */
+/** All iOS simulators (booted and shut-down), via `@expo/hub-apple-utils` → `devicectl`. */
 export async function listIosSimulators(): Promise<HubDevice[]> {
   const devices = await listAppleDevices();
 
@@ -67,7 +67,7 @@ export async function listIosSimulators(): Promise<HubDevice[]> {
 
 /**
  * All Android devices — every AVD plus connected physical devices — via
- * `@expo-hub/android-utils` → `avdmanager` / `adb`. Shut-down AVDs are included
+ * `@expo/hub-android-utils` → `avdmanager` / `adb`. Shut-down AVDs are included
  * (with `booted: false`) so they can be offered as recent devices.
  */
 export async function listAndroidEmulators(): Promise<HubDevice[]> {

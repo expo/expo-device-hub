@@ -6,7 +6,7 @@
  * loads `dist/server/index.mjs` and calls its default-exported fetch handler for
  * requests to `/_expo/plugins/expo-hub/*`. The handler is authored in TypeScript
  * under `src/server/` and bundled here with Bun into a single, self-contained ESM
- * file — so `@expo-hub/apple-utils` and the device-listing logic ship inlined and
+ * file — so `@expo/hub-apple-utils` and the device-listing logic ship inlined and
  * only Node built-ins stay external.
  *
  * Output (`dist/`) is gitignored; run `bun run build:server` before using the

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { type NewDeviceOptions, type Platform } from '@expo-hub/components';
+import { type NewDeviceOptions, type Platform } from '@expo/hub-components';
 
 /**
  * The OS versions + device models offered in the picker's "New simulator" /

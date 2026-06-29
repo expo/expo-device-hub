@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { type DeviceClient } from '@expo-hub/client';
+import { type DeviceClient } from '@expo/hub-client';
 import { text, textSize } from '../primitives';
 import { type TabKey } from './data';
 import { LogControls } from './LogControls';

@@ -1,6 +1,6 @@
 import { type CSSProperties, useEffect, useRef } from 'react';
 
-import { type DeviceLog } from '@expo-hub/client';
+import { type DeviceLog } from '@expo/hub-client';
 import { text, textSize } from '../primitives';
 import { LogRow } from './LogRow';
 

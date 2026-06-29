@@ -3,12 +3,12 @@
  * web app (see postcss.config.mjs). We skip Tailwind's full preflight so it
  * doesn't disturb the existing inline-styled UI, but we do include the small
  * border/margin resets the ported components rely on, plus the page-global
- * body/surface styles (kept here, not in the shared @expo-hub/components
+ * body/surface styles (kept here, not in the shared @expo/hub-components
  * package, so that package never restyles a host document).
  *
  * The @expo/styleguide semantic class names (bg-default, text-danger, …) are
  * defined here as @utility rules mapped to the --expo-theme-* CSS variables
- * from @expo-hub/components/theme.css, so Tailwind utilities follow the same
+ * from @expo/hub-components/theme.css, so Tailwind utilities follow the same
  * light/dark theme as the rest of the app.
  */
 @layer theme, base, components, utilities;
@@ -17,12 +17,12 @@
 @import 'tailwindcss/utilities.css';
 
 /* The ported Radix components (Dialog, Dropdown, DropdownItem) now live in the
-   @expo-hub/components package and style themselves with Tailwind utility classes
+   @expo/hub-components package and style themselves with Tailwind utility classes
    (`fixed`, `inset-0`, `w-[90vw]`, `animate-largeSlideUpAndFadeIn`, …). Tailwind
    ignores node_modules during auto-detection, so register that package's source
    here — otherwise those classes aren't generated and e.g. the add-device dialog
    renders unstyled and off-screen. */
-@source '../@expo-hub/components/src/**/*.{ts,tsx}';
+@source '../@expo/hub-components/src/**/*.{ts,tsx}';
 
 /* Dark mode follows the `.dark-theme` wrapper class used across Expo Hub. */
 @custom-variant dark (&:is(.dark-theme *));
@@ -31,7 +31,7 @@
 @custom-variant hocus (&:is(:hover, :focus));
 
 @theme {
-  /* Match the Expo design-system radius scale (@expo-hub/components tokens). */
+  /* Match the Expo design-system radius scale (@expo/hub-components tokens). */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
@@ -73,7 +73,7 @@
   }
 
   /* Base body/surface. These are page-global styles, so they live here in the
-     app rather than in @expo-hub/components' theme.css — a shared package must
+     app rather than in @expo/hub-components' theme.css — a shared package must
      not restyle the host document. They read the token vars theme.css defines. */
   html,
   body {

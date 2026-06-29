@@ -10,7 +10,7 @@
  * styles (no `html`/`body` rules), so importing it never restyles the host
  * document. The consuming app owns the base body/surface reset (Expo Hub keeps
  * it in `global.css`). Import once per DOM component subtree via
- * `import '@expo-hub/components/theme.css'`.
+ * `import '@expo/hub-components/theme.css'`.
  */
 @import '@expo/styleguide/dist/expo-theme.css';
 
