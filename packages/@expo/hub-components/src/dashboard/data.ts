@@ -16,6 +16,11 @@ export type Device = {
   /** Whether the device is currently booted / running. */
   booted: boolean;
   /**
+   * Whether this is real physical hardware rather than a simulator/emulator.
+   * Physical devices can't be erased, so the "Erase" control is hidden for them.
+   */
+  physical: boolean;
+  /**
    * Epoch ms the device was last used. Drives the relative "Recents" time in the
    * add-device picker.
    */

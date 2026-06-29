@@ -128,6 +128,7 @@ export function RecentDevicesModal({
         name: newName,
         version: osVersion,
         platform,
+        physical: false,
         booted: false,
       });
     } else if (selectedRecent) {

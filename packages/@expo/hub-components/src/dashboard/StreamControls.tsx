@@ -24,6 +24,7 @@ import { type ColorScheme, type Platform } from './data';
  */
 export function StreamControls({
   platform,
+  physical,
   scheme,
   onToggleTheme,
   onHome,
@@ -31,6 +32,7 @@ export function StreamControls({
   onRecents,
 }: {
   platform: Platform;
+  physical: boolean;
   scheme: ColorScheme;
   onToggleTheme: () => void;
   /** Press the device Home button. */
@@ -60,7 +62,7 @@ export function StreamControls({
       )}
       <DropdownItem label="Rotate device" Icon={RotateIcon} />
       <DropdownItem label="Shutdown" Icon={PowerIcon} />
-      <DropdownItem label="Erase" Icon={TrashIcon} destructive />
+      {!physical && <DropdownItem label="Erase" Icon={TrashIcon} destructive />}
     </Dropdown>
   );
 

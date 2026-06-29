@@ -28,6 +28,11 @@ export interface HubDevice {
   /** Whether the device is currently booted / running. */
   booted: boolean;
   /**
+   * Whether this is real physical hardware rather than a simulator/emulator.
+   * Physical devices can't be erased/wiped from Hub, so the UI hides that action.
+   */
+  physical: boolean;
+  /**
    * Epoch ms the device was last used — drives the "Recents" relative time
    * ("18m ago", "2 days ago") in the add-device picker. MOCKED for now: neither
    * `devicectl` nor `adb` reports a last-used timestamp, so we synthesize a
@@ -61,6 +66,7 @@ export async function listIosSimulators(): Promise<HubDevice[]> {
         version: osVersion ? `${platform} ${osVersion}` : platform,
         platform: 'ios' as const,
         booted: device.deviceProperties?.bootState === 'booted',
+        physical: device.hardwareProperties?.reality === 'physical',
       };
     });
 }
@@ -79,6 +85,7 @@ export async function listAndroidEmulators(): Promise<HubDevice[]> {
     version: androidVersion(device),
     platform: 'android' as const,
     booted: device.booted,
+    physical: device.type === 'device',
   }));
 }
 

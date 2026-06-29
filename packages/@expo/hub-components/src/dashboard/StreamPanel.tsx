@@ -47,6 +47,7 @@ export function StreamPanel({
       />
       <StreamControls
         platform={device.platform}
+        physical={device.physical}
         scheme={scheme}
         onToggleTheme={onToggleTheme}
         onHome={() => client.pressButton('home')}
