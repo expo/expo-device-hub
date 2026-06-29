@@ -68,7 +68,9 @@ const BUTTON_NAME: Record<HardwareButton, string | null> = {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-function taggedJson(tag: number, payload: unknown): Uint8Array {
+// Returns an `ArrayBuffer`-backed view (not the default `Uint8Array<ArrayBufferLike>`)
+// so it satisfies `WebSocket.send`'s `BufferSource` under strict lib.dom typings.
+function taggedJson(tag: number, payload: unknown): Uint8Array<ArrayBuffer> {
   const json = encoder.encode(JSON.stringify(payload));
   const out = new Uint8Array(1 + json.length);
   out[0] = tag;

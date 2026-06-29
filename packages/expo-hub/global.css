@@ -2,17 +2,27 @@
  * Tailwind v4 entry for Expo Hub — same PostCSS integration as the expo-agent
  * web app (see postcss.config.mjs). We skip Tailwind's full preflight so it
  * doesn't disturb the existing inline-styled UI, but we do include the small
- * border/margin resets the ported components rely on.
+ * border/margin resets the ported components rely on, plus the page-global
+ * body/surface styles (kept here, not in the shared @expo-hub/components
+ * package, so that package never restyles a host document).
  *
  * The @expo/styleguide semantic class names (bg-default, text-danger, …) are
  * defined here as @utility rules mapped to the --expo-theme-* CSS variables
- * from theme/theme.css, so Tailwind utilities follow the same light/dark theme
- * as the rest of the app.
+ * from @expo-hub/components/theme.css, so Tailwind utilities follow the same
+ * light/dark theme as the rest of the app.
  */
 @layer theme, base, components, utilities;
 
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css';
+
+/* The ported Radix components (Dialog, Dropdown, DropdownItem) now live in the
+   @expo-hub/components package and style themselves with Tailwind utility classes
+   (`fixed`, `inset-0`, `w-[90vw]`, `animate-largeSlideUpAndFadeIn`, …). Tailwind
+   ignores node_modules during auto-detection, so register that package's source
+   here — otherwise those classes aren't generated and e.g. the add-device dialog
+   renders unstyled and off-screen. */
+@source '../@expo-hub/components/src/**/*.{ts,tsx}';
 
 /* Dark mode follows the `.dark-theme` wrapper class used across Expo Hub. */
 @custom-variant dark (&:is(.dark-theme *));
@@ -21,7 +31,7 @@
 @custom-variant hocus (&:is(:hover, :focus));
 
 @theme {
-  /* Match the Expo design-system radius scale (theme/tokens.ts). */
+  /* Match the Expo design-system radius scale (@expo-hub/components tokens). */
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
@@ -60,6 +70,27 @@
   }
   p {
     margin: 0;
+  }
+
+  /* Base body/surface. These are page-global styles, so they live here in the
+     app rather than in @expo-hub/components' theme.css — a shared package must
+     not restyle the host document. They read the token vars theme.css defines. */
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    background-color: var(--expo-theme-background-default);
+    color: var(--expo-theme-text-default);
+    font-family: var(--expo-font-sans);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    font-optical-sizing: auto;
+  }
+  code,
+  pre,
+  .monospace {
+    font-family: var(--expo-font-mono);
   }
 }
 

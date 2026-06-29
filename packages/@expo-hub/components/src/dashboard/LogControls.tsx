@@ -1,4 +1,4 @@
-import { Button } from '../../components/Button';
+import { Button } from '../primitives';
 
 /**
  * Attach / Detach / Clear controls for the logs panel. Logs are off by default,

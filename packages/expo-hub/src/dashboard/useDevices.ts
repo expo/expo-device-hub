@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { type Device } from './data';
+import { type Device } from '@expo-hub/components';
 
 /**
  * The Expo Hub DevTools plugin server (`src/server/`) exposes the live device

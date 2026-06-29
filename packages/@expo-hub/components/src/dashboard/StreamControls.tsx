@@ -1,21 +1,20 @@
-import { ControlButton } from '../../components/ControlButton';
-import { Dropdown } from '../../components/Dropdown';
-import { DropdownItem } from '../../components/DropdownItem';
-import { Switch } from '../../components/Switch';
 import {
   BackIcon,
   CameraIcon,
+  ControlButton,
   DotsIcon,
+  Dropdown,
+  DropdownItem,
   HomeIcon,
   PowerIcon,
   RecentsIcon,
   RefreshIcon,
   RotateIcon,
+  Switch,
   ThemeIcon,
   TrashIcon,
-} from '../../components/icons';
-import { type Platform } from './data';
-import { type ColorScheme } from './useColorScheme';
+} from '../primitives';
+import { type ColorScheme, type Platform } from './data';
 
 /**
  * Controls under the device stream. The layout is platform-specific:

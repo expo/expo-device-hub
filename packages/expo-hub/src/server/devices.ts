@@ -9,8 +9,8 @@
  * the running devices in the sidebar and offer the rest as "recent" devices to
  * add (see `/api/devices?booted=true` in `index.ts`).
  *
- * The returned shape mirrors `dashboard/data.ts`'s `Device`, so the DOM sidebar
- * can consume `/api/devices` directly.
+ * The returned shape mirrors `@expo-hub/components`'s `Device` type, so the DOM
+ * sidebar can consume `/api/devices` directly.
  */
 
 import { type AndroidDevice, listDevices as listAndroidDevices } from '@expo-hub/android-utils';

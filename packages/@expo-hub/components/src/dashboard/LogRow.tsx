@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { bg, font, radius, text } from '../../theme/tokens';
+import { bg, font, radius, text } from '../primitives';
 import { type LogEntry } from './data';
 
 /** A single log line: a monospace source chip followed by the message. */

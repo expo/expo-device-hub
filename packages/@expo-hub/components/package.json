@@ -1,0 +1,63 @@
+{
+  "name": "@expo-hub/components",
+  "version": "0.1.0",
+  "description": "Dependency-free UI kit shared by Expo Hub and the Expo dashboard website, driving the @expo/styleguide design tokens.",
+  "license": "MIT",
+  "keywords": [
+    "expo",
+    "devtools",
+    "ui",
+    "styleguide"
+  ],
+  "type": "module",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    },
+    "./theme.css": "./dist/theme/theme.css"
+  },
+  "sideEffects": [
+    "*.css"
+  ],
+  "scripts": {
+    "build": "swc src -d dist --strip-leading-paths --out-file-extension mjs --copy-files --delete-dir-on-start && tsc -p tsconfig.build.json",
+    "dev": "swc src -d dist --strip-leading-paths --out-file-extension mjs --copy-files -w",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
+  },
+  "dependencies": {
+    "@expo/styleguide": "^14.1.5",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-dropdown-menu": "^2.1.16",
+    "@radix-ui/react-visually-hidden": "^1.2.4"
+  },
+  "peerDependencies": {
+    "react": "*",
+    "react-dom": "*"
+  },
+  "devDependencies": {
+    "@expo-hub/client": "workspace:*",
+    "@swc/cli": "^0.8.1",
+    "@swc/core": "^1.15.43",
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.0",
+    "oxfmt": "^0.56.0",
+    "oxlint": "^1.71.0",
+    "typescript": "~6.0.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

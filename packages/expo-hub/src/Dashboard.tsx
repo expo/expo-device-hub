@@ -1,17 +1,21 @@
 'use dom';
 
-import '../theme/theme.css';
+import '@expo-hub/components/theme.css';
 import '../global.css';
 
 import { useEffect, useMemo, useState } from 'react';
 
-import { SidebarToggle } from '../components/SidebarToggle';
-import { bg, shadow, text } from '../theme/tokens';
-import { useActiveDeviceClient } from './device';
-import { type Device } from './dashboard/data';
-import { EmptyState } from './dashboard/EmptyState';
-import { Sidebar } from './dashboard/Sidebar';
-import { StreamPanel } from './dashboard/StreamPanel';
+import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo-hub/client';
+import {
+  EmptyState,
+  Sidebar,
+  SidebarToggle,
+  StreamPanel,
+  bg,
+  shadow,
+  text,
+  type Device,
+} from '@expo-hub/components';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDevices, useRecentDevices } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
@@ -140,7 +144,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
       )}
 
       {selected ? (
-        <StreamPanel device={selected} client={client} scheme={scheme} onToggleTheme={toggle} />
+        <StreamPanel
+          device={selected}
+          client={client}
+          scheme={scheme}
+          onToggleTheme={toggle}
+          DeviceScreen={DeviceScreen}
+          displayScreen={displayScreen}
+        />
       ) : (
         <EmptyState />
       )}

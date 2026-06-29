@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-export type ColorScheme = 'light' | 'dark';
+import { type ColorScheme } from '@expo-hub/components';
 
 /**
  * Tracks the system color scheme (`prefers-color-scheme`) and lets the UI

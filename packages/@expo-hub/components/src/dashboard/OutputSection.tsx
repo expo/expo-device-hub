@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
-import { type DeviceClient } from '../device';
-import { text, textSize } from '../../theme/tokens';
+import { type DeviceClient } from '@expo-hub/client';
+import { text, textSize } from '../primitives';
 import { type TabKey } from './data';
 import { LogControls } from './LogControls';
 import { LogList } from './LogList';

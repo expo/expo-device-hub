@@ -1,7 +1,7 @@
 import { type CSSProperties, useEffect, useRef } from 'react';
 
-import { type DeviceLog } from '../device';
-import { text, textSize } from '../../theme/tokens';
+import { type DeviceLog } from '@expo-hub/client';
+import { text, textSize } from '../primitives';
 import { LogRow } from './LogRow';
 
 // An always-visible, styled scrollbar. Styling `::-webkit-scrollbar` opts out of

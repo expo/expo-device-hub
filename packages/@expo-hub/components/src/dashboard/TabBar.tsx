@@ -1,6 +1,6 @@
 import { type CSSProperties, useState } from 'react';
 
-import { bg, radius, text, textSize } from '../../theme/tokens';
+import { bg, radius, text, textSize } from '../primitives';
 import { tabs, type TabKey } from './data';
 
 /** Logs / Network / Settings tab switcher for the selected simulator. */

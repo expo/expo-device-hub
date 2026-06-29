@@ -1,11 +1,8 @@
 import { useState } from 'react';
 
-import { DeviceListItem } from '../../components/DeviceListItem';
-import { PlusIcon } from '../../components/icons';
-import { bg, border, icon, radius, text, textSize } from '../../theme/tokens';
-import { type Device } from './data';
+import { DeviceListItem, PlusIcon, bg, border, icon, radius, text, textSize } from '../primitives';
+import { type Device, type NewDeviceOptions } from './data';
 import { RecentDevicesModal } from './RecentDevicesModal';
-import { type NewDeviceOptions } from './useNewDeviceOptions';
 
 /**
  * A titled, selectable list of devices (Simulators or Emulators) with an add

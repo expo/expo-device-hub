@@ -1,10 +1,8 @@
-import { type DeviceClient } from '../device';
-import { Logo } from '../../components/Logo';
-import { SidebarToggle } from '../../components/SidebarToggle';
-import { type Device } from './data';
+import { type DeviceClient } from '@expo-hub/client';
+import { Logo, SidebarToggle } from '../primitives';
+import { type Device, type NewDeviceOptions } from './data';
 import { DeviceSection } from './DeviceSection';
 import { OutputSection } from './OutputSection';
-import { type NewDeviceOptions } from './useNewDeviceOptions';
 
 /** Left column: simulators + emulators lists and the output tabs. */
 export function Sidebar({

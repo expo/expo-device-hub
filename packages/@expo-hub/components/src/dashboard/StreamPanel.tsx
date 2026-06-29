@@ -1,9 +1,10 @@
-import { type DeviceClient } from '../device';
-import { bg } from '../../theme/tokens';
-import { type Device } from './data';
+import { type ComponentType } from 'react';
+
+import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo-hub/client';
+import { bg } from '../primitives';
+import { type ColorScheme, type Device } from './data';
 import { PhoneFrame } from './PhoneFrame';
 import { StreamControls } from './StreamControls';
-import { type ColorScheme } from './useColorScheme';
 
 /** Right panel: the selected device's stream and its controls, full height. */
 export function StreamPanel({
@@ -11,11 +12,17 @@ export function StreamPanel({
   client,
   scheme,
   onToggleTheme,
+  DeviceScreen,
+  displayScreen,
 }: {
   device: Device;
   client: DeviceClient;
   scheme: ColorScheme;
   onToggleTheme: () => void;
+  /** Live-stream renderer, injected from `@expo-hub/client` by the consumer. */
+  DeviceScreen: ComponentType<DeviceScreenProps>;
+  /** Orientation-corrected screen sizer, injected from `@expo-hub/client`. */
+  displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
 }) {
   return (
     <section
@@ -32,7 +39,12 @@ export function StreamPanel({
         backgroundColor: bg.subtle,
         overflow: 'hidden',
       }}>
-      <PhoneFrame platform={device.platform} client={client} />
+      <PhoneFrame
+        platform={device.platform}
+        client={client}
+        DeviceScreen={DeviceScreen}
+        displayScreen={displayScreen}
+      />
       <StreamControls
         platform={device.platform}
         scheme={scheme}

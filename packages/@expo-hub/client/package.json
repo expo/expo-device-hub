@@ -1,0 +1,51 @@
+{
+  "name": "@expo-hub/client",
+  "version": "0.1.0",
+  "description": "Device-client hooks and types for mirroring live iOS simulators (serve-sim) and Android emulators (serve-emu) in the browser.",
+  "license": "MIT",
+  "keywords": [
+    "expo",
+    "devtools",
+    "simulator",
+    "emulator"
+  ],
+  "type": "module",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "swc src -d dist --strip-leading-paths --out-file-extension mjs --delete-dir-on-start && tsc -p tsconfig.build.json",
+    "dev": "swc src -d dist --strip-leading-paths --out-file-extension mjs -w",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint",
+    "format": "oxfmt",
+    "format:check": "oxfmt --check"
+  },
+  "peerDependencies": {
+    "react": "*"
+  },
+  "devDependencies": {
+    "@swc/cli": "^0.8.1",
+    "@swc/core": "^1.15.43",
+    "@types/react": "~19.2.2",
+    "oxfmt": "^0.56.0",
+    "oxlint": "^1.71.0",
+    "typescript": "~6.0.3"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

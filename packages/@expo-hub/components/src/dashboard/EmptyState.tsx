@@ -1,5 +1,4 @@
-import { PhoneIcon } from '../../components/icons';
-import { bg, border, heading, icon, radius, text, textSize } from '../../theme/tokens';
+import { PhoneIcon, bg, border, heading, icon, radius, text, textSize } from '../primitives';
 
 /**
  * Shown in the stream panel when no devices are available — i.e. there are no

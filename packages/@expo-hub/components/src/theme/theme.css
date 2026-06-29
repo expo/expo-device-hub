@@ -1,0 +1,31 @@
+/*
+ * Expo Hub design tokens as CSS custom properties.
+ *
+ * `@import`s `@expo/styleguide/dist/expo-theme.css` (the Radix color scales + the
+ * semantic `--expo-theme-*` layer), then defines the few token variables the
+ * styleguide's CSS lacks: the `--expo-font-*` families and the `--expo-radius-*`
+ * scale that `tokens.ts` binds to.
+ *
+ * This file only *defines variables* — it intentionally sets no global page
+ * styles (no `html`/`body` rules), so importing it never restyles the host
+ * document. The consuming app owns the base body/surface reset (Expo Hub keeps
+ * it in `global.css`). Import once per DOM component subtree via
+ * `import '@expo-hub/components/theme.css'`.
+ */
+@import '@expo/styleguide/dist/expo-theme.css';
+
+:root {
+  /* Fonts — match website (styles/globals.css) exactly. */
+  --expo-font-sans: 'Inter', -apple-system, 'system-ui', sans-serif;
+  --expo-font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  /* Radii — Tailwind preset borderRadius scale */
+  --expo-radius-xs: 2px;
+  --expo-radius-sm: 4px;
+  --expo-radius-md: 6px;
+  --expo-radius-lg: 8px;
+  --expo-radius-xl: 16px;
+  --expo-radius-2xl: 20px;
+  --expo-radius-3xl: 24px;
+  --expo-radius-full: 9999px;
+}

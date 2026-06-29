@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 
-import { type Platform } from './data';
+import { type NewDeviceOptions, type Platform } from '@expo-hub/components';
 
 /**
  * The OS versions + device models offered in the picker's "New simulator" /
@@ -10,13 +10,6 @@ import { type Platform } from './data';
  * the form's selects render empty rather than throwing.
  */
 const NEW_DEVICE_OPTIONS_ENDPOINT = '/_expo/plugins/expo-hub/api/new-device-options';
-
-export type NewDeviceOptions = {
-  /** OS versions for the select, newest first. e.g. "iOS 27.0". */
-  osVersions: string[];
-  /** Device models for the select. e.g. "iPhone 17 Pro". */
-  models: string[];
-};
 
 export type NewDeviceOptionsByPlatform = Record<Platform, NewDeviceOptions>;
 

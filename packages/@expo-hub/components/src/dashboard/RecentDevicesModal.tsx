@@ -1,17 +1,24 @@
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react';
 
-import { Button } from '../../components/Button';
 import {
+  Button,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronsUpDownIcon,
   DialogContent,
   DialogContentContainer,
   DialogFooter,
   DialogRoot,
   DialogTitle,
-} from '../../components/Dialog';
-import { CheckIcon, ChevronDownIcon, ChevronsUpDownIcon, SmartphoneIcon } from '../../components/icons';
-import { bg, border, font, icon, radius, text } from '../../theme/tokens';
-import { type Device, type Platform } from './data';
-import { type NewDeviceOptions } from './useNewDeviceOptions';
+  SmartphoneIcon,
+  bg,
+  border,
+  font,
+  icon,
+  radius,
+  text,
+} from '../primitives';
+import { type Device, type NewDeviceOptions, type Platform } from './data';
 
 /**
  * "Add a simulator" / "Add an emulator" picker (Option B in the design handoff),
