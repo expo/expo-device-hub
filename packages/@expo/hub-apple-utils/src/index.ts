@@ -1,4 +1,7 @@
+export { bootDevice } from "./boot-device";
+export { createDevice } from "./create-device";
 export { listDevices } from "./list-devices";
+export { listRuntimes } from "./list-runtimes";
 export { removeDevice } from "./remove-device";
 export { shutdownDevice } from "./shutdown-device";
 export type {
@@ -7,6 +10,10 @@ export type {
   AppleDeviceCapability,
   AppleDeviceProperties,
   AppleHardwareProperties,
+  AppleSimulatorDeviceType,
+  AppleSimulatorRuntime,
+  BootDeviceOptions,
+  CreateDeviceOptions,
   RemoveDeviceOptions,
   ShutdownDeviceOptions,
 } from "./types";

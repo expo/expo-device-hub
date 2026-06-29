@@ -7,8 +7,8 @@ const execFileAsync = promisify(execFile);
  * Run `xcrun simctl <args>` and resolve with its stdout/stderr.
  *
  * Throws (rejects) on a non-zero exit — callers that need to inspect the failure
- * (e.g. {@link runSimctlShutdown} detecting an already-shut-down device) use
- * this; most callers want {@link runSimctl}, which never throws.
+ * (such as boot/shutdown handling for an already-transitioned device) use this;
+ * most callers want {@link runSimctl}, which never throws.
  */
 export function execSimctl(args: string[]): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync("xcrun", ["simctl", ...args]);

@@ -1,3 +1,4 @@
+import { isRecord, safeJsonParse } from "./json";
 import type { AppleDevice } from "./types";
 
 /**
@@ -17,17 +18,4 @@ export function parseDevicesJson(json: string): AppleDevice[] {
   if (!Array.isArray(devices)) return [];
 
   return devices.filter(isRecord) as AppleDevice[];
-}
-
-function safeJsonParse(json: string): unknown {
-  try {
-    return JSON.parse(json);
-  } catch (error) {
-    console.error("[apple-utils] Failed to parse devicectl JSON output:", error);
-    return undefined;
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
