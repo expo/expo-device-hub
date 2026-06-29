@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent } from "react";
+import { useApi } from "../lib/device";
 
 type Point = { x: number; y: number };
 type LocationPoint = { latitude: number; longitude: number; altitude?: number };
@@ -188,6 +189,7 @@ export function LocationPanel() {
   const [speedKph, setSpeedKph] = useState("30");
   const [multiplier, setMultiplier] = useState("1");
   const [loop, setLoop] = useState(false);
+  const api = useApi();
 
   const syncDraft = useCallback((next: LocationPoint, recenter = false) => {
     const normalized = {
@@ -217,18 +219,20 @@ export function LocationPanel() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/location")
+    api
+      .fetch("/api/location")
       .then((r) => r.json())
       .then((data: { location?: LocationPoint | null }) => {
         if (data.location) syncDraft(data.location, true);
       })
       .catch(() => {});
-  }, [syncDraft]);
+  }, [syncDraft, api]);
 
   useEffect(() => {
     let cancelled = false;
     const syncRoute = () => {
-      fetch("/api/route")
+      api
+        .fetch("/api/route")
         .then((r) => r.json() as Promise<RouteSnapshot>)
         .then((route) => {
           if (cancelled) return;
@@ -244,7 +248,7 @@ export function LocationPanel() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [syncDraft]);
+  }, [syncDraft, api]);
 
   const centerPixel = useMemo(() => project(center, zoom), [center, zoom]);
   const draftPixel = useMemo(() => project(draft, zoom), [draft, zoom]);
@@ -306,7 +310,7 @@ export function LocationPanel() {
   const applyLocation = async (location = draft) => {
     setStatus("Setting...");
     try {
-      const res = await fetch("/api/location", {
+      const res = await api.fetch("/api/location", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -370,7 +374,7 @@ export function LocationPanel() {
     }
     setStatus("Starting route...");
     try {
-      const res = await fetch("/api/route", {
+      const res = await api.fetch("/api/route", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -392,7 +396,7 @@ export function LocationPanel() {
 
   const controlRoute = async (action: "pause" | "resume" | "stop") => {
     try {
-      const res = await fetch("/api/route/control", {
+      const res = await api.fetch("/api/route/control", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),

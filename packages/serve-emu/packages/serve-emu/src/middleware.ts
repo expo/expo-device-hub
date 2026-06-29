@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { listAllDevices, screencapPng } from "./adb.ts";
+import { listAllDevices, listDevices, screencapPng } from "./adb.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import {
   clearAppData,
@@ -61,6 +61,11 @@ const STALE_VIDEO_RESET_MS = 2500;
 const MAX_JSON_BODY_BYTES = 8 * 1024;
 const MAX_ROUTE_BODY_BYTES = 2 * 1024 * 1024;
 const MAX_LOGCAT_QUERY_BYTES = 200;
+// After a device's scrcpy start fails, wait this long before retrying so a
+// flapping device doesn't get hammered on every request.
+const SPAWN_RETRY_COOLDOWN_MS = 5_000;
+
+const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -87,6 +92,23 @@ function contentTypeFor(path: string): string {
   const dot = path.lastIndexOf(".");
   const ext = dot === -1 ? "" : path.slice(dot).toLowerCase();
   return STATIC_CONTENT_TYPES[ext] ?? "application/octet-stream";
+}
+
+/**
+ * Serve a file from the built UI directory. Returns `null` when the path does
+ * not map to a real file so callers can fall back to a 404. The UI shell is
+ * device-independent, so the router serves it without a device attached.
+ */
+function serveStaticFile(pathname: string): Response | null {
+  const reqPath = pathname === "/" ? "/index.html" : pathname;
+  if (reqPath.includes("..")) return null;
+  const filePath = join(UI_DIR, reqPath);
+  if (existsSync(filePath) && statSync(filePath).isFile()) {
+    return new Response(new Uint8Array(readFileSync(filePath)), {
+      headers: { "Content-Type": contentTypeFor(filePath) },
+    });
+  }
+  return null;
 }
 
 /**
@@ -808,15 +830,7 @@ export async function createApp(opts: AppOptions) {
       }
     }
 
-    const reqPath = url.pathname === "/" ? "/index.html" : url.pathname;
-    if (reqPath.includes("..")) return new Response("not found", { status: 404 });
-    const filePath = join(UI_DIR, reqPath);
-    if (existsSync(filePath) && statSync(filePath).isFile()) {
-      return new Response(new Uint8Array(readFileSync(filePath)), {
-        headers: { "Content-Type": contentTypeFor(filePath) },
-      });
-    }
-    return new Response("not found", { status: 404 });
+    return serveStaticFile(url.pathname) ?? new Response("not found", { status: 404 });
   };
 
   /**
@@ -895,3 +909,161 @@ export async function createApp(opts: AppOptions) {
 }
 
 export type EmuApp = Awaited<ReturnType<typeof createApp>>;
+
+export type RouterDefaults = Partial<AppOptions>;
+
+/**
+ * Multi-device router. Owns a lazily-populated `Map<serial, EmuApp>` and routes
+ * each request to the app for its `?device=<serial>` query (falling back to the
+ * first available device when absent). The UI shell and the `/api/devices`
+ * fleet listing are served without requiring any device. Both `server.ts` (Bun)
+ * and the Expo DevTools plugin mount this onto their own transport, so the
+ * device-routing logic lives here once rather than in each transport.
+ */
+export function createRouter(defaults: RouterDefaults = {}) {
+  const apps = new Map<string, EmuApp>();
+  const pending = new Map<string, Promise<EmuApp>>();
+  const failureAt = new Map<string, number>();
+
+  // Resolve the serial a request targets: an explicit (connected) `?device=`,
+  // else the configured default if still attached, else the first online
+  // device. Throws only when *no* device is attached — multiple devices is
+  // never an error (we just take the first), so the UI always opens cleanly.
+  const resolveSerial = (requested?: string | null): string => {
+    const online = listDevices();
+    if (requested) {
+      if (!online.some((d) => d.serial === requested)) {
+        throw new Error(`device ${requested} is not connected`);
+      }
+      return requested;
+    }
+    if (defaults.serial && online.some((d) => d.serial === defaults.serial)) {
+      return defaults.serial;
+    }
+    const first = online[0];
+    if (!first) {
+      throw new Error("No booted Android device found. Start an emulator or attach a device.");
+    }
+    return first.serial;
+  };
+
+  // Get (or lazily start) the app for a serial. A dead session is torn down so
+  // the next call re-initializes; repeated start failures are throttled.
+  const getApp = (serial: string): Promise<EmuApp> => {
+    const existing = apps.get(serial);
+    if (existing) {
+      if (existing.isStreaming()) return Promise.resolve(existing);
+      try {
+        existing.stop();
+      } catch {}
+      apps.delete(serial);
+    }
+    const inFlight = pending.get(serial);
+    if (inFlight) return inFlight;
+    if (Date.now() - (failureAt.get(serial) ?? 0) < SPAWN_RETRY_COOLDOWN_MS) {
+      return Promise.reject(
+        new Error(`serve-emu start for ${serial} is cooling down after a failure`),
+      );
+    }
+    const promise = (async () => {
+      const created = await createApp({ ...defaults, serial });
+      apps.set(serial, created);
+      return created;
+    })();
+    pending.set(serial, promise);
+    promise.then(
+      () => pending.delete(serial),
+      () => {
+        pending.delete(serial);
+        failureAt.set(serial, Date.now());
+      },
+    );
+    return promise;
+  };
+
+  // Resolve + start in one step.
+  const ensure = async (requested?: string | null): Promise<{ serial: string; app: EmuApp }> => {
+    const serial = resolveSerial(requested);
+    return { serial, app: await getApp(serial) };
+  };
+
+  const devicesResponse = (): Response => {
+    let defaultSerial: string | null = null;
+    try {
+      defaultSerial = resolveSerial(null);
+    } catch {
+      defaultSerial = null;
+    }
+    return Response.json({
+      ok: true,
+      defaultSerial,
+      devices: listAllDevices().map((device) => ({
+        ...device,
+        streaming: apps.get(device.serial)?.isStreaming() ?? false,
+      })),
+    });
+  };
+
+  const handleRequest = async (req: Request): Promise<Response> => {
+    const url = new URL(req.url);
+
+    // Fleet endpoint — lists every adb device, so it is not device-scoped.
+    if (url.pathname === "/api/devices") {
+      if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
+      try {
+        return devicesResponse();
+      } catch (err) {
+        return Response.json({ ok: false, error: errMsg(err) }, { status: 400 });
+      }
+    }
+
+    // Device-scoped endpoints are `/api`, `/api/*` (other than the fleet listing
+    // handled above), and `/health`. Everything else is the device-independent
+    // UI shell — serve it (and its 404s) without starting a device, so the page
+    // loads before one is selected or attached.
+    const deviceScoped =
+      url.pathname === "/api" ||
+      url.pathname.startsWith("/api/") ||
+      url.pathname === "/health";
+    if (!deviceScoped) {
+      return serveStaticFile(url.pathname) ?? new Response("not found", { status: 404 });
+    }
+
+    // Everything else operates on a single device.
+    let app: EmuApp;
+    try {
+      app = (await ensure(url.searchParams.get("device"))).app;
+    } catch (err) {
+      return Response.json({ ok: false, error: errMsg(err) }, { status: 503 });
+    }
+    return app.handleRequest(req);
+  };
+
+  // Attach a video/gesture socket to an already-resolved, already-started
+  // device. The transport ensures the serial before upgrading and passes it
+  // here, so the app should exist; close defensively if it raced away.
+  const attachWebSocket = (
+    socket: StreamSocket,
+    opts: { serial: string; frameMeta: boolean },
+  ): void => {
+    const app = apps.get(opts.serial);
+    if (!app) {
+      socket.close(1011, "device not ready");
+      return;
+    }
+    app.attachWebSocket(socket, { frameMeta: opts.frameMeta });
+  };
+
+  const stopAll = () => {
+    for (const app of apps.values()) {
+      try {
+        app.stop();
+      } catch {}
+    }
+    apps.clear();
+  };
+
+  return { resolveSerial, getApp, ensure, handleRequest, attachWebSocket, stopAll };
+}
+
+export type EmuRouter = ReturnType<typeof createRouter>;

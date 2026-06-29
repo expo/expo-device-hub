@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { buildCodecString, scanAU } from "./h264";
+import { withDevice } from "./device";
 
 export type DeviceSize = { width: number; height: number };
 
@@ -50,7 +51,7 @@ function parseFramePacket(raw: ArrayBuffer | Uint8Array): FramePacket {
   return { data: bytes, isKey: null, timestamp: null };
 }
 
-export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
+export function useStream(canvasRef: RefObject<HTMLCanvasElement>, serial: string | null) {
   const [state, setState] = useState<StreamState>({
     status: "connecting…",
     fps: 0,
@@ -68,6 +69,11 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
     const canDecode = "VideoDecoder" in globalThis && "EncodedVideoChunk" in globalThis;
     if (!canDecode) {
       setState((s) => ({ ...s, status: "WebCodecs unsupported" }));
+      return;
+    }
+
+    if (!serial) {
+      setState((s) => ({ ...s, status: "waiting for device", deviceSize: null }));
       return;
     }
 
@@ -268,7 +274,7 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
     const connect = () => {
       if (cancelled) return;
       const proto = location.protocol === "https:" ? "wss:" : "ws:";
-      const ws = new WebSocket(`${proto}//${location.host}/ws?frame-meta=1`);
+      const ws = new WebSocket(`${proto}//${location.host}${withDevice("/ws?frame-meta=1", serial)}`);
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
       ws.onopen = () => {
@@ -311,7 +317,8 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
       }));
     };
 
-    fetch("/health")
+    const healthUrl = withDevice("/health", serial);
+    fetch(healthUrl)
       .then((r) => r.json() as Promise<ApiInfo>)
       .then((d) => {
         if (cancelled) return;
@@ -322,7 +329,7 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
       });
 
     healthTimer = setInterval(() => {
-      fetch("/health")
+      fetch(healthUrl)
         .then((r) => r.json() as Promise<ApiInfo>)
         .then((d) => {
           if (!cancelled) applyServerStatus(d);
@@ -343,7 +350,7 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>) {
       closeDecoder();
       wsRef.current = null;
     };
-  }, [canvasRef]);
+  }, [canvasRef, serial]);
 
   return { state, send };
 }

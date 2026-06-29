@@ -1,15 +1,18 @@
 /**
  * serve-emu (Android) implementation of the {@link DeviceClient} interface.
  *
- * Wire protocol (see serve-emu `src/server.ts` / `src/input.ts`):
- *   - Video + input share one WebSocket at `<base>/ws?frame-meta=1`.
+ * Wire protocol (see serve-emu `src/middleware.ts` / `src/input.ts`):
+ *   - Video + input share one WebSocket at `<base>/ws?frame-meta=1`. serve-emu is
+ *     multi-device: a `&device=<serial>` query selects which device to stream
+ *     (omitted → first available). `/api/logcat` takes the same `?device=`.
  *   - Binary inbound messages are H.264 access units, each prefixed with a
  *     16-byte "SEMU" header (keyframe flag + PTS); decoded with WebCodecs into a
  *     `<canvas>`.
  *   - Outbound input is JSON on the same socket: `{type:'touch',action,x,y}`,
  *     `{type:'home'|'back'|'recents'|'power'}`, `{type:'reset-video'}`.
  *   - Screen size comes from the decoded frames; logcat is an SSE feed at
- *     `<base>/api/logcat`; running devices come from `<base>/api/devices`.
+ *     `<base>/api/logcat`; the device fleet comes from `<base>/api/devices`
+ *     (device-agnostic — never carries `?device=`).
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -55,15 +58,17 @@ function apiUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/$/, '')}${path}`;
 }
 
-function wsUrlFor(baseUrl: string): string {
+function wsUrlFor(baseUrl: string, device: string | null): string {
   const u = new URL(apiUrl(baseUrl, '/ws'));
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
   u.searchParams.set('frame-meta', '1');
+  // serve-emu routes the stream to this device; omitted → first available.
+  if (device) u.searchParams.set('device', device);
   return u.toString();
 }
 
 export function useAndroidDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true } = options;
+  const { baseUrl, enabled = true, device: targetDevice = null } = options;
   const active = enabled && !!baseUrl;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
@@ -126,6 +131,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setError(null);
 
     let cancelled = false;
+    // Effect-local "first frame painted" flag. Drives the → streaming transition
+    // without reading the `status` state from this closure: on a device switch
+    // the effect re-runs while `status` is still the previous device's
+    // 'streaming', so a `status !== 'streaming'` guard would never fire again and
+    // the new device would stay stuck on "Connecting…".
+    let painted = false;
     let reconnectDelay = 500;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let decoder: VideoDecoder | null = null;
@@ -169,7 +180,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       ctx.drawImage(frame, 0, 0);
       frame.close();
 
-      if (!cancelled && status !== 'streaming') setStatus('streaming');
+      if (!cancelled && !painted) {
+        painted = true;
+        setStatus('streaming');
+      }
       fpsCount++;
       const now = performance.now();
       if (now - fpsTimer >= 1000) {
@@ -274,7 +288,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (cancelled) return;
       let ws: WebSocket;
       try {
-        ws = new WebSocket(wsUrlFor(baseUrl));
+        ws = new WebSocket(wsUrlFor(baseUrl, targetDevice));
       } catch (err) {
         setStatus('error');
         setError(err instanceof Error ? err.message : 'Invalid server URL');
@@ -296,6 +310,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         if (cancelled) return;
         closeDecoder();
         sawKeyframe = false;
+        painted = false;
         frameIdx = 0;
         setStatus('error');
         setError((prev) => prev ?? 'Disconnected — retrying…');
@@ -322,17 +337,19 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       setScreen(null);
       setFps(0);
     };
-    // `status` is read for a transition guard only; tracking it would re-run the
-    // whole connection on every frame.
+    // Reconnect only when the target device or server changes — not on every
+    // status/fps/screen state update this effect writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, baseUrl]);
+  }, [active, baseUrl, targetDevice]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
     if (!logsEnabled || !active || !baseUrl) return;
     let source: EventSource | null = null;
     try {
-      source = new EventSource(apiUrl(baseUrl, '/api/logcat'));
+      source = new EventSource(
+        apiUrl(baseUrl, `/api/logcat${targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''}`),
+      );
     } catch {
       return;
     }
@@ -345,7 +362,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       } catch {}
     });
     return () => source?.close();
-  }, [logsEnabled, active, baseUrl]);
+  }, [logsEnabled, active, baseUrl, targetDevice]);
 
   // ── Running devices (best-effort) ──
   useEffect(() => {
@@ -354,10 +371,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       return;
     }
     let cancelled = false;
+    // `/api/devices` is serve-emu's fleet listing — it must stay device-agnostic
+    // (no `?device=`). The streamed device is the selected serial, or serve-emu's
+    // first-available default when none is selected.
     fetch(apiUrl(baseUrl, '/api/devices'))
       .then((r) => r.json())
-      .then((data: { devices?: Array<Record<string, unknown>>; currentSerial?: string }) => {
+      .then((data: { devices?: Array<Record<string, unknown>>; defaultSerial?: string }) => {
         if (cancelled || !Array.isArray(data.devices) || data.devices.length === 0) return;
+        const streamed = targetDevice ?? data.defaultSerial ?? null;
         setDevices(
           data.devices.map((d) => {
             const id = String(d.serial ?? d.id ?? 'android');
@@ -365,7 +386,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
               id,
               name: String(d.model ?? d.name ?? d.product ?? id),
               platform: 'android' as const,
-              current: d.current === true || id === data.currentSerial,
+              current: id === streamed,
             };
           }),
         );
@@ -376,7 +397,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     return () => {
       cancelled = true;
     };
-  }, [active, baseUrl]);
+  }, [active, baseUrl, targetDevice]);
 
   return {
     platform: 'android',

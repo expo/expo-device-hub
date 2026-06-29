@@ -31,6 +31,7 @@ export function useActiveDeviceClient(target: ActiveDeviceTarget | null): Device
   const android = useAndroidDeviceClient({
     baseUrl: androidActive ? endpointFor('android', target?.baseUrl) : null,
     enabled: androidActive,
+    device: androidActive ? target?.device ?? null : null,
   });
 
   return androidActive ? android : ios;

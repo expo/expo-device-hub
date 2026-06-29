@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
 import { parseArgs } from "node:util";
-import { pickDevice } from "./adb.ts";
 import { listAvds, listRunningAvds, startEmulator } from "./emulator.ts";
 import { startServer } from "./server.ts";
 
@@ -89,6 +88,8 @@ async function main() {
   }
 
   let emulatorLaunch: Awaited<ReturnType<typeof startEmulator>> | null = null;
+  // Without --avd or -s, leave the serial undefined: the router picks the first
+  // available device, so multiple booted devices no longer error.
   const serial = values.avd
     ? (emulatorLaunch = await startEmulator({
         avd: values.avd,
@@ -96,14 +97,14 @@ async function main() {
         port: values["emulator-port"] ? Number(values["emulator-port"]) : undefined,
         restartAvd: values["restart-avd"],
       })).serial
-    : pickDevice(values.serial);
+    : values.serial;
   const port = Number(values.port);
   const maxFps = numberOption("max-fps", 30);
   const bitRate = numberOption("bit-rate", 8_000_000);
   const maxSize = numberOption("max-size", 1280);
   const keyFrameInterval = numberOption("key-frame-interval", 1);
 
-  const { server, stop: stopServer } = await startServer({
+  const started = await startServer({
     serial,
     port,
     maxFps,
@@ -114,6 +115,7 @@ async function main() {
     emulatorLaunch?.stop();
     throw err;
   });
+  const { server, stop: stopServer } = started;
 
   const stop = () => {
     stopServer();
@@ -128,7 +130,7 @@ async function main() {
     process.exit(0);
   });
 
-  console.log(`serve-emu → http://localhost:${server.port}  (device: ${serial})`);
+  console.log(`serve-emu → http://localhost:${server.port}  (device: ${started.serial})`);
 }
 
 await main().catch((err) => {

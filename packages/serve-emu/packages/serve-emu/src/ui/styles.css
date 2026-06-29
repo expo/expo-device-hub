@@ -340,14 +340,27 @@ input[type="checkbox"] {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
+  width: 100%;
   padding: 8px 10px;
   border: 1px solid #25252d;
   border-radius: 8px;
   background: #111116;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.device-row:hover:not(:disabled):not(.current) {
+  border-color: #3a3a44;
+  background: #16161c;
+}
+.device-row:disabled {
+  cursor: default;
+  opacity: 0.5;
 }
 .device-row.current {
   border-color: #3f7d5c;
   background: #132219;
+  cursor: default;
 }
 .device-row span {
   min-width: 0;

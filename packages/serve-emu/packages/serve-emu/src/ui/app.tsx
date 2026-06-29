@@ -8,11 +8,13 @@ import { ControlBar, type HardwareKey } from "./components/control-bar";
 import { LogcatPanel } from "./components/logcat-panel";
 import { LocationPanel } from "./components/location-panel";
 import { SessionPanel } from "./components/session-panel";
+import { useDevice } from "./lib/device";
 import { useStream } from "./lib/use-stream";
 
 export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const { state, send } = useStream(canvasRef);
+  const { serial } = useDevice();
+  const { state, send } = useStream(canvasRef, serial);
   const [accessibilityEnabled, setAccessibilityEnabled] = useState(false);
   const [accessibilityNodes, setAccessibilityNodes] = useState<AccessibilityNode[]>([]);
   const [highlightedAccessibilityId, setHighlightedAccessibilityId] = useState<string | null>(null);

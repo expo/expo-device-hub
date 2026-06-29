@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
+import { useApi } from "../lib/device";
 
 type AppApiResult = {
   ok?: boolean;
@@ -18,15 +19,6 @@ type ForegroundApp = {
   debuggable: boolean | null;
 };
 
-async function postJson(path: string, body: Record<string, unknown>): Promise<AppApiResult> {
-  const res = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return await res.json() as AppApiResult;
-}
-
 function outputFor(result: AppApiResult): string {
   return result.ok ? result.output || "OK" : result.error || "Failed";
 }
@@ -44,12 +36,25 @@ export function AppManagementPanel() {
   const [dragOver, setDragOver] = useState(false);
   const [foreground, setForeground] = useState<ForegroundApp | null>(null);
   const [foregroundError, setForegroundError] = useState<string | null>(null);
+  const api = useApi();
+
+  const postJson = useCallback(
+    async (path: string, body: Record<string, unknown>): Promise<AppApiResult> => {
+      const res = await api.fetch(path, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      return (await res.json()) as AppApiResult;
+    },
+    [api],
+  );
 
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
       try {
-        const res = await fetch("/api/foreground", { cache: "no-store" });
+        const res = await api.fetch("/api/foreground", { cache: "no-store" });
         const json = await res.json() as { ok?: boolean; app?: ForegroundApp; error?: string };
         if (cancelled) return;
         if (json.ok && json.app) {
@@ -72,7 +77,7 @@ export function AppManagementPanel() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, []);
+  }, [api]);
 
   const run = async (label: string, request: () => Promise<AppApiResult>) => {
     setStatus(`${label}...`);
@@ -89,7 +94,7 @@ export function AppManagementPanel() {
     await run(apk ? "Installing" : "Importing", async () => {
       const form = new FormData();
       form.set(apk ? "apk" : "file", file);
-      const res = await fetch(apk ? "/api/apps/install" : "/api/files/import", {
+      const res = await api.fetch(apk ? "/api/apps/install" : "/api/files/import", {
         method: "POST",
         body: form,
       });

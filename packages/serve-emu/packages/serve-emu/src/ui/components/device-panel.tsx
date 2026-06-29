@@ -1,37 +1,7 @@
-import { useCallback, useEffect, useState } from "react";
-
-type Device = {
-  serial: string;
-  state: string;
-  current: boolean;
-};
+import { useDevice } from "../lib/device";
 
 export function DevicePanel() {
-  const [devices, setDevices] = useState<Device[]>([]);
-  const [status, setStatus] = useState("Loading...");
-
-  const refresh = useCallback(async () => {
-    try {
-      const res = await fetch("/api/devices", { cache: "no-store" });
-      const json = await res.json() as { ok?: boolean; devices?: Device[]; error?: string };
-      if (!json.ok || !json.devices) {
-        setDevices([]);
-        setStatus(json.error || "Unavailable");
-        return;
-      }
-      setDevices(json.devices);
-      setStatus(`${json.devices.length} device${json.devices.length === 1 ? "" : "s"}`);
-    } catch (err) {
-      setDevices([]);
-      setStatus(err instanceof Error ? err.message : String(err));
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(refresh, 3000);
-    return () => clearInterval(timer);
-  }, [refresh]);
+  const { devices, serial, setSerial, status, refresh } = useDevice();
 
   return (
     <section className="tool-panel device-panel">
@@ -43,12 +13,26 @@ export function DevicePanel() {
         {devices.length === 0 ? (
           <div className="device-empty">No adb devices reported.</div>
         ) : (
-          devices.map((device) => (
-            <div key={device.serial} className={device.current ? "device-row current" : "device-row"}>
-              <span>{device.serial}</span>
-              <code>{device.current ? "streaming" : device.state}</code>
-            </div>
-          ))
+          devices.map((device) => {
+            const online = device.state === "device";
+            const active = device.serial === serial;
+            return (
+              <button
+                key={device.serial}
+                type="button"
+                className={active ? "device-row current" : "device-row"}
+                disabled={!online}
+                aria-pressed={active}
+                title={online ? (active ? "Streaming" : "Stream this device") : device.state}
+                onClick={() => {
+                  if (online && !active) setSerial(device.serial);
+                }}
+              >
+                <span>{device.serial}</span>
+                <code>{active ? "streaming" : device.state}</code>
+              </button>
+            );
+          })
         )}
       </div>
       <button onClick={() => void refresh()}>Refresh Devices</button>

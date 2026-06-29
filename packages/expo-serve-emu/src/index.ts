@@ -5,24 +5,19 @@
  * `/_expo/plugins/expo-serve-emu/*` with the plugin prefix stripped from the
  * URL, expecting a fetch `Response` back.
  *
- * serve-emu ships a fetch-style middleware (`createApp` → `handleRequest(req) =>
- * Response` + `attachWebSocket(socket)`), so this runs serve-emu IN-PROCESS —
- * no spawned Bun child, no HTTP/WS reverse proxy. It lazily starts one
- * scrcpy-backed app for the booted device on first use, forwards HTTP straight
- * through, and hands the DevTools-plugin WebSocket to `attachWebSocket` via the
- * `ws` adapter. The served `index.html` is rewritten so the UI's root-absolute
- * `/api`, `/ws`, `/health` URLs and asset paths resolve under the plugin prefix.
+ * serve-emu ships a fetch-style middleware. We mount its multi-device router
+ * (`createRouter` → `handleRequest(req) => Response` + `attachWebSocket(socket)`)
+ * IN-PROCESS — no spawned Bun child, no HTTP/WS reverse proxy. The router serves
+ * the (device-independent) UI shell and `/api/devices` listing without a device,
+ * and lazily starts one scrcpy-backed app per `?device=<serial>` (defaulting to
+ * the first available device) for `/api/*`, `/health`, and `/ws`. The served
+ * `index.html` is rewritten so the UI's root-absolute `/api`, `/ws`, `/health`
+ * URLs (with their `?device=` query preserved) resolve under the plugin prefix.
  */
 
 import type { IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
-import {
-  createApp,
-  fromWsSocket,
-  pickDevice,
-  type EmuApp,
-  type WsWebSocketLike,
-} from "serve-emu/middleware";
+import { createRouter, fromWsSocket, type WsWebSocketLike } from "serve-emu/middleware";
 
 // Compiled to ESM (.mjs), but package.json is JSON loaded with CJS semantics.
 const require = createRequire(import.meta.url);
@@ -38,54 +33,20 @@ const BASE = `${DEVTOOLS_PLUGINS_ENDPOINT}/${PACKAGE_NAME}`;
 // serve-emu's UI roots — the root-absolute paths the bundle hard-codes.
 const API_ROOTS = ["/api", "/ws", "/health"];
 
-const SPAWN_RETRY_COOLDOWN_MS = 5_000;
+// One router for the whole CLI process. It owns the per-device scrcpy apps and
+// is shared by the HTTP handler and the WebSocket handler below.
+const router = createRouter();
 
-// ── Lazy in-process serve-emu app ───────────────────────────────────────────
-let app: EmuApp | null = null;
-let appPromise: Promise<EmuApp> | null = null;
-let lastFailureAt = 0;
-
-// Start (once) the scrcpy-backed app for the booted device. `pickDevice()`
-// throws if zero or multiple devices are attached (matching the standalone CLI),
-// which surfaces as the "waiting for an emulator" page. A dead session (scrcpy
-// exited) is torn down so the next request re-initializes.
-function ensureApp(): Promise<EmuApp> {
-  if (app) {
-    if (app.isStreaming()) return Promise.resolve(app);
-    try {
-      app.stop();
-    } catch {}
-    app = null;
-    appPromise = null;
-  }
-  if (appPromise) return appPromise;
-  if (Date.now() - lastFailureAt < SPAWN_RETRY_COOLDOWN_MS) {
-    return Promise.reject(new Error("serve-emu start is cooling down after a failure"));
-  }
-  appPromise = (async () => {
-    const created = await createApp({ serial: pickDevice() });
-    app = created;
-    return created;
-  })();
-  appPromise.catch(() => {
-    appPromise = null;
-    lastFailureAt = Date.now();
-  });
-  return appPromise;
-}
-
-// Tie the scrcpy session to this process — it mirrors a live device, so it must
-// not outlive `expo start`.
-function stopApp(): void {
+// Tie the scrcpy sessions to this process — they mirror live devices, so they
+// must not outlive `expo start`.
+function stopAll(): void {
   try {
-    app?.stop();
+    router.stopAll();
   } catch {}
-  app = null;
-  appPromise = null;
 }
-process.once("exit", stopApp);
-process.once("SIGINT", stopApp);
-process.once("SIGTERM", stopApp);
+process.once("exit", stopAll);
+process.once("SIGINT", stopAll);
+process.once("SIGTERM", stopAll);
 
 // ── HTML rewriting ──────────────────────────────────────────────────────────
 //
@@ -95,8 +56,9 @@ process.once("SIGTERM", stopApp);
 // the plugin prefix those all miss. Rather than fork the UI, fix it on the way
 // out: prefix the asset paths, and inject a classic script (runs before the
 // deferred module bundle) that wraps `fetch`/`WebSocket`/`EventSource` to push
-// the UI's root-absolute API paths under the plugin prefix. serve-emu standalone
-// is untouched and unaware of any base.
+// the UI's root-absolute API paths under the plugin prefix. The wrapper keeps
+// the query string (so the UI's `?device=<serial>` survives). serve-emu
+// standalone is untouched and unaware of any base.
 // FIXME: This is super hacky, let's update the UI.
 const INLINE_PATCH = `(function(){
   var BASE=${JSON.stringify(BASE)};
@@ -117,30 +79,21 @@ function rewriteHtml(html: string): string {
     .replace(/\b(src|href)="\//g, `$1="${BASE}/`);
 }
 
-function unavailableResponse(request: Request): Response {
-  const wantsHtml = (request.headers.get("accept") || "").includes("text/html");
-  if (!wantsHtml) {
-    return new Response("serve-emu is not available yet", { status: 503 });
-  }
+// Shown when the document 404s — i.e. the serve-emu UI bundle hasn't been built.
+// (Device availability is reflected live in the UI itself, so it is no longer a
+// reason to block the page.)
+function uiUnavailableResponse(): Response {
   const page = `<!doctype html><html><head><meta charset="utf-8"><title>Emulator</title>
 <style>body{font:14px -apple-system,system-ui,sans-serif;margin:3rem auto;max-width:32rem;color:#111}code{background:#eee;padding:.1rem .3rem;border-radius:4px}</style>
 </head><body>
-<h1>Waiting for an Android emulator</h1>
-<p>serve-emu couldn't start. Make sure a single emulator or device is booted (<code>adb devices</code>),
-that the serve-emu UI has been built (<code>bun run setup</code> in the serve-emu package), then reload.</p>
+<h1>Emulator preview unavailable</h1>
+<p>The serve-emu UI has not been built yet. Run <code>bun run setup</code> in the serve-emu package, then reload.</p>
 </body></html>`;
   return new Response(page, { status: 503, headers: { "content-type": "text/html; charset=utf-8" } });
 }
 
 export default async function handler(request: Request): Promise<Response> {
-  let current: EmuApp;
-  try {
-    current = await ensureApp();
-  } catch {
-    return unavailableResponse(request);
-  }
-
-  const response = await current.handleRequest(request);
+  const response = await router.handleRequest(request);
 
   // Only the HTML document needs the prefix rewrite; assets, JSON, the logcat
   // SSE feed, and screenshots stream straight through.
@@ -151,6 +104,11 @@ export default async function handler(request: Request): Promise<Response> {
     headers.delete("content-length"); // body length changed by the rewrite
     return new Response(body, { status: response.status, headers });
   }
+
+  // A 404 on a navigation means the UI bundle is missing — guide the user.
+  if (response.status === 404 && (request.headers.get("accept") || "").includes("text/html")) {
+    return uiUnavailableResponse();
+  }
   return response;
 }
 
@@ -158,22 +116,24 @@ export default async function handler(request: Request): Promise<Response> {
 //
 // serve-emu streams H.264 video and accepts gesture input over a single
 // WebSocket at `/ws`. The Expo CLI owns the upgrade and passes the accepted `ws`
-// socket to handlers exported here; we hand it to the in-process app via the
-// `ws` StreamSocket adapter — no upstream bridge. `frame-meta=1` (preserved in
-// the un-stripped request URL) selects the SEMU-framed packet format.
+// socket to handlers exported here. We resolve the target device from the
+// request URL's `?device=<serial>` (defaulting to the first available), ensure
+// its app is started, then hand the socket to the router via the `ws`
+// StreamSocket adapter — no upstream bridge. `frame-meta=1` selects the
+// SEMU-framed packet format. Both query params survive in the un-stripped URL.
 async function handleWsConnection(socket: WsWebSocketLike, request: IncomingMessage): Promise<void> {
-  let current: EmuApp;
+  const url = new URL(request.url || "/ws", "http://localhost");
+  let serial: string;
   try {
-    current = await ensureApp();
+    serial = (await router.ensure(url.searchParams.get("device"))).serial;
   } catch {
     try {
       socket.close();
     } catch {}
     return;
   }
-  const frameMeta =
-    new URL(request.url || "/ws", "http://localhost").searchParams.get("frame-meta") === "1";
-  current.attachWebSocket(fromWsSocket(socket), { frameMeta });
+  const frameMeta = url.searchParams.get("frame-meta") === "1";
+  router.attachWebSocket(fromWsSocket(socket), { serial, frameMeta });
 }
 
 export const webSocketHandlers = {

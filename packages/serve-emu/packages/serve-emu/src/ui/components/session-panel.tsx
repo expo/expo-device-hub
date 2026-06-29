@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useApi } from "../lib/device";
 
 type SessionEvent = {
   id: number;
@@ -28,9 +29,11 @@ export function SessionPanel() {
   const [session, setSession] = useState<SessionSnapshot | null>(null);
   const [multiplier, setMultiplier] = useState("1");
   const [status, setStatus] = useState("Ready");
+  const api = useApi();
 
   const refresh = () => {
-    fetch("/api/session")
+    api
+      .fetch("/api/session")
       .then((r) => r.json() as Promise<SessionSnapshot>)
       .then(setSession)
       .catch(() => setStatus("Session unavailable"));
@@ -40,7 +43,8 @@ export function SessionPanel() {
     refresh();
     const timer = setInterval(refresh, 1000);
     return () => clearInterval(timer);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api.serial]);
 
   const replay = async () => {
     const rate = Number(multiplier);
@@ -48,7 +52,7 @@ export function SessionPanel() {
       setStatus("Rate must be positive");
       return;
     }
-    const res = await fetch("/api/session/replay", {
+    const res = await api.fetch("/api/session/replay", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ multiplier: rate }),
@@ -63,14 +67,14 @@ export function SessionPanel() {
   };
 
   const stopReplay = async () => {
-    const res = await fetch("/api/session/replay/stop", { method: "POST" });
+    const res = await api.fetch("/api/session/replay/stop", { method: "POST" });
     const data = await res.json() as { session?: SessionSnapshot };
     setSession(data.session ?? null);
     setStatus("Replay stopped");
   };
 
   const clear = async () => {
-    const res = await fetch("/api/session", { method: "DELETE" });
+    const res = await api.fetch("/api/session", { method: "DELETE" });
     const data = await res.json() as { session?: SessionSnapshot };
     setSession(data.session ?? null);
     setStatus("Cleared");

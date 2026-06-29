@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { useApi } from "../lib/device";
 
 type LogLine = {
   id: number;
@@ -17,13 +18,14 @@ export function LogcatPanel() {
   const [search, setSearch] = useState("");
   const [paused, setPaused] = useState(false);
   const [status, setStatus] = useState("Disconnected");
+  const api = useApi();
 
   const connect = () => {
     eventSourceRef.current?.close();
     const params = new URLSearchParams();
     if (packageName.trim()) params.set("package", packageName.trim());
     if (search.trim()) params.set("search", search.trim());
-    const source = new EventSource(`/api/logcat?${params}`);
+    const source = new EventSource(api.url(`/api/logcat?${params}`));
     eventSourceRef.current = source;
     setStatus("Connecting");
     source.addEventListener("ready", () => setStatus("Streaming"));
@@ -40,10 +42,11 @@ export function LogcatPanel() {
   };
 
   useEffect(() => {
+    // Reconnect when the active device changes (filters are applied manually).
     connect();
     return () => eventSourceRef.current?.close();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [api.serial]);
 
   useEffect(() => {
     pausedRef.current = paused;

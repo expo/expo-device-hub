@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useApi } from "../lib/device";
 
 export type AccessibilityNode = {
   id: string;
@@ -41,12 +42,13 @@ export function AccessibilityPanel({
   onHighlight,
 }: Props) {
   const [status, setStatus] = useState("AX off");
+  const api = useApi();
 
   const refresh = useCallback(async () => {
     if (!enabled) return;
     setStatus("Reading...");
     try {
-      const res = await fetch("/api/accessibility", { cache: "no-store" });
+      const res = await api.fetch("/api/accessibility", { cache: "no-store" });
       const json = await res.json() as { ok?: boolean; nodes?: AccessibilityNode[]; error?: string };
       if (!json.ok || !json.nodes) {
         setStatus(json.error || "AX unavailable");
@@ -59,7 +61,7 @@ export function AccessibilityPanel({
       onNodesChange([]);
       setStatus(err instanceof Error ? err.message : String(err));
     }
-  }, [enabled, onNodesChange]);
+  }, [enabled, onNodesChange, api]);
 
   useEffect(() => {
     if (!enabled) {
