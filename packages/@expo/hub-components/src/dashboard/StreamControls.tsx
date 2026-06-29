@@ -62,7 +62,7 @@ export function StreamControls({
       )}
       <DropdownItem label="Rotate device" Icon={RotateIcon} />
       <DropdownItem label="Shutdown" Icon={PowerIcon} />
-      {!physical && <DropdownItem label="Erase" Icon={TrashIcon} destructive />}
+      {!physical && <DropdownItem label="Remove" Icon={TrashIcon} destructive />}
     </Dropdown>
   );
 

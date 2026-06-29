@@ -29,7 +29,7 @@ export interface HubDevice {
   booted: boolean;
   /**
    * Whether this is real physical hardware rather than a simulator/emulator.
-   * Physical devices can't be erased/wiped from Hub, so the UI hides that action.
+   * Physical devices can't be removed from Hub, so the UI hides that action.
    */
   physical: boolean;
   /**

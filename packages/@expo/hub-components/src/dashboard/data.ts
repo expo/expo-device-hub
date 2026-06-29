@@ -17,7 +17,7 @@ export type Device = {
   booted: boolean;
   /**
    * Whether this is real physical hardware rather than a simulator/emulator.
-   * Physical devices can't be erased, so the "Erase" control is hidden for them.
+   * Physical devices can't be removed, so the "Remove" control is hidden for them.
    */
   physical: boolean;
   /**
