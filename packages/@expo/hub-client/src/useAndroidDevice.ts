@@ -44,8 +44,19 @@ const BUTTON_MESSAGE: Record<HardwareButton, Record<string, unknown> | null> = {
 
 const TOUCH_ACTION = { begin: 'down', move: 'move', end: 'up' } as const;
 
+/**
+ * Join an API path onto the base URL, **preserving any path prefix** the base
+ * carries. `baseUrl` is the `expo-serve-emu` plugin mount
+ * (`…/_expo/plugins/expo-serve-emu`), so `new URL('/ws', baseUrl)` would drop
+ * that prefix and miss the plugin; a plain string join keeps it (and still works
+ * for a bare `http://localhost:3300` standalone serve-emu).
+ */
+function apiUrl(baseUrl: string, path: string): string {
+  return `${baseUrl.replace(/\/$/, '')}${path}`;
+}
+
 function wsUrlFor(baseUrl: string): string {
-  const u = new URL('/ws', baseUrl);
+  const u = new URL(apiUrl(baseUrl, '/ws'));
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
   u.searchParams.set('frame-meta', '1');
   return u.toString();
@@ -321,7 +332,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     if (!logsEnabled || !active || !baseUrl) return;
     let source: EventSource | null = null;
     try {
-      source = new EventSource(new URL('/api/logcat', baseUrl).toString());
+      source = new EventSource(apiUrl(baseUrl, '/api/logcat'));
     } catch {
       return;
     }
@@ -343,7 +354,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       return;
     }
     let cancelled = false;
-    fetch(new URL('/api/devices', baseUrl).toString())
+    fetch(apiUrl(baseUrl, '/api/devices'))
       .then((r) => r.json())
       .then((data: { devices?: Array<Record<string, unknown>>; currentSerial?: string }) => {
         if (cancelled || !Array.isArray(data.devices) || data.devices.length === 0) return;

@@ -16,4 +16,10 @@ export { displayScreen, streamGeometry } from './orientation';
 export { useIosDeviceClient } from './useIosDevice';
 export { useAndroidDeviceClient } from './useAndroidDevice';
 export { useActiveDeviceClient, type ActiveDeviceTarget } from './useActiveDeviceClient';
-export { DEFAULT_ENDPOINTS, SERVE_SIM_PLUGIN_PATH, endpointFor, startIosHelper } from './connections';
+export {
+  DEFAULT_ENDPOINTS,
+  SERVE_SIM_PLUGIN_PATH,
+  SERVE_EMU_PLUGIN_PATH,
+  endpointFor,
+  startIosHelper,
+} from './connections';

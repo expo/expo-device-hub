@@ -7,11 +7,15 @@
  *     process is needed — the iOS client discovers the helper via that plugin's
  *     `/api`, lists/starts sims via its `/grid/api`, and a bare helper URL still
  *     works in a reduced video-only mode.
- *   - serve-emu (Android): `serve-emu --port 3300` → http://localhost:3300.
+ *   - Android streams through `expo-serve-emu`, which mounts serve-emu the same
+ *     way (`/_expo/plugins/expo-serve-emu`) on the Hub's origin. No separate
+ *     `serve-emu --port 3300` process is needed — the Android client connects to
+ *     that plugin's `/ws` (H.264 video + input) and reads `/api/devices` /
+ *     `/api/logcat` under the same prefix.
  *
  * Override at runtime (e.g. from the browser console in the Hub preview, or to
- * point iOS at a standalone `serve-sim --port 3200`) without a rebuild by setting
- * `window.__EXPO_HUB_ENDPOINTS__ = { ios, android }`.
+ * point at a standalone `serve-sim --port 3200` / `serve-emu --port 3300`)
+ * without a rebuild by setting `window.__EXPO_HUB_ENDPOINTS__ = { ios, android }`.
  */
 
 import { type DevicePlatform } from './types';
@@ -19,9 +23,12 @@ import { type DevicePlatform } from './types';
 /** Same-origin path where the `expo-serve-sim` DevTools plugin is mounted. */
 export const SERVE_SIM_PLUGIN_PATH = '/_expo/plugins/expo-serve-sim';
 
+/** Same-origin path where the `expo-serve-emu` DevTools plugin is mounted. */
+export const SERVE_EMU_PLUGIN_PATH = '/_expo/plugins/expo-serve-emu';
+
 export const DEFAULT_ENDPOINTS: Record<DevicePlatform, string> = {
   ios: SERVE_SIM_PLUGIN_PATH,
-  android: 'http://localhost:3300',
+  android: SERVE_EMU_PLUGIN_PATH,
 };
 
 declare global {

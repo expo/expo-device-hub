@@ -96,6 +96,7 @@
         "@expo/hub-components": "workspace:*",
         "@expo/metro-runtime": "catalog:",
         "expo": "catalog:",
+        "expo-serve-emu": "workspace:*",
         "expo-serve-sim": "workspace:*",
         "react": "catalog:",
         "react-dom": "catalog:",
