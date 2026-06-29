@@ -15,6 +15,7 @@ import { StreamPanel } from './dashboard/StreamPanel';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDevices, useRecentDevices } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
+import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -39,6 +40,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const { scheme, toggle } = useColorScheme();
   const booted = useDevices();
   const recent = useRecentDevices();
+  // Mocked OS versions + models for the add-device picker's "New device" form.
+  const newDeviceOptions = useNewDeviceOptions();
   const [selectedId, setSelectedId] = useState('');
   // Devices the user added from a "recent devices" picker. UI-only for now: they
   // join the sidebar list but aren't booted on the host.
@@ -126,6 +129,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           emulators={emulators}
           recentSimulators={recent.simulators}
           recentEmulators={recent.emulators}
+          simulatorOptions={newDeviceOptions.ios}
+          emulatorOptions={newDeviceOptions.android}
           selectedId={selectedId}
           onSelect={setSelectedId}
           onAddDevice={handleAddDevice}
@@ -161,6 +166,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               emulators={emulators}
               recentSimulators={recent.simulators}
               recentEmulators={recent.emulators}
+              simulatorOptions={newDeviceOptions.ios}
+              emulatorOptions={newDeviceOptions.android}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onAddDevice={handleAddDevice}

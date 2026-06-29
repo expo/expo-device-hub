@@ -166,3 +166,75 @@ export function TrashIcon({ size = 16, color = 'currentColor', strokeWidth = 1.6
     </svg>
   );
 }
+
+/** Lucide `smartphone` — the device glyph in the add-device picker's recent rows. */
+export function SmartphoneIcon({ size = 16, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <rect
+        x="5"
+        y="2"
+        width="14"
+        height="20"
+        rx="2.5"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M12 18h.01" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** Lucide `check` — trailing mark on the selected recent row. */
+export function CheckIcon({ size = 17, color = 'currentColor', strokeWidth = 2.5, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <polyline
+        points="20 6 9 17 4 12"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Lucide `chevron-down` — trailing affordance on the OS-version select. */
+export function ChevronDownIcon({ size = 14, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <polyline
+        points="6 9 12 15 18 9"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+/** Lucide `chevrons-up-down` — trailing affordance on the Model select. */
+export function ChevronsUpDownIcon({ size = 14, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <polyline
+        points="7 15 12 20 17 15"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <polyline
+        points="7 9 12 4 17 9"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}

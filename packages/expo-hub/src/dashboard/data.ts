@@ -13,6 +13,11 @@ export type Device = {
   platform: Platform;
   /** Whether the device is currently booted / running. */
   booted: boolean;
+  /**
+   * Epoch ms the device was last used, from `/api/devices` (mocked server-side
+   * for now). Drives the relative "Recents" time in the add-device picker.
+   */
+  lastUsedAt?: number;
 };
 
 export type LogEntry = {

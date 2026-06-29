@@ -5,36 +5,41 @@ import { PlusIcon } from '../../components/icons';
 import { bg, border, icon, radius, text, textSize } from '../../theme/tokens';
 import { type Device } from './data';
 import { RecentDevicesModal } from './RecentDevicesModal';
+import { type NewDeviceOptions } from './useNewDeviceOptions';
 
 /**
  * A titled, selectable list of devices (Simulators or Emulators) with an add
  * button. Selection is controlled by the parent so it can be shared across
  * sections — only one device is "open" at a time. The add button opens the
- * "recent devices" picker; the chosen device is reported via `onAdd`.
+ * "Add a simulator/emulator" picker; the chosen (or newly configured) device is
+ * reported via `onAdd`.
  */
 export type DeviceSectionProps = {
   title: string;
   addLabel: string;
-  /** Header for the add-device modal, e.g. "Recent Simulators". */
-  modalTitle: string;
+  /** Drives the add-device picker's nouns ("simulator" / "emulator"). */
+  kind: 'simulator' | 'emulator';
   /** Shown under the heading when the list is empty. */
   emptyLabel: string;
   devices: Device[];
   /** Devices that could be added (the modal hides any already shown here). */
   recent: Device[];
+  /** Mocked OS versions + models for the picker's "New <kind>" form. */
+  options: NewDeviceOptions;
   selectedId: string;
   onSelect: (id: string) => void;
-  /** Called with the device chosen in the add-device modal. */
-  onAdd: (device: Device) => void;
+  /** Called with the device chosen (or configured) in the add-device modal. */
+  onAdd?: (device: Device) => void;
 };
 
 export function DeviceSection({
   title,
   addLabel,
-  modalTitle,
+  kind,
   emptyLabel,
   devices,
   recent,
+  options,
   selectedId,
   onSelect,
   onAdd,
@@ -51,33 +56,35 @@ export function DeviceSection({
     <section style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{title}</span>
-        <button
-          type="button"
-          aria-label={addLabel}
-          onClick={() => setModalOpen(true)}
-          onMouseEnter={() => setAddHovered(true)}
-          onMouseLeave={() => {
-            setAddHovered(false);
-            setAddPressed(false);
-          }}
-          onMouseDown={() => setAddPressed(true)}
-          onMouseUp={() => setAddPressed(false)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            width: 26,
-            height: 26,
-            padding: 0,
-            borderRadius: radius.full,
-            border: `1px solid ${border.default}`,
-            backgroundColor: addHovered ? bg.element : 'transparent',
-            cursor: 'pointer',
-            transition: 'background-color 150ms ease, transform 100ms ease',
-            transform: addPressed ? 'scale(0.98)' : undefined,
-          }}>
-          <PlusIcon size={18} color={icon.secondary} />
-        </button>
+        {
+          !!onAdd && <button
+            type="button"
+            aria-label={addLabel}
+            onClick={() => setModalOpen(true)}
+            onMouseEnter={() => setAddHovered(true)}
+            onMouseLeave={() => {
+              setAddHovered(false);
+              setAddPressed(false);
+            }}
+            onMouseDown={() => setAddPressed(true)}
+            onMouseUp={() => setAddPressed(false)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: 26,
+              height: 26,
+              padding: 0,
+              borderRadius: radius.full,
+              border: `1px solid ${border.default}`,
+              backgroundColor: addHovered ? bg.element : 'transparent',
+              cursor: 'pointer',
+              transition: 'background-color 150ms ease, transform 100ms ease',
+              transform: addPressed ? 'scale(0.98)' : undefined,
+            }}>
+            <PlusIcon size={18} color={icon.secondary} />
+          </button>
+        }
       </div>
 
       <div style={{ display: 'grid', gap: 6 }}>
@@ -110,9 +117,10 @@ export function DeviceSection({
       <RecentDevicesModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={modalTitle}
+        kind={kind}
         devices={candidates}
-        onAdd={onAdd}
+        options={options}
+        onAdd={onAdd || (() => {})}
       />
     </section>
   );

@@ -4,6 +4,7 @@ import { SidebarToggle } from '../../components/SidebarToggle';
 import { type Device } from './data';
 import { DeviceSection } from './DeviceSection';
 import { OutputSection } from './OutputSection';
+import { type NewDeviceOptions } from './useNewDeviceOptions';
 
 /** Left column: simulators + emulators lists and the output tabs. */
 export function Sidebar({
@@ -11,6 +12,8 @@ export function Sidebar({
   emulators,
   recentSimulators,
   recentEmulators,
+  simulatorOptions,
+  emulatorOptions,
   selectedId,
   onSelect,
   onAddDevice,
@@ -21,10 +24,14 @@ export function Sidebar({
   simulators: Device[];
   /** Emulators to list. */
   emulators: Device[];
-  /** Shut-down simulators offered in the "Recent Simulators" picker. */
+  /** Shut-down simulators offered in the add-simulator picker. */
   recentSimulators: Device[];
-  /** Shut-down emulators offered in the "Recent Emulators" picker. */
+  /** Shut-down emulators offered in the add-emulator picker. */
   recentEmulators: Device[];
+  /** Mocked OS versions + models for the "New simulator" form. */
+  simulatorOptions: NewDeviceOptions;
+  /** Mocked OS versions + models for the "New emulator" form. */
+  emulatorOptions: NewDeviceOptions;
   selectedId: string;
   onSelect: (id: string) => void;
   /** Called with the device chosen in either add-device picker. */
@@ -54,10 +61,11 @@ export function Sidebar({
       <DeviceSection
         title="Simulators"
         addLabel="Add simulator"
-        modalTitle="Recent Simulators"
+        kind="simulator"
         emptyLabel="No booted simulators. Use the + button to add one."
         devices={simulators}
         recent={recentSimulators}
+        options={simulatorOptions}
         selectedId={selectedId}
         onSelect={onSelect}
         onAdd={onAddDevice}
@@ -65,13 +73,14 @@ export function Sidebar({
       <DeviceSection
         title="Emulators"
         addLabel="Add emulator"
-        modalTitle="Recent Emulators"
+        kind="emulator"
         emptyLabel="No booted emulators or devices. Use the + button to add one."
         devices={emulators}
         recent={recentEmulators}
+        options={emulatorOptions}
         selectedId={selectedId}
         onSelect={onSelect}
-        onAdd={onAddDevice}
+        onAdd={undefined}
       />
       <OutputSection client={client} />
     </aside>
