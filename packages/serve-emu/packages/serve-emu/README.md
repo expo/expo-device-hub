@@ -25,6 +25,7 @@ v1. Working:
 - Logcat forwarding over SSE with browser-side filter, pause, and copy controls
 - Agent-friendly REST input APIs plus session event replay
 - App management controls for APK install, launch, clear data, force stop, and permission grants
+- Full-resolution screenshot capture from the browser UI (download / copy) and `GET /api/screenshot`
 
 Planned:
 

@@ -497,6 +497,34 @@ input[type="checkbox"] {
   color: #9a9aa3;
   font-variant-numeric: tabular-nums;
 }
+.screenshot-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.screenshot-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  max-height: 320px;
+  overflow: hidden;
+  border: 1px solid #25252d;
+  border-radius: 8px;
+  background: #000;
+}
+.screenshot-preview img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 320px;
+}
+.screenshot-empty {
+  padding: 12px;
+  border: 1px dashed #2a2a32;
+  border-radius: 8px;
+  color: #8a8a93;
+  font-size: 12px;
+  text-align: center;
+}
 @media (max-width: 920px) {
   body {
     min-height: 100dvh;

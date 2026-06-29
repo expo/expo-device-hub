@@ -3,6 +3,7 @@ import { StatusBar } from "./components/status-bar";
 import { AppManagementPanel } from "./components/app-management-panel";
 import { AccessibilityPanel, type AccessibilityNode } from "./components/accessibility-panel";
 import { DevicePanel } from "./components/device-panel";
+import { ScreenshotPanel } from "./components/screenshot-panel";
 import { DeviceStream } from "./components/device-stream";
 import { ControlBar, type HardwareKey } from "./components/control-bar";
 import { LogcatPanel } from "./components/logcat-panel";
@@ -59,6 +60,7 @@ export function App() {
         </div>
         <aside className="side-panel">
           <DevicePanel />
+          <ScreenshotPanel />
           <AccessibilityPanel
             enabled={accessibilityEnabled}
             nodes={accessibilityNodes}
