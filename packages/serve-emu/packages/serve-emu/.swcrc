@@ -1,0 +1,15 @@
+{
+  "$schema": "https://swc.rs/schema.json",
+  "exclude": ["/ui/", "\\.test\\.ts$"],
+  "jsc": {
+    "parser": {
+      "syntax": "typescript"
+    },
+    "target": "es2022",
+    "rewriteRelativeImportExtensions": true
+  },
+  "module": {
+    "type": "es6"
+  },
+  "sourceMaps": false
+}

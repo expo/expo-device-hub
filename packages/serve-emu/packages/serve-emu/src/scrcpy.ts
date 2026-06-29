@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createConnection, type Socket } from "node:net";
 import { setTimeout as sleep } from "node:timers/promises";
-import { SCRCPY_VERSION, ensureScrcpyServer } from "../scripts/fetch-scrcpy.ts";
+import { SCRCPY_VERSION, ensureScrcpyServer } from "./scrcpy-server.ts";
 
 const DEVICE_JAR_PATH = "/data/local/tmp/scrcpy-server.jar";
 
