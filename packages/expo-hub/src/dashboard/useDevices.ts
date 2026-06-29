@@ -32,31 +32,46 @@ const onlyUnbooted = (list: DeviceList): DeviceList => ({
   emulators: list.emulators.filter((device) => !device.booted),
 });
 
+// Devices boot, shut down, and change orientation outside the dashboard, so we
+// re-poll the endpoint on this cadence to keep both lists live.
+const POLL_INTERVAL_MS = 500;
+
 /**
  * Loads a device list from the plugin server, applying `transform` to the
- * response. Returns the empty list until the fetch resolves, and stays empty if
- * it fails — the endpoint only exists when Hub runs as a DevTools plugin behind
+ * response, and re-polls every `POLL_INTERVAL_MS` so the list tracks devices
+ * booting/shutting down out from under us. Returns the empty list until the
+ * first fetch resolves.
+ *
+ * The endpoint only exists when Hub runs as a DevTools plugin behind
  * `@expo/cli`, so opening the dashboard standalone (e.g. `expo start --web` for
- * design work) falls back to the empty state rather than mocked devices.
+ * design work) falls back to the empty state rather than mocked devices. We
+ * stop polling after the first failure so standalone mode logs a single warning
+ * instead of spamming the console twice a second.
  */
 function useDeviceList(search: string, transform: (list: DeviceList) => DeviceList): DeviceList {
   const [devices, setDevices] = useState<DeviceList>(EMPTY);
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
 
-    (async () => {
+    async function poll() {
       try {
         const data = await fetchDeviceList(search);
-        if (!cancelled) setDevices(transform(data));
+        if (cancelled) return;
+        setDevices(transform(data));
+        timer = setTimeout(poll, POLL_INTERVAL_MS);
       } catch (error) {
-        // Keep the empty list — the endpoint is absent outside the plugin.
+        // Keep the empty list and stop — the endpoint is absent outside the plugin.
         console.warn('[expo-hub] No device endpoint, showing empty state:', error);
       }
-    })();
+    }
+
+    poll();
 
     return () => {
       cancelled = true;
+      clearTimeout(timer);
     };
   }, [search, transform]);
 
