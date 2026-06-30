@@ -3,8 +3,7 @@
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
-    "dev": "bun run --filter serve-emu dev",
-    "build": "bun run --filter serve-emu build"
+    "dev": "bun run --filter serve-emu dev"
   },
   "devDependencies": {
     "typescript": "^5.6.0",
