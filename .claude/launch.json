@@ -14,6 +14,13 @@
       "runtimeArgs": ["run", "--cwd", "packages/serve-emu/packages/serve-emu", "start"],
       "port": 3300,
       "autoPort": false
+    },
+    {
+      "name": "serve-sim",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["packages/serve-sim/packages/serve-sim/dist/serve-sim.js", "--port", "3200"],
+      "port": 3200,
+      "autoPort": false
     }
   ]
 }
