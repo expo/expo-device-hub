@@ -145,6 +145,26 @@ writeFileSync(
 );
 console.log("dist/middleware.cjs (wrapper)");
 
+// ─── 3b. Expo DevTools plugin entry (dist/devtools-plugin.js) ─────────────
+// The serverEntryPoint named in expo-module.config.json. Expo CLI loads it and
+// calls its default fetch handler for `/_expo/plugins/serve-sim/*`.
+const pluginResult = await Bun.build({
+  entrypoints: [resolve(root, "src/devtools-plugin.ts")],
+  target: "node",
+  format: "esm",
+  minify: true,
+  outdir: distDir,
+  naming: "devtools-plugin.js",
+  external: ["*middleware.js", "ws"],
+});
+if (!pluginResult.success) {
+  console.error("DevTools plugin build failed:");
+  for (const log of pluginResult.logs) console.error(log);
+  process.exit(1);
+}
+const pluginSize = (await pluginResult.outputs[0]!.text()).length;
+console.log(`dist/devtools-plugin.js ${kb(pluginSize)}`);
+
 // ─── 4. Bin JS bundle ────────────────────────────────────────────────────
 
 const binJsResult = await Bun.build({

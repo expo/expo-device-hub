@@ -2,7 +2,7 @@
 
 Expo DevTools plugin that serves the [`serve-emu`](../serve-emu) Android emulator
 preview directly from the Expo CLI dev server — the Android counterpart to
-[`expo-serve-sim`](../expo-serve-sim).
+[`serve-sim`](../serve-sim).
 
 ## How it works
 

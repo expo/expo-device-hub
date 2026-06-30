@@ -1,0 +1,6 @@
+{
+  "platforms": ["devtools"],
+  "devtools": {
+    "serverEntryPoint": "dist/devtools-plugin.js"
+  }
+}

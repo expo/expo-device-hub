@@ -10,11 +10,11 @@
     "@expo/metro-runtime": "catalog:",
     "expo": "catalog:",
     "expo-serve-emu": "workspace:*",
-    "expo-serve-sim": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-native": "catalog:",
-    "react-native-web": "catalog:"
+    "react-native-web": "catalog:",
+    "serve-sim": "workspace:*"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.11",

@@ -1,8 +1,0 @@
-{
-  "platforms": ["devtools"],
-  "devtools": {
-    "cliBanner": true,
-    "bannerTitle": "Simulator",
-    "serverEntryPoint": "dist/index.mjs"
-  }
-}

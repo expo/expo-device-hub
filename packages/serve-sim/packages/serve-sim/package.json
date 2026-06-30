@@ -27,6 +27,8 @@
     "dist/serve-sim.js",
     "dist/middleware.js",
     "dist/middleware.cjs",
+    "dist/devtools-plugin.js",
+    "expo-module.config.json",
     "dist/simcam/libSimCameraInjector.dylib",
     "dist/simcam/serve-sim-camera-helper",
     "dist/simax/serve-sim-ax-settings",

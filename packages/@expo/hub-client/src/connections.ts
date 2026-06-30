@@ -1,9 +1,9 @@
 /**
  * Where Expo Hub looks for running serve-sim / serve-emu servers.
  *
- *   - iOS streams through the serve-sim **middleware**, which `expo-serve-sim`
- *     mounts as a DevTools plugin on the *same dev-server origin* as the Hub
- *     (`/_expo/plugins/expo-serve-sim`). No separate `serve-sim --port 3200`
+ *   - iOS streams through the serve-sim **middleware**, which the `serve-sim`
+ *     package mounts as a DevTools plugin on the *same dev-server origin* as the
+ *     Hub (`/_expo/plugins/serve-sim`). No separate `serve-sim --port 3200`
  *     process is needed — the iOS client discovers the helper via that plugin's
  *     `/api`, lists/starts sims via its `/grid/api`, and a bare helper URL still
  *     works in a reduced video-only mode.
@@ -20,8 +20,8 @@
 
 import { type DevicePlatform } from './types';
 
-/** Same-origin path where the `expo-serve-sim` DevTools plugin is mounted. */
-export const SERVE_SIM_PLUGIN_PATH = '/_expo/plugins/expo-serve-sim';
+/** Same-origin path where the `serve-sim` DevTools plugin is mounted. */
+export const SERVE_SIM_PLUGIN_PATH = '/_expo/plugins/serve-sim';
 
 /** Same-origin path where the `expo-serve-emu` DevTools plugin is mounted. */
 export const SERVE_EMU_PLUGIN_PATH = '/_expo/plugins/expo-serve-emu';
@@ -49,7 +49,7 @@ function sameOrigin(path: string): string {
 
 /** Resolve the base URL for a device, preferring an explicit value, then the
  *  runtime override global, then the built-in default. The iOS default is the
- *  same-origin expo-serve-sim plugin path, qualified with the page origin. */
+ *  same-origin serve-sim plugin path, qualified with the page origin. */
 export function endpointFor(platform: DevicePlatform, explicit?: string | null): string {
   if (explicit) return sameOrigin(explicit);
   const override = typeof window !== 'undefined' ? window.__EXPO_HUB_ENDPOINTS__?.[platform] : undefined;

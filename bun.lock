@@ -11,10 +11,10 @@
       "dependencies": {
         "expo": "catalog:",
         "expo-serve-emu": "workspace:*",
-        "expo-serve-sim": "workspace:*",
         "expo-status-bar": "~56.0.4",
         "react": "catalog:",
         "react-native": "catalog:",
+        "serve-sim": "workspace:*",
       },
       "devDependencies": {
         "@types/react": "~19.2.2",
@@ -97,11 +97,11 @@
         "@expo/metro-runtime": "catalog:",
         "expo": "catalog:",
         "expo-serve-emu": "workspace:*",
-        "expo-serve-sim": "workspace:*",
         "react": "catalog:",
         "react-dom": "catalog:",
         "react-native": "catalog:",
         "react-native-web": "catalog:",
+        "serve-sim": "workspace:*",
       },
       "devDependencies": {
         "@tailwindcss/postcss": "^4.1.11",
@@ -116,23 +116,6 @@
       "version": "0.1.0",
       "dependencies": {
         "serve-emu": "*",
-      },
-      "devDependencies": {
-        "@swc/cli": "^0.8.1",
-        "@swc/core": "^1.15.43",
-        "@types/node": "^25.6.2",
-        "typescript": "^5.7.0",
-      },
-      "peerDependencies": {
-        "expo": "*",
-      },
-    },
-    "packages/expo-serve-sim": {
-      "name": "expo-serve-sim",
-      "version": "0.1.0",
-      "dependencies": {
-        "inspect-webkit": "^0.0.5",
-        "ws": "^8.21.0",
       },
       "devDependencies": {
         "@swc/cli": "^0.8.1",
@@ -1367,8 +1350,6 @@
 
     "expo-serve-emu": ["expo-serve-emu@workspace:packages/expo-serve-emu"],
 
-    "expo-serve-sim": ["expo-serve-sim@workspace:packages/expo-serve-sim"],
-
     "expo-server": ["expo-server@56.0.5", "", {}, "sha512-SmM2p2g3Jrktpiazcst+OxhjSzOHXKAY4BPURHYHXvApzzoybMmrNF4IEZ8DKZ145BhSe4ydAmlEFCRTsdtgUQ=="],
 
     "expo-status-bar": ["expo-status-bar@56.0.4", "", { "peerDependencies": { "expo": "*", "react": "*", "react-native": "*" } }, "sha512-IGs/fDfkHXofy2ZQrGiXayhFK04HB85FZXorhcEhDZEcqASKgSqpak+HwUtAaR0MeTJwWyHNF7I6VmVbbp8EcA=="],
@@ -2258,8 +2239,6 @@
     "serve-emu/react": ["react@18.3.1", "", { "dependencies": { "loose-envify": "^1.1.0" } }, "sha512-wS+hAgJShR0KhEvPJArfuPVN1+Hz1t0Y6n5jLrGQbkb4urgPE/0Rve+1kMB1v/oWgHgm4WIcV+i7F2pTVj+2iQ=="],
 
     "serve-emu/react-dom": ["react-dom@18.3.1", "", { "dependencies": { "loose-envify": "^1.1.0", "scheduler": "^0.23.2" }, "peerDependencies": { "react": "^18.3.1" } }, "sha512-5m4nQKp+rZRb09LNH59GM4BxTh9251/ylbKIbpe7TpGxfJ+9kv6BLkLBXIjjspbgbnIBNqlI23tRnTWT0snUIw=="],
-
-    "serve-sim/tailwindcss": ["tailwindcss@4.3.0", "", {}, "sha512-y6nxMGB1nMW9R6k96e5gdIFzcfL/gTJRNaqGes1YvkLnPVXzWgbqFF2yLC0T8G774n24cx3Pe8XrKoniCOAH+Q=="],
 
     "serve-sim-repo/oxlint": ["oxlint@1.69.0", "", { "optionalDependencies": { "@oxlint/binding-android-arm-eabi": "1.69.0", "@oxlint/binding-android-arm64": "1.69.0", "@oxlint/binding-darwin-arm64": "1.69.0", "@oxlint/binding-darwin-x64": "1.69.0", "@oxlint/binding-freebsd-x64": "1.69.0", "@oxlint/binding-linux-arm-gnueabihf": "1.69.0", "@oxlint/binding-linux-arm-musleabihf": "1.69.0", "@oxlint/binding-linux-arm64-gnu": "1.69.0", "@oxlint/binding-linux-arm64-musl": "1.69.0", "@oxlint/binding-linux-ppc64-gnu": "1.69.0", "@oxlint/binding-linux-riscv64-gnu": "1.69.0", "@oxlint/binding-linux-riscv64-musl": "1.69.0", "@oxlint/binding-linux-s390x-gnu": "1.69.0", "@oxlint/binding-linux-x64-gnu": "1.69.0", "@oxlint/binding-linux-x64-musl": "1.69.0", "@oxlint/binding-openharmony-arm64": "1.69.0", "@oxlint/binding-win32-arm64-msvc": "1.69.0", "@oxlint/binding-win32-ia32-msvc": "1.69.0", "@oxlint/binding-win32-x64-msvc": "1.69.0" }, "peerDependencies": { "oxlint-tsgolint": ">=0.22.1", "vite-plus": "*" }, "optionalPeers": ["oxlint-tsgolint", "vite-plus"], "bin": { "oxlint": "bin/oxlint" } }, "sha512-ypZkK/aDc5NQV8zIR6s2H2Tl3aNW8FmJ1m9+2qsaYuRenl8vgnHNCGwTHviWJdUQzglOlHFchgopdtGhSy17Rw=="],
 

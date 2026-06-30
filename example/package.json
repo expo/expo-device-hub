@@ -5,10 +5,10 @@
   "dependencies": {
     "expo": "catalog:",
     "expo-serve-emu": "workspace:*",
-    "expo-serve-sim": "workspace:*",
     "expo-status-bar": "~56.0.4",
     "react": "catalog:",
-    "react-native": "catalog:"
+    "react-native": "catalog:",
+    "serve-sim": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
