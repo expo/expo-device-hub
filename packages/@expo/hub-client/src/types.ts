@@ -68,6 +68,13 @@ export interface DeviceLog {
 /** Hardware buttons. Implementations ignore the ones their platform lacks. */
 export type HardwareButton = 'home' | 'back' | 'recents' | 'power' | 'appSwitcher';
 
+/**
+ * Device system appearance. Binary on purpose — the Hub exposes a plain
+ * light/dark toggle with no "auto", even where the backend supports one
+ * (serve-emu's `uimode night auto`).
+ */
+export type DeviceAppearance = 'light' | 'dark';
+
 /** One normalized (0..1) touch sample. The hook maps it to the wire protocol. */
 export interface TouchSample {
   phase: 'begin' | 'move' | 'end';
@@ -152,6 +159,19 @@ export interface DeviceClient {
    * decides what to do with it (e.g. trigger a file download).
    */
   screenshot: () => Promise<Blob | null>;
+
+  /**
+   * Current device system appearance (dark/light), or `null` while unknown or on
+   * a backend that can't report it (e.g. a bare serve-sim helper with no
+   * middleware). Read once the connection resolves; updated by {@link setAppearance}.
+   */
+  appearance: DeviceAppearance | null;
+  /**
+   * Set the device's system appearance. serve-sim runs `simctl ui <udid>
+   * appearance <mode>` (over the middleware exec-ws); serve-emu posts `uimode
+   * night yes|no`. No-op on a backend that can't set it.
+   */
+  setAppearance: (mode: DeviceAppearance) => void;
 }
 
 /** A platform implementation of the connection half of the interface. */

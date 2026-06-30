@@ -34,14 +34,15 @@ const NARROW_MAX_WIDTH = 767;
 /**
  * The single Expo Hub screen, authored as an Expo DOM component (`'use dom'`) so
  * it renders with web primitives and real CSS. Left: simulators + emulators +
- * output tabs. Right: the stream of the selected device. Dark mode follows the
- * system setting (and can be flipped with the Theme switch) via `dark-theme`.
+ * output tabs. Right: the stream of the selected device. Hub's own dark mode
+ * follows the system setting via `dark-theme`; the stream's Theme control flips
+ * the *device's* appearance, not Hub's.
  *
  * On narrow viewports the sidebar collapses: a floating toggle reveals it as an
  * overlay over the stream, and a matching toggle in its header hides it again.
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
-  const { scheme, toggle } = useColorScheme();
+  const scheme = useColorScheme();
   const booted = useDevices();
   const recent = useRecentDevices();
   // Mocked OS versions + models for the add-device picker's "New device" form.
@@ -147,8 +148,6 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         <StreamPanel
           device={selected}
           client={client}
-          scheme={scheme}
-          onToggleTheme={toggle}
           DeviceScreen={DeviceScreen}
           displayScreen={displayScreen}
         />

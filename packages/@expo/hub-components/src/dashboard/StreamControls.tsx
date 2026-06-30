@@ -21,12 +21,15 @@ import { type ColorScheme, type Platform } from './data';
  *  - Android: Save · Back · Home · Recents · More — with Reload + Theme moved
  *    into the More menu (Android exposes hardware Back/Recents keys).
  *  - iOS: Save · Theme · Home · Reload · More.
+ *
+ * "Theme" toggles the **device's** system dark/light appearance (not Hub's own
+ * theme) via the active device client.
  */
 export function StreamControls({
   platform,
   physical,
-  scheme,
-  onToggleTheme,
+  appearance,
+  onToggleAppearance,
   onHome,
   onBack,
   onRecents,
@@ -34,8 +37,10 @@ export function StreamControls({
 }: {
   platform: Platform;
   physical: boolean;
-  scheme: ColorScheme;
-  onToggleTheme: () => void;
+  /** The device's current dark/light appearance; null while unknown. */
+  appearance: ColorScheme | null;
+  /** Flip the device's system appearance (dark ↔ light). */
+  onToggleAppearance: () => void;
   /** Press the device Home button. */
   onHome?: () => void;
   /** Press the Android Back key. */
@@ -58,9 +63,9 @@ export function StreamControls({
       {isAndroid && <DropdownItem label="Reload" Icon={RefreshIcon} />}
       {isAndroid && (
         <DropdownItem
-          label={scheme === 'dark' ? 'Light mode' : 'Dark mode'}
+          label={appearance === 'dark' ? 'Light mode' : 'Dark mode'}
           Icon={ThemeIcon}
-          onSelect={onToggleTheme}
+          onSelect={onToggleAppearance}
         />
       )}
       <DropdownItem label="Rotate device" Icon={RotateIcon} />
@@ -77,7 +82,7 @@ export function StreamControls({
         <ControlButton icon={<BackIcon />} label="Back" onClick={onBack} />
       ) : (
         // Theme uses the reusable Switch instead of an icon circle.
-        <Switch checked={scheme === 'dark'} onChange={onToggleTheme} label="Theme" />
+        <Switch checked={appearance === 'dark'} onChange={onToggleAppearance} label="Theme" />
       )}
 
       <ControlButton icon={<HomeIcon />} label="Home" variant="primary" onClick={onHome} />

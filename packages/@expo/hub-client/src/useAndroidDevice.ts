@@ -20,6 +20,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
 import {
   type ConnectionStatus,
+  type DeviceAppearance,
   type DeviceClient,
   type DeviceConnectionOptions,
   type DeviceLog,
@@ -79,6 +80,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Logs are opt-in: nothing streams until the user attaches.
   const [logsEnabled, setLogsEnabled] = useState(false);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
+  // The device's system dark/light setting. null until `/api/uimode` reports it.
+  const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -131,6 +134,25 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       return null;
     }
   }, [baseUrl, targetDevice]);
+
+  // Toggle the emulator's system dark theme via `/api/uimode` (POST
+  // `adb shell cmd uimode night yes|no` — Hub only ever sets the binary modes,
+  // never `auto`). Optimistic: reflect the choice immediately, fire-and-forget.
+  const setAppearance = useCallback(
+    (mode: DeviceAppearance) => {
+      if (!baseUrl) return;
+      setAppearanceState(mode);
+      const url = `${apiUrl(baseUrl, '/api/uimode')}${
+        targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
+      }`;
+      void fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ night: mode === 'dark' ? 'yes' : 'no' }),
+      }).catch(() => {});
+    },
+    [baseUrl, targetDevice],
+  );
 
   // ── Video + input WebSocket (with reconnect) ──
   useEffect(() => {
@@ -416,6 +438,32 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, targetDevice]);
 
+  // ── Current appearance (best-effort) — reflect the device's dark/light mode ──
+  useEffect(() => {
+    if (!active || !baseUrl) {
+      setAppearanceState(null);
+      return;
+    }
+    let cancelled = false;
+    const url = `${apiUrl(baseUrl, '/api/uimode')}${
+      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
+    }`;
+    fetch(url, { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((data: { ok?: boolean; night?: string }) => {
+        // `night` is yes|no|auto; map anything but an explicit `yes` to light so
+        // the binary toggle has a definite position.
+        if (cancelled || !data.ok) return;
+        setAppearanceState(data.night === 'yes' ? 'dark' : 'light');
+      })
+      .catch(() => {
+        /* offline / unsupported — leave unknown */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, baseUrl, targetDevice]);
+
   return {
     platform: 'android',
     status,
@@ -433,5 +481,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendTouch,
     pressButton,
     screenshot,
+    appearance,
+    setAppearance,
   };
 }

@@ -2,7 +2,7 @@ import { type ComponentType } from 'react';
 
 import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo/hub-client';
 import { bg } from '../primitives';
-import { type ColorScheme, type Device } from './data';
+import { type Device } from './data';
 import { PhoneFrame } from './PhoneFrame';
 import { StreamControls } from './StreamControls';
 
@@ -30,15 +30,11 @@ function screenshotFilename(name: string): string {
 export function StreamPanel({
   device,
   client,
-  scheme,
-  onToggleTheme,
   DeviceScreen,
   displayScreen,
 }: {
   device: Device;
   client: DeviceClient;
-  scheme: ColorScheme;
-  onToggleTheme: () => void;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
@@ -68,8 +64,10 @@ export function StreamPanel({
       <StreamControls
         platform={device.platform}
         physical={device.physical}
-        scheme={scheme}
-        onToggleTheme={onToggleTheme}
+        appearance={client.appearance}
+        onToggleAppearance={() =>
+          client.setAppearance(client.appearance === 'dark' ? 'light' : 'dark')
+        }
         onHome={() => client.pressButton('home')}
         onBack={() => client.pressButton('back')}
         onRecents={() => client.pressButton('recents')}

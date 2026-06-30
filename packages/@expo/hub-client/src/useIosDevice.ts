@@ -33,6 +33,7 @@ import {
 import { startIosHelper } from './connections';
 import {
   type ConnectionStatus,
+  type DeviceAppearance,
   type DeviceClient,
   type DeviceConnectionOptions,
   type DeviceLog,
@@ -82,6 +83,69 @@ function toWs(url: string): string {
   return url.replace(/^http/, 'ws');
 }
 
+/** Response shape of a serve-sim UI (`simulator-settings`) request over exec-ws. */
+interface UiRequestResult {
+  /** Present on a read (no `option`): every UI option's current value. */
+  status?: Record<string, string>;
+  /** Present on a write. */
+  ok?: boolean;
+}
+
+/**
+ * Run a single serve-sim **simulator-settings** request over a one-shot
+ * middleware exec-ws connection and resolve its reply. The protocol mirrors the
+ * serve-sim client: connect → `{token}` → wait for `{ready}` → `{id, ui}` →
+ * `{id, ...result}`. A read omits `option` and returns `{status}`; a write sends
+ * `{device, option, value}` and returns `{ok}`. Used for the appearance get/set
+ * (logs use their own long-lived exec-ws below).
+ */
+function execWsUiRequest(
+  execWsUrl: string,
+  execToken: string,
+  ui: Record<string, unknown>,
+): Promise<UiRequestResult> {
+  return new Promise((resolve, reject) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(execWsUrl);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const finish = (run: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch {}
+      run();
+    };
+    timer = setTimeout(() => finish(() => reject(new Error('exec-ws timeout'))), 5000);
+    ws.onopen = () => ws.send(JSON.stringify({ token: execToken }));
+    ws.onmessage = (event) => {
+      let msg: { ready?: boolean; id?: number; error?: string } & UiRequestResult;
+      try {
+        msg = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      if (msg.ready) {
+        ws.send(JSON.stringify({ id: 1, ui }));
+        return;
+      }
+      if (msg.id === 1) {
+        if (msg.error) finish(() => reject(new Error(msg.error)));
+        else finish(() => resolve(msg));
+      }
+    };
+    ws.onerror = () => finish(() => reject(new Error('exec-ws error')));
+    ws.onclose = () => finish(() => reject(new Error('exec-ws closed')));
+  });
+}
+
 /** Resolved connection: where to stream video/input, and how to reach logs/devices. */
 interface ResolvedConfig {
   mode: 'middleware' | 'helper';
@@ -120,6 +184,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [logsEnabled, setLogsEnabled] = useState(false);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   const [config, setConfig] = useState<ResolvedConfig | null>(null);
+  // The simulator's system dark/light setting. null until read (or in bare-helper
+  // mode, where there's no middleware exec-ws to drive `simctl ui appearance`).
+  const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   // Monotonic log id source, persisted across log-stream reconnects so ids stay
@@ -206,6 +273,24 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return null;
     }
   }, [baseUrl, targetDevice, config]);
+
+  // Set the simulator appearance via `simctl ui <udid> appearance <mode>`,
+  // issued over the middleware exec-ws (the same UI-request channel the serve-sim
+  // client uses). Needs a resolved middleware config + udid — a no-op otherwise
+  // (bare-helper mode). Optimistic: reflect the choice immediately.
+  const setAppearance = useCallback(
+    (mode: DeviceAppearance) => {
+      const c = config;
+      if (!c || !c.execWsUrl || !c.execToken || !c.device) return;
+      setAppearanceState(mode);
+      void execWsUiRequest(c.execWsUrl, c.execToken, {
+        device: c.device,
+        option: 'appearance',
+        value: mode,
+      }).catch(() => {});
+    },
+    [config],
+  );
 
   const attachLogs = useCallback(() => setLogsEnabled(true), []);
   const detachLogs = useCallback(() => setLogsEnabled(false), []);
@@ -495,6 +580,28 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [logsEnabled, execWsUrl, execToken, logsPath]);
 
+  // ── Current appearance (best-effort) — reads `simctl ui appearance` via a
+  //    one-shot exec-ws UI request once the middleware config resolves. ──
+  const deviceUdid = config?.device ?? null;
+  useEffect(() => {
+    if (!execWsUrl || !execToken || !deviceUdid) {
+      setAppearanceState(null);
+      return;
+    }
+    let cancelled = false;
+    execWsUiRequest(execWsUrl, execToken, { device: deviceUdid })
+      .then((res) => {
+        const value = res.status?.appearance;
+        if (!cancelled && (value === 'light' || value === 'dark')) setAppearanceState(value);
+      })
+      .catch(() => {
+        /* unreachable / unsupported — leave unknown */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [execWsUrl, execToken, deviceUdid]);
+
   // ── Running simulators (middleware /grid/api) ──
   const gridApiUrl = config?.gridApiUrl ?? null;
   useEffect(() => {
@@ -543,5 +650,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     sendMultiTouch,
     pressButton,
     screenshot,
+    appearance,
+    setAppearance,
   };
 }
