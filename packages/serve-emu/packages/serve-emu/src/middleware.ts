@@ -13,6 +13,7 @@ import {
   launchApp,
 } from "./app-management.ts";
 import { getForegroundApp } from "./app-info.ts";
+import { getNightMode, isNightMode, setNightMode } from "./ui-mode.ts";
 import { startScrcpy, type ScrcpySession } from "./scrcpy.ts";
 import { dispatch, parseGesture, resetVideoPacket, type Gesture, type Screen } from "./input.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
@@ -658,6 +659,38 @@ export async function createApp(opts: AppOptions) {
           { status: 400 },
         );
       }
+    }
+
+    if (url.pathname === "/api/uimode") {
+      if (req.method === "GET") {
+        try {
+          return Response.json({ ok: true, night: getNightMode(opts.serial) });
+        } catch (err) {
+          return Response.json(
+            { ok: false, error: err instanceof Error ? err.message : String(err) },
+            { status: 400 },
+          );
+        }
+      }
+      if (req.method === "POST") {
+        try {
+          const payload = await readJsonBody(req);
+          const night =
+            typeof payload === "object" && payload !== null && !Array.isArray(payload)
+              ? (payload as Record<string, unknown>).night
+              : undefined;
+          if (!isNightMode(night)) {
+            throw new Error('night must be one of "yes", "no", or "auto"');
+          }
+          return Response.json({ ok: true, night: setNightMode(opts.serial, night) });
+        } catch (err) {
+          return Response.json(
+            { ok: false, error: err instanceof Error ? err.message : String(err) },
+            { status: 400 },
+          );
+        }
+      }
+      return new Response("method not allowed", { status: 405 });
     }
 
     if (url.pathname === "/api/tap") {

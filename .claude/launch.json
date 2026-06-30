@@ -7,6 +7,13 @@
       "runtimeArgs": ["run", "--cwd", "packages/expo-hub", "start"],
       "port": 8081,
       "autoPort": false
+    },
+    {
+      "name": "serve-emu",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "packages/serve-emu/packages/serve-emu", "start"],
+      "port": 3300,
+      "autoPort": false
     }
   ]
 }

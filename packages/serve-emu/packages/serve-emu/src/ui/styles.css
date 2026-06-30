@@ -525,6 +525,21 @@ input[type="checkbox"] {
   font-size: 12px;
   text-align: center;
 }
+.appearance-options {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.appearance-option.current {
+  border-color: #3f7d5c;
+  background: #132219;
+  color: #f2f2f7;
+  cursor: default;
+}
+.appearance-option:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
 @media (max-width: 920px) {
   body {
     min-height: 100dvh;
