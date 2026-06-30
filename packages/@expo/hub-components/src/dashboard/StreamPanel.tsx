@@ -6,6 +6,26 @@ import { type ColorScheme, type Device } from './data';
 import { PhoneFrame } from './PhoneFrame';
 import { StreamControls } from './StreamControls';
 
+/** Trigger a browser download of `blob` under `filename`. */
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  // Revoke on the next tick, once the click has consumed the object URL.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** Filesystem-safe screenshot name, e.g. `iPhone-16-2026-06-30T12-34-56.png`. */
+function screenshotFilename(name: string): string {
+  const slug = name.trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'device';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, '');
+  return `${slug}-${stamp}.png`;
+}
+
 /** Right panel: the selected device's stream and its controls, full height. */
 export function StreamPanel({
   device,
@@ -53,6 +73,10 @@ export function StreamPanel({
         onHome={() => client.pressButton('home')}
         onBack={() => client.pressButton('back')}
         onRecents={() => client.pressButton('recents')}
+        onSave={async () => {
+          const blob = await client.screenshot();
+          if (blob) downloadBlob(blob, screenshotFilename(device.name));
+        }}
       />
     </section>
   );

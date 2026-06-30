@@ -115,6 +115,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [send],
   );
 
+  // serve-emu captures the frame buffer server-side (`adb exec-out screencap
+  // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
+  // first available, matching the stream).
+  const screenshot = useCallback(async (): Promise<Blob | null> => {
+    if (!baseUrl) return null;
+    const url = `${apiUrl(baseUrl, '/api/screenshot')}${
+      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
+    }`;
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) return null;
+      return await res.blob();
+    } catch {
+      return null;
+    }
+  }, [baseUrl, targetDevice]);
+
   // ── Video + input WebSocket (with reconnect) ──
   useEffect(() => {
     if (!active || !baseUrl) {
@@ -415,5 +432,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     attachVideo,
     sendTouch,
     pressButton,
+    screenshot,
   };
 }

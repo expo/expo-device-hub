@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
-import { execSync, spawn, exec, execFile, type ChildProcess, type ExecException } from "child_process";
+import { readFile, unlink } from "fs/promises";
+import { execSync, spawn, exec, execFile, type ChildProcess, type ExecException, type ExecFileOptions, type PromiseWithChild } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { createServer as createNetServer } from "net";
@@ -260,6 +261,45 @@ function queryDevice(rawUrl: string): string | null {
   const qIndex = rawUrl.indexOf("?");
   if (qIndex === -1) return null;
   return new URLSearchParams(rawUrl.slice(qIndex + 1)).get("device");
+}
+
+/**
+ * True for a well-formed simulator UDID — the canonical UUID shape `simctl`
+ * reports. Guards the grid/screenshot routes before they shell out to `xcrun
+ * simctl <udid>`. (The UI-settings route accepts a looser id form on purpose.)
+ */
+function isSimulatorUdid(value: string | null | undefined): value is string {
+  return value != null && /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(value);
+}
+
+/** Resolved value of {@link execFileAsync}. */
+interface ExecAsyncReturns {
+  stdout: string;
+  stderr: string;
+}
+
+/**
+ * Promise-returning `execFile` that still exposes the spawned process on
+ * `.child` — the same contract as `util.promisify(execFile)`, including
+ * surfacing `stdout`/`stderr` on the rejected error. Lets the screenshot route
+ * `await` the `simctl` capture instead of hand-wrapping the callback form.
+ */
+function execFileAsync(
+  file: string,
+  args: string[],
+  options: ExecFileOptions = {},
+): PromiseWithChild<ExecAsyncReturns> {
+  let child!: ChildProcess;
+  const promise = new Promise<ExecAsyncReturns>((resolve, reject) => {
+    child = execFile(file, args, options, (error, stdout, stderr) => {
+      // stdout/stderr are typed `string | Buffer` (options could set encoding);
+      // normalize to string for the default text contract.
+      if (error) reject(Object.assign(error, { stdout: stdout.toString(), stderr: stderr.toString() }));
+      else resolve({ stdout: stdout.toString(), stderr: stderr.toString() });
+    });
+  }) as PromiseWithChild<ExecAsyncReturns>;
+  promise.child = child;
+  return promise;
 }
 
 function endpoint(base: string, path: string, device: string): string {
@@ -981,7 +1021,7 @@ export function simMiddleware(options?: SimMiddlewareOptions) {
       const body = await request.text();
       let udid = "";
       try { udid = (JSON.parse(body) as ShutdownRequestBody).udid ?? ""; } catch {}
-      if (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(udid)) {
+      if (!isSimulatorUdid(udid)) {
         return jsonResponse({ ok: false, error: "Invalid or missing udid" }, { status: 400 });
       }
       // Drop the snapshot so the next /grid/api call re-queries simctl
@@ -1006,7 +1046,7 @@ export function simMiddleware(options?: SimMiddlewareOptions) {
       const body = await request.text();
       let udid = "";
       try { udid = (JSON.parse(body) as StartRequestBody).udid ?? ""; } catch {}
-      if (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(udid)) {
+      if (!isSimulatorUdid(udid)) {
         return jsonResponse({ ok: false, error: "Invalid or missing udid" }, { status: 400 });
       }
       const resolved = resolveServeSimCommand();
@@ -1143,6 +1183,39 @@ export function simMiddleware(options?: SimMiddlewareOptions) {
       }
       const remoteState = state ? rewriteStateForRequestHost(state, host) : null;
       return noStoreJsonResponse(remoteState ? previewConfigForState(remoteState, base, serveSimBinPath(), execToken) : null);
+    }
+
+    // Capture a PNG of the simulator via `simctl io <udid> screenshot`
+    if (url === base + "/api/screenshot") {
+      if (request.method !== "GET" && request.method !== "POST") {
+        return textResponse("method not allowed", { status: 405 });
+      }
+      const booted = getBootedUdids();
+      const udid = selectedDevice ?? (booted ? [...booted][0] : null);
+      if (!isSimulatorUdid(udid)) {
+        return jsonResponse({ ok: false, error: "No booted simulator to screenshot" }, { status: 400 });
+      }
+      const file = join(tmpdir(), `serve-sim-screenshot-${randomBytes(8).toString("hex")}.png`);
+      try {
+        await execFileAsync("xcrun", ["simctl", "io", udid, "screenshot", file], { timeout: 30_000 });
+        const png = await readFile(file);
+        return new Response(new Uint8Array(png), {
+          headers: {
+            "Content-Type": "image/png",
+            "Cache-Control": "no-store",
+            "Access-Control-Allow-Origin": "*",
+          },
+        });
+      } catch (err) {
+        const stderr = (err as { stderr?: unknown }).stderr;
+        const message =
+          (typeof stderr === "string" && stderr.trim()) ||
+          (err instanceof Error ? err.message : String(err));
+        return jsonResponse({ ok: false, error: message }, { status: 500 });
+      } finally {
+        // Best-effort cleanup; the PNG is already in memory by now.
+        await unlink(file).catch(() => {});
+      }
     }
 
     // SSE: serve-sim state stream. Push replacement for the web UI's old ~1.5s

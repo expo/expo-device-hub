@@ -145,6 +145,13 @@ export interface DeviceClient {
   sendMultiTouch?: (sample: MultiTouchSample) => void;
   /** Press a hardware button. */
   pressButton: (button: HardwareButton) => void;
+  /**
+   * Capture a still PNG of the device via the backend's screenshot API
+   * (serve-emu `adb screencap` / serve-sim `simctl io … screenshot`), resolving
+   * to a `Blob`, or `null` if capture fails or nothing is connected. The caller
+   * decides what to do with it (e.g. trigger a file download).
+   */
+  screenshot: () => Promise<Blob | null>;
 }
 
 /** A platform implementation of the connection half of the interface. */

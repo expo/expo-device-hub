@@ -30,6 +30,7 @@ export function StreamControls({
   onHome,
   onBack,
   onRecents,
+  onSave,
 }: {
   platform: Platform;
   physical: boolean;
@@ -41,6 +42,8 @@ export function StreamControls({
   onBack?: () => void;
   /** Press the Android Recents key. */
   onRecents?: () => void;
+  /** Save a screenshot of the device (triggers a file download). */
+  onSave?: () => void;
 }) {
   const isAndroid = platform === 'android';
 
@@ -68,7 +71,7 @@ export function StreamControls({
 
   return (
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 24 }}>
-      <ControlButton icon={<CameraIcon />} label="Save" />
+      <ControlButton icon={<CameraIcon />} label="Save" onClick={onSave} />
 
       {isAndroid ? (
         <ControlButton icon={<BackIcon />} label="Back" onClick={onBack} />

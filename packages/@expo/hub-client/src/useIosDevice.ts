@@ -190,6 +190,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (name) ws.send(taggedJson(WS_MSG_BUTTON, { button: name }));
   }, []);
 
+  // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
+  // and returns the PNG bytes. Use the resolved udid from `/api` (falling back
+  // to the requested device); the middleware defaults to the booted sim if none.
+  const screenshot = useCallback(async (): Promise<Blob | null> => {
+    if (!baseUrl) return null;
+    const udid = config?.device ?? targetDevice;
+    const base = baseUrl.replace(/\/$/, '');
+    const url = `${base}/api/screenshot${udid ? `?device=${encodeURIComponent(udid)}` : ''}`;
+    try {
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) return null;
+      return await res.blob();
+    } catch {
+      return null;
+    }
+  }, [baseUrl, targetDevice, config]);
+
   const attachLogs = useCallback(() => setLogsEnabled(true), []);
   const detachLogs = useCallback(() => setLogsEnabled(false), []);
   const clearLogs = useCallback(() => setLogs([]), []);
@@ -525,5 +542,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     sendTouch,
     sendMultiTouch,
     pressButton,
+    screenshot,
   };
 }
