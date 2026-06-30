@@ -4,12 +4,12 @@ import { type Device } from '@expo/hub-components';
 
 /**
  * The Expo Hub DevTools plugin server (`src/server/`) exposes the live device
- * list here. Expo CLI mounts the plugin under `/_expo/plugins/expo-hub/*` and
+ * list here. Expo CLI mounts the plugin under `/_expo/plugins/expo-device-hub/*` and
  * strips that prefix before calling our handler, so from the browser the route
  * is the prefixed path below. `?booted=true` narrows the response to running
  * devices; the unfiltered response also includes shut-down ones.
  */
-const DEVICES_ENDPOINT = '/_expo/plugins/expo-hub/api/devices';
+const DEVICES_ENDPOINT = '/_expo/plugins/expo-device-hub/api/devices';
 
 export type DeviceList = {
   simulators: Device[];
@@ -63,7 +63,7 @@ function useDeviceList(search: string, transform: (list: DeviceList) => DeviceLi
         timer = setTimeout(poll, POLL_INTERVAL_MS);
       } catch (error) {
         // Keep the empty list and stop — the endpoint is absent outside the plugin.
-        console.warn('[expo-hub] No device endpoint, showing empty state:', error);
+        console.warn('[expo-device-hub] No device endpoint, showing empty state:', error);
       }
     }
 

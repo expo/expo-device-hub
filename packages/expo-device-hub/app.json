@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "expo-hub",
-    "slug": "expo-hub",
+    "name": "expo-device-hub",
+    "slug": "expo-device-hub",
     "version": "1.0.0",
     "platforms": ["web"],
     "orientation": "portrait",

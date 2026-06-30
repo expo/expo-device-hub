@@ -3,7 +3,7 @@
  *
  * Declared via `expo-module.config.json` (`devtools.serverEntryPoint`). Expo CLI
  * calls this default-exported fetch handler for every request to
- * `/_expo/plugins/expo-hub/*`, with the plugin prefix stripped from the URL,
+ * `/_expo/plugins/expo-device-hub/*`, with the plugin prefix stripped from the URL,
  * expecting a fetch `Response` back (or `null`/`undefined` to fall through to
  * static serving — this plugin has none, so that becomes a 404).
  *

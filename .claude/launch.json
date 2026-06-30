@@ -2,9 +2,9 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "expo-hub",
+      "name": "expo-device-hub",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "--cwd", "packages/expo-hub", "start"],
+      "runtimeArgs": ["run", "--cwd", "packages/expo-device-hub", "start"],
       "port": 8081,
       "autoPort": false
     },

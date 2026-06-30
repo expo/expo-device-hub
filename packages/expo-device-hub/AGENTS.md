@@ -1,6 +1,6 @@
 # Expo Hub — Style Guide
 
-UI in `expo-hub` must look like the **Expo dashboard website** (`universe/server/website`).
+UI in `expo-device-hub` must look like the **Expo dashboard website** (`universe/server/website`).
 Both share one design system: **`@expo/styleguide`**. This file is the contract for
 producing matching UI here.
 

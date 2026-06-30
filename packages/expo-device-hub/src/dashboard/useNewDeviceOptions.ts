@@ -9,7 +9,7 @@ import { type NewDeviceOptions, type Platform } from '@expo/hub-components';
  * standalone (no plugin), the fetch fails and we fall back to empty options, so
  * the form's selects render empty rather than throwing.
  */
-const NEW_DEVICE_OPTIONS_ENDPOINT = '/_expo/plugins/expo-hub/api/new-device-options';
+const NEW_DEVICE_OPTIONS_ENDPOINT = '/_expo/plugins/expo-device-hub/api/new-device-options';
 
 export type NewDeviceOptionsByPlatform = Record<Platform, NewDeviceOptions>;
 
@@ -36,7 +36,7 @@ export function useNewDeviceOptions(): NewDeviceOptionsByPlatform {
         const data = (await response.json()) as NewDeviceOptionsByPlatform;
         if (!cancelled) setOptions(data);
       } catch (error) {
-        console.warn('[expo-hub] No new-device-options endpoint, using empty options:', error);
+        console.warn('[expo-device-hub] No new-device-options endpoint, using empty options:', error);
       }
     })();
 
