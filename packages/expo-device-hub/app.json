@@ -9,6 +9,9 @@
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
+    },
+    "experiments": {
+      "baseUrl": "/_expo/plugins/expo-device-hub"
     }
   }
 }

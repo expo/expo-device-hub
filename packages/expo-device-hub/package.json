@@ -1,32 +1,58 @@
 {
   "name": "expo-device-hub",
-  "version": "1.0.0",
-  "main": "index.ts",
+  "version": "0.1.0",
+  "description": "Expo DevTools plugin for managing iOS simulators and Android emulators.",
+  "keywords": [
+    "expo",
+    "devtools",
+    "devices",
+    "simulator",
+    "emulator",
+    "ios",
+    "android"
+  ],
+  "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/expo-device-hub",
+  "bugs": {
+    "url": "https://github.com/expo/expo-device-hub/issues"
+  },
+  "license": "MIT",
+  "author": "Expo",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/expo/expo-device-hub.git",
+    "directory": "packages/expo-device-hub"
+  },
+  "files": [
+    "dist/client",
+    "dist/server/index.mjs",
+    "expo-module.config.json"
+  ],
   "dependencies": {
+    "expo-serve-emu": "workspace:*",
+    "serve-sim": "workspace:*"
+  },
+  "devDependencies": {
     "@expo/hub-android-utils": "workspace:*",
     "@expo/hub-apple-utils": "workspace:*",
     "@expo/hub-client": "workspace:*",
     "@expo/hub-components": "workspace:*",
     "@expo/metro-runtime": "catalog:",
+    "@tailwindcss/postcss": "^4.1.11",
+    "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.0",
     "expo": "catalog:",
-    "expo-serve-emu": "workspace:*",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-native": "catalog:",
     "react-native-web": "catalog:",
-    "serve-sim": "workspace:*"
-  },
-  "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.11",
-    "@types/react": "~19.2.2",
-    "@types/react-dom": "~19.2.0",
     "tailwindcss": "^4.1.11",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start --web",
     "web": "expo start --web",
+    "build": "bun run build:web && bun run build:server",
+    "build:web": "expo export --platform web --output-dir dist/client",
     "build:server": "bun run scripts/build-plugin-server.ts"
-  },
-  "private": true
+  }
 }

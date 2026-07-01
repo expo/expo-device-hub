@@ -1,8 +1,6 @@
 {
   "platforms": ["devtools"],
   "devtools": {
-    "cliBanner": true,
-    "bannerTitle": "Emulator",
     "serverEntryPoint": "dist/index.mjs"
   }
 }

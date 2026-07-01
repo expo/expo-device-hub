@@ -1,9 +1,10 @@
 {
   "name": "example",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "main": "index.ts",
   "dependencies": {
     "expo": "catalog:",
+    "expo-device-hub": "workspace:*",
     "expo-serve-emu": "workspace:*",
     "expo-status-bar": "~56.0.4",
     "react": "catalog:",

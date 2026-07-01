@@ -2,7 +2,7 @@
   "platforms": ["devtools"],
   "devtools": {
     "cliBanner": true,
-    "bannerTitle": "Hub (Dev)",
+    "bannerTitle": "Expo Device Hub (Dev)",
     "serverEntryPoint": "./server.mjs"
   }
 }
