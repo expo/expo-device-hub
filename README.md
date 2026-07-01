@@ -16,8 +16,8 @@ This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://
 | [`packages/@expo/hub-components`](packages/@expo/hub-components) | Dependency-free UI kit (`Sidebar`, `StreamPanel`, `Button`, …) built on `@expo/styleguide` design tokens, so Hub matches the Expo dashboard website. |
 | [`packages/@expo/hub-apple-utils`](packages/@expo/hub-apple-utils) | Lists, creates, and boots Apple devices via `devicectl` / `simctl` (macOS only). |
 | [`packages/@expo/hub-android-utils`](packages/@expo/hub-android-utils) | Lists, creates, and boots Android emulators via `avdmanager` / `sdkmanager` / `emulator`. |
-| [`packages/expo-serve-emu`](packages/expo-serve-emu) | Thin wrapper of `serve-emu`. To be replaced by [[[`@expo/serve-emu`](http://www.github.com/expo/serve-emu). |
-| [`packages/serve-sim`](packages/serve-sim) | Vendored fork of `serve-sim`. To be replaced by [`@expo/serve-sim`](http://www.github.com/expo/serve-sim) |
+| [`packages/expo-serve-emu`](packages/expo-serve-emu) | Thin wrapper of `serve-emu`. To be replaced by [`@expo/serve-emu`](http://www.github.com/expo/serve-emu). |
+| [`packages/serve-sim`](packages/serve-sim) | Vendored fork of `serve-sim`. To be replaced by [`@expo/serve-sim`](http://www.github.com/expo/serve-sim). |
 | [`packages/serve-emu`](packages/serve-emu) | Vendored fork of `serve-emu`. To be replaced by [`@expo/serve-emu`](http://www.github.com/expo/serve-emu). |
 | [`example`](example) | A minimal Expo app with the plugin installed. |
 
@@ -67,7 +67,7 @@ two backends speak very different wire protocols — serve-sim streams MJPEG/H.2
 takes binary touch packets, while serve-emu streams H.264 (WebCodecs) and takes JSON
 gestures — so this package hides that behind one shared contract:
 
-- a hook (`useIosDeviceClient` / `useAndroidDeviceClient`, selected by
+- a hook (`useIosDeviceClient` / `useAndroidDeviceClient` and general
   `useActiveDeviceClient`) that owns the WebSocket connection and exposes the live
   connection state plus input controls, and
 - a `DeviceScreen` component that paints whichever stream is active and forwards
