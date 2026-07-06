@@ -94,8 +94,7 @@
       "name": "expo-device-hub",
       "version": "0.1.0",
       "dependencies": {
-        "serve-emu": "workspace:*",
-        "serve-sim": "workspace:*",
+        "ws": "^8.21.0",
       },
       "devDependencies": {
         "@expo/hub-android-utils": "workspace:*",
@@ -111,6 +110,8 @@
         "react-dom": "catalog:",
         "react-native": "catalog:",
         "react-native-web": "catalog:",
+        "serve-emu": "workspace:*",
+        "serve-sim": "workspace:*",
         "tailwindcss": "^4.1.11",
         "typescript": "~6.0.3",
       },

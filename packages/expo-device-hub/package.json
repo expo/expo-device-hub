@@ -28,8 +28,7 @@
     "expo-module.config.json"
   ],
   "dependencies": {
-    "serve-emu": "workspace:*",
-    "serve-sim": "workspace:*"
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@expo/hub-android-utils": "workspace:*",
@@ -45,14 +44,17 @@
     "react-dom": "catalog:",
     "react-native": "catalog:",
     "react-native-web": "catalog:",
+    "serve-emu": "workspace:*",
+    "serve-sim": "workspace:*",
     "tailwindcss": "^4.1.11",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start --web",
     "web": "expo start --web",
-    "build": "bun run build:web && bun run build:server",
+    "build": "bun run build:web && bun run build:vendor && bun run build:server",
     "build:web": "expo export --platform web --output-dir dist/client",
+    "build:vendor": "bun run scripts/vendor.ts",
     "build:server": "bun run scripts/build-plugin-server.ts"
   }
 }

@@ -21,10 +21,10 @@
 import { type DevicePlatform } from './types';
 
 /** Same-origin path where the `serve-sim` DevTools plugin is mounted. */
-export const SERVE_SIM_PLUGIN_PATH = '/_expo/plugins/serve-sim';
+export const SERVE_SIM_PLUGIN_PATH = '/_expo/plugins/expo-device-hub/vendor/serve-sim';
 
 /** Same-origin path where the `expo-serve-emu` DevTools plugin is mounted. */
-export const SERVE_EMU_PLUGIN_PATH = '/_expo/plugins/serve-emu';
+export const SERVE_EMU_PLUGIN_PATH = '/_expo/plugins/expo-device-hub/vendor/serve-emu';
 
 export const DEFAULT_ENDPOINTS: Record<DevicePlatform, string> = {
   ios: SERVE_SIM_PLUGIN_PATH,

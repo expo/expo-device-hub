@@ -1,18 +1,4 @@
 #!/usr/bin/env bun
-/**
- * Bundle the Expo Hub DevTools plugin server.
- *
- * expo-device-hub is an Expo DevTools plugin (see `expo-module.config.json`): Expo CLI
- * loads `dist/server/index.mjs` and calls its default-exported fetch handler for
- * requests to `/_expo/plugins/expo-device-hub/*`. The handler is authored in TypeScript
- * under `src/server/` and bundled here with Bun into a single, self-contained ESM
- * file — so `@expo/hub-apple-utils` and the device-listing logic ship inlined and
- * only Node built-ins stay external.
- *
- * Output (`dist/`) is gitignored; run `bun run build:server` before using the
- * plugin from a host app.
- */
-
 import { rmSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -28,6 +14,19 @@ const result = await Bun.build({
   format: 'esm',
   naming: '[dir]/[name].mjs',
   sourcemap: 'linked',
+  plugins: [
+    {
+      name: 'externalize-vendor',
+      setup(build) {
+        // Must stay external: inlining rebases serve-sim/serve-emu's `import.meta.url`-relative
+        // native-binary lookups onto `dist/server/` and breaks them at runtime.
+        build.onResolve(
+          { filter: /\/vendor\/serve-(sim|emu)\/dist\/middleware\.js$/ },
+          (args) => ({ path: args.path, external: true }),
+        );
+      },
+    },
+  ],
 });
 
 if (!result.success) {
