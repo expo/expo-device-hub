@@ -8,10 +8,10 @@ const root = resolve(import.meta.dir, '..');
 const vendorDir = resolve(root, 'vendor');
 const require = createRequire(import.meta.url);
 
-const { dependencies = {} } = require(resolve(root, 'package.json')) as {
-  dependencies?: Record<string, string>;
+const { vendorDependencies = {} } = require(resolve(root, 'package.json')) as {
+  vendorDependencies?: Record<string, string>;
 };
-const deps = Object.keys(dependencies);
+const deps = Object.keys(vendorDependencies);
 
 rmSync(vendorDir, { recursive: true, force: true });
 mkdirSync(vendorDir, { recursive: true });

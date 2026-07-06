@@ -49,6 +49,10 @@
     "tailwindcss": "^4.1.11",
     "typescript": "~6.0.3"
   },
+  "vendorDependencies": {
+    "serve-emu": "workspace:*",
+    "serve-sim": "workspace:*"
+  },
   "scripts": {
     "start": "expo start --web",
     "web": "expo start --web",
