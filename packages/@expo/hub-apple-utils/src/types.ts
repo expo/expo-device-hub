@@ -38,3 +38,15 @@ export interface AppleHardwareProperties {
   reality?: string;
   [key: string]: unknown;
 }
+
+/** Options for {@link shutdownDevice} → `xcrun simctl shutdown`. */
+export interface ShutdownDeviceOptions {
+  /** UDID of the simulator to shut down. */
+  udid: string;
+}
+
+/** Options for {@link removeDevice} → `xcrun simctl delete`. */
+export interface RemoveDeviceOptions {
+  /** UDID of the simulator to delete. */
+  udid: string;
+}

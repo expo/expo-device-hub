@@ -94,6 +94,44 @@ export async function runAvdmanagerCreateAvd(
   }
 }
 
+/** Throw if `name` is empty — `avdmanager delete avd` needs an AVD name. */
+export function assertName(name: string): void {
+  if (!name || !name.trim()) {
+    throw new Error(
+      '[android-utils] `name` is required to delete an AVD (e.g. "expo-emu-host-0").',
+    );
+  }
+}
+
+/**
+ * Build the `avdmanager delete avd --name <name>` arguments.
+ *
+ * Throws via {@link assertName} when `name` is empty.
+ */
+export function buildDeleteAvdArgs(name: string): string[] {
+  assertName(name);
+  return ["delete", "avd", "--name", name];
+}
+
+/**
+ * Run `avdmanager delete avd --name <name>` and return its stdout, or `null` on
+ * failure. Throws via {@link assertName} when `name` is empty.
+ */
+export async function runAvdmanagerDeleteAvd(
+  avdmanagerPath: string,
+  name: string,
+): Promise<string | null> {
+  const args = buildDeleteAvdArgs(name);
+
+  try {
+    const { stdout } = await execFileAsync(avdmanagerPath, args);
+    return stdout;
+  } catch (error) {
+    console.error("[android-utils] Failed to run `avdmanager delete avd`:", error);
+    return null;
+  }
+}
+
 /**
  * Read and parse `<avdPath>/config.ini`. Returns an empty object when the path
  * is missing or the file cannot be read. Never throws.

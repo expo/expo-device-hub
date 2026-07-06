@@ -111,3 +111,15 @@ export interface BootedDevice {
   /** OS process id of the spawned emulator; `null` when unavailable. */
   pid: number | null;
 }
+
+/** Options for {@link shutdownDevice} → `adb -s <serial> emu kill`. */
+export interface ShutdownDeviceOptions {
+  /** adb serial of the running emulator to stop (e.g. `"emulator-5554"`). */
+  serial: string;
+}
+
+/** Options for {@link removeDevice} → `avdmanager delete avd`. */
+export interface RemoveDeviceOptions {
+  /** AVD name to delete → `--name` (e.g. `"expo-emu-host-0"`). */
+  name: string;
+}

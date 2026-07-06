@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { assertDevice, buildCreateAvdArgs } from "../avdmanager";
+import { assertDevice, assertName, buildCreateAvdArgs, buildDeleteAvdArgs } from "../avdmanager";
 
 const OPTIONS = {
   name: "expo-emu-host-0",
@@ -48,5 +48,32 @@ describe("buildCreateAvdArgs", () => {
     ).toThrow(/device/);
     expect(() => buildCreateAvdArgs({ ...OPTIONS, device: "" })).toThrow(/device/);
     expect(() => buildCreateAvdArgs({ ...OPTIONS, device: "   " })).toThrow(/device/);
+  });
+});
+
+describe("assertName", () => {
+  test("throws on an empty or whitespace name", () => {
+    expect(() => assertName("")).toThrow(/name/);
+    expect(() => assertName("   ")).toThrow(/name/);
+  });
+
+  test("accepts a non-empty name", () => {
+    expect(() => assertName("expo-emu-host-0")).not.toThrow();
+  });
+});
+
+describe("buildDeleteAvdArgs", () => {
+  test("maps the name to `avdmanager delete avd` flags", () => {
+    expect(buildDeleteAvdArgs("expo-emu-host-0")).toEqual([
+      "delete",
+      "avd",
+      "--name",
+      "expo-emu-host-0",
+    ]);
+  });
+
+  test("throws when name is empty or whitespace", () => {
+    expect(() => buildDeleteAvdArgs("")).toThrow(/name/);
+    expect(() => buildDeleteAvdArgs("   ")).toThrow(/name/);
   });
 });

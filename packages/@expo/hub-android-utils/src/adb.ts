@@ -44,3 +44,22 @@ export async function runAdbEmuAvdName(adbPath: string, serial: string): Promise
     return null;
   }
 }
+
+/** Build the `adb -s <serial> emu kill` args. */
+export function buildEmuKillArgs(serial: string): string[] {
+  return ["-s", serial, "emu", "kill"];
+}
+
+/**
+ * Run `adb -s <serial> emu kill` to stop a running emulator. Returns `true` on
+ * success, `false` on failure. Never throws.
+ */
+export async function runAdbEmuKill(adbPath: string, serial: string): Promise<boolean> {
+  try {
+    await execFileAsync(adbPath, buildEmuKillArgs(serial));
+    return true;
+  } catch (error) {
+    console.error(`[android-utils] Failed to run \`adb -s ${serial} emu kill\`:`, error);
+    return false;
+  }
+}
