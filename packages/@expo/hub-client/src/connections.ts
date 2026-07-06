@@ -8,7 +8,7 @@
  *     `/api`, lists/starts sims via its `/grid/api`, and a bare helper URL still
  *     works in a reduced video-only mode.
  *   - Android streams through `expo-serve-emu`, which mounts serve-emu the same
- *     way (`/_expo/plugins/expo-serve-emu`) on the Hub's origin. No separate
+ *     way (`/_expo/plugins/serve-emu`) on the Hub's origin. No separate
  *     `serve-emu --port 3300` process is needed — the Android client connects to
  *     that plugin's `/ws` (H.264 video + input) and reads `/api/devices` /
  *     `/api/logcat` under the same prefix.
@@ -24,7 +24,7 @@ import { type DevicePlatform } from './types';
 export const SERVE_SIM_PLUGIN_PATH = '/_expo/plugins/serve-sim';
 
 /** Same-origin path where the `expo-serve-emu` DevTools plugin is mounted. */
-export const SERVE_EMU_PLUGIN_PATH = '/_expo/plugins/expo-serve-emu';
+export const SERVE_EMU_PLUGIN_PATH = '/_expo/plugins/serve-emu';
 
 export const DEFAULT_ENDPOINTS: Record<DevicePlatform, string> = {
   ios: SERVE_SIM_PLUGIN_PATH,

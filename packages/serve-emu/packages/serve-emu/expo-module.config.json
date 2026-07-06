@@ -1,6 +1,6 @@
 {
   "platforms": ["devtools"],
   "devtools": {
-    "serverEntryPoint": "dist/index.mjs"
+    "serverEntryPoint": "dist/devtools-plugin.js"
   }
 }

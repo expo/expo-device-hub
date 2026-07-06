@@ -1,9 +1,13 @@
 /**
  * DevTools plugin server entry point for serve-emu (Android emulator preview).
  *
+ * This is serve-emu's own DevTools plugin entry — previously the standalone
+ * `expo-serve-emu` wrapper package, now folded into serve-emu itself so there is
+ * a single package to ship/vendor.
+ *
  * Expo CLI calls the default-exported fetch handler for every request to
- * `/_expo/plugins/expo-serve-emu/*` with the plugin prefix stripped from the
- * URL, expecting a fetch `Response` back.
+ * `/_expo/plugins/serve-emu/*` with the plugin prefix stripped from the URL,
+ * expecting a fetch `Response` back.
  *
  * serve-emu ships a fetch-style middleware. We mount its multi-device router
  * (`createRouter` → `handleRequest(req) => Response` + `attachWebSocket(socket)`)
@@ -17,9 +21,9 @@
 
 import type { IncomingMessage } from "node:http";
 import { createRequire } from "node:module";
-import { createRouter, fromWsSocket, type WsWebSocketLike } from "serve-emu/middleware";
+import { createRouter, fromWsSocket, type WsWebSocketLike } from "./middleware.ts";
 
-// Compiled to ESM (.mjs), but package.json is JSON loaded with CJS semantics.
+// Compiled to ESM (.js), but package.json is JSON loaded with CJS semantics.
 const require = createRequire(import.meta.url);
 const { name: PACKAGE_NAME } = require("../package.json") as { name: string };
 

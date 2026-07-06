@@ -67,12 +67,16 @@
     "scripts",
     "vendor",
     "dist",
+    "expo-module.config.json",
     "README.md",
     "LICENSE"
   ],
   "dependencies": {
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
+  },
+  "peerDependencies": {
+    "expo": "*"
   },
   "devDependencies": {
     "@swc/cli": "^0.8.1",

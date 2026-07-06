@@ -28,7 +28,7 @@
     "expo-module.config.json"
   ],
   "dependencies": {
-    "expo-serve-emu": "workspace:*",
+    "serve-emu": "workspace:*",
     "serve-sim": "workspace:*"
   },
   "devDependencies": {

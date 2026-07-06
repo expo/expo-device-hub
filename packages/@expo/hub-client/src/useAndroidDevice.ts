@@ -51,7 +51,7 @@ const TOUCH_ACTION = { begin: 'down', move: 'move', end: 'up' } as const;
 /**
  * Join an API path onto the base URL, **preserving any path prefix** the base
  * carries. `baseUrl` is the `expo-serve-emu` plugin mount
- * (`…/_expo/plugins/expo-serve-emu`), so `new URL('/ws', baseUrl)` would drop
+ * (`…/_expo/plugins/serve-emu`), so `new URL('/ws', baseUrl)` would drop
  * that prefix and miss the plugin; a plain string join keeps it (and still works
  * for a bare `http://localhost:3300` standalone serve-emu).
  */
