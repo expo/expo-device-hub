@@ -326,8 +326,7 @@ export async function startScrcpy(opts: StartOpts): Promise<ScrcpySession> {
       ],
       { stdio: ["ignore", "pipe", "pipe"] },
     );
-    proc.stdout?.on("data", (b: Buffer) => process.stdout.write(`[scrcpy] ${b}`));
-    proc.stderr?.on("data", (b: Buffer) => process.stderr.write(`[scrcpy] ${b}`));
+    // FIXME: Use `debug` to priny out scrcpy logs
 
     // Wait for the device-side abstract socket to appear before the host dials in;
     // otherwise adb accepts the local connection, then closes it the moment the
