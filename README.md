@@ -1,3 +1,12 @@
+<p align="center">
+  <a href="https://github.com/expo/expo-device-hub">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="assets/expo-device-hub-banner-dark-2x.png">
+      <img alt="Expo Device Hub" src="assets/expo-device-hub-banner-light-2x.png" width="900">
+    </picture>
+  </a>
+</p>
+
 # expo-device-hub
 
 An **Expo DevTools plugin** for managing and interacting with iOS simulators and
