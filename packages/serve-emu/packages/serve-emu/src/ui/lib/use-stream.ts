@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { buildCodecString, scanAU } from "./h264";
+import { MsePlayer } from "./mse-player";
 import { withDevice } from "./device";
 
 export type DeviceSize = { width: number; height: number };
@@ -66,8 +67,13 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>, serial: strin
   }, []);
 
   useEffect(() => {
-    const canDecode = "VideoDecoder" in globalThis && "EncodedVideoChunk" in globalThis;
-    if (!canDecode) {
+    // WebCodecs (`VideoDecoder`) is a secure-context-only API, so it's absent
+    // over a plain-HTTP LAN origin. Fall back to Media Source Extensions — not
+    // secure-context gated — which decodes the same H.264 via a <video> element
+    // blitted onto the canvas (see MsePlayer).
+    const canWebCodecs = "VideoDecoder" in globalThis && "EncodedVideoChunk" in globalThis;
+    const useMse = !canWebCodecs;
+    if (useMse && !MsePlayer.isSupported()) {
       setState((s) => ({ ...s, status: "WebCodecs unsupported" }));
       return;
     }
@@ -81,6 +87,7 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>, serial: strin
     let reconnectDelay = 500;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let decoder: VideoDecoder | null = null;
+    let msePlayer: MsePlayer | null = null;
     let sawKeyframe = false;
     let frameIdx = 0;
     let fpsCount = 0;
@@ -221,6 +228,28 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>, serial: strin
 
     const feedFrame = (raw: ArrayBuffer | Uint8Array) => {
       const packet = parseFramePacket(raw);
+
+      if (useMse) {
+        const isKey = packet.isKey ?? scanAU(packet.data).isKey;
+        if (!msePlayer) {
+          const canvas = canvasRef.current;
+          if (!canvas) {
+            requestKeyframe();
+            return;
+          }
+          msePlayer = new MsePlayer(canvas, {
+            onFirstFrame: () => setStatus("streaming"),
+            onResize: (width, height) =>
+              setState((s) => ({ ...s, deviceSize: { width, height } })),
+            onFps: (fps) => setState((s) => (s.fps === fps ? s : { ...s, fps })),
+            onError: (message) => setStatus(message),
+            requestKeyframe,
+          });
+        }
+        msePlayer.feed(packet.data, isKey, packet.timestamp);
+        return;
+      }
+
       const needsScan =
         packet.isKey === null ||
         (packet.isKey && (!decoder || decoder.state !== "configured" || droppingUntilKeyframe));
@@ -280,6 +309,8 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>, serial: strin
       ws.onopen = () => {
         reconnectDelay = 500;
         setStatus("streaming");
+        // MSE playback must begin on a keyframe; nudge the server to emit one now.
+        if (useMse) requestKeyframe();
       };
       ws.onerror = () => setStatus("connection error");
       ws.onclose = () => {
@@ -290,6 +321,8 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>, serial: strin
           decoder?.close();
         } catch {}
         decoder = null;
+        msePlayer?.destroy();
+        msePlayer = null;
         frameIdx = 0;
         sawKeyframe = false;
         reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 5000);
@@ -348,6 +381,8 @@ export function useStream(canvasRef: RefObject<HTMLCanvasElement>, serial: strin
       } catch {}
       clearFrameQueue();
       closeDecoder();
+      msePlayer?.destroy();
+      msePlayer = null;
       wsRef.current = null;
     };
   }, [canvasRef, serial]);

@@ -26,9 +26,10 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "swc src -d dist --strip-leading-paths --out-file-extension mjs --delete-dir-on-start && tsc -p tsconfig.build.json",
-    "dev": "swc src -d dist --strip-leading-paths --out-file-extension mjs -w",
+    "build": "swc src -d dist --strip-leading-paths --out-file-extension mjs --delete-dir-on-start --ignore \"**/__tests__/**\" && tsc -p tsconfig.build.json",
+    "dev": "swc src -d dist --strip-leading-paths --out-file-extension mjs --ignore \"**/__tests__/**\" -w",
     "clean": "rm -rf dist",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt",
@@ -40,6 +41,7 @@
   "devDependencies": {
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.15.43",
+    "@types/bun": "latest",
     "@types/react": "~19.2.2",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",

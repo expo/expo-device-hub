@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
+import { MsePlayer } from './mse-player';
 import {
   type ConnectionStatus,
   type DeviceAppearance,
@@ -160,7 +161,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       setStatus('idle');
       return;
     }
-    if (!isWebCodecsSupported()) {
+    // WebCodecs (`VideoDecoder`) is a secure-context-only API, so it's absent
+    // over a plain-HTTP LAN origin (`http://192.168.x.x:8081`). Fall back to
+    // Media Source Extensions — not secure-context gated — which decodes the same
+    // H.264 through a <video> element blitted onto the canvas (see MsePlayer).
+    const useMse = !isWebCodecsSupported();
+    if (useMse && !MsePlayer.isSupported()) {
       setStatus('error');
       setError('This browser cannot decode H.264 (WebCodecs unavailable).');
       return;
@@ -170,6 +176,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setError(null);
 
     let cancelled = false;
+    let msePlayer: MsePlayer | null = null;
     // Effect-local "first frame painted" flag. Drives the → streaming transition
     // without reading the `status` state from this closure: on a device switch
     // the effect re-runs while `status` is still the previous device's
@@ -268,6 +275,41 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     const feedFrame = (raw: ArrayBuffer) => {
       const packet = parseFramePacket(raw);
+
+      if (useMse) {
+        const isKey = packet.isKey ?? scanAU(packet.data).isKey;
+        if (!msePlayer) {
+          const canvas = canvasRef.current;
+          if (!canvas) {
+            requestKeyframe();
+            return;
+          }
+          msePlayer = new MsePlayer(canvas, {
+            onFirstFrame: () => {
+              if (!cancelled && !painted) {
+                painted = true;
+                setStatus('streaming');
+              }
+            },
+            onResize: (width, height) => {
+              if (!cancelled) setScreen({ width, height });
+            },
+            onFps: (next) => {
+              if (!cancelled) setFps((prev) => (prev === next ? prev : next));
+            },
+            onError: (message) => {
+              if (!cancelled) {
+                setStatus('error');
+                setError(message);
+              }
+            },
+            requestKeyframe,
+          });
+        }
+        msePlayer.feed(packet.data, isKey, packet.timestamp);
+        return;
+      }
+
       const needsScan =
         packet.isKey === null ||
         (packet.isKey && (!decoder || decoder.state !== 'configured' || droppingUntilKeyframe));
@@ -341,6 +383,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         reconnectDelay = 500;
         setError(null);
         setStatus((prev) => (prev === 'streaming' ? prev : 'connecting'));
+        // MSE playback must begin on a keyframe; nudge the server to emit one now.
+        if (useMse) requestKeyframe();
       };
       ws.onerror = () => {
         if (!cancelled) setStatus('error');
@@ -348,6 +392,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       ws.onclose = () => {
         if (cancelled) return;
         closeDecoder();
+        msePlayer?.destroy();
+        msePlayer = null;
         sawKeyframe = false;
         painted = false;
         frameIdx = 0;
@@ -368,6 +414,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
       closeDecoder();
+      msePlayer?.destroy();
+      msePlayer = null;
       try {
         wsRef.current?.close();
       } catch {}
