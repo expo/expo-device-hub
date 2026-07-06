@@ -25,7 +25,14 @@
   "files": [
     "dist/client",
     "dist/server/index.mjs",
-    "expo-module.config.json"
+    "vendor/serve-sim/dist/middleware.js",
+    "vendor/serve-sim/dist/serve-sim.js",
+    "vendor/serve-sim/dist/simax",
+    "vendor/serve-sim/dist/simcam",
+    "vendor/serve-sim/bin/serve-sim-bin",
+    "vendor/serve-emu/dist/*.js",
+    "vendor/serve-emu/vendor",
+    "/expo-module.config.json"
   ],
   "dependencies": {
     "ws": "^8.21.0"
