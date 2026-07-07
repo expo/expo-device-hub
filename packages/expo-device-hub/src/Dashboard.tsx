@@ -16,6 +16,7 @@ import {
   text,
   type Device,
 } from '@expo/hub-components';
+import { removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDevices, useRecentDevices } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
@@ -73,6 +74,21 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   function handleAddDevice(device: Device) {
     setAdded((prev) => (prev.some((item) => item.id === device.id) ? prev : [...prev, device]));
     setSelectedId(device.id);
+  }
+
+  // Shut down / remove the selected device on the host, then drop it from the
+  // UI. The device leaves the polled booted list within a tick, and the
+  // selection effect re-selects the next device (or falls back to EmptyState).
+  async function handleShutdown(device: Device) {
+    await shutdownDevice(device);
+    setAdded((prev) => prev.filter((item) => item.id !== device.id));
+    setSelectedId('');
+  }
+
+  async function handleRemove(device: Device) {
+    await removeDevice(device);
+    setAdded((prev) => prev.filter((item) => item.id !== device.id));
+    setSelectedId('');
   }
 
   // Default to open on the wide layout, collapsed on the narrow one — but the
@@ -150,6 +166,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           client={client}
           DeviceScreen={DeviceScreen}
           displayScreen={displayScreen}
+          onShutdown={() => handleShutdown(selected)}
+          onRemove={() => handleRemove(selected)}
         />
       ) : (
         <EmptyState />

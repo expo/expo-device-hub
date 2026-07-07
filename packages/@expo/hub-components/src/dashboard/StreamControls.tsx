@@ -32,6 +32,8 @@ export function StreamControls({
   onBack,
   onRecents,
   onSave,
+  onShutdown,
+  onRemove,
 }: {
   platform: Platform;
   physical: boolean;
@@ -47,6 +49,10 @@ export function StreamControls({
   onRecents?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
+  /** Shut the device down (More menu). */
+  onShutdown?: () => void;
+  /** Remove/delete the device (More menu; hidden for physical devices). */
+  onRemove?: () => void;
 }) {
   const isAndroid = platform === 'android';
 
@@ -65,8 +71,10 @@ export function StreamControls({
           onSelect={onToggleAppearance}
         />
       )}
-      <DropdownItem label="Shutdown" Icon={PowerIcon} />
-      {!physical && <DropdownItem label="Remove" Icon={TrashIcon} destructive />}
+      <DropdownItem label="Shutdown" Icon={PowerIcon} onSelect={onShutdown} />
+      {!physical && (
+        <DropdownItem label="Remove" Icon={TrashIcon} destructive onSelect={onRemove} />
+      )}
     </Dropdown>
   );
 

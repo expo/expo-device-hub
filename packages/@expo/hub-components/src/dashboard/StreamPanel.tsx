@@ -32,6 +32,8 @@ export function StreamPanel({
   client,
   DeviceScreen,
   displayScreen,
+  onShutdown,
+  onRemove,
 }: {
   device: Device;
   client: DeviceClient;
@@ -39,6 +41,10 @@ export function StreamPanel({
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
+  /** Shut the streamed device down (More menu). */
+  onShutdown?: () => void;
+  /** Remove/delete the streamed device (More menu). */
+  onRemove?: () => void;
 }) {
   return (
     <section
@@ -75,6 +81,8 @@ export function StreamPanel({
           const blob = await client.screenshot();
           if (blob) downloadBlob(blob, screenshotFilename(device.name));
         }}
+        onShutdown={onShutdown}
+        onRemove={onRemove}
       />
     </section>
   );
