@@ -4,7 +4,7 @@
  * route at `/_expo/plugins/expo-device-hub/<route>`. Bundled to `dist/server/index.mjs`.
  */
 
-import { parseDeviceAction, removeHubDevice, shutdownHubDevice } from './device-actions';
+import { bootHubDevice, parseDeviceAction, removeHubDevice, shutdownHubDevice } from './device-actions';
 import { type HubDeviceList, listDevices } from './devices';
 import { EMU_PREFIX, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
 import { SIM_PREFIX, handleSimRequest, simExecWebSocketHandler } from './serve-sim';
@@ -13,6 +13,7 @@ import { MOCK_NEW_DEVICE_OPTIONS } from './sim-options';
 const DEVICES_ROUTE = '/api/devices';
 const SHUTDOWN_DEVICE_ROUTE = '/api/devices/shutdown';
 const REMOVE_DEVICE_ROUTE = '/api/devices/remove';
+const BOOT_DEVICE_ROUTE = '/api/devices/boot';
 const NEW_DEVICE_OPTIONS_ROUTE = '/api/new-device-options';
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -57,6 +58,23 @@ export default async function handler(request: Request): Promise<Response | null
           ? await shutdownHubDevice(action)
           : await removeHubDevice(action);
       return jsonResponse({ ok });
+    } catch (error) {
+      return jsonResponse({ ok: false, error: String(error) }, 500);
+    }
+  }
+
+  if (pathname === BOOT_DEVICE_ROUTE) {
+    if (request.method !== 'POST') {
+      return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
+    }
+
+    const action = await parseDeviceAction(request);
+    if (!action) {
+      return jsonResponse({ ok: false, error: 'Expected { platform, id, name } JSON body' }, 400);
+    }
+
+    try {
+      return jsonResponse(await bootHubDevice(action));
     } catch (error) {
       return jsonResponse({ ok: false, error: String(error) }, 500);
     }

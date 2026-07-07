@@ -3,12 +3,13 @@
  * simulator/emulator down and removing (deleting) it.
  *
  * These shell out through `@expo/hub-apple-utils` (`xcrun simctl`) and
- * `@expo/hub-android-utils` (`adb` / `avdmanager`). The dashboard's More menu
- * calls them via `POST /api/devices/shutdown` and `POST /api/devices/remove`
- * (see `index.ts`).
+ * `@expo/hub-android-utils` (`adb` / `avdmanager` / `emulator`). The dashboard
+ * calls them via `POST /api/devices/{shutdown,remove,boot}` (see `index.ts`).
  */
 
 import {
+  bootDevice as bootAndroidEmulator,
+  listDevices as listAndroidDevices,
   removeDevice as removeAndroidDevice,
   shutdownDevice as shutdownAndroidDevice,
 } from '@expo/hub-android-utils';
@@ -73,4 +74,73 @@ export async function removeHubDevice({ platform, id, name }: DeviceActionReques
 
   await shutdownAndroidDevice({ serial: id });
   return removeAndroidDevice({ name });
+}
+
+const EMULATOR_PORT_MIN = 5554;
+// adb's emulator serial range tops out at emulator-5682; console ports are even.
+const EMULATOR_PORT_MAX = 5682;
+const BOOT_READY_TIMEOUT_MS = 180_000;
+const BOOT_POLL_INTERVAL_MS = 1500;
+
+/** Result of a boot request — the adb serial once the emulator is online. */
+export interface BootDeviceResult {
+  ok: boolean;
+  /** adb serial of the booted emulator (`emulator-<port>`), when it came up. */
+  serial?: string;
+  error?: string;
+}
+
+/** Lowest free even emulator console port not held by a running emulator. */
+async function freeEmulatorPort(): Promise<number> {
+  const devices = await listAndroidDevices();
+  const used = new Set<number>();
+  for (const device of devices) {
+    const port = Number(/^emulator-(\d+)$/.exec(device.serial ?? '')?.[1]);
+    if (Number.isFinite(port)) used.add(port);
+  }
+  for (let port = EMULATOR_PORT_MIN; port <= EMULATOR_PORT_MAX; port += 2) {
+    if (!used.has(port)) return port;
+  }
+  throw new Error('No free emulator console port available');
+}
+
+/** Poll `listDevices` until `serial` shows up booted (adb-online), or time out. */
+async function waitForAdbOnline(serial: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const devices = await listAndroidDevices();
+      if (devices.some((device) => device.serial === serial && device.booted)) return true;
+    } catch {}
+    await new Promise((resolve) => setTimeout(resolve, BOOT_POLL_INTERVAL_MS));
+  }
+  return false;
+}
+
+/**
+ * Boot a shut-down Android emulator (iOS boots via serve-sim on connect, so this
+ * is Android-only). Spawns `emulator -avd <name> -port <port>`, waits until that
+ * emulator's serial is adb-online, and returns the serial so the client can
+ * stream it via serve-emu (which keys off the adb serial, not the AVD name).
+ */
+export async function bootHubDevice({
+  platform,
+  id,
+  name,
+}: DeviceActionRequest): Promise<BootDeviceResult> {
+  if (platform !== 'android') {
+    return { ok: false, error: 'Boot is Android-only; iOS simulators boot via serve-sim.' };
+  }
+
+  const avdName = name || id;
+  if (!avdName) return { ok: false, error: 'Missing AVD name' };
+
+  const port = await freeEmulatorPort();
+  const booted = bootAndroidEmulator({ name: avdName, port });
+  if (!booted) return { ok: false, error: `Failed to spawn emulator for ${avdName}` };
+
+  const online = await waitForAdbOnline(booted.serial, BOOT_READY_TIMEOUT_MS);
+  return online
+    ? { ok: true, serial: booted.serial }
+    : { ok: false, serial: booted.serial, error: 'Timed out waiting for the emulator to come online' };
 }
