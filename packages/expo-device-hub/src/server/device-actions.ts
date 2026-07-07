@@ -9,9 +9,10 @@
 
 import {
   bootDevice as bootAndroidEmulator,
-  listDevices as listAndroidDevices,
+  freeEmulatorPort,
   removeDevice as removeAndroidDevice,
   shutdownDevice as shutdownAndroidDevice,
+  waitForAdbOnline,
 } from '@expo/hub-android-utils';
 import {
   removeDevice as removeAppleDevice,
@@ -76,11 +77,7 @@ export async function removeHubDevice({ platform, id, name }: DeviceActionReques
   return removeAndroidDevice({ name });
 }
 
-const EMULATOR_PORT_MIN = 5554;
-// adb's emulator serial range tops out at emulator-5682; console ports are even.
-const EMULATOR_PORT_MAX = 5682;
 const BOOT_READY_TIMEOUT_MS = 180_000;
-const BOOT_POLL_INTERVAL_MS = 1500;
 
 /** Result of a boot request — the adb serial once the emulator is online. */
 export interface BootDeviceResult {
@@ -88,33 +85,6 @@ export interface BootDeviceResult {
   /** adb serial of the booted emulator (`emulator-<port>`), when it came up. */
   serial?: string;
   error?: string;
-}
-
-/** Lowest free even emulator console port not held by a running emulator. */
-async function freeEmulatorPort(): Promise<number> {
-  const devices = await listAndroidDevices();
-  const used = new Set<number>();
-  for (const device of devices) {
-    const port = Number(/^emulator-(\d+)$/.exec(device.serial ?? '')?.[1]);
-    if (Number.isFinite(port)) used.add(port);
-  }
-  for (let port = EMULATOR_PORT_MIN; port <= EMULATOR_PORT_MAX; port += 2) {
-    if (!used.has(port)) return port;
-  }
-  throw new Error('No free emulator console port available');
-}
-
-/** Poll `listDevices` until `serial` shows up booted (adb-online), or time out. */
-async function waitForAdbOnline(serial: string, timeoutMs: number): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try {
-      const devices = await listAndroidDevices();
-      if (devices.some((device) => device.serial === serial && device.booted)) return true;
-    } catch {}
-    await new Promise((resolve) => setTimeout(resolve, BOOT_POLL_INTERVAL_MS));
-  }
-  return false;
 }
 
 /**
