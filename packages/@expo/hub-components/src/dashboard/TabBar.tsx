@@ -3,7 +3,7 @@ import { type CSSProperties, useState } from 'react';
 import { bg, radius, text, textSize } from '../primitives';
 import { tabs, type TabKey } from './data';
 
-/** Logs / Network / Settings tab switcher for the selected simulator. */
+/** Tab switcher for the selected simulator's output. */
 export function TabBar({ active, onChange }: { active: TabKey; onChange: (key: TabKey) => void }) {
   const [hovered, setHovered] = useState<TabKey | null>(null);
   const [pressed, setPressed] = useState<TabKey | null>(null);

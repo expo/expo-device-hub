@@ -8,8 +8,6 @@ import {
   HomeIcon,
   PowerIcon,
   RecentsIcon,
-  RefreshIcon,
-  RotateIcon,
   Switch,
   ThemeIcon,
   TrashIcon,
@@ -18,9 +16,9 @@ import { type ColorScheme, type Platform } from './data';
 
 /**
  * Controls under the device stream. The layout is platform-specific:
- *  - Android: Save · Back · Home · Recents · More — with Reload + Theme moved
- *    into the More menu (Android exposes hardware Back/Recents keys).
- *  - iOS: Save · Theme · Home · Reload · More.
+ *  - Android: Save · Back · Home · Recents · More — with Theme moved into the
+ *    More menu (Android exposes hardware Back/Recents keys).
+ *  - iOS: Save · Theme · Home · More (a blank spacer holds the former Reload slot).
  *
  * "Theme" toggles the **device's** system dark/light appearance (not Hub's own
  * theme) via the active device client.
@@ -60,7 +58,6 @@ export function StreamControls({
       // Don't return focus to the trigger on close, so it isn't left with a focus ring.
       onCloseAutoFocus={(event) => event.preventDefault()}
       trigger={<ControlButton icon={<DotsIcon />} label="More" />}>
-      {isAndroid && <DropdownItem label="Reload" Icon={RefreshIcon} />}
       {isAndroid && (
         <DropdownItem
           label={appearance === 'dark' ? 'Light mode' : 'Dark mode'}
@@ -68,7 +65,6 @@ export function StreamControls({
           onSelect={onToggleAppearance}
         />
       )}
-      <DropdownItem label="Rotate device" Icon={RotateIcon} />
       <DropdownItem label="Shutdown" Icon={PowerIcon} />
       {!physical && <DropdownItem label="Remove" Icon={TrashIcon} destructive />}
     </Dropdown>
@@ -90,7 +86,14 @@ export function StreamControls({
       {isAndroid ? (
         <ControlButton icon={<RecentsIcon />} label="Recents" onClick={onRecents} />
       ) : (
-        <ControlButton icon={<RefreshIcon />} label="Reload" />
+        // Blank, inert spacer so the iOS row keeps a button-sized slot where Reload used to be.
+        <ControlButton
+          icon={null}
+          label=""
+          aria-hidden
+          tabIndex={-1}
+          style={{ visibility: 'hidden', pointerEvents: 'none' }}
+        />
       )}
 
       {more}

@@ -34,7 +34,7 @@ export type LogEntry = {
   message: string;
 };
 
-export type TabKey = 'logs' | 'network' | 'settings';
+export type TabKey = 'logs';
 
 /**
  * Active UI color scheme. The consumer owns how it's resolved (system setting +
@@ -50,8 +50,4 @@ export type NewDeviceOptions = {
   models: string[];
 };
 
-export const tabs: { key: TabKey; label: string }[] = [
-  { key: 'logs', label: 'Logs' },
-  { key: 'network', label: 'Network' },
-  { key: 'settings', label: 'Settings' },
-];
+export const tabs: { key: TabKey; label: string }[] = [{ key: 'logs', label: 'Logs' }];
