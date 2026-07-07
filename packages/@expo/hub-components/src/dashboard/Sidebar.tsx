@@ -78,7 +78,7 @@ export function Sidebar({
         options={emulatorOptions}
         selectedId={selectedId}
         onSelect={onSelect}
-        onAdd={undefined}
+        onAdd={onAddDevice}
       />
       <OutputSection client={client} />
     </aside>
