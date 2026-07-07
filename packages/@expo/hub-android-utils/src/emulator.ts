@@ -6,15 +6,19 @@ export function emulatorSerial(port: number): string {
   return `emulator-${port}`;
 }
 
-/** Build the `emulator` arguments for a headless (windowless) boot. */
+/**
+ * Build the `emulator` arguments for a boot.
+ * Use `auto` (hw/host when available) GPU,
+ * auto-no-window/swiftshader resulted in low fps and interaction delay.
+ * `-no-window` works, but to match iOS for now we don't use it.
+ */
 export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
   return [
     "-avd",
     options.name,
-    "-no-window",
     "-no-audio",
     "-gpu",
-    "auto-no-window",
+    "auto",
     "-no-boot-anim",
     "-port",
     String(options.port),
