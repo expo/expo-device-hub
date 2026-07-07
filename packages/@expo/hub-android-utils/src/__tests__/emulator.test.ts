@@ -8,14 +8,13 @@ describe("emulatorSerial", () => {
 });
 
 describe("buildEmulatorArgs", () => {
-  test("builds a headless boot command for the avd and port", () => {
+  test("builds the boot command for the avd and port", () => {
     expect(buildEmulatorArgs({ name: "expo-emu-host-0", port: 5554 })).toEqual([
       "-avd",
       "expo-emu-host-0",
-      "-no-window",
       "-no-audio",
       "-gpu",
-      "auto-no-window",
+      "auto",
       "-no-boot-anim",
       "-port",
       "5554",
