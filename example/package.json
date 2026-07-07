@@ -6,7 +6,7 @@
     "expo": "catalog:",
     "expo-device-hub": "workspace:*",
     "serve-emu": "workspace:*",
-    "expo-status-bar": "~56.0.4",
+    "expo-status-bar": "~57.0.0",
     "react": "catalog:",
     "react-native": "catalog:",
     "serve-sim": "workspace:*"
