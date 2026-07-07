@@ -11,6 +11,7 @@ import { type Device } from '@expo/hub-components';
  */
 const SHUTDOWN_ENDPOINT = '/_expo/plugins/expo-device-hub/api/devices/shutdown';
 const REMOVE_ENDPOINT = '/_expo/plugins/expo-device-hub/api/devices/remove';
+const BOOT_ENDPOINT = '/_expo/plugins/expo-device-hub/api/devices/boot';
 
 async function postAction(endpoint: string, device: Device): Promise<boolean> {
   try {
@@ -39,4 +40,27 @@ export function shutdownDevice(device: Device): Promise<boolean> {
 /** Remove/delete the given device. Resolves to whether the server reported success. */
 export function removeDevice(device: Device): Promise<boolean> {
   return postAction(REMOVE_ENDPOINT, device);
+}
+
+/**
+ * Boot a shut-down Android emulator on the host, resolving to its adb serial
+ * (`emulator-<port>`) once online, or `null` on failure. iOS sims boot via
+ * serve-sim on connect, so this is only used for Android.
+ */
+export async function bootDevice(device: Device): Promise<string | null> {
+  try {
+    const response = await fetch(BOOT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ platform: device.platform, id: device.id, name: device.name }),
+      // A cold emulator boot can take a couple of minutes.
+      signal: AbortSignal.timeout(200_000),
+    });
+    if (!response.ok) throw new Error(`Unexpected ${response.status}`);
+    const data = (await response.json()) as { ok?: boolean; serial?: string };
+    return data.ok && data.serial ? data.serial : null;
+  } catch (error) {
+    console.warn('[expo-device-hub] Device boot failed:', error);
+    return null;
+  }
 }

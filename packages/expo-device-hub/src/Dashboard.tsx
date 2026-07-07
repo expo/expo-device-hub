@@ -16,7 +16,7 @@ import {
   text,
   type Device,
 } from '@expo/hub-components';
-import { removeDevice, shutdownDevice } from './dashboard/deviceActions';
+import { bootDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDevices, useRecentDevices } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
@@ -66,14 +66,33 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     [booted.emulators, added],
   );
 
-  // Add a device chosen in a picker and select it straight away. Selecting a
-  // device attaches its serve-sim helper on demand (see useIosDeviceClient):
-  // a booted sim just gets a stream daemon, while a shut-down one picked here is
-  // booted. This picker is the only path that boots a sim — the middleware never
-  // does so on its own.
-  function handleAddDevice(device: Device) {
+  // Add a device chosen in a picker and select it straight away.
+  //
+  // iOS: selecting attaches the serve-sim helper on demand, which boots a
+  // shut-down sim (see useIosDeviceClient / startIosHelper).
+  //
+  // Android: serve-emu only streams already-running emulators, keyed by adb
+  // serial, so a shut-down (recent) AVD must be booted on the host first. Boot
+  // it, then re-key the added entry from the AVD name to the `emulator-<port>`
+  // serial serve-emu streams, and select that.
+  async function handleAddDevice(device: Device) {
     setAdded((prev) => (prev.some((item) => item.id === device.id) ? prev : [...prev, device]));
     setSelectedId(device.id);
+
+    if (device.platform === 'android' && !device.booted) {
+      const serial = await bootDevice(device);
+      if (serial) {
+        setAdded((prev) => [
+          ...prev.filter((item) => item.id !== device.id && item.id !== serial),
+          { ...device, id: serial, booted: true },
+        ]);
+        setSelectedId(serial);
+      } else {
+        // Boot failed — drop the placeholder and let the selection effect fall back.
+        setAdded((prev) => prev.filter((item) => item.id !== device.id));
+        setSelectedId('');
+      }
+    }
   }
 
   // Shut down / remove the selected device on the host, then drop it from the
