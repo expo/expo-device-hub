@@ -23,10 +23,9 @@ jobs:
       pull-requests: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-tags: true
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
