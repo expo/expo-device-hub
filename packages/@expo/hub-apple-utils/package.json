@@ -1,6 +1,7 @@
 {
   "name": "@expo/hub-apple-utils",
   "version": "0.1.0",
+  "private": true,
   "description": "List connected Apple devices via devicectl.",
   "license": "MIT",
   "files": [

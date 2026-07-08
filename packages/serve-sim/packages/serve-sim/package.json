@@ -1,6 +1,7 @@
 {
   "name": "serve-sim",
   "version": "0.1.34",
+  "private": true,
   "type": "module",
   "author": {
     "name": "Evan Bacon",
@@ -59,7 +60,7 @@
     }
   },
   "scripts": {
-    "build": "bun run build.ts",
+    "build": "bun run build.ts && bun run build:swift",
     "build:swift": "./build.sh"
   },
   "devDependencies": {

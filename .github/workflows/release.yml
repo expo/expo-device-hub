@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build + version only — skip commit, tag, and npm publish"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    environment: ${{ !inputs.dry_run && 'npm-publish' || '' }}
+    permissions:
+      contents: write # push the release commit + tags
+      id-token: write # npm OIDC Trusted Publishing
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.6"
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Test
+        run: bun run test
+
+      - name: Build packages
+        run: bun run build
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Verify pending changesets
+        run: ./scripts/verify-pending-changesets.ts
+
+      - name: Apply version bump & generate changelog
+        run: bun run changeset:version
+
+      - name: Summarize versions
+        run: ./scripts/summarize-versions.ts
+
+      - name: Preview (dry run)
+        if: ${{ inputs.dry_run }}
+        run: ./scripts/preview-dry-run.ts
+
+      - name: Upload package tarballs (dry run)
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: package-tarballs
+          path: release-artifacts/*.tgz
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Commit & push version bump
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git add -A
+          git commit -m "chore(release): version packages"
+          git push origin "HEAD:${{ github.ref_name }}"
+
+      - name: Publish to npm
+        if: ${{ !inputs.dry_run }}
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: bun run changeset:publish
+
+      - name: Push git tags
+        if: ${{ !inputs.dry_run }}
+        run: git push origin --tags
+
+      - name: Create GitHub releases
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/create-github-releases.ts

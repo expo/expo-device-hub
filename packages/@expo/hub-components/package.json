@@ -1,6 +1,7 @@
 {
   "name": "@expo/hub-components",
   "version": "0.1.0",
+  "private": true,
   "description": "Dependency-free UI kit shared by Expo Hub and the Expo dashboard website, driving the @expo/styleguide design tokens.",
   "license": "MIT",
   "keywords": [
