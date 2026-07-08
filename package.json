@@ -6,7 +6,11 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
-    "clean": "turbo run clean"
+    "test": "turbo run test",
+    "clean": "turbo run clean",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "changeset publish"
   },
   "workspaces": {
     "packages": [
@@ -26,6 +30,7 @@
     }
   },
   "devDependencies": {
+    "@changesets/cli": "^2.27.0",
     "turbo": "^2.10.2"
   }
 }

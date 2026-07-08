@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Build + version only — skip commit, tag, and npm publish"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: release-expo-device-hub
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-latest
+    environment: npm-publish
+    permissions:
+      contents: write # push the release commit + tags
+      id-token: write # npm OIDC Trusted Publishing
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.6"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24.x"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Ensure npm supports OIDC Trusted Publishing
+        # Trusted Publishing requires npm >= 11.5.1.
+        run: npm install -g npm@latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Test
+        run: bun run test
+
+      - name: Build serve-sim native binary (Swift)
+        working-directory: packages/serve-sim/packages/serve-sim
+        run: ./build.sh
+
+      - name: Build packages
+        run: bun run build
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Verify pending changesets
+        # Releases are changeset-driven: refuse to run if there is nothing to release.
+        run: ./scripts/verify-pending-changesets.ts
+
+      - name: Apply version bump & generate changelog
+        # Reads the pending changesets to compute each package's bump + changelog.
+        run: bun run changeset:version
+
+      - name: Summarize versions
+        run: ./scripts/summarize-versions.ts
+
+      - name: Preview (dry run)
+        if: ${{ inputs.dry_run }}
+        run: ./scripts/preview-dry-run.ts
+
+      - name: Commit & push version bump
+        if: ${{ !inputs.dry_run }}
+        run: |
+          git add -A
+          git commit -m "chore(release): version packages"
+          git push origin "HEAD:${{ github.ref_name }}"
+
+      - name: Publish to npm (OIDC Trusted Publishing)
+        # changeset publish only publishes packages whose version is not yet on npm,
+        # and creates a git tag per published package (e.g. expo-device-hub@X.Y.Z).
+        if: ${{ !inputs.dry_run }}
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: bun run changeset:publish
+
+      - name: Push git tags
+        if: ${{ !inputs.dry_run }}
+        run: git push origin --tags

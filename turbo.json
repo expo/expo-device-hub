@@ -10,6 +10,7 @@
       "dependsOn": ["^build"]
     },
     "lint": {},
+    "test": {},
     "clean": {
       "cache": false
     }

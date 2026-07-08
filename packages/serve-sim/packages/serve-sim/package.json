@@ -1,6 +1,7 @@
 {
   "name": "serve-sim",
   "version": "0.1.34",
+  "private": true,
   "type": "module",
   "author": {
     "name": "Evan Bacon",

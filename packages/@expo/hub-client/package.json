@@ -1,7 +1,7 @@
 {
   "name": "@expo/hub-client",
-  "version": "0.1.0",
-  "description": "Device-client hooks and types for mirroring live iOS simulators (serve-sim) and Android emulators (serve-emu) in the browser.",
+  "version": "0.0.0",
+  "description": "Device-client hooks and types for mirroring live iOS simulators and Android emulators and devices in the browser.",
   "license": "MIT",
   "keywords": [
     "expo",
