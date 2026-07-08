@@ -1,6 +1,5 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { readdirSync } from 'node:fs';
-import type { IncomingMessage } from 'node:http';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,11 +35,13 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
 
 // serve-sim's video (/stream.mjpeg) and touch sockets are served by its detached helper
 // directly, not through this mount — /exec-ws is the only same-origin WebSocket.
-export const simExecWebSocketHandler = (
-  socket: { close(): void },
-  request: IncomingMessage,
-): void => {
-  const handled = middleware.handleWebSocket?.(request, socket);
+export const simExecWebSocketHandler = (socket: { close(): void }, request: Request): void => {
+  const url = new URL(request.url);
+  const rewritten = new Request(
+    `${url.origin}${PLUGIN_MOUNT}${url.pathname}${url.search}`,
+    request,
+  );
+  const handled = middleware.handleWebSocket?.(rewritten, socket);
   if (!handled) socket.close();
 };
 
