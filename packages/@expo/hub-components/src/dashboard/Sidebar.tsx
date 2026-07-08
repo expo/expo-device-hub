@@ -1,10 +1,8 @@
-import { type DeviceClient } from '@expo/hub-client';
 import { Logo, SidebarToggle } from '../primitives';
 import { type Device, type NewDeviceOptions } from './data';
 import { DeviceSection } from './DeviceSection';
-import { OutputSection } from './OutputSection';
 
-/** Left column: simulators + emulators lists and the output tabs. */
+/** Left column: simulators + emulators lists. The output tabs live in {@link LogSidebar}. */
 export function Sidebar({
   simulators,
   emulators,
@@ -16,7 +14,6 @@ export function Sidebar({
   onSelect,
   onAddDevice,
   onToggle,
-  client,
 }: {
   /** Simulators to list — real iOS devices from the plugin server. */
   simulators: Device[];
@@ -36,8 +33,6 @@ export function Sidebar({
   onAddDevice: (device: Device) => void;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */
   onToggle?: () => void;
-  /** Active device connection — feeds the logs panel and its controls. */
-  client?: DeviceClient;
 }) {
   return (
     <aside
@@ -80,7 +75,6 @@ export function Sidebar({
         onSelect={onSelect}
         onAdd={onAddDevice}
       />
-      <OutputSection client={client} />
     </aside>
   );
 }

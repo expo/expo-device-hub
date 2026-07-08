@@ -1,7 +1,7 @@
 import { type ComponentType } from 'react';
 
 import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo/hub-client';
-import { bg } from '../primitives';
+import { bg, border, radius, shadow } from '../primitives';
 import { type Device } from './data';
 import { PhoneFrame } from './PhoneFrame';
 import { StreamControls } from './StreamControls';
@@ -26,7 +26,12 @@ function screenshotFilename(name: string): string {
   return `${slug}-${stamp}.png`;
 }
 
-/** Right panel: the selected device's stream and its controls, full height. */
+/**
+ * Center panel: the selected device's stream and its controls. Rendered as the
+ * raised white content card from the Expo dashboard shell — `bg.default` on the
+ * `bg.subtle` canvas, a `border.secondary` hairline, `radius.lg` corners and a
+ * `shadow.sm` — so it floats above the gray sidebars exactly like the website.
+ */
 export function StreamPanel({
   device,
   client,
@@ -57,8 +62,12 @@ export function StreamPanel({
         justifyContent: 'center',
         gap: 40,
         padding: 40,
+        margin: 16,
         boxSizing: 'border-box',
-        backgroundColor: bg.subtle,
+        backgroundColor: bg.default,
+        border: `1px solid ${border.secondary}`,
+        borderRadius: radius.lg,
+        boxShadow: shadow.sm,
         overflow: 'hidden',
       }}>
       <PhoneFrame

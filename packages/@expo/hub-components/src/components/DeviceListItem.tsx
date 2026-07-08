@@ -26,7 +26,7 @@ export function DeviceListItem({ name, version, selected = false, onClick }: Dev
     padding: 16,
     border: 'none',
     borderRadius: radius.xl,
-    backgroundColor: selected ? bg.hover : hovered ? bg.element : bg.subtle,
+    backgroundColor: selected ? bg.hover : hovered ? bg.element : 'transparent',
     cursor: 'pointer',
     textAlign: 'left',
     fontFamily: 'inherit',

@@ -45,6 +45,7 @@ export * from './theme/tokens';
 // component + `displayScreen` helper as props (typed from `@expo/hub-client`, a
 // types-only devDependency) so this library never imports the client at runtime.
 export { Sidebar } from './dashboard/Sidebar';
+export { LogSidebar } from './dashboard/LogSidebar';
 export { StreamPanel } from './dashboard/StreamPanel';
 export { EmptyState } from './dashboard/EmptyState';
 export { DeviceSection, type DeviceSectionProps } from './dashboard/DeviceSection';

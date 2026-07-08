@@ -1,14 +1,24 @@
 import { type CSSProperties, useState } from 'react';
 
-import { bg, border, icon, radius, shadow } from '../theme/tokens';
+import { bg, icon, radius } from '../theme/tokens';
 import { SidebarIcon } from './icons';
 
 /**
- * Toggle for showing/hiding the sidebar on narrow screens. `floating` renders
- * the bordered, elevated button that sits over the stream when the sidebar is
- * hidden; the default is the plain inline button used inside the sidebar header.
+ * Toggle for showing/hiding a sidebar. `floating` is the larger standalone button
+ * shown while the sidebar is collapsed; both variants are plain — no border, no
+ * background, just a hover fill. `side` mirrors the glyph so it points at the
+ * sidebar it controls; pass `"right"` for the right-hand sidebar.
  */
-export function SidebarToggle({ onClick, floating = false }: { onClick: () => void; floating?: boolean }) {
+export function SidebarToggle({
+  onClick,
+  floating = false,
+  side = 'left',
+}: {
+  onClick: () => void;
+  floating?: boolean;
+  /** Which sidebar it controls — mirrors the glyph to point that way. */
+  side?: 'left' | 'right';
+}) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -17,9 +27,8 @@ export function SidebarToggle({ onClick, floating = false }: { onClick: () => vo
         width: 40,
         height: 40,
         borderRadius: radius.lg,
-        border: `1px solid ${border.default}`,
-        backgroundColor: hovered ? bg.subtle : bg.default,
-        boxShadow: shadow.xs,
+        border: 'none',
+        backgroundColor: hovered ? bg.element : 'transparent',
       }
     : {
         width: 32,
@@ -52,7 +61,11 @@ export function SidebarToggle({ onClick, floating = false }: { onClick: () => vo
         transform: pressed ? 'scale(0.98)' : undefined,
         ...style,
       }}>
-      <SidebarIcon size={20} color={icon.default} />
+      <SidebarIcon
+        size={20}
+        color={icon.default}
+        style={side === 'right' ? { transform: 'scaleX(-1)' } : undefined}
+      />
     </button>
   );
 }

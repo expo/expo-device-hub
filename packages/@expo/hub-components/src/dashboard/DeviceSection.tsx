@@ -74,7 +74,7 @@ export function DeviceSection({
               padding: 0,
               borderRadius: radius.full,
               border: `1px solid ${border.default}`,
-              backgroundColor: addHovered ? bg.element : 'transparent',
+              backgroundColor: addHovered ? bg.hover : bg.default,
               cursor: 'pointer',
               transition: 'background-color 150ms ease, transform 100ms ease',
               transform: addPressed ? 'scale(0.98)' : undefined,
@@ -94,7 +94,7 @@ export function DeviceSection({
               padding: '12px 16px',
               borderRadius: radius.xl,
               border: `1px dashed ${border.default}`,
-              backgroundColor: bg.subtle,
+              backgroundColor: bg.default,
             }}>
             {emptyLabel}
           </p>

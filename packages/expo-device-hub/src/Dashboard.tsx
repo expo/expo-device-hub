@@ -8,6 +8,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo/hub-client';
 import {
   EmptyState,
+  LogSidebar,
   Sidebar,
   SidebarToggle,
   StreamPanel,
@@ -28,19 +29,26 @@ function mergeById(base: Device[], extra: Device[]): Device[] {
   return [...base, ...extra.filter((device) => !ids.has(device.id))];
 }
 
-// Below this width the sidebar + device stream no longer fit side by side, so
-// the sidebar collapses and becomes a toggleable overlay.
+// Below this width a single sidebar + the device stream no longer fit side by
+// side, so the left (devices) sidebar collapses into a toggleable overlay.
 const NARROW_MAX_WIDTH = 767;
+// The logs sidebar is a second ~400px column, so two sidebars + the stream need
+// roughly one more sidebar-width to fit. Between these thresholds the left
+// sidebar stays inline while the logs sidebar collapses first; below
+// NARROW_MAX_WIDTH both are overlays.
+const LOGS_MAX_WIDTH = NARROW_MAX_WIDTH + 400;
 
 /**
  * The single Expo Hub screen, authored as an Expo DOM component (`'use dom'`) so
- * it renders with web primitives and real CSS. Left: simulators + emulators +
- * output tabs. Right: the stream of the selected device. Hub's own dark mode
- * follows the system setting via `dark-theme`; the stream's Theme control flips
- * the *device's* appearance, not Hub's.
+ * it renders with web primitives and real CSS. Left: simulators + emulators.
+ * Center: the stream of the selected device. Right: the output tabs (logs) for
+ * that device. Hub's own dark mode follows the system setting via `dark-theme`;
+ * the stream's Theme control flips the *device's* appearance, not Hub's.
  *
- * On narrow viewports the sidebar collapses: a floating toggle reveals it as an
- * overlay over the stream, and a matching toggle in its header hides it again.
+ * As the viewport narrows the sidebars collapse in stages — the logs sidebar
+ * first, then the left (devices) sidebar — each becoming a toggleable overlay
+ * over the stream, with a floating toggle to reveal it and a header toggle to
+ * hide it again.
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
   const scheme = useColorScheme();
@@ -53,7 +61,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // join the sidebar list but aren't booted on the host.
   const [added, setAdded] = useState<Device[]>([]);
   const narrow = useIsNarrow(NARROW_MAX_WIDTH);
+  const logsNarrow = useIsNarrow(LOGS_MAX_WIDTH);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [logsOpen, setLogsOpen] = useState(true);
 
   // Merge booted devices (from the server) with any the user added, deduped by
   // id and split back into the two sections by platform.
@@ -110,11 +120,17 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     setSelectedId('');
   }
 
-  // Default to open on the wide layout, collapsed on the narrow one — but the
-  // toggle lets the user close/open it at any width.
+  // Default each sidebar open when it fits inline, collapsed once its own
+  // breakpoint is crossed — but the toggles let the user close/open either at any
+  // width. Separate effects so resizing across one breakpoint never resets the
+  // other sidebar's manually-toggled state.
   useEffect(() => {
     setSidebarOpen(!narrow);
   }, [narrow]);
+
+  useEffect(() => {
+    setLogsOpen(!logsNarrow);
+  }, [logsNarrow]);
 
   // Mirror the theme onto the document root so Radix portals (e.g. the dropdown
   // menu), which mount on document.body outside the wrapper below, still pick up
@@ -157,7 +173,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         minWidth: 0,
         height: '100vh',
         boxSizing: 'border-box',
-        backgroundColor: bg.default,
+        backgroundColor: bg.subtle,
         color: text.default,
         fontFamily: 'var(--expo-font-sans)',
         overflow: 'hidden',
@@ -175,7 +191,6 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onSelect={setSelectedId}
           onAddDevice={handleAddDevice}
           onToggle={() => setSidebarOpen(false)}
-          client={client}
         />
       )}
 
@@ -192,6 +207,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         <EmptyState />
       )}
 
+      {/* Room for two sidebars + open: the logs sidebar sits inline to the right of the stream. */}
+      {logsOpen && !logsNarrow && <LogSidebar client={client} onToggle={() => setLogsOpen(false)} />}
+
       {/* Narrow + open: the sidebar overlays the stream with a backdrop. */}
       {sidebarOpen && narrow && (
         <>
@@ -205,7 +223,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               top: 0,
               left: 0,
               zIndex: 11,
-              backgroundColor: bg.default,
+              backgroundColor: bg.subtle,
               boxShadow: shadow.lg,
             }}>
             <Sidebar
@@ -219,16 +237,43 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               onSelect={setSelectedId}
               onAddDevice={handleAddDevice}
               onToggle={() => setSidebarOpen(false)}
-              client={client}
             />
           </div>
         </>
       )}
 
-      {/* Closed (either layout): a floating toggle to reopen the sidebar. */}
+      {/* Cramped + open: the logs sidebar overlays the stream from the right. */}
+      {logsOpen && logsNarrow && (
+        <>
+          <div
+            onClick={() => setLogsOpen(false)}
+            style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.35)', zIndex: 10 }}
+          />
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              right: 0,
+              zIndex: 11,
+              backgroundColor: bg.subtle,
+              boxShadow: shadow.lg,
+            }}>
+            <LogSidebar client={client} onToggle={() => setLogsOpen(false)} />
+          </div>
+        </>
+      )}
+
+      {/* Closed (either layout): a floating toggle to reopen the left sidebar. */}
       {!sidebarOpen && (
         <div style={{ position: 'absolute', top: 24, left: 24, zIndex: 12 }}>
           <SidebarToggle floating onClick={() => setSidebarOpen(true)} />
+        </div>
+      )}
+
+      {/* Closed (either layout): a floating toggle to reopen the logs sidebar. */}
+      {!logsOpen && (
+        <div style={{ position: 'absolute', top: 24, right: 24, zIndex: 12 }}>
+          <SidebarToggle floating side="right" onClick={() => setLogsOpen(true)} />
         </div>
       )}
     </div>

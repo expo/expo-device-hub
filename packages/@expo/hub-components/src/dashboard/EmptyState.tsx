@@ -1,4 +1,4 @@
-import { PhoneIcon, bg, border, heading, icon, radius, text, textSize } from '../primitives';
+import { PhoneIcon, bg, border, heading, icon, radius, shadow, text, textSize } from '../primitives';
 
 /**
  * Shown in the stream panel when no devices are available — i.e. there are no
@@ -17,8 +17,12 @@ export function EmptyState() {
         justifyContent: 'center',
         gap: 16,
         padding: 40,
+        margin: 16,
         boxSizing: 'border-box',
-        backgroundColor: bg.subtle,
+        backgroundColor: bg.default,
+        border: `1px solid ${border.secondary}`,
+        borderRadius: radius.lg,
+        boxShadow: shadow.sm,
         overflow: 'hidden',
         textAlign: 'center',
       }}>
@@ -30,8 +34,8 @@ export function EmptyState() {
           width: 56,
           height: 56,
           borderRadius: radius.full,
-          border: `1px solid ${border.default}`,
-          backgroundColor: bg.default,
+          border: `1px solid ${border.secondary}`,
+          backgroundColor: bg.subtle,
         }}>
         <PhoneIcon size={28} color={icon.secondary} />
       </div>
