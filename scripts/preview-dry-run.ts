@@ -1,14 +1,13 @@
 #!/usr/bin/env bun
-// Preview each published package's changelog and npm tarball without publishing.
-// Mirrors the "Preview (dry run)" release step. Run from the repo root.
+
 import { $ } from "bun";
+import { mkdir } from "node:fs/promises";
+import { getPublicPackages } from "./lib/public-packages.ts";
 
-const PUBLIC_PACKAGE_DIRS = [
-  "packages/expo-device-hub",
-  "packages/@expo/hub-client",
-];
+const artifactsDir = `${process.cwd()}/release-artifacts`;
+await mkdir(artifactsDir, { recursive: true });
 
-for (const dir of PUBLIC_PACKAGE_DIRS) {
+for (const { dir } of await getPublicPackages()) {
   const changelog = Bun.file(`${dir}/CHANGELOG.md`);
 
   console.log(`::group::${dir} — CHANGELOG.md`);
@@ -19,8 +18,11 @@ for (const dir of PUBLIC_PACKAGE_DIRS) {
   }
   console.log("::endgroup::");
 
-  console.log(`::group::${dir} — npm publish --dry-run`);
-  // .nothrow() so a pack warning doesn't fail the preview.
-  await $`npm publish --dry-run --access public`.cwd(dir).nothrow();
+  console.log(`::group::${dir} — npm pack`);
+  await $`npm pack --pack-destination ${artifactsDir}`.cwd(dir);
   console.log("::endgroup::");
 }
+
+console.log("::group::Tarballs in release-artifacts/");
+await $`ls -lh ${artifactsDir}`;
+console.log("::endgroup::");

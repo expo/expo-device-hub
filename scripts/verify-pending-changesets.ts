@@ -1,6 +1,5 @@
 #!/usr/bin/env bun
-// Releases are changeset-driven: fail if there is nothing to release.
-// Mirrors the "Verify pending changesets" release step. Run from the repo root.
+
 import { Glob } from "bun";
 
 const changesets: string[] = [];

@@ -39,10 +39,6 @@ jobs:
           node-version: "24.x"
           registry-url: "https://registry.npmjs.org"
 
-      - name: Ensure npm supports OIDC Trusted Publishing
-        # Trusted Publishing requires npm >= 11.5.1.
-        run: npm install -g npm@latest
-
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
@@ -54,10 +50,6 @@ jobs:
 
       - name: Test
         run: bun run test
-
-      - name: Build serve-sim native binary (Swift)
-        working-directory: packages/serve-sim/packages/serve-sim
-        run: ./build.sh
 
       - name: Build packages
         run: bun run build
@@ -81,6 +73,15 @@ jobs:
       - name: Preview (dry run)
         if: ${{ inputs.dry_run }}
         run: ./scripts/preview-dry-run.ts
+
+      - name: Upload package tarballs (dry run)
+        if: ${{ inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-tarballs
+          path: release-artifacts/*.tgz
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Commit & push version bump
         if: ${{ !inputs.dry_run }}

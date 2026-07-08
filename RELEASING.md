@@ -33,7 +33,9 @@ folds them all together, and each package's final bump is the largest one reques
 Go to **Actions → Release → Run workflow**. The only input is **dry_run**:
 
 - **off** → real release.
-- **on** → build, version, and preview the changelog + npm tarball, without committing,
-  tagging, or publishing.
+- **on** → build, version, preview the changelog, and upload the packed `.tgz` tarballs as a
+  **`package-tarballs`** artifact — without committing, tagging, or publishing. Download it from
+  the run summary to install/verify the packages locally (e.g.
+  `npm install ./expo-device-hub-<version>.tgz`).
 
 Only packages that have a changeset are versioned and published; the other one stays put.

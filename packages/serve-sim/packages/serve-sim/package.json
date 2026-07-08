@@ -60,7 +60,7 @@
     }
   },
   "scripts": {
-    "build": "bun run build.ts",
+    "build": "bun run build.ts && bun run build:swift",
     "build:swift": "./build.sh"
   },
   "devDependencies": {

@@ -6,6 +6,7 @@
       "name": "expo-serve-device-monorepo",
       "devDependencies": {
         "@changesets/cli": "^2.27.0",
+        "@types/bun": "^1.3.14",
         "turbo": "^2.10.2",
       },
     },
@@ -54,7 +55,7 @@
     },
     "packages/@expo/hub-client": {
       "name": "@expo/hub-client",
-      "version": "0.1.0",
+      "version": "0.0.0",
       "devDependencies": {
         "@swc/cli": "^0.8.1",
         "@swc/core": "^1.15.43",
@@ -94,7 +95,7 @@
     },
     "packages/expo-device-hub": {
       "name": "expo-device-hub",
-      "version": "0.1.0",
+      "version": "0.0.0",
       "dependencies": {
         "ws": "^8.21.0",
       },
