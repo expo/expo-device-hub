@@ -32,7 +32,6 @@ for (const pkg of await getPublicPackages()) {
     continue;
   }
 
-  // Idempotent: never recreate an existing release.
   const alreadyReleased =
     (await $`gh release view ${tag}`.nothrow().quiet()).exitCode === 0;
   if (alreadyReleased) {
@@ -47,7 +46,6 @@ for (const pkg of await getPublicPackages()) {
     if (section) notes = section;
   }
 
-  // Pack the exact bytes that were published to npm and attach them to the release.
   const packOutput = await $`npm pack --pack-destination ${artifactsDir} --json`.cwd(pkg.dir).text();
   const tarball = `${artifactsDir}/${JSON.parse(packOutput)[0].filename}`;
 
