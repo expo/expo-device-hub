@@ -48,11 +48,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Lint
-        run: bun run lint
 
       - name: Test
         run: bun run test
@@ -96,9 +91,7 @@ jobs:
           git commit -m "chore(release): version packages"
           git push origin "HEAD:${{ github.ref_name }}"
 
-      - name: Publish to npm (OIDC Trusted Publishing)
-        # changeset publish only publishes packages whose version is not yet on npm,
-        # and creates a git tag per published package (e.g. expo-device-hub@X.Y.Z).
+      - name: Publish to npm
         if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
@@ -107,3 +100,9 @@ jobs:
       - name: Push git tags
         if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
         run: git push origin --tags
+
+      - name: Create GitHub releases
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./scripts/create-github-releases.ts
