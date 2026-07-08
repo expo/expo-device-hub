@@ -153,6 +153,12 @@ export interface DeviceClient {
   /** Press a hardware button. */
   pressButton: (button: HardwareButton) => void;
   /**
+   * Reload the running React Native/Expo bundle. serve-sim injects ⌘R over the
+   * helper's key channel; serve-emu injects a hardware "R" keypress over scrcpy.
+   * A no-op if nothing is connected; harmless if the foreground app isn't RN.
+   */
+  reload: () => void;
+  /**
    * Capture a still PNG of the device via the backend's screenshot API
    * (serve-emu `adb screencap` / serve-sim `simctl io … screenshot`), resolving
    * to a `Blob`, or `null` if capture fails or nothing is connected. The caller

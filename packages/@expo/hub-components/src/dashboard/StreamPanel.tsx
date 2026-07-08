@@ -86,6 +86,7 @@ export function StreamPanel({
         onHome={() => client.pressButton('home')}
         onBack={() => client.pressButton('back')}
         onRecents={() => client.pressButton('recents')}
+        onReload={() => client.reload()}
         onSave={async () => {
           const blob = await client.screenshot();
           if (blob) downloadBlob(blob, screenshotFilename(device.name));

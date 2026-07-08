@@ -35,6 +35,8 @@ const MAX_LOGS = 200;
 const SOFT_DECODE_QUEUE_SIZE = 4;
 const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 
+const KEYCODE_R = 46
+
 const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'android', name: 'Emulator Android', platform: 'android', current: true },
 ];
@@ -118,6 +120,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     },
     [send],
   );
+
+  // Reload the RN/Expo bundle by injecting a hardware "R" keypress, which React
+  // Native listens for as its reload shortcut; serve-emu turns this into an
+  // INJECT_KEYCODE on the scrcpy control socket. Not recorded
+  // into the session; harmless if the foreground app isn't RN.
+  const reload = useCallback(() => {
+    send({ type: 'key', keycode: KEYCODE_R, record: false });
+  }, [send]);
 
   // serve-emu captures the frame buffer server-side (`adb exec-out screencap
   // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
@@ -528,6 +538,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     attachVideo,
     sendTouch,
     pressButton,
+    reload,
     screenshot,
     appearance,
     setAppearance,

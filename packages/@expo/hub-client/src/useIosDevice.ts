@@ -51,7 +51,11 @@ const RECONNECT_MS = 1500;
 const WS_MSG_TOUCH = 0x03;
 const WS_MSG_BUTTON = 0x04;
 const WS_MSG_MULTI_TOUCH = 0x05;
+const WS_MSG_KEY = 0x06;
 const WS_TAG_SCREEN_CONFIG = 0x82;
+
+// HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
+const HID_USAGE_R = 0x15; // 'r'
 
 const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'ios', name: 'iPhone Simulator', platform: 'ios', current: true },
@@ -255,6 +259,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const name = BUTTON_NAME[button];
     if (name) ws.send(taggedJson(WS_MSG_BUTTON, { button: name }));
+  }, []);
+
+  // Reload the RN/Expo bundle by injecting ⌘R over the helper's key channel
+  // (tag 0x06 → HID keystroke) — RN registers ⌘R as its reload shortcut. Mirrors
+  // the serve-sim web client's sequence exactly: ⌘ down, R down, R up, ⌘ up, with
+  // a sequential 30ms await between each event (so the gaps can't compress under
+  // timer jitter). Harmless if the foreground app isn't RN.
+  const reload = useCallback(async () => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const key = (type: 'down' | 'up', usage: number) =>
+      ws.send(taggedJson(WS_MSG_KEY, { type, usage }));
+    key('down', HID_USAGE_R);
+    await new Promise((r) => setTimeout(r, 30));
+    key('up', HID_USAGE_R);
   }, []);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
@@ -649,6 +668,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     sendTouch,
     sendMultiTouch,
     pressButton,
+    reload,
     screenshot,
     appearance,
     setAppearance,

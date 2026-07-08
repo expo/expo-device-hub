@@ -8,20 +8,20 @@ import {
   HomeIcon,
   PowerIcon,
   RecentsIcon,
+  RefreshIcon,
   Switch,
-  ThemeIcon,
   TrashIcon,
 } from '../primitives';
 import { type ColorScheme, type Platform } from './data';
 
 /**
- * Controls under the device stream. The layout is platform-specific:
- *  - Android: Save · Back · Home · Recents · More — with Theme moved into the
- *    More menu (Android exposes hardware Back/Recents keys).
- *  - iOS: Save · Theme · Home · More (a blank spacer holds the former Reload slot).
+ * Controls under the device stream. Both platforms share one bar:
+ *  - Save · Theme · Home · Reload · More.
+ *  - Android's hardware Back + Recents keys live in the More menu (iOS lacks them).
  *
- * "Theme" toggles the **device's** system dark/light appearance (not Hub's own
- * theme) via the active device client.
+ * "Reload" reloads the running React Native/Expo bundle via the active device
+ * client. "Theme" toggles the **device's** system dark/light appearance (not
+ * Hub's own theme).
  */
 export function StreamControls({
   platform,
@@ -31,6 +31,7 @@ export function StreamControls({
   onHome,
   onBack,
   onRecents,
+  onReload,
   onSave,
   onShutdown,
   onRemove,
@@ -47,6 +48,8 @@ export function StreamControls({
   onBack?: () => void;
   /** Press the Android Recents key. */
   onRecents?: () => void;
+  /** Reload the running React Native/Expo bundle. */
+  onReload?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
   /** Shut the device down (More menu). */
@@ -64,13 +67,8 @@ export function StreamControls({
       // Don't return focus to the trigger on close, so it isn't left with a focus ring.
       onCloseAutoFocus={(event) => event.preventDefault()}
       trigger={<ControlButton icon={<DotsIcon />} label="More" />}>
-      {isAndroid && (
-        <DropdownItem
-          label={appearance === 'dark' ? 'Light mode' : 'Dark mode'}
-          Icon={ThemeIcon}
-          onSelect={onToggleAppearance}
-        />
-      )}
+      {isAndroid && <DropdownItem label="Back" Icon={BackIcon} onSelect={onBack} />}
+      {isAndroid && <DropdownItem label="Recents" Icon={RecentsIcon} onSelect={onRecents} />}
       <DropdownItem label="Shutdown" Icon={PowerIcon} onSelect={onShutdown} />
       {!physical && (
         <DropdownItem label="Remove" Icon={TrashIcon} destructive onSelect={onRemove} />
@@ -82,27 +80,12 @@ export function StreamControls({
     <div style={{ display: 'flex', alignItems: 'flex-end', gap: 24 }}>
       <ControlButton icon={<CameraIcon />} label="Save" onClick={onSave} />
 
-      {isAndroid ? (
-        <ControlButton icon={<BackIcon />} label="Back" onClick={onBack} />
-      ) : (
-        // Theme uses the reusable Switch instead of an icon circle.
-        <Switch checked={appearance === 'dark'} onChange={onToggleAppearance} label="Theme" />
-      )}
+      {/* Theme toggle — same on both platforms; uses the reusable Switch. */}
+      <Switch checked={appearance === 'dark'} onChange={onToggleAppearance} label="Theme" />
 
       <ControlButton icon={<HomeIcon />} label="Home" variant="primary" onClick={onHome} />
 
-      {isAndroid ? (
-        <ControlButton icon={<RecentsIcon />} label="Recents" onClick={onRecents} />
-      ) : (
-        // Blank, inert spacer so the iOS row keeps a button-sized slot where Reload used to be.
-        <ControlButton
-          icon={null}
-          label=""
-          aria-hidden
-          tabIndex={-1}
-          style={{ visibility: 'hidden', pointerEvents: 'none' }}
-        />
-      )}
+      <ControlButton icon={<RefreshIcon />} label="Reload" onClick={onReload} />
 
       {more}
     </div>
