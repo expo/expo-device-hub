@@ -30,8 +30,10 @@
     "vendor/serve-sim/dist/simax",
     "vendor/serve-sim/dist/simcam",
     "vendor/serve-sim/bin/serve-sim-bin",
+    "vendor/serve-sim/LICENSE",
     "vendor/serve-emu/dist/*.js",
     "vendor/serve-emu/vendor",
+    "vendor/serve-emu/LICENSE",
     "/expo-module.config.json"
   ],
   "dependencies": {

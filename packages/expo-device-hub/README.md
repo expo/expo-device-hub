@@ -46,6 +46,24 @@ terminal when the dev server starts:
 › Expo Device Hub: http://localhost:8081/_expo/plugins/expo-device-hub
 ```
 
+## Acknowledgements
+
+Device streaming and control are powered by two vendored, Apache-2.0-licensed
+dependencies, bundled from Expo's forks. Each fork's license travels with the
+vendored code:
+
+- **[`@expo/serve-sim`](https://github.com/expo/expo-device-hub/tree/main/packages/serve-sim)** —
+  iOS simulator streaming and input; a fork of
+  [EvanBacon/serve-sim](https://github.com/EvanBacon/serve-sim).
+  License: [`vendor/serve-sim/LICENSE`](./vendor/serve-sim/LICENSE).
+- **[`@expo/serve-emu`](https://github.com/expo/expo-device-hub/tree/main/packages/serve-emu)** —
+  Android emulator streaming and input; a fork of
+  [jiunshinn/serve-emu](https://github.com/jiunshinn/serve-emu).
+  License: [`vendor/serve-emu/LICENSE`](./vendor/serve-emu/LICENSE).
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).
+
+Bundled dependencies keep their own licenses under [`vendor/`](./vendor); see
+[Acknowledgements](#acknowledgements) above.

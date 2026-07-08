@@ -46,7 +46,8 @@
     "Sources/SimCameraHelper/main.m",
     "Sources/SimCameraHelper/build.sh",
     "Sources/SimAXSettings/sim-ax-settings.m",
-    "Sources/SimAXSettings/build.sh"
+    "Sources/SimAXSettings/build.sh",
+    "LICENSE"
   ],
   "exports": {
     "./middleware": {

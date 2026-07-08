@@ -22,8 +22,10 @@ SOFTWARE.
 
 ---
 
-This package bundles third-party code that is licensed separately. See the
+This repository includes third-party code that is licensed separately. See the
 vendored licenses:
 
-- serve-sim — Apache License 2.0: ./vendor/serve-sim/LICENSE
-- serve-emu — Apache License 2.0: ./vendor/serve-emu/LICENSE
+- serve-sim — Apache License 2.0:
+  packages/expo-device-hub/vendor/serve-sim/LICENSE
+- serve-emu — Apache License 2.0:
+  packages/expo-device-hub/vendor/serve-emu/LICENSE
