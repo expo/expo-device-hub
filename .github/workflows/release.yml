@@ -8,15 +8,21 @@ on:
         required: false
         default: false
         type: boolean
+  # Every push to a PR targeting main runs a dry run (build + version + pack,
+  # uploading tarballs) — it never commits, tags, or publishes.
+  pull_request:
+    branches: [main]
 
 concurrency:
-  group: release-expo-device-hub
-  cancel-in-progress: false
+  # One lane per ref; cancel superseded PR dry runs but never a real release.
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   release:
     runs-on: macos-latest
-    environment: npm-publish
+    # Only enter the publish environment for a real release; dry runs skip it.
+    environment: ${{ (github.event_name == 'workflow_dispatch' && !inputs.dry_run) && 'npm-publish' || '' }}
     permissions:
       contents: write # push the release commit + tags
       id-token: write # npm OIDC Trusted Publishing
@@ -71,11 +77,11 @@ jobs:
         run: ./scripts/summarize-versions.ts
 
       - name: Preview (dry run)
-        if: ${{ inputs.dry_run }}
+        if: ${{ github.event_name == 'pull_request' || inputs.dry_run }}
         run: ./scripts/preview-dry-run.ts
 
       - name: Upload package tarballs (dry run)
-        if: ${{ inputs.dry_run }}
+        if: ${{ github.event_name == 'pull_request' || inputs.dry_run }}
         uses: actions/upload-artifact@v4
         with:
           name: package-tarballs
@@ -84,7 +90,7 @@ jobs:
           retention-days: 14
 
       - name: Commit & push version bump
-        if: ${{ !inputs.dry_run }}
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
         run: |
           git add -A
           git commit -m "chore(release): version packages"
@@ -93,11 +99,11 @@ jobs:
       - name: Publish to npm (OIDC Trusted Publishing)
         # changeset publish only publishes packages whose version is not yet on npm,
         # and creates a git tag per published package (e.g. expo-device-hub@X.Y.Z).
-        if: ${{ !inputs.dry_run }}
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
         run: bun run changeset:publish
 
       - name: Push git tags
-        if: ${{ !inputs.dry_run }}
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.dry_run }}
         run: git push origin --tags
