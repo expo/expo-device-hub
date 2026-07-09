@@ -2,7 +2,7 @@ import { Logo, SidebarToggle } from '../primitives';
 import { type Device, type NewDeviceOptions } from './data';
 import { DeviceSection } from './DeviceSection';
 
-/** Left column: simulators + emulators lists. The output tabs live in {@link LogSidebar}. */
+/** Left column: simulators + emulators lists. The device output (logs) lives in {@link LogSidebar}. */
 export function Sidebar({
   simulators,
   emulators,

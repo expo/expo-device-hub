@@ -41,7 +41,7 @@ const LOGS_MAX_WIDTH = NARROW_MAX_WIDTH + 400;
 /**
  * The single Expo Hub screen, authored as an Expo DOM component (`'use dom'`) so
  * it renders with web primitives and real CSS. Left: simulators + emulators.
- * Center: the stream of the selected device. Right: the output tabs (logs) for
+ * Center: the stream of the selected device. Right: the output (logs) for
  * that device. Hub's own dark mode follows the system setting via `dark-theme`;
  * the stream's Theme control flips the *device's* appearance, not Hub's.
  *

@@ -51,7 +51,6 @@ export { EmptyState } from './dashboard/EmptyState';
 export { DeviceSection, type DeviceSectionProps } from './dashboard/DeviceSection';
 export { OutputSection } from './dashboard/OutputSection';
 export { PhoneFrame } from './dashboard/PhoneFrame';
-export { TabBar } from './dashboard/TabBar';
 export { LogControls } from './dashboard/LogControls';
 export { LogList } from './dashboard/LogList';
 export { LogRow } from './dashboard/LogRow';

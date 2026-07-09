@@ -3,7 +3,7 @@ import { SidebarToggle } from '../primitives';
 import { OutputSection } from './OutputSection';
 
 /**
- * Right column: the selected device's output tabs (currently Logs). Mirrors the
+ * Right column: the selected device's output (currently Logs). Mirrors the
  * left {@link Sidebar} — same width, transparent over the `bg.subtle` canvas —
  * with its padding flipped so the wider gutter sits on the outer (right) edge.
  * The header holds a {@link SidebarToggle} on the inner edge to collapse it.

@@ -3,7 +3,7 @@
  *
  * Device lists come live from the consumer (e.g. the Hub plugin server via a
  * `useDevices` hook); this module only holds the shared shapes the presentational
- * components are typed against, plus the static `tabs` config.
+ * components are typed against.
  */
 
 export type Platform = 'ios' | 'android';
@@ -34,8 +34,6 @@ export type LogEntry = {
   message: string;
 };
 
-export type TabKey = 'logs';
-
 /**
  * Active UI color scheme. The consumer owns how it's resolved (system setting +
  * override); the components just read it and render light/dark accordingly.
@@ -49,5 +47,3 @@ export type NewDeviceOptions = {
   /** Device models for the select. e.g. "iPhone 17 Pro". */
   models: string[];
 };
-
-export const tabs: { key: TabKey; label: string }[] = [{ key: 'logs', label: 'Logs' }];

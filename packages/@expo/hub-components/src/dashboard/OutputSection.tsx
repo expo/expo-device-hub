@@ -1,15 +1,10 @@
-import { useState } from 'react';
-
 import { type DeviceClient } from '@expo/hub-client';
-import { type TabKey } from './data';
+import { text, textSize } from '../primitives';
 import { LogControls } from './LogControls';
 import { LogList } from './LogList';
-import { TabBar } from './TabBar';
 
-/** The selected simulator's output. Currently only the Logs tab. */
+/** The selected simulator's output. Currently only the logs. */
 export function OutputSection({ client }: { client?: DeviceClient }) {
-  const [active, setActive] = useState<TabKey>('logs');
-
   const logs = client?.logs;
   const logsEnabled = client?.logsEnabled ?? false;
 
@@ -22,7 +17,7 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         flex: 1,
         minHeight: 0,
       }}>
-      <TabBar active={active} onChange={setActive} />
+      <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>Logs</span>
       <LogControls
         enabled={logsEnabled}
         hasLogs={(logs?.length ?? 0) > 0}
