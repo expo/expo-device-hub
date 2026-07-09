@@ -92,6 +92,12 @@ export interface BootDeviceResult {
  * is Android-only). Spawns `emulator -avd <name> -port <port>`, waits until that
  * emulator's serial is adb-online, and returns the serial so the client can
  * stream it via serve-emu (which keys off the adb serial, not the AVD name).
+ *
+ * The wait races against the emulator process dying: a bad AVD/config kills the
+ * process within seconds, and burning the full 3-minute timeout on a corpse
+ * would leave the dashboard with a meaningless "timed out". The emulator's
+ * output isn't captured (the detached child outlives this server), so an early
+ * exit reports the exit code plus the exact command to re-run for the details.
  */
 export async function bootHubDevice({
   platform,
@@ -109,8 +115,32 @@ export async function bootHubDevice({
   const booted = bootAndroidEmulator({ name: avdName, port });
   if (!booted) return { ok: false, error: `Failed to spawn emulator for ${avdName}` };
 
-  const online = await waitForAdbOnline(booted.serial, BOOT_READY_TIMEOUT_MS);
-  return online
+  const abort = new AbortController();
+  const outcome = await Promise.race([
+    waitForAdbOnline(booted.serial, BOOT_READY_TIMEOUT_MS, { signal: abort.signal }).then(
+      (online) => ({ kind: 'wait' as const, online }),
+    ),
+    booted.exited.then((exit) => ({ kind: 'exited' as const, exit })),
+  ]);
+  abort.abort();
+
+  if (outcome.kind === 'exited') {
+    const ended =
+      outcome.exit.code != null
+        ? `exited with code ${outcome.exit.code}`
+        : outcome.exit.signal
+          ? `was killed by ${outcome.exit.signal}`
+          : 'exited';
+    return {
+      ok: false,
+      serial: booted.serial,
+      error:
+        `The emulator process for "${avdName}" ${ended} before coming online.\n\n` +
+        `For details, try running it manually:\n${booted.command}`,
+    };
+  }
+
+  return outcome.online
     ? { ok: true, serial: booted.serial }
     : { ok: false, serial: booted.serial, error: 'Timed out waiting for the emulator to come online' };
 }

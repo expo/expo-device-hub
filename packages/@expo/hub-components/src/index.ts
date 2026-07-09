@@ -56,6 +56,7 @@ export { LogList } from './dashboard/LogList';
 export { LogRow } from './dashboard/LogRow';
 export { StreamControls } from './dashboard/StreamControls';
 export { RecentDevicesModal, type RecentDevicesModalProps } from './dashboard/RecentDevicesModal';
+export { BootErrorModal, type BootErrorModalProps } from './dashboard/BootErrorModal';
 
 // ── Shared dashboard types + config ──
 export * from './dashboard/data';

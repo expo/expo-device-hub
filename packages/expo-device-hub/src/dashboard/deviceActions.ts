@@ -42,12 +42,21 @@ export function removeDevice(device: Device): Promise<boolean> {
   return postAction(REMOVE_ENDPOINT, device);
 }
 
+/** Outcome of a {@link bootDevice} call: exactly one of the two is set. */
+export interface BootDeviceOutcome {
+  /** adb serial (`emulator-<port>`) of the booted emulator, on success. */
+  serial: string | null;
+  /** Human-readable failure reason (may span multiple lines), on failure. */
+  error: string | null;
+}
+
 /**
  * Boot a shut-down Android emulator on the host, resolving to its adb serial
- * (`emulator-<port>`) once online, or `null` on failure. iOS sims boot via
- * serve-sim on connect, so this is only used for Android.
+ * (`emulator-<port>`) once online, or the server's failure reason (e.g. the
+ * emulator's own error output when the process died during boot). iOS sims boot
+ * via serve-sim on connect, so this is only used for Android. Never throws.
  */
-export async function bootDevice(device: Device): Promise<string | null> {
+export async function bootDevice(device: Device): Promise<BootDeviceOutcome> {
   try {
     const response = await fetch(BOOT_ENDPOINT, {
       method: 'POST',
@@ -57,10 +66,11 @@ export async function bootDevice(device: Device): Promise<string | null> {
       signal: AbortSignal.timeout(200_000),
     });
     if (!response.ok) throw new Error(`Unexpected ${response.status}`);
-    const data = (await response.json()) as { ok?: boolean; serial?: string };
-    return data.ok && data.serial ? data.serial : null;
+    const data = (await response.json()) as { ok?: boolean; serial?: string; error?: string };
+    if (data.ok && data.serial) return { serial: data.serial, error: null };
+    return { serial: null, error: data.error ?? 'The emulator did not come online.' };
   } catch (error) {
     console.warn('[expo-device-hub] Device boot failed:', error);
-    return null;
+    return { serial: null, error: error instanceof Error ? error.message : String(error) };
   }
 }

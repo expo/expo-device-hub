@@ -75,6 +75,38 @@ describe("waitForAdbOnline", () => {
     expect(online).toBe(false);
   });
 
+  test("resolves false without polling when the signal is already aborted", async () => {
+    let calls = 0;
+    const listDevicesFn = async () => {
+      calls++;
+      return [device("emulator-5554")];
+    };
+    const online = await waitForAdbOnline("emulator-5554", 1000, {
+      listDevicesFn,
+      pollIntervalMs: 1,
+      signal: AbortSignal.abort(),
+    });
+    expect(online).toBe(false);
+    expect(calls).toBe(0);
+  });
+
+  test("stops polling once the signal aborts", async () => {
+    const controller = new AbortController();
+    let calls = 0;
+    const listDevicesFn = async () => {
+      calls++;
+      controller.abort();
+      return [device("emulator-5554", { booted: false })];
+    };
+    const online = await waitForAdbOnline("emulator-5554", 1000, {
+      listDevicesFn,
+      pollIntervalMs: 1,
+      signal: controller.signal,
+    });
+    expect(online).toBe(false);
+    expect(calls).toBe(1);
+  });
+
   test("recovers after a transient lister error", async () => {
     let calls = 0;
     const listDevicesFn = async () => {

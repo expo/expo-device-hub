@@ -14,6 +14,7 @@ export type {
   AndroidSystemImage,
   BootDeviceOptions,
   BootedDevice,
+  EmulatorExit,
   CreateDeviceOptions,
   RemoveDeviceOptions,
   ShutdownDeviceOptions,

@@ -104,12 +104,33 @@ export interface BootDeviceOptions {
   port: number;
 }
 
+/** How a spawned emulator process ended (see {@link BootedDevice.exited}). */
+export interface EmulatorExit {
+  /** Process exit code; `null` when killed by a signal or never spawned. */
+  code: number | null;
+  /** Terminating signal (e.g. `"SIGKILL"`); `null` on a normal exit. */
+  signal: string | null;
+}
+
 /** A freshly launched emulator returned by {@link bootDevice}. */
 export interface BootedDevice {
   /** adb serial for the emulator, `emulator-<port>`. */
   serial: string;
   /** OS process id of the spawned emulator; `null` when unavailable. */
   pid: number | null;
+  /**
+   * The exact boot invocation as a runnable shell command. The emulator's
+   * output is discarded (the detached child outlives us), so this is what a
+   * failure report offers the user to reproduce the boot with the full
+   * emulator output visible.
+   */
+  command: string;
+  /**
+   * Resolves when the emulator process exits — which, before the device is
+   * adb-online, means the boot failed. Only fires while the parent process is
+   * alive (the child is detached); never rejects.
+   */
+  exited: Promise<EmulatorExit>;
 }
 
 /** Options for {@link shutdownDevice} → `adb -s <serial> emu kill`. */

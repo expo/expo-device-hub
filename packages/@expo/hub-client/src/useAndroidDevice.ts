@@ -239,6 +239,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (!cancelled && !painted) {
         painted = true;
         setStatus('streaming');
+        setError(null);
       }
       fpsCount++;
       const now = performance.now();
@@ -299,6 +300,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
               if (!cancelled && !painted) {
                 painted = true;
                 setStatus('streaming');
+                setError(null);
               }
             },
             onResize: (width, height) => {
@@ -391,13 +393,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       ws.onopen = () => {
         if (cancelled) return;
         reconnectDelay = 500;
-        setError(null);
-        setStatus((prev) => (prev === 'streaming' ? prev : 'connecting'));
+        // Status stays as-is: a socket opening proves nothing user-visible yet
+        // (the server accepts even while the emulator is still booting). Only the
+        // first painted frame flips to 'streaming'.
         // MSE playback must begin on a keyframe; nudge the server to emit one now.
         if (useMse) requestKeyframe();
       };
       ws.onerror = () => {
-        if (!cancelled) setStatus('error');
+        // A failed socket always fires onclose next — status is decided there.
       };
       ws.onclose = () => {
         if (cancelled) return;
@@ -405,10 +408,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         msePlayer?.destroy();
         msePlayer = null;
         sawKeyframe = false;
-        painted = false;
         frameIdx = 0;
-        setStatus('error');
-        setError((prev) => prev ?? 'Disconnected — retrying…');
+        // A drop before the first frame is normal while the emulator is still
+        // booting/attaching — keep "Connecting…" and retry quietly (matching
+        // iOS). Only a stream that was actually live reports a disconnect.
+        if (painted) {
+          painted = false;
+          setStatus('error');
+          setError((prev) => prev ?? 'Disconnected — retrying…');
+        }
         retryTimer = setTimeout(connect, reconnectDelay);
         reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 5000);
       };

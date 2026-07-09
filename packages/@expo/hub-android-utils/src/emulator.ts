@@ -26,6 +26,17 @@ export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
 }
 
 /**
+ * The boot invocation as a human-runnable shell command — what error messages
+ * offer the user to reproduce a failed boot with the full emulator output
+ * visible in their terminal.
+ */
+export function formatEmulatorCommand(emulatorPath: string, options: BootDeviceOptions): string {
+  return [emulatorPath, ...buildEmulatorArgs(options)]
+    .map((part) => (/\s/.test(part) ? JSON.stringify(part) : part))
+    .join(" ");
+}
+
+/**
  * Spawn a detached, headless `emulator` process.
  *
  * The child is fully detached (its own process group, ignored stdio, `unref`ed)

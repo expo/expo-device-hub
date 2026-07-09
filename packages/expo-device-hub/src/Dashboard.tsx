@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 
 import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo/hub-client';
 import {
+  BootErrorModal,
   EmptyState,
   LogSidebar,
   Sidebar,
@@ -64,6 +65,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const logsNarrow = useIsNarrow(LOGS_MAX_WIDTH);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [logsOpen, setLogsOpen] = useState(true);
+  // Set when booting a device on the host failed — drives the error dialog.
+  const [bootError, setBootError] = useState<{ deviceName: string; message: string } | null>(null);
 
   // Merge booted devices (from the server) with any the user added, deduped by
   // id and split back into the two sections by platform.
@@ -90,7 +93,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     setSelectedId(device.id);
 
     if (device.platform === 'android' && !device.booted) {
-      const serial = await bootDevice(device);
+      const { serial, error } = await bootDevice(device);
       if (serial) {
         setAdded((prev) => [
           ...prev.filter((item) => item.id !== device.id && item.id !== serial),
@@ -98,9 +101,11 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         ]);
         setSelectedId(serial);
       } else {
-        // Boot failed — drop the placeholder and let the selection effect fall back.
+        // Boot failed — drop the placeholder (the device leaves the sidebar),
+        // let the selection effect fall back, and surface the reason.
         setAdded((prev) => prev.filter((item) => item.id !== device.id));
         setSelectedId('');
+        setBootError({ deviceName: device.name, message: error ?? 'Unknown error' });
       }
     }
   }
@@ -276,6 +281,13 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           <SidebarToggle floating side="right" onClick={() => setLogsOpen(true)} />
         </div>
       )}
+
+      <BootErrorModal
+        open={bootError !== null}
+        onClose={() => setBootError(null)}
+        deviceName={bootError?.deviceName ?? ''}
+        message={bootError?.message ?? ''}
+      />
     </div>
   );
 }
