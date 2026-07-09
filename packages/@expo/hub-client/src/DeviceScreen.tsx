@@ -210,7 +210,7 @@ export function DeviceScreen({ client, borderRadius, squircle }: DeviceScreenPro
     overflow: 'hidden',
     backgroundColor: '#000',
     borderRadius,
-    ...(squircle ? ({ cornerShape: 'squircle' } as Record<string, unknown>) : {}),
+    ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
   };
 
   const mediaStyle: CSSProperties =

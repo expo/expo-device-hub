@@ -10,7 +10,7 @@ const SHADOW = '0 40px 80px rgba(0, 0, 0, 0.4), 0 12px 28px rgba(0, 0, 0, 0.28)'
 const RESERVED_VERTICAL = 210;
 
 const CONFIG: Record<Platform, { ratio: number; radiusFraction: number; squircle: boolean }> = {
-  ios: { ratio: 320 / 695, radiusFraction: 102 / 390, squircle: true },
+  ios: { ratio: 320 / 695, radiusFraction: 55 / 391, squircle: true },
   android: { ratio: 320 / 711, radiusFraction: 10 / 390, squircle: false },
 };
 
@@ -69,7 +69,7 @@ export function PhoneFrame({
             height: '100%',
             backgroundColor: bg.element,
             borderRadius,
-            ...(squircle ? ({ cornerShape: 'squircle' } as Record<string, unknown>) : {}),
+            ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
           }}
         />
       )}
