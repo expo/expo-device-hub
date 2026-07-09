@@ -44,7 +44,8 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
       backgroundColor: primary ? text.default : hovered ? bg.element : 'transparent',
       color: primary ? bg.default : iconColor.default,
       opacity: primary && hovered ? 0.85 : 1,
-      transition: 'background-color 150ms ease, opacity 150ms ease',
+      transition: 'background-color 150ms ease, opacity 150ms ease, transform 100ms ease',
+      transform: pressed ? 'scale(0.98)' : undefined,
     };
 
     return (
@@ -78,8 +79,6 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
           background: 'none',
           cursor: 'pointer',
           fontFamily: 'inherit',
-          transition: 'transform 100ms ease',
-          transform: pressed ? 'scale(0.98)' : undefined,
           ...style,
         }}
         {...rest}>

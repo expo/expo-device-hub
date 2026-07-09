@@ -28,7 +28,8 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
     borderRadius: radius.full,
     border: `1px solid ${border.default}`,
     backgroundColor: hovered ? bg.element : 'transparent',
-    transition: 'background-color 150ms ease',
+    transition: 'background-color 150ms ease, transform 100ms ease',
+    transform: pressed ? 'scale(0.98)' : undefined,
   };
 
   return (
@@ -55,8 +56,6 @@ export function Switch({ checked, onChange, label }: SwitchProps) {
         background: 'none',
         cursor: 'pointer',
         fontFamily: 'inherit',
-        transition: 'transform 100ms ease',
-        transform: pressed ? 'scale(0.98)' : undefined,
       }}>
       <span style={circleStyle}>
         <span
