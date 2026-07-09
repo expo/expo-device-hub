@@ -86,16 +86,21 @@ function keycode(value: unknown): number {
   return n;
 }
 
-function textBytes(text: string): Buffer {
+/** Truncate to whole UTF-8 characters within a byte budget. */
+export function truncateTextUtf8(text: string, maxBytes: number): string {
   const out: string[] = [];
   let total = 0;
   for (const char of text) {
     const bytes = Buffer.byteLength(char, "utf8");
-    if (total + bytes > MAX_TEXT_BYTES) break;
+    if (total + bytes > maxBytes) break;
     out.push(char);
     total += bytes;
   }
-  return Buffer.from(out.join(""), "utf8");
+  return out.join("");
+}
+
+function textBytes(text: string): Buffer {
+  return Buffer.from(truncateTextUtf8(text, MAX_TEXT_BYTES), "utf8");
 }
 
 export function parseGesture(value: unknown): Gesture {

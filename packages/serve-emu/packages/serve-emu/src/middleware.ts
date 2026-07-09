@@ -14,8 +14,8 @@ import {
 } from "./app-management.ts";
 import { getForegroundApp } from "./app-info.ts";
 import { getNightMode, isNightMode, setNightMode } from "./ui-mode.ts";
-import { startScrcpy, type ScrcpySession } from "./scrcpy.ts";
-import { dispatch, parseGesture, resetVideoPacket, type Gesture, type Screen } from "./input.ts";
+import { startSession, type EmuBackend, type EmuSession } from "./session.ts";
+import { parseGesture, type Gesture } from "./input.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
 import { parseRoutePlaybackRequest, RoutePlayback } from "./route-playback.ts";
 import { SessionRecorder } from "./session-recorder.ts";
@@ -25,6 +25,7 @@ export { fromBunSocket, fromWsSocket } from "./stream-socket.ts";
 export type { StreamSocket, WsWebSocketLike } from "./stream-socket.ts";
 export { pickDevice } from "./adb.ts";
 export type { ScrcpySession } from "./scrcpy.ts";
+export type { EmuBackend, EmuSession } from "./session.ts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 // `src/middleware.ts` and `dist/middleware.mjs` both resolve to `<pkg>/dist/ui`.
@@ -36,6 +37,12 @@ export type AppOptions = {
   bitRate?: number;
   maxSize?: number;
   keyFrameInterval?: number;
+  /**
+   * Video/input backend: "scrcpy" (default, works everywhere) or "grpc"
+   * (emulator-only host-side capture; falls back to scrcpy when unavailable).
+   * Defaults to the SERVE_EMU_BACKEND environment variable.
+   */
+  backend?: EmuBackend;
 };
 
 type SessionStatus = "streaming" | "stopped" | "error";
@@ -119,16 +126,16 @@ function serveStaticFile(pathname: string): Response | null {
  * Expo DevTools plugin both mount these onto their own transport.
  */
 export async function createApp(opts: AppOptions) {
-  const session: ScrcpySession = await startScrcpy({
+  const session: EmuSession = await startSession({
     serial: opts.serial,
     maxFps: opts.maxFps,
     bitRate: opts.bitRate,
     maxSize: opts.maxSize,
     keyFrameInterval: opts.keyFrameInterval,
+    backend: opts.backend,
   });
 
   const clients = new Set<Client>();
-  const screen: Screen = { width: session.meta.width, height: session.meta.height };
   const startedMs = Date.now();
   const startedAt = new Date(startedMs).toISOString();
   let status: SessionStatus = "streaming";
@@ -162,6 +169,7 @@ export async function createApp(opts: AppOptions) {
     status,
     serial: opts.serial,
     device: session.meta.deviceName,
+    transport: session.transport,
     codec: session.meta.codecId,
     size: { width: session.meta.width, height: session.meta.height },
     clients: clients.size,
@@ -267,7 +275,7 @@ export async function createApp(opts: AppOptions) {
 
   const dispatchGesture = async (gesture: Gesture, source: string, record = true) => {
     if (status !== "streaming") throw new Error(`session is ${status}`);
-    await dispatch(session.controlSocket, gesture, screen);
+    await session.sendGesture(gesture);
     if (record) sessionRecorder.recordGesture(gesture, source);
   };
 
@@ -468,7 +476,7 @@ export async function createApp(opts: AppOptions) {
     lastVideoResetAt = new Date(now).toISOString();
     lastVideoResetReason = reason;
     try {
-      session.controlSocket.write(resetVideoPacket());
+      session.resetVideo();
     } catch {}
   };
 
@@ -522,7 +530,7 @@ export async function createApp(opts: AppOptions) {
       while (!stopRequested) {
         const f = await session.readFrame();
         if (!f) {
-          if (!stopRequested) markTerminal("error", "scrcpy video stream ended");
+          if (!stopRequested) markTerminal("error", "video stream ended");
           break;
         }
         if (f.isConfig) {
@@ -562,14 +570,9 @@ export async function createApp(opts: AppOptions) {
     }
   }, 1000);
 
-  session.proc.once("exit", (code, signal) => {
+  session.onFatal((reason) => {
     if (!stopRequested && status === "streaming") {
-      markTerminal("error", `scrcpy exited with code ${code ?? "null"} signal ${signal ?? "null"}`);
-    }
-  });
-  session.controlSocket.once("error", (err) => {
-    if (!stopRequested && status === "streaming") {
-      markTerminal("error", `scrcpy control socket error: ${err.message}`);
+      markTerminal("error", reason);
     }
   });
 
@@ -580,6 +583,7 @@ export async function createApp(opts: AppOptions) {
       return Response.json({
         serial: opts.serial,
         device: session.meta.deviceName,
+        transport: session.transport,
         codec: session.meta.codecId,
         size: { width: session.meta.width, height: session.meta.height },
         status,
