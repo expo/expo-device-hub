@@ -8,17 +8,17 @@ export function emulatorSerial(port: number): string {
 
 /**
  * Build the `emulator` arguments for a boot.
- * Use `auto` (hw/host when available) GPU,
- * auto-no-window/swiftshader resulted in low fps and interaction delay.
- * `-no-window` works, but to match iOS for now we don't use it.
+ * Always use `host` GPU, `auto` results in low fps when using with `-no-window`
+ * or the windows is in the background. (~10fps scrcpy, or ~30fps with grpc streaming)
  */
 export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
   return [
     "-avd",
     options.name,
     "-no-audio",
+    "-no-window",
     "-gpu",
-    "auto",
+    "host",
     "-no-boot-anim",
     "-port",
     String(options.port),
