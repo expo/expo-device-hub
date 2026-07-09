@@ -9,6 +9,7 @@ import {
   PowerIcon,
   RecentsIcon,
   RefreshIcon,
+  RotateIcon,
   Switch,
   TrashIcon,
 } from '../primitives';
@@ -32,6 +33,7 @@ export function StreamControls({
   onBack,
   onRecents,
   onReload,
+  onRotate,
   onSave,
   onShutdown,
   onRemove,
@@ -50,6 +52,8 @@ export function StreamControls({
   onRecents?: () => void;
   /** Reload the running React Native/Expo bundle. */
   onReload?: () => void;
+  /** Rotate the device (More menu). */
+  onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
   /** Shut the device down (More menu). */
@@ -69,6 +73,7 @@ export function StreamControls({
       trigger={<ControlButton icon={<DotsIcon />} label="More" />}>
       {isAndroid && <DropdownItem label="Back" Icon={BackIcon} onSelect={onBack} />}
       {isAndroid && <DropdownItem label="Recents" Icon={RecentsIcon} onSelect={onRecents} />}
+      <DropdownItem label="Rotate" Icon={RotateIcon} onSelect={onRotate} />
       <DropdownItem label="Shutdown" Icon={PowerIcon} onSelect={onShutdown} />
       {!physical && (
         <DropdownItem label="Remove" Icon={TrashIcon} destructive onSelect={onRemove} />

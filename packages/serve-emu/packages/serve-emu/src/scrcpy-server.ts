@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 
 // Pinned scrcpy server version. Bumping it means re-validating the wire protocol
 // in `scrcpy.ts` (the framing drifts between scrcpy majors).
-export const SCRCPY_VERSION = "3.1";
+export const SCRCPY_VERSION = "4.0";
 
 const DOWNLOAD_URL = `https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`;
 

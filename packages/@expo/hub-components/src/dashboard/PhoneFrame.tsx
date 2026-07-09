@@ -9,6 +9,12 @@ const SHADOW = '0 40px 80px rgba(0, 0, 0, 0.4), 0 12px 28px rgba(0, 0, 0, 0.28)'
 // Room reserved for the controls + panel padding when sizing by height.
 const RESERVED_VERTICAL = 210;
 
+// Cap on the device's *short* side (portrait width / landscape height). Sizing
+// by the short side keeps the physical phone the same size across rotations:
+// in landscape the long side lies horizontally, so what was the portrait
+// height becomes the width instead of the frame shrinking into the old width.
+const MAX_SHORT_SIDE = 480;
+
 const CONFIG: Record<Platform, { ratio: number; radiusFraction: number; squircle: boolean }> = {
   ios: { ratio: 320 / 695, radiusFraction: 55 / 391, squircle: true },
   android: { ratio: 320 / 711, radiusFraction: 10 / 390, squircle: false },
@@ -21,10 +27,11 @@ const CONFIG: Record<Platform, { ratio: number; radiusFraction: number; squircle
  * library stays free of a runtime dependency on it; otherwise it shows an empty
  * idle surface.
  *
- * The phone stays as large as fits (cap 320px, shrinking to the available height
- * or panel width). The corner radius scales with the rendered width via `cqw`,
- * and once the stream reports its real dimensions the frame adopts that exact
- * aspect ratio so the live screen isn't distorted.
+ * The phone stays as large as fits (short side capped at {@link MAX_SHORT_SIDE},
+ * shrinking to the available height or panel width). The corner radius scales
+ * with the rendered width via `cqw`, and once the stream reports its real
+ * dimensions the frame adopts that exact aspect ratio so the live screen isn't
+ * distorted.
  */
 export function PhoneFrame({
   platform,
@@ -49,13 +56,19 @@ export function PhoneFrame({
 
   // The container's width is the phone width; `cqw` on the child resolves
   // against it, so the radius is always `radiusFraction` of the rendered width.
+  // The pixel cap applies to the short side: in portrait (ratio < 1) it caps the
+  // width directly; in landscape it caps the height (width / ratio), so the
+  // frame widens on rotation instead of squeezing into the portrait width.
+  const maxWidth = MAX_SHORT_SIDE * Math.max(ratio, 1);
   const wrapperStyle: CSSProperties = {
-    width: `min(320px, calc((100vh - ${RESERVED_VERTICAL}px) * ${ratio}), 100%)`,
+    width: `min(${maxWidth}px, calc((100vh - ${RESERVED_VERTICAL}px) * ${ratio}), 100%)`,
     aspectRatio: `${ratio}`,
     containerType: 'inline-size',
   };
 
-  const borderRadius = `${(radiusFraction * 100).toFixed(3)}cqw`;
+  // `cqw` resolves against the width, but the radius should stay a fraction of
+  // the *short* side so the corners look the same in portrait and landscape.
+  const borderRadius = `${((radiusFraction / Math.max(ratio, 1)) * 100).toFixed(3)}cqw`;
   const live = client && client.status !== 'idle';
 
   return (

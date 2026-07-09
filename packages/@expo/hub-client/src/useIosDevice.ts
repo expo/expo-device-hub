@@ -37,6 +37,7 @@ import {
   type DeviceClient,
   type DeviceConnectionOptions,
   type DeviceLog,
+  type DeviceOrientation,
   type HardwareButton,
   type MultiTouchSample,
   type RunningDevice,
@@ -52,6 +53,7 @@ const WS_MSG_TOUCH = 0x03;
 const WS_MSG_BUTTON = 0x04;
 const WS_MSG_MULTI_TOUCH = 0x05;
 const WS_MSG_KEY = 0x06;
+const WS_MSG_ORIENTATION = 0x07;
 const WS_TAG_SCREEN_CONFIG = 0x82;
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
@@ -59,6 +61,15 @@ const HID_USAGE_R = 0x15; // 'r'
 
 const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'ios', name: 'iPhone Simulator', platform: 'ios', current: true },
+];
+
+// The counterclockwise rotation order (matches Simulator's "Rotate Left"): each
+// press advances one step, so four presses come back around to portrait.
+const ORIENTATION_CYCLE: DeviceOrientation[] = [
+  'portrait',
+  'landscape_left',
+  'portrait_upside_down',
+  'landscape_right',
 ];
 
 // iOS only has a Home button + app switcher; the rest are no-ops.
@@ -274,6 +285,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     key('down', HID_USAGE_R);
     await new Promise((r) => setTimeout(r, 30));
     key('up', HID_USAGE_R);
+  }, []);
+
+  // Rotate one step counterclockwise from the last known orientation, over the
+  // helper's orientation channel (tag 0x07 → HID orientation event). The helper
+  // confirms by pushing an updated screen config, which keeps the cycle in sync.
+  const rotate = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    const current = screenRef.current?.orientation ?? 'portrait';
+    const next =
+      ORIENTATION_CYCLE[(ORIENTATION_CYCLE.indexOf(current) + 1) % ORIENTATION_CYCLE.length];
+    ws.send(taggedJson(WS_MSG_ORIENTATION, { orientation: next }));
   }, []);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
@@ -669,6 +692,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     sendMultiTouch,
     pressButton,
     reload,
+    rotate,
     screenshot,
     appearance,
     setAppearance,

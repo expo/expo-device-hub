@@ -12,16 +12,19 @@ export type ScrcpyMeta = {
   height: number;
 };
 
+type ScrcpyProtocol = 3 | 4;
+
 export type ScrcpySession = {
   transport: "scrcpy";
   meta: ScrcpyMeta;
+  protocol: ScrcpyProtocol;
   videoReader: FramedReader;
   controlSocket: Socket;
   proc: ChildProcess;
   scid: string;
   localPort: number;
   serial: string;
-  readFrame: () => Promise<VideoFrame | null>;
+  readFrame: () => Promise<VideoPacket | null>;
   close: () => void;
 };
 
@@ -34,11 +37,23 @@ export type StartOpts = {
 };
 
 export type VideoFrame = {
+  type: "frame";
   data: Buffer;
   pts: bigint;
   isConfig: boolean;
   isKey: boolean;
 };
+
+/** scrcpy 4.x mid-stream video session header: the encoder restarted with a new
+ * size (device rotation / display resize). */
+export type VideoSession = {
+  type: "session";
+  width: number;
+  height: number;
+  clientResized: boolean;
+};
+
+export type VideoPacket = VideoFrame | VideoSession;
 
 function adb(serial: string, args: string[]) {
   const r = spawnSync("adb", ["-s", serial, ...args], { encoding: "utf8" });
@@ -236,14 +251,45 @@ function parseVideoPreamble(buf: Buffer): {
   codecName: string;
   width: number;
   height: number;
+  protocol: ScrcpyProtocol;
   extra: Buffer;
 } {
   for (const offset of [0, 1]) {
-    const codecMetaOffset = offset + 64;
-    if (codecMetaOffset + 12 > buf.length) continue;
-    const codecId = buf.readUInt32BE(codecMetaOffset);
-    const width = buf.readUInt32BE(codecMetaOffset + 4);
-    const height = buf.readUInt32BE(codecMetaOffset + 8);
+    const streamMetaOffset = offset + 64;
+
+    // scrcpy 4.x (`send_stream_meta`): codec id + session flags + size (16 bytes).
+    if (streamMetaOffset + 16 <= buf.length) {
+      const codecId = buf.readUInt32BE(streamMetaOffset);
+      const sessionFlags = buf.readUInt32BE(streamMetaOffset + 4);
+      const width = buf.readUInt32BE(streamMetaOffset + 8);
+      const height = buf.readUInt32BE(streamMetaOffset + 12);
+      const codecName = CODEC_NAMES[codecId];
+      if (
+        codecName &&
+        (sessionFlags & 0x80000000) !== 0 &&
+        width >= 1 &&
+        height >= 1 &&
+        width <= 16_384 &&
+        height <= 16_384
+      ) {
+        const nameBuf = buf.subarray(offset, offset + 64);
+        const deviceName = nameBuf.toString("utf8").replace(/\0+$/, "");
+        return {
+          deviceName,
+          codecName,
+          width,
+          height,
+          protocol: 4,
+          extra: buf.subarray(streamMetaOffset + 16),
+        };
+      }
+    }
+
+    // scrcpy 3.x (`send_codec_meta`): codec id + size (12 bytes).
+    if (streamMetaOffset + 12 > buf.length) continue;
+    const codecId = buf.readUInt32BE(streamMetaOffset);
+    const width = buf.readUInt32BE(streamMetaOffset + 4);
+    const height = buf.readUInt32BE(streamMetaOffset + 8);
     const codecName = CODEC_NAMES[codecId];
     if (!codecName || width < 1 || height < 1 || width > 16_384 || height > 16_384) continue;
 
@@ -254,7 +300,8 @@ function parseVideoPreamble(buf: Buffer): {
       codecName,
       width,
       height,
-      extra: buf.subarray(codecMetaOffset + 12),
+      protocol: 3,
+      extra: buf.subarray(streamMetaOffset + 12),
     };
   }
 
@@ -315,7 +362,7 @@ export async function startScrcpy(opts: StartOpts): Promise<ScrcpySession> {
         "tunnel_forward=true",
         "control=true",
         "send_dummy_byte=true",
-        "send_codec_meta=true",
+        "send_stream_meta=true",
         "send_frame_meta=true",
         "send_device_meta=true",
         `max_size=${maxSize}`,
@@ -346,7 +393,7 @@ export async function startScrcpy(opts: StartOpts): Promise<ScrcpySession> {
     const reader = new FramedReader(videoSock);
     // scrcpy variants disagree on whether the video socket includes the dummy
     // byte, so detect the codec metadata alignment instead of blindly skipping.
-    const preamble = parseVideoPreamble(await reader.read(77));
+    const preamble = parseVideoPreamble(await reader.read(81));
     reader.prepend(preamble.extra);
 
     return {
@@ -357,13 +404,14 @@ export async function startScrcpy(opts: StartOpts): Promise<ScrcpySession> {
         width: preamble.width,
         height: preamble.height,
       },
+      protocol: preamble.protocol,
       videoReader: reader,
       controlSocket: controlSock,
       proc,
       scid,
       localPort,
       serial,
-      readFrame: () => readFrame(reader),
+      readFrame: () => readFrame(reader, preamble.protocol),
       close,
     };
   } catch (err) {
@@ -378,20 +426,43 @@ export async function startScrcpy(opts: StartOpts): Promise<ScrcpySession> {
  */
 const PACKET_FLAG_CONFIG = 1n << 63n;
 const PACKET_FLAG_KEY_FRAME = 1n << 62n;
-const PACKET_FLAGS = PACKET_FLAG_CONFIG | PACKET_FLAG_KEY_FRAME;
+const PACKET_V4_FLAG_SESSION = 1n << 63n;
+const PACKET_V4_FLAG_CONFIG = 1n << 62n;
+const PACKET_V4_FLAG_KEY_FRAME = 1n << 61n;
+const PACKET_V3_FLAGS = PACKET_FLAG_CONFIG | PACKET_FLAG_KEY_FRAME;
+const PACKET_V4_FLAGS = PACKET_V4_FLAG_SESSION | PACKET_V4_FLAG_CONFIG | PACKET_V4_FLAG_KEY_FRAME;
 
 export async function readFrame(
   reader: FramedReader,
-): Promise<VideoFrame | null> {
+  protocol: ScrcpyProtocol,
+): Promise<VideoPacket | null> {
   try {
     const header = await reader.read(12);
     const ptsRaw = header.readBigUInt64BE(0);
+    if (protocol === 4 && (ptsRaw & PACKET_V4_FLAG_SESSION) !== 0n) {
+      return {
+        type: "session",
+        clientResized: (header.readUInt32BE(0) & 1) !== 0,
+        width: header.readUInt32BE(4),
+        height: header.readUInt32BE(8),
+      };
+    }
+
     const size = header.readUInt32BE(8);
-    const isConfig = (ptsRaw & PACKET_FLAG_CONFIG) !== 0n;
-    const isKey = (ptsRaw & PACKET_FLAG_KEY_FRAME) !== 0n;
-    const pts = ptsRaw & ~PACKET_FLAGS;
+    if (size === 0 || size > 16 * 1024 * 1024) {
+      throw new Error(`invalid scrcpy frame size: ${size}`);
+    }
+    const isConfig =
+      protocol === 4
+        ? (ptsRaw & PACKET_V4_FLAG_CONFIG) !== 0n
+        : (ptsRaw & PACKET_FLAG_CONFIG) !== 0n;
+    const isKey =
+      protocol === 4
+        ? (ptsRaw & PACKET_V4_FLAG_KEY_FRAME) !== 0n
+        : (ptsRaw & PACKET_FLAG_KEY_FRAME) !== 0n;
+    const pts = ptsRaw & ~(protocol === 4 ? PACKET_V4_FLAGS : PACKET_V3_FLAGS);
     const data = await reader.read(size);
-    return { data, pts, isConfig, isKey };
+    return { type: "frame", data, pts, isConfig, isKey };
   } catch {
     return null;
   }

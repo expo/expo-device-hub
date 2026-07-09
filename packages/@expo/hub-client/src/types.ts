@@ -159,6 +159,13 @@ export interface DeviceClient {
    */
   reload: () => void;
   /**
+   * Rotate the device. serve-sim sets the next orientation in the
+   * counterclockwise cycle over the helper's orientation channel; serve-emu
+   * locks the opposite portrait/landscape orientation via `POST
+   * /api/orientation`. A no-op if nothing is connected.
+   */
+  rotate: () => void;
+  /**
    * Capture a still PNG of the device via the backend's screenshot API
    * (serve-emu `adb screencap` / serve-sim `simctl io … screenshot`), resolving
    * to a `Blob`, or `null` if capture fails or nothing is connected. The caller

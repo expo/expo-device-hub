@@ -129,6 +129,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     send({ type: 'key', keycode: KEYCODE_R, record: false });
   }, [send]);
 
+  // Rotate the emulator by locking user rotation to the opposite of the current
+  // aspect via `/api/orientation` (POST `adb shell cmd window user-rotation
+  // lock 0|1`). The streamed frame size tells which way the display currently
+  // faces; locking (rather than `auto`) turns it even when auto-rotate is off.
+  const rotate = useCallback(() => {
+    if (!baseUrl) return;
+    const next = screen && screen.width > screen.height ? 'portrait' : 'landscape';
+    const url = `${apiUrl(baseUrl, '/api/orientation')}${
+      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
+    }`;
+    void fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orientation: next }),
+    }).catch(() => {});
+  }, [baseUrl, targetDevice, screen]);
+
   // serve-emu captures the frame buffer server-side (`adb exec-out screencap
   // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
   // first available, matching the stream).
@@ -421,7 +438,34 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 5000);
       };
       ws.onmessage = (event) => {
-        if (cancelled || typeof event.data === 'string') return;
+        if (cancelled) return;
+        if (typeof event.data === 'string') {
+          // serve-emu announces an encoder restart with a new size (device
+          // rotation) as a JSON "video-session" message. Drop the old decoder
+          // and resync onto the new stream from a fresh keyframe.
+          try {
+            const msg = JSON.parse(event.data) as {
+              type?: string;
+              size?: { width: number; height: number };
+            };
+            if (
+              msg.type === 'video-session' &&
+              msg.size &&
+              Number.isFinite(msg.size.width) &&
+              Number.isFinite(msg.size.height)
+            ) {
+              closeDecoder();
+              msePlayer?.destroy();
+              msePlayer = null;
+              frameIdx = 0;
+              sawKeyframe = false;
+              droppingUntilKeyframe = true;
+              setScreen({ width: msg.size.width, height: msg.size.height });
+              requestKeyframe();
+            }
+          } catch {}
+          return;
+        }
         feedFrame(event.data as ArrayBuffer);
       };
     };
@@ -547,6 +591,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendTouch,
     pressButton,
     reload,
+    rotate,
     screenshot,
     appearance,
     setAppearance,

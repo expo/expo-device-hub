@@ -2,7 +2,14 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { listAllDevices, listDevices, screencapPng } from "./adb.ts";
+import {
+  getUserRotation,
+  listAllDevices,
+  listDevices,
+  screencapPng,
+  setUserRotation,
+  type OrientationMode,
+} from "./adb.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import {
   clearAppData,
@@ -163,7 +170,7 @@ export async function createApp(opts: AppOptions) {
     serial: opts.serial,
     device: session.meta.deviceName,
     codec: session.meta.codecId,
-    size: { width: session.meta.width, height: session.meta.height },
+    size: { width: screen.width, height: screen.height },
     clients: clients.size,
     frames: frameCount,
     sourceFps,
@@ -525,6 +532,23 @@ export async function createApp(opts: AppOptions) {
           if (!stopRequested) markTerminal("error", "scrcpy video stream ended");
           break;
         }
+        if (f.type === "session") {
+          // The encoder restarted with a new size (device rotation). Adopt it so
+          // touch packets keep matching the video size (scrcpy drops touches
+          // whose embedded screen size disagrees), and resync every client onto
+          // the new stream from a fresh keyframe.
+          if (f.width > 0 && f.height > 0) {
+            screen.width = f.width;
+            screen.height = f.height;
+            cachedConfig = null;
+            for (const c of clients) {
+              c.awaitingKeyFrame = true;
+              sendJson(c.socket, { type: "video-session", size: { width: f.width, height: f.height } });
+            }
+            requestVideoReset(`video session resized to ${f.width}×${f.height}`);
+          }
+          continue;
+        }
         if (f.isConfig) {
           cachedConfig = f.data;
           configPacketCount++;
@@ -581,7 +605,7 @@ export async function createApp(opts: AppOptions) {
         serial: opts.serial,
         device: session.meta.deviceName,
         codec: session.meta.codecId,
-        size: { width: session.meta.width, height: session.meta.height },
+        size: { width: screen.width, height: screen.height },
         status,
         clients: clients.size,
       });
@@ -711,6 +735,41 @@ export async function createApp(opts: AppOptions) {
     if (url.pathname === "/api/key") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       return keyEndpoint(req);
+    }
+
+    if (url.pathname === "/api/orientation") {
+      if (req.method === "GET") {
+        try {
+          return Response.json({ ok: true, orientation: getUserRotation(opts.serial) });
+        } catch (err) {
+          return Response.json(
+            { ok: false, error: err instanceof Error ? err.message : String(err) },
+            { status: 400 },
+          );
+        }
+      }
+      if (req.method === "POST") {
+        try {
+          const payload = await readJsonBody(req);
+          if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+            throw new Error("orientation payload must be an object");
+          }
+          const orientation = (payload as Record<string, unknown>).orientation;
+          if (orientation !== "auto" && orientation !== "portrait" && orientation !== "landscape") {
+            throw new Error("orientation must be auto, portrait, or landscape");
+          }
+          return Response.json({
+            ok: true,
+            orientation: setUserRotation(opts.serial, orientation as OrientationMode),
+          });
+        } catch (err) {
+          return Response.json(
+            { ok: false, error: err instanceof Error ? err.message : String(err) },
+            { status: 400 },
+          );
+        }
+      }
+      return new Response("method not allowed", { status: 405 });
     }
 
     if (url.pathname === "/api/session") {
