@@ -47,8 +47,28 @@ export function DeviceListItem({ name, version, selected = false, onClick }: Dev
       }}
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}>
-      <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{name}</span>
-      <span style={{ ...textSize.sm, fontWeight: 500, color: text.secondary }}>{version}</span>
+      <span
+        title={name}
+        style={{
+          ...textSize.sm,
+          fontWeight: 500,
+          color: text.default,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>
+        {name}
+      </span>
+      <span
+        style={{
+          ...textSize.sm,
+          fontWeight: 500,
+          color: text.secondary,
+          whiteSpace: 'nowrap',
+          flexShrink: 0,
+        }}>
+        {version}
+      </span>
     </button>
   );
 }
