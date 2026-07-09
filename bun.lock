@@ -55,7 +55,7 @@
     },
     "packages/@expo/hub-client": {
       "name": "@expo/hub-client",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "devDependencies": {
         "@swc/cli": "^0.8.1",
         "@swc/core": "^1.15.43",
@@ -95,7 +95,7 @@
     },
     "packages/expo-device-hub": {
       "name": "expo-device-hub",
-      "version": "0.0.0",
+      "version": "0.1.1",
       "dependencies": {
         "ws": "^8.21.0",
       },
@@ -169,7 +169,6 @@
         "ws": "^8.21.0",
       },
       "devDependencies": {
-        "@remix-run/node-fetch-server": "^0.13.3",
         "@types/bun": "latest",
         "@types/debug": "^4.1.13",
         "@types/react": "^19.0.0",
@@ -950,8 +949,6 @@
     "@react-native/normalize-colors": ["@react-native/normalize-colors@0.86.0", "", {}, "sha512-kG0wfCGghUKlfxkJyyHCDVutWVYWK7/DG58ojA/4v9EfulgF+osuSQmlbNb3rcKX58qutm7JcldSeVLgGFha9g=="],
 
     "@react-native/virtualized-lists": ["@react-native/virtualized-lists@0.86.0", "", { "dependencies": { "invariant": "^2.2.4", "nullthrows": "^1.1.1" }, "peerDependencies": { "@types/react": "^19.2.0", "react": "*", "react-native": "0.86.0" }, "optionalPeers": ["@types/react"] }, "sha512-4/ZLXdf/OSpPDVO0AsQ1SJdRIzt5t9BNQ46QwGgxvX7/cirYR5k8KXctNGGgW8lQo2gZChEfY2zFCZg9nM/jiw=="],
-
-    "@remix-run/node-fetch-server": ["@remix-run/node-fetch-server@0.13.3", "", {}, "sha512-UfjOXed/DQteaM5VyTfqTeGpHwyL2J5aoRGY6cydip4tt1ehNNeSwuXCC7AEGE0RWBs/7bgKxYkL/B/+UDe4AA=="],
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-beta.27", "", {}, "sha512-+d0F4MKMCbeVUJwG96uQ4SgAznZNSq93I3V+9NHA4OpvqG8mRCpGdKmK8l/dl02h2CCDHwW2FqilnTyDcAnqjA=="],
 
