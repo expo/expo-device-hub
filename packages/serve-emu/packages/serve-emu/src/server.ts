@@ -24,7 +24,7 @@ export async function startServer(opts: ServerOpts) {
   // log has something to print, and a no-device situation fails fast at boot.
   const { serial, app } = await router.ensure(defaults.serial);
   console.log(
-    `scrcpy ready: ${app.session.meta.deviceName} • ${app.session.meta.codecId} • ${app.session.meta.width}×${app.session.meta.height}`,
+    `${app.session.transport} ready: ${app.session.meta.deviceName} • ${app.session.meta.codecId} • ${app.session.meta.width}×${app.session.meta.height}`,
   );
 
   const server = Bun.serve<WsData>({

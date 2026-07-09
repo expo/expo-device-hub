@@ -1,4 +1,7 @@
 - Prefer kebab-case for all TS/JS files.
+- Two video/input backends behind one session interface (`src/session.ts`), selected per session with `SERVE_EMU_BACKEND=scrcpy|grpc` (default `scrcpy`) or `AppOptions.backend`:
+  - `scrcpy`: in-guest capture + MediaCodec encode, streamed over adb. Emulators and physical devices.
+  - `grpc`: emulators only — host-side capture via the emulator's built-in gRPC endpoint (`src/emulator-grpc.ts`, discovered through the `pid_<pid>.ini` files Android Studio uses; hand-rolled protobuf over node:http2, no deps) plus host-side ffmpeg H.264 encode (`src/h264-encoder.ts`). Zero guest CPU cost; input injection is ~0.3ms vs ~5ms. Requires `ffmpeg` on PATH (or `SERVE_EMU_FFMPEG`); physical devices and any grpc start failure fall back to scrcpy with a console warning.
 - Streaming runs through the vendored scrcpy server (`vendor/scrcpy-server-v<VERSION>`). The version is pinned in `scripts/fetch-scrcpy.ts`; the wire protocol drifts between scrcpy majors, so bumping the version means re-validating `src/scrcpy.ts` against the new server.
 - Server protocol summary: open two sockets through `adb forward tcp:<port> localabstract:scrcpy_<scid>`; both prefix a 1-byte dummy. Video socket then yields 64-byte device name, 12-byte codec meta (codec_id, width, height BE), then frames of `[8B PTS BE (high bit = config), 4B size BE, N B Annex-B NALUs]`. Control socket consumes binary messages described in `src/input.ts`.
 - Default device target: the only booted device. If multiple, require `-s <serial>`.
