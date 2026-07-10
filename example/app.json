@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "example",
-    "slug": "example",
+    "slug": "expo-device-hub",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -20,6 +20,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "05537bfc-41b0-49c3-bab5-a308bf2392bf"
+      }
+    },
+    "owner": "expo"
   }
 }
