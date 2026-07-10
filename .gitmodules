@@ -1,18 +1,9 @@
-# FIXME: the serve-sim submodule packages (packages/serve-sim, packages/serve-sim-client)
-# and the serve-emu package (packages/serve-emu) declare Apache-2.0 but ship no LICENSE
-# file in the package directories (only each submodule's repo root has one); the previously
-# vendored copies included per-package LICENSE files. npm pack therefore omits LICENSE,
-# so expo-device-hub's "vendor/serve-emu/LICENSE" files entry packs nothing.
 [submodule "packages/serve-sim"]
 	path = packages/serve-sim
 	url = https://github.com/expo/serve-sim.git
 	branch = expo
 	ignore = untracked
-# NOTE: the serve-emu submodule intentionally drops the standalone Expo DevTools
-# plugin the vendored copy carried (expo-module.config.json + src/devtools-plugin.ts
-# from monorepo commit 599175f) — the hub consumes serve-emu only through
-# scripts/vendor.ts (dist/middleware.js), and hub-client points at the hub's own
-# vendored mount, so the standalone plugin is unused.
+
 [submodule "packages/serve-emu"]
 	path = packages/serve-emu
 	url = https://github.com/expo/serve-emu.git
