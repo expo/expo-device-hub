@@ -2,12 +2,6 @@ name: Release
 
 on:
   workflow_dispatch:
-    inputs:
-      dry_run:
-        description: "Build + version only — skip commit, tag, and npm publish"
-        required: false
-        default: false
-        type: boolean
 
 concurrency:
   group: release
@@ -16,7 +10,7 @@ concurrency:
 jobs:
   release:
     runs-on: macos-latest
-    environment: ${{ !inputs.dry_run && 'npm-publish' || '' }}
+    environment: npm-publish
     permissions:
       contents: write # push the release commit + tags
       id-token: write # npm OIDC Trusted Publishing
@@ -61,21 +55,7 @@ jobs:
       - name: Summarize versions
         run: ./scripts/summarize-versions.ts
 
-      - name: Preview (dry run)
-        if: ${{ inputs.dry_run }}
-        run: ./scripts/preview-dry-run.ts
-
-      - name: Upload package tarballs (dry run)
-        if: ${{ inputs.dry_run }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: package-tarballs
-          path: release-artifacts/*.tgz
-          if-no-files-found: error
-          retention-days: 14
-
       - name: Commit & push version bump
-        if: ${{ !inputs.dry_run }}
         run: |
           git add -A
           git commit -m "chore(release): version packages"
@@ -85,17 +65,14 @@ jobs:
         run: ./scripts/ignore-packages.ts
 
       - name: Publish to npm
-        if: ${{ !inputs.dry_run }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
         run: bun run changeset:publish
 
       - name: Push git tags
-        if: ${{ !inputs.dry_run }}
         run: git push origin --tags
 
       - name: Create GitHub releases
-        if: ${{ !inputs.dry_run }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/create-github-releases.ts
