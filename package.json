@@ -4,17 +4,17 @@
   "packageManager": "bun@1.3.6",
   "scripts": {
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck",
-    "lint": "turbo run lint",
-    "test": "turbo run test",
-    "clean": "turbo run clean",
+    "typecheck": "turbo run typecheck --filter='!./packages/serve-sim/packages/*' --filter='!./packages/serve-emu/packages/*'",
+    "lint": "turbo run lint --filter='!./packages/serve-sim/packages/*' --filter='!./packages/serve-emu/packages/*'",
+    "test": "turbo run test --filter='!./packages/serve-sim/packages/*' --filter='!./packages/serve-emu/packages/*'",
+    "clean": "turbo run clean --filter='!./packages/serve-sim/packages/*' --filter='!./packages/serve-emu/packages/*'",
     "changeset": "changeset",
     "changeset:version": "changeset version",
     "changeset:publish": "changeset publish"
   },
   "workspaces": {
     "packages": [
-      "packages/*",
+      "packages/expo-device-hub",
       "packages/@expo/hub-*",
       "packages/serve-sim/packages/*",
       "packages/serve-emu/packages/*",
