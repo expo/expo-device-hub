@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       canary:
-        description: "Canary release — publish a prerelease under the 'canary' npm dist-tag instead of a real release (no version commit, git tag, or GitHub release)"
+        description: "Canary"
         required: false
         default: false
         type: boolean
