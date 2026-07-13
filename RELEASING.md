@@ -30,7 +30,18 @@ folds them all together, and each package's final bump is the largest one reques
 
 ### 2. When ready to publish — run the workflow
 
-Go to **Actions → Release → Run workflow**. There are no inputs — the workflow tests, builds,
-versions, publishes to npm, pushes the release commit and tags, and creates GitHub releases.
+Go to **Actions → Release → Run workflow**. The only input is **canary**:
+
+- **off** (default) → real release. The workflow tests, builds, versions, publishes to npm,
+  pushes the release commit and tags, and creates GitHub releases.
+- **on** → canary release. The workflow tests, builds, and versions as usual, then rewrites each
+  published package's version into a prerelease and publishes it under the **`canary`** npm
+  dist-tag — without committing the version bump, pushing tags, or creating GitHub releases.
+  Install it with `npm install expo-device-hub@canary`, and `latest` stays untouched.
+
+Canary versions are `<next-minor>-canary-<YYYYMMDD>-<short-sha>` — the current version with its
+minor bumped (e.g. `0.1.1` → `0.2.0`), suffixed with the build date and the released commit's
+short hash (e.g. `expo-device-hub@0.2.0-canary-20260429-a5e59cf`). Unlike a real release,
+a canary does not require a pending changeset, so you can publish one from any commit.
 
 Only packages that have a changeset are versioned and published; the other one stays put.

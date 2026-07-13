@@ -2,6 +2,12 @@ name: Release
 
 on:
   workflow_dispatch:
+    inputs:
+      canary:
+        description: "Canary release — publish a prerelease under the 'canary' npm dist-tag instead of a real release (no version commit, git tag, or GitHub release)"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: release
@@ -47,15 +53,21 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Verify pending changesets
+        if: ${{ !inputs.canary }}
         run: ./scripts/verify-pending-changesets.ts
 
       - name: Apply version bump & generate changelog
         run: bun run changeset:version
 
+      - name: Apply canary version
+        if: ${{ inputs.canary }}
+        run: ./scripts/apply-canary-version.ts
+
       - name: Summarize versions
         run: ./scripts/summarize-versions.ts
 
       - name: Commit & push version bump
+        if: ${{ !inputs.canary }}
         run: |
           git add -A
           git commit -m "chore(release): version packages"
@@ -65,14 +77,23 @@ jobs:
         run: ./scripts/ignore-packages.ts
 
       - name: Publish to npm
+        if: ${{ !inputs.canary }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
         run: bun run changeset:publish
 
+      - name: Publish canary to npm
+        if: ${{ inputs.canary }}
+        env:
+          NPM_CONFIG_PROVENANCE: "true"
+        run: bun run changeset:publish -- --tag canary
+
       - name: Push git tags
+        if: ${{ !inputs.canary }}
         run: git push origin --tags
 
       - name: Create GitHub releases
+        if: ${{ !inputs.canary }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/create-github-releases.ts
