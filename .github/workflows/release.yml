@@ -81,6 +81,9 @@ jobs:
           git commit -m "chore(release): version packages"
           git push origin "HEAD:${{ github.ref_name }}"
 
+      - name: Ignore packages excluded from release
+        run: ./scripts/ignore-packages.ts
+
       - name: Publish to npm
         if: ${{ !inputs.dry_run }}
         env:

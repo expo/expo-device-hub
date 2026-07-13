@@ -3,6 +3,7 @@ import { Glob } from "bun";
 interface PublicPackage {
   name: string;
   dir: string;
+  path: string;
   version: string;
 }
 
@@ -29,7 +30,12 @@ export async function getPublicPackages(
       const pkg = await Bun.file(`${root}/${rel}`).json();
       if (pkg.private === true) continue;
       if (!pkg.name || !pkg.version) continue;
-      packages.push({ name: pkg.name, dir, version: pkg.version });
+      packages.push({
+        name: pkg.name,
+        dir,
+        path: rel,
+        version: pkg.version
+      });
     }
   }
 
