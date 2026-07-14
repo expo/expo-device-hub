@@ -29,7 +29,7 @@
     "vendor/serve-sim/dist/serve-sim.js",
     "vendor/serve-sim/dist/simax",
     "vendor/serve-sim/dist/simcam",
-    "vendor/serve-sim/bin/serve-sim-bin",
+    "vendor/serve-sim/dist/native",
     "vendor/serve-sim/LICENSE",
     "vendor/serve-emu/dist/*.js",
     "vendor/serve-emu/vendor",

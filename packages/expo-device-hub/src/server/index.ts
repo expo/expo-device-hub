@@ -7,7 +7,7 @@
 import { bootHubDevice, parseDeviceAction, removeHubDevice, shutdownHubDevice } from './device-actions';
 import { type HubDeviceList, listDevices } from './devices';
 import { EMU_PREFIX, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
-import { SIM_PREFIX, handleSimRequest, simExecWebSocketHandler } from './serve-sim';
+import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
 import { MOCK_NEW_DEVICE_OPTIONS } from './sim-options';
 
 const DEVICES_ROUTE = '/api/devices';
@@ -88,7 +88,8 @@ export default async function handler(request: Request): Promise<Response | null
 }
 
 export const webSocketHandlers = {
-  [`${SIM_PREFIX}/exec-ws`]: simExecWebSocketHandler,
+  [`${SIM_PREFIX}/exec-ws`]: simWebSocketHandler,
+  [`${SIM_PREFIX}/helper/ws`]: simWebSocketHandler,
   [`${EMU_PREFIX}/ws`]: emuWebSocketHandler,
 };
 
