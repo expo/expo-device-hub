@@ -33,9 +33,10 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
   return response ?? null;
 }
 
-// serve-sim's video (/stream.mjpeg) and touch sockets are served by its detached helper
-// directly, not through this mount — /exec-ws is the only same-origin WebSocket.
-export const simExecWebSocketHandler = (socket: { close(): void }, request: Request): void => {
+// Same-origin WebSockets: the exec/control channel (/exec-ws) and the HID input
+// socket (/helper/ws?device=<udid>). Expo CLI accepts the upgrade for each
+// registered route and hands us the socket; simMiddleware dispatches by path.
+export const simWebSocketHandler = (socket: { close(): void }, request: Request): void => {
   const url = new URL(request.url);
   const rewritten = new Request(
     `${url.origin}${PLUGIN_MOUNT}${url.pathname}${url.search}`,

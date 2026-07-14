@@ -98,6 +98,21 @@ function toWs(url: string): string {
   return url.replace(/^http/, 'ws');
 }
 
+/**
+ * `…/helper/<udid>/ws` -> `…/helper/ws?device=<udid>`
+ * serve-sim 
+ */
+export function toQueryStyleHelperWsUrl(wsUrl: string): string {
+  const url = new URL(wsUrl);
+  const match = url.pathname.match(/^(.*\/helper)\/([^/]+)\/ws$/);
+  if (!match) throw new Error(`Invalid helper ws url, no deviceId matched: ${wsUrl}`);
+  url.pathname = `${match[1]}/ws`;
+  if (!url.searchParams.has('device')) {
+    url.searchParams.set('device', decodeURIComponent(match[2]));
+  }
+  return url.toString();
+}
+
 /** Response shape of a serve-sim UI (`simulator-settings`) request over exec-ws. */
 interface UiRequestResult {
   /** Present on a read (no `option`): every UI option's current value. */
@@ -379,7 +394,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return {
         mode: 'middleware',
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
-        wsUrl: c.wsUrl ?? `${toWs(c.url!)}/ws`,
+        wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         device: c.device ?? null,
         execWsUrl: toWs(new URL(`${basePath}/exec-ws`, baseUrl).toString()),
         execToken: c.execToken ?? null,
