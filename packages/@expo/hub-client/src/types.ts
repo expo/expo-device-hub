@@ -65,6 +65,18 @@ export interface DeviceLog {
   message: string;
 }
 
+/** The app currently in the foreground on the device. */
+export interface ForegroundApp {
+  /** Bundle identifier (iOS) / package name (Android). */
+  id: string;
+  /** Human-readable app label, when the backend reports one (serve-emu). */
+  label?: string;
+  /** Foreground process id, when known. */
+  pid?: number;
+  /** True when the backend detected a React Native app (serve-sim). */
+  isReactNative?: boolean;
+}
+
 /** Hardware buttons. Implementations ignore the ones their platform lacks. */
 export type HardwareButton = 'home' | 'back' | 'recents' | 'power' | 'appSwitcher';
 
@@ -137,6 +149,14 @@ export interface DeviceClient {
   detachLogs: () => void;
   /** Drop all collected log lines. */
   clearLogs: () => void;
+  /**
+   * The app currently in the foreground, or `null` while unknown. serve-sim
+   * pushes changes over its `{base}/appstate` SSE (SpringBoard log driven,
+   * bootstrapped with the current frontmost app); serve-emu polls
+   * `GET /api/foreground` (dumpsys). Best-effort — stays `null` on a backend
+   * that can't report it (e.g. a bare serve-sim helper with no middleware).
+   */
+  foregroundApp: ForegroundApp | null;
 
   /** Element kind {@link DeviceScreen} should render for this client. */
   videoKind: VideoSurfaceKind;

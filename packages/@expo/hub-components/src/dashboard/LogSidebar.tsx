@@ -1,9 +1,10 @@
 import { type DeviceClient } from '@expo/hub-client';
 import { SidebarToggle } from '../primitives';
+import { CurrentAppSection } from './CurrentAppSection';
 import { OutputSection } from './OutputSection';
 
 /**
- * Right column: the selected device's output (currently Logs). Mirrors the
+ * Right column: the selected device's output (Current app + Logs). Mirrors the
  * left {@link Sidebar} — same width, transparent over the `bg.subtle` canvas —
  * with its padding flipped so the wider gutter sits on the outer (right) edge.
  * The header holds a {@link SidebarToggle} on the inner edge to collapse it.
@@ -14,7 +15,7 @@ export function LogSidebar({
 }: {
   /** When set, a sidebar toggle is shown to collapse this panel. */
   onToggle?: () => void;
-  /** Active device connection — feeds the logs panel and its controls. */
+  /** Active device connection — feeds the current-app and logs panels. */
   client?: DeviceClient;
 }) {
   return (
@@ -36,6 +37,7 @@ export function LogSidebar({
           <SidebarToggle side="right" onClick={onToggle} />
         </div>
       )}
+      <CurrentAppSection client={client} />
       <OutputSection client={client} />
     </aside>
   );

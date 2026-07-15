@@ -14,6 +14,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   attachLogs: () => {},
   detachLogs: () => {},
   clearLogs: () => {},
+  foregroundApp: null,
   videoKind: 'img',
   attachVideo: () => {},
   sendTouch: () => {},

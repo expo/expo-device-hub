@@ -38,6 +38,7 @@ import {
   type DeviceConnectionOptions,
   type DeviceLog,
   type DeviceOrientation,
+  type ForegroundApp,
   type HardwareButton,
   type MultiTouchSample,
   type RunningDevice,
@@ -187,6 +188,8 @@ interface ResolvedConfig {
   execToken: string | null;
   /** Relative SSE path to subscribe for logs, e.g. `/logs?device=<udid>`. */
   logsPath: string | null;
+  /** Absolute URL of the foreground-app SSE stream; null in bare-helper mode. */
+  appStateUrl: string | null;
   gridApiUrl: string | null;
 }
 
@@ -199,6 +202,7 @@ interface PreviewApi {
   basePath?: string;
   execToken?: string;
   logsEndpoint?: string;
+  appStateEndpoint?: string;
   gridApiEndpoint?: string;
 }
 
@@ -217,6 +221,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // The simulator's system dark/light setting. null until read (or in bare-helper
   // mode, where there's no middleware exec-ws to drive `simctl ui appearance`).
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
+  // The frontmost app, pushed by the middleware's /appstate SSE. null until the
+  // first event (or in bare-helper mode, which has no appstate stream).
+  const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   // Monotonic log id source, persisted across log-stream reconnects so ids stay
@@ -386,6 +393,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       execWsUrl: null,
       execToken: null,
       logsPath: null,
+      appStateUrl: null,
       gridApiUrl: null,
     });
 
@@ -399,6 +407,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         execWsUrl: toWs(new URL(`${basePath}/exec-ws`, baseUrl).toString()),
         execToken: c.execToken ?? null,
         logsPath: c.logsEndpoint ?? null,
+        appStateUrl: c.appStateEndpoint ? new URL(c.appStateEndpoint, baseUrl).toString() : null,
         gridApiUrl: new URL(c.gridApiEndpoint ?? '/grid/api', baseUrl).toString(),
       };
     };
@@ -659,6 +668,34 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [execWsUrl, execToken, deviceUdid]);
 
+  // ── Foreground app (middleware /appstate SSE) — the middleware bootstraps a
+  //    fresh subscriber with the current frontmost app, then pushes changes as
+  //    SpringBoard foregrounds apps. EventSource reconnects on its own. ──
+  const appStateUrl = config?.appStateUrl ?? null;
+  useEffect(() => {
+    setForegroundApp(null);
+    if (!appStateUrl) return;
+    let source: EventSource | null = null;
+    try {
+      source = new EventSource(appStateUrl);
+    } catch {
+      return;
+    }
+    source.onmessage = (event) => {
+      try {
+        const data = JSON.parse(String(event.data)) as {
+          bundleId?: string;
+          pid?: number;
+          isReactNative?: boolean;
+        };
+        if (data.bundleId) {
+          setForegroundApp({ id: data.bundleId, pid: data.pid, isReactNative: data.isReactNative });
+        }
+      } catch {}
+    };
+    return () => source?.close();
+  }, [appStateUrl]);
+
   // ── Running simulators (middleware /grid/api) ──
   const gridApiUrl = config?.gridApiUrl ?? null;
   useEffect(() => {
@@ -701,6 +738,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     attachLogs,
     detachLogs,
     clearLogs,
+    foregroundApp,
     videoKind: 'img',
     attachVideo,
     sendTouch,
