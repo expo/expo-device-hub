@@ -19,6 +19,7 @@ import {
   type Device,
 } from '@expo/hub-components';
 import { bootDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
+import { basePath } from './dashboard/basePath';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDevices, useRecentDevices } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
@@ -165,6 +166,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // boots) on load.
   const client = useActiveDeviceClient(
     selected ? { platform: selected.platform, device: selected.id } : null,
+    basePath(),
   );
 
   return (

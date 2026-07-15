@@ -2,37 +2,38 @@ import { endpointFor } from './connections';
 import { type DeviceClient, type DevicePlatform } from './types';
 import { useAndroidDeviceClient } from './useAndroidDevice';
 import { useIosDeviceClient } from './useIosDevice';
+import { NOOP_DEVICE_CLIENT } from './useNoopDeviceClient';
 
 export interface ActiveDeviceTarget {
   platform: DevicePlatform;
-  /** Explicit server base URL; falls back to the platform default endpoint. */
-  baseUrl?: string | null;
   /** Which running device (udid/serial) to stream. */
   device?: string | null;
 }
 
 /**
  * Connect to whichever device is selected and return its live {@link DeviceClient}.
- *
- * Both platform hooks are always called (hooks can't be conditional), but only
- * the one matching the selected platform is enabled — the other stays inert.
- * This keeps a single shared connection at the Hub's composition root so the
- * stream, logs panel, Home control, and device lists all read from it.
+ * With no target selected yet, returns {@link NOOP_DEVICE_CLIENT} so callers can render
+ * an idle UI without connecting anything.
  */
-export function useActiveDeviceClient(target: ActiveDeviceTarget | null): DeviceClient {
+export function useActiveDeviceClient(
+  target: ActiveDeviceTarget | null,
+  hubBase: string,
+): DeviceClient {
   const iosActive = target?.platform === 'ios';
   const androidActive = target?.platform === 'android';
 
   const ios = useIosDeviceClient({
-    baseUrl: iosActive ? endpointFor('ios', target?.baseUrl) : null,
     enabled: iosActive,
+    baseUrl: iosActive ? endpointFor('ios', hubBase) : null,
     device: iosActive ? target?.device ?? null : null,
   });
   const android = useAndroidDeviceClient({
-    baseUrl: androidActive ? endpointFor('android', target?.baseUrl) : null,
     enabled: androidActive,
+    baseUrl: androidActive ? endpointFor('android', hubBase) : null,
     device: androidActive ? target?.device ?? null : null,
   });
 
-  return androidActive ? android : ios;
+  if (iosActive) return ios;
+  if (androidActive) return android;
+  return NOOP_DEVICE_CLIENT;
 }

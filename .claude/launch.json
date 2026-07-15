@@ -21,6 +21,27 @@
       "runtimeArgs": ["packages/serve-sim/packages/serve-sim/dist/serve-sim.js", "--port", "3200"],
       "port": 3200,
       "autoPort": false
+    },
+    {
+      "name": "hub-cli-node",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["packages/expo-device-hub/dist/server/cli.mjs", "--port", "3400"],
+      "port": 3400,
+      "autoPort": false
+    },
+    {
+      "name": "hub-cli-bun",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["packages/expo-device-hub/dist/server/cli.mjs", "--port", "3401"],
+      "port": 3401,
+      "autoPort": false
+    },
+    {
+      "name": "example",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "--cwd", "example", "start"],
+      "port": 8081,
+      "autoPort": false
     }
   ]
 }

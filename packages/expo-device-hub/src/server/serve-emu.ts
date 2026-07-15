@@ -1,5 +1,3 @@
-import type { IncomingMessage } from 'node:http';
-
 // @ts-ignore vendored module, absent until `bun run build:vendor`
 import { createRouter, fromWsSocket, type WsWebSocketLike } from '../../vendor/serve-emu/dist/middleware.js';
 
@@ -22,8 +20,8 @@ export function handleEmuRequest(request: Request): Promise<Response> {
   return router.handleRequest(new Request(`${url.origin}${rest}`, request));
 }
 
-async function attachEmuSocket(socket: WsWebSocketLike, request: IncomingMessage): Promise<void> {
-  const url = new URL(request.url || '/ws', 'http://localhost');
+async function attachEmuSocket(socket: WsWebSocketLike, request: Request): Promise<void> {
+  const url = new URL(request.url);
   let serial: string;
   try {
     serial = (await router.ensure(url.searchParams.get('device'))).serial;
@@ -37,6 +35,6 @@ async function attachEmuSocket(socket: WsWebSocketLike, request: IncomingMessage
   router.attachWebSocket(fromWsSocket(socket), { serial, frameMeta });
 }
 
-export const emuWebSocketHandler = (socket: WsWebSocketLike, request: IncomingMessage): void => {
+export const emuWebSocketHandler = (socket: WsWebSocketLike, request: Request): void => {
   void attachEmuSocket(socket, request);
 };

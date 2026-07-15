@@ -7,11 +7,12 @@ import { fileURLToPath } from 'node:url';
 // @ts-ignore vendored module, absent until `bun run build:vendor`
 import { simMiddleware } from '../../vendor/serve-sim/dist/middleware.js';
 
-const PLUGIN_MOUNT = '/_expo/plugins/expo-device-hub';
+import { MOUNT_PATH } from './mount';
+
 export const SIM_PREFIX = '/vendor/serve-sim';
 // Must be the full mount path: serve-sim bakes basePath into the client-facing URLs it returns
 // (grid / exec-ws / stream), so a shorter value silently breaks the iOS client.
-const SIM_BASE_PATH = `${PLUGIN_MOUNT}${SIM_PREFIX}`;
+const SIM_BASE_PATH = `${MOUNT_PATH}${SIM_PREFIX}`;
 
 const middleware = simMiddleware({ basePath: SIM_BASE_PATH });
 
@@ -28,7 +29,7 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
   if (isPreviewRoot) ensureHelperSpawned();
 
   const response = await middleware(
-    new Request(`${url.origin}${PLUGIN_MOUNT}${url.pathname}${url.search}`, request),
+    new Request(`${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`, request),
   );
   return response ?? null;
 }
@@ -39,7 +40,7 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
 export const simWebSocketHandler = (socket: { close(): void }, request: Request): void => {
   const url = new URL(request.url);
   const rewritten = new Request(
-    `${url.origin}${PLUGIN_MOUNT}${url.pathname}${url.search}`,
+    `${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`,
     request,
   );
   const handled = middleware.handleWebSocket?.(rewritten, socket);

@@ -13,7 +13,7 @@
       "bundler": "metro"
     },
     "experiments": {
-      "baseUrl": "/_expo/plugins/expo-device-hub"
+      "baseUrl": "./"
     },
     "extra": {
       "eas": {

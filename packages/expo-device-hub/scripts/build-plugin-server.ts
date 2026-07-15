@@ -1,13 +1,15 @@
 #!/usr/bin/env bun
-import { rmSync } from 'node:fs';
+import { promises } from 'node:fs';
 import { resolve } from 'node:path';
+
+const { rm, chmod } = promises;
 
 const root = resolve(import.meta.dir, '..');
 const outdir = resolve(root, 'dist/server');
 
-rmSync(outdir, { recursive: true, force: true });
+await rm(outdir, { recursive: true, force: true });
 
-const result = await Bun.build({
+const serverResult = await Bun.build({
   entrypoints: [resolve(root, 'src/server/index.ts')],
   outdir,
   target: 'node',
@@ -29,10 +31,42 @@ const result = await Bun.build({
   ],
 });
 
-if (!result.success) {
+if (!serverResult.success) {
   console.error('Failed to bundle the expo-device-hub DevTools server:');
-  for (const message of result.logs) console.error(message);
+  for (const message of serverResult.logs) console.error(message);
   process.exit(1);
 }
 
 console.log('Bundled expo-device-hub DevTools server → dist/server/index.mjs');
+
+const cliResult = await Bun.build({
+  entrypoints: [resolve(root, 'src/server/cli.ts')],
+  outdir,
+  target: 'node',
+  format: 'esm',
+  naming: '[dir]/[name].mjs',
+  sourcemap: 'linked',
+  banner: '#!/usr/bin/env node',
+  external: ['ws'],
+  plugins: [
+    {
+      name: 'externalize-plugin-server',
+      setup(build) {
+        // Externalize src/server/index.ts
+        build.onResolve({ filter: /^\.\/index\.mjs$/ }, (args) => ({
+          path: args.path,
+          external: true,
+        }));
+      },
+    },
+  ],
+});
+
+if (!cliResult.success) {
+  console.error('Failed to bundle the expo-device-hub CLI:');
+  for (const message of cliResult.logs) console.error(message);
+  process.exit(1);
+}
+
+await chmod(resolve(outdir, 'cli.mjs'), 0o755);
+console.log('Bundled expo-device-hub CLI → dist/server/cli.mjs');

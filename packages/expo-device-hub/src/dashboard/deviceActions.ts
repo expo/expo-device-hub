@@ -1,17 +1,19 @@
 import { type Device } from '@expo/hub-components';
 
+import { basePath } from './basePath';
+
 /**
- * Device lifecycle actions, posted to the Hub DevTools plugin server (see
- * `src/server/device-actions.ts`). Expo CLI mounts the plugin under
- * `/_expo/plugins/expo-device-hub/*` and strips that prefix before calling the
- * handler, so from the browser these are the prefixed paths below.
+ * Device lifecycle actions, posted to the Hub server (see
+ * `src/server/device-actions.ts`) under whatever mount `basePath()`
+ * resolves (the Expo CLI plugin prefix, or wherever the standalone CLI
+ * mounts it).
  *
  * Each resolves to whether the server reported success and never throws — the
  * dashboard just refreshes its list afterward regardless.
  */
-const SHUTDOWN_ENDPOINT = '/_expo/plugins/expo-device-hub/api/devices/shutdown';
-const REMOVE_ENDPOINT = '/_expo/plugins/expo-device-hub/api/devices/remove';
-const BOOT_ENDPOINT = '/_expo/plugins/expo-device-hub/api/devices/boot';
+const shutdownEndpoint = () => `${basePath()}/api/devices/shutdown`;
+const removeEndpoint = () => `${basePath()}/api/devices/remove`;
+const bootEndpoint = () => `${basePath()}/api/devices/boot`;
 
 async function postAction(endpoint: string, device: Device): Promise<boolean> {
   try {
@@ -34,12 +36,12 @@ async function postAction(endpoint: string, device: Device): Promise<boolean> {
 
 /** Shut the given device down. Resolves to whether the server reported success. */
 export function shutdownDevice(device: Device): Promise<boolean> {
-  return postAction(SHUTDOWN_ENDPOINT, device);
+  return postAction(shutdownEndpoint(), device);
 }
 
 /** Remove/delete the given device. Resolves to whether the server reported success. */
 export function removeDevice(device: Device): Promise<boolean> {
-  return postAction(REMOVE_ENDPOINT, device);
+  return postAction(removeEndpoint(), device);
 }
 
 /** Outcome of a {@link bootDevice} call: exactly one of the two is set. */
@@ -58,7 +60,7 @@ export interface BootDeviceOutcome {
  */
 export async function bootDevice(device: Device): Promise<BootDeviceOutcome> {
   try {
-    const response = await fetch(BOOT_ENDPOINT, {
+    const response = await fetch(bootEndpoint(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ platform: device.platform, id: device.id, name: device.name }),

@@ -46,6 +46,15 @@ terminal when the dev server starts:
 › Expo Device Hub: http://localhost:8081/_expo/plugins/expo-device-hub
 ```
 
+## CLI
+
+The Hub also runs outside of `expo start` as a standalone server — useful when you want
+the device dashboard without a running Expo project:
+
+```sh
+npx expo-device-hub
+```
+
 ## Acknowledgements
 
 Device streaming and control are powered by two vendored, Apache-2.0-licensed

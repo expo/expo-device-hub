@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react';
 
 import { type Device } from '@expo/hub-components';
 
+import { basePath } from './basePath';
+
 /**
- * The Expo Hub DevTools plugin server (`src/server/`) exposes the live device
- * list here. Expo CLI mounts the plugin under `/_expo/plugins/expo-device-hub/*` and
- * strips that prefix before calling our handler, so from the browser the route
- * is the prefixed path below. `?booted=true` narrows the response to running
- * devices; the unfiltered response also includes shut-down ones.
+ * The Expo Hub server (`src/server/`) exposes the live device list here,
+ * under whatever mount `basePath()` resolves (the Expo CLI plugin prefix,
+ * or wherever the standalone CLI mounts it). `?booted=true` narrows the
+ * response to running devices; the unfiltered response also includes
+ * shut-down ones.
  */
-const DEVICES_ENDPOINT = '/_expo/plugins/expo-device-hub/api/devices';
+const devicesEndpoint = () => `${basePath()}/api/devices`;
 
 export type DeviceList = {
   simulators: Device[];
@@ -19,7 +21,7 @@ export type DeviceList = {
 const EMPTY: DeviceList = { simulators: [], emulators: [] };
 
 async function fetchDeviceList(search: string): Promise<DeviceList> {
-  const response = await fetch(`${DEVICES_ENDPOINT}${search}`, {
+  const response = await fetch(`${devicesEndpoint()}${search}`, {
     headers: { Accept: 'application/json' },
   });
   if (!response.ok) throw new Error(`Unexpected ${response.status}`);
