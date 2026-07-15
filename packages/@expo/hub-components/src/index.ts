@@ -31,6 +31,7 @@ export {
 export { Dropdown } from './components/Dropdown';
 export { DropdownItem } from './components/DropdownItem';
 export { Logo } from './components/Logo';
+export { ResizeHandle } from './components/ResizeHandle';
 export { SidebarToggle } from './components/SidebarToggle';
 export { Switch, type SwitchProps } from './components/Switch';
 export { cx } from './components/cx';

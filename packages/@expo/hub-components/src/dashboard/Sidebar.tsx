@@ -14,6 +14,7 @@ export function Sidebar({
   onSelect,
   onAddDevice,
   onToggle,
+  width = 400,
 }: {
   /** Simulators to list — real iOS devices from the plugin server. */
   simulators: Device[];
@@ -33,6 +34,8 @@ export function Sidebar({
   onAddDevice: (device: Device) => void;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */
   onToggle?: () => void;
+  /** Column width in px, driven by the resize handle. Defaults to 400. */
+  width?: number;
 }) {
   return (
     <aside
@@ -40,7 +43,7 @@ export function Sidebar({
         display: 'flex',
         flexDirection: 'column',
         gap: 32,
-        width: 'min(400px, 100vw)',
+        width: `min(${width}px, 100vw)`,
         flexShrink: 0,
         height: '100vh',
         boxSizing: 'border-box',

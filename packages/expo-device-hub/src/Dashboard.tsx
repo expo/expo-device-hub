@@ -3,13 +3,14 @@
 import '@expo/hub-components/theme.css';
 import '../global.css';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo/hub-client';
 import {
   BootErrorModal,
   EmptyState,
   LogSidebar,
+  ResizeHandle,
   Sidebar,
   SidebarToggle,
   StreamPanel,
@@ -40,6 +41,26 @@ const NARROW_MAX_WIDTH = 767;
 // NARROW_MAX_WIDTH both are overlays.
 const LOGS_MAX_WIDTH = NARROW_MAX_WIDTH + 400;
 
+// Resizable-sidebar bounds. Each column starts at DEFAULT_SIDEBAR_WIDTH (the
+// original fixed width) and can be dragged between MIN and MAX — never so wide
+// that the stream, alongside the other sidebar, is squeezed below MIN_STREAM.
+const DEFAULT_SIDEBAR_WIDTH = 400;
+const MIN_SIDEBAR_WIDTH = 280;
+const MAX_SIDEBAR_WIDTH = 560;
+const MIN_STREAM_WIDTH = 320;
+
+/**
+ * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
+ * also cap it so the stream keeps at least `MIN_STREAM_WIDTH` next to the other
+ * sidebar (`otherWidth` is 0 when that sidebar is collapsed/overlaid).
+ */
+function clampSidebarWidth(width: number, otherWidth: number): number {
+  const viewport = typeof window === 'undefined' ? Infinity : window.innerWidth;
+  const roomCap = viewport - otherWidth - MIN_STREAM_WIDTH;
+  const upper = Math.max(MIN_SIDEBAR_WIDTH, Math.min(MAX_SIDEBAR_WIDTH, roomCap));
+  return Math.min(Math.max(width, MIN_SIDEBAR_WIDTH), upper);
+}
+
 /**
  * The single Expo Hub screen, authored as an Expo DOM component (`'use dom'`) so
  * it renders with web primitives and real CSS. Left: simulators + emulators.
@@ -66,6 +87,13 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const logsNarrow = useIsNarrow(LOGS_MAX_WIDTH);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [logsOpen, setLogsOpen] = useState(true);
+  // Draggable widths for each inline sidebar. The `*Start` refs snapshot the
+  // width when a drag begins so each move re-derives width from the start point
+  // (delta-from-start), which clamps cleanly without drifting.
+  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [logsWidth, setLogsWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const sidebarWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
+  const logsWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   // Set when booting a device on the host failed — drives the error dialog.
   const [bootError, setBootError] = useState<{ deviceName: string; message: string } | null>(null);
 
@@ -187,18 +215,37 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
       }}>
       {/* Wide + open: the sidebar sits inline next to the stream. */}
       {sidebarOpen && !narrow && (
-        <Sidebar
-          simulators={simulators}
-          emulators={emulators}
-          recentSimulators={recent.simulators}
-          recentEmulators={recent.emulators}
-          simulatorOptions={newDeviceOptions.ios}
-          emulatorOptions={newDeviceOptions.android}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onAddDevice={handleAddDevice}
-          onToggle={() => setSidebarOpen(false)}
-        />
+        <>
+          <Sidebar
+            simulators={simulators}
+            emulators={emulators}
+            recentSimulators={recent.simulators}
+            recentEmulators={recent.emulators}
+            simulatorOptions={newDeviceOptions.ios}
+            emulatorOptions={newDeviceOptions.android}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onAddDevice={handleAddDevice}
+            onToggle={() => setSidebarOpen(false)}
+            width={sidebarWidth}
+          />
+          {/* Drag the seam between the devices sidebar and the stream to resize. */}
+          <ResizeHandle
+            side="left"
+            offset={sidebarWidth}
+            onResizeStart={() => {
+              sidebarWidthStart.current = sidebarWidth;
+            }}
+            onResize={(delta) =>
+              setSidebarWidth(
+                clampSidebarWidth(
+                  sidebarWidthStart.current + delta,
+                  logsOpen && !logsNarrow ? logsWidth : 0,
+                ),
+              )
+            }
+          />
+        </>
       )}
 
       {selected ? (
@@ -215,7 +262,27 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
       )}
 
       {/* Room for two sidebars + open: the logs sidebar sits inline to the right of the stream. */}
-      {logsOpen && !logsNarrow && <LogSidebar client={client} onToggle={() => setLogsOpen(false)} />}
+      {logsOpen && !logsNarrow && (
+        <>
+          {/* Drag the seam between the stream and the logs sidebar to resize. */}
+          <ResizeHandle
+            side="right"
+            offset={logsWidth}
+            onResizeStart={() => {
+              logsWidthStart.current = logsWidth;
+            }}
+            onResize={(delta) =>
+              setLogsWidth(
+                clampSidebarWidth(
+                  logsWidthStart.current + delta,
+                  sidebarOpen && !narrow ? sidebarWidth : 0,
+                ),
+              )
+            }
+          />
+          <LogSidebar client={client} onToggle={() => setLogsOpen(false)} width={logsWidth} />
+        </>
+      )}
 
       {/* Narrow + open: the sidebar overlays the stream with a backdrop. */}
       {sidebarOpen && narrow && (
@@ -244,6 +311,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               onSelect={setSelectedId}
               onAddDevice={handleAddDevice}
               onToggle={() => setSidebarOpen(false)}
+              width={sidebarWidth}
             />
           </div>
         </>
@@ -265,7 +333,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               backgroundColor: bg.subtle,
               boxShadow: shadow.lg,
             }}>
-            <LogSidebar client={client} onToggle={() => setLogsOpen(false)} />
+            <LogSidebar client={client} onToggle={() => setLogsOpen(false)} width={logsWidth} />
           </div>
         </>
       )}

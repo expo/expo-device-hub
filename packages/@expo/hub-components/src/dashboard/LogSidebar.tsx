@@ -11,11 +11,14 @@ import { OutputSection } from './OutputSection';
 export function LogSidebar({
   onToggle,
   client,
+  width = 400,
 }: {
   /** When set, a sidebar toggle is shown to collapse this panel. */
   onToggle?: () => void;
   /** Active device connection — feeds the logs panel and its controls. */
   client?: DeviceClient;
+  /** Column width in px, driven by the resize handle. Defaults to 400. */
+  width?: number;
 }) {
   return (
     <aside
@@ -23,7 +26,7 @@ export function LogSidebar({
         display: 'flex',
         flexDirection: 'column',
         gap: 32,
-        width: 'min(400px, 100vw)',
+        width: `min(${width}px, 100vw)`,
         flexShrink: 0,
         height: '100vh',
         boxSizing: 'border-box',
