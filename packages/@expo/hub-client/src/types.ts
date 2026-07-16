@@ -69,12 +69,28 @@ export interface DeviceLog {
 export interface ForegroundApp {
   /** Bundle identifier (iOS) / package name (Android). */
   id: string;
-  /** Human-readable app label, when the backend reports one (serve-emu). */
+  /** Human-readable app label (Android `dumpsys`, iOS `CFBundleDisplayName`). */
   label?: string;
   /** Foreground process id, when known. */
   pid?: number;
   /** True when the backend detected a React Native app (serve-sim). */
   isReactNative?: boolean;
+  /** Marketing version — iOS `CFBundleShortVersionString` / Android `versionName`. */
+  version?: string;
+  /** Build identifier — iOS `CFBundleVersion` / Android `versionCode`. */
+  build?: string;
+  /** App icon as a `data:` URL, when the backend can extract one (iOS only today). */
+  iconDataUrl?: string;
+  /** Fully-qualified foreground activity (Android). */
+  activity?: string;
+  /** Whether the app is debuggable (Android). */
+  debuggable?: boolean;
+  /** `MinimumOSVersion` from Info.plist (iOS). */
+  minOS?: string;
+  /** `CFBundleExecutable` from Info.plist (iOS). */
+  executable?: string;
+  /** Path of the installed `.app` bundle on the host (iOS). */
+  appPath?: string;
 }
 
 /** Hardware buttons. Implementations ignore the ones their platform lacks. */

@@ -31,6 +31,7 @@ import {
   streamGeometry,
 } from './orientation';
 import { startIosHelper } from './connections';
+import { type ExecResult, getIosAppDetails } from './ios-app-details';
 import {
   type ConnectionStatus,
   type DeviceAppearance,
@@ -170,6 +171,63 @@ function execWsUiRequest(
       if (msg.id === 1) {
         if (msg.error) finish(() => reject(new Error(msg.error)));
         else finish(() => resolve(msg));
+      }
+    };
+    ws.onerror = () => finish(() => reject(new Error('exec-ws error')));
+    ws.onclose = () => finish(() => reject(new Error('exec-ws closed')));
+  });
+}
+
+/**
+ * Run a single host shell command over a one-shot middleware exec-ws
+ * connection: connect → `{token}` → wait for `{ready}` → `{id, command}` →
+ * `{id, stdout, stderr, exitCode}`. Same channel as {@link execWsUiRequest},
+ * different request shape. Used to introspect the foreground app's bundle
+ * (Info.plist, icon) — see `ios-app-details.ts`.
+ */
+function execWsCommand(
+  execWsUrl: string,
+  execToken: string,
+  command: string,
+): Promise<ExecResult> {
+  return new Promise((resolve, reject) => {
+    let ws: WebSocket;
+    try {
+      ws = new WebSocket(execWsUrl);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    let settled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const finish = (run: () => void) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      try {
+        ws.close();
+      } catch {}
+      run();
+    };
+    timer = setTimeout(() => finish(() => reject(new Error('exec-ws timeout'))), 10_000);
+    ws.onopen = () => ws.send(JSON.stringify({ token: execToken }));
+    ws.onmessage = (event) => {
+      let msg: { ready?: boolean; id?: number; error?: string } & Partial<ExecResult>;
+      try {
+        msg = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      if (msg.ready) {
+        ws.send(JSON.stringify({ id: 1, command }));
+        return;
+      }
+      if (msg.id === 1) {
+        if (msg.error) finish(() => reject(new Error(msg.error)));
+        else
+          finish(() =>
+            resolve({ stdout: msg.stdout ?? '', stderr: msg.stderr ?? '', exitCode: msg.exitCode ?? 1 }),
+          );
       }
     };
     ws.onerror = () => finish(() => reject(new Error('exec-ws error')));
@@ -689,12 +747,46 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           isReactNative?: boolean;
         };
         if (data.bundleId) {
-          setForegroundApp({ id: data.bundleId, pid: data.pid, isReactNative: data.isReactNative });
+          // Merge repeat events for the same app so a relaunch (new pid)
+          // doesn't wipe the bundle details filled in below.
+          setForegroundApp((prev) =>
+            prev && prev.id === data.bundleId
+              ? prev.pid === data.pid && prev.isReactNative === data.isReactNative
+                ? prev
+                : { ...prev, pid: data.pid, isReactNative: data.isReactNative }
+              : { id: data.bundleId!, pid: data.pid, isReactNative: data.isReactNative },
+          );
         }
       } catch {}
     };
     return () => source?.close();
   }, [appStateUrl]);
+
+  // ── Foreground app details (name, versions, icon) — introspected from the
+  //    app bundle on the host over exec-ws whenever the foreground bundle id
+  //    changes. Cached per udid:bundleId, so revisits apply instantly. ──
+  const foregroundAppId = foregroundApp?.id ?? null;
+  useEffect(() => {
+    if (!foregroundAppId || !execWsUrl || !execToken || !deviceUdid) return;
+    let cancelled = false;
+    getIosAppDetails(
+      (command) => execWsCommand(execWsUrl, execToken, command),
+      deviceUdid,
+      foregroundAppId,
+    )
+      .then((details) => {
+        if (cancelled || !details) return;
+        setForegroundApp((prev) =>
+          prev && prev.id === foregroundAppId ? { ...prev, ...details } : prev,
+        );
+      })
+      .catch(() => {
+        /* exec channel unavailable — the id/pid line still renders */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [foregroundAppId, execWsUrl, execToken, deviceUdid]);
 
   // ── Running simulators (middleware /grid/api) ──
   const gridApiUrl = config?.gridApiUrl ?? null;

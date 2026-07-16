@@ -39,6 +39,19 @@ const FOREGROUND_POLL_MS = 5000;
 
 const KEYCODE_R = 46
 
+/** Field-wise equality so the poll only publishes state when something changed. */
+function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
+  return (
+    a.id === b.id &&
+    a.label === b.label &&
+    a.pid === b.pid &&
+    a.activity === b.activity &&
+    a.version === b.version &&
+    a.build === b.build &&
+    a.debuggable === b.debuggable
+  );
+}
+
 const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'android', name: 'Emulator Android', platform: 'android', current: true },
 ];
@@ -566,19 +579,27 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         const res = await fetch(url, { cache: 'no-store' });
         const data = (await res.json()) as {
           ok?: boolean;
-          app?: { packageName?: string | null; pid?: number | null; label?: string | null };
+          app?: {
+            packageName?: string | null;
+            activity?: string | null;
+            pid?: number | null;
+            label?: string | null;
+            versionName?: string | null;
+            versionCode?: string | null;
+            debuggable?: boolean | null;
+          };
         };
         if (cancelled || !data.ok || !data.app?.packageName) return;
         const next: ForegroundApp = {
           id: data.app.packageName,
           label: data.app.label ?? undefined,
           pid: data.app.pid ?? undefined,
+          activity: data.app.activity ?? undefined,
+          version: data.app.versionName ?? undefined,
+          build: data.app.versionCode ?? undefined,
+          debuggable: data.app.debuggable ?? undefined,
         };
-        setForegroundApp((prev) =>
-          prev && prev.id === next.id && prev.label === next.label && prev.pid === next.pid
-            ? prev
-            : next,
-        );
+        setForegroundApp((prev) => (prev && sameForegroundApp(prev, next) ? prev : next));
       } catch {
         /* offline / unsupported — keep the last known app */
       }
