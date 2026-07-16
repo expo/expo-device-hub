@@ -19,7 +19,7 @@ Usage: expo-device-hub [options]
 
 Options:
   -p, --port <port>  Port to listen on (default: ${DEFAULT_PORT}, or the next available port)
-      --host <host>  Host to bind (default: localhost; use 0.0.0.0 to expose on your local network)
+      --host <host>  Host to bind (default: 127.0.0.1; use 0.0.0.0 to expose on your local network)
   -h, --help         Show this help
 `;
 
@@ -67,7 +67,10 @@ async function main(): Promise<void> {
     ({ values } = parseArgs({
       options: {
         port: { type: 'string', short: 'p' },
-        host: { type: 'string', default: 'localhost' },
+        // Bind the IPv4 loopback explicitly: 'localhost' resolves to ::1 first on
+        // macOS, but serve-sim's in-process state mints 127.0.0.1 URLs, so a
+        // v6-only listener leaves the advertised stream/ws endpoints unreachable.
+        host: { type: 'string', default: '127.0.0.1' },
         help: { type: 'boolean', short: 'h', default: false },
       },
     }));
