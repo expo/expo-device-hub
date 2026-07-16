@@ -17,7 +17,9 @@ export function EmptyState() {
         justifyContent: 'center',
         gap: 16,
         padding: 40,
-        margin: 16,
+        // Match StreamPanel: half margin on the sides so the card sits closer to
+        // the resize seams; full top/bottom margin keeps its vertical framing.
+        margin: '16px 8px',
         boxSizing: 'border-box',
         backgroundColor: bg.default,
         border: `1px solid ${border.secondary}`,

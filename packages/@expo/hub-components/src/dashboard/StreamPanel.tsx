@@ -62,7 +62,9 @@ export function StreamPanel({
         justifyContent: 'center',
         gap: 40,
         padding: 40,
-        margin: 16,
+        // Half margin on the sides so the stream card sits closer to the resize
+        // seams; full top/bottom margin keeps its vertical framing unchanged.
+        margin: '16px 8px',
         boxSizing: 'border-box',
         backgroundColor: bg.default,
         border: `1px solid ${border.secondary}`,
