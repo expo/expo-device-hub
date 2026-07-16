@@ -9,10 +9,53 @@
 
 # expo-device-hub
 
-An **Expo DevTools plugin** for managing and interacting with iOS simulators and
-Android emulators straight from the browser. When you run `expo start` in an app
-that has the plugin installed, Expo Hub adds a device dashboard to preview and
-control your devices.
+**Expo Device Hub** is an [Expo DevTools plugin](https://docs.expo.dev/debugging/devtools-plugins/)
+that lets you preview and control your iOS simulators and Android emulators right from
+the browser — without leaving your development workflow. When you run `expo start`, the
+Hub adds a device dashboard where you can watch a live stream of any device, interact
+with it, and manage which devices are running from one place.
+
+## Features
+
+- Live stream of iOS simulators and Android emulators in your browser.
+- Interact directly — tap, swipe, scroll, and type into the device.
+- Boot, shut down, and add devices without opening Xcode or Android Studio.
+- Follows your system light/dark theme, and can flip the device's appearance too.
+
+> iOS simulators require macOS with Xcode. Android emulators require the Android SDK
+> (`emulator`, `adb`).
+
+## Use in an Expo app
+
+> Using the Hub inside an Expo app requires **Expo SDK 57** or newer.
+
+Install the plugin:
+
+```sh
+npx expo install expo-device-hub
+```
+
+Then start your project as usual:
+
+```sh
+npx expo start
+```
+
+Expo Device Hub registers itself as a DevTools plugin, so a link to it appears in your
+terminal when the dev server starts:
+
+```
+› Expo Device Hub: http://localhost:8081/_expo/plugins/expo-device-hub
+```
+
+## Use standalone
+
+The Hub also runs outside of `expo start` as a standalone server — useful when you want
+the device dashboard without a running Expo project:
+
+```sh
+npx expo-device-hub
+```
 
 ## Repository structure
 

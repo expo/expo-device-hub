@@ -27,6 +27,8 @@ with it, and manage which devices are running from one place.
 
 ## Installation
 
+> Using the Hub inside an Expo app requires **Expo SDK 57** or newer.
+
 ```sh
 npx expo install expo-device-hub
 ```
