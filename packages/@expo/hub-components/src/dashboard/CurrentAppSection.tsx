@@ -17,11 +17,12 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
     ? [app.label ? app.id : null, app.pid != null ? `pid ${app.pid}` : null].filter(Boolean)
     : [];
 
-  // Meta line: marketing version (+ build) and the app's minimum iOS.
+  // Meta line: marketing version (+ build) and the app's minimum OS.
   const meta = app
     ? [
         app.version ? `v${app.version}${app.build ? ` (${app.build})` : ''}` : null,
         app.minOS ? `min iOS ${app.minOS}` : null,
+        app.minSdk != null ? `min SDK ${app.minSdk}` : null,
       ].filter(Boolean)
     : [];
 

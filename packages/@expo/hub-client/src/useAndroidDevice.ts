@@ -48,6 +48,7 @@ function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
     a.activity === b.activity &&
     a.version === b.version &&
     a.build === b.build &&
+    a.minSdk === b.minSdk &&
     a.debuggable === b.debuggable
   );
 }
@@ -586,6 +587,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             label?: string | null;
             versionName?: string | null;
             versionCode?: string | null;
+            minSdk?: number | null;
             debuggable?: boolean | null;
           };
         };
@@ -597,6 +599,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           activity: data.app.activity ?? undefined,
           version: data.app.versionName ?? undefined,
           build: data.app.versionCode ?? undefined,
+          minSdk: data.app.minSdk ?? undefined,
           debuggable: data.app.debuggable ?? undefined,
         };
         setForegroundApp((prev) => (prev && sameForegroundApp(prev, next) ? prev : next));

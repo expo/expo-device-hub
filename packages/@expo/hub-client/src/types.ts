@@ -85,6 +85,8 @@ export interface ForegroundApp {
   activity?: string;
   /** Whether the app is debuggable (Android). */
   debuggable?: boolean;
+  /** Minimum supported Android API level, e.g. 24 (Android). */
+  minSdk?: number;
   /** `MinimumOSVersion` from Info.plist (iOS). */
   minOS?: string;
   /** `CFBundleExecutable` from Info.plist (iOS). */
