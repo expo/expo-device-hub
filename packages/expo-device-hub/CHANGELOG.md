@@ -1,5 +1,11 @@
 # expo-device-hub
 
+## 0.2.1
+
+### Patch Changes
+
+- f32c4e3: Restore the iOS Save screenshot action. serve-sim's `/api/screenshot` route was lost in its fetch-style middleware rewrite, so the dashboard's Save button silently did nothing for simulators.
+
 ## 0.2.0
 
 ### Minor Changes
