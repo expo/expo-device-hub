@@ -39,6 +39,7 @@ export function StreamPanel({
   displayScreen,
   onShutdown,
   onRemove,
+  framed = true,
 }: {
   device: Device;
   client: DeviceClient;
@@ -50,6 +51,11 @@ export function StreamPanel({
   onShutdown?: () => void;
   /** Remove/delete the streamed device (More menu). */
   onRemove?: () => void;
+  /**
+   * Whether to render the raised dashboard card around the stream. Compact
+   * layouts disable this so the center view reaches every viewport edge.
+   */
+  framed?: boolean;
 }) {
   return (
     <section
@@ -64,12 +70,12 @@ export function StreamPanel({
         padding: 40,
         // Half margin on the sides so the stream card sits closer to the resize
         // seams; full top/bottom margin keeps its vertical framing unchanged.
-        margin: '16px 8px',
+        margin: framed ? '16px 8px' : 0,
         boxSizing: 'border-box',
         backgroundColor: bg.default,
-        border: `1px solid ${border.secondary}`,
-        borderRadius: radius.lg,
-        boxShadow: shadow.sm,
+        border: framed ? `1px solid ${border.secondary}` : 'none',
+        borderRadius: framed ? radius.lg : 0,
+        boxShadow: framed ? shadow.sm : 'none',
         overflow: 'hidden',
       }}>
       <PhoneFrame

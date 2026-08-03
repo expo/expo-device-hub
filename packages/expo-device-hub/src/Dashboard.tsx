@@ -256,6 +256,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           displayScreen={displayScreen}
           onShutdown={() => handleShutdown(selected)}
           onRemove={() => handleRemove(selected)}
+          framed={!narrow}
         />
       ) : (
         <EmptyState />
