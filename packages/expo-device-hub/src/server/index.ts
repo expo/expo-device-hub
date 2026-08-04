@@ -12,18 +12,26 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { bootHubDevice, parseDeviceAction, removeHubDevice, shutdownHubDevice } from './device-actions';
+import {
+  bootHubDevice,
+  createHubDevice,
+  parseCreateDeviceAction,
+  parseDeviceAction,
+  removeHubDevice,
+  shutdownHubDevice,
+} from './device-actions';
 import { deviceListWebSocketHandler, refreshDeviceList } from './device-list-websocket';
 import { type HubDeviceList, listDevices } from './devices';
 import { MOUNT_PATH } from './mount';
 import { EMU_PREFIX, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
 import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
-import { MOCK_NEW_DEVICE_OPTIONS } from './sim-options';
+import { listNewDeviceOptions } from './sim-options';
 
 const DEVICES_ROUTE = '/api/devices';
 const SHUTDOWN_DEVICE_ROUTE = '/api/devices/shutdown';
 const REMOVE_DEVICE_ROUTE = '/api/devices/remove';
 const BOOT_DEVICE_ROUTE = '/api/devices/boot';
+const CREATE_DEVICE_ROUTE = '/api/devices/create';
 const NEW_DEVICE_OPTIONS_ROUTE = '/api/new-device-options';
 const DEVICES_WEBSOCKET_ROUTE = '/api/devices/ws';
 
@@ -40,7 +48,7 @@ async function serveClientIndexHtml(): Promise<Response | null> {
     try {
       clientIndexHtml = await readFile(
         fileURLToPath(new URL('../client/index.html', import.meta.url)),
-        'utf-8',
+        'utf-8'
       );
     } catch {
       return null;
@@ -125,8 +133,33 @@ export default async function handler(request: Request): Promise<Response | null
     }
   }
 
+  if (pathname === CREATE_DEVICE_ROUTE) {
+    if (request.method !== 'POST') {
+      return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
+    }
+
+    const action = await parseCreateDeviceAction(request);
+    if (!action) {
+      return jsonResponse(
+        { ok: false, error: 'Expected { platform, name, runtime, deviceType } JSON body' },
+        400
+      );
+    }
+
+    try {
+      const result = await createHubDevice(action);
+      if (result.ok) refreshDeviceList();
+      return jsonResponse(result);
+    } catch (error) {
+      return jsonResponse({ ok: false, error: String(error) }, 500);
+    }
+  }
+
   if (pathname === NEW_DEVICE_OPTIONS_ROUTE) {
-    return jsonResponse(MOCK_NEW_DEVICE_OPTIONS);
+    if (request.method !== 'GET') {
+      return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
+    }
+    return jsonResponse(await listNewDeviceOptions());
   }
 
   return null;

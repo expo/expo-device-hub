@@ -1,6 +1,11 @@
 import { Logo, SidebarToggle } from '../primitives';
-import { type Device, type NewDeviceOptions } from './data';
 import { DeviceSection } from './DeviceSection';
+import {
+  type AddDeviceOutcome,
+  type AddDeviceTarget,
+  type Device,
+  type NewDeviceOptions,
+} from './data';
 
 /** Left column: simulators + emulators lists. The device output (logs) lives in {@link LogSidebar}. */
 export function Sidebar({
@@ -24,14 +29,14 @@ export function Sidebar({
   recentSimulators: Device[];
   /** Shut-down emulators offered in the add-emulator picker. */
   recentEmulators: Device[];
-  /** Mocked OS versions + models for the "New simulator" form. */
+  /** Installed iOS runtimes and their compatible simulator models. */
   simulatorOptions: NewDeviceOptions;
-  /** Mocked OS versions + models for the "New emulator" form. */
+  /** Installed Android system images and compatible emulator profiles. */
   emulatorOptions: NewDeviceOptions;
   selectedId: string;
   onSelect: (id: string) => void;
-  /** Called with the device chosen in either add-device picker. */
-  onAddDevice: (device: Device) => void;
+  /** Starts the existing or new device chosen in either add-device picker. */
+  onAddDevice: (target: AddDeviceTarget) => Promise<AddDeviceOutcome>;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */
   onToggle?: () => void;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
@@ -50,7 +55,8 @@ export function Sidebar({
         padding: '32px 24px 32px 48px',
         overflow: 'hidden',
       }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <div
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <Logo />
         {onToggle && <SidebarToggle onClick={onToggle} />}
       </div>

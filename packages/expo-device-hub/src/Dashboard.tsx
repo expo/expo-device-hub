@@ -2,12 +2,8 @@
 
 import '@expo/hub-components/theme.css';
 import '../global.css';
-
-import { useEffect, useMemo, useRef, useState } from 'react';
-
 import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo/hub-client';
 import {
-  BootErrorModal,
   EmptyState,
   LogSidebar,
   ResizeHandle,
@@ -17,10 +13,14 @@ import {
   bg,
   shadow,
   text,
+  type AddDeviceOutcome,
+  type AddDeviceTarget,
   type Device,
 } from '@expo/hub-components';
-import { bootDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
+import { useEffect, useMemo, useRef, useState } from 'react';
+
 import { basePath } from './dashboard/basePath';
+import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
@@ -76,11 +76,10 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
   const scheme = useColorScheme();
   const { booted, recent } = useDeviceLists();
-  // Mocked OS versions + models for the add-device picker's "New device" form.
+  // Installed runtimes/system images and models for the new-device forms.
   const newDeviceOptions = useNewDeviceOptions();
   const [selectedId, setSelectedId] = useState('');
-  // Devices the user added from a "recent devices" picker. UI-only for now: they
-  // join the sidebar list but aren't booted on the host.
+  // Devices started through the picker, retained until host discovery catches up.
   const [added, setAdded] = useState<Device[]>([]);
   const narrow = useIsNarrow(NARROW_MAX_WIDTH);
   const logsNarrow = useIsNarrow(LOGS_MAX_WIDTH);
@@ -93,49 +92,62 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const [logsWidth, setLogsWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const sidebarWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   const logsWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
-  // Set when booting a device on the host failed — drives the error dialog.
-  const [bootError, setBootError] = useState<{ deviceName: string; message: string } | null>(null);
 
   // Merge booted devices (from the server) with any the user added, deduped by
   // id and split back into the two sections by platform.
   const simulators = useMemo(
-    () => mergeById(booted.simulators, added.filter((device) => device.platform === 'ios')),
-    [booted.simulators, added],
+    () =>
+      mergeById(
+        booted.simulators,
+        added.filter((device) => device.platform === 'ios')
+      ),
+    [booted.simulators, added]
   );
   const emulators = useMemo(
-    () => mergeById(booted.emulators, added.filter((device) => device.platform === 'android')),
-    [booted.emulators, added],
+    () =>
+      mergeById(
+        booted.emulators,
+        added.filter((device) => device.platform === 'android')
+      ),
+    [booted.emulators, added]
   );
 
-  // Add a device chosen in a picker and select it straight away.
-  //
-  // iOS: selecting attaches the serve-sim helper on demand, which boots a
-  // shut-down sim (see useIosDeviceClient / startIosHelper).
-  //
-  // Android: serve-emu only streams already-running emulators, keyed by adb
-  // serial, so a shut-down (recent) AVD must be booted on the host first. Boot
-  // it, then re-key the added entry from the AVD name to the `emulator-<port>`
-  // serial serve-emu streams, and select that.
-  async function handleAddDevice(device: Device) {
-    setAdded((prev) => (prev.some((item) => item.id === device.id) ? prev : [...prev, device]));
-    setSelectedId(device.id);
+  // Create/boot the chosen target on the host. The modal awaits this result, so
+  // it stays open during slow Android boots and can show failures in context.
+  async function handleAddDevice(target: AddDeviceTarget): Promise<AddDeviceOutcome> {
+    const source = target.device;
+    const result =
+      target.kind === 'new'
+        ? await createDevice(source)
+        : source.booted
+          ? { id: source.id, error: null }
+          : await bootDevice(source);
 
-    if (device.platform === 'android' && !device.booted) {
-      const { serial, error } = await bootDevice(device);
-      if (serial) {
-        setAdded((prev) => [
-          ...prev.filter((item) => item.id !== device.id && item.id !== serial),
-          { ...device, id: serial, booted: true },
-        ]);
-        setSelectedId(serial);
-      } else {
-        // Boot failed — drop the placeholder (the device leaves the sidebar),
-        // let the selection effect fall back, and surface the reason.
-        setAdded((prev) => prev.filter((item) => item.id !== device.id));
-        setSelectedId('');
-        setBootError({ deviceName: device.name, message: error ?? 'Unknown error' });
-      }
+    if (!result.id) {
+      return { ok: false, error: result.error ?? 'The device did not come online.' };
     }
+
+    const device: Device =
+      target.kind === 'new'
+        ? {
+            id: result.id,
+            name: source.name,
+            version: source.version,
+            platform: source.platform,
+            physical: false,
+            booted: true,
+            lastUsedAt: Date.now(),
+          }
+        : { ...source, id: result.id, booted: true, lastUsedAt: Date.now() };
+
+    setAdded((previous) => [
+      ...previous.filter(
+        (item) => item.id !== source.name && item.id !== source.id && item.id !== result.id
+      ),
+      device,
+    ]);
+    setSelectedId(result.id);
+    return { ok: true };
   }
 
   // Shut down / remove the selected device on the host, then drop it from the
@@ -193,7 +205,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // boots) on load.
   const client = useActiveDeviceClient(
     selected ? { platform: selected.platform, device: selected.id } : null,
-    basePath(),
+    basePath()
   );
 
   return (
@@ -239,8 +251,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               setSidebarWidth(
                 clampSidebarWidth(
                   sidebarWidthStart.current + delta,
-                  logsOpen && !logsNarrow ? logsWidth : 0,
-                ),
+                  logsOpen && !logsNarrow ? logsWidth : 0
+                )
               )
             }
           />
@@ -275,8 +287,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               setLogsWidth(
                 clampSidebarWidth(
                   logsWidthStart.current + delta,
-                  sidebarOpen && !narrow ? sidebarWidth : 0,
-                ),
+                  sidebarOpen && !narrow ? sidebarWidth : 0
+                )
               )
             }
           />
@@ -289,7 +301,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         <>
           <div
             onClick={() => setSidebarOpen(false)}
-            style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.35)', zIndex: 10 }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.35)',
+              zIndex: 10,
+            }}
           />
           <div
             style={{
@@ -322,7 +339,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         <>
           <div
             onClick={() => setLogsOpen(false)}
-            style={{ position: 'absolute', inset: 0, backgroundColor: 'rgba(0, 0, 0, 0.35)', zIndex: 10 }}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.35)',
+              zIndex: 10,
+            }}
           />
           <div
             style={{
@@ -351,13 +373,6 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           <SidebarToggle floating side="right" onClick={() => setLogsOpen(true)} />
         </div>
       )}
-
-      <BootErrorModal
-        open={bootError !== null}
-        onClose={() => setBootError(null)}
-        deviceName={bootError?.deviceName ?? ''}
-        message={bootError?.message ?? ''}
-      />
     </div>
   );
 }

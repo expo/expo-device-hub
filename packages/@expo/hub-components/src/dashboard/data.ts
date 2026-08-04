@@ -40,10 +40,45 @@ export type LogEntry = {
  */
 export type ColorScheme = 'light' | 'dark';
 
-/** OS versions + device models offered in the add-device picker's "New <kind>" form. */
-export type NewDeviceOptions = {
-  /** OS versions for the select, newest first. e.g. "iOS 27.0". */
-  osVersions: string[];
-  /** Device models for the select. e.g. "iPhone 17 Pro". */
-  models: string[];
+/** A host toolchain device type/profile that can be used to create a device. */
+export type NewDeviceModelOption = {
+  /** Stable identifier passed to `simctl` / `avdmanager`. */
+  value: string;
+  /** Human-readable model name shown in the picker. */
+  label: string;
 };
+
+/** An installed runtime/system image and the models it can create. */
+export type NewDeviceRuntimeOption = {
+  /** Runtime identifier (iOS) or system-image package (Android). */
+  value: string;
+  /** Human-readable OS/image name shown in the picker. */
+  label: string;
+  /** Models compatible with this runtime/image. */
+  models: NewDeviceModelOption[];
+};
+
+/** Real host toolchain options for the add-device picker's new-device form. */
+export type NewDeviceOptions = {
+  runtimes: NewDeviceRuntimeOption[];
+};
+
+/** Values required by the host to create and boot a new virtual device. */
+export type NewDeviceRequest = {
+  platform: Platform;
+  name: string;
+  /** Runtime identifier (iOS) or system-image package (Android). */
+  runtime: string;
+  /** Simulator device-type identifier (iOS) or AVD device-profile id (Android). */
+  deviceType: string;
+  /** Human-readable OS label retained for the sidebar after creation. */
+  version: string;
+};
+
+/** The mutually exclusive target selected in the add-device picker. */
+export type AddDeviceTarget =
+  | { kind: 'recent'; device: Device }
+  | { kind: 'new'; device: NewDeviceRequest };
+
+/** Result returned to the picker after its async boot/create request. */
+export type AddDeviceOutcome = { ok: true } | { ok: false; error: string };

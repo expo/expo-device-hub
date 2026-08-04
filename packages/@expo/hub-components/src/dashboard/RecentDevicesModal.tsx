@@ -1,4 +1,11 @@
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useState } from 'react';
+import {
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react';
 
 import {
   Button,
@@ -18,7 +25,13 @@ import {
   radius,
   text,
 } from '../primitives';
-import { type Device, type NewDeviceOptions, type Platform } from './data';
+import {
+  type AddDeviceOutcome,
+  type AddDeviceTarget,
+  type Device,
+  type NewDeviceOptions,
+  type Platform,
+} from './data';
 
 /**
  * "Add a simulator" / "Add an emulator" picker (Option B in the design handoff),
@@ -32,10 +45,10 @@ import { type Device, type NewDeviceOptions, type Platform } from './data';
  * The target is mutually exclusive: selecting a recent de-activates the form, and
  * touching the form de-selects the recent.
  *
- * Both targets report through `onAdd`: a recent passes its own `Device`; a new
- * one passes a synthesized `Device` (real host-side create is still mocked, see
- * `handleBoot`). The form's OS-version/model options are mocked too (fed in via
- * `options`); recents carry a mocked `lastUsedAt` for the relative time shown.
+ * Both targets report through `onAdd`: a recent passes its existing `Device`;
+ * a new target passes the selected host toolchain identifiers. The dialog stays
+ * open while the async request runs and only closes after the host confirms the
+ * device is booted.
  */
 export type RecentDevicesModalProps = {
   open: boolean;
@@ -44,14 +57,17 @@ export type RecentDevicesModalProps = {
   kind: 'simulator' | 'emulator';
   /** Recents to offer (already filtered to those not shown in the sidebar). */
   devices: Device[];
-  /** Mocked OS versions + models for the "New <kind>" form selects. */
+  /** Installed runtimes/system images and their compatible device models. */
   options: NewDeviceOptions;
-  /** Boots the chosen target (existing recent, or synthesized new device). */
-  onAdd: (device: Device) => void;
+  /** Boots the chosen target or creates and boots a new device on the host. */
+  onAdd: (target: AddDeviceTarget) => Promise<AddDeviceOutcome>;
 };
 
 /** The active boot target — exactly one at a time. */
 type Target = { kind: 'recent'; id: string } | { kind: 'new' };
+
+const ANDROID_AVD_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
+const ANDROID_AVD_NAME_HINT = 'Allowed: a-z A-Z 0-9 . _ -';
 
 export function RecentDevicesModal({
   open,
@@ -68,44 +84,65 @@ export function RecentDevicesModal({
   // Most-recently-used first, so the top row is the natural default selection.
   const recents = useMemo(
     () => [...devices].sort((a, b) => (b.lastUsedAt ?? 0) - (a.lastUsedAt ?? 0)),
-    [devices],
+    [devices]
   );
 
   const [target, setTarget] = useState<Target>({ kind: 'new' });
-  const [osVersion, setOsVersion] = useState('');
+  const [runtime, setRuntime] = useState('');
   const [model, setModel] = useState('');
   const [name, setName] = useState('');
   // Once the user edits the name we stop auto-deriving it from the model.
   const [nameEdited, setNameEdited] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submissionError, setSubmissionError] = useState<string | null>(null);
 
-  // Reset to a clean state each time the dialog opens. Keyed on `open` only so
-  // selecting/editing while open isn't clobbered by parent re-renders (the
-  // `devices`/`options` props are fresh arrays on every render).
+  // Reset to a clean state each time the dialog opens, and initialize again if
+  // async host discovery resolves while an already-open dialog is still empty.
+  // The options object is stable after loading, so ordinary parent re-renders
+  // do not clobber in-progress edits.
   useEffect(() => {
     if (!open) return;
-    const firstOs = options.osVersions[0] ?? '';
-    const firstModel = options.models[0] ?? '';
-    setOsVersion(firstOs);
-    setModel(firstModel);
-    setName(suggestName(firstModel, recents));
+    const firstRuntime = options.runtimes[0];
+    const firstModel = firstRuntime?.models[0];
+    setRuntime(firstRuntime?.value ?? '');
+    setModel(firstModel?.value ?? '');
+    setName(suggestName(firstModel?.label ?? '', recents, platform));
     setNameEdited(false);
     setNameFocused(false);
+    setSubmitting(false);
+    setSubmissionError(null);
     // Default target: the most-recently-used recent, else the new-device form.
     setTarget(recents.length ? { kind: 'recent', id: recents[0].id } : { kind: 'new' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [open, options]);
 
   const isNew = target.kind === 'new';
   const selectedRecent =
     target.kind === 'recent' ? recents.find((device) => device.id === target.id) : undefined;
+  const selectedRuntime = options.runtimes.find((option) => option.value === runtime);
+  const modelOptions = selectedRuntime?.models ?? [];
+  const selectedModel = modelOptions.find((option) => option.value === model);
 
-  const activateNew = () => setTarget({ kind: 'new' });
+  const activateNew = () => {
+    setTarget({ kind: 'new' });
+    setSubmissionError(null);
+  };
+
+  function handleRuntimeChange(next: string) {
+    const nextRuntime = options.runtimes.find((option) => option.value === next);
+    const firstModel = nextRuntime?.models[0];
+    setRuntime(next);
+    setModel(firstModel?.value ?? '');
+    activateNew();
+    if (!nameEdited) setName(suggestName(firstModel?.label ?? '', recents, platform));
+  }
 
   function handleModelChange(next: string) {
     setModel(next);
     activateNew();
-    if (!nameEdited) setName(suggestName(next, recents));
+    const nextModel = modelOptions.find((option) => option.value === next);
+    if (!nameEdited) setName(suggestName(nextModel?.label ?? '', recents, platform));
   }
 
   function handleNameChange(next: string) {
@@ -114,27 +151,51 @@ export function RecentDevicesModal({
     activateNew();
   }
 
-  const canBoot = isNew ? name.trim().length > 0 : !!selectedRecent;
+  const trimmedName = name.trim();
+  const nameIsValid =
+    trimmedName.length > 0 &&
+    (platform !== 'android' || ANDROID_AVD_NAME_PATTERN.test(trimmedName));
+  const hasInvalidAndroidName =
+    platform === 'android' &&
+    nameEdited &&
+    trimmedName.length > 0 &&
+    !ANDROID_AVD_NAME_PATTERN.test(trimmedName);
+  const nameHintId = `new-${platform}-device-name-hint`;
+  const canBoot = isNew
+    ? nameIsValid && runtime.length > 0 && model.length > 0
+    : !!selectedRecent;
 
-  function handleBoot() {
-    if (!canBoot) return;
-    if (isNew) {
-      // MOCK: real host-side create+boot isn't wired up yet. Synthesize a Device
-      // so the new one joins the sidebar and gets selected, mirroring the recent
-      // path. Swap for a real "create simulator" call when one exists.
-      const newName = name.trim();
-      onAdd({
-        id: `new:${platform}:${newName}`,
-        name: newName,
-        version: osVersion,
-        platform,
-        physical: false,
-        booted: false,
-      });
-    } else if (selectedRecent) {
-      onAdd(selectedRecent);
+  async function handleBoot(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!canBoot || submitting) return;
+
+    setSubmitting(true);
+    setSubmissionError(null);
+    try {
+      const addTarget: AddDeviceTarget =
+        isNew && selectedRuntime && selectedModel
+          ? {
+              kind: 'new',
+              device: {
+                platform,
+                name: trimmedName,
+                runtime: selectedRuntime.value,
+                deviceType: selectedModel.value,
+                version: selectedRuntime.label,
+              },
+            }
+          : { kind: 'recent', device: selectedRecent! };
+      const outcome = await onAdd(addTarget);
+      if (outcome.ok) {
+        onClose();
+      } else {
+        setSubmissionError(outcome.error);
+      }
+    } catch (error) {
+      setSubmissionError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSubmitting(false);
     }
-    onClose();
   }
 
   return (
@@ -145,95 +206,163 @@ export function RecentDevicesModal({
       }}>
       <DialogContent>
         <DialogTitle title={title} />
-        <DialogContentContainer>
-          <SectionLabel>Recents</SectionLabel>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            {recents.length === 0 ? (
-              <p style={{ margin: 0, padding: '2px 2px 6px 2px', fontSize: 13, color: text.tertiary }}>
-                No recent {noun}s.
-              </p>
-            ) : (
-              recents.map((device) => (
-                <RecentRow
-                  key={device.id}
-                  device={device}
-                  selected={target.kind === 'recent' && target.id === device.id}
-                  onSelect={() => setTarget({ kind: 'recent', id: device.id })}
-                />
-              ))
-            )}
-          </div>
-
-          {/*<div style={{ marginTop: 10 }}>
-            <SectionLabel active={isNew}>New {noun}</SectionLabel>
-            <div
-              onClick={activateNew}
-              style={{
-                borderRadius: radius.lg,
-                overflow: 'hidden',
-                backgroundColor: bg.subtle,
-                border: `1px solid ${isNew ? border.default : border.secondary}`,
-                transition: 'border-color 150ms ease',
-              }}>
-              <FormRow label="Name" last={false}>
-                <input
-                  type="text"
-                  value={name}
-                  placeholder={model || `New ${noun}`}
-                  onChange={(event) => handleNameChange(event.currentTarget.value)}
-                  onFocus={() => {
-                    setNameFocused(true);
-                    activateNew();
-                  }}
-                  onBlur={() => setNameFocused(false)}
+        <form onSubmit={handleBoot}>
+          <DialogContentContainer>
+            <SectionLabel>Recents</SectionLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {recents.length === 0 ? (
+                <p
                   style={{
-                    width: '100%',
-                    boxSizing: 'border-box',
-                    padding: '6px 10px',
-                    border: `1px solid ${border.default}`,
-                    borderRadius: radius.md,
-                    backgroundColor: bg.default,
-                    color: isNew ? text.default : text.tertiary,
-                    caretColor: text.default,
-                    fontSize: 13.5,
-                    fontFamily: 'inherit',
-                    outline: 'none',
-                    boxShadow: nameFocused ? `0 0 0 3px ${bg.element}` : 'none',
-                  }}
-                />
-              </FormRow>
-              <FormRow label="OS version" last={false}>
-                <SelectField
-                  value={osVersion}
-                  options={options.osVersions}
-                  onChange={(next) => {
-                    setOsVersion(next);
-                    activateNew();
-                  }}
-                  onActivate={activateNew}
-                  trailing={<ChevronDownIcon size={14} color={icon.secondary} />}
-                />
-              </FormRow>
-              <FormRow label="Model" last>
-                <SelectField
-                  value={model}
-                  options={options.models}
-                  onChange={handleModelChange}
-                  onActivate={activateNew}
-                  trailing={<ChevronsUpDownIcon size={14} color={icon.secondary} />}
-                />
-              </FormRow>
+                    margin: 0,
+                    padding: '2px 2px 6px 2px',
+                    fontSize: 13,
+                    color: text.tertiary,
+                  }}>
+                  No recent {noun}s.
+                </p>
+              ) : (
+                recents.map((device) => (
+                  <RecentRow
+                    key={device.id}
+                    device={device}
+                    selected={target.kind === 'recent' && target.id === device.id}
+                    onSelect={() => {
+                      setTarget({ kind: 'recent', id: device.id });
+                      setSubmissionError(null);
+                    }}
+                  />
+                ))
+              )}
             </div>
-          </div>*/}
-        </DialogContentContainer>
-        <DialogFooter>
-          <Button theme="quaternary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button theme="primary" disabled={!canBoot} onClick={handleBoot}>
-            Boot
-          </Button>
-        </DialogFooter>
+
+            <div style={{ marginTop: 10 }}>
+              <SectionLabel active={isNew}>New {noun}</SectionLabel>
+              <div
+                onClick={activateNew}
+                style={{
+                  borderRadius: radius.lg,
+                  overflow: 'hidden',
+                  backgroundColor: bg.subtle,
+                  border: `1px solid ${isNew ? border.default : border.secondary}`,
+                  transition: 'border-color 150ms ease',
+                }}>
+                {options.runtimes.length === 0 ? (
+                  <p style={{ margin: 0, padding: 13, color: text.tertiary, fontSize: 13 }}>
+                    No usable {platform === 'ios' ? 'iOS runtimes' : 'Android system images'} were
+                    found on this host.
+                  </p>
+                ) : (
+                  <>
+                    <FormRow
+                      label={
+                        <>
+                          <span>Name</span>
+                          {platform === 'android' && (
+                            <span
+                              id={nameHintId}
+                              style={{
+                                color: hasInvalidAndroidName ? text.danger : text.tertiary,
+                                fontSize: 11,
+                                lineHeight: 1.3,
+                              }}>
+                              {ANDROID_AVD_NAME_HINT}
+                            </span>
+                          )}
+                        </>
+                      }
+                      htmlFor={`new-${platform}-device-name`}
+                      last={false}>
+                      <div style={{ flex: '0 0 58%' }}>
+                        <input
+                          id={`new-${platform}-device-name`}
+                          type="text"
+                          value={name}
+                          placeholder={selectedModel?.label || `New ${noun}`}
+                          autoComplete="off"
+                          spellCheck={false}
+                          pattern={platform === 'android' ? '[A-Za-z0-9._-]+' : undefined}
+                          title={platform === 'android' ? ANDROID_AVD_NAME_HINT : undefined}
+                          aria-invalid={hasInvalidAndroidName ? true : undefined}
+                          aria-describedby={platform === 'android' ? nameHintId : undefined}
+                          disabled={submitting}
+                          onChange={(event) => handleNameChange(event.currentTarget.value)}
+                          onFocus={() => {
+                            setNameFocused(true);
+                            activateNew();
+                          }}
+                          onBlur={() => setNameFocused(false)}
+                          style={{
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '6px 10px',
+                            border: `1px solid ${
+                              hasInvalidAndroidName ? border.danger : border.default
+                            }`,
+                            borderRadius: radius.md,
+                            backgroundColor: bg.default,
+                            color: isNew ? text.default : text.tertiary,
+                            caretColor: text.default,
+                            fontSize: 16,
+                            fontFamily: 'inherit',
+                            outline: 'none',
+                            boxShadow: nameFocused ? `0 0 0 3px ${bg.element}` : 'none',
+                          }}
+                        />
+                      </div>
+                    </FormRow>
+                    <FormRow label="OS version" htmlFor={`new-${platform}-runtime`} last={false}>
+                      <SelectField
+                        id={`new-${platform}-runtime`}
+                        value={runtime}
+                        options={options.runtimes}
+                        disabled={submitting}
+                        onChange={handleRuntimeChange}
+                        onActivate={activateNew}
+                        trailing={<ChevronDownIcon size={14} color={icon.secondary} />}
+                      />
+                    </FormRow>
+                    <FormRow label="Model" htmlFor={`new-${platform}-model`} last>
+                      <SelectField
+                        id={`new-${platform}-model`}
+                        value={model}
+                        options={modelOptions}
+                        disabled={submitting}
+                        onChange={handleModelChange}
+                        onActivate={activateNew}
+                        trailing={<ChevronsUpDownIcon size={14} color={icon.secondary} />}
+                      />
+                    </FormRow>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {submissionError && (
+              <p
+                role="alert"
+                style={{
+                  margin: '12px 0 0',
+                  padding: '9px 11px',
+                  border: `1px solid ${border.danger}`,
+                  borderRadius: radius.lg,
+                  backgroundColor: bg.danger,
+                  color: text.danger,
+                  fontSize: 13,
+                  whiteSpace: 'pre-wrap',
+                }}>
+                {submissionError}
+              </p>
+            )}
+          </DialogContentContainer>
+          <DialogFooter>
+            <Button type="button" theme="quaternary" disabled={submitting} onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" theme="primary" disabled={!canBoot || submitting}>
+              {submitting ? (isNew ? 'Creating…' : 'Booting…') : isNew ? 'Create & Boot' : 'Boot'}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </DialogRoot>
   );
@@ -355,7 +484,17 @@ function RecentRow({
 }
 
 /** A label/control row inside the new-device form card. */
-function FormRow({ label, last, children }: { label: string; last: boolean; children: ReactNode }) {
+function FormRow({
+  label,
+  htmlFor,
+  last,
+  children,
+}: {
+  label: ReactNode;
+  htmlFor: string;
+  last: boolean;
+  children: ReactNode;
+}) {
   return (
     <div
       style={{
@@ -366,7 +505,18 @@ function FormRow({ label, last, children }: { label: string; last: boolean; chil
         padding: '11px 13px',
         borderBottom: last ? undefined : `1px solid ${border.secondary}`,
       }}>
-      <span style={{ fontSize: 13, color: text.secondary }}>{label}</span>
+      <label
+        htmlFor={htmlFor}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 2,
+          fontSize: 13,
+          color: text.secondary,
+          cursor: 'pointer',
+        }}>
+        {label}
+      </label>
       {children}
     </div>
   );
@@ -374,14 +524,18 @@ function FormRow({ label, last, children }: { label: string; last: boolean; chil
 
 /** Native select styled as a bordered field with a custom trailing chevron. */
 function SelectField({
+  id,
   value,
   options,
+  disabled,
   onChange,
   onActivate,
   trailing,
 }: {
+  id: string;
   value: string;
-  options: string[];
+  options: { value: string; label: string }[];
+  disabled: boolean;
   onChange: (value: string) => void;
   onActivate: () => void;
   trailing: ReactNode;
@@ -396,7 +550,7 @@ function SelectField({
     borderRadius: radius.md,
     backgroundColor: bg.default,
     color: text.default,
-    fontSize: 13.5,
+    fontSize: 16,
     fontFamily: 'inherit',
     appearance: 'none',
     WebkitAppearance: 'none',
@@ -409,7 +563,9 @@ function SelectField({
   return (
     <div style={{ position: 'relative', flex: '0 0 58%' }}>
       <select
+        id={id}
         value={value}
+        disabled={disabled}
         onChange={(event) => onChange(event.currentTarget.value)}
         onMouseDown={onActivate}
         onFocus={() => {
@@ -422,8 +578,8 @@ function SelectField({
           <option value="">—</option>
         ) : (
           options.map((option) => (
-            <option key={option} value={option}>
-              {option}
+            <option key={option.value} value={option.value}>
+              {option.label}
             </option>
           ))
         )}
@@ -445,13 +601,21 @@ function SelectField({
 }
 
 /** Default name for a new device: the model, with the next free integer suffix. */
-function suggestName(model: string, existing: Device[]): string {
-  if (!model) return '';
+function suggestName(model: string, existing: Device[], platform: Platform): string {
+  const base =
+    platform === 'android'
+      ? model
+          .trim()
+          .replace(/[^A-Za-z0-9._-]+/g, '_')
+          .replace(/^_+|_+$/g, '')
+      : model;
+  if (!base) return '';
   const taken = new Set(existing.map((device) => device.name));
-  if (!taken.has(model)) return model;
+  if (!taken.has(base)) return base;
   let n = 2;
-  while (taken.has(`${model} ${n}`)) n++;
-  return `${model} ${n}`;
+  const separator = platform === 'android' ? '_' : ' ';
+  while (taken.has(`${base}${separator}${n}`)) n++;
+  return `${base}${separator}${n}`;
 }
 
 /** "now" / "18m ago" / "1h ago" / "2 days ago" / "1 week ago" from an epoch ms. */

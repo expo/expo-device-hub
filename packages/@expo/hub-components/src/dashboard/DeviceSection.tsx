@@ -1,8 +1,13 @@
 import { useState } from 'react';
 
 import { DeviceListItem, PlusIcon, bg, border, icon, radius, text, textSize } from '../primitives';
-import { type Device, type NewDeviceOptions } from './data';
 import { RecentDevicesModal } from './RecentDevicesModal';
+import {
+  type AddDeviceOutcome,
+  type AddDeviceTarget,
+  type Device,
+  type NewDeviceOptions,
+} from './data';
 
 /**
  * A titled, selectable list of devices (Simulators or Emulators) with an add
@@ -21,12 +26,12 @@ export type DeviceSectionProps = {
   devices: Device[];
   /** Devices that could be added (the modal hides any already shown here). */
   recent: Device[];
-  /** Mocked OS versions + models for the picker's "New <kind>" form. */
+  /** Installed runtimes/system images and compatible models for new devices. */
   options: NewDeviceOptions;
   selectedId: string;
   onSelect: (id: string) => void;
-  /** Called with the device chosen (or configured) in the add-device modal. */
-  onAdd?: (device: Device) => void;
+  /** Starts the existing or newly configured device selected in the modal. */
+  onAdd?: (target: AddDeviceTarget) => Promise<AddDeviceOutcome>;
 };
 
 export function DeviceSection({
@@ -53,8 +58,8 @@ export function DeviceSection({
     <section style={{ display: 'grid', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{title}</span>
-        {
-          !!onAdd && <button
+        {!!onAdd && (
+          <button
             type="button"
             aria-label={addLabel}
             onClick={() => setModalOpen(true)}
@@ -81,7 +86,7 @@ export function DeviceSection({
             }}>
             <PlusIcon size={18} color={icon.secondary} />
           </button>
-        }
+        )}
       </div>
 
       <div style={{ display: 'grid', gap: 6 }}>
@@ -117,7 +122,7 @@ export function DeviceSection({
         kind={kind}
         devices={candidates}
         options={options}
-        onAdd={onAdd || (() => {})}
+        onAdd={onAdd || (async () => ({ ok: false, error: 'Device actions are unavailable.' }))}
       />
     </section>
   );

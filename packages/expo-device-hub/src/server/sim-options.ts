@@ -1,45 +1,82 @@
-/**
- * Options for the "New simulator" / "New emulator" form in the add-device
- * picker — the OS versions and device models offered in the two selects.
- *
- * MOCKED for now. Eventually these come from the host toolchain:
- *   - iOS: `xcrun simctl list runtimes` (OS versions) + `… devicetypes` (models)
- *   - Android: `avdmanager list` (system images + device definitions)
- * Until that wiring exists, the picker is fed this hard-coded set so the form is
- * fully interactive. The shape is per-platform so the Simulators section gets
- * iOS options and the Emulators section gets Android ones.
- */
+/** Host toolchain options used by the new simulator/emulator picker. */
 
-export type NewDevicePlatform = 'ios' | 'android';
+import {
+  type AndroidDeviceProfile,
+  type AndroidSystemImage,
+  listDeviceProfiles,
+  listSystemImages,
+} from '@expo/hub-android-utils';
+import { type AppleSimulatorRuntime, listRuntimes } from '@expo/hub-apple-utils';
+import { type NewDeviceOptions, type Platform } from '@expo/hub-components';
 
-export interface NewDeviceOptions {
-  /** OS versions for the select, newest first. e.g. "iOS 27.0". */
-  osVersions: string[];
-  /** Device models for the select. e.g. "iPhone 17 Pro". */
-  models: string[];
+export type NewDeviceOptionsByPlatform = Record<Platform, NewDeviceOptions>;
+
+/** Discover installed iOS runtimes and Android images/profiles in parallel. */
+export async function listNewDeviceOptions(): Promise<NewDeviceOptionsByPlatform> {
+  const [appleRuntimes, androidImages, androidProfiles] = await Promise.all([
+    listRuntimes(),
+    listSystemImages(),
+    listDeviceProfiles(),
+  ]);
+
+  return {
+    ios: appleRuntimesToOptions(appleRuntimes),
+    android: androidImagesToOptions(androidImages, androidProfiles),
+  };
 }
 
-export interface NewDeviceOptionsByPlatform {
-  ios: NewDeviceOptions;
-  android: NewDeviceOptions;
+/** Keep available iOS runtimes and the simulator models each runtime supports. */
+export function appleRuntimesToOptions(runtimes: AppleSimulatorRuntime[]): NewDeviceOptions {
+  return {
+    runtimes: runtimes
+      .filter((runtime) => runtime.isAvailable && runtime.platform === 'iOS')
+      .map((runtime) => ({
+        value: runtime.identifier,
+        label: runtime.name || `iOS ${runtime.version}`,
+        models: runtime.supportedDeviceTypes.map((deviceType) => ({
+          value: deviceType.identifier,
+          label: deviceType.name,
+        })),
+      }))
+      .filter((runtime) => runtime.models.length > 0)
+      .sort((a, b) => compareVersionsDescending(a.label, b.label)),
+  };
 }
 
-/** Hard-coded stand-in until real runtime/device-type discovery is wired up. */
-export const MOCK_NEW_DEVICE_OPTIONS: NewDeviceOptionsByPlatform = {
-  ios: {
-    osVersions: ['iOS 27.0', 'iOS 26.5', 'iOS 18.6', 'iOS 18.0'],
-    models: [
-      'iPhone 17 Pro',
-      'iPhone 17',
-      'iPhone 16 Pro',
-      'iPhone 16',
-      'iPhone SE (3rd generation)',
-      'iPad Pro 13-inch (M4)',
-      'iPad mini (A17 Pro)',
-    ],
-  },
-  android: {
-    osVersions: ['Android 16.0', 'Android 15.0', 'Android 14.0', 'Android 13.0'],
-    models: ['Pixel 9 Pro', 'Pixel 9', 'Pixel 8', 'Pixel 7', 'Pixel Tablet'],
-  },
-};
+/** Pair every installed Android system image with the SDK's device profiles. */
+export function androidImagesToOptions(
+  images: AndroidSystemImage[],
+  profiles: AndroidDeviceProfile[]
+): NewDeviceOptions {
+  const models = profiles
+    .map((profile) => ({ value: profile.id, label: profile.name || profile.id }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+
+  return {
+    runtimes: images
+      .map((image) => ({
+        value: image.package,
+        label: androidImageLabel(image),
+        models,
+      }))
+      .filter((runtime) => runtime.models.length > 0)
+      .sort((a, b) => compareVersionsDescending(a.label, b.label)),
+  };
+}
+
+function androidImageLabel(image: AndroidSystemImage): string {
+  const api = image.apiLevel?.replace(/^android-/i, 'Android ') ?? image.description;
+  const tag =
+    image.tag === 'google_apis'
+      ? 'Google APIs'
+      : image.tag === 'google_apis_playstore'
+        ? 'Google Play'
+        : image.tag === 'default'
+          ? 'AOSP'
+          : image.tag?.replaceAll('_', ' ');
+  return [api, tag, image.abi].filter(Boolean).join(' · ');
+}
+
+function compareVersionsDescending(a: string, b: string): number {
+  return b.localeCompare(a, undefined, { numeric: true, sensitivity: 'base' });
+}

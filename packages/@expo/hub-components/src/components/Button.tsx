@@ -83,6 +83,8 @@ export type ButtonProps = {
   /** Stretch to fill the parent width. */
   block?: boolean;
   disabled?: boolean;
+  /** Native button behavior. Ignored when rendering a link. */
+  type?: 'button' | 'submit' | 'reset';
   /** Renders an `<a>` instead of a `<button>`. */
   href?: string;
   target?: string;
@@ -99,6 +101,7 @@ export function Button({
   rightSlot,
   block = false,
   disabled = false,
+  type = 'button',
   href,
   target,
   onClick,
@@ -166,7 +169,7 @@ export function Button({
 
   return (
     <button
-      type="button"
+      type={type}
       className={className}
       style={baseStyle}
       disabled={disabled}

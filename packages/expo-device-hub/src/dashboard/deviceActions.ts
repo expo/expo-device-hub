@@ -1,4 +1,4 @@
-import { type Device } from '@expo/hub-components';
+import { type Device, type NewDeviceRequest } from '@expo/hub-components';
 
 import { basePath } from './basePath';
 
@@ -14,6 +14,7 @@ import { basePath } from './basePath';
 const shutdownEndpoint = () => `${basePath()}/api/devices/shutdown`;
 const removeEndpoint = () => `${basePath()}/api/devices/remove`;
 const bootEndpoint = () => `${basePath()}/api/devices/boot`;
+const createEndpoint = () => `${basePath()}/api/devices/create`;
 
 async function postAction(endpoint: string, device: Device): Promise<boolean> {
   try {
@@ -44,35 +45,62 @@ export function removeDevice(device: Device): Promise<boolean> {
   return postAction(removeEndpoint(), device);
 }
 
-/** Outcome of a {@link bootDevice} call: exactly one of the two is set. */
-export interface BootDeviceOutcome {
-  /** adb serial (`emulator-<port>`) of the booted emulator, on success. */
-  serial: string | null;
+/** Outcome of a create/boot call: exactly one of `id` and `error` is set. */
+export interface StartDeviceOutcome {
+  /** iOS simulator UDID or Android adb serial, on success. */
+  id: string | null;
   /** Human-readable failure reason (may span multiple lines), on failure. */
   error: string | null;
 }
 
 /**
- * Boot a shut-down Android emulator on the host, resolving to its adb serial
- * (`emulator-<port>`) once online, or the server's failure reason (e.g. the
- * emulator's own error output when the process died during boot). iOS sims boot
- * via serve-sim on connect, so this is only used for Android. Never throws.
+ * Boot a shut-down simulator/emulator on the host, resolving to its iOS UDID or
+ * Android adb serial once accepted/online. Never throws.
  */
-export async function bootDevice(device: Device): Promise<BootDeviceOutcome> {
+export async function bootDevice(device: Device): Promise<StartDeviceOutcome> {
+  return postStartDevice(bootEndpoint(), {
+    platform: device.platform,
+    id: device.id,
+    name: device.name,
+  });
+}
+
+/** Create and boot a new simulator/emulator from host toolchain identifiers. */
+export async function createDevice(device: NewDeviceRequest): Promise<StartDeviceOutcome> {
+  return postStartDevice(createEndpoint(), {
+    platform: device.platform,
+    name: device.name,
+    runtime: device.runtime,
+    deviceType: device.deviceType,
+  });
+}
+
+async function postStartDevice(
+  endpoint: string,
+  body: Record<string, string>
+): Promise<StartDeviceOutcome> {
   try {
-    const response = await fetch(bootEndpoint(), {
+    const response = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ platform: device.platform, id: device.id, name: device.name }),
+      body: JSON.stringify(body),
       // A cold emulator boot can take a couple of minutes.
       signal: AbortSignal.timeout(200_000),
     });
-    if (!response.ok) throw new Error(`Unexpected ${response.status}`);
-    const data = (await response.json()) as { ok?: boolean; serial?: string; error?: string };
-    if (data.ok && data.serial) return { serial: data.serial, error: null };
-    return { serial: null, error: data.error ?? 'The emulator did not come online.' };
+    const data = (await response.json()) as {
+      ok?: boolean;
+      id?: string;
+      serial?: string;
+      error?: string;
+    };
+    if (!response.ok) {
+      return { id: null, error: data.error ?? `Unexpected ${response.status}` };
+    }
+    const id = data.id ?? data.serial;
+    if (data.ok && id) return { id, error: null };
+    return { id: null, error: data.error ?? 'The device did not come online.' };
   } catch (error) {
-    console.warn('[expo-device-hub] Device boot failed:', error);
-    return { serial: null, error: error instanceof Error ? error.message : String(error) };
+    console.warn('[expo-device-hub] Device start failed:', error);
+    return { id: null, error: error instanceof Error ? error.message : String(error) };
   }
 }
