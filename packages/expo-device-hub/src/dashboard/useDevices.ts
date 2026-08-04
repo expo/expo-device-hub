@@ -1,17 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { type Device } from '@expo/hub-components';
 
+import { DEVICE_LIST_MESSAGE_TYPE } from '../device-list-protocol';
 import { basePath } from './basePath';
 
 /**
  * The Expo Hub server (`src/server/`) exposes the live device list here,
  * under whatever mount `basePath()` resolves (the Expo CLI plugin prefix,
- * or wherever the standalone CLI mounts it). `?booted=true` narrows the
- * response to running devices; the unfiltered response also includes
- * shut-down ones.
+ * or wherever the standalone CLI mounts it). One WebSocket response includes
+ * both running and shut-down devices.
  */
-const devicesEndpoint = () => `${basePath()}/api/devices`;
+export function devicesWebSocketUrl(locationHref = window.location.href): string {
+  const url = new URL(`${basePath()}/api/devices/ws`, locationHref);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  return url.toString();
+}
 
 export type DeviceList = {
   simulators: Device[];
@@ -20,75 +24,101 @@ export type DeviceList = {
 
 const EMPTY: DeviceList = { simulators: [], emulators: [] };
 
-async function fetchDeviceList(search: string): Promise<DeviceList> {
-  const response = await fetch(`${devicesEndpoint()}${search}`, {
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) throw new Error(`Unexpected ${response.status}`);
-  return (await response.json()) as DeviceList;
-}
-
-const identity = (list: DeviceList): DeviceList => list;
-const onlyUnbooted = (list: DeviceList): DeviceList => ({
-  simulators: list.simulators.filter((device) => !device.booted),
-  emulators: list.emulators.filter((device) => !device.booted),
-});
-
-// Devices boot, shut down, and change orientation outside the dashboard, so we
-// re-poll the endpoint on this cadence to keep both lists live.
-const POLL_INTERVAL_MS = 500;
+const RECONNECT_MIN_MS = 500;
+const RECONNECT_MAX_MS = 10_000;
 
 /**
- * Loads a device list from the plugin server, applying `transform` to the
- * response, and re-polls every `POLL_INTERVAL_MS` so the list tracks devices
- * booting/shutting down out from under us. Returns the empty list until the
- * first fetch resolves.
- *
- * The endpoint only exists when Hub runs as a DevTools plugin behind
- * `@expo/cli`, so opening the dashboard standalone (e.g. `expo start --web` for
- * design work) falls back to the empty state rather than mocked devices. We
- * stop polling after the first failure so standalone mode logs a single warning
- * instead of spamming the console twice a second.
+ * Subscribes to the server's shared device-discovery loop. The server does the
+ * host polling once regardless of how many dashboards are open and sends only
+ * changed snapshots. Returns the empty list until the first snapshot arrives.
  */
-function useDeviceList(search: string, transform: (list: DeviceList) => DeviceList): DeviceList {
+function useDeviceList(): DeviceList {
   const [devices, setDevices] = useState<DeviceList>(EMPTY);
 
   useEffect(() => {
     let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let reconnectDelay = RECONNECT_MIN_MS;
 
-    async function poll() {
+    function connect() {
+      if (cancelled) return;
+      let nextSocket: WebSocket;
       try {
-        const data = await fetchDeviceList(search);
-        if (cancelled) return;
-        setDevices(transform(data));
-        timer = setTimeout(poll, POLL_INTERVAL_MS);
-      } catch (error) {
-        // Keep the empty list and stop — the endpoint is absent outside the plugin.
-        console.warn('[expo-device-hub] No device endpoint, showing empty state:', error);
+        nextSocket = new WebSocket(devicesWebSocketUrl());
+      } catch {
+        scheduleReconnect();
+        return;
       }
+      socket = nextSocket;
+
+      nextSocket.onopen = () => {
+        reconnectDelay = RECONNECT_MIN_MS;
+      };
+      nextSocket.onmessage = (event) => {
+        const next = parseDeviceListMessage(event.data);
+        if (next) setDevices(next);
+      };
+      nextSocket.onerror = () => nextSocket.close();
+      nextSocket.onclose = () => {
+        // Ignore a late close from a socket already superseded by a reconnect.
+        if (socket !== nextSocket) return;
+        socket = null;
+        scheduleReconnect();
+      };
     }
 
-    poll();
+    function scheduleReconnect() {
+      if (cancelled || reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, RECONNECT_MAX_MS);
+    }
+
+    connect();
 
     return () => {
       cancelled = true;
-      clearTimeout(timer);
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      socket?.close();
     };
-  }, [search, transform]);
+  }, []);
 
   return devices;
 }
 
-/** Booted simulators and emulators/devices — what the sidebar lists. */
-export function useDevices(): DeviceList {
-  return useDeviceList('?booted=true', identity);
+export function parseDeviceListMessage(data: unknown): DeviceList | null {
+  if (typeof data !== 'string') return null;
+  try {
+    const message = JSON.parse(data) as {
+      type?: unknown;
+      devices?: { simulators?: unknown; emulators?: unknown };
+    };
+    if (
+      message.type !== DEVICE_LIST_MESSAGE_TYPE ||
+      !Array.isArray(message.devices?.simulators) ||
+      !Array.isArray(message.devices?.emulators)
+    ) {
+      return null;
+    }
+    return message.devices as DeviceList;
+  } catch {
+    return null;
+  }
 }
 
-/**
- * Shut-down simulators and emulators — the "recent" devices the add-device modal
- * offers. (Booted devices are already in the sidebar, so they're filtered out.)
- */
-export function useRecentDevices(): DeviceList {
-  return useDeviceList('', onlyUnbooted);
+export function splitDeviceList(all: DeviceList): { booted: DeviceList; recent: DeviceList } {
+  const filter = (booted: boolean) => ({
+    simulators: all.simulators.filter((device) => device.booted === booted),
+    emulators: all.emulators.filter((device) => device.booted === booted),
+  });
+  return { booted: filter(true), recent: filter(false) };
+}
+
+/** One connection supplying both the running sidebar and recent-device picker. */
+export function useDeviceLists(): { booted: DeviceList; recent: DeviceList } {
+  const all = useDeviceList();
+  return useMemo(() => splitDeviceList(all), [all]);
 }

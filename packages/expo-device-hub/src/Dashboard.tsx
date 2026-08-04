@@ -22,7 +22,7 @@ import {
 import { bootDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { basePath } from './dashboard/basePath';
 import { useColorScheme } from './dashboard/useColorScheme';
-import { useDevices, useRecentDevices } from './dashboard/useDevices';
+import { useDeviceLists } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 
@@ -75,8 +75,7 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
   const scheme = useColorScheme();
-  const booted = useDevices();
-  const recent = useRecentDevices();
+  const { booted, recent } = useDeviceLists();
   // Mocked OS versions + models for the add-device picker's "New device" form.
   const newDeviceOptions = useNewDeviceOptions();
   const [selectedId, setSelectedId] = useState('');

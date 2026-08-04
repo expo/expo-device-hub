@@ -116,15 +116,24 @@ const MOCK_LAST_USED_OFFSETS_MS = [
   5 * 24 * 60 * 60_000, // 5 days ago
 ];
 
+const mockLastUsedState = new Map<string, { booted: boolean; lastUsedAt: number }>();
+
 /** Stamp each device with a mock `lastUsedAt` (booted → now, others staggered). */
 function withMockLastUsed(devices: HubDevice[]): HubDevice[] {
   const now = Date.now();
   let shutDownIndex = 0;
   return devices.map((device) => {
-    if (device.booted) return { ...device, lastUsedAt: now };
-    const offset =
-      MOCK_LAST_USED_OFFSETS_MS[shutDownIndex++ % MOCK_LAST_USED_OFFSETS_MS.length];
-    return { ...device, lastUsedAt: now - offset };
+    const offset = device.booted
+      ? 0
+      : MOCK_LAST_USED_OFFSETS_MS[shutDownIndex++ % MOCK_LAST_USED_OFFSETS_MS.length];
+    const key = `${device.platform}:${device.id}`;
+    const previous = mockLastUsedState.get(key);
+    const state =
+      previous && previous.booted === device.booted
+        ? previous
+        : { booted: device.booted, lastUsedAt: now - offset };
+    mockLastUsedState.set(key, state);
+    return { ...device, lastUsedAt: state.lastUsedAt };
   });
 }
 
