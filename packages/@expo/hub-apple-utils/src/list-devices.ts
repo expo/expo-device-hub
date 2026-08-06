@@ -1,18 +1,19 @@
-import { runDevicectlListDevices } from "./devicectl";
 import { type AppleUtilsResult, reportError, result } from "./errors";
 import { parseDevicesJson } from "./parse-devices";
+import { runSimctl } from "./simctl";
 import type { AppleDevice } from "./types";
 
 /**
- * List the Apple devices known to `devicectl`.
+ * List the simulator devices known to `simctl`.
  *
- * The result's `value` is the `result.devices` array from devicectl, or an empty
- * array when unavailable. The first invocation-specific failure is returned in
- * `error`.
+ * The result's `value` contains the flattened device arrays from
+ * `xcrun simctl list devices --json`, or an empty array when unavailable. The
+ * first invocation-specific failure is returned in `error`. Never throws.
  */
 export async function listDevices(): Promise<AppleUtilsResult<AppleDevice[]>> {
   try {
-    const listed = await runDevicectlListDevices();
+    // `devicectl` 518.33 on EAS VMs always returned an empty devices array.
+    const listed = await runSimctl(["list", "devices", "--json"]);
     if (listed.error) return result([], listed.error);
     if (!listed.value) return result([]);
 

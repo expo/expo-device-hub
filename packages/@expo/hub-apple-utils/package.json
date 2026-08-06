@@ -2,7 +2,7 @@
   "name": "@expo/hub-apple-utils",
   "version": "0.1.0",
   "private": true,
-  "description": "List Apple devices via devicectl, and list runtimes (with supported device types) / create / boot iOS simulators via simctl.",
+  "description": "List, create, and boot Apple simulator devices via simctl.",
   "license": "MIT",
   "files": [
     "dist",

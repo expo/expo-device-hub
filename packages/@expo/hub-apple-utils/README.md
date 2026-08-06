@@ -1,6 +1,6 @@
 # @expo/hub-apple-utils
 
-List connected Apple devices via `devicectl`.
+List Apple simulator devices via `simctl`.
 
 ```ts
 import { listDevices } from "@expo/hub-apple-utils";
@@ -8,11 +8,12 @@ import { listDevices } from "@expo/hub-apple-utils";
 const { value: devices, error } = await listDevices();
 ```
 
-`listDevices()` runs `devicectl list devices` (writing to a throwaway temp file
-that is always cleaned up) and returns its `result.devices` array. It never
-throws — on any failure its `value` is an empty array and `error` contains the
-first failure from that invocation. Set `DEBUG=expo-device-hub:apple-utils` to
-also print the full diagnostics in the terminal.
+`listDevices()` runs `xcrun simctl list devices --json`, flattens the arrays
+grouped by runtime, and adds each runtime's identifier, platform, and OS version
+to its devices. It never throws — on any failure its `value` is an empty array
+and `error` contains the first failure from that invocation. Set
+`DEBUG=expo-device-hub:apple-utils` to also print the full diagnostics in the
+terminal.
 
 ## Creating and booting simulators
 
@@ -68,4 +69,4 @@ All three resolve `xcrun` from `PATH` and return `{ value, error }`:
 `listRuntimes` uses `[]`, `createDevice` uses `null`, and `bootDevice` uses
 `false` as the failure value.
 
-> Requires Xcode's `devicectl` and `simctl` on `PATH`. macOS only.
+> Requires Xcode's `simctl` on `PATH`. macOS only.

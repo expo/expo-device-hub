@@ -1,41 +1,17 @@
-/** A single device entry as reported by `devicectl list devices`. */
+/** A simulator device from `xcrun simctl list devices --json`. */
 export interface AppleDevice {
-  /** Identifier devicectl assigns to the device for this discovery session. */
-  identifier?: string;
-  capabilities?: AppleDeviceCapability[];
-  connectionProperties?: AppleConnectionProperties;
-  deviceProperties?: AppleDeviceProperties;
-  hardwareProperties?: AppleHardwareProperties;
-  /** Any other fields emitted by devicectl are preserved as-is. */
-  [key: string]: unknown;
-}
-
-export interface AppleDeviceCapability {
-  featureIdentifier?: string;
-  name?: string;
-}
-
-export interface AppleConnectionProperties {
-  pairingState?: string;
-  transportType?: string;
-  tunnelState?: string;
-  [key: string]: unknown;
-}
-
-export interface AppleDeviceProperties {
-  name?: string;
-  osVersionNumber?: string;
-  bootState?: string;
-  [key: string]: unknown;
-}
-
-export interface AppleHardwareProperties {
-  udid?: string;
-  platform?: string;
-  deviceType?: string;
-  marketingName?: string;
-  /** `"simulated"` for Simulator devices, `"physical"` for real hardware. */
-  reality?: string;
+  udid: string;
+  name: string;
+  state: string;
+  isAvailable: boolean;
+  deviceTypeIdentifier: string | null;
+  /** The key of the runtime group that contained this device. */
+  runtimeIdentifier: string;
+  /** Platform derived from the runtime identifier, such as `"iOS"`. */
+  platform: string | null;
+  /** Dot-separated OS version derived from the runtime identifier. */
+  osVersion: string | null;
+  /** Any other fields emitted by simctl are preserved as-is. */
   [key: string]: unknown;
 }
 

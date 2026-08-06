@@ -5,11 +5,7 @@ export { listRuntimes } from "./list-runtimes";
 export { removeDevice } from "./remove-device";
 export { shutdownDevice } from "./shutdown-device";
 export type {
-  AppleConnectionProperties,
   AppleDevice,
-  AppleDeviceCapability,
-  AppleDeviceProperties,
-  AppleHardwareProperties,
   AppleSimulatorDeviceType,
   AppleSimulatorRuntime,
   BootDeviceOptions,

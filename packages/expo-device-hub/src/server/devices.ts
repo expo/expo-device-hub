@@ -2,12 +2,11 @@
  * Device discovery for the Expo Hub DevTools server.
  *
  * iOS simulators are listed via `@expo/hub-apple-utils` (which shells out to
- * `devicectl`), filtered to those that are *simulated* — both booted and
- * shut-down. Android devices are listed via `@expo/hub-android-utils` (which
- * shells out to `avdmanager` / `adb`): every known AVD plus any connected
- * physical device. Each device carries a `booted` flag, so the caller can show
- * the running devices in the sidebar and offer the rest as "recent" devices to
- * add (see `/api/devices?booted=true` in `index.ts`).
+ * `simctl`) — both booted and shut-down. Android devices are listed via
+ * `@expo/hub-android-utils` (which shells out to `avdmanager` / `adb`): every
+ * known AVD plus any connected physical device. Each device carries a `booted`
+ * flag, so the caller can show the running devices in the sidebar and offer the
+ * rest as "recent" devices to add (see `/api/devices?booted=true` in `index.ts`).
  *
  * The returned shape mirrors `@expo/hub-components`'s `Device` type, so the DOM
  * sidebar can consume `/api/devices` directly.
@@ -36,10 +35,10 @@ export interface HubDevice {
   physical: boolean;
   /**
    * Epoch ms the device was last used — drives the "Recents" relative time
-   * ("18m ago", "2 days ago") in the add-device picker. MOCKED for now: neither
-   * `devicectl` nor `adb` reports a last-used timestamp, so we synthesize a
-   * plausible spread (see `withMockLastUsed`). Replace with a real signal (e.g.
-   * a persisted usage log) when one exists.
+   * ("18m ago", "2 days ago") in the add-device picker. MOCKED for now because
+   * not every simulator or Android record reports one, so we synthesize a
+   * plausible spread (see `withMockLastUsed`). Replace with a consistent real
+   * signal (e.g. a persisted usage log) when one exists.
    */
   lastUsedAt?: number;
 }
@@ -56,27 +55,23 @@ interface PlatformDeviceList {
   error: SerializableError | null;
 }
 
-/** All iOS simulators (booted and shut-down), via `@expo/hub-apple-utils` → `devicectl`. */
+/** All available iOS simulators (booted and shut-down), via `@expo/hub-apple-utils` → `simctl`. */
 export async function listIosSimulators(): Promise<PlatformDeviceList> {
   const listed = await listAppleDevices();
 
   return {
     devices: listed.value
-      .filter((device) => device.hardwareProperties?.reality === 'simulated')
+      .filter((device) => device.platform === 'iOS' && device.isAvailable)
       .map((device) => {
-        const id = device.hardwareProperties?.udid ?? device.identifier ?? '';
-        const name =
-          device.deviceProperties?.name ?? device.hardwareProperties?.marketingName ?? 'Simulator';
-        const platform = device.hardwareProperties?.platform ?? 'iOS';
-        const osVersion = device.deviceProperties?.osVersionNumber;
+        const platform = device.platform ?? 'iOS';
 
         return {
-          id,
-          name,
-          version: osVersion ? `${platform} ${osVersion}` : platform,
+          id: device.udid,
+          name: device.name || 'Simulator',
+          version: device.osVersion ? `${platform} ${device.osVersion}` : platform,
           platform: 'ios' as const,
-          booted: device.deviceProperties?.bootState === 'booted',
-          physical: device.hardwareProperties?.reality === 'physical',
+          booted: device.state.toLowerCase() === 'booted',
+          physical: false,
         };
       }),
     error: toSerializableError(listed.error),

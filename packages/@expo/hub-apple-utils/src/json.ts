@@ -1,4 +1,4 @@
-/** Small JSON helpers shared by the `devicectl` / `simctl` output parsers. */
+/** Small JSON helpers shared by the `simctl` output parsers. */
 
 import { type AppleUtilsResult, reportError, result } from "./errors";
 
