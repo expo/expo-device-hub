@@ -1,8 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import plist from "@expo/plist";
+import plistImport from "@expo/plist";
 import { type AppleUtilsResult, reportError, result } from "./errors";
 import { isRecord } from "./json";
+
+// Workaround the Node CJS interop/Bun interop respecting __esModule.
+type ExpoPlist = typeof plistImport;
+const plistModule = plistImport as ExpoPlist | { default: ExpoPlist };
+const plist = "default" in plistModule ? plistModule.default : plistModule;
 
 export interface DevicePlistTimestamps {
   lastUsedAt: number | null;
