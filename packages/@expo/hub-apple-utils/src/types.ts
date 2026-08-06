@@ -5,6 +5,12 @@ export interface AppleDevice {
   state: string;
   isAvailable: boolean;
   deviceTypeIdentifier: string | null;
+  /** CoreSimulator data directory reported by simctl. */
+  dataPath: string | null;
+  /** Epoch milliseconds parsed from device.plist's `lastUsedAt`, when present. */
+  lastUsedAt: number | null;
+  /** Epoch milliseconds parsed from device.plist's `lastBootedAt`, when present. */
+  lastBootedAt: number | null;
   /** The key of the runtime group that contained this device. */
   runtimeIdentifier: string;
   /** Platform derived from the runtime identifier, such as `"iOS"`. */

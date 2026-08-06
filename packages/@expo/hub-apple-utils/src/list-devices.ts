@@ -1,4 +1,5 @@
 import { type AppleUtilsResult, reportError, result } from "./errors";
+import { readDevicePlist } from "./device-plist";
 import { parseDevicesJson } from "./parse-devices";
 import { runSimctl } from "./simctl";
 import type { AppleDevice } from "./types";
@@ -17,7 +18,23 @@ export async function listDevices(): Promise<AppleUtilsResult<AppleDevice[]>> {
     if (listed.error) return result([], listed.error);
     if (!listed.value) return result([]);
 
-    return parseDevicesJson(listed.value);
+    const parsed = parseDevicesJson(listed.value);
+    if (parsed.error) return parsed;
+
+    const enriched = await Promise.all(
+      parsed.value.map(async (device) => {
+        const plist = await readDevicePlist(device.dataPath);
+        return {
+          value: { ...device, ...plist.value },
+          error: plist.error,
+        };
+      }),
+    );
+
+    return result(
+      enriched.map(({ value }) => value),
+      enriched.find(({ error }) => error !== null)?.error ?? null,
+    );
   } catch (error) {
     return result([], reportError("[apple-utils] Failed to list devices:", error));
   }

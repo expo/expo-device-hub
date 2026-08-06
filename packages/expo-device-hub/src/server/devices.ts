@@ -2,7 +2,8 @@
  * Device discovery for the Expo Hub DevTools server.
  *
  * iOS simulators are listed via `@expo/hub-apple-utils` (which shells out to
- * `simctl`) — both booted and shut-down. Android devices are listed via
+ * `simctl`) when CoreSimulator has usage history for them — both booted and
+ * shut-down. Android devices are listed via
  * `@expo/hub-android-utils` (which shells out to `avdmanager` / `adb`): every
  * known AVD plus any connected physical device. Each device carries a `booted`
  * flag, so the caller can show the running devices in the sidebar and offer the
@@ -35,10 +36,9 @@ export interface HubDevice {
   physical: boolean;
   /**
    * Epoch ms the device was last used — drives the "Recents" relative time
-   * ("18m ago", "2 days ago") in the add-device picker. MOCKED for now because
-   * not every simulator or Android record reports one, so we synthesize a
-   * plausible spread (see `withMockLastUsed`). Replace with a consistent real
-   * signal (e.g. a persisted usage log) when one exists.
+   * ("18m ago", "2 days ago") in the add-device picker. For iOS this is the
+   * newest `lastUsedAt` / `lastBootedAt` value from CoreSimulator's
+   * device.plist. It is absent when the platform does not provide usage data.
    */
   lastUsedAt?: number;
 }
@@ -55,7 +55,7 @@ interface PlatformDeviceList {
   error: SerializableError | null;
 }
 
-/** All available iOS simulators (booted and shut-down), via `@expo/hub-apple-utils` → `simctl`. */
+/** Available iOS simulators with plist usage history, via `@expo/hub-apple-utils` → `simctl`. */
 export async function listIosSimulators(): Promise<PlatformDeviceList> {
   const listed = await listAppleDevices();
 
@@ -72,8 +72,10 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
           platform: 'ios' as const,
           booted: device.state.toLowerCase() === 'booted',
           physical: false,
+          lastUsedAt: latestTimestamp(device.lastUsedAt, device.lastBootedAt),
         };
-      }),
+      })
+      .filter((device) => device.lastUsedAt !== undefined),
     error: toSerializableError(listed.error),
   };
 }
@@ -110,41 +112,9 @@ function androidVersion(device: AndroidDevice): string {
   return match ? match[0] : 'Android';
 }
 
-/**
- * Mock "last used" offsets (ms before now) handed out, in order, to the
- * shut-down devices in a list — so the picker shows a realistic spread of
- * "18m ago / 1h ago / 2 days ago / 1 week ago" instead of every row reading the
- * same. Booted devices are stamped with "now" instead. Remove once a real
- * last-used signal exists.
- */
-const MOCK_LAST_USED_OFFSETS_MS = [
-  18 * 60_000, // 18m ago
-  60 * 60_000, // 1h ago
-  2 * 24 * 60 * 60_000, // 2 days ago
-  7 * 24 * 60 * 60_000, // 1 week ago
-  3 * 60 * 60_000, // 3h ago
-  5 * 24 * 60 * 60_000, // 5 days ago
-];
-
-const mockLastUsedState = new Map<string, { booted: boolean; lastUsedAt: number }>();
-
-/** Stamp each device with a mock `lastUsedAt` (booted → now, others staggered). */
-function withMockLastUsed(devices: HubDevice[]): HubDevice[] {
-  const now = Date.now();
-  let shutDownIndex = 0;
-  return devices.map((device) => {
-    const offset = device.booted
-      ? 0
-      : MOCK_LAST_USED_OFFSETS_MS[shutDownIndex++ % MOCK_LAST_USED_OFFSETS_MS.length];
-    const key = `${device.platform}:${device.id}`;
-    const previous = mockLastUsedState.get(key);
-    const state =
-      previous && previous.booted === device.booted
-        ? previous
-        : { booted: device.booted, lastUsedAt: now - offset };
-    mockLastUsedState.set(key, state);
-    return { ...device, lastUsedAt: state.lastUsedAt };
-  });
+function latestTimestamp(...timestamps: Array<number | null>): number | undefined {
+  const available = timestamps.filter((timestamp): timestamp is number => timestamp !== null);
+  return available.length > 0 ? Math.max(...available) : undefined;
 }
 
 /** Every known simulator and emulator/device, each tagged with its `booted` state. */
@@ -152,8 +122,8 @@ export async function listDevices(): Promise<HubDeviceList> {
   const [simulators, emulators] = await Promise.all([listIosSimulators(), listAndroidEmulators()]);
 
   return {
-    simulators: withMockLastUsed(simulators.devices),
-    emulators: withMockLastUsed(emulators.devices),
+    simulators: simulators.devices,
+    emulators: emulators.devices,
     errors: [simulators.error, emulators.error].filter(
       (error): error is SerializableError => error !== null
     ),

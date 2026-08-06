@@ -10,8 +10,11 @@ const { value: devices, error } = await listDevices();
 
 `listDevices()` runs `xcrun simctl list devices --json`, flattens the arrays
 grouped by runtime, and adds each runtime's identifier, platform, and OS version
-to its devices. It never throws — on any failure its `value` is an empty array
-and `error` contains the first failure from that invocation. Set
+to its devices. It also parses the `device.plist` adjacent to each simulator's
+data directory and exposes `lastUsedAt` and `lastBootedAt` as epoch
+milliseconds when CoreSimulator recorded them. It never throws — on any failure
+its `value` contains every device it could read and `error` contains the first
+failure from that invocation. Set
 `DEBUG=expo-device-hub:apple-utils` to also print the full diagnostics in the
 terminal.
 
