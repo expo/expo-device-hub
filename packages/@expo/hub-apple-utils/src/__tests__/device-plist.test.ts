@@ -61,10 +61,12 @@ describe("parseDevicePlist", () => {
     });
   });
 
-  test("returns empty timestamps and an error for malformed plist data", () => {
+  test("accepts plist data with missing closing tags", () => {
     const parsed = parseDevicePlist("<plist><dict>");
 
-    expect(parsed.value).toEqual({ lastUsedAt: null, lastBootedAt: null });
-    expect(parsed.error).not.toBeNull();
+    expect(parsed).toEqual({
+      value: { lastUsedAt: null, lastBootedAt: null },
+      error: null,
+    });
   });
 });

@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { parse } from "plist";
+import plist from "@expo/plist";
 import { type AppleUtilsResult, reportError, result } from "./errors";
 import { isRecord } from "./json";
 
@@ -14,7 +14,8 @@ export function parseDevicePlist(
   contents: string | Uint8Array,
 ): AppleUtilsResult<DevicePlistTimestamps> {
   try {
-    const payload = parse(contents);
+    const xml = typeof contents === "string" ? contents : Buffer.from(contents).toString();
+    const payload = plist.parse(xml);
     if (!isRecord(payload)) return result(emptyTimestamps());
 
     return result({
