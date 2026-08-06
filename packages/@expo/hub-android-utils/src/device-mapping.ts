@@ -34,6 +34,7 @@ export function toEmulatorDevice(
   properties: Record<string, string>,
   config: Record<string, string>,
   serial: string | null,
+  lastBootedAt: number | null,
 ): AndroidDevice {
   return {
     name: properties.Name ?? "",
@@ -41,6 +42,7 @@ export function toEmulatorDevice(
     booted: serial !== null,
     serial,
     path: properties.Path ?? null,
+    lastBootedAt,
     properties,
     config,
   };
@@ -57,6 +59,7 @@ export function toBootedEmulatorDevice(device: ConnectedDevice): AndroidDevice {
     booted: true,
     serial: device.serial,
     path: null,
+    lastBootedAt: null,
     properties: {},
     config: {},
   };
@@ -72,6 +75,7 @@ export function toPhysicalDevice(device: ConnectedDevice): AndroidDevice {
     booted: true,
     serial: device.serial,
     path: null,
+    lastBootedAt: null,
     properties,
     config: {},
   };

@@ -48,26 +48,32 @@ describe("toEmulatorDevice", () => {
   const block = { Name: "Pixel_6", Path: "/avd/Pixel_6.avd", Device: "pixel_6 (Google)" };
 
   test("marks the AVD booted when a serial is provided", () => {
-    const device = toEmulatorDevice(block, { AvdId: "Pixel_6" }, "emulator-5554");
+    const device = toEmulatorDevice(
+      block,
+      { AvdId: "Pixel_6" },
+      "emulator-5554",
+      1_786_016_208_000,
+    );
     expect(device).toEqual({
       name: "Pixel_6",
       type: "emulator",
       booted: true,
       serial: "emulator-5554",
       path: "/avd/Pixel_6.avd",
+      lastBootedAt: 1_786_016_208_000,
       properties: block,
       config: { AvdId: "Pixel_6" },
     });
   });
 
   test("marks the AVD not booted when serial is null", () => {
-    const device = toEmulatorDevice(block, {}, null);
+    const device = toEmulatorDevice(block, {}, null, null);
     expect(device.booted).toBe(false);
     expect(device.serial).toBeNull();
   });
 
   test("tolerates missing Name and Path", () => {
-    const device = toEmulatorDevice({}, {}, null);
+    const device = toEmulatorDevice({}, {}, null, null);
     expect(device.name).toBe("");
     expect(device.path).toBeNull();
   });
@@ -81,6 +87,7 @@ describe("toBootedEmulatorDevice", () => {
       booted: true,
       serial: "emulator-5554",
       path: null,
+      lastBootedAt: null,
       properties: {},
       config: {},
     });
@@ -109,6 +116,7 @@ describe("toPhysicalDevice", () => {
       booted: true,
       serial: "27151JEGR11854",
       path: null,
+      lastBootedAt: null,
       properties: {
         "ro.product.model": "Pixel 6a",
         "ro.product.manufacturer": "Google",

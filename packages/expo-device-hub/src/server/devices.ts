@@ -3,11 +3,12 @@
  *
  * iOS simulators are listed via `@expo/hub-apple-utils` (which shells out to
  * `simctl`) when CoreSimulator has usage history for them — both booted and
- * shut-down. Android devices are listed via
- * `@expo/hub-android-utils` (which shells out to `avdmanager` / `adb`): every
- * known AVD plus any connected physical device. Each device carries a `booted`
- * flag, so the caller can show the running devices in the sidebar and offer the
- * rest as "recent" devices to add (see `/api/devices?booted=true` in `index.ts`).
+ * shut-down. Android devices are listed via `@expo/hub-android-utils` (which
+ * shells out to `avdmanager` / `adb`) when Android Emulator has successful boot
+ * history for them, plus any currently connected device. Each device carries a
+ * `booted` flag, so the caller can show the running devices in the sidebar and
+ * offer the rest as "recent" devices to add (see `/api/devices?booted=true` in
+ * `index.ts`).
  *
  * The returned shape mirrors `@expo/hub-components`'s `Device` type, so the DOM
  * sidebar can consume `/api/devices` directly.
@@ -38,7 +39,8 @@ export interface HubDevice {
    * Epoch ms the device was last used — drives the "Recents" relative time
    * ("18m ago", "2 days ago") in the add-device picker. For iOS this is the
    * newest `lastUsedAt` / `lastBootedAt` value from CoreSimulator's
-   * device.plist. It is absent when the platform does not provide usage data.
+   * device.plist. For Android it is the AVD's latest successful boot completion
+   * time. It is absent when the platform does not provide usage data.
    */
   lastUsedAt?: number;
 }
@@ -81,22 +83,24 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
 }
 
 /**
- * All Android devices — every AVD plus connected physical devices — via
- * `@expo/hub-android-utils` → `avdmanager` / `adb`. Shut-down AVDs are included
- * (with `booted: false`) so they can be offered as recent devices.
+ * Android AVDs with successful boot history plus currently connected devices,
+ * via `@expo/hub-android-utils` → `avdmanager` / `adb`.
  */
 export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
   const listed = await listAndroidDevices();
 
   return {
-    devices: listed.value.map((device) => ({
-      id: device.serial ?? device.name,
-      name: device.name,
-      version: androidVersion(device),
-      platform: 'android' as const,
-      booted: device.booted,
-      physical: device.type === 'device',
-    })),
+    devices: listed.value
+      .map((device) => ({
+        id: device.serial ?? device.name,
+        name: device.name,
+        version: androidVersion(device),
+        platform: 'android' as const,
+        booted: device.booted,
+        physical: device.type === 'device',
+        lastUsedAt: latestTimestamp(device.lastBootedAt),
+      }))
+      .filter((device) => device.booted || device.lastUsedAt !== undefined),
     error: toSerializableError(listed.error),
   };
 }

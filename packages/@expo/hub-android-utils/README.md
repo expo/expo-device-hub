@@ -1,13 +1,13 @@
 # @expo/hub-android-utils
 
 List Android emulators (AVDs) and connected physical devices, with each AVD's
-parsed `config.ini` and a `booted` flag.
+parsed `config.ini`, latest successful boot time, and a `booted` flag.
 
 ```ts
 import { listDevices } from "@expo/hub-android-utils";
 
 const { value: devices, error } = await listDevices();
-// [{ name, type, booted, serial, path, properties, config }, ...]
+// [{ name, type, booted, serial, path, lastBootedAt, properties, config }, ...]
 ```
 
 `listDevices()` resolves `avdmanager` and `adb` from `ANDROID_HOME` /
@@ -15,7 +15,9 @@ const { value: devices, error } = await listDevices();
 one entry per device:
 
 - **Emulators** come from `avdmanager list avd`, enriched with the parsed
-  `<Path>/config.ini`.
+  `<Path>/config.ini` and `lastBootedAt`, the modification time of the
+  emulator's `bootcompleted.ini` marker. It is `null` when no completed-boot
+  marker exists.
 - **Physical devices** come from `adb devices -l`, described from `getprop`
   (`type: "device"`).
 
@@ -24,8 +26,9 @@ are matched back to their AVD via `adb -s <serial> emu avd name`, and emulator
 vs. physical hardware is told apart with `getprop ro.kernel.qemu` (`1` on
 emulators). Booted devices carry their adb `serial`.
 
-It never throws — on any failure its result `value` is an empty array and
-`error` contains the first failure from that invocation. Set
+It never throws — its result `value` contains every device it could read (and
+is empty when discovery cannot continue), while `error` contains the first
+failure from that invocation. Set
 `DEBUG=expo-device-hub:android-utils` to also print the full diagnostics in the
 terminal.
 

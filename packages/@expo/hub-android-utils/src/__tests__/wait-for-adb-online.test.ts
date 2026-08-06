@@ -8,6 +8,7 @@ const device = (serial: string, overrides: Partial<AndroidDevice> = {}): Android
   booted: true,
   serial,
   path: null,
+  lastBootedAt: null,
   properties: {},
   config: {},
   ...overrides,

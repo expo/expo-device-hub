@@ -1,7 +1,8 @@
 import { homedir } from "node:os";
 import { runAdbDevices, runAdbEmuAvdName, runAdbGetprop } from "./adb";
+import { readAvdLastBootedAt } from "./avd-usage";
 import { readAvdConfig, runAvdmanagerListAvd } from "./avdmanager";
-import { type AndroidUtilsResult, reportError, result } from "./errors";
+import { type AndroidUtilsError, type AndroidUtilsResult, reportError, result } from "./errors";
 import {
   type ConnectedDevice,
   indexBootedEmulators,
@@ -22,8 +23,8 @@ import type { AndroidDevice } from "./types";
  * Combines the AVDs from `avdmanager list avd` with the devices currently
  * connected to `adb`, marking each as `booted` and attaching its serial. AVDs
  * are matched to running emulators via `adb emu avd name`; physical devices are
- * described from `getprop`. The result's `value` is empty on failure, with
- * the first invocation-specific failure in `error`.
+ * described from `getprop`. The result's `value` contains every device it could
+ * read, with the first invocation-specific failure in `error`.
  */
 export async function listDevices(): Promise<AndroidUtilsResult<AndroidDevice[]>> {
   try {
@@ -96,11 +97,17 @@ async function buildDevices(
   const bootedByName = indexBootedEmulators(connected);
 
   const emulators: AndroidDevice[] = [];
+  let usageError: AndroidUtilsError | null = null;
   for (const properties of avdBlocks) {
-    const config = await readAvdConfig(properties.Path ?? null);
+    const path = properties.Path ?? null;
+    const [config, lastBootedAt] = await Promise.all([
+      readAvdConfig(path),
+      readAvdLastBootedAt(path),
+    ]);
     if (config.error) return result([], config.error);
+    usageError ??= lastBootedAt.error;
     const serial = properties.Name ? (bootedByName.get(properties.Name) ?? null) : null;
-    emulators.push(toEmulatorDevice(properties, config.value, serial));
+    emulators.push(toEmulatorDevice(properties, config.value, serial, lastBootedAt.value));
   }
 
   const knownNames = new Set(emulators.map((device) => device.name).filter(Boolean));
@@ -110,7 +117,7 @@ async function buildDevices(
       device.isEmulator ? toBootedEmulatorDevice(device) : toPhysicalDevice(device),
     );
 
-  return result([...emulators, ...extras]);
+  return result([...emulators, ...extras], usageError);
 }
 
 function isKnownAvd(device: ConnectedDevice, knownNames: Set<string>): boolean {

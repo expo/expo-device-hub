@@ -18,6 +18,8 @@ export interface AndroidDevice {
   serial: string | null;
   /** Absolute path to the `.avd` directory (emulators only), if present. */
   path: string | null;
+  /** Epoch milliseconds from the AVD's latest successful boot marker, when present. */
+  lastBootedAt: number | null;
   /**
    * `avdmanager` block fields (emulators) or the curated `getprop` values
    * (physical devices).
