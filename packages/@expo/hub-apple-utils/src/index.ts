@@ -17,3 +17,4 @@ export type {
   RemoveDeviceOptions,
   ShutdownDeviceOptions,
 } from "./types";
+export type { AppleUtilsError, AppleUtilsResult } from "./errors";

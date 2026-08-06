@@ -39,19 +39,40 @@ describe('device-list WebSocket client helpers', () => {
   test('builds ws and wss URLs under the configured mount', () => {
     (globalThis as any).window = { __EXPO_DEVICE_HUB_BASE_PATH__: '/hub/' };
     expect(devicesWebSocketUrl('http://localhost:3400/dashboard')).toBe(
-      'ws://localhost:3400/hub/api/devices/ws',
+      'ws://localhost:3400/hub/api/devices/ws'
     );
     expect(devicesWebSocketUrl('https://example.com/dashboard')).toBe(
-      'wss://example.com/hub/api/devices/ws',
+      'wss://example.com/hub/api/devices/ws'
     );
   });
 
   test('accepts device-list messages and ignores other payloads', () => {
     expect(
-      parseDeviceListMessage(JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: list })),
+      parseDeviceListMessage(JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: list }))
     ).toEqual(list);
     expect(parseDeviceListMessage(JSON.stringify({ type: 'other', devices: list }))).toBeNull();
     expect(parseDeviceListMessage('not json')).toBeNull();
+    expect(
+      parseDeviceListMessage(
+        JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: { ...list, errors: {} } })
+      )
+    ).toBeNull();
+  });
+
+  test('preserves captured utility errors for the browser console', () => {
+    const errors = [
+      {
+        id: 'Error:spawn avdmanager ENOENT',
+        message: '[android-utils] Failed to run `avdmanager list avd`:',
+        error: 'Error: spawn avdmanager ENOENT',
+      },
+    ];
+
+    expect(
+      parseDeviceListMessage(
+        JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: { ...list, errors } })
+      )
+    ).toEqual({ ...list, errors });
   });
 
   test('derives booted and recent devices from one snapshot', () => {

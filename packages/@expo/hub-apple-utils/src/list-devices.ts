@@ -1,22 +1,23 @@
 import { runDevicectlListDevices } from "./devicectl";
+import { type AppleUtilsResult, reportError, result } from "./errors";
 import { parseDevicesJson } from "./parse-devices";
 import type { AppleDevice } from "./types";
 
 /**
  * List the Apple devices known to `devicectl`.
  *
- * Returns the `result.devices` array from `devicectl list devices`, or an empty
- * array if devicectl is unavailable or its output cannot be parsed. Never
- * throws.
+ * The result's `value` is the `result.devices` array from devicectl, or an empty
+ * array when unavailable. The first invocation-specific failure is returned in
+ * `error`.
  */
-export async function listDevices(): Promise<AppleDevice[]> {
+export async function listDevices(): Promise<AppleUtilsResult<AppleDevice[]>> {
   try {
-    const json = await runDevicectlListDevices();
-    if (!json) return [];
+    const listed = await runDevicectlListDevices();
+    if (listed.error) return result([], listed.error);
+    if (!listed.value) return result([]);
 
-    return parseDevicesJson(json);
+    return parseDevicesJson(listed.value);
   } catch (error) {
-    console.error("[apple-utils] Failed to list devices:", error);
-    return [];
+    return result([], reportError("[apple-utils] Failed to list devices:", error));
   }
 }

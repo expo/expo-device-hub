@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { runAdbDevices, runAdbEmuAvdName, runAdbGetprop } from "./adb";
 import { readAvdConfig, runAvdmanagerListAvd } from "./avdmanager";
+import { type AndroidUtilsResult, reportError, result } from "./errors";
 import {
   type ConnectedDevice,
   indexBootedEmulators,
@@ -21,27 +22,29 @@ import type { AndroidDevice } from "./types";
  * Combines the AVDs from `avdmanager list avd` with the devices currently
  * connected to `adb`, marking each as `booted` and attaching its serial. AVDs
  * are matched to running emulators via `adb emu avd name`; physical devices are
- * described from `getprop`. Returns an empty array on any failure. Never throws.
+ * described from `getprop`. The result's `value` is empty on failure, with
+ * the first invocation-specific failure in `error`.
  */
-export async function listDevices(): Promise<AndroidDevice[]> {
+export async function listDevices(): Promise<AndroidUtilsResult<AndroidDevice[]>> {
   try {
     const env = process.env;
     const home = homedir();
     const avdmanager = resolveAvdmanagerPath(env, home);
     const adb = resolveAdbPath(env, home);
 
-    const [avdStdout, adbStdout] = await Promise.all([
-      runAvdmanagerListAvd(avdmanager),
-      runAdbDevices(adb),
-    ]);
+    const avdList = await runAvdmanagerListAvd(avdmanager);
+    if (avdList.error) return result([], avdList.error);
 
-    const avdBlocks = avdStdout ? parseAvdList(avdStdout) : [];
-    const connected = await inspectConnectedDevices(adb, adbStdout);
+    const adbList = await runAdbDevices(adb);
+    if (adbList.error) return result([], adbList.error);
 
-    return await buildDevices(avdBlocks, connected);
+    const avdBlocks = avdList.value ? parseAvdList(avdList.value) : [];
+    const connected = await inspectConnectedDevices(adb, adbList.value);
+    if (connected.error) return result([], connected.error);
+
+    return await buildDevices(avdBlocks, connected.value);
   } catch (error) {
-    console.error("[android-utils] Failed to list devices:", error);
-    return [];
+    return result([], reportError("[android-utils] Failed to list devices:", error));
   }
 }
 
@@ -49,36 +52,56 @@ export async function listDevices(): Promise<AndroidDevice[]> {
 async function inspectConnectedDevices(
   adb: string,
   adbStdout: string | null,
-): Promise<ConnectedDevice[]> {
-  if (!adbStdout) return [];
+): Promise<AndroidUtilsResult<ConnectedDevice[]>> {
+  if (!adbStdout) return result([]);
 
   const online = parseAdbDevices(adbStdout).filter(isOnline);
-  return Promise.all(online.map((device) => inspectDevice(adb, device.serial)));
+  const connected: ConnectedDevice[] = [];
+  for (const device of online) {
+    const inspected = await inspectDevice(adb, device.serial);
+    if (inspected.error) return result([], inspected.error);
+    connected.push(inspected.value);
+  }
+  return result(connected);
 }
 
-async function inspectDevice(adb: string, serial: string): Promise<ConnectedDevice> {
+async function inspectDevice(
+  adb: string,
+  serial: string,
+): Promise<AndroidUtilsResult<ConnectedDevice>> {
   const getprop = await runAdbGetprop(adb, serial);
-  const properties = getprop ? parseGetprop(getprop) : {};
-  const isEmulator = isEmulatorProps(properties);
-  const avdName = isEmulator ? parseEmuAvdName(await runAdbEmuAvdName(adb, serial)) : null;
+  if (getprop.error) {
+    return result({ serial, isEmulator: false, avdName: null, properties: {} }, getprop.error);
+  }
 
-  return { serial, isEmulator, avdName, properties };
+  const properties = getprop.value ? parseGetprop(getprop.value) : {};
+  const isEmulator = isEmulatorProps(properties);
+  let avdName: string | null = null;
+  if (isEmulator) {
+    const named = await runAdbEmuAvdName(adb, serial);
+    if (named.error) {
+      return result({ serial, isEmulator, avdName, properties }, named.error);
+    }
+    avdName = parseEmuAvdName(named.value);
+  }
+
+  return result({ serial, isEmulator, avdName, properties });
 }
 
 /** Merge AVD blocks with connected devices into the final device list. */
 async function buildDevices(
   avdBlocks: Record<string, string>[],
   connected: ConnectedDevice[],
-): Promise<AndroidDevice[]> {
+): Promise<AndroidUtilsResult<AndroidDevice[]>> {
   const bootedByName = indexBootedEmulators(connected);
 
-  const emulators = await Promise.all(
-    avdBlocks.map(async (properties) => {
-      const config = await readAvdConfig(properties.Path ?? null);
-      const serial = properties.Name ? (bootedByName.get(properties.Name) ?? null) : null;
-      return toEmulatorDevice(properties, config, serial);
-    }),
-  );
+  const emulators: AndroidDevice[] = [];
+  for (const properties of avdBlocks) {
+    const config = await readAvdConfig(properties.Path ?? null);
+    if (config.error) return result([], config.error);
+    const serial = properties.Name ? (bootedByName.get(properties.Name) ?? null) : null;
+    emulators.push(toEmulatorDevice(properties, config.value, serial));
+  }
 
   const knownNames = new Set(emulators.map((device) => device.name).filter(Boolean));
   const extras = connected
@@ -87,7 +110,7 @@ async function buildDevices(
       device.isEmulator ? toBootedEmulatorDevice(device) : toPhysicalDevice(device),
     );
 
-  return [...emulators, ...extras];
+  return result([...emulators, ...extras]);
 }
 
 function isKnownAvd(device: ConnectedDevice, knownNames: Set<string>): boolean {

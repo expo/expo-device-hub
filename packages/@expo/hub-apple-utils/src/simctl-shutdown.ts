@@ -1,3 +1,4 @@
+import { type AppleUtilsResult, result } from "./errors";
 import { errorText, execSimctl } from "./simctl";
 
 /** Build the `simctl shutdown <udid>` args. */
@@ -23,14 +24,10 @@ export function isAlreadyShutdownError(message: string): boolean {
  * Treats an already-shut-down device as success. Returns `false` on any other
  * failure. Never throws.
  */
-export async function runSimctlShutdown(udid: string): Promise<boolean> {
-  try {
-    await execSimctl(buildShutdownArgs(udid));
-    return true;
-  } catch (error) {
-    if (isAlreadyShutdownError(errorText(error))) return true;
-
-    console.error("[apple-utils] Failed to run `xcrun simctl shutdown`:", error);
-    return false;
-  }
+export async function runSimctlShutdown(udid: string): Promise<AppleUtilsResult<boolean>> {
+  const executed = await execSimctl(buildShutdownArgs(udid), {
+    errorMessage: "[apple-utils] Failed to run `xcrun simctl shutdown`:",
+    ignoreError: (error) => isAlreadyShutdownError(errorText(error)),
+  });
+  return result(executed.error === null, executed.error);
 }

@@ -1,12 +1,13 @@
 /** Small JSON helpers shared by the `devicectl` / `simctl` output parsers. */
 
-/** `JSON.parse` that logs and returns `undefined` instead of throwing. */
-export function safeJsonParse(json: string): unknown {
+import { type AppleUtilsResult, reportError, result } from "./errors";
+
+/** `JSON.parse` that returns `undefined` plus an `error` instead of throwing. */
+export function safeJsonParse(json: string): AppleUtilsResult<unknown | undefined> {
   try {
-    return JSON.parse(json);
+    return result(JSON.parse(json));
   } catch (error) {
-    console.error("[apple-utils] Failed to parse JSON output:", error);
-    return undefined;
+    return result(undefined, reportError("[apple-utils] Failed to parse JSON output:", error));
   }
 }
 

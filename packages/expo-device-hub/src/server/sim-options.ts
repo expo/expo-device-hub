@@ -9,10 +9,13 @@ import {
 import { type AppleSimulatorRuntime, listRuntimes } from '@expo/hub-apple-utils';
 import { type NewDeviceOptions, type Platform } from '@expo/hub-components';
 
+import { type SerializableError, toSerializableError } from './utility-errors';
+
 export type NewDeviceOptionsByPlatform = Record<Platform, NewDeviceOptions>;
+export type NewDeviceOptionsResponse = NewDeviceOptionsByPlatform & { errors: SerializableError[] };
 
 /** Discover installed iOS runtimes and Android images/profiles in parallel. */
-export async function listNewDeviceOptions(): Promise<NewDeviceOptionsByPlatform> {
+export async function listNewDeviceOptions(): Promise<NewDeviceOptionsResponse> {
   const [appleRuntimes, androidImages, androidProfiles] = await Promise.all([
     listRuntimes(),
     listSystemImages(),
@@ -20,8 +23,13 @@ export async function listNewDeviceOptions(): Promise<NewDeviceOptionsByPlatform
   ]);
 
   return {
-    ios: appleRuntimesToOptions(appleRuntimes),
-    android: androidImagesToOptions(androidImages, androidProfiles),
+    ios: appleRuntimesToOptions(appleRuntimes.value),
+    android: androidImagesToOptions(androidImages.value, androidProfiles.value),
+    errors: [
+      toSerializableError(appleRuntimes.error),
+      toSerializableError(androidImages.error),
+      toSerializableError(androidProfiles.error),
+    ].filter((error): error is SerializableError => error !== null),
   };
 }
 
@@ -70,10 +78,10 @@ function androidImageLabel(image: AndroidSystemImage): string {
     image.tag === 'google_apis'
       ? 'Google APIs'
       : image.tag === 'google_apis_playstore'
-        ? 'Google Play'
-        : image.tag === 'default'
-          ? 'AOSP'
-          : image.tag?.replaceAll('_', ' ');
+      ? 'Google Play'
+      : image.tag === 'default'
+      ? 'AOSP'
+      : image.tag?.replaceAll('_', ' ');
   return [api, tag, image.abi].filter(Boolean).join(' · ');
 }
 

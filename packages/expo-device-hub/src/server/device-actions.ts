@@ -23,6 +23,7 @@ import {
 } from '@expo/hub-apple-utils';
 
 import { type HubDevicePlatform } from './devices';
+import { type SerializableError, toSerializableError } from './utility-errors';
 
 const ANDROID_AVD_NAME_PATTERN = /^[A-Za-z0-9._-]+$/;
 
@@ -105,30 +106,68 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+export interface DeviceActionResult {
+  ok: boolean;
+  errors: SerializableError[];
+}
+
+function errorList(error: SerializableError | null): SerializableError[] {
+  return error ? [error] : [];
+}
+
 /** Shut a running simulator/emulator down. Resolves to whether it succeeded. */
-export async function shutdownHubDevice({ platform, id }: DeviceActionRequest): Promise<boolean> {
-  return platform === 'ios'
-    ? shutdownAppleDevice({ udid: id })
-    : shutdownAndroidDevice({ serial: id });
+export async function shutdownHubDevice({
+  platform,
+  id,
+}: DeviceActionRequest): Promise<DeviceActionResult> {
+  if (platform === 'ios') {
+    const result = await shutdownAppleDevice({ udid: id });
+    return { ok: result.value, errors: errorList(toSerializableError(result.error)) };
+  }
+
+  const result = await shutdownAndroidDevice({ serial: id });
+  return { ok: result.value, errors: errorList(toSerializableError(result.error)) };
 }
 
 /**
  * Remove (delete) a simulator/emulator permanently. A running device can't be
- * cleanly deleted, so shut it down first (best-effort) and then delete: iOS by
- * udid, Android by AVD name.
+ * cleanly deleted, so shut it down first and then delete: iOS by udid, Android
+ * by AVD name. A shutdown error stops the operation before deletion.
  */
 export async function removeHubDevice({
   platform,
   id,
   name,
-}: DeviceActionRequest): Promise<boolean> {
+}: DeviceActionRequest): Promise<DeviceActionResult> {
   if (platform === 'ios') {
-    await shutdownAppleDevice({ udid: id });
-    return removeAppleDevice({ udid: id });
+    const shutdown = await shutdownAppleDevice({ udid: id });
+    if (shutdown.error || !shutdown.value) {
+      return {
+        ok: false,
+        errors: errorList(toSerializableError(shutdown.error)),
+      };
+    }
+
+    const removed = await removeAppleDevice({ udid: id });
+    return {
+      ok: removed.value,
+      errors: errorList(toSerializableError(removed.error)),
+    };
   }
 
-  await shutdownAndroidDevice({ serial: id });
-  return removeAndroidDevice({ name });
+  const shutdown = await shutdownAndroidDevice({ serial: id });
+  if (shutdown.error || !shutdown.value) {
+    return {
+      ok: false,
+      errors: errorList(toSerializableError(shutdown.error)),
+    };
+  }
+
+  const removed = await removeAndroidDevice({ name });
+  return {
+    ok: removed.value,
+    errors: errorList(toSerializableError(removed.error)),
+  };
 }
 
 const BOOT_READY_TIMEOUT_MS = 180_000;
@@ -141,6 +180,7 @@ export interface BootDeviceResult {
   /** Backwards-compatible Android adb serial. */
   serial?: string;
   error?: string;
+  errors: SerializableError[];
 }
 
 /**
@@ -160,14 +200,15 @@ export async function bootHubDevice({
   name,
 }: DeviceActionRequest): Promise<BootDeviceResult> {
   if (platform === 'ios') {
-    const ok = await bootAppleSimulator({ udid: id });
-    return ok
-      ? { ok: true, id }
-      : { ok: false, id, error: `Failed to boot iOS simulator ${name || id}` };
+    const booted = await bootAppleSimulator({ udid: id });
+    const errors = errorList(toSerializableError(booted.error));
+    return booted.value
+      ? { ok: true, id, errors }
+      : { ok: false, id, error: `Failed to boot iOS simulator ${name || id}`, errors };
   }
 
   const avdName = name || id;
-  if (!avdName) return { ok: false, error: 'Missing AVD name' };
+  if (!avdName) return { ok: false, error: 'Missing AVD name', errors: [] };
 
   return bootAndroidHubDevice(avdName);
 }
@@ -180,13 +221,26 @@ export async function createHubDevice({
   deviceType,
 }: CreateDeviceActionRequest): Promise<BootDeviceResult> {
   if (platform === 'ios') {
-    const udid = await createAppleSimulator({ name, runtime, deviceType });
-    if (!udid) return { ok: false, error: `Failed to create iOS simulator ${name}` };
+    const created = await createAppleSimulator({ name, runtime, deviceType });
+    const udid = created.value;
+    if (created.error || !udid) {
+      return {
+        ok: false,
+        error: `Failed to create iOS simulator ${name}`,
+        errors: errorList(toSerializableError(created.error)),
+      };
+    }
 
     const booted = await bootAppleSimulator({ udid });
-    return booted
-      ? { ok: true, id: udid }
-      : { ok: false, id: udid, error: `Created ${name}, but failed to boot it` };
+    const errors = errorList(toSerializableError(booted.error));
+    return booted.value
+      ? { ok: true, id: udid, errors }
+      : {
+          ok: false,
+          id: udid,
+          error: `Created ${name}, but failed to boot it`,
+          errors,
+        };
   }
 
   const created = await createAndroidDevice({
@@ -194,15 +248,36 @@ export async function createHubDevice({
     package: runtime,
     device: deviceType,
   });
-  if (!created) return { ok: false, error: `Failed to create Android emulator ${name}` };
+  if (created.error || !created.value) {
+    return {
+      ok: false,
+      error: `Failed to create Android emulator ${name}`,
+      errors: errorList(toSerializableError(created.error)),
+    };
+  }
 
   return bootAndroidHubDevice(name);
 }
 
 async function bootAndroidHubDevice(avdName: string): Promise<BootDeviceResult> {
-  const port = await freeEmulatorPort();
-  const booted = bootAndroidEmulator({ name: avdName, port });
-  if (!booted) return { ok: false, error: `Failed to spawn emulator for ${avdName}` };
+  const allocated = await freeEmulatorPort();
+  if (allocated.error || allocated.value === null) {
+    return {
+      ok: false,
+      error: `Failed to allocate an emulator port for ${avdName}`,
+      errors: errorList(toSerializableError(allocated.error)),
+    };
+  }
+
+  const bootedResult = await bootAndroidEmulator({ name: avdName, port: allocated.value });
+  const booted = bootedResult.value;
+  if (bootedResult.error || !booted) {
+    return {
+      ok: false,
+      error: `Failed to spawn emulator for ${avdName}`,
+      errors: errorList(toSerializableError(bootedResult.error)),
+    };
+  }
 
   const abort = new AbortController();
   const outcome = await Promise.race([
@@ -218,8 +293,8 @@ async function bootAndroidHubDevice(avdName: string): Promise<BootDeviceResult> 
       outcome.exit.code != null
         ? `exited with code ${outcome.exit.code}`
         : outcome.exit.signal
-          ? `was killed by ${outcome.exit.signal}`
-          : 'exited';
+        ? `was killed by ${outcome.exit.signal}`
+        : 'exited';
     return {
       ok: false,
       id: booted.serial,
@@ -227,15 +302,27 @@ async function bootAndroidHubDevice(avdName: string): Promise<BootDeviceResult> 
       error:
         `The emulator process for "${avdName}" ${ended} before coming online.\n\n` +
         `For details, try running it manually:\n${booted.command}`,
+      errors: errorList(toSerializableError(outcome.exit.error)),
     };
   }
 
-  return outcome.online
-    ? { ok: true, id: booted.serial, serial: booted.serial }
+  if (outcome.online.error) {
+    return {
+      ok: false,
+      id: booted.serial,
+      serial: booted.serial,
+      error: `Failed while waiting for ${avdName} to come online`,
+      errors: errorList(toSerializableError(outcome.online.error)),
+    };
+  }
+
+  return outcome.online.value
+    ? { ok: true, id: booted.serial, serial: booted.serial, errors: [] }
     : {
         ok: false,
         id: booted.serial,
         serial: booted.serial,
         error: 'Timed out waiting for the emulator to come online',
+        errors: [],
       };
 }

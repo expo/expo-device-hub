@@ -1,4 +1,5 @@
-import { execSimctl } from "./simctl";
+import { type AppleUtilsResult, result } from "./errors";
+import { errorText, execSimctl } from "./simctl";
 
 /** Build the `simctl boot <udid>` args. */
 export function buildBootArgs(udid: string): string[] {
@@ -22,22 +23,10 @@ export function isAlreadyBootedError(message: string): boolean {
  * Treats an already-booted device as success. Returns `false` on any other
  * failure. Never throws.
  */
-export async function runSimctlBoot(udid: string): Promise<boolean> {
-  try {
-    await execSimctl(buildBootArgs(udid));
-    return true;
-  } catch (error) {
-    if (isAlreadyBootedError(errorText(error))) return true;
-
-    console.error("[apple-utils] Failed to run `xcrun simctl boot`:", error);
-    return false;
-  }
-}
-
-/** Collect the human-readable text from an exec error (its message and stderr). */
-function errorText(error: unknown): string {
-  if (!error || typeof error !== "object") return String(error ?? "");
-
-  const { message, stderr } = error as { message?: unknown; stderr?: unknown };
-  return [message, stderr].filter((value) => typeof value === "string").join("\n");
+export async function runSimctlBoot(udid: string): Promise<AppleUtilsResult<boolean>> {
+  const executed = await execSimctl(buildBootArgs(udid), {
+    errorMessage: "[apple-utils] Failed to run `xcrun simctl boot`:",
+    ignoreError: (error) => isAlreadyBootedError(errorText(error)),
+  });
+  return result(executed.error === null, executed.error);
 }

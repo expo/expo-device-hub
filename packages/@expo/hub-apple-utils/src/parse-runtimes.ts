@@ -1,3 +1,4 @@
+import { type AppleUtilsResult, result } from "./errors";
 import { asString, isRecord, safeJsonParse } from "./json";
 import type { AppleSimulatorDeviceType, AppleSimulatorRuntime } from "./types";
 
@@ -10,16 +11,17 @@ import type { AppleSimulatorDeviceType, AppleSimulatorRuntime } from "./types";
  * runtime that lists it — a guaranteed-valid `simctl create` combination. All
  * platforms (iOS, tvOS, watchOS, …) are kept — filter by `platform` /
  * `isAvailable` as needed. Returns an empty array when the payload is missing or
- * malformed. Never throws.
+ * malformed. Malformed JSON is returned in `error`. Never throws.
  */
-export function parseRuntimes(json: string): AppleSimulatorRuntime[] {
-  const payload = safeJsonParse(json);
-  if (!isRecord(payload)) return [];
+export function parseRuntimes(json: string): AppleUtilsResult<AppleSimulatorRuntime[]> {
+  const parsed = safeJsonParse(json);
+  if (parsed.error) return result([], parsed.error);
+  if (!isRecord(parsed.value)) return result([]);
 
-  const list = payload.runtimes;
-  if (!Array.isArray(list)) return [];
+  const list = parsed.value.runtimes;
+  if (!Array.isArray(list)) return result([]);
 
-  return list.filter(isRecord).map(toRuntime).filter(hasIdentifier);
+  return result(list.filter(isRecord).map(toRuntime).filter(hasIdentifier));
 }
 
 function toRuntime(entry: Record<string, unknown>): AppleSimulatorRuntime {

@@ -19,3 +19,4 @@ export type {
   RemoveDeviceOptions,
   ShutdownDeviceOptions,
 } from "./types";
+export type { AndroidUtilsError, AndroidUtilsResult } from "./errors";

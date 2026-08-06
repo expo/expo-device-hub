@@ -1,6 +1,7 @@
 import { type Device, type NewDeviceRequest } from '@expo/hub-components';
 
 import { basePath } from './basePath';
+import { logUtilityErrors, type UtilityError } from './utilityErrors';
 
 /**
  * Device lifecycle actions, posted to the Hub server (see
@@ -27,7 +28,8 @@ async function postAction(endpoint: string, device: Device): Promise<boolean> {
       body: JSON.stringify({ platform: device.platform, id: device.id, name: device.name }),
     });
     if (!response.ok) throw new Error(`Unexpected ${response.status}`);
-    const data = (await response.json()) as { ok?: boolean };
+    const data = (await response.json()) as { ok?: boolean; errors?: UtilityError[] };
+    logUtilityErrors(data.errors);
     return data.ok === true;
   } catch (error) {
     console.warn('[expo-device-hub] Device action failed:', error);
@@ -92,7 +94,9 @@ async function postStartDevice(
       id?: string;
       serial?: string;
       error?: string;
+      errors?: UtilityError[];
     };
+    logUtilityErrors(data.errors);
     if (!response.ok) {
       return { id: null, error: data.error ?? `Unexpected ${response.status}` };
     }

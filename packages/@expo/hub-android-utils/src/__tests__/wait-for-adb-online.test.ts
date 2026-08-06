@@ -13,14 +13,16 @@ const device = (serial: string, overrides: Partial<AndroidDevice> = {}): Android
   ...overrides,
 });
 
+const listed = (value: AndroidDevice[]) => ({ value, error: null });
+
 describe("waitForAdbOnline", () => {
   test("resolves true on the first poll when the serial is already booted", async () => {
     let calls = 0;
     const listDevicesFn = async () => {
       calls++;
-      return [device("emulator-5554")];
+      return listed([device("emulator-5554")]);
     };
-    expect(await waitForAdbOnline("emulator-5554", 1000, { listDevicesFn })).toBe(true);
+    expect((await waitForAdbOnline("emulator-5554", 1000, { listDevicesFn })).value).toBe(true);
     expect(calls).toBe(1);
   });
 
@@ -28,13 +30,13 @@ describe("waitForAdbOnline", () => {
     let calls = 0;
     const listDevicesFn = async () => {
       calls++;
-      return [device("emulator-5554", { booted: calls >= 3 })];
+      return listed([device("emulator-5554", { booted: calls >= 3 })]);
     };
     const online = await waitForAdbOnline("emulator-5554", 1000, {
       listDevicesFn,
       pollIntervalMs: 1,
     });
-    expect(online).toBe(true);
+    expect(online.value).toBe(true);
     expect(calls).toBe(3);
   });
 
@@ -42,51 +44,56 @@ describe("waitForAdbOnline", () => {
     let calls = 0;
     const listDevicesFn = async () => {
       calls++;
-      return [device("emulator-5554", { booted: false })];
+      return listed([device("emulator-5554", { booted: false })]);
     };
     const online = await waitForAdbOnline("emulator-5554", 30, {
       listDevicesFn,
       pollIntervalMs: 10,
     });
-    expect(online).toBe(false);
+    expect(online.value).toBe(false);
     expect(calls).toBeGreaterThanOrEqual(1);
   });
 
   test("only matches a device that is both the right serial and booted", async () => {
-    const listDevicesFn = async () => [
-      device("emulator-5554", { booted: false }),
-      device("emulator-5556", { booted: true }),
-    ];
+    const listDevicesFn = async () =>
+      listed([
+        device("emulator-5554", { booted: false }),
+        device("emulator-5556", { booted: true }),
+      ]);
     const online = await waitForAdbOnline("emulator-5554", 30, {
       listDevicesFn,
       pollIntervalMs: 10,
     });
-    expect(online).toBe(false);
+    expect(online.value).toBe(false);
   });
 
-  test("swallows lister errors and keeps polling until timeout", async () => {
+  test("returns a thrown lister error on the first poll", async () => {
+    let calls = 0;
     const listDevicesFn = async () => {
+      calls++;
       throw new Error("adb unavailable");
     };
-    const online = await waitForAdbOnline("emulator-5554", 30, {
+    const online = await waitForAdbOnline("emulator-5554", 1000, {
       listDevicesFn,
       pollIntervalMs: 10,
     });
-    expect(online).toBe(false);
+    expect(online.value).toBe(false);
+    expect(online.error).not.toBeNull();
+    expect(calls).toBe(1);
   });
 
   test("resolves false without polling when the signal is already aborted", async () => {
     let calls = 0;
     const listDevicesFn = async () => {
       calls++;
-      return [device("emulator-5554")];
+      return listed([device("emulator-5554")]);
     };
     const online = await waitForAdbOnline("emulator-5554", 1000, {
       listDevicesFn,
       pollIntervalMs: 1,
       signal: AbortSignal.abort(),
     });
-    expect(online).toBe(false);
+    expect(online.value).toBe(false);
     expect(calls).toBe(0);
   });
 
@@ -96,29 +103,29 @@ describe("waitForAdbOnline", () => {
     const listDevicesFn = async () => {
       calls++;
       controller.abort();
-      return [device("emulator-5554", { booted: false })];
+      return listed([device("emulator-5554", { booted: false })]);
     };
     const online = await waitForAdbOnline("emulator-5554", 1000, {
       listDevicesFn,
       pollIntervalMs: 1,
       signal: controller.signal,
     });
-    expect(online).toBe(false);
+    expect(online.value).toBe(false);
     expect(calls).toBe(1);
   });
 
-  test("recovers after a transient lister error", async () => {
+  test("returns a lister result error on the first poll", async () => {
     let calls = 0;
+    const error = { message: "adb starting", error: new Error("not ready") };
     const listDevicesFn = async () => {
       calls++;
-      if (calls === 1) throw new Error("adb starting");
-      return [device("emulator-5554")];
+      return { value: [], error };
     };
     const online = await waitForAdbOnline("emulator-5554", 1000, {
       listDevicesFn,
       pollIntervalMs: 1,
     });
-    expect(online).toBe(true);
-    expect(calls).toBe(2);
+    expect(online).toEqual({ value: false, error });
+    expect(calls).toBe(1);
   });
 });

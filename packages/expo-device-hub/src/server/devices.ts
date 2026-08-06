@@ -16,6 +16,8 @@
 import { type AndroidDevice, listDevices as listAndroidDevices } from '@expo/hub-android-utils';
 import { listDevices as listAppleDevices } from '@expo/hub-apple-utils';
 
+import { type SerializableError, toSerializableError } from './utility-errors';
+
 export type HubDevicePlatform = 'ios' | 'android';
 
 export interface HubDevice {
@@ -45,30 +47,40 @@ export interface HubDevice {
 export interface HubDeviceList {
   simulators: HubDevice[];
   emulators: HubDevice[];
+  /** Utility failures captured during this discovery pass. */
+  errors?: SerializableError[];
+}
+
+interface PlatformDeviceList {
+  devices: HubDevice[];
+  error: SerializableError | null;
 }
 
 /** All iOS simulators (booted and shut-down), via `@expo/hub-apple-utils` → `devicectl`. */
-export async function listIosSimulators(): Promise<HubDevice[]> {
-  const devices = await listAppleDevices();
+export async function listIosSimulators(): Promise<PlatformDeviceList> {
+  const listed = await listAppleDevices();
 
-  return devices
-    .filter((device) => device.hardwareProperties?.reality === 'simulated')
-    .map((device) => {
-      const id = device.hardwareProperties?.udid ?? device.identifier ?? '';
-      const name =
-        device.deviceProperties?.name ?? device.hardwareProperties?.marketingName ?? 'Simulator';
-      const platform = device.hardwareProperties?.platform ?? 'iOS';
-      const osVersion = device.deviceProperties?.osVersionNumber;
+  return {
+    devices: listed.value
+      .filter((device) => device.hardwareProperties?.reality === 'simulated')
+      .map((device) => {
+        const id = device.hardwareProperties?.udid ?? device.identifier ?? '';
+        const name =
+          device.deviceProperties?.name ?? device.hardwareProperties?.marketingName ?? 'Simulator';
+        const platform = device.hardwareProperties?.platform ?? 'iOS';
+        const osVersion = device.deviceProperties?.osVersionNumber;
 
-      return {
-        id,
-        name,
-        version: osVersion ? `${platform} ${osVersion}` : platform,
-        platform: 'ios' as const,
-        booted: device.deviceProperties?.bootState === 'booted',
-        physical: device.hardwareProperties?.reality === 'physical',
-      };
-    });
+        return {
+          id,
+          name,
+          version: osVersion ? `${platform} ${osVersion}` : platform,
+          platform: 'ios' as const,
+          booted: device.deviceProperties?.bootState === 'booted',
+          physical: device.hardwareProperties?.reality === 'physical',
+        };
+      }),
+    error: toSerializableError(listed.error),
+  };
 }
 
 /**
@@ -76,17 +88,20 @@ export async function listIosSimulators(): Promise<HubDevice[]> {
  * `@expo/hub-android-utils` → `avdmanager` / `adb`. Shut-down AVDs are included
  * (with `booted: false`) so they can be offered as recent devices.
  */
-export async function listAndroidEmulators(): Promise<HubDevice[]> {
-  const devices = await listAndroidDevices();
+export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
+  const listed = await listAndroidDevices();
 
-  return devices.map((device) => ({
-    id: device.serial ?? device.name,
-    name: device.name,
-    version: androidVersion(device),
-    platform: 'android' as const,
-    booted: device.booted,
-    physical: device.type === 'device',
-  }));
+  return {
+    devices: listed.value.map((device) => ({
+      id: device.serial ?? device.name,
+      name: device.name,
+      version: androidVersion(device),
+      platform: 'android' as const,
+      booted: device.booted,
+      physical: device.type === 'device',
+    })),
+    error: toSerializableError(listed.error),
+  };
 }
 
 /** Derive an "Android <version>" label from a device's getprop / avdmanager fields. */
@@ -139,13 +154,13 @@ function withMockLastUsed(devices: HubDevice[]): HubDevice[] {
 
 /** Every known simulator and emulator/device, each tagged with its `booted` state. */
 export async function listDevices(): Promise<HubDeviceList> {
-  const [simulators, emulators] = await Promise.all([
-    listIosSimulators(),
-    listAndroidEmulators(),
-  ]);
+  const [simulators, emulators] = await Promise.all([listIosSimulators(), listAndroidEmulators()]);
 
   return {
-    simulators: withMockLastUsed(simulators),
-    emulators: withMockLastUsed(emulators),
+    simulators: withMockLastUsed(simulators.devices),
+    emulators: withMockLastUsed(emulators.devices),
+    errors: [simulators.error, emulators.error].filter(
+      (error): error is SerializableError => error !== null
+    ),
   };
 }

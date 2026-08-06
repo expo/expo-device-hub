@@ -153,6 +153,7 @@ export function deviceListFingerprint(list: HubDeviceList): string {
   return JSON.stringify({
     simulators: normalize(list.simulators),
     emulators: normalize(list.emulators),
+    errors: [...new Set((list.errors ?? []).map(({ id }) => id))].sort(),
   });
 }
 

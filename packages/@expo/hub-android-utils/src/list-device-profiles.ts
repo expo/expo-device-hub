@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { runAvdmanagerListDevice } from "./avdmanager";
+import { type AndroidUtilsResult, reportError, result } from "./errors";
 import { parseDeviceProfiles } from "./parse-device-profiles";
 import { resolveAvdmanagerPath } from "./sdk-paths";
 import type { AndroidDeviceProfile } from "./types";
@@ -10,16 +11,16 @@ import type { AndroidDeviceProfile } from "./types";
  * Wraps `avdmanager list device`, returning one entry per profile. Each `id` is
  * the stable identifier to pass to `avdmanager create avd -d <id>`. Resolves
  * `avdmanager` from `ANDROID_HOME` / `ANDROID_SDK_ROOT` (falling back to the
- * default macOS SDK location). Returns an empty array on any failure. Never
- * throws.
+ * default macOS SDK location). The result's `value` is empty on failure, with
+ * the invocation-specific failure in `error`.
  */
-export async function listDeviceProfiles(): Promise<AndroidDeviceProfile[]> {
+export async function listDeviceProfiles(): Promise<AndroidUtilsResult<AndroidDeviceProfile[]>> {
   try {
     const avdmanager = resolveAvdmanagerPath(process.env, homedir());
-    const stdout = await runAvdmanagerListDevice(avdmanager);
-    return stdout ? parseDeviceProfiles(stdout) : [];
+    const listed = await runAvdmanagerListDevice(avdmanager);
+    if (listed.error) return result([], listed.error);
+    return result(listed.value ? parseDeviceProfiles(listed.value) : []);
   } catch (error) {
-    console.error("[android-utils] Failed to list device profiles:", error);
-    return [];
+    return result([], reportError("[android-utils] Failed to list device profiles:", error));
   }
 }

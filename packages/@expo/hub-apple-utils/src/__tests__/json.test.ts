@@ -1,18 +1,16 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { asString, isRecord, safeJsonParse } from "../json";
 
 describe("safeJsonParse", () => {
   test("parses valid JSON", () => {
-    expect(safeJsonParse('{"a":1}')).toEqual({ a: 1 });
+    expect(safeJsonParse('{"a":1}')).toEqual({ value: { a: 1 }, error: null });
   });
 
-  test("returns undefined and logs on malformed JSON", () => {
-    const errorSpy = spyOn(console, "error").mockImplementation(() => {});
-
-    expect(safeJsonParse("{ not json")).toBeUndefined();
-    expect(errorSpy).toHaveBeenCalled();
-
-    errorSpy.mockRestore();
+  test("returns undefined and the malformed JSON error", () => {
+    expect(safeJsonParse("{ not json")).toEqual({
+      value: undefined,
+      error: expect.objectContaining({ message: "[apple-utils] Failed to parse JSON output:" }),
+    });
   });
 });
 

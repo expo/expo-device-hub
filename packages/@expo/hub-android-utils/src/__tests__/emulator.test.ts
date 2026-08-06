@@ -2,7 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { buildEmulatorArgs, emulatorSerial, formatEmulatorCommand, spawnEmulator } from "../emulator";
+import {
+  buildEmulatorArgs,
+  emulatorSerial,
+  formatEmulatorCommand,
+  spawnEmulator,
+} from "../emulator";
 
 describe("emulatorSerial", () => {
   test("formats the adb serial from the console port", () => {
@@ -56,14 +61,8 @@ describe("spawnEmulator", () => {
   });
 
   test("returns null when the binary does not exist", async () => {
-    const child = spawnEmulator(join(dir, "missing"), { name: "x", port: 5554 });
-    // spawn() defers ENOENT to the "error" event; either shape (null or an
-    // errored child) must not throw.
-    if (child) {
-      await new Promise((resolve) => {
-        child.once("error", resolve);
-        child.once("exit", resolve);
-      });
-    }
+    const spawned = await spawnEmulator(join(dir, "missing"), { name: "x", port: 5554 });
+    expect(spawned.value).toBeNull();
+    expect(spawned.error?.message).toBe("[android-utils] Failed to spawn `emulator`:");
   });
 });

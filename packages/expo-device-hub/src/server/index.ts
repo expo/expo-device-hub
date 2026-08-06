@@ -103,12 +103,12 @@ export default async function handler(request: Request): Promise<Response | null
     }
 
     try {
-      const ok =
+      const result =
         pathname === SHUTDOWN_DEVICE_ROUTE
           ? await shutdownHubDevice(action)
           : await removeHubDevice(action);
-      if (ok) refreshDeviceList();
-      return jsonResponse({ ok });
+      if (result.ok) refreshDeviceList();
+      return jsonResponse(result);
     } catch (error) {
       return jsonResponse({ ok: false, error: String(error) }, 500);
     }
@@ -176,5 +176,6 @@ function filterBooted(list: HubDeviceList): HubDeviceList {
   return {
     simulators: list.simulators.filter((device) => device.booted),
     emulators: list.emulators.filter((device) => device.booted),
+    errors: list.errors,
   };
 }

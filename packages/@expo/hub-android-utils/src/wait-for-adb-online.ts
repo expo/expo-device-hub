@@ -1,3 +1,4 @@
+import { type AndroidUtilsResult, reportError, result } from "./errors";
 import { listDevices } from "./list-devices";
 import type { AndroidDevice } from "./types";
 
@@ -7,7 +8,7 @@ export const BOOT_POLL_INTERVAL_MS = 1500;
 /** Options for {@link waitForAdbOnline}; the first two are injectable for testing. */
 export interface WaitForAdbOnlineOptions {
   /** Device lister to poll. Defaults to {@link listDevices}. */
-  listDevicesFn?: () => Promise<AndroidDevice[]>;
+  listDevicesFn?: () => Promise<AndroidUtilsResult<AndroidDevice[]>>;
   /** Delay between polls in ms. Defaults to {@link BOOT_POLL_INTERVAL_MS}. */
   pollIntervalMs?: number;
   /** Stops the wait early (resolving `false`), e.g. once the emulator process died. */
@@ -17,10 +18,9 @@ export interface WaitForAdbOnlineOptions {
 /**
  * Poll `listDevices` until `serial` shows up booted (adb-online), or time out.
  *
- * Resolves `true` as soon as a device with the given `serial` reports `booted`,
- * or `false` once `timeoutMs` has elapsed or `signal` aborts. Errors from the
- * device lister are swallowed so a transient `adb` hiccup doesn't abort the
- * wait.
+ * Its result `value` becomes `true` as soon as the serial reports `booted`, or
+ * `false` once the timeout elapses or the signal aborts. A discovery failure
+ * returns immediately in `error`.
  */
 export async function waitForAdbOnline(
   serial: string,
@@ -30,15 +30,23 @@ export async function waitForAdbOnline(
     pollIntervalMs = BOOT_POLL_INTERVAL_MS,
     signal,
   }: WaitForAdbOnlineOptions = {},
-): Promise<boolean> {
+): Promise<AndroidUtilsResult<boolean>> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (signal?.aborted) return false;
+    if (signal?.aborted) return result(false);
     try {
-      const devices = await listDevicesFn();
-      if (devices.some((device) => device.serial === serial && device.booted)) return true;
-    } catch {}
+      const listed = await listDevicesFn();
+      if (listed.error) return result(false, listed.error);
+      if (listed.value.some((device) => device.serial === serial && device.booted)) {
+        return result(true);
+      }
+    } catch (error) {
+      return result(
+        false,
+        reportError("[android-utils] Failed to poll devices while waiting for adb:", error),
+      );
+    }
     await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
   }
-  return false;
+  return result(false);
 }

@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { emulatorSerial, formatEmulatorCommand, spawnEmulator } from "./emulator";
+import { type AndroidUtilsResult, reportError, result } from "./errors";
 import { resolveEmulatorPath } from "./sdk-paths";
 import type { BootDeviceOptions, BootedDevice, EmulatorExit } from "./types";
 
@@ -13,29 +14,36 @@ import type { BootDeviceOptions, BootedDevice, EmulatorExit } from "./types";
  * is discarded (the detached child outlives us), so failure reports point the
  * user at re-running the returned `command` to see it. Resolves `emulator`
  * from `ANDROID_HOME` / `ANDROID_SDK_ROOT` (falling back to the default macOS
- * SDK location). Returns `null` if the process could not be spawned. Never
- * throws.
+ * SDK location). The result's `value` is `null` if the process could not be
+ * spawned, with the invocation-specific failure in `error`.
  */
-export function bootDevice(options: BootDeviceOptions): BootedDevice | null {
+export async function bootDevice(
+  options: BootDeviceOptions,
+): Promise<AndroidUtilsResult<BootedDevice | null>> {
   try {
     const emulator = resolveEmulatorPath(process.env, homedir());
-    const child = spawnEmulator(emulator, options);
-    if (!child) return null;
+    const spawned = await spawnEmulator(emulator, options);
+    if (spawned.error || !spawned.value) return result(null, spawned.error);
+    const child = spawned.value;
 
     const exited = new Promise<EmulatorExit>((resolve) => {
-      child.once("exit", (code, signal) => resolve({ code, signal }));
-      // A spawn-level error (e.g. binary vanished) may never reach "exit".
-      child.once("error", () => resolve({ code: null, signal: null }));
+      child.once("exit", (code, signal) => resolve({ code, signal, error: null }));
+      child.once("error", (error) =>
+        resolve({
+          code: null,
+          signal: null,
+          error: reportError("[android-utils] `emulator` process error:", error),
+        }),
+      );
     });
 
-    return {
+    return result({
       serial: emulatorSerial(options.port),
       pid: child.pid ?? null,
       command: formatEmulatorCommand(emulator, options),
       exited,
-    };
+    });
   } catch (error) {
-    console.error("[android-utils] Failed to boot device:", error);
-    return null;
+    return result(null, reportError("[android-utils] Failed to boot device:", error));
   }
 }

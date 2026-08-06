@@ -1,3 +1,5 @@
+import type { AndroidUtilsError } from "./errors";
+
 /** Whether an {@link AndroidDevice} is an emulator (AVD) or physical hardware. */
 export type AndroidDeviceType = "emulator" | "device";
 
@@ -110,6 +112,8 @@ export interface EmulatorExit {
   code: number | null;
   /** Terminating signal (e.g. `"SIGKILL"`); `null` on a normal exit. */
   signal: string | null;
+  /** Process-level failure emitted after the emulator was successfully spawned. */
+  error: AndroidUtilsError | null;
 }
 
 /** A freshly launched emulator returned by {@link bootDevice}. */

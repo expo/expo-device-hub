@@ -4,6 +4,7 @@ import { type Device } from '@expo/hub-components';
 
 import { DEVICE_LIST_MESSAGE_TYPE } from '../device-list-protocol';
 import { basePath } from './basePath';
+import { isUtilityError, logUtilityErrors, type UtilityError } from './utilityErrors';
 
 /**
  * The Expo Hub server (`src/server/`) exposes the live device list here,
@@ -21,6 +22,8 @@ export type DeviceList = {
   simulators: Device[];
   emulators: Device[];
 };
+
+export type DeviceListSnapshot = DeviceList & { errors?: UtilityError[] };
 
 const EMPTY: DeviceList = { simulators: [], emulators: [] };
 
@@ -40,6 +43,7 @@ function useDeviceList(): DeviceList {
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let reconnectDelay = RECONNECT_MIN_MS;
+    let activeErrorIds = new Set<string>();
 
     function connect() {
       if (cancelled) return;
@@ -57,7 +61,12 @@ function useDeviceList(): DeviceList {
       };
       nextSocket.onmessage = (event) => {
         const next = parseDeviceListMessage(event.data);
-        if (next) setDevices(next);
+        if (!next) return;
+
+        activeErrorIds = logUtilityErrors(next.errors, activeErrorIds);
+
+        const { errors: _errors, ...nextDevices } = next;
+        setDevices(nextDevices);
       };
       nextSocket.onerror = () => nextSocket.close();
       nextSocket.onclose = () => {
@@ -89,21 +98,27 @@ function useDeviceList(): DeviceList {
   return devices;
 }
 
-export function parseDeviceListMessage(data: unknown): DeviceList | null {
+export function parseDeviceListMessage(data: unknown): DeviceListSnapshot | null {
   if (typeof data !== 'string') return null;
   try {
     const message = JSON.parse(data) as {
       type?: unknown;
-      devices?: { simulators?: unknown; emulators?: unknown };
+      devices?: { simulators?: unknown; emulators?: unknown; errors?: unknown };
     };
     if (
       message.type !== DEVICE_LIST_MESSAGE_TYPE ||
       !Array.isArray(message.devices?.simulators) ||
-      !Array.isArray(message.devices?.emulators)
+      !Array.isArray(message.devices?.emulators) ||
+      (message.devices.errors !== undefined && !Array.isArray(message.devices.errors))
     ) {
       return null;
     }
-    return message.devices as DeviceList;
+    const errors = message.devices.errors?.filter(isUtilityError);
+    return {
+      simulators: message.devices.simulators as Device[],
+      emulators: message.devices.emulators as Device[],
+      ...(errors ? { errors } : {}),
+    };
   } catch {
     return null;
   }

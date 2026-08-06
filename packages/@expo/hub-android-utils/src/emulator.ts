@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { type AndroidUtilsResult, reportError, result } from "./errors";
 import type { BootDeviceOptions } from "./types";
 
 /** The adb serial for an emulator started on the given console port. */
@@ -40,27 +41,33 @@ export function formatEmulatorCommand(emulatorPath: string, options: BootDeviceO
  * Spawn a detached, headless `emulator` process.
  *
  * The child is fully detached (its own process group, ignored stdio, `unref`ed)
- * so it keeps running after the parent exits. Returns the {@link ChildProcess},
- * or `null` if it could not be spawned. Never throws.
+ * so it keeps running after the parent exits. Resolves with the
+ * {@link ChildProcess}, or `null` plus `error` if it could not be spawned.
  */
 export function spawnEmulator(
   emulatorPath: string,
   options: BootDeviceOptions,
-): ChildProcess | null {
+): Promise<AndroidUtilsResult<ChildProcess | null>> {
   try {
     const child = spawn(emulatorPath, buildEmulatorArgs(options), {
       detached: true,
       stdio: "ignore",
     });
 
-    child.on("error", (error) => {
-      console.error("[android-utils] `emulator` process error:", error);
+    return new Promise((resolve) => {
+      const onError = (error: Error) => {
+        resolve(result(null, reportError("[android-utils] Failed to spawn `emulator`:", error)));
+      };
+      child.once("error", onError);
+      child.once("spawn", () => {
+        child.removeListener("error", onError);
+        child.unref();
+        resolve(result(child));
+      });
     });
-    child.unref();
-
-    return child;
   } catch (error) {
-    console.error("[android-utils] Failed to spawn `emulator`:", error);
-    return null;
+    return Promise.resolve(
+      result(null, reportError("[android-utils] Failed to spawn `emulator`:", error)),
+    );
   }
 }

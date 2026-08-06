@@ -181,3 +181,19 @@ test('deviceListFingerprint ignores discovery order', () => {
   const b = { ...LIST, simulators: [secondIos, IOS] };
   expect(deviceListFingerprint(a)).toBe(deviceListFingerprint(b));
 });
+
+test('deviceListFingerprint compares stable error ids instead of volatile details', () => {
+  const error = {
+    id: 'Error:spawn devicectl ENOENT',
+    message: '[apple-utils] Failed to run `devicectl list devices`:',
+    error: 'first temporary path',
+  };
+  const a = { ...LIST, errors: [error] };
+  const b = { ...LIST, errors: [{ ...error, error: 'second temporary path' }] };
+  const duplicated = { ...LIST, errors: [error, error] };
+  const changed = { ...LIST, errors: [{ ...error, id: 'Error:spawn devicectl EACCES' }] };
+
+  expect(deviceListFingerprint(a)).toBe(deviceListFingerprint(b));
+  expect(deviceListFingerprint(a)).toBe(deviceListFingerprint(duplicated));
+  expect(deviceListFingerprint(a)).not.toBe(deviceListFingerprint(changed));
+});
