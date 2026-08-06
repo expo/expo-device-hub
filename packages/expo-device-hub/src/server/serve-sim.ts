@@ -14,7 +14,7 @@ export const SIM_PREFIX = '/vendor/serve-sim';
 // (grid / exec-ws / stream), so a shorter value silently breaks the iOS client.
 const SIM_BASE_PATH = `${MOUNT_PATH}${SIM_PREFIX}`;
 
-const middleware = simMiddleware({ basePath: SIM_BASE_PATH });
+const middleware = simMiddleware({ basePath: SIM_BASE_PATH, proxyHelpers: true });
 
 const SERVE_SIM_STATE_DIR = join(tmpdir(), 'serve-sim');
 const SPAWN_RETRY_COOLDOWN_MS = 30_000;
