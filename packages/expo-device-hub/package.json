@@ -34,6 +34,7 @@
     "vendor/serve-sim/dist/simax",
     "vendor/serve-sim/dist/simcam",
     "vendor/serve-sim/dist/native",
+    "vendor/serve-sim/dist/bin",
     "vendor/serve-sim/LICENSE",
     "vendor/serve-emu/dist/*.js",
     "vendor/serve-emu/vendor",
