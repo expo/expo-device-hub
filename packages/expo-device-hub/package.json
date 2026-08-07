@@ -60,14 +60,14 @@
     "react-native": "catalog:",
     "react-native-web": "catalog:",
     "serve-emu": "workspace:*",
-    "serve-sim": "workspace:*",
+    "@expo/serve-sim": "workspace:*",
     "sirv": "^3.0.2",
     "tailwindcss": "^4.1.11",
     "typescript": "~6.0.3"
   },
   "vendorDependencies": {
     "serve-emu": "workspace:*",
-    "serve-sim": "workspace:*"
+    "@expo/serve-sim": "workspace:*"
   },
   "scripts": {
     "start": "expo start --web",

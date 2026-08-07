@@ -9,7 +9,7 @@
     "expo-status-bar": "~57.0.0",
     "react": "catalog:",
     "react-native": "catalog:",
-    "serve-sim": "workspace:*"
+    "@expo/serve-sim": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",

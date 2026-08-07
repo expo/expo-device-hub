@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["example", "serve-emu", "serve-sim"]
+  "ignore": ["example", "serve-emu", "@expo/serve-sim"]
 }

@@ -69,7 +69,7 @@ This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://
 | [`packages/@expo/hub-apple-utils`](packages/@expo/hub-apple-utils) | Lists, creates, and boots Apple simulator devices via `simctl` (macOS only). |
 | [`packages/@expo/hub-android-utils`](packages/@expo/hub-android-utils) | Lists, creates, and boots Android emulators via `avdmanager` / `sdkmanager` / `emulator`. |
 | [`packages/expo-serve-emu`](packages/expo-serve-emu) | Thin wrapper of `serve-emu`. To be replaced by [`@expo/serve-emu`](http://www.github.com/expo/serve-emu). |
-| [`packages/serve-sim`](packages/serve-sim) | Vendored fork of `serve-sim`. To be replaced by [`@expo/serve-sim`](http://www.github.com/expo/serve-sim). |
+| [`packages/serve-sim`](packages/serve-sim) | Vendored source for [`@expo/serve-sim`](http://www.github.com/expo/serve-sim). |
 | [`packages/serve-emu`](packages/serve-emu) | Vendored fork of `serve-emu`. To be replaced by [`@expo/serve-emu`](http://www.github.com/expo/serve-emu). |
 | [`example`](example) | A minimal Expo app with the plugin installed. |
 

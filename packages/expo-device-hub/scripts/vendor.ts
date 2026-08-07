@@ -18,7 +18,10 @@ mkdirSync(vendorDir, { recursive: true });
 
 for (const name of deps) {
   const packageDir = realpathSync(resolve(root, 'node_modules', name));
-  const dest = resolve(vendorDir, name);
+  // Keep scoped package names out of the published vendor layout. Runtime
+  // paths intentionally remain vendor/serve-sim and vendor/serve-emu.
+  const vendorName = name.split('/').at(-1)!;
+  const dest = resolve(vendorDir, vendorName);
   mkdirSync(dest, { recursive: true });
 
   execFileSync('npm', ['pack', '--ignore-scripts', '--pack-destination', dest], {
@@ -39,5 +42,5 @@ for (const name of deps) {
     .filter((file) => file.split(sep).pop() === 'package.json');
   for (const manifest of manifests) rmSync(resolve(dest, manifest), { force: true });
 
-  console.log(`Vendored ${name} → vendor/${name}`);
+  console.log(`Vendored ${name} → vendor/${vendorName}`);
 }
