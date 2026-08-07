@@ -25,6 +25,7 @@ import {
   type DeviceClient,
   type DeviceConnectionOptions,
   type DeviceLog,
+  type ForegroundApp,
   type HardwareButton,
   type RunningDevice,
   type ScreenSize,
@@ -34,8 +35,23 @@ import {
 const MAX_LOGS = 200;
 const SOFT_DECODE_QUEUE_SIZE = 4;
 const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
+const FOREGROUND_POLL_MS = 5000;
 
 const KEYCODE_R = 46
+
+/** Field-wise equality so the poll only publishes state when something changed. */
+function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
+  return (
+    a.id === b.id &&
+    a.label === b.label &&
+    a.pid === b.pid &&
+    a.activity === b.activity &&
+    a.version === b.version &&
+    a.build === b.build &&
+    a.minSdk === b.minSdk &&
+    a.debuggable === b.debuggable
+  );
+}
 
 const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'android', name: 'Emulator Android', platform: 'android', current: true },
@@ -85,6 +101,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   // The device's system dark/light setting. null until `/api/uimode` reports it.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
+  // The foreground app, polled from `/api/foreground`. null until the first read.
+  const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -548,6 +566,55 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, targetDevice]);
 
+  // ── Foreground app (best-effort) — serve-emu has no push channel for app
+  //    switches, so poll `/api/foreground` (dumpsys window) on an interval. ──
+  useEffect(() => {
+    setForegroundApp(null);
+    if (!active || !baseUrl) return;
+    let cancelled = false;
+    const url = `${apiUrl(baseUrl, '/api/foreground')}${
+      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
+    }`;
+    const poll = async () => {
+      try {
+        const res = await fetch(url, { cache: 'no-store' });
+        const data = (await res.json()) as {
+          ok?: boolean;
+          app?: {
+            packageName?: string | null;
+            activity?: string | null;
+            pid?: number | null;
+            label?: string | null;
+            versionName?: string | null;
+            versionCode?: string | null;
+            minSdk?: number | null;
+            debuggable?: boolean | null;
+          };
+        };
+        if (cancelled || !data.ok || !data.app?.packageName) return;
+        const next: ForegroundApp = {
+          id: data.app.packageName,
+          label: data.app.label ?? undefined,
+          pid: data.app.pid ?? undefined,
+          activity: data.app.activity ?? undefined,
+          version: data.app.versionName ?? undefined,
+          build: data.app.versionCode ?? undefined,
+          minSdk: data.app.minSdk ?? undefined,
+          debuggable: data.app.debuggable ?? undefined,
+        };
+        setForegroundApp((prev) => (prev && sameForegroundApp(prev, next) ? prev : next));
+      } catch {
+        /* offline / unsupported — keep the last known app */
+      }
+    };
+    void poll();
+    const timer = setInterval(poll, FOREGROUND_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [active, baseUrl, targetDevice]);
+
   // ── Current appearance (best-effort) — reflect the device's dark/light mode ──
   useEffect(() => {
     if (!active || !baseUrl) {
@@ -586,6 +653,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     attachLogs,
     detachLogs,
     clearLogs,
+    foregroundApp,
     videoKind: 'canvas',
     attachVideo,
     sendTouch,
