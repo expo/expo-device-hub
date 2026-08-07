@@ -47,6 +47,7 @@ import {
   type ScreenSize,
   type TouchSample,
 } from './types';
+import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
@@ -262,6 +263,7 @@ interface PreviewApi {
   logsEndpoint?: string;
   appStateEndpoint?: string;
   gridApiEndpoint?: string;
+  proxyHelpers?: boolean;
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
@@ -442,7 +444,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
     }`;
 
-    const toMiddleware = (c: PreviewApi): ResolvedConfig => {
+    const toMiddleware = (rawConfig: PreviewApi): ResolvedConfig => {
+      const c = proxyPreviewConfigForBrowser(rawConfig, window.location);
       const basePath = c.basePath ?? '';
       return {
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
