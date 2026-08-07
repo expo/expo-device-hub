@@ -17,8 +17,9 @@
  *      has none).
  *   4. Devices: `GET <base>/grid/api`.
  *
- * If `/api` isn't reachable (pointed straight at a bare helper), it falls back
- * to treating `baseUrl` as the helper: video + input only, no logs/devices.
+ * `baseUrl` is always the mounted serve-sim middleware. Connection failures
+ * keep retrying middleware discovery; they must not be reinterpreted as a bare
+ * helper because doing so drops the middleware/helper path from stream URLs.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -237,16 +238,15 @@ function execWsCommand(
 
 /** Resolved connection: where to stream video/input, and how to reach logs/devices. */
 interface ResolvedConfig {
-  mode: 'middleware' | 'helper';
   streamUrl: string;
   wsUrl: string;
   device: string | null;
-  /** Middleware exec-ws URL (logs transport); null in bare-helper mode. */
+  /** Middleware exec-ws URL used as the logs transport. */
   execWsUrl: string | null;
   execToken: string | null;
   /** Relative SSE path to subscribe for logs, e.g. `/logs?device=<udid>`. */
   logsPath: string | null;
-  /** Absolute URL of the foreground-app SSE stream; null in bare-helper mode. */
+  /** Absolute URL of the foreground-app SSE stream. */
   appStateUrl: string | null;
   gridApiUrl: string | null;
 }
@@ -276,11 +276,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [logsEnabled, setLogsEnabled] = useState(false);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   const [config, setConfig] = useState<ResolvedConfig | null>(null);
-  // The simulator's system dark/light setting. null until read (or in bare-helper
-  // mode, where there's no middleware exec-ws to drive `simctl ui appearance`).
+  // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   // The frontmost app, pushed by the middleware's /appstate SSE. null until the
-  // first event (or in bare-helper mode, which has no appstate stream).
+  // first event.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -399,7 +398,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Set the simulator appearance via `simctl ui <udid> appearance <mode>`,
   // issued over the middleware exec-ws (the same UI-request channel the serve-sim
   // client uses). Needs a resolved middleware config + udid — a no-op otherwise
-  // (bare-helper mode). Optimistic: reflect the choice immediately.
+  // until middleware discovery resolves. Optimistic: reflect the choice
+  // immediately.
   const setAppearance = useCallback(
     (mode: DeviceAppearance) => {
       const c = config;
@@ -418,14 +418,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const detachLogs = useCallback(() => setLogsEnabled(false), []);
   const clearLogs = useCallback(() => setLogs([]), []);
 
-  // ── Resolve the connection: discover the helper + log/device routes via /api,
-  //    falling back to treating baseUrl as a bare helper. ──
+  // ── Resolve the connection: discover the helper + log/device routes via /api. ──
   //
   // The Hub starts helpers explicitly (see `startIosHelper`) — it never boots a
   // sim just by connecting. So when the middleware is reachable but no helper is
   // attached yet (`/api` → null), we keep polling until the just-started helper
-  // comes up, then resolve its streaming config. Only an unreachable/absent
-  // route falls back to bare-helper mode.
+  // comes up, then resolve its streaming config. An unreachable middleware is
+  // retried: `baseUrl` is never interpreted as a bare helper.
   useEffect(() => {
     if (!active || !baseUrl) {
       setConfig(null);
@@ -443,22 +442,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
     }`;
 
-    const helperFallback = (): ResolvedConfig => ({
-      mode: 'helper',
-      streamUrl: new URL('/stream.mjpeg', baseUrl).toString(),
-      wsUrl: toWs(new URL('/ws', baseUrl).toString()),
-      device: null,
-      execWsUrl: null,
-      execToken: null,
-      logsPath: null,
-      appStateUrl: null,
-      gridApiUrl: null,
-    });
-
     const toMiddleware = (c: PreviewApi): ResolvedConfig => {
       const basePath = c.basePath ?? '';
       return {
-        mode: 'middleware',
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         device: c.device ?? null,
@@ -479,8 +465,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       try {
         const res = await fetch(apiUrl, { signal: AbortSignal.timeout(3000) });
         if (!res.ok) {
-          // No middleware at this origin — treat baseUrl as a bare helper.
-          if (!cancelled) setConfig(helperFallback());
+          if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
           return;
         }
         const c = (await res.json()) as PreviewApi | null;
@@ -498,8 +483,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
         if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
       } catch {
-        // /api unreachable — fall back to bare-helper mode.
-        if (!cancelled) setConfig(helperFallback());
+        if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
       }
     };
     void resolve();
