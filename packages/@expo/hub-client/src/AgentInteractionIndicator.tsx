@@ -11,37 +11,19 @@ export function AgentInteractionIndicator({
 }: {
   interaction?: AgentInteraction | null;
 }) {
-  const surfaceRef = useRef<HTMLDivElement | null>(null);
-  const dotRefs = useRef<Array<HTMLDivElement | null>>([]);
-  const sizeRef = useRef({ width: 0, height: 0 });
-  const pointsRef = useRef<AgentInteractionPoint[]>([]);
+  const layerRefs = useRef<Array<HTMLDivElement | null>>([]);
 
   const paint = (points: AgentInteractionPoint[]) => {
-    pointsRef.current = points;
-    const { width, height } = sizeRef.current;
-    for (let index = 0; index < dotRefs.current.length; index++) {
-      const dot = dotRefs.current[index];
-      if (!dot) continue;
+    for (let index = 0; index < layerRefs.current.length; index++) {
+      const layer = layerRefs.current[index];
+      if (!layer) continue;
       const point = points[index];
-      dot.hidden = !point;
+      layer.hidden = !point;
       if (point) {
-        dot.style.transform = `translate3d(${point.x * width}px, ${point.y * height}px, 0) translate(-50%, -50%)`;
+        layer.style.transform = `translate3d(${point.x * 100}%, ${point.y * 100}%, 0)`;
       }
     }
   };
-
-  useEffect(() => {
-    const surface = surfaceRef.current;
-    if (!surface || typeof ResizeObserver === 'undefined') return;
-    const observer = new ResizeObserver(([entry]) => {
-      const rect = entry?.contentRect;
-      if (!rect) return;
-      sizeRef.current = { width: rect.width, height: rect.height };
-      paint(pointsRef.current);
-    });
-    observer.observe(surface);
-    return () => observer.disconnect();
-  }, []);
 
   useEffect(() => {
     if (!interaction) {
@@ -66,7 +48,6 @@ export function AgentInteractionIndicator({
 
   return (
     <div
-      ref={surfaceRef}
       aria-hidden="true"
       data-testid="agent-interaction-indicator"
       style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
@@ -75,12 +56,21 @@ export function AgentInteractionIndicator({
         <div
           key={index}
           ref={(element) => {
-            dotRefs.current[index] = element;
+            layerRefs.current[index] = element;
           }}
-          data-agent-touch={index}
           hidden
-          style={{ ...AGENT_TOUCH_INDICATOR_STYLE, left: 0, top: 0, willChange: 'transform' }}
-        />
+          style={{ position: 'absolute', inset: 0, willChange: 'transform' }}
+        >
+          <div
+            data-agent-touch={index}
+            style={{
+              ...AGENT_TOUCH_INDICATOR_STYLE,
+              left: 0,
+              top: 0,
+              transform: 'translate(-50%, -50%)',
+            }}
+          />
+        </div>
       ))}
     </div>
   );
