@@ -121,6 +121,17 @@ export interface MultiTouchSample {
   b: { x: number; y: number };
 }
 
+/** A physical browser-keyboard event forwarded by {@link DeviceScreen}. */
+export interface KeyboardInput {
+  phase: 'down' | 'up';
+  /** Physical browser key, e.g. `KeyA`, `ShiftLeft`, or `Enter`. */
+  code: string;
+  /** Layout-resolved value, e.g. `a`, `A`, `é`, or `Enter`. */
+  key: string;
+  /** Whether this is an auto-repeated keydown. */
+  repeat: boolean;
+}
+
 export interface DeviceConnectionOptions {
   /**
    * Origin (and optional base path) of a running serve-sim / serve-emu server,
@@ -188,6 +199,12 @@ export interface DeviceClient {
   sendTouch: (sample: TouchSample) => void;
   /** Forward a two-finger pinch/pan. Present only on backends that support it (serve-sim). */
   sendMultiTouch?: (sample: MultiTouchSample) => void;
+  /**
+   * Forward a physical browser-keyboard event to the device. Returns true when
+   * the event was accepted, allowing {@link DeviceScreen} to suppress the
+   * corresponding browser action while the streamed device has focus.
+   */
+  sendKey: (input: KeyboardInput) => boolean;
   /** Press a hardware button. */
   pressButton: (button: HardwareButton) => void;
   /**
@@ -223,6 +240,16 @@ export interface DeviceClient {
    * night yes|no`. No-op on a backend that can't set it.
    */
   setAppearance: (mode: DeviceAppearance) => void;
+
+  /**
+   * Whether Simulator currently treats the Mac keyboard as connected to the
+   * guest. iOS only; null while the helper is unavailable or on Android.
+   */
+  hardwareKeyboardConnected: boolean | null;
+  /** Connect or disconnect the Mac keyboard from the iOS guest. */
+  setHardwareKeyboardConnected: (connected: boolean) => void;
+  /** Toggle the iOS on-screen software keyboard without changing the hardware connection. */
+  toggleSoftwareKeyboard: () => void;
 }
 
 /** A platform implementation of the connection half of the interface. */

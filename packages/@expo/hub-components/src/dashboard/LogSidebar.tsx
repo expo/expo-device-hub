@@ -1,6 +1,7 @@
 import { type DeviceClient } from '@expo/hub-client';
 import { SidebarToggle } from '../primitives';
 import { CurrentAppSection } from './CurrentAppSection';
+import { KeyboardSection } from './KeyboardSection';
 import { OutputSection } from './OutputSection';
 
 /**
@@ -41,6 +42,7 @@ export function LogSidebar({
         </div>
       )}
       <CurrentAppSection client={client} />
+      {client?.platform === 'ios' && <KeyboardSection client={client} />}
       <OutputSection client={client} />
     </aside>
   );

@@ -18,6 +18,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
+import { androidMessageForKeyboardInput } from './keyboard';
 import { MsePlayer } from './mse-player';
 import {
   type ConnectionStatus,
@@ -27,6 +28,7 @@ import {
   type DeviceLog,
   type ForegroundApp,
   type HardwareButton,
+  type KeyboardInput,
   type RunningDevice,
   type ScreenSize,
   type TouchSample,
@@ -37,7 +39,7 @@ const SOFT_DECODE_QUEUE_SIZE = 4;
 const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 const FOREGROUND_POLL_MS = 5000;
 
-const KEYCODE_R = 46
+const KEYCODE_R = 46;
 
 /** Field-wise equality so the poll only publishes state when something changed. */
 function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
@@ -118,10 +120,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const detachLogs = useCallback(() => setLogsEnabled(false), []);
   const clearLogs = useCallback(() => setLogs([]), []);
 
-  const send = useCallback((message: Record<string, unknown>) => {
+  const send = useCallback((message: Record<string, unknown>): boolean => {
     const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
     ws.send(JSON.stringify({ ack: false, ...message }));
+    return true;
   }, []);
 
   const sendTouch = useCallback(
@@ -135,6 +138,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     (button: HardwareButton) => {
       const message = BUTTON_MESSAGE[button];
       if (message) send(message);
+    },
+    [send],
+  );
+
+  const sendKey = useCallback(
+    (input: KeyboardInput): boolean => {
+      const message = androidMessageForKeyboardInput(input);
+      return message ? send(message) : false;
     },
     [send],
   );
@@ -657,11 +668,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     videoKind: 'canvas',
     attachVideo,
     sendTouch,
+    sendKey,
     pressButton,
     reload,
     rotate,
     screenshot,
     appearance,
     setAppearance,
+    hardwareKeyboardConnected: null,
+    setHardwareKeyboardConnected: () => {},
+    toggleSoftwareKeyboard: () => {},
   };
 }
