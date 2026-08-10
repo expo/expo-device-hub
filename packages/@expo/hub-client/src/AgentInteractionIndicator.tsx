@@ -30,20 +30,40 @@ export function AgentInteractionIndicator({
       paint([]);
       return;
     }
+    const activeInteraction = interaction;
 
     const reduceMotion = window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false;
-    const endMs = agentInteractionEndMs(interaction);
-    const parsedTimestamp = Date.parse(interaction.timestamp);
+    const endMs = agentInteractionEndMs(activeInteraction);
+    const parsedTimestamp = Date.parse(activeInteraction.timestamp);
     const startedAt = Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now();
     let frame = 0;
+    let fallbackTimer = 0;
 
-    const update = () => {
-      const elapsedMs = reduceMotion ? endMs : Math.max(0, Date.now() - startedAt);
-      paint(agentInteractionPointsAt(interaction, elapsedMs));
-      if (!reduceMotion && elapsedMs < endMs) frame = requestAnimationFrame(update);
+    const scheduleUpdate = () => {
+      frame = requestAnimationFrame(() => {
+        clearTimeout(fallbackTimer);
+        fallbackTimer = 0;
+        update();
+      });
+      // A streamed device can remain visible in a browser whose compositor has
+      // paused rAF. Keep the log-timed animation advancing in that case.
+      fallbackTimer = window.setTimeout(() => {
+        cancelAnimationFrame(frame);
+        frame = 0;
+        update();
+      }, 100);
     };
+
+    function update() {
+      const elapsedMs = reduceMotion ? endMs : Math.max(0, Date.now() - startedAt);
+      paint(agentInteractionPointsAt(activeInteraction, elapsedMs));
+      if (!reduceMotion && elapsedMs < endMs) scheduleUpdate();
+    }
     update();
-    return () => cancelAnimationFrame(frame);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(fallbackTimer);
+    };
   }, [interaction]);
 
   return (
