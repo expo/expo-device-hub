@@ -23,6 +23,7 @@ import { basePath } from './dashboard/basePath';
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
+import { useArgentInteraction } from './dashboard/useArgentInteraction';
 import { useIsNarrow } from './dashboard/useIsNarrow';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 
@@ -207,6 +208,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     selected ? { platform: selected.platform, device: selected.id } : null,
     basePath()
   );
+  const agentInteraction = useArgentInteraction(selected?.id);
 
   return (
     <div
@@ -263,6 +265,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         <StreamPanel
           device={selected}
           client={client}
+          agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
           displayScreen={displayScreen}
           onShutdown={() => handleShutdown(selected)}

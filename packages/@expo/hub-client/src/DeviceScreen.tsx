@@ -7,6 +7,8 @@ import {
 } from 'react';
 
 import { streamGeometry } from './orientation';
+import { AgentInteractionIndicator } from './AgentInteractionIndicator';
+import { TouchIndicator } from './TouchIndicator';
 import { type DeviceScreenProps, type MultiTouchSample } from './types';
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
@@ -30,7 +32,12 @@ const FINGER_CURSOR =
  * the stream is rotated for a non-portrait device, only the video element is
  * CSS-rotated — the input overlay stays display-aligned.
  */
-export function DeviceScreen({ client, borderRadius, squircle }: DeviceScreenProps) {
+export function DeviceScreen({
+  client,
+  borderRadius,
+  squircle,
+  agentInteraction,
+}: DeviceScreenProps) {
   const { videoKind, attachVideo, sendTouch, sendMultiTouch, screen, status, error } = client;
   const canMulti = !!sendMultiTouch;
 
@@ -258,10 +265,12 @@ export function DeviceScreen({ client, borderRadius, squircle }: DeviceScreenPro
       {/* Two-finger indicator dots. */}
       {fingers && (
         <>
-          <FingerDot point={fingers.a} />
-          <FingerDot point={fingers.b} />
+          <TouchIndicator point={fingers.a} />
+          <TouchIndicator point={fingers.b} />
         </>
       )}
+
+      <AgentInteractionIndicator interaction={agentInteraction} />
 
       {status !== 'streaming' && (
         <div
@@ -287,25 +296,5 @@ export function DeviceScreen({ client, borderRadius, squircle }: DeviceScreenPro
         </div>
       )}
     </div>
-  );
-}
-
-function FingerDot({ point }: { point: Point }) {
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        left: `${point.x * 100}%`,
-        top: `${point.y * 100}%`,
-        width: 20,
-        height: 20,
-        borderRadius: '50%',
-        background: 'rgba(255, 255, 255, 0.45)',
-        border: '1.25px solid rgba(0, 0, 0, 0.55)',
-        boxShadow: '0 1px 3px rgba(0, 0, 0, 0.45)',
-        transform: 'translate(-50%, -50%)',
-        pointerEvents: 'none',
-      }}
-    />
   );
 }
