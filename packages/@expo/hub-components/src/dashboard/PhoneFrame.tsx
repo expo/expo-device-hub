@@ -1,6 +1,11 @@
 import { type ComponentType, type CSSProperties } from 'react';
 
-import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo/hub-client';
+import {
+  type AgentInteraction,
+  type DeviceClient,
+  type DeviceScreenProps,
+  type ScreenSize,
+} from '@expo/hub-client';
 import { bg } from '../primitives';
 import { type Platform } from './data';
 
@@ -36,11 +41,13 @@ const CONFIG: Record<Platform, { ratio: number; radiusFraction: number; squircle
 export function PhoneFrame({
   platform,
   client,
+  agentInteraction,
   DeviceScreen,
   displayScreen,
 }: {
   platform: Platform;
   client?: DeviceClient;
+  agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
@@ -74,7 +81,12 @@ export function PhoneFrame({
   return (
     <div style={{ ...wrapperStyle, boxShadow: SHADOW, borderRadius }}>
       {live ? (
-        <DeviceScreen client={client} borderRadius={borderRadius} squircle={squircle} />
+        <DeviceScreen
+          client={client}
+          agentInteraction={agentInteraction}
+          borderRadius={borderRadius}
+          squircle={squircle}
+        />
       ) : (
         <div
           style={{

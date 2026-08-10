@@ -38,6 +38,7 @@ import {
   FloatingSidebarToggle,
   floatingSidebarToggleInset,
 } from './dashboard/FloatingSidebarToggle';
+import { useArgentInteraction } from './dashboard/useArgentInteraction';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 import { SidebarOverlay } from './dashboard/SidebarOverlay';
 import { useSidebarLayout } from './dashboard/useSidebarLayout';
@@ -236,6 +237,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     selected ? { platform: selected.platform, device: selected.id, streamMode } : null,
     basePath()
   );
+  const agentInteraction = useArgentInteraction(selected?.id);
 
   return (
     <div
@@ -297,6 +299,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         <StreamPanel
           device={selected}
           client={client}
+          agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
           displayScreen={displayScreen}
           onShutdown={() => handleShutdown(selected)}

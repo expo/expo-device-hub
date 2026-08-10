@@ -1,6 +1,11 @@
 import { type ComponentType } from 'react';
 
-import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo/hub-client';
+import {
+  type AgentInteraction,
+  type DeviceClient,
+  type DeviceScreenProps,
+  type ScreenSize,
+} from '@expo/hub-client';
 import { bg, border, radius, shadow } from '../primitives';
 import { type Device } from './data';
 import { PhoneFrame } from './PhoneFrame';
@@ -35,6 +40,7 @@ function screenshotFilename(name: string): string {
 export function StreamPanel({
   device,
   client,
+  agentInteraction,
   DeviceScreen,
   displayScreen,
   onShutdown,
@@ -43,6 +49,7 @@ export function StreamPanel({
 }: {
   device: Device;
   client: DeviceClient;
+  agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
@@ -81,6 +88,7 @@ export function StreamPanel({
       <PhoneFrame
         platform={device.platform}
         client={client}
+        agentInteraction={agentInteraction}
         DeviceScreen={DeviceScreen}
         displayScreen={displayScreen}
       />
