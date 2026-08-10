@@ -21,6 +21,7 @@ import {
   shutdownHubDevice,
 } from './device-actions';
 import { configureClientShell } from './client-shell';
+import { argentInteractionWebSocketHandler } from './argent-interaction-websocket';
 import { deviceListWebSocketHandler, refreshDeviceList } from './device-list-websocket';
 import { type HubDeviceList, listDevices } from './devices';
 import { MOUNT_PATH } from './mount';
@@ -38,6 +39,7 @@ const BOOT_DEVICE_ROUTE = '/api/devices/boot';
 const CREATE_DEVICE_ROUTE = '/api/devices/create';
 const NEW_DEVICE_OPTIONS_ROUTE = '/api/new-device-options';
 const DEVICES_WEBSOCKET_ROUTE = '/api/devices/ws';
+const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = '/api/argent-interactions/ws';
 
 // The exported dashboard shell (dist/client/index.html, a sibling of the
 // dist/server bundle this file becomes). Its asset URLs are relative and its
@@ -180,6 +182,7 @@ export default async function handler(request: Request): Promise<Response | null
 
 export const webSocketHandlers = {
   [DEVICES_WEBSOCKET_ROUTE]: deviceListWebSocketHandler,
+  [ARGENT_INTERACTIONS_WEBSOCKET_ROUTE]: argentInteractionWebSocketHandler,
   [`${SIM_PREFIX}/exec-ws`]: simWebSocketHandler,
   [`${SIM_PREFIX}/helper/ws`]: simWebSocketHandler,
   [`${EMU_PREFIX}/ws`]: emuWebSocketHandler,
