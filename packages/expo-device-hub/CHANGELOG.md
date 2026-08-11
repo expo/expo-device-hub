@@ -1,5 +1,17 @@
 # expo-device-hub
 
+## 0.3.0
+
+### Minor Changes
+
+- d5c3290: Added UI to create new simulators and emulators based on the available SDKs.
+- f7f6486: Add currently opened application metadata.
+- b6d3b9f: Added fullscreen compact view to maximize the device view when used in agentic UIs.
+
+### Patch Changes
+
+- 93a310a, 9282d67: Fixed reading of the last boot timestamp of recent simulators and emulators.
+
 ## 0.2.1
 
 ### Patch Changes
