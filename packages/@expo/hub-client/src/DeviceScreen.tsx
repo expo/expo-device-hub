@@ -22,8 +22,8 @@ const FINGER_CURSOR =
 /**
  * Shared renderer for a live {@link DeviceClient}, used in place of the static
  * `<img>` inside {@link PhoneFrame}. It paints whatever element the active
- * implementation asks for (`<canvas>` for serve-emu H.264, `<img>` for serve-sim
- * MJPEG) and forwards normalized pointer input.
+ * implementation asks for (`<canvas>` for H.264, `<img>` for MJPEG, or
+ * `<video>` for WebRTC) and forwards normalized pointer input.
  *
  * Input is measured in *display* space (the hook remaps to the device's raw
  * frame for the current orientation). Single-finger drags go through
@@ -302,6 +302,8 @@ export function DeviceScreen({ client, borderRadius, squircle }: DeviceScreenPro
     <div style={surfaceStyle}>
       {videoKind === 'canvas' ? (
         <canvas ref={attachVideo} style={mediaStyle} />
+      ) : videoKind === 'video' ? (
+        <video ref={attachVideo} autoPlay muted playsInline style={mediaStyle} />
       ) : (
         <img ref={attachVideo} alt="Device screen" draggable={false} style={mediaStyle} />
       )}

@@ -22,7 +22,7 @@ import { type CSSProperties } from 'react';
 export type DevicePlatform = 'ios' | 'android';
 
 /** Viewer-selected transport for serve-sim video. */
-export type DeviceStreamMode = 'mjpeg' | 'h264';
+export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
 
 /**
  * Lifecycle of a single connection:
@@ -157,7 +157,7 @@ export interface DeviceConnectionOptions {
 }
 
 /** Which element the implementation paints into. */
-export type VideoSurfaceKind = 'canvas' | 'img';
+export type VideoSurfaceKind = 'canvas' | 'img' | 'video';
 
 /**
  * The live state + controls for one device connection. Returned by the hook and
@@ -199,10 +199,11 @@ export interface DeviceClient {
   /** Element kind {@link DeviceScreen} should render for this client. */
   videoKind: VideoSurfaceKind;
   /**
-   * Ref callback for the paint target. The hook owns the element: for `canvas`
-   * it decodes frames into it; for `img` it points its `src` at the stream.
+   * Ref callback for the paint target. The hook owns the element: `canvas`
+   * receives decoded H.264 frames, `img` points at MJPEG, and `video` receives
+   * a WebRTC MediaStream.
    */
-  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | null) => void;
+  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => void;
 
   /** Forward a normalized touch/drag to the device. */
   sendTouch: (sample: TouchSample) => void;
