@@ -2,7 +2,12 @@
 
 import '@expo/hub-components/theme.css';
 import '../global.css';
-import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo/hub-client';
+import {
+  DeviceScreen,
+  displayScreen,
+  useActiveDeviceClient,
+  type DeviceStreamMode,
+} from '@expo/hub-client';
 import {
   EmptyState,
   LogSidebar,
@@ -48,6 +53,7 @@ const DEFAULT_SIDEBAR_WIDTH = 400;
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
+const DEFAULT_STREAM_MODE: DeviceStreamMode = 'h264';
 
 /**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
@@ -85,6 +91,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const logsNarrow = useIsNarrow(LOGS_MAX_WIDTH);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [logsOpen, setLogsOpen] = useState(true);
+  const [streamMode] = useState<DeviceStreamMode>(DEFAULT_STREAM_MODE);
   // Draggable widths for each inline sidebar. The `*Start` refs snapshot the
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
@@ -204,7 +211,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load.
   const client = useActiveDeviceClient(
-    selected ? { platform: selected.platform, device: selected.id } : null,
+    selected ? { platform: selected.platform, device: selected.id, streamMode } : null,
     basePath()
   );
 

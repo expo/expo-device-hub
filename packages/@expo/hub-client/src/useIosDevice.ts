@@ -22,8 +22,10 @@
  * helper because doing so drops the middleware/helper path from stream URLs.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
+import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
+import { isAvccSupported } from './avcc';
 import {
   HID_EDGE_BOTTOM,
   homeIndicatorEdge,
@@ -50,6 +52,7 @@ import {
   type TouchSample,
 } from './types';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
+import { useAvccStream } from './useAvccStream';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
@@ -244,6 +247,8 @@ function execWsCommand(
 
 /** Resolved connection: where to stream video/input, and how to reach logs/devices. */
 interface ResolvedConfig {
+  /** Base serve-sim helper URL used by `/stream.avcc`. */
+  url: string;
   streamUrl: string;
   wsUrl: string;
   device: string | null;
@@ -272,12 +277,13 @@ interface PreviewApi {
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true, device: targetDevice = null } = options;
+  const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
   const active = enabled && !!baseUrl;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<ScreenSize | null>(null);
+  const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
   // Logs are opt-in: nothing streams until the user attaches.
   const [logsEnabled, setLogsEnabled] = useState(false);
@@ -299,7 +305,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
+  const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
+  const useAvcc = streamMode === 'h264' && isAvccSupported() && !avccFallback.fellBack;
   // True while the in-flight single-finger drag began in the home-indicator band.
   const edgeGestureRef = useRef(false);
   // Latest screen config, read by the (stable) input callbacks for orientation.
@@ -319,10 +328,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | null) => {
-      imgRef.current = (el as HTMLImageElement) ?? null;
-      if (el) applyStreamSrc();
+      if (useAvcc) {
+        canvasRef.current = (el as HTMLCanvasElement) ?? null;
+        imgRef.current = null;
+      } else {
+        imgRef.current = (el as HTMLImageElement) ?? null;
+        canvasRef.current = null;
+        if (el) applyStreamSrc();
+      }
     },
-    [applyStreamSrc],
+    [applyStreamSrc, useAvcc],
   );
 
   const sendTouch = useCallback((sample: TouchSample) => {
@@ -479,6 +494,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const c = proxyPreviewConfigForBrowser(rawConfig, window.location);
       const basePath = c.basePath ?? '';
       return {
+        url: c.url!,
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         device: c.device ?? null,
@@ -528,8 +544,53 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [active, baseUrl, targetDevice]);
 
+  // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
+  useEffect(() => {
+    dispatchAvccFallback('reset');
+    setFps(0);
+  }, [streamMode, config?.url]);
+
+  useEffect(() => {
+    if (!useAvcc || !config?.url) return;
+    const timer = setTimeout(() => dispatchAvccFallback('timeout'), AVCC_FRAME_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [useAvcc, config?.url]);
+
+  const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
+  const onAvccFrame = useCallback(() => {
+    const now = performance.now();
+    const counter = fpsCounterRef.current;
+    if (counter.startedAt === 0) counter.startedAt = now;
+    counter.frames++;
+    if (now - counter.startedAt < 1_000) return;
+    const next = Math.round((counter.frames * 1_000) / (now - counter.startedAt));
+    counter.frames = 0;
+    counter.startedAt = now;
+    setFps((previous) => (previous === next ? previous : next));
+  }, []);
+
+  useAvccStream({
+    url: config?.url ?? '',
+    enabled: active && useAvcc && !!config,
+    canvasRef,
+    onFirstFrame: () => {
+      setStatus('streaming');
+      setError(null);
+    },
+    onFrame: onAvccFrame,
+    onDecodedFrame: () => dispatchAvccFallback('decoded-frame'),
+    onResize: (width, height) => {
+      if (!hasWsConfigRef.current) setScreen({ width, height });
+    },
+    onError: (message) => {
+      setStatus('error');
+      setError(message);
+    },
+    onDecoderError: () => dispatchAvccFallback('error'),
+  });
+
   // ── MJPEG video (<img>) ──
-  const streamUrl = config?.streamUrl ?? null;
+  const streamUrl = useAvcc ? null : (config?.streamUrl ?? null);
   useEffect(() => {
     if (!streamUrl) {
       streamUrlRef.current = null;
@@ -582,6 +643,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const el = imgRef.current;
       if (el) el.removeAttribute('src');
       setScreen(null);
+      setFps(0);
     };
   }, [streamUrl, applyStreamSrc]);
 
@@ -865,7 +927,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     status,
     error,
     screen,
-    fps: 0,
+    fps,
     devices,
     logs,
     logsEnabled,
@@ -873,7 +935,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     detachLogs,
     clearLogs,
     foregroundApp,
-    videoKind: 'img',
+    videoKind: useAvcc ? 'canvas' : 'img',
     attachVideo,
     sendTouch,
     sendMultiTouch,
