@@ -2,7 +2,12 @@
 
 import '@expo/hub-components/theme.css';
 import '../global.css';
-import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo/hub-client';
+import {
+  DeviceScreen,
+  displayScreen,
+  useActiveDeviceClient,
+  type DeviceStreamMode,
+} from '@expo/hub-client';
 import {
   EmptyState,
   LogSidebar,
@@ -25,6 +30,7 @@ import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
+import { initialStreamMode, supportsSecureStreamModes } from './dashboard/streamMode';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -79,6 +85,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // Installed runtimes/system images and models for the new-device forms.
   const newDeviceOptions = useNewDeviceOptions();
   const [selectedId, setSelectedId] = useState('');
+  const secureModesAvailable = supportsSecureStreamModes({
+    protocol: window.location.protocol,
+    hostname: window.location.hostname,
+    isSecureContext: window.isSecureContext,
+  });
+  const [streamMode, setStreamMode] = useState<DeviceStreamMode>(() =>
+    initialStreamMode(secureModesAvailable)
+  );
   // Devices started through the picker, retained until host discovery catches up.
   const [added, setAdded] = useState<Device[]>([]);
   const narrow = useIsNarrow(NARROW_MAX_WIDTH);
@@ -206,8 +220,13 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const client = useActiveDeviceClient(
     selected ? { platform: selected.platform, device: selected.id } : null,
     basePath(),
-    'h264'
+    streamMode
   );
+
+  const streamSettings =
+    selected?.platform === 'ios'
+      ? { mode: streamMode, onModeChange: setStreamMode, secureModesAvailable }
+      : undefined;
 
   return (
     <div
@@ -293,7 +312,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               )
             }
           />
-          <LogSidebar client={client} onToggle={() => setLogsOpen(false)} width={logsWidth} />
+          <LogSidebar
+            client={client}
+            streamSettings={streamSettings}
+            onToggle={() => setLogsOpen(false)}
+            width={logsWidth}
+          />
         </>
       )}
 
@@ -356,7 +380,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               backgroundColor: bg.subtle,
               boxShadow: shadow.lg,
             }}>
-            <LogSidebar client={client} onToggle={() => setLogsOpen(false)} width={logsWidth} />
+            <LogSidebar
+              client={client}
+              streamSettings={streamSettings}
+              onToggle={() => setLogsOpen(false)}
+              width={logsWidth}
+            />
           </div>
         </>
       )}

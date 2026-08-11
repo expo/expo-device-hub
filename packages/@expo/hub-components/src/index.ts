@@ -47,6 +47,10 @@ export * from './theme/tokens';
 // types-only devDependency) so this library never imports the client at runtime.
 export { Sidebar } from './dashboard/Sidebar';
 export { LogSidebar } from './dashboard/LogSidebar';
+export {
+  StreamSettingsSection,
+  type StreamSettingsProps,
+} from './dashboard/StreamSettingsSection';
 export { StreamPanel } from './dashboard/StreamPanel';
 export { EmptyState } from './dashboard/EmptyState';
 export { DeviceSection, type DeviceSectionProps } from './dashboard/DeviceSection';

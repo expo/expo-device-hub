@@ -2,6 +2,7 @@ import { type DeviceClient } from '@expo/hub-client';
 import { SidebarToggle } from '../primitives';
 import { CurrentAppSection } from './CurrentAppSection';
 import { OutputSection } from './OutputSection';
+import { StreamSettingsSection, type StreamSettingsProps } from './StreamSettingsSection';
 
 /**
  * Right column: the selected device's output (Current app + Logs). Mirrors the
@@ -12,12 +13,15 @@ import { OutputSection } from './OutputSection';
 export function LogSidebar({
   onToggle,
   client,
+  streamSettings,
   width = 400,
 }: {
   /** When set, a sidebar toggle is shown to collapse this panel. */
   onToggle?: () => void;
   /** Active device connection — feeds the current-app and logs panels. */
   client?: DeviceClient;
+  /** iOS playback controls. Omitted for Android devices and empty states. */
+  streamSettings?: StreamSettingsProps;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
 }) {
@@ -41,6 +45,7 @@ export function LogSidebar({
         </div>
       )}
       <CurrentAppSection client={client} />
+      {streamSettings && <StreamSettingsSection {...streamSettings} />}
       <OutputSection client={client} />
     </aside>
   );
