@@ -205,7 +205,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // boots) on load.
   const client = useActiveDeviceClient(
     selected ? { platform: selected.platform, device: selected.id } : null,
-    basePath()
+    basePath(),
+    'h264'
   );
 
   return (

@@ -7,10 +7,10 @@
  *   1. `GET <base>/api` → the live config: the helper `url`/`streamUrl`/`wsUrl`,
  *      the `device` udid, the per-session `execToken`, and the `logsEndpoint` /
  *      `gridApiEndpoint` route paths.
- *   2. Video: MJPEG `<img>` from the helper's `streamUrl`. Input + screen config:
- *      the helper's binary WebSocket (`0x03` touch, `0x04` button, `0x05`
- *      multi-touch out; `0x82` screen config in). Coordinates are mapped to the
- *      device's raw frame per orientation (see `./orientation`).
+ *   2. Video: caller-selected MJPEG, HTTP H.264/AVCC, or WebRTC, matching the
+ *      serve-sim UI. Input + screen config use the helper's binary WebSocket
+ *      (`0x03` touch, `0x04` button, `0x05` multi-touch out; `0x82` screen
+ *      config in). Coordinates are mapped to the raw frame per orientation.
  *   3. Logs: streamed over the middleware's **exec-ws** WebSocket exactly like
  *      the serve-sim client — `{token}` → `{sub, path: logsEndpoint}` → `{sub,
  *      data}` (raw SSE) — rather than a direct route on the helper (the helper
@@ -24,6 +24,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { isAvccSupported } from './avcc';
 import {
   HID_EDGE_BOTTOM,
   homeIndicatorEdge,
@@ -48,6 +49,8 @@ import {
   type TouchSample,
 } from './types';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
+import { useAvccStream } from './useAvccStream';
+import { useWebRtcStream } from './useWebRtcStream';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
@@ -239,6 +242,8 @@ function execWsCommand(
 
 /** Resolved connection: where to stream video/input, and how to reach logs/devices. */
 interface ResolvedConfig {
+  /** Same-origin helper base used by H.264 and WebRTC endpoints. */
+  helperUrl: string;
   streamUrl: string;
   wsUrl: string;
   device: string | null;
@@ -267,12 +272,13 @@ interface PreviewApi {
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true, device: targetDevice = null } = options;
+  const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
   const active = enabled && !!baseUrl;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<ScreenSize | null>(null);
+  const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
   // Logs are opt-in: nothing streams until the user attaches.
   const [logsEnabled, setLogsEnabled] = useState(false);
@@ -289,7 +295,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
+  const fpsRef = useRef({ count: 0, startedAt: performance.now() });
   // True while the in-flight single-finger drag began in the home-indicator band.
   const edgeGestureRef = useRef(false);
   // Latest screen config, read by the (stable) input callbacks for orientation.
@@ -308,12 +317,27 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, []);
 
   const attachVideo = useCallback(
-    (el: HTMLCanvasElement | HTMLImageElement | null) => {
-      imgRef.current = (el as HTMLImageElement) ?? null;
-      if (el) applyStreamSrc();
+    (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
+      if (streamMode === 'h264') canvasRef.current = (el as HTMLCanvasElement) ?? null;
+      else if (streamMode === 'webrtc') videoRef.current = (el as HTMLVideoElement) ?? null;
+      else {
+        imgRef.current = (el as HTMLImageElement) ?? null;
+        if (el) applyStreamSrc();
+      }
     },
-    [applyStreamSrc],
+    [applyStreamSrc, streamMode],
   );
+
+  const recordFrame = useCallback(() => {
+    const counter = fpsRef.current;
+    counter.count++;
+    const now = performance.now();
+    if (now - counter.startedAt < 1000) return;
+    const next = Math.round((counter.count * 1000) / (now - counter.startedAt));
+    counter.count = 0;
+    counter.startedAt = now;
+    setFps((previous) => (previous === next ? previous : next));
+  }, []);
 
   const sendTouch = useCallback((sample: TouchSample) => {
     const ws = wsRef.current;
@@ -448,6 +472,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const c = proxyPreviewConfigForBrowser(rawConfig, window.location);
       const basePath = c.basePath ?? '';
       return {
+        helperUrl: c.url!,
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         device: c.device ?? null,
@@ -497,10 +522,20 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [active, baseUrl, targetDevice]);
 
+  const helperUrl = config?.helperUrl ?? '';
+  useEffect(() => {
+    fpsRef.current = { count: 0, startedAt: performance.now() };
+    setFps(0);
+    if (helperUrl) {
+      setStatus('connecting');
+      setError(null);
+    }
+  }, [helperUrl, streamMode]);
+
   // ── MJPEG video (<img>) ──
   const streamUrl = config?.streamUrl ?? null;
   useEffect(() => {
-    if (!streamUrl) {
+    if (streamMode !== 'mjpeg' || !streamUrl) {
       streamUrlRef.current = null;
       return;
     }
@@ -550,9 +585,111 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       img?.removeEventListener('error', onError);
       const el = imgRef.current;
       if (el) el.removeAttribute('src');
-      setScreen(null);
     };
-  }, [streamUrl, applyStreamSrc]);
+  }, [streamMode, streamUrl, applyStreamSrc]);
+
+  // ── HTTP H.264 (`/stream.avcc`) decoded into a canvas with WebCodecs. ──
+  useEffect(() => {
+    if (streamMode !== 'h264' || !helperUrl || isAvccSupported()) return;
+    setStatus('error');
+    setError('H.264 requires WebCodecs in a secure browser context.');
+  }, [helperUrl, streamMode]);
+  useAvccStream({
+    url: helperUrl,
+    enabled: active && streamMode === 'h264',
+    canvasRef,
+    onFirstFrame: () => {
+      setStatus('streaming');
+      setError(null);
+    },
+    onFrame: recordFrame,
+    onResize: (width, height) => {
+      if (hasWsConfigRef.current) return;
+      setScreen((previous) =>
+        previous?.width === width && previous.height === height
+          ? previous
+          : { width, height },
+      );
+    },
+    onError: (message) => {
+      setStatus('error');
+      setError(message);
+    },
+  });
+
+  // ── WebRTC: same receive-only offer/answer flow as the serve-sim UI. ──
+  const {
+    error: webRtcError,
+    markFrameDecoded: markWebRtcFrameDecoded,
+    stream: webRtcStream,
+  } = useWebRtcStream({
+    offerUrl: helperUrl ? `${helperUrl.replace(/\/$/, '')}/webrtc/offer` : '',
+    closeUrl: helperUrl ? `${helperUrl.replace(/\/$/, '')}/webrtc/close` : '',
+    enabled: active && streamMode === 'webrtc',
+    codec: 'h264',
+  });
+  useEffect(() => {
+    if (streamMode !== 'webrtc') return;
+    if (webRtcError) {
+      setStatus('error');
+      setError(webRtcError);
+    } else if (!webRtcStream) {
+      setStatus('connecting');
+      setError(null);
+    }
+  }, [streamMode, webRtcError, webRtcStream]);
+  useEffect(() => {
+    if (streamMode !== 'webrtc') return;
+    const video = videoRef.current;
+    if (!video) return;
+
+    let stopped = false;
+    let firstFrame = true;
+    let callbackId = 0;
+    const updateDimensions = () => {
+      if (hasWsConfigRef.current || video.videoWidth <= 0 || video.videoHeight <= 0) return;
+      setScreen((previous) =>
+        previous?.width === video.videoWidth && previous.height === video.videoHeight
+          ? previous
+          : { width: video.videoWidth, height: video.videoHeight },
+      );
+    };
+    const markFrame = () => {
+      if (stopped) return;
+      updateDimensions();
+      recordFrame();
+      if (firstFrame) {
+        firstFrame = false;
+        markWebRtcFrameDecoded();
+        setStatus('streaming');
+        setError(null);
+      }
+    };
+    const onVideoFrame = () => {
+      markFrame();
+      callbackId = video.requestVideoFrameCallback(onVideoFrame);
+    };
+    const onTimeUpdate = () => markFrame();
+
+    video.srcObject = webRtcStream;
+    if (webRtcStream) {
+      const hasVideoFrameCallback = typeof video.requestVideoFrameCallback === 'function';
+      if (hasVideoFrameCallback) callbackId = video.requestVideoFrameCallback(onVideoFrame);
+      else video.addEventListener('timeupdate', onTimeUpdate);
+      video.addEventListener('loadeddata', markFrame, { once: true });
+      void video.play().catch(() => {});
+    }
+
+    return () => {
+      stopped = true;
+      video.removeEventListener('loadeddata', markFrame);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      if (callbackId && typeof video.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(callbackId);
+      }
+      video.srcObject = null;
+    };
+  }, [markWebRtcFrameDecoded, recordFrame, streamMode, webRtcStream]);
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
@@ -810,7 +947,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     status,
     error,
     screen,
-    fps: 0,
+    fps,
     devices,
     logs,
     logsEnabled,
@@ -818,7 +955,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     detachLogs,
     clearLogs,
     foregroundApp,
-    videoKind: 'img',
+    videoKind: streamMode === 'h264' ? 'canvas' : streamMode === 'webrtc' ? 'video' : 'img',
     attachVideo,
     sendTouch,
     sendMultiTouch,

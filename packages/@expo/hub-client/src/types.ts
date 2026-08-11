@@ -21,6 +21,9 @@ import { type CSSProperties } from 'react';
 
 export type DevicePlatform = 'ios' | 'android';
 
+/** Playback pipeline requested by the Hub UI. The client intentionally has no default. */
+export type DeviceStreamMode = 'h264' | 'webrtc' | 'mjpeg';
+
 /**
  * Lifecycle of a single connection:
  *   idle       — nothing to connect to (no base URL / disabled)
@@ -134,10 +137,12 @@ export interface DeviceConnectionOptions {
    * helper via `/api?device=<udid>`; when omitted the first available is used.
    */
   device?: string | null;
+  /** Playback pipeline selected by the host UI. Required so the client owns no default policy. */
+  streamMode: DeviceStreamMode;
 }
 
 /** Which element the implementation paints into. */
-export type VideoSurfaceKind = 'canvas' | 'img';
+export type VideoSurfaceKind = 'canvas' | 'img' | 'video';
 
 /**
  * The live state + controls for one device connection. Returned by the hook and
@@ -182,7 +187,9 @@ export interface DeviceClient {
    * Ref callback for the paint target. The hook owns the element: for `canvas`
    * it decodes frames into it; for `img` it points its `src` at the stream.
    */
-  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | null) => void;
+  attachVideo: (
+    el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null,
+  ) => void;
 
   /** Forward a normalized touch/drag to the device. */
   sendTouch: (sample: TouchSample) => void;
