@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react';
 
-import { agentInteractionEndMs, agentInteractionPointsAt } from './agent-interaction-animation';
+import {
+  agentInteractionEndMs,
+  agentInteractionPointsAt,
+  agentInteractionPointsWithTravelAt,
+  agentInteractionTravelMs,
+} from './agent-interaction-animation';
 import { AGENT_TOUCH_INDICATOR_STYLE } from './TouchIndicator';
 import { type AgentInteraction, type AgentInteractionPoint } from './types';
 
@@ -12,8 +17,10 @@ export function AgentInteractionIndicator({
   interaction?: AgentInteraction | null;
 }) {
   const layerRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pointsRef = useRef<AgentInteractionPoint[]>([]);
 
   const paint = (points: AgentInteractionPoint[]) => {
+    pointsRef.current = points;
     for (let index = 0; index < layerRefs.current.length; index++) {
       const layer = layerRefs.current[index];
       if (!layer) continue;
@@ -33,9 +40,13 @@ export function AgentInteractionIndicator({
     const activeInteraction = interaction;
 
     const reduceMotion = window.matchMedia?.(REDUCED_MOTION_QUERY).matches ?? false;
-    const endMs = agentInteractionEndMs(activeInteraction);
+    const previousPoints = pointsRef.current;
+    const travelMs = reduceMotion ? 0 : agentInteractionTravelMs(previousPoints, activeInteraction);
+    const interactionEndMs = agentInteractionEndMs(activeInteraction);
+    const endMs = travelMs + interactionEndMs;
     const parsedTimestamp = Date.parse(activeInteraction.timestamp);
-    const startedAt = Number.isFinite(parsedTimestamp) ? parsedTimestamp : Date.now();
+    const startedAt =
+      travelMs > 0 || !Number.isFinite(parsedTimestamp) ? Date.now() : parsedTimestamp;
     let frame = 0;
     let fallbackTimer = 0;
 
@@ -55,8 +66,12 @@ export function AgentInteractionIndicator({
     };
 
     function update() {
-      const elapsedMs = reduceMotion ? endMs : Math.max(0, Date.now() - startedAt);
-      paint(agentInteractionPointsAt(activeInteraction, elapsedMs));
+      const elapsedMs = reduceMotion ? interactionEndMs : Math.max(0, Date.now() - startedAt);
+      paint(
+        reduceMotion
+          ? agentInteractionPointsAt(activeInteraction, elapsedMs)
+          : agentInteractionPointsWithTravelAt(activeInteraction, previousPoints, elapsedMs)
+      );
       if (!reduceMotion && elapsedMs < endMs) scheduleUpdate();
     }
     update();
