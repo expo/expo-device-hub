@@ -318,6 +318,7 @@ export function DeviceScreen({ client, borderRadius, squircle }: DeviceScreenPro
           cursor: FINGER_CURSOR,
           touchAction: 'none',
           borderRadius,
+          outline: 'none',
         }}
         onBlur={() => {
           releasePressedKeys();
