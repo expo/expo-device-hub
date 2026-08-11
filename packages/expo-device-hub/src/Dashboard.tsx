@@ -15,6 +15,7 @@ import {
   Sidebar,
   SidebarToggle,
   StreamPanel,
+  type StreamModeAvailability,
   bg,
   shadow,
   text,
@@ -30,6 +31,10 @@ import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
+import {
+  browserStreamModeAvailability,
+  resolveStreamMode,
+} from './dashboard/streamMode';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -91,7 +96,16 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const logsNarrow = useIsNarrow(LOGS_MAX_WIDTH);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [logsOpen, setLogsOpen] = useState(true);
-  const [streamMode] = useState<DeviceStreamMode>(DEFAULT_STREAM_MODE);
+  const streamModeAvailability = useMemo<StreamModeAvailability>(
+    browserStreamModeAvailability,
+    []
+  );
+  const [streamMode, setStreamMode] = useState<DeviceStreamMode>(() =>
+    resolveStreamMode(DEFAULT_STREAM_MODE, streamModeAvailability)
+  );
+  const handleStreamModeChange = (mode: DeviceStreamMode) => {
+    setStreamMode(resolveStreamMode(mode, streamModeAvailability));
+  };
   // Draggable widths for each inline sidebar. The `*Start` refs snapshot the
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
@@ -299,7 +313,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               )
             }
           />
-          <LogSidebar client={client} onToggle={() => setLogsOpen(false)} width={logsWidth} />
+          <LogSidebar
+            client={client}
+            streamMode={streamMode}
+            streamModeAvailability={streamModeAvailability}
+            onStreamModeChange={handleStreamModeChange}
+            onToggle={() => setLogsOpen(false)}
+            width={logsWidth}
+          />
         </>
       )}
 
@@ -362,7 +383,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               backgroundColor: bg.subtle,
               boxShadow: shadow.lg,
             }}>
-            <LogSidebar client={client} onToggle={() => setLogsOpen(false)} width={logsWidth} />
+            <LogSidebar
+              client={client}
+              streamMode={streamMode}
+              streamModeAvailability={streamModeAvailability}
+              onStreamModeChange={handleStreamModeChange}
+              onToggle={() => setLogsOpen(false)}
+              width={logsWidth}
+            />
           </div>
         </>
       )}
