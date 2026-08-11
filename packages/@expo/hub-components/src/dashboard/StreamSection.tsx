@@ -43,31 +43,40 @@ export function StreamSection({
   const triggerStyle: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
-    width: '100%',
+    width: 92,
     height: 44,
     boxSizing: 'border-box',
-    padding: '0 12px',
+    padding: '6px 0',
+    border: 0,
+    background: 'transparent',
+    fontFamily: 'inherit',
+    outline: 'none',
+    cursor: 'pointer',
+    touchAction: 'manipulation',
+  };
+
+  const triggerContentStyle: CSSProperties = {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 6,
+    width: '100%',
+    height: 32,
+    boxSizing: 'border-box',
+    padding: '0 8px',
     border: `1px solid ${border.default}`,
     borderRadius: radius.lg,
     backgroundColor: bg.default,
     color: text.default,
-    fontFamily: 'inherit',
-    fontSize: 16,
-    fontWeight: 400,
-    lineHeight: 1.4,
-    outline: 'none',
+    ...textSize.xs,
     boxShadow: focused ? `0 0 0 3px ${bg.element}` : 'none',
-    cursor: 'pointer',
-    touchAction: 'manipulation',
     transition: 'box-shadow 150ms ease',
   };
 
   return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>Stream</span>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, color: text.secondary }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: text.secondary }}>
         <span id={labelId} style={{ ...textSize.xs }}>
           Mode
         </span>
@@ -76,9 +85,10 @@ export function StreamSection({
           sideOffset={6}
           aria-labelledby={labelId}
           style={{
-            width: 'var(--radix-dropdown-menu-trigger-width)',
-            minWidth: 'var(--radix-dropdown-menu-trigger-width)',
+            width: 92,
+            minWidth: 92,
             boxSizing: 'border-box',
+            padding: 4,
           }}
           trigger={
             <button
@@ -88,8 +98,10 @@ export function StreamSection({
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               style={triggerStyle}>
-              <span id={valueId}>{selectedLabel}</span>
-              <ChevronDownIcon size={16} color={icon.secondary} />
+              <span style={triggerContentStyle}>
+                <span id={valueId}>{selectedLabel}</span>
+                <ChevronDownIcon size={14} color={icon.secondary} />
+              </span>
             </button>
           }>
           <RadioGroup value={mode} onValueChange={(value) => onChange(value as DeviceStreamMode)}>
@@ -99,15 +111,15 @@ export function StreamSection({
                 value={option.value}
                 disabled={!availability[option.value]}
                 className={cx(
-                  'relative z-40 flex cursor-pointer items-center justify-between rounded-lg px-3 outline-none select-none',
+                  'relative z-40 flex cursor-pointer items-center justify-between rounded-lg px-2 outline-none select-none',
                   'data-[highlighted]:bg-hover',
                   'data-[disabled]:cursor-default data-[disabled]:opacity-60'
                 )}
                 style={{ minHeight: 44 }}>
-                <span style={{ ...textSize.sm, color: text.default }}>{option.label}</span>
+                <span style={{ ...textSize.xs, color: text.default }}>{option.label}</span>
                 <ItemIndicator asChild>
                   <span style={{ display: 'flex', color: icon.default }}>
-                    <CheckIcon size={16} />
+                    <CheckIcon size={14} />
                   </span>
                 </ItemIndicator>
               </RadioItem>
