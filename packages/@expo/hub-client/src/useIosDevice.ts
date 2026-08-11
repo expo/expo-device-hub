@@ -33,6 +33,7 @@ import {
 } from './orientation';
 import { startIosHelper } from './connections';
 import { type ExecResult, getIosAppDetails } from './ios-app-details';
+import { hidUsageForCode } from './keyboard';
 import {
   type ConnectionStatus,
   type DeviceAppearance,
@@ -42,6 +43,7 @@ import {
   type DeviceOrientation,
   type ForegroundApp,
   type HardwareButton,
+  type KeyboardInput,
   type MultiTouchSample,
   type RunningDevice,
   type ScreenSize,
@@ -58,7 +60,10 @@ const WS_MSG_BUTTON = 0x04;
 const WS_MSG_MULTI_TOUCH = 0x05;
 const WS_MSG_KEY = 0x06;
 const WS_MSG_ORIENTATION = 0x07;
+const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
+const WS_MSG_HARDWARE_KEYBOARD = 0x0d;
 const WS_TAG_SCREEN_CONFIG = 0x82;
+const WS_TAG_HARDWARE_KEYBOARD = 0x83;
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
 const HID_USAGE_R = 0x15; // 'r'
@@ -104,7 +109,7 @@ function toWs(url: string): string {
 
 /**
  * `…/helper/<udid>/ws` -> `…/helper/ws?device=<udid>`
- * serve-sim 
+ * serve-sim
  */
 export function toQueryStyleHelperWsUrl(wsUrl: string): string {
   const url = new URL(wsUrl);
@@ -280,6 +285,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [config, setConfig] = useState<ResolvedConfig | null>(null);
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
+  // Browser HID injection remains active when this is false. Disabling the
+  // Simulator-owned host connection lets iOS keep its software keyboard open.
+  const [hardwareKeyboardConnected, setHardwareKeyboardConnectedState] = useState<boolean | null>(
+    null,
+  );
   // The frontmost app, pushed by the middleware's /appstate SSE. null until the
   // first event.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
@@ -344,6 +354,27 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const a = rawPointForDisplayPoint(orientation, sample.a.x, sample.a.y);
     const b = rawPointForDisplayPoint(orientation, sample.b.x, sample.b.y);
     ws.send(taggedJson(WS_MSG_MULTI_TOUCH, { type: sample.phase, x1: a.x, y1: a.y, x2: b.x, y2: b.y }));
+  }, []);
+
+  const sendKey = useCallback((input: KeyboardInput): boolean => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    const usage = hidUsageForCode(input.code);
+    if (usage === null) return false;
+    ws.send(taggedJson(WS_MSG_KEY, { type: input.phase, usage }));
+    return true;
+  }, []);
+
+  const setHardwareKeyboardConnected = useCallback((connected: boolean) => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(taggedJson(WS_MSG_HARDWARE_KEYBOARD, { enabled: connected }));
+  }, []);
+
+  const toggleSoftwareKeyboard = useCallback(() => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(taggedJson(WS_MSG_SOFTWARE_KEYBOARD, {}));
   }, []);
 
   const pressButton = useCallback((button: HardwareButton) => {
@@ -557,6 +588,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
   useEffect(() => {
+    setHardwareKeyboardConnectedState(null);
     if (!wsUrl) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -572,16 +604,38 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
+      // The Hub owns keyboard forwarding while this socket is active. Keep the
+      // Simulator's separate host-keyboard connection off by default so iOS can
+      // show the software keyboard while browser HID keys continue to type.
+      ws.onopen = () => {
+        ws.send(taggedJson(WS_MSG_HARDWARE_KEYBOARD, { enabled: false }));
+      };
       ws.onmessage = (event) => {
         if (!(event.data instanceof ArrayBuffer)) return;
         const bytes = new Uint8Array(event.data);
-        if (bytes.length < 1 || bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
+        if (bytes.length < 1) return;
+        if (bytes[0] === WS_TAG_HARDWARE_KEYBOARD) {
+          try {
+            const result = JSON.parse(decoder.decode(bytes.subarray(1))) as {
+              enabled?: boolean;
+              ok?: boolean;
+            };
+            if (!cancelled && result.ok && typeof result.enabled === 'boolean') {
+              setHardwareKeyboardConnectedState(result.enabled);
+            }
+          } catch {}
+          return;
+        }
+        if (bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
         try {
           const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize;
           if (c.width > 0 && c.height > 0) {
             hasWsConfigRef.current = true;
             setScreen((prev) =>
-              prev && prev.width === c.width && prev.height === c.height && prev.orientation === c.orientation
+              prev &&
+              prev.width === c.width &&
+              prev.height === c.height &&
+              prev.orientation === c.orientation
                 ? prev
                 : c,
             );
@@ -608,6 +662,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         wsRef.current?.close();
       } catch {}
       wsRef.current = null;
+      setHardwareKeyboardConnectedState(null);
     };
   }, [wsUrl]);
 
@@ -822,11 +877,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     attachVideo,
     sendTouch,
     sendMultiTouch,
+    sendKey,
     pressButton,
     reload,
     rotate,
     screenshot,
     appearance,
     setAppearance,
+    hardwareKeyboardConnected,
+    setHardwareKeyboardConnected,
+    toggleSoftwareKeyboard,
   };
 }

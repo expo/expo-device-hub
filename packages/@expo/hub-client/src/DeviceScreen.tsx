@@ -1,13 +1,15 @@
 import {
   type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
 } from 'react';
 
 import { streamGeometry } from './orientation';
-import { type DeviceScreenProps, type MultiTouchSample } from './types';
+import { type DeviceScreenProps, type KeyboardInput, type MultiTouchSample } from './types';
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 
@@ -31,11 +33,70 @@ const FINGER_CURSOR =
  * CSS-rotated — the input overlay stays display-aligned.
  */
 export function DeviceScreen({ client, borderRadius, squircle }: DeviceScreenProps) {
-  const { videoKind, attachVideo, sendTouch, sendMultiTouch, screen, status, error } = client;
+  const { videoKind, attachVideo, sendTouch, sendMultiTouch, sendKey, screen, status, error } =
+    client;
   const canMulti = !!sendMultiTouch;
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
+
+  // A focused device surface owns physical keyboard input. Track held keys so
+  // modifiers never remain stuck in the simulator if focus/window visibility is
+  // lost before the browser delivers their keyup.
+  const pressedKeysRef = useRef(new Map<string, KeyboardInput>());
+  const releasePressedKeys = useCallback(() => {
+    for (const input of pressedKeysRef.current.values()) {
+      sendKey({ ...input, phase: 'up', repeat: false });
+    }
+    pressedKeysRef.current.clear();
+  }, [sendKey]);
+
+  useEffect(() => {
+    const onWindowBlur = () => releasePressedKeys();
+    const onVisibilityChange = () => {
+      if (document.hidden) releasePressedKeys();
+    };
+    window.addEventListener('blur', onWindowBlur);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('blur', onWindowBlur);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      releasePressedKeys();
+    };
+  }, [releasePressedKeys]);
+
+  const keyboardInputFrom = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    phase: KeyboardInput['phase'],
+  ): KeyboardInput => ({
+    phase,
+    code: event.code,
+    key: event.key,
+    repeat: event.repeat,
+  });
+
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    // Keep the remote surface escapable for keyboard-only users while leaving a
+    // plain Escape available to the simulator/emulator.
+    if (event.key === 'Escape' && event.shiftKey) {
+      event.preventDefault();
+      releasePressedKeys();
+      event.currentTarget.blur();
+      return;
+    }
+    if (event.nativeEvent.isComposing) return;
+    const input = keyboardInputFrom(event, 'down');
+    if (!sendKey(input)) return;
+    event.preventDefault();
+    pressedKeysRef.current.set(event.code || event.key, input);
+  };
+
+  const onKeyUp = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    const keyId = event.code || event.key;
+    const wasPressed = pressedKeysRef.current.delete(keyId);
+    const handled = sendKey(keyboardInputFrom(event, 'up'));
+    if (wasPressed || handled) event.preventDefault();
+  };
 
   // Measure the surface so a rotated video can be sized to fill it.
   useEffect(() => {
@@ -102,6 +163,7 @@ export function DeviceScreen({ client, borderRadius, squircle }: DeviceScreenPro
     const p = pointFrom(event.clientX, event.clientY);
     if (!p) return;
     event.preventDefault();
+    surfaceRef.current?.focus({ preventScroll: true });
     try {
       surfaceRef.current?.setPointerCapture(event.pointerId);
     } catch {}
@@ -247,7 +309,22 @@ export function DeviceScreen({ client, borderRadius, squircle }: DeviceScreenPro
       {/* Input overlay: display-aligned, captures all pointer events. */}
       <div
         ref={surfaceRef}
-        style={{ position: 'absolute', inset: 0, cursor: FINGER_CURSOR, touchAction: 'none' }}
+        role="application"
+        aria-label="Interactive device screen. Focus to control it with your keyboard. Press Shift and Escape to stop keyboard control."
+        tabIndex={0}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          cursor: FINGER_CURSOR,
+          touchAction: 'none',
+          borderRadius,
+          outline: 'none',
+        }}
+        onBlur={() => {
+          releasePressedKeys();
+        }}
+        onKeyDown={onKeyDown}
+        onKeyUp={onKeyUp}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
