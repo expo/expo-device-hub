@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { agentInteractionEndMs, agentInteractionPointsAt } from '../agent-interaction-animation';
+import {
+  agentInteractionEndMs,
+  agentInteractionPointsAt,
+  agentInteractionPointsWithTravelAt,
+  agentInteractionTravelMs,
+} from '../agent-interaction-animation';
 import { type AgentInteraction } from '../types';
 
 const INTERACTION: AgentInteraction = {
@@ -20,10 +25,30 @@ const INTERACTION: AgentInteraction = {
 };
 
 describe('agentInteractionPointsAt', () => {
-  test('interpolates movement and holds between batched gestures', () => {
+  test('interpolates gesture and cursor movement between batched segments', () => {
     expect(agentInteractionPointsAt(INTERACTION, 150)).toEqual([{ x: 0.5, y: 0.5 }]);
-    expect(agentInteractionPointsAt(INTERACTION, 400)).toEqual([{ x: 0.8, y: 0.5 }]);
+    expect(agentInteractionPointsAt(INTERACTION, 400)).toEqual([{ x: 0.45, y: 0.7 }]);
     expect(agentInteractionPointsAt(INTERACTION, 500)).toEqual([{ x: 0.1, y: 0.9 }]);
+  });
+
+  test('moves from the previous log record before replaying the next click', () => {
+    const nextClick: AgentInteraction = {
+      ...INTERACTION,
+      id: 'interaction-2',
+      segments: [{ startMs: 0, frames: [{ atMs: 0, points: [{ x: 0.9, y: 0.1 }] }] }],
+    };
+    const previousPoints = [{ x: 0.1, y: 0.9 }];
+
+    expect(agentInteractionTravelMs(previousPoints, nextClick)).toBe(220);
+    expect(agentInteractionPointsWithTravelAt(nextClick, previousPoints, 0)).toEqual(
+      previousPoints
+    );
+    expect(agentInteractionPointsWithTravelAt(nextClick, previousPoints, 110)).toEqual([
+      { x: 0.5, y: 0.5 },
+    ]);
+    expect(agentInteractionPointsWithTravelAt(nextClick, previousPoints, 220)).toEqual([
+      { x: 0.9, y: 0.1 },
+    ]);
   });
 
   test('keeps the final interaction visible indefinitely', () => {
