@@ -5,12 +5,23 @@ import {
 } from './types';
 
 const CURSOR_TRAVEL_MS = 220;
+const CURSOR_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
 
 export function agentInteractionEndMs(interaction: AgentInteraction): number {
   return interaction.segments.reduce(
     (latest, segment) => Math.max(latest, segment.startMs + (segment.frames.at(-1)?.atMs ?? 0)),
     0
   );
+}
+
+/** Timestamp after which the settled cursor should no longer be visible. */
+export function agentInteractionCursorExpiresAt(
+  interaction: AgentInteraction,
+  fallbackStartedAt = Date.now()
+): number {
+  const parsedTimestamp = Date.parse(interaction.timestamp);
+  const startedAt = Number.isFinite(parsedTimestamp) ? parsedTimestamp : fallbackStartedAt;
+  return startedAt + agentInteractionEndMs(interaction) + CURSOR_IDLE_TIMEOUT_MS;
 }
 
 /** Resolve the visible agent finger positions for one moment on the MCP-call timeline. */
