@@ -9,13 +9,15 @@ import type { BootDeviceOptions, BootedDevice } from "./types";
  *
  * Spawns a detached, windowless emulator and returns as soon as the process is
  * launched — not once Android has finished booting; track readiness with adb
- * via the returned `serial`. `exited` resolves if the process dies — before
- * the device is adb-online that means the boot failed; the emulator's output
- * is discarded (the detached child outlives us), so failure reports point the
- * user at re-running the returned `command` to see it. Resolves `emulator`
- * from `ANDROID_HOME` / `ANDROID_SDK_ROOT` (falling back to the default macOS
- * SDK location). The result's `value` is `null` if the process could not be
- * spawned, with the invocation-specific failure in `error`.
+ * via the returned `serial`. If host GPU rendering is unavailable, the process
+ * is retried once with software rendering. `exited` follows that retry and
+ * resolves if the active process dies — before the device is adb-online that
+ * means the boot failed. Emulator output is otherwise discarded (the detached
+ * child outlives us), so failure reports point the user at re-running the
+ * returned `command` to see it. Resolves `emulator` from `ANDROID_HOME` /
+ * `ANDROID_SDK_ROOT` (falling back to the default macOS SDK location). The
+ * result's `value` is `null` if the process could not be spawned, with the
+ * invocation-specific failure in `error`.
  */
 export async function bootDevice(
   options: BootDeviceOptions,
