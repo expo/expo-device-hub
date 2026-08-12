@@ -261,7 +261,7 @@ export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClien
 /** Props for the shared {@link DeviceScreen} component rendered inside PhoneFrame. */
 export interface DeviceScreenProps {
   client: DeviceClient;
-  /** Last Argent gesture for the streamed device; its final frame remains visible. */
+  /** Last active Argent gesture for the streamed device; removed after its idle timeout. */
   agentInteraction?: AgentInteraction | null;
   /** Corner radius for the video surface (matches the PhoneFrame placeholder). */
   borderRadius?: CSSProperties['borderRadius'];

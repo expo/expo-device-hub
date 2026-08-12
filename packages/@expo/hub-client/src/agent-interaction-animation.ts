@@ -5,7 +5,7 @@ import {
 } from './types';
 
 const CURSOR_TRAVEL_MS = 220;
-const CURSOR_IDLE_TIMEOUT_MS = 2 * 60 * 1000;
+export const AGENT_INTERACTION_IDLE_TIMEOUT_MS = 60 * 1000;
 
 export function agentInteractionEndMs(interaction: AgentInteraction): number {
   return interaction.segments.reduce(
@@ -21,7 +21,7 @@ export function agentInteractionCursorExpiresAt(
 ): number {
   const parsedTimestamp = Date.parse(interaction.timestamp);
   const startedAt = Number.isFinite(parsedTimestamp) ? parsedTimestamp : fallbackStartedAt;
-  return startedAt + agentInteractionEndMs(interaction) + CURSOR_IDLE_TIMEOUT_MS;
+  return startedAt + agentInteractionEndMs(interaction) + AGENT_INTERACTION_IDLE_TIMEOUT_MS;
 }
 
 /** Resolve the visible agent finger positions for one moment on the MCP-call timeline. */
