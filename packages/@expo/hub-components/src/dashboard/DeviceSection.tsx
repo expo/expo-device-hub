@@ -28,6 +28,7 @@ export type DeviceSectionProps = {
   recent: Device[];
   /** Installed runtimes/system images and compatible models for new devices. */
   options: NewDeviceOptions;
+  agentDeviceIds?: readonly string[];
   selectedId: string;
   onSelect: (id: string) => void;
   /** Starts the existing or newly configured device selected in the modal. */
@@ -42,6 +43,7 @@ export function DeviceSection({
   devices,
   recent,
   options,
+  agentDeviceIds = [],
   selectedId,
   onSelect,
   onAdd,
@@ -109,6 +111,7 @@ export function DeviceSection({
               key={device.id}
               name={device.name}
               version={device.version}
+              usedByAgent={agentDeviceIds.includes(device.id)}
               selected={device.id === selectedId}
               onClick={() => onSelect(device.id)}
             />

@@ -15,6 +15,7 @@ export function Sidebar({
   recentEmulators,
   simulatorOptions,
   emulatorOptions,
+  agentDeviceIds = [],
   selectedId,
   onSelect,
   onAddDevice,
@@ -33,6 +34,8 @@ export function Sidebar({
   simulatorOptions: NewDeviceOptions;
   /** Installed Android system images and compatible emulator profiles. */
   emulatorOptions: NewDeviceOptions;
+  /** Devices with an unexpired Argent interaction. */
+  agentDeviceIds?: readonly string[];
   selectedId: string;
   onSelect: (id: string) => void;
   /** Starts the existing or new device chosen in either add-device picker. */
@@ -68,6 +71,7 @@ export function Sidebar({
         devices={simulators}
         recent={recentSimulators}
         options={simulatorOptions}
+        agentDeviceIds={agentDeviceIds}
         selectedId={selectedId}
         onSelect={onSelect}
         onAdd={onAddDevice}
@@ -80,6 +84,7 @@ export function Sidebar({
         devices={emulators}
         recent={recentEmulators}
         options={emulatorOptions}
+        agentDeviceIds={agentDeviceIds}
         selectedId={selectedId}
         onSelect={onSelect}
         onAdd={onAddDevice}

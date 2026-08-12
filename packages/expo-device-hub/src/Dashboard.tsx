@@ -23,7 +23,7 @@ import { basePath } from './dashboard/basePath';
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
-import { useArgentInteraction } from './dashboard/useArgentInteraction';
+import { useArgentInteractions } from './dashboard/useArgentInteraction';
 import { useIsNarrow } from './dashboard/useIsNarrow';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 
@@ -208,7 +208,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     selected ? { platform: selected.platform, device: selected.id } : null,
     basePath()
   );
-  const agentInteraction = useArgentInteraction(selected?.id);
+  const agentInteractions = useArgentInteractions();
+  const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
+  const agentDeviceIds = Object.keys(agentInteractions);
 
   return (
     <div
@@ -236,6 +238,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             recentEmulators={recent.emulators}
             simulatorOptions={newDeviceOptions.ios}
             emulatorOptions={newDeviceOptions.android}
+            agentDeviceIds={agentDeviceIds}
             selectedId={selectedId}
             onSelect={setSelectedId}
             onAddDevice={handleAddDevice}
@@ -327,6 +330,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               recentEmulators={recent.emulators}
               simulatorOptions={newDeviceOptions.ios}
               emulatorOptions={newDeviceOptions.android}
+              agentDeviceIds={agentDeviceIds}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onAddDevice={handleAddDevice}

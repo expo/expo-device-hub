@@ -1,6 +1,7 @@
 import { type CSSProperties, useState } from 'react';
 
 import { bg, radius, text, textSize } from '../theme/tokens';
+import { AgentDeviceStatus } from './AgentDeviceStatus';
 
 /**
  * A selectable row in the simulators list ("list button"). Selected rows use the
@@ -9,11 +10,18 @@ import { bg, radius, text, textSize } from '../theme/tokens';
 export type DeviceListItemProps = {
   name: string;
   version: string;
+  usedByAgent?: boolean;
   selected?: boolean;
   onClick?: () => void;
 };
 
-export function DeviceListItem({ name, version, selected = false, onClick }: DeviceListItemProps) {
+export function DeviceListItem({
+  name,
+  version,
+  usedByAgent = false,
+  selected = false,
+  onClick,
+}: DeviceListItemProps) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -40,6 +48,7 @@ export function DeviceListItem({ name, version, selected = false, onClick }: Dev
       style={style}
       onClick={onClick}
       aria-pressed={selected}
+      aria-label={`${name}, ${version}${usedByAgent ? ', used by agent' : ''}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -48,16 +57,27 @@ export function DeviceListItem({ name, version, selected = false, onClick }: Dev
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}>
       <span
-        title={name}
         style={{
-          ...textSize.sm,
-          fontWeight: 500,
-          color: text.default,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          minWidth: 0,
           overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
         }}>
-        {name}
+        <span
+          title={name}
+          style={{
+            ...textSize.sm,
+            minWidth: 0,
+            fontWeight: 500,
+            color: text.default,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+          {name}
+        </span>
+        <AgentDeviceStatus active={usedByAgent} />
       </span>
       <span
         style={{

@@ -1,4 +1,4 @@
-import { type ComponentType, type CSSProperties } from 'react';
+import { type ComponentType, type CSSProperties, useState } from 'react';
 
 import {
   type AgentInteraction,
@@ -7,6 +7,7 @@ import {
   type ScreenSize,
 } from '@expo/hub-client';
 import { bg } from '../primitives';
+import { AgentDeviceOverlay } from './AgentDeviceOverlay';
 import { type Platform } from './data';
 
 const SHADOW = '0 40px 80px rgba(0, 0, 0, 0.4), 0 12px 28px rgba(0, 0, 0, 0.28)';
@@ -53,6 +54,7 @@ export function PhoneFrame({
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
 }) {
+  const [hovered, setHovered] = useState(false);
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[platform];
 
   // Prefer the live screen's aspect ratio once known, so the stream fills the
@@ -71,6 +73,9 @@ export function PhoneFrame({
     width: `min(${maxWidth}px, calc((100vh - ${RESERVED_VERTICAL}px) * ${ratio}), 100%)`,
     aspectRatio: `${ratio}`,
     containerType: 'inline-size',
+    position: 'relative',
+    isolation: 'isolate',
+    overflow: 'hidden',
   };
 
   // `cqw` resolves against the width, but the radius should stay a fraction of
@@ -79,7 +84,14 @@ export function PhoneFrame({
   const live = client && client.status !== 'idle';
 
   return (
-    <div style={{ ...wrapperStyle, boxShadow: SHADOW, borderRadius }}>
+    <div
+      data-testid="device-screen-frame"
+      data-agent-active={agentInteraction ? 'true' : 'false'}
+      style={{ ...wrapperStyle, boxShadow: SHADOW, borderRadius }}
+      onPointerEnter={(event) => {
+        if (event.pointerType === 'mouse') setHovered(true);
+      }}
+      onPointerLeave={() => setHovered(false)}>
       {live ? (
         <DeviceScreen
           client={client}
@@ -98,6 +110,7 @@ export function PhoneFrame({
           }}
         />
       )}
+      <AgentDeviceOverlay visible={!!agentInteraction && hovered} borderRadius={borderRadius} />
     </div>
   );
 }

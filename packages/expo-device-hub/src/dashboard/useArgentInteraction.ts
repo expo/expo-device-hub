@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import { type AgentInteraction } from '@expo/hub-client';
 
@@ -6,6 +6,12 @@ import {
   ARGENT_INTERACTION_MESSAGE_TYPE,
   type ArgentInteractionMessage,
 } from '../argent-interaction-protocol';
+import {
+  activeAgentInteractions,
+  type AgentInteractions,
+  nextAgentInteractionExpiry,
+  normalizeAgentInteractionTimestamp,
+} from './agentActivity';
 import { basePath } from './basePath';
 
 const RECONNECT_MIN_MS = 500;
@@ -17,8 +23,9 @@ export function argentInteractionsWebSocketUrl(locationHref = window.location.hr
   return url.toString();
 }
 
-export function useArgentInteraction(deviceId?: string): AgentInteraction | null {
-  const [latest, setLatest] = useState<Record<string, AgentInteraction>>({});
+export function useArgentInteractions(): AgentInteractions {
+  const [latest, setLatest] = useState<AgentInteractions>({});
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     let cancelled = false;
@@ -42,10 +49,13 @@ export function useArgentInteraction(deviceId?: string): AgentInteraction | null
       nextSocket.onmessage = (event) => {
         const message = parseArgentInteractionMessage(event.data);
         if (!message) return;
+        const observedAt = Date.now();
+        const interaction = normalizeAgentInteractionTimestamp(message.interaction, observedAt);
         setLatest((current) => ({
           ...current,
-          [message.interaction.deviceId]: message.interaction,
+          [interaction.deviceId]: interaction,
         }));
+        setNow(observedAt);
       };
       nextSocket.onerror = () => nextSocket.close();
       nextSocket.onclose = () => {
@@ -72,7 +82,21 @@ export function useArgentInteraction(deviceId?: string): AgentInteraction | null
     };
   }, []);
 
-  return deviceId ? (latest[deviceId] ?? null) : null;
+  const active = useMemo(() => activeAgentInteractions(latest, now), [latest, now]);
+
+  useEffect(() => {
+    const expiresAt = nextAgentInteractionExpiry(active, now);
+    if (expiresAt === null) return;
+    const timer = window.setTimeout(() => setNow(Date.now()), Math.max(0, expiresAt - Date.now()));
+    return () => window.clearTimeout(timer);
+  }, [active, now]);
+
+  return active;
+}
+
+export function useArgentInteraction(deviceId?: string): AgentInteraction | null {
+  const active = useArgentInteractions();
+  return deviceId ? active[deviceId] ?? null : null;
 }
 
 export function parseArgentInteractionMessage(data: unknown): ArgentInteractionMessage | null {
