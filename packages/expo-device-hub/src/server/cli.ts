@@ -1,27 +1,15 @@
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { networkInterfaces } from 'node:os';
-import { parseArgs } from 'node:util';
 import { WebSocketServer } from 'ws';
 import { URL } from 'node:url';
 
 import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } from './cli/node-fetch-server';
+import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { staticFileHandler } from './cli/static-files';
 
 type HubServerModule = typeof import('./index');
 type WebSocketRouteHandler = (socket: unknown, request: Request, server: WebSocketServer) => void;
-
-const DEFAULT_PORT = 3400;
-
-const HELP = `expo-device-hub — manage iOS simulators and Android emulators from the browser
-
-Usage: expo-device-hub [options]
-
-Options:
-  -p, --port <port>  Port to listen on (default: ${DEFAULT_PORT}, or the next available port)
-      --host <host>  Host to bind (default: 127.0.0.1; use 0.0.0.0 to expose on your local network)
-  -h, --help         Show this help
-`;
 
 function fail(message: string): never {
   console.error(message);
@@ -62,32 +50,23 @@ function tryListen(server: Server, port: number, host: string): Promise<boolean>
 }
 
 async function main(): Promise<void> {
-  let values: { port?: string; host: string; help: boolean };
+  let options: CliOptions;
   try {
-    ({ values } = parseArgs({
-      options: {
-        port: { type: 'string', short: 'p' },
-        // Bind the IPv4 loopback explicitly: 'localhost' resolves to ::1 first on
-        // macOS, but serve-sim's in-process state mints 127.0.0.1 URLs, so a
-        // v6-only listener leaves the advertised stream/ws endpoints unreachable.
-        host: { type: 'string', default: '127.0.0.1' },
-        help: { type: 'boolean', short: 'h', default: false },
-      },
-    }));
+    options = parseCliOptions(process.argv.slice(2));
   } catch (error) {
-    fail(`${error instanceof Error ? error.message : error}\n\n${HELP}`);
+    fail(error instanceof Error ? error.message : String(error));
   }
-  if (values.help) {
+  if (options.help) {
     console.log(HELP);
     return;
   }
 
-  const explicitPort = values.port !== undefined ? Number(values.port) : undefined;
-  if (explicitPort !== undefined && (!Number.isInteger(explicitPort) || explicitPort < 0 || explicitPort > 65535)) {
-    fail(`Invalid --port: ${values.port}\n\n${HELP}`);
-  }
-
   process.env.EXPO_DEVICE_HUB_BASE_PATH = '';
+  if (options.platform) {
+    process.env.EXPO_DEVICE_HUB_PLATFORM = options.platform;
+  } else {
+    delete process.env.EXPO_DEVICE_HUB_PLATFORM;
+  }
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
   const hubServer = (await import('./index.mjs')) as HubServerModule;
   const handler = hubServer.default;
@@ -151,13 +130,13 @@ async function main(): Promise<void> {
     });
   }
 
-  if (explicitPort !== undefined) {
-    if (!(await tryListen(server, explicitPort, values.host))) {
-      fail(`Port ${explicitPort} is already in use — pick another with --port.`);
+  if (options.port !== undefined) {
+    if (!(await tryListen(server, options.port, options.host))) {
+      fail(`Port ${options.port} is already in use — pick another with --port.`);
     }
   } else {
     let candidate = DEFAULT_PORT;
-    while (!(await tryListen(server, candidate, values.host))) {
+    while (!(await tryListen(server, candidate, options.host))) {
       candidate++;
       if (candidate > 65535) {
         fail(`No available port found starting from ${DEFAULT_PORT}.`);
@@ -166,18 +145,19 @@ async function main(): Promise<void> {
   }
 
   const boundPort = (server.address() as AddressInfo).port;
-  const isLoopback = values.host === 'localhost' || values.host === '127.0.0.1' || values.host === '::1';
-  const isWildcard = values.host === '0.0.0.0' || values.host === '::';
+  const isLoopback =
+    options.host === 'localhost' || options.host === '127.0.0.1' || options.host === '::1';
+  const isWildcard = options.host === '0.0.0.0' || options.host === '::';
   console.log('Expo Device Hub ready\n');
   if (isLoopback || isWildcard) {
     console.log(`  Local:   http://localhost:${boundPort}`);
   }
   if (isWildcard) {
-    console.log(`  Network: http://${lanAddress() ?? values.host}:${boundPort}`);
+    console.log(`  Network: http://${lanAddress() ?? options.host}:${boundPort}`);
   } else if (isLoopback) {
     console.log('  Network: pass --host 0.0.0.0 to expose on your local network');
   } else {
-    console.log(`  Network: http://${values.host}:${boundPort}`);
+    console.log(`  Network: http://${options.host}:${boundPort}`);
   }
 }
 
