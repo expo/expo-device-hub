@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 import {
+  agentInteractionCursorExpiresAt,
   agentInteractionEndMs,
   agentInteractionPointsAt,
   agentInteractionPointsWithTravelAt,
@@ -44,11 +45,26 @@ export function AgentInteractionIndicator({
     const travelMs = reduceMotion ? 0 : agentInteractionTravelMs(previousPoints, activeInteraction);
     const interactionEndMs = agentInteractionEndMs(activeInteraction);
     const endMs = travelMs + interactionEndMs;
+    const now = Date.now();
     const parsedTimestamp = Date.parse(activeInteraction.timestamp);
-    const startedAt =
-      travelMs > 0 || !Number.isFinite(parsedTimestamp) ? Date.now() : parsedTimestamp;
+    const interactionStartedAt = Number.isFinite(parsedTimestamp) ? parsedTimestamp : now;
+    const expiresAt = agentInteractionCursorExpiresAt(activeInteraction, interactionStartedAt);
+    if (now >= expiresAt) {
+      paint([]);
+      return;
+    }
+    const startedAt = travelMs > 0 ? now : interactionStartedAt;
     let frame = 0;
     let fallbackTimer = 0;
+    let expiryTimer = 0;
+
+    const hide = () => {
+      cancelAnimationFrame(frame);
+      frame = 0;
+      clearTimeout(fallbackTimer);
+      fallbackTimer = 0;
+      paint([]);
+    };
 
     const scheduleUpdate = () => {
       frame = requestAnimationFrame(() => {
@@ -66,6 +82,10 @@ export function AgentInteractionIndicator({
     };
 
     function update() {
+      if (Date.now() >= expiresAt) {
+        hide();
+        return;
+      }
       const elapsedMs = reduceMotion ? interactionEndMs : Math.max(0, Date.now() - startedAt);
       paint(
         reduceMotion
@@ -74,10 +94,12 @@ export function AgentInteractionIndicator({
       );
       if (!reduceMotion && elapsedMs < endMs) scheduleUpdate();
     }
+    expiryTimer = window.setTimeout(hide, expiresAt - now);
     update();
     return () => {
       cancelAnimationFrame(frame);
       clearTimeout(fallbackTimer);
+      clearTimeout(expiryTimer);
     };
   }, [interaction]);
 

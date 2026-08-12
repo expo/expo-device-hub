@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  agentInteractionCursorExpiresAt,
   agentInteractionEndMs,
   agentInteractionPointsAt,
   agentInteractionPointsWithTravelAt,
@@ -51,9 +52,21 @@ describe('agentInteractionPointsAt', () => {
     ]);
   });
 
-  test('keeps the final interaction visible indefinitely', () => {
+  test('keeps the final interaction point settled after playback', () => {
     expect(agentInteractionEndMs(INTERACTION)).toBe(500);
     expect(agentInteractionPointsAt(INTERACTION, 10_000)).toEqual([{ x: 0.1, y: 0.9 }]);
+  });
+
+  test('expires the cursor two minutes after the final interaction frame', () => {
+    expect(agentInteractionCursorExpiresAt(INTERACTION)).toBe(
+      Date.parse(INTERACTION.timestamp) + 500 + 120_000
+    );
+  });
+
+  test('uses the observation time when an interaction timestamp is invalid', () => {
+    expect(agentInteractionCursorExpiresAt({ ...INTERACTION, timestamp: 'invalid' }, 1_000)).toBe(
+      121_500
+    );
   });
 
   test('matches Argent settle swipe cubic ease-out', () => {
