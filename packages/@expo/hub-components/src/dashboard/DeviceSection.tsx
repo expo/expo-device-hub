@@ -57,7 +57,7 @@ export function DeviceSection({
   const candidates = recent.filter((device) => !shownIds.has(device.id));
 
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
+    <section style={{ display: 'grid', gap: 12, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{title}</span>
         {!!onAdd && (
@@ -91,7 +91,7 @@ export function DeviceSection({
         )}
       </div>
 
-      <div style={{ display: 'grid', gap: 6 }}>
+      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
         {devices.length === 0 ? (
           <p
             style={{

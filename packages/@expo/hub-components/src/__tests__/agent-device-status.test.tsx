@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DeviceListItem } from '../components/DeviceListItem';
+import { shouldCompactAgentDeviceStatus } from '../components/useCompactAgentDeviceStatus';
 import { AgentDeviceOverlay } from '../dashboard/AgentDeviceOverlay';
 import { PhoneFrame } from '../dashboard/PhoneFrame';
 
@@ -24,6 +25,36 @@ describe('agent device status', () => {
     expect(markup).toContain('data-agent-device-status="inactive"');
     expect(markup).toContain('visibility:hidden');
     expect(markup).not.toContain('aria-label="iPhone 16, iOS 26.5, used by agent"');
+  });
+
+  test('keeps long device rows contained and compacts agent status when needed', () => {
+    const markup = renderToStaticMarkup(
+      <DeviceListItem name="Medium_Phone_API_36.1" version="Android 16.0" usedByAgent />
+    );
+    const buttonTag = markup.slice(0, markup.indexOf('>') + 1);
+
+    expect(buttonTag).toContain('width:100%');
+    expect(buttonTag).toContain('min-width:0');
+    expect(buttonTag).toContain('box-sizing:border-box');
+    expect(buttonTag).toContain('overflow:hidden');
+    expect(
+      shouldCompactAgentDeviceStatus({
+        available: 176,
+        name: 172,
+        version: 82,
+        badge: 7,
+        label: 66,
+      })
+    ).toBeTrue();
+    expect(
+      shouldCompactAgentDeviceStatus({
+        available: 380,
+        name: 60,
+        version: 58,
+        badge: 7,
+        label: 66,
+      })
+    ).toBeFalse();
   });
 
   test('only reveals the phone overlay while hover state is active', () => {
