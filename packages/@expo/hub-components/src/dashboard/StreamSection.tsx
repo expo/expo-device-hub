@@ -43,45 +43,42 @@ export function StreamSection({
   const triggerStyle: CSSProperties = {
     display: 'flex',
     alignItems: 'center',
-    width: 92,
-    height: 44,
-    boxSizing: 'border-box',
-    padding: '6px 0',
-    border: 0,
-    background: 'transparent',
-    fontFamily: 'inherit',
-    outline: 'none',
-    cursor: 'pointer',
-    touchAction: 'manipulation',
-  };
-
-  const triggerContentStyle: CSSProperties = {
-    display: 'flex',
-    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 6,
-    width: '100%',
-    height: 32,
+    width: 92,
+    height: 28,
     boxSizing: 'border-box',
     padding: '0 8px',
     border: `1px solid ${border.default}`,
     borderRadius: radius.lg,
     backgroundColor: bg.default,
     color: text.default,
+    fontFamily: 'inherit',
     ...textSize.xs,
+    outline: 'none',
     boxShadow: focused ? `0 0 0 3px ${bg.element}` : 'none',
+    cursor: 'pointer',
+    touchAction: 'manipulation',
     transition: 'box-shadow 150ms ease',
   };
 
   return (
     <section style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>Stream</span>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: text.secondary }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          width: '100%',
+          gap: 8,
+          color: text.secondary,
+        }}>
         <span id={labelId} style={{ ...textSize.xs }}>
           Mode
         </span>
         <Dropdown
-          align="start"
+          align="end"
           sideOffset={6}
           aria-labelledby={labelId}
           style={{
@@ -97,11 +94,10 @@ export function StreamSection({
               aria-describedby={restricted ? helpId : undefined}
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
+              className="relative before:absolute before:inset-x-0 before:-inset-y-2 before:content-['']"
               style={triggerStyle}>
-              <span style={triggerContentStyle}>
-                <span id={valueId}>{selectedLabel}</span>
-                <ChevronDownIcon size={14} color={icon.secondary} />
-              </span>
+              <span id={valueId}>{selectedLabel}</span>
+              <ChevronDownIcon size={14} color={icon.secondary} />
             </button>
           }>
           <RadioGroup value={mode} onValueChange={(value) => onChange(value as DeviceStreamMode)}>
