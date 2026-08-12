@@ -6,6 +6,7 @@ import {
   useState,
 } from 'react';
 
+import { withCanvasSeamOvershoot } from './canvas-style';
 import { streamGeometry } from './orientation';
 import { AgentInteractionIndicator } from './AgentInteractionIndicator';
 import { TouchIndicator } from './TouchIndicator';
@@ -242,11 +243,12 @@ export function DeviceScreen({
           objectFit: 'cover',
         };
   Object.assign(mediaStyle, { userSelect: 'none', WebkitUserSelect: 'none', pointerEvents: 'none' });
+  const canvasStyle = withCanvasSeamOvershoot(mediaStyle);
 
   return (
     <div style={surfaceStyle}>
       {videoKind === 'canvas' ? (
-        <canvas ref={attachVideo} style={mediaStyle} />
+        <canvas ref={attachVideo} style={canvasStyle} />
       ) : (
         <img ref={attachVideo} alt="Device screen" draggable={false} style={mediaStyle} />
       )}
