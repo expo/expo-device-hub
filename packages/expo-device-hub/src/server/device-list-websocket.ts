@@ -1,8 +1,9 @@
-import { DEVICE_LIST_MESSAGE_TYPE } from '../device-list-protocol';
+import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from '../device-list-protocol';
 import { type HubDevice, type HubDeviceList, listDevices } from './devices';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
 
 const POLL_INTERVAL_MS = 500;
+const HEARTBEAT_INTERVAL_MS = 2_000;
 
 export interface DeviceListSocket {
   send(data: string): void;
@@ -15,11 +16,16 @@ interface DeviceListBroadcasterOptions {
   intervalMs?: number;
   schedule?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>;
   cancelSchedule?: (timer: ReturnType<typeof setTimeout>) => void;
+  heartbeatIntervalMs?: number;
+  scheduleHeartbeat?: (callback: () => void, delay: number) => ReturnType<typeof setInterval>;
+  cancelHeartbeat?: (timer: ReturnType<typeof setInterval>) => void;
   onError?: (error: unknown) => void;
 }
 
 type Schedule = NonNullable<DeviceListBroadcasterOptions['schedule']>;
 type CancelSchedule = NonNullable<DeviceListBroadcasterOptions['cancelSchedule']>;
+type ScheduleHeartbeat = NonNullable<DeviceListBroadcasterOptions['scheduleHeartbeat']>;
+type CancelHeartbeat = NonNullable<DeviceListBroadcasterOptions['cancelHeartbeat']>;
 
 /**
  * A single device-discovery loop shared by every dashboard connection.
@@ -31,9 +37,13 @@ export class DeviceListBroadcaster {
   readonly #intervalMs: number;
   readonly #schedule: Schedule;
   readonly #cancelSchedule: CancelSchedule;
+  readonly #heartbeatIntervalMs: number;
+  readonly #scheduleHeartbeat: ScheduleHeartbeat;
+  readonly #cancelHeartbeat: CancelHeartbeat;
   readonly #onError: (error: unknown) => void;
 
   #timer: ReturnType<typeof setTimeout> | null = null;
+  #heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   #polling = false;
   #refreshQueued = false;
   #snapshot: HubDeviceList | null = null;
@@ -44,6 +54,9 @@ export class DeviceListBroadcaster {
     this.#intervalMs = options.intervalMs ?? POLL_INTERVAL_MS;
     this.#schedule = options.schedule ?? setTimeout;
     this.#cancelSchedule = options.cancelSchedule ?? clearTimeout;
+    this.#heartbeatIntervalMs = options.heartbeatIntervalMs ?? HEARTBEAT_INTERVAL_MS;
+    this.#scheduleHeartbeat = options.scheduleHeartbeat ?? setInterval;
+    this.#cancelHeartbeat = options.cancelHeartbeat ?? clearInterval;
     this.#onError =
       options.onError ??
       ((error) => console.warn('[expo-device-hub] Failed to refresh device list:', error));
@@ -57,19 +70,20 @@ export class DeviceListBroadcaster {
     const unsubscribe = () => {
       if (!active) return;
       active = false;
-      this.#clients.delete(socket);
-      if (this.#clients.size === 0) {
-        this.#refreshQueued = false;
-        this.#stopTimer();
-      }
+      this.#removeClient(socket);
     };
     socket.on('close', unsubscribe);
     socket.on('error', unsubscribe);
 
-    // A reconnecting/new tab gets the latest known state immediately. The
-    // first subscriber also starts a fresh discovery pass in the background.
-    if (this.#snapshot) this.#send(socket, this.#snapshot);
-    if (wasEmpty) this.refresh();
+    // Confirm liveness immediately, even if the first device discovery pass is
+    // slow. Changed device snapshots and periodic heartbeats both keep the
+    // browser-side watchdog alive after this initial message.
+    if (wasEmpty) {
+      this.#startHeartbeat();
+      this.refresh();
+    }
+    this.#sendHeartbeat(socket);
+    if (this.#clients.has(socket) && this.#snapshot) this.#send(socket, this.#snapshot);
   }
 
   /** Request a prompt refresh, coalescing with an in-flight discovery pass. */
@@ -117,16 +131,52 @@ export class DeviceListBroadcaster {
     for (const socket of this.#clients) this.#send(socket, snapshot);
   }
 
+  #broadcastHeartbeat(): void {
+    for (const socket of this.#clients) this.#sendHeartbeat(socket);
+  }
+
+  #sendHeartbeat(socket: DeviceListSocket): void {
+    this.#sendMessage(socket, JSON.stringify({ type: HEARTBEAT_MESSAGE_TYPE }));
+  }
+
   #send(socket: DeviceListSocket, snapshot: HubDeviceList): void {
+    this.#sendMessage(
+      socket,
+      JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: snapshot })
+    );
+  }
+
+  #sendMessage(socket: DeviceListSocket, message: string): void {
     try {
-      socket.send(JSON.stringify({ type: DEVICE_LIST_MESSAGE_TYPE, devices: snapshot }));
+      socket.send(message);
     } catch {
-      this.#clients.delete(socket);
-      if (this.#clients.size === 0) this.#stopTimer();
+      this.#removeClient(socket);
       try {
         socket.close();
       } catch {}
     }
+  }
+
+  #removeClient(socket: DeviceListSocket): void {
+    this.#clients.delete(socket);
+    if (this.#clients.size > 0) return;
+    this.#refreshQueued = false;
+    this.#stopTimer();
+    this.#stopHeartbeat();
+  }
+
+  #startHeartbeat(): void {
+    if (this.#heartbeatTimer !== null) return;
+    this.#heartbeatTimer = this.#scheduleHeartbeat(
+      () => this.#broadcastHeartbeat(),
+      this.#heartbeatIntervalMs
+    );
+  }
+
+  #stopHeartbeat(): void {
+    if (this.#heartbeatTimer === null) return;
+    this.#cancelHeartbeat(this.#heartbeatTimer);
+    this.#heartbeatTimer = null;
   }
 
   #stopTimer(): void {
