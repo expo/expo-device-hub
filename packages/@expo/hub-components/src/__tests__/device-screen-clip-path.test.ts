@@ -18,8 +18,8 @@ describe('deviceScreenClipPath', () => {
     expect(clipPath).toContain('calc(14.066cqw - 0.5px)');
     expect(clipPath).toContain('calc(100% - 14.066cqw + 0.5px)');
     expect(clipPath).toContain('calc(100% + 0.5px)');
-    expect(clipPath).toContain('9.552cqw 0 from start / 0 -9.552cqw from end');
-    expect(superellipseParameter(clipPath, 14.066)).toBeCloseTo(1.3, 3);
+    expect(clipPath).toContain('8.391cqw 0 from start / 0 -8.391cqw from end');
+    expect(superellipseParameter(clipPath, 14.066)).toBeCloseTo(1.1, 3);
     expect(clipPath).toEndWith('close)');
   });
 
