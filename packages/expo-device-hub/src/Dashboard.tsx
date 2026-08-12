@@ -13,6 +13,7 @@ import {
   EmptyState,
   LogSidebar,
   ResizeHandle,
+  ServerConnectionOverlay,
   Sidebar,
   StreamPanel,
   type StreamModeAvailability,
@@ -109,7 +110,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const scheme = useColorScheme();
   const hideBootDevice = dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
-  const { booted, recent } = useDeviceLists();
+  const { booted, recent, connectionStatus } = useDeviceLists();
   // Installed runtimes/system images and models for the new-device forms.
   const newDeviceOptions = useNewDeviceOptions();
   const hideUnsupportedDevices = useHideUnsupportedDevices();
@@ -273,12 +274,23 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load.
   const client = useActiveDeviceClient(
-    selected ? { platform: selected.platform, device: selected.id, streamMode } : null,
+    connectionStatus === 'connected' && selected
+      ? { platform: selected.platform, device: selected.id, streamMode }
+      : null,
     basePath()
   );
   const agentInteractions = useArgentInteractions();
   const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
   const agentDeviceIds = Object.keys(agentInteractions);
+
+  if (connectionStatus !== 'connected') {
+    return (
+      <ServerConnectionOverlay
+        status={connectionStatus}
+        onReload={() => window.location.reload()}
+      />
+    );
+  }
 
   return (
     <div
