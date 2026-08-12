@@ -31,11 +31,11 @@
 
   /* Agent takeover prompt — stays bright against the blurred light surface. */
   --expo-theme-button-agent-overlay-background: var(--expo-color-white);
-  --expo-theme-button-agent-overlay-border: var(--slate-5);
+  --expo-theme-button-agent-overlay-border: transparent;
   --expo-theme-button-agent-overlay-hover: var(--slate-2);
   --expo-theme-button-agent-overlay-text: var(--slate-12);
   --expo-theme-button-agent-overlay-disabled-background: var(--slate-2);
-  --expo-theme-button-agent-overlay-disabled-border: var(--slate-5);
+  --expo-theme-button-agent-overlay-disabled-border: transparent;
   --expo-theme-button-agent-overlay-disabled-text: var(--slate-9);
 }
 
