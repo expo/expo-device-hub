@@ -41,6 +41,9 @@ describe('agent device status', () => {
     expect(visible).toContain('Agent is using this device');
     expect(visible).toContain('Taking over might collide with what the agent is doing.');
     expect(visible).toContain('Take over anyway');
+    expect(visible).toContain(
+      'background-color:var(--expo-theme-button-agent-overlay-background)'
+    );
   });
 
   test('clips the stream and unshaped overlay with one shared iOS screen shape', () => {
