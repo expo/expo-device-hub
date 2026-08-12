@@ -16,7 +16,7 @@ export const TOUCH_INDICATOR_STYLE: CSSProperties = {
 
 export const AGENT_TOUCH_INDICATOR_STYLE: CSSProperties = {
   ...TOUCH_INDICATOR_STYLE,
-  border: '2px solid rgba(48, 48, 48, 0.95)',
+  border: '2px solid var(--expo-theme-border-info)',
 };
 
 export function TouchIndicator({ point }: { point: AgentInteractionPoint }) {
