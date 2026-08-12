@@ -12,6 +12,11 @@ export interface AndroidUtilsResult<T> {
   error: AndroidUtilsError | null;
 }
 
+/** Emit an informational message when the debug namespace is enabled. */
+export function logDebug(message: string): void {
+  debug("%s", message);
+}
+
 /** Create a utility failure and emit it when the debug namespace is enabled. */
 export function reportError(message: string, error: unknown): AndroidUtilsError {
   const captured = { message, error };

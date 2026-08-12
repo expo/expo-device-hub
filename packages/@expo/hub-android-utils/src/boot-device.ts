@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { emulatorSerial, formatEmulatorCommand, spawnEmulator } from "./emulator";
 import { type AndroidUtilsResult, reportError, result } from "./errors";
 import { resolveEmulatorPath } from "./sdk-paths";
-import type { BootDeviceOptions, BootedDevice, EmulatorExit } from "./types";
+import type { BootDeviceOptions, BootedDevice } from "./types";
 
 /**
  * Boot an AVD headlessly via the `emulator` binary.
@@ -24,24 +24,17 @@ export async function bootDevice(
     const emulator = resolveEmulatorPath(process.env, homedir());
     const spawned = await spawnEmulator(emulator, options);
     if (spawned.error || !spawned.value) return result(null, spawned.error);
-    const child = spawned.value;
-
-    const exited = new Promise<EmulatorExit>((resolve) => {
-      child.once("exit", (code, signal) => resolve({ code, signal, error: null }));
-      child.once("error", (error) =>
-        resolve({
-          code: null,
-          signal: null,
-          error: reportError("[android-utils] `emulator` process error:", error),
-        }),
-      );
-    });
+    const running = spawned.value;
 
     return result({
       serial: emulatorSerial(options.port),
-      pid: child.pid ?? null,
-      command: formatEmulatorCommand(emulator, options),
-      exited,
+      get pid() {
+        return running.child.pid ?? null;
+      },
+      get command() {
+        return formatEmulatorCommand(emulator, options, running.gpuMode);
+      },
+      exited: running.exited,
     });
   } catch (error) {
     return result(null, reportError("[android-utils] Failed to boot device:", error));
