@@ -55,6 +55,7 @@ export function PhoneFrame({
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
 }) {
   const [hovered, setHovered] = useState(false);
+  const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[platform];
 
   // Prefer the live screen's aspect ratio once known, so the stream fills the
@@ -81,6 +82,8 @@ export function PhoneFrame({
   // the *short* side so the corners look the same in portrait and landscape.
   const borderRadius = `${((radiusFraction / Math.max(ratio, 1)) * 100).toFixed(3)}cqw`;
   const live = client && client.status !== 'idle';
+  const overlayVisible =
+    !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
 
   return (
     <div
@@ -117,10 +120,13 @@ export function PhoneFrame({
           zIndex: 2,
           overflow: 'hidden',
           borderRadius,
-          pointerEvents: 'none',
+          pointerEvents: overlayVisible ? 'auto' : 'none',
           ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
         }}>
-        <AgentDeviceOverlay visible={!!agentInteraction && hovered} />
+        <AgentDeviceOverlay
+          visible={overlayVisible}
+          onTakeOver={() => setDismissedInteractionId(agentInteraction?.id ?? null)}
+        />
       </div>
     </div>
   );
