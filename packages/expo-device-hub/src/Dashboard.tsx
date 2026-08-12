@@ -38,7 +38,7 @@ import {
   FloatingSidebarToggle,
   floatingSidebarToggleInset,
 } from './dashboard/FloatingSidebarToggle';
-import { useArgentInteraction } from './dashboard/useArgentInteraction';
+import { useArgentInteractions } from './dashboard/useArgentInteraction';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 import { SidebarOverlay } from './dashboard/SidebarOverlay';
 import { useSidebarLayout } from './dashboard/useSidebarLayout';
@@ -237,7 +237,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     selected ? { platform: selected.platform, device: selected.id, streamMode } : null,
     basePath()
   );
-  const agentInteraction = useArgentInteraction(selected?.id);
+  const agentInteractions = useArgentInteractions();
+  const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
+  const agentDeviceIds = Object.keys(agentInteractions);
 
   return (
     <div
@@ -268,6 +270,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           recentEmulators={recentEmulators}
           simulatorOptions={simulatorOptions}
           emulatorOptions={emulatorOptions}
+          agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
           onSelect={selectDevice}
           onAddDevice={handleAddDevice}
@@ -356,6 +359,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           recentEmulators={recentEmulators}
           simulatorOptions={simulatorOptions}
           emulatorOptions={emulatorOptions}
+          agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
           onSelect={selectDevice}
           onAddDevice={handleAddDevice}

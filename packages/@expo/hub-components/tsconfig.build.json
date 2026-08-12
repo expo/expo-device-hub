@@ -7,5 +7,6 @@
     "declarationMap": true,
     "outDir": "dist",
     "rootDir": "src"
-  }
+  },
+  "exclude": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx"]
 }

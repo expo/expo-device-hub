@@ -2,6 +2,7 @@ import { type CSSProperties, useState } from 'react';
 
 import { WarningIcon } from './icons';
 import { bg, icon, radius, text, textSize } from '../theme/tokens';
+import { AgentDeviceStatus } from './AgentDeviceStatus';
 
 /**
  * A selectable row in the simulators list ("list button"). Selected rows use the
@@ -12,6 +13,7 @@ export type DeviceListItemProps = {
   version: string;
   /** Shows an accessible warning for a device type that Hub does not support or test. */
   unsupported?: boolean;
+  usedByAgent?: boolean;
   selected?: boolean;
   onClick?: () => void;
 };
@@ -20,6 +22,7 @@ export function DeviceListItem({
   name,
   version,
   unsupported = false,
+  usedByAgent = false,
   selected = false,
   onClick,
 }: DeviceListItemProps) {
@@ -52,6 +55,7 @@ export function DeviceListItem({
       style={style}
       onClick={onClick}
       aria-pressed={selected}
+      aria-label={`${name}, ${version}${usedByAgent ? ', used by agent' : ''}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -83,6 +87,7 @@ export function DeviceListItem({
           }}>
           {name}
         </span>
+        <AgentDeviceStatus active={usedByAgent} />
       </span>
       <span
         style={{
