@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DeviceListItem } from '../components/DeviceListItem';
 import { AgentDeviceOverlay } from '../dashboard/AgentDeviceOverlay';
+import { PhoneFrame } from '../dashboard/PhoneFrame';
 
 describe('agent device status', () => {
   test('labels active device rows and renders the blue status badge', () => {
@@ -34,5 +35,20 @@ describe('agent device status', () => {
     expect(visible).toContain('display:flex');
     expect(visible).not.toContain('border-radius');
     expect(visible).toContain('Agent is using this device');
+  });
+
+  test('clips the unshaped overlay with the same iOS screen shape', () => {
+    const markup = renderToStaticMarkup(
+      <PhoneFrame
+        platform="ios"
+        DeviceScreen={() => null}
+        displayScreen={() => null}
+      />
+    );
+
+    expect(markup).toContain('data-testid="agent-device-overlay-clip"');
+    expect(markup).toContain('overflow:hidden');
+    expect(markup).toContain('border-radius:14.066cqw');
+    expect(markup).toContain('corner-shape:superellipse(1.3)');
   });
 });
