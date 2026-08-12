@@ -1,4 +1,4 @@
-import { Button, bg, text, textSize } from '../primitives';
+import { Button, text, textSize } from '../primitives';
 
 /** Unshaped hover notice; PhoneFrame clips it to the device screen. */
 export function AgentDeviceOverlay({
@@ -24,9 +24,6 @@ export function AgentDeviceOverlay({
         justifyContent: 'center',
         padding: 24,
         boxSizing: 'border-box',
-        backgroundColor: `color-mix(in srgb, ${bg.default} 68%, transparent)`,
-        backdropFilter: 'blur(18px) saturate(120%)',
-        WebkitBackdropFilter: 'blur(18px) saturate(120%)',
         pointerEvents: 'auto',
         textAlign: 'center',
       }}>
