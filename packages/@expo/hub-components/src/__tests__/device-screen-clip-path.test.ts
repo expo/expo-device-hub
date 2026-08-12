@@ -6,8 +6,11 @@ describe('deviceScreenClipPath', () => {
   test('builds a responsive iOS superellipse', () => {
     const clipPath = deviceScreenClipPath(14.066, true);
 
-    expect(clipPath).toStartWith('shape(from 14.066cqw 0');
+    expect(clipPath).toStartWith('shape(from 14.066cqw -0.5px');
     expect(clipPath).toContain('calc(100% - 14.066cqw)');
+    expect(clipPath).toContain('calc(14.066cqw - 0.5px)');
+    expect(clipPath).toContain('calc(100% - 14.066cqw + 0.5px)');
+    expect(clipPath).toContain('calc(100% + 0.5px)');
     expect(clipPath).toContain('9.613cqw 0 from start / 0 -9.613cqw from end');
     expect(clipPath).toEndWith('close)');
   });
