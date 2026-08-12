@@ -26,6 +26,13 @@ const CONFIG: Record<Platform, { ratio: number; radiusFraction: number; squircle
   android: { ratio: 320 / 711, radiusFraction: 10 / 390, squircle: false },
 };
 
+export function overlayClipPath(
+  visible: boolean,
+  borderRadius: CSSProperties['borderRadius']
+): CSSProperties['clipPath'] {
+  return visible ? `inset(0 round ${borderRadius})` : undefined;
+}
+
 /**
  * The selected device's screen. When a {@link DeviceClient} connection is active
  * (a serve-sim/serve-emu server is selected) it renders the live, interactive
@@ -101,6 +108,9 @@ export function PhoneFrame({
           inset: 0,
           overflow: 'hidden',
           borderRadius,
+          // Apply one final clip after backdrop-filter compositing; rounded
+          // overflow alone can leak the stream at fractional pixel edges.
+          clipPath: overlayClipPath(overlayVisible, borderRadius),
           ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
         }}>
         {live ? (
