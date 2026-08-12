@@ -35,6 +35,7 @@ import {
   browserStreamModeAvailability,
   resolveStreamMode,
 } from './dashboard/streamMode';
+import { dashboardPlatformFilter } from './platform-filter';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -86,6 +87,7 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
   const scheme = useColorScheme();
+  const platform = dashboardPlatformFilter();
   const { booted, recent } = useDeviceLists();
   // Installed runtimes/system images and models for the new-device forms.
   const newDeviceOptions = useNewDeviceOptions();
@@ -118,19 +120,23 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // id and split back into the two sections by platform.
   const simulators = useMemo(
     () =>
-      mergeById(
-        booted.simulators,
-        added.filter((device) => device.platform === 'ios')
-      ),
-    [booted.simulators, added]
+      platform === 'android'
+        ? []
+        : mergeById(
+            booted.simulators,
+            added.filter((device) => device.platform === 'ios')
+          ),
+    [booted.simulators, added, platform]
   );
   const emulators = useMemo(
     () =>
-      mergeById(
-        booted.emulators,
-        added.filter((device) => device.platform === 'android')
-      ),
-    [booted.emulators, added]
+      platform === 'ios'
+        ? []
+        : mergeById(
+            booted.emulators,
+            added.filter((device) => device.platform === 'android')
+          ),
+    [booted.emulators, added, platform]
   );
 
   // Create/boot the chosen target on the host. The modal awaits this result, so
@@ -259,6 +265,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             onSelect={setSelectedId}
             onAddDevice={handleAddDevice}
             onToggle={() => setSidebarOpen(false)}
+            platform={platform}
             width={sidebarWidth}
           />
           {/* Drag the seam between the devices sidebar and the stream to resize. */}
@@ -291,7 +298,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           framed={!narrow}
         />
       ) : (
-        <EmptyState />
+        <EmptyState platform={platform} />
       )}
 
       {/* Room for two sidebars + open: the logs sidebar sits inline to the right of the stream. */}
@@ -356,6 +363,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               onSelect={setSelectedId}
               onAddDevice={handleAddDevice}
               onToggle={() => setSidebarOpen(false)}
+              platform={platform}
               width={sidebarWidth}
             />
           </div>

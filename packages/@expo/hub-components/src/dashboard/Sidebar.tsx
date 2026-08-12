@@ -5,6 +5,7 @@ import {
   type AddDeviceTarget,
   type Device,
   type NewDeviceOptions,
+  type Platform,
 } from './data';
 
 /** Left column: simulators + emulators lists. The device output (logs) lives in {@link LogSidebar}. */
@@ -19,6 +20,7 @@ export function Sidebar({
   onSelect,
   onAddDevice,
   onToggle,
+  platform,
   width = 400,
 }: {
   /** Simulators to list — real iOS devices from the plugin server. */
@@ -39,6 +41,8 @@ export function Sidebar({
   onAddDevice: (target: AddDeviceTarget) => Promise<AddDeviceOutcome>;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */
   onToggle?: () => void;
+  /** Restrict the sidebar to one platform. Both sections render by default. */
+  platform?: Platform;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
 }) {
@@ -60,30 +64,34 @@ export function Sidebar({
         <Logo />
         {onToggle && <SidebarToggle onClick={onToggle} />}
       </div>
-      <DeviceSection
-        title="Simulators"
-        addLabel="Add simulator"
-        kind="simulator"
-        emptyLabel="No booted simulators. Use the + button to add one."
-        devices={simulators}
-        recent={recentSimulators}
-        options={simulatorOptions}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        onAdd={onAddDevice}
-      />
-      <DeviceSection
-        title="Emulators"
-        addLabel="Add emulator"
-        kind="emulator"
-        emptyLabel="No booted emulators or devices. Use the + button to add one."
-        devices={emulators}
-        recent={recentEmulators}
-        options={emulatorOptions}
-        selectedId={selectedId}
-        onSelect={onSelect}
-        onAdd={onAddDevice}
-      />
+      {platform !== 'android' && (
+        <DeviceSection
+          title="Simulators"
+          addLabel="Add simulator"
+          kind="simulator"
+          emptyLabel="No booted simulators. Use the + button to add one."
+          devices={simulators}
+          recent={recentSimulators}
+          options={simulatorOptions}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onAdd={onAddDevice}
+        />
+      )}
+      {platform !== 'ios' && (
+        <DeviceSection
+          title="Emulators"
+          addLabel="Add emulator"
+          kind="emulator"
+          emptyLabel="No booted emulators or devices. Use the + button to add one."
+          devices={emulators}
+          recent={recentEmulators}
+          options={emulatorOptions}
+          selectedId={selectedId}
+          onSelect={onSelect}
+          onAdd={onAddDevice}
+        />
+      )}
     </aside>
   );
 }

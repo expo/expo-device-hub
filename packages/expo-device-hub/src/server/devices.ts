@@ -17,9 +17,10 @@
 import { type AndroidDevice, listDevices as listAndroidDevices } from '@expo/hub-android-utils';
 import { listDevices as listAppleDevices } from '@expo/hub-apple-utils';
 
+import { type PlatformFilter } from '../platform-filter';
 import { type SerializableError, toSerializableError } from './utility-errors';
 
-export type HubDevicePlatform = 'ios' | 'android';
+export type HubDevicePlatform = PlatformFilter;
 
 export interface HubDevice {
   /** udid (iOS) / serial-or-AVD-name (Android). */
@@ -121,9 +122,13 @@ function latestTimestamp(...timestamps: Array<number | null>): number | undefine
   return available.length > 0 ? Math.max(...available) : undefined;
 }
 
-/** Every known simulator and emulator/device, each tagged with its `booted` state. */
-export async function listDevices(): Promise<HubDeviceList> {
-  const [simulators, emulators] = await Promise.all([listIosSimulators(), listAndroidEmulators()]);
+/** Every requested simulator and emulator/device, each tagged with its `booted` state. */
+export async function listDevices(platform?: PlatformFilter): Promise<HubDeviceList> {
+  const empty = (): PlatformDeviceList => ({ devices: [], error: null });
+  const [simulators, emulators] = await Promise.all([
+    platform === 'android' ? empty() : listIosSimulators(),
+    platform === 'ios' ? empty() : listAndroidEmulators(),
+  ]);
 
   return {
     simulators: simulators.devices,

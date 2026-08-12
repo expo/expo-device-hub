@@ -20,9 +20,11 @@ import {
   removeHubDevice,
   shutdownHubDevice,
 } from './device-actions';
+import { configureClientShell } from './client-shell';
 import { deviceListWebSocketHandler, refreshDeviceList } from './device-list-websocket';
 import { type HubDeviceList, listDevices } from './devices';
 import { MOUNT_PATH } from './mount';
+import { SERVER_PLATFORM_FILTER } from './platform-filter';
 import { EMU_PREFIX, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
 import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
 import { listNewDeviceOptions } from './sim-options';
@@ -54,7 +56,7 @@ async function serveClientIndexHtml(): Promise<Response | null> {
       return null;
     }
   }
-  return new Response(clientIndexHtml.replaceAll('{{mount}}', MOUNT_PATH), {
+  return new Response(configureClientShell(clientIndexHtml, MOUNT_PATH, SERVER_PLATFORM_FILTER), {
     headers: {
       'Content-Type': 'text/html; charset=utf-8',
       'Cache-Control': 'no-store',
@@ -87,7 +89,7 @@ export default async function handler(request: Request): Promise<Response | null
   }
 
   if (pathname === DEVICES_ROUTE) {
-    const devices = await listDevices();
+    const devices = await listDevices(SERVER_PLATFORM_FILTER);
     const bootedOnly = searchParams.get('booted') === 'true' || searchParams.get('booted') === '1';
     return jsonResponse(bootedOnly ? filterBooted(devices) : devices);
   }
@@ -159,7 +161,7 @@ export default async function handler(request: Request): Promise<Response | null
     if (request.method !== 'GET') {
       return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
     }
-    return jsonResponse(await listNewDeviceOptions());
+    return jsonResponse(await listNewDeviceOptions(SERVER_PLATFORM_FILTER));
   }
 
   return null;
