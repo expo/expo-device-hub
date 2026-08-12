@@ -1,6 +1,6 @@
 import { bg, text, textSize } from '../primitives';
 
-/** Hover-only notice layered over a device while Argent activity is current. */
+/** Unshaped hover notice; PhoneFrame clips it to the device screen. */
 export function AgentDeviceOverlay({ visible }: { visible: boolean }) {
   return (
     <div

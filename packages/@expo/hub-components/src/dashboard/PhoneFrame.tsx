@@ -109,7 +109,19 @@ export function PhoneFrame({
           }}
         />
       )}
-      <AgentDeviceOverlay visible={!!agentInteraction && hovered} />
+      <div
+        data-testid="agent-device-overlay-clip"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 2,
+          overflow: 'hidden',
+          borderRadius,
+          pointerEvents: 'none',
+          ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
+        }}>
+        <AgentDeviceOverlay visible={!!agentInteraction && hovered} />
+      </div>
     </div>
   );
 }
