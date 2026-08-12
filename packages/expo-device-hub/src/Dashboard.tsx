@@ -25,6 +25,7 @@ import {
   type DeviceFrameAssets,
 } from '@expo/hub-components';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import pixelDeviceFrame from '../assets/device-frames/google-pixel-10-pro.png';
 import iphoneDeviceFrame from '../assets/device-frames/iphone-17-pro-silver.png';
@@ -283,19 +284,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
   const agentDeviceIds = Object.keys(agentInteractions);
 
-  if (connectionStatus !== 'connected') {
-    return (
-      <ServerConnectionOverlay
-        status={connectionStatus}
-        onReload={() => window.location.reload()}
-      />
-    );
-  }
+  const connectionBlocked = connectionStatus !== 'connected';
 
   return (
     <div
       ref={sidebars.containerRef}
+      aria-hidden={connectionBlocked || undefined}
       className={scheme === 'dark' ? 'dark-theme' : undefined}
+      inert={connectionBlocked || undefined}
       style={{
         display: 'flex',
         position: 'relative',
@@ -471,6 +467,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onClick={sidebars.openRight}
         />
       )}
+      {connectionBlocked &&
+        createPortal(
+          <ServerConnectionOverlay
+            status={connectionStatus}
+            onReload={() => window.location.reload()}
+          />,
+          document.body
+        )}
     </div>
   );
 }
