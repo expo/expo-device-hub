@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DeviceListItem } from '../components/DeviceListItem';
@@ -44,6 +45,18 @@ describe('agent device status', () => {
     expect(visible).toContain(
       'background-color:var(--expo-theme-button-agent-overlay-background)'
     );
+    expect(visible).toContain('font-family:inherit');
+    expect(visible).toContain(
+      '<span style="font-size:14px;font-weight:500;line-height:1.6;letter-spacing:0">Take over anyway</span>'
+    );
+  });
+
+  test('keeps the agent takeover button borderless in light mode', () => {
+    const themeCss = readFileSync(new URL('../theme/theme.css', import.meta.url), 'utf8');
+    const lightTheme = themeCss.slice(themeCss.indexOf(':root {'), themeCss.indexOf('.dark-theme'));
+
+    expect(lightTheme).toContain('--expo-theme-button-agent-overlay-border: transparent;');
+    expect(lightTheme).toContain('--expo-theme-button-agent-overlay-disabled-border: transparent;');
   });
 
   test('clips the stream and unshaped overlay with one shared iOS screen shape', () => {

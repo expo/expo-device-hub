@@ -42,8 +42,12 @@ export function AgentDeviceOverlay({
         <div style={{ maxWidth: 260, color: text.secondary, ...textSize.sm }}>
           Taking over might collide with what the agent is doing.
         </div>
-        <Button theme="agent-overlay" size="lg" onClick={onTakeOver}>
-          Take over anyway
+        <Button
+          theme="agent-overlay"
+          size="lg"
+          onClick={onTakeOver}
+          style={{ fontFamily: 'inherit' }}>
+          <span style={{ ...textSize.sm, fontWeight: 500 }}>Take over anyway</span>
         </Button>
       </div>
     </div>
