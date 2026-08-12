@@ -19,6 +19,7 @@ import {
   type Device,
 } from '@expo/hub-components';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import { basePath } from './dashboard/basePath';
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
@@ -211,18 +212,13 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     basePath()
   );
 
-  if (connectionStatus !== 'connected') {
-    return (
-      <ServerConnectionOverlay
-        status={connectionStatus}
-        onReload={() => window.location.reload()}
-      />
-    );
-  }
+  const connectionBlocked = connectionStatus !== 'connected';
 
   return (
     <div
+      aria-hidden={connectionBlocked || undefined}
       className={scheme === 'dark' ? 'dark-theme' : undefined}
+      inert={connectionBlocked || undefined}
       style={{
         display: 'flex',
         position: 'relative',
@@ -385,6 +381,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           <SidebarToggle floating side="right" onClick={() => setLogsOpen(true)} />
         </div>
       )}
+      {connectionBlocked &&
+        createPortal(
+          <ServerConnectionOverlay
+            status={connectionStatus}
+            onReload={() => window.location.reload()}
+          />,
+          document.body
+        )}
     </div>
   );
 }
