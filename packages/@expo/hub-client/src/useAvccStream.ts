@@ -116,9 +116,9 @@ export function useAvccStream({
         decoder.configure({
           codec: avcCodecString(description),
           description,
-          optimizeFor: 'latency',
+          optimizeForLatency: true,
           hardwareAcceleration: 'prefer-hardware',
-        } as VideoDecoderConfig & { optimizeFor: 'latency' });
+        });
       } catch (caught) {
         reportDecodeFailure(`config: ${(caught as Error).message}`);
       }
