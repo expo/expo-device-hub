@@ -60,6 +60,10 @@ export { LogRow } from './dashboard/LogRow';
 export { StreamControls } from './dashboard/StreamControls';
 export { RecentDevicesModal, type RecentDevicesModalProps } from './dashboard/RecentDevicesModal';
 export { BootErrorModal, type BootErrorModalProps } from './dashboard/BootErrorModal';
+export {
+  ServerConnectionOverlay,
+  type ServerConnectionOverlayProps,
+} from './dashboard/ServerConnectionOverlay';
 
 // ── Shared dashboard types + config ──
 export * from './dashboard/data';

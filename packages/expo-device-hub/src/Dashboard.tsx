@@ -7,6 +7,7 @@ import {
   EmptyState,
   LogSidebar,
   ResizeHandle,
+  ServerConnectionOverlay,
   Sidebar,
   SidebarToggle,
   StreamPanel,
@@ -75,7 +76,7 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
   const scheme = useColorScheme();
-  const { booted, recent } = useDeviceLists();
+  const { booted, recent, connectionStatus } = useDeviceLists();
   // Installed runtimes/system images and models for the new-device forms.
   const newDeviceOptions = useNewDeviceOptions();
   const [selectedId, setSelectedId] = useState('');
@@ -204,9 +205,20 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load.
   const client = useActiveDeviceClient(
-    selected ? { platform: selected.platform, device: selected.id } : null,
+    connectionStatus === 'connected' && selected
+      ? { platform: selected.platform, device: selected.id }
+      : null,
     basePath()
   );
+
+  if (connectionStatus !== 'connected') {
+    return (
+      <ServerConnectionOverlay
+        status={connectionStatus}
+        onReload={() => window.location.reload()}
+      />
+    );
+  }
 
   return (
     <div
