@@ -26,15 +26,20 @@ describe('agent device status', () => {
   });
 
   test('only reveals the phone overlay while hover state is active', () => {
-    const hidden = renderToStaticMarkup(<AgentDeviceOverlay visible={false} />);
-    const visible = renderToStaticMarkup(<AgentDeviceOverlay visible />);
+    const hidden = renderToStaticMarkup(<AgentDeviceOverlay visible={false} onTakeOver={() => {}} />);
+    const visible = renderToStaticMarkup(<AgentDeviceOverlay visible onTakeOver={() => {}} />);
+    const visibleOverlayTag = visible.slice(0, visible.indexOf('>') + 1);
 
     expect(hidden).toContain('hidden=""');
     expect(hidden).toContain('display:none');
     expect(visible).not.toContain('hidden=""');
     expect(visible).toContain('display:flex');
-    expect(visible).not.toContain('border-radius');
+    expect(visibleOverlayTag).not.toContain('border-radius');
+    expect(visible).toContain('color:var(--expo-theme-text-info)');
+    expect(visible).toContain('backdrop-filter:blur(18px) saturate(120%)');
     expect(visible).toContain('Agent is using this device');
+    expect(visible).toContain('Taking over might collide with what the agent is doing.');
+    expect(visible).toContain('Take over anyway');
   });
 
   test('clips the unshaped overlay with the same iOS screen shape', () => {
