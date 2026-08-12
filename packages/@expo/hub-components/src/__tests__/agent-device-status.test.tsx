@@ -36,7 +36,8 @@ describe('agent device status', () => {
     expect(visible).toContain('display:flex');
     expect(visibleOverlayTag).not.toContain('border-radius');
     expect(visible).toContain('color:var(--expo-theme-text-info)');
-    expect(visible).toContain('backdrop-filter:blur(18px) saturate(120%)');
+    expect(visibleOverlayTag).not.toContain('backdrop-filter');
+    expect(visibleOverlayTag).not.toContain('background-color');
     expect(visible).toContain('Agent is using this device');
     expect(visible).toContain('Taking over might collide with what the agent is doing.');
     expect(visible).toContain('Take over anyway');

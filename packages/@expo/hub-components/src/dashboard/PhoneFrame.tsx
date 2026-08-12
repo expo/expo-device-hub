@@ -121,6 +121,11 @@ export function PhoneFrame({
           overflow: 'hidden',
           borderRadius,
           pointerEvents: overlayVisible ? 'auto' : 'none',
+          backgroundColor: overlayVisible
+            ? `color-mix(in srgb, ${bg.default} 68%, transparent)`
+            : 'transparent',
+          backdropFilter: overlayVisible ? 'blur(18px) saturate(120%)' : 'none',
+          WebkitBackdropFilter: overlayVisible ? 'blur(18px) saturate(120%)' : 'none',
           ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
         }}>
         <AgentDeviceOverlay
