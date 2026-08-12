@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DeviceListItem } from '../components/DeviceListItem';
 import { AgentDeviceOverlay } from '../dashboard/AgentDeviceOverlay';
-import { PhoneFrame } from '../dashboard/PhoneFrame';
+import { overlayClipPath, PhoneFrame } from '../dashboard/PhoneFrame';
 
 describe('agent device status', () => {
   test('labels active device rows and renders the blue status badge', () => {
@@ -59,8 +59,14 @@ describe('agent device status', () => {
     expect(screenClipTag).toContain('overflow:hidden');
     expect(screenClipTag).toContain('border-radius:14.066cqw');
     expect(screenClipTag).toContain('corner-shape:superellipse(1.3)');
+    expect(screenClipTag).not.toContain('clip-path');
     expect(overlayTag).not.toContain('overflow:hidden');
     expect(overlayTag).not.toContain('border-radius');
     expect(overlayTag).not.toContain('corner-shape');
+  });
+
+  test('adds an explicit final clip only while the blurred overlay is visible', () => {
+    expect(overlayClipPath(false, '14.066cqw')).toBeUndefined();
+    expect(overlayClipPath(true, '14.066cqw')).toBe('inset(0 round 14.066cqw)');
   });
 });
