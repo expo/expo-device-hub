@@ -94,44 +94,38 @@ export function PhoneFrame({
         if (event.pointerType === 'mouse') setHovered(true);
       }}
       onPointerLeave={() => setHovered(false)}>
-      {live ? (
-        <DeviceScreen
-          client={client}
-          agentInteraction={agentInteraction}
-          borderRadius={borderRadius}
-          squircle={squircle}
-        />
-      ) : (
-        <div
-          style={{
-            width: '100%',
-            height: '100%',
-            backgroundColor: bg.element,
-            borderRadius,
-            ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
-          }}
-        />
-      )}
       <div
-        data-testid="agent-device-overlay-clip"
+        data-testid="device-screen-clip"
         style={{
           position: 'absolute',
           inset: 0,
-          zIndex: 2,
           overflow: 'hidden',
           borderRadius,
-          pointerEvents: overlayVisible ? 'auto' : 'none',
-          backgroundColor: overlayVisible
-            ? `color-mix(in srgb, ${bg.default} 68%, transparent)`
-            : 'transparent',
-          backdropFilter: overlayVisible ? 'blur(18px) saturate(120%)' : 'none',
-          WebkitBackdropFilter: overlayVisible ? 'blur(18px) saturate(120%)' : 'none',
           ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
         }}>
-        <AgentDeviceOverlay
-          visible={overlayVisible}
-          onTakeOver={() => setDismissedInteractionId(agentInteraction?.id ?? null)}
-        />
+        {live ? (
+          <DeviceScreen client={client} agentInteraction={agentInteraction} />
+        ) : (
+          <div style={{ width: '100%', height: '100%', backgroundColor: bg.element }} />
+        )}
+        <div
+          data-testid="agent-device-overlay-clip"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            pointerEvents: overlayVisible ? 'auto' : 'none',
+            backgroundColor: overlayVisible
+              ? `color-mix(in srgb, ${bg.default} 68%, transparent)`
+              : 'transparent',
+            backdropFilter: overlayVisible ? 'blur(18px) saturate(120%)' : 'none',
+            WebkitBackdropFilter: overlayVisible ? 'blur(18px) saturate(120%)' : 'none',
+          }}>
+          <AgentDeviceOverlay
+            visible={overlayVisible}
+            onTakeOver={() => setDismissedInteractionId(agentInteraction?.id ?? null)}
+          />
+        </div>
       </div>
     </div>
   );

@@ -43,7 +43,7 @@ describe('agent device status', () => {
     expect(visible).toContain('Take over anyway');
   });
 
-  test('clips the unshaped overlay with the same iOS screen shape', () => {
+  test('clips the stream and unshaped overlay with one shared iOS screen shape', () => {
     const markup = renderToStaticMarkup(
       <PhoneFrame
         platform="ios"
@@ -51,10 +51,16 @@ describe('agent device status', () => {
         displayScreen={() => null}
       />
     );
+    const screenClipStart = markup.indexOf('data-testid="device-screen-clip"');
+    const screenClipTag = markup.slice(screenClipStart, markup.indexOf('>', screenClipStart) + 1);
+    const overlayStart = markup.indexOf('data-testid="agent-device-overlay-clip"');
+    const overlayTag = markup.slice(overlayStart, markup.indexOf('>', overlayStart) + 1);
 
-    expect(markup).toContain('data-testid="agent-device-overlay-clip"');
-    expect(markup).toContain('overflow:hidden');
-    expect(markup).toContain('border-radius:14.066cqw');
-    expect(markup).toContain('corner-shape:superellipse(1.3)');
+    expect(screenClipTag).toContain('overflow:hidden');
+    expect(screenClipTag).toContain('border-radius:14.066cqw');
+    expect(screenClipTag).toContain('corner-shape:superellipse(1.3)');
+    expect(overlayTag).not.toContain('overflow:hidden');
+    expect(overlayTag).not.toContain('border-radius');
+    expect(overlayTag).not.toContain('corner-shape');
   });
 });
