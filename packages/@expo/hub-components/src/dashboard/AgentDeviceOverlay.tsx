@@ -1,15 +1,7 @@
-import { type CSSProperties } from 'react';
-
 import { bg, text, textSize } from '../primitives';
 
 /** Hover-only notice layered over a device while Argent activity is current. */
-export function AgentDeviceOverlay({
-  visible,
-  borderRadius,
-}: {
-  visible: boolean;
-  borderRadius: CSSProperties['borderRadius'];
-}) {
+export function AgentDeviceOverlay({ visible }: { visible: boolean }) {
   return (
     <div
       hidden={!visible}
@@ -24,7 +16,6 @@ export function AgentDeviceOverlay({
         justifyContent: 'center',
         padding: 24,
         boxSizing: 'border-box',
-        borderRadius,
         backgroundColor: bg.overlay,
         color: text.preview,
         pointerEvents: 'none',

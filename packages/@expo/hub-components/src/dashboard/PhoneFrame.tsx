@@ -75,7 +75,6 @@ export function PhoneFrame({
     containerType: 'inline-size',
     position: 'relative',
     isolation: 'isolate',
-    overflow: 'hidden',
   };
 
   // `cqw` resolves against the width, but the radius should stay a fraction of
@@ -110,7 +109,7 @@ export function PhoneFrame({
           }}
         />
       )}
-      <AgentDeviceOverlay visible={!!agentInteraction && hovered} borderRadius={borderRadius} />
+      <AgentDeviceOverlay visible={!!agentInteraction && hovered} />
     </div>
   );
 }
