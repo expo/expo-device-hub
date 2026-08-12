@@ -57,15 +57,15 @@ describe('agentInteractionPointsAt', () => {
     expect(agentInteractionPointsAt(INTERACTION, 10_000)).toEqual([{ x: 0.1, y: 0.9 }]);
   });
 
-  test('expires the cursor two minutes after the final interaction frame', () => {
+  test('expires the cursor one minute after the final interaction frame', () => {
     expect(agentInteractionCursorExpiresAt(INTERACTION)).toBe(
-      Date.parse(INTERACTION.timestamp) + 500 + 120_000
+      Date.parse(INTERACTION.timestamp) + 500 + 60_000
     );
   });
 
   test('uses the observation time when an interaction timestamp is invalid', () => {
     expect(agentInteractionCursorExpiresAt({ ...INTERACTION, timestamp: 'invalid' }, 1_000)).toBe(
-      121_500
+      61_500
     );
   });
 

@@ -12,7 +12,12 @@
 
 export * from './types';
 export { DeviceScreen } from './DeviceScreen';
-export { agentInteractionEndMs, agentInteractionPointsAt } from './agent-interaction-animation';
+export {
+  AGENT_INTERACTION_IDLE_TIMEOUT_MS,
+  agentInteractionCursorExpiresAt,
+  agentInteractionEndMs,
+  agentInteractionPointsAt,
+} from './agent-interaction-animation';
 export { displayScreen, streamGeometry } from './orientation';
 export { useIosDeviceClient } from './useIosDevice';
 export { useAndroidDeviceClient } from './useAndroidDevice';
