@@ -1,20 +1,21 @@
-import { type CSSProperties } from 'react';
-
-// Cubic Bézier control points for a quarter circle and for the
-// x^(2^1.3) + y^(2^1.3) = 1 superellipse used by the iOS frame.
-const CIRCLE_CONTROL = 0.552285;
-const IOS_SUPERELLIPSE_CONTROL = 0.683437;
+const CIRCLE_SUPERELLIPSE_PARAMETER = 1;
+const IOS_SUPERELLIPSE_PARAMETER = 1.3;
+const CIRCLE_CONTROL = superellipseControl(CIRCLE_SUPERELLIPSE_PARAMETER);
+const IOS_SUPERELLIPSE_CONTROL = superellipseControl(IOS_SUPERELLIPSE_PARAMETER);
 const VERTICAL_EDGE_BLEED = '0.5px';
+
+/** Matches a symmetric cubic's midpoint to the CSS superellipse(K) half-corner. */
+function superellipseControl(parameter: number): number {
+  const halfCorner = Math.pow(0.5, Math.pow(0.5, parameter));
+  return (halfCorner - 0.5) / 0.375;
+}
 
 function cqw(value: number): string {
   return `${value.toFixed(3)}cqw`;
 }
 
 /** Builds one responsive clip for the stream and every screen overlay. */
-export function deviceScreenClipPath(
-  radiusCqw: number,
-  squircle: boolean
-): CSSProperties['clipPath'] {
+export function deviceScreenClipPath(radiusCqw: number, squircle: boolean): string {
   const radius = cqw(radiusCqw);
   const control = cqw(radiusCqw * (squircle ? IOS_SUPERELLIPSE_CONTROL : CIRCLE_CONTROL));
   const top = `-${VERTICAL_EDGE_BLEED}`;
