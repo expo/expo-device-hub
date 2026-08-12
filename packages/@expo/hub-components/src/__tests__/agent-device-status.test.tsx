@@ -25,13 +25,14 @@ describe('agent device status', () => {
   });
 
   test('only reveals the phone overlay while hover state is active', () => {
-    const hidden = renderToStaticMarkup(<AgentDeviceOverlay visible={false} borderRadius="20px" />);
-    const visible = renderToStaticMarkup(<AgentDeviceOverlay visible borderRadius="20px" />);
+    const hidden = renderToStaticMarkup(<AgentDeviceOverlay visible={false} />);
+    const visible = renderToStaticMarkup(<AgentDeviceOverlay visible />);
 
     expect(hidden).toContain('hidden=""');
     expect(hidden).toContain('display:none');
     expect(visible).not.toContain('hidden=""');
     expect(visible).toContain('display:flex');
+    expect(visible).not.toContain('border-radius');
     expect(visible).toContain('Agent is using this device');
   });
 });
