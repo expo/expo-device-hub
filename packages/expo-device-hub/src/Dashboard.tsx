@@ -58,7 +58,7 @@ const DEFAULT_SIDEBAR_WIDTH = 400;
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
-const DEFAULT_STREAM_MODE: DeviceStreamMode = 'h264';
+const DEFAULT_STREAM_MODE: DeviceStreamMode = 'mjpeg';
 
 /**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
