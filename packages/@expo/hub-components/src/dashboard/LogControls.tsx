@@ -1,12 +1,18 @@
 import { Button, bg, font, radius, text, textSize } from '../primitives';
 
-/** Compact stream toolbar shown while device logs are attached. */
+/** Compact stream toolbar for pausing, resuming, and clearing device logs. */
 export function LogControls({
   count,
+  running,
   onClear,
+  onStart,
+  onStop,
 }: {
   count: number;
+  running: boolean;
   onClear: () => void;
+  onStart: () => void;
+  onStop: () => void;
 }) {
   return (
     <div
@@ -27,6 +33,13 @@ export function LogControls({
         }}>
         {count} {count === 1 ? 'line' : 'lines'}
       </span>
+      <Button
+        size="2xs"
+        theme="secondary"
+        onClick={running ? onStop : onStart}
+        style={{ borderRadius: radius.full, paddingInline: 14 }}>
+        {running ? 'Stop' : 'Start'}
+      </Button>
       <Button
         size="2xs"
         theme="secondary"

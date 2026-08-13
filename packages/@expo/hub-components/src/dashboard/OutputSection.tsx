@@ -1,3 +1,5 @@
+import { useState } from 'react';
+
 import { type DeviceClient } from '@expo/hub-client';
 import { LogControls } from './LogControls';
 import { LogList } from './LogList';
@@ -7,6 +9,13 @@ import { SidebarRow, SidebarSwitch } from './SidebarRow';
 export function OutputSection({ client }: { client?: DeviceClient }) {
   const logs = client?.logs ?? [];
   const logsEnabled = client?.logsEnabled ?? false;
+  const [logsOpen, setLogsOpen] = useState(logsEnabled);
+
+  function setLogsVisibility(next: boolean) {
+    setLogsOpen(next);
+    if (next) client?.attachLogs();
+    else client?.detachLogs();
+  }
 
   return (
     <section
@@ -19,17 +28,23 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
       <div style={{ padding: '0 20px' }}>
         <SidebarRow label="Logs" borderBottom={false}>
           <SidebarSwitch
-            checked={logsEnabled}
+            checked={logsOpen}
             disabled={!client}
             label="Logs"
-            onChange={(next) => (next ? client?.attachLogs() : client?.detachLogs())}
+            onChange={setLogsVisibility}
           />
         </SidebarRow>
       </div>
-      {logsEnabled && (
+      {logsOpen && (
         <>
-          <LogControls count={logs.length} onClear={() => client?.clearLogs()} />
-          <LogList logs={logs} enabled />
+          <LogControls
+            count={logs.length}
+            running={logsEnabled}
+            onClear={() => client?.clearLogs()}
+            onStart={() => client?.attachLogs()}
+            onStop={() => client?.detachLogs()}
+          />
+          <LogList logs={logs} enabled={logsEnabled} />
         </>
       )}
       <div style={{ flex: 1, minHeight: 0 }} />

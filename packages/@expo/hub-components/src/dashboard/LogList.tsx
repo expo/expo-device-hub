@@ -53,7 +53,7 @@ export function LogList({ logs = [], enabled = false }: { logs?: DeviceLog[]; en
 
   const emptyMessage = enabled
     ? 'No logs. The stream resumes on the next event.'
-    : 'Logs are paused. Press Attach to stream device logs.';
+    : 'Logs are paused. Press Start to stream device logs.';
 
   return (
     <div ref={scrollRef} className="hub-log-scroll" style={scrollStyle}>
