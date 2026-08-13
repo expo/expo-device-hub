@@ -1,4 +1,5 @@
-import { Button, bg, font, radius, text, textSize } from '../primitives';
+import { bg, font, text, textSize } from '../primitives';
+import { SidebarActionButton } from './SidebarActionButton';
 
 /** Compact stream toolbar for pausing, resuming, and clearing device logs. */
 export function LogControls({
@@ -33,21 +34,12 @@ export function LogControls({
         }}>
         {count} {count === 1 ? 'line' : 'lines'}
       </span>
-      <Button
-        size="2xs"
-        theme="secondary"
-        onClick={running ? onStop : onStart}
-        style={{ borderRadius: radius.full, paddingInline: 14 }}>
+      <SidebarActionButton onClick={running ? onStop : onStart}>
         {running ? 'Stop' : 'Start'}
-      </Button>
-      <Button
-        size="2xs"
-        theme="secondary"
-        disabled={count === 0}
-        onClick={onClear}
-        style={{ borderRadius: radius.full, paddingInline: 14 }}>
+      </SidebarActionButton>
+      <SidebarActionButton disabled={count === 0} onClick={onClear}>
         Clear
-      </Button>
+      </SidebarActionButton>
     </div>
   );
 }

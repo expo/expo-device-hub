@@ -1,5 +1,5 @@
 import { type DeviceClient } from '@expo/hub-client';
-import { Button, radius } from '../primitives';
+import { SidebarActionButton } from './SidebarActionButton';
 import { SidebarRow, SidebarSwitch } from './SidebarRow';
 
 /** iOS keyboard connection controls. Browser HID forwarding stays independent. */
@@ -17,14 +17,11 @@ export function KeyboardSection({ client }: { client: DeviceClient }) {
         />
       </SidebarRow>
       <SidebarRow label="Software keyboard">
-        <Button
-          size="2xs"
-          theme="secondary"
+        <SidebarActionButton
           disabled={connected === null}
-          onClick={() => client.toggleSoftwareKeyboard()}
-          style={{ borderRadius: radius.full, paddingInline: 14, fontWeight: 600 }}>
+          onClick={() => client.toggleSoftwareKeyboard()}>
           Toggle
-        </Button>
+        </SidebarActionButton>
       </SidebarRow>
     </section>
   );
