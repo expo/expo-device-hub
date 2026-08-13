@@ -104,6 +104,28 @@ if (gpuMode === "host") {
     expect(readFileSync(invocations, "utf8")).toBe("host\nsoftware\n");
   });
 
+  test("reports software mode when the fallback process cannot be spawned", async () => {
+    const emulator = join(dir, "emulator");
+    writeFileSync(
+      emulator,
+      `#!/usr/bin/env node
+const { unlinkSync } = require("node:fs");
+unlinkSync(__filename);
+console.error("ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.");
+setTimeout(() => process.exit(1), 1_000);
+`,
+    );
+    chmodSync(emulator, 0o755);
+
+    const spawned = await spawnEmulator(emulator, { name: "x", port: 5554 });
+    expect(spawned.error).toBeNull();
+    expect(spawned.value).not.toBeNull();
+
+    const exited = await spawned.value!.exited;
+    expect(exited.error?.message).toBe("[android-utils] Failed to spawn `emulator`:");
+    expect(spawned.value!.gpuMode).toBe("software");
+  });
+
   test("does not retry after a process error has finished the lifecycle", async () => {
     const invocations = join(dir, "invocations.txt");
     const emulator = join(dir, "emulator");

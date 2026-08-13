@@ -123,14 +123,14 @@ export async function spawnEmulator(
           return;
         }
 
-        const retried = await spawnEmulatorProcess(emulatorPath, options, "software");
+        activeGpuMode = "software";
+        const retried = await spawnEmulatorProcess(emulatorPath, options, activeGpuMode);
         if (retried.error || !retried.value) {
           resolve({ code: null, signal: null, error: retried.error });
           return;
         }
 
         activeChild = retried.value;
-        activeGpuMode = "software";
         monitor(activeChild, activeGpuMode);
       }
 
