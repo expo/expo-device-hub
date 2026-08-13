@@ -25,7 +25,7 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         flex: 1,
         minHeight: 0,
       }}>
-      <div style={{ padding: '0 20px' }}>
+      <div>
         <SidebarRow label="Logs" borderBottom={false}>
           <SidebarSwitch
             checked={logsOpen}

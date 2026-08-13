@@ -36,7 +36,7 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   ];
 
   return (
-    <section style={{ padding: '18px 20px 20px' }}>
+    <section style={{ padding: '18px 0 20px' }}>
       <div
         style={{
           display: 'flex',

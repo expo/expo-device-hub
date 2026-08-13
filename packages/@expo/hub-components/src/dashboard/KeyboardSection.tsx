@@ -7,7 +7,7 @@ export function KeyboardSection({ client }: { client: DeviceClient }) {
   const connected = client.hardwareKeyboardConnected;
 
   return (
-    <section aria-label="Keyboard settings" style={{ padding: '4px 20px 0' }}>
+    <section aria-label="Keyboard settings" style={{ paddingTop: 4 }}>
       <SidebarRow label="Hardware keyboard">
         <SidebarSwitch
           checked={connected ?? false}

@@ -41,7 +41,7 @@ export function LogSidebar({
         height: '100vh',
         boxSizing: 'border-box',
         gap: 12,
-        padding: '16px 12px 16px 8px',
+        padding: '32px 24px',
         overflow: 'hidden',
       }}>
       {onToggle && (
@@ -58,7 +58,7 @@ export function LogSidebar({
           overflow: 'hidden',
         }}>
         <CurrentAppSection client={client} />
-        <div style={{ padding: '0 20px 4px' }}>
+        <div style={{ paddingBottom: 4 }}>
           <SidebarSectionHeading>Device options</SidebarSectionHeading>
         </div>
         {client?.platform === 'ios' && <KeyboardSection client={client} />}
