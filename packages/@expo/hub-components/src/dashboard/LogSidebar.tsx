@@ -1,13 +1,13 @@
 import { type DeviceClient, type DeviceStreamMode } from '@expo/hub-client';
-import { SidebarToggle, bg, border, radius, shadow } from '../primitives';
+import { SidebarToggle } from '../primitives';
 import { CurrentAppSection } from './CurrentAppSection';
 import { KeyboardSection } from './KeyboardSection';
 import { OutputSection } from './OutputSection';
 import { StreamSection, type StreamModeAvailability } from './StreamSection';
 
 /**
- * Right column: a compact inspector for the selected device. Its bordered
- * surface follows the Expo sidebar handoff while remaining resizable.
+ * Right column: a compact inspector for the selected device, rendered directly
+ * on the dashboard canvas so it matches the existing sidebar treatment.
  */
 export function LogSidebar({
   onToggle,
@@ -55,10 +55,6 @@ export function LogSidebar({
           minHeight: 0,
           flexDirection: 'column',
           overflow: 'hidden',
-          backgroundColor: bg.default,
-          border: `1px solid ${border.default}`,
-          borderRadius: radius.xl,
-          boxShadow: shadow.xs,
         }}>
         <CurrentAppSection client={client} />
         {client?.platform === 'ios' && <KeyboardSection client={client} />}
