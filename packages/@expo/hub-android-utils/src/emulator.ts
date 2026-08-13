@@ -80,31 +80,44 @@ export async function spawnEmulator(
   const exited = new Promise<EmulatorExit>((resolve) => {
     const monitor = (child: ChildProcess, gpuMode: EmulatorGpuMode): void => {
       let fallbackRequested = false;
+      let finished = false;
       let stderrTail = "";
 
-      const onStderr = (chunk: Buffer | string): void => {
+      function cleanup(): void {
+        child.stderr?.removeListener("data", onStderr);
+        child.removeListener("error", onError);
+        child.removeListener("close", onClose);
+      }
+
+      function onStderr(chunk: Buffer | string): void {
+        if (finished || gpuMode !== "host" || fallbackRequested) return;
+
         stderrTail = `${stderrTail}${chunk}`.slice(-HARDWARE_GPU_ERROR.length * 2);
-        if (gpuMode !== "host" || fallbackRequested || !stderrTail.includes(HARDWARE_GPU_ERROR)) {
-          return;
-        }
+        if (!stderrTail.includes(HARDWARE_GPU_ERROR)) return;
 
         fallbackRequested = true;
         logDebug(
           "[android-utils] Hardware GPU rendering unavailable; retrying `emulator` with software rendering.",
         );
         child.kill();
-      };
+      }
 
-      child.stderr?.on("data", onStderr);
-      child.once("error", (error) => {
+      function onError(error: Error): void {
+        if (finished) return;
+        finished = true;
+        cleanup();
         resolve({
           code: null,
           signal: null,
           error: reportError("[android-utils] `emulator` process error:", error),
         });
-      });
-      child.once("close", async (code, signal) => {
-        child.stderr?.removeListener("data", onStderr);
+      }
+
+      async function onClose(code: number | null, signal: NodeJS.Signals | null): Promise<void> {
+        if (finished) return;
+        finished = true;
+        cleanup();
+
         if (!fallbackRequested) {
           resolve({ code, signal, error: null });
           return;
@@ -119,7 +132,11 @@ export async function spawnEmulator(
         activeChild = retried.value;
         activeGpuMode = "software";
         monitor(activeChild, activeGpuMode);
-      });
+      }
+
+      child.stderr?.on("data", onStderr);
+      child.once("error", onError);
+      child.once("close", onClose);
     };
 
     monitor(activeChild, activeGpuMode);
