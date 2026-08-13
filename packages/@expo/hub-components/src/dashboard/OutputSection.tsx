@@ -26,7 +26,10 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         minHeight: 0,
       }}>
       <div>
-        <SidebarRow label="Logs" borderBottom={false}>
+        <SidebarRow
+          label="Logs"
+          borderBottom={false}
+          flushTop={client?.platform !== 'ios'}>
           <SidebarSwitch
             checked={logsOpen}
             disabled={!client}

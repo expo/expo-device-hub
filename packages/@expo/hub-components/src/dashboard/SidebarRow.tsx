@@ -4,7 +4,11 @@ import { bg, border, font, radius, shadow, text, textSize } from "../primitives"
 
 export function SidebarSectionHeading({ children }: { children: ReactNode }) {
   return (
-    <span style={{ ...textSize.xs, fontFamily: font.mono, color: text.tertiary }}>{children}</span>
+    <span
+      style={{ ...textSize.xs, display: "block", fontFamily: font.mono, color: text.tertiary }}
+    >
+      {children}
+    </span>
   );
 }
 
@@ -12,18 +16,20 @@ export function SidebarRow({
   label,
   children,
   borderBottom = true,
+  flushTop = false,
 }: {
   label: string;
   children: ReactNode;
   borderBottom?: boolean;
+  flushTop?: boolean;
 }) {
   return (
     <div
       style={{
         display: "flex",
-        alignItems: "center",
+        alignItems: flushTop ? "flex-start" : "center",
         gap: 16,
-        padding: "11px 0",
+        padding: flushTop ? "0 0 11px" : "11px 0",
         borderBottom: borderBottom ? `1px solid ${border.secondary}` : undefined,
       }}
     >
