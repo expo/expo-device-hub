@@ -58,7 +58,7 @@ export function LogSidebar({
           overflow: 'hidden',
         }}>
         <CurrentAppSection client={client} />
-        <div style={{ paddingBottom: 4 }}>
+        <div style={{ padding: '8px 0' }}>
           <SidebarSectionHeading>Device options</SidebarSectionHeading>
         </div>
         {client?.platform === 'ios' && <KeyboardSection client={client} />}
