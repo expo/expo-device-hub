@@ -1,11 +1,12 @@
 import { type DeviceClient } from '@expo/hub-client';
-import { text, textSize } from '../primitives';
+import { border } from '../primitives';
 import { LogControls } from './LogControls';
 import { LogList } from './LogList';
+import { SidebarRow, SidebarSwitch } from './SidebarRow';
 
 /** The selected simulator's output. Currently only the logs. */
 export function OutputSection({ client }: { client?: DeviceClient }) {
-  const logs = client?.logs;
+  const logs = client?.logs ?? [];
   const logsEnabled = client?.logsEnabled ?? false;
 
   return (
@@ -13,19 +14,26 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 16,
         flex: 1,
         minHeight: 0,
       }}>
-      <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>Logs</span>
-      <LogControls
-        enabled={logsEnabled}
-        hasLogs={(logs?.length ?? 0) > 0}
-        onAttach={() => client?.attachLogs()}
-        onDetach={() => client?.detachLogs()}
-        onClear={() => client?.clearLogs()}
-      />
-      <LogList logs={logs} enabled={logsEnabled} />
+      <div style={{ padding: '0 20px' }}>
+        <SidebarRow label="Logs" borderBottom={logsEnabled}>
+          <SidebarSwitch
+            checked={logsEnabled}
+            disabled={!client}
+            label="Logs"
+            onChange={(next) => (next ? client?.attachLogs() : client?.detachLogs())}
+          />
+        </SidebarRow>
+      </div>
+      {logsEnabled && (
+        <>
+          <LogControls count={logs.length} onClear={() => client?.clearLogs()} />
+          <LogList logs={logs} enabled />
+        </>
+      )}
+      <div style={{ flex: 1, minHeight: 0, borderTop: `1px solid ${border.secondary}` }} />
     </section>
   );
 }

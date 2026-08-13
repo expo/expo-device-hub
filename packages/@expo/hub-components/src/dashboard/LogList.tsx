@@ -24,17 +24,12 @@ const SCROLLBAR_CSS = `
 `;
 
 const scrollStyle: CSSProperties = {
-  flex: 1,
-  minHeight: 0,
+  height: 200,
+  flexShrink: 0,
   overflowY: 'auto',
   overflowX: 'hidden',
   display: 'flex',
   flexDirection: 'column',
-  gap: 8,
-  // Gutters so the row hover highlight can bleed without shifting content or
-  // adding a horizontal scrollbar.
-  margin: '0 -8px',
-  padding: '0 8px',
   // The rolling buffer trims lines off the top; without this the browser's
   // scroll anchoring fights our tail-follow by nudging scrollTop on each trim.
   overflowAnchor: 'none',
@@ -57,16 +52,24 @@ export function LogList({ logs = [], enabled = false }: { logs?: DeviceLog[]; en
   }, [logs]);
 
   const emptyMessage = enabled
-    ? 'Waiting for device logs…'
+    ? 'No logs. The stream resumes on the next event.'
     : 'Logs are paused. Press Attach to stream device logs.';
 
   return (
     <div ref={scrollRef} className="hub-log-scroll" style={scrollStyle}>
       <style>{SCROLLBAR_CSS}</style>
       {logs.length === 0 ? (
-        <span style={{ ...textSize.xs, fontWeight: 500, color: text.tertiary, paddingLeft: 8 }}>
-          {emptyMessage}
-        </span>
+        <div
+          style={{
+            display: 'flex',
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '40px 24px',
+            textAlign: 'center',
+          }}>
+          <span style={{ ...textSize.xs, color: text.secondary }}>{emptyMessage}</span>
+        </div>
       ) : (
         logs.map((entry) => <LogRow key={entry.id} entry={entry} />)
       )}

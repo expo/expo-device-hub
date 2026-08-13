@@ -1,32 +1,40 @@
-import { Button } from '../primitives';
+import { Button, bg, border, font, radius, text, textSize } from '../primitives';
 
-/**
- * Attach / Detach / Clear controls for the logs panel. Logs are off by default,
- * so the user opts in with Attach and stops streaming with Detach (kept lines
- * remain); Clear drops the collected lines.
- */
+/** Compact stream toolbar shown while device logs are attached. */
 export function LogControls({
-  enabled,
-  hasLogs,
-  onAttach,
-  onDetach,
+  count,
   onClear,
 }: {
-  enabled: boolean;
-  hasLogs: boolean;
-  onAttach: () => void;
-  onDetach: () => void;
+  count: number;
   onClear: () => void;
 }) {
   return (
-    <div style={{ display: 'flex', gap: 8 }}>
-      <Button size="2xs" theme="secondary" disabled={enabled} onClick={onAttach}>
-        Attach
-      </Button>
-      <Button size="2xs" theme="secondary" disabled={!enabled} onClick={onDetach}>
-        Detach
-      </Button>
-      <Button size="2xs" theme="tertiary" disabled={!hasLogs} onClick={onClear}>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 10,
+        padding: '10px 20px',
+        backgroundColor: bg.subtle,
+        borderTop: `1px solid ${border.default}`,
+        borderBottom: `1px solid ${border.default}`,
+      }}>
+      <span
+        style={{
+          ...textSize['2xs'],
+          flex: 1,
+          fontFamily: font.mono,
+          fontWeight: 400,
+          color: text.tertiary,
+        }}>
+        {count} {count === 1 ? 'line' : 'lines'}
+      </span>
+      <Button
+        size="2xs"
+        theme="secondary"
+        disabled={count === 0}
+        onClick={onClear}
+        style={{ borderRadius: radius.full, paddingInline: 14 }}>
         Clear
       </Button>
     </div>
