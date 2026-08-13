@@ -36,7 +36,7 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         </SidebarRow>
       </div>
       {logsOpen && (
-        <>
+        <div style={{ marginInline: -24 }}>
           <LogControls
             count={logs.length}
             running={logsEnabled}
@@ -45,7 +45,7 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
             onStop={() => client?.detachLogs()}
           />
           <LogList logs={logs} enabled={logsEnabled} />
-        </>
+        </div>
       )}
       <div style={{ flex: 1, minHeight: 0 }} />
     </section>
