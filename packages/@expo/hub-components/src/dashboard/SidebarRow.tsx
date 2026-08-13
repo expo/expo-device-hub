@@ -1,6 +1,12 @@
 import { type ReactNode } from "react";
 
-import { bg, border, radius, shadow, text, textSize } from "../primitives";
+import { bg, border, font, radius, shadow, text, textSize } from "../primitives";
+
+export function SidebarSectionHeading({ children }: { children: ReactNode }) {
+  return (
+    <span style={{ ...textSize.xs, fontFamily: font.mono, color: text.tertiary }}>{children}</span>
+  );
+}
 
 export function SidebarRow({
   label,

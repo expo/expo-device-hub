@@ -3,6 +3,7 @@ import { SidebarToggle } from '../primitives';
 import { CurrentAppSection } from './CurrentAppSection';
 import { KeyboardSection } from './KeyboardSection';
 import { OutputSection } from './OutputSection';
+import { SidebarSectionHeading } from './SidebarRow';
 import { StreamSection, type StreamModeAvailability } from './StreamSection';
 
 /**
@@ -57,6 +58,9 @@ export function LogSidebar({
           overflow: 'hidden',
         }}>
         <CurrentAppSection client={client} />
+        <div style={{ padding: '0 20px 4px' }}>
+          <SidebarSectionHeading>Device options</SidebarSectionHeading>
+        </div>
         {client?.platform === 'ios' && <KeyboardSection client={client} />}
         {streamMode &&
           streamModeAvailability &&

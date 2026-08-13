@@ -1,4 +1,4 @@
-import { Button, bg, border, font, radius, text, textSize } from '../primitives';
+import { Button, bg, font, radius, text, textSize } from '../primitives';
 
 /** Compact stream toolbar shown while device logs are attached. */
 export function LogControls({
@@ -16,8 +16,6 @@ export function LogControls({
         gap: 10,
         padding: '10px 20px',
         backgroundColor: bg.subtle,
-        borderTop: `1px solid ${border.default}`,
-        borderBottom: `1px solid ${border.default}`,
       }}>
       <span
         style={{

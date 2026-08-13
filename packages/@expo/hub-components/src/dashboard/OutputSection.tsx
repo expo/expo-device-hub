@@ -1,5 +1,4 @@
 import { type DeviceClient } from '@expo/hub-client';
-import { border } from '../primitives';
 import { LogControls } from './LogControls';
 import { LogList } from './LogList';
 import { SidebarRow, SidebarSwitch } from './SidebarRow';
@@ -18,7 +17,7 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         minHeight: 0,
       }}>
       <div style={{ padding: '0 20px' }}>
-        <SidebarRow label="Logs" borderBottom={logsEnabled}>
+        <SidebarRow label="Logs" borderBottom={false}>
           <SidebarSwitch
             checked={logsEnabled}
             disabled={!client}
@@ -33,7 +32,7 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
           <LogList logs={logs} enabled />
         </>
       )}
-      <div style={{ flex: 1, minHeight: 0, borderTop: `1px solid ${border.secondary}` }} />
+      <div style={{ flex: 1, minHeight: 0 }} />
     </section>
   );
 }

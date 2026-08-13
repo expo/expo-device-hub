@@ -1,5 +1,6 @@
 import { type DeviceClient } from '@expo/hub-client';
 import { bg, border, font, heading, icon, radius, text, textSize } from '../primitives';
+import { SidebarSectionHeading } from './SidebarRow';
 
 const APP_ICON_SIZE = 52;
 
@@ -35,19 +36,17 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
     : [];
 
   return (
-    <section style={{ padding: '18px 20px 20px', borderBottom: `1px solid ${border.default}` }}>
+    <section style={{ padding: '18px 20px 20px' }}>
       <div
         style={{
           display: 'flex',
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: 16,
-          marginBottom: 18,
+          marginBottom: details.length > 0 ? 18 : 0,
         }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-          <span style={{ ...textSize.xs, fontFamily: font.mono, color: text.tertiary }}>
-            Current app
-          </span>
+          <SidebarSectionHeading>Current app</SidebarSectionHeading>
           {app && name ? (
             <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
               <span
