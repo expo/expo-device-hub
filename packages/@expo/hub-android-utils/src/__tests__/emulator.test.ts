@@ -104,6 +104,89 @@ if (gpuMode === "host") {
     expect(readFileSync(invocations, "utf8")).toBe("host\nsoftware\n");
   });
 
+  test("does not retry for unrelated stderr", async () => {
+    const invocations = join(dir, "invocations.txt");
+    const emulator = join(dir, "emulator");
+    writeFileSync(
+      emulator,
+      `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const gpuIndex = process.argv.indexOf("-gpu");
+appendFileSync(${JSON.stringify(invocations)}, process.argv[gpuIndex + 1] + "\\n");
+console.error("WARNING | Host rendering probe returned an unknown result.");
+setTimeout(() => process.exit(7), 20);
+`,
+    );
+    chmodSync(emulator, 0o755);
+
+    const spawned = await spawnEmulator(emulator, { name: "x", port: 5554 });
+    expect(spawned.error).toBeNull();
+    expect(spawned.value).not.toBeNull();
+    expect(await spawned.value!.exited).toEqual({ code: 7, signal: null, error: null });
+    expect(spawned.value!.gpuMode).toBe("host");
+    expect(readFileSync(invocations, "utf8")).toBe("host\n");
+  });
+
+  test("detects a hardware rendering error split across stderr chunks", async () => {
+    const invocations = join(dir, "invocations.txt");
+    const emulator = join(dir, "emulator");
+    writeFileSync(
+      emulator,
+      `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const gpuIndex = process.argv.indexOf("-gpu");
+const gpuMode = process.argv[gpuIndex + 1];
+appendFileSync(${JSON.stringify(invocations)}, gpuMode + "\\n");
+if (gpuMode === "host") {
+  process.stderr.write("ERROR | Your GPU cannot be used for hard");
+  setTimeout(() => {
+    process.stderr.write("ware rendering. Consider using software rendering.\\n");
+  }, 20);
+  setTimeout(() => process.exit(1), 1_000);
+} else {
+  setTimeout(() => process.exit(0), 20);
+}
+`,
+    );
+    chmodSync(emulator, 0o755);
+
+    const spawned = await spawnEmulator(emulator, { name: "x", port: 5554 });
+    expect(spawned.error).toBeNull();
+    expect(spawned.value).not.toBeNull();
+    expect(await spawned.value!.exited).toEqual({ code: 0, signal: null, error: null });
+    expect(spawned.value!.gpuMode).toBe("software");
+    expect(readFileSync(invocations, "utf8")).toBe("host\nsoftware\n");
+  });
+
+  test("retries only once when stderr repeats the hardware rendering error", async () => {
+    const invocations = join(dir, "invocations.txt");
+    const emulator = join(dir, "emulator");
+    writeFileSync(
+      emulator,
+      `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const gpuIndex = process.argv.indexOf("-gpu");
+const gpuMode = process.argv[gpuIndex + 1];
+appendFileSync(${JSON.stringify(invocations)}, gpuMode + "\\n");
+if (gpuMode === "host") {
+  const error = "ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.";
+  process.stderr.write(error + "\\n" + error + "\\n");
+  setTimeout(() => process.exit(1), 1_000);
+} else {
+  setTimeout(() => process.exit(0), 20);
+}
+`,
+    );
+    chmodSync(emulator, 0o755);
+
+    const spawned = await spawnEmulator(emulator, { name: "x", port: 5554 });
+    expect(spawned.error).toBeNull();
+    expect(spawned.value).not.toBeNull();
+    expect(await spawned.value!.exited).toEqual({ code: 0, signal: null, error: null });
+    expect(spawned.value!.gpuMode).toBe("software");
+    expect(readFileSync(invocations, "utf8")).toBe("host\nsoftware\n");
+  });
+
   test("reports software mode when the fallback process cannot be spawned", async () => {
     const emulator = join(dir, "emulator");
     writeFileSync(
