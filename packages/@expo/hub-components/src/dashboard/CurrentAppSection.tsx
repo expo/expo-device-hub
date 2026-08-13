@@ -94,7 +94,7 @@ function AppIcon({ iconDataUrl }: { iconDataUrl?: string }) {
         flexShrink: 0,
         boxSizing: 'border-box',
         overflow: 'hidden',
-        border: `1px solid ${border.default}`,
+        border: iconDataUrl ? undefined : `1px solid ${border.default}`,
         borderRadius: radius.lg,
         backgroundColor: bg.element,
       }}>
