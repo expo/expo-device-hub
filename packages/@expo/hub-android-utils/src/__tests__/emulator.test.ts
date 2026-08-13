@@ -87,7 +87,7 @@ const gpuIndex = process.argv.indexOf("-gpu");
 const gpuMode = process.argv[gpuIndex + 1];
 appendFileSync(${JSON.stringify(invocations)}, gpuMode + "\\n");
 if (gpuMode === "host") {
-  console.error("ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.");
+  console.log("ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.");
   setTimeout(() => process.exit(1), 1_000);
 } else {
   setTimeout(() => process.exit(0), 20);
@@ -101,6 +101,33 @@ if (gpuMode === "host") {
     expect(spawned.value).not.toBeNull();
     expect(await spawned.value!.exited).toEqual({ code: 0, signal: null, error: null });
     expect(spawned.value!.gpuMode).toBe("software");
+    expect(readFileSync(invocations, "utf8")).toBe("host\nsoftware\n");
+  });
+
+  test("also detects the hardware rendering error on stderr", async () => {
+    const invocations = join(dir, "invocations.txt");
+    const emulator = join(dir, "emulator");
+    writeFileSync(
+      emulator,
+      `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const gpuIndex = process.argv.indexOf("-gpu");
+const gpuMode = process.argv[gpuIndex + 1];
+appendFileSync(${JSON.stringify(invocations)}, gpuMode + "\\n");
+if (gpuMode === "host") {
+  console.error("ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.");
+  setTimeout(() => process.exit(1), 1_000);
+} else {
+  setTimeout(() => process.exit(0), 20);
+}
+`,
+    );
+    chmodSync(emulator, 0o755);
+
+    const spawned = await spawnEmulator(emulator, { name: "x", port: 5554 });
+    expect(spawned.error).toBeNull();
+    expect(spawned.value).not.toBeNull();
+    expect(await spawned.value!.exited).toEqual({ code: 0, signal: null, error: null });
     expect(readFileSync(invocations, "utf8")).toBe("host\nsoftware\n");
   });
 
@@ -127,7 +154,7 @@ setTimeout(() => process.exit(7), 20);
     expect(readFileSync(invocations, "utf8")).toBe("host\n");
   });
 
-  test("detects a hardware rendering error split across stderr chunks", async () => {
+  test("detects a hardware rendering error split across stdout chunks", async () => {
     const invocations = join(dir, "invocations.txt");
     const emulator = join(dir, "emulator");
     writeFileSync(
@@ -138,9 +165,10 @@ const gpuIndex = process.argv.indexOf("-gpu");
 const gpuMode = process.argv[gpuIndex + 1];
 appendFileSync(${JSON.stringify(invocations)}, gpuMode + "\\n");
 if (gpuMode === "host") {
-  process.stderr.write("ERROR | Your GPU cannot be used for hard");
+  process.stdout.write("ERROR | Your GPU cannot be used for hard");
   setTimeout(() => {
-    process.stderr.write("ware rendering. Consider using software rendering.\\n");
+    process.stderr.write("GlxEnginegetDefaultDisplay: Failed to open display 0.\\n");
+    process.stdout.write("ware rendering. Consider using software rendering.\\n");
   }, 20);
   setTimeout(() => process.exit(1), 1_000);
 } else {
@@ -158,7 +186,7 @@ if (gpuMode === "host") {
     expect(readFileSync(invocations, "utf8")).toBe("host\nsoftware\n");
   });
 
-  test("retries only once when stderr repeats the hardware rendering error", async () => {
+  test("retries only once when stdout repeats the hardware rendering error", async () => {
     const invocations = join(dir, "invocations.txt");
     const emulator = join(dir, "emulator");
     writeFileSync(
@@ -170,7 +198,7 @@ const gpuMode = process.argv[gpuIndex + 1];
 appendFileSync(${JSON.stringify(invocations)}, gpuMode + "\\n");
 if (gpuMode === "host") {
   const error = "ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.";
-  process.stderr.write(error + "\\n" + error + "\\n");
+  process.stdout.write(error + "\\n" + error + "\\n");
   setTimeout(() => process.exit(1), 1_000);
 } else {
   setTimeout(() => process.exit(0), 20);
@@ -194,7 +222,7 @@ if (gpuMode === "host") {
       `#!/usr/bin/env node
 const { unlinkSync } = require("node:fs");
 unlinkSync(__filename);
-console.error("ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.");
+console.log("ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.");
 setTimeout(() => process.exit(1), 1_000);
 `,
     );
@@ -237,7 +265,7 @@ setInterval(() => {}, 1_000);
     child.kill = () => true;
 
     try {
-      child.stderr?.emit(
+      child.stdout?.emit(
         "data",
         "ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.",
       );

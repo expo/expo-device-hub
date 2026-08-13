@@ -62,10 +62,10 @@ export function formatEmulatorCommand(
  * Spawn a detached, headless `emulator` process.
  *
  * The child is fully detached (its own process group, unreferenced stdio,
- * `unref`ed) so it keeps running after the parent exits. If the emulator says
- * host rendering is unavailable, the host attempt is stopped and retried once
- * with software rendering. Resolves with the managed process lifecycle, or
- * `null` plus `error` if the first process could not be spawned.
+ * `unref`ed) so it keeps running after the parent exits. If stdout or stderr
+ * says host rendering is unavailable, the host attempt is stopped and retried
+ * once with software rendering. Resolves with the managed process lifecycle,
+ * or `null` plus `error` if the first process could not be spawned.
  */
 export async function spawnEmulator(
   emulatorPath: string,
@@ -81,25 +81,36 @@ export async function spawnEmulator(
     const monitor = (child: ChildProcess, gpuMode: EmulatorGpuMode): void => {
       let fallbackRequested = false;
       let finished = false;
+      let stdoutTail = "";
       let stderrTail = "";
 
       function cleanup(): void {
+        child.stdout?.removeListener("data", onStdout);
         child.stderr?.removeListener("data", onStderr);
         child.removeListener("error", onError);
         child.removeListener("close", onClose);
       }
 
-      function onStderr(chunk: Buffer | string): void {
-        if (finished || gpuMode !== "host" || fallbackRequested) return;
+      function inspectOutput(tail: string, chunk: Buffer | string): string {
+        if (finished || gpuMode !== "host" || fallbackRequested) return tail;
 
-        stderrTail = `${stderrTail}${chunk}`.slice(-HARDWARE_GPU_ERROR.length * 2);
-        if (!stderrTail.includes(HARDWARE_GPU_ERROR)) return;
+        const nextTail = `${tail}${chunk}`.slice(-HARDWARE_GPU_ERROR.length * 2);
+        if (!nextTail.includes(HARDWARE_GPU_ERROR)) return nextTail;
 
         fallbackRequested = true;
         logDebug(
           "[android-utils] Hardware GPU rendering unavailable; retrying `emulator` with software rendering.",
         );
         child.kill();
+        return nextTail;
+      }
+
+      function onStdout(chunk: Buffer | string): void {
+        stdoutTail = inspectOutput(stdoutTail, chunk);
+      }
+
+      function onStderr(chunk: Buffer | string): void {
+        stderrTail = inspectOutput(stderrTail, chunk);
       }
 
       function onError(error: Error): void {
@@ -134,6 +145,7 @@ export async function spawnEmulator(
         monitor(activeChild, activeGpuMode);
       }
 
+      child.stdout?.on("data", onStdout);
       child.stderr?.on("data", onStderr);
       child.once("error", onError);
       child.once("close", onClose);
@@ -161,7 +173,7 @@ function spawnEmulatorProcess(
   try {
     const child = spawn(emulatorPath, buildEmulatorArgs(options, gpuMode), {
       detached: true,
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     return new Promise((resolve) => {
@@ -172,8 +184,10 @@ function spawnEmulatorProcess(
       child.once("spawn", () => {
         child.removeListener("error", onError);
         child.unref();
-        const stderr = child.stderr as (typeof child.stderr & { unref(): void }) | null;
-        stderr?.unref();
+        for (const stream of [child.stdout, child.stderr]) {
+          const pipe = stream as (typeof stream & { unref(): void }) | null;
+          pipe?.unref();
+        }
         resolve(result(child));
       });
     });
