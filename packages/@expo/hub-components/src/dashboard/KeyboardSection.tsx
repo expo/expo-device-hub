@@ -22,7 +22,7 @@ export function KeyboardSection({ client }: { client: DeviceClient }) {
           theme="secondary"
           disabled={connected === null}
           onClick={() => client.toggleSoftwareKeyboard()}
-          style={{ borderRadius: radius.full, paddingInline: 14 }}>
+          style={{ borderRadius: radius.full, paddingInline: 14, fontWeight: 600 }}>
           Toggle
         </Button>
       </SidebarRow>

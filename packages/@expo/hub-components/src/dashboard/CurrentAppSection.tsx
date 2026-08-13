@@ -3,6 +3,7 @@ import { bg, border, font, heading, icon, radius, text, textSize } from '../prim
 import { SidebarSectionHeading } from './SidebarRow';
 
 const APP_ICON_SIZE = 52;
+const UNKNOWN_VALUE = 'Unknown';
 
 type AppDetail = {
   label: string;
@@ -19,21 +20,20 @@ type AppDetail = {
  */
 export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   const app = client?.foregroundApp ?? null;
-  const name = app ? (app.label ?? app.id) : null;
+  const name = app ? (app.label ?? app.id) : UNKNOWN_VALUE;
 
-  const details: AppDetail[] = app
-    ? [
-        app.version ? { label: 'Version', value: app.version } : null,
-        app.build ? { label: 'Build number', value: app.build } : null,
-        app.pid != null ? { label: 'PID', value: String(app.pid) } : null,
-        app.label ? { label: 'App ID', value: app.id } : null,
-        app.minOS
-          ? { label: 'Minimum iOS', value: app.minOS }
-          : app.minSdk != null
-            ? { label: 'Minimum SDK', value: String(app.minSdk) }
-            : null,
-      ].filter((detail): detail is AppDetail => detail != null)
-    : [];
+  const details: AppDetail[] = [
+    { label: 'Version', value: app?.version ?? UNKNOWN_VALUE },
+    { label: 'Build number', value: app?.build ?? UNKNOWN_VALUE },
+    { label: 'PID', value: app?.pid != null ? String(app.pid) : UNKNOWN_VALUE },
+    { label: 'App ID', value: app?.id ?? UNKNOWN_VALUE },
+    client?.platform === 'android'
+      ? {
+          label: 'Minimum SDK',
+          value: app?.minSdk != null ? String(app.minSdk) : UNKNOWN_VALUE,
+        }
+      : { label: 'Minimum iOS', value: app?.minOS ?? UNKNOWN_VALUE },
+  ];
 
   return (
     <section style={{ padding: '18px 20px 20px' }}>
@@ -43,46 +43,40 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
           alignItems: 'flex-start',
           justifyContent: 'space-between',
           gap: 16,
-          marginBottom: details.length > 0 ? 18 : 0,
+          marginBottom: 18,
         }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
           <SidebarSectionHeading>Current app</SidebarSectionHeading>
-          {app && name ? (
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-              <span
-                title={name}
-                style={{
-                  ...heading.xl,
-                  color: text.default,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}>
-                {name}
-              </span>
-              {app.isReactNative && <Badge color="info">React Native</Badge>}
-              {app.debuggable && <Badge color="warning">debuggable</Badge>}
-            </div>
-          ) : (
-            <span style={{ ...heading.xl, color: text.tertiary }}>No app detected</span>
-          )}
+          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+            <span
+              title={name}
+              style={{
+                ...heading.xl,
+                color: app ? text.default : text.tertiary,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+              {name}
+            </span>
+            {app?.isReactNative && <Badge color="info">React Native</Badge>}
+            {app?.debuggable && <Badge color="warning">debuggable</Badge>}
+          </div>
         </div>
         <AppIcon iconDataUrl={app?.iconDataUrl} />
       </div>
-      {details.length > 0 && (
-        <dl
-          style={{
-            display: 'grid',
-            gridTemplateColumns: 'auto minmax(0, 1fr)',
-            rowGap: 10,
-            columnGap: 16,
-            margin: 0,
-          }}>
-          {details.map((detail) => (
-            <AppDetailLine key={detail.label} detail={detail} />
-          ))}
-        </dl>
-      )}
+      <dl
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'auto minmax(0, 1fr)',
+          rowGap: 4,
+          columnGap: 16,
+          margin: 0,
+        }}>
+        {details.map((detail) => (
+          <AppDetailLine key={detail.label} detail={detail} />
+        ))}
+      </dl>
     </section>
   );
 }
