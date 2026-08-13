@@ -1,8 +1,7 @@
 import { type DeviceClient } from '@expo/hub-client';
-import { bg, radius, text, textSize } from '../primitives';
+import { bg, border, font, heading, icon, radius, text, textSize } from '../primitives';
 
-const APP_ICON_SIZE = 32;
-const CURRENT_APP_CONTENT_MIN_HEIGHT = 129;
+const APP_ICON_SIZE = 52;
 
 type AppDetail = {
   label: string;
@@ -24,7 +23,7 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   const details: AppDetail[] = app
     ? [
         app.version ? { label: 'Version', value: app.version } : null,
-        app.build ? { label: 'Build Number', value: app.build } : null,
+        app.build ? { label: 'Build number', value: app.build } : null,
         app.pid != null ? { label: 'PID', value: String(app.pid) } : null,
         app.label ? { label: 'App ID', value: app.id } : null,
         app.minOS
@@ -36,27 +35,25 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
     : [];
 
   return (
-    <section style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <section style={{ padding: '18px 20px 20px', borderBottom: `1px solid ${border.default}` }}>
       <div
         style={{
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-start',
           justifyContent: 'space-between',
-          gap: 8,
-          minHeight: APP_ICON_SIZE,
+          gap: 16,
+          marginBottom: 18,
         }}>
-        <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>Current app</span>
-        <AppIcon iconDataUrl={app?.iconDataUrl} />
-      </div>
-      <div style={{ minHeight: CURRENT_APP_CONTENT_MIN_HEIGHT, minWidth: 0 }}>
-        {app && name ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          <span style={{ ...textSize.xs, fontFamily: font.mono, color: text.tertiary }}>
+            Current app
+          </span>
+          {app && name ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
               <span
                 title={name}
                 style={{
-                  ...textSize.sm,
-                  fontWeight: 500,
+                  ...heading.xl,
                   color: text.default,
                   overflow: 'hidden',
                   textOverflow: 'ellipsis',
@@ -67,59 +64,84 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
               {app.isReactNative && <Badge color="info">React Native</Badge>}
               {app.debuggable && <Badge color="warning">debuggable</Badge>}
             </div>
-            {details.map((detail) => (
-              <AppDetailLine key={detail.label} detail={detail} />
-            ))}
-          </div>
-        ) : (
-          <span style={{ ...textSize.xs, fontWeight: 500, color: text.tertiary }}>
-            No foreground app detected yet.
-          </span>
-        )}
+          ) : (
+            <span style={{ ...heading.xl, color: text.tertiary }}>No app detected</span>
+          )}
+        </div>
+        <AppIcon iconDataUrl={app?.iconDataUrl} />
       </div>
+      {details.length > 0 && (
+        <dl
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'auto minmax(0, 1fr)',
+            rowGap: 10,
+            columnGap: 16,
+            margin: 0,
+          }}>
+          {details.map((detail) => (
+            <AppDetailLine key={detail.label} detail={detail} />
+          ))}
+        </dl>
+      )}
     </section>
   );
 }
 
-/** Keeps a stable heading slot while only rendering real app artwork. */
 function AppIcon({ iconDataUrl }: { iconDataUrl?: string }) {
   return (
     <span
       aria-hidden="true"
       style={{
-        display: 'block',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
         width: APP_ICON_SIZE,
         height: APP_ICON_SIZE,
         flexShrink: 0,
+        boxSizing: 'border-box',
+        overflow: 'hidden',
+        border: `1px solid ${border.default}`,
+        borderRadius: radius.lg,
+        backgroundColor: bg.element,
       }}>
-      {iconDataUrl && (
+      {iconDataUrl ? (
         <img
           src={iconDataUrl}
           alt=""
           width={APP_ICON_SIZE}
           height={APP_ICON_SIZE}
-          style={{ display: 'block', borderRadius: radius.md }}
+          style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
         />
+      ) : (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <rect x="2" y="4" width="20" height="16" rx="2" stroke={icon.quaternary} />
+          <path d="M10 4v4h12" stroke={icon.quaternary} />
+        </svg>
       )}
     </span>
   );
 }
 
 function AppDetailLine({ detail }: { detail: AppDetail }) {
-  const fullText = `${detail.label} ${detail.value}`;
   return (
-    <span
-      title={fullText}
-      style={{
-        ...textSize.xs,
-        color: text.secondary,
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        fontVariantNumeric: 'tabular-nums',
-      }}>
-      {fullText}
-    </span>
+    <>
+      <dt style={{ ...textSize.xs, color: text.tertiary }}>{detail.label}</dt>
+      <dd
+        title={detail.value}
+        style={{
+          ...textSize.xs,
+          minWidth: 0,
+          margin: 0,
+          color: text.default,
+          fontFamily: font.mono,
+          textAlign: 'right',
+          overflowWrap: 'anywhere',
+          fontVariantNumeric: 'tabular-nums',
+        }}>
+        {detail.value}
+      </dd>
+    </>
   );
 }
 

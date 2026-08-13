@@ -1,15 +1,13 @@
 import { type DeviceClient, type DeviceStreamMode } from '@expo/hub-client';
-import { SidebarToggle } from '../primitives';
+import { SidebarToggle, bg, border, radius, shadow } from '../primitives';
 import { CurrentAppSection } from './CurrentAppSection';
 import { KeyboardSection } from './KeyboardSection';
 import { OutputSection } from './OutputSection';
 import { StreamSection, type StreamModeAvailability } from './StreamSection';
 
 /**
- * Right column: the selected device's details (Current app + Stream + Logs).
- * Mirrors the left {@link Sidebar} — same width, transparent over the
- * `bg.subtle` canvas — with its padding flipped so the wider gutter sits on the outer (right) edge.
- * The header holds a {@link SidebarToggle} on the inner edge to collapse it.
+ * Right column: a compact inspector for the selected device. Its bordered
+ * surface follows the Expo sidebar handoff while remaining resizable.
  */
 export function LogSidebar({
   onToggle,
@@ -37,13 +35,12 @@ export function LogSidebar({
       style={{
         display: 'flex',
         flexDirection: 'column',
-        gap: 32,
         width: `min(${width}px, 100vw)`,
         flexShrink: 0,
         height: '100vh',
         boxSizing: 'border-box',
-        // Mirror of the left sidebar's padding — wider gutter on the outer edge.
-        padding: '32px 48px 32px 24px',
+        gap: 12,
+        padding: '16px 12px 16px 8px',
         overflow: 'hidden',
       }}>
       {onToggle && (
@@ -51,16 +48,32 @@ export function LogSidebar({
           <SidebarToggle side="right" onClick={onToggle} />
         </div>
       )}
-      <CurrentAppSection client={client} />
-      {client?.platform === 'ios' && <KeyboardSection client={client} />}
-      {streamMode && streamModeAvailability && onStreamModeChange && client?.platform === 'ios' && (
-        <StreamSection
-          mode={streamMode}
-          availability={streamModeAvailability}
-          onChange={onStreamModeChange}
-        />
-      )}
-      <OutputSection client={client} />
+      <div
+        style={{
+          display: 'flex',
+          flex: 1,
+          minHeight: 0,
+          flexDirection: 'column',
+          overflow: 'hidden',
+          backgroundColor: bg.default,
+          border: `1px solid ${border.default}`,
+          borderRadius: radius.xl,
+          boxShadow: shadow.xs,
+        }}>
+        <CurrentAppSection client={client} />
+        {client?.platform === 'ios' && <KeyboardSection client={client} />}
+        {streamMode &&
+          streamModeAvailability &&
+          onStreamModeChange &&
+          client?.platform === 'ios' && (
+            <StreamSection
+              mode={streamMode}
+              availability={streamModeAvailability}
+              onChange={onStreamModeChange}
+            />
+          )}
+        <OutputSection client={client} />
+      </div>
     </aside>
   );
 }
