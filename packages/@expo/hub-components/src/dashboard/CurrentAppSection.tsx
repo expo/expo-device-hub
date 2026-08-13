@@ -23,16 +23,16 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   const name = app ? (app.label ?? app.id) : UNKNOWN_VALUE;
 
   const details: AppDetail[] = [
+    { label: 'App ID', value: app?.id ?? UNKNOWN_VALUE },
     { label: 'Version', value: app?.version ?? UNKNOWN_VALUE },
     { label: 'Build number', value: app?.build ?? UNKNOWN_VALUE },
-    { label: 'PID', value: app?.pid != null ? String(app.pid) : UNKNOWN_VALUE },
-    { label: 'App ID', value: app?.id ?? UNKNOWN_VALUE },
     client?.platform === 'android'
       ? {
           label: 'Minimum SDK',
           value: app?.minSdk != null ? String(app.minSdk) : UNKNOWN_VALUE,
         }
       : { label: 'Minimum iOS', value: app?.minOS ?? UNKNOWN_VALUE },
+    { label: 'PID', value: app?.pid != null ? String(app.pid) : UNKNOWN_VALUE },
   ];
 
   return (
