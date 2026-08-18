@@ -23,6 +23,9 @@ export function DeviceListItem({ name, version, selected = false, onClick }: Dev
     alignItems: 'center',
     gap: 16,
     width: '100%',
+    maxWidth: '100%',
+    minWidth: 0,
+    boxSizing: 'border-box',
     padding: 16,
     border: 'none',
     borderRadius: radius.xl,
@@ -51,6 +54,8 @@ export function DeviceListItem({ name, version, selected = false, onClick }: Dev
         title={name}
         style={{
           ...textSize.sm,
+          flex: 1,
+          minWidth: 0,
           fontWeight: 500,
           color: text.default,
           overflow: 'hidden',
