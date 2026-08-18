@@ -64,6 +64,15 @@ npx expo-device-hub --platform ios
 npx expo-device-hub --platform android
 ```
 
+Choose the preferred iOS simulator stream mode with `--stream-mode`:
+
+```sh
+npx expo-device-hub --stream-mode h264
+```
+
+The accepted modes are `mjpeg`, `h264`, and `webrtc`. MJPEG is the default and is used
+automatically when the browser cannot use the requested mode.
+
 ## Repository structure
 
 This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://turbo.build).

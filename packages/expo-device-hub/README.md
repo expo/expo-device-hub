@@ -64,6 +64,15 @@ npx expo-device-hub --platform ios
 npx expo-device-hub --platform android
 ```
 
+Choose the preferred iOS simulator stream mode with `--stream-mode`:
+
+```sh
+npx expo-device-hub --stream-mode h264
+```
+
+The accepted modes are `mjpeg`, `h264`, and `webrtc`. MJPEG is the default and is used
+automatically when the browser cannot use the requested mode.
+
 ## Acknowledgements
 
 Device streaming and control are powered by two vendored, Apache-2.0-licensed
