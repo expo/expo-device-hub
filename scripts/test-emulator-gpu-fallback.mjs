@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 // Usage: node scripts/test-emulator-gpu-fallback.mjs [AVD_NAME]
 const avdName = process.argv[2] ?? "Pixel_9";
@@ -8,6 +8,26 @@ const hardwareRenderingError =
 // The real server keeps Node alive. This timer plays that role while leaving
 // the emulator process and its pipes unreferenced, just like expo-device-hub.
 const serverKeepAlive = setInterval(() => {}, 60_000);
+
+function stopEmulatorAttempt(emulator) {
+  if (process.platform === "win32" && emulator.pid) {
+    const stopped = spawnSync(
+      "taskkill",
+      ["/PID", String(emulator.pid), "/T", "/F"],
+      { stdio: "ignore", windowsHide: true },
+    );
+    if (!stopped.error && stopped.status === 0) return;
+  } else if (emulator.pid) {
+    try {
+      process.kill(-emulator.pid, "SIGKILL");
+      return;
+    } catch {
+      // The process may have exited between emitting output and being signaled.
+    }
+  }
+
+  emulator.kill("SIGKILL");
+}
 
 function startEmulator(gpuMode) {
   return new Promise((resolve) => {
@@ -51,7 +71,7 @@ function startEmulator(gpuMode) {
         console.log(
           "[fallback] Hardware rendering is unavailable; stopping the host GPU attempt.",
         );
-        emulator.kill();
+        stopEmulatorAttempt(emulator);
       }
 
       return output.slice(-(hardwareRenderingError.length - 1));

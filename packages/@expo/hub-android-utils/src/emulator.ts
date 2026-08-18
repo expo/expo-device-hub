@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import { type AndroidUtilsResult, logDebug, reportError, result } from "./errors";
 import type { BootDeviceOptions, EmulatorExit } from "./types";
 
@@ -13,6 +13,25 @@ export interface SpawnedEmulator {
   readonly gpuMode: EmulatorGpuMode;
   /** Resolves when the active process exits without another retry. */
   readonly exited: Promise<EmulatorExit>;
+}
+
+function stopEmulatorAttempt(child: ChildProcess): void {
+  if (process.platform === "win32" && child.pid) {
+    const stopped = spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    if (!stopped.error && stopped.status === 0) return;
+  } else if (child.pid) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      // The process may have exited between emitting output and being signaled.
+    }
+  }
+
+  child.kill("SIGKILL");
 }
 
 /** The adb serial for an emulator started on the given console port. */
@@ -101,7 +120,7 @@ export async function spawnEmulator(
         logDebug(
           "[android-utils] Hardware GPU rendering unavailable; retrying `emulator` with software rendering.",
         );
-        child.kill();
+        stopEmulatorAttempt(child);
         return nextTail;
       }
 
