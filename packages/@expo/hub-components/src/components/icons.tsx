@@ -187,6 +187,35 @@ export function SmartphoneIcon({ size = 16, color = 'currentColor', strokeWidth 
   );
 }
 
+/** Lucide `triangle-alert` — warning marker for unsupported or untested devices. */
+export function WarningIcon({ size = 16, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      aria-hidden="true"
+      focusable="false"
+      style={style}>
+      <path
+        d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M12 9v4M12 17h.01"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Lucide `check` — trailing mark on the selected recent row. */
 export function CheckIcon({ size = 17, color = 'currentColor', strokeWidth = 2.5, style }: IconProps) {
   return (
