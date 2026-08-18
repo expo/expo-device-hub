@@ -1,5 +1,9 @@
 import { endpointFor } from './connections';
-import { type DeviceClient, type DevicePlatform } from './types';
+import {
+  type DeviceClient,
+  type DeviceConnectionOptions,
+  type DevicePlatform,
+} from './types';
 import { useAndroidDeviceClient } from './useAndroidDevice';
 import { useIosDeviceClient } from './useIosDevice';
 import { NOOP_DEVICE_CLIENT } from './useNoopDeviceClient';
@@ -8,6 +12,8 @@ export interface ActiveDeviceTarget {
   platform: DevicePlatform;
   /** Which running device (udid/serial) to stream. */
   device?: string | null;
+  /** Explicit consumer-owned stream selection. */
+  streamMode: DeviceConnectionOptions['streamMode'];
 }
 
 /**
@@ -26,11 +32,13 @@ export function useActiveDeviceClient(
     enabled: iosActive,
     baseUrl: iosActive ? endpointFor('ios', hubBase) : null,
     device: iosActive ? target?.device ?? null : null,
+    streamMode: target?.streamMode as DeviceConnectionOptions['streamMode'],
   });
   const android = useAndroidDeviceClient({
     enabled: androidActive,
     baseUrl: androidActive ? endpointFor('android', hubBase) : null,
     device: androidActive ? target?.device ?? null : null,
+    streamMode: target?.streamMode as DeviceConnectionOptions['streamMode'],
   });
 
   if (iosActive) return ios;

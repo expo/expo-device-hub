@@ -112,9 +112,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
 
-  const attachVideo = useCallback((el: HTMLCanvasElement | HTMLImageElement | null) => {
-    canvasRef.current = (el as HTMLCanvasElement) ?? null;
-  }, []);
+  const attachVideo = useCallback(
+    (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
+      canvasRef.current = (el as HTMLCanvasElement) ?? null;
+    },
+    [],
+  );
 
   const attachLogs = useCallback(() => setLogsEnabled(true), []);
   const detachLogs = useCallback(() => setLogsEnabled(false), []);

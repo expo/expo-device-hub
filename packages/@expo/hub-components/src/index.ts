@@ -58,6 +58,10 @@ export { LogControls } from './dashboard/LogControls';
 export { LogList } from './dashboard/LogList';
 export { LogRow } from './dashboard/LogRow';
 export { StreamControls } from './dashboard/StreamControls';
+export {
+  StreamSection,
+  type StreamModeAvailability,
+} from './dashboard/StreamSection';
 export { RecentDevicesModal, type RecentDevicesModalProps } from './dashboard/RecentDevicesModal';
 export { BootErrorModal, type BootErrorModalProps } from './dashboard/BootErrorModal';
 

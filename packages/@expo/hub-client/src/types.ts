@@ -21,6 +21,9 @@ import { type CSSProperties } from 'react';
 
 export type DevicePlatform = 'ios' | 'android';
 
+/** Viewer-selected transport for serve-sim video. */
+export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
+
 /**
  * Lifecycle of a single connection:
  *   idle       — nothing to connect to (no base URL / disabled)
@@ -145,10 +148,16 @@ export interface DeviceConnectionOptions {
    * helper via `/api?device=<udid>`; when omitted the first available is used.
    */
   device?: string | null;
+  /**
+   * Stream transport selected by the consumer. There is intentionally no
+   * client-level default; products embedding Hub own their default choice.
+   * serve-emu currently ignores this because its wire protocol is always H.264.
+   */
+  streamMode: DeviceStreamMode;
 }
 
 /** Which element the implementation paints into. */
-export type VideoSurfaceKind = 'canvas' | 'img';
+export type VideoSurfaceKind = 'canvas' | 'img' | 'video';
 
 /**
  * The live state + controls for one device connection. Returned by the hook and
@@ -190,10 +199,11 @@ export interface DeviceClient {
   /** Element kind {@link DeviceScreen} should render for this client. */
   videoKind: VideoSurfaceKind;
   /**
-   * Ref callback for the paint target. The hook owns the element: for `canvas`
-   * it decodes frames into it; for `img` it points its `src` at the stream.
+   * Ref callback for the paint target. The hook owns the element: `canvas`
+   * receives decoded H.264 frames, `img` points at MJPEG, and `video` receives
+   * a WebRTC MediaStream.
    */
-  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | null) => void;
+  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => void;
 
   /** Forward a normalized touch/drag to the device. */
   sendTouch: (sample: TouchSample) => void;

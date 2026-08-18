@@ -22,8 +22,10 @@
  * helper because doing so drops the middleware/helper path from stream URLs.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
 
+import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
+import { isAvccSupported } from './avcc';
 import {
   HID_EDGE_BOTTOM,
   homeIndicatorEdge,
@@ -50,6 +52,12 @@ import {
   type TouchSample,
 } from './types';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
+import { useAvccStream } from './useAvccStream';
+import { useWebRtcStream } from './useWebRtcStream';
+import {
+  type WebRtcCodec,
+  webRtcFallbackDecision,
+} from './webrtc-fallback';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
@@ -244,6 +252,8 @@ function execWsCommand(
 
 /** Resolved connection: where to stream video/input, and how to reach logs/devices. */
 interface ResolvedConfig {
+  /** Base serve-sim helper URL used by `/stream.avcc`. */
+  url: string;
   streamUrl: string;
   wsUrl: string;
   device: string | null;
@@ -272,12 +282,13 @@ interface PreviewApi {
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true, device: targetDevice = null } = options;
+  const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
   const active = enabled && !!baseUrl;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [screen, setScreen] = useState<ScreenSize | null>(null);
+  const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
   // Logs are opt-in: nothing streams until the user attaches.
   const [logsEnabled, setLogsEnabled] = useState(false);
@@ -299,7 +310,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
+  const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
+  const [webRtcCodec, setWebRtcCodec] = useState<WebRtcCodec>('h264');
+  const [webRtcHttpFallback, setWebRtcHttpFallback] = useState(false);
+  const useWebRtc = streamMode === 'webrtc' && !webRtcHttpFallback;
+  const wantsAvcc = streamMode === 'h264' || webRtcHttpFallback;
+  const useAvcc = wantsAvcc && isAvccSupported() && !avccFallback.fellBack;
   // True while the in-flight single-finger drag began in the home-indicator band.
   const edgeGestureRef = useRef(false);
   // Latest screen config, read by the (stable) input callbacks for orientation.
@@ -318,11 +337,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, []);
 
   const attachVideo = useCallback(
-    (el: HTMLCanvasElement | HTMLImageElement | null) => {
-      imgRef.current = (el as HTMLImageElement) ?? null;
-      if (el) applyStreamSrc();
+    (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
+      if (useWebRtc) {
+        videoRef.current = (el as HTMLVideoElement) ?? null;
+        canvasRef.current = null;
+        imgRef.current = null;
+      } else if (useAvcc) {
+        canvasRef.current = (el as HTMLCanvasElement) ?? null;
+        videoRef.current = null;
+        imgRef.current = null;
+      } else {
+        imgRef.current = (el as HTMLImageElement) ?? null;
+        canvasRef.current = null;
+        videoRef.current = null;
+        if (el) applyStreamSrc();
+      }
     },
-    [applyStreamSrc],
+    [applyStreamSrc, useAvcc, useWebRtc],
   );
 
   const sendTouch = useCallback((sample: TouchSample) => {
@@ -479,6 +510,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const c = proxyPreviewConfigForBrowser(rawConfig, window.location);
       const basePath = c.basePath ?? '';
       return {
+        url: c.url!,
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         device: c.device ?? null,
@@ -528,8 +560,137 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [active, baseUrl, targetDevice]);
 
+  const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
+  const onAvccFrame = useCallback(() => {
+    const now = performance.now();
+    const counter = fpsCounterRef.current;
+    if (counter.startedAt === 0) counter.startedAt = now;
+    counter.frames++;
+    if (now - counter.startedAt < 1_000) return;
+    const next = Math.round((counter.frames * 1_000) / (now - counter.startedAt));
+    counter.frames = 0;
+    counter.startedAt = now;
+    setFps((previous) => (previous === next ? previous : next));
+  }, []);
+
+  // ── WebRTC with serve-sim's codec and HTTP fallback policy. ──
+  const {
+    stream: webRtcStream,
+    failure: webRtcFailure,
+    error: webRtcError,
+    markFrameDecoded: markWebRtcFrameDecoded,
+  } = useWebRtcStream({
+    offerUrl: config ? `${config.url}/webrtc/offer` : '',
+    closeUrl: config ? `${config.url}/webrtc/close` : '',
+    enabled: active && useWebRtc && !!config,
+    codec: webRtcCodec,
+  });
+  const handledWebRtcFailureRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!useWebRtc || !webRtcFailure) return;
+    if (handledWebRtcFailureRef.current === webRtcFailure.sessionId) return;
+    handledWebRtcFailureRef.current = webRtcFailure.sessionId;
+    const decision = webRtcFallbackDecision('h264', webRtcCodec, webRtcFailure);
+    if (!decision) return;
+    if (decision.type === 'switch-to-http') setWebRtcHttpFallback(true);
+    else setWebRtcCodec(decision.codec);
+  }, [useWebRtc, webRtcFailure, webRtcCodec]);
+
+  useEffect(() => {
+    if (!useWebRtc) return;
+    if (webRtcError) {
+      setStatus('error');
+      setError(webRtcError);
+    } else if (!webRtcStream) {
+      setStatus('connecting');
+      setError(null);
+    }
+  }, [useWebRtc, webRtcError, webRtcStream]);
+
+  useEffect(() => {
+    if (!useWebRtc) return;
+    const video = videoRef.current;
+    if (!video) return;
+    let stopped = false;
+    let firstFrame = true;
+    let frameCallback = 0;
+
+    const markFrame = () => {
+      if (stopped) return;
+      if (video.videoWidth > 0 && video.videoHeight > 0 && !hasWsConfigRef.current) {
+        setScreen({ width: video.videoWidth, height: video.videoHeight });
+      }
+      onAvccFrame();
+      if (firstFrame) {
+        firstFrame = false;
+        markWebRtcFrameDecoded();
+        setStatus('streaming');
+        setError(null);
+      }
+    };
+    const onVideoFrame = () => {
+      markFrame();
+      frameCallback = video.requestVideoFrameCallback(onVideoFrame);
+    };
+    const onTimeUpdate = () => markFrame();
+
+    video.srcObject = webRtcStream;
+    if (webRtcStream) {
+      const supportsVideoFrameCallback = typeof video.requestVideoFrameCallback === 'function';
+      if (supportsVideoFrameCallback) frameCallback = video.requestVideoFrameCallback(onVideoFrame);
+      else video.addEventListener('timeupdate', onTimeUpdate);
+      video.addEventListener('loadeddata', markFrame, { once: true });
+      void video.play().catch(() => {});
+    }
+
+    return () => {
+      stopped = true;
+      video.removeEventListener('loadeddata', markFrame);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(frameCallback);
+      }
+      video.srcObject = null;
+    };
+  }, [useWebRtc, webRtcStream, markWebRtcFrameDecoded, onAvccFrame]);
+
+  // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
+  useEffect(() => {
+    dispatchAvccFallback('reset');
+    setWebRtcCodec('h264');
+    setWebRtcHttpFallback(false);
+    setFps(0);
+  }, [streamMode, config?.url]);
+
+  useEffect(() => {
+    if (!useAvcc || !config?.url) return;
+    const timer = setTimeout(() => dispatchAvccFallback('timeout'), AVCC_FRAME_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [useAvcc, config?.url]);
+
+  useAvccStream({
+    url: config?.url ?? '',
+    enabled: active && useAvcc && !!config,
+    canvasRef,
+    onFirstFrame: () => {
+      setStatus('streaming');
+      setError(null);
+    },
+    onFrame: onAvccFrame,
+    onDecodedFrame: () => dispatchAvccFallback('decoded-frame'),
+    onResize: (width, height) => {
+      if (!hasWsConfigRef.current) setScreen({ width, height });
+    },
+    onError: (message) => {
+      setStatus('error');
+      setError(message);
+    },
+    onDecoderError: () => dispatchAvccFallback('error'),
+  });
+
   // ── MJPEG video (<img>) ──
-  const streamUrl = config?.streamUrl ?? null;
+  const streamUrl = useAvcc || useWebRtc ? null : (config?.streamUrl ?? null);
   useEffect(() => {
     if (!streamUrl) {
       streamUrlRef.current = null;
@@ -582,6 +743,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const el = imgRef.current;
       if (el) el.removeAttribute('src');
       setScreen(null);
+      setFps(0);
     };
   }, [streamUrl, applyStreamSrc]);
 
@@ -865,7 +1027,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     status,
     error,
     screen,
-    fps: 0,
+    fps,
     devices,
     logs,
     logsEnabled,
@@ -873,7 +1035,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     detachLogs,
     clearLogs,
     foregroundApp,
-    videoKind: 'img',
+    videoKind: useWebRtc ? 'video' : useAvcc ? 'canvas' : 'img',
     attachVideo,
     sendTouch,
     sendMultiTouch,

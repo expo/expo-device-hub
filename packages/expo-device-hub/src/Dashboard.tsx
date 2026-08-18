@@ -2,7 +2,12 @@
 
 import '@expo/hub-components/theme.css';
 import '../global.css';
-import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo/hub-client';
+import {
+  DeviceScreen,
+  displayScreen,
+  useActiveDeviceClient,
+  type DeviceStreamMode,
+} from '@expo/hub-client';
 import {
   EmptyState,
   LogSidebar,
@@ -10,6 +15,7 @@ import {
   Sidebar,
   SidebarToggle,
   StreamPanel,
+  type StreamModeAvailability,
   bg,
   shadow,
   text,
@@ -25,6 +31,10 @@ import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
+import {
+  browserStreamModeAvailability,
+  resolveStreamMode,
+} from './dashboard/streamMode';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -48,6 +58,7 @@ const DEFAULT_SIDEBAR_WIDTH = 400;
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
+const DEFAULT_STREAM_MODE: DeviceStreamMode = 'mjpeg';
 
 /**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
@@ -85,6 +96,16 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const logsNarrow = useIsNarrow(LOGS_MAX_WIDTH);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [logsOpen, setLogsOpen] = useState(true);
+  const streamModeAvailability = useMemo<StreamModeAvailability>(
+    browserStreamModeAvailability,
+    []
+  );
+  const [streamMode, setStreamMode] = useState<DeviceStreamMode>(() =>
+    resolveStreamMode(DEFAULT_STREAM_MODE, streamModeAvailability)
+  );
+  const handleStreamModeChange = (mode: DeviceStreamMode) => {
+    setStreamMode(resolveStreamMode(mode, streamModeAvailability));
+  };
   // Draggable widths for each inline sidebar. The `*Start` refs snapshot the
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
@@ -204,7 +225,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load.
   const client = useActiveDeviceClient(
-    selected ? { platform: selected.platform, device: selected.id } : null,
+    selected ? { platform: selected.platform, device: selected.id, streamMode } : null,
     basePath()
   );
 
@@ -292,7 +313,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               )
             }
           />
-          <LogSidebar client={client} onToggle={() => setLogsOpen(false)} width={logsWidth} />
+          <LogSidebar
+            client={client}
+            streamMode={streamMode}
+            streamModeAvailability={streamModeAvailability}
+            onStreamModeChange={handleStreamModeChange}
+            onToggle={() => setLogsOpen(false)}
+            width={logsWidth}
+          />
         </>
       )}
 
@@ -355,7 +383,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               backgroundColor: bg.subtle,
               boxShadow: shadow.lg,
             }}>
-            <LogSidebar client={client} onToggle={() => setLogsOpen(false)} width={logsWidth} />
+            <LogSidebar
+              client={client}
+              streamMode={streamMode}
+              streamModeAvailability={streamModeAvailability}
+              onStreamModeChange={handleStreamModeChange}
+              onToggle={() => setLogsOpen(false)}
+              width={logsWidth}
+            />
           </div>
         </>
       )}
