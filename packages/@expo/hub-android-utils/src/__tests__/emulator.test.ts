@@ -104,6 +104,60 @@ if (gpuMode === "host") {
     expect(readFileSync(invocations, "utf8")).toBe("host\nsoftware\n");
   });
 
+  test("stops the detached host process group before retrying", async () => {
+    if (process.platform === "win32") return;
+
+    const invocations = join(dir, "invocations.txt");
+    const descendant = join(dir, "emulator-descendant.js");
+    const emulator = join(dir, "emulator");
+    writeFileSync(descendant, "setInterval(() => {}, 1_000);\n");
+    writeFileSync(
+      emulator,
+      `#!/usr/bin/env node
+const { appendFileSync } = require("node:fs");
+const { spawn } = require("node:child_process");
+const gpuIndex = process.argv.indexOf("-gpu");
+const gpuMode = process.argv[gpuIndex + 1];
+appendFileSync(${JSON.stringify(invocations)}, gpuMode + "\\n");
+if (gpuMode === "host") {
+  spawn(process.execPath, [${JSON.stringify(descendant)}], {
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  process.on("SIGTERM", () => {});
+  console.log("ERROR | Your GPU cannot be used for hardware rendering. Consider using software rendering.");
+  setInterval(() => {}, 1_000);
+} else {
+  setTimeout(() => process.exit(0), 20);
+}
+`,
+    );
+    chmodSync(emulator, 0o755);
+
+    const spawned = await spawnEmulator(emulator, { name: "x", port: 5554 });
+    expect(spawned.error).toBeNull();
+    expect(spawned.value).not.toBeNull();
+    const hostPid = spawned.value!.child.pid;
+    let completed = false;
+    try {
+      const exited = await Promise.race([
+        spawned.value!.exited,
+        Bun.sleep(3_000).then(() => {
+          throw new Error("Timed out waiting for the software GPU retry");
+        }),
+      ]);
+      completed = true;
+      expect(exited).toEqual({ code: 0, signal: null, error: null });
+      expect(spawned.value!.gpuMode).toBe("software");
+      expect(readFileSync(invocations, "utf8")).toBe("host\nsoftware\n");
+    } finally {
+      if (!completed && hostPid) {
+        try {
+          process.kill(-hostPid, "SIGKILL");
+        } catch {}
+      }
+    }
+  });
+
   test("also detects the hardware rendering error on stderr", async () => {
     const invocations = join(dir, "invocations.txt");
     const emulator = join(dir, "emulator");
