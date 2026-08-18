@@ -1,6 +1,5 @@
 ---
-"@expo/hub-client": minor
 "expo-device-hub": minor
 ---
 
-Add selectable MJPEG, H.264, and WebRTC simulator streaming with secure-context fallbacks.
+Add H.264, and WebRTC iOS simulator streaming.
