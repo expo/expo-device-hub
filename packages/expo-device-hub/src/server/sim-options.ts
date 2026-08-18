@@ -10,6 +10,7 @@ import { type AppleSimulatorRuntime, listRuntimes } from '@expo/hub-apple-utils'
 import { type NewDeviceOptions, type Platform } from '@expo/hub-components';
 
 import { type PlatformFilter } from '../platform-filter';
+import { isSupportedAndroidDeviceProfile, isSupportedAppleDeviceType } from './device-support';
 import { type SerializableError, toSerializableError } from './utility-errors';
 
 export type NewDeviceOptionsByPlatform = Record<Platform, NewDeviceOptions>;
@@ -75,6 +76,7 @@ export function appleRuntimesToOptions(runtimes: AppleSimulatorRuntime[]): NewDe
         models: runtime.supportedDeviceTypes.map((deviceType) => ({
           value: deviceType.identifier,
           label: deviceType.name,
+          supported: isSupportedAppleDeviceType(deviceType),
         })),
       }))
       .filter((runtime) => runtime.models.length > 0)
@@ -88,7 +90,11 @@ export function androidImagesToOptions(
   profiles: AndroidDeviceProfile[]
 ): NewDeviceOptions {
   const models = profiles
-    .map((profile) => ({ value: profile.id, label: profile.name || profile.id }))
+    .map((profile) => ({
+      value: profile.id,
+      label: profile.name || profile.id,
+      supported: isSupportedAndroidDeviceProfile(profile),
+    }))
     .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 
   return {

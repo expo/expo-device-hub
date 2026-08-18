@@ -182,6 +182,7 @@ export function RecentDevicesModal({
                 runtime: selectedRuntime.value,
                 deviceType: selectedModel.value,
                 version: selectedRuntime.label,
+                supported: selectedModel.supported,
               },
             }
           : { kind: 'recent', device: selectedRecent! };

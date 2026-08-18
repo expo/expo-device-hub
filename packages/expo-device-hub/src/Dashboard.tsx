@@ -163,6 +163,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             platform: source.platform,
             physical: false,
             booted: true,
+            supported: source.supported,
             lastUsedAt: Date.now(),
           }
         : { ...source, id: result.id, booted: true, lastUsedAt: Date.now() };

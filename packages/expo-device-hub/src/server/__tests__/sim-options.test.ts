@@ -18,12 +18,12 @@ describe('appleRuntimesToOptions', () => {
         {
           value: 'ios-18',
           label: 'iOS 18.0',
-          models: [{ value: 'iphone-16', label: 'iPhone 16' }],
+          models: [{ value: 'iphone-16', label: 'iPhone 16', supported: true }],
         },
         {
           value: 'ios-17',
           label: 'iOS 17.0',
-          models: [{ value: 'iphone-16', label: 'iPhone 16' }],
+          models: [{ value: 'iphone-16', label: 'iPhone 16', supported: true }],
         },
       ],
     });
@@ -47,16 +47,16 @@ describe('androidImagesToOptions', () => {
           value: 'system-images;android-35;google_apis_playstore;arm64-v8a',
           label: 'Android 35 · Google Play · arm64-v8a',
           models: [
-            { value: 'pixel_8', label: 'Pixel 8' },
-            { value: 'pixel_9', label: 'Pixel 9' },
+            { value: 'pixel_8', label: 'Pixel 8', supported: true },
+            { value: 'pixel_9', label: 'Pixel 9', supported: true },
           ],
         },
         {
           value: 'system-images;android-34;google_apis;arm64-v8a',
           label: 'Android 34 · Google APIs · arm64-v8a',
           models: [
-            { value: 'pixel_8', label: 'Pixel 8' },
-            { value: 'pixel_9', label: 'Pixel 9' },
+            { value: 'pixel_8', label: 'Pixel 8', supported: true },
+            { value: 'pixel_9', label: 'Pixel 9', supported: true },
           ],
         },
       ],

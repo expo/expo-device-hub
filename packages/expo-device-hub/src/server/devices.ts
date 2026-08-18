@@ -18,6 +18,7 @@ import { type AndroidDevice, listDevices as listAndroidDevices } from '@expo/hub
 import { listDevices as listAppleDevices } from '@expo/hub-apple-utils';
 
 import { type PlatformFilter } from '../platform-filter';
+import { isSupportedAndroidDevice, isSupportedAppleDevice } from './device-support';
 import { type SerializableError, toSerializableError } from './utility-errors';
 
 export type HubDevicePlatform = PlatformFilter;
@@ -36,6 +37,8 @@ export interface HubDevice {
    * Physical devices can't be removed from Hub, so the UI hides that action.
    */
   physical: boolean;
+  /** Whether this device type is in the set currently supported and tested by Hub. */
+  supported: boolean;
   /**
    * Epoch ms the device was last used — drives the "Recents" relative time
    * ("18m ago", "2 days ago") in the add-device picker. For iOS this is the
@@ -75,6 +78,7 @@ export async function listIosSimulators(): Promise<PlatformDeviceList> {
           platform: 'ios' as const,
           booted: device.state.toLowerCase() === 'booted',
           physical: false,
+          supported: isSupportedAppleDevice(device),
           lastUsedAt: latestTimestamp(device.lastUsedAt, device.lastBootedAt),
         };
       })
@@ -99,6 +103,7 @@ export async function listAndroidEmulators(): Promise<PlatformDeviceList> {
         platform: 'android' as const,
         booted: device.booted,
         physical: device.type === 'device',
+        supported: isSupportedAndroidDevice(device),
         lastUsedAt: latestTimestamp(device.lastBootedAt),
       }))
       .filter((device) => device.booted || device.lastUsedAt !== undefined),
