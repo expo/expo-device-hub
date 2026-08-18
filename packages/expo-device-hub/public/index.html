@@ -18,6 +18,10 @@
         if (platform === 'ios' || platform === 'android') {
           window.__EXPO_DEVICE_HUB_PLATFORM__ = platform;
         }
+        var streamMode = '{{streamMode}}';
+        if (streamMode === 'mjpeg' || streamMode === 'h264' || streamMode === 'webrtc') {
+          window.__EXPO_DEVICE_HUB_STREAM_MODE__ = streamMode;
+        }
       })();
     </script>
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->

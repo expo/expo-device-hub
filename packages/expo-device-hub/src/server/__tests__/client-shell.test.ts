@@ -3,17 +3,18 @@ import { describe, expect, test } from 'bun:test';
 import { configureClientShell } from '../client-shell';
 
 describe('configureClientShell', () => {
-  const shell = '<base href="{{mount}}/"> <script>var platform = "{{platform}}"</script>';
+  const shell =
+    '<base href="{{mount}}/"> <script>var platform = "{{platform}}"; var streamMode = "{{streamMode}}"</script>';
 
-  test('leaves the platform empty when the CLI option is omitted', () => {
-    expect(configureClientShell(shell, '', undefined)).toBe(
-      '<base href="/"> <script>var platform = ""</script>'
+  test('leaves CLI options empty when they are omitted', () => {
+    expect(configureClientShell(shell, '', undefined, undefined)).toBe(
+      '<base href="/"> <script>var platform = ""; var streamMode = ""</script>'
     );
   });
 
-  test('injects the selected platform and mount path', () => {
-    expect(configureClientShell(shell, '/hub', 'android')).toBe(
-      '<base href="/hub/"> <script>var platform = "android"</script>'
+  test('injects the selected options and mount path', () => {
+    expect(configureClientShell(shell, '/hub', 'android', 'webrtc')).toBe(
+      '<base href="/hub/"> <script>var platform = "android"; var streamMode = "webrtc"</script>'
     );
   });
 });

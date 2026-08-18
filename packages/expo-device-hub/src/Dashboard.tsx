@@ -36,6 +36,7 @@ import {
   resolveStreamMode,
 } from './dashboard/streamMode';
 import { dashboardPlatformFilter } from './platform-filter';
+import { dashboardStreamMode } from './stream-mode';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -59,7 +60,6 @@ const DEFAULT_SIDEBAR_WIDTH = 400;
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
-const DEFAULT_STREAM_MODE: DeviceStreamMode = 'mjpeg';
 
 /**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
@@ -103,7 +103,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     []
   );
   const [streamMode, setStreamMode] = useState<DeviceStreamMode>(() =>
-    resolveStreamMode(DEFAULT_STREAM_MODE, streamModeAvailability)
+    resolveStreamMode(dashboardStreamMode(), streamModeAvailability)
   );
   const handleStreamModeChange = (mode: DeviceStreamMode) => {
     setStreamMode(resolveStreamMode(mode, streamModeAvailability));
