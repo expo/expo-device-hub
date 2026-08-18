@@ -5,22 +5,39 @@ const avdName = process.argv[2] ?? "Pixel_9";
 const hardwareRenderingError =
   "Your GPU cannot be used for hardware rendering";
 
+// The real server keeps Node alive. This timer plays that role while leaving
+// the emulator process and its pipes unreferenced, just like expo-device-hub.
+const serverKeepAlive = setInterval(() => {}, 60_000);
+
 function startEmulator(gpuMode) {
   return new Promise((resolve) => {
-    const emulator = spawn("emulator", [
-      "-avd",
-      avdName,
-      "-no-audio",
-      "-no-window",
-      "-gpu",
-      gpuMode,
-      "-no-boot-anim",
-    ]);
+    const emulator = spawn(
+      "emulator",
+      [
+        "-avd",
+        avdName,
+        "-no-audio",
+        "-no-window",
+        "-gpu",
+        gpuMode,
+        "-no-boot-anim",
+      ],
+      {
+        detached: true,
+        stdio: ["ignore", "pipe", "pipe"],
+      },
+    );
 
     let stdoutTail = "";
     let stderrTail = "";
     let fallbackRequested = false;
     let finished = false;
+
+    emulator.once("spawn", () => {
+      emulator.unref();
+      emulator.stdout.unref();
+      emulator.stderr.unref();
+    });
 
     const inspectOutput = (tail, data) => {
       const output = tail + data.toString();
@@ -70,12 +87,16 @@ function startEmulator(gpuMode) {
   });
 }
 
-const hostAttempt = await startEmulator("host");
+try {
+  const hostAttempt = await startEmulator("host");
 
-if (hostAttempt.fallbackRequested && !hostAttempt.error) {
-  console.log("[fallback] Retrying with -gpu software.");
-  const softwareAttempt = await startEmulator("software");
-  process.exitCode = softwareAttempt.error ? 1 : (softwareAttempt.code ?? 1);
-} else {
-  process.exitCode = hostAttempt.error ? 1 : (hostAttempt.code ?? 1);
+  if (hostAttempt.fallbackRequested && !hostAttempt.error) {
+    console.log("[fallback] Retrying with -gpu software.");
+    const softwareAttempt = await startEmulator("software");
+    process.exitCode = softwareAttempt.error ? 1 : (softwareAttempt.code ?? 1);
+  } else {
+    process.exitCode = hostAttempt.error ? 1 : (hostAttempt.code ?? 1);
+  }
+} finally {
+  clearInterval(serverKeepAlive);
 }
