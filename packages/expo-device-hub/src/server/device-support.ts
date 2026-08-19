@@ -38,7 +38,6 @@ function isPixelPhone(...candidates: Array<string | undefined>): boolean {
   return candidates.some((candidate) => {
     if (!candidate) return false;
     const normalized = candidate.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ');
-    const excluded = ['fold', 'tablet', 'watch', 'buds', 'pixel c'];
-    return normalized.includes('pixel') && excluded.every((term) => !normalized.includes(term));
+    return /pixel/.test(normalized) && !/(?:fold|tablet|watch|buds|pixel c)/.test(normalized);
   });
 }
