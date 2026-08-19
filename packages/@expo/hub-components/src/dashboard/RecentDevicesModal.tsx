@@ -120,9 +120,27 @@ export function RecentDevicesModal({
   const isNew = target.kind === 'new';
   const selectedRecent =
     target.kind === 'recent' ? recents.find((device) => device.id === target.id) : undefined;
-  const selectedRuntime = options.runtimes.find((option) => option.value === runtime);
-  const modelOptions = selectedRuntime?.models ?? [];
-  const selectedModel = modelOptions.find((option) => option.value === model);
+  const allModelOptions = useMemo(() => {
+    const models = new Map<string, NewDeviceOptions['runtimes'][number]['models'][number]>();
+    for (const runtimeOption of options.runtimes) {
+      for (const modelOption of runtimeOption.models) {
+        if (!models.has(modelOption.value)) models.set(modelOption.value, modelOption);
+      }
+    }
+    return [...models.values()].sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, { numeric: true })
+    );
+  }, [options.runtimes]);
+  const runtimeOptions =
+    platform === 'android'
+      ? options.runtimes.filter((option) =>
+          option.models.some((modelOption) => modelOption.value === model)
+        )
+      : options.runtimes;
+  const selectedRuntime = runtimeOptions.find((option) => option.value === runtime);
+  const modelOptions =
+    platform === 'android' ? allModelOptions : (selectedRuntime?.models ?? []);
+  const selectedModel = selectedRuntime?.models.find((option) => option.value === model);
 
   const activateNew = () => {
     setTarget({ kind: 'new' });
@@ -131,17 +149,25 @@ export function RecentDevicesModal({
 
   function handleRuntimeChange(next: string) {
     const nextRuntime = options.runtimes.find((option) => option.value === next);
-    const firstModel = nextRuntime?.models[0];
     setRuntime(next);
-    setModel(firstModel?.value ?? '');
     activateNew();
-    if (!nameEdited) setName(suggestName(firstModel?.label ?? '', recents, platform));
+    if (platform === 'ios') {
+      const firstModel = nextRuntime?.models[0];
+      setModel(firstModel?.value ?? '');
+      if (!nameEdited) setName(suggestName(firstModel?.label ?? '', recents, platform));
+    }
   }
 
   function handleModelChange(next: string) {
     setModel(next);
     activateNew();
     const nextModel = modelOptions.find((option) => option.value === next);
+    if (platform === 'android') {
+      const firstCompatibleRuntime = options.runtimes.find((option) =>
+        option.models.some((modelOption) => modelOption.value === next)
+      );
+      setRuntime(firstCompatibleRuntime?.value ?? '');
+    }
     if (!nameEdited) setName(suggestName(nextModel?.label ?? '', recents, platform));
   }
 
@@ -311,28 +337,60 @@ export function RecentDevicesModal({
                         />
                       </div>
                     </FormRow>
-                    <FormRow label="OS version" htmlFor={`new-${platform}-runtime`} last={false}>
-                      <SelectField
-                        id={`new-${platform}-runtime`}
-                        value={runtime}
-                        options={options.runtimes}
-                        disabled={submitting}
-                        onChange={handleRuntimeChange}
-                        onActivate={activateNew}
-                        trailing={<ChevronDownIcon size={14} color={icon.secondary} />}
-                      />
-                    </FormRow>
-                    <FormRow label="Model" htmlFor={`new-${platform}-model`} last>
-                      <SelectField
-                        id={`new-${platform}-model`}
-                        value={model}
-                        options={modelOptions}
-                        disabled={submitting}
-                        onChange={handleModelChange}
-                        onActivate={activateNew}
-                        trailing={<ChevronsUpDownIcon size={14} color={icon.secondary} />}
-                      />
-                    </FormRow>
+                    {platform === 'android' ? (
+                      <>
+                        <FormRow label="Model" htmlFor={`new-${platform}-model`} last={false}>
+                          <SelectField
+                            id={`new-${platform}-model`}
+                            value={model}
+                            options={modelOptions}
+                            disabled={submitting}
+                            onChange={handleModelChange}
+                            onActivate={activateNew}
+                            trailing={<ChevronsUpDownIcon size={14} color={icon.secondary} />}
+                          />
+                        </FormRow>
+                        <FormRow label="OS version" htmlFor={`new-${platform}-runtime`} last>
+                          <SelectField
+                            id={`new-${platform}-runtime`}
+                            value={runtime}
+                            options={runtimeOptions}
+                            disabled={submitting}
+                            onChange={handleRuntimeChange}
+                            onActivate={activateNew}
+                            trailing={<ChevronDownIcon size={14} color={icon.secondary} />}
+                          />
+                        </FormRow>
+                      </>
+                    ) : (
+                      <>
+                        <FormRow
+                          label="OS version"
+                          htmlFor={`new-${platform}-runtime`}
+                          last={false}>
+                          <SelectField
+                            id={`new-${platform}-runtime`}
+                            value={runtime}
+                            options={runtimeOptions}
+                            disabled={submitting}
+                            onChange={handleRuntimeChange}
+                            onActivate={activateNew}
+                            trailing={<ChevronDownIcon size={14} color={icon.secondary} />}
+                          />
+                        </FormRow>
+                        <FormRow label="Model" htmlFor={`new-${platform}-model`} last>
+                          <SelectField
+                            id={`new-${platform}-model`}
+                            value={model}
+                            options={modelOptions}
+                            disabled={submitting}
+                            onChange={handleModelChange}
+                            onActivate={activateNew}
+                            trailing={<ChevronsUpDownIcon size={14} color={icon.secondary} />}
+                          />
+                        </FormRow>
+                      </>
+                    )}
                   </>
                 )}
               </div>
