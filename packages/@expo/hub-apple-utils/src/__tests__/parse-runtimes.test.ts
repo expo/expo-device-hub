@@ -90,7 +90,7 @@ describe("parseRuntimes", () => {
     expect(parseRuntimes(json).value[0]?.isAvailable).toBe(false);
   });
 
-  test("warns per iOS device type whose product family cannot be parsed", () => {
+  test("warns per Apple device type whose product family cannot be parsed", () => {
     const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
     const json = JSON.stringify({
       runtimes: [
@@ -106,7 +106,7 @@ describe("parseRuntimes", () => {
         {
           identifier: "tvos",
           platform: "tvOS",
-          supportedDeviceTypes: [{ identifier: "silent-non-ios" }],
+          supportedDeviceTypes: [{ identifier: "missing-tvos-family" }],
         },
       ],
     });
@@ -118,18 +118,22 @@ describe("parseRuntimes", () => {
         null,
         null,
       ]);
-      expect(warnSpy).toHaveBeenCalledTimes(3);
+      expect(warnSpy).toHaveBeenCalledTimes(4);
       expect(warnSpy).toHaveBeenNthCalledWith(
         1,
-        "[apple-utils] Failed to parse productFamily for iOS device type: missing-family",
+        "[apple-utils] Failed to parse productFamily for Apple device type: missing-family",
       );
       expect(warnSpy).toHaveBeenNthCalledWith(
         2,
-        "[apple-utils] Failed to parse productFamily for iOS device type: invalid-family",
+        "[apple-utils] Failed to parse productFamily for Apple device type: invalid-family",
       );
       expect(warnSpy).toHaveBeenNthCalledWith(
         3,
-        "[apple-utils] Failed to parse productFamily for iOS device type: empty-family",
+        "[apple-utils] Failed to parse productFamily for Apple device type: empty-family",
+      );
+      expect(warnSpy).toHaveBeenNthCalledWith(
+        4,
+        "[apple-utils] Failed to parse productFamily for Apple device type: missing-tvos-family",
       );
     } finally {
       warnSpy.mockRestore();
