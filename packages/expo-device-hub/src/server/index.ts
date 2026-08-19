@@ -28,6 +28,7 @@ import { SERVER_PLATFORM_FILTER } from './platform-filter';
 import { EMU_PREFIX, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
 import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
 import { listNewDeviceOptions } from './sim-options';
+import { SERVER_STREAM_MODE } from './stream-mode';
 
 const DEVICES_ROUTE = '/api/devices';
 const SHUTDOWN_DEVICE_ROUTE = '/api/devices/shutdown';
@@ -56,12 +57,15 @@ async function serveClientIndexHtml(): Promise<Response | null> {
       return null;
     }
   }
-  return new Response(configureClientShell(clientIndexHtml, MOUNT_PATH, SERVER_PLATFORM_FILTER), {
-    headers: {
-      'Content-Type': 'text/html; charset=utf-8',
-      'Cache-Control': 'no-store',
-    },
-  });
+  return new Response(
+    configureClientShell(clientIndexHtml, MOUNT_PATH, SERVER_PLATFORM_FILTER, SERVER_STREAM_MODE),
+    {
+      headers: {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Cache-Control': 'no-store',
+      },
+    }
+  );
 }
 
 function jsonResponse(body: unknown, status = 200): Response {

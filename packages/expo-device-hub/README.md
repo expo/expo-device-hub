@@ -57,13 +57,6 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
-Pass `--platform` to focus the standalone dashboard on one platform:
-
-```sh
-npx expo-device-hub --platform ios
-npx expo-device-hub --platform android
-```
-
 ## Acknowledgements
 
 Device streaming and control are powered by two vendored, Apache-2.0-licensed
