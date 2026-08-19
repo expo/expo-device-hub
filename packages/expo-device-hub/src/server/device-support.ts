@@ -22,10 +22,10 @@ export function isSupportedAndroidDeviceProfile(
   return profile.tag === null && isPixelPhone(profile.id, profile.name);
 }
 
-/** Classify an existing AVD or physical device from the metadata available during discovery. */
+/** Allow physical Android devices; classify AVDs from their profile metadata. */
 export function isSupportedAndroidDevice(device: AndroidDevice): boolean {
   if (device.type === 'device') {
-    return isPixelPhone(device.properties['ro.product.model']);
+    return true;
   }
 
   const profile = device.config['hw.device.name'] ?? device.properties.Device;

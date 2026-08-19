@@ -60,7 +60,7 @@ describe('Android device support', () => {
     ).toBe(false);
   });
 
-  test('classifies physical Pixel phones and treats unknown hardware as untested', () => {
+  test('supports all physical Android devices', () => {
     expect(
       isSupportedAndroidDevice(
         androidDevice({ type: 'device', properties: { 'ro.product.model': 'Pixel 9 Pro' } }),
@@ -70,7 +70,11 @@ describe('Android device support', () => {
       isSupportedAndroidDevice(
         androidDevice({ type: 'device', properties: { 'ro.product.model': 'Galaxy S25' } }),
       ),
-    ).toBe(false);
+    ).toBe(true);
+    expect(isSupportedAndroidDevice(androidDevice({ type: 'device' }))).toBe(true);
+  });
+
+  test('treats unknown Android emulators as untested', () => {
     expect(isSupportedAndroidDevice(androidDevice())).toBe(false);
   });
 });
