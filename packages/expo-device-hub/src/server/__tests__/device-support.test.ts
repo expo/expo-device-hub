@@ -45,10 +45,12 @@ describe('Android device support', () => {
     );
     expect(isSupportedAndroidDeviceProfile(profile('pixel_fold', 'Pixel Fold'))).toBe(false);
     expect(isSupportedAndroidDeviceProfile(profile('pixel_tablet', 'Pixel Tablet'))).toBe(false);
+    expect(isSupportedAndroidDeviceProfile(profile('pixel_c', 'Pixel C'))).toBe(false);
     expect(isSupportedAndroidDeviceProfile(profile('medium_phone', 'Medium Phone'))).toBe(false);
     expect(
       isSupportedAndroidDeviceProfile(profile('pixel_watch', 'Pixel Watch', 'android-wear')),
     ).toBe(false);
+    expect(isSupportedAndroidDeviceProfile(profile('pixel_buds', 'Pixel Buds'))).toBe(false);
   });
 
   test('classifies known AVDs from their profile metadata', () => {
