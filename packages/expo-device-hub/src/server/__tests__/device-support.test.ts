@@ -9,10 +9,17 @@ import {
 } from '../device-support';
 
 describe('iOS device support', () => {
-  test('supports iPhone simulator types and rejects other Apple families', () => {
-    expect(isSupportedAppleDeviceType({ productFamily: 'iPhone' })).toBe(true);
-    expect(isSupportedAppleDeviceType({ productFamily: 'iPad' })).toBe(false);
-    expect(isSupportedAppleDeviceType({ productFamily: null })).toBe(false);
+  test('supports simulator types whose identifier contains iPhone', () => {
+    expect(
+      isSupportedAppleDeviceType({
+        identifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro',
+      }),
+    ).toBe(true);
+    expect(
+      isSupportedAppleDeviceType({
+        identifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4',
+      }),
+    ).toBe(false);
   });
 
   test('classifies existing simulators from their device type identifier', () => {

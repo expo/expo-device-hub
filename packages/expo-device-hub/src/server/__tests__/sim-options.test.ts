@@ -18,12 +18,12 @@ describe('appleRuntimesToOptions', () => {
         {
           value: 'ios-18',
           label: 'iOS 18.0',
-          models: [{ value: 'iphone-16', label: 'iPhone 16', supported: true }],
+          models: [{ value: 'iPhone-16', label: 'iPhone 16', supported: true }],
         },
         {
           value: 'ios-17',
           label: 'iOS 17.0',
-          models: [{ value: 'iphone-16', label: 'iPhone 16', supported: true }],
+          models: [{ value: 'iPhone-16', label: 'iPhone 16', supported: true }],
         },
       ],
     });
@@ -120,7 +120,7 @@ function appleRuntime(overrides: Partial<AppleSimulatorRuntime> = {}): AppleSimu
     buildVersion: null,
     platform: 'iOS',
     isAvailable: true,
-    supportedDeviceTypes: [{ identifier: 'iphone-16', name: 'iPhone 16', productFamily: 'iPhone' }],
+    supportedDeviceTypes: [{ identifier: 'iPhone-16', name: 'iPhone 16', productFamily: 'iPhone' }],
     ...overrides,
   };
 }

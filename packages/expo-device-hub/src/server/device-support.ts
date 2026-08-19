@@ -3,9 +3,9 @@ import { type AppleDevice, type AppleSimulatorDeviceType } from '@expo/hub-apple
 
 /** Hub currently supports and tests iPhone simulator hardware only. */
 export function isSupportedAppleDeviceType(
-  deviceType: Pick<AppleSimulatorDeviceType, 'productFamily'>,
+  deviceType: Pick<AppleSimulatorDeviceType, 'identifier'>,
 ): boolean {
-  return deviceType.productFamily === 'iPhone';
+  return isIphoneDeviceTypeIdentifier(deviceType.identifier);
 }
 
 /** Classify an existing simulator from the device-type identifier reported by simctl. */
@@ -31,7 +31,7 @@ export function isSupportedAndroidDevice(device: AndroidDevice): boolean {
 }
 
 function isIphoneDeviceTypeIdentifier(identifier: string | null): boolean {
-  return identifier !== null && /(?:^|\.)iPhone(?:-|$)/i.test(identifier);
+  return identifier?.includes('iPhone') ?? false;
 }
 
 function isPixelPhone(...candidates: Array<string | undefined>): boolean {
