@@ -31,18 +31,17 @@ describe('iOS device support', () => {
 });
 
 describe('Android device support', () => {
-  test('supports non-folding Pixel profiles by name', () => {
+  test('supports Pixel phone profiles and rejects other or non-phone profiles', () => {
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9', 'Pixel 9'))).toBe(true);
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9_pro_fold', 'Pixel 9 Pro Fold'))).toBe(
       false,
     );
     expect(isSupportedAndroidDeviceProfile(profile('pixel_fold', 'Pixel Fold'))).toBe(false);
-    expect(isSupportedAndroidDeviceProfile(profile('pixel_tablet', 'Pixel Tablet'))).toBe(true);
+    expect(isSupportedAndroidDeviceProfile(profile('pixel_tablet', 'Pixel Tablet'))).toBe(false);
     expect(isSupportedAndroidDeviceProfile(profile('medium_phone', 'Medium Phone'))).toBe(false);
     expect(
       isSupportedAndroidDeviceProfile(profile('pixel_watch', 'Pixel Watch', 'android-wear')),
-    ).toBe(true);
-    expect(isSupportedAndroidDeviceProfile(profile('pixel_phone', 'Generic Phone'))).toBe(false);
+    ).toBe(false);
   });
 
   test('classifies known AVDs from their profile metadata', () => {
