@@ -62,7 +62,55 @@ describe('androidImagesToOptions', () => {
       ],
     });
   });
+
+  test('pairs mobile and specialized images with compatible profile tags', () => {
+    const profiles: AndroidDeviceProfile[] = [
+      { id: 'medium_phone', index: 0, name: 'Medium Phone', oem: 'Generic', tag: null },
+      { id: 'tv_4k', index: 1, name: 'Television (4K)', oem: 'Google', tag: 'android-tv' },
+      {
+        id: 'wearos_square',
+        index: 2,
+        name: 'Wear OS Square',
+        oem: 'Google',
+        tag: 'android-wear',
+      },
+      {
+        id: 'automotive_portrait',
+        index: 3,
+        name: 'Automotive Portrait',
+        oem: 'Google',
+        tag: 'android-automotive',
+      },
+    ];
+    const images: AndroidSystemImage[] = [
+      androidImage('android-36', null, 'arm64-v8a'),
+      androidImage('android-35', 'google_apis_playstore', 'arm64-v8a'),
+      androidImage('android-35', 'android-tv', 'arm64-v8a'),
+      androidImage('android-35', 'android-wear', 'arm64-v8a'),
+      androidImage('android-35', 'android-automotive-playstore', 'arm64-v8a'),
+    ];
+
+    const runtimes = androidImagesToOptions(images, profiles).runtimes;
+    expect(modelsForTag(runtimes, null)).toEqual(['medium_phone']);
+    expect(modelsForTag(runtimes, 'google_apis_playstore')).toEqual(['medium_phone']);
+    expect(modelsForTag(runtimes, 'android-tv')).toEqual(['tv_4k']);
+    expect(modelsForTag(runtimes, 'android-wear')).toEqual(['wearos_square']);
+    expect(modelsForTag(runtimes, 'android-automotive-playstore')).toEqual([
+      'automotive_portrait',
+    ]);
+  });
 });
+
+function modelsForTag(
+  runtimes: ReturnType<typeof androidImagesToOptions>['runtimes'],
+  tag: string | null
+): string[] {
+  return (
+    runtimes
+      .find((runtime) => runtime.value.includes(`;${tag ?? ''};`))
+      ?.models.map((model) => model.value) ?? []
+  );
+}
 
 function appleRuntime(overrides: Partial<AppleSimulatorRuntime> = {}): AppleSimulatorRuntime {
   return {
@@ -77,14 +125,14 @@ function appleRuntime(overrides: Partial<AppleSimulatorRuntime> = {}): AppleSimu
   };
 }
 
-function androidImage(apiLevel: string, tag: string, abi: string): AndroidSystemImage {
+function androidImage(apiLevel: string, tag: string | null, abi: string): AndroidSystemImage {
   return {
-    package: `system-images;${apiLevel};${tag};${abi}`,
+    package: `system-images;${apiLevel};${tag ?? ''};${abi}`,
     apiLevel,
     tag,
     abi,
     version: '1',
     description: `${apiLevel} system image`,
-    location: `system-images/${apiLevel}/${tag}/${abi}`,
+    location: `system-images/${apiLevel}/${tag ?? ''}/${abi}`,
   };
 }

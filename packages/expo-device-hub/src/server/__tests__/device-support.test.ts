@@ -34,8 +34,9 @@ describe('Android device support', () => {
   test('supports Pixel phone profiles and rejects other or non-phone profiles', () => {
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9', 'Pixel 9'))).toBe(true);
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9_pro_fold', 'Pixel 9 Pro Fold'))).toBe(
-      true,
+      false,
     );
+    expect(isSupportedAndroidDeviceProfile(profile('pixel_fold', 'Pixel Fold'))).toBe(false);
     expect(isSupportedAndroidDeviceProfile(profile('pixel_tablet', 'Pixel Tablet'))).toBe(false);
     expect(isSupportedAndroidDeviceProfile(profile('medium_phone', 'Medium Phone'))).toBe(false);
     expect(

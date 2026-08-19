@@ -40,7 +40,7 @@ function isPixelPhone(...candidates: Array<string | undefined>): boolean {
     const normalized = candidate.toLowerCase().replaceAll('_', ' ').replaceAll('-', ' ');
     return (
       /(?:^|\s)pixel(?:\s|$)/.test(normalized) &&
-      !/(?:^|\s)(?:tablet|watch|buds)(?:\s|$)/.test(normalized) &&
+      !/(?:^|\s)(?:tablet|watch|buds|fold)(?:\s|$)/.test(normalized) &&
       !/(?:^|\s)pixel\s+c(?:\s|$)/.test(normalized)
     );
   });

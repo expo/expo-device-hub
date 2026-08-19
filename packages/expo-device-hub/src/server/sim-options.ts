@@ -91,6 +91,7 @@ export function androidImagesToOptions(
 ): NewDeviceOptions {
   const models = profiles
     .map((profile) => ({
+      profile,
       value: profile.id,
       label: profile.name || profile.id,
       supported: isSupportedAndroidDeviceProfile(profile),
@@ -102,11 +103,28 @@ export function androidImagesToOptions(
       .map((image) => ({
         value: image.package,
         label: androidImageLabel(image),
-        models,
+        models: models
+          .filter(({ profile }) => isAndroidProfileCompatibleWithImage(profile, image))
+          .map(({ profile: _profile, ...model }) => model),
       }))
       .filter((runtime) => runtime.models.length > 0)
       .sort((a, b) => compareVersionsDescending(a.label, b.label)),
   };
+}
+
+const MOBILE_SYSTEM_IMAGE_TAG_PREFIXES = ['default', 'google_apis'];
+
+function isAndroidProfileCompatibleWithImage(
+  profile: AndroidDeviceProfile,
+  image: AndroidSystemImage
+): boolean {
+  if (profile.tag === null) {
+    if (image.tag === null) return true;
+    return MOBILE_SYSTEM_IMAGE_TAG_PREFIXES.some((prefix) => image.tag?.startsWith(prefix));
+  }
+
+  if (image.tag === null) return false;
+  return profile.tag.startsWith(image.tag) || image.tag.startsWith(profile.tag);
 }
 
 function androidImageLabel(image: AndroidSystemImage): string {
