@@ -20,6 +20,8 @@ export type Device = {
    * Physical devices can't be removed, so the "Remove" control is hidden for them.
    */
   physical: boolean;
+  /** Whether this device type is in the set currently supported and tested by Hub. */
+  supported: boolean;
   /**
    * Epoch ms the device was last used. Drives the relative "Recents" time in the
    * add-device picker.
@@ -46,6 +48,8 @@ export type NewDeviceModelOption = {
   value: string;
   /** Human-readable model name shown in the picker. */
   label: string;
+  /** Whether this model is in the set currently supported and tested by Hub. */
+  supported: boolean;
 };
 
 /** An installed runtime/system image and the models it can create. */
@@ -73,6 +77,8 @@ export type NewDeviceRequest = {
   deviceType: string;
   /** Human-readable OS label retained for the sidebar after creation. */
   version: string;
+  /** Whether the selected model is currently supported and tested by Hub. */
+  supported: boolean;
 };
 
 /** The mutually exclusive target selected in the add-device picker. */

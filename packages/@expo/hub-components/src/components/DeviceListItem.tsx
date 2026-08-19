@@ -1,6 +1,7 @@
 import { type CSSProperties, useState } from 'react';
 
-import { bg, radius, text, textSize } from '../theme/tokens';
+import { WarningIcon } from './icons';
+import { bg, icon, radius, text, textSize } from '../theme/tokens';
 
 /**
  * A selectable row in the simulators list ("list button"). Selected rows use the
@@ -9,11 +10,19 @@ import { bg, radius, text, textSize } from '../theme/tokens';
 export type DeviceListItemProps = {
   name: string;
   version: string;
+  /** Shows an accessible warning for a device type that Hub does not support or test. */
+  unsupported?: boolean;
   selected?: boolean;
   onClick?: () => void;
 };
 
-export function DeviceListItem({ name, version, selected = false, onClick }: DeviceListItemProps) {
+export function DeviceListItem({
+  name,
+  version,
+  unsupported = false,
+  selected = false,
+  onClick,
+}: DeviceListItemProps) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -50,19 +59,30 @@ export function DeviceListItem({ name, version, selected = false, onClick }: Dev
       }}
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}>
-      <span
-        title={name}
-        style={{
-          ...textSize.sm,
-          flex: 1,
-          minWidth: 0,
-          fontWeight: 500,
-          color: text.default,
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>
-        {name}
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+        {unsupported && (
+          <span
+            role="img"
+            aria-label="Unsupported or untested device"
+            title="This device type is unsupported or untested."
+            style={{ display: 'flex', flex: '0 0 auto', color: icon.warning }}>
+            <WarningIcon size={16} />
+          </span>
+        )}
+        <span
+          title={name}
+          style={{
+            ...textSize.sm,
+            flex: 1,
+            minWidth: 0,
+            fontWeight: 500,
+            color: text.default,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          }}>
+          {name}
+        </span>
       </span>
       <span
         style={{

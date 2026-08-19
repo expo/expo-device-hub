@@ -17,6 +17,7 @@ const list: DeviceList = {
       platform: 'ios',
       booted: true,
       physical: false,
+      supported: true,
     },
   ],
   emulators: [
@@ -27,6 +28,7 @@ const list: DeviceList = {
       platform: 'android',
       booted: false,
       physical: false,
+      supported: true,
     },
   ],
 };

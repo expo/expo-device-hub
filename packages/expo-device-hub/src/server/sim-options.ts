@@ -10,6 +10,7 @@ import { type AppleSimulatorRuntime, listRuntimes } from '@expo/hub-apple-utils'
 import { type NewDeviceOptions, type Platform } from '@expo/hub-components';
 
 import { type PlatformFilter } from '../platform-filter';
+import { isSupportedAndroidDeviceProfile, isSupportedAppleDeviceType } from './device-support';
 import { type SerializableError, toSerializableError } from './utility-errors';
 
 export type NewDeviceOptionsByPlatform = Record<Platform, NewDeviceOptions>;
@@ -75,6 +76,7 @@ export function appleRuntimesToOptions(runtimes: AppleSimulatorRuntime[]): NewDe
         models: runtime.supportedDeviceTypes.map((deviceType) => ({
           value: deviceType.identifier,
           label: deviceType.name,
+          supported: isSupportedAppleDeviceType(deviceType),
         })),
       }))
       .filter((runtime) => runtime.models.length > 0)
@@ -88,7 +90,12 @@ export function androidImagesToOptions(
   profiles: AndroidDeviceProfile[]
 ): NewDeviceOptions {
   const models = profiles
-    .map((profile) => ({ value: profile.id, label: profile.name || profile.id }))
+    .map((profile) => ({
+      profile,
+      value: profile.id,
+      label: profile.name || profile.id,
+      supported: isSupportedAndroidDeviceProfile(profile),
+    }))
     .sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 
   return {
@@ -96,11 +103,28 @@ export function androidImagesToOptions(
       .map((image) => ({
         value: image.package,
         label: androidImageLabel(image),
-        models,
+        models: models
+          .filter(({ profile }) => isAndroidProfileCompatibleWithImage(profile, image))
+          .map(({ profile: _profile, ...model }) => model),
       }))
       .filter((runtime) => runtime.models.length > 0)
       .sort((a, b) => compareVersionsDescending(a.label, b.label)),
   };
+}
+
+const MOBILE_SYSTEM_IMAGE_TAG_PREFIXES = ['default', 'google_apis'];
+
+function isAndroidProfileCompatibleWithImage(
+  profile: AndroidDeviceProfile,
+  image: AndroidSystemImage
+): boolean {
+  if (profile.tag === null) {
+    if (image.tag === null) return true;
+    return MOBILE_SYSTEM_IMAGE_TAG_PREFIXES.some((prefix) => image.tag?.startsWith(prefix));
+  }
+
+  if (image.tag === null) return false;
+  return profile.tag.startsWith(image.tag) || image.tag.startsWith(profile.tag);
 }
 
 function androidImageLabel(image: AndroidSystemImage): string {

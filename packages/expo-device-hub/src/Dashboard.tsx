@@ -27,6 +27,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { basePath } from './dashboard/basePath';
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
+import {
+  useHideUnsupportedDevices,
+  visibleDevices,
+  visibleNewDeviceOptions,
+} from './dashboard/deviceVisibility';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
 import { useIsNarrow } from './dashboard/useIsNarrow';
@@ -91,6 +96,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const { booted, recent } = useDeviceLists();
   // Installed runtimes/system images and models for the new-device forms.
   const newDeviceOptions = useNewDeviceOptions();
+  const hideUnsupportedDevices = useHideUnsupportedDevices();
   const [selectedId, setSelectedId] = useState('');
   // Devices started through the picker, retained until host discovery catches up.
   const [added, setAdded] = useState<Device[]>([]);
@@ -138,6 +144,24 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           ),
     [booted.emulators, added, platform]
   );
+  // The browser flag affects only shut-down recents and creation choices. Every
+  // running device remains visible in the sidebar, including untested models.
+  const recentSimulators = useMemo(
+    () => visibleDevices(recent.simulators, hideUnsupportedDevices),
+    [recent.simulators, hideUnsupportedDevices]
+  );
+  const recentEmulators = useMemo(
+    () => visibleDevices(recent.emulators, hideUnsupportedDevices),
+    [recent.emulators, hideUnsupportedDevices]
+  );
+  const simulatorOptions = useMemo(
+    () => visibleNewDeviceOptions(newDeviceOptions.ios, hideUnsupportedDevices),
+    [newDeviceOptions.ios, hideUnsupportedDevices]
+  );
+  const emulatorOptions = useMemo(
+    () => visibleNewDeviceOptions(newDeviceOptions.android, hideUnsupportedDevices),
+    [newDeviceOptions.android, hideUnsupportedDevices]
+  );
 
   // Create/boot the chosen target on the host. The modal awaits this result, so
   // it stays open during slow Android boots and can show failures in context.
@@ -163,6 +187,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             platform: source.platform,
             physical: false,
             booted: true,
+            supported: source.supported,
             lastUsedAt: Date.now(),
           }
         : { ...source, id: result.id, booted: true, lastUsedAt: Date.now() };
@@ -257,10 +282,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           <Sidebar
             simulators={simulators}
             emulators={emulators}
-            recentSimulators={recent.simulators}
-            recentEmulators={recent.emulators}
-            simulatorOptions={newDeviceOptions.ios}
-            emulatorOptions={newDeviceOptions.android}
+            recentSimulators={recentSimulators}
+            recentEmulators={recentEmulators}
+            simulatorOptions={simulatorOptions}
+            emulatorOptions={emulatorOptions}
             selectedId={selectedId}
             onSelect={setSelectedId}
             onAddDevice={handleAddDevice}
@@ -355,10 +380,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             <Sidebar
               simulators={simulators}
               emulators={emulators}
-              recentSimulators={recent.simulators}
-              recentEmulators={recent.emulators}
-              simulatorOptions={newDeviceOptions.ios}
-              emulatorOptions={newDeviceOptions.android}
+              recentSimulators={recentSimulators}
+              recentEmulators={recentEmulators}
+              simulatorOptions={simulatorOptions}
+              emulatorOptions={emulatorOptions}
               selectedId={selectedId}
               onSelect={setSelectedId}
               onAddDevice={handleAddDevice}

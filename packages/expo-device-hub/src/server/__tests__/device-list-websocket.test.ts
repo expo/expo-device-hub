@@ -15,6 +15,7 @@ const IOS = {
   platform: 'ios' as const,
   booted: true,
   physical: false,
+  supported: true,
   lastUsedAt: 123,
 };
 
@@ -25,6 +26,7 @@ const ANDROID = {
   platform: 'android' as const,
   booted: false,
   physical: false,
+  supported: true,
   lastUsedAt: 456,
 };
 

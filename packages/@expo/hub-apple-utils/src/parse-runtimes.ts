@@ -46,7 +46,7 @@ function toDeviceType(entry: Record<string, unknown>): AppleSimulatorDeviceType 
   return {
     identifier: asString(entry.identifier) ?? "",
     name: asString(entry.name) ?? "",
-    productFamily: asString(entry.productFamily) ?? null,
+    productFamily: asString(entry.productFamily) || null,
   };
 }
 

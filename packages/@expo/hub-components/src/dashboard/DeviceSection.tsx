@@ -109,6 +109,7 @@ export function DeviceSection({
               key={device.id}
               name={device.name}
               version={device.version}
+              unsupported={!device.supported}
               selected={device.id === selectedId}
               onClick={() => onSelect(device.id)}
             />

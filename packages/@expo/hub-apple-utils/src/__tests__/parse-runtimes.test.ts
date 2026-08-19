@@ -90,6 +90,29 @@ describe("parseRuntimes", () => {
     expect(parseRuntimes(json).value[0]?.isAvailable).toBe(false);
   });
 
+  test("defaults missing or invalid product families to null", () => {
+    const json = JSON.stringify({
+      runtimes: [
+        {
+          identifier: "ios",
+          platform: "iOS",
+          supportedDeviceTypes: [
+            { identifier: "missing-family", name: "Missing Family" },
+            { identifier: "invalid-family", productFamily: 123 },
+            { identifier: "empty-family", productFamily: "" },
+          ],
+        },
+      ],
+    });
+
+    const parsed = parseRuntimes(json).value;
+    expect(parsed[0]?.supportedDeviceTypes.map((device) => device.productFamily)).toEqual([
+      null,
+      null,
+      null,
+    ]);
+  });
+
   test("drops entries without an identifier", () => {
     const json = JSON.stringify({ runtimes: [{ name: "No id" }, { identifier: "keep" }] });
     expect(parseRuntimes(json).value.map((r) => r.identifier)).toEqual(["keep"]);
