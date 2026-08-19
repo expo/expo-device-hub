@@ -43,20 +43,10 @@ function toDeviceTypes(value: unknown): AppleSimulatorDeviceType[] {
 }
 
 function toDeviceType(entry: Record<string, unknown>): AppleSimulatorDeviceType {
-  const identifier = asString(entry.identifier) ?? "";
-  const name = asString(entry.name) ?? "";
-  const productFamily = asString(entry.productFamily) || null;
-
-  if (productFamily === null) {
-    console.warn(
-      `[apple-utils] Failed to parse productFamily for Apple device type: ${identifier || name || "unknown"}`,
-    );
-  }
-
   return {
-    identifier,
-    name,
-    productFamily,
+    identifier: asString(entry.identifier) ?? "",
+    name: asString(entry.name) ?? "",
+    productFamily: asString(entry.productFamily) || null,
   };
 }
 

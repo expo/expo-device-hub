@@ -1,4 +1,4 @@
-import { describe, expect, spyOn, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { parseRuntimes } from "../parse-runtimes";
 
 const RUNTIMES_JSON = JSON.stringify({
@@ -90,8 +90,7 @@ describe("parseRuntimes", () => {
     expect(parseRuntimes(json).value[0]?.isAvailable).toBe(false);
   });
 
-  test("warns per Apple device type whose product family cannot be parsed", () => {
-    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+  test("defaults missing or invalid product families to null", () => {
     const json = JSON.stringify({
       runtimes: [
         {
@@ -103,41 +102,15 @@ describe("parseRuntimes", () => {
             { identifier: "empty-family", productFamily: "" },
           ],
         },
-        {
-          identifier: "tvos",
-          platform: "tvOS",
-          supportedDeviceTypes: [{ identifier: "missing-tvos-family" }],
-        },
       ],
     });
 
-    try {
-      const parsed = parseRuntimes(json).value;
-      expect(parsed[0]?.supportedDeviceTypes.map((device) => device.productFamily)).toEqual([
-        null,
-        null,
-        null,
-      ]);
-      expect(warnSpy).toHaveBeenCalledTimes(4);
-      expect(warnSpy).toHaveBeenNthCalledWith(
-        1,
-        "[apple-utils] Failed to parse productFamily for Apple device type: missing-family",
-      );
-      expect(warnSpy).toHaveBeenNthCalledWith(
-        2,
-        "[apple-utils] Failed to parse productFamily for Apple device type: invalid-family",
-      );
-      expect(warnSpy).toHaveBeenNthCalledWith(
-        3,
-        "[apple-utils] Failed to parse productFamily for Apple device type: empty-family",
-      );
-      expect(warnSpy).toHaveBeenNthCalledWith(
-        4,
-        "[apple-utils] Failed to parse productFamily for Apple device type: missing-tvos-family",
-      );
-    } finally {
-      warnSpy.mockRestore();
-    }
+    const parsed = parseRuntimes(json).value;
+    expect(parsed[0]?.supportedDeviceTypes.map((device) => device.productFamily)).toEqual([
+      null,
+      null,
+      null,
+    ]);
   });
 
   test("drops entries without an identifier", () => {
