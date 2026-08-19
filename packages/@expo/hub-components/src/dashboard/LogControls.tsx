@@ -21,6 +21,9 @@ export function LogControls({
         display: 'flex',
         alignItems: 'center',
         gap: 10,
+        width: '100%',
+        minWidth: 0,
+        boxSizing: 'border-box',
         padding: '10px 20px',
         backgroundColor: bg.subtle,
       }}>
@@ -28,9 +31,13 @@ export function LogControls({
         style={{
           ...textSize['2xs'],
           flex: 1,
+          minWidth: 0,
           fontFamily: font.mono,
           fontWeight: 400,
           color: text.tertiary,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
         }}>
         {count} {count === 1 ? 'line' : 'lines'}
       </span>

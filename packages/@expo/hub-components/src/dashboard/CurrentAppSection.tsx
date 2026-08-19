@@ -3,7 +3,7 @@ import { bg, border, font, heading, icon, radius, text, textSize } from '../prim
 import { SidebarSectionHeading } from './SidebarRow';
 
 const APP_ICON_SIZE = 52;
-const UNKNOWN_VALUE = 'Unknown';
+const UNKNOWN_VALUE = 'unknown';
 
 type AppDetail = {
   label: string;

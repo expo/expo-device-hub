@@ -17,7 +17,12 @@ export function SidebarActionButton({
       theme="secondary"
       disabled={disabled}
       onClick={onClick}
-      style={{ borderRadius: radius.full, paddingInline: 14, fontWeight: 600 }}>
+      style={{
+        flexShrink: 0,
+        borderRadius: radius.full,
+        paddingInline: 14,
+        fontWeight: 600,
+      }}>
       {children}
     </Button>
   );

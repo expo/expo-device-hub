@@ -1,6 +1,6 @@
 import { type DeviceClient } from '@expo/hub-client';
 import { SidebarActionButton } from './SidebarActionButton';
-import { SidebarRow, SidebarSwitch } from './SidebarRow';
+import { SidebarRow } from './SidebarRow';
 
 /** iOS keyboard connection controls. Browser HID forwarding stays independent. */
 export function KeyboardSection({ client }: { client: DeviceClient }) {
@@ -9,12 +9,11 @@ export function KeyboardSection({ client }: { client: DeviceClient }) {
   return (
     <section aria-label="Keyboard settings">
       <SidebarRow label="Hardware keyboard" flushTop>
-        <SidebarSwitch
-          checked={connected ?? false}
+        <SidebarActionButton
           disabled={connected === null}
-          label="Hardware keyboard"
-          onChange={(next) => client.setHardwareKeyboardConnected(next)}
-        />
+          onClick={() => client.setHardwareKeyboardConnected(!connected)}>
+          Toggle
+        </SidebarActionButton>
       </SidebarRow>
       <SidebarRow label="Software keyboard">
         <SidebarActionButton

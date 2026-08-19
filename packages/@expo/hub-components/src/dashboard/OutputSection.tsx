@@ -23,6 +23,7 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         display: 'flex',
         flexDirection: 'column',
         flex: 1,
+        minWidth: 0,
         minHeight: 0,
       }}>
       <div>
@@ -39,7 +40,13 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         </SidebarRow>
       </div>
       {logsOpen && (
-        <div style={{ marginInline: -24 }}>
+        <div
+          style={{
+            width: 'calc(100% + 48px)',
+            minWidth: 0,
+            marginInline: -24,
+            boxSizing: 'border-box',
+          }}>
           <LogControls
             count={logs.length}
             running={logsEnabled}
