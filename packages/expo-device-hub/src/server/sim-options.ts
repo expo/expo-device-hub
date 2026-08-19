@@ -9,13 +9,44 @@ import {
 import { type AppleSimulatorRuntime, listRuntimes } from '@expo/hub-apple-utils';
 import { type NewDeviceOptions, type Platform } from '@expo/hub-components';
 
+import { type PlatformFilter } from '../platform-filter';
 import { type SerializableError, toSerializableError } from './utility-errors';
 
 export type NewDeviceOptionsByPlatform = Record<Platform, NewDeviceOptions>;
 export type NewDeviceOptionsResponse = NewDeviceOptionsByPlatform & { errors: SerializableError[] };
 
-/** Discover installed iOS runtimes and Android images/profiles in parallel. */
-export async function listNewDeviceOptions(): Promise<NewDeviceOptionsResponse> {
+const EMPTY_OPTIONS: NewDeviceOptions = { runtimes: [] };
+
+/** Discover installed runtimes and profiles for the requested platform(s). */
+export async function listNewDeviceOptions(
+  platform?: PlatformFilter
+): Promise<NewDeviceOptionsResponse> {
+  if (platform === 'ios') {
+    const appleRuntimes = await listRuntimes();
+    return {
+      ios: appleRuntimesToOptions(appleRuntimes.value),
+      android: EMPTY_OPTIONS,
+      errors: [toSerializableError(appleRuntimes.error)].filter(
+        (error): error is SerializableError => error !== null
+      ),
+    };
+  }
+
+  if (platform === 'android') {
+    const [androidImages, androidProfiles] = await Promise.all([
+      listSystemImages(),
+      listDeviceProfiles(),
+    ]);
+    return {
+      ios: EMPTY_OPTIONS,
+      android: androidImagesToOptions(androidImages.value, androidProfiles.value),
+      errors: [
+        toSerializableError(androidImages.error),
+        toSerializableError(androidProfiles.error),
+      ].filter((error): error is SerializableError => error !== null),
+    };
+  }
+
   const [appleRuntimes, androidImages, androidProfiles] = await Promise.all([
     listRuntimes(),
     listSystemImages(),
@@ -78,10 +109,10 @@ function androidImageLabel(image: AndroidSystemImage): string {
     image.tag === 'google_apis'
       ? 'Google APIs'
       : image.tag === 'google_apis_playstore'
-      ? 'Google Play'
-      : image.tag === 'default'
-      ? 'AOSP'
-      : image.tag?.replaceAll('_', ' ');
+        ? 'Google Play'
+        : image.tag === 'default'
+          ? 'AOSP'
+          : image.tag?.replaceAll('_', ' ');
   return [api, tag, image.abi].filter(Boolean).join(' · ');
 }
 

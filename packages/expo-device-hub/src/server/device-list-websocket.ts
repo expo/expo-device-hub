@@ -1,5 +1,6 @@
 import { DEVICE_LIST_MESSAGE_TYPE } from '../device-list-protocol';
 import { type HubDevice, type HubDeviceList, listDevices } from './devices';
+import { SERVER_PLATFORM_FILTER } from './platform-filter';
 
 const POLL_INTERVAL_MS = 500;
 
@@ -39,7 +40,7 @@ export class DeviceListBroadcaster {
   #fingerprint: string | null = null;
 
   constructor(options: DeviceListBroadcasterOptions = {}) {
-    this.#load = options.load ?? listDevices;
+    this.#load = options.load ?? (() => listDevices(SERVER_PLATFORM_FILTER));
     this.#intervalMs = options.intervalMs ?? POLL_INTERVAL_MS;
     this.#schedule = options.schedule ?? setTimeout;
     this.#cancelSchedule = options.cancelSchedule ?? clearTimeout;
