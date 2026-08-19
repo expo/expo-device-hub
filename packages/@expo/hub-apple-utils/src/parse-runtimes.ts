@@ -25,28 +25,49 @@ export function parseRuntimes(json: string): AppleUtilsResult<AppleSimulatorRunt
 }
 
 function toRuntime(entry: Record<string, unknown>): AppleSimulatorRuntime {
+  const platform = asString(entry.platform) ?? null;
+
   return {
     identifier: asString(entry.identifier) ?? "",
     name: asString(entry.name) ?? "",
     version: asString(entry.version) ?? "",
     // simctl spells this `buildversion` (all lowercase).
     buildVersion: asString(entry.buildversion) ?? null,
-    platform: asString(entry.platform) ?? null,
+    platform,
     isAvailable: entry.isAvailable === true,
-    supportedDeviceTypes: toDeviceTypes(entry.supportedDeviceTypes),
+    supportedDeviceTypes: toDeviceTypes(entry.supportedDeviceTypes, platform === "iOS"),
   };
 }
 
-function toDeviceTypes(value: unknown): AppleSimulatorDeviceType[] {
+function toDeviceTypes(
+  value: unknown,
+  warnForMissingProductFamily: boolean,
+): AppleSimulatorDeviceType[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(isRecord).map(toDeviceType).filter(hasIdentifier);
+  return value
+    .filter(isRecord)
+    .map((entry) => toDeviceType(entry, warnForMissingProductFamily))
+    .filter(hasIdentifier);
 }
 
-function toDeviceType(entry: Record<string, unknown>): AppleSimulatorDeviceType {
+function toDeviceType(
+  entry: Record<string, unknown>,
+  warnForMissingProductFamily: boolean,
+): AppleSimulatorDeviceType {
+  const identifier = asString(entry.identifier) ?? "";
+  const name = asString(entry.name) ?? "";
+  const productFamily = asString(entry.productFamily) || null;
+
+  if (warnForMissingProductFamily && productFamily === null) {
+    console.warn(
+      `[apple-utils] Failed to parse productFamily for iOS device type: ${identifier || name || "unknown"}`,
+    );
+  }
+
   return {
-    identifier: asString(entry.identifier) ?? "",
-    name: asString(entry.name) ?? "",
-    productFamily: asString(entry.productFamily) ?? null,
+    identifier,
+    name,
+    productFamily,
   };
 }
 

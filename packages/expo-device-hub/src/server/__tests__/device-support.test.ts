@@ -10,12 +10,9 @@ import {
 
 describe('iOS device support', () => {
   test('supports iPhone simulator types and rejects other Apple families', () => {
-    expect(isSupportedAppleDeviceType({ identifier: 'iphone-16', productFamily: 'iPhone' })).toBe(
-      true,
-    );
-    expect(isSupportedAppleDeviceType({ identifier: 'ipad-pro', productFamily: 'iPad' })).toBe(
-      false,
-    );
+    expect(isSupportedAppleDeviceType({ productFamily: 'iPhone' })).toBe(true);
+    expect(isSupportedAppleDeviceType({ productFamily: 'iPad' })).toBe(false);
+    expect(isSupportedAppleDeviceType({ productFamily: null })).toBe(false);
   });
 
   test('classifies existing simulators from their device type identifier', () => {

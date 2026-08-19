@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { parseRuntimes } from "../parse-runtimes";
 
 const RUNTIMES_JSON = JSON.stringify({
@@ -88,6 +88,52 @@ describe("parseRuntimes", () => {
   test("defaults isAvailable to false when absent or not a boolean", () => {
     const json = JSON.stringify({ runtimes: [{ identifier: "x", isAvailable: "true" }] });
     expect(parseRuntimes(json).value[0]?.isAvailable).toBe(false);
+  });
+
+  test("warns per iOS device type whose product family cannot be parsed", () => {
+    const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+    const json = JSON.stringify({
+      runtimes: [
+        {
+          identifier: "ios",
+          platform: "iOS",
+          supportedDeviceTypes: [
+            { identifier: "missing-family", name: "Missing Family" },
+            { identifier: "invalid-family", productFamily: 123 },
+            { identifier: "empty-family", productFamily: "" },
+          ],
+        },
+        {
+          identifier: "tvos",
+          platform: "tvOS",
+          supportedDeviceTypes: [{ identifier: "silent-non-ios" }],
+        },
+      ],
+    });
+
+    try {
+      const parsed = parseRuntimes(json).value;
+      expect(parsed[0]?.supportedDeviceTypes.map((device) => device.productFamily)).toEqual([
+        null,
+        null,
+        null,
+      ]);
+      expect(warnSpy).toHaveBeenCalledTimes(3);
+      expect(warnSpy).toHaveBeenNthCalledWith(
+        1,
+        "[apple-utils] Failed to parse productFamily for iOS device type: missing-family",
+      );
+      expect(warnSpy).toHaveBeenNthCalledWith(
+        2,
+        "[apple-utils] Failed to parse productFamily for iOS device type: invalid-family",
+      );
+      expect(warnSpy).toHaveBeenNthCalledWith(
+        3,
+        "[apple-utils] Failed to parse productFamily for iOS device type: empty-family",
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 
   test("drops entries without an identifier", () => {

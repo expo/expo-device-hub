@@ -3,11 +3,9 @@ import { type AppleDevice, type AppleSimulatorDeviceType } from '@expo/hub-apple
 
 /** Hub currently supports and tests iPhone simulator hardware only. */
 export function isSupportedAppleDeviceType(
-  deviceType: Pick<AppleSimulatorDeviceType, 'identifier' | 'productFamily'>,
+  deviceType: Pick<AppleSimulatorDeviceType, 'productFamily'>,
 ): boolean {
-  return (
-    deviceType.productFamily === 'iPhone' || isIphoneDeviceTypeIdentifier(deviceType.identifier)
-  );
+  return deviceType.productFamily === 'iPhone';
 }
 
 /** Classify an existing simulator from the device-type identifier reported by simctl. */
