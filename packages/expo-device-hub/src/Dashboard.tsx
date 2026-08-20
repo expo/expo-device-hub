@@ -13,7 +13,6 @@ import {
   LogSidebar,
   ResizeHandle,
   Sidebar,
-  SidebarToggle,
   StreamPanel,
   type StreamModeAvailability,
   bg,
@@ -33,6 +32,10 @@ import {
 } from './dashboard/deviceVisibility';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
+import {
+  FloatingSidebarToggle,
+  floatingSidebarToggleInset,
+} from './dashboard/FloatingSidebarToggle';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 import { SidebarOverlay } from './dashboard/SidebarOverlay';
 import { useSidebarLayout } from './dashboard/useSidebarLayout';
@@ -372,27 +375,27 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
       )}
 
       {!sidebars.leftOpen && (
-        <div
-          style={{
-            position: 'absolute',
-            top: sidebars.rightOverlay ? 80 : 24,
-            left: 24,
-            zIndex: 15,
-          }}>
-          <SidebarToggle floating onClick={sidebars.openLeft} />
-        </div>
+        <FloatingSidebarToggle
+          side="left"
+          inset={floatingSidebarToggleInset(
+            sidebars.rightOverlay,
+            sidebars.containerWidth,
+            logsWidth
+          )}
+          onClick={sidebars.openLeft}
+        />
       )}
 
       {!sidebars.rightOpen && (
-        <div
-          style={{
-            position: 'absolute',
-            top: sidebars.leftOverlay ? 80 : 24,
-            right: 24,
-            zIndex: 15,
-          }}>
-          <SidebarToggle floating side="right" onClick={sidebars.openRight} />
-        </div>
+        <FloatingSidebarToggle
+          side="right"
+          inset={floatingSidebarToggleInset(
+            sidebars.leftOverlay,
+            sidebars.containerWidth,
+            sidebarWidth
+          )}
+          onClick={sidebars.openRight}
+        />
       )}
     </div>
   );
