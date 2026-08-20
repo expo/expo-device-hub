@@ -2,11 +2,11 @@ import { parseArgs } from 'node:util';
 
 import { parsePlatformFilter, type PlatformFilter } from '../../platform-filter';
 import {
-  DEFAULT_STREAM_MODE,
-  parseStreamMode,
-  STREAM_MODES,
-  type StreamMode,
-} from '../../stream-mode';
+  DEFAULT_TRANSPORT,
+  parseTransport,
+  TRANSPORTS,
+  type Transport,
+} from '../../transport';
 
 export const DEFAULT_PORT = 3400;
 
@@ -18,7 +18,7 @@ Options:
   -p, --port <port>          Port to listen on (default: ${DEFAULT_PORT}, or the next available port)
       --host <host>          Host to bind (default: 127.0.0.1; use 0.0.0.0 to expose on your local network)
       --platform <platform>  Show only iOS simulators or Android emulators (ios or android)
-      --stream-mode <mode>   Preferred stream mode: ${STREAM_MODES.join(', ')} (default: ${DEFAULT_STREAM_MODE})
+      --transport <transport> Preferred transport: ${TRANSPORTS.join(', ')} (default: ${DEFAULT_TRANSPORT})
   -h, --help                 Show this help
 `;
 
@@ -26,7 +26,7 @@ export type CliOptions = {
   port?: number;
   host: string;
   platform?: PlatformFilter;
-  streamMode?: StreamMode;
+  transport?: Transport;
   help: boolean;
 };
 
@@ -35,7 +35,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     port?: string;
     host: string;
     platform?: string;
-    'stream-mode'?: string;
+    transport?: string;
     help: boolean;
   };
   try {
@@ -48,7 +48,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         // v6-only listener leaves the advertised stream/ws endpoints unreachable.
         host: { type: 'string', default: '127.0.0.1' },
         platform: { type: 'string' },
-        'stream-mode': { type: 'string' },
+        transport: { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
       },
     }));
@@ -68,10 +68,10 @@ export function parseCliOptions(args: string[]): CliOptions {
     throw new Error(`Invalid --platform: ${values.platform}\n\n${HELP}`);
   }
 
-  const streamMode = parseStreamMode(values['stream-mode']);
-  if (values['stream-mode'] !== undefined && streamMode === undefined) {
-    throw new Error(`Invalid --stream-mode: ${values['stream-mode']}\n\n${HELP}`);
+  const transport = parseTransport(values.transport);
+  if (values.transport !== undefined && transport === undefined) {
+    throw new Error(`Invalid --transport: ${values.transport}\n\n${HELP}`);
   }
 
-  return { port, host: values.host, platform, streamMode, help: false };
+  return { port, host: values.host, platform, transport, help: false };
 }

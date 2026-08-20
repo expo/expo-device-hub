@@ -18,9 +18,9 @@
         if (platform === 'ios' || platform === 'android') {
           window.__EXPO_DEVICE_HUB_PLATFORM__ = platform;
         }
-        var streamMode = '{{streamMode}}';
-        if (streamMode === 'mjpeg' || streamMode === 'h264' || streamMode === 'webrtc') {
-          window.__EXPO_DEVICE_HUB_STREAM_MODE__ = streamMode;
+        var transport = '{{transport}}';
+        if (transport === 'mjpeg' || transport === 'h264' || transport === 'webrtc') {
+          window.__EXPO_DEVICE_HUB_TRANSPORT__ = transport;
         }
       })();
     </script>

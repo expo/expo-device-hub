@@ -41,7 +41,7 @@ import {
   resolveStreamMode,
 } from './dashboard/streamMode';
 import { dashboardPlatformFilter } from './platform-filter';
-import { dashboardStreamMode } from './stream-mode';
+import { dashboardTransport } from './transport';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -109,7 +109,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     []
   );
   const [streamMode, setStreamMode] = useState<DeviceStreamMode>(() =>
-    resolveStreamMode(dashboardStreamMode(), streamModeAvailability)
+    resolveStreamMode(dashboardTransport(), streamModeAvailability)
   );
   const handleStreamModeChange = (mode: DeviceStreamMode) => {
     setStreamMode(resolveStreamMode(mode, streamModeAvailability));

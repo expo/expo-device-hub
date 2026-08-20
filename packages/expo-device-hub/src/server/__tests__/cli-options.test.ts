@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseCliOptions } from '../cli/options';
+import { HELP, parseCliOptions } from '../cli/options';
 
 describe('parseCliOptions', () => {
   test('keeps the existing defaults when no options are provided', () => {
@@ -8,7 +8,7 @@ describe('parseCliOptions', () => {
       port: undefined,
       host: '127.0.0.1',
       platform: undefined,
-      streamMode: undefined,
+      transport: undefined,
       help: false,
     });
   });
@@ -22,15 +22,21 @@ describe('parseCliOptions', () => {
     expect(() => parseCliOptions(['--platform', 'web'])).toThrow('Invalid --platform: web');
   });
 
-  test('accepts each supported stream mode', () => {
-    expect(parseCliOptions(['--stream-mode', 'mjpeg']).streamMode).toBe('mjpeg');
-    expect(parseCliOptions(['--stream-mode=h264']).streamMode).toBe('h264');
-    expect(parseCliOptions(['--stream-mode', 'webrtc']).streamMode).toBe('webrtc');
+  test('accepts each supported transport', () => {
+    expect(parseCliOptions(['--transport', 'mjpeg']).transport).toBe('mjpeg');
+    expect(parseCliOptions(['--transport=h264']).transport).toBe('h264');
+    expect(parseCliOptions(['--transport', 'webrtc']).transport).toBe('webrtc');
   });
 
-  test('rejects unsupported stream modes', () => {
-    expect(() => parseCliOptions(['--stream-mode', 'auto'])).toThrow(
-      'Invalid --stream-mode: auto'
+  test('rejects unsupported transports', () => {
+    expect(() => parseCliOptions(['--transport', 'auto'])).toThrow('Invalid --transport: auto');
+  });
+
+  test('replaces the old stream-mode flag', () => {
+    expect(HELP).toContain('--transport <transport>');
+    expect(HELP).not.toContain('--stream-mode');
+    expect(() => parseCliOptions(['--stream-mode', 'webrtc'])).toThrow(
+      "Unknown option '--stream-mode'"
     );
   });
 
@@ -39,7 +45,7 @@ describe('parseCliOptions', () => {
       port: 4300,
       host: '0.0.0.0',
       platform: undefined,
-      streamMode: undefined,
+      transport: undefined,
       help: false,
     });
     expect(parseCliOptions(['--help'])).toEqual({ host: '127.0.0.1', help: true });

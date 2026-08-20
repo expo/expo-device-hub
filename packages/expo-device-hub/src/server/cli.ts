@@ -67,10 +67,10 @@ async function main(): Promise<void> {
   } else {
     delete process.env.EXPO_DEVICE_HUB_PLATFORM;
   }
-  if (options.streamMode) {
-    process.env.EXPO_DEVICE_HUB_STREAM_MODE = options.streamMode;
+  if (options.transport) {
+    process.env.EXPO_DEVICE_HUB_TRANSPORT = options.transport;
   } else {
-    delete process.env.EXPO_DEVICE_HUB_STREAM_MODE;
+    delete process.env.EXPO_DEVICE_HUB_TRANSPORT;
   }
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
   const hubServer = (await import('./index.mjs')) as HubServerModule;
