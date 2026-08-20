@@ -56,7 +56,7 @@ export function Sidebar({
         flexShrink: 0,
         height: '100vh',
         boxSizing: 'border-box',
-        padding: '32px 24px 32px 48px',
+        padding: '32px 24px',
         overflow: 'hidden',
       }}>
       <div

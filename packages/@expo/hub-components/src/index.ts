@@ -32,6 +32,10 @@ export { Dropdown } from './components/Dropdown';
 export { DropdownItem } from './components/DropdownItem';
 export { Logo } from './components/Logo';
 export { ResizeHandle } from './components/ResizeHandle';
+export {
+  SegmentedControl,
+  type SegmentedControlOption,
+} from './components/SegmentedControl';
 export { SidebarToggle } from './components/SidebarToggle';
 export { Switch, type SwitchProps } from './components/Switch';
 export { cx } from './components/cx';
@@ -52,6 +56,7 @@ export { EmptyState } from './dashboard/EmptyState';
 export { DeviceSection, type DeviceSectionProps } from './dashboard/DeviceSection';
 export { OutputSection } from './dashboard/OutputSection';
 export { CurrentAppSection } from './dashboard/CurrentAppSection';
+export { DeviceOptionsSection } from './dashboard/DeviceOptionsSection';
 export { KeyboardSection } from './dashboard/KeyboardSection';
 export { PhoneFrame } from './dashboard/PhoneFrame';
 export { LogControls } from './dashboard/LogControls';
