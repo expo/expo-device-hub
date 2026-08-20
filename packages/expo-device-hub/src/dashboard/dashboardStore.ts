@@ -57,7 +57,12 @@ export function persistHideUnsupportedDevicesDefault(storage: WritableStorage): 
 }
 
 function initialHideUnsupportedDevices(): boolean {
-  return typeof window === 'undefined' ? true : readHideUnsupportedDevices(window.localStorage);
+  if (typeof window === 'undefined') return true;
+  try {
+    return readHideUnsupportedDevices(window.localStorage);
+  } catch {
+    return true;
+  }
 }
 
 function defaultDashboardStoreValues(): DashboardStoreValues {

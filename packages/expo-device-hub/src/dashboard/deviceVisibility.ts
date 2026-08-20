@@ -1,49 +1,43 @@
 import { type Device, type NewDeviceOptions } from '@expo/hub-components';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 
-export const HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY =
-  'expo-device-hub.hideUnsupportedDevices';
+import {
+  HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY,
+  persistHideUnsupportedDevicesDefault,
+  readHideUnsupportedDevices,
+  useDashboardStore,
+} from './dashboardStore';
 
-type ReadableStorage = Pick<Storage, 'getItem'>;
-type WritableStorage = Pick<Storage, 'getItem' | 'setItem'>;
-
-/** Missing or malformed values use the safe default: hide untested devices. */
-export function readHideUnsupportedDevices(storage: ReadableStorage): boolean {
-  try {
-    return storage.getItem(HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY) !== 'false';
-  } catch {
-    return true;
-  }
-}
-
-/** Persist the default so the browser flag is visible and easy to override. */
-export function persistHideUnsupportedDevicesDefault(storage: WritableStorage): void {
-  try {
-    if (storage.getItem(HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY) === null) {
-      storage.setItem(HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY, 'true');
-    }
-  } catch {
-    // Storage can be unavailable in restricted browser contexts; retain the in-memory default.
-  }
-}
+export {
+  HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY,
+  persistHideUnsupportedDevicesDefault,
+  readHideUnsupportedDevices,
+};
 
 /** Read the browser flag and keep it in sync when another tab changes local storage. */
 export function useHideUnsupportedDevices(): boolean {
-  const [hideUnsupported, setHideUnsupported] = useState(() =>
-    readHideUnsupportedDevices(window.localStorage)
-  );
+  const hideUnsupported = useDashboardStore((state) => state.hideUnsupportedDevices);
+  const setHideUnsupported = useDashboardStore((state) => state.setHideUnsupportedDevices);
 
   useEffect(() => {
     persistHideUnsupportedDevicesDefault(window.localStorage);
 
+    const syncFromStorage = (event?: StorageEvent) => {
+      if (event && event.key !== null && event.key !== HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY) {
+        return;
+      }
+      setHideUnsupported(readHideUnsupportedDevices(window.localStorage));
+    };
+    syncFromStorage();
+
     const onStorage = (event: StorageEvent) => {
       if (event.key === null || event.key === HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY) {
-        setHideUnsupported(readHideUnsupportedDevices(window.localStorage));
+        syncFromStorage(event);
       }
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
-  }, []);
+  }, [setHideUnsupported]);
 
   return hideUnsupported;
 }
