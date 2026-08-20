@@ -24,7 +24,6 @@ export function LogControls({
         width: '100%',
         minWidth: 0,
         boxSizing: 'border-box',
-        padding: '10px 20px',
         backgroundColor: bg.subtle,
       }}>
       <span

@@ -40,13 +40,7 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         </SidebarRow>
       </div>
       {logsOpen && (
-        <div
-          style={{
-            width: 'calc(100% + 48px)',
-            minWidth: 0,
-            marginInline: -24,
-            boxSizing: 'border-box',
-          }}>
+        <div style={{ width: '100%', minWidth: 0 }}>
           <LogControls
             count={logs.length}
             running={logsEnabled}

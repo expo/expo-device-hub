@@ -11,7 +11,6 @@ export function LogRow({ entry }: { entry: LogEntry }) {
         display: 'flex',
         alignItems: 'flex-start',
         gap: 8,
-        margin: '0 20px',
         padding: '8px 0',
         borderBottom: `1px solid ${border.secondary}`,
       }}>
