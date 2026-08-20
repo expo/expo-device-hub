@@ -28,7 +28,7 @@ export type DashboardStore = DashboardStoreValues & {
   dismissDevice: (id: string) => void;
   chooseStreamMode: (mode: DeviceStreamMode, availability: StreamModeAvailability) => void;
   resizeSidebar: (side: SidebarSide, width: number) => void;
-  openSidebar: (side: SidebarSide, fits: boolean) => void;
+  openSidebar: (side: SidebarSide, canDock: boolean) => void;
   closeSidebar: (side: SidebarSide) => void;
   setHideUnsupportedDevices: (hide: boolean) => void;
 };
@@ -106,11 +106,11 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
       set({ streamMode: resolveStreamMode(mode, availability) }),
     resizeSidebar: (side, width) =>
       set((state) => ({ sidebarWidths: { ...state.sidebarWidths, [side]: width } })),
-    openSidebar: (side, fits) =>
+    openSidebar: (side, canDock) =>
       set((state) => ({
         sidebarPreferences: {
           ...state.sidebarPreferences,
-          [side]: fits ? 'auto' : 'open',
+          [side]: canDock ? 'auto' : 'open',
         },
         lastOpenedSidebar: side,
       })),
