@@ -13,8 +13,8 @@ import { deviceScreenClipPath } from './deviceScreenClipPath';
 
 const SHADOW = '0 40px 80px rgba(0, 0, 0, 0.4), 0 12px 28px rgba(0, 0, 0, 0.28)';
 
-// Room reserved for the controls + panel padding when sizing by height.
-const RESERVED_VERTICAL = 210;
+// Room reserved for the title, controls, gaps, and panel padding when sizing by height.
+const RESERVED_VERTICAL = 250;
 
 // Cap on the device's *short* side (portrait width / landscape height). Sizing
 // by the short side keeps the physical phone the same size across rotations:

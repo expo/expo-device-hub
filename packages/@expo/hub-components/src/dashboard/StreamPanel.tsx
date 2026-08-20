@@ -8,6 +8,7 @@ import {
 } from '@expo/hub-client';
 import { bg, border, radius, shadow } from '../primitives';
 import { type Device } from './data';
+import { DeviceTitle } from './DeviceTitle';
 import { PhoneFrame } from './PhoneFrame';
 import { StreamControls } from './StreamControls';
 
@@ -85,13 +86,24 @@ export function StreamPanel({
         boxShadow: framed ? shadow.sm : 'none',
         overflow: 'hidden',
       }}>
-      <PhoneFrame
-        platform={device.platform}
-        client={client}
-        agentInteraction={agentInteraction}
-        DeviceScreen={DeviceScreen}
-        displayScreen={displayScreen}
-      />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          gap: 12,
+          width: '100%',
+          minHeight: 0,
+        }}>
+        <DeviceTitle key={device.id} device={device} />
+        <PhoneFrame
+          platform={device.platform}
+          client={client}
+          agentInteraction={agentInteraction}
+          DeviceScreen={DeviceScreen}
+          displayScreen={displayScreen}
+        />
+      </div>
       <StreamControls
         platform={device.platform}
         physical={device.physical}
