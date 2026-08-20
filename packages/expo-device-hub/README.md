@@ -57,6 +57,13 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
+Pass `--hide-sidebar` to start with the device list collapsed. The sidebar can still be
+opened from the toggle in the upper-left corner:
+
+```sh
+npx expo-device-hub --hide-sidebar
+```
+
 ## Acknowledgements
 
 Device streaming and control are powered by two vendored, Apache-2.0-licensed
