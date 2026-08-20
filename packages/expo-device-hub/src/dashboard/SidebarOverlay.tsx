@@ -18,11 +18,13 @@ export function SidebarOverlay({
     <>
       <div
         aria-hidden="true"
+        data-sidebar-backdrop={side}
         onClick={onDismiss}
         style={{
           position: 'absolute',
           inset: 0,
           backgroundColor: bg.overlay,
+          opacity: 0.35,
           zIndex: backdropZIndex,
         }}
       />
