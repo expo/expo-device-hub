@@ -3,7 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import { resolveSidebarLayout } from '../useSidebarLayout';
 
 const base = {
-  leftOpen: false,
+  leftPreference: 'auto' as const,
   rightPreference: 'auto' as const,
   leftWidth: 400,
   rightWidth: 400,
@@ -11,13 +11,27 @@ const base = {
 };
 
 describe('resolveSidebarLayout', () => {
-  test('starts with the left sidebar closed and docks the right sidebar when it fits', () => {
+  test('docks both automatically managed sidebars when they fit', () => {
     expect(resolveSidebarLayout({ ...base, containerWidth: 1200 })).toEqual({
-      leftDocked: false,
+      leftOpen: true,
+      leftDocked: true,
       leftOverlay: false,
       rightOpen: true,
       rightDocked: true,
       rightOverlay: false,
+    });
+  });
+
+  test('keeps the automatically managed left sidebar closed until both sidebars fit', () => {
+    expect(resolveSidebarLayout({ ...base, containerWidth: 1119 })).toMatchObject({
+      leftOpen: false,
+      leftDocked: false,
+      rightDocked: true,
+    });
+    expect(resolveSidebarLayout({ ...base, containerWidth: 1120 })).toMatchObject({
+      leftOpen: true,
+      leftDocked: true,
+      rightDocked: true,
     });
   });
 
@@ -40,6 +54,12 @@ describe('resolveSidebarLayout', () => {
     ).toMatchObject({ rightOpen: false });
   });
 
+  test('never reopens a left sidebar the user hid', () => {
+    expect(
+      resolveSidebarLayout({ ...base, containerWidth: 1600, leftPreference: 'hidden' })
+    ).toMatchObject({ leftOpen: false });
+  });
+
   test('overlays a sidebar explicitly opened without enough room', () => {
     expect(
       resolveSidebarLayout({ ...base, containerWidth: 390, rightPreference: 'open' })
@@ -51,19 +71,23 @@ describe('resolveSidebarLayout', () => {
       resolveSidebarLayout({
         ...base,
         containerWidth: 390,
-        leftOpen: true,
+        leftPreference: 'open',
         rightPreference: 'open',
       })
     ).toMatchObject({ leftOverlay: true, rightOverlay: true });
   });
 
   test('only docks the left sidebar when it fits beside the docked right sidebar', () => {
-    expect(resolveSidebarLayout({ ...base, containerWidth: 1000, leftOpen: true })).toMatchObject({
+    expect(
+      resolveSidebarLayout({ ...base, containerWidth: 1000, leftPreference: 'open' })
+    ).toMatchObject({
       leftDocked: false,
       leftOverlay: true,
       rightDocked: true,
     });
-    expect(resolveSidebarLayout({ ...base, containerWidth: 1200, leftOpen: true })).toMatchObject({
+    expect(
+      resolveSidebarLayout({ ...base, containerWidth: 1200, leftPreference: 'open' })
+    ).toMatchObject({
       leftDocked: true,
       leftOverlay: false,
       rightDocked: true,

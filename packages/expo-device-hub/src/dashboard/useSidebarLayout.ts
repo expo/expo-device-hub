@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
-export type RightSidebarPreference = 'auto' | 'open' | 'hidden';
+export type SidebarPreference = 'auto' | 'open' | 'hidden';
 export type SidebarSide = 'left' | 'right';
 
 type SidebarLayoutOptions = {
-  leftOpen: boolean;
-  rightPreference: RightSidebarPreference;
+  leftPreference: SidebarPreference;
+  rightPreference: SidebarPreference;
   containerWidth: number;
   leftWidth: number;
   rightWidth: number;
@@ -13,6 +13,7 @@ type SidebarLayoutOptions = {
 };
 
 export type SidebarLayout = {
+  leftOpen: boolean;
   leftDocked: boolean;
   leftOverlay: boolean;
   rightOpen: boolean;
@@ -22,7 +23,7 @@ export type SidebarLayout = {
 
 /** Resolve docking from the space that is actually available, without viewport breakpoints. */
 export function resolveSidebarLayout({
-  leftOpen,
+  leftPreference,
   rightPreference,
   containerWidth,
   leftWidth,
@@ -32,11 +33,13 @@ export function resolveSidebarLayout({
   const rightFits = containerWidth >= rightWidth + minStreamWidth;
   const rightOpen = rightPreference === 'open' || (rightPreference === 'auto' && rightFits);
   const rightDocked = rightOpen && rightFits;
-  const leftDocked =
-    leftOpen &&
+  const leftFits =
     containerWidth >= leftWidth + minStreamWidth + (rightDocked ? rightWidth : 0);
+  const leftOpen = leftPreference === 'open' || (leftPreference === 'auto' && leftFits);
+  const leftDocked = leftOpen && leftFits;
 
   return {
+    leftOpen,
     leftDocked,
     leftOverlay: leftOpen && !leftDocked,
     rightOpen,
@@ -55,8 +58,8 @@ export function useSidebarLayout({
   const [containerWidth, setContainerWidth] = useState(() =>
     typeof window === 'undefined' ? 0 : window.innerWidth
   );
-  const [leftOpen, setLeftOpen] = useState(false);
-  const [rightPreference, setRightPreference] = useState<RightSidebarPreference>('auto');
+  const [leftPreference, setLeftPreference] = useState<SidebarPreference>('auto');
+  const [rightPreference, setRightPreference] = useState<SidebarPreference>('auto');
   const [lastOpened, setLastOpened] = useState<SidebarSide>('right');
 
   useEffect(() => {
@@ -72,7 +75,7 @@ export function useSidebarLayout({
   }, []);
 
   const layout = resolveSidebarLayout({
-    leftOpen,
+    leftPreference,
     rightPreference,
     containerWidth,
     leftWidth,
@@ -81,10 +84,13 @@ export function useSidebarLayout({
   });
 
   const openLeft = () => {
-    setLeftOpen(true);
+    const leftFits =
+      containerWidth >=
+      leftWidth + minStreamWidth + (layout.rightDocked ? rightWidth : 0);
+    setLeftPreference(leftFits ? 'auto' : 'open');
     setLastOpened('left');
   };
-  const closeLeft = () => setLeftOpen(false);
+  const closeLeft = () => setLeftPreference('hidden');
   const openRight = () => {
     const rightFits = containerWidth >= rightWidth + minStreamWidth;
     setRightPreference(rightFits ? 'auto' : 'open');
@@ -96,7 +102,7 @@ export function useSidebarLayout({
     ...layout,
     containerRef,
     containerWidth,
-    leftOpen,
+    leftOpen: layout.leftOpen,
     lastOpened,
     openLeft,
     closeLeft,
