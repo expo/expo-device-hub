@@ -53,6 +53,7 @@ export * from './theme/tokens';
 export { Sidebar } from './dashboard/Sidebar';
 export { LogSidebar, type LogSidebarProps } from './dashboard/LogSidebar';
 export { StreamPanel } from './dashboard/StreamPanel';
+export { DeviceTitle, type DeviceTitleProps } from './dashboard/DeviceTitle';
 export { EmptyState } from './dashboard/EmptyState';
 export { DeviceSection, type DeviceSectionProps } from './dashboard/DeviceSection';
 export { OutputSection } from './dashboard/OutputSection';
