@@ -3,10 +3,11 @@
 import { $ } from "bun";
 import { getPublicPackages } from "./lib/public-packages.ts";
 
-// Rewrites each public package's version into a canary prerelease built on the
-// next minor version:
+// Rewrites each public package's version into a canary prerelease. Versions
+// already bumped by `changeset version` keep that bump; unchanged versions use
+// the next minor version:
 //
-//   <next-minor>-canary-<YYYYMMDD>-<short-sha>
+//   <release-version>-canary-<YYYYMMDD>-<short-sha>
 //   e.g. expo-device-hub@0.2.0-canary-20260429-a5e59cf
 //
 // Run before `changeset publish --tag canary` in the canary release path.
@@ -26,9 +27,16 @@ console.log(`::group::Applying canary versions (date ${date}, commit ${sha})`);
 for (const pkg of await getPublicPackages()) {
   const path = `${pkg.dir}/package.json`;
   const json = await Bun.file(path).json();
-  const canaryVersion = `${nextMinor(pkg.version)}-canary-${date}-${sha}`;
+  const committedVersion = JSON.parse(
+    await $`git show ${`HEAD:${pkg.path}`}`.text(),
+  ).version;
+  const baseVersion =
+    pkg.version === committedVersion ? nextMinor(pkg.version) : pkg.version;
+  const canaryVersion = `${baseVersion}-canary-${date}-${sha}`;
   json.version = canaryVersion;
   await Bun.write(path, `${JSON.stringify(json, null, 2)}\n`);
-  console.log(`${pkg.name}: ${pkg.version} -> ${canaryVersion}`);
+  console.log(
+    `${pkg.name}: ${committedVersion} -> ${pkg.version} -> ${canaryVersion}`,
+  );
 }
 console.log("::endgroup::");
