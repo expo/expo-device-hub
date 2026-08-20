@@ -17,7 +17,6 @@ import {
   StreamPanel,
   type StreamModeAvailability,
   bg,
-  shadow,
   text,
   type AddDeviceOutcome,
   type AddDeviceTarget,
@@ -34,8 +33,9 @@ import {
 } from './dashboard/deviceVisibility';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
-import { useIsNarrow } from './dashboard/useIsNarrow';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
+import { SidebarOverlay } from './dashboard/SidebarOverlay';
+import { useSidebarLayout } from './dashboard/useSidebarLayout';
 import {
   browserStreamModeAvailability,
   resolveStreamMode,
@@ -48,15 +48,6 @@ function mergeById(base: Device[], extra: Device[]): Device[] {
   const ids = new Set(base.map((device) => device.id));
   return [...base, ...extra.filter((device) => !ids.has(device.id))];
 }
-
-// Below this width a single sidebar + the device stream no longer fit side by
-// side, so the left (devices) sidebar collapses into a toggleable overlay.
-const NARROW_MAX_WIDTH = 767;
-// The logs sidebar is a second ~400px column, so two sidebars + the stream need
-// roughly one more sidebar-width to fit. Between these thresholds the left
-// sidebar stays inline while the logs sidebar collapses first; below
-// NARROW_MAX_WIDTH both are overlays.
-const LOGS_MAX_WIDTH = NARROW_MAX_WIDTH + 400;
 
 // Resizable-sidebar bounds. Each column starts at DEFAULT_SIDEBAR_WIDTH (the
 // original fixed width) and can be dragged between MIN and MAX — never so wide
@@ -85,10 +76,8 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  * that device. Hub's own dark mode follows the system setting via `dark-theme`;
  * the stream's Theme control flips the *device's* appearance, not Hub's.
  *
- * As the viewport narrows the sidebars collapse in stages — the logs sidebar
- * first, then the left (devices) sidebar — each becoming a toggleable overlay
- * over the stream, with a floating toggle to reveal it and a header toggle to
- * hide it again.
+ * Sidebars dock whenever their measured widths leave enough room for the stream
+ * and become toggleable overlays otherwise.
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
   const scheme = useColorScheme();
@@ -100,10 +89,6 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const [selectedId, setSelectedId] = useState('');
   // Devices started through the picker, retained until host discovery catches up.
   const [added, setAdded] = useState<Device[]>([]);
-  const narrow = useIsNarrow(NARROW_MAX_WIDTH);
-  const logsNarrow = useIsNarrow(LOGS_MAX_WIDTH);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [logsOpen, setLogsOpen] = useState(true);
   const streamModeAvailability = useMemo<StreamModeAvailability>(
     browserStreamModeAvailability,
     []
@@ -121,6 +106,11 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const [logsWidth, setLogsWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
   const sidebarWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   const logsWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
+  const sidebars = useSidebarLayout({
+    leftWidth: sidebarWidth,
+    rightWidth: logsWidth,
+    minStreamWidth: MIN_STREAM_WIDTH,
+  });
 
   // Merge booted devices (from the server) with any the user added, deduped by
   // id and split back into the two sections by platform.
@@ -217,18 +207,6 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     setSelectedId('');
   }
 
-  // Default each sidebar open when it fits inline, collapsed once its own
-  // breakpoint is crossed — but the toggles let the user close/open either at any
-  // width. Separate effects so resizing across one breakpoint never resets the
-  // other sidebar's manually-toggled state.
-  useEffect(() => {
-    setSidebarOpen(!narrow);
-  }, [narrow]);
-
-  useEffect(() => {
-    setLogsOpen(!logsNarrow);
-  }, [logsNarrow]);
-
   // Mirror the theme onto the document root so Radix portals (e.g. the dropdown
   // menu), which mount on document.body outside the wrapper below, still pick up
   // the dark `--expo-theme-*` variables.
@@ -262,6 +240,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
 
   return (
     <div
+      ref={sidebars.containerRef}
       className={scheme === 'dark' ? 'dark-theme' : undefined}
       style={{
         display: 'flex',
@@ -276,8 +255,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         fontFamily: 'var(--expo-font-sans)',
         overflow: 'hidden',
       }}>
-      {/* Wide + open: the sidebar sits inline next to the stream. */}
-      {sidebarOpen && !narrow && (
+      {sidebars.leftDocked && (
         <>
           <Sidebar
             simulators={simulators}
@@ -289,7 +267,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             selectedId={selectedId}
             onSelect={setSelectedId}
             onAddDevice={handleAddDevice}
-            onToggle={() => setSidebarOpen(false)}
+            onToggle={sidebars.closeLeft}
             platform={platform}
             width={sidebarWidth}
           />
@@ -304,7 +282,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               setSidebarWidth(
                 clampSidebarWidth(
                   sidebarWidthStart.current + delta,
-                  logsOpen && !logsNarrow ? logsWidth : 0
+                  sidebars.rightDocked ? logsWidth : 0
                 )
               )
             }
@@ -320,14 +298,13 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           displayScreen={displayScreen}
           onShutdown={() => handleShutdown(selected)}
           onRemove={() => handleRemove(selected)}
-          framed={!narrow}
+          framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
         />
       ) : (
         <EmptyState platform={platform} />
       )}
 
-      {/* Room for two sidebars + open: the logs sidebar sits inline to the right of the stream. */}
-      {logsOpen && !logsNarrow && (
+      {sidebars.rightDocked && (
         <>
           {/* Drag the seam between the stream and the logs sidebar to resize. */}
           <ResizeHandle
@@ -340,7 +317,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
               setLogsWidth(
                 clampSidebarWidth(
                   logsWidthStart.current + delta,
-                  sidebarOpen && !narrow ? sidebarWidth : 0
+                  sidebars.leftDocked ? sidebarWidth : 0
                 )
               )
             }
@@ -350,95 +327,71 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             streamMode={streamMode}
             streamModeAvailability={streamModeAvailability}
             onStreamModeChange={handleStreamModeChange}
-            onToggle={() => setLogsOpen(false)}
+            onToggle={sidebars.closeRight}
             width={logsWidth}
           />
         </>
       )}
 
-      {/* Narrow + open: the sidebar overlays the stream with a backdrop. */}
-      {sidebarOpen && narrow && (
-        <>
-          <div
-            onClick={() => setSidebarOpen(false)}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.35)',
-              zIndex: 10,
-            }}
+      {sidebars.leftOverlay && (
+        <SidebarOverlay
+          side="left"
+          topmost={sidebars.lastOpened === 'left' || !sidebars.rightOverlay}
+          onDismiss={sidebars.closeLeft}>
+          <Sidebar
+            simulators={simulators}
+            emulators={emulators}
+            recentSimulators={recentSimulators}
+            recentEmulators={recentEmulators}
+            simulatorOptions={simulatorOptions}
+            emulatorOptions={emulatorOptions}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onAddDevice={handleAddDevice}
+            onToggle={sidebars.closeLeft}
+            platform={platform}
+            width={sidebarWidth}
           />
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              zIndex: 11,
-              backgroundColor: bg.subtle,
-              boxShadow: shadow.lg,
-            }}>
-            <Sidebar
-              simulators={simulators}
-              emulators={emulators}
-              recentSimulators={recentSimulators}
-              recentEmulators={recentEmulators}
-              simulatorOptions={simulatorOptions}
-              emulatorOptions={emulatorOptions}
-              selectedId={selectedId}
-              onSelect={setSelectedId}
-              onAddDevice={handleAddDevice}
-              onToggle={() => setSidebarOpen(false)}
-              platform={platform}
-              width={sidebarWidth}
-            />
-          </div>
-        </>
+        </SidebarOverlay>
       )}
 
-      {/* Cramped + open: the logs sidebar overlays the stream from the right. */}
-      {logsOpen && logsNarrow && (
-        <>
-          <div
-            onClick={() => setLogsOpen(false)}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              backgroundColor: 'rgba(0, 0, 0, 0.35)',
-              zIndex: 10,
-            }}
+      {sidebars.rightOverlay && (
+        <SidebarOverlay
+          side="right"
+          topmost={sidebars.lastOpened === 'right' || !sidebars.leftOverlay}
+          onDismiss={sidebars.closeRight}>
+          <LogSidebar
+            client={client}
+            streamMode={streamMode}
+            streamModeAvailability={streamModeAvailability}
+            onStreamModeChange={handleStreamModeChange}
+            onToggle={sidebars.closeRight}
+            width={logsWidth}
           />
-          <div
-            style={{
-              position: 'absolute',
-              top: 0,
-              right: 0,
-              zIndex: 11,
-              backgroundColor: bg.subtle,
-              boxShadow: shadow.lg,
-            }}>
-            <LogSidebar
-              client={client}
-              streamMode={streamMode}
-              streamModeAvailability={streamModeAvailability}
-              onStreamModeChange={handleStreamModeChange}
-              onToggle={() => setLogsOpen(false)}
-              width={logsWidth}
-            />
-          </div>
-        </>
+        </SidebarOverlay>
       )}
 
-      {/* Closed (either layout): a floating toggle to reopen the left sidebar. */}
-      {!sidebarOpen && (
-        <div style={{ position: 'absolute', top: 24, left: 24, zIndex: 12 }}>
-          <SidebarToggle floating onClick={() => setSidebarOpen(true)} />
+      {!sidebars.leftOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: sidebars.rightOverlay ? 80 : 24,
+            left: 24,
+            zIndex: 15,
+          }}>
+          <SidebarToggle floating onClick={sidebars.openLeft} />
         </div>
       )}
 
-      {/* Closed (either layout): a floating toggle to reopen the logs sidebar. */}
-      {!logsOpen && (
-        <div style={{ position: 'absolute', top: 24, right: 24, zIndex: 12 }}>
-          <SidebarToggle floating side="right" onClick={() => setLogsOpen(true)} />
+      {!sidebars.rightOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: sidebars.leftOverlay ? 80 : 24,
+            right: 24,
+            zIndex: 15,
+          }}>
+          <SidebarToggle floating side="right" onClick={sidebars.openRight} />
         </div>
       )}
     </div>
