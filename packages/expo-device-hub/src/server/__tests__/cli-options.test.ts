@@ -9,6 +9,7 @@ describe('parseCliOptions', () => {
       host: '127.0.0.1',
       platform: undefined,
       transport: undefined,
+      hideSidebar: false,
       help: false,
     });
   });
@@ -32,6 +33,11 @@ describe('parseCliOptions', () => {
     expect(() => parseCliOptions(['--transport', 'auto'])).toThrow('Invalid --transport: auto');
   });
 
+  test('hides the device list sidebar on request', () => {
+    expect(parseCliOptions(['--hide-sidebar']).hideSidebar).toBe(true);
+    expect(HELP).toContain('--hide-sidebar');
+  });
+
   test('replaces the old stream-mode flag', () => {
     expect(HELP).toContain('--transport <transport>');
     expect(HELP).not.toContain('--stream-mode');
@@ -46,6 +52,7 @@ describe('parseCliOptions', () => {
       host: '0.0.0.0',
       platform: undefined,
       transport: undefined,
+      hideSidebar: false,
       help: false,
     });
     expect(parseCliOptions(['--help'])).toEqual({ host: '127.0.0.1', help: true });
