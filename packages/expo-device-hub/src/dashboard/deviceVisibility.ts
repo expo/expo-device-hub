@@ -30,13 +30,8 @@ export function useHideUnsupportedDevices(): boolean {
     };
     syncFromStorage();
 
-    const onStorage = (event: StorageEvent) => {
-      if (event.key === null || event.key === HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY) {
-        syncFromStorage(event);
-      }
-    };
-    window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    window.addEventListener('storage', syncFromStorage);
+    return () => window.removeEventListener('storage', syncFromStorage);
   }, [setHideUnsupported]);
 
   return hideUnsupported;
