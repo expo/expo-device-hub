@@ -7,8 +7,8 @@ export function KeyboardSection({ client }: { client: DeviceClient }) {
   const connected = client.hardwareKeyboardConnected;
 
   return (
-    <section aria-label="Keyboard settings">
-      <SidebarRow label="Hardware keyboard" flushTop>
+    <>
+      <SidebarRow label="Hardware keyboard">
         <SidebarActionButton
           disabled={connected === null}
           onClick={() => client.setHardwareKeyboardConnected(!connected)}>
@@ -22,6 +22,6 @@ export function KeyboardSection({ client }: { client: DeviceClient }) {
           Toggle
         </SidebarActionButton>
       </SidebarRow>
-    </section>
+    </>
   );
 }

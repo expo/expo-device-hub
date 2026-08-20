@@ -18,7 +18,7 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
   }
 
   return (
-    <section
+    <div
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -26,19 +26,14 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         minWidth: 0,
         minHeight: 0,
       }}>
-      <div>
-        <SidebarRow
+      <SidebarRow label="Logs" borderBottom={false}>
+        <SidebarSwitch
+          checked={logsOpen}
+          disabled={!client}
           label="Logs"
-          borderBottom={false}
-          flushTop={client?.platform !== 'ios'}>
-          <SidebarSwitch
-            checked={logsOpen}
-            disabled={!client}
-            label="Logs"
-            onChange={setLogsVisibility}
-          />
-        </SidebarRow>
-      </div>
+          onChange={setLogsVisibility}
+        />
+      </SidebarRow>
       {logsOpen && (
         <div style={{ width: '100%', minWidth: 0 }}>
           <LogControls
@@ -52,6 +47,6 @@ export function OutputSection({ client }: { client?: DeviceClient }) {
         </div>
       )}
       <div style={{ flex: 1, minHeight: 0 }} />
-    </section>
+    </div>
   );
 }

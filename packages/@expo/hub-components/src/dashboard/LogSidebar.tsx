@@ -1,10 +1,8 @@
 import { type DeviceClient, type DeviceStreamMode } from '@expo/hub-client';
 import { SidebarToggle } from '../primitives';
 import { CurrentAppSection } from './CurrentAppSection';
-import { KeyboardSection } from './KeyboardSection';
-import { OutputSection } from './OutputSection';
-import { SidebarSectionHeading } from './SidebarRow';
-import { StreamSection, type StreamModeAvailability } from './StreamSection';
+import { DeviceOptionsSection } from './DeviceOptionsSection';
+import { type StreamModeAvailability } from './StreamSection';
 
 /**
  * Right column: a compact inspector for the selected device, rendered directly
@@ -58,21 +56,12 @@ export function LogSidebar({
           overflow: 'hidden',
         }}>
         <CurrentAppSection client={client} />
-        <div style={{ padding: '8px 0' }}>
-          <SidebarSectionHeading>Device options</SidebarSectionHeading>
-        </div>
-        {client?.platform === 'ios' && <KeyboardSection client={client} />}
-        {streamMode &&
-          streamModeAvailability &&
-          onStreamModeChange &&
-          client?.platform === 'ios' && (
-            <StreamSection
-              mode={streamMode}
-              availability={streamModeAvailability}
-              onChange={onStreamModeChange}
-            />
-          )}
-        <OutputSection client={client} />
+        <DeviceOptionsSection
+          client={client}
+          streamMode={streamMode}
+          streamModeAvailability={streamModeAvailability}
+          onStreamModeChange={onStreamModeChange}
+        />
       </div>
     </aside>
   );
