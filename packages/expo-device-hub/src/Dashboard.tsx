@@ -23,6 +23,7 @@ import {
 } from '@expo/hub-components';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
 import { basePath } from './dashboard/basePath';
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import {
@@ -258,39 +259,42 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         fontFamily: 'var(--expo-font-sans)',
         overflow: 'hidden',
       }}>
+      <AnimatedDockedSidebar
+        side="left"
+        width={sidebarWidth}
+        open={sidebars.leftDocked}
+        sidebarOpen={sidebars.leftOpen}>
+        <Sidebar
+          simulators={simulators}
+          emulators={emulators}
+          recentSimulators={recentSimulators}
+          recentEmulators={recentEmulators}
+          simulatorOptions={simulatorOptions}
+          emulatorOptions={emulatorOptions}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onAddDevice={handleAddDevice}
+          onToggle={sidebars.closeLeft}
+          platform={platform}
+          width={sidebarWidth}
+        />
+      </AnimatedDockedSidebar>
       {sidebars.leftDocked && (
-        <>
-          <Sidebar
-            simulators={simulators}
-            emulators={emulators}
-            recentSimulators={recentSimulators}
-            recentEmulators={recentEmulators}
-            simulatorOptions={simulatorOptions}
-            emulatorOptions={emulatorOptions}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onAddDevice={handleAddDevice}
-            onToggle={sidebars.closeLeft}
-            platform={platform}
-            width={sidebarWidth}
-          />
-          {/* Drag the seam between the devices sidebar and the stream to resize. */}
-          <ResizeHandle
-            side="left"
-            offset={sidebarWidth}
-            onResizeStart={() => {
-              sidebarWidthStart.current = sidebarWidth;
-            }}
-            onResize={(delta) =>
-              setSidebarWidth(
-                clampSidebarWidth(
-                  sidebarWidthStart.current + delta,
-                  sidebars.rightDocked ? logsWidth : 0
-                )
+        <ResizeHandle
+          side="left"
+          offset={sidebarWidth}
+          onResizeStart={() => {
+            sidebarWidthStart.current = sidebarWidth;
+          }}
+          onResize={(delta) =>
+            setSidebarWidth(
+              clampSidebarWidth(
+                sidebarWidthStart.current + delta,
+                sidebars.rightDocked ? logsWidth : 0
               )
-            }
-          />
-        </>
+            )
+          }
+        />
       )}
 
       {selected ? (
@@ -308,71 +312,74 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
       )}
 
       {sidebars.rightDocked && (
-        <>
-          {/* Drag the seam between the stream and the logs sidebar to resize. */}
-          <ResizeHandle
-            side="right"
-            offset={logsWidth}
-            onResizeStart={() => {
-              logsWidthStart.current = logsWidth;
-            }}
-            onResize={(delta) =>
-              setLogsWidth(
-                clampSidebarWidth(
-                  logsWidthStart.current + delta,
-                  sidebars.leftDocked ? sidebarWidth : 0
-                )
-              )
-            }
-          />
-          <LogSidebar
-            client={client}
-            streamMode={streamMode}
-            streamModeAvailability={streamModeAvailability}
-            onStreamModeChange={handleStreamModeChange}
-            onToggle={sidebars.closeRight}
-            width={logsWidth}
-          />
-        </>
-      )}
-
-      {sidebars.leftOverlay && (
-        <SidebarOverlay
-          side="left"
-          topmost={sidebars.lastOpened === 'left' || !sidebars.rightOverlay}
-          onDismiss={sidebars.closeLeft}>
-          <Sidebar
-            simulators={simulators}
-            emulators={emulators}
-            recentSimulators={recentSimulators}
-            recentEmulators={recentEmulators}
-            simulatorOptions={simulatorOptions}
-            emulatorOptions={emulatorOptions}
-            selectedId={selectedId}
-            onSelect={setSelectedId}
-            onAddDevice={handleAddDevice}
-            onToggle={sidebars.closeLeft}
-            platform={platform}
-            width={sidebarWidth}
-          />
-        </SidebarOverlay>
-      )}
-
-      {sidebars.rightOverlay && (
-        <SidebarOverlay
+        <ResizeHandle
           side="right"
-          topmost={sidebars.lastOpened === 'right' || !sidebars.leftOverlay}
-          onDismiss={sidebars.closeRight}>
-          <LogSidebar
-            client={client}
-            streamMode={streamMode}
-            streamModeAvailability={streamModeAvailability}
-            onStreamModeChange={handleStreamModeChange}
-            onToggle={sidebars.closeRight}
-            width={logsWidth}
-          />
-        </SidebarOverlay>
+          offset={logsWidth}
+          onResizeStart={() => {
+            logsWidthStart.current = logsWidth;
+          }}
+          onResize={(delta) =>
+            setLogsWidth(
+              clampSidebarWidth(
+                logsWidthStart.current + delta,
+                sidebars.leftDocked ? sidebarWidth : 0
+              )
+            )
+          }
+        />
       )}
+      <AnimatedDockedSidebar
+        side="right"
+        width={logsWidth}
+        open={sidebars.rightDocked}
+        sidebarOpen={sidebars.rightOpen}>
+        <LogSidebar
+          client={client}
+          streamMode={streamMode}
+          streamModeAvailability={streamModeAvailability}
+          onStreamModeChange={handleStreamModeChange}
+          onToggle={sidebars.closeRight}
+          width={logsWidth}
+        />
+      </AnimatedDockedSidebar>
+
+      <SidebarOverlay
+        side="left"
+        open={sidebars.leftOverlay}
+        sidebarOpen={sidebars.leftOpen}
+        topmost={sidebars.lastOpened === 'left' || !sidebars.rightOverlay}
+        onDismiss={sidebars.closeLeft}>
+        <Sidebar
+          simulators={simulators}
+          emulators={emulators}
+          recentSimulators={recentSimulators}
+          recentEmulators={recentEmulators}
+          simulatorOptions={simulatorOptions}
+          emulatorOptions={emulatorOptions}
+          selectedId={selectedId}
+          onSelect={setSelectedId}
+          onAddDevice={handleAddDevice}
+          onToggle={sidebars.closeLeft}
+          platform={platform}
+          width={sidebarWidth}
+        />
+      </SidebarOverlay>
+
+      <SidebarOverlay
+        side="right"
+        open={sidebars.rightOverlay}
+        sidebarOpen={sidebars.rightOpen}
+        topmost={sidebars.lastOpened === 'right' || !sidebars.leftOverlay}
+        onDismiss={sidebars.closeRight}>
+        <LogSidebar
+          client={client}
+          streamMode={streamMode}
+          streamModeAvailability={streamModeAvailability}
+          onStreamModeChange={handleStreamModeChange}
+          onToggle={sidebars.closeRight}
+          width={logsWidth}
+        />
+      </SidebarOverlay>
 
       {!sidebars.leftOpen && (
         <FloatingSidebarToggle
