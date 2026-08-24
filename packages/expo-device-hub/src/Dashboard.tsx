@@ -21,11 +21,12 @@ import {
   type AddDeviceTarget,
   type Device,
 } from '@expo/hub-components';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 
 import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
 import { basePath } from './dashboard/basePath';
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
+import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from './dashboard/dashboardStore';
 import {
   useHideUnsupportedDevices,
   visibleDevices,
@@ -40,12 +41,8 @@ import {
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 import { SidebarOverlay } from './dashboard/SidebarOverlay';
 import { useSidebarLayout } from './dashboard/useSidebarLayout';
-import {
-  browserStreamModeAvailability,
-  resolveStreamMode,
-} from './dashboard/streamMode';
+import { browserStreamModeAvailability } from './dashboard/streamMode';
 import { dashboardPlatformFilter } from './platform-filter';
-import { dashboardTransport } from './transport';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -53,10 +50,9 @@ function mergeById(base: Device[], extra: Device[]): Device[] {
   return [...base, ...extra.filter((device) => !ids.has(device.id))];
 }
 
-// Resizable-sidebar bounds. Each column starts at DEFAULT_SIDEBAR_WIDTH (the
-// original fixed width) and can be dragged between MIN and MAX — never so wide
-// that the stream, alongside the other sidebar, is squeezed below MIN_STREAM.
-const DEFAULT_SIDEBAR_WIDTH = 400;
+// Resizable-sidebar bounds. Each column starts at the original fixed width and
+// can be dragged between MIN and MAX — never so wide that the stream, alongside
+// the other sidebar, is squeezed below MIN_STREAM.
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
@@ -90,24 +86,30 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // Installed runtimes/system images and models for the new-device forms.
   const newDeviceOptions = useNewDeviceOptions();
   const hideUnsupportedDevices = useHideUnsupportedDevices();
-  const [selectedId, setSelectedId] = useState('');
-  // Devices started through the picker, retained until host discovery catches up.
-  const [added, setAdded] = useState<Device[]>([]);
+  const selectedId = useDashboardStore((state) => state.selectedDeviceId);
+  const selectDevice = useDashboardStore((state) => state.selectDevice);
+  const reconcileSelectedDevice = useDashboardStore(
+    (state) => state.reconcileSelectedDevice
+  );
+  // Devices started through the picker are retained until host discovery catches up.
+  const added = useDashboardStore((state) => state.addedDevices);
+  const trackAddedDevice = useDashboardStore((state) => state.trackAddedDevice);
+  const dismissDevice = useDashboardStore((state) => state.dismissDevice);
   const streamModeAvailability = useMemo<StreamModeAvailability>(
     browserStreamModeAvailability,
     []
   );
-  const [streamMode, setStreamMode] = useState<DeviceStreamMode>(() =>
-    resolveStreamMode(dashboardTransport(), streamModeAvailability)
-  );
+  const streamMode = useDashboardStore((state) => state.streamMode);
+  const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
   const handleStreamModeChange = (mode: DeviceStreamMode) => {
-    setStreamMode(resolveStreamMode(mode, streamModeAvailability));
+    chooseStreamMode(mode, streamModeAvailability);
   };
   // Draggable widths for each inline sidebar. The `*Start` refs snapshot the
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
-  const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
-  const [logsWidth, setLogsWidth] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const sidebarWidth = useDashboardStore((state) => state.sidebarWidths.left);
+  const logsWidth = useDashboardStore((state) => state.sidebarWidths.right);
+  const resizeSidebar = useDashboardStore((state) => state.resizeSidebar);
   const sidebarWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   const logsWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   const sidebars = useSidebarLayout({
@@ -160,13 +162,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // Create/boot the chosen target on the host. The modal awaits this result, so
   // it stays open during slow Android boots and can show failures in context.
   async function handleAddDevice(target: AddDeviceTarget): Promise<AddDeviceOutcome> {
-    const source = target.device;
     const result =
       target.kind === 'new'
-        ? await createDevice(source)
-        : source.booted
-          ? { id: source.id, error: null }
-          : await bootDevice(source);
+        ? await createDevice(target.device)
+        : target.device.booted
+          ? { id: target.device.id, error: null }
+          : await bootDevice(target.device);
 
     if (!result.id) {
       return { ok: false, error: result.error ?? 'The device did not come online.' };
@@ -176,23 +177,21 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
       target.kind === 'new'
         ? {
             id: result.id,
-            name: source.name,
-            version: source.version,
-            platform: source.platform,
+            name: target.device.name,
+            version: target.device.version,
+            platform: target.device.platform,
             physical: false,
             booted: true,
-            supported: source.supported,
+            supported: target.device.supported,
             lastUsedAt: Date.now(),
           }
-        : { ...source, id: result.id, booted: true, lastUsedAt: Date.now() };
+        : { ...target.device, id: result.id, booted: true, lastUsedAt: Date.now() };
 
-    setAdded((previous) => [
-      ...previous.filter(
-        (item) => item.id !== source.name && item.id !== source.id && item.id !== result.id
-      ),
-      device,
-    ]);
-    setSelectedId(result.id);
+    const replacedIds =
+      target.kind === 'new'
+        ? [target.device.name, result.id]
+        : [target.device.name, target.device.id, result.id];
+    trackAddedDevice(device, replacedIds);
     return { ok: true };
   }
 
@@ -201,14 +200,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // selection effect re-selects the next device (or falls back to EmptyState).
   async function handleShutdown(device: Device) {
     await shutdownDevice(device);
-    setAdded((prev) => prev.filter((item) => item.id !== device.id));
-    setSelectedId('');
+    dismissDevice(device.id);
   }
 
   async function handleRemove(device: Device) {
     await removeDevice(device);
-    setAdded((prev) => prev.filter((item) => item.id !== device.id));
-    setSelectedId('');
+    dismissDevice(device.id);
   }
 
   // Mirror the theme onto the document root so Radix portals (e.g. the dropdown
@@ -226,10 +223,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // already-running sim and never boots anything.
   useEffect(() => {
     const devices = [...simulators, ...emulators];
-    if (!devices.some((device) => device.id === selectedId)) {
-      setSelectedId(devices[0]?.id ?? '');
-    }
-  }, [simulators, emulators, selectedId]);
+    reconcileSelectedDevice(devices.map((device) => device.id));
+  }, [simulators, emulators, reconcileSelectedDevice]);
 
   const devices = [...simulators, ...emulators];
   const selected = devices.find((device) => device.id === selectedId) ?? devices[0];
@@ -272,7 +267,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           simulatorOptions={simulatorOptions}
           emulatorOptions={emulatorOptions}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={selectDevice}
           onAddDevice={handleAddDevice}
           onToggle={sidebars.closeLeft}
           platform={platform}
@@ -287,7 +282,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             sidebarWidthStart.current = sidebarWidth;
           }}
           onResize={(delta) =>
-            setSidebarWidth(
+            resizeSidebar(
+              'left',
               clampSidebarWidth(
                 sidebarWidthStart.current + delta,
                 sidebars.rightDocked ? logsWidth : 0
@@ -319,7 +315,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             logsWidthStart.current = logsWidth;
           }}
           onResize={(delta) =>
-            setLogsWidth(
+            resizeSidebar(
+              'right',
               clampSidebarWidth(
                 logsWidthStart.current + delta,
                 sidebars.leftDocked ? sidebarWidth : 0
@@ -357,7 +354,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           simulatorOptions={simulatorOptions}
           emulatorOptions={emulatorOptions}
           selectedId={selectedId}
-          onSelect={setSelectedId}
+          onSelect={selectDevice}
           onAddDevice={handleAddDevice}
           onToggle={sidebars.closeLeft}
           platform={platform}

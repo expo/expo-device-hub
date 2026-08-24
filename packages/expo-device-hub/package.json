@@ -42,7 +42,8 @@
     "/expo-module.config.json"
   ],
   "dependencies": {
-    "ws": "^8.21.0"
+    "ws": "^8.21.0",
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@expo/hub-android-utils": "workspace:*",
