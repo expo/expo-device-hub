@@ -1,5 +1,14 @@
 # expo-device-hub
 
+## 0.4.0
+
+### Minor Changes
+
+- 1e21217: Add `--platform ios|android` to the standalone CLI.
+- d906816: Add keyboard input and simulator keyboard controls.
+- 571207b: Add H.264, and WebRTC iOS simulator streaming.
+- e106f9b: Add `--transport mjpeg|h264|webrtc` to the standalone CLI.
+
 ## 0.3.0
 
 ### Minor Changes
