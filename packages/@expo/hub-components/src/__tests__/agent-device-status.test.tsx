@@ -67,7 +67,7 @@ describe('agent device status', () => {
     expect(visible).not.toContain('hidden=""');
     expect(visible).toContain('display:flex');
     expect(visibleOverlayTag).not.toContain('border-radius');
-    expect(visible).toContain('color:var(--expo-theme-text-info)');
+    expect(visible).toContain('color:rgba(218, 233, 255, 0.74)');
     expect(visibleOverlayTag).not.toContain('backdrop-filter');
     expect(visibleOverlayTag).toContain('background-color:rgba(0, 0, 0, 0.55)');
     expect(visible).toContain('Agent is using this device');
@@ -79,7 +79,7 @@ describe('agent device status', () => {
     );
     expect(visible).toContain('font-family:inherit');
     expect(visible).toContain(
-      '<span style="font-size:14px;font-weight:500;line-height:1.6;letter-spacing:0">Take over anyway</span>'
+      '<span style="font-size:12px;font-weight:500;line-height:1.6;letter-spacing:0">Take over anyway</span>'
     );
   });
 
