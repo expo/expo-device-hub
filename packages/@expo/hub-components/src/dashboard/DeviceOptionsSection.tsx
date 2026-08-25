@@ -39,6 +39,8 @@ export function DeviceOptionsSection({
             mode={streamMode}
             availability={streamModeAvailability}
             onChange={onStreamModeChange}
+            webRtcCodec={client.webRtcCodec}
+            onWebRtcCodecChange={client.setWebRtcCodec}
           />
         )}
       <OutputSection client={client} />
