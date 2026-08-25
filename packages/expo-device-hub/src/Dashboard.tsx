@@ -6,6 +6,7 @@ import {
   DeviceScreen,
   displayScreen,
   useActiveDeviceClient,
+  type DeviceHttpCodec,
   type DeviceStreamMode,
 } from '@expo/hub-client';
 import {
@@ -21,7 +22,7 @@ import {
   type AddDeviceTarget,
   type Device,
 } from '@expo/hub-components';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
 import { basePath } from './dashboard/basePath';
@@ -102,6 +103,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   );
   const streamMode = useDashboardStore((state) => state.streamMode);
   const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
+  const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
+    streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto'
+  );
   const handleStreamModeChange = (mode: DeviceStreamMode) => {
     chooseStreamMode(mode, streamModeAvailability);
   };
@@ -339,8 +343,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         <LogSidebar
           client={client}
           streamMode={streamMode}
+          httpCodec={httpCodec}
           streamModeAvailability={streamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
+          onHttpCodecChange={setHttpCodec}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -378,8 +384,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         <LogSidebar
           client={client}
           streamMode={streamMode}
+          httpCodec={httpCodec}
           streamModeAvailability={streamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
+          onHttpCodecChange={setHttpCodec}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />

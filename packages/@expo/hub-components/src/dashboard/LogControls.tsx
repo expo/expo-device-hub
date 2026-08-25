@@ -5,12 +5,14 @@ import { SidebarActionButton } from './SidebarActionButton';
 export function LogControls({
   count,
   running,
+  unit = 'line',
   onClear,
   onStart,
   onStop,
 }: {
   count: number;
   running: boolean;
+  unit?: string;
   onClear: () => void;
   onStart: () => void;
   onStop: () => void;
@@ -38,7 +40,7 @@ export function LogControls({
           textOverflow: 'ellipsis',
           whiteSpace: 'nowrap',
         }}>
-        {count} {count === 1 ? 'line' : 'lines'}
+        {count} {count === 1 ? unit : `${unit}s`}
       </span>
       <SidebarActionButton onClick={running ? onStop : onStart}>
         {running ? 'Stop' : 'Start'}

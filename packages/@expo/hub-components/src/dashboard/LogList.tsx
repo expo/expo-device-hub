@@ -40,7 +40,15 @@ const scrollStyle: CSSProperties = {
  * oldest → newest (top → bottom); the view sticks to the tail as new lines
  * arrive while the user is at the bottom.
  */
-export function LogList({ logs = [], enabled = false }: { logs?: DeviceLog[]; enabled?: boolean }) {
+export function LogList({
+  logs = [],
+  enabled = false,
+  emptyMessage: emptyMessageOverride,
+}: {
+  logs?: ReadonlyArray<DeviceLog>;
+  enabled?: boolean;
+  emptyMessage?: string;
+}) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   // New lines arrive at the bottom; while attached we follow the tail so the
@@ -51,9 +59,11 @@ export function LogList({ logs = [], enabled = false }: { logs?: DeviceLog[]; en
     if (el) el.scrollTop = el.scrollHeight;
   }, [logs]);
 
-  const emptyMessage = enabled
-    ? 'No logs. The stream resumes on the next event.'
-    : 'Logs are paused. Press Start to stream device logs.';
+  const emptyMessage =
+    emptyMessageOverride ??
+    (enabled
+      ? 'No logs. The stream resumes on the next event.'
+      : 'Logs are paused. Press Start to stream device logs.');
 
   return (
     <div ref={scrollRef} className="hub-log-scroll" style={scrollStyle}>
