@@ -29,7 +29,7 @@
   --expo-radius-3xl: 24px;
   --expo-radius-full: 9999px;
 
-  /* Agent takeover prompt — stays bright against the blurred light surface. */
+  /* Agent takeover prompt — stays bright against the dark status overlay. */
   --expo-theme-button-agent-overlay-background: var(--expo-color-white);
   --expo-theme-button-agent-overlay-border: transparent;
   --expo-theme-button-agent-overlay-hover: var(--slate-2);

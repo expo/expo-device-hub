@@ -117,11 +117,6 @@ export function PhoneFrame({
             inset: 0,
             zIndex: 2,
             pointerEvents: overlayVisible ? 'auto' : 'none',
-            backgroundColor: overlayVisible
-              ? `color-mix(in srgb, ${bg.default} 68%, transparent)`
-              : 'transparent',
-            backdropFilter: overlayVisible ? 'blur(18px) saturate(120%)' : 'none',
-            WebkitBackdropFilter: overlayVisible ? 'blur(18px) saturate(120%)' : 'none',
           }}>
           <AgentDeviceOverlay
             visible={overlayVisible}
