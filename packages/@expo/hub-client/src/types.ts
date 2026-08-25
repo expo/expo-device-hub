@@ -24,6 +24,9 @@ export type DevicePlatform = 'ios' | 'android';
 /** Viewer-selected transport for serve-sim video. */
 export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
 
+/** Viewer-selected WebRTC codec preference for serve-sim video. */
+export type DeviceWebRtcCodec = 'h264' | 'vp8' | 'vp9';
+
 /**
  * Lifecycle of a single connection:
  *   idle       — nothing to connect to (no base URL / disabled)
@@ -172,6 +175,10 @@ export interface DeviceClient {
   screen: ScreenSize | null;
   /** Best-effort frames-per-second (0 when unavailable). */
   fps: number;
+  /** Requested WebRTC codec for iOS, or null on backends without WebRTC. */
+  webRtcCodec: DeviceWebRtcCodec | null;
+  /** Change the viewer-local WebRTC codec preference and renegotiate the stream. */
+  setWebRtcCodec: (codec: DeviceWebRtcCodec) => void;
   /** Running devices the server exposes (may be a placeholder list). */
   devices: RunningDevice[];
   /** Rolling buffer of recent log lines (best-effort; may be empty). */

@@ -13,6 +13,12 @@ describe('WebRTC fallback', () => {
     expect(nextWebRtcFallbackCodec('h264', 'vp9')).toBe(null);
   });
 
+  test('keeps fallback ordering anchored to the configured codec', () => {
+    expect(nextWebRtcFallbackCodec('vp8', 'vp8')).toBe(null);
+    expect(nextWebRtcFallbackCodec('vp9', 'vp9')).toBe('vp8');
+    expect(nextWebRtcFallbackCodec('vp9', 'vp8')).toBe(null);
+  });
+
   test('switches to HTTP after codecs are exhausted or signaling is permanent', () => {
     expect(webRtcFallbackDecision('h264', 'h264', { kind: 'permanent' })).toEqual({
       type: 'switch-to-http',

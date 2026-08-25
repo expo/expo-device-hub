@@ -1,4 +1,6 @@
-export type WebRtcCodec = 'h264' | 'vp8' | 'vp9';
+import { type DeviceWebRtcCodec } from './types';
+
+export type WebRtcCodec = DeviceWebRtcCodec;
 
 export type WebRtcFailureReason =
   | { kind: 'permanent' }

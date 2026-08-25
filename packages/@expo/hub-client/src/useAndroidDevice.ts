@@ -661,6 +661,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     error,
     screen,
     fps,
+    webRtcCodec: null,
+    setWebRtcCodec: () => {},
     devices,
     logs,
     logsEnabled,

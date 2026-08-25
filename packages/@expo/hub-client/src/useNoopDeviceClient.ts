@@ -8,6 +8,8 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   error: null,
   screen: null,
   fps: 0,
+  webRtcCodec: null,
+  setWebRtcCodec: () => {},
   devices: [],
   logs: [],
   logsEnabled: false,

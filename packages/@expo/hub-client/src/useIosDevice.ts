@@ -43,6 +43,7 @@ import {
   type DeviceConnectionOptions,
   type DeviceLog,
   type DeviceOrientation,
+  type DeviceWebRtcCodec,
   type ForegroundApp,
   type HardwareButton,
   type KeyboardInput,
@@ -53,7 +54,7 @@ import {
 } from './types';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { useAvccStream } from './useAvccStream';
-import { useWebRtcStream } from './useWebRtcStream';
+import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import {
   type WebRtcCodec,
   webRtcFallbackDecision,
@@ -265,6 +266,8 @@ interface ResolvedConfig {
   /** Absolute URL of the foreground-app SSE stream. */
   appStateUrl: string | null;
   gridApiUrl: string | null;
+  webRtcCodec: WebRtcCodec;
+  iceServers?: WebRtcIceServer[];
 }
 
 /** Shape of the serve-sim middleware `/api` (and grid) responses we read. */
@@ -279,6 +282,83 @@ interface PreviewApi {
   appStateEndpoint?: string;
   gridApiEndpoint?: string;
   proxyHelpers?: boolean;
+  streamSettings?: {
+    transport?: unknown;
+    codec?: unknown;
+    iceServers?: unknown;
+  };
+}
+
+type BrowserLocation = Pick<Location, 'host' | 'protocol'>;
+
+function previewIceServers(value: unknown): WebRtcIceServer[] | undefined {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 16) return undefined;
+  const servers: WebRtcIceServer[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') return undefined;
+    const { urls, username, credential } = entry as {
+      urls?: unknown;
+      username?: unknown;
+      credential?: unknown;
+    };
+    if (
+      !Array.isArray(urls) ||
+      urls.length === 0 ||
+      urls.length > 16 ||
+      !urls.every(
+        (url) =>
+          typeof url === 'string' &&
+          url.length <= 2_048 &&
+          /^(stun|stuns|turn|turns):/i.test(url),
+      ) ||
+      (username !== undefined && typeof username !== 'string') ||
+      (credential !== undefined && typeof credential !== 'string')
+    ) {
+      return undefined;
+    }
+    servers.push({
+      urls,
+      ...(typeof username === 'string' ? { username } : {}),
+      ...(typeof credential === 'string' ? { credential } : {}),
+    });
+  }
+  return servers;
+}
+
+function previewWebRtcSettings(settings: PreviewApi['streamSettings']): {
+  webRtcCodec: WebRtcCodec;
+  iceServers?: WebRtcIceServer[];
+} {
+  if (settings?.transport !== 'webrtc') return { webRtcCodec: 'h264' };
+  const webRtcCodec =
+    settings.codec === 'vp8' || settings.codec === 'vp9' || settings.codec === 'h264'
+      ? settings.codec
+      : 'h264';
+  const iceServers = previewIceServers(settings.iceServers);
+  return { webRtcCodec, ...(iceServers ? { iceServers } : {}) };
+}
+
+/** Convert serve-sim's middleware response into the URLs consumed by the iOS client. */
+export function resolveIosPreviewConfig(
+  rawConfig: PreviewApi,
+  browserLocation: BrowserLocation,
+  baseUrl: string,
+): ResolvedConfig {
+  const c = proxyPreviewConfigForBrowser(rawConfig, browserLocation);
+  const basePath = c.basePath ?? '';
+  const webRtcSettings = previewWebRtcSettings(c.streamSettings);
+  return {
+    url: c.url!,
+    streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
+    wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
+    device: c.device ?? null,
+    execWsUrl: toWs(new URL(`${basePath}/exec-ws`, baseUrl).toString()),
+    execToken: c.execToken ?? null,
+    logsPath: c.logsEndpoint ?? null,
+    appStateUrl: c.appStateEndpoint ? new URL(c.appStateEndpoint, baseUrl).toString() : null,
+    gridApiUrl: new URL(c.gridApiEndpoint ?? '/grid/api', baseUrl).toString(),
+    ...webRtcSettings,
+  };
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
@@ -314,8 +394,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
   const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
+  const [requestedWebRtcCodec, setRequestedWebRtcCodec] = useState<WebRtcCodec>('h264');
   const [webRtcCodec, setWebRtcCodec] = useState<WebRtcCodec>('h264');
   const [webRtcHttpFallback, setWebRtcHttpFallback] = useState(false);
+  const handledWebRtcFailureRef = useRef<string | null>(null);
   const useWebRtc = streamMode === 'webrtc' && !webRtcHttpFallback;
   const wantsAvcc = streamMode === 'h264' || webRtcHttpFallback;
   const useAvcc = wantsAvcc && isAvccSupported() && !avccFallback.fellBack;
@@ -506,22 +588,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
     }`;
 
-    const toMiddleware = (rawConfig: PreviewApi): ResolvedConfig => {
-      const c = proxyPreviewConfigForBrowser(rawConfig, window.location);
-      const basePath = c.basePath ?? '';
-      return {
-        url: c.url!,
-        streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
-        wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
-        device: c.device ?? null,
-        execWsUrl: toWs(new URL(`${basePath}/exec-ws`, baseUrl).toString()),
-        execToken: c.execToken ?? null,
-        logsPath: c.logsEndpoint ?? null,
-        appStateUrl: c.appStateEndpoint ? new URL(c.appStateEndpoint, baseUrl).toString() : null,
-        gridApiUrl: new URL(c.gridApiEndpoint ?? '/grid/api', baseUrl).toString(),
-      };
-    };
-
     // Ask the grid to attach a helper for this device at most once per effect
     // run (i.e. per device). Resets whenever `targetDevice`/`baseUrl` change.
     let startRequested = false;
@@ -536,7 +602,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
         const c = (await res.json()) as PreviewApi | null;
         if (c && c.url && c.device) {
-          if (!cancelled) setConfig(toMiddleware(c));
+          if (!cancelled) {
+            const resolved = resolveIosPreviewConfig(c, window.location, baseUrl);
+            setRequestedWebRtcCodec(resolved.webRtcCodec);
+            setWebRtcCodec(resolved.webRtcCodec);
+            setWebRtcHttpFallback(false);
+            handledWebRtcFailureRef.current = null;
+            setConfig(resolved);
+          }
           return;
         }
         // Middleware reachable but no helper for this device yet. Ask the grid to
@@ -584,18 +657,25 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     closeUrl: config ? `${config.url}/webrtc/close` : '',
     enabled: active && useWebRtc && !!config,
     codec: webRtcCodec,
+    iceServers: config?.iceServers,
   });
-  const handledWebRtcFailureRef = useRef<string | null>(null);
+
+  const selectWebRtcCodec = useCallback((codec: DeviceWebRtcCodec) => {
+    handledWebRtcFailureRef.current = null;
+    setRequestedWebRtcCodec(codec);
+    setWebRtcCodec(codec);
+    setWebRtcHttpFallback(false);
+  }, []);
 
   useEffect(() => {
     if (!useWebRtc || !webRtcFailure) return;
     if (handledWebRtcFailureRef.current === webRtcFailure.sessionId) return;
     handledWebRtcFailureRef.current = webRtcFailure.sessionId;
-    const decision = webRtcFallbackDecision('h264', webRtcCodec, webRtcFailure);
+    const decision = webRtcFallbackDecision(requestedWebRtcCodec, webRtcCodec, webRtcFailure);
     if (!decision) return;
     if (decision.type === 'switch-to-http') setWebRtcHttpFallback(true);
     else setWebRtcCodec(decision.codec);
-  }, [useWebRtc, webRtcFailure, webRtcCodec]);
+  }, [useWebRtc, webRtcFailure, requestedWebRtcCodec, webRtcCodec]);
 
   useEffect(() => {
     if (!useWebRtc) return;
@@ -658,10 +738,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
   useEffect(() => {
     dispatchAvccFallback('reset');
-    setWebRtcCodec('h264');
+    handledWebRtcFailureRef.current = null;
+    setWebRtcCodec(requestedWebRtcCodec);
     setWebRtcHttpFallback(false);
+    fpsCounterRef.current = { frames: 0, startedAt: 0 };
     setFps(0);
-  }, [streamMode, config?.url]);
+  }, [streamMode, config?.url, requestedWebRtcCodec]);
 
   useEffect(() => {
     if (!useAvcc || !config?.url) return;
@@ -1028,6 +1110,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     error,
     screen,
     fps,
+    webRtcCodec: requestedWebRtcCodec,
+    setWebRtcCodec: selectWebRtcCodec,
     devices,
     logs,
     logsEnabled,
