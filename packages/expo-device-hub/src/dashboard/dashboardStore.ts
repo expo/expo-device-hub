@@ -2,6 +2,7 @@ import { type DeviceStreamMode } from '@expo/hub-client';
 import { type Device, type StreamModeAvailability } from '@expo/hub-components';
 import { create } from 'zustand';
 
+import { dashboardHideSidebar } from '../sidebar';
 import { dashboardTransport } from '../transport';
 import { browserStreamModeAvailability, resolveStreamMode } from './streamMode';
 
@@ -72,7 +73,10 @@ function defaultDashboardStoreValues(): DashboardStoreValues {
     addedDevices: [],
     streamMode: resolveStreamMode(dashboardTransport(), availability),
     sidebarWidths: { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
-    sidebarPreferences: { left: 'auto', right: 'auto' },
+    sidebarPreferences: {
+      left: dashboardHideSidebar() ? 'hidden' : 'auto',
+      right: 'auto',
+    },
     lastOpenedSidebar: 'right',
     hideUnsupportedDevices: initialHideUnsupportedDevices(),
   };

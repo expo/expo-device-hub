@@ -72,6 +72,11 @@ async function main(): Promise<void> {
   } else {
     delete process.env.EXPO_DEVICE_HUB_TRANSPORT;
   }
+  if (options.hideSidebar) {
+    process.env.EXPO_DEVICE_HUB_HIDE_SIDEBAR = 'true';
+  } else {
+    delete process.env.EXPO_DEVICE_HUB_HIDE_SIDEBAR;
+  }
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
   const hubServer = (await import('./index.mjs')) as HubServerModule;
   const handler = hubServer.default;

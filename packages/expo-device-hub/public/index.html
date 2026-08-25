@@ -22,6 +22,9 @@
         if (transport === 'mjpeg' || transport === 'h264' || transport === 'webrtc') {
           window.__EXPO_DEVICE_HUB_TRANSPORT__ = transport;
         }
+        if ('{{hideSidebar}}' === 'true') {
+          window.__EXPO_DEVICE_HUB_HIDE_SIDEBAR__ = true;
+        }
       })();
     </script>
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->

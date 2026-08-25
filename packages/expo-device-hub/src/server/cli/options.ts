@@ -19,6 +19,7 @@ Options:
       --host <host>          Host to bind (default: 127.0.0.1; use 0.0.0.0 to expose on your local network)
       --platform <platform>  Show only iOS simulators or Android emulators (ios or android)
       --transport <transport> Preferred transport: ${TRANSPORTS.join(', ')} (default: ${DEFAULT_TRANSPORT})
+      --hide-sidebar         Hide the device list sidebar by default
   -h, --help                 Show this help
 `;
 
@@ -27,6 +28,7 @@ export type CliOptions = {
   host: string;
   platform?: PlatformFilter;
   transport?: Transport;
+  hideSidebar: boolean;
   help: boolean;
 };
 
@@ -36,6 +38,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     host: string;
     platform?: string;
     transport?: string;
+    'hide-sidebar': boolean;
     help: boolean;
   };
   try {
@@ -49,6 +52,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         host: { type: 'string', default: '127.0.0.1' },
         platform: { type: 'string' },
         transport: { type: 'string' },
+        'hide-sidebar': { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
       },
     }));
@@ -73,5 +77,12 @@ export function parseCliOptions(args: string[]): CliOptions {
     throw new Error(`Invalid --transport: ${values.transport}\n\n${HELP}`);
   }
 
-  return { port, host: values.host, platform, transport, help: false };
+  return {
+    port,
+    host: values.host,
+    platform,
+    transport,
+    hideSidebar: values['hide-sidebar'],
+    help: false,
+  };
 }

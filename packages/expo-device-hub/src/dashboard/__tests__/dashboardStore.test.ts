@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
 
 import { type Device } from '@expo/hub-components';
 
@@ -13,6 +13,10 @@ const iosDevice: Device = {
   physical: false,
   supported: true,
 };
+
+afterEach(() => {
+  delete (globalThis as any).window;
+});
 
 describe('dashboard store', () => {
   test('tracks a replacement device and selects it', () => {
@@ -75,5 +79,13 @@ describe('dashboard store', () => {
 
     store.getState().closeSidebar('left');
     expect(store.getState().sidebarPreferences.left).toBe('hidden');
+  });
+
+  test('uses the standalone shell preference for the initial left sidebar state', () => {
+    (globalThis as any).window = { __EXPO_DEVICE_HUB_HIDE_SIDEBAR__: true };
+
+    const store = createDashboardStore();
+
+    expect(store.getState().sidebarPreferences).toEqual({ left: 'hidden', right: 'auto' });
   });
 });

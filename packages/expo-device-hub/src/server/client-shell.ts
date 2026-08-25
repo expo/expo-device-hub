@@ -6,10 +6,12 @@ export function configureClientShell(
   html: string,
   mountPath: string,
   platform: PlatformFilter | undefined,
-  transport: Transport | undefined
+  transport: Transport | undefined,
+  hideSidebar: boolean
 ): string {
   return html
     .replaceAll('{{mount}}', mountPath)
     .replaceAll('{{platform}}', platform ?? '')
-    .replaceAll('{{transport}}', transport ?? '');
+    .replaceAll('{{transport}}', transport ?? '')
+    .replaceAll('{{hideSidebar}}', String(hideSidebar));
 }
