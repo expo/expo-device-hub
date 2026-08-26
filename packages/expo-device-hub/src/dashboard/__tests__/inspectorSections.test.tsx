@@ -148,13 +148,23 @@ test('omits unsupported Android activity, stream, and iOS-only options', () => {
   expect(html.match(/aria-expanded="false"/g)?.length).toBe(2);
 });
 
-test('renders device option pills beside their titles in one compact row', () => {
+test('uses the shared stream-pill spacing for every device option', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
 
-  for (const label of ['Appearance', 'Liquid glass', 'Color filter', 'Text size']) {
-    expect(rowOpeningTag(html, label)).toContain('height:51px');
+  for (const [label, optionCount] of [
+    ['Appearance', 2],
+    ['Liquid glass', 2],
+    ['Color filter', 5],
+    ['Text size', 7],
+  ] as const) {
+    const control = segmentedControlMarkup(html, label);
+
+    expect(rowOpeningTag(html, label)).toContain('flex-wrap:wrap');
+    expect(rowOpeningTag(html, label)).toContain('min-height:51px');
     expect(rowOpeningTag(html, label)).toContain('gap:12px');
-    expect(segmentedControlMarkup(html, label)).toContain('padding:0 4px');
+    expect(control.match(/padding:0 8px/g)).toHaveLength(optionCount);
+    expect(control.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(control.match(/aria-pressed="false"/g)).toHaveLength(optionCount - 1);
     expect(html).toMatch(
       new RegExp(
         `<span style="[^"]*">${label}</span><div role="group" aria-label="${label}"`,

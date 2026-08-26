@@ -105,7 +105,6 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
         <SidebarRow compact label="Appearance" borderBottom={hasFollowingRow('appearance')}>
           <SegmentedControl
             ariaLabel="Appearance"
-            compact
             options={pillOptions('appearance', APPEARANCE_OPTIONS)}
             value={value('appearance') as (typeof APPEARANCE_OPTIONS)[number]['value']}
             onChange={(nextValue) => setValue('appearance', nextValue)}
@@ -117,7 +116,6 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
         <SidebarRow compact label="Liquid glass" borderBottom={hasFollowingRow('liquid-glass')}>
           <SegmentedControl
             ariaLabel="Liquid glass"
-            compact
             options={pillOptions('liquid-glass', LIQUID_GLASS_OPTIONS)}
             value={value('liquid-glass') as (typeof LIQUID_GLASS_OPTIONS)[number]['value']}
             onChange={(nextValue) => setValue('liquid-glass', nextValue)}
@@ -129,7 +127,6 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
         <SidebarRow compact label="Color filter" borderBottom={hasFollowingRow('color-filter')}>
           <SegmentedControl
             ariaLabel="Color filter"
-            compact
             options={pillOptions('color-filter', COLOR_FILTER_OPTIONS)}
             value={value('color-filter') as (typeof COLOR_FILTER_OPTIONS)[number]['value']}
             onChange={(nextValue) => setValue('color-filter', nextValue)}
@@ -141,7 +138,6 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
         <SidebarRow compact label="Text size" borderBottom={hasFollowingRow('text-size')}>
           <SegmentedControl
             ariaLabel="Text size"
-            compact
             options={pillOptions('text-size', TEXT_SIZE_OPTIONS)}
             value={value('text-size') as (typeof TEXT_SIZE_OPTIONS)[number]['value']}
             onChange={(nextValue) => setValue('text-size', nextValue)}

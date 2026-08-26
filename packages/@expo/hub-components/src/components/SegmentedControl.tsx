@@ -21,15 +21,12 @@ export type SegmentedControlOption<Value extends string> = {
 export function SegmentedControl<Value extends string>({
   ariaLabel,
   ariaDescribedBy,
-  compact = false,
   options,
   value,
   onChange,
 }: {
   ariaLabel: string;
   ariaDescribedBy?: string;
-  /** Reduce horizontal padding for dense sidebar rows at the minimum panel width. */
-  compact?: boolean;
   options: ReadonlyArray<SegmentedControlOption<Value>>;
   value: Value;
   onChange: (value: Value) => void;
@@ -80,6 +77,7 @@ export function SegmentedControl<Value extends string>({
         display: 'flex',
         position: 'relative',
         flexShrink: 0,
+        marginLeft: 'auto',
         gap: CONTROL_SPACING,
         height: CONTROL_HEIGHT,
         padding: CONTROL_SPACING,
@@ -125,7 +123,7 @@ export function SegmentedControl<Value extends string>({
               height: OPTION_HEIGHT,
               flexShrink: 0,
               boxSizing: 'border-box',
-              padding: `0 ${compact ? 4 : OPTION_HORIZONTAL_PADDING}px`,
+              padding: `0 ${OPTION_HORIZONTAL_PADDING}px`,
               border: 0,
               borderRadius: radius.full,
               backgroundColor: 'transparent',

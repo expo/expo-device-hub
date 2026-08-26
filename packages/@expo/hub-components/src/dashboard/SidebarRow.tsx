@@ -26,9 +26,11 @@ export function SidebarRow({
     <div
       style={{
         display: "flex",
+        flexWrap: compact ? "wrap" : undefined,
         alignItems: "center",
         gap: compact ? 12 : 16,
-        height: 51,
+        height: compact ? undefined : 51,
+        minHeight: compact ? 51 : undefined,
         boxSizing: "border-box",
         padding: "11px 0",
         borderBottom: borderBottom ? `1px solid ${border.secondary}` : undefined,
