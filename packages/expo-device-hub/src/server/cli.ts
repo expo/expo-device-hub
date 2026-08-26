@@ -7,6 +7,10 @@ import { URL } from 'node:url';
 import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } from './cli/node-fetch-server';
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { staticFileHandler } from './cli/static-files';
+import {
+  encodeStandaloneServeSimOptions,
+  SERVE_SIM_OPTIONS_ENV,
+} from './serve-sim-options';
 
 type HubServerModule = typeof import('./index');
 type WebSocketRouteHandler = (socket: unknown, request: Request, server: WebSocketServer) => void;
@@ -77,6 +81,7 @@ async function main(): Promise<void> {
   } else {
     delete process.env.EXPO_DEVICE_HUB_HIDE_SIDEBAR;
   }
+  process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options);
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
   const hubServer = (await import('./index.mjs')) as HubServerModule;
   const handler = hubServer.default;

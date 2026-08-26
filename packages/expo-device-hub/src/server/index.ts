@@ -24,6 +24,7 @@ import { configureClientShell } from './client-shell';
 import { argentInteractionWebSocketHandler } from './argent-interaction-websocket';
 import { deviceListWebSocketHandler, refreshDeviceList } from './device-list-websocket';
 import { type HubDeviceList, listDevices } from './devices';
+import { handleEasEndpoint } from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
 import { EMU_PREFIX, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
@@ -89,6 +90,12 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 export default async function handler(request: Request): Promise<Response | null> {
   const { pathname, searchParams } = new URL(request.url);
+
+  const easResponse = handleEasEndpoint(request, {
+    mountPath: MOUNT_PATH,
+    serveSimPrefix: SIM_PREFIX,
+  });
+  if (easResponse) return easResponse;
 
   if (request.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
     return serveClientIndexHtml();

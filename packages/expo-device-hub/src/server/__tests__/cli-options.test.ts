@@ -9,6 +9,16 @@ describe('parseCliOptions', () => {
       host: '127.0.0.1',
       platform: undefined,
       transport: undefined,
+      webrtcCodec: undefined,
+      maxDimension: undefined,
+      mjpegQuality: undefined,
+      videoBitrate: undefined,
+      videoFps: undefined,
+      stunUrls: undefined,
+      turnUrls: undefined,
+      turnUsername: undefined,
+      turnCredential: undefined,
+      metricsCorsOrigins: [],
       hideSidebar: false,
       help: false,
     });
@@ -33,6 +43,118 @@ describe('parseCliOptions', () => {
     expect(() => parseCliOptions(['--transport', 'auto'])).toThrow('Invalid --transport: auto');
   });
 
+  test('parses serve-sim WebRTC options', () => {
+    expect(
+      parseCliOptions([
+        '--transport',
+        'webrtc',
+        '--webrtc-codec',
+        'VP8',
+        '--stun-url',
+        'stun:one.test,stuns:two.test',
+        '--turn-url=turn:relay.test,turns:secure-relay.test',
+        '--turn-username',
+        'alice',
+        '--turn-credential',
+        'secret',
+      ])
+    ).toMatchObject({
+      transport: 'webrtc',
+      webrtcCodec: 'vp8',
+      stunUrls: ['stun:one.test', 'stuns:two.test'],
+      turnUrls: ['turn:relay.test', 'turns:secure-relay.test'],
+      turnUsername: 'alice',
+      turnCredential: 'secret',
+    });
+  });
+
+  test('parses serve-sim encoder and metrics options', () => {
+    expect(
+      parseCliOptions([
+        '--max-dimension=1920',
+        '--mjpeg-quality',
+        '0.8',
+        '--video-bitrate',
+        '8000000',
+        '--video-fps',
+        '30',
+        '--metrics-cors-origin',
+        'https://one.test',
+        '--metrics-cors-origin=https://two.test',
+      ])
+    ).toMatchObject({
+      maxDimension: 1920,
+      mjpegQuality: 0.8,
+      videoBitrate: 8_000_000,
+      videoFps: 30,
+      metricsCorsOrigins: ['https://one.test', 'https://two.test'],
+    });
+  });
+
+  test('validates serve-sim option ranges and values', () => {
+    expect(() => parseCliOptions(['--webrtc-codec', 'av1'])).toThrow(
+      'Invalid --webrtc-codec: av1'
+    );
+    expect(() => parseCliOptions(['--max-dimension', '4097'])).toThrow(
+      'Invalid --max-dimension: 4097'
+    );
+    expect(() => parseCliOptions(['--mjpeg-quality', '0'])).toThrow(
+      'Invalid --mjpeg-quality: 0'
+    );
+    expect(() => parseCliOptions(['--video-bitrate', '99999'])).toThrow(
+      'Invalid --video-bitrate: 99999'
+    );
+    expect(() => parseCliOptions(['--video-fps', '29.97'])).toThrow(
+      'Invalid --video-fps: 29.97'
+    );
+    expect(() =>
+      parseCliOptions(['--transport', 'webrtc', '--stun-url', 'https://bad.test'])
+    ).toThrow('Invalid --stun-url');
+  });
+
+  test('requires a WebRTC transport and complete TURN credentials', () => {
+    expect(() => parseCliOptions(['--webrtc-codec', 'vp8'])).toThrow(
+      'WebRTC options require --transport webrtc'
+    );
+    expect(() =>
+      parseCliOptions([
+        '--transport',
+        'webrtc',
+        '--turn-url',
+        'turn:relay.test',
+        '--turn-username',
+        'alice',
+      ])
+    ).toThrow('--turn-username and --turn-credential must be provided together');
+    expect(() =>
+      parseCliOptions([
+        '--transport',
+        'webrtc',
+        '--turn-username',
+        'alice',
+        '--turn-credential',
+        'secret',
+      ])
+    ).toThrow('--turn-username and --turn-credential require --turn-url');
+  });
+
+  test('documents every serve-sim flag', () => {
+    for (const flag of [
+      '--webrtc-codec',
+      '--max-dimension',
+      '--mjpeg-quality',
+      '--video-bitrate',
+      '--video-fps',
+      '--stun-url',
+      '--turn-url',
+      '--turn-username',
+      '--turn-credential',
+      '--metrics-cors-origin',
+    ]) {
+      expect(HELP).toContain(flag);
+    }
+  });
+
   test('hides the device list sidebar on request', () => {
     expect(parseCliOptions(['--hide-sidebar']).hideSidebar).toBe(true);
     expect(HELP).toContain('--hide-sidebar');
@@ -52,6 +174,16 @@ describe('parseCliOptions', () => {
       host: '0.0.0.0',
       platform: undefined,
       transport: undefined,
+      webrtcCodec: undefined,
+      maxDimension: undefined,
+      mjpegQuality: undefined,
+      videoBitrate: undefined,
+      videoFps: undefined,
+      stunUrls: undefined,
+      turnUrls: undefined,
+      turnUsername: undefined,
+      turnCredential: undefined,
+      metricsCorsOrigins: [],
       hideSidebar: false,
       help: false,
     });
