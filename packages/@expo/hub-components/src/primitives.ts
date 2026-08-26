@@ -16,6 +16,7 @@ export * from './components/DropdownItem';
 export * from './components/Logo';
 export * from './components/ResizeHandle';
 export * from './components/SegmentedControl';
+export * from './components/Select';
 export * from './components/SidebarToggle';
 export * from './components/Switch';
 export * from './components/cx';

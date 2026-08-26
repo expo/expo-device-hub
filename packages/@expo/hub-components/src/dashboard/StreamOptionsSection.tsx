@@ -7,13 +7,12 @@ import {
   type DeviceStreamMode,
   type DeviceWebRtcCodec,
 } from '@expo/hub-client';
-import { SegmentedControl, bg, border, radius, text, textSize } from '../primitives';
+import { SegmentedControl, Select, type SelectOption, text, textSize } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { SidebarRow } from './SidebarRow';
 import { type StreamModeAvailability } from './StreamSection';
 
 type StreamTransport = 'http' | 'webrtc';
-type SelectOption = { value: string; label: string };
 
 export type StreamOptionsSectionProps = {
   client: DeviceClient;
@@ -94,49 +93,6 @@ function withCurrentValue(
   return options.some((option) => option.value === current)
     ? options
     : [{ value: current, label: label(value) }, ...options];
-}
-
-function SettingSelect({
-  label,
-  value,
-  options,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: SelectOption[];
-  disabled: boolean;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <select
-      aria-label={label}
-      value={value}
-      disabled={disabled}
-      onChange={(event) => onChange(event.currentTarget.value)}
-      style={{
-        ...textSize.xs,
-        minWidth: 116,
-        height: 30,
-        padding: '0 24px 0 9px',
-        boxSizing: 'border-box',
-        border: `1px solid ${border.default}`,
-        borderRadius: radius.md,
-        backgroundColor: bg.subtle,
-        color: text.default,
-        fontFamily: 'inherit',
-        cursor: disabled ? 'default' : 'pointer',
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      {options.map((option) => (
-        <option key={option.value} value={option.value}>
-          {option.label}
-        </option>
-      ))}
-    </select>
-  );
 }
 
 /** Viewer transport, codec, and serve-sim runtime encoder controls. */
@@ -233,8 +189,8 @@ export function StreamOptionsSection({
         </span>
       )}
       <SidebarRow label="Max size">
-        <SettingSelect
-          label="Max size"
+        <Select
+          ariaLabel="Max size"
           value={String(settings.maxDimension)}
           options={withCurrentValue(settings.maxDimension, MAX_DIMENSION_OPTIONS, (value) =>
             value === 0 ? 'Full' : `${value} px`,
@@ -244,8 +200,8 @@ export function StreamOptionsSection({
         />
       </SidebarRow>
       <SidebarRow label="MJPEG FPS">
-        <SettingSelect
-          label="MJPEG FPS"
+        <Select
+          ariaLabel="MJPEG FPS"
           value={String(settings.mjpegFps)}
           options={withCurrentValue(settings.mjpegFps, FPS_OPTIONS, (value) => `${value} FPS`)}
           disabled={settingsDisabled || transport !== 'http'}
@@ -253,8 +209,8 @@ export function StreamOptionsSection({
         />
       </SidebarRow>
       <SidebarRow label="MJPEG quality">
-        <SettingSelect
-          label="MJPEG quality"
+        <Select
+          ariaLabel="MJPEG quality"
           value={String(settings.mjpegQuality)}
           options={withCurrentValue(
             settings.mjpegQuality,
@@ -266,8 +222,8 @@ export function StreamOptionsSection({
         />
       </SidebarRow>
       <SidebarRow label="Video FPS">
-        <SettingSelect
-          label="Video FPS"
+        <Select
+          ariaLabel="Video FPS"
           value={String(settings.h264Fps)}
           options={withCurrentValue(settings.h264Fps, FPS_OPTIONS, (value) => `${value} FPS`)}
           disabled={settingsDisabled || !h264Active}
@@ -275,8 +231,8 @@ export function StreamOptionsSection({
         />
       </SidebarRow>
       <SidebarRow label="Video bitrate" borderBottom={false}>
-        <SettingSelect
-          label="Video bitrate"
+        <Select
+          ariaLabel="Video bitrate"
           value={String(settings.h264Bitrate)}
           options={withCurrentValue(
             settings.h264Bitrate,

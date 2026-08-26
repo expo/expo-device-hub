@@ -36,6 +36,7 @@ export {
   SegmentedControl,
   type SegmentedControlOption,
 } from './components/SegmentedControl';
+export { Select, type SelectOption, type SelectProps } from './components/Select';
 export { SidebarToggle } from './components/SidebarToggle';
 export { Switch, type SwitchProps } from './components/Switch';
 export { cx } from './components/cx';
