@@ -8,13 +8,22 @@ import { fileURLToPath } from 'node:url';
 import { simMiddleware } from '../../vendor/serve-sim/dist/middleware.js';
 
 import { MOUNT_PATH } from './mount';
+import {
+  readStandaloneServeSimOptions,
+  SERVE_SIM_OPTIONS_ENV,
+} from './serve-sim-options';
 
 export const SIM_PREFIX = '/vendor/serve-sim';
 // Must be the full mount path: serve-sim bakes basePath into the client-facing URLs it returns
 // (grid / exec-ws / stream), so a shorter value silently breaks the iOS client.
 const SIM_BASE_PATH = `${MOUNT_PATH}${SIM_PREFIX}`;
 
-const middleware = simMiddleware({ basePath: SIM_BASE_PATH, proxyHelpers: true });
+const standaloneOptions = readStandaloneServeSimOptions(process.env[SERVE_SIM_OPTIONS_ENV]);
+const middleware = simMiddleware({
+  basePath: SIM_BASE_PATH,
+  proxyHelpers: true,
+  ...standaloneOptions,
+});
 
 const SERVE_SIM_STATE_DIR = join(tmpdir(), 'serve-sim');
 const SPAWN_RETRY_COOLDOWN_MS = 30_000;

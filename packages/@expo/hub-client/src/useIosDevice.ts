@@ -53,7 +53,7 @@ import {
 } from './types';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { useAvccStream } from './useAvccStream';
-import { useWebRtcStream } from './useWebRtcStream';
+import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
 import {
   type WebRtcCodec,
   webRtcFallbackDecision,
@@ -265,6 +265,8 @@ interface ResolvedConfig {
   /** Absolute URL of the foreground-app SSE stream. */
   appStateUrl: string | null;
   gridApiUrl: string | null;
+  webRtcCodec: WebRtcCodec;
+  webRtcIceServers?: WebRtcIceServer[];
 }
 
 /** Shape of the serve-sim middleware `/api` (and grid) responses we read. */
@@ -279,6 +281,9 @@ interface PreviewApi {
   appStateEndpoint?: string;
   gridApiEndpoint?: string;
   proxyHelpers?: boolean;
+  streamSettings?:
+    | { transport: 'http'; codec?: 'auto' | 'h264' | 'mjpeg' }
+    | { transport: 'webrtc'; codec: WebRtcCodec; iceServers?: WebRtcIceServer[] };
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
@@ -519,6 +524,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         logsPath: c.logsEndpoint ?? null,
         appStateUrl: c.appStateEndpoint ? new URL(c.appStateEndpoint, baseUrl).toString() : null,
         gridApiUrl: new URL(c.gridApiEndpoint ?? '/grid/api', baseUrl).toString(),
+        webRtcCodec: c.streamSettings?.transport === 'webrtc' ? c.streamSettings.codec : 'h264',
+        ...(c.streamSettings?.transport === 'webrtc' && c.streamSettings.iceServers
+          ? { webRtcIceServers: c.streamSettings.iceServers }
+          : {}),
       };
     };
 
@@ -536,7 +545,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
         const c = (await res.json()) as PreviewApi | null;
         if (c && c.url && c.device) {
-          if (!cancelled) setConfig(toMiddleware(c));
+          if (!cancelled) {
+            const resolved = toMiddleware(c);
+            setWebRtcCodec(resolved.webRtcCodec);
+            setConfig(resolved);
+          }
           return;
         }
         // Middleware reachable but no helper for this device yet. Ask the grid to
@@ -584,6 +597,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     closeUrl: config ? `${config.url}/webrtc/close` : '',
     enabled: active && useWebRtc && !!config,
     codec: webRtcCodec,
+    iceServers: config?.webRtcIceServers,
   });
   const handledWebRtcFailureRef = useRef<string | null>(null);
 
@@ -591,11 +605,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!useWebRtc || !webRtcFailure) return;
     if (handledWebRtcFailureRef.current === webRtcFailure.sessionId) return;
     handledWebRtcFailureRef.current = webRtcFailure.sessionId;
-    const decision = webRtcFallbackDecision('h264', webRtcCodec, webRtcFailure);
+    const decision = webRtcFallbackDecision(
+      config?.webRtcCodec ?? 'h264',
+      webRtcCodec,
+      webRtcFailure,
+    );
     if (!decision) return;
     if (decision.type === 'switch-to-http') setWebRtcHttpFallback(true);
     else setWebRtcCodec(decision.codec);
-  }, [useWebRtc, webRtcFailure, webRtcCodec]);
+  }, [useWebRtc, webRtcFailure, webRtcCodec, config?.webRtcCodec]);
 
   useEffect(() => {
     if (!useWebRtc) return;
@@ -658,10 +676,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
   useEffect(() => {
     dispatchAvccFallback('reset');
-    setWebRtcCodec('h264');
+    setWebRtcCodec(config?.webRtcCodec ?? 'h264');
     setWebRtcHttpFallback(false);
     setFps(0);
-  }, [streamMode, config?.url]);
+  }, [streamMode, config?.url, config?.webRtcCodec]);
 
   useEffect(() => {
     if (!useAvcc || !config?.url) return;
