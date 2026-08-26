@@ -21,7 +21,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   clearEvents: () => {},
   activity: null,
   deviceSettings: null,
-  deviceSettingsPending: null,
+  deviceSettingsPending: new Set(),
   setDeviceSetting: () => {},
   streamSettings: null,
   streamSettingsPending: false,

@@ -14,17 +14,20 @@ export function SidebarRow({
   label,
   children,
   borderBottom = true,
+  compact = false,
 }: {
   label: string;
   children: ReactNode;
   borderBottom?: boolean;
+  /** Tighten the label/control gap for option-dense rows. */
+  compact?: boolean;
 }) {
   return (
     <div
       style={{
         display: "flex",
         alignItems: "center",
-        gap: 16,
+        gap: compact ? 12 : 16,
         height: 51,
         boxSizing: "border-box",
         padding: "11px 0",

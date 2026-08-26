@@ -27,7 +27,7 @@ export function FloatingSidebarToggle({
   return (
     <div
       data-floating-sidebar-toggle={side}
-      style={{ position: 'absolute', top: 24, [side]: inset, zIndex: 15 }}>
+      style={{ position: 'absolute', top: 28, [side]: inset, zIndex: 15 }}>
       <SidebarToggle floating side={side} onClick={onClick} />
     </div>
   );

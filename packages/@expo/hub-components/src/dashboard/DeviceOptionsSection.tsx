@@ -1,7 +1,7 @@
-import { useState, type ReactNode } from 'react';
+import { useState } from 'react';
 
 import { type DeviceClient, type DeviceSettingKey } from '@expo/hub-client';
-import { SegmentedControl, border, text, textSize } from '../primitives';
+import { SegmentedControl } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { KeyboardSection } from './KeyboardSection';
 import { SidebarRow, SidebarSwitch } from './SidebarRow';
@@ -54,29 +54,21 @@ const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = 
   { key: 'voiceover', label: 'VoiceOver' },
 ];
 
-function SettingGroup({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div
-      style={{
-        display: 'flex',
-        minWidth: 0,
-        flexDirection: 'column',
-        gap: 7,
-        padding: '9px 0 10px',
-        borderBottom: `1px solid ${border.secondary}`,
-      }}
-    >
-      <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{label}</span>
-      <div style={{ minWidth: 0, overflowX: 'auto' }}>{children}</div>
-    </div>
-  );
-}
+const SETTING_ORDER: ReadonlyArray<DeviceSettingKey> = [
+  'appearance',
+  'liquid-glass',
+  'color-filter',
+  'text-size',
+  ...SWITCH_OPTIONS.map(({ key }) => key),
+];
+
+const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
 /** Device-wide appearance and accessibility settings, plus the iOS keyboard controls. */
 export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
   const [open, setOpen] = useState(true);
   const settings = client?.deviceSettings ?? null;
-  const pending = client?.deviceSettingsPending ?? null;
+  const pending = client?.deviceSettingsPending ?? EMPTY_PENDING_SETTINGS;
   const platform = client?.platform;
 
   function visible(key: DeviceSettingKey) {
@@ -89,69 +81,81 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
   }
 
   function pillOptions<Value extends string>(
+    key: DeviceSettingKey,
     options: ReadonlyArray<{ value: Value; label: string }>,
   ) {
-    const disabled = settings === null || pending !== null;
+    const disabled = settings === null || pending.has(key);
     return options.map((option) => ({ ...option, disabled }));
   }
 
   function setValue(key: DeviceSettingKey, nextValue: string) {
-    if (settings !== null && pending === null) client?.setDeviceSetting(key, nextValue);
+    if (settings !== null && !pending.has(key)) client?.setDeviceSetting(key, nextValue);
+  }
+
+  const keyboardVisible = client?.platform === 'ios';
+  const visibleSettingKeys = SETTING_ORDER.filter(visible);
+
+  function hasFollowingRow(key: DeviceSettingKey) {
+    return keyboardVisible || visibleSettingKeys.at(-1) !== key;
   }
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
       {visible('appearance') && (
-        <SettingGroup label="Appearance">
+        <SidebarRow compact label="Appearance" borderBottom={hasFollowingRow('appearance')}>
           <SegmentedControl
             ariaLabel="Appearance"
-            options={pillOptions(APPEARANCE_OPTIONS)}
+            compact
+            options={pillOptions('appearance', APPEARANCE_OPTIONS)}
             value={value('appearance') as (typeof APPEARANCE_OPTIONS)[number]['value']}
             onChange={(nextValue) => setValue('appearance', nextValue)}
           />
-        </SettingGroup>
+        </SidebarRow>
       )}
 
       {platform === 'ios' && visible('liquid-glass') && (
-        <SettingGroup label="Liquid glass">
+        <SidebarRow compact label="Liquid glass" borderBottom={hasFollowingRow('liquid-glass')}>
           <SegmentedControl
             ariaLabel="Liquid glass"
-            options={pillOptions(LIQUID_GLASS_OPTIONS)}
+            compact
+            options={pillOptions('liquid-glass', LIQUID_GLASS_OPTIONS)}
             value={value('liquid-glass') as (typeof LIQUID_GLASS_OPTIONS)[number]['value']}
             onChange={(nextValue) => setValue('liquid-glass', nextValue)}
           />
-        </SettingGroup>
+        </SidebarRow>
       )}
 
       {platform === 'ios' && visible('color-filter') && (
-        <SettingGroup label="Color filter">
+        <SidebarRow compact label="Color filter" borderBottom={hasFollowingRow('color-filter')}>
           <SegmentedControl
             ariaLabel="Color filter"
-            options={pillOptions(COLOR_FILTER_OPTIONS)}
+            compact
+            options={pillOptions('color-filter', COLOR_FILTER_OPTIONS)}
             value={value('color-filter') as (typeof COLOR_FILTER_OPTIONS)[number]['value']}
             onChange={(nextValue) => setValue('color-filter', nextValue)}
           />
-        </SettingGroup>
+        </SidebarRow>
       )}
 
       {platform === 'ios' && visible('text-size') && (
-        <SettingGroup label="Text size">
+        <SidebarRow compact label="Text size" borderBottom={hasFollowingRow('text-size')}>
           <SegmentedControl
             ariaLabel="Text size"
-            options={pillOptions(TEXT_SIZE_OPTIONS)}
+            compact
+            options={pillOptions('text-size', TEXT_SIZE_OPTIONS)}
             value={value('text-size') as (typeof TEXT_SIZE_OPTIONS)[number]['value']}
             onChange={(nextValue) => setValue('text-size', nextValue)}
           />
-        </SettingGroup>
+        </SidebarRow>
       )}
 
       {platform === 'ios' &&
-        SWITCH_OPTIONS.map(({ key, label }, index) =>
+        SWITCH_OPTIONS.map(({ key, label }) =>
           visible(key) ? (
-            <SidebarRow key={key} label={label} borderBottom={index < SWITCH_OPTIONS.length - 1}>
+            <SidebarRow key={key} label={label} borderBottom={hasFollowingRow(key)}>
               <SidebarSwitch
                 checked={value(key) === 'on'}
-                disabled={settings === null || pending !== null}
+                disabled={settings === null || pending.has(key)}
                 label={label}
                 onChange={(checked) => setValue(key, checked ? 'on' : 'off')}
               />

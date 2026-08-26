@@ -115,7 +115,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   // The device's system dark/light setting. null until `/api/uimode` reports it.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
-  const [deviceSettingsPending, setDeviceSettingsPending] = useState<DeviceSettingKey | null>(null);
+  const [deviceSettingsPending, setDeviceSettingsPending] = useState<
+    ReadonlySet<DeviceSettingKey>
+  >(() => new Set());
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
@@ -229,7 +231,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       const request = ++appearanceRequestRef.current;
       appearancePendingRef.current = true;
       setAppearanceState(mode);
-      setDeviceSettingsPending('appearance');
+      setDeviceSettingsPending(new Set(['appearance']));
       const url = `${apiUrl(baseUrl, '/api/uimode')}${
         targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
       }`;
@@ -263,7 +265,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         .finally(() => {
           if (appearanceRequestRef.current === request) {
             appearancePendingRef.current = false;
-            setDeviceSettingsPending(null);
+            setDeviceSettingsPending(new Set());
           }
         });
     },
@@ -756,7 +758,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   useEffect(() => {
     const request = ++appearanceRequestRef.current;
     appearancePendingRef.current = false;
-    setDeviceSettingsPending(null);
+    setDeviceSettingsPending(new Set());
     if (!active || !baseUrl) {
       setAppearanceState(null);
       return;

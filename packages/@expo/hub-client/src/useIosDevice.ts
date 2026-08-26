@@ -22,7 +22,7 @@
  * helper because doing so drops the middleware/helper path from stream URLs.
  */
 
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 
 import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
 import {
@@ -66,6 +66,10 @@ import {
   type ScreenSize,
   type TouchSample,
 } from './types';
+import {
+  DeviceSettingWriteTracker,
+  mergeAuthoritativeDeviceSetting,
+} from './device-setting-writes';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import {
   DEFAULT_DEVICE_STREAM_SETTINGS,
@@ -365,7 +369,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
-  const [deviceSettingsPending, setDeviceSettingsPending] = useState<DeviceSettingKey | null>(null);
+  const [deviceSettingsPending, setDeviceSettingsPending] = useState<
+    ReadonlySet<DeviceSettingKey>
+  >(() => new Set());
   const [streamSettings, setStreamSettings] = useState<DeviceStreamEncoderSettings | null>(null);
   const [streamSettingsPending, setStreamSettingsPending] = useState(false);
   // Browser HID injection remains active when this is false. Disabling the
@@ -389,8 +395,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [webRtcCodec, setWebRtcCodecState] = useState<DeviceWebRtcCodec>('h264');
   const [activeWebRtcCodec, setActiveWebRtcCodec] = useState<WebRtcCodec>('h264');
   const [webRtcHttpFallback, setWebRtcHttpFallback] = useState(false);
-  const deviceSettingRequestRef = useRef(0);
-  const deviceSettingPendingRef = useRef(false);
+  const deviceSettingWriteTrackerRef = useRef(new DeviceSettingWriteTracker());
+  // Async option writes capture their config. Track only committed config so
+  // an interrupted concurrent render cannot invalidate a legitimate rollback.
+  const deviceSettingConfigRef = useRef(config);
+  useLayoutEffect(() => {
+    deviceSettingConfigRef.current = config;
+  }, [config]);
   const streamSettingsRequestRef = useRef(0);
   const streamSettingsRef = useRef<DeviceStreamEncoderSettings | null>(null);
   const streamSettingsPendingRef = useRef(false);
@@ -550,58 +561,59 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
   }, [baseUrl, targetDevice, config]);
 
-  const refreshDeviceSettings = useCallback(async (request?: number) => {
-    const c = config;
-    if (!c?.execWsUrl || !c.execToken || !c.device) return;
-    const result = await execWsUiRequest(c.execWsUrl, c.execToken, { device: c.device });
-    if (request !== undefined && deviceSettingRequestRef.current !== request) return;
-    const next: DeviceSettings = {};
-    for (const [key, value] of Object.entries(result.status ?? {})) {
-      if (typeof value === 'string') next[key as DeviceSettingKey] = value;
-    }
-    setDeviceSettings(next);
-    const nextAppearance = next.appearance;
-    if (nextAppearance === 'light' || nextAppearance === 'dark') {
-      setAppearanceState(nextAppearance);
-    }
-  }, [config]);
-
   // Apply any serve-sim UI option over its authenticated exec-ws request
   // channel. The state is optimistic so the selected pill/switch responds at
-  // once; a failed request re-reads the simulator's authoritative values.
+  // once. Writes are serialized per option, while unrelated options can update
+  // concurrently. A failed request re-reads only that option's authoritative
+  // value so it cannot roll back another optimistic write.
   const setDeviceSetting = useCallback(
     (key: DeviceSettingKey, value: string) => {
       const c = config;
-      if (!c?.execWsUrl || !c.execToken || !c.device || deviceSettingPendingRef.current) return;
-      const request = ++deviceSettingRequestRef.current;
-      deviceSettingPendingRef.current = true;
-      setDeviceSettingsPending(key);
+      if (!c?.execWsUrl || !c.execToken || !c.device) return;
+      const { device, execToken, execWsUrl } = c;
+      const tracker = deviceSettingWriteTrackerRef.current;
+      const request = tracker.start(key);
+      if (!request) return;
+      setDeviceSettingsPending(tracker.pending);
       setDeviceSettings((current) => ({ ...(current ?? {}), [key]: value }));
       if (key === 'appearance' && (value === 'light' || value === 'dark')) {
         setAppearanceState(value);
       }
-      void execWsUiRequest(c.execWsUrl, c.execToken, {
-        device: c.device,
+      void execWsUiRequest(execWsUrl, execToken, {
+        device,
         option: key,
         value,
       })
         .catch(async () => {
-          if (deviceSettingRequestRef.current !== request) return;
+          if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
           try {
-            await refreshDeviceSettings(request);
+            const result = await execWsUiRequest(execWsUrl, execToken, { device });
+            if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
+            const authoritative: DeviceSettings = {};
+            for (const [nextKey, nextValue] of Object.entries(result.status ?? {})) {
+              if (typeof nextValue === 'string') {
+                authoritative[nextKey as DeviceSettingKey] = nextValue;
+              }
+            }
+            setDeviceSettings((current) =>
+              mergeAuthoritativeDeviceSetting(current, key, authoritative),
+            );
+            if (key === 'appearance') {
+              const nextAppearance = authoritative.appearance;
+              if (nextAppearance === 'light' || nextAppearance === 'dark') {
+                setAppearanceState(nextAppearance);
+              }
+            }
           } catch {
             // Keep the optimistic value if both the write and authoritative
             // refresh channels are temporarily unavailable.
           }
         })
         .finally(() => {
-          if (deviceSettingRequestRef.current === request) {
-            deviceSettingPendingRef.current = false;
-            setDeviceSettingsPending(null);
-          }
+          if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [config, refreshDeviceSettings],
+    [config],
   );
 
   const setAppearance = useCallback(
@@ -1216,9 +1228,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // ── Simulator settings (best-effort) — one status request hydrates every
   //    device-options control, including the appearance used by the toolbar. ──
   useEffect(() => {
-    ++deviceSettingRequestRef.current;
-    deviceSettingPendingRef.current = false;
-    setDeviceSettingsPending(null);
+    deviceSettingWriteTrackerRef.current.reset();
+    setDeviceSettingsPending(new Set());
     if (!execWsUrl || !execToken || !deviceUdid) {
       setAppearanceState(null);
       setDeviceSettings(null);

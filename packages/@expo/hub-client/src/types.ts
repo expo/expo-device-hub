@@ -312,8 +312,8 @@ export interface DeviceClient {
 
   /** Backend-supported simulator/device options and their current values. */
   deviceSettings: DeviceSettings | null;
-  /** The option currently being changed, if any. */
-  deviceSettingsPending: DeviceSettingKey | null;
+  /** Options currently being changed. Writes to other options remain available. */
+  deviceSettingsPending: ReadonlySet<DeviceSettingKey>;
   /** Change one simulator/device option. Unsupported keys are ignored by each backend. */
   setDeviceSetting: (key: DeviceSettingKey, value: string) => void;
 
