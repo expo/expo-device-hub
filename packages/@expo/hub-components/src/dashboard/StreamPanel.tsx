@@ -95,7 +95,7 @@ export function StreamPanel({
           width: '100%',
           minHeight: 0,
         }}>
-        <DeviceTitle key={device.id} device={device} />
+        <DeviceTitle key={device.id} device={device} status={client.status} />
         <PhoneFrame
           platform={device.platform}
           client={client}
