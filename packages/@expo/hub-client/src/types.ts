@@ -262,6 +262,8 @@ export interface DeviceConnectionOptions {
    * serve-emu currently ignores this because its wire protocol is always H.264.
    */
   streamMode: DeviceStreamMode;
+  /** Viewer-local HTTP codec retained when WebRTC falls back to HTTP. */
+  httpCodec?: DeviceHttpCodec;
 }
 
 /** Which element the implementation paints into. */
@@ -280,6 +282,8 @@ export interface DeviceClient {
   screen: ScreenSize | null;
   /** Best-effort frames-per-second (0 when unavailable). */
   fps: number;
+  /** Transport currently painting frames, including automatic codec/transport fallback. */
+  activeStreamMode: DeviceStreamMode;
   /** Running devices the server exposes (may be a placeholder list). */
   devices: RunningDevice[];
   /** Rolling buffer of recent log lines (best-effort; may be empty). */
@@ -312,8 +316,12 @@ export interface DeviceClient {
 
   /** Backend-supported simulator/device options and their current values. */
   deviceSettings: DeviceSettings | null;
+  /** Hydration failure for device options, or null while loading/available. */
+  deviceSettingsError: string | null;
   /** Options currently being changed. Writes to other options remain available. */
   deviceSettingsPending: ReadonlySet<DeviceSettingKey>;
+  /** Retry hydrating device options after a transient backend failure. */
+  retryDeviceSettings: () => void;
   /** Change one simulator/device option. Unsupported keys are ignored by each backend. */
   setDeviceSetting: (key: DeviceSettingKey, value: string) => void;
 

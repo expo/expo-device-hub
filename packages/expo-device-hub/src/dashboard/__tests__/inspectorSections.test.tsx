@@ -12,6 +12,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     error: null,
     screen: { width: 390, height: 844 },
     fps: 60,
+    activeStreamMode: ios ? 'mjpeg' : 'h264',
     devices: [],
     logs: [],
     logsEnabled: false,
@@ -39,7 +40,9 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           voiceover: 'off',
         }
       : { appearance: 'light' },
+    deviceSettingsError: null,
     deviceSettingsPending: new Set(),
+    retryDeviceSettings: () => {},
     setDeviceSetting: () => {},
     streamSettings: ios
       ? {

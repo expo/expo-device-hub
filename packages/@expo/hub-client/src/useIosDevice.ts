@@ -22,7 +22,15 @@
  * helper because doing so drops the middleware/helper path from stream URLs.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 
 import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
 import {
@@ -31,6 +39,7 @@ import {
   parseActivitySample,
 } from './activity';
 import { isAvccSupported } from './avcc';
+import { ExecWsEventPool, type ExecWsEventBlock } from './exec-ws-event-pool';
 import {
   HID_EDGE_BOTTOM,
   homeIndicatorEdge,
@@ -56,6 +65,7 @@ import {
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamEncoderSettings,
+  type DeviceStreamMode,
   type DeviceWebRtcCodec,
   type DeviceOrientation,
   type ForegroundApp,
@@ -85,32 +95,8 @@ import {
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
 const ACTIVITY_STALE_MS = 8000;
-
-interface ParsedSseBlock {
-  event: string;
-  data: string;
-}
-
-/** Append raw SSE bytes and emit every complete block, retaining a partial tail. */
-function drainSseChunk(
-  previous: string,
-  chunk: string,
-  emit: (block: ParsedSseBlock) => void,
-): string {
-  let buffer = `${previous}${chunk}`.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  let boundary: number;
-  while ((boundary = buffer.indexOf('\n\n')) !== -1) {
-    const lines = buffer.slice(0, boundary).split('\n');
-    buffer = buffer.slice(boundary + 2);
-    const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message';
-    const data = lines
-      .filter((line) => line.startsWith('data:'))
-      .map((line) => line.slice(5).replace(/^ /, ''))
-      .join('\n');
-    if (data) emit({ event, data });
-  }
-  return buffer;
-}
+const UI_REQUEST_TIMEOUT_MS = 15_000;
+const STREAM_SETTINGS_REVALIDATE_MS = 3_000;
 
 // serve-sim binary WS message tags (serve-sim-client `SimulatorView`).
 const WS_MSG_TOUCH = 0x03;
@@ -220,7 +206,10 @@ function execWsUiRequest(
       } catch {}
       run();
     };
-    timer = setTimeout(() => finish(() => reject(new Error('exec-ws timeout'))), 5000);
+    timer = setTimeout(
+      () => finish(() => reject(new Error('Device options did not respond.'))),
+      UI_REQUEST_TIMEOUT_MS,
+    );
     ws.onopen = () => ws.send(JSON.stringify({ token: execToken }));
     ws.onmessage = (event) => {
       let msg: { ready?: boolean; id?: number; error?: string } & UiRequestResult;
@@ -350,7 +339,13 @@ interface PreviewApi {
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
+  const {
+    baseUrl,
+    enabled = true,
+    device: targetDevice = null,
+    streamMode,
+    httpCodec = streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto',
+  } = options;
   const active = enabled && !!baseUrl;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
@@ -369,6 +364,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
+  const [deviceSettingsError, setDeviceSettingsError] = useState<string | null>(null);
+  const [deviceSettingsRetry, retryDeviceSettings] = useReducer((generation) => generation + 1, 0);
   const [deviceSettingsPending, setDeviceSettingsPending] = useState<
     ReadonlySet<DeviceSettingKey>
   >(() => new Set());
@@ -405,17 +402,32 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const streamSettingsRequestRef = useRef(0);
   const streamSettingsRef = useRef<DeviceStreamEncoderSettings | null>(null);
   const streamSettingsPendingRef = useRef(false);
-  const streamSettingsControllerRef = useRef<AbortController | null>(null);
+  const streamSettingsLoadControllerRef = useRef<AbortController | null>(null);
+  const streamSettingsUpdateControllerRef = useRef<AbortController | null>(null);
   const activityLastSampleAtRef = useRef(0);
   useEffect(
     () => () => {
-      streamSettingsControllerRef.current?.abort();
+      streamSettingsLoadControllerRef.current?.abort();
+      streamSettingsUpdateControllerRef.current?.abort();
     },
     [],
   );
   const useWebRtc = streamMode === 'webrtc' && !webRtcHttpFallback;
-  const wantsAvcc = streamMode === 'h264' || webRtcHttpFallback;
-  const useAvcc = wantsAvcc && isAvccSupported() && !avccFallback.fellBack;
+  const wantsAvcc =
+    streamMode === 'h264' || (webRtcHttpFallback && httpCodec !== 'mjpeg');
+  const playbackIdentity = `${streamMode}:${httpCodec}:${config?.url ?? ''}`;
+  const previousPlaybackIdentityRef = useRef(playbackIdentity);
+  const resettingAvccFallback = previousPlaybackIdentityRef.current !== playbackIdentity;
+  useLayoutEffect(() => {
+    previousPlaybackIdentityRef.current = playbackIdentity;
+  }, [playbackIdentity]);
+  const useAvcc =
+    wantsAvcc && isAvccSupported() && (!avccFallback.fellBack || resettingAvccFallback);
+  const activeStreamMode: DeviceStreamMode = useWebRtc
+    ? 'webrtc'
+    : useAvcc
+      ? 'h264'
+      : 'mjpeg';
   useEffect(() => {
     if (streamMode === 'webrtc') return;
     setWebRtcHttpFallback(false);
@@ -633,9 +645,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!endpoint || streamSettingsPendingRef.current || Object.keys(patch).length === 0) return;
       const previous = streamSettingsRef.current ?? DEFAULT_DEVICE_STREAM_SETTINGS;
       const optimistic = normalizeDeviceStreamSettings({ ...previous, ...patch }, previous);
+      streamSettingsLoadControllerRef.current?.abort();
+      streamSettingsLoadControllerRef.current = null;
       const request = ++streamSettingsRequestRef.current;
       const controller = new AbortController();
-      streamSettingsControllerRef.current = controller;
+      streamSettingsUpdateControllerRef.current = controller;
       streamSettingsPendingRef.current = true;
       streamSettingsRef.current = optimistic;
       setStreamSettings(optimistic);
@@ -661,8 +675,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
         })
         .finally(() => {
-          if (streamSettingsControllerRef.current === controller) {
-            streamSettingsControllerRef.current = null;
+          if (streamSettingsUpdateControllerRef.current === controller) {
+            streamSettingsUpdateControllerRef.current = null;
           }
           if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
             streamSettingsPendingRef.current = false;
@@ -780,7 +794,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [active, baseUrl, targetDevice]);
+  }, [active, baseUrl, targetDevice, setWebRtcCodec]);
 
   const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
   const onAvccFrame = useCallback(() => {
@@ -883,7 +897,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     dispatchAvccFallback('reset');
     setWebRtcHttpFallback(false);
     setFps(0);
-  }, [streamMode, config?.url, config?.webRtcCodec]);
+  }, [streamMode, httpCodec, config?.url, config?.webRtcCodec]);
 
   useEffect(() => {
     if (!useAvcc || !config?.url) return;
@@ -1059,6 +1073,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const eventsPath = config?.eventsPath ?? null;
   const metricsPath = config?.metricsPath ?? null;
   const deviceUdid = config?.device ?? null;
+  const execEventPool = useMemo(
+    () =>
+      execWsUrl && execToken
+        ? new ExecWsEventPool(execWsUrl, execToken, RECONNECT_MS)
+        : null,
+    [execWsUrl, execToken],
+  );
 
   useEffect(() => {
     setEventLogState(createIosEventLogState());
@@ -1081,58 +1102,35 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [metricsPath]);
 
   useEffect(() => {
-    if (!execWsUrl || !execToken) return;
-    const subscriptions = new Map<number, 'logs' | 'events' | 'metrics'>();
-    const paths = new Map<number, string>();
-    if (logsEnabled && logsPath) {
-      subscriptions.set(1, 'logs');
-      paths.set(1, logsPath);
-    }
-    if (eventsEnabled && eventsPath && deviceUdid) {
-      subscriptions.set(2, 'events');
-      paths.set(2, eventsPath);
-    }
-    if (metricsPath) {
-      subscriptions.set(3, 'metrics');
-      paths.set(3, metricsPath);
-    }
-    if (subscriptions.size === 0) return;
-
-    let cancelled = false;
-    let ws: WebSocket | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    const buffers = new Map<number, string>();
-
-    const markInterrupted = () => {
-      if (metricsPath) {
-        setActivity((current) => (current ? { ...current, errored: true } : current));
-      }
-    };
-
-    const emit = (kind: 'logs' | 'events' | 'metrics', block: ParsedSseBlock) => {
-      if (kind === 'logs') {
-        let message = block.data;
-        try {
-          const parsed = JSON.parse(block.data) as { eventMessage?: string };
-          if (typeof parsed.eventMessage === 'string') message = parsed.eventMessage;
-        } catch {}
-        if (message) {
-          setLogs((previous) =>
-            [
-              ...previous,
-              { id: `i${++logSeqRef.current}`, source: 'syslog', message },
-            ].slice(-MAX_LOGS),
-          );
-        }
-        return;
-      }
-      if (kind === 'events' && deviceUdid) {
-        setEventLogState((current) =>
-          mergeIosEventLogPayload(current, block.data, deviceUdid),
+    if (!execEventPool || !logsEnabled || !logsPath) return;
+    const stream = execEventPool.subscribe(logsPath, (block) => {
+      let message = block.data;
+      try {
+        const parsed = JSON.parse(block.data) as { eventMessage?: string };
+        if (typeof parsed.eventMessage === 'string') message = parsed.eventMessage;
+      } catch {}
+      if (message) {
+        setLogs((previous) =>
+          [...previous, { id: `i${++logSeqRef.current}`, source: 'syslog', message }].slice(
+            -MAX_LOGS,
+          ),
         );
-        return;
       }
-      if (kind !== 'metrics') return;
+    });
+    return () => stream.close();
+  }, [execEventPool, logsEnabled, logsPath]);
+
+  useEffect(() => {
+    if (!execEventPool || !eventsEnabled || !eventsPath || !deviceUdid) return;
+    const stream = execEventPool.subscribe(eventsPath, (block) => {
+      setEventLogState((current) => mergeIosEventLogPayload(current, block.data, deviceUdid));
+    });
+    return () => stream.close();
+  }, [execEventPool, eventsEnabled, eventsPath, deviceUdid]);
+
+  useEffect(() => {
+    if (!execEventPool || !metricsPath) return;
+    const emit = (block: ExecWsEventBlock) => {
       try {
         const payload = JSON.parse(block.data) as unknown;
         if (block.event === 'meta') {
@@ -1153,83 +1151,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         );
       } catch {}
     };
-
-    const connect = () => {
-      if (cancelled) return;
-      buffers.clear();
-      try {
-        ws = new WebSocket(execWsUrl);
-      } catch {
-        markInterrupted();
-        retryTimer = setTimeout(connect, RECONNECT_MS);
-        return;
-      }
-      ws.onopen = () => ws?.send(JSON.stringify({ token: execToken }));
-      ws.onmessage = (event) => {
-        let msg: { ready?: boolean; sub?: number; data?: string; end?: boolean };
-        try {
-          msg = JSON.parse(String(event.data));
-        } catch {
-          return;
-        }
-        if (msg.ready) {
-          for (const [sub, path] of paths) {
-            ws?.send(JSON.stringify({ sub, path }));
-          }
-          return;
-        }
-        if (typeof msg.sub !== 'number' || !subscriptions.has(msg.sub)) return;
-        if (msg.end) {
-          markInterrupted();
-          ws?.close();
-          return;
-        }
-        if (typeof msg.data === 'string') {
-          const sub = msg.sub;
-          const kind = subscriptions.get(sub)!;
-          buffers.set(
-            sub,
-            drainSseChunk(buffers.get(sub) ?? '', msg.data, (block) => emit(kind, block)),
-          );
-        }
-      };
-      ws.onclose = () => {
-        if (!cancelled) {
-          markInterrupted();
-          retryTimer = setTimeout(connect, RECONNECT_MS);
-        }
-      };
-      ws.onerror = () => {
-        try {
-          ws?.close();
-        } catch {}
-      };
-    };
-    connect();
-
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      try {
-        ws?.close();
-      } catch {}
-    };
-  }, [
-    logsEnabled,
-    eventsEnabled,
-    execWsUrl,
-    execToken,
-    logsPath,
-    eventsPath,
-    metricsPath,
-    deviceUdid,
-  ]);
+    const stream = execEventPool.subscribe(metricsPath, emit, () => {
+      setActivity((current) => (current ? { ...current, errored: true } : current));
+    });
+    return () => stream.close();
+  }, [execEventPool, metricsPath]);
 
   // ── Simulator settings (best-effort) — one status request hydrates every
   //    device-options control, including the appearance used by the toolbar. ──
   useEffect(() => {
     deviceSettingWriteTrackerRef.current.reset();
     setDeviceSettingsPending(new Set());
+    setDeviceSettingsError(null);
     if (!execWsUrl || !execToken || !deviceUdid) {
       setAppearanceState(null);
       setDeviceSettings(null);
@@ -1244,26 +1177,32 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (typeof value === 'string') next[key as DeviceSettingKey] = value;
         }
         setDeviceSettings(next);
+        setDeviceSettingsError(null);
         if (next.appearance === 'light' || next.appearance === 'dark') {
           setAppearanceState(next.appearance);
         }
       })
-      .catch(() => {
-        /* unreachable / unsupported — leave unknown */
+      .catch((caught) => {
+        if (cancelled) return;
+        setDeviceSettingsError(
+          caught instanceof Error ? caught.message : 'Device options are unavailable.',
+        );
       });
     return () => {
       cancelled = true;
     };
-  }, [execWsUrl, execToken, deviceUdid]);
+  }, [execWsUrl, execToken, deviceUdid, deviceSettingsRetry]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
   const initialStreamSettings = config?.initialStreamSettings;
   useEffect(() => {
-    streamSettingsControllerRef.current?.abort();
-    streamSettingsControllerRef.current = null;
+    streamSettingsLoadControllerRef.current?.abort();
+    streamSettingsUpdateControllerRef.current?.abort();
+    streamSettingsLoadControllerRef.current = null;
+    streamSettingsUpdateControllerRef.current = null;
     streamSettingsPendingRef.current = false;
-    const request = ++streamSettingsRequestRef.current;
+    ++streamSettingsRequestRef.current;
     if (!streamSettingsUrl) {
       streamSettingsRef.current = null;
       setStreamSettings(null);
@@ -1275,24 +1214,75 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setStreamSettings(initial);
     streamSettingsPendingRef.current = true;
     setStreamSettingsPending(true);
-    const controller = new AbortController();
-    void fetch(streamSettingsUrl, { cache: 'no-store', signal: controller.signal })
-      .then(async (response) => {
+    let disposed = false;
+    let initialLoad = true;
+
+    const refresh = async () => {
+      if (
+        disposed ||
+        (streamSettingsPendingRef.current && !initialLoad) ||
+        streamSettingsLoadControllerRef.current
+      ) {
+        return;
+      }
+      const request = ++streamSettingsRequestRef.current;
+      const controller = new AbortController();
+      streamSettingsLoadControllerRef.current = controller;
+      try {
+        const response = await fetch(streamSettingsUrl, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
         if (!response.ok) throw new Error(`Stream settings request failed (${response.status})`);
-        const next = normalizeDeviceStreamSettings(await response.json(), initial);
-        if (streamSettingsRequestRef.current === request) {
+        const fallback = streamSettingsRef.current ?? initial;
+        const next = normalizeDeviceStreamSettings(await response.json(), fallback);
+        if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
           streamSettingsRef.current = next;
           setStreamSettings(next);
         }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
+      } catch {
+        // Keep the last known settings; the next interval/focus retries.
+      } finally {
+        if (streamSettingsLoadControllerRef.current === controller) {
+          streamSettingsLoadControllerRef.current = null;
+        }
+        if (
+          initialLoad &&
+          !controller.signal.aborted &&
+          streamSettingsRequestRef.current === request
+        ) {
+          initialLoad = false;
           streamSettingsPendingRef.current = false;
           setStreamSettingsPending(false);
         }
-      });
-    return () => controller.abort();
+      }
+    };
+
+    const refreshWhenVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState !== 'hidden') {
+        void refresh();
+      }
+    };
+
+    void refresh();
+    const timer = setInterval(refreshWhenVisible, STREAM_SETTINGS_REVALIDATE_MS);
+    if (typeof window !== 'undefined') window.addEventListener('focus', refreshWhenVisible);
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', refreshWhenVisible);
+    }
+
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+      if (typeof window !== 'undefined') window.removeEventListener('focus', refreshWhenVisible);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', refreshWhenVisible);
+      }
+      streamSettingsLoadControllerRef.current?.abort();
+      streamSettingsUpdateControllerRef.current?.abort();
+      streamSettingsLoadControllerRef.current = null;
+      streamSettingsUpdateControllerRef.current = null;
+    };
   }, [streamSettingsUrl, initialStreamSettings]);
 
   // ── Foreground app (middleware /appstate SSE) — the middleware bootstraps a
@@ -1393,6 +1383,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     error,
     screen,
     fps,
+    activeStreamMode,
     devices,
     logs,
     logsEnabled,
@@ -1406,7 +1397,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     clearEvents,
     activity,
     deviceSettings,
+    deviceSettingsError,
     deviceSettingsPending,
+    retryDeviceSettings,
     setDeviceSetting,
     streamSettings,
     streamSettingsPending,

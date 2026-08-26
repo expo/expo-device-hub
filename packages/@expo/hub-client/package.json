@@ -44,8 +44,10 @@
     "@swc/core": "^1.15.43",
     "@types/bun": "latest",
     "@types/react": "~19.2.2",
+    "@types/react-test-renderer": "19.1.0",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
+    "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },
   "engines": {

@@ -1,12 +1,61 @@
 import { useState } from 'react';
 
-import { type DeviceActivitySample, type DeviceClient } from '@expo/hub-client';
+import {
+  type DeviceActivity,
+  type DeviceActivitySample,
+  type DeviceClient,
+} from '@expo/hub-client';
 import { bg, border, radius, text, textSize } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 
 const MAX_SAMPLES = 60;
 const CHART_WIDTH = 100;
 const CHART_HEIGHT = 28;
+
+const MOCK_ACTIVITY_SAMPLES: DeviceActivitySample[] = [
+  { t: 0, bundleId: 'mock', cpuPct: 18, memBytes: 92, netInBytesPerSec: 16, netOutBytesPerSec: 8 },
+  { t: 1, bundleId: 'mock', cpuPct: 31, memBytes: 98, netInBytesPerSec: 28, netOutBytesPerSec: 12 },
+  {
+    t: 2,
+    bundleId: 'mock',
+    cpuPct: 24,
+    memBytes: 105,
+    netInBytesPerSec: 21,
+    netOutBytesPerSec: 15,
+  },
+  {
+    t: 3,
+    bundleId: 'mock',
+    cpuPct: 48,
+    memBytes: 109,
+    netInBytesPerSec: 44,
+    netOutBytesPerSec: 19,
+  },
+  {
+    t: 4,
+    bundleId: 'mock',
+    cpuPct: 39,
+    memBytes: 116,
+    netInBytesPerSec: 32,
+    netOutBytesPerSec: 11,
+  },
+  {
+    t: 5,
+    bundleId: 'mock',
+    cpuPct: 67,
+    memBytes: 121,
+    netInBytesPerSec: 51,
+    netOutBytesPerSec: 23,
+  },
+  {
+    t: 6,
+    bundleId: 'mock',
+    cpuPct: 53,
+    memBytes: 128,
+    netInBytesPerSec: 39,
+    netOutBytesPerSec: 17,
+  },
+];
 
 type ChartSeries = {
   label: string;
@@ -124,13 +173,28 @@ function latestSample(samples: DeviceActivitySample[]) {
   return samples.at(-1) ?? null;
 }
 
-/** Live CPU, memory, and network history for the foreground iOS app. */
-export function ActivitySection({ client }: { client?: DeviceClient }) {
-  const [open, setOpen] = useState(false);
-  const activity = client?.activity ?? null;
-  const samples = activity?.samples.slice(-MAX_SAMPLES) ?? [];
-  const latest = latestSample(samples);
+function activityPlaceholderMessage(
+  activity: DeviceActivity | null,
+  latest: DeviceActivitySample | null,
+) {
+  if (activity?.errored) return 'The activity stream disconnected.';
+  if (activity?.stale) return 'Activity data is paused. Waiting for live data.';
+  if (latest?.bundleId === null) {
+    return 'Only your app is measured. Open your app to see activity.';
+  }
+  return 'Waiting for activity data.';
+}
 
+function ActivityCharts({
+  samples,
+  hostCores,
+  mocked = false,
+}: {
+  samples: DeviceActivitySample[];
+  hostCores: number | null;
+  mocked?: boolean;
+}) {
+  const latest = latestSample(samples)!;
   const cpuSeries: ChartSeries[] = [
     { label: 'CPU', color: text.info, values: samples.map((sample) => sample.cpuPct) },
   ];
@@ -149,50 +213,96 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
       values: samples.map((sample) => sample.netOutBytesPerSec),
     },
   ];
-  const cpuCapacity = Math.max(100, (activity?.hostCores ?? 0) * 100);
-
-  let message: string | null = null;
-  if (activity?.errored) message = 'Activity data is unavailable for this app.';
-  else if (!latest) message = 'Waiting for activity data…';
-  else if (activity?.stale) message = 'Activity data is paused. Showing the most recent samples.';
-
   return (
-    <CollapsibleSection title="Activity" open={open} onOpenChange={setOpen}>
-      {message && (
+    <div style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 8 }}>
+      <MetricChart
+        title="CPU"
+        value={mocked ? '—' : `${Math.round(latest.cpuPct)}%`}
+        description={
+          mocked
+            ? '\u00a0'
+            : hostCores
+              ? `${hostCores} ${hostCores === 1 ? 'core' : 'cores'}`
+              : undefined
+        }
+        series={cpuSeries}
+        maxValue={maxOf(cpuSeries)}
+      />
+      <MetricChart
+        title="Memory"
+        value={mocked ? '—' : formatBytes(latest.memBytes)}
+        series={memorySeries}
+        maxValue={maxOf(memorySeries)}
+      />
+      <MetricChart
+        title="Network"
+        value={
+          mocked
+            ? '—'
+            : `↓ ${formatBytes(latest.netInBytesPerSec)}/s · ↑ ${formatBytes(latest.netOutBytesPerSec)}/s`
+        }
+        series={networkSeries}
+        maxValue={maxOf(networkSeries)}
+      />
+    </div>
+  );
+}
+
+/** Activity graphs, or a graph-sized explanation while no foreground-app sample is live. */
+export function ActivitySectionContent({ activity }: { activity: DeviceActivity | null }) {
+  const samples = activity?.samples.slice(-MAX_SAMPLES) ?? [];
+  const latest = latestSample(samples);
+  const live =
+    latest !== null && latest.bundleId !== null && !activity?.errored && !activity?.stale;
+
+  if (live) {
+    return <ActivityCharts samples={samples} hostCores={activity?.hostCores ?? null} />;
+  }
+
+  const message = activityPlaceholderMessage(activity, latest);
+  return (
+    <div data-activity-placeholder="true" style={{ position: 'relative', minWidth: 0 }}>
+      <div data-activity-mock="true" aria-hidden="true" style={{ opacity: 0.28 }}>
+        <ActivityCharts samples={MOCK_ACTIVITY_SAMPLES} hostCores={null} mocked />
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 16,
+        }}
+      >
         <span
-          role={activity?.errored ? 'alert' : undefined}
-          style={{ ...textSize.xs, display: 'block', padding: '2px 0 8px', color: text.tertiary }}
+          role={activity?.errored ? 'alert' : 'status'}
+          style={{
+            ...textSize.xs,
+            maxWidth: 240,
+            padding: '8px 10px',
+            border: `1px solid ${border.secondary}`,
+            borderRadius: radius.md,
+            backgroundColor: bg.default,
+            color: text.secondary,
+            textAlign: 'center',
+          }}
         >
           {message}
         </span>
-      )}
-      {latest && (
-        <div style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 8 }}>
-          <MetricChart
-            title="CPU"
-            value={`${Math.round(latest.cpuPct)}%`}
-            description={
-              activity?.hostCores
-                ? `Up to ${activity.hostCores * 100}% across host cores`
-                : undefined
-            }
-            series={cpuSeries}
-            maxValue={Math.max(cpuCapacity, maxOf(cpuSeries))}
-          />
-          <MetricChart
-            title="Memory"
-            value={formatBytes(latest.memBytes)}
-            series={memorySeries}
-            maxValue={maxOf(memorySeries)}
-          />
-          <MetricChart
-            title="Network"
-            value={`↓ ${formatBytes(latest.netInBytesPerSec)}/s · ↑ ${formatBytes(latest.netOutBytesPerSec)}/s`}
-            series={networkSeries}
-            maxValue={maxOf(networkSeries)}
-          />
-        </div>
-      )}
+      </div>
+    </div>
+  );
+}
+
+/** Live CPU, memory, and network history for the foreground iOS app. */
+export function ActivitySection({ client }: { client?: DeviceClient }) {
+  const [open, setOpen] = useState(false);
+  const activity = client?.activity ?? null;
+
+  return (
+    <CollapsibleSection title="Activity" open={open} onOpenChange={setOpen}>
+      <ActivitySectionContent activity={activity} />
     </CollapsibleSection>
   );
 }

@@ -96,7 +96,18 @@ function withCurrentValue(
 }
 
 /** Viewer transport, codec, and serve-sim runtime encoder controls. */
-export function StreamOptionsSection({
+export function StreamOptionsSection(props: StreamOptionsSectionProps) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
+      <StreamOptionsSectionContent {...props} />
+    </CollapsibleSection>
+  );
+}
+
+/** Stream settings controls without the collapsible disclosure wrapper. */
+export function StreamOptionsSectionContent({
   client,
   streamMode = 'mjpeg',
   httpCodec,
@@ -104,13 +115,13 @@ export function StreamOptionsSection({
   onStreamModeChange,
   onHttpCodecChange,
 }: StreamOptionsSectionProps) {
-  const [open, setOpen] = useState(false);
   const settings = client.streamSettings ?? DEFAULT_SETTINGS;
   const settingsReady = client.streamSettings !== null;
   const settingsDisabled = !settingsReady || client.streamSettingsPending;
   const transport: StreamTransport = streamMode === 'webrtc' ? 'webrtc' : 'http';
-  const selectedHttpCodec: DeviceHttpCodec =
-    httpCodec ?? (streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto');
+  const selectedHttpCodec: DeviceHttpCodec = !streamModeAvailability.h264
+    ? 'mjpeg'
+    : (httpCodec ?? (streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto'));
   const httpAvailable = streamModeAvailability.mjpeg || streamModeAvailability.h264;
   const h264Active =
     transport === 'webrtc' ||
@@ -139,9 +150,11 @@ export function StreamOptionsSection({
   }
 
   const restricted = !streamModeAvailability.h264 || !streamModeAvailability.webrtc;
+  const httpCodecDisabled =
+    transport !== 'http' || !onHttpCodecChange || !streamModeAvailability.h264;
 
   return (
-    <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
+    <>
       <SidebarRow label="Transport">
         <SegmentedControl
           ariaLabel="Stream transport"
@@ -161,10 +174,7 @@ export function StreamOptionsSection({
           options={HTTP_CODEC_OPTIONS.map((option) => ({
             ...option,
             disabled:
-              transport !== 'http' ||
-              !onHttpCodecChange ||
-              (option.value === 'h264' && !streamModeAvailability.h264) ||
-              (option.value === 'mjpeg' && !streamModeAvailability.mjpeg),
+              httpCodecDisabled || (option.value === 'mjpeg' && !streamModeAvailability.mjpeg),
           }))}
           value={selectedHttpCodec}
           onChange={changeHttpCodec}
@@ -243,6 +253,6 @@ export function StreamOptionsSection({
           onChange={(value) => patchSetting('h264Bitrate', Number(value))}
         />
       </SidebarRow>
-    </CollapsibleSection>
+    </>
   );
 }

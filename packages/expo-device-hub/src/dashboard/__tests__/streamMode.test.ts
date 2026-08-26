@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { resolveStreamMode, streamModeAvailability } from '../streamMode';
+import {
+  resolveStreamMode,
+  streamModeAvailability,
+  webRtcHttpFallbackMode,
+} from '../streamMode';
 import { dashboardTransport, parseTransport } from '../../transport';
 
 afterEach(() => {
@@ -53,6 +57,13 @@ describe('stream mode availability', () => {
       webRtc: true,
     });
     expect(resolveStreamMode(dashboardTransport(), availability)).toBe('mjpeg');
+  });
+
+  test('commits only WebRTC transport fallback, preserving direct HTTP codec intent', () => {
+    expect(webRtcHttpFallbackMode('webrtc', 'h264')).toBe('h264');
+    expect(webRtcHttpFallbackMode('webrtc', 'mjpeg')).toBe('mjpeg');
+    expect(webRtcHttpFallbackMode('h264', 'mjpeg')).toBeNull();
+    expect(webRtcHttpFallbackMode('mjpeg', 'mjpeg')).toBeNull();
   });
 });
 

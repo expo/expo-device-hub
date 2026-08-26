@@ -28,6 +28,7 @@ export type DashboardStore = DashboardStoreValues & {
   trackAddedDevice: (device: Device, replacedIds: readonly string[]) => void;
   dismissDevice: (id: string) => void;
   chooseStreamMode: (mode: DeviceStreamMode, availability: StreamModeAvailability) => void;
+  commitActiveStreamMode: (mode: DeviceStreamMode) => void;
   resizeSidebar: (side: SidebarSide, width: number) => void;
   openSidebar: (side: SidebarSide, canDock: boolean) => void;
   closeSidebar: (side: SidebarSide) => void;
@@ -108,6 +109,7 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
       })),
     chooseStreamMode: (mode, availability) =>
       set({ streamMode: resolveStreamMode(mode, availability) }),
+    commitActiveStreamMode: (streamMode) => set({ streamMode }),
     resizeSidebar: (side, width) =>
       set((state) => ({ sidebarWidths: { ...state.sidebarWidths, [side]: width } })),
     openSidebar: (side, canDock) =>
