@@ -1,7 +1,9 @@
-import { type CSSProperties, useState } from 'react';
+import { type CSSProperties, useRef, useState } from 'react';
 
 import { WarningIcon } from './icons';
 import { bg, icon, radius, text, textSize } from '../theme/tokens';
+import { AgentDeviceStatus } from './AgentDeviceStatus';
+import { useCompactAgentDeviceStatus } from './useCompactAgentDeviceStatus';
 
 /**
  * A selectable row in the simulators list ("list button"). Selected rows use the
@@ -12,6 +14,7 @@ export type DeviceListItemProps = {
   version: string;
   /** Shows an accessible warning for a device type that Hub does not support or test. */
   unsupported?: boolean;
+  usedByAgent?: boolean;
   selected?: boolean;
   onClick?: () => void;
 };
@@ -20,11 +23,22 @@ export function DeviceListItem({
   name,
   version,
   unsupported = false,
+  usedByAgent = false,
   selected = false,
   onClick,
 }: DeviceListItemProps) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const nameRef = useRef<HTMLSpanElement>(null);
+  const statusLabelRef = useRef<HTMLSpanElement>(null);
+  const versionRef = useRef<HTMLSpanElement>(null);
+  const compactAgentStatus = useCompactAgentDeviceStatus({
+    buttonRef,
+    nameRef,
+    statusLabelRef,
+    versionRef,
+  });
 
   const style: CSSProperties = {
     display: 'flex',
@@ -36,6 +50,7 @@ export function DeviceListItem({
     minWidth: 0,
     boxSizing: 'border-box',
     padding: 16,
+    overflow: 'hidden',
     border: 'none',
     borderRadius: radius.xl,
     backgroundColor: selected ? bg.hover : hovered ? bg.element : 'transparent',
@@ -48,10 +63,12 @@ export function DeviceListItem({
 
   return (
     <button
+      ref={buttonRef}
       type="button"
       style={style}
       onClick={onClick}
       aria-pressed={selected}
+      aria-label={`${name}, ${version}${usedByAgent ? ', used by agent' : ''}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -59,7 +76,15 @@ export function DeviceListItem({
       }}
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}>
-      <span style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+      <span
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          flex: '1 1 auto',
+          minWidth: 0,
+          overflow: 'hidden',
+        }}>
         {unsupported && (
           <span
             role="img"
@@ -70,11 +95,12 @@ export function DeviceListItem({
           </span>
         )}
         <span
+          ref={nameRef}
           title={name}
           style={{
             ...textSize.sm,
-            flex: 1,
             minWidth: 0,
+            flex: '1 1 auto',
             fontWeight: 500,
             color: text.default,
             overflow: 'hidden',
@@ -83,8 +109,14 @@ export function DeviceListItem({
           }}>
           {name}
         </span>
+        <AgentDeviceStatus
+          active={usedByAgent}
+          compact={compactAgentStatus}
+          labelRef={statusLabelRef}
+        />
       </span>
       <span
+        ref={versionRef}
         style={{
           ...textSize.sm,
           fontWeight: 500,

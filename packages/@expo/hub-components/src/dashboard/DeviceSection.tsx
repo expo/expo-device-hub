@@ -28,6 +28,7 @@ export type DeviceSectionProps = {
   recent: Device[];
   /** Installed runtimes/system images and compatible models for new devices. */
   options: NewDeviceOptions;
+  agentDeviceIds?: readonly string[];
   selectedId: string;
   onSelect: (id: string) => void;
   /** Starts the existing or newly configured device selected in the modal. */
@@ -42,6 +43,7 @@ export function DeviceSection({
   devices,
   recent,
   options,
+  agentDeviceIds = [],
   selectedId,
   onSelect,
   onAdd,
@@ -55,7 +57,7 @@ export function DeviceSection({
   const candidates = recent.filter((device) => !shownIds.has(device.id));
 
   return (
-    <section style={{ display: 'grid', gap: 12 }}>
+    <section style={{ display: 'grid', gap: 12, minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{title}</span>
         {!!onAdd && (
@@ -89,7 +91,7 @@ export function DeviceSection({
         )}
       </div>
 
-      <div style={{ display: 'grid', gap: 6 }}>
+      <div style={{ display: 'grid', gap: 6, minWidth: 0 }}>
         {devices.length === 0 ? (
           <p
             style={{
@@ -110,6 +112,7 @@ export function DeviceSection({
               name={device.name}
               version={device.version}
               unsupported={!device.supported}
+              usedByAgent={agentDeviceIds.includes(device.id)}
               selected={device.id === selectedId}
               onClick={() => onSelect(device.id)}
             />

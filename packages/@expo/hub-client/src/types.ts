@@ -135,6 +135,36 @@ export interface KeyboardInput {
   repeat: boolean;
 }
 
+/** A normalized point rendered over the device's display-aligned stream. */
+export interface AgentInteractionPoint {
+  x: number;
+  y: number;
+}
+
+/** A frame within one continuous Argent touch gesture. */
+export interface AgentInteractionFrame {
+  /** Milliseconds since this segment began. */
+  atMs: number;
+  /** One point for touch gestures, two for pinch/rotate gestures. */
+  points: AgentInteractionPoint[];
+}
+
+/** A continuous gesture within a possibly batched Argent interaction. */
+export interface AgentInteractionSegment {
+  /** Milliseconds since the outer Argent tool call. */
+  startMs: number;
+  frames: AgentInteractionFrame[];
+  easing?: 'linear' | 'ease-out';
+}
+
+/** Parsed, visualization-safe geometry from an Argent MCP tool call. */
+export interface AgentInteraction {
+  id: string;
+  deviceId: string;
+  timestamp: string;
+  segments: AgentInteractionSegment[];
+}
+
 export interface DeviceConnectionOptions {
   /**
    * Origin (and optional base path) of a running serve-sim / serve-emu server,
@@ -268,6 +298,8 @@ export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClien
 /** Props for the shared {@link DeviceScreen} component rendered inside PhoneFrame. */
 export interface DeviceScreenProps {
   client: DeviceClient;
+  /** Last active Argent gesture for the streamed device; removed after its idle timeout. */
+  agentInteraction?: AgentInteraction | null;
   /** Corner radius for the video surface (matches the PhoneFrame placeholder). */
   borderRadius?: CSSProperties['borderRadius'];
   /** Apply the iOS `corner-shape: squircle`. */

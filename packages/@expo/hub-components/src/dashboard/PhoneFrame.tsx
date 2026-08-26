@@ -1,8 +1,15 @@
-import { type ComponentType, type CSSProperties } from 'react';
+import { type ComponentType, type CSSProperties, useState } from 'react';
 
-import { type DeviceClient, type DeviceScreenProps, type ScreenSize } from '@expo/hub-client';
+import {
+  type AgentInteraction,
+  type DeviceClient,
+  type DeviceScreenProps,
+  type ScreenSize,
+} from '@expo/hub-client';
 import { bg } from '../primitives';
+import { AgentDeviceOverlay } from './AgentDeviceOverlay';
 import { type Platform } from './data';
+import { deviceScreenClipPath } from './deviceScreenClipPath';
 
 const SHADOW = '0 40px 80px rgba(0, 0, 0, 0.4), 0 12px 28px rgba(0, 0, 0, 0.28)';
 
@@ -36,16 +43,20 @@ const CONFIG: Record<Platform, { ratio: number; radiusFraction: number; squircle
 export function PhoneFrame({
   platform,
   client,
+  agentInteraction,
   DeviceScreen,
   displayScreen,
 }: {
   platform: Platform;
   client?: DeviceClient;
+  agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
 }) {
+  const [hovered, setHovered] = useState(false);
+  const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[platform];
 
   // Prefer the live screen's aspect ratio once known, so the stream fills the
@@ -64,28 +75,55 @@ export function PhoneFrame({
     width: `min(${maxWidth}px, calc((100vh - ${RESERVED_VERTICAL}px) * ${ratio}), 100%)`,
     aspectRatio: `${ratio}`,
     containerType: 'inline-size',
+    position: 'relative',
+    isolation: 'isolate',
   };
 
   // `cqw` resolves against the width, but the radius should stay a fraction of
   // the *short* side so the corners look the same in portrait and landscape.
-  const borderRadius = `${((radiusFraction / Math.max(ratio, 1)) * 100).toFixed(3)}cqw`;
+  const radiusCqw = (radiusFraction / Math.max(ratio, 1)) * 100;
+  const borderRadius = `${radiusCqw.toFixed(3)}cqw`;
   const live = client && client.status !== 'idle';
+  const overlayVisible =
+    !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
 
   return (
-    <div style={{ ...wrapperStyle, boxShadow: SHADOW, borderRadius }}>
-      {live ? (
-        <DeviceScreen client={client} borderRadius={borderRadius} squircle={squircle} />
-      ) : (
+    <div
+      data-testid="device-screen-frame"
+      data-agent-active={agentInteraction ? 'true' : 'false'}
+      style={{ ...wrapperStyle, boxShadow: SHADOW, borderRadius }}
+      onPointerEnter={(event) => {
+        if (event.pointerType === 'mouse') setHovered(true);
+      }}
+      onPointerLeave={() => setHovered(false)}>
+      <div
+        data-testid="device-screen-clip"
+        style={{
+          position: 'absolute',
+          inset: 0,
+          // One responsive path clips both the stream and every overlay, which
+          // avoids fractional seams between separate composited masks.
+          clipPath: deviceScreenClipPath(radiusCqw, squircle),
+        }}>
+        {live ? (
+          <DeviceScreen client={client} agentInteraction={agentInteraction} />
+        ) : (
+          <div style={{ width: '100%', height: '100%', backgroundColor: bg.element }} />
+        )}
         <div
+          data-testid="agent-device-overlay-clip"
           style={{
-            width: '100%',
-            height: '100%',
-            backgroundColor: bg.element,
-            borderRadius,
-            ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
-          }}
-        />
-      )}
+            position: 'absolute',
+            inset: 0,
+            zIndex: 2,
+            pointerEvents: overlayVisible ? 'auto' : 'none',
+          }}>
+          <AgentDeviceOverlay
+            visible={overlayVisible}
+            onTakeOver={() => setDismissedInteractionId(agentInteraction?.id ?? null)}
+          />
+        </div>
+      </div>
     </div>
   );
 }
