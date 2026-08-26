@@ -1,5 +1,15 @@
 # expo-device-hub
 
+## 0.5.0
+
+### Minor Changes
+
+- 9897a47: Add agentic cursor visuals for argent
+- 2ef9430: Add device options, activity graphs, device events, stream controls, and collapsible log sections for iOS sessions.
+- 14be971: Add `--hide-sidebar` to the standalone CLI.
+- be2b818: Add standalone CLI flags for configuring serve-sim streaming, WebRTC ICE, and metrics CORS.
+  Expose EAS-compatible readiness and temporary serve-sim-backed metrics endpoints.
+
 ## 0.4.0
 
 ### Minor Changes
