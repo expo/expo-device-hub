@@ -22,9 +22,14 @@
  * helper because doing so drops the middleware/helper path from stream URLs.
  */
 
-import { useCallback, useEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 
 import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
+import {
+  appendActivitySample,
+  parseActivityHostCores,
+  parseActivitySample,
+} from './activity';
 import { isAvccSupported } from './avcc';
 import {
   HID_EDGE_BOTTOM,
@@ -34,14 +39,24 @@ import {
   streamGeometry,
 } from './orientation';
 import { startIosHelper } from './connections';
+import {
+  clearIosEventLogState,
+  createIosEventLogState,
+  mergeIosEventLogPayload,
+} from './ios-events';
 import { type ExecResult, getIosAppDetails } from './ios-app-details';
 import { hidUsageForCode } from './keyboard';
 import {
   type ConnectionStatus,
+  type DeviceActivity,
   type DeviceAppearance,
   type DeviceClient,
   type DeviceConnectionOptions,
   type DeviceLog,
+  type DeviceSettingKey,
+  type DeviceSettings,
+  type DeviceStreamEncoderSettings,
+  type DeviceWebRtcCodec,
   type DeviceOrientation,
   type ForegroundApp,
   type HardwareButton,
@@ -51,7 +66,15 @@ import {
   type ScreenSize,
   type TouchSample,
 } from './types';
+import {
+  DeviceSettingWriteTracker,
+  mergeAuthoritativeDeviceSetting,
+} from './device-setting-writes';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
+import {
+  DEFAULT_DEVICE_STREAM_SETTINGS,
+  normalizeDeviceStreamSettings,
+} from './stream-settings';
 import { useAvccStream } from './useAvccStream';
 import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
 import {
@@ -61,6 +84,33 @@ import {
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
+const ACTIVITY_STALE_MS = 8000;
+
+interface ParsedSseBlock {
+  event: string;
+  data: string;
+}
+
+/** Append raw SSE bytes and emit every complete block, retaining a partial tail. */
+function drainSseChunk(
+  previous: string,
+  chunk: string,
+  emit: (block: ParsedSseBlock) => void,
+): string {
+  let buffer = `${previous}${chunk}`.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  let boundary: number;
+  while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+    const lines = buffer.slice(0, boundary).split('\n');
+    buffer = buffer.slice(boundary + 2);
+    const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message';
+    const data = lines
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).replace(/^ /, ''))
+      .join('\n');
+    if (data) emit({ event, data });
+  }
+  return buffer;
+}
 
 // serve-sim binary WS message tags (serve-sim-client `SimulatorView`).
 const WS_MSG_TOUCH = 0x03;
@@ -257,13 +307,21 @@ interface ResolvedConfig {
   streamUrl: string;
   wsUrl: string;
   device: string | null;
-  /** Middleware exec-ws URL used as the logs transport. */
+  /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
   execWsUrl: string | null;
   execToken: string | null;
   /** Relative SSE path to subscribe for logs, e.g. `/logs?device=<udid>`. */
   logsPath: string | null;
   /** Absolute URL of the foreground-app SSE stream. */
   appStateUrl: string | null;
+  /** Relative SSE path for normalized serve-sim events. */
+  eventsPath: string | null;
+  /** Relative SSE path for foreground app activity. */
+  metricsPath: string | null;
+  /** Runtime encoder settings endpoint on the selected helper. */
+  streamSettingsUrl: string | null;
+  /** Initial server-provided stream settings, if present. */
+  initialStreamSettings: unknown;
   gridApiUrl: string | null;
   webRtcCodec: WebRtcCodec;
   webRtcIceServers?: WebRtcIceServer[];
@@ -279,11 +337,16 @@ interface PreviewApi {
   execToken?: string;
   logsEndpoint?: string;
   appStateEndpoint?: string;
+  eventLogEventsEndpoint?: string;
+  metricsEndpoint?: string;
+  streamSettingsEndpoint?: string;
   gridApiEndpoint?: string;
   proxyHelpers?: boolean;
   streamSettings?:
-    | { transport: 'http'; codec?: 'auto' | 'h264' | 'mjpeg' }
-    | { transport: 'webrtc'; codec: WebRtcCodec; iceServers?: WebRtcIceServer[] };
+    | ({ transport: 'http'; codec?: 'auto' | 'h264' | 'mjpeg' } &
+        Partial<DeviceStreamEncoderSettings>)
+    | ({ transport: 'webrtc'; codec: WebRtcCodec; iceServers?: WebRtcIceServer[] } &
+        Partial<DeviceStreamEncoderSettings>);
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
@@ -297,10 +360,20 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [logs, setLogs] = useState<DeviceLog[]>([]);
   // Logs are opt-in: nothing streams until the user attaches.
   const [logsEnabled, setLogsEnabled] = useState(false);
+  const [eventLogState, setEventLogState] = useState(createIosEventLogState);
+  const events = eventLogState.events;
+  const [eventsEnabled, setEventsEnabled] = useState(false);
+  const [activity, setActivity] = useState<DeviceActivity | null>(null);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   const [config, setConfig] = useState<ResolvedConfig | null>(null);
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
+  const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
+  const [deviceSettingsPending, setDeviceSettingsPending] = useState<
+    ReadonlySet<DeviceSettingKey>
+  >(() => new Set());
+  const [streamSettings, setStreamSettings] = useState<DeviceStreamEncoderSettings | null>(null);
+  const [streamSettingsPending, setStreamSettingsPending] = useState(false);
   // Browser HID injection remains active when this is false. Disabling the
   // Simulator-owned host connection lets iOS keep its software keyboard open.
   const [hardwareKeyboardConnected, setHardwareKeyboardConnectedState] = useState<boolean | null>(
@@ -319,11 +392,35 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamUrlRef = useRef<string | null>(null);
   const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
-  const [webRtcCodec, setWebRtcCodec] = useState<WebRtcCodec>('h264');
+  const [webRtcCodec, setWebRtcCodecState] = useState<DeviceWebRtcCodec>('h264');
+  const [activeWebRtcCodec, setActiveWebRtcCodec] = useState<WebRtcCodec>('h264');
   const [webRtcHttpFallback, setWebRtcHttpFallback] = useState(false);
+  const deviceSettingWriteTrackerRef = useRef(new DeviceSettingWriteTracker());
+  // Async option writes capture their config. Track only committed config so
+  // an interrupted concurrent render cannot invalidate a legitimate rollback.
+  const deviceSettingConfigRef = useRef(config);
+  useLayoutEffect(() => {
+    deviceSettingConfigRef.current = config;
+  }, [config]);
+  const streamSettingsRequestRef = useRef(0);
+  const streamSettingsRef = useRef<DeviceStreamEncoderSettings | null>(null);
+  const streamSettingsPendingRef = useRef(false);
+  const streamSettingsControllerRef = useRef<AbortController | null>(null);
+  const activityLastSampleAtRef = useRef(0);
+  useEffect(
+    () => () => {
+      streamSettingsControllerRef.current?.abort();
+    },
+    [],
+  );
   const useWebRtc = streamMode === 'webrtc' && !webRtcHttpFallback;
   const wantsAvcc = streamMode === 'h264' || webRtcHttpFallback;
   const useAvcc = wantsAvcc && isAvccSupported() && !avccFallback.fellBack;
+  useEffect(() => {
+    if (streamMode === 'webrtc') return;
+    setWebRtcHttpFallback(false);
+    setActiveWebRtcCodec(webRtcCodec);
+  }, [streamMode, webRtcCodec]);
   // True while the in-flight single-finger drag began in the home-indicator band.
   const edgeGestureRef = useRef(false);
   // Latest screen config, read by the (stable) input callbacks for orientation.
@@ -464,28 +561,128 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
   }, [baseUrl, targetDevice, config]);
 
-  // Set the simulator appearance via `simctl ui <udid> appearance <mode>`,
-  // issued over the middleware exec-ws (the same UI-request channel the serve-sim
-  // client uses). Needs a resolved middleware config + udid — a no-op otherwise
-  // until middleware discovery resolves. Optimistic: reflect the choice
-  // immediately.
-  const setAppearance = useCallback(
-    (mode: DeviceAppearance) => {
+  // Apply any serve-sim UI option over its authenticated exec-ws request
+  // channel. The state is optimistic so the selected pill/switch responds at
+  // once. Writes are serialized per option, while unrelated options can update
+  // concurrently. A failed request re-reads only that option's authoritative
+  // value so it cannot roll back another optimistic write.
+  const setDeviceSetting = useCallback(
+    (key: DeviceSettingKey, value: string) => {
       const c = config;
-      if (!c || !c.execWsUrl || !c.execToken || !c.device) return;
-      setAppearanceState(mode);
-      void execWsUiRequest(c.execWsUrl, c.execToken, {
-        device: c.device,
-        option: 'appearance',
-        value: mode,
-      }).catch(() => {});
+      if (!c?.execWsUrl || !c.execToken || !c.device) return;
+      const { device, execToken, execWsUrl } = c;
+      const tracker = deviceSettingWriteTrackerRef.current;
+      const request = tracker.start(key);
+      if (!request) return;
+      setDeviceSettingsPending(tracker.pending);
+      setDeviceSettings((current) => ({ ...(current ?? {}), [key]: value }));
+      if (key === 'appearance' && (value === 'light' || value === 'dark')) {
+        setAppearanceState(value);
+      }
+      void execWsUiRequest(execWsUrl, execToken, {
+        device,
+        option: key,
+        value,
+      })
+        .catch(async () => {
+          if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
+          try {
+            const result = await execWsUiRequest(execWsUrl, execToken, { device });
+            if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
+            const authoritative: DeviceSettings = {};
+            for (const [nextKey, nextValue] of Object.entries(result.status ?? {})) {
+              if (typeof nextValue === 'string') {
+                authoritative[nextKey as DeviceSettingKey] = nextValue;
+              }
+            }
+            setDeviceSettings((current) =>
+              mergeAuthoritativeDeviceSetting(current, key, authoritative),
+            );
+            if (key === 'appearance') {
+              const nextAppearance = authoritative.appearance;
+              if (nextAppearance === 'light' || nextAppearance === 'dark') {
+                setAppearanceState(nextAppearance);
+              }
+            }
+          } catch {
+            // Keep the optimistic value if both the write and authoritative
+            // refresh channels are temporarily unavailable.
+          }
+        })
+        .finally(() => {
+          if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
+        });
     },
     [config],
+  );
+
+  const setAppearance = useCallback(
+    (mode: DeviceAppearance) => setDeviceSetting('appearance', mode),
+    [setDeviceSetting],
+  );
+
+  const setWebRtcCodec = useCallback((codec: DeviceWebRtcCodec) => {
+    setWebRtcCodecState(codec);
+    setActiveWebRtcCodec(codec);
+    setWebRtcHttpFallback(false);
+  }, []);
+
+  const updateStreamSettings = useCallback(
+    (patch: Partial<DeviceStreamEncoderSettings>) => {
+      const endpoint = config?.streamSettingsUrl;
+      if (!endpoint || streamSettingsPendingRef.current || Object.keys(patch).length === 0) return;
+      const previous = streamSettingsRef.current ?? DEFAULT_DEVICE_STREAM_SETTINGS;
+      const optimistic = normalizeDeviceStreamSettings({ ...previous, ...patch }, previous);
+      const request = ++streamSettingsRequestRef.current;
+      const controller = new AbortController();
+      streamSettingsControllerRef.current = controller;
+      streamSettingsPendingRef.current = true;
+      streamSettingsRef.current = optimistic;
+      setStreamSettings(optimistic);
+      setStreamSettingsPending(true);
+      void fetch(endpoint, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Stream settings update failed (${response.status})`);
+          const next = normalizeDeviceStreamSettings(await response.json(), optimistic);
+          if (streamSettingsRequestRef.current === request) {
+            streamSettingsRef.current = next;
+            setStreamSettings(next);
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
+            streamSettingsRef.current = previous;
+            setStreamSettings(previous);
+          }
+        })
+        .finally(() => {
+          if (streamSettingsControllerRef.current === controller) {
+            streamSettingsControllerRef.current = null;
+          }
+          if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
+            streamSettingsPendingRef.current = false;
+            setStreamSettingsPending(false);
+          }
+        });
+    },
+    [config?.streamSettingsUrl],
   );
 
   const attachLogs = useCallback(() => setLogsEnabled(true), []);
   const detachLogs = useCallback(() => setLogsEnabled(false), []);
   const clearLogs = useCallback(() => setLogs([]), []);
+  const attachEvents = useCallback(() => setEventsEnabled(true), []);
+  const detachEvents = useCallback(() => setEventsEnabled(false), []);
+  const clearEvents = useCallback(() => {
+    const device = config?.device;
+    if (!device) return;
+    setEventLogState((current) => clearIosEventLogState(current, device));
+  }, [config?.device]);
 
   // ── Resolve the connection: discover the helper + log/device routes via /api. ──
   //
@@ -514,6 +711,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const toMiddleware = (rawConfig: PreviewApi): ResolvedConfig => {
       const c = proxyPreviewConfigForBrowser(rawConfig, window.location);
       const basePath = c.basePath ?? '';
+      const absoluteMiddlewareUrl = (path?: string): string | null =>
+        path ? new URL(path, baseUrl).toString() : null;
       return {
         url: c.url!,
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
@@ -522,7 +721,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         execWsUrl: toWs(new URL(`${basePath}/exec-ws`, baseUrl).toString()),
         execToken: c.execToken ?? null,
         logsPath: c.logsEndpoint ?? null,
-        appStateUrl: c.appStateEndpoint ? new URL(c.appStateEndpoint, baseUrl).toString() : null,
+        appStateUrl: absoluteMiddlewareUrl(c.appStateEndpoint),
+        eventsPath: c.eventLogEventsEndpoint ?? null,
+        metricsPath: c.metricsEndpoint ?? null,
+        // A proxied helper URL is re-anchored to the browser origin above; use
+        // that canonical URL rather than an injected host port that may be 0.
+        streamSettingsUrl: c.streamSettingsEndpoint
+          ? c.proxyHelpers
+            ? `${c.url}/stream-settings`
+            : absoluteMiddlewareUrl(c.streamSettingsEndpoint)
+          : null,
+        initialStreamSettings: c.streamSettings,
         gridApiUrl: new URL(c.gridApiEndpoint ?? '/grid/api', baseUrl).toString(),
         webRtcCodec: c.streamSettings?.transport === 'webrtc' ? c.streamSettings.codec : 'h264',
         ...(c.streamSettings?.transport === 'webrtc' && c.streamSettings.iceServers
@@ -596,7 +805,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     offerUrl: config ? `${config.url}/webrtc/offer` : '',
     closeUrl: config ? `${config.url}/webrtc/close` : '',
     enabled: active && useWebRtc && !!config,
-    codec: webRtcCodec,
+    codec: activeWebRtcCodec,
     iceServers: config?.webRtcIceServers,
   });
   const handledWebRtcFailureRef = useRef<string | null>(null);
@@ -605,15 +814,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!useWebRtc || !webRtcFailure) return;
     if (handledWebRtcFailureRef.current === webRtcFailure.sessionId) return;
     handledWebRtcFailureRef.current = webRtcFailure.sessionId;
-    const decision = webRtcFallbackDecision(
-      config?.webRtcCodec ?? 'h264',
-      webRtcCodec,
-      webRtcFailure,
-    );
+    const decision = webRtcFallbackDecision(webRtcCodec, activeWebRtcCodec, webRtcFailure);
     if (!decision) return;
     if (decision.type === 'switch-to-http') setWebRtcHttpFallback(true);
-    else setWebRtcCodec(decision.codec);
-  }, [useWebRtc, webRtcFailure, webRtcCodec, config?.webRtcCodec]);
+    else setActiveWebRtcCodec(decision.codec);
+  }, [useWebRtc, webRtcFailure, webRtcCodec, activeWebRtcCodec]);
 
   useEffect(() => {
     if (!useWebRtc) return;
@@ -676,7 +881,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
   useEffect(() => {
     dispatchAvccFallback('reset');
-    setWebRtcCodec(config?.webRtcCodec ?? 'h264');
     setWebRtcHttpFallback(false);
     setFps(0);
   }, [streamMode, config?.url, config?.webRtcCodec]);
@@ -846,43 +1050,118 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [wsUrl]);
 
-  // ── Logs over the middleware exec-ws (same transport as the serve-sim client) ──
+  // ── Long-lived middleware SSE routes multiplexed over one authenticated
+  //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
+  //    metrics off separate HTTP streams avoids the per-origin connection cap. ──
   const execWsUrl = config?.execWsUrl ?? null;
   const execToken = config?.execToken ?? null;
   const logsPath = config?.logsPath ?? null;
+  const eventsPath = config?.eventsPath ?? null;
+  const metricsPath = config?.metricsPath ?? null;
+  const deviceUdid = config?.device ?? null;
+
   useEffect(() => {
-    // Off by default — only subscribe once the user has attached.
-    if (!logsEnabled || !execWsUrl || !execToken || !logsPath) return;
+    setEventLogState(createIosEventLogState());
+  }, [eventsPath, deviceUdid]);
+
+  useEffect(() => {
+    activityLastSampleAtRef.current = 0;
+    if (!metricsPath) {
+      setActivity(null);
+      return;
+    }
+    setActivity({ hostCores: null, samples: [], errored: false, stale: false });
+    const watchdog = setInterval(() => {
+      const lastSampleAt = activityLastSampleAtRef.current;
+      if (lastSampleAt > 0 && Date.now() - lastSampleAt > ACTIVITY_STALE_MS) {
+        setActivity((current) => (current ? { ...current, stale: true } : current));
+      }
+    }, 1000);
+    return () => clearInterval(watchdog);
+  }, [metricsPath]);
+
+  useEffect(() => {
+    if (!execWsUrl || !execToken) return;
+    const subscriptions = new Map<number, 'logs' | 'events' | 'metrics'>();
+    const paths = new Map<number, string>();
+    if (logsEnabled && logsPath) {
+      subscriptions.set(1, 'logs');
+      paths.set(1, logsPath);
+    }
+    if (eventsEnabled && eventsPath && deviceUdid) {
+      subscriptions.set(2, 'events');
+      paths.set(2, eventsPath);
+    }
+    if (metricsPath) {
+      subscriptions.set(3, 'metrics');
+      paths.set(3, metricsPath);
+    }
+    if (subscriptions.size === 0) return;
+
     let cancelled = false;
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let sseBuffer = '';
+    const buffers = new Map<number, string>();
 
-    const emit = (block: string) => {
-      const dataLines = block
-        .split('\n')
-        .filter((l) => l.startsWith('data:'))
-        .map((l) => l.slice(5).replace(/^ /, ''));
-      const raw = dataLines.join('\n');
-      if (!raw) return;
-      let message = raw;
-      try {
-        const parsed = JSON.parse(raw) as { eventMessage?: string };
-        if (typeof parsed.eventMessage === 'string') message = parsed.eventMessage;
-      } catch {}
-      if (message) {
-        setLogs((prev) =>
-          [...prev, { id: `i${++logSeqRef.current}`, source: 'syslog', message }].slice(-MAX_LOGS),
-        );
+    const markInterrupted = () => {
+      if (metricsPath) {
+        setActivity((current) => (current ? { ...current, errored: true } : current));
       }
+    };
+
+    const emit = (kind: 'logs' | 'events' | 'metrics', block: ParsedSseBlock) => {
+      if (kind === 'logs') {
+        let message = block.data;
+        try {
+          const parsed = JSON.parse(block.data) as { eventMessage?: string };
+          if (typeof parsed.eventMessage === 'string') message = parsed.eventMessage;
+        } catch {}
+        if (message) {
+          setLogs((previous) =>
+            [
+              ...previous,
+              { id: `i${++logSeqRef.current}`, source: 'syslog', message },
+            ].slice(-MAX_LOGS),
+          );
+        }
+        return;
+      }
+      if (kind === 'events' && deviceUdid) {
+        setEventLogState((current) =>
+          mergeIosEventLogPayload(current, block.data, deviceUdid),
+        );
+        return;
+      }
+      if (kind !== 'metrics') return;
+      try {
+        const payload = JSON.parse(block.data) as unknown;
+        if (block.event === 'meta') {
+          const hostCores = parseActivityHostCores(payload);
+          setActivity((current) =>
+            current ? { ...current, hostCores, errored: false } : current,
+          );
+          return;
+        }
+        const sample = parseActivitySample(payload);
+        if (!sample) return;
+        activityLastSampleAtRef.current = Date.now();
+        setActivity((current) =>
+          appendActivitySample(
+            current ?? { hostCores: null, samples: [], errored: false, stale: false },
+            sample,
+          ),
+        );
+      } catch {}
     };
 
     const connect = () => {
       if (cancelled) return;
-      sseBuffer = '';
+      buffers.clear();
       try {
         ws = new WebSocket(execWsUrl);
       } catch {
+        markInterrupted();
+        retryTimer = setTimeout(connect, RECONNECT_MS);
         return;
       }
       ws.onopen = () => ws?.send(JSON.stringify({ token: execToken }));
@@ -894,20 +1173,31 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           return;
         }
         if (msg.ready) {
-          ws?.send(JSON.stringify({ sub: 1, path: logsPath }));
+          for (const [sub, path] of paths) {
+            ws?.send(JSON.stringify({ sub, path }));
+          }
           return;
         }
-        if (msg.sub === 1 && typeof msg.data === 'string') {
-          sseBuffer += msg.data.replace(/\r\n/g, '\n');
-          let i: number;
-          while ((i = sseBuffer.indexOf('\n\n')) !== -1) {
-            emit(sseBuffer.slice(0, i));
-            sseBuffer = sseBuffer.slice(i + 2);
-          }
+        if (typeof msg.sub !== 'number' || !subscriptions.has(msg.sub)) return;
+        if (msg.end) {
+          markInterrupted();
+          ws?.close();
+          return;
+        }
+        if (typeof msg.data === 'string') {
+          const sub = msg.sub;
+          const kind = subscriptions.get(sub)!;
+          buffers.set(
+            sub,
+            drainSseChunk(buffers.get(sub) ?? '', msg.data, (block) => emit(kind, block)),
+          );
         }
       };
       ws.onclose = () => {
-        if (!cancelled) retryTimer = setTimeout(connect, RECONNECT_MS);
+        if (!cancelled) {
+          markInterrupted();
+          retryTimer = setTimeout(connect, RECONNECT_MS);
+        }
       };
       ws.onerror = () => {
         try {
@@ -924,21 +1214,39 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         ws?.close();
       } catch {}
     };
-  }, [logsEnabled, execWsUrl, execToken, logsPath]);
+  }, [
+    logsEnabled,
+    eventsEnabled,
+    execWsUrl,
+    execToken,
+    logsPath,
+    eventsPath,
+    metricsPath,
+    deviceUdid,
+  ]);
 
-  // ── Current appearance (best-effort) — reads `simctl ui appearance` via a
-  //    one-shot exec-ws UI request once the middleware config resolves. ──
-  const deviceUdid = config?.device ?? null;
+  // ── Simulator settings (best-effort) — one status request hydrates every
+  //    device-options control, including the appearance used by the toolbar. ──
   useEffect(() => {
+    deviceSettingWriteTrackerRef.current.reset();
+    setDeviceSettingsPending(new Set());
     if (!execWsUrl || !execToken || !deviceUdid) {
       setAppearanceState(null);
+      setDeviceSettings(null);
       return;
     }
     let cancelled = false;
     execWsUiRequest(execWsUrl, execToken, { device: deviceUdid })
       .then((res) => {
-        const value = res.status?.appearance;
-        if (!cancelled && (value === 'light' || value === 'dark')) setAppearanceState(value);
+        if (cancelled) return;
+        const next: DeviceSettings = {};
+        for (const [key, value] of Object.entries(res.status ?? {})) {
+          if (typeof value === 'string') next[key as DeviceSettingKey] = value;
+        }
+        setDeviceSettings(next);
+        if (next.appearance === 'light' || next.appearance === 'dark') {
+          setAppearanceState(next.appearance);
+        }
       })
       .catch(() => {
         /* unreachable / unsupported — leave unknown */
@@ -947,6 +1255,45 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
     };
   }, [execWsUrl, execToken, deviceUdid]);
+
+  // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
+  const streamSettingsUrl = config?.streamSettingsUrl ?? null;
+  const initialStreamSettings = config?.initialStreamSettings;
+  useEffect(() => {
+    streamSettingsControllerRef.current?.abort();
+    streamSettingsControllerRef.current = null;
+    streamSettingsPendingRef.current = false;
+    const request = ++streamSettingsRequestRef.current;
+    if (!streamSettingsUrl) {
+      streamSettingsRef.current = null;
+      setStreamSettings(null);
+      setStreamSettingsPending(false);
+      return;
+    }
+    const initial = normalizeDeviceStreamSettings(initialStreamSettings);
+    streamSettingsRef.current = initial;
+    setStreamSettings(initial);
+    streamSettingsPendingRef.current = true;
+    setStreamSettingsPending(true);
+    const controller = new AbortController();
+    void fetch(streamSettingsUrl, { cache: 'no-store', signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`Stream settings request failed (${response.status})`);
+        const next = normalizeDeviceStreamSettings(await response.json(), initial);
+        if (streamSettingsRequestRef.current === request) {
+          streamSettingsRef.current = next;
+          setStreamSettings(next);
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
+          streamSettingsPendingRef.current = false;
+          setStreamSettingsPending(false);
+        }
+      });
+    return () => controller.abort();
+  }, [streamSettingsUrl, initialStreamSettings]);
 
   // ── Foreground app (middleware /appstate SSE) — the middleware bootstraps a
   //    fresh subscriber with the current frontmost app, then pushes changes as
@@ -1052,6 +1399,26 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     attachLogs,
     detachLogs,
     clearLogs,
+    events,
+    eventsEnabled,
+    attachEvents,
+    detachEvents,
+    clearEvents,
+    activity,
+    deviceSettings,
+    deviceSettingsPending,
+    setDeviceSetting,
+    streamSettings,
+    streamSettingsPending,
+    updateStreamSettings,
+    webRtcCodec,
+    setWebRtcCodec,
+    capabilities: {
+      deviceSettings: !!execWsUrl && !!execToken && !!deviceUdid,
+      activity: !!metricsPath,
+      events: !!eventsPath,
+      streamSettings: !!streamSettingsUrl,
+    },
     foregroundApp,
     videoKind: useWebRtc ? 'video' : useAvcc ? 'canvas' : 'img',
     attachVideo,

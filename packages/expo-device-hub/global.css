@@ -98,6 +98,9 @@
 @utility bg-default {
   background-color: var(--expo-theme-background-default);
 }
+@utility bg-element {
+  background-color: var(--expo-theme-background-element);
+}
 @utility bg-hover {
   background-color: var(--expo-theme-background-hover);
 }

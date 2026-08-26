@@ -77,6 +77,7 @@ export function SegmentedControl<Value extends string>({
         display: 'flex',
         position: 'relative',
         flexShrink: 0,
+        marginLeft: 'auto',
         gap: CONTROL_SPACING,
         height: CONTROL_HEIGHT,
         padding: CONTROL_SPACING,

@@ -68,6 +68,84 @@ export interface DeviceLog {
   message: string;
 }
 
+/** A normalized device interaction or command reported by a device backend. */
+export interface DeviceEvent {
+  /** Stable within a device session and namespaced by the backend/device. */
+  id: string;
+  /** ISO timestamp reported by the backend. */
+  timestamp: string;
+  /** Backend event source, e.g. `hid`, `ui`, `ws`, or `rest:tap`. */
+  source: string;
+  /** Broad event category used for display and filtering. */
+  kind: string;
+  /** More specific operation within {@link kind}, when available. */
+  action?: string;
+  /** Whether the backend reported the operation as successful or failed. */
+  status?: 'ok' | 'error';
+  /** Human-readable, privacy-safe event summary. */
+  message: string;
+  /** Structured event data retained for future richer presentation. */
+  details?: Record<string, unknown>;
+}
+
+/** Simulator-wide settings exposed by serve-sim (Android currently supports appearance only). */
+export type DeviceSettingKey =
+  | 'appearance'
+  | 'liquid-glass'
+  | 'color-filter'
+  | 'text-size'
+  | 'reduce-motion'
+  | 'increase-contrast'
+  | 'show-borders'
+  | 'reduce-transparency'
+  | 'voiceover';
+
+/** Current backend-reported values. Missing keys are unavailable; `unsupported` keys are hidden. */
+export type DeviceSettings = Partial<Record<DeviceSettingKey, string>>;
+
+/** One live CPU, memory, and network sample for the foreground iOS app. */
+export interface DeviceActivitySample {
+  /** Milliseconds since the backend sampler started. */
+  t: number;
+  bundleId: string | null;
+  /** Per-core CPU utilization. It can exceed 100 on multicore workloads. */
+  cpuPct: number;
+  memBytes: number;
+  netInBytesPerSec: number;
+  netOutBytesPerSec: number;
+}
+
+/** Rolling activity history and health for the selected device. */
+export interface DeviceActivity {
+  hostCores: number | null;
+  samples: DeviceActivitySample[];
+  errored: boolean;
+  stale: boolean;
+}
+
+/** Viewer-local HTTP stream codec selection. */
+export type DeviceHttpCodec = 'auto' | 'mjpeg' | 'h264';
+
+/** Viewer-local WebRTC codec selection. */
+export type DeviceWebRtcCodec = 'h264' | 'vp9' | 'vp8';
+
+/** Runtime encoder settings supported by serve-sim's `/stream-settings` endpoint. */
+export interface DeviceStreamEncoderSettings {
+  mjpegFps: number;
+  mjpegQuality: number;
+  maxDimension: number;
+  h264Bitrate: number;
+  h264Fps: number;
+}
+
+/** Explicit backend feature flags used to omit unsupported inspector sections. */
+export interface DeviceCapabilities {
+  deviceSettings: boolean;
+  activity: boolean;
+  events: boolean;
+  streamSettings: boolean;
+}
+
 /** The app currently in the foreground on the device. */
 export interface ForegroundApp {
   /** Bundle identifier (iOS) / package name (Android). */
@@ -217,6 +295,39 @@ export interface DeviceClient {
   detachLogs: () => void;
   /** Drop all collected log lines. */
   clearLogs: () => void;
+
+  /** Rolling buffer of normalized touch, command, and UI-setting events. */
+  events: DeviceEvent[];
+  /** Whether the client is currently subscribed to/polling backend events. */
+  eventsEnabled: boolean;
+  /** Start observing backend events. */
+  attachEvents: () => void;
+  /** Stop observing events while retaining the current rows. */
+  detachEvents: () => void;
+  /** Clear the event rows visible in this client. */
+  clearEvents: () => void;
+
+  /** Live iOS app activity, or null before the first endpoint/config resolution. */
+  activity: DeviceActivity | null;
+
+  /** Backend-supported simulator/device options and their current values. */
+  deviceSettings: DeviceSettings | null;
+  /** Options currently being changed. Writes to other options remain available. */
+  deviceSettingsPending: ReadonlySet<DeviceSettingKey>;
+  /** Change one simulator/device option. Unsupported keys are ignored by each backend. */
+  setDeviceSetting: (key: DeviceSettingKey, value: string) => void;
+
+  /** Runtime encoder settings, available on serve-sim only. */
+  streamSettings: DeviceStreamEncoderSettings | null;
+  streamSettingsPending: boolean;
+  /** Patch one or more runtime encoder values. */
+  updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => void;
+  /** Requested WebRTC codec for this viewer. */
+  webRtcCodec: DeviceWebRtcCodec;
+  setWebRtcCodec: (codec: DeviceWebRtcCodec) => void;
+
+  /** Backend feature availability. Presentation uses this to omit unsupported UI. */
+  capabilities: DeviceCapabilities;
   /**
    * The app currently in the foreground, or `null` while unknown. serve-sim
    * pushes changes over its `{base}/appstate` SSE (SpringBoard log driven,

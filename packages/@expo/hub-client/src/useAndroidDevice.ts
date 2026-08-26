@@ -18,6 +18,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
+import {
+  type AndroidSessionEvent,
+  clearAndroidEventCursor,
+  createAndroidEventCursor,
+  mergeAndroidEventSnapshotCursor,
+  reconcileAndroidSessionEvents,
+} from './android-events';
 import { androidMessageForKeyboardInput } from './keyboard';
 import { MsePlayer } from './mse-player';
 import {
@@ -25,7 +32,9 @@ import {
   type DeviceAppearance,
   type DeviceClient,
   type DeviceConnectionOptions,
+  type DeviceEvent,
   type DeviceLog,
+  type DeviceSettingKey,
   type ForegroundApp,
   type HardwareButton,
   type KeyboardInput,
@@ -38,6 +47,7 @@ const MAX_LOGS = 200;
 const SOFT_DECODE_QUEUE_SIZE = 4;
 const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 const FOREGROUND_POLL_MS = 5000;
+const EVENTS_POLL_MS = 1000;
 
 const KEYCODE_R = 46;
 
@@ -100,9 +110,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [logs, setLogs] = useState<DeviceLog[]>([]);
   // Logs are opt-in: nothing streams until the user attaches.
   const [logsEnabled, setLogsEnabled] = useState(false);
+  const [events, setEvents] = useState<DeviceEvent[]>([]);
+  const [eventsEnabled, setEventsEnabled] = useState(false);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   // The device's system dark/light setting. null until `/api/uimode` reports it.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
+  const [deviceSettingsPending, setDeviceSettingsPending] = useState<
+    ReadonlySet<DeviceSettingKey>
+  >(() => new Set());
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
@@ -111,6 +126,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Monotonic log id source, persisted across logcat reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
+  // Clear is viewer-local so it does not erase serve-emu's replayable session.
+  const eventCursorRef = useRef(createAndroidEventCursor());
+  const appearanceRequestRef = useRef(0);
+  const appearancePendingRef = useRef(false);
 
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
@@ -122,6 +141,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const attachLogs = useCallback(() => setLogsEnabled(true), []);
   const detachLogs = useCallback(() => setLogsEnabled(false), []);
   const clearLogs = useCallback(() => setLogs([]), []);
+  const attachEvents = useCallback(() => setEventsEnabled(true), []);
+  const detachEvents = useCallback(() => setEventsEnabled(false), []);
+  const clearEvents = useCallback(() => {
+    eventCursorRef.current = clearAndroidEventCursor(eventCursorRef.current);
+    setEvents([]);
+  }, []);
 
   const send = useCallback((message: Record<string, unknown>): boolean => {
     const ws = wsRef.current;
@@ -197,11 +222,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   // Toggle the emulator's system dark theme via `/api/uimode` (POST
   // `adb shell cmd uimode night yes|no` — Hub only ever sets the binary modes,
-  // never `auto`). Optimistic: reflect the choice immediately, fire-and-forget.
+  // never `auto`). Reflect the choice optimistically, then confirm or refresh
+  // the authoritative value if serve-emu rejects the request.
   const setAppearance = useCallback(
     (mode: DeviceAppearance) => {
-      if (!baseUrl) return;
+      if (!baseUrl || appearancePendingRef.current) return;
+      const previous = appearance;
+      const request = ++appearanceRequestRef.current;
+      appearancePendingRef.current = true;
       setAppearanceState(mode);
+      setDeviceSettingsPending(new Set(['appearance']));
       const url = `${apiUrl(baseUrl, '/api/uimode')}${
         targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
       }`;
@@ -209,9 +239,46 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ night: mode === 'dark' ? 'yes' : 'no' }),
-      }).catch(() => {});
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Appearance update failed (${response.status})`);
+          const data = (await response.json()) as { ok?: boolean; night?: string };
+          if (!data.ok) throw new Error('Appearance update was rejected');
+          if (appearanceRequestRef.current === request) {
+            setAppearanceState(data.night === 'yes' ? 'dark' : 'light');
+          }
+        })
+        .catch(async () => {
+          if (appearanceRequestRef.current !== request) return;
+          try {
+            const response = await fetch(url, { cache: 'no-store' });
+            if (!response.ok) throw new Error('Appearance refresh failed');
+            const data = (await response.json()) as { ok?: boolean; night?: string };
+            if (!data.ok) throw new Error('Appearance refresh was rejected');
+            if (appearanceRequestRef.current === request) {
+              setAppearanceState(data.night === 'yes' ? 'dark' : 'light');
+            }
+          } catch {
+            if (appearanceRequestRef.current === request) setAppearanceState(previous);
+          }
+        })
+        .finally(() => {
+          if (appearanceRequestRef.current === request) {
+            appearancePendingRef.current = false;
+            setDeviceSettingsPending(new Set());
+          }
+        });
     },
-    [baseUrl, targetDevice],
+    [appearance, baseUrl, targetDevice],
+  );
+
+  const setDeviceSetting = useCallback(
+    (key: DeviceSettingKey, value: string) => {
+      if (key === 'appearance' && (value === 'light' || value === 'dark')) {
+        setAppearance(value);
+      }
+    },
+    [setAppearance],
   );
 
   // ── Video + input WebSocket (with reconnect) ──
@@ -545,6 +612,64 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     return () => source?.close();
   }, [logsEnabled, active, baseUrl, targetDevice]);
 
+  // ── Recorded input/session events (polling, best-effort) ──
+  // serve-emu records Hub-originated touches, keyboard input, hardware buttons,
+  // and location changes. Its session endpoint is a snapshot rather than SSE.
+  useEffect(() => {
+    setEvents([]);
+    eventCursorRef.current = createAndroidEventCursor();
+  }, [baseUrl, targetDevice]);
+
+  useEffect(() => {
+    if (!eventsEnabled || !active || !baseUrl) return;
+    let cancelled = false;
+    let polling = false;
+    let controller: AbortController | null = null;
+    const url = `${apiUrl(baseUrl, '/api/session')}${
+      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
+    }`;
+    const serial = targetDevice ?? 'default';
+
+    const poll = async () => {
+      if (cancelled || polling) return;
+      polling = true;
+      controller = new AbortController();
+      try {
+        const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) return;
+        const snapshot = (await response.json()) as { events?: AndroidSessionEvent[] };
+        if (cancelled || !Array.isArray(snapshot.events)) return;
+        const snapshotEvents = snapshot.events;
+        eventCursorRef.current = mergeAndroidEventSnapshotCursor(
+          eventCursorRef.current,
+          snapshotEvents,
+        );
+        setEvents((previous) =>
+          reconcileAndroidSessionEvents(
+            previous,
+            snapshotEvents.filter(
+              (event) => event.id > eventCursorRef.current.clearedThroughId,
+            ),
+            serial,
+          ),
+        );
+      } catch {
+        // Keep the latest successful snapshot while temporarily disconnected.
+      } finally {
+        polling = false;
+        controller = null;
+      }
+    };
+
+    void poll();
+    const timer = setInterval(poll, EVENTS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      controller?.abort();
+    };
+  }, [eventsEnabled, active, baseUrl, targetDevice]);
+
   // ── Running devices (best-effort) ──
   useEffect(() => {
     if (!active || !baseUrl) {
@@ -631,6 +756,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   // ── Current appearance (best-effort) — reflect the device's dark/light mode ──
   useEffect(() => {
+    const request = ++appearanceRequestRef.current;
+    appearancePendingRef.current = false;
+    setDeviceSettingsPending(new Set());
     if (!active || !baseUrl) {
       setAppearanceState(null);
       return;
@@ -644,7 +772,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       .then((data: { ok?: boolean; night?: string }) => {
         // `night` is yes|no|auto; map anything but an explicit `yes` to light so
         // the binary toggle has a definite position.
-        if (cancelled || !data.ok) return;
+        if (cancelled || appearanceRequestRef.current !== request || !data.ok) return;
         setAppearanceState(data.night === 'yes' ? 'dark' : 'light');
       })
       .catch(() => {
@@ -667,6 +795,26 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     attachLogs,
     detachLogs,
     clearLogs,
+    events,
+    eventsEnabled,
+    attachEvents,
+    detachEvents,
+    clearEvents,
+    activity: null,
+    deviceSettings: appearance ? { appearance } : null,
+    deviceSettingsPending,
+    setDeviceSetting,
+    streamSettings: null,
+    streamSettingsPending: false,
+    updateStreamSettings: () => {},
+    webRtcCodec: 'h264',
+    setWebRtcCodec: () => {},
+    capabilities: {
+      deviceSettings: true,
+      activity: false,
+      events: true,
+      streamSettings: false,
+    },
     foregroundApp,
     videoKind: 'canvas',
     attachVideo,

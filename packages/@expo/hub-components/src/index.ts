@@ -36,6 +36,7 @@ export {
   SegmentedControl,
   type SegmentedControlOption,
 } from './components/SegmentedControl';
+export { Select, type SelectOption, type SelectProps } from './components/Select';
 export { SidebarToggle } from './components/SidebarToggle';
 export { Switch, type SwitchProps } from './components/Switch';
 export { cx } from './components/cx';
@@ -50,13 +51,17 @@ export * from './theme/tokens';
 // component + `displayScreen` helper as props (typed from `@expo/hub-client`, a
 // types-only devDependency) so this library never imports the client at runtime.
 export { Sidebar } from './dashboard/Sidebar';
-export { LogSidebar } from './dashboard/LogSidebar';
+export { LogSidebar, type LogSidebarProps } from './dashboard/LogSidebar';
 export { StreamPanel } from './dashboard/StreamPanel';
 export { EmptyState } from './dashboard/EmptyState';
 export { DeviceSection, type DeviceSectionProps } from './dashboard/DeviceSection';
 export { OutputSection } from './dashboard/OutputSection';
 export { CurrentAppSection } from './dashboard/CurrentAppSection';
 export { DeviceOptionsSection } from './dashboard/DeviceOptionsSection';
+export { ActivitySection } from './dashboard/ActivitySection';
+export { EventsSection } from './dashboard/EventsSection';
+export { LogsSection } from './dashboard/LogsSection';
+export { CollapsibleSection } from './dashboard/CollapsibleSection';
 export { KeyboardSection } from './dashboard/KeyboardSection';
 export { PhoneFrame } from './dashboard/PhoneFrame';
 export { LogControls } from './dashboard/LogControls';
@@ -67,6 +72,10 @@ export {
   StreamSection,
   type StreamModeAvailability,
 } from './dashboard/StreamSection';
+export {
+  StreamOptionsSection,
+  type StreamOptionsSectionProps,
+} from './dashboard/StreamOptionsSection';
 export { RecentDevicesModal, type RecentDevicesModalProps } from './dashboard/RecentDevicesModal';
 export { BootErrorModal, type BootErrorModalProps } from './dashboard/BootErrorModal';
 
