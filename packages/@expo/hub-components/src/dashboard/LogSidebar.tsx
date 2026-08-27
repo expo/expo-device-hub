@@ -76,7 +76,7 @@ export function LogSidebar({
         {client?.capabilities.deviceSettings && <DeviceOptionsSection client={client} />}
         {client?.capabilities.activity && <ActivitySection client={client} />}
         {client?.capabilities.events && <EventsSection client={client} />}
-        {client?.capabilities.streamSettings && (
+        {client?.streamCapabilities && (
           <StreamOptionsSection
             client={client}
             streamMode={streamMode}

@@ -110,6 +110,7 @@
         "expo-device-hub": "dist/server/cli.mjs",
       },
       "dependencies": {
+        "node-datachannel": "^0.32.3",
         "ws": "^8.21.0",
         "zustand": "^5.0.15",
       },

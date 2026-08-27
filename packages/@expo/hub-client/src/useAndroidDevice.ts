@@ -2,9 +2,10 @@
  * serve-emu (Android) implementation of the {@link DeviceClient} interface.
  *
  * Wire protocol (see serve-emu `src/middleware.ts` / `src/input.ts`):
- *   - Video + input share one WebSocket at `<base>/ws?frame-meta=1`. serve-emu is
- *     multi-device: a `&device=<serial>` query selects which device to stream
- *     (omitted → first available). `/api/logcat` takes the same `?device=`.
+ *   - H.264 video + input share one WebSocket at `<base>/ws?frame-meta=1`.
+ *     With WebRTC video, input stays on `<base>/ws?video=0`; signaling uses
+ *     `<base>/webrtc/{offer,close}`. serve-emu is multi-device: `?device=<serial>`
+ *     selects the target (omitted → first available).
  *   - Binary inbound messages are H.264 access units, each prefixed with a
  *     16-byte "SEMU" header (keyframe flag + PTS); decoded with WebCodecs into a
  *     `<canvas>`.
@@ -27,6 +28,7 @@ import {
 } from './android-events';
 import { androidMessageForKeyboardInput } from './keyboard';
 import { MsePlayer } from './mse-player';
+import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import {
   type ConnectionStatus,
   type DeviceAppearance,
@@ -48,6 +50,7 @@ const SOFT_DECODE_QUEUE_SIZE = 4;
 const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 const FOREGROUND_POLL_MS = 5000;
 const EVENTS_POLL_MS = 1000;
+const STREAM_METADATA_POLL_MS = 1500;
 
 const KEYCODE_R = 46;
 
@@ -90,17 +93,76 @@ function apiUrl(baseUrl: string, path: string): string {
   return `${baseUrl.replace(/\/$/, '')}${path}`;
 }
 
-function wsUrlFor(baseUrl: string, device: string | null): string {
+function deviceApiUrl(baseUrl: string, path: string, device: string | null): string {
+  const url = new URL(apiUrl(baseUrl, path));
+  if (device) url.searchParams.set('device', device);
+  return url.toString();
+}
+
+export function androidWsUrlFor(
+  baseUrl: string,
+  device: string | null,
+  video: boolean,
+): string {
   const u = new URL(apiUrl(baseUrl, '/ws'));
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
-  u.searchParams.set('frame-meta', '1');
+  if (video) u.searchParams.set('frame-meta', '1');
+  else u.searchParams.set('video', '0');
   // serve-emu routes the stream to this device; omitted → first available.
   if (device) u.searchParams.set('device', device);
   return u.toString();
 }
 
+type ServeEmuStreamSettings =
+  | { transport: 'websocket' }
+  | {
+      transport: 'webrtc';
+      codec: 'h264';
+      iceServers: WebRtcIceServer[];
+      iceTransportPolicy: RTCIceTransportPolicy;
+    };
+
+type ServeEmuApiInfo = {
+  size?: { width?: unknown; height?: unknown };
+  stream?: unknown;
+};
+
+function isIceServer(value: unknown): value is WebRtcIceServer {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const candidate = value as Record<string, unknown>;
+  return (
+    Array.isArray(candidate.urls) &&
+    candidate.urls.length > 0 &&
+    candidate.urls.every((url) => typeof url === 'string') &&
+    (candidate.username === undefined || typeof candidate.username === 'string') &&
+    (candidate.credential === undefined || typeof candidate.credential === 'string')
+  );
+}
+
+/** Validate the stream contract returned by serve-emu's device-scoped `/api`. */
+export function parseServeEmuStreamSettings(value: unknown): ServeEmuStreamSettings | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.transport === 'websocket') return { transport: 'websocket' };
+  if (
+    candidate.transport !== 'webrtc' ||
+    candidate.codec !== 'h264' ||
+    !Array.isArray(candidate.iceServers) ||
+    !candidate.iceServers.every(isIceServer) ||
+    (candidate.iceTransportPolicy !== 'all' && candidate.iceTransportPolicy !== 'relay')
+  ) {
+    return null;
+  }
+  return {
+    transport: 'webrtc',
+    codec: 'h264',
+    iceServers: candidate.iceServers,
+    iceTransportPolicy: candidate.iceTransportPolicy,
+  };
+}
+
 export function useAndroidDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true, device: targetDevice = null } = options;
+  const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
   const active = enabled && !!baseUrl;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
@@ -120,6 +182,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   >(() => new Set());
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
+  const [serverStreamSettings, setServerStreamSettings] =
+    useState<ServeEmuStreamSettings | null>(null);
+  const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
+  const [webRtcVideoReady, setWebRtcVideoReady] = useState(false);
+  const [webRtcInputReady, setWebRtcInputReady] = useState(false);
+  const [webRtcInputError, setWebRtcInputError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -133,7 +201,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
-      canvasRef.current = (el as HTMLCanvasElement) ?? null;
+      canvasRef.current = el?.tagName === 'CANVAS' ? (el as HTMLCanvasElement) : null;
+      const video = el?.tagName === 'VIDEO' ? (el as HTMLVideoElement) : null;
+      setWebRtcVideoElement((current) => (current === video ? current : video));
     },
     [],
   );
@@ -281,12 +351,187 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [setAppearance],
   );
 
-  // ── Video + input WebSocket (with reconnect) ──
+  // ── Stream metadata ──
+  // serve-emu locks its host transport at launch. Poll the device-scoped API so
+  // the viewer only offers WebRTC when that transport is actually configured,
+  // and so the peer uses the host's ICE servers/policy rather than client input.
+  useEffect(() => {
+    setServerStreamSettings(null);
+    if (!active || !baseUrl) return;
+
+    let cancelled = false;
+    let polling = false;
+    let controller: AbortController | null = null;
+    const url = deviceApiUrl(baseUrl, '/api', targetDevice);
+
+    const refresh = async () => {
+      if (cancelled || polling) return;
+      polling = true;
+      controller = new AbortController();
+      try {
+        const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) return;
+        const info = (await response.json()) as ServeEmuApiInfo;
+        if (cancelled) return;
+        const next = parseServeEmuStreamSettings(info.stream) ?? { transport: 'websocket' };
+        setServerStreamSettings((current) =>
+          JSON.stringify(current) === JSON.stringify(next) ? current : next,
+        );
+        const width = Number(info.size?.width);
+        const height = Number(info.size?.height);
+        if (width > 0 && height > 0) {
+          setScreen((current) =>
+            current?.width === width && current.height === height ? current : { width, height },
+          );
+        }
+      } catch {
+        // Device startup and temporary disconnects are expected; keep polling.
+      } finally {
+        polling = false;
+        controller = null;
+      }
+    };
+
+    void refresh();
+    const timer = setInterval(refresh, STREAM_METADATA_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      controller?.abort();
+    };
+  }, [active, baseUrl, targetDevice]);
+
+  const webRtcRequested = streamMode === 'webrtc';
+  const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
+  const useWebRtc =
+    webRtcRequested && serverStreamSettings?.transport === 'webrtc';
+  const requestWebRtcKeyframe = useCallback(() => {
+    send({ type: 'reset-video' });
+  }, [send]);
+  const {
+    stream: webRtcStream,
+    error: webRtcError,
+    markFrameDecoded: markWebRtcFrameDecoded,
+  } = useWebRtcStream({
+    offerUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/offer', targetDevice) : '',
+    closeUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/close', targetDevice) : '',
+    enabled: active && useWebRtc,
+    codec: 'h264',
+    iceServers:
+      serverStreamSettings?.transport === 'webrtc'
+        ? serverStreamSettings.iceServers
+        : undefined,
+    iceTransportPolicy:
+      serverStreamSettings?.transport === 'webrtc'
+        ? serverStreamSettings.iceTransportPolicy
+        : 'all',
+    sendIceServersInOffer: false,
+    allowCodecFallback: false,
+    onKeyframeNeeded: requestWebRtcKeyframe,
+  });
+
+  useEffect(() => {
+    if (!useWebRtc) {
+      setWebRtcVideoReady(false);
+      setWebRtcInputReady(false);
+      setWebRtcInputError(null);
+      return;
+    }
+    if (webRtcError) {
+      setStatus('error');
+      setError(webRtcError);
+    } else if (webRtcInputError) {
+      setStatus('error');
+      setError(webRtcInputError);
+    } else if (!webRtcStream || !webRtcVideoReady || !webRtcInputReady) {
+      setStatus('connecting');
+      setError(null);
+    } else {
+      setStatus('streaming');
+      setError(null);
+    }
+  }, [useWebRtc, webRtcError, webRtcInputError, webRtcInputReady, webRtcStream, webRtcVideoReady]);
+
+  // Attach the negotiated MediaStream to DeviceScreen's current <video> node.
+  // The node is stateful (rather than only a ref) so a remount reattaches the
+  // stream and frame observer even when the MediaStream itself is unchanged.
+  useEffect(() => {
+    if (!useWebRtc) return;
+    const video = webRtcVideoElement;
+    if (!video) return;
+
+    let stopped = false;
+    let firstFrame = true;
+    let frameCallback = 0;
+    let fpsCount = 0;
+    let fpsStartedAt = performance.now();
+
+    const markFrame = () => {
+      if (stopped) return;
+      if (video.videoWidth > 0 && video.videoHeight > 0) {
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        setScreen((current) =>
+          current?.width === width && current.height === height ? current : { width, height },
+        );
+      }
+      if (firstFrame) {
+        firstFrame = false;
+        markWebRtcFrameDecoded();
+        setWebRtcVideoReady(true);
+      }
+      fpsCount++;
+      const now = performance.now();
+      if (now - fpsStartedAt >= 1000) {
+        const next = Math.round((fpsCount * 1000) / (now - fpsStartedAt));
+        fpsCount = 0;
+        fpsStartedAt = now;
+        setFps((current) => (current === next ? current : next));
+      }
+    };
+    const onVideoFrame = () => {
+      markFrame();
+      frameCallback = video.requestVideoFrameCallback(onVideoFrame);
+    };
+    const onTimeUpdate = () => markFrame();
+
+    video.srcObject = webRtcStream;
+    setWebRtcVideoReady(false);
+    if (webRtcStream) {
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        frameCallback = video.requestVideoFrameCallback(onVideoFrame);
+      } else {
+        video.addEventListener('timeupdate', onTimeUpdate);
+      }
+      video.addEventListener('loadeddata', markFrame, { once: true });
+      void video.play().catch(() => {});
+    }
+
+    return () => {
+      stopped = true;
+      video.removeEventListener('loadeddata', markFrame);
+      video.removeEventListener('timeupdate', onTimeUpdate);
+      if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(frameCallback);
+      }
+      video.srcObject = null;
+      setWebRtcVideoReady(false);
+      setFps(0);
+    };
+  }, [useWebRtc, webRtcStream, webRtcVideoElement, markWebRtcFrameDecoded]);
+
+  // ── H.264 video + input WebSocket (with reconnect) ──
   useEffect(() => {
     if (!active || !baseUrl) {
       setStatus('idle');
       return;
     }
+    if (waitingForWebRtcMetadata) {
+      setStatus('connecting');
+      setError(null);
+      return;
+    }
+    if (useWebRtc) return;
     // WebCodecs (`VideoDecoder`) is a secure-context-only API, so it's absent
     // over a plain-HTTP LAN origin (`http://192.168.x.x:8081`). Fall back to
     // Media Source Extensions — not secure-context gated — which decodes the same
@@ -497,7 +742,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (cancelled) return;
       let ws: WebSocket;
       try {
-        ws = new WebSocket(wsUrlFor(baseUrl, targetDevice));
+        ws = new WebSocket(androidWsUrlFor(baseUrl, targetDevice, true));
       } catch (err) {
         setStatus('error');
         setError(err instanceof Error ? err.message : 'Invalid server URL');
@@ -588,7 +833,79 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // Reconnect only when the target device or server changes — not on every
     // status/fps/screen state update this effect writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, baseUrl, targetDevice]);
+  }, [active, baseUrl, targetDevice, waitingForWebRtcMetadata, useWebRtc]);
+
+  // ── WebRTC input WebSocket ──
+  // Video travels over the peer connection, but low-latency JSON input and
+  // keyframe requests retain serve-emu's scrcpy control WebSocket.
+  useEffect(() => {
+    if (!active || !baseUrl || !useWebRtc) {
+      setWebRtcInputReady(false);
+      setWebRtcInputError(null);
+      return;
+    }
+
+    let cancelled = false;
+    let reconnectDelay = 500;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const inputUrl = androidWsUrlFor(baseUrl, targetDevice, false);
+    setWebRtcInputReady(false);
+    setWebRtcInputError(null);
+
+    const scheduleReconnect = (message: string) => {
+      if (cancelled) return;
+      setWebRtcInputReady(false);
+      setWebRtcInputError(message);
+      const retryIn = reconnectDelay;
+      reconnectDelay = Math.min(Math.round(reconnectDelay * 1.6), 5000);
+      retryTimer = setTimeout(connect, retryIn);
+    };
+
+    function connect() {
+      if (cancelled) return;
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(inputUrl);
+      } catch {
+        scheduleReconnect('WebRTC input connection failed. Retrying...');
+        return;
+      }
+      wsRef.current = ws;
+      ws.onopen = () => {
+        if (cancelled) return;
+        reconnectDelay = 500;
+        setWebRtcInputReady(true);
+        setWebRtcInputError(null);
+        ws.send(JSON.stringify({ type: 'reset-video', ack: false }));
+      };
+      ws.onerror = () => {
+        // onclose owns retry scheduling.
+      };
+      ws.onclose = () => {
+        if (wsRef.current === ws) wsRef.current = null;
+        scheduleReconnect('WebRTC input disconnected. Retrying...');
+      };
+      ws.onmessage = (event) => {
+        if (cancelled || typeof event.data !== 'string') return;
+        try {
+          const message = JSON.parse(event.data) as { ok?: boolean; error?: string };
+          if (message.ok === false && message.error) setError(message.error);
+        } catch {}
+      };
+    }
+
+    connect();
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      const ws = wsRef.current;
+      try {
+        ws?.close();
+      } catch {}
+      if (wsRef.current === ws) wsRef.current = null;
+      setWebRtcInputReady(false);
+    };
+  }, [active, baseUrl, targetDevice, useWebRtc]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
@@ -809,6 +1126,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     updateStreamSettings: () => {},
     webRtcCodec: 'h264',
     setWebRtcCodec: () => {},
+    streamCapabilities: {
+      modeAvailability: {
+        mjpeg: false,
+        h264: true,
+        webrtc: serverStreamSettings?.transport === 'webrtc',
+      },
+      httpCodecs: ['h264'],
+      webRtcCodecs: ['h264'],
+    },
     capabilities: {
       deviceSettings: true,
       activity: false,
@@ -816,7 +1142,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       streamSettings: false,
     },
     foregroundApp,
-    videoKind: 'canvas',
+    videoKind: useWebRtc ? 'video' : 'canvas',
     attachVideo,
     sendTouch,
     sendKey,

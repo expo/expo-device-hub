@@ -43,9 +43,13 @@
     "/expo-module.config.json"
   ],
   "dependencies": {
+    "node-datachannel": "^0.32.3",
     "ws": "^8.21.0",
     "zustand": "^5.0.15"
   },
+  "trustedDependencies": [
+    "node-datachannel"
+  ],
   "devDependencies": {
     "@expo/hub-android-utils": "workspace:*",
     "@expo/hub-apple-utils": "workspace:*",

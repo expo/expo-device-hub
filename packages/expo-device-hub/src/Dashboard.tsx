@@ -43,7 +43,10 @@ import { useArgentInteractions } from './dashboard/useArgentInteraction';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 import { SidebarOverlay } from './dashboard/SidebarOverlay';
 import { useSidebarLayout } from './dashboard/useSidebarLayout';
-import { browserStreamModeAvailability } from './dashboard/streamMode';
+import {
+  androidStreamModeAvailability,
+  browserStreamModeAvailability,
+} from './dashboard/streamMode';
 import { dashboardPlatformFilter } from './platform-filter';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
@@ -106,9 +109,6 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto'
   );
-  const handleStreamModeChange = (mode: DeviceStreamMode) => {
-    chooseStreamMode(mode, streamModeAvailability);
-  };
   // Draggable widths for each inline sidebar. The `*Start` refs snapshot the
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
@@ -233,6 +233,16 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
 
   const devices = [...simulators, ...emulators];
   const selected = devices.find((device) => device.id === selectedId) ?? devices[0];
+  const selectedStreamModeAvailability =
+    selected?.platform === 'android'
+      ? androidStreamModeAvailability(
+          streamModeAvailability,
+          typeof window.MediaSource !== 'undefined'
+        )
+      : streamModeAvailability;
+  const handleStreamModeChange = (mode: DeviceStreamMode) => {
+    chooseStreamMode(mode, selectedStreamModeAvailability);
+  };
 
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
@@ -344,7 +354,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           client={client}
           streamMode={streamMode}
           httpCodec={httpCodec}
-          streamModeAvailability={streamModeAvailability}
+          streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
           onToggle={sidebars.closeRight}
@@ -385,7 +395,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           client={client}
           streamMode={streamMode}
           httpCodec={httpCodec}
-          streamModeAvailability={streamModeAvailability}
+          streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
           onToggle={sidebars.closeRight}

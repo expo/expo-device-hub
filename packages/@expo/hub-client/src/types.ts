@@ -21,7 +21,7 @@ import { type CSSProperties } from 'react';
 
 export type DevicePlatform = 'ios' | 'android';
 
-/** Viewer-selected transport for serve-sim video. */
+/** Viewer-selected transport for the active device stream. */
 export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
 
 /**
@@ -129,6 +129,13 @@ export type DeviceHttpCodec = 'auto' | 'mjpeg' | 'h264';
 /** Viewer-local WebRTC codec selection. */
 export type DeviceWebRtcCodec = 'h264' | 'vp9' | 'vp8';
 
+/** Stream transports and codecs supported by the active backend. */
+export interface DeviceStreamCapabilities {
+  modeAvailability: Record<DeviceStreamMode, boolean>;
+  httpCodecs: readonly DeviceHttpCodec[];
+  webRtcCodecs: readonly DeviceWebRtcCodec[];
+}
+
 /** Runtime encoder settings supported by serve-sim's `/stream-settings` endpoint. */
 export interface DeviceStreamEncoderSettings {
   mjpegFps: number;
@@ -138,11 +145,12 @@ export interface DeviceStreamEncoderSettings {
   h264Fps: number;
 }
 
-/** Explicit backend feature flags used to omit unsupported inspector sections. */
+/** Explicit backend feature flags used to omit unsupported inspector sections and controls. */
 export interface DeviceCapabilities {
   deviceSettings: boolean;
   activity: boolean;
   events: boolean;
+  /** Runtime encoder settings can be read and patched. */
   streamSettings: boolean;
 }
 
@@ -259,7 +267,7 @@ export interface DeviceConnectionOptions {
   /**
    * Stream transport selected by the consumer. There is intentionally no
    * client-level default; products embedding Hub own their default choice.
-   * serve-emu currently ignores this because its wire protocol is always H.264.
+   * Each backend adapter maps unavailable choices to one of its supported modes.
    */
   streamMode: DeviceStreamMode;
 }
@@ -317,7 +325,9 @@ export interface DeviceClient {
   /** Change one simulator/device option. Unsupported keys are ignored by each backend. */
   setDeviceSetting: (key: DeviceSettingKey, value: string) => void;
 
-  /** Runtime encoder settings, available on serve-sim only. */
+  /** Backend-supported viewer transport and codec choices; null hides stream controls. */
+  streamCapabilities: DeviceStreamCapabilities | null;
+  /** Runtime encoder settings, available only when `capabilities.streamSettings` is true. */
   streamSettings: DeviceStreamEncoderSettings | null;
   streamSettingsPending: boolean;
   /** Patch one or more runtime encoder values. */

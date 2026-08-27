@@ -1,9 +1,15 @@
 // @ts-ignore vendored module, absent until `bun run build:vendor`
 import { createRouter, fromWsSocket, type WsWebSocketLike } from '../../vendor/serve-emu/dist/middleware.js';
 
+import {
+  readStandaloneServeEmuOptions,
+  SERVE_EMU_OPTIONS_ENV,
+  serveEmuWebSocketOptions,
+} from './serve-emu-options';
+
 export const EMU_PREFIX = '/vendor/serve-emu';
 
-const router = createRouter();
+const router = createRouter(readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]));
 
 function stopAll(): void {
   try {
@@ -31,8 +37,8 @@ async function attachEmuSocket(socket: WsWebSocketLike, request: Request): Promi
     } catch {}
     return;
   }
-  const frameMeta = url.searchParams.get('frame-meta') === '1';
-  router.attachWebSocket(fromWsSocket(socket), { serial, frameMeta });
+  const { video, frameMeta } = serveEmuWebSocketOptions(url);
+  router.attachWebSocket(fromWsSocket(socket), { serial, video, frameMeta });
 }
 
 export const emuWebSocketHandler = (socket: WsWebSocketLike, request: Request): void => {
