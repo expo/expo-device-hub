@@ -23,7 +23,7 @@ describe("buildEmulatorArgs", () => {
       "-no-audio",
       "-no-window",
       "-gpu",
-      "host",
+      "auto",
       "-no-boot-anim",
       "-port",
       "5554",

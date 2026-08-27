@@ -9,8 +9,7 @@ export function emulatorSerial(port: number): string {
 
 /**
  * Build the `emulator` arguments for a boot.
- * Always use `host` GPU, `auto` results in low fps when using with `-no-window`
- * or the windows is in the background. (~10fps scrcpy, or ~30fps with grpc streaming)
+ * Let the emulator choose the GPU backend that best matches the host.
  */
 export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
   return [
@@ -19,7 +18,7 @@ export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
     "-no-audio",
     "-no-window",
     "-gpu",
-    "host",
+    "auto",
     "-no-boot-anim",
     "-port",
     String(options.port),

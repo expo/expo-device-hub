@@ -80,7 +80,7 @@ if (created) {
   `device` throws. Its result `value` is `true` on success and `false` on
   operational failure.
 - `bootDevice(options)` launches the AVD headlessly via the `emulator` binary
-  (`-no-window -no-audio -gpu host -no-boot-anim`). The emulator is
+  (`-no-window -no-audio -gpu auto -no-boot-anim`). The emulator is
   detached so it keeps running after the parent exits. Returns as soon as the
   process is spawned — not once Android has finished booting — so wait for boot
   with adb using the returned `value.serial` (`emulator-<port>`).
