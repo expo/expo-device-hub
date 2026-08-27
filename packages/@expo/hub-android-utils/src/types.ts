@@ -122,13 +122,13 @@ export interface EmulatorExit {
 export interface BootedDevice {
   /** adb serial for the emulator, `emulator-<port>`. */
   serial: string;
-  /** OS process id of the spawned emulator; `null` when unavailable. */
+  /** OS process id of the active emulator; updated after a software GPU retry. */
   pid: number | null;
   /**
-   * The exact boot invocation as a runnable shell command. The emulator's
-   * output is discarded (the detached child outlives us), so this is what a
-   * failure report offers the user to reproduce the boot with the full
-   * emulator output visible.
+   * The active boot invocation as a runnable shell command. This switches to
+   * `-gpu software` after a host rendering fallback. Emulator output is
+   * otherwise discarded (the detached child outlives us), so this is what a
+   * failure report offers the user to reproduce the boot with full output.
    */
   command: string;
   /**

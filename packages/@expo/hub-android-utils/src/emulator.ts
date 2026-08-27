@@ -1,6 +1,38 @@
-import { type ChildProcess, spawn } from "node:child_process";
-import { type AndroidUtilsResult, reportError, result } from "./errors";
-import type { BootDeviceOptions } from "./types";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
+import { type AndroidUtilsResult, logDebug, reportError, result } from "./errors";
+import type { BootDeviceOptions, EmulatorExit } from "./types";
+
+const HARDWARE_GPU_ERROR = "Your GPU cannot be used for hardware rendering";
+
+export type EmulatorGpuMode = "host" | "software";
+
+export interface SpawnedEmulator {
+  /** The active process, updated if startup falls back to software rendering. */
+  readonly child: ChildProcess;
+  /** The active GPU mode, updated if startup falls back to software rendering. */
+  readonly gpuMode: EmulatorGpuMode;
+  /** Resolves when the active process exits without another retry. */
+  readonly exited: Promise<EmulatorExit>;
+}
+
+function stopEmulatorAttempt(child: ChildProcess): void {
+  if (process.platform === "win32" && child.pid) {
+    const stopped = spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    if (!stopped.error && stopped.status === 0) return;
+  } else if (child.pid) {
+    try {
+      process.kill(-child.pid, "SIGKILL");
+      return;
+    } catch {
+      // The process may have exited between emitting output and being signaled.
+    }
+  }
+
+  child.kill("SIGKILL");
+}
 
 /** The adb serial for an emulator started on the given console port. */
 export function emulatorSerial(port: number): string {
@@ -9,17 +41,21 @@ export function emulatorSerial(port: number): string {
 
 /**
  * Build the `emulator` arguments for a boot.
- * Always use `host` GPU, `auto` results in low fps when using with `-no-window`
- * or the windows is in the background. (~10fps scrcpy, or ~30fps with grpc streaming)
+ * Prefer the `host` GPU because `auto` results in low fps with `-no-window` or
+ * when the window is in the background. Software rendering is used only when
+ * the host attempt reports that hardware rendering is unavailable.
  */
-export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
+export function buildEmulatorArgs(
+  options: BootDeviceOptions,
+  gpuMode: EmulatorGpuMode = "host",
+): string[] {
   return [
     "-avd",
     options.name,
     "-no-audio",
     "-no-window",
     "-gpu",
-    "host",
+    gpuMode,
     "-no-boot-anim",
     "-port",
     String(options.port),
@@ -31,8 +67,12 @@ export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
  * offer the user to reproduce a failed boot with the full emulator output
  * visible in their terminal.
  */
-export function formatEmulatorCommand(emulatorPath: string, options: BootDeviceOptions): string {
-  return [emulatorPath, ...buildEmulatorArgs(options)]
+export function formatEmulatorCommand(
+  emulatorPath: string,
+  options: BootDeviceOptions,
+  gpuMode: EmulatorGpuMode = "host",
+): string {
+  return [emulatorPath, ...buildEmulatorArgs(options, gpuMode)]
     .map((part) => (/\s/.test(part) ? JSON.stringify(part) : part))
     .join(" ");
 }
@@ -40,18 +80,119 @@ export function formatEmulatorCommand(emulatorPath: string, options: BootDeviceO
 /**
  * Spawn a detached, headless `emulator` process.
  *
- * The child is fully detached (its own process group, ignored stdio, `unref`ed)
- * so it keeps running after the parent exits. Resolves with the
- * {@link ChildProcess}, or `null` plus `error` if it could not be spawned.
+ * The child is fully detached (its own process group, unreferenced stdio,
+ * `unref`ed) so it keeps running after the parent exits. If stdout or stderr
+ * says host rendering is unavailable, the host attempt is stopped and retried
+ * once with software rendering. Resolves with the managed process lifecycle,
+ * or `null` plus `error` if the first process could not be spawned.
  */
-export function spawnEmulator(
+export async function spawnEmulator(
   emulatorPath: string,
   options: BootDeviceOptions,
+): Promise<AndroidUtilsResult<SpawnedEmulator | null>> {
+  const initial = await spawnEmulatorProcess(emulatorPath, options, "host");
+  if (initial.error || !initial.value) return result(null, initial.error);
+
+  let activeChild = initial.value;
+  let activeGpuMode: EmulatorGpuMode = "host";
+
+  const exited = new Promise<EmulatorExit>((resolve) => {
+    const monitor = (child: ChildProcess, gpuMode: EmulatorGpuMode): void => {
+      let fallbackRequested = false;
+      let finished = false;
+      let stdoutTail = "";
+      let stderrTail = "";
+
+      function cleanup(): void {
+        child.stdout?.removeListener("data", onStdout);
+        child.stderr?.removeListener("data", onStderr);
+        child.removeListener("error", onError);
+        child.removeListener("close", onClose);
+      }
+
+      function inspectOutput(tail: string, chunk: Buffer | string): string {
+        if (finished || gpuMode !== "host" || fallbackRequested) return tail;
+
+        const nextTail = `${tail}${chunk}`.slice(-HARDWARE_GPU_ERROR.length * 2);
+        if (!nextTail.includes(HARDWARE_GPU_ERROR)) return nextTail;
+
+        fallbackRequested = true;
+        logDebug(
+          "[android-utils] Hardware GPU rendering unavailable; retrying `emulator` with software rendering.",
+        );
+        stopEmulatorAttempt(child);
+        return nextTail;
+      }
+
+      function onStdout(chunk: Buffer | string): void {
+        stdoutTail = inspectOutput(stdoutTail, chunk);
+      }
+
+      function onStderr(chunk: Buffer | string): void {
+        stderrTail = inspectOutput(stderrTail, chunk);
+      }
+
+      function onError(error: Error): void {
+        if (finished) return;
+        finished = true;
+        cleanup();
+        resolve({
+          code: null,
+          signal: null,
+          error: reportError("[android-utils] `emulator` process error:", error),
+        });
+      }
+
+      async function onClose(code: number | null, signal: NodeJS.Signals | null): Promise<void> {
+        if (finished) return;
+        finished = true;
+        cleanup();
+
+        if (!fallbackRequested) {
+          resolve({ code, signal, error: null });
+          return;
+        }
+
+        activeGpuMode = "software";
+        const retried = await spawnEmulatorProcess(emulatorPath, options, activeGpuMode);
+        if (retried.error || !retried.value) {
+          resolve({ code: null, signal: null, error: retried.error });
+          return;
+        }
+
+        activeChild = retried.value;
+        monitor(activeChild, activeGpuMode);
+      }
+
+      child.stdout?.on("data", onStdout);
+      child.stderr?.on("data", onStderr);
+      child.once("error", onError);
+      child.once("close", onClose);
+    };
+
+    monitor(activeChild, activeGpuMode);
+  });
+
+  return result({
+    get child() {
+      return activeChild;
+    },
+    get gpuMode() {
+      return activeGpuMode;
+    },
+    exited,
+  });
+}
+
+function spawnEmulatorProcess(
+  emulatorPath: string,
+  options: BootDeviceOptions,
+  gpuMode: EmulatorGpuMode,
 ): Promise<AndroidUtilsResult<ChildProcess | null>> {
   try {
-    const child = spawn(emulatorPath, buildEmulatorArgs(options), {
+    const child = spawn(emulatorPath, buildEmulatorArgs(options, gpuMode), {
       detached: true,
-      stdio: "ignore",
+      stdio: ["ignore", "pipe", "pipe"],
     });
 
     return new Promise((resolve) => {
@@ -62,6 +203,10 @@ export function spawnEmulator(
       child.once("spawn", () => {
         child.removeListener("error", onError);
         child.unref();
+        for (const stream of [child.stdout, child.stderr]) {
+          const pipe = stream as (typeof stream & { unref(): void }) | null;
+          pipe?.unref();
+        }
         resolve(result(child));
       });
     });

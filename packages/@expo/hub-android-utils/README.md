@@ -81,9 +81,12 @@ if (created) {
   operational failure.
 - `bootDevice(options)` launches the AVD headlessly via the `emulator` binary
   (`-no-window -no-audio -gpu host -no-boot-anim`). The emulator is
-  detached so it keeps running after the parent exits. Returns as soon as the
-  process is spawned — not once Android has finished booting — so wait for boot
-  with adb using the returned `value.serial` (`emulator-<port>`).
+  detached so it keeps running after the parent exits. If host rendering is
+  unavailable, the launch is retried once with `-gpu software`; this is silent
+  unless the `expo-device-hub:android-utils` debug namespace is enabled. Returns
+  as soon as the process is spawned — not once Android has finished booting —
+  so wait for boot with adb using the returned `value.serial`
+  (`emulator-<port>`).
 
 All four resolve their binaries the same way as `listDevices()` and return
 `{ value, error }`: the listers use `[]`, `createDevice` uses `false`, and
