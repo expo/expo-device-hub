@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { resolveStreamMode, streamModeAvailability } from '../streamMode';
+import {
+  androidStreamModeAvailability,
+  resolveStreamMode,
+  streamModeAvailability,
+} from '../streamMode';
 import { dashboardTransport, parseTransport } from '../../transport';
 
 afterEach(() => {
@@ -33,6 +37,21 @@ describe('stream mode availability', () => {
     });
     expect(resolveStreamMode('mjpeg', availability)).toBe('mjpeg');
     expect(resolveStreamMode('h264', availability)).toBe('mjpeg');
+  });
+
+  test('keeps Android WebSocket H.264 available through MSE on insecure HTTP', () => {
+    const browserAvailability = streamModeAvailability({
+      secureContext: false,
+      h264Decoder: false,
+      webRtc: true,
+    });
+
+    expect(androidStreamModeAvailability(browserAvailability, true)).toEqual({
+      mjpeg: true,
+      h264: true,
+      webrtc: false,
+    });
+    expect(androidStreamModeAvailability(browserAvailability, false).h264).toBe(false);
   });
 
   test('uses the standalone host preference when it is available', () => {

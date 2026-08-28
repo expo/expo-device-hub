@@ -3,6 +3,9 @@ import { type DeviceClient, type DevicePlatform } from '@expo/hub-client';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
+import {
+  StreamOptionsSection,
+} from '../../../../@expo/hub-components/src/dashboard/StreamOptionsSection';
 
 function inspectorClient(platform: DevicePlatform): DeviceClient {
   const ios = platform === 'ios';
@@ -41,6 +44,17 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       : { appearance: 'light' },
     deviceSettingsPending: new Set(),
     setDeviceSetting: () => {},
+    streamCapabilities: ios
+      ? {
+          modeAvailability: { mjpeg: true, h264: true, webrtc: true },
+          httpCodecs: ['auto', 'h264', 'mjpeg'],
+          webRtcCodecs: ['h264', 'vp9', 'vp8'],
+        }
+      : {
+          modeAvailability: { mjpeg: false, h264: true, webrtc: true },
+          httpCodecs: ['h264'],
+          webRtcCodecs: ['h264'],
+        },
     streamSettings: ios
       ? {
           mjpegFps: 60,
@@ -135,17 +149,66 @@ test('renders every supported iOS inspector section and option', () => {
   expect(html.match(/aria-expanded="false"/g)?.length).toBe(4);
 });
 
-test('omits unsupported Android activity, stream, and iOS-only options', () => {
+test('renders Android stream options while omitting unsupported and iOS-only sections', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
-  for (const label of ['Device options', 'Events', 'Logs', 'Appearance']) {
+  for (const label of ['Device options', 'Events', 'Stream options', 'Logs', 'Appearance']) {
     expect(html).toContain(label);
   }
-  for (const label of ['Activity', 'Stream options', 'Liquid glass', 'VoiceOver']) {
+  for (const label of ['Activity', 'Liquid glass', 'VoiceOver']) {
     expect(html).not.toContain(`>${label}<`);
   }
   expect(html.match(/aria-expanded="true"/g)?.length).toBe(1);
-  expect(html.match(/aria-expanded="false"/g)?.length).toBe(2);
+  expect(html.match(/aria-expanded="false"/g)?.length).toBe(3);
+});
+
+test('limits Android stream controls to the transports and H.264 codecs serve-emu supports', () => {
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={inspectorClient('android')}
+      defaultOpen
+      streamMode="webrtc"
+      httpCodec="h264"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+      onHttpCodecChange={() => {}}
+    />,
+  );
+
+  expect(segmentedControlMarkup(html, 'Stream transport')).toContain('>WebSocket</button>');
+  expect(segmentedControlMarkup(html, 'Stream transport')).toContain('>WebRTC</button>');
+  expect(segmentedControlMarkup(html, 'WebSocket codec')).toContain('>H.264</button>');
+  expect(segmentedControlMarkup(html, 'WebRTC codec')).toContain('>H.264</button>');
+  expect(html).not.toContain('>HTTP</button>');
+  expect(html).not.toContain('>MJPEG</button>');
+  expect(html).not.toContain('>VP8</button>');
+  expect(html).not.toContain('>VP9</button>');
+  expect(html).not.toContain('>Max size</span>');
+});
+
+test('explains when the Android host was not launched with WebRTC', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamCapabilities: {
+      modeAvailability: { mjpeg: false, h264: true, webrtc: false },
+      httpCodecs: ['h264'],
+      webRtcCodecs: ['h264'],
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={client}
+      defaultOpen
+      streamMode="h264"
+      httpCodec="h264"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+      onHttpCodecChange={() => {}}
+    />,
+  );
+
+  expect(segmentedControlMarkup(html, 'Stream transport')).toContain('disabled=""');
+  expect(html).toContain('Start the standalone server with --transport webrtc');
 });
 
 test('uses the shared stream-pill spacing for every device option', () => {

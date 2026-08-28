@@ -8,6 +8,10 @@ import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } f
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { staticFileHandler } from './cli/static-files';
 import {
+  encodeStandaloneServeEmuOptions,
+  SERVE_EMU_OPTIONS_ENV,
+} from './serve-emu-options';
+import {
   encodeStandaloneServeSimOptions,
   SERVE_SIM_OPTIONS_ENV,
 } from './serve-sim-options';
@@ -81,6 +85,7 @@ async function main(): Promise<void> {
   } else {
     delete process.env.EXPO_DEVICE_HUB_HIDE_SIDEBAR;
   }
+  process.env[SERVE_EMU_OPTIONS_ENV] = encodeStandaloneServeEmuOptions(options);
   process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options);
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
   const hubServer = (await import('./index.mjs')) as HubServerModule;

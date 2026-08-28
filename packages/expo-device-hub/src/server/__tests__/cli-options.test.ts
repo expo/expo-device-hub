@@ -18,6 +18,7 @@ describe('parseCliOptions', () => {
       turnUrls: undefined,
       turnUsername: undefined,
       turnCredential: undefined,
+      webrtcIcePolicy: undefined,
       metricsCorsOrigins: [],
       hideSidebar: false,
       help: false,
@@ -57,6 +58,8 @@ describe('parseCliOptions', () => {
         'alice',
         '--turn-credential',
         'secret',
+        '--webrtc-ice-policy',
+        'relay',
       ])
     ).toMatchObject({
       transport: 'webrtc',
@@ -65,6 +68,7 @@ describe('parseCliOptions', () => {
       turnUrls: ['turn:relay.test', 'turns:secure-relay.test'],
       turnUsername: 'alice',
       turnCredential: 'secret',
+      webrtcIcePolicy: 'relay',
     });
   });
 
@@ -136,6 +140,25 @@ describe('parseCliOptions', () => {
         'secret',
       ])
     ).toThrow('--turn-username and --turn-credential require --turn-url');
+    expect(() => parseCliOptions(['--webrtc-ice-policy', 'all'])).toThrow(
+      'WebRTC options require --transport webrtc'
+    );
+    expect(() =>
+      parseCliOptions(['--transport', 'webrtc', '--webrtc-ice-policy', 'relay'])
+    ).toThrow('--webrtc-ice-policy relay requires --turn-url');
+    expect(() =>
+      parseCliOptions(['--transport', 'webrtc', '--webrtc-ice-policy', 'host'])
+    ).toThrow('Invalid --webrtc-ice-policy: host');
+    expect(() =>
+      parseCliOptions([
+        '--platform',
+        'ios',
+        '--transport',
+        'webrtc',
+        '--webrtc-ice-policy',
+        'all',
+      ])
+    ).toThrow('--webrtc-ice-policy is supported only for Android');
   });
 
   test('documents every serve-sim flag', () => {
@@ -149,6 +172,7 @@ describe('parseCliOptions', () => {
       '--turn-url',
       '--turn-username',
       '--turn-credential',
+      '--webrtc-ice-policy',
       '--metrics-cors-origin',
     ]) {
       expect(HELP).toContain(flag);
@@ -183,6 +207,7 @@ describe('parseCliOptions', () => {
       turnUrls: undefined,
       turnUsername: undefined,
       turnCredential: undefined,
+      webrtcIcePolicy: undefined,
       metricsCorsOrigins: [],
       hideSidebar: false,
       help: false,

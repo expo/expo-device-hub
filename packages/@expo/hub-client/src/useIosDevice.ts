@@ -56,6 +56,7 @@ import {
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
+  type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
   type DeviceWebRtcCodec,
   type DeviceOrientation,
@@ -130,6 +131,12 @@ const HID_USAGE_R = 0x15; // 'r'
 const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'ios', name: 'iPhone Simulator', platform: 'ios', current: true },
 ];
+
+const IOS_STREAM_CAPABILITIES = {
+  modeAvailability: { mjpeg: true, h264: true, webrtc: true },
+  httpCodecs: ['auto', 'h264', 'mjpeg'],
+  webRtcCodecs: ['h264', 'vp9', 'vp8'],
+} as const satisfies DeviceStreamCapabilities;
 
 // The counterclockwise rotation order (matches Simulator's "Rotate Left"): each
 // press advances one step, so four presses come back around to portrait.
@@ -773,7 +780,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [active, baseUrl, targetDevice]);
+  }, [active, baseUrl, targetDevice, setWebRtcCodec]);
 
   const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
   const onAvccFrame = useCallback(() => {
@@ -1401,6 +1408,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
+    streamCapabilities: IOS_STREAM_CAPABILITIES,
     streamSettings,
     streamSettingsPending,
     updateStreamSettings,

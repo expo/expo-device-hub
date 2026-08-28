@@ -29,6 +29,72 @@ const BUSY_RETRY_INTERVAL_MS = 500;
 const BUSY_RETRY_COUNT = 30;
 const TRANSPORT_RETRY_BASE_MS = 500;
 const TRANSPORT_RETRY_MAX_MS = 5_000;
+const DISCONNECTED_GRACE_MS = 10_000;
+
+export type WebRtcVideoCodecCapability = {
+  mimeType: string;
+  sdpFmtpLine?: string;
+};
+
+/** Keep serve-emu's packetization-mode=1 H.264 formats ahead of incompatible formats. */
+export function preferredVideoCodecs<Capability extends WebRtcVideoCodecCapability>(
+  codecs: readonly Capability[],
+  codec: WebRtcCodec,
+): Capability[] {
+  const preferredMimeType =
+    codec === 'h264' ? 'video/h264' : codec === 'vp9' ? 'video/vp9' : 'video/vp8';
+  if (codec !== 'h264') {
+    return [
+      ...codecs.filter((candidate) => candidate.mimeType.toLowerCase() === preferredMimeType),
+      ...codecs.filter((candidate) => candidate.mimeType.toLowerCase() !== preferredMimeType),
+    ];
+  }
+
+  const isH264 = (candidate: Capability) => candidate.mimeType.toLowerCase() === preferredMimeType;
+  const hasPacketizationMode1 = (candidate: Capability) =>
+    /(?:^|;)\s*packetization-mode=1(?:\s*;|$)/i.test(candidate.sdpFmtpLine ?? '');
+  return [
+    ...codecs.filter((candidate) => isH264(candidate) && hasPacketizationMode1(candidate)),
+    ...codecs.filter((candidate) => isH264(candidate) && !hasPacketizationMode1(candidate)),
+    ...codecs.filter((candidate) => !isH264(candidate)),
+  ];
+}
+
+export function buildWebRtcOfferPayload({
+  description,
+  sessionId,
+  codec,
+  iceServers,
+  sendIceServersInOffer = true,
+}: {
+  description: RTCSessionDescriptionInit;
+  sessionId: string;
+  codec: WebRtcCodec;
+  iceServers: WebRtcIceServer[];
+  sendIceServersInOffer?: boolean;
+}): Record<string, unknown> {
+  return {
+    type: description.type,
+    sdp: description.sdp,
+    sessionId,
+    codec,
+    ...(sendIceServersInOffer ? { iceServers } : {}),
+  };
+}
+
+export function isRetryableWebRtcOfferStatus(status: number): boolean {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+export function shouldFallbackCodecAfterFirstFrameTimeout(
+  allowCodecFallback: boolean,
+  connectionState: RTCPeerConnectionState,
+): boolean {
+  return (
+    allowCodecFallback &&
+    webRtcFailureDisposition('first-frame-timeout', connectionState) === 'codec'
+  );
+}
 
 function createSessionId(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
@@ -39,19 +105,27 @@ function createSessionId(): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-/** Negotiate and maintain serve-sim's recv-only WebRTC stream. */
+/** Negotiate and maintain a recv-only serve-sim / serve-emu WebRTC stream. */
 export function useWebRtcStream({
   offerUrl,
   closeUrl,
   enabled,
   codec,
   iceServers,
+  iceTransportPolicy = 'all',
+  sendIceServersInOffer = true,
+  allowCodecFallback = true,
+  onKeyframeNeeded,
 }: {
   offerUrl: string;
   closeUrl: string;
   enabled: boolean;
   codec: WebRtcCodec;
   iceServers?: WebRtcIceServer[];
+  iceTransportPolicy?: RTCIceTransportPolicy;
+  sendIceServersInOffer?: boolean;
+  allowCodecFallback?: boolean;
+  onKeyframeNeeded?: () => void;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -74,7 +148,16 @@ export function useWebRtcStream({
 
   useEffect(() => {
     transportRetryAttemptRef.current = 0;
-  }, [enabled, offerUrl, closeUrl, codec, iceServers]);
+  }, [
+    enabled,
+    offerUrl,
+    closeUrl,
+    codec,
+    iceServers,
+    iceTransportPolicy,
+    sendIceServersInOffer,
+    allowCodecFallback,
+  ]);
 
   useEffect(() => {
     if (!enabled || !offerUrl) return;
@@ -89,8 +172,11 @@ export function useWebRtcStream({
     let stopped = false;
     let peer: RTCPeerConnection | null = null;
     let retryTimer: number | undefined;
+    let disconnectedTimer: number | undefined;
     let closePromise: Promise<void> | null = null;
     let failing = false;
+    let trackReceived = false;
+    let connectionReady = false;
     const lifecycleController = new AbortController();
     const sessionId = createSessionId();
     const servers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS;
@@ -112,9 +198,29 @@ export function useWebRtcStream({
     window.addEventListener('pagehide', releaseOnPageHide);
     window.addEventListener('beforeunload', releaseOnPageHide);
 
+    const clearFirstFrameTimeout = () => {
+      if (firstFrameTimeoutRef.current === undefined) return;
+      window.clearTimeout(firstFrameTimeoutRef.current);
+      firstFrameTimeoutRef.current = undefined;
+    };
+
+    const clearDisconnectedTimer = () => {
+      if (disconnectedTimer === undefined) return;
+      window.clearTimeout(disconnectedTimer);
+      disconnectedTimer = undefined;
+    };
+
     const closePeer = () => {
+      clearFirstFrameTimeout();
+      clearDisconnectedTimer();
       setStream(null);
       peer?.close();
+    };
+
+    const requestKeyframe = () => {
+      try {
+        onKeyframeNeeded?.();
+      } catch {}
     };
 
     const failPermanently = (message: string) => {
@@ -144,14 +250,36 @@ export function useWebRtcStream({
         TRANSPORT_RETRY_BASE_MS * 2 ** Math.min(attempt, 4),
         TRANSPORT_RETRY_MAX_MS,
       );
+      requestKeyframe();
       setError(`${message} Retrying...`);
       closePeer();
-      void closeRemoteSession().finally(() => {
-        if (stopped) return;
-        retryTimer = window.setTimeout(() => {
-          if (!stopped) setRetryGeneration((generation) => generation + 1);
-        }, delay);
-      });
+      void closeRemoteSession();
+      retryTimer = window.setTimeout(() => {
+        if (!stopped) setRetryGeneration((generation) => generation + 1);
+      }, delay);
+    };
+
+    const armFirstFrameTimeout = () => {
+      if (
+        stopped ||
+        firstFrameDecodedRef.current ||
+        !trackReceived ||
+        !connectionReady ||
+        firstFrameTimeoutRef.current !== undefined
+      ) {
+        return;
+      }
+      firstFrameTimeoutRef.current = window.setTimeout(() => {
+        firstFrameTimeoutRef.current = undefined;
+        if (stopped || firstFrameDecodedRef.current) return;
+        const state = peer?.connectionState ?? 'closed';
+        if (shouldFallbackCodecAfterFirstFrameTimeout(allowCodecFallback, state)) {
+          requestKeyframe();
+          failCodec();
+        } else {
+          retryTransport('WebRTC did not establish a video path.');
+        }
+      }, FIRST_FRAME_TIMEOUT_MS);
     };
 
     const waitForIce = (connection: RTCPeerConnection) =>
@@ -180,40 +308,41 @@ export function useWebRtcStream({
       try {
         peer = new RTCPeerConnection({
           iceServers: servers,
-          iceTransportPolicy: 'all',
+          iceTransportPolicy,
         });
 
         const transceiver = peer.addTransceiver('video', { direction: 'recvonly' });
         const capabilities = RTCRtpReceiver.getCapabilities('video');
-        const preferredMimeType =
-          codec === 'h264' ? 'video/H264' : codec === 'vp9' ? 'video/VP9' : 'video/VP8';
         if (capabilities?.codecs.length && 'setCodecPreferences' in transceiver) {
-          const preferred = preferredMimeType.toLowerCase();
-          transceiver.setCodecPreferences([
-            ...capabilities.codecs.filter((candidate) => candidate.mimeType.toLowerCase() === preferred),
-            ...capabilities.codecs.filter((candidate) => candidate.mimeType.toLowerCase() !== preferred),
-          ]);
+          transceiver.setCodecPreferences(preferredVideoCodecs(capabilities.codecs, codec));
         }
 
         peer.ontrack = (event) => {
           if (stopped) return;
+          trackReceived = true;
           firstFrameDecodedRef.current = false;
           event.track.onended = () => retryTransport('WebRTC video track ended.');
           setStream(event.streams[0] ?? new MediaStream([event.track]));
-          if (firstFrameTimeoutRef.current !== undefined) {
-            window.clearTimeout(firstFrameTimeoutRef.current);
-          }
-          firstFrameTimeoutRef.current = window.setTimeout(() => {
-            firstFrameTimeoutRef.current = undefined;
-            if (stopped || firstFrameDecodedRef.current) return;
-            const state = peer?.connectionState ?? 'closed';
-            if (webRtcFailureDisposition('first-frame-timeout', state) === 'codec') failCodec();
-            else retryTransport('WebRTC did not establish a video path.');
-          }, FIRST_FRAME_TIMEOUT_MS);
+          clearFirstFrameTimeout();
+          armFirstFrameTimeout();
         };
         peer.onconnectionstatechange = () => {
-          if (stopped || !peer || peer.connectionState !== 'failed') return;
-          if (webRtcFailureDisposition('connection-failed', peer.connectionState) === 'transport') {
+          if (stopped || !peer) return;
+          if (peer.connectionState === 'connected') {
+            connectionReady = true;
+            clearDisconnectedTimer();
+            armFirstFrameTimeout();
+          } else if (peer.connectionState === 'disconnected') {
+            connectionReady = false;
+            clearFirstFrameTimeout();
+            if (disconnectedTimer === undefined) {
+              disconnectedTimer = window.setTimeout(() => {
+                disconnectedTimer = undefined;
+                if (stopped || !peer || peer.connectionState === 'connected') return;
+                retryTransport('WebRTC remained disconnected.');
+              }, DISCONNECTED_GRACE_MS);
+            }
+          } else if (peer.connectionState === 'failed' || peer.connectionState === 'closed') {
             retryTransport('WebRTC connection failed.');
           }
         };
@@ -229,17 +358,22 @@ export function useWebRtcStream({
           requestTimeoutMs: SIGNALING_REQUEST_TIMEOUT_MS,
           busyRetryIntervalMs: BUSY_RETRY_INTERVAL_MS,
           busyRetryCount: BUSY_RETRY_COUNT,
-          body: JSON.stringify({
-            type: local.type,
-            sdp: local.sdp,
-            sessionId,
-            codec,
-            iceServers: servers,
-          }),
+          body: JSON.stringify(
+            buildWebRtcOfferPayload({
+              description: local,
+              sessionId,
+              codec,
+              iceServers: servers,
+              sendIceServersInOffer,
+            }),
+          ),
         });
         if (!response.ok) {
+          const status = response.status;
           await response.body?.cancel();
-          failPermanently(`WebRTC offer failed: HTTP ${response.status}`);
+          const message = `WebRTC offer failed: HTTP ${status}.`;
+          if (isRetryableWebRtcOfferStatus(status)) retryTransport(message);
+          else failPermanently(message);
           return;
         }
         const answer = (await response.json()) as RTCSessionDescriptionInit;
@@ -255,16 +389,14 @@ export function useWebRtcStream({
       } catch (caught) {
         if (stopped || lifecycleController.signal.aborted) return;
         if (caught instanceof WebRtcSignalingBusyError) {
-          failPermanently(caught.message);
+          retryTransport('WebRTC signaling stayed busy for too long.');
           return;
         }
         const message =
           caught instanceof WebRtcSignalingTimeoutError
             ? 'WebRTC signaling timed out.'
             : 'WebRTC signaling failed.';
-        if (webRtcFailureDisposition('signaling-failed', peer?.connectionState ?? 'closed') === 'transport') {
-          retryTransport(message);
-        }
+        retryTransport(message);
       }
     })();
 
@@ -274,15 +406,24 @@ export function useWebRtcStream({
       window.removeEventListener('beforeunload', releaseOnPageHide);
       lifecycleController.abort();
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-      if (firstFrameTimeoutRef.current !== undefined) {
-        window.clearTimeout(firstFrameTimeoutRef.current);
-        firstFrameTimeoutRef.current = undefined;
-      }
+      clearFirstFrameTimeout();
+      clearDisconnectedTimer();
       void closeRemoteSession(true);
       setStream(null);
       peer?.close();
     };
-  }, [enabled, offerUrl, closeUrl, codec, iceServers, retryGeneration]);
+  }, [
+    enabled,
+    offerUrl,
+    closeUrl,
+    codec,
+    iceServers,
+    iceTransportPolicy,
+    sendIceServersInOffer,
+    allowCodecFallback,
+    onKeyframeNeeded,
+    retryGeneration,
+  ]);
 
   return { stream, failure, error, markFrameDecoded };
 }

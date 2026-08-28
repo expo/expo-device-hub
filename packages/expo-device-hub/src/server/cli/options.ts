@@ -13,6 +13,9 @@ import {
 export const DEFAULT_PORT = 3400;
 export const DEFAULT_WEBRTC_CODEC: WebRtcStreamCodec = 'h264';
 export const WEBRTC_CODECS = ['vp8', 'vp9', 'h264'] as const satisfies readonly WebRtcStreamCodec[];
+export const DEFAULT_WEBRTC_ICE_POLICY = 'all';
+export const WEBRTC_ICE_POLICIES = ['all', 'relay'] as const;
+export type WebRtcIcePolicy = (typeof WEBRTC_ICE_POLICIES)[number];
 
 export const HELP = `expo-device-hub — manage iOS simulators and Android emulators from the browser
 
@@ -32,6 +35,7 @@ Options:
       --turn-url <urls>      Comma-separated TURN URL(s) for WebRTC ICE
       --turn-username <name> TURN username (requires --turn-credential and --turn-url)
       --turn-credential <credential> TURN credential (requires --turn-username and --turn-url)
+      --webrtc-ice-policy <policy> Android ICE policy: ${WEBRTC_ICE_POLICIES.join(', ')} (default: ${DEFAULT_WEBRTC_ICE_POLICY})
       --metrics-cors-origin <origin> Allow an origin to read serve-sim metrics (repeatable)
       --hide-sidebar         Hide the device list sidebar by default
   -h, --help                 Show this help
@@ -51,6 +55,7 @@ export type CliOptions = {
   turnUrls?: string[];
   turnUsername?: string;
   turnCredential?: string;
+  webrtcIcePolicy?: WebRtcIcePolicy;
   metricsCorsOrigins?: string[];
   hideSidebar?: boolean;
   help: boolean;
@@ -116,6 +121,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     'turn-url'?: string;
     'turn-username'?: string;
     'turn-credential'?: string;
+    'webrtc-ice-policy'?: string;
     'metrics-cors-origin': string[];
     'hide-sidebar': boolean;
     help: boolean;
@@ -140,6 +146,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         'turn-url': { type: 'string' },
         'turn-username': { type: 'string' },
         'turn-credential': { type: 'string' },
+        'webrtc-ice-policy': { type: 'string' },
         'metrics-cors-origin': { type: 'string', multiple: true, default: [] },
         'hide-sidebar': { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
@@ -194,13 +201,26 @@ export function parseCliOptions(args: string[]): CliOptions {
   const turnUrls = parseIceUrls(values['turn-url'], 'turn');
   const turnUsername = values['turn-username'];
   const turnCredential = values['turn-credential'];
+  const normalizedWebRtcIcePolicy = values['webrtc-ice-policy']?.toLowerCase();
+  const webrtcIcePolicy = WEBRTC_ICE_POLICIES.includes(
+    normalizedWebRtcIcePolicy as WebRtcIcePolicy
+  )
+    ? (normalizedWebRtcIcePolicy as WebRtcIcePolicy)
+    : undefined;
+  if (values['webrtc-ice-policy'] !== undefined && webrtcIcePolicy === undefined) {
+    throw new Error(`Invalid --webrtc-ice-policy: ${values['webrtc-ice-policy']}\n\n${HELP}`);
+  }
+  if (values['webrtc-ice-policy'] !== undefined && platform === 'ios') {
+    throw new Error(`--webrtc-ice-policy is supported only for Android.\n\n${HELP}`);
+  }
 
   const webRtcOptionProvided =
     values['webrtc-codec'] !== undefined ||
     stunUrls !== undefined ||
     turnUrls !== undefined ||
     turnUsername !== undefined ||
-    turnCredential !== undefined;
+    turnCredential !== undefined ||
+    values['webrtc-ice-policy'] !== undefined;
   if (webRtcOptionProvided && transport !== 'webrtc') {
     throw new Error(`WebRTC options require --transport webrtc.\n\n${HELP}`);
   }
@@ -209,6 +229,9 @@ export function parseCliOptions(args: string[]): CliOptions {
   }
   if ((turnUsername !== undefined || turnCredential !== undefined) && turnUrls === undefined) {
     throw new Error(`--turn-username and --turn-credential require --turn-url.\n\n${HELP}`);
+  }
+  if (webrtcIcePolicy === 'relay' && turnUrls === undefined) {
+    throw new Error(`--webrtc-ice-policy relay requires --turn-url.\n\n${HELP}`);
   }
 
   return {
@@ -225,6 +248,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     turnUrls,
     turnUsername,
     turnCredential,
+    webrtcIcePolicy,
     metricsCorsOrigins: values['metrics-cors-origin'],
     hideSidebar: values['hide-sidebar'],
     help: false,

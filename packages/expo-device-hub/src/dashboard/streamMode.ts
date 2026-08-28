@@ -31,6 +31,17 @@ export function browserStreamModeAvailability(): StreamModeAvailability {
   });
 }
 
+/** Android can decode serve-emu's WebSocket H.264 stream through MSE on LAN HTTP. */
+export function androidStreamModeAvailability(
+  availability: StreamModeAvailability,
+  mediaSourceSupported: boolean,
+): StreamModeAvailability {
+  return {
+    ...availability,
+    h264: availability.h264 || mediaSourceSupported,
+  };
+}
+
 /** Keep the requested mode when available, otherwise use the universal MJPEG path. */
 export function resolveStreamMode(
   requested: DeviceStreamMode,
