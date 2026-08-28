@@ -1,32 +1,15 @@
 import { useState } from 'react';
 
 import { type DeviceActivitySample, type DeviceClient } from '@expo/hub-client';
-import { bg, border, radius, text, textSize } from '../primitives';
+import { text, textSize } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
+import {
+  MetricChart,
+  type MetricChartSeries,
+  maxChartValue,
+} from './MetricChart';
 
 const MAX_SAMPLES = 60;
-const CHART_WIDTH = 100;
-const CHART_HEIGHT = 28;
-
-type ChartSeries = {
-  label: string;
-  color: string;
-  values: number[];
-};
-
-function chartPath(values: number[], maxValue: number) {
-  if (values.length === 0) return '';
-  const safeMax = Math.max(maxValue, 1);
-
-  return values
-    .map((rawValue, index) => {
-      const x = values.length === 1 ? CHART_WIDTH : (index / (values.length - 1)) * CHART_WIDTH;
-      const value = Number.isFinite(rawValue) ? Math.max(0, rawValue) : 0;
-      const y = CHART_HEIGHT - Math.min(1, value / safeMax) * (CHART_HEIGHT - 2) - 1;
-      return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
-    })
-    .join(' ');
-}
 
 function formatBytes(value: number) {
   const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -36,88 +19,6 @@ function formatBytes(value: number) {
     return `${(safeValue / 1024 ** 2).toFixed(safeValue < 10 * 1024 ** 2 ? 1 : 0)} MB`;
   }
   return `${(safeValue / 1024 ** 3).toFixed(1)} GB`;
-}
-
-function maxOf(series: ChartSeries[], minimum = 1) {
-  return Math.max(minimum, ...series.flatMap((entry) => entry.values));
-}
-
-function MetricChart({
-  title,
-  value,
-  description,
-  series,
-  maxValue,
-}: {
-  title: string;
-  value: string;
-  description?: string;
-  series: ChartSeries[];
-  maxValue: number;
-}) {
-  return (
-    <div
-      style={{
-        padding: '9px 10px 8px',
-        border: `1px solid ${border.secondary}`,
-        borderRadius: radius.md,
-        backgroundColor: bg.subtle,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-        <span style={{ ...textSize.xs, flex: 1, fontWeight: 500, color: text.default }}>
-          {title}
-        </span>
-        <span style={{ ...textSize.xs, color: text.secondary }}>{value}</span>
-      </div>
-      {description && (
-        <span style={{ ...textSize['2xs'], display: 'block', color: text.tertiary }}>
-          {description}
-        </span>
-      )}
-      <svg
-        role="img"
-        aria-label={`${title}: ${value}`}
-        viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
-        preserveAspectRatio="none"
-        style={{ display: 'block', width: '100%', height: 38, marginTop: 7 }}
-      >
-        <line
-          x1="0"
-          y1={CHART_HEIGHT / 2}
-          x2={CHART_WIDTH}
-          y2={CHART_HEIGHT / 2}
-          stroke={border.secondary}
-          strokeWidth="0.5"
-          vectorEffect="non-scaling-stroke"
-        />
-        {series.map((entry) => (
-          <path
-            key={entry.label}
-            d={chartPath(entry.values, maxValue)}
-            fill="none"
-            stroke={entry.color}
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        ))}
-      </svg>
-      {series.length > 1 && (
-        <div style={{ display: 'flex', gap: 12, marginTop: 2 }}>
-          {series.map((entry) => (
-            <span
-              key={entry.label}
-              style={{ ...textSize['2xs'], color: entry.color, whiteSpace: 'nowrap' }}
-            >
-              {entry.label}
-            </span>
-          ))}
-        </div>
-      )}
-    </div>
-  );
 }
 
 function latestSample(samples: DeviceActivitySample[]) {
@@ -131,13 +32,13 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
   const samples = activity?.samples.slice(-MAX_SAMPLES) ?? [];
   const latest = latestSample(samples);
 
-  const cpuSeries: ChartSeries[] = [
+  const cpuSeries: MetricChartSeries[] = [
     { label: 'CPU', color: text.info, values: samples.map((sample) => sample.cpuPct) },
   ];
-  const memorySeries: ChartSeries[] = [
+  const memorySeries: MetricChartSeries[] = [
     { label: 'Memory', color: text.preview, values: samples.map((sample) => sample.memBytes) },
   ];
-  const networkSeries: ChartSeries[] = [
+  const networkSeries: MetricChartSeries[] = [
     {
       label: 'Inbound',
       color: text.success,
@@ -177,19 +78,19 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
                 : undefined
             }
             series={cpuSeries}
-            maxValue={Math.max(cpuCapacity, maxOf(cpuSeries))}
+            maxValue={Math.max(cpuCapacity, maxChartValue(cpuSeries))}
           />
           <MetricChart
             title="Memory"
             value={formatBytes(latest.memBytes)}
             series={memorySeries}
-            maxValue={maxOf(memorySeries)}
+            maxValue={maxChartValue(memorySeries)}
           />
           <MetricChart
             title="Network"
             value={`↓ ${formatBytes(latest.netInBytesPerSec)}/s · ↑ ${formatBytes(latest.netOutBytesPerSec)}/s`}
             series={networkSeries}
-            maxValue={maxOf(networkSeries)}
+            maxValue={maxChartValue(networkSeries)}
           />
         </div>
       )}

@@ -67,6 +67,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       : null,
     streamSettingsPending: false,
     updateStreamSettings: () => {},
+    streamStats: null,
     webRtcCodec: 'h264',
     setWebRtcCodec: () => {},
     capabilities: {
@@ -212,6 +213,126 @@ test('limits Android stream controls to the transports and H.264 codecs serve-em
   expect(html).not.toContain('>VP8</button>');
   expect(html).not.toContain('>VP9</button>');
   expect(html).not.toContain('>Max size</span>');
+});
+
+test('renders current WebRTC statistics in a table with client history graphs', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamStats: {
+      samples: [
+        {
+          atMs: 1_000,
+          serverFps: null,
+          clientFps: null,
+          clientBitrateBps: null,
+        },
+        {
+          atMs: 2_000,
+          serverFps: 30,
+          clientFps: 29,
+          clientBitrateBps: 5_750_000,
+        },
+      ],
+      stale: false,
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={client}
+      defaultOpen
+      streamMode="webrtc"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+    />,
+  );
+
+  expect(html).toContain('<table aria-label="WebRTC stream statistics"');
+  expect(html).toMatch(/<th scope="row"[^>]*>Server FPS<\/th>/);
+  expect(html).toMatch(/<th scope="row"[^>]*>Client FPS<\/th>/);
+  expect(html).toMatch(/<th scope="row"[^>]*>Client bitrate<\/th>/);
+  expect(html).toMatch(/<td[^>]*>30 FPS<\/td>/);
+  expect(html).toMatch(/<td[^>]*>29 FPS<\/td>/);
+  expect(html).toMatch(/<td[^>]*>5.75 Mbps<\/td>/);
+  expect(html).toContain('role="img" aria-label="Client FPS: 29 FPS"');
+  expect(html).toContain('role="img" aria-label="Client bitrate: 5.75 Mbps"');
+  expect(html.match(/>Last 60 samples</g)).toHaveLength(2);
+});
+
+test('shows the WebRTC measuring state without inventing zero readings', () => {
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={inspectorClient('android')}
+      defaultOpen
+      streamMode="webrtc"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+    />,
+  );
+
+  expect(html).toContain('role="status"');
+  expect(html).toContain('Measuring WebRTC stream…');
+  expect(html).toContain('aria-label="WebRTC stream statistics"');
+  expect(html.match(/>—<\/td>/g)).toHaveLength(3);
+  expect(html).not.toContain('role="img"');
+});
+
+test('keeps measuring when the first WebRTC counter sample has no rate window yet', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamStats: {
+      samples: [
+        {
+          atMs: 1_000,
+          serverFps: null,
+          clientFps: null,
+          clientBitrateBps: null,
+        },
+      ],
+      stale: false,
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={client}
+      defaultOpen
+      streamMode="webrtc"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+    />,
+  );
+
+  expect(html).toContain('Measuring WebRTC stream…');
+  expect(html.match(/>—<\/td>/g)).toHaveLength(3);
+  expect(html).not.toContain('role="img"');
+});
+
+test('hides WebRTC statistics when another transport is active', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamStats: {
+      samples: [
+        {
+          atMs: 2_000,
+          serverFps: 30,
+          clientFps: 29,
+          clientBitrateBps: 5_750_000,
+        },
+      ],
+      stale: false,
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={client}
+      defaultOpen
+      streamMode="h264"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+    />,
+  );
+
+  expect(html).not.toContain('aria-label="WebRTC stream statistics"');
+  expect(html).not.toContain('role="img"');
 });
 
 test('explains when the Android host was not launched with WebRTC', () => {
