@@ -42,19 +42,21 @@ export function MetricChart({
   description,
   series,
   maxValue,
+  bordered = true,
 }: {
   title: string;
   value: string;
   description?: string;
   series: readonly MetricChartSeries[];
   maxValue: number;
+  bordered?: boolean;
 }) {
   return (
     <div
       style={{
         minWidth: 0,
         padding: '9px 10px 8px',
-        border: `1px solid ${border.secondary}`,
+        ...(bordered ? { border: `1px solid ${border.secondary}` } : {}),
         borderRadius: radius.md,
         backgroundColor: bg.subtle,
       }}
