@@ -195,20 +195,21 @@ function switchMarkup(html: string, label: string) {
 }
 
 function streamStatisticGroupMarkup(html: string, label: string) {
-  const start = html.indexOf(`<tbody aria-label="${label}"`);
+  const marker = `<div role="rowgroup" aria-label="${label}"`;
+  const start = html.indexOf(marker);
   expect(start).toBeGreaterThanOrEqual(0);
 
-  const end = html.indexOf('</tbody>', start);
-  return html.slice(start, end + '</tbody>'.length);
+  const next = html.indexOf('<div role="rowgroup"', start + marker.length);
+  return html.slice(start, next === -1 ? html.length : next);
 }
 
 function streamStatisticValue(group: string, label: string) {
-  const labelIndex = group.indexOf(`>${label}</th>`);
-  expect(labelIndex).toBeGreaterThanOrEqual(0);
+  const rowIndex = group.indexOf(`data-stream-statistic="${label}"`);
+  expect(rowIndex).toBeGreaterThanOrEqual(0);
 
-  const cellStart = group.indexOf('<td', labelIndex);
+  const cellStart = group.indexOf('<span role="cell"', rowIndex);
   const valueStart = group.indexOf('>', cellStart) + 1;
-  const valueEnd = group.indexOf('</td>', valueStart);
+  const valueEnd = group.indexOf('</span>', valueStart);
   return group.slice(valueStart, valueEnd).replace(/<[^>]+>/g, '').trim();
 }
 
@@ -292,7 +293,7 @@ test('limits Android stream controls to the transports and H.264 codecs serve-em
 
 test('renders grouped WebRTC statistics with rich client, encoder, and capture values', () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient('ios'),
     streamStats: streamStats(
       [
         streamSample(),
@@ -324,7 +325,12 @@ test('renders grouped WebRTC statistics with rich client, encoder, and capture v
     />,
   );
 
-  expect(html).toContain('<table aria-label="WebRTC stream statistics"');
+  expect(html).toContain(
+    '<div role="table" aria-label="WebRTC stream statistics" aria-colcount="2"',
+  );
+  expect(
+    html.match(/grid-template-columns:repeat\(auto-fit, minmax\(150px, 1fr\)\)/g),
+  ).toHaveLength(5);
   const stream = streamStatisticGroupMarkup(html, 'Stream statistics');
   const receiver = streamStatisticGroupMarkup(html, 'Client statistics');
   const encoder = streamStatisticGroupMarkup(html, 'Encoder statistics');
@@ -360,7 +366,7 @@ test('renders grouped WebRTC statistics with rich client, encoder, and capture v
 
 test('keeps measured zero distinct from unavailable WebRTC values', () => {
   const client = {
-    ...inspectorClient('android'),
+    ...inspectorClient('ios'),
     streamStats: streamStats(
       [
         streamSample({
@@ -416,6 +422,74 @@ test('keeps measured zero distinct from unavailable WebRTC values', () => {
   expect(html).not.toContain('— FPS');
 });
 
+test('shows only the server statistics that serve-emu can provide', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamStats: streamStats(
+      [streamSample({ serverFps: 30, clientFps: 29, clientBitrateBps: 3_000_000 })],
+      {
+        encoder: {
+          codec: 'video/H264',
+          encodeFps: 30,
+          targetBitrateBps: 8_000_000,
+          encodeMsPerFrame: null,
+          framesEncoded: 1_200,
+          framesSent: null,
+          framesDropped: null,
+          packetLossRatio: null,
+          qualityLimitationReason: null,
+        },
+        capture: {
+          screenFrames: null,
+          idleFrames: null,
+          offeredFrames: 1_200,
+          forwardedFrames: null,
+          pumpRestarts: null,
+        },
+      },
+    ),
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={client}
+      defaultOpen
+      streamMode="webrtc"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+    />,
+  );
+  const stream = streamStatisticGroupMarkup(html, 'Stream statistics');
+  const encoder = streamStatisticGroupMarkup(html, 'Encoder statistics');
+  const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
+
+  expect(streamStatisticValue(stream, 'Server FPS')).toBe('30 FPS');
+  expect(streamStatisticValue(encoder, 'Codec')).toBe('H.264');
+  expect(streamStatisticValue(encoder, 'Output FPS')).toBe('30 FPS');
+  expect(streamStatisticValue(encoder, 'Configured bitrate')).toBe('8.00 Mbps');
+  expect(streamStatisticValue(encoder, 'Output frames')).toBe('1.2k');
+  expect(streamStatisticValue(capture, 'Publisher offers')).toBe('1.2k');
+  expect(encoder.match(/data-stream-statistic=/g)).toHaveLength(4);
+  expect(capture.match(/data-stream-statistic=/g)).toHaveLength(1);
+  for (const label of [
+    'Encode FPS',
+    'Target bitrate',
+    'Encode time / frame',
+    'Frames encoded',
+    'Frames sent',
+    'Frames dropped',
+    'Packet loss',
+    'Limitation',
+    'Screen frames',
+    'Idle frames',
+    'Capture deliveries',
+    'Pacer submissions',
+    'Pump restarts',
+  ]) {
+    expect(`${encoder}${capture}`).not.toContain(`data-stream-statistic="${label}"`);
+  }
+  expect(`${encoder}${capture}`).not.toContain('>—</span>');
+});
+
 test('shows the WebRTC measuring state without inventing zero readings', () => {
   const html = renderToStaticMarkup(
     <StreamOptionsSection
@@ -430,7 +504,7 @@ test('shows the WebRTC measuring state without inventing zero readings', () => {
   expect(html).toContain('role="status"');
   expect(html).toContain('Measuring WebRTC stream…');
   expect(html).toContain('aria-label="WebRTC stream statistics"');
-  expect(html.match(/>—<\/td>/g)).toHaveLength(10);
+  expect(html.match(/>—<\/span>/g)).toHaveLength(10);
   expect(html).not.toContain('role="img"');
 });
 
@@ -450,7 +524,7 @@ test('keeps measuring when the first WebRTC counter sample has no rate window ye
   );
 
   expect(html).toContain('Measuring WebRTC stream…');
-  expect(html.match(/>—<\/td>/g)).toHaveLength(10);
+  expect(html.match(/>—<\/span>/g)).toHaveLength(10);
   expect(html).not.toContain('role="img"');
 });
 
