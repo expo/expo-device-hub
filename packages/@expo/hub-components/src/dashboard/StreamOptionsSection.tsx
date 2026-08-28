@@ -131,9 +131,109 @@ function formatBitrate(value: number | null) {
   return `${(safeValue / 1_000_000).toFixed(2)} Mbps`;
 }
 
-function StreamStatisticRow({ label, value }: { label: string; value: string }) {
+function formatPercentage(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return UNAVAILABLE_VALUE;
+  return `${(Math.max(0, value) * 100).toFixed(1)}%`;
+}
+
+function formatMilliseconds(value: number | null, digits: number) {
+  if (value === null || !Number.isFinite(value)) return UNAVAILABLE_VALUE;
+  return `${Math.max(0, value).toFixed(digits)} ms`;
+}
+
+function formatCount(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return UNAVAILABLE_VALUE;
+  const safeValue = Math.max(0, value);
+  if (safeValue < 1_000) return String(Math.round(safeValue));
+  if (safeValue < 999_950) return `${(safeValue / 1_000).toFixed(1)}k`;
+  return `${(safeValue / 1_000_000).toFixed(2)}M`;
+}
+
+function formatFreezes(count: number | null, durationMs: number | null) {
+  const countValue = formatCount(count);
+  if (
+    count === null ||
+    !Number.isFinite(count) ||
+    count <= 0 ||
+    durationMs === null ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  ) {
+    return countValue;
+  }
+  const safeDurationMs = Math.max(0, durationMs);
+  const duration =
+    safeDurationMs < 1_000
+      ? `${safeDurationMs.toFixed(0)} ms`
+      : `${(safeDurationMs / 1_000).toFixed(1)} s`;
+  return `${countValue} · ${duration}`;
+}
+
+function formatIcePath(value: 'direct' | 'relay' | 'unknown' | null | undefined) {
+  if (value === 'direct') return 'Direct';
+  if (value === 'relay') return 'Via relay';
+  return UNAVAILABLE_VALUE;
+}
+
+function formatCodec(value: string | null) {
+  if (value === null || value.length === 0) return UNAVAILABLE_VALUE;
+  const codec = value.replace(/^video\//i, '');
+  if (/^h\.?264$/i.test(codec)) return 'H.264';
+  if (/^vp8$/i.test(codec)) return 'VP8';
+  if (/^vp9$/i.test(codec)) return 'VP9';
+  if (/^av1$/i.test(codec)) return 'AV1';
+  return codec;
+}
+
+function formatEncoderLimitation(value: string | null) {
+  switch (value) {
+    case 'none':
+      return 'None';
+    case 'cpu':
+      return 'CPU';
+    case 'bandwidth':
+      return 'Network';
+    case null:
+      return UNAVAILABLE_VALUE;
+    default:
+      return 'Unknown';
+  }
+}
+
+function StreamStatisticGroupHeading({ label }: { label: string }) {
   return (
-    <tr style={{ borderTop: `1px solid ${border.secondary}` }}>
+    <tr>
+      <th
+        scope="rowgroup"
+        colSpan={2}
+        style={{
+          ...textSize['2xs'],
+          padding: '7px 8px 5px',
+          borderTop: `1px solid ${border.secondary}`,
+          color: text.tertiary,
+          fontWeight: 500,
+          letterSpacing: '0.04em',
+          textAlign: 'left',
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </th>
+    </tr>
+  );
+}
+
+function StreamStatisticRow({
+  label,
+  value,
+  stale = false,
+}: {
+  label: string;
+  value: string;
+  stale?: boolean;
+}) {
+  return (
+    <tr style={{ borderTop: `1px solid ${border.secondary}`, opacity: stale ? 0.55 : 1 }}>
       <th
         scope="row"
         style={{
@@ -166,6 +266,8 @@ function StreamStatisticRow({ label, value }: { label: string; value: string }) 
 function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
   const samples = stats?.samples.slice(-MAX_STATS_SAMPLES) ?? [];
   const latest = samples.at(-1) ?? null;
+  const encoder = stats?.encoder ?? null;
+  const capture = stats?.capture ?? null;
   const hasClientMeasurement = samples.some(
     (sample) => sample.clientFps !== null || sample.clientBitrateBps !== null,
   );
@@ -188,11 +290,15 @@ function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
     },
   ];
 
-  const message = stats?.stale
-    ? 'Stream statistics are paused. Showing the most recent samples.'
-    : hasClientMeasurement
-      ? null
-      : 'Measuring WebRTC stream…';
+  const pausedMessage =
+    stats?.stale && stats.serverStale
+      ? 'Client and server stream statistics are paused. Showing the most recent samples.'
+      : stats?.stale
+        ? 'Client stream statistics are paused. Showing the most recent samples.'
+        : stats?.serverStale
+          ? 'Server stream statistics are paused. Showing the most recent values.'
+          : null;
+  const measuring = !hasClientMeasurement && !stats?.stale;
 
   return (
     <div
@@ -204,9 +310,14 @@ function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
         paddingTop: 8,
       }}
     >
-      {message && (
+      {pausedMessage && (
+        <span role="status" style={{ ...textSize.xs, color: text.warning }}>
+          {pausedMessage}
+        </span>
+      )}
+      {measuring && (
         <span role="status" style={{ ...textSize.xs, color: text.tertiary }}>
-          {message}
+          Measuring WebRTC stream…
         </span>
       )}
       <table
@@ -250,17 +361,161 @@ function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
             </th>
           </tr>
         </thead>
-        <tbody>
-          <StreamStatisticRow label="Server FPS" value={formatFps(latest?.serverFps ?? null)} />
-          <StreamStatisticRow label="Client FPS" value={formatFps(latest?.clientFps ?? null)} />
+        <tbody
+          aria-label="Stream statistics"
+          data-receiver-stale={stats?.stale || undefined}
+          data-server-stale={stats?.serverStale || undefined}
+        >
+          <StreamStatisticGroupHeading label="Stream" />
+          <StreamStatisticRow
+            label="Server FPS"
+            value={formatFps(latest?.serverFps ?? null)}
+            stale={stats?.serverStale}
+          />
+          <StreamStatisticRow
+            label="Client FPS"
+            value={formatFps(latest?.clientFps ?? null)}
+            stale={stats?.stale}
+          />
           <StreamStatisticRow
             label="Client bitrate"
             value={formatBitrate(latest?.clientBitrateBps ?? null)}
+            stale={stats?.stale}
           />
         </tbody>
+        <tbody aria-label="Client statistics" data-stale={stats?.stale || undefined}>
+          <StreamStatisticGroupHeading label="Client" />
+          <StreamStatisticRow
+            label="Packet loss"
+            value={formatPercentage(latest?.clientPacketLossRatio ?? null)}
+            stale={stats?.stale}
+          />
+          <StreamStatisticRow
+            label="Jitter"
+            value={formatMilliseconds(latest?.clientJitterMs ?? null, 1)}
+            stale={stats?.stale}
+          />
+          <StreamStatisticRow
+            label="Jitter buffer"
+            value={formatMilliseconds(latest?.clientJitterBufferMs ?? null, 0)}
+            stale={stats?.stale}
+          />
+          <StreamStatisticRow
+            label="Dropped frames"
+            value={formatCount(latest?.clientDroppedFrames ?? null)}
+            stale={stats?.stale}
+          />
+          <StreamStatisticRow
+            label="Freezes"
+            value={formatFreezes(
+              latest?.clientFreezeCount ?? null,
+              latest?.clientFreezeDurationMs ?? null,
+            )}
+            stale={stats?.stale}
+          />
+          <StreamStatisticRow
+            label="RTT"
+            value={formatMilliseconds(latest?.clientRoundTripMs ?? null, 0)}
+            stale={stats?.stale}
+          />
+          <StreamStatisticRow
+            label="ICE path"
+            value={formatIcePath(latest?.clientIcePath)}
+            stale={stats?.stale}
+          />
+        </tbody>
+        {encoder && (
+          <tbody aria-label="Encoder statistics" data-stale={stats?.serverStale || undefined}>
+            <StreamStatisticGroupHeading label="Encoder" />
+            <StreamStatisticRow
+              label="Codec"
+              value={formatCodec(encoder.codec)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Encode FPS"
+              value={formatFps(encoder.encodeFps)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Target bitrate"
+              value={formatBitrate(encoder.targetBitrateBps)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Encode time / frame"
+              value={formatMilliseconds(encoder.encodeMsPerFrame, 1)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Frames encoded"
+              value={formatCount(encoder.framesEncoded)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Frames sent"
+              value={formatCount(encoder.framesSent)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Frames dropped"
+              value={formatCount(encoder.framesDropped)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Packet loss"
+              value={formatPercentage(encoder.packetLossRatio)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Limitation"
+              value={formatEncoderLimitation(encoder.qualityLimitationReason)}
+              stale={stats?.serverStale}
+            />
+          </tbody>
+        )}
+        {capture && (
+          <tbody aria-label="Capture statistics" data-stale={stats?.serverStale || undefined}>
+            <StreamStatisticGroupHeading label="Capture" />
+            <StreamStatisticRow
+              label="Screen frames"
+              value={formatCount(capture.screenFrames)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Idle frames"
+              value={formatCount(capture.idleFrames)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Capture deliveries"
+              value={formatCount(capture.offeredFrames)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Pacer submissions"
+              value={formatCount(capture.forwardedFrames)}
+              stale={stats?.serverStale}
+            />
+            <StreamStatisticRow
+              label="Pump restarts"
+              value={formatCount(capture.pumpRestarts)}
+              stale={stats?.serverStale}
+            />
+          </tbody>
+        )}
       </table>
       {latest && hasClientMeasurement && (
-        <>
+        <div
+          data-stale={stats?.stale || undefined}
+          style={{
+            display: 'flex',
+            minWidth: 0,
+            flexDirection: 'column',
+            gap: 8,
+            opacity: stats?.stale ? 0.55 : 1,
+          }}
+        >
           <MetricChart
             title="Client FPS"
             value={formatFps(latest.clientFps)}
@@ -275,7 +530,7 @@ function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
             series={clientBitrateSeries}
             maxValue={maxChartValue(clientBitrateSeries)}
           />
-        </>
+        </div>
       )}
     </div>
   );

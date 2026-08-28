@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { type DeviceStreamStats, type DeviceStreamStatsSample } from './types';
+import {
+  type DeviceStreamCaptureStats,
+  type DeviceStreamEncoderStats,
+  type DeviceStreamStats,
+  type DeviceStreamStatsSample,
+} from './types';
 
 const MIN_WINDOW_MS = 250;
 const POLL_MS = 1_000;
@@ -16,70 +21,267 @@ export type WebRtcStatsConnection = {
 export type WebRtcClientCounters = {
   atMs: number;
   presentedFrames: number;
-  bytesReceived: number;
+  bytesReceived: number | null;
+  framesDropped: number | null;
+  freezeCount: number | null;
+  freezeDurationMs: number | null;
+  packetsReceived: number | null;
+  packetsLost: number | null;
+  jitterMs: number | null;
+  jitterBufferDelaySeconds: number | null;
+  jitterBufferEmittedCount: number | null;
+  roundTripMs: number | null;
+  icePath: DeviceStreamStatsSample['clientIcePath'];
 };
+
+export type WebRtcServerStats = {
+  serverFps: number | null;
+  encoder: DeviceStreamEncoderStats | null;
+  capture: DeviceStreamCaptureStats | null;
+};
+
+type WebRtcClientDescription = Pick<
+  DeviceStreamStatsSample,
+  | 'clientFps'
+  | 'clientBitrateBps'
+  | 'clientPacketLossRatio'
+  | 'clientJitterMs'
+  | 'clientJitterBufferMs'
+  | 'clientDroppedFrames'
+  | 'clientFreezeCount'
+  | 'clientFreezeDurationMs'
+  | 'clientRoundTripMs'
+  | 'clientIcePath'
+>;
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null;
+}
+
+function nonEmptyString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/** Read the cumulative counters for the live inbound video stream. */
+/** Read cumulative receiver counters and point-in-time path health for the live video stream. */
 export function readWebRtcClientCounters(
   report: RTCStatsReport,
   atMs: number,
   presentedFrames: number,
 ): WebRtcClientCounters | null {
-  let foundVideo = false;
+  const pairsById = new Map<string, Record<string, unknown>>();
+  const candidatesById = new Map<string, Record<string, unknown>>();
+  let selectedPairId: string | null = null;
+  let selectedPair: Record<string, unknown> | null = null;
+  let nominatedPair: Record<string, unknown> | null = null;
+  let succeededPair: Record<string, unknown> | null = null;
+  let video: Record<string, unknown> | null = null;
   let mostDecodedFrames = -1;
-  let bytesReceived = 0;
 
-  report.forEach((entry: Record<string, unknown>) => {
-    if (entry.type !== 'inbound-rtp') return;
-    if (entry.kind !== 'video' && entry.mediaType !== 'video') return;
-    const frames = finiteNumber(entry.framesDecoded) ?? 0;
-    if (frames < mostDecodedFrames) return;
-    foundVideo = true;
-    mostDecodedFrames = frames;
-    bytesReceived = finiteNumber(entry.bytesReceived) ?? 0;
-  });
+  for (const rawEntry of report.values()) {
+    const entry = rawEntry as unknown as Record<string, unknown>;
+    switch (entry.type) {
+      case 'inbound-rtp': {
+        if (entry.kind !== 'video' && entry.mediaType !== 'video') break;
+        const framesDecoded = finiteNumber(entry.framesDecoded) ?? 0;
+        if (framesDecoded < mostDecodedFrames) break;
+        mostDecodedFrames = framesDecoded;
+        video = entry;
+        break;
+      }
+      case 'transport':
+        if (typeof entry.selectedCandidatePairId === 'string') {
+          selectedPairId = entry.selectedCandidatePairId;
+        }
+        break;
+      case 'candidate-pair':
+        if (typeof entry.id === 'string') pairsById.set(entry.id, entry);
+        if (entry.selected === true) selectedPair = entry;
+        else if (entry.nominated === true && entry.state === 'succeeded') nominatedPair ??= entry;
+        else if (entry.state === 'succeeded') succeededPair ??= entry;
+        break;
+      case 'local-candidate':
+      case 'remote-candidate':
+        if (typeof entry.id === 'string') candidatesById.set(entry.id, entry);
+        break;
+    }
+  }
 
-  return foundVideo ? { atMs, presentedFrames, bytesReceived } : null;
+  if (video === null) return null;
+
+  let pair = selectedPair ?? nominatedPair ?? succeededPair;
+  if (selectedPairId !== null) pair = pairsById.get(selectedPairId) ?? pair;
+  const roundTripSeconds = pair === null ? null : finiteNumber(pair.currentRoundTripTime);
+  let icePath: WebRtcClientCounters['icePath'] = 'unknown';
+  if (pair !== null) {
+    const candidateTypes = [pair.localCandidateId, pair.remoteCandidateId].map((id) =>
+      typeof id === 'string' ? nonEmptyString(candidatesById.get(id)?.candidateType) : null,
+    );
+    if (candidateTypes.every((type) => type !== null)) {
+      icePath = candidateTypes.includes('relay') ? 'relay' : 'direct';
+    }
+  }
+
+  const freezeDurationSeconds = finiteNumber(video.totalFreezesDuration);
+  const jitterSeconds = finiteNumber(video.jitter);
+  return {
+    atMs,
+    presentedFrames,
+    bytesReceived: finiteNumber(video.bytesReceived),
+    framesDropped: finiteNumber(video.framesDropped),
+    freezeCount: finiteNumber(video.freezeCount),
+    freezeDurationMs: freezeDurationSeconds === null ? null : freezeDurationSeconds * 1_000,
+    packetsReceived: finiteNumber(video.packetsReceived),
+    packetsLost: finiteNumber(video.packetsLost),
+    jitterMs: jitterSeconds === null ? null : jitterSeconds * 1_000,
+    jitterBufferDelaySeconds: finiteNumber(video.jitterBufferDelay),
+    jitterBufferEmittedCount: finiteNumber(video.jitterBufferEmittedCount),
+    roundTripMs: roundTripSeconds === null ? null : roundTripSeconds * 1_000,
+    icePath,
+  };
+}
+
+function unmeasuredClient(current: WebRtcClientCounters): WebRtcClientDescription {
+  return {
+    clientFps: null,
+    clientBitrateBps: null,
+    clientPacketLossRatio: null,
+    clientJitterMs: current.jitterMs,
+    clientJitterBufferMs: null,
+    clientDroppedFrames: null,
+    clientFreezeCount: null,
+    clientFreezeDurationMs: null,
+    clientRoundTripMs: current.roundTripMs,
+    clientIcePath: current.icePath,
+  };
+}
+
+function windowPacketLossRatio(
+  previous: WebRtcClientCounters,
+  current: WebRtcClientCounters,
+): number | null {
+  if (
+    previous.packetsReceived === null ||
+    current.packetsReceived === null ||
+    previous.packetsLost === null ||
+    current.packetsLost === null
+  ) {
+    return null;
+  }
+  const lost = current.packetsLost - previous.packetsLost;
+  const received = current.packetsReceived - previous.packetsReceived;
+  if (lost < 0 || received < 0) return null;
+  const expected = received + lost;
+  return expected > 0 ? lost / expected : null;
+}
+
+function windowJitterBufferMs(
+  previous: WebRtcClientCounters,
+  current: WebRtcClientCounters,
+): number | null {
+  if (
+    previous.jitterBufferDelaySeconds === null ||
+    current.jitterBufferDelaySeconds === null ||
+    previous.jitterBufferEmittedCount === null ||
+    current.jitterBufferEmittedCount === null
+  ) {
+    return null;
+  }
+  const delaySeconds = current.jitterBufferDelaySeconds - previous.jitterBufferDelaySeconds;
+  const emittedFrames = current.jitterBufferEmittedCount - previous.jitterBufferEmittedCount;
+  if (delaySeconds < 0 || emittedFrames <= 0) return null;
+  return (delaySeconds / emittedFrames) * 1_000;
+}
+
+function windowCounterDelta(previous: number | null, current: number | null): number | null {
+  if (previous === null || current === null) return null;
+  const delta = current - previous;
+  return delta < 0 ? null : delta;
 }
 
 /** Derive one receiver window. Unknown and reset windows stay null instead of looking idle. */
 export function describeWebRtcClientCounters(
   previous: WebRtcClientCounters | null,
   current: WebRtcClientCounters,
-): Pick<DeviceStreamStatsSample, 'clientFps' | 'clientBitrateBps'> {
-  const unknown = { clientFps: null, clientBitrateBps: null };
-  if (previous === null) return unknown;
+): WebRtcClientDescription {
+  const unmeasured = unmeasuredClient(current);
+  if (previous === null) return unmeasured;
   const elapsedMs = current.atMs - previous.atMs;
-  if (elapsedMs < MIN_WINDOW_MS) return unknown;
-  const frames = current.presentedFrames - previous.presentedFrames;
-  const bytes = current.bytesReceived - previous.bytesReceived;
-  if (frames < 0 || bytes < 0) return unknown;
-  const seconds = elapsedMs / 1_000;
+  if (elapsedMs < MIN_WINDOW_MS) return unmeasured;
+
+  const presentedFrames = windowCounterDelta(previous.presentedFrames, current.presentedFrames);
+  const bytesReceived = windowCounterDelta(previous.bytesReceived, current.bytesReceived);
+  const droppedFrames = windowCounterDelta(previous.framesDropped, current.framesDropped);
+  const freezes = windowCounterDelta(previous.freezeCount, current.freezeCount);
+  const freezeDurationMs = windowCounterDelta(previous.freezeDurationMs, current.freezeDurationMs);
+
+  const elapsedSeconds = elapsedMs / 1_000;
   return {
-    clientFps: frames / seconds,
-    clientBitrateBps: (bytes * 8) / seconds,
+    clientFps: presentedFrames === null ? null : presentedFrames / elapsedSeconds,
+    clientBitrateBps: bytesReceived === null ? null : (bytesReceived * 8) / elapsedSeconds,
+    clientPacketLossRatio: windowPacketLossRatio(previous, current),
+    clientJitterMs: current.jitterMs,
+    clientJitterBufferMs: windowJitterBufferMs(previous, current),
+    clientDroppedFrames: droppedFrames,
+    clientFreezeCount: freezes,
+    clientFreezeDurationMs: freezeDurationMs,
+    clientRoundTripMs: current.roundTripMs,
+    clientIcePath: current.icePath,
   };
 }
 
-/** Read the normalized Hub Android response or serve-sim's sender-session response. */
-export function readWebRtcServerFps(value: unknown, sessionId: string): number | null {
+function readWebRtcEncoderStats(value: unknown): DeviceStreamEncoderStats | null {
   if (!isRecord(value)) return null;
-  const direct = finiteNumber(value.serverFps);
-  if (direct !== null) return direct;
-  if (!Array.isArray(value.sessions)) return null;
-  const session = value.sessions.find(
-    (candidate) => isRecord(candidate) && candidate.sessionId === sessionId,
-  );
-  if (!isRecord(session)) return null;
-  return finiteNumber(session.reportedFps) ?? finiteNumber(session.sourceFps);
+  const targetBitrateBps = finiteNumber(value.targetBitrateBps);
+  const targetKbps = finiteNumber(value.targetKbps);
+  return {
+    codec: nonEmptyString(value.codec),
+    encodeFps: finiteNumber(value.encodeFps) ?? finiteNumber(value.reportedFps),
+    targetBitrateBps: targetBitrateBps ?? (targetKbps === null ? null : targetKbps * 1_000),
+    encodeMsPerFrame: finiteNumber(value.encodeMsPerFrame),
+    framesEncoded: finiteNumber(value.framesEncoded),
+    framesSent: finiteNumber(value.framesSent),
+    framesDropped: finiteNumber(value.framesDropped) ?? finiteNumber(value.sourceFramesDropped),
+    packetLossRatio: finiteNumber(value.packetLossRatio) ?? finiteNumber(value.lossRatio),
+    qualityLimitationReason: nonEmptyString(value.qualityLimitationReason),
+  };
+}
+
+function readWebRtcCaptureStats(value: unknown): DeviceStreamCaptureStats | null {
+  if (!isRecord(value)) return null;
+  return {
+    screenFrames: finiteNumber(value.screenFrames),
+    idleFrames: finiteNumber(value.idleFrames),
+    offeredFrames: finiteNumber(value.offeredFrames),
+    forwardedFrames: finiteNumber(value.forwardedFrames),
+    pumpRestarts: finiteNumber(value.pumpRestarts),
+  };
+}
+
+/** Normalize either the Hub Android response or serve-sim's matching sender-session response. */
+export function readWebRtcServerStats(value: unknown, sessionId: string): WebRtcServerStats {
+  if (!isRecord(value)) return { serverFps: null, encoder: null, capture: null };
+
+  const session = Array.isArray(value.sessions)
+    ? value.sessions.find((candidate) => isRecord(candidate) && candidate.sessionId === sessionId)
+    : null;
+  const matchingSession = isRecord(session) ? session : null;
+  const directServerFps = finiteNumber(value.serverFps);
+  const serverFps =
+    matchingSession === null
+      ? directServerFps
+      : (finiteNumber(matchingSession.sourceFps) ??
+        finiteNumber(matchingSession.reportedFps) ??
+        directServerFps);
+
+  return {
+    serverFps,
+    encoder: readWebRtcEncoderStats(matchingSession ?? value.encoder),
+    capture: readWebRtcCaptureStats(value.capture),
+  };
 }
 
 export function appendStreamStatsSample(
@@ -89,19 +291,29 @@ export function appendStreamStatsSample(
   return [...samples, sample].slice(-HISTORY_LIMIT);
 }
 
-async function readServerFps(
+async function requestWebRtcServerStats(
   statsUrl: string,
   sessionId: string,
   signal: AbortSignal,
-): Promise<number | null> {
+): Promise<WebRtcServerStats> {
   const url = new URL(statsUrl, window.location.href);
   url.searchParams.set('sessionId', sessionId);
   const response = await fetch(url, { cache: 'no-store', signal });
   if (!response.ok) {
     await response.body?.cancel();
-    return null;
+    throw new Error(`WebRTC server statistics unavailable (${response.status})`);
   }
-  return readWebRtcServerFps(await response.json(), sessionId);
+  return readWebRtcServerStats(await response.json(), sessionId);
+}
+
+function emptyStats(): DeviceStreamStats {
+  return {
+    samples: [],
+    encoder: null,
+    capture: null,
+    stale: false,
+    serverStale: false,
+  };
 }
 
 /** Own the single stats poll for a WebRTC peer so UI remounts do not reset history. */
@@ -112,22 +324,23 @@ export function useWebRtcStreamStats(
 ): DeviceStreamStats | null {
   const [stats, setStats] = useState<DeviceStreamStats | null>(null);
   const previousRef = useRef<WebRtcClientCounters | null>(null);
-  const lastSampleAtRef = useRef(0);
+  const lastClientSampleAtRef = useRef(0);
 
   useEffect(() => {
     previousRef.current = null;
-    lastSampleAtRef.current = 0;
+    lastClientSampleAtRef.current = 0;
     if (connection === null || !statsUrl) {
       setStats(null);
       return;
     }
 
-    setStats({ samples: [], stale: false });
+    setStats(emptyStats());
     const pollingStartedAt = Date.now();
     let stopped = false;
     let clientPolling = false;
     let serverPolling = false;
-    let serverFps: number | null = null;
+    let serverStats: WebRtcServerStats = { serverFps: null, encoder: null, capture: null };
+    let lastServerSampleAt = 0;
     let serverController: AbortController | null = null;
 
     const sampleServer = async () => {
@@ -137,10 +350,26 @@ export function useWebRtcStreamStats(
       const controller = serverController;
       const timeout = window.setTimeout(() => controller.abort(), SERVER_REQUEST_TIMEOUT_MS);
       try {
-        const next = await readServerFps(statsUrl, connection.sessionId, controller.signal);
-        if (!stopped) serverFps = next;
+        const next = await requestWebRtcServerStats(
+          statsUrl,
+          connection.sessionId,
+          controller.signal,
+        );
+        if (stopped) return;
+        serverStats = next;
+        lastServerSampleAt = Date.now();
+        setStats((current) =>
+          current
+            ? {
+                ...current,
+                encoder: next.encoder,
+                capture: next.capture,
+                serverStale: false,
+              }
+            : current,
+        );
       } catch {
-        if (!stopped) serverFps = null;
+        // Retain the last successful payload; the server watchdog marks it stale.
       } finally {
         window.clearTimeout(timeout);
         if (serverController === controller) serverController = null;
@@ -160,12 +389,20 @@ export function useWebRtcStreamStats(
         if (counters === null) return;
         const client = describeWebRtcClientCounters(previousRef.current, counters);
         previousRef.current = counters;
-        lastSampleAtRef.current = atMs;
-        const next: DeviceStreamStatsSample = { atMs, serverFps, ...client };
-        setStats((current) => ({
-          samples: appendStreamStatsSample(current?.samples ?? [], next),
-          stale: false,
-        }));
+        lastClientSampleAtRef.current = atMs;
+        const next: DeviceStreamStatsSample = {
+          atMs,
+          serverFps: serverStats.serverFps,
+          ...client,
+        };
+        setStats((current) => {
+          const retained = current ?? emptyStats();
+          return {
+            ...retained,
+            samples: appendStreamStatsSample(retained.samples, next),
+            stale: false,
+          };
+        });
       } catch {
         // Closing peer connections reject getStats. The watchdog marks retained data stale.
       } finally {
@@ -180,10 +417,17 @@ export function useWebRtcStreamStats(
       void sampleClient();
     }, POLL_MS);
     const staleTimer = window.setInterval(() => {
-      const lastSampleAt = lastSampleAtRef.current || pollingStartedAt;
-      if (Date.now() - lastSampleAt > STALE_AFTER_MS) {
-        setStats((current) => (current ? { ...current, stale: true } : current));
-      }
+      const now = Date.now();
+      const lastClientSampleAt = lastClientSampleAtRef.current || pollingStartedAt;
+      const lastServerSample = lastServerSampleAt || pollingStartedAt;
+      const stale = now - lastClientSampleAt > STALE_AFTER_MS;
+      const serverStale = now - lastServerSample > STALE_AFTER_MS;
+      setStats((current) => {
+        if (current === null || (current.stale === stale && current.serverStale === serverStale)) {
+          return current;
+        }
+        return { ...current, stale, serverStale };
+      });
     }, POLL_MS);
 
     return () => {
