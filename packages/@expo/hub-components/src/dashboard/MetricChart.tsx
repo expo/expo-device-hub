@@ -86,7 +86,7 @@ export function MetricChart({
         aria-label={`${title}: ${value}`}
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
         preserveAspectRatio="none"
-        style={{ display: 'block', width: '100%', height: 38, marginTop: 7 }}
+        style={{ display: 'block', width: '100%', height: 38, marginTop: 7, overflow: 'visible' }}
       >
         <line
           x1="0"
