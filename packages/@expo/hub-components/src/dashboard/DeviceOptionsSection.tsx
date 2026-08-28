@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { type DeviceClient, type DeviceSettingKey } from '@expo/hub-client';
-import { SegmentedControl } from '../primitives';
+import { Button, SegmentedControl, text, textSize } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { KeyboardSection } from './KeyboardSection';
 import { SidebarRow, SidebarSwitch } from './SidebarRow';
@@ -101,6 +101,24 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
+      {client?.deviceSettingsError && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 12,
+            paddingBlock: 8,
+            color: text.secondary,
+            ...textSize.xs,
+          }}>
+          <span>{client.deviceSettingsError}</span>
+          <Button theme="secondary" size="2xs" onClick={client.retryDeviceSettings}>
+            Retry
+          </Button>
+        </div>
+      )}
       {visible('appearance') && (
         <SidebarRow compact label="Appearance" borderBottom={hasFollowingRow('appearance')}>
           <SegmentedControl

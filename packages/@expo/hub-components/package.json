@@ -33,6 +33,7 @@
     "build": "swc src -d dist --strip-leading-paths --out-file-extension mjs --copy-files --delete-dir-on-start && tsc -p tsconfig.build.json",
     "dev": "swc src -d dist --strip-leading-paths --out-file-extension mjs --copy-files -w",
     "clean": "rm -rf dist",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint",
     "format": "oxfmt",

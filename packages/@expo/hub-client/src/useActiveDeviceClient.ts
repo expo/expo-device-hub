@@ -14,6 +14,8 @@ export interface ActiveDeviceTarget {
   device?: string | null;
   /** Explicit consumer-owned stream selection. */
   streamMode: DeviceConnectionOptions['streamMode'];
+  /** HTTP codec remembered while WebRTC is selected. */
+  httpCodec?: DeviceConnectionOptions['httpCodec'];
 }
 
 /**
@@ -33,12 +35,14 @@ export function useActiveDeviceClient(
     baseUrl: iosActive ? endpointFor('ios', hubBase) : null,
     device: iosActive ? target?.device ?? null : null,
     streamMode: target?.streamMode as DeviceConnectionOptions['streamMode'],
+    httpCodec: target?.httpCodec,
   });
   const android = useAndroidDeviceClient({
     enabled: androidActive,
     baseUrl: androidActive ? endpointFor('android', hubBase) : null,
     device: androidActive ? target?.device ?? null : null,
     streamMode: target?.streamMode as DeviceConnectionOptions['streamMode'],
+    httpCodec: target?.httpCodec,
   });
 
   if (iosActive) return ios;

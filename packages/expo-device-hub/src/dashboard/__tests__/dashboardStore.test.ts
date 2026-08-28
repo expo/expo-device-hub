@@ -66,6 +66,17 @@ describe('dashboard store', () => {
     expect(store.getState().streamMode).toBe('mjpeg');
   });
 
+  test('commits the active HTTP fallback and allows WebRTC to be selected again', () => {
+    const store = createDashboardStore({ streamMode: 'webrtc' });
+    const availability = { mjpeg: true, h264: true, webrtc: true };
+
+    store.getState().commitActiveStreamMode('mjpeg');
+    expect(store.getState().streamMode).toBe('mjpeg');
+
+    store.getState().chooseStreamMode('webrtc', availability);
+    expect(store.getState().streamMode).toBe('webrtc');
+  });
+
   test('owns sidebar sizing and explicit open/close intent', () => {
     const store = createDashboardStore();
 

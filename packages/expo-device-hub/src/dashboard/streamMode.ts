@@ -38,3 +38,11 @@ export function resolveStreamMode(
 ): DeviceStreamMode {
   return availability[requested] ? requested : 'mjpeg';
 }
+
+/** Commit only an actual WebRTC-to-HTTP fallback, not an internal HTTP decoder fallback. */
+export function webRtcHttpFallbackMode(
+  requested: DeviceStreamMode,
+  active: DeviceStreamMode,
+): DeviceStreamMode | null {
+  return requested === 'webrtc' && active !== 'webrtc' ? active : null;
+}

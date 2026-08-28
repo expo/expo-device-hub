@@ -43,7 +43,10 @@ import { useArgentInteractions } from './dashboard/useArgentInteraction';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 import { SidebarOverlay } from './dashboard/SidebarOverlay';
 import { useSidebarLayout } from './dashboard/useSidebarLayout';
-import { browserStreamModeAvailability } from './dashboard/streamMode';
+import {
+  browserStreamModeAvailability,
+  webRtcHttpFallbackMode,
+} from './dashboard/streamMode';
 import { dashboardPlatformFilter } from './platform-filter';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
@@ -103,6 +106,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   );
   const streamMode = useDashboardStore((state) => state.streamMode);
   const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
+  const commitActiveStreamMode = useDashboardStore((state) => state.commitActiveStreamMode);
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto'
   );
@@ -238,9 +242,15 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load.
   const client = useActiveDeviceClient(
-    selected ? { platform: selected.platform, device: selected.id, streamMode } : null,
+    selected ? { platform: selected.platform, device: selected.id, streamMode, httpCodec } : null,
     basePath()
   );
+  useEffect(() => {
+    const fallbackMode = webRtcHttpFallbackMode(streamMode, client.activeStreamMode);
+    if (selected?.platform === 'ios' && fallbackMode) {
+      commitActiveStreamMode(fallbackMode);
+    }
+  }, [selected?.platform, client.activeStreamMode, streamMode, commitActiveStreamMode]);
   const agentInteractions = useArgentInteractions();
   const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
   const agentDeviceIds = Object.keys(agentInteractions);
