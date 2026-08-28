@@ -51,24 +51,7 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
       theme="tertiary"
       size="2xs"
       onClick={() => setRevealedId(showingId ? null : device.id)}
-      style={{
-        maxWidth: 'min(100%, 320px)',
-        minWidth: 0,
-        flexShrink: 0,
-        boxSizing: 'border-box',
-        paddingInline: 12,
-        borderWidth: 0.5,
-        borderColor: border.default,
-        borderRadius: radius.full,
-      }}>
-      <span
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6,
-          maxWidth: '100%',
-          minWidth: 0,
-        }}>
+      leftSlot={
         <span
           title={label}
           style={{
@@ -82,22 +65,37 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
           }}>
           {label}
         </span>
-        <span
-          aria-hidden
-          style={{
-            width: 6,
-            height: 6,
-            flexShrink: 0,
-            boxSizing: 'content-box',
-            border: `2px solid ${appearance.ringColor}`,
-            borderRadius: radius.full,
-            backgroundColor: appearance.dotColor,
-          }}
-        />
-        <span aria-live="polite" style={{ flexShrink: 0, color: appearance.labelColor }}>
-          {appearance.label}
-        </span>
-      </span>
-    </Button>
+      }
+      rightSlot={
+        <>
+          <span
+            aria-hidden
+            style={{
+              width: 6,
+              height: 6,
+              flexShrink: 0,
+              boxSizing: 'content-box',
+              border: `2px solid ${appearance.ringColor}`,
+              borderRadius: radius.full,
+              backgroundColor: appearance.dotColor,
+            }}
+          />
+          <span aria-live="polite" style={{ flexShrink: 0, color: appearance.labelColor }}>
+            {appearance.label}
+          </span>
+        </>
+      }
+      style={{
+        maxWidth: 'min(100%, 320px)',
+        minWidth: 0,
+        flexShrink: 0,
+        boxSizing: 'border-box',
+        gap: 6,
+        paddingInline: 12,
+        borderWidth: 0.5,
+        borderColor: border.default,
+        borderRadius: radius.full,
+      }}
+    />
   );
 }
