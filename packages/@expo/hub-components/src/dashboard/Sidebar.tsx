@@ -41,7 +41,7 @@ export function Sidebar({
   selectedId: string;
   onSelect: (id: string) => void;
   /** Starts the existing or new device chosen in either add-device picker. */
-  onAddDevice: (target: AddDeviceTarget) => Promise<AddDeviceOutcome>;
+  onAddDevice?: (target: AddDeviceTarget) => Promise<AddDeviceOutcome>;
   /** When set, a sidebar toggle is shown right-aligned in the logo row. */
   onToggle?: () => void;
   /** Restrict the sidebar to one platform. Both sections render by default. */
@@ -72,7 +72,11 @@ export function Sidebar({
           title="Simulators"
           addLabel="Add simulator"
           kind="simulator"
-          emptyLabel="No booted simulators. Use the + button to add one."
+          emptyLabel={
+            onAddDevice
+              ? 'No booted simulators. Use the + button to add one.'
+              : 'No booted simulators.'
+          }
           devices={simulators}
           recent={recentSimulators}
           options={simulatorOptions}
@@ -87,7 +91,11 @@ export function Sidebar({
           title="Emulators"
           addLabel="Add emulator"
           kind="emulator"
-          emptyLabel="No booted emulators or devices. Use the + button to add one."
+          emptyLabel={
+            onAddDevice
+              ? 'No booted emulators or devices. Use the + button to add one.'
+              : 'No booted emulators or devices.'
+          }
           devices={emulators}
           recent={recentEmulators}
           options={emulatorOptions}

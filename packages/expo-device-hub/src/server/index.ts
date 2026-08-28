@@ -12,6 +12,7 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
+import { SERVER_HIDE_BOOT_DEVICE } from './boot-device';
 import {
   bootHubDevice,
   createHubDevice,
@@ -67,7 +68,8 @@ async function serveClientIndexHtml(): Promise<Response | null> {
       MOUNT_PATH,
       SERVER_PLATFORM_FILTER,
       SERVER_TRANSPORT,
-      SERVER_HIDE_SIDEBAR
+      SERVER_HIDE_SIDEBAR,
+      SERVER_HIDE_BOOT_DEVICE
     ),
     {
       headers: {

@@ -85,6 +85,11 @@ async function main(): Promise<void> {
   } else {
     delete process.env.EXPO_DEVICE_HUB_HIDE_SIDEBAR;
   }
+  if (options.hideBootDevice) {
+    process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE = 'true';
+  } else {
+    delete process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE;
+  }
   process.env[SERVE_EMU_OPTIONS_ENV] = encodeStandaloneServeEmuOptions(options);
   process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options);
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time

@@ -25,6 +25,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
+import { dashboardHideBootDevice } from './boot-device';
 import { basePath } from './dashboard/basePath';
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from './dashboard/dashboardStore';
@@ -86,6 +87,7 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
   const scheme = useColorScheme();
+  const hideBootDevice = dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
   const { booted, recent } = useDeviceLists();
   // Installed runtimes/system images and models for the new-device forms.
@@ -287,7 +289,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
           onSelect={selectDevice}
-          onAddDevice={handleAddDevice}
+          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
           onToggle={sidebars.closeLeft}
           platform={platform}
           width={sidebarWidth}
@@ -378,7 +380,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
           onSelect={selectDevice}
-          onAddDevice={handleAddDevice}
+          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
           onToggle={sidebars.closeLeft}
           platform={platform}
           width={sidebarWidth}

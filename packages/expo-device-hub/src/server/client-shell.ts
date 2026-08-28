@@ -7,11 +7,13 @@ export function configureClientShell(
   mountPath: string,
   platform: PlatformFilter | undefined,
   transport: Transport | undefined,
-  hideSidebar: boolean
+  hideSidebar: boolean,
+  hideBootDevice: boolean
 ): string {
   return html
     .replaceAll('{{mount}}', mountPath)
     .replaceAll('{{platform}}', platform ?? '')
     .replaceAll('{{transport}}', transport ?? '')
-    .replaceAll('{{hideSidebar}}', String(hideSidebar));
+    .replaceAll('{{hideSidebar}}', String(hideSidebar))
+    .replaceAll('{{hideBootDevice}}', String(hideBootDevice));
 }

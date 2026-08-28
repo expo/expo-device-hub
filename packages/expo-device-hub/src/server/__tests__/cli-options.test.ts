@@ -21,6 +21,7 @@ describe('parseCliOptions', () => {
       webrtcIcePolicy: undefined,
       metricsCorsOrigins: [],
       hideSidebar: false,
+      hideBootDevice: false,
       help: false,
     });
   });
@@ -184,6 +185,11 @@ describe('parseCliOptions', () => {
     expect(HELP).toContain('--hide-sidebar');
   });
 
+  test('hides controls for booting or creating devices on request', () => {
+    expect(parseCliOptions(['--hide-boot-device']).hideBootDevice).toBe(true);
+    expect(HELP).toContain('--hide-boot-device');
+  });
+
   test('replaces the old stream-mode flag', () => {
     expect(HELP).toContain('--transport <transport>');
     expect(HELP).not.toContain('--stream-mode');
@@ -210,6 +216,7 @@ describe('parseCliOptions', () => {
       webrtcIcePolicy: undefined,
       metricsCorsOrigins: [],
       hideSidebar: false,
+      hideBootDevice: false,
       help: false,
     });
     expect(parseCliOptions(['--help'])).toEqual({ host: '127.0.0.1', help: true });
