@@ -11,6 +11,7 @@ import {
   WebRtcSignalingBusyError,
   WebRtcSignalingTimeoutError,
 } from './webrtc-negotiation';
+import { useWebRtcStreamStats, type WebRtcStatsConnection } from './stream-stats';
 
 export type WebRtcIceServer = {
   urls: string[];
@@ -109,6 +110,7 @@ function createSessionId(): string {
 export function useWebRtcStream({
   offerUrl,
   closeUrl,
+  statsUrl = '',
   enabled,
   codec,
   iceServers,
@@ -119,6 +121,8 @@ export function useWebRtcStream({
 }: {
   offerUrl: string;
   closeUrl: string;
+  /** Device-scoped WebRTC sender statistics endpoint. */
+  statsUrl?: string;
   enabled: boolean;
   codec: WebRtcCodec;
   iceServers?: WebRtcIceServer[];
@@ -130,12 +134,17 @@ export function useWebRtcStream({
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [statsConnection, setStatsConnection] = useState<WebRtcStatsConnection | null>(null);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const firstFrameTimeoutRef = useRef<number | undefined>(undefined);
   const firstFrameDecodedRef = useRef(false);
+  const presentedFramesRef = useRef(0);
   const transportRetryAttemptRef = useRef(0);
+  const streamStats = useWebRtcStreamStats(statsConnection, statsUrl, presentedFramesRef);
 
   const markFrameDecoded = useCallback(() => {
+    presentedFramesRef.current++;
+    if (firstFrameDecodedRef.current) return;
     firstFrameDecodedRef.current = true;
     transportRetryAttemptRef.current = 0;
     if (firstFrameTimeoutRef.current !== undefined) {
@@ -164,6 +173,7 @@ export function useWebRtcStream({
     setFailure(null);
     if (typeof RTCPeerConnection === 'undefined' || typeof RTCRtpReceiver === 'undefined') {
       setStream(null);
+      setStatsConnection(null);
       setError('WebRTC is not supported by this browser.');
       setFailure({ sessionId: createSessionId(), kind: 'permanent' });
       return;
@@ -214,6 +224,9 @@ export function useWebRtcStream({
       clearFirstFrameTimeout();
       clearDisconnectedTimer();
       setStream(null);
+      setStatsConnection((current) =>
+        current?.sessionId === sessionId ? null : current,
+      );
       peer?.close();
     };
 
@@ -310,6 +323,7 @@ export function useWebRtcStream({
           iceServers: servers,
           iceTransportPolicy,
         });
+        setStatsConnection({ peerConnection: peer, sessionId });
 
         const transceiver = peer.addTransceiver('video', { direction: 'recvonly' });
         const capabilities = RTCRtpReceiver.getCapabilities('video');
@@ -410,6 +424,9 @@ export function useWebRtcStream({
       clearDisconnectedTimer();
       void closeRemoteSession(true);
       setStream(null);
+      setStatsConnection((current) =>
+        current?.sessionId === sessionId ? null : current,
+      );
       peer?.close();
     };
   }, [
@@ -425,5 +442,5 @@ export function useWebRtcStream({
     retryGeneration,
   ]);
 
-  return { stream, failure, error, markFrameDecoded };
+  return { stream, failure, error, markFrameDecoded, streamStats };
 }
