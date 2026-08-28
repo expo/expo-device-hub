@@ -406,7 +406,7 @@ function StreamStatistics({
         aria-colcount={2}
         style={{
           width: '100%',
-          overflow: 'hidden',
+          overflow: 'visible',
           borderRadius: radius.md,
           backgroundColor: bg.subtle,
         }}

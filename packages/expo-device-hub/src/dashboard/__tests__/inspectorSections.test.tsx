@@ -228,6 +228,13 @@ function streamStatisticValue(group: string, label: string) {
   return group.slice(valueStart, valueEnd).replace(/<[^>]+>/g, '').trim();
 }
 
+function openingTag(html: string, marker: string) {
+  const start = html.indexOf(marker);
+  expect(start).toBeGreaterThanOrEqual(0);
+
+  return html.slice(start, html.indexOf('>', start) + 1);
+}
+
 test('renders every supported iOS inspector section and option', () => {
   const html = renderToStaticMarkup(
     <LogSidebar
@@ -359,6 +366,12 @@ test('renders grouped WebRTC statistics with rich client, encoder, and capture v
     '<div role="table" aria-label="WebRTC stream statistics" aria-colcount="2"',
   );
   expect(
+    openingTag(
+      html,
+      '<div role="table" aria-label="WebRTC stream statistics" aria-colcount="2"',
+    ),
+  ).toContain('overflow:visible');
+  expect(
     html.match(/grid-template-columns:repeat\(auto-fit, minmax\(150px, 1fr\)\)/g),
   ).toHaveLength(5);
   const stream = streamStatisticGroupMarkup(html, 'Stream statistics');
@@ -391,6 +404,12 @@ test('renders grouped WebRTC statistics with rich client, encoder, and capture v
   expect(streamStatisticValue(capture, 'Pump restarts')).toBe('2');
   expect(html).toContain('role="img" aria-label="Client FPS: 29 FPS"');
   expect(html).toContain('role="img" aria-label="Client bitrate: 5.75 Mbps"');
+  expect(openingTag(html, '<svg role="img" aria-label="Client FPS: 29 FPS"')).toContain(
+    'overflow:visible',
+  );
+  expect(openingTag(html, '<svg role="img" aria-label="Client bitrate: 5.75 Mbps"')).toContain(
+    'overflow:visible',
+  );
   expect(html.match(/>Last 60 samples</g)).toHaveLength(2);
 });
 
