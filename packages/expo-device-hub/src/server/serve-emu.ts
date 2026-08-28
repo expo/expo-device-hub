@@ -8,16 +8,18 @@ import {
 } from './serve-emu-options';
 import { handleServeEmuDeviceOptionRequest } from './serve-emu-device-options';
 import {
+  DEFAULT_SERVE_EMU_TARGET_BITRATE_BPS,
   handleServeEmuStreamStatsRequest,
   SERVE_EMU_STREAM_STATS_PATH,
 } from './serve-emu-stream-stats';
 
 export const EMU_PREFIX = '/vendor/serve-emu';
 
-const router = createRouter(readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]));
+const serveEmuOptions = readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]);
+const router = createRouter(serveEmuOptions);
 type ActiveEmuApp = {
   handleRequest: (request: Request) => Promise<Response>;
-  health: () => { frames: number; sourceFps: number };
+  health: () => { codec?: string; frames: number; sourceFps: number };
   isStreaming: () => boolean;
 };
 const activeApps = new Map<string, ActiveEmuApp>();
@@ -48,7 +50,12 @@ export function handleEmuRequest(request: Request): Promise<Response> {
       const serial = router.resolveSerial(url.searchParams.get('device'));
       const app = activeApps.get(serial);
       if (!app?.isStreaming()) throw new Error('No active serve-emu stream');
-      return app.health();
+      return {
+        ...app.health(),
+        targetBitrateBps:
+          serveEmuOptions.bitRate ?? DEFAULT_SERVE_EMU_TARGET_BITRATE_BPS,
+        webRtcEnabled: serveEmuOptions.streamSettings.transport === 'webrtc',
+      };
     });
   }
   if (pathname === '/webrtc/offer' || pathname === '/webrtc/close') {

@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  DEFAULT_SERVE_EMU_TARGET_BITRATE_BPS,
   handleServeEmuStreamStatsRequest,
   readServeEmuStreamStats,
 } from '../serve-emu-stream-stats';
@@ -22,25 +23,85 @@ describe('serve-emu WebRTC stream stats compatibility route', () => {
     });
   });
 
-  test('shapes only source production metrics from the broad health snapshot', () => {
+  test('shapes only honest source metrics from broad multi-peer health', () => {
     const health = {
+      codec: 'h264',
       frames: 1_234,
       sourceFps: 58.5,
+      targetBitrateBps: 4_000_000,
+      webRtcEnabled: true,
       session: { events: [{ payload: 'must not be serialized' }] },
-      webrtc: { detail: [{ sentFrames: 1_000 }] },
+      webrtc: {
+        detail: [
+          { sentFrames: 1_000, droppedFrames: 3, candidate: 'private peer data' },
+          { sentFrames: 2_000, droppedFrames: 7, candidate: 'other private peer data' },
+        ],
+      },
     };
 
     expect(readServeEmuStreamStats(health, 42)).toEqual({
       sampledAt: 42,
       serverFps: 58.5,
       frames: 1_234,
+      encoder: {
+        codec: 'h264',
+        encodeFps: 58.5,
+        targetBitrateBps: 4_000_000,
+        encodeMsPerFrame: null,
+        framesEncoded: 1_234,
+        framesSent: null,
+        framesDropped: null,
+        packetLossRatio: null,
+        qualityLimitationReason: null,
+      },
+      capture: {
+        screenFrames: null,
+        idleFrames: null,
+        offeredFrames: 1_234,
+        forwardedFrames: null,
+        pumpRestarts: null,
+      },
+    });
+  });
+
+  test('uses scrcpy defaults and nulls unsupported counters instead of reporting zero', () => {
+    expect(
+      readServeEmuStreamStats({ frames: 0, sourceFps: 0, webRtcEnabled: true }, 42),
+    ).toEqual({
+      sampledAt: 42,
+      serverFps: 0,
+      frames: 0,
+      encoder: {
+        codec: null,
+        encodeFps: 0,
+        targetBitrateBps: DEFAULT_SERVE_EMU_TARGET_BITRATE_BPS,
+        encodeMsPerFrame: null,
+        framesEncoded: 0,
+        framesSent: null,
+        framesDropped: null,
+        packetLossRatio: null,
+        qualityLimitationReason: null,
+      },
+      capture: {
+        screenFrames: null,
+        idleFrames: null,
+        offeredFrames: 0,
+        forwardedFrames: null,
+        pumpRestarts: null,
+      },
     });
   });
 
   test('returns no-store JSON and accepts serve-sim-compatible session IDs', async () => {
     const response = await handleServeEmuStreamStatsRequest(
       new Request(`http://localhost/webrtc/stats?sessionId=${SESSION_ID}`),
-      () => ({ frames: 240, sourceFps: 60 }),
+      () => ({
+        codec: 'h264',
+        frames: 240,
+        sourceFps: 60,
+        targetBitrateBps: 6_000_000,
+        webRtcEnabled: true,
+      }),
       () => 1_725_000_000_000,
     );
 
@@ -51,7 +112,31 @@ describe('serve-emu WebRTC stream stats compatibility route', () => {
       sampledAt: 1_725_000_000_000,
       serverFps: 60,
       frames: 240,
+      encoder: {
+        codec: 'h264',
+        encodeFps: 60,
+        targetBitrateBps: 6_000_000,
+        encodeMsPerFrame: null,
+        framesEncoded: 240,
+        framesSent: null,
+        framesDropped: null,
+        packetLossRatio: null,
+        qualityLimitationReason: null,
+      },
+      capture: {
+        screenFrames: null,
+        idleFrames: null,
+        offeredFrames: 240,
+        forwardedFrames: null,
+        pumpRestarts: null,
+      },
     });
+  });
+
+  test('does not report WebRTC capture deliveries for a WebSocket stream', () => {
+    const stats = readServeEmuStreamStats({ frames: 240, sourceFps: 60 }, 42);
+
+    expect(stats.capture.offeredFrames).toBeNull();
   });
 
   test('rejects invalid session IDs before reading device health', async () => {

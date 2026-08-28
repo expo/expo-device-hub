@@ -6,16 +6,42 @@ const JSON_HEADERS = {
 } as const;
 
 export const SERVE_EMU_STREAM_STATS_PATH = '/webrtc/stats';
+export const DEFAULT_SERVE_EMU_TARGET_BITRATE_BPS = 8_000_000;
 
 export interface ServeEmuStreamHealth {
+  codec?: string;
   frames: number;
   sourceFps: number;
+  targetBitrateBps?: number;
+  webRtcEnabled?: boolean;
+}
+
+export interface ServeEmuEncoderStats {
+  codec: string | null;
+  encodeFps: number;
+  targetBitrateBps: number;
+  encodeMsPerFrame: null;
+  framesEncoded: number;
+  framesSent: null;
+  framesDropped: null;
+  packetLossRatio: null;
+  qualityLimitationReason: null;
+}
+
+export interface ServeEmuCaptureStats {
+  screenFrames: null;
+  idleFrames: null;
+  offeredFrames: number | null;
+  forwardedFrames: null;
+  pumpRestarts: null;
 }
 
 export interface ServeEmuStreamStats {
   sampledAt: number;
   serverFps: number;
   frames: number;
+  encoder: ServeEmuEncoderStats;
+  capture: ServeEmuCaptureStats;
 }
 
 /**
@@ -30,6 +56,31 @@ export function readServeEmuStreamStats(
     sampledAt,
     serverFps: health.sourceFps,
     frames: health.frames,
+    encoder: {
+      codec: typeof health.codec === 'string' && health.codec.length > 0 ? health.codec : null,
+      encodeFps: health.sourceFps,
+      targetBitrateBps:
+        health.targetBitrateBps ?? DEFAULT_SERVE_EMU_TARGET_BITRATE_BPS,
+      encodeMsPerFrame: null,
+      framesEncoded: health.frames,
+      // serve-emu's broad health detail does not identify peers by WebRTC
+      // session ID. Do not guess from the first (or only) peer.
+      framesSent: null,
+      framesDropped: null,
+      packetLossRatio: null,
+      qualityLimitationReason: null,
+    },
+    capture: {
+      // Android's scrcpy stream begins after screen capture and encoding, so it
+      // cannot distinguish screen frames from an idle-frame floor.
+      screenFrames: null,
+      idleFrames: null,
+      // Every counted non-config access unit is offered when the WebRTC
+      // publisher is enabled. A WebSocket stream has no such delivery.
+      offeredFrames: health.webRtcEnabled === true ? health.frames : null,
+      forwardedFrames: null,
+      pumpRestarts: null,
+    },
   };
 }
 
