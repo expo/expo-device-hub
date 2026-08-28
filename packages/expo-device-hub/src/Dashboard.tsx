@@ -67,21 +67,19 @@ const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
 
 const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
-  pixel: {
+  'android:pixel-10-pro': {
     src: String(pixelDeviceFrame),
     width: 1250,
     height: 2631,
     screen: { x: 50, y: 48, width: 1138, height: 2532 },
     screenRadius: 150,
-    screenSuperellipse: 1,
   },
-  iphone: {
+  'ios:iphone-17-pro': {
     src: String(iphoneDeviceFrame),
     width: 2620,
     height: 5420,
     screen: { x: 104, y: 88, width: 2412, height: 5244 },
-    screenRadius: 512,
-    screenSuperellipse: 1.57,
+    screenRadius: 340,
   },
 };
 

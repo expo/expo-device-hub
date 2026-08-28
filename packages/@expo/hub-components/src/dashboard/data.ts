@@ -8,8 +8,17 @@
 
 export type Platform = 'ios' | 'android';
 
-/** Device-frame artwork bundled by Hub for a known phone family. */
-export type DeviceFrameKind = 'iphone' | 'pixel';
+/** Exact device profile with frame artwork bundled by Hub. */
+export const DEVICE_FRAME_PROFILE_IDS = [
+  'ios:iphone-17-pro',
+  'android:pixel-10-pro',
+] as const;
+export type DeviceFrameProfileId = (typeof DEVICE_FRAME_PROFILE_IDS)[number];
+
+/** Fail closed when a newer or stale server sends an unknown profile id. */
+export function isDeviceFrameProfileId(value: unknown): value is DeviceFrameProfileId {
+  return DEVICE_FRAME_PROFILE_IDS.some((profileId) => profileId === value);
+}
 
 export type Device = {
   id: string;
@@ -26,7 +35,7 @@ export type Device = {
   /** Whether this device type is in the set currently supported and tested by Hub. */
   supported: boolean;
   /** Frame artwork available for this exact device model, or null when none is available. */
-  deviceFrame: DeviceFrameKind | null;
+  deviceFrame: DeviceFrameProfileId | null;
   /**
    * Epoch ms the device was last used. Drives the relative "Recents" time in the
    * add-device picker.
@@ -56,7 +65,7 @@ export type NewDeviceModelOption = {
   /** Whether this model is in the set currently supported and tested by Hub. */
   supported: boolean;
   /** Frame artwork available for this model, or null when none is available. */
-  deviceFrame: DeviceFrameKind | null;
+  deviceFrame: DeviceFrameProfileId | null;
 };
 
 /** An installed runtime/system image and the models it can create. */
@@ -87,7 +96,7 @@ export type NewDeviceRequest = {
   /** Whether the selected model is currently supported and tested by Hub. */
   supported: boolean;
   /** Frame artwork available for the selected model, or null when none is available. */
-  deviceFrame: DeviceFrameKind | null;
+  deviceFrame: DeviceFrameProfileId | null;
 };
 
 /** The mutually exclusive target selected in the add-device picker. */

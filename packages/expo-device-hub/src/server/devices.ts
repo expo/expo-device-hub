@@ -17,7 +17,7 @@
 import { type AndroidDevice, listDevices as listAndroidDevices } from '@expo/hub-android-utils';
 import { listDevices as listAppleDevices } from '@expo/hub-apple-utils';
 
-import { type DeviceFrameKind } from '@expo/hub-components';
+import { type DeviceFrameProfileId } from '@expo/hub-components';
 
 import { type PlatformFilter } from '../platform-filter';
 import {
@@ -47,7 +47,7 @@ export interface HubDevice {
   /** Whether this device type is in the set currently supported and tested by Hub. */
   supported: boolean;
   /** Frame artwork available for this exact device model, or null when none is available. */
-  deviceFrame: DeviceFrameKind | null;
+  deviceFrame: DeviceFrameProfileId | null;
   /**
    * Epoch ms the device was last used — drives the "Recents" relative time
    * ("18m ago", "2 days ago") in the add-device picker. For iOS this is the

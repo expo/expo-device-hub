@@ -10,7 +10,7 @@ import { DeviceOptionsSection } from './DeviceOptionsSection';
 import { EventsSection } from './EventsSection';
 import { LogsSection } from './LogsSection';
 import { StreamOptionsSection } from './StreamOptionsSection';
-import { type Device } from './data';
+import { type Device, isDeviceFrameProfileId } from './data';
 import { type StreamModeAvailability } from './StreamSection';
 
 export type LogSidebarProps = {
@@ -57,7 +57,7 @@ export function LogSidebar({
 }: LogSidebarProps) {
   const deviceFrame = device
     ? {
-        available: device.deviceFrame === 'iphone' || device.deviceFrame === 'pixel',
+        available: isDeviceFrameProfileId(device.deviceFrame),
         visible: showDeviceFrame,
         onVisibleChange: onShowDeviceFrameChange ?? (() => {}),
       }

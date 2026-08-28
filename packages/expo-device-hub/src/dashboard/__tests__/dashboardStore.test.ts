@@ -12,7 +12,7 @@ const iosDevice: Device = {
   booted: true,
   physical: false,
   supported: true,
-  deviceFrame: 'iphone',
+  deviceFrame: 'ios:iphone-17-pro',
 };
 
 afterEach(() => {

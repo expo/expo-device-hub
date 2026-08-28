@@ -95,23 +95,38 @@ export function StreamPanel({
       }}>
       <div
         style={{
+          flex: 1,
+          minWidth: 0,
+          minHeight: 0,
+          width: '100%',
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
           gap: 20,
-          width: '100%',
-          minHeight: 0,
         }}>
         <DeviceTitle key={device.id} device={device} status={client.status} />
-        <PhoneFrame
-          device={device}
-          client={client}
-          agentInteraction={agentInteraction}
-          DeviceScreen={DeviceScreen}
-          displayScreen={displayScreen}
-          showDeviceFrame={showDeviceFrame}
-          deviceFrameAssets={deviceFrameAssets}
-        />
+        <div
+          data-testid="device-frame-viewport"
+          style={{
+            flex: 1,
+            minWidth: 0,
+            minHeight: 0,
+            width: '100%',
+            containerType: 'size',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+          <PhoneFrame
+            device={device}
+            client={client}
+            agentInteraction={agentInteraction}
+            DeviceScreen={DeviceScreen}
+            displayScreen={displayScreen}
+            showDeviceFrame={showDeviceFrame}
+            deviceFrameAssets={deviceFrameAssets}
+          />
+        </div>
       </div>
       <StreamControls
         platform={device.platform}

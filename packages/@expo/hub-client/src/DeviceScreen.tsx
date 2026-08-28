@@ -25,6 +25,62 @@ type Point = { x: number; y: number };
 const FINGER_CURSOR =
   `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='9' fill='rgba(255,255,255,0.45)' stroke='rgba(0,0,0,0.55)' stroke-width='1.25'/%3E%3C/svg%3E") 12 12, pointer`;
 
+export const DEVICE_SCREEN_SURFACE_LAYOUT_STYLE: CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  containerType: 'size',
+  overflow: 'hidden',
+  backgroundColor: '#000',
+};
+
+export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  boxSizing: 'border-box',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  padding: 24,
+  textAlign: 'center',
+  pointerEvents: 'none',
+  backgroundColor: 'rgba(0, 0, 0, 0.55)',
+  fontSize: 13,
+  fontFamily: 'var(--expo-font-mono)',
+};
+
+/** Keep media geometry tied to the same synchronous size container as the frame. */
+export function deviceScreenMediaStyle(rotation: number): CSSProperties {
+  const rotatesSideways = Math.abs(rotation) === 90;
+  const style: CSSProperties =
+    rotation === 0
+      ? {
+          display: 'block',
+          position: 'absolute',
+          inset: 0,
+          width: '100%',
+          height: '100%',
+          objectFit: 'cover',
+        }
+      : {
+          display: 'block',
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          width: rotatesSideways ? '100cqh' : '100%',
+          height: rotatesSideways ? '100cqw' : '100%',
+          transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
+          transformOrigin: 'center center',
+          objectFit: 'cover',
+        };
+
+  return {
+    ...style,
+    userSelect: 'none',
+    WebkitUserSelect: 'none',
+    pointerEvents: 'none',
+  };
+}
+
 /**
  * Shared renderer for a live {@link DeviceClient}, used in place of the static
  * `<img>` inside {@link PhoneFrame}. It paints whatever element the active
@@ -49,7 +105,6 @@ export function DeviceScreen({
   const canMulti = !!sendMultiTouch;
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = useState<{ w: number; h: number } | null>(null);
 
   // A focused device surface owns physical keyboard input. Track held keys so
   // modifiers never remain stuck in the simulator if focus/window visibility is
@@ -108,18 +163,6 @@ export function DeviceScreen({
     const handled = sendKey(keyboardInputFrom(event, 'up'));
     if (wasPressed || handled) event.preventDefault();
   };
-
-  // Measure the surface so a rotated video can be sized to fill it.
-  useEffect(() => {
-    const el = surfaceRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver((entries) => {
-      const r = entries[0]?.contentRect;
-      if (r) setSize({ w: r.width, h: r.height });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
 
   // ── pointer state ──
   const pointersRef = useRef(new Map<number, Point>());
@@ -274,40 +317,14 @@ export function DeviceScreen({
   // ── display geometry (rotation for non-portrait devices) ──
   const geometry = streamGeometry(screen);
   const rotation = geometry.rotationDegrees;
-  const rotatesSideways = Math.abs(rotation) === 90;
 
   const surfaceStyle: CSSProperties = {
-    position: 'relative',
-    width: '100%',
-    height: '100%',
-    overflow: 'hidden',
-    backgroundColor: '#000',
+    ...DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
     borderRadius,
     ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
   };
 
-  const mediaStyle: CSSProperties =
-    rotation === 0
-      ? {
-          display: 'block',
-          position: 'absolute',
-          inset: 0,
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-        }
-      : {
-          display: 'block',
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          width: rotatesSideways && size ? `${size.h}px` : '100%',
-          height: rotatesSideways && size ? `${size.w}px` : '100%',
-          transform: `translate(-50%, -50%) rotate(${rotation}deg)`,
-          transformOrigin: 'center center',
-          objectFit: 'cover',
-        };
-  Object.assign(mediaStyle, { userSelect: 'none', WebkitUserSelect: 'none', pointerEvents: 'none' });
+  const mediaStyle = deviceScreenMediaStyle(rotation);
 
   return (
     <div style={surfaceStyle}>
@@ -358,18 +375,8 @@ export function DeviceScreen({
       {status !== 'streaming' && (
         <div
           style={{
-            position: 'absolute',
-            inset: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 24,
-            textAlign: 'center',
-            pointerEvents: 'none',
-            backgroundColor: 'rgba(0, 0, 0, 0.55)',
+            ...DEVICE_SCREEN_STATUS_LAYOUT_STYLE,
             color: status === 'error' ? '#fca5a5' : 'rgba(255, 255, 255, 0.7)',
-            fontSize: 13,
-            fontFamily: 'var(--expo-font-mono)',
           }}>
           {status === 'error'
             ? (error ?? 'Disconnected')

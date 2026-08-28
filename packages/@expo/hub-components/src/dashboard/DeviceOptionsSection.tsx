@@ -129,30 +129,13 @@ export function DeviceOptionsSection({
 
   const keyboardVisible = showDeviceSettings && client?.platform === 'ios';
   const visibleSettingKeys = showDeviceSettings ? SETTING_ORDER.filter(visible) : [];
-  const frameHasFollowingRow = visibleSettingKeys.length > 0 || keyboardVisible;
 
   function hasFollowingRow(key: DeviceSettingKey) {
-    return keyboardVisible || visibleSettingKeys.at(-1) !== key;
+    return Boolean(deviceFrame) || keyboardVisible || visibleSettingKeys.at(-1) !== key;
   }
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
-      {deviceFrame && (
-        <SidebarRow
-          label="Show device frame"
-          description={deviceFrame.available ? undefined : NO_DEVICE_FRAME_DESCRIPTION}
-          descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
-          borderBottom={frameHasFollowingRow}>
-          <SidebarSwitch
-            checked={deviceFrame.available && deviceFrame.visible}
-            disabled={!deviceFrame.available}
-            label="Show device frame"
-            descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
-            onChange={deviceFrame.onVisibleChange}
-          />
-        </SidebarRow>
-      )}
-
       {showDeviceSettings && visible('appearance') && (
         <SidebarRow compact label="Appearance" borderBottom={hasFollowingRow('appearance')}>
           <SegmentedControl
@@ -227,6 +210,22 @@ export function DeviceOptionsSection({
             </SidebarRow>
           ) : null,
         )}
+
+      {deviceFrame && (
+        <SidebarRow
+          label="Show device frame"
+          description={deviceFrame.available ? undefined : NO_DEVICE_FRAME_DESCRIPTION}
+          descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
+          borderBottom={keyboardVisible}>
+          <SidebarSwitch
+            checked={deviceFrame.available && deviceFrame.visible}
+            disabled={!deviceFrame.available}
+            label="Show device frame"
+            descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
+            onChange={deviceFrame.onVisibleChange}
+          />
+        </SidebarRow>
+      )}
 
       {keyboardVisible && client && <KeyboardSection client={client} />}
     </CollapsibleSection>

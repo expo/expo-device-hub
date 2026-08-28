@@ -13,17 +13,34 @@ import {
 } from '../device-support';
 
 describe('iOS device support', () => {
-  test('supports simulator types whose identifier contains iPhone', () => {
-    const iphone = { identifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro' };
+  test('keeps iPhone support independent from exact frame-profile availability', () => {
+    const iphone17Pro = {
+      identifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro',
+    };
+    const iphone16Pro = {
+      identifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro',
+    };
     const ipad = { identifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4' };
 
-    expect(isSupportedAppleDeviceType(iphone)).toBe(true);
-    expect(appleDeviceTypeFrame(iphone)).toBe('iphone');
+    expect(isSupportedAppleDeviceType(iphone17Pro)).toBe(true);
+    expect(appleDeviceTypeFrame(iphone17Pro)).toBe('ios:iphone-17-pro');
+    expect(isSupportedAppleDeviceType(iphone16Pro)).toBe(true);
+    expect(appleDeviceTypeFrame(iphone16Pro)).toBeNull();
     expect(isSupportedAppleDeviceType(ipad)).toBe(false);
     expect(appleDeviceTypeFrame(ipad)).toBeNull();
   });
 
   test('classifies existing simulators from their device type identifier', () => {
+    expect(
+      isSupportedAppleDevice({
+        deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro',
+      }),
+    ).toBe(true);
+    expect(
+      appleDeviceFrame({
+        deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro',
+      }),
+    ).toBe('ios:iphone-17-pro');
     expect(
       isSupportedAppleDevice({
         deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro',
@@ -33,7 +50,7 @@ describe('iOS device support', () => {
       appleDeviceFrame({
         deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro',
       }),
-    ).toBe('iphone');
+    ).toBeNull();
     expect(
       isSupportedAppleDevice({
         deviceTypeIdentifier: 'com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M4',
@@ -45,13 +62,20 @@ describe('iOS device support', () => {
 });
 
 describe('Android device support', () => {
-  test('supports Pixel phone profiles and rejects other or non-phone profiles', () => {
+  test('keeps Pixel-phone support independent from exact frame-profile availability', () => {
+    expect(isSupportedAndroidDeviceProfile(profile('pixel_10_pro', 'Pixel 10 Pro'))).toBe(true);
+    expect(androidDeviceProfileFrame(profile('pixel_10_pro', 'Pixel 10 Pro'))).toBe(
+      'android:pixel-10-pro',
+    );
+    expect(androidDeviceProfileFrame(profile('pixel_6', 'Pixel 6'))).toBe(
+      'android:pixel-10-pro',
+    );
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9', 'Pixel 9'))).toBe(true);
-    expect(androidDeviceProfileFrame(profile('pixel_9', 'Pixel 9'))).toBe('pixel');
+    expect(androidDeviceProfileFrame(profile('pixel_9', 'Pixel 9'))).toBeNull();
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9_pro_fold', 'Pixel 9 Pro Fold'))).toBe(
       false,
     );
-    expect(androidDeviceProfileFrame(profile('pixel_9_pro_fold', 'Pixel 9 Pro Fold'))).toBe('pixel');
+    expect(androidDeviceProfileFrame(profile('pixel_9_pro_fold', 'Pixel 9 Pro Fold'))).toBeNull();
     expect(isSupportedAndroidDeviceProfile(profile('pixel_fold', 'Pixel Fold'))).toBe(false);
     expect(isSupportedAndroidDeviceProfile(profile('pixel_tablet', 'Pixel Tablet'))).toBe(false);
     expect(isSupportedAndroidDeviceProfile(profile('pixel_c', 'Pixel C'))).toBe(false);
@@ -61,18 +85,22 @@ describe('Android device support', () => {
     ).toBe(false);
     expect(
       androidDeviceProfileFrame(profile('pixel_watch', 'Pixel Watch', 'android-wear')),
-    ).toBe('pixel');
+    ).toBeNull();
     expect(isSupportedAndroidDeviceProfile(profile('pixel_buds', 'Pixel Buds'))).toBe(false);
     expect(androidDeviceProfileFrame(profile('medium_phone', 'Medium Phone'))).toBeNull();
   });
 
   test('classifies known AVDs from their profile metadata', () => {
     expect(
-      isSupportedAndroidDevice(androidDevice({ config: { 'hw.device.name': 'pixel_8' } })),
+      isSupportedAndroidDevice(androidDevice({ config: { 'hw.device.name': 'pixel_10_pro' } })),
     ).toBe(true);
-    expect(androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_8' } }))).toBe(
-      'pixel',
+    expect(
+      androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_10_pro' } })),
+    ).toBe('android:pixel-10-pro');
+    expect(androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_6' } }))).toBe(
+      'android:pixel-10-pro',
     );
+    expect(androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_8' } }))).toBeNull();
     expect(
       isSupportedAndroidDevice(
         androidDevice({
@@ -104,9 +132,14 @@ describe('Android device support', () => {
     ).toBe(true);
     expect(
       androidDeviceFrame(
+        androidDevice({ type: 'device', properties: { 'ro.product.model': 'Pixel 10 Pro' } }),
+      ),
+    ).toBe('android:pixel-10-pro');
+    expect(
+      androidDeviceFrame(
         androidDevice({ type: 'device', properties: { 'ro.product.model': 'Pixel 9 Pro' } }),
       ),
-    ).toBe('pixel');
+    ).toBeNull();
     expect(
       androidDeviceFrame(
         androidDevice({ type: 'device', properties: { 'ro.product.model': 'Galaxy S25' } }),

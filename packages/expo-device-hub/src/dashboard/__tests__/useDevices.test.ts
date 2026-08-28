@@ -18,7 +18,7 @@ const list: DeviceList = {
       booted: true,
       physical: false,
       supported: true,
-      deviceFrame: 'iphone',
+      deviceFrame: 'ios:iphone-17-pro',
     },
   ],
   emulators: [
@@ -30,7 +30,7 @@ const list: DeviceList = {
       booted: false,
       physical: false,
       supported: true,
-      deviceFrame: 'pixel',
+      deviceFrame: 'android:pixel-10-pro',
     },
   ],
 };

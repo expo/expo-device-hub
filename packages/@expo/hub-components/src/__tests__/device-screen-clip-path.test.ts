@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import { deviceFrameLayout, deviceFrameRotation } from '../dashboard/deviceFrame';
-import { deviceFrameScreenClipPath, deviceScreenClipPath } from '../dashboard/deviceScreenClipPath';
+import { deviceScreenClipPath } from '../dashboard/deviceScreenClipPath';
 
 function superellipseParameter(clipPath: string, radius: number): number {
   const match = clipPath.match(/with ([\d.]+)cqw/);
@@ -29,15 +29,6 @@ describe('deviceScreenClipPath', () => {
 
     expect(clipPath).toContain('1.416cqw 0 from start / 0 -1.416cqw from end');
     expect(superellipseParameter(clipPath, 2.564)).toBeCloseTo(1, 3);
-  });
-
-  test('uses the artwork-specific iPhone superellipse for a framed opening', () => {
-    const clipPath = deviceFrameScreenClipPath(21.227, 9.764, 1.57);
-
-    expect(clipPath).toStartWith('shape(from 21.227% -0.5px');
-    expect(clipPath).toContain('calc(100% - 21.227%)');
-    expect(clipPath).toContain('calc(9.764% - 0.5px)');
-    expect(clipPath).toEndWith('close)');
   });
 });
 

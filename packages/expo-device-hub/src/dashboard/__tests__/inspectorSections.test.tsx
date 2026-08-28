@@ -96,7 +96,11 @@ function device(platform: DevicePlatform, deviceFrame: Device['deviceFrame']): D
   return {
     id: `${platform}-device`,
     name:
-      deviceFrame === 'iphone' ? 'iPhone 17 Pro' : deviceFrame === 'pixel' ? 'Pixel 10' : 'Other',
+      deviceFrame === 'ios:iphone-17-pro'
+        ? 'iPhone 17 Pro'
+        : deviceFrame === 'android:pixel-10-pro'
+          ? 'Pixel 10 Pro'
+          : 'Other',
     version: platform === 'ios' ? 'iOS 27.0' : 'Android 17.0',
     platform,
     booted: true,
@@ -318,10 +322,10 @@ test('disables only the device setting with an in-flight update', () => {
   expect(switchMarkup(html, 'Reduce motion')).not.toContain('disabled=""');
 });
 
-test('shows an enabled viewer-local frame switch for iPhones and Pixels', () => {
+test('shows an enabled viewer-local frame switch for exact device profiles', () => {
   for (const [platform, frame] of [
-    ['ios', 'iphone'],
-    ['android', 'pixel'],
+    ['ios', 'ios:iphone-17-pro'],
+    ['android', 'android:pixel-10-pro'],
   ] as const) {
     const onMarkup = renderToStaticMarkup(
       <LogSidebar
@@ -345,6 +349,23 @@ test('shows an enabled viewer-local frame switch for iPhones and Pixels', () => 
     expect(switchMarkup(offMarkup, 'Show device frame')).toContain('aria-checked="false"');
     expect(switchMarkup(offMarkup, 'Show device frame')).not.toContain('disabled=""');
   }
+});
+
+test('places the device frame option immediately above the hardware keyboard', () => {
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={inspectorClient('ios')}
+      device={device('ios', 'ios:iphone-17-pro')}
+      showDeviceFrame
+      onShowDeviceFrameChange={() => {}}
+    />,
+  );
+
+  const frameIndex = html.indexOf('>Show device frame</span>');
+  const hardwareKeyboardIndex = html.indexOf('>Hardware keyboard</span>');
+
+  expect(frameIndex).toBeGreaterThan(html.indexOf('>VoiceOver</span>'));
+  expect(frameIndex).toBeLessThan(hardwareKeyboardIndex);
 });
 
 test('keeps the frame option disabled with an explanation for unsupported devices', () => {
@@ -389,7 +410,7 @@ test('shows only the viewer-local frame option while iOS device settings are una
   const html = renderToStaticMarkup(
     <LogSidebar
       client={client}
-      device={device('ios', 'iphone')}
+      device={device('ios', 'ios:iphone-17-pro')}
       showDeviceFrame
       onShowDeviceFrameChange={() => {}}
     />,

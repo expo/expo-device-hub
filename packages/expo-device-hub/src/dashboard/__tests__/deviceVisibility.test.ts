@@ -60,7 +60,12 @@ describe('device visibility policy', () => {
           value: 'current',
           label: 'Current OS',
           models: [
-            { value: 'phone', label: 'Phone', supported: true, deviceFrame: 'iphone' },
+            {
+              value: 'phone',
+              label: 'Phone',
+              supported: true,
+              deviceFrame: 'ios:iphone-17-pro',
+            },
             { value: 'tablet', label: 'Tablet', supported: false, deviceFrame: null },
           ],
         },
@@ -78,7 +83,12 @@ describe('device visibility policy', () => {
           value: 'current',
           label: 'Current OS',
           models: [
-            { value: 'phone', label: 'Phone', supported: true, deviceFrame: 'iphone' },
+            {
+              value: 'phone',
+              label: 'Phone',
+              supported: true,
+              deviceFrame: 'ios:iphone-17-pro',
+            },
           ],
         },
       ],
@@ -108,6 +118,6 @@ function device(id: string, supported: boolean): Device {
     booted: false,
     physical: false,
     supported,
-    deviceFrame: supported ? 'iphone' : null,
+    deviceFrame: supported ? 'ios:iphone-17-pro' : null,
   };
 }
