@@ -91,7 +91,7 @@ export function StreamPanel({
           display: 'flex',
           flexDirection: 'column',
           alignItems: 'center',
-          gap: 12,
+          gap: 20,
           width: '100%',
           minHeight: 0,
         }}>
