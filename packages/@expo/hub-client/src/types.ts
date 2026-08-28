@@ -88,9 +88,10 @@ export interface DeviceEvent {
   details?: Record<string, unknown>;
 }
 
-/** Simulator-wide settings exposed by serve-sim (Android currently supports appearance only). */
+/** Simulator/device-wide settings exposed by serve-sim and serve-emu. */
 export type DeviceSettingKey =
   | 'appearance'
+  | 'network'
   | 'liquid-glass'
   | 'color-filter'
   | 'text-size'
