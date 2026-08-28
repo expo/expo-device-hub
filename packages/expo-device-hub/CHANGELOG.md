@@ -1,5 +1,16 @@
 # expo-device-hub
 
+## 0.6.0
+
+### Minor Changes
+
+- ce7fec2: Add Android network and font-size controls to the shared device options UI.
+- b1e9c36: Add Android WebRTC streaming
+
+### Patch Changes
+
+- bf38c74: Send iOS screenshot requests with POST to match the updated serve-sim endpoint.
+
 ## 0.5.0
 
 ### Minor Changes
