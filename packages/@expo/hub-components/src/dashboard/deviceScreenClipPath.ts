@@ -14,6 +14,10 @@ function cqw(value: number): string {
   return `${value.toFixed(3)}cqw`;
 }
 
+function percentage(value: number): string {
+  return `${value.toFixed(3)}%`;
+}
+
 /** Builds one responsive clip for the stream and every screen overlay. */
 export function deviceScreenClipPath(radiusCqw: number, squircle: boolean): string {
   const radius = cqw(radiusCqw);
@@ -33,6 +37,36 @@ export function deviceScreenClipPath(radiusCqw: number, squircle: boolean): stri
     `curve to 0 ${bottomRadius} with -${control} 0 from start / 0 ${control} from end`,
     `vline to ${topRadius}`,
     `curve to ${radius} ${top} with 0 -${control} from start / -${control} 0 from end`,
+    'close)',
+  ].join(', ');
+}
+
+/** Build the calibrated transparent opening for a frame-artwork viewport. */
+export function deviceFrameScreenClipPath(
+  radiusXPercent: number,
+  radiusYPercent: number,
+  superellipseParameter: number,
+): string {
+  const radiusX = percentage(radiusXPercent);
+  const radiusY = percentage(radiusYPercent);
+  const controlFactor = superellipseControl(superellipseParameter);
+  const controlX = percentage(radiusXPercent * controlFactor);
+  const controlY = percentage(radiusYPercent * controlFactor);
+  const top = `-${VERTICAL_EDGE_BLEED}`;
+  const topRadius = `calc(${radiusY} - ${VERTICAL_EDGE_BLEED})`;
+  const bottomRadius = `calc(100% - ${radiusY} + ${VERTICAL_EDGE_BLEED})`;
+  const bottom = `calc(100% + ${VERTICAL_EDGE_BLEED})`;
+
+  return [
+    `shape(from ${radiusX} ${top}`,
+    `hline to calc(100% - ${radiusX})`,
+    `curve to 100% ${topRadius} with ${controlX} 0 from start / 0 -${controlY} from end`,
+    `vline to ${bottomRadius}`,
+    `curve to calc(100% - ${radiusX}) ${bottom} with 0 ${controlY} from start / ${controlX} 0 from end`,
+    `hline to ${radiusX}`,
+    `curve to 0 ${bottomRadius} with -${controlX} 0 from start / 0 ${controlY} from end`,
+    `vline to ${topRadius}`,
+    `curve to ${radiusX} ${top} with 0 -${controlY} from start / -${controlX} 0 from end`,
     'close)',
   ].join(', ');
 }

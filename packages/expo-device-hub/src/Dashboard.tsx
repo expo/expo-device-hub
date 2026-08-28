@@ -21,9 +21,12 @@ import {
   type AddDeviceOutcome,
   type AddDeviceTarget,
   type Device,
+  type DeviceFrameAssets,
 } from '@expo/hub-components';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import pixelDeviceFrame from '../assets/device-frames/google-pixel-10-pro.png';
+import iphoneDeviceFrame from '../assets/device-frames/iphone-17-pro-silver.png';
 import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
 import { dashboardHideBootDevice } from './boot-device';
 import { basePath } from './dashboard/basePath';
@@ -62,6 +65,25 @@ function mergeById(base: Device[], extra: Device[]): Device[] {
 const MIN_SIDEBAR_WIDTH = 280;
 const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
+
+const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
+  pixel: {
+    src: String(pixelDeviceFrame),
+    width: 1250,
+    height: 2631,
+    screen: { x: 50, y: 48, width: 1138, height: 2532 },
+    screenRadius: 150,
+    screenSuperellipse: 1,
+  },
+  iphone: {
+    src: String(iphoneDeviceFrame),
+    width: 2620,
+    height: 5420,
+    screen: { x: 104, y: 88, width: 2412, height: 5244 },
+    screenRadius: 512,
+    screenSuperellipse: 1.57,
+  },
+};
 
 /**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
@@ -108,6 +130,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   );
   const streamMode = useDashboardStore((state) => state.streamMode);
   const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
+  const showDeviceFrame = useDashboardStore((state) => state.showDeviceFrame);
+  const setShowDeviceFrame = useDashboardStore((state) => state.setShowDeviceFrame);
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto'
   );
@@ -190,6 +214,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
             physical: false,
             booted: true,
             supported: target.device.supported,
+            deviceFrame: target.device.deviceFrame,
             lastUsedAt: Date.now(),
           }
         : { ...target.device, id: result.id, booted: true, lastUsedAt: Date.now() };
@@ -324,6 +349,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onShutdown={() => handleShutdown(selected)}
           onRemove={() => handleRemove(selected)}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
+          showDeviceFrame={showDeviceFrame}
+          deviceFrameAssets={DEVICE_FRAME_ASSETS}
         />
       ) : (
         <EmptyState platform={platform} />
@@ -353,7 +380,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         open={sidebars.rightDocked}
         sidebarOpen={sidebars.rightOpen}>
         <LogSidebar
+          device={selected}
           client={client}
+          showDeviceFrame={showDeviceFrame}
+          onShowDeviceFrameChange={setShowDeviceFrame}
           streamMode={streamMode}
           httpCodec={httpCodec}
           streamModeAvailability={selectedStreamModeAvailability}
@@ -394,7 +424,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         topmost={sidebars.lastOpened === 'right' || !sidebars.leftOverlay}
         onDismiss={sidebars.closeRight}>
         <LogSidebar
+          device={selected}
           client={client}
+          showDeviceFrame={showDeviceFrame}
+          onShowDeviceFrameChange={setShowDeviceFrame}
           streamMode={streamMode}
           httpCodec={httpCodec}
           streamModeAvailability={selectedStreamModeAvailability}

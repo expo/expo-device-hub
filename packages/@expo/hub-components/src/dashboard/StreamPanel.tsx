@@ -9,6 +9,7 @@ import {
 import { bg, border, radius, shadow } from '../primitives';
 import { type Device } from './data';
 import { DeviceTitle } from './DeviceTitle';
+import { type DeviceFrameAssets } from './deviceFrame';
 import { PhoneFrame } from './PhoneFrame';
 import { StreamControls } from './StreamControls';
 
@@ -47,6 +48,8 @@ export function StreamPanel({
   onShutdown,
   onRemove,
   framed = true,
+  showDeviceFrame = true,
+  deviceFrameAssets,
 }: {
   device: Device;
   client: DeviceClient;
@@ -64,6 +67,10 @@ export function StreamPanel({
    * layouts disable this so the center view reaches every viewport edge.
    */
   framed?: boolean;
+  /** Viewer-local preference for displaying supported device artwork. */
+  showDeviceFrame?: boolean;
+  /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
+  deviceFrameAssets?: DeviceFrameAssets;
 }) {
   return (
     <section
@@ -97,11 +104,13 @@ export function StreamPanel({
         }}>
         <DeviceTitle key={device.id} device={device} status={client.status} />
         <PhoneFrame
-          platform={device.platform}
+          device={device}
           client={client}
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
           displayScreen={displayScreen}
+          showDeviceFrame={showDeviceFrame}
+          deviceFrameAssets={deviceFrameAssets}
         />
       </div>
       <StreamControls

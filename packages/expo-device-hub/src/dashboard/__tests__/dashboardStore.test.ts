@@ -12,6 +12,7 @@ const iosDevice: Device = {
   booted: true,
   physical: false,
   supported: true,
+  deviceFrame: 'iphone',
 };
 
 afterEach(() => {
@@ -64,6 +65,14 @@ describe('dashboard store', () => {
     store.getState().chooseStreamMode('webrtc', { mjpeg: true, h264: false, webrtc: false });
 
     expect(store.getState().streamMode).toBe('mjpeg');
+  });
+
+  test('shows supported device frames by default and keeps the viewer toggle', () => {
+    const store = createDashboardStore();
+
+    expect(store.getState().showDeviceFrame).toBe(true);
+    store.getState().setShowDeviceFrame(false);
+    expect(store.getState().showDeviceFrame).toBe(false);
   });
 
   test('owns sidebar sizing and explicit open/close intent', () => {

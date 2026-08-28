@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useId, useState } from 'react';
 
 import { type DeviceClient, type DeviceSettingKey } from '@expo/hub-client';
 import { SegmentedControl } from '../primitives';
@@ -78,12 +78,30 @@ const SETTING_ORDER: ReadonlyArray<DeviceSettingKey> = [
 
 const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
+export const NO_DEVICE_FRAME_DESCRIPTION = 'No device frame for selected device.';
+
+export type DeviceFrameOption = {
+  available: boolean;
+  visible: boolean;
+  onVisibleChange: (visible: boolean) => void;
+};
+
 /**
  * Device-wide appearance, connectivity, and accessibility settings, plus iOS
- * keyboard controls.
+ * keyboard controls and the viewer-local device frame option.
  */
-export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
+export function DeviceOptionsSection({
+  client,
+  deviceFrame,
+  showDeviceSettings = true,
+}: {
+  client?: DeviceClient;
+  deviceFrame?: DeviceFrameOption;
+  /** Whether backend-controlled appearance and accessibility settings are available. */
+  showDeviceSettings?: boolean;
+}) {
   const [open, setOpen] = useState(true);
+  const unavailableFrameDescriptionId = useId();
   const settings = client?.deviceSettings ?? null;
   const pending = client?.deviceSettingsPending ?? EMPTY_PENDING_SETTINGS;
   const platform = client?.platform;
@@ -109,8 +127,9 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
     if (settings !== null && !pending.has(key)) client?.setDeviceSetting(key, nextValue);
   }
 
-  const keyboardVisible = client?.platform === 'ios';
-  const visibleSettingKeys = SETTING_ORDER.filter(visible);
+  const keyboardVisible = showDeviceSettings && client?.platform === 'ios';
+  const visibleSettingKeys = showDeviceSettings ? SETTING_ORDER.filter(visible) : [];
+  const frameHasFollowingRow = visibleSettingKeys.length > 0 || keyboardVisible;
 
   function hasFollowingRow(key: DeviceSettingKey) {
     return keyboardVisible || visibleSettingKeys.at(-1) !== key;
@@ -118,7 +137,23 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
-      {visible('appearance') && (
+      {deviceFrame && (
+        <SidebarRow
+          label="Show device frame"
+          description={deviceFrame.available ? undefined : NO_DEVICE_FRAME_DESCRIPTION}
+          descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
+          borderBottom={frameHasFollowingRow}>
+          <SidebarSwitch
+            checked={deviceFrame.available && deviceFrame.visible}
+            disabled={!deviceFrame.available}
+            label="Show device frame"
+            descriptionId={deviceFrame.available ? undefined : unavailableFrameDescriptionId}
+            onChange={deviceFrame.onVisibleChange}
+          />
+        </SidebarRow>
+      )}
+
+      {showDeviceSettings && visible('appearance') && (
         <SidebarRow compact label="Appearance" borderBottom={hasFollowingRow('appearance')}>
           <SegmentedControl
             ariaLabel="Appearance"
@@ -129,7 +164,7 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
         </SidebarRow>
       )}
 
-      {platform === 'ios' && visible('liquid-glass') && (
+      {showDeviceSettings && platform === 'ios' && visible('liquid-glass') && (
         <SidebarRow compact label="Liquid glass" borderBottom={hasFollowingRow('liquid-glass')}>
           <SegmentedControl
             ariaLabel="Liquid glass"
@@ -140,7 +175,7 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
         </SidebarRow>
       )}
 
-      {platform === 'ios' && visible('color-filter') && (
+      {showDeviceSettings && platform === 'ios' && visible('color-filter') && (
         <SidebarRow compact label="Color filter" borderBottom={hasFollowingRow('color-filter')}>
           <SegmentedControl
             ariaLabel="Color filter"
@@ -151,7 +186,7 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
         </SidebarRow>
       )}
 
-      {platform === 'android' && visible('network') && (
+      {showDeviceSettings && platform === 'android' && visible('network') && (
         <SidebarRow compact label="Network" borderBottom={hasFollowingRow('network')}>
           <SegmentedControl
             ariaLabel="Network"
@@ -162,21 +197,24 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
         </SidebarRow>
       )}
 
-      {(platform === 'ios' || platform === 'android') && visible('text-size') && (
-        <SidebarRow compact label="Text size" borderBottom={hasFollowingRow('text-size')}>
-          <SegmentedControl
-            ariaLabel="Text size"
-            options={pillOptions(
-              'text-size',
-              platform === 'android' ? ANDROID_TEXT_SIZE_OPTIONS : TEXT_SIZE_OPTIONS,
-            )}
-            value={value('text-size')}
-            onChange={(nextValue) => setValue('text-size', nextValue)}
-          />
-        </SidebarRow>
-      )}
+      {showDeviceSettings &&
+        (platform === 'ios' || platform === 'android') &&
+        visible('text-size') && (
+          <SidebarRow compact label="Text size" borderBottom={hasFollowingRow('text-size')}>
+            <SegmentedControl
+              ariaLabel="Text size"
+              options={pillOptions(
+                'text-size',
+                platform === 'android' ? ANDROID_TEXT_SIZE_OPTIONS : TEXT_SIZE_OPTIONS,
+              )}
+              value={value('text-size')}
+              onChange={(nextValue) => setValue('text-size', nextValue)}
+            />
+          </SidebarRow>
+        )}
 
-      {platform === 'ios' &&
+      {showDeviceSettings &&
+        platform === 'ios' &&
         SWITCH_OPTIONS.map(({ key, label }) =>
           visible(key) ? (
             <SidebarRow key={key} label={label} borderBottom={hasFollowingRow(key)}>
@@ -190,7 +228,7 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
           ) : null,
         )}
 
-      {client?.platform === 'ios' && <KeyboardSection client={client} />}
+      {keyboardVisible && client && <KeyboardSection client={client} />}
     </CollapsibleSection>
   );
 }

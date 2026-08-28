@@ -1,5 +1,6 @@
 import { expect, test } from 'bun:test';
 import { type DeviceClient, type DevicePlatform } from '@expo/hub-client';
+import { type Device, NO_DEVICE_FRAME_DESCRIPTION } from '@expo/hub-components';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
@@ -88,6 +89,20 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     hardwareKeyboardConnected: ios,
     setHardwareKeyboardConnected: () => {},
     toggleSoftwareKeyboard: () => {},
+  };
+}
+
+function device(platform: DevicePlatform, deviceFrame: Device['deviceFrame']): Device {
+  return {
+    id: `${platform}-device`,
+    name:
+      deviceFrame === 'iphone' ? 'iPhone 17 Pro' : deviceFrame === 'pixel' ? 'Pixel 10' : 'Other',
+    version: platform === 'ios' ? 'iOS 27.0' : 'Android 17.0',
+    platform,
+    booted: true,
+    physical: false,
+    supported: deviceFrame !== null,
+    deviceFrame,
   };
 }
 
@@ -301,4 +316,87 @@ test('disables only the device setting with an in-flight update', () => {
   expect(segmentedControlMarkup(html, 'Appearance').match(/disabled=""/g)).toHaveLength(2);
   expect(segmentedControlMarkup(html, 'Liquid glass')).not.toContain('disabled=""');
   expect(switchMarkup(html, 'Reduce motion')).not.toContain('disabled=""');
+});
+
+test('shows an enabled viewer-local frame switch for iPhones and Pixels', () => {
+  for (const [platform, frame] of [
+    ['ios', 'iphone'],
+    ['android', 'pixel'],
+  ] as const) {
+    const onMarkup = renderToStaticMarkup(
+      <LogSidebar
+        client={inspectorClient(platform)}
+        device={device(platform, frame)}
+        showDeviceFrame
+        onShowDeviceFrameChange={() => {}}
+      />,
+    );
+    const offMarkup = renderToStaticMarkup(
+      <LogSidebar
+        client={inspectorClient(platform)}
+        device={device(platform, frame)}
+        showDeviceFrame={false}
+        onShowDeviceFrameChange={() => {}}
+      />,
+    );
+
+    expect(switchMarkup(onMarkup, 'Show device frame')).toContain('aria-checked="true"');
+    expect(switchMarkup(onMarkup, 'Show device frame')).not.toContain('disabled=""');
+    expect(switchMarkup(offMarkup, 'Show device frame')).toContain('aria-checked="false"');
+    expect(switchMarkup(offMarkup, 'Show device frame')).not.toContain('disabled=""');
+  }
+});
+
+test('keeps the frame option disabled with an explanation for unsupported devices', () => {
+  for (const platform of ['ios', 'android'] as const) {
+    const client = {
+      ...inspectorClient(platform),
+      capabilities: {
+        deviceSettings: false,
+        activity: false,
+        events: true,
+        streamSettings: false,
+      },
+    };
+    const html = renderToStaticMarkup(
+      <LogSidebar
+        client={client}
+        device={device(platform, null)}
+        showDeviceFrame
+        onShowDeviceFrameChange={() => {}}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Device options"');
+    expect(switchMarkup(html, 'Show device frame')).toContain('aria-checked="false"');
+    expect(switchMarkup(html, 'Show device frame')).toContain('disabled=""');
+    expect(html).toContain(NO_DEVICE_FRAME_DESCRIPTION);
+    expect(html).not.toContain('>Appearance</span>');
+  }
+});
+
+test('shows only the viewer-local frame option while iOS device settings are unavailable', () => {
+  const client = {
+    ...inspectorClient('ios'),
+    capabilities: {
+      deviceSettings: false,
+      activity: false,
+      events: true,
+      streamSettings: false,
+    },
+    deviceSettings: null,
+  };
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={client}
+      device={device('ios', 'iphone')}
+      showDeviceFrame
+      onShowDeviceFrameChange={() => {}}
+    />,
+  );
+
+  expect(switchMarkup(html, 'Show device frame')).not.toContain('disabled=""');
+  expect(html).not.toContain('>Appearance</span>');
+  expect(html).not.toContain('>Liquid glass</span>');
+  expect(html).not.toContain('>Keyboard</span>');
 });

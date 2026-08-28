@@ -18,12 +18,16 @@ describe('appleRuntimesToOptions', () => {
         {
           value: 'ios-18',
           label: 'iOS 18.0',
-          models: [{ value: 'iPhone-16', label: 'iPhone 16', supported: true }],
+          models: [
+            { value: 'iPhone-16', label: 'iPhone 16', supported: true, deviceFrame: 'iphone' },
+          ],
         },
         {
           value: 'ios-17',
           label: 'iOS 17.0',
-          models: [{ value: 'iPhone-16', label: 'iPhone 16', supported: true }],
+          models: [
+            { value: 'iPhone-16', label: 'iPhone 16', supported: true, deviceFrame: 'iphone' },
+          ],
         },
       ],
     });
@@ -47,20 +51,31 @@ describe('androidImagesToOptions', () => {
           value: 'system-images;android-35;google_apis_playstore;arm64-v8a',
           label: 'Android 35 · Google Play · arm64-v8a',
           models: [
-            { value: 'pixel_8', label: 'Pixel 8', supported: true },
-            { value: 'pixel_9', label: 'Pixel 9', supported: true },
+            { value: 'pixel_8', label: 'Pixel 8', supported: true, deviceFrame: 'pixel' },
+            { value: 'pixel_9', label: 'Pixel 9', supported: true, deviceFrame: 'pixel' },
           ],
         },
         {
           value: 'system-images;android-34;google_apis;arm64-v8a',
           label: 'Android 34 · Google APIs · arm64-v8a',
           models: [
-            { value: 'pixel_8', label: 'Pixel 8', supported: true },
-            { value: 'pixel_9', label: 'Pixel 9', supported: true },
+            { value: 'pixel_8', label: 'Pixel 8', supported: true, deviceFrame: 'pixel' },
+            { value: 'pixel_9', label: 'Pixel 9', supported: true, deviceFrame: 'pixel' },
           ],
         },
       ],
     });
+  });
+
+  test('keeps Pixel frame eligibility independent from the supported-phone policy', () => {
+    const models = androidImagesToOptions(
+      [androidImage('android-36', 'google_apis', 'arm64-v8a')],
+      [{ id: 'pixel_fold', index: 0, name: 'Pixel Fold', oem: 'Google', tag: null }],
+    ).runtimes[0]?.models;
+
+    expect(models).toEqual([
+      { value: 'pixel_fold', label: 'Pixel Fold', supported: false, deviceFrame: 'pixel' },
+    ]);
   });
 
   test('pairs mobile and specialized images with compatible profile tags', () => {

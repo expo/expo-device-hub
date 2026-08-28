@@ -20,6 +20,7 @@ type DashboardStoreValues = {
   sidebarPreferences: Record<SidebarSide, SidebarPreference>;
   lastOpenedSidebar: SidebarSide;
   hideUnsupportedDevices: boolean;
+  showDeviceFrame: boolean;
 };
 
 export type DashboardStore = DashboardStoreValues & {
@@ -32,6 +33,7 @@ export type DashboardStore = DashboardStoreValues & {
   openSidebar: (side: SidebarSide, canDock: boolean) => void;
   closeSidebar: (side: SidebarSide) => void;
   setHideUnsupportedDevices: (hide: boolean) => void;
+  setShowDeviceFrame: (show: boolean) => void;
 };
 
 type ReadableStorage = Pick<Storage, 'getItem'>;
@@ -79,6 +81,7 @@ function defaultDashboardStoreValues(): DashboardStoreValues {
     },
     lastOpenedSidebar: 'right',
     hideUnsupportedDevices: initialHideUnsupportedDevices(),
+    showDeviceFrame: true,
   };
 }
 
@@ -123,6 +126,7 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
         sidebarPreferences: { ...state.sidebarPreferences, [side]: 'hidden' },
       })),
     setHideUnsupportedDevices: (hideUnsupportedDevices) => set({ hideUnsupportedDevices }),
+    setShowDeviceFrame: (showDeviceFrame) => set({ showDeviceFrame }),
   }));
 }
 
