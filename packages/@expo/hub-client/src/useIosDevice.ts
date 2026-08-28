@@ -45,6 +45,7 @@ import {
   mergeIosEventLogPayload,
 } from './ios-events';
 import { type ExecResult, getIosAppDetails } from './ios-app-details';
+import { fetchIosScreenshot } from './ios-screenshot';
 import { hidUsageForCode } from './keyboard';
 import {
   type ConnectionStatus,
@@ -550,15 +551,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const screenshot = useCallback(async (): Promise<Blob | null> => {
     if (!baseUrl) return null;
     const udid = config?.device ?? targetDevice;
-    const base = baseUrl.replace(/\/$/, '');
-    const url = `${base}/api/screenshot${udid ? `?device=${encodeURIComponent(udid)}` : ''}`;
-    try {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) return null;
-      return await res.blob();
-    } catch {
-      return null;
-    }
+    return fetchIosScreenshot(baseUrl, udid);
   }, [baseUrl, targetDevice, config]);
 
   // Apply any serve-sim UI option over its authenticated exec-ws request

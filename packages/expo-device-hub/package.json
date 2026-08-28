@@ -36,6 +36,7 @@
     "vendor/serve-sim/dist/native",
     "vendor/serve-sim/dist/bin",
     "vendor/serve-sim/LICENSE",
+    "vendor/serve-sim/NOTICE",
     "vendor/serve-emu/dist/*.js",
     "vendor/serve-emu/vendor",
     "vendor/serve-emu/LICENSE",
