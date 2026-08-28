@@ -8,8 +8,22 @@ import {
   type DeviceStreamMode,
   type DeviceWebRtcCodec,
 } from '@expo/hub-client';
-import { SegmentedControl, Select, type SelectOption, text, textSize } from '../primitives';
+import {
+  SegmentedControl,
+  Select,
+  type SelectOption,
+  bg,
+  border,
+  radius,
+  text,
+  textSize,
+} from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
+import {
+  MetricChart,
+  type MetricChartSeries,
+  maxChartValue,
+} from './MetricChart';
 import { SidebarRow } from './SidebarRow';
 import { type StreamModeAvailability } from './StreamSection';
 
@@ -90,6 +104,9 @@ const BITRATE_OPTIONS: SelectOption[] = [
   { value: '16000000', label: '16 Mbps' },
 ];
 
+const MAX_STATS_SAMPLES = 60;
+const UNAVAILABLE_VALUE = '—';
+
 function withCurrentValue(
   value: number,
   options: SelectOption[],
@@ -99,6 +116,169 @@ function withCurrentValue(
   return options.some((option) => option.value === current)
     ? options
     : [{ value: current, label: label(value) }, ...options];
+}
+
+function formatFps(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return UNAVAILABLE_VALUE;
+  const safeValue = Math.max(0, value);
+  return `${safeValue < 10 ? safeValue.toFixed(1) : safeValue.toFixed(0)} FPS`;
+}
+
+function formatBitrate(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return UNAVAILABLE_VALUE;
+  const safeValue = Math.max(0, value);
+  if (safeValue < 1_000_000) return `${(safeValue / 1_000).toFixed(0)} kbps`;
+  return `${(safeValue / 1_000_000).toFixed(2)} Mbps`;
+}
+
+function StreamStatisticRow({ label, value }: { label: string; value: string }) {
+  return (
+    <tr style={{ borderTop: `1px solid ${border.secondary}` }}>
+      <th
+        scope="row"
+        style={{
+          ...textSize.xs,
+          padding: '6px 8px',
+          color: text.secondary,
+          fontWeight: 400,
+          textAlign: 'left',
+        }}
+      >
+        {label}
+      </th>
+      <td
+        style={{
+          ...textSize.xs,
+          padding: '6px 8px',
+          color: text.default,
+          fontWeight: 500,
+          fontVariantNumeric: 'tabular-nums',
+          textAlign: 'right',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        {value}
+      </td>
+    </tr>
+  );
+}
+
+function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
+  const samples = stats?.samples.slice(-MAX_STATS_SAMPLES) ?? [];
+  const latest = samples.at(-1) ?? null;
+  const hasClientMeasurement = samples.some(
+    (sample) => sample.clientFps !== null || sample.clientBitrateBps !== null,
+  );
+  const clientFpsSeries: MetricChartSeries[] = [
+    {
+      label: 'Client FPS',
+      color: text.info,
+      values: samples.flatMap((sample) =>
+        sample.clientFps === null ? [] : [sample.clientFps],
+      ),
+    },
+  ];
+  const clientBitrateSeries: MetricChartSeries[] = [
+    {
+      label: 'Client bitrate',
+      color: text.preview,
+      values: samples.flatMap((sample) =>
+        sample.clientBitrateBps === null ? [] : [sample.clientBitrateBps],
+      ),
+    },
+  ];
+
+  const message = stats?.stale
+    ? 'Stream statistics are paused. Showing the most recent samples.'
+    : hasClientMeasurement
+      ? null
+      : 'Measuring WebRTC stream…';
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        minWidth: 0,
+        flexDirection: 'column',
+        gap: 8,
+        paddingTop: 8,
+      }}
+    >
+      {message && (
+        <span role="status" style={{ ...textSize.xs, color: text.tertiary }}>
+          {message}
+        </span>
+      )}
+      <table
+        aria-label="WebRTC stream statistics"
+        style={{
+          width: '100%',
+          tableLayout: 'fixed',
+          borderCollapse: 'separate',
+          borderSpacing: 0,
+          overflow: 'hidden',
+          border: `1px solid ${border.secondary}`,
+          borderRadius: radius.md,
+          backgroundColor: bg.subtle,
+        }}
+      >
+        <thead>
+          <tr>
+            <th
+              scope="col"
+              style={{
+                ...textSize['2xs'],
+                padding: '6px 8px',
+                color: text.tertiary,
+                fontWeight: 500,
+                textAlign: 'left',
+              }}
+            >
+              Metric
+            </th>
+            <th
+              scope="col"
+              style={{
+                ...textSize['2xs'],
+                padding: '6px 8px',
+                color: text.tertiary,
+                fontWeight: 500,
+                textAlign: 'right',
+              }}
+            >
+              Current
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <StreamStatisticRow label="Server FPS" value={formatFps(latest?.serverFps ?? null)} />
+          <StreamStatisticRow label="Client FPS" value={formatFps(latest?.clientFps ?? null)} />
+          <StreamStatisticRow
+            label="Client bitrate"
+            value={formatBitrate(latest?.clientBitrateBps ?? null)}
+          />
+        </tbody>
+      </table>
+      {latest && hasClientMeasurement && (
+        <>
+          <MetricChart
+            title="Client FPS"
+            value={formatFps(latest.clientFps)}
+            description="Last 60 samples"
+            series={clientFpsSeries}
+            maxValue={maxChartValue(clientFpsSeries)}
+          />
+          <MetricChart
+            title="Client bitrate"
+            value={formatBitrate(latest.clientBitrateBps)}
+            description="Last 60 samples"
+            series={clientBitrateSeries}
+            maxValue={maxChartValue(clientBitrateSeries)}
+          />
+        </>
+      )}
+    </div>
+  );
 }
 
 /** Viewer transport, backend-supported codecs, and optional runtime encoder controls. */
@@ -228,7 +408,10 @@ export function StreamOptionsSection({
         </SidebarRow>
       )}
       {webRtcCodecOptions.length > 0 && (
-        <SidebarRow label="WebRTC codec" borderBottom={client.capabilities.streamSettings}>
+        <SidebarRow
+          label="WebRTC codec"
+          borderBottom={client.capabilities.streamSettings || transport === 'webrtc'}
+        >
           <SegmentedControl
             ariaLabel="WebRTC codec"
             options={webRtcCodecOptions.map((option) => ({
@@ -300,7 +483,7 @@ export function StreamOptionsSection({
               onChange={(value) => patchSetting('h264Fps', Number(value))}
             />
           </SidebarRow>
-          <SidebarRow label="Video bitrate" borderBottom={false}>
+          <SidebarRow label="Video bitrate" borderBottom={transport === 'webrtc'}>
             <Select
               ariaLabel="Video bitrate"
               value={String(settings.h264Bitrate)}
@@ -315,6 +498,7 @@ export function StreamOptionsSection({
           </SidebarRow>
         </>
       )}
+      {transport === 'webrtc' && <StreamStatistics stats={client.streamStats} />}
     </CollapsibleSection>
   );
 }

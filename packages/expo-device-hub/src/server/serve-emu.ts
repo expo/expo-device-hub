@@ -7,12 +7,29 @@ import {
   serveEmuWebSocketOptions,
 } from './serve-emu-options';
 import { handleServeEmuDeviceOptionRequest } from './serve-emu-device-options';
+import {
+  handleServeEmuStreamStatsRequest,
+  SERVE_EMU_STREAM_STATS_PATH,
+} from './serve-emu-stream-stats';
 
 export const EMU_PREFIX = '/vendor/serve-emu';
 
 const router = createRouter(readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]));
+type ActiveEmuApp = {
+  handleRequest: (request: Request) => Promise<Response>;
+  health: () => { frames: number; sourceFps: number };
+  isStreaming: () => boolean;
+};
+const activeApps = new Map<string, ActiveEmuApp>();
+
+async function ensureEmu(requested: string | null): Promise<{ serial: string; app: ActiveEmuApp }> {
+  const resolved = await router.ensure(requested);
+  activeApps.set(resolved.serial, resolved.app);
+  return resolved;
+}
 
 function stopAll(): void {
+  activeApps.clear();
   try {
     router.stopAll();
   } catch {}
@@ -26,9 +43,26 @@ export function handleEmuRequest(request: Request): Promise<Response> {
   const rest = `${url.pathname.slice(EMU_PREFIX.length) || '/'}${url.search}`;
   const forwarded = new Request(`${url.origin}${rest}`, request);
   const pathname = new URL(forwarded.url).pathname;
+  if (pathname === SERVE_EMU_STREAM_STATS_PATH) {
+    return handleServeEmuStreamStatsRequest(forwarded, async () => {
+      const serial = router.resolveSerial(url.searchParams.get('device'));
+      const app = activeApps.get(serial);
+      if (!app?.isStreaming()) throw new Error('No active serve-emu stream');
+      return app.health();
+    });
+  }
+  if (pathname === '/webrtc/offer' || pathname === '/webrtc/close') {
+    return ensureEmu(url.searchParams.get('device'))
+      .then(({ app }) => app.handleRequest(forwarded))
+      .catch((error) =>
+        Response.json(
+          { ok: false, error: error instanceof Error ? error.message : String(error) },
+          { status: 503 },
+        ),
+      );
+  }
   if (pathname === '/api/network' || pathname === '/api/font-scale') {
-    return router
-      .ensure(url.searchParams.get('device'))
+    return ensureEmu(url.searchParams.get('device'))
       .then(async ({ serial }) =>
         (await handleServeEmuDeviceOptionRequest(forwarded, serial)) ??
         new Response('not found', { status: 404 }),
@@ -47,7 +81,7 @@ async function attachEmuSocket(socket: WsWebSocketLike, request: Request): Promi
   const url = new URL(request.url);
   let serial: string;
   try {
-    serial = (await router.ensure(url.searchParams.get('device'))).serial;
+    serial = (await ensureEmu(url.searchParams.get('device'))).serial;
   } catch {
     try {
       socket.close();

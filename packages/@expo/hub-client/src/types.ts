@@ -146,6 +146,24 @@ export interface DeviceStreamEncoderSettings {
   h264Fps: number;
 }
 
+/** One WebRTC telemetry sample, normally collected once per second. */
+export interface DeviceStreamStatsSample {
+  atMs: number;
+  /** Frames produced by the active backend WebRTC source/encoder. */
+  serverFps: number | null;
+  /** Video frames actually presented by the browser. */
+  clientFps: number | null;
+  /** Actual inbound video media bitrate, derived from `bytesReceived`. */
+  clientBitrateBps: number | null;
+}
+
+/** Bounded WebRTC telemetry history owned by the device connection. */
+export interface DeviceStreamStats {
+  samples: readonly DeviceStreamStatsSample[];
+  /** True when the peer has not produced a successful sample for four seconds. */
+  stale: boolean;
+}
+
 /** Explicit backend feature flags used to omit unsupported inspector sections and controls. */
 export interface DeviceCapabilities {
   deviceSettings: boolean;
@@ -333,6 +351,8 @@ export interface DeviceClient {
   streamSettingsPending: boolean;
   /** Patch one or more runtime encoder values. */
   updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => void;
+  /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */
+  streamStats: DeviceStreamStats | null;
   /** Requested WebRTC codec for this viewer. */
   webRtcCodec: DeviceWebRtcCodec;
   setWebRtcCodec: (codec: DeviceWebRtcCodec) => void;
