@@ -41,7 +41,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           'reduce-transparency': 'off',
           voiceover: 'off',
         }
-      : { appearance: 'light' },
+      : { appearance: 'light', network: 'on', 'text-size': 'medium' },
     deviceSettingsPending: new Set(),
     setDeviceSetting: () => {},
     streamCapabilities: ios
@@ -145,6 +145,7 @@ test('renders every supported iOS inspector section and option', () => {
   ]) {
     expect(html).toContain(label);
   }
+  expect(html).not.toContain('>Network<');
   expect(html.match(/aria-expanded="true"/g)?.length).toBe(1);
   expect(html.match(/aria-expanded="false"/g)?.length).toBe(4);
 });
@@ -152,7 +153,15 @@ test('renders every supported iOS inspector section and option', () => {
 test('renders Android stream options while omitting unsupported and iOS-only sections', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
-  for (const label of ['Device options', 'Events', 'Stream options', 'Logs', 'Appearance']) {
+  for (const label of [
+    'Device options',
+    'Events',
+    'Stream options',
+    'Logs',
+    'Appearance',
+    'Network',
+    'Text size',
+  ]) {
     expect(html).toContain(label);
   }
   for (const label of ['Activity', 'Liquid glass', 'VoiceOver']) {
@@ -236,6 +245,24 @@ test('uses the shared stream-pill spacing for every device option', () => {
   }
 });
 
+test('maps Android device options onto Network and S–XL controls', () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+  const network = segmentedControlMarkup(html, 'Network');
+  const textSize = segmentedControlMarkup(html, 'Text size');
+
+  expect(network).toContain('>On</button>');
+  expect(network).toContain('>Off</button>');
+  expect(network).toMatch(/<button[^>]*aria-pressed="true"[^>]*>On<\/button>/);
+  expect(textSize).toContain('>S</button>');
+  expect(textSize).toContain('>M</button>');
+  expect(textSize).toContain('>L</button>');
+  expect(textSize).toContain('>XL</button>');
+  expect(textSize).not.toContain('>XS</button>');
+  expect(textSize).not.toContain('>2XL</button>');
+  expect(textSize.match(/padding:0 8px/g)).toHaveLength(4);
+  expect(textSize).toMatch(/<button[^>]*aria-pressed="true"[^>]*>M<\/button>/);
+});
+
 test('keeps keyboard controls in the device options list and omits only its final divider', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
 
@@ -247,7 +274,21 @@ test('keeps keyboard controls in the device options list and omits only its fina
 test('omits the final device option divider when no keyboard controls follow', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
-  expect(rowOpeningTag(html, 'Appearance')).not.toContain('border-bottom:');
+  expect(rowOpeningTag(html, 'Appearance')).toContain('border-bottom:');
+  expect(rowOpeningTag(html, 'Network')).toContain('border-bottom:');
+  expect(rowOpeningTag(html, 'Text size')).not.toContain('border-bottom:');
+});
+
+test('disables only the pending Android device setting', () => {
+  const client = {
+    ...inspectorClient('android'),
+    deviceSettingsPending: new Set(['network'] as const),
+  };
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  expect(segmentedControlMarkup(html, 'Network').match(/disabled=""/g)).toHaveLength(2);
+  expect(segmentedControlMarkup(html, 'Appearance')).not.toContain('disabled=""');
+  expect(segmentedControlMarkup(html, 'Text size')).not.toContain('disabled=""');
 });
 
 test('disables only the device setting with an in-flight update', () => {

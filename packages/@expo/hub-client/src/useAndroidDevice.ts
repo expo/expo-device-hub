@@ -16,9 +16,8 @@
  *     (device-agnostic — never carries `?device=`).
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
@@ -26,6 +25,17 @@ import {
   mergeAndroidEventSnapshotCursor,
   reconcileAndroidSessionEvents,
 } from './android-events';
+import {
+  type AndroidDeviceSettingKey,
+  androidDeviceSettingPath,
+  androidDeviceSettingRequest,
+  parseAndroidDeviceSetting,
+} from './android-device-settings';
+import {
+  DeviceSettingWriteTracker,
+  mergeAuthoritativeDeviceSetting,
+} from './device-setting-writes';
+import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
 import { androidMessageForKeyboardInput } from './keyboard';
 import { MsePlayer } from './mse-player';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
@@ -37,6 +47,7 @@ import {
   type DeviceEvent,
   type DeviceLog,
   type DeviceSettingKey,
+  type DeviceSettings,
   type ForegroundApp,
   type HardwareButton,
   type KeyboardInput,
@@ -51,6 +62,17 @@ const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 const FOREGROUND_POLL_MS = 5000;
 const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
+const DEVICE_SETTINGS_POLL_MS = 3000;
+
+const ANDROID_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = [
+  'appearance',
+  'network',
+  'text-size',
+];
+const ANDROID_POLLED_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = [
+  'network',
+  'text-size',
+];
 
 const KEYCODE_R = 46;
 
@@ -177,6 +199,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   // The device's system dark/light setting. null until `/api/uimode` reports it.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
+  const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
   const [deviceSettingsPending, setDeviceSettingsPending] = useState<
     ReadonlySet<DeviceSettingKey>
   >(() => new Set());
@@ -196,8 +219,17 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const logSeqRef = useRef(0);
   // Clear is viewer-local so it does not erase serve-emu's replayable session.
   const eventCursorRef = useRef(createAndroidEventCursor());
-  const appearanceRequestRef = useRef(0);
-  const appearancePendingRef = useRef(false);
+  const deviceSettingWriteTrackerRef = useRef(new DeviceSettingWriteTracker());
+  const deviceSettingVersionsRef = useRef<Record<AndroidDeviceSettingKey, number>>({
+    appearance: 0,
+    network: 0,
+    'text-size': 0,
+  });
+  const deviceSettingScope = `${active ? 'active' : 'inactive'}\0${baseUrl ?? ''}\0${targetDevice ?? ''}`;
+  const deviceSettingScopeRef = useRef(deviceSettingScope);
+  useLayoutEffect(() => {
+    deviceSettingScopeRef.current = deviceSettingScope;
+  }, [deviceSettingScope]);
 
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
@@ -290,65 +322,79 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     }
   }, [baseUrl, targetDevice]);
 
-  // Toggle the emulator's system dark theme via `/api/uimode` (POST
-  // `adb shell cmd uimode night yes|no` — Hub only ever sets the binary modes,
-  // never `auto`). Reflect the choice optimistically, then confirm or refresh
-  // the authoritative value if serve-emu rejects the request.
-  const setAppearance = useCallback(
-    (mode: DeviceAppearance) => {
-      if (!baseUrl || appearancePendingRef.current) return;
-      const previous = appearance;
-      const request = ++appearanceRequestRef.current;
-      appearancePendingRef.current = true;
-      setAppearanceState(mode);
-      setDeviceSettingsPending(new Set(['appearance']));
-      const url = `${apiUrl(baseUrl, '/api/uimode')}${
-        targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
-      }`;
+  // Device-wide options use the same GET/POST contracts as serve-emu's own UI.
+  // Writes are optimistic and independently serialized by key; a failed write
+  // refreshes only that key so concurrent changes cannot roll each other back.
+  const setDeviceSetting = useCallback(
+    (key: DeviceSettingKey, value: string) => {
+      if (!baseUrl) return;
+      const requestOptions = androidDeviceSettingRequest(key, value);
+      if (!requestOptions) return;
+      const settingKey = key as AndroidDeviceSettingKey;
+      const tracker = deviceSettingWriteTrackerRef.current;
+      const request = tracker.start(key);
+      if (!request) return;
+      deviceSettingVersionsRef.current[settingKey]++;
+      const scope = deviceSettingScope;
+      const previous = deviceSettings?.[key];
+      const url = deviceApiUrl(baseUrl, requestOptions.path, targetDevice);
+
+      setDeviceSettingsPending(tracker.pending);
+      setDeviceSettings((current) => ({ ...(current ?? {}), [key]: value }));
+      if (key === 'appearance') setAppearanceState(value as DeviceAppearance);
+
       void fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ night: mode === 'dark' ? 'yes' : 'no' }),
+        body: JSON.stringify(requestOptions.body),
       })
         .then(async (response) => {
-          if (!response.ok) throw new Error(`Appearance update failed (${response.status})`);
-          const data = (await response.json()) as { ok?: boolean; night?: string };
-          if (!data.ok) throw new Error('Appearance update was rejected');
-          if (appearanceRequestRef.current === request) {
-            setAppearanceState(data.night === 'yes' ? 'dark' : 'light');
-          }
+          if (!response.ok) throw new Error(`Device option update failed (${response.status})`);
+          const payload: unknown = await response.json();
+          const authoritative = parseAndroidDeviceSetting(settingKey, payload);
+          if (authoritative === null) throw new Error('Device option update was rejected');
+          if (!tracker.isCurrent(request) || deviceSettingScopeRef.current !== scope) return;
+          setDeviceSettings((current) => ({ ...(current ?? {}), [key]: authoritative }));
+          if (key === 'appearance') setAppearanceState(authoritative as DeviceAppearance);
         })
         .catch(async () => {
-          if (appearanceRequestRef.current !== request) return;
+          if (!tracker.isCurrent(request) || deviceSettingScopeRef.current !== scope) return;
+          let authoritative: string | null = null;
           try {
             const response = await fetch(url, { cache: 'no-store' });
-            if (!response.ok) throw new Error('Appearance refresh failed');
-            const data = (await response.json()) as { ok?: boolean; night?: string };
-            if (!data.ok) throw new Error('Appearance refresh was rejected');
-            if (appearanceRequestRef.current === request) {
-              setAppearanceState(data.night === 'yes' ? 'dark' : 'light');
-            }
+            if (!response.ok) throw new Error('Device option refresh failed');
+            authoritative = parseAndroidDeviceSetting(
+              settingKey,
+              await response.json(),
+            );
           } catch {
-            if (appearanceRequestRef.current === request) setAppearanceState(previous);
+            // Restore the last rendered value if both write and refresh fail.
+            authoritative = previous ?? null;
+          }
+          if (!tracker.isCurrent(request) || deviceSettingScopeRef.current !== scope) return;
+          setDeviceSettings((current) =>
+            mergeAuthoritativeDeviceSetting(
+              current,
+              key,
+              authoritative === null ? {} : { [key]: authoritative },
+            ),
+          );
+          if (key === 'appearance') {
+            setAppearanceState(
+              authoritative === 'light' || authoritative === 'dark' ? authoritative : null,
+            );
           }
         })
         .finally(() => {
-          if (appearanceRequestRef.current === request) {
-            appearancePendingRef.current = false;
-            setDeviceSettingsPending(new Set());
-          }
+          if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [appearance, baseUrl, targetDevice],
+    [baseUrl, deviceSettingScope, deviceSettings, targetDevice],
   );
 
-  const setDeviceSetting = useCallback(
-    (key: DeviceSettingKey, value: string) => {
-      if (key === 'appearance' && (value === 'light' || value === 'dark')) {
-        setAppearance(value);
-      }
-    },
-    [setAppearance],
+  const setAppearance = useCallback(
+    (mode: DeviceAppearance) => setDeviceSetting('appearance', mode),
+    [setDeviceSetting],
   );
 
   // ── Stream metadata ──
@@ -1071,34 +1117,96 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, targetDevice]);
 
-  // ── Current appearance (best-effort) — reflect the device's dark/light mode ──
+  // ── Device options (best-effort) ──
+  // Keep Hub in sync with changes made on-device or through serve-emu's own UI.
+  // Polling also makes network's aggregate wifi/data state authoritative.
   useEffect(() => {
-    const request = ++appearanceRequestRef.current;
-    appearancePendingRef.current = false;
+    const tracker = deviceSettingWriteTrackerRef.current;
+    tracker.reset();
+    for (const key of ANDROID_DEVICE_SETTING_KEYS) deviceSettingVersionsRef.current[key]++;
     setDeviceSettingsPending(new Set());
+    setDeviceSettings(null);
+    setAppearanceState(null);
     if (!active || !baseUrl) {
-      setAppearanceState(null);
       return;
     }
+
     let cancelled = false;
-    const url = `${apiUrl(baseUrl, '/api/uimode')}${
-      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
-    }`;
-    fetch(url, { cache: 'no-store' })
-      .then((r) => r.json())
-      .then((data: { ok?: boolean; night?: string }) => {
-        // `night` is yes|no|auto; map anything but an explicit `yes` to light so
-        // the binary toggle has a definite position.
-        if (cancelled || appearanceRequestRef.current !== request || !data.ok) return;
-        setAppearanceState(data.night === 'yes' ? 'dark' : 'light');
-      })
-      .catch(() => {
-        /* offline / unsupported — leave unknown */
+    let polling = false;
+    let controllers: AbortController[] = [];
+    const scope = deviceSettingScope;
+
+    const poll = async (keys: readonly AndroidDeviceSettingKey[]) => {
+      if (cancelled || polling) return;
+      polling = true;
+      const nextControllers: AbortController[] = [];
+      controllers = nextControllers;
+      const results = await Promise.all(
+        keys.map(async (key) => {
+          const version = deviceSettingVersionsRef.current[key];
+          const pendingAtStart = tracker.pending.has(key);
+          const controller = new AbortController();
+          nextControllers.push(controller);
+          try {
+            const response = await fetch(
+              deviceApiUrl(baseUrl, androidDeviceSettingPath(key), targetDevice),
+              { cache: 'no-store', signal: controller.signal },
+            );
+            if (!response.ok) return { key, version, pendingAtStart, handled: false as const };
+            return {
+              key,
+              version,
+              pendingAtStart,
+              handled: true as const,
+              value: parseAndroidDeviceSetting(key, await response.json()),
+            };
+          } catch {
+            return { key, version, pendingAtStart, handled: false as const };
+          }
+        }),
+      );
+      polling = false;
+      if (cancelled || deviceSettingScopeRef.current !== scope) return;
+      if (!results.some((result) => result.handled)) return;
+      setDeviceSettings((current) => {
+        const next = { ...(current ?? {}) };
+        for (const result of results) {
+          if (!result.handled) continue;
+          if (result.pendingAtStart) continue;
+          if (deviceSettingVersionsRef.current[result.key] !== result.version) continue;
+          if (tracker.pending.has(result.key)) continue;
+          if (result.value === null) delete next[result.key];
+          else next[result.key] = result.value;
+        }
+        return next;
       });
+      const appearanceResult = results.find((result) => result.key === 'appearance');
+      if (
+        appearanceResult?.handled &&
+        !appearanceResult.pendingAtStart &&
+        deviceSettingVersionsRef.current.appearance === appearanceResult.version &&
+        !tracker.pending.has('appearance') &&
+        (appearanceResult.value === 'light' || appearanceResult.value === 'dark')
+      ) {
+        setAppearanceState(appearanceResult.value);
+      }
+    };
+
+    // Appearance keeps its historical one-shot read because the pinned
+    // serve-emu branch still implements `/api/uimode` synchronously. Network
+    // and font scale use Hub's async compatibility routes and stay live-polled.
+    void poll(ANDROID_DEVICE_SETTING_KEYS);
+    const timer = setInterval(
+      () => void poll(ANDROID_POLLED_DEVICE_SETTING_KEYS),
+      DEVICE_SETTINGS_POLL_MS,
+    );
     return () => {
       cancelled = true;
+      clearInterval(timer);
+      for (const controller of controllers) controller.abort();
+      tracker.reset();
     };
-  }, [active, baseUrl, targetDevice]);
+  }, [active, baseUrl, deviceSettingScope, targetDevice]);
 
   return {
     platform: 'android',
@@ -1118,7 +1226,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     detachEvents,
     clearEvents,
     activity: null,
-    deviceSettings: appearance ? { appearance } : null,
+    deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
     streamSettings: null,

@@ -8,6 +8,7 @@ import { SidebarRow, SidebarSwitch } from './SidebarRow';
 
 const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
   appearance: 'light',
+  network: 'on',
   'liquid-glass': 'clear',
   'color-filter': 'none',
   'text-size': 'large',
@@ -21,6 +22,11 @@ const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
 const APPEARANCE_OPTIONS = [
   { value: 'light', label: 'Light' },
   { value: 'dark', label: 'Dark' },
+] as const;
+
+const NETWORK_OPTIONS = [
+  { value: 'on', label: 'On' },
+  { value: 'off', label: 'Off' },
 ] as const;
 
 const LIQUID_GLASS_OPTIONS = [
@@ -46,6 +52,13 @@ const TEXT_SIZE_OPTIONS = [
   { value: 'extra-extra-extra-large', label: '3XL' },
 ] as const;
 
+const ANDROID_TEXT_SIZE_OPTIONS = [
+  { value: 'small', label: 'S' },
+  { value: 'medium', label: 'M' },
+  { value: 'large', label: 'L' },
+  { value: 'extra-large', label: 'XL' },
+] as const;
+
 const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = [
   { key: 'reduce-motion', label: 'Reduce motion' },
   { key: 'increase-contrast', label: 'Increase contrast' },
@@ -56,6 +69,7 @@ const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = 
 
 const SETTING_ORDER: ReadonlyArray<DeviceSettingKey> = [
   'appearance',
+  'network',
   'liquid-glass',
   'color-filter',
   'text-size',
@@ -64,7 +78,10 @@ const SETTING_ORDER: ReadonlyArray<DeviceSettingKey> = [
 
 const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
-/** Device-wide appearance and accessibility settings, plus the iOS keyboard controls. */
+/**
+ * Device-wide appearance, connectivity, and accessibility settings, plus iOS
+ * keyboard controls.
+ */
 export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
   const [open, setOpen] = useState(true);
   const settings = client?.deviceSettings ?? null;
@@ -134,12 +151,26 @@ export function DeviceOptionsSection({ client }: { client?: DeviceClient }) {
         </SidebarRow>
       )}
 
-      {platform === 'ios' && visible('text-size') && (
+      {platform === 'android' && visible('network') && (
+        <SidebarRow compact label="Network" borderBottom={hasFollowingRow('network')}>
+          <SegmentedControl
+            ariaLabel="Network"
+            options={pillOptions('network', NETWORK_OPTIONS)}
+            value={value('network') as (typeof NETWORK_OPTIONS)[number]['value']}
+            onChange={(nextValue) => setValue('network', nextValue)}
+          />
+        </SidebarRow>
+      )}
+
+      {(platform === 'ios' || platform === 'android') && visible('text-size') && (
         <SidebarRow compact label="Text size" borderBottom={hasFollowingRow('text-size')}>
           <SegmentedControl
             ariaLabel="Text size"
-            options={pillOptions('text-size', TEXT_SIZE_OPTIONS)}
-            value={value('text-size') as (typeof TEXT_SIZE_OPTIONS)[number]['value']}
+            options={pillOptions(
+              'text-size',
+              platform === 'android' ? ANDROID_TEXT_SIZE_OPTIONS : TEXT_SIZE_OPTIONS,
+            )}
+            value={value('text-size')}
             onChange={(nextValue) => setValue('text-size', nextValue)}
           />
         </SidebarRow>
