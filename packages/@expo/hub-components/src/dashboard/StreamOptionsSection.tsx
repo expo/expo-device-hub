@@ -106,6 +106,7 @@ const BITRATE_OPTIONS: SelectOption[] = [
 
 const MAX_STATS_SAMPLES = 60;
 const UNAVAILABLE_VALUE = '—';
+const COMPACT_STATS_COLUMNS = 'repeat(auto-fit, minmax(150px, 1fr))';
 
 function withCurrentValue(
   value: number,
@@ -202,15 +203,16 @@ function formatEncoderLimitation(value: string | null) {
 
 function StreamStatisticGroupHeading({ label }: { label: string }) {
   return (
-    <tr>
-      <th
-        scope="rowgroup"
-        colSpan={2}
+    <div role="row" style={{ gridColumn: '1 / -1' }}>
+      <span
+        role="columnheader"
+        aria-colspan={2}
         style={{
           ...textSize['2xs'],
+          display: 'block',
           padding: '7px 8px 5px',
           borderTop: `1px solid ${border.secondary}`,
-          color: text.tertiary,
+          color: text.secondary,
           fontWeight: 500,
           letterSpacing: '0.04em',
           textAlign: 'left',
@@ -218,8 +220,8 @@ function StreamStatisticGroupHeading({ label }: { label: string }) {
         }}
       >
         {label}
-      </th>
-    </tr>
+      </span>
+    </div>
   );
 }
 
@@ -233,37 +235,55 @@ function StreamStatisticRow({
   stale?: boolean;
 }) {
   return (
-    <tr style={{ borderTop: `1px solid ${border.secondary}`, opacity: stale ? 0.55 : 1 }}>
-      <th
-        scope="row"
+    <div
+      role="row"
+      data-stream-statistic={label}
+      style={{
+        display: 'flex',
+        minWidth: 0,
+        alignItems: 'baseline',
+        justifyContent: 'space-between',
+        gap: 4,
+        padding: '5px 8px',
+        borderTop: `1px solid ${border.secondary}`,
+        opacity: stale ? 0.55 : 1,
+      }}
+    >
+      <span
+        role="rowheader"
         style={{
-          ...textSize.xs,
-          padding: '6px 8px',
+          ...textSize['2xs'],
+          minWidth: 0,
           color: text.secondary,
           fontWeight: 400,
-          textAlign: 'left',
         }}
       >
         {label}
-      </th>
-      <td
+      </span>
+      <span
+        role="cell"
         style={{
-          ...textSize.xs,
-          padding: '6px 8px',
+          ...textSize['2xs'],
+          flexShrink: 0,
           color: text.default,
           fontWeight: 500,
           fontVariantNumeric: 'tabular-nums',
-          textAlign: 'right',
           whiteSpace: 'nowrap',
         }}
       >
         {value}
-      </td>
-    </tr>
+      </span>
+    </div>
   );
 }
 
-function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
+function StreamStatistics({
+  stats,
+  platform,
+}: {
+  stats: DeviceClient['streamStats'];
+  platform: DeviceClient['platform'];
+}) {
   const samples = stats?.samples.slice(-MAX_STATS_SAMPLES) ?? [];
   const latest = samples.at(-1) ?? null;
   const encoder = stats?.encoder ?? null;
@@ -299,6 +319,59 @@ function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
           ? 'Server stream statistics are paused. Showing the most recent values.'
           : null;
   const measuring = !hasClientMeasurement && !stats?.stale;
+  const encoderRows =
+    encoder === null
+      ? []
+      : platform === 'android'
+        ? [
+            { label: 'Codec', value: formatCodec(encoder.codec) },
+            {
+              label: 'Output FPS',
+              value: formatFps(encoder.encodeFps),
+            },
+            {
+              label: 'Configured bitrate',
+              value: formatBitrate(encoder.targetBitrateBps),
+            },
+            {
+              label: 'Output frames',
+              value: formatCount(encoder.framesEncoded),
+            },
+          ]
+        : [
+            { label: 'Codec', value: formatCodec(encoder.codec) },
+            { label: 'Encode FPS', value: formatFps(encoder.encodeFps) },
+            { label: 'Target bitrate', value: formatBitrate(encoder.targetBitrateBps) },
+            {
+              label: 'Encode time / frame',
+              value: formatMilliseconds(encoder.encodeMsPerFrame, 1),
+            },
+            { label: 'Frames encoded', value: formatCount(encoder.framesEncoded) },
+            { label: 'Frames sent', value: formatCount(encoder.framesSent) },
+            { label: 'Frames dropped', value: formatCount(encoder.framesDropped) },
+            { label: 'Packet loss', value: formatPercentage(encoder.packetLossRatio) },
+            {
+              label: 'Limitation',
+              value: formatEncoderLimitation(encoder.qualityLimitationReason),
+            },
+          ];
+  const captureRows =
+    capture === null
+      ? []
+      : platform === 'android'
+        ? [
+            {
+              label: 'Publisher offers',
+              value: formatCount(capture.offeredFrames),
+            },
+          ]
+        : [
+            { label: 'Screen frames', value: formatCount(capture.screenFrames) },
+            { label: 'Idle frames', value: formatCount(capture.idleFrames) },
+            { label: 'Capture deliveries', value: formatCount(capture.offeredFrames) },
+            { label: 'Pacer submissions', value: formatCount(capture.forwardedFrames) },
+            { label: 'Pump restarts', value: formatCount(capture.pumpRestarts) },
+          ];
 
   return (
     <div
@@ -320,51 +393,24 @@ function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
           Measuring WebRTC stream…
         </span>
       )}
-      <table
+      <div
+        role="table"
         aria-label="WebRTC stream statistics"
+        aria-colcount={2}
         style={{
           width: '100%',
-          tableLayout: 'fixed',
-          borderCollapse: 'separate',
-          borderSpacing: 0,
           overflow: 'hidden',
           border: `1px solid ${border.secondary}`,
           borderRadius: radius.md,
           backgroundColor: bg.subtle,
         }}
       >
-        <thead>
-          <tr>
-            <th
-              scope="col"
-              style={{
-                ...textSize['2xs'],
-                padding: '6px 8px',
-                color: text.tertiary,
-                fontWeight: 500,
-                textAlign: 'left',
-              }}
-            >
-              Metric
-            </th>
-            <th
-              scope="col"
-              style={{
-                ...textSize['2xs'],
-                padding: '6px 8px',
-                color: text.tertiary,
-                fontWeight: 500,
-                textAlign: 'right',
-              }}
-            >
-              Current
-            </th>
-          </tr>
-        </thead>
-        <tbody
+        <div
+          role="rowgroup"
           aria-label="Stream statistics"
           data-receiver-stale={stats?.stale || undefined}
           data-server-stale={stats?.serverStale || undefined}
+          style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
         >
           <StreamStatisticGroupHeading label="Stream" />
           <StreamStatisticRow
@@ -382,8 +428,13 @@ function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
             value={formatBitrate(latest?.clientBitrateBps ?? null)}
             stale={stats?.stale}
           />
-        </tbody>
-        <tbody aria-label="Client statistics" data-stale={stats?.stale || undefined}>
+        </div>
+        <div
+          role="rowgroup"
+          aria-label="Client statistics"
+          data-stale={stats?.stale || undefined}
+          style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
+        >
           <StreamStatisticGroupHeading label="Client" />
           <StreamStatisticRow
             label="Packet loss"
@@ -423,95 +474,51 @@ function StreamStatistics({ stats }: { stats: DeviceClient['streamStats'] }) {
             value={formatIcePath(latest?.clientIcePath)}
             stale={stats?.stale}
           />
-        </tbody>
-        {encoder && (
-          <tbody aria-label="Encoder statistics" data-stale={stats?.serverStale || undefined}>
+        </div>
+        {encoderRows.length > 0 && (
+          <div
+            role="rowgroup"
+            aria-label="Encoder statistics"
+            data-stale={stats?.serverStale || undefined}
+            style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
+          >
             <StreamStatisticGroupHeading label="Encoder" />
-            <StreamStatisticRow
-              label="Codec"
-              value={formatCodec(encoder.codec)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Encode FPS"
-              value={formatFps(encoder.encodeFps)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Target bitrate"
-              value={formatBitrate(encoder.targetBitrateBps)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Encode time / frame"
-              value={formatMilliseconds(encoder.encodeMsPerFrame, 1)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Frames encoded"
-              value={formatCount(encoder.framesEncoded)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Frames sent"
-              value={formatCount(encoder.framesSent)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Frames dropped"
-              value={formatCount(encoder.framesDropped)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Packet loss"
-              value={formatPercentage(encoder.packetLossRatio)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Limitation"
-              value={formatEncoderLimitation(encoder.qualityLimitationReason)}
-              stale={stats?.serverStale}
-            />
-          </tbody>
+            {encoderRows.map((row) => (
+              <StreamStatisticRow
+                key={row.label}
+                label={row.label}
+                value={row.value}
+                stale={stats?.serverStale}
+              />
+            ))}
+          </div>
         )}
-        {capture && (
-          <tbody aria-label="Capture statistics" data-stale={stats?.serverStale || undefined}>
+        {captureRows.length > 0 && (
+          <div
+            role="rowgroup"
+            aria-label="Capture statistics"
+            data-stale={stats?.serverStale || undefined}
+            style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
+          >
             <StreamStatisticGroupHeading label="Capture" />
-            <StreamStatisticRow
-              label="Screen frames"
-              value={formatCount(capture.screenFrames)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Idle frames"
-              value={formatCount(capture.idleFrames)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Capture deliveries"
-              value={formatCount(capture.offeredFrames)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Pacer submissions"
-              value={formatCount(capture.forwardedFrames)}
-              stale={stats?.serverStale}
-            />
-            <StreamStatisticRow
-              label="Pump restarts"
-              value={formatCount(capture.pumpRestarts)}
-              stale={stats?.serverStale}
-            />
-          </tbody>
+            {captureRows.map((row) => (
+              <StreamStatisticRow
+                key={row.label}
+                label={row.label}
+                value={row.value}
+                stale={stats?.serverStale}
+              />
+            ))}
+          </div>
         )}
-      </table>
+      </div>
       {latest && hasClientMeasurement && (
         <div
           data-stale={stats?.stale || undefined}
           style={{
-            display: 'flex',
+            display: 'grid',
             minWidth: 0,
-            flexDirection: 'column',
+            gridTemplateColumns: COMPACT_STATS_COLUMNS,
             gap: 8,
             opacity: stats?.stale ? 0.55 : 1,
           }}
@@ -753,7 +760,9 @@ export function StreamOptionsSection({
           </SidebarRow>
         </>
       )}
-      {transport === 'webrtc' && <StreamStatistics stats={client.streamStats} />}
+      {transport === 'webrtc' && (
+        <StreamStatistics stats={client.streamStats} platform={client.platform} />
+      )}
     </CollapsibleSection>
   );
 }
