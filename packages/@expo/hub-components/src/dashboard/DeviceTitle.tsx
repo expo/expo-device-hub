@@ -52,8 +52,10 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
       size="2xs"
       onClick={() => setRevealedId(showingId ? null : device.id)}
       style={{
-        maxWidth: '100%',
+        maxWidth: 'min(100%, 320px)',
+        minWidth: 0,
         flexShrink: 0,
+        boxSizing: 'border-box',
         paddingInline: 12,
         borderWidth: 0.5,
         borderColor: border.default,
@@ -64,15 +66,18 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
           display: 'flex',
           alignItems: 'center',
           gap: 6,
+          maxWidth: '100%',
           minWidth: 0,
         }}>
         <span
           title={label}
           style={{
             display: 'block',
-            maxWidth: 'min(65vw, 420px)',
+            flex: '1 1 auto',
+            minWidth: 0,
             overflow: 'hidden',
             textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
             fontFamily: showingId ? font.mono : font.sans,
           }}>
           {label}

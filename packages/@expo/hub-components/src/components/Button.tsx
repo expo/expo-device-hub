@@ -140,7 +140,11 @@ export function Button({
   const content = (
     <>
       {leftSlot}
-      {children != null && <span style={{ display: 'flex', lineHeight: 1 }}>{children}</span>}
+      {children != null && (
+        <span style={{ display: 'flex', minWidth: 0, maxWidth: '100%', lineHeight: 1 }}>
+          {children}
+        </span>
+      )}
       {rightSlot}
     </>
   );
