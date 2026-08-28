@@ -1,5 +1,15 @@
 # expo-device-hub
 
+## 0.7.0
+
+### Minor Changes
+
+- 09ec254: Add a `--hide-boot-device` CLI option that hides controls for booting and creating devices.
+
+### Patch Changes
+
+- 5065b02: Show a compact stream-status pill above the device frame and reveal its identifier on click.
+
 ## 0.6.0
 
 ### Minor Changes
