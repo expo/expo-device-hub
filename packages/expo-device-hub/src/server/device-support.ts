@@ -21,7 +21,7 @@ export function appleDeviceFrame(
 export function androidDeviceProfileFrame(
   profile: Pick<AndroidDeviceProfile, 'id' | 'name' | 'tag'>,
 ): DeviceFrameProfileId | null {
-  return usesPixel10ProFrame(profile.id, profile.name) ? PIXEL_10_PRO_FRAME : null;
+  return isPixel10Pro(profile.id, profile.name) ? PIXEL_10_PRO_FRAME : null;
 }
 
 export function androidDeviceFrame(device: AndroidDevice): DeviceFrameProfileId | null {
@@ -29,7 +29,7 @@ export function androidDeviceFrame(device: AndroidDevice): DeviceFrameProfileId 
     device.type === 'device'
       ? (device.properties['ro.product.model'] ?? device.name)
       : (device.config['hw.device.name'] ?? device.properties.Device);
-  return usesPixel10ProFrame(profile ?? device.name) ? PIXEL_10_PRO_FRAME : null;
+  return isPixel10Pro(profile ?? device.name) ? PIXEL_10_PRO_FRAME : null;
 }
 
 /** Hub currently supports and tests iPhone simulator hardware only. */
@@ -72,12 +72,10 @@ function isPixelPhone(...candidates: Array<string | undefined>): boolean {
   });
 }
 
-function usesPixel10ProFrame(...candidates: Array<string | undefined>): boolean {
-  return candidates.some((candidate) => {
-    const name = normalizeDeviceName(candidate);
-    // Temporary preview mapping until the Pixel 6 has its own calibrated frame.
-    return name === 'pixel 10 pro' || name === 'pixel 6';
-  });
+function isPixel10Pro(...candidates: Array<string | undefined>): boolean {
+  return candidates.some(
+    (candidate) => normalizeDeviceName(candidate) === 'pixel 10 pro',
+  );
 }
 
 function normalizeDeviceName(candidate: string | undefined): string | null {

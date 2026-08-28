@@ -67,9 +67,7 @@ describe('Android device support', () => {
     expect(androidDeviceProfileFrame(profile('pixel_10_pro', 'Pixel 10 Pro'))).toBe(
       'android:pixel-10-pro',
     );
-    expect(androidDeviceProfileFrame(profile('pixel_6', 'Pixel 6'))).toBe(
-      'android:pixel-10-pro',
-    );
+    expect(androidDeviceProfileFrame(profile('pixel_6', 'Pixel 6'))).toBeNull();
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9', 'Pixel 9'))).toBe(true);
     expect(androidDeviceProfileFrame(profile('pixel_9', 'Pixel 9'))).toBeNull();
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9_pro_fold', 'Pixel 9 Pro Fold'))).toBe(
@@ -97,9 +95,7 @@ describe('Android device support', () => {
     expect(
       androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_10_pro' } })),
     ).toBe('android:pixel-10-pro');
-    expect(androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_6' } }))).toBe(
-      'android:pixel-10-pro',
-    );
+    expect(androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_6' } }))).toBeNull();
     expect(androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_8' } }))).toBeNull();
     expect(
       isSupportedAndroidDevice(
