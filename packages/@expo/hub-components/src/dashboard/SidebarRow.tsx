@@ -15,12 +15,18 @@ export function SidebarRow({
   children,
   borderBottom = true,
   compact = false,
+  description,
+  descriptionId,
 }: {
   label: string;
   children: ReactNode;
   borderBottom?: boolean;
   /** Tighten the label/control gap for option-dense rows. */
   compact?: boolean;
+  /** Optional explanatory copy shown directly beneath the label. */
+  description?: string;
+  /** Associates the explanatory copy with an interactive row control. */
+  descriptionId?: string;
 }) {
   return (
     <div
@@ -29,14 +35,25 @@ export function SidebarRow({
         flexWrap: compact ? "wrap" : undefined,
         alignItems: "center",
         gap: compact ? 12 : 16,
-        height: compact ? undefined : 51,
-        minHeight: compact ? 51 : undefined,
+        height: compact || description ? undefined : 51,
+        minHeight: compact || description ? 51 : undefined,
         boxSizing: "border-box",
         padding: "11px 0",
         borderBottom: borderBottom ? `1px solid ${border.secondary}` : undefined,
       }}
     >
-      <span style={{ ...textSize.sm, flex: 1, fontWeight: 500, color: text.default }}>{label}</span>
+      {description ? (
+        <span style={{ display: "flex", flex: 1, minWidth: 0, flexDirection: "column", gap: 2 }}>
+          <span style={{ ...textSize.sm, fontWeight: 500, color: text.default }}>{label}</span>
+          <span id={descriptionId} style={{ ...textSize.xs, color: text.secondary }}>
+            {description}
+          </span>
+        </span>
+      ) : (
+        <span style={{ ...textSize.sm, flex: 1, fontWeight: 500, color: text.default }}>
+          {label}
+        </span>
+      )}
       {children}
     </div>
   );
@@ -46,11 +63,13 @@ export function SidebarSwitch({
   checked,
   disabled = false,
   label,
+  descriptionId,
   onChange,
 }: {
   checked: boolean;
   disabled?: boolean;
   label: string;
+  descriptionId?: string;
   onChange: (checked: boolean) => void;
 }) {
   return (
@@ -59,6 +78,7 @@ export function SidebarSwitch({
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      aria-describedby={descriptionId}
       disabled={disabled}
       onClick={() => onChange(!checked)}
       style={{

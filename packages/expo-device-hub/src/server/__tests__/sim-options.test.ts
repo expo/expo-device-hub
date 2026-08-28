@@ -18,12 +18,38 @@ describe('appleRuntimesToOptions', () => {
         {
           value: 'ios-18',
           label: 'iOS 18.0',
-          models: [{ value: 'iPhone-16', label: 'iPhone 16', supported: true }],
+          models: [
+            {
+              value: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro',
+              label: 'iPhone 17 Pro',
+              supported: true,
+              deviceFrame: 'ios:iphone-17-pro',
+            },
+            {
+              value: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
+              label: 'iPhone 16',
+              supported: true,
+              deviceFrame: null,
+            },
+          ],
         },
         {
           value: 'ios-17',
           label: 'iOS 17.0',
-          models: [{ value: 'iPhone-16', label: 'iPhone 16', supported: true }],
+          models: [
+            {
+              value: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro',
+              label: 'iPhone 17 Pro',
+              supported: true,
+              deviceFrame: 'ios:iphone-17-pro',
+            },
+            {
+              value: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
+              label: 'iPhone 16',
+              supported: true,
+              deviceFrame: null,
+            },
+          ],
         },
       ],
     });
@@ -33,8 +59,8 @@ describe('appleRuntimesToOptions', () => {
 describe('androidImagesToOptions', () => {
   test('pairs installed images with sorted device profiles', () => {
     const profiles: AndroidDeviceProfile[] = [
-      { id: 'pixel_9', index: 1, name: 'Pixel 9', oem: 'Google', tag: null },
-      { id: 'pixel_8', index: 0, name: 'Pixel 8', oem: 'Google', tag: null },
+      { id: 'pixel_10_pro', index: 1, name: 'Pixel 10 Pro', oem: 'Google', tag: null },
+      { id: 'pixel_9', index: 0, name: 'Pixel 9', oem: 'Google', tag: null },
     ];
     const images: AndroidSystemImage[] = [
       androidImage('android-34', 'google_apis', 'arm64-v8a'),
@@ -47,20 +73,41 @@ describe('androidImagesToOptions', () => {
           value: 'system-images;android-35;google_apis_playstore;arm64-v8a',
           label: 'Android 35 · Google Play · arm64-v8a',
           models: [
-            { value: 'pixel_8', label: 'Pixel 8', supported: true },
-            { value: 'pixel_9', label: 'Pixel 9', supported: true },
+            { value: 'pixel_9', label: 'Pixel 9', supported: true, deviceFrame: null },
+            {
+              value: 'pixel_10_pro',
+              label: 'Pixel 10 Pro',
+              supported: true,
+              deviceFrame: 'android:pixel-10-pro',
+            },
           ],
         },
         {
           value: 'system-images;android-34;google_apis;arm64-v8a',
           label: 'Android 34 · Google APIs · arm64-v8a',
           models: [
-            { value: 'pixel_8', label: 'Pixel 8', supported: true },
-            { value: 'pixel_9', label: 'Pixel 9', supported: true },
+            { value: 'pixel_9', label: 'Pixel 9', supported: true, deviceFrame: null },
+            {
+              value: 'pixel_10_pro',
+              label: 'Pixel 10 Pro',
+              supported: true,
+              deviceFrame: 'android:pixel-10-pro',
+            },
           ],
         },
       ],
     });
+  });
+
+  test('does not infer frame availability from the Pixel family name', () => {
+    const models = androidImagesToOptions(
+      [androidImage('android-36', 'google_apis', 'arm64-v8a')],
+      [{ id: 'pixel_fold', index: 0, name: 'Pixel Fold', oem: 'Google', tag: null }],
+    ).runtimes[0]?.models;
+
+    expect(models).toEqual([
+      { value: 'pixel_fold', label: 'Pixel Fold', supported: false, deviceFrame: null },
+    ]);
   });
 
   test('pairs mobile and specialized images with compatible profile tags', () => {
@@ -120,7 +167,18 @@ function appleRuntime(overrides: Partial<AppleSimulatorRuntime> = {}): AppleSimu
     buildVersion: null,
     platform: 'iOS',
     isAvailable: true,
-    supportedDeviceTypes: [{ identifier: 'iPhone-16', name: 'iPhone 16', productFamily: 'iPhone' }],
+    supportedDeviceTypes: [
+      {
+        identifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro',
+        name: 'iPhone 17 Pro',
+        productFamily: 'iPhone',
+      },
+      {
+        identifier: 'com.apple.CoreSimulator.SimDeviceType.iPhone-16',
+        name: 'iPhone 16',
+        productFamily: 'iPhone',
+      },
+    ],
     ...overrides,
   };
 }

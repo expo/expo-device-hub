@@ -16,6 +16,7 @@ const IOS = {
   booted: true,
   physical: false,
   supported: true,
+  deviceFrame: 'ios:iphone-17-pro' as const,
   lastUsedAt: 123,
 };
 
@@ -27,6 +28,7 @@ const ANDROID = {
   booted: false,
   physical: false,
   supported: true,
+  deviceFrame: 'android:pixel-10-pro' as const,
   lastUsedAt: 456,
 };
 
@@ -182,6 +184,12 @@ test('deviceListFingerprint ignores discovery order', () => {
   const a = { ...LIST, simulators: [IOS, secondIos] };
   const b = { ...LIST, simulators: [secondIos, IOS] };
   expect(deviceListFingerprint(a)).toBe(deviceListFingerprint(b));
+});
+
+test('deviceListFingerprint includes device-frame capability changes', () => {
+  const changed = { ...LIST, simulators: [{ ...IOS, deviceFrame: null }] };
+
+  expect(deviceListFingerprint(LIST)).not.toBe(deviceListFingerprint(changed));
 });
 
 test('deviceListFingerprint compares stable error ids instead of volatile details', () => {

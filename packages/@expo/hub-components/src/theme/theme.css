@@ -6,8 +6,8 @@
  * styleguide's CSS lacks: the `--expo-font-*` families and the `--expo-radius-*`
  * scale that `tokens.ts` binds to.
  *
- * This file only *defines variables* — it intentionally sets no global page
- * styles (no `html`/`body` rules), so importing it never restyles the host
+ * This file defines variables plus narrowly scoped component rules. It sets no
+ * global page styles (`html`/`body`), so importing it never restyles the host
  * document. The consuming app owns the base body/surface reset (Expo Hub keeps
  * it in `global.css`). Import once per DOM component subtree via
  * `import '@expo/hub-components/theme.css'`.
@@ -47,4 +47,9 @@
   --expo-theme-button-agent-overlay-disabled-background: var(--slate-2);
   --expo-theme-button-agent-overlay-disabled-border: transparent;
   --expo-theme-button-agent-overlay-disabled-text: var(--slate-11);
+}
+
+/* React's inline-style serialization does not yet expose this new CSS property. */
+[data-device-frame-screen='true'] {
+  corner-shape: var(--expo-device-frame-corner-shape, round);
 }

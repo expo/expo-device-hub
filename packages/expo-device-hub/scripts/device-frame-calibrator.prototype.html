@@ -1,0 +1,722 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Device frame calibrator prototype</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        background: #101114;
+        color: #f4f5f7;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      header {
+        padding: 16px 20px;
+        border-bottom: 1px solid #2d3037;
+        background: #17191e;
+      }
+
+      h1 {
+        margin: 0 0 4px;
+        font-size: 18px;
+      }
+
+      header p {
+        margin: 0;
+        color: #aeb3bd;
+        font-size: 13px;
+      }
+
+      main {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+      }
+
+      #workspace {
+        position: relative;
+        min-width: 0;
+        min-height: 420px;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        overflow: hidden;
+        background-color: #fff;
+        background-image:
+          linear-gradient(45deg, #d7d9de 25%, transparent 25%),
+          linear-gradient(-45deg, #d7d9de 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #d7d9de 75%),
+          linear-gradient(-45deg, transparent 75%, #d7d9de 75%);
+        background-size: 24px 24px;
+        background-position:
+          0 0,
+          0 12px,
+          12px -12px,
+          -12px 0;
+      }
+
+      #workspace.dragging {
+        outline: 3px solid #72a7ff;
+        outline-offset: -8px;
+      }
+
+      #empty-state {
+        width: min(480px, 90%);
+        padding: 48px 28px;
+        border: 2px dashed #484d58;
+        border-radius: 18px;
+        background: #17191e;
+        text-align: center;
+        color: #aeb3bd;
+      }
+
+      #empty-state strong {
+        display: block;
+        color: #f4f5f7;
+        margin-bottom: 8px;
+      }
+
+      #stage {
+        position: relative;
+        display: none;
+        flex: none;
+        box-shadow: 0 24px 70px rgb(0 0 0 / 55%);
+        touch-action: none;
+      }
+
+      #screen-fill {
+        position: absolute;
+        z-index: 1;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 72% 24%, rgb(255 255 255 / 30%), transparent 24%),
+          linear-gradient(145deg, #2b80ff, #825cff 52%, #f04f9d);
+      }
+
+      #screen-fill::after {
+        content: "SCREEN";
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        color: rgb(255 255 255 / 70%);
+        font-weight: 800;
+        letter-spacing: 0.15em;
+        font-size: clamp(10px, 2vw, 22px);
+      }
+
+      #frame-image {
+        position: absolute;
+        inset: 0;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        user-select: none;
+        pointer-events: none;
+      }
+
+      #selection {
+        position: absolute;
+        z-index: 3;
+        border: 1px solid #71f6c4;
+        box-shadow: 0 0 0 1px rgb(0 0 0 / 75%);
+        cursor: move;
+      }
+
+      .handle {
+        position: absolute;
+        z-index: 4;
+        width: 14px;
+        height: 14px;
+        margin: -7px;
+        border: 2px solid #0c0d10;
+        border-radius: 50%;
+        background: #71f6c4;
+        box-shadow: 0 1px 5px rgb(0 0 0 / 70%);
+        touch-action: none;
+      }
+
+      .handle[data-corner="nw"] {
+        left: 0;
+        top: 0;
+        cursor: nwse-resize;
+      }
+
+      .handle[data-corner="ne"] {
+        right: 0;
+        top: 0;
+        cursor: nesw-resize;
+      }
+
+      .handle[data-corner="se"] {
+        right: 0;
+        bottom: 0;
+        cursor: nwse-resize;
+      }
+
+      .handle[data-corner="sw"] {
+        left: 0;
+        bottom: 0;
+        cursor: nesw-resize;
+      }
+
+      #radius-handle {
+        position: absolute;
+        z-index: 5;
+        width: 14px;
+        height: 14px;
+        margin: -7px;
+        border: 2px solid #0c0d10;
+        border-radius: 50%;
+        background: #ffd166;
+        box-shadow: 0 1px 5px rgb(0 0 0 / 70%);
+        cursor: ew-resize;
+        touch-action: none;
+      }
+
+      aside {
+        min-height: 0;
+        overflow: auto;
+        padding: 20px;
+        border-left: 1px solid #2d3037;
+        background: #17191e;
+      }
+
+      section + section {
+        margin-top: 22px;
+        padding-top: 20px;
+        border-top: 1px solid #2d3037;
+      }
+
+      h2 {
+        margin: 0 0 12px;
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #aeb3bd;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      button,
+      .file-button {
+        min-height: 38px;
+        border: 1px solid #454a55;
+        border-radius: 9px;
+        background: #24272e;
+        color: #f4f5f7;
+        padding: 8px 12px;
+        cursor: pointer;
+      }
+
+      button:hover,
+      .file-button:hover {
+        background: #2d313a;
+      }
+
+      .file-button {
+        display: grid;
+        place-items: center;
+        width: 100%;
+        background: #2b67c7;
+        border-color: #407bd7;
+        font-weight: 650;
+      }
+
+      #file-input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      label.field {
+        display: grid;
+        gap: 6px;
+        margin-top: 12px;
+        font-size: 12px;
+        color: #aeb3bd;
+      }
+
+      input[type="text"],
+      input[type="number"] {
+        width: 100%;
+        min-width: 0;
+        border: 1px solid #3d424c;
+        border-radius: 8px;
+        background: #101217;
+        color: #f4f5f7;
+        padding: 8px 9px;
+      }
+
+      input:focus-visible,
+      button:focus-visible,
+      .file-button:focus-within {
+        outline: 2px solid #72a7ff;
+        outline-offset: 2px;
+      }
+
+      .coordinate-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .coordinate-grid .field {
+        margin-top: 0;
+      }
+
+      .radius-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 82px;
+        align-items: end;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      input[type="range"] {
+        width: 100%;
+        accent-color: #ffd166;
+      }
+
+      .button-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      #profile-output {
+        margin: 0;
+        min-height: 145px;
+        padding: 12px;
+        overflow: auto;
+        border: 1px solid #343842;
+        border-radius: 9px;
+        background: #0f1115;
+        color: #b9d6ff;
+        font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        white-space: pre-wrap;
+      }
+
+      #file-meta,
+      #status {
+        margin: 10px 0 0;
+        color: #aeb3bd;
+        font-size: 12px;
+      }
+
+      #status {
+        min-height: 18px;
+        color: #71f6c4;
+      }
+
+      .hint {
+        margin: 10px 0 0;
+        color: #858b97;
+        font-size: 12px;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 760px) {
+        main {
+          grid-template-columns: 1fr;
+          grid-template-rows: minmax(440px, 62dvh) auto;
+        }
+
+        aside {
+          border-left: 0;
+          border-top: 1px solid #2d3037;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>PROTOTYPE — Device frame geometry calibrator</h1>
+      <p>
+        Question: which screen rectangle and circular corner radius make a stream fit a device-frame
+        PNG without visible gaps or leaks?
+      </p>
+    </header>
+
+    <main>
+      <div id="workspace">
+        <div id="empty-state">
+          <strong>Drop a transparent device-frame PNG here</strong>
+          The image stays on top while the simulated screen is adjusted behind it.
+        </div>
+
+        <div id="stage" aria-label="Device frame calibration canvas">
+          <div id="screen-fill"></div>
+          <img id="frame-image" alt="Dropped device frame" draggable="false" />
+          <div id="selection" aria-label="Draggable screen rectangle">
+            <span class="handle" data-corner="nw"></span>
+            <span class="handle" data-corner="ne"></span>
+            <span class="handle" data-corner="se"></span>
+            <span class="handle" data-corner="sw"></span>
+          </div>
+          <span id="radius-handle" title="Drag horizontally to change the radius"></span>
+        </div>
+      </div>
+
+      <aside>
+        <section>
+          <h2>Frame PNG</h2>
+          <label class="file-button">
+            Choose PNG
+            <input id="file-input" type="file" accept="image/png" />
+          </label>
+          <p id="file-meta">No image loaded.</p>
+          <label class="field">
+            Profile key
+            <input id="profile-key" type="text" placeholder="ios:iphone-17-pro" />
+          </label>
+          <p class="hint">You can also drop a replacement PNG anywhere over the preview.</p>
+        </section>
+
+        <section>
+          <h2>Screen rectangle · source pixels</h2>
+          <div class="coordinate-grid">
+            <label class="field">X <input id="rect-x" type="number" min="0" step="1" /></label>
+            <label class="field">Y <input id="rect-y" type="number" min="0" step="1" /></label>
+            <label class="field">Width <input id="rect-width" type="number" min="1" step="1" /></label>
+            <label class="field">Height <input id="rect-height" type="number" min="1" step="1" /></label>
+          </div>
+
+          <div class="radius-row">
+            <label class="field">
+              Radius
+              <input id="radius-range" type="range" min="0" step="1" />
+            </label>
+            <label class="field">
+              Pixels
+              <input id="radius-number" type="number" min="0" step="1" />
+            </label>
+          </div>
+
+          <div class="button-row">
+            <button id="reset-button" type="button">Reset rectangle</button>
+            <button id="copy-button" type="button">Copy JSON</button>
+          </div>
+          <p class="hint">
+            Drag inside the outline to move it. Drag green handles to resize. Drag the yellow handle
+            along the top edge to change the radius.
+          </p>
+        </section>
+
+        <section>
+          <h2>Current profile</h2>
+          <pre id="profile-output">Drop a PNG to begin.</pre>
+          <p id="status" role="status"></p>
+        </section>
+      </aside>
+    </main>
+
+    <script>
+      // Pure calibration logic. It intentionally knows nothing about the DOM.
+      const Geometry = (() => {
+        const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+        const round = (value) => Math.round(value);
+
+        function initial(imageWidth, imageHeight) {
+          const x = imageWidth * 0.04;
+          const y = imageHeight * 0.02;
+          const width = imageWidth * 0.92;
+          const height = imageHeight * 0.96;
+          return normalize(
+            {
+              imageWidth,
+              imageHeight,
+              rect: { x, y, width, height },
+              radius: imageWidth * 0.12,
+            },
+            imageWidth,
+            imageHeight,
+          );
+        }
+
+        function normalize(state, imageWidth = state.imageWidth, imageHeight = state.imageHeight) {
+          const width = clamp(round(state.rect.width), 1, imageWidth);
+          const height = clamp(round(state.rect.height), 1, imageHeight);
+          const x = clamp(round(state.rect.x), 0, imageWidth - width);
+          const y = clamp(round(state.rect.y), 0, imageHeight - height);
+          return {
+            imageWidth,
+            imageHeight,
+            rect: { x, y, width, height },
+            radius: clamp(round(state.radius), 0, Math.floor(Math.min(width, height) / 2)),
+          };
+        }
+
+        function move(state, dx, dy) {
+          return normalize({
+            ...state,
+            rect: {
+              ...state.rect,
+              x: state.rect.x + dx,
+              y: state.rect.y + dy,
+            },
+          });
+        }
+
+        function resize(state, corner, dx, dy) {
+          const minSize = 4;
+          let left = state.rect.x;
+          let top = state.rect.y;
+          let right = left + state.rect.width;
+          let bottom = top + state.rect.height;
+
+          if (corner.includes("w")) left = clamp(left + dx, 0, right - minSize);
+          if (corner.includes("e")) right = clamp(right + dx, left + minSize, state.imageWidth);
+          if (corner.includes("n")) top = clamp(top + dy, 0, bottom - minSize);
+          if (corner.includes("s")) bottom = clamp(bottom + dy, top + minSize, state.imageHeight);
+
+          return normalize({
+            ...state,
+            rect: { x: left, y: top, width: right - left, height: bottom - top },
+          });
+        }
+
+        function setRect(state, patch) {
+          return normalize({ ...state, rect: { ...state.rect, ...patch } });
+        }
+
+        function setRadius(state, radius) {
+          return normalize({ ...state, radius });
+        }
+
+        function profile(state, profileKey, imageName) {
+          return {
+            [profileKey || "device-profile"]: {
+              image: imageName,
+              frame: [state.imageWidth, state.imageHeight],
+              screen: [state.rect.x, state.rect.y, state.rect.width, state.rect.height],
+              radius: state.radius,
+            },
+          };
+        }
+
+        return { initial, move, resize, setRect, setRadius, profile };
+      })();
+
+      const workspace = document.querySelector("#workspace");
+      const emptyState = document.querySelector("#empty-state");
+      const stage = document.querySelector("#stage");
+      const frameImage = document.querySelector("#frame-image");
+      const screenFill = document.querySelector("#screen-fill");
+      const selection = document.querySelector("#selection");
+      const radiusHandle = document.querySelector("#radius-handle");
+      const fileInput = document.querySelector("#file-input");
+      const fileMeta = document.querySelector("#file-meta");
+      const profileKeyInput = document.querySelector("#profile-key");
+      const output = document.querySelector("#profile-output");
+      const status = document.querySelector("#status");
+      const radiusRange = document.querySelector("#radius-range");
+      const radiusNumber = document.querySelector("#radius-number");
+      const fields = {
+        x: document.querySelector("#rect-x"),
+        y: document.querySelector("#rect-y"),
+        width: document.querySelector("#rect-width"),
+        height: document.querySelector("#rect-height"),
+      };
+
+      let state = null;
+      let imageName = "";
+      let imageUrl = "";
+      let scale = 1;
+      let drag = null;
+
+      function slugFromFilename(filename) {
+        return filename
+          .replace(/\.png$/i, "")
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, "-")
+          .replace(/^-|-$/g, "");
+      }
+
+      function fitStage() {
+        if (!state) return;
+        const padding = 48;
+        const widthScale = Math.max(0.01, (workspace.clientWidth - padding) / state.imageWidth);
+        const heightScale = Math.max(0.01, (workspace.clientHeight - padding) / state.imageHeight);
+        scale = Math.min(widthScale, heightScale, 1);
+        stage.style.width = `${state.imageWidth * scale}px`;
+        stage.style.height = `${state.imageHeight * scale}px`;
+        renderGeometry();
+      }
+
+      function position(element, rect) {
+        element.style.left = `${rect.x * scale}px`;
+        element.style.top = `${rect.y * scale}px`;
+        element.style.width = `${rect.width * scale}px`;
+        element.style.height = `${rect.height * scale}px`;
+      }
+
+      function renderGeometry() {
+        if (!state) return;
+        const radius = state.radius * scale;
+        position(screenFill, state.rect);
+        position(selection, state.rect);
+        screenFill.style.borderRadius = `${radius}px`;
+        selection.style.borderRadius = `${radius}px`;
+        radiusHandle.style.left = `${(state.rect.x + state.radius) * scale}px`;
+        radiusHandle.style.top = `${state.rect.y * scale}px`;
+
+        fields.x.value = state.rect.x;
+        fields.y.value = state.rect.y;
+        fields.width.value = state.rect.width;
+        fields.height.value = state.rect.height;
+        radiusRange.max = Math.floor(Math.min(state.rect.width, state.rect.height) / 2);
+        radiusRange.value = state.radius;
+        radiusNumber.max = radiusRange.max;
+        radiusNumber.value = state.radius;
+        output.textContent = JSON.stringify(
+          Geometry.profile(state, profileKeyInput.value.trim(), imageName),
+          null,
+          2,
+        );
+      }
+
+      function loadFile(file) {
+        if (!file || (file.type && file.type !== "image/png")) {
+          status.textContent = "Please choose a PNG image.";
+          return;
+        }
+
+        const nextUrl = URL.createObjectURL(file);
+        const probe = new Image();
+        probe.onload = () => {
+          if (imageUrl) URL.revokeObjectURL(imageUrl);
+          imageUrl = nextUrl;
+          imageName = file.name;
+          frameImage.src = imageUrl;
+          state = Geometry.initial(probe.naturalWidth, probe.naturalHeight);
+          profileKeyInput.value = slugFromFilename(file.name);
+          fileMeta.textContent = `${file.name} · ${probe.naturalWidth} × ${probe.naturalHeight}px`;
+          emptyState.style.display = "none";
+          stage.style.display = "block";
+          status.textContent = "Frame loaded. Adjust the rectangle and radius.";
+          fitStage();
+        };
+        probe.onerror = () => {
+          URL.revokeObjectURL(nextUrl);
+          status.textContent = "The selected file could not be decoded as a PNG.";
+        };
+        probe.src = nextUrl;
+      }
+
+      function startDrag(event, kind, detail) {
+        if (!state) return;
+        event.preventDefault();
+        event.stopPropagation();
+        drag = {
+          kind,
+          detail,
+          startX: event.clientX,
+          startY: event.clientY,
+          state,
+        };
+      }
+
+      selection.addEventListener("pointerdown", (event) => {
+        const corner = event.target.dataset.corner;
+        startDrag(event, corner ? "resize" : "move", corner);
+      });
+
+      radiusHandle.addEventListener("pointerdown", (event) => {
+        startDrag(event, "radius", null);
+      });
+
+      window.addEventListener("pointermove", (event) => {
+        if (!drag || !state) return;
+        const dx = (event.clientX - drag.startX) / scale;
+        const dy = (event.clientY - drag.startY) / scale;
+        if (drag.kind === "move") state = Geometry.move(drag.state, dx, dy);
+        if (drag.kind === "resize") state = Geometry.resize(drag.state, drag.detail, dx, dy);
+        if (drag.kind === "radius") state = Geometry.setRadius(drag.state, drag.state.radius + dx);
+        renderGeometry();
+      });
+
+      window.addEventListener("pointerup", () => {
+        drag = null;
+      });
+
+      fileInput.addEventListener("change", () => loadFile(fileInput.files[0]));
+      profileKeyInput.addEventListener("input", renderGeometry);
+
+      for (const [key, field] of Object.entries(fields)) {
+        field.addEventListener("input", () => {
+          if (!state || field.value === "") return;
+          state = Geometry.setRect(state, { [key]: Number(field.value) });
+          renderGeometry();
+        });
+      }
+
+      function updateRadius(value) {
+        if (!state || value === "") return;
+        state = Geometry.setRadius(state, Number(value));
+        renderGeometry();
+      }
+
+      radiusRange.addEventListener("input", () => updateRadius(radiusRange.value));
+      radiusNumber.addEventListener("input", () => updateRadius(radiusNumber.value));
+
+      document.querySelector("#reset-button").addEventListener("click", () => {
+        if (!state) return;
+        state = Geometry.initial(state.imageWidth, state.imageHeight);
+        status.textContent = "Rectangle reset to the centered starting position.";
+        renderGeometry();
+      });
+
+      document.querySelector("#copy-button").addEventListener("click", async () => {
+        if (!state) return;
+        try {
+          await navigator.clipboard.writeText(output.textContent);
+          status.textContent = "Profile JSON copied.";
+        } catch {
+          const range = document.createRange();
+          range.selectNodeContents(output);
+          const selectionApi = window.getSelection();
+          selectionApi.removeAllRanges();
+          selectionApi.addRange(range);
+          status.textContent = "JSON selected. Press Ctrl/Cmd+C to copy it.";
+        }
+      });
+
+      for (const eventName of ["dragenter", "dragover"]) {
+        workspace.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          workspace.classList.add("dragging");
+        });
+      }
+
+      for (const eventName of ["dragleave", "drop"]) {
+        workspace.addEventListener(eventName, (event) => {
+          event.preventDefault();
+          workspace.classList.remove("dragging");
+        });
+      }
+
+      workspace.addEventListener("drop", (event) => loadFile(event.dataTransfer.files[0]));
+      window.addEventListener("resize", fitStage);
+    </script>
+  </body>
+</html>

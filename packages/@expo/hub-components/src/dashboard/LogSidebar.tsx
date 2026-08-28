@@ -10,6 +10,7 @@ import { DeviceOptionsSection } from './DeviceOptionsSection';
 import { EventsSection } from './EventsSection';
 import { LogsSection } from './LogsSection';
 import { StreamOptionsSection } from './StreamOptionsSection';
+import { type Device, isDeviceFrameProfileId } from './data';
 import { type StreamModeAvailability } from './StreamSection';
 
 export type LogSidebarProps = {
@@ -17,6 +18,12 @@ export type LogSidebarProps = {
   onToggle?: () => void;
   /** Active device connection — feeds the inspector sections. */
   client?: DeviceClient;
+  /** Selected device metadata used by viewer-local options. */
+  device?: Device;
+  /** Viewer-local preference for supported device-frame artwork. */
+  showDeviceFrame?: boolean;
+  /** Change the viewer-local device-frame preference. */
+  onShowDeviceFrameChange?: (show: boolean) => void;
   /** Viewer-selected simulator stream mode. */
   streamMode?: DeviceStreamMode;
   /** Viewer-selected HTTP codec. */
@@ -38,6 +45,9 @@ export type LogSidebarProps = {
 export function LogSidebar({
   onToggle,
   client,
+  device,
+  showDeviceFrame = true,
+  onShowDeviceFrameChange,
   streamMode,
   httpCodec,
   streamModeAvailability,
@@ -45,6 +55,14 @@ export function LogSidebar({
   onHttpCodecChange,
   width = 400,
 }: LogSidebarProps) {
+  const deviceFrame = device
+    ? {
+        available: isDeviceFrameProfileId(device.deviceFrame),
+        visible: showDeviceFrame,
+        onVisibleChange: onShowDeviceFrameChange ?? (() => {}),
+      }
+    : undefined;
+
   return (
     <aside
       style={{
@@ -73,7 +91,13 @@ export function LogSidebar({
           overflowY: 'auto',
         }}>
         <CurrentAppSection client={client} />
-        {client?.capabilities.deviceSettings && <DeviceOptionsSection client={client} />}
+        {(client?.capabilities.deviceSettings || deviceFrame) && (
+          <DeviceOptionsSection
+            client={client}
+            deviceFrame={deviceFrame}
+            showDeviceSettings={client?.capabilities.deviceSettings ?? false}
+          />
+        )}
         {client?.capabilities.activity && <ActivitySection client={client} />}
         {client?.capabilities.events && <EventsSection client={client} />}
         {client?.streamCapabilities && (

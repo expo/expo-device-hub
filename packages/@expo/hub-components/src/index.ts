@@ -58,13 +58,26 @@ export { EmptyState } from './dashboard/EmptyState';
 export { DeviceSection, type DeviceSectionProps } from './dashboard/DeviceSection';
 export { OutputSection } from './dashboard/OutputSection';
 export { CurrentAppSection } from './dashboard/CurrentAppSection';
-export { DeviceOptionsSection } from './dashboard/DeviceOptionsSection';
+export {
+  DeviceOptionsSection,
+  NO_DEVICE_FRAME_DESCRIPTION,
+  type DeviceFrameOption,
+} from './dashboard/DeviceOptionsSection';
 export { ActivitySection } from './dashboard/ActivitySection';
 export { EventsSection } from './dashboard/EventsSection';
 export { LogsSection } from './dashboard/LogsSection';
 export { CollapsibleSection } from './dashboard/CollapsibleSection';
 export { KeyboardSection } from './dashboard/KeyboardSection';
 export { PhoneFrame } from './dashboard/PhoneFrame';
+export {
+  deviceFrameLayout,
+  deviceFrameRotation,
+  type DeviceFrameAsset,
+  type DeviceFrameAssets,
+  type DeviceFrameLayout,
+  type DeviceFrameRect,
+  type DeviceFrameRotation,
+} from './dashboard/deviceFrame';
 export { LogControls } from './dashboard/LogControls';
 export { LogList } from './dashboard/LogList';
 export { LogRow } from './dashboard/LogRow';
