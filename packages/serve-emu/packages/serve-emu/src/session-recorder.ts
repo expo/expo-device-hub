@@ -35,10 +35,6 @@ type ReplayHandlers = {
 
 const MAX_EVENTS = 2_000;
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export class SessionRecorder {
   #events: RecordedEvent[] = [];
   #nextId = 1;
@@ -49,6 +45,7 @@ export class SessionRecorder {
   #replayStartedAt: string | null = null;
   #replayCompletedAt: string | null = null;
   #lastError: string | null = null;
+  #cancelDelay: (() => void) | null = null;
 
   get isReplaying(): boolean {
     return this.#replaying;
@@ -72,6 +69,7 @@ export class SessionRecorder {
 
   stopReplay(): SessionSnapshot {
     this.#stopReplay = true;
+    this.#cancelDelay?.();
     return this.snapshot();
   }
 
@@ -103,7 +101,8 @@ export class SessionRecorder {
     try {
       for (const event of events) {
         if (this.#stopReplay) break;
-        await sleep(Math.max(0, event.delayMs / multiplier));
+        await this.#waitForDelay(Math.max(0, event.delayMs / multiplier));
+        if (this.#stopReplay) break;
         if (event.kind === "gesture") {
           await handlers.dispatchGesture(event.gesture);
         } else {
@@ -115,11 +114,27 @@ export class SessionRecorder {
       this.#lastError = err instanceof Error ? err.message : String(err);
       throw err;
     } finally {
+      this.#cancelDelay = null;
       this.#replaying = false;
       this.#stopReplay = false;
     }
 
     return this.snapshot();
+  }
+
+  #waitForDelay(ms: number): Promise<void> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const finish = () => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (this.#cancelDelay === finish) this.#cancelDelay = null;
+        resolve();
+      };
+      const timer = setTimeout(finish, ms);
+      this.#cancelDelay = finish;
+    });
   }
 
   #record(

@@ -39,10 +39,15 @@ export function resolveFfmpeg(): string {
 }
 
 export function assertFfmpegAvailable(): void {
-  const r = spawnSync(resolveFfmpeg(), ["-version"], { encoding: "utf8" });
+  const r = spawnSync(resolveFfmpeg(), ["-hide_banner", "-encoders"], { encoding: "utf8" });
   if (r.error || r.status !== 0) {
     throw new Error(
       `ffmpeg not found (tried "${resolveFfmpeg()}"); the grpc backend encodes H.264 on the host — install ffmpeg or point SERVE_EMU_FFMPEG at a binary`,
+    );
+  }
+  if (!/\blibx264\b/.test(r.stdout)) {
+    throw new Error(
+      `ffmpeg at "${resolveFfmpeg()}" does not include the libx264 encoder required by the grpc backend`,
     );
   }
 }
@@ -119,11 +124,12 @@ export class H264Encoder {
     });
   }
 
-  /** Feed one rgb24 frame (must be width×height×3 bytes). */
-  write(rgb: Buffer, ptsUs: bigint): void {
-    if (this.closed || !this.proc.stdin?.writable) return;
+  /** Feed one rgb24 frame; false means it was dropped for encoder backpressure. */
+  write(rgb: Buffer, ptsUs: bigint): boolean {
+    if (this.closed || !this.proc.stdin?.writable || this.proc.stdin.writableNeedDrain) return false;
     this.ptsQueue.push(ptsUs);
     this.proc.stdin.write(rgb);
+    return true;
   }
 
   close(): void {

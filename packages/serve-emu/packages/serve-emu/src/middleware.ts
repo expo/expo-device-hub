@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { listAllDevices, listDevices, screencapPng } from "./adb.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
@@ -14,7 +14,14 @@ import {
 } from "./app-management.ts";
 import { getForegroundApp } from "./app-info.ts";
 import { getNightMode, isNightMode, setNightMode } from "./ui-mode.ts";
-import { startSession, type EmuBackend, type EmuSession } from "./session.ts";
+import {
+  backendForStreamMode,
+  EMU_STREAM_MODES,
+  startSession,
+  streamModeForBackend,
+  type EmuBackend,
+  type EmuSession,
+} from "./session.ts";
 import { parseGesture, type Gesture } from "./input.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
 import { parseRoutePlaybackRequest, RoutePlayback } from "./route-playback.ts";
@@ -43,6 +50,8 @@ export type AppOptions = {
    * Defaults to the SERVE_EMU_BACKEND environment variable.
    */
   backend?: EmuBackend;
+  /** Fail instead of falling back when the requested backend cannot start. */
+  strictBackend?: boolean;
 };
 
 type SessionStatus = "streaming" | "stopped" | "error";
@@ -74,6 +83,12 @@ const MAX_LOGCAT_QUERY_BYTES = 200;
 const SPAWN_RETRY_COOLDOWN_MS = 5_000;
 
 const errMsg = (err: unknown): string => (err instanceof Error ? err.message : String(err));
+
+const readJsonBody = async (req: Request, maxBytes = MAX_JSON_BODY_BYTES): Promise<unknown> => {
+  const contentLength = Number(req.headers.get("content-length") ?? "0");
+  if (contentLength > maxBytes) throw new Error("request body too large");
+  return req.json();
+};
 
 const STATIC_CONTENT_TYPES: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -133,9 +148,11 @@ export async function createApp(opts: AppOptions) {
     maxSize: opts.maxSize,
     keyFrameInterval: opts.keyFrameInterval,
     backend: opts.backend,
+    strictBackend: opts.strictBackend,
   });
 
   const clients = new Set<Client>();
+  const logcatProcesses = new Set<ChildProcess>();
   const startedMs = Date.now();
   const startedAt = new Date(startedMs).toISOString();
   let status: SessionStatus = "streaming";
@@ -208,15 +225,26 @@ export async function createApp(opts: AppOptions) {
     clients.clear();
   };
 
+  const closeLogcatStreams = () => {
+    for (const proc of logcatProcesses) {
+      try {
+        proc.kill("SIGTERM");
+      } catch {}
+    }
+    logcatProcesses.clear();
+  };
+
   const markTerminal = (nextStatus: Exclude<SessionStatus, "streaming">, reason: string) => {
     if (status !== "streaming") return;
     status = nextStatus;
     lastError = reason;
     stoppedAt = new Date().toISOString();
     if (watchdog) clearInterval(watchdog);
+    sessionRecorder.stopReplay();
     routePlayback.close();
     session.close();
     closeClients(nextStatus === "error" ? 1011 : 1000, reason);
+    closeLogcatStreams();
   };
 
   const sendJson = (socket: StreamSocket, value: unknown) => {
@@ -261,12 +289,6 @@ export async function createApp(opts: AppOptions) {
     !Array.isArray(value) &&
     (value as Record<string, unknown>).type === "reset-video";
 
-  const readJsonBody = async (req: Request, maxBytes = MAX_JSON_BODY_BYTES): Promise<unknown> => {
-    const contentLength = Number(req.headers.get("content-length") ?? "0");
-    if (contentLength > maxBytes) throw new Error("request body too large");
-    return req.json();
-  };
-
   const shouldRecord = (value: unknown) =>
     typeof value !== "object" ||
     value === null ||
@@ -280,6 +302,7 @@ export async function createApp(opts: AppOptions) {
   };
 
   const applyLocation = async (fix: GeoFix, source: string, record = true) => {
+    if (status !== "streaming") throw new Error(`session is ${status}`);
     routePlayback.stop();
     await setEmulatorLocationAsync(opts.serial, fix);
     lastLocation = { ...fix, appliedAt: new Date().toISOString() };
@@ -301,6 +324,7 @@ export async function createApp(opts: AppOptions) {
     const packageName = (url.searchParams.get("package") ?? "").trim().slice(0, MAX_LOGCAT_QUERY_BYTES);
     const search = (url.searchParams.get("search") ?? "").trim().slice(0, MAX_LOGCAT_QUERY_BYTES).toLowerCase();
     const proc = spawn("adb", ["-s", opts.serial, "logcat", "-v", "threadtime"]);
+    logcatProcesses.add(proc);
     const encoder = new TextEncoder();
     let pidSet = packageName ? resolvePackagePids(packageName) : new Set<string>();
     let pidTimer: ReturnType<typeof setInterval> | null = null;
@@ -348,6 +372,7 @@ export async function createApp(opts: AppOptions) {
           if (text) send("error", { line: text, at: new Date().toISOString() });
         });
         proc.once("exit", (code, signal) => {
+          logcatProcesses.delete(proc);
           send("close", { code, signal });
           try {
             controller.close();
@@ -355,6 +380,7 @@ export async function createApp(opts: AppOptions) {
           if (pidTimer) clearInterval(pidTimer);
         });
         proc.once("error", (err) => {
+          logcatProcesses.delete(proc);
           send("error", { line: err.message, at: new Date().toISOString() });
           try {
             controller.close();
@@ -364,6 +390,7 @@ export async function createApp(opts: AppOptions) {
       },
       cancel() {
         if (pidTimer) clearInterval(pidTimer);
+        logcatProcesses.delete(proc);
         try {
           proc.kill("SIGTERM");
         } catch {}
@@ -931,8 +958,10 @@ export async function createApp(opts: AppOptions) {
     }
     closeClients(1001, "server stopping");
     if (watchdog) clearInterval(watchdog);
+    sessionRecorder.stopReplay();
     routePlayback.close();
     session.close();
+    closeLogcatStreams();
   };
 
   return {
@@ -949,6 +978,19 @@ export type EmuApp = Awaited<ReturnType<typeof createApp>>;
 
 export type RouterDefaults = Partial<AppOptions>;
 
+/** Injectable process/device seams used by focused router lifecycle tests. */
+export type RouterDependencies = {
+  createApp: (opts: AppOptions) => Promise<EmuApp>;
+  listAllDevices: typeof listAllDevices;
+  listDevices: typeof listDevices;
+};
+
+const defaultRouterDependencies: RouterDependencies = {
+  createApp,
+  listAllDevices,
+  listDevices,
+};
+
 /**
  * Multi-device router. Owns a lazily-populated `Map<serial, EmuApp>` and routes
  * each request to the app for its `?device=<serial>` query (falling back to the
@@ -957,17 +999,23 @@ export type RouterDefaults = Partial<AppOptions>;
  * and the Expo DevTools plugin mount this onto their own transport, so the
  * device-routing logic lives here once rather than in each transport.
  */
-export function createRouter(defaults: RouterDefaults = {}) {
+export function createRouter(
+  defaults: RouterDefaults = {},
+  dependencies: RouterDependencies = defaultRouterDependencies,
+) {
   const apps = new Map<string, EmuApp>();
   const pending = new Map<string, Promise<EmuApp>>();
   const failureAt = new Map<string, number>();
+  const backendOverrides = new Map<string, EmuBackend>();
+  const backendQueues = new Map<string, Promise<void>>();
+  let stopped = false;
 
   // Resolve the serial a request targets: an explicit (connected) `?device=`,
   // else the configured default if still attached, else the first online
   // device. Throws only when *no* device is attached — multiple devices is
   // never an error (we just take the first), so the UI always opens cleanly.
   const resolveSerial = (requested?: string | null): string => {
-    const online = listDevices();
+    const online = dependencies.listDevices();
     if (requested) {
       if (!online.some((d) => d.serial === requested)) {
         throw new Error(`device ${requested} is not connected`);
@@ -984,12 +1032,36 @@ export function createRouter(defaults: RouterDefaults = {}) {
     return first.serial;
   };
 
+  const createConfiguredApp = (
+    serial: string,
+    backend = backendOverrides.get(serial),
+  ): Promise<EmuApp> => {
+    const appOptions: AppOptions = { ...defaults, serial };
+    if (backend) {
+      appOptions.backend = backend;
+      // A user-selected mode must stay truthful rather than silently starting
+      // another transport when its requested backend is unavailable.
+      appOptions.strictBackend = true;
+    }
+    return dependencies.createApp(appOptions);
+  };
+
   // Get (or lazily start) the app for a serial. A dead session is torn down so
   // the next call re-initializes; repeated start failures are throttled.
   const getApp = (serial: string): Promise<EmuApp> => {
+    if (stopped) return Promise.reject(new Error("serve-emu router is stopped"));
     const existing = apps.get(serial);
     if (existing) {
       if (existing.isStreaming()) return Promise.resolve(existing);
+    }
+    const backendQueue = backendQueues.get(serial);
+    if (backendQueue) {
+      return backendQueue.then(() => {
+        const active = apps.get(serial);
+        return active?.isStreaming() ? active : getApp(serial);
+      });
+    }
+    if (existing) {
       try {
         existing.stop();
       } catch {}
@@ -1003,7 +1075,13 @@ export function createRouter(defaults: RouterDefaults = {}) {
       );
     }
     const promise = (async () => {
-      const created = await createApp({ ...defaults, serial });
+      const created = await createConfiguredApp(serial);
+      if (stopped) {
+        try {
+          created.stop();
+        } catch {}
+        throw new Error("serve-emu router stopped while the device session was starting");
+      }
       apps.set(serial, created);
       return created;
     })();
@@ -1016,6 +1094,64 @@ export function createRouter(defaults: RouterDefaults = {}) {
       },
     );
     return promise;
+  };
+
+  // Start the replacement before disturbing the live app. Once ready, swap it
+  // into the router atomically and close the previous app; its WebSockets close
+  // and the browser's normal reconnect path attaches to the new backend. A
+  // failed replacement leaves the existing stream untouched.
+  const performBackendSwitch = async (serial: string, backend: EmuBackend): Promise<EmuApp> => {
+    if (stopped) throw new Error("serve-emu router is stopped");
+    const inFlight = pending.get(serial);
+    if (inFlight) {
+      try {
+        await inFlight;
+      } catch {}
+    }
+    if (stopped) throw new Error("serve-emu router is stopped");
+
+    const current = apps.get(serial);
+    if (current?.isStreaming() && current.session.transport === backend) {
+      backendOverrides.set(serial, backend);
+      return current;
+    }
+
+    const replacement = await createConfiguredApp(serial, backend);
+    if (stopped) {
+      try {
+        replacement.stop();
+      } catch {}
+      throw new Error("serve-emu router stopped while the backend was switching");
+    }
+    const previous = apps.get(serial);
+    backendOverrides.set(serial, backend);
+    failureAt.delete(serial);
+    apps.set(serial, replacement);
+    if (previous && previous !== replacement) {
+      try {
+        previous.stop();
+      } catch {}
+    }
+    return replacement;
+  };
+
+  // Every request joins the same per-device FIFO, including repeated targets.
+  // This makes the last completed request the final state instead of letting a
+  // later request coalesce with an older operation across an intervening mode.
+  const switchBackend = (serial: string, backend: EmuBackend): Promise<EmuApp> => {
+    if (stopped) return Promise.reject(new Error("serve-emu router is stopped"));
+    const previous = backendQueues.get(serial) ?? Promise.resolve();
+    const operation = previous.then(() => performBackendSwitch(serial, backend));
+    const tail = operation.then(
+      () => {},
+      () => {},
+    );
+    backendQueues.set(serial, tail);
+    const clearQueue = () => {
+      if (backendQueues.get(serial) === tail) backendQueues.delete(serial);
+    };
+    tail.then(clearQueue);
+    return operation;
   };
 
   // Resolve + start in one step.
@@ -1034,12 +1170,21 @@ export function createRouter(defaults: RouterDefaults = {}) {
     return Response.json({
       ok: true,
       defaultSerial,
-      devices: listAllDevices().map((device) => ({
+      devices: dependencies.listAllDevices().map((device) => ({
         ...device,
         streaming: apps.get(device.serial)?.isStreaming() ?? false,
       })),
     });
   };
+
+  const streamModeResponse = (serial: string, app: EmuApp): Response =>
+    Response.json({
+      ok: true,
+      serial,
+      mode: streamModeForBackend(app.session.transport),
+      transport: app.session.transport,
+      availableModes: /^emulator-\d+$/.test(serial) ? EMU_STREAM_MODES : ["scrcpy"],
+    });
 
   const handleRequest = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
@@ -1051,6 +1196,57 @@ export function createRouter(defaults: RouterDefaults = {}) {
         return devicesResponse();
       } catch (err) {
         return Response.json({ ok: false, error: errMsg(err) }, { status: 400 });
+      }
+    }
+
+    // Backend selection replaces the device app itself, so this endpoint lives
+    // at the router layer instead of inside the currently-active app.
+    if (url.pathname === "/api/stream-mode") {
+      if (req.method !== "GET" && req.method !== "PUT") {
+        return new Response("method not allowed", {
+          status: 405,
+          headers: { Allow: "GET, PUT" },
+        });
+      }
+
+      let serial: string;
+      try {
+        serial = resolveSerial(url.searchParams.get("device"));
+      } catch (err) {
+        return Response.json({ ok: false, error: errMsg(err) }, { status: 503 });
+      }
+
+      if (req.method === "GET") {
+        try {
+          return streamModeResponse(serial, await getApp(serial));
+        } catch (err) {
+          return Response.json({ ok: false, error: errMsg(err) }, { status: 503 });
+        }
+      }
+
+      let backend: EmuBackend;
+      try {
+        const payload = await readJsonBody(req);
+        const mode =
+          typeof payload === "object" && payload !== null && !Array.isArray(payload)
+            ? (payload as Record<string, unknown>).mode
+            : undefined;
+        const parsed = backendForStreamMode(mode);
+        if (!parsed) {
+          throw new Error(`mode must be one of: ${EMU_STREAM_MODES.join(", ")}`);
+        }
+        if (parsed === "grpc" && !/^emulator-\d+$/.test(serial)) {
+          throw new Error("grpc-screenshot is only available for Android Emulator devices");
+        }
+        backend = parsed;
+      } catch (err) {
+        return Response.json({ ok: false, error: errMsg(err) }, { status: 400 });
+      }
+
+      try {
+        return streamModeResponse(serial, await switchBackend(serial, backend));
+      } catch (err) {
+        return Response.json({ ok: false, error: errMsg(err) }, { status: 503 });
       }
     }
 
@@ -1092,15 +1288,27 @@ export function createRouter(defaults: RouterDefaults = {}) {
   };
 
   const stopAll = () => {
+    stopped = true;
     for (const app of apps.values()) {
       try {
         app.stop();
       } catch {}
     }
     apps.clear();
+    backendOverrides.clear();
   };
 
-  return { resolveSerial, getApp, ensure, handleRequest, attachWebSocket, stopAll };
+  const getActiveApp = (serial: string): EmuApp | undefined => apps.get(serial);
+
+  return {
+    resolveSerial,
+    getApp,
+    getActiveApp,
+    ensure,
+    handleRequest,
+    attachWebSocket,
+    stopAll,
+  };
 }
 
 export type EmuRouter = ReturnType<typeof createRouter>;

@@ -1,7 +1,10 @@
 import http2 from "node:http2";
-import { readdirSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { createConnection, createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 
 /**
  * Minimal client for the Android Emulator's built-in gRPC control endpoint
@@ -34,6 +37,18 @@ function discoveryDirs(): string[] {
   return dirs;
 }
 
+function discoveryProcessIsAlive(file: string): boolean {
+  const match = file.match(/^pid_(\d+)(?:_info)?\.ini$/);
+  if (!match) return false;
+  try {
+    process.kill(Number(match[1]), 0);
+    return true;
+  } catch (error) {
+    // EPERM still means that the process exists (relevant on shared hosts).
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
 /**
  * Find the gRPC control endpoint of a running emulator by its adb serial.
  * Every modern emulator writes a discovery file (`pid_<pid>.ini`, same files
@@ -44,14 +59,19 @@ function discoveryDirs(): string[] {
 export function findEmulatorGrpcEndpoint(serial: string): GrpcEndpoint | null {
   const match = serial.match(/^emulator-(\d+)$/);
   if (!match) return null;
+  const candidates: (GrpcEndpoint & { modifiedMs: number })[] = [];
   for (const dir of discoveryDirs()) {
     let files: string[];
     try {
-      files = readdirSync(dir).filter((f) => /^pid_\d+\.ini$/.test(f));
+      files = readdirSync(dir).filter((f) => /^pid_\d+(?:_info)?\.ini$/.test(f));
     } catch {
       continue;
     }
     for (const file of files) {
+      // Discovery files are not always removed after an emulator exits. A
+      // stale file can claim the same console serial as a newer emulator and
+      // otherwise send us to a dead (or unrelated) gRPC port.
+      if (!discoveryProcessIsAlive(file)) continue;
       let text: string;
       try {
         text = readFileSync(join(dir, file), "utf8");
@@ -66,10 +86,123 @@ export function findEmulatorGrpcEndpoint(serial: string): GrpcEndpoint | null {
       if (kv.get("port.serial") !== match[1]) continue;
       const port = Number(kv.get("grpc.port"));
       if (!Number.isInteger(port) || port <= 0) continue;
-      return { port, token: kv.get("grpc.token") || null, avdName: kv.get("avd.name") || null };
+      let modifiedMs = 0;
+      try {
+        modifiedMs = statSync(join(dir, file)).mtimeMs;
+      } catch {}
+      candidates.push({
+        port,
+        token: kv.get("grpc.token") || null,
+        avdName: kv.get("avd.name") || null,
+        modifiedMs,
+      });
     }
   }
-  return null;
+  candidates.sort((a, b) => b.modifiedMs - a.modifiedMs);
+  const endpoint = candidates[0];
+  return endpoint
+    ? { port: endpoint.port, token: endpoint.token, avdName: endpoint.avdName }
+    : null;
+}
+
+function portIsReachable(port: number, timeoutMs = 300): Promise<boolean> {
+  return new Promise((resolve) => {
+    const socket = createConnection({ host: "127.0.0.1", port });
+    let settled = false;
+    const finish = (reachable: boolean) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      socket.destroy();
+      resolve(reachable);
+    };
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    socket.once("connect", () => finish(true));
+    socket.once("error", () => finish(false));
+  });
+}
+
+function pickAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("could not allocate a local gRPC port"));
+        return;
+      }
+      const { port } = address;
+      server.close((error) => (error ? reject(error) : resolve(port)));
+    });
+  });
+}
+
+function runningAvdName(serial: string): string | null {
+  const result = spawnSync("adb", ["-s", serial, "emu", "avd", "name"], {
+    encoding: "utf8",
+    timeout: 5_000,
+  });
+  if (result.status !== 0) return null;
+  return (
+    result.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line && line !== "OK" && !line.startsWith("KO:")) ?? null
+  );
+}
+
+export function parseEmulatorGrpcPort(output: string): number | null {
+  const value = Number(
+    output.match(/["']?port["']?\s*:\s*["']?(\d+)/i)?.[1] ??
+      output.match(/\bport\s+(\d+)/i)?.[1],
+  );
+  return Number.isInteger(value) && value > 0 && value <= 65_535 ? value : null;
+}
+
+/**
+ * Return a usable emulator gRPC endpoint. Android Studio launches publish one
+ * in a discovery file. Headless/CLI emulators commonly do not start gRPC at
+ * all, so enable a loopback endpoint through the emulator console and read
+ * its refreshed discovery/auth metadata when no live endpoint exists.
+ */
+export async function ensureEmulatorGrpcEndpoint(serial: string): Promise<GrpcEndpoint> {
+  const discovered = findEmulatorGrpcEndpoint(serial);
+  if (discovered && (await portIsReachable(discovered.port))) return discovered;
+
+  let lastError = discovered
+    ? `discovered gRPC port ${discovered.port} is not reachable`
+    : "no live emulator gRPC discovery file";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const port = await pickAvailablePort();
+    const result = spawnSync("adb", ["-s", serial, "emu", "grpc", String(port)], {
+      encoding: "utf8",
+      timeout: 5_000,
+    });
+    const output = `${result.stdout ?? ""}\n${result.stderr ?? ""}`.trim();
+    if (result.status !== 0 || output.includes("KO:")) {
+      lastError = output || result.error?.message || `adb exited with ${result.status}`;
+      continue;
+    }
+
+    const reportedPort = parseEmulatorGrpcPort(output);
+    for (let probe = 0; probe < 40; probe++) {
+      // Starting the endpoint creates/refreshes the authenticated discovery
+      // file. Prefer it so we carry the token, and honor the emulator when it
+      // reports an already-active port instead of the one we requested.
+      const activated = findEmulatorGrpcEndpoint(serial);
+      if (activated && (await portIsReachable(activated.port))) return activated;
+      const activePort = reportedPort ?? port;
+      if (probe === 39 && (await portIsReachable(activePort))) {
+        return { port: activePort, token: null, avdName: runningAvdName(serial) };
+      }
+      await sleep(50);
+    }
+    lastError = `emulator accepted the gRPC command, but no usable endpoint became reachable`;
+  }
+
+  throw new Error(`could not enable the emulator gRPC endpoint for ${serial}: ${lastError}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +311,7 @@ export type EmuImage = {
   format: number;
   /** Rotation.SkinRotation: 0 portrait, 1 landscape, 2 reverse portrait, 3 reverse landscape. */
   rotation: number;
-  /** Raw payload: PNG file or top-down packed pixels, per the requested format. */
+  /** Raw payload: PNG file or packed pixels, per the requested format. */
   image: Buffer;
   seq: number;
   timestampUs: bigint;
@@ -248,6 +381,8 @@ export type KeyboardEventRequest = {
   key?: string;
   /** UTF-8 text typed as a sequence of keypresses; overrides `key`. */
   text?: string;
+  /** Linux evdev keycode, sent as a complete keypress. */
+  evdev?: number;
 };
 
 // KeyboardEvent { KeyCodeType codeType=1; KeyEventType eventType=2; int32 keyCode=3; string key=4; string text=5 }
@@ -255,6 +390,14 @@ const KEY_EVENT_TYPE_KEYPRESS = 2;
 
 function encodeKeyboardEvent(req: KeyboardEventRequest): Buffer {
   const out: number[] = [];
+  if (req.evdev !== undefined) {
+    // KeyCodeType.Evdev = 1; KeyEventType.keypress = 2. Let the emulator
+    // produce the correctly encoded down/up pair for this physical key.
+    varintField(out, 1, 1);
+    varintField(out, 2, KEY_EVENT_TYPE_KEYPRESS);
+    varintField(out, 3, req.evdev);
+    return Buffer.from(out);
+  }
   if (!req.text) varintField(out, 2, KEY_EVENT_TYPE_KEYPRESS);
   stringField(out, 4, req.key ?? "");
   stringField(out, 5, req.text ?? "");
@@ -434,6 +577,14 @@ export class EmulatorGrpcClient {
 
   async sendKey(event: KeyboardEventRequest): Promise<void> {
     await this.request("sendKey", encodeKeyboardEvent(event), { timeoutMs: UNARY_TIMEOUT_MS });
+  }
+
+  /** Send one evdev keypress through the emulator control endpoint. */
+  async sendEvdevKeyPress(keyCode: number): Promise<void> {
+    if (!Number.isInteger(keyCode) || keyCode <= 0) {
+      throw new Error(`invalid evdev keycode ${keyCode}`);
+    }
+    await this.sendKey({ evdev: keyCode });
   }
 
   close(): void {

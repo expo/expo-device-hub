@@ -77,7 +77,15 @@ export async function startServer(opts: ServerOpts) {
     server.stop(true);
   };
 
-  return { server, router, serial, session: app.session, stop };
+  return {
+    server,
+    router,
+    serial,
+    get session() {
+      return router.getActiveApp(serial)?.session ?? app.session;
+    },
+    stop,
+  };
 }
 
 export type StartedServer = Awaited<ReturnType<typeof startServer>>;

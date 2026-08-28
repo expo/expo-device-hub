@@ -11,13 +11,14 @@ bunx serve-emu
 # → Preview at http://localhost:3300
 ```
 
-`serve-emu` spawns the scrcpy server on the device, opens an adb forward tunnel, pipes H.264 frames over a WebSocket, and decodes them in the browser with WebCodecs. Input events flow back over the same socket to scrcpy's control channel.
+`serve-emu` streams H.264 frames over a WebSocket and decodes them in the browser with WebCodecs. It uses scrcpy by default, or `--stream-mode grpc-screenshot` for host-side Android Emulator screenshot capture and input injection.
 
 ## Status
 
 v1. Working:
 
 - Live H.264 video stream from device → WebCodecs canvas
+- Runtime stream-source switching between scrcpy and gRPC screenshot from the browser UI
 - Taps, swipes, hardware buttons (Back / Home / Recents / Power)
 - Text injection, keyevents
 - Multi-client (multiple browser tabs share one stream)
@@ -40,6 +41,7 @@ Planned:
 - `adb` on PATH (Android platform-tools)
 - A booted device/emulator (`adb devices` shows it), or an AVD name passed with `--avd`
 - Chrome / Edge / Safari 16.4+ (for WebCodecs)
+- `ffmpeg` with the `libx264` encoder on PATH when using `--stream-mode grpc-screenshot`
 
 ## Quick start
 
@@ -55,7 +57,7 @@ The `setup` step is also run lazily on first start, so you can skip it.
 ## CLI
 
 ```
-serve-emu [-p <port>] [-s <serial>] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec]
+serve-emu [-p <port>] [-s <serial>] [--stream-mode <scrcpy|grpc-screenshot>] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec]
 serve-emu --avd <name> [--restart-avd]
 serve-emu --avd-list
 serve-emu --running-avds
@@ -65,9 +67,10 @@ serve-emu --running-avds
 |---|---|---|
 | `-p, --port` | `3300` | HTTP port for the preview server |
 | `-s, --serial` | auto | adb device serial (only required when multiple devices are attached) |
+| `--stream-mode` | `scrcpy` | screen/input source: `scrcpy` (all devices) or `grpc-screenshot` (Android emulators only; requires `ffmpeg` with `libx264`) |
 | `--max-fps` | `30` | cap source frame rate |
 | `--bit-rate` | `8000000` | H.264 bit rate in bps |
-| `--max-size` | `1024` | downscale longest edge to N pixels; `0` = native (encoders on many emulators reject above ~2560, so the default trims) |
+| `--max-size` | `1280` | downscale longest edge to N pixels; `0` = native (encoders on many emulators reject above ~2560, so the default trims) |
 | `--key-frame-interval` | `1` | ask the encoder for regular keyframes so clients can recover without resetting video capture; `0` disables this codec option |
 | `--avd` | none | launch this Android Virtual Device before streaming |
 | `--restart-avd` | false | stop a running matching AVD before launching it |
@@ -77,6 +80,18 @@ serve-emu --running-avds
 | `--emulator-port` | auto | emulator console port for `--avd`; must be an even port from 5554 through 5682 |
 
 ## HTTP API
+
+Read or change the selected device's stream source without restarting serve-emu:
+
+```sh
+curl 'http://localhost:3300/api/stream-mode?device=emulator-5554'
+
+curl -X PUT 'http://localhost:3300/api/stream-mode?device=emulator-5554' \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"grpc-screenshot"}'
+```
+
+The supported modes are `scrcpy` and `grpc-screenshot`. gRPC screenshot is emulator-only; if a requested replacement cannot start, serve-emu leaves the current stream running.
 
 Set an Android Emulator GPS fix:
 

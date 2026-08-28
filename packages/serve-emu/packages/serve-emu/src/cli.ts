@@ -2,6 +2,7 @@
 import { parseArgs } from "node:util";
 import { listAvds, listRunningAvds, startEmulator } from "./emulator.ts";
 import { startServer } from "./server.ts";
+import { backendForStreamMode, EMU_STREAM_MODES } from "./session.ts";
 
 const argv = Bun.argv.slice(2);
 const { values } = parseArgs({
@@ -16,6 +17,7 @@ const { values } = parseArgs({
     // bake in black letterbox columns the way 1024 (→460.8, rounded to 464) did.
     "max-size": { type: "string", default: "1280" },
     "key-frame-interval": { type: "string", default: "1" },
+    "stream-mode": { type: "string" },
     avd: { type: "string" },
     "avd-list": { type: "boolean" },
     "running-avds": { type: "boolean" },
@@ -36,10 +38,10 @@ function numberOption(name: string, fallback: number): number {
 }
 
 if (values.help) {
-  console.log(`serve-emu — host an Android device over scrcpy + WebSocket
+  console.log(`serve-emu — host an Android device stream in the browser
 
 Usage:
-  serve-emu [-p <port>] [-s <serial>] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec]
+  serve-emu [-p <port>] [-s <serial>] [--stream-mode <mode>] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec]
   serve-emu --avd <name> [--restart-avd]
   serve-emu --avd-list
   serve-emu --running-avds
@@ -55,6 +57,9 @@ Options:
       --key-frame-interval <sec>
                          Ask the encoder for regular keyframes; 0 disables this
                          codec option (default: 1)
+      --stream-mode <mode>
+                         Screen/input source: ${EMU_STREAM_MODES.join(" or ")}
+                         (default: scrcpy)
       --avd <name>       Launch this Android Virtual Device before streaming
       --restart-avd      Stop a running matching AVD before launching it
       --avd-list         Print available Android Virtual Device names
@@ -87,6 +92,17 @@ async function main() {
     throw new Error("Use either --avd to launch an emulator or --serial to attach to an existing device, not both.");
   }
 
+  // Validate the requested source before --restart-avd can mutate emulator
+  // state. With no flag, leave the backend unset so SERVE_EMU_BACKEND remains
+  // a supported programmatic/CLI default.
+  const streamMode = values["stream-mode"];
+  const backend = streamMode === undefined ? undefined : backendForStreamMode(streamMode);
+  if (streamMode !== undefined && !backend) {
+    throw new Error(
+      `--stream-mode must be one of: ${EMU_STREAM_MODES.join(", ")}. Received "${streamMode}".`,
+    );
+  }
+
   let emulatorLaunch: Awaited<ReturnType<typeof startEmulator>> | null = null;
   // Without --avd or -s, leave the serial undefined: the router picks the first
   // available device, so multiple booted devices no longer error.
@@ -103,7 +119,6 @@ async function main() {
   const bitRate = numberOption("bit-rate", 8_000_000);
   const maxSize = numberOption("max-size", 1280);
   const keyFrameInterval = numberOption("key-frame-interval", 1);
-
   const started = await startServer({
     serial,
     port,
@@ -111,6 +126,8 @@ async function main() {
     bitRate,
     maxSize,
     keyFrameInterval,
+    backend,
+    strictBackend: streamMode !== undefined,
   }).catch((err) => {
     emulatorLaunch?.stop();
     throw err;

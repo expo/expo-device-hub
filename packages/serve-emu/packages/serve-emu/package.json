@@ -61,6 +61,7 @@
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "typecheck:ui": "tsc -p src/ui --noEmit",
+    "test": "bun test",
     "prepublishOnly": "bun run build"
   },
   "files": [

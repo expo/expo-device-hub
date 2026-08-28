@@ -1,7 +1,7 @@
-import { spawn } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   EmulatorGrpcClient,
-  findEmulatorGrpcEndpoint,
+  ensureEmulatorGrpcEndpoint,
   IMG_FORMAT_PNG,
   IMG_FORMAT_RGB888,
   type EmuImage,
@@ -35,41 +35,102 @@ const MAX_QUEUED_FRAMES = 256;
 const MAX_TEXT_BYTES = 300;
 const TOUCH_PRESSURE = 1;
 
-// Android keycodes (input.ts KEY / client "key" gestures) → W3C KeyboardEvent
-// key values the emulator's keyboard translator understands.
-const ANDROID_KEYCODE_TO_W3C: Record<number, string> = {
-  3: "GoHome",
-  4: "GoBack",
-  19: "ArrowUp",
-  20: "ArrowDown",
-  21: "ArrowLeft",
-  22: "ArrowRight",
-  24: "AudioVolumeUp",
-  25: "AudioVolumeDown",
-  26: "Power",
-  61: "Tab",
-  66: "Enter",
-  67: "Backspace",
-  92: "PageUp",
-  93: "PageDown",
-  111: "Escape",
-  112: "Delete",
-  122: "Home",
-  123: "End",
-  164: "AudioVolumeMute",
-  187: "AppSwitch",
+// Android keycodes (input.ts KEY / client "key" gestures) → Linux evdev
+// codes for non-printable physical keys. Printable keys use the emulator's
+// W3C character path below so keyboard layout/modifier handling stays native.
+const ANDROID_KEYCODE_TO_EVDEV: Record<number, number> = {
+  19: 103, // KEY_UP
+  20: 108, // KEY_DOWN
+  21: 105, // KEY_LEFT
+  22: 106, // KEY_RIGHT
+  24: 115, // KEY_VOLUMEUP
+  25: 114, // KEY_VOLUMEDOWN
+  61: 15, // KEY_TAB
+  66: 28, // KEY_ENTER
+  67: 14, // KEY_BACKSPACE
+  92: 104, // KEY_PAGEUP
+  93: 109, // KEY_PAGEDOWN
+  111: 1, // KEY_ESC
+  112: 111, // KEY_DELETE
+  122: 102, // KEY_HOME → Android MOVE_HOME in Generic.kl
+  123: 107, // KEY_END → Android MOVE_END in Generic.kl
+  164: 113, // KEY_MUTE
+};
+
+const ANDROID_PRINTABLE_KEYCODE_TO_W3C: Record<number, string> = {
+  55: ",",
+  56: ".",
+  62: " ",
+  68: "`",
+  69: "-",
+  70: "=",
+  71: "[",
+  72: "]",
+  73: "\\",
+  74: ";",
+  75: "'",
+  76: "/",
+  77: "@",
+  81: "+",
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-function adbKeyEvent(serial: string, keycode: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("adb", ["-s", serial, "shell", "input", "keyevent", String(keycode)]);
-    proc.once("error", reject);
-    proc.once("exit", (code) =>
-      code === 0 ? resolve() : reject(new Error(`adb input keyevent ${keycode} exited with ${code}`)),
-    );
+function readNavigationMode(serial: string): 0 | 1 | 2 | null {
+  const result = spawnSync(
+    "adb",
+    ["-s", serial, "shell", "settings", "get", "secure", "navigation_mode"],
+    { encoding: "utf8", timeout: 5_000 },
+  );
+  const mode = Number(result.stdout.trim());
+  return result.status === 0 && (mode === 0 || mode === 1 || mode === 2) ? mode : null;
+}
+
+function runPowerCommand(serial: string, action: "sleep" | "wakeup"): void {
+  const result = spawnSync("adb", ["-s", serial, "shell", "cmd", "power", action], {
+    encoding: "utf8",
+    timeout: 5_000,
   });
+  if (result.status !== 0) {
+    throw new Error(
+      `could not ${action} ${serial}: ${result.stderr.trim() || result.stdout.trim() || result.error?.message || `adb exited with ${result.status}`}`,
+    );
+  }
+}
+
+function isDeviceAwake(serial: string): boolean {
+  const result = spawnSync("adb", ["-s", serial, "shell", "dumpsys", "power"], {
+    encoding: "utf8",
+    timeout: 5_000,
+  });
+  if (result.status !== 0) {
+    throw new Error(
+      `could not read power state for ${serial}: ${result.stderr.trim() || result.error?.message || `adb exited with ${result.status}`}`,
+    );
+  }
+  return /mWakefulness=Awake\b/.test(result.stdout);
+}
+
+function toggleDevicePower(serial: string): void {
+  runPowerCommand(serial, isDeviceAwake(serial) ? "sleep" : "wakeup");
+}
+
+function androidKeycodeToW3c(keycode: number): string | null {
+  const named = ANDROID_PRINTABLE_KEYCODE_TO_W3C[keycode];
+  if (named) return named;
+  // Android KEYCODE_0..9 and KEYCODE_A..Z are contiguous.
+  if (keycode >= 7 && keycode <= 16) return String(keycode - 7);
+  if (keycode >= 29 && keycode <= 54) return String.fromCharCode(97 + keycode - 29);
+  return null;
+}
+
+function isUsableRgbFrame(image: EmuImage): boolean {
+  return (
+    image.format === IMG_FORMAT_RGB888 &&
+    image.width > 0 &&
+    image.height > 0 &&
+    image.image.length === image.width * image.height * 3
+  );
 }
 
 export async function startGrpcSession(opts: StartOpts): Promise<EmuSession> {
@@ -80,15 +141,11 @@ export async function startGrpcSession(opts: StartOpts): Promise<EmuSession> {
   const keyFrameInterval = opts.keyFrameInterval ?? 1;
   const paceMs = Math.max(1, Math.round(1000 / maxFps));
 
-  const endpoint = findEmulatorGrpcEndpoint(serial);
-  if (!endpoint) {
-    throw new Error(
-      `no gRPC endpoint found for ${serial} (no emulator discovery file matches — the emulator may be too old or running with gRPC disabled)`,
-    );
-  }
   assertFfmpegAvailable();
+  const endpoint = await ensureEmulatorGrpcEndpoint(serial);
 
   const client = new EmulatorGrpcClient(endpoint);
+  const navigationMode = readNavigationMode(serial);
   let closed = false;
   let fatalReason: string | null = null;
   let fatalCb: ((reason: string) => void) | null = null;
@@ -134,13 +191,13 @@ export async function startGrpcSession(opts: StartOpts): Promise<EmuSession> {
 
   const writeFrame = (repeat: boolean) => {
     if (closed || !encoder || !latest) return;
-    encoder.write(latest.image, nowUs());
+    const accepted = encoder.write(latest.image, nowUs());
     lastWriteAt = Date.now();
     if (flushTimer) {
       clearTimeout(flushTimer);
       flushTimer = null;
     }
-    if (!repeat) {
+    if (!repeat && accepted) {
       flushTimer = setTimeout(() => {
         flushTimer = null;
         writeFrame(true);
@@ -176,7 +233,10 @@ export async function startGrpcSession(opts: StartOpts): Promise<EmuSession> {
 
   let resolveFirstFrame: ((image: EmuImage) => void) | null = null;
   const onImage = (image: EmuImage) => {
-    if (closed) return;
+    // The emulator explicitly emits empty frames while a display is inactive.
+    // Feeding one (or a partial raw payload) into ffmpeg would permanently
+    // desynchronize the rawvideo byte stream.
+    if (closed || !isUsableRgbFrame(image)) return;
     latest = image;
     if (resolveFirstFrame) {
       const resolve = resolveFirstFrame;
@@ -212,7 +272,24 @@ export async function startGrpcSession(opts: StartOpts): Promise<EmuSession> {
   try {
     // Touch coordinates are native display pixels while the stream is scaled,
     // so learn the native size up front (rotation-normalized to portrait).
-    const probe = await client.getScreenshot({ format: IMG_FORMAT_PNG });
+    if (!isDeviceAwake(serial)) {
+      runPowerCommand(serial, "wakeup");
+      await sleep(100);
+    }
+    let probe = await client.getScreenshot({ format: IMG_FORMAT_PNG });
+    if (probe.width <= 0 || probe.height <= 0) {
+      // A sleeping display produces explicit 0×0 images. Wake through the
+      // power service (not `adb shell input`) so startup can learn dimensions
+      // and expose a usable stream on keyboard-less AVDs.
+      runPowerCommand(serial, "wakeup");
+      for (let attempt = 0; attempt < 20 && (probe.width <= 0 || probe.height <= 0); attempt++) {
+        await sleep(100);
+        probe = await client.getScreenshot({ format: IMG_FORMAT_PNG });
+      }
+      if (probe.width <= 0 || probe.height <= 0) {
+        throw new Error("emulator display stayed inactive after requesting wakeup");
+      }
+    }
     const probeLandscape = probe.rotation === 1 || probe.rotation === 3;
     const portraitNative = {
       width: probeLandscape ? probe.height : probe.width,
@@ -257,6 +334,51 @@ export async function startGrpcSession(opts: StartOpts): Promise<EmuSession> {
         },
       ]);
     };
+    const swipeTouch = async (
+      x1: number,
+      y1: number,
+      x2: number,
+      y2: number,
+      durationMs: number,
+      holdMs = 0,
+    ) => {
+      const dur = Math.max(80, durationMs);
+      const steps = Math.max(8, Math.round(dur / 16));
+      await touch(x1, y1, TOUCH_PRESSURE);
+      for (let i = 1; i < steps; i++) {
+        const t = i / steps;
+        await sleep(dur / steps);
+        await touch(x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, TOUCH_PRESSURE);
+      }
+      await sleep(dur / steps + holdMs);
+      await touch(x2, y2, 0);
+    };
+    const tapTouch = async (x: number, y: number) => {
+      await touch(x, y, TOUCH_PRESSURE);
+      await sleep(20);
+      await touch(x, y, 0);
+    };
+
+    // Navigate through the on-screen system UI so controls also work on AVDs
+    // with hw.keyboard=false. Modes: 0 = 3-button, 1 = 2-button, 2 = gestural.
+    const goBack = () =>
+      navigationMode === 2
+        ? swipeTouch(0.002, 0.5, 0.28, 0.5, 180)
+        : navigationMode === 0 || navigationMode === 1
+          ? tapTouch(0.17, 0.985)
+          : client.sendKey({ key: "GoBack" });
+    const goHome = () =>
+      navigationMode === 2
+        ? swipeTouch(0.5, 0.995, 0.5, 0.65, 250)
+        : navigationMode === 0 || navigationMode === 1
+          ? tapTouch(0.5, 0.985)
+          : client.sendKey({ key: "GoHome" });
+    const openRecents = () =>
+      navigationMode === 0
+        ? tapTouch(0.83, 0.985)
+        : navigationMode === 1 || navigationMode === 2
+          ? swipeTouch(0.5, 0.995, 0.5, 0.55, 280, 500)
+          : client.sendKey({ key: "AppSwitch" });
 
     const sendGesture = async (gesture: Gesture): Promise<void> => {
       if (closed) throw new Error("session closed");
@@ -267,20 +389,13 @@ export async function startGrpcSession(opts: StartOpts): Promise<EmuSession> {
           await touch(gesture.x, gesture.y, 0);
           return;
         case "swipe": {
-          const dur = Math.max(80, gesture.durationMs ?? 250);
-          const steps = Math.max(8, Math.round(dur / 16));
-          await touch(gesture.x1, gesture.y1, TOUCH_PRESSURE);
-          for (let i = 1; i < steps; i++) {
-            const t = i / steps;
-            await sleep(dur / steps);
-            await touch(
-              gesture.x1 + (gesture.x2 - gesture.x1) * t,
-              gesture.y1 + (gesture.y2 - gesture.y1) * t,
-              TOUCH_PRESSURE,
-            );
-          }
-          await sleep(dur / steps);
-          await touch(gesture.x2, gesture.y2, 0);
+          await swipeTouch(
+            gesture.x1,
+            gesture.y1,
+            gesture.x2,
+            gesture.y2,
+            gesture.durationMs ?? 250,
+          );
           return;
         }
         case "touch":
@@ -292,27 +407,36 @@ export async function startGrpcSession(opts: StartOpts): Promise<EmuSession> {
           );
           return;
         case "key": {
-          const key = ANDROID_KEYCODE_TO_W3C[gesture.keycode];
-          if (key) return void (await client.sendKey({ key }));
-          // Unmapped Android keycodes take the slow adb path (~200ms); the
-          // common ones all resolve to W3C key values above.
-          await adbKeyEvent(serial, gesture.keycode);
+          if (gesture.keycode === 3) return goHome();
+          if (gesture.keycode === 4) return goBack();
+          if (gesture.keycode === 26) return void toggleDevicePower(serial);
+          if (gesture.keycode === 187) return openRecents();
+          const evdev = ANDROID_KEYCODE_TO_EVDEV[gesture.keycode];
+          if (evdev) {
+            await client.sendEvdevKeyPress(evdev);
+            return;
+          }
+          const key = androidKeycodeToW3c(gesture.keycode);
+          if (!key) {
+            throw new Error(`Android keycode ${gesture.keycode} is unsupported by the gRPC backend`);
+          }
+          await client.sendKey({ key });
           return;
         }
         case "text":
           await client.sendKey({ text: truncateTextUtf8(gesture.text, MAX_TEXT_BYTES) });
           return;
         case "back":
-          await client.sendKey({ key: "GoBack" });
+          await goBack();
           return;
         case "home":
-          await client.sendKey({ key: "GoHome" });
+          await goHome();
           return;
         case "recents":
-          await client.sendKey({ key: "AppSwitch" });
+          await openRecents();
           return;
         case "power":
-          await client.sendKey({ key: "Power" });
+          toggleDevicePower(serial);
           return;
       }
     };
@@ -323,8 +447,8 @@ export async function startGrpcSession(opts: StartOpts): Promise<EmuSession> {
       meta: {
         deviceName: endpoint.avdName ?? serial,
         codecId: "h264",
-        width: first.width,
-        height: first.height,
+        width: first.width - (first.width % 2),
+        height: first.height - (first.height % 2),
       },
       readFrame,
       sendGesture,

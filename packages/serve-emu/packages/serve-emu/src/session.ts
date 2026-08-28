@@ -15,8 +15,11 @@ import { startScrcpy, type ScrcpyMeta, type StartOpts, type VideoFrame } from ".
  * SERVE_EMU_BACKEND environment variable.
  */
 export type EmuBackend = "scrcpy" | "grpc";
+export type EmuStreamMode = "scrcpy" | "grpc-screenshot";
 
-export type SessionOpts = StartOpts & { backend?: string };
+export const EMU_STREAM_MODES = ["scrcpy", "grpc-screenshot"] as const satisfies readonly EmuStreamMode[];
+
+export type SessionOpts = StartOpts & { backend?: string; strictBackend?: boolean };
 
 /**
  * Transport-agnostic device streaming session. Both backends produce H.264
@@ -40,8 +43,23 @@ export type EmuSession = {
 export function resolveBackend(explicit?: string): EmuBackend {
   const value = explicit ?? process.env.SERVE_EMU_BACKEND ?? "scrcpy";
   if (value === "scrcpy" || value === "grpc") return value;
-  console.warn(`serve-emu: unknown backend "${value}" (expected "scrcpy" or "grpc"); using scrcpy`);
+  if (value === "grpc-screenshot") return "grpc";
+  console.warn(
+    `serve-emu: unknown backend "${value}" (expected "scrcpy" or "grpc-screenshot"); using scrcpy`,
+  );
   return "scrcpy";
+}
+
+/** Parse the public CLI spelling into the internal session adapter name. */
+export function backendForStreamMode(value: unknown): EmuBackend | undefined {
+  if (value === "scrcpy") return "scrcpy";
+  if (value === "grpc-screenshot") return "grpc";
+  return undefined;
+}
+
+/** Convert an active session adapter name back to the public UI/CLI spelling. */
+export function streamModeForBackend(backend: EmuBackend): EmuStreamMode {
+  return backend === "grpc" ? "grpc-screenshot" : "scrcpy";
 }
 
 export async function startSession(opts: SessionOpts): Promise<EmuSession> {
@@ -52,10 +70,14 @@ export async function startSession(opts: SessionOpts): Promise<EmuSession> {
         console.log(`serve-emu: ${opts.serial} streaming via grpc backend (host-side capture)`);
         return session;
       } catch (err) {
+        if (opts.strictBackend) throw err;
         console.warn(
           `serve-emu: grpc backend failed for ${opts.serial} (${err instanceof Error ? err.message : err}); falling back to scrcpy`,
         );
       }
+    }
+    if (opts.strictBackend) {
+      throw new Error(`grpc-screenshot requires an Android Emulator serial; received ${opts.serial}`);
     }
     // Physical devices have no host-side framebuffer; scrcpy is the only option.
   }
