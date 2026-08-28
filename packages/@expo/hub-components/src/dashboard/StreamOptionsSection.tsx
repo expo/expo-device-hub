@@ -407,7 +407,6 @@ function StreamStatistics({
         style={{
           width: '100%',
           overflow: 'hidden',
-          border: `1px solid ${border.secondary}`,
           borderRadius: radius.md,
           backgroundColor: bg.subtle,
         }}
@@ -536,6 +535,7 @@ function StreamStatistics({
             description="Last 60 samples"
             series={clientFpsSeries}
             maxValue={maxChartValue(clientFpsSeries)}
+            bordered={false}
           />
           <MetricChart
             title="Client bitrate"
@@ -543,6 +543,7 @@ function StreamStatistics({
             description="Last 60 samples"
             series={clientBitrateSeries}
             maxValue={maxChartValue(clientBitrateSeries)}
+            bordered={false}
           />
         </div>
       )}
