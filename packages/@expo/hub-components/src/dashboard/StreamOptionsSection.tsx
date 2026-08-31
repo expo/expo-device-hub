@@ -208,7 +208,13 @@ function formatEncoderLimitation(value: string | null) {
   }
 }
 
-function StreamStatisticGroupHeading({ label }: { label: string }) {
+function StreamStatisticGroupHeading({
+  label,
+  showTopBorder = true,
+}: {
+  label: string;
+  showTopBorder?: boolean;
+}) {
   return (
     <div role="row" style={{ gridColumn: '1 / -1' }}>
       <span
@@ -218,7 +224,7 @@ function StreamStatisticGroupHeading({ label }: { label: string }) {
           ...textSize['2xs'],
           display: 'block',
           padding: '7px 8px 5px',
-          borderTop: `1px solid ${border.secondary}`,
+          ...(showTopBorder ? { borderTop: `1px solid ${border.secondary}` } : {}),
           color: text.secondary,
           fontWeight: 500,
           letterSpacing: '0.04em',
@@ -418,7 +424,7 @@ function StreamStatistics({
           data-server-stale={stats?.serverStale || undefined}
           style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
         >
-          <StreamStatisticGroupHeading label="Stream" />
+          <StreamStatisticGroupHeading label="Stream" showTopBorder={false} />
           <StreamStatisticRow
             label="Server FPS"
             value={formatFps(latest?.serverFps ?? null)}
