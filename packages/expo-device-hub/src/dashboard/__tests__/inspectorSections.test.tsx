@@ -478,9 +478,13 @@ test('shows only the server statistics that serve-emu can provide', () => {
     />,
   );
   const stream = streamStatisticGroupMarkup(html, 'Stream statistics');
+  const receiver = streamStatisticGroupMarkup(html, 'Client statistics');
   const encoder = streamStatisticGroupMarkup(html, 'Encoder statistics');
   const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
 
+  expect(rowOpeningTag(html, 'WebRTC codec')).toContain('border-bottom:');
+  expect(openingTag(stream, '<span role="columnheader"')).not.toContain('border-top:');
+  expect(openingTag(receiver, '<span role="columnheader"')).toContain('border-top:');
   expect(streamStatisticValue(stream, 'Server FPS')).toBe('30 FPS');
   expect(streamStatisticValue(encoder, 'Codec')).toBe('H.264');
   expect(streamStatisticValue(encoder, 'Output FPS')).toBe('30 FPS');
