@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { DEVICE_LIST_MESSAGE_TYPE } from '../../device-list-protocol';
+import { DEVICE_LIST_MESSAGE_TYPE, HEARTBEAT_MESSAGE_TYPE } from '../../device-list-protocol';
 import {
   DeviceListBroadcaster,
   type DeviceListSocket,
@@ -55,7 +55,7 @@ class FakeSocket implements DeviceListSocket {
   }
 }
 
-function manualScheduler() {
+function manualScheduler({ repeating = false } = {}) {
   let callback: (() => void) | null = null;
   let cancelled = 0;
   return {
@@ -63,14 +63,14 @@ function manualScheduler() {
       callback = next;
       return 1 as unknown as ReturnType<typeof setTimeout>;
     },
-    cancelSchedule() {
+    cancel() {
       callback = null;
       cancelled++;
     },
     run() {
       const next = callback;
-      callback = null;
-      if (!next) throw new Error('No poll scheduled');
+      if (!repeating) callback = null;
+      if (!next) throw new Error('No callback scheduled');
       next();
     },
     get cancelled() {
@@ -84,13 +84,14 @@ async function flushPoll(): Promise<void> {
   await Promise.resolve();
 }
 
-function decoded(socket: FakeSocket): Array<{ type: string; devices: HubDeviceList }> {
+function decoded(socket: FakeSocket): Array<{ type: string; devices?: HubDeviceList }> {
   return socket.sent.map((message) => JSON.parse(message));
 }
 
 describe('DeviceListBroadcaster', () => {
   test('shares one poller and broadcasts only semantic changes', async () => {
     const scheduler = manualScheduler();
+    const heartbeat = manualScheduler({ repeating: true });
     let current = LIST;
     let loads = 0;
     const broadcaster = new DeviceListBroadcaster({
@@ -99,7 +100,9 @@ describe('DeviceListBroadcaster', () => {
         return current;
       },
       schedule: scheduler.schedule,
-      cancelSchedule: scheduler.cancelSchedule,
+      cancelSchedule: scheduler.cancel,
+      scheduleHeartbeat: heartbeat.schedule,
+      cancelHeartbeat: heartbeat.cancel,
     });
     const first = new FakeSocket();
     const second = new FakeSocket();
@@ -107,31 +110,43 @@ describe('DeviceListBroadcaster', () => {
     broadcaster.subscribe(first);
     await flushPoll();
     expect(loads).toBe(1);
-    expect(decoded(first)).toEqual([{ type: DEVICE_LIST_MESSAGE_TYPE, devices: LIST }]);
+    expect(decoded(first)).toEqual([
+      { type: HEARTBEAT_MESSAGE_TYPE },
+      { type: DEVICE_LIST_MESSAGE_TYPE, devices: LIST },
+    ]);
 
     broadcaster.subscribe(second);
     expect(loads).toBe(1);
-    expect(decoded(second)).toEqual([{ type: DEVICE_LIST_MESSAGE_TYPE, devices: LIST }]);
+    expect(decoded(second)).toEqual([
+      { type: HEARTBEAT_MESSAGE_TYPE },
+      { type: DEVICE_LIST_MESSAGE_TYPE, devices: LIST },
+    ]);
+
+    heartbeat.run();
+    expect(decoded(first).at(-1)).toEqual({ type: HEARTBEAT_MESSAGE_TYPE });
+    expect(decoded(second).at(-1)).toEqual({ type: HEARTBEAT_MESSAGE_TYPE });
 
     scheduler.run();
     await flushPoll();
     expect(loads).toBe(2);
-    expect(first.sent).toHaveLength(1);
-    expect(second.sent).toHaveLength(1);
+    expect(first.sent).toHaveLength(3);
+    expect(second.sent).toHaveLength(3);
 
     current = { ...LIST, simulators: [{ ...IOS, booted: false }] };
     scheduler.run();
     await flushPoll();
-    expect(first.sent).toHaveLength(2);
-    expect(second.sent).toHaveLength(2);
+    expect(first.sent).toHaveLength(4);
+    expect(second.sent).toHaveLength(4);
 
     first.emit('close');
     second.emit('close');
     expect(scheduler.cancelled).toBe(1);
+    expect(heartbeat.cancelled).toBe(1);
   });
 
   test('keeps the last known snapshot when discovery throws', async () => {
     const scheduler = manualScheduler();
+    const heartbeat = manualScheduler({ repeating: true });
     const errors: unknown[] = [];
     let fail = false;
     const broadcaster = new DeviceListBroadcaster({
@@ -140,7 +155,9 @@ describe('DeviceListBroadcaster', () => {
         return LIST;
       },
       schedule: scheduler.schedule,
-      cancelSchedule: scheduler.cancelSchedule,
+      cancelSchedule: scheduler.cancel,
+      scheduleHeartbeat: heartbeat.schedule,
+      cancelHeartbeat: heartbeat.cancel,
       onError: (error) => errors.push(error),
     });
     const socket = new FakeSocket();
@@ -151,12 +168,13 @@ describe('DeviceListBroadcaster', () => {
     scheduler.run();
     await flushPoll();
 
-    expect(socket.sent).toHaveLength(1);
+    expect(socket.sent).toHaveLength(2);
     expect(errors).toHaveLength(1);
   });
 
   test('coalesces a refresh requested during an in-flight poll', async () => {
     const scheduler = manualScheduler();
+    const heartbeat = manualScheduler({ repeating: true });
     let resolveFirst!: (list: HubDeviceList) => void;
     let loads = 0;
     const firstLoad = new Promise<HubDeviceList>((resolve) => {
@@ -165,7 +183,9 @@ describe('DeviceListBroadcaster', () => {
     const broadcaster = new DeviceListBroadcaster({
       load: async () => (++loads === 1 ? firstLoad : LIST),
       schedule: scheduler.schedule,
-      cancelSchedule: scheduler.cancelSchedule,
+      cancelSchedule: scheduler.cancel,
+      scheduleHeartbeat: heartbeat.schedule,
+      cancelHeartbeat: heartbeat.cancel,
     });
 
     broadcaster.subscribe(new FakeSocket());

@@ -13,6 +13,7 @@ import {
   EmptyState,
   LogSidebar,
   ResizeHandle,
+  ServerConnectionOverlay,
   Sidebar,
   StreamPanel,
   type StreamModeAvailability,
@@ -24,6 +25,7 @@ import {
   type DeviceFrameAssets,
 } from '@expo/hub-components';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 import pixelDeviceFrame from '../assets/device-frames/google-pixel-10-pro.png';
 import iphoneDeviceFrame from '../assets/device-frames/iphone-17-pro-silver.png';
@@ -109,7 +111,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const scheme = useColorScheme();
   const hideBootDevice = dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
-  const { booted, recent } = useDeviceLists();
+  const { booted, recent, connectionStatus } = useDeviceLists();
   // Installed runtimes/system images and models for the new-device forms.
   const newDeviceOptions = useNewDeviceOptions();
   const hideUnsupportedDevices = useHideUnsupportedDevices();
@@ -273,17 +275,23 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load.
   const client = useActiveDeviceClient(
-    selected ? { platform: selected.platform, device: selected.id, streamMode } : null,
+    connectionStatus === 'connected' && selected
+      ? { platform: selected.platform, device: selected.id, streamMode }
+      : null,
     basePath()
   );
   const agentInteractions = useArgentInteractions();
   const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
   const agentDeviceIds = Object.keys(agentInteractions);
 
+  const connectionBlocked = connectionStatus !== 'connected';
+
   return (
     <div
       ref={sidebars.containerRef}
+      aria-hidden={connectionBlocked || undefined}
       className={scheme === 'dark' ? 'dark-theme' : undefined}
+      inert={connectionBlocked || undefined}
       style={{
         display: 'flex',
         position: 'relative',
@@ -459,6 +467,14 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onClick={sidebars.openRight}
         />
       )}
+      {connectionBlocked &&
+        createPortal(
+          <ServerConnectionOverlay
+            status={connectionStatus}
+            onReload={() => window.location.reload()}
+          />,
+          document.body
+        )}
     </div>
   );
 }
