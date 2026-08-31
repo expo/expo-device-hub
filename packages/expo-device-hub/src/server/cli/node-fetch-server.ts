@@ -4,7 +4,13 @@ import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 
 /** `http(s)://host` origin of an incoming request, for absolutizing its URL. */
 export function requestOrigin(request: IncomingMessage): string {
-  const proto = 'encrypted' in request.socket && request.socket.encrypted ? 'https' : 'http';
+  const forwardedProto = request.headers['x-forwarded-proto'];
+  const clientProto = (Array.isArray(forwardedProto) ? forwardedProto[0] : forwardedProto)
+    ?.split(',', 1)[0]
+    ?.trim()
+    .toLowerCase();
+  const socketProto = 'encrypted' in request.socket && request.socket.encrypted ? 'https' : 'http';
+  const proto = clientProto === 'http' || clientProto === 'https' ? clientProto : socketProto;
   return `${proto}://${request.headers.host ?? 'localhost'}`;
 }
 
