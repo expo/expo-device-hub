@@ -1,5 +1,11 @@
 # expo-device-hub
 
+## 0.7.1
+
+### Patch Changes
+
+- e2ca548: Honor `X-Forwarded-Proto` in the standalone CLI so WebRTC signaling works behind TLS-terminating reverse proxies.
+
 ## 0.7.0
 
 ### Minor Changes
