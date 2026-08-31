@@ -111,7 +111,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const scheme = useColorScheme();
   const hideBootDevice = dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
-  const { booted, recent, connectionStatus } = useDeviceLists();
+  const { booted, recent, connectionStatus, reconnect } = useDeviceLists();
   // Installed runtimes/system images and models for the new-device forms.
   const newDeviceOptions = useNewDeviceOptions();
   const hideUnsupportedDevices = useHideUnsupportedDevices();
@@ -471,7 +471,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         createPortal(
           <ServerConnectionOverlay
             status={connectionStatus}
-            onReload={() => window.location.reload()}
+            onReconnect={reconnect}
           />,
           document.body
         )}
