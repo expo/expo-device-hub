@@ -55,7 +55,7 @@ class FakeSocket implements DeviceListSocket {
   }
 }
 
-function manualScheduler() {
+function manualScheduler({ repeating = false } = {}) {
   let callback: (() => void) | null = null;
   let cancelled = 0;
   return {
@@ -63,37 +63,15 @@ function manualScheduler() {
       callback = next;
       return 1 as unknown as ReturnType<typeof setTimeout>;
     },
-    cancelSchedule() {
+    cancel() {
       callback = null;
       cancelled++;
     },
     run() {
       const next = callback;
-      callback = null;
-      if (!next) throw new Error('No poll scheduled');
+      if (!repeating) callback = null;
+      if (!next) throw new Error('No callback scheduled');
       next();
-    },
-    get cancelled() {
-      return cancelled;
-    },
-  };
-}
-
-function manualHeartbeatScheduler() {
-  let callback: (() => void) | null = null;
-  let cancelled = 0;
-  return {
-    scheduleHeartbeat(next: () => void) {
-      callback = next;
-      return 1 as unknown as ReturnType<typeof setInterval>;
-    },
-    cancelHeartbeat() {
-      callback = null;
-      cancelled++;
-    },
-    run() {
-      if (!callback) throw new Error('No heartbeat scheduled');
-      callback();
     },
     get cancelled() {
       return cancelled;
@@ -113,7 +91,7 @@ function decoded(socket: FakeSocket): Array<{ type: string; devices?: HubDeviceL
 describe('DeviceListBroadcaster', () => {
   test('shares one poller and broadcasts only semantic changes', async () => {
     const scheduler = manualScheduler();
-    const heartbeat = manualHeartbeatScheduler();
+    const heartbeat = manualScheduler({ repeating: true });
     let current = LIST;
     let loads = 0;
     const broadcaster = new DeviceListBroadcaster({
@@ -122,9 +100,9 @@ describe('DeviceListBroadcaster', () => {
         return current;
       },
       schedule: scheduler.schedule,
-      cancelSchedule: scheduler.cancelSchedule,
-      scheduleHeartbeat: heartbeat.scheduleHeartbeat,
-      cancelHeartbeat: heartbeat.cancelHeartbeat,
+      cancelSchedule: scheduler.cancel,
+      scheduleHeartbeat: heartbeat.schedule,
+      cancelHeartbeat: heartbeat.cancel,
     });
     const first = new FakeSocket();
     const second = new FakeSocket();
@@ -168,7 +146,7 @@ describe('DeviceListBroadcaster', () => {
 
   test('keeps the last known snapshot when discovery throws', async () => {
     const scheduler = manualScheduler();
-    const heartbeat = manualHeartbeatScheduler();
+    const heartbeat = manualScheduler({ repeating: true });
     const errors: unknown[] = [];
     let fail = false;
     const broadcaster = new DeviceListBroadcaster({
@@ -177,9 +155,9 @@ describe('DeviceListBroadcaster', () => {
         return LIST;
       },
       schedule: scheduler.schedule,
-      cancelSchedule: scheduler.cancelSchedule,
-      scheduleHeartbeat: heartbeat.scheduleHeartbeat,
-      cancelHeartbeat: heartbeat.cancelHeartbeat,
+      cancelSchedule: scheduler.cancel,
+      scheduleHeartbeat: heartbeat.schedule,
+      cancelHeartbeat: heartbeat.cancel,
       onError: (error) => errors.push(error),
     });
     const socket = new FakeSocket();
@@ -196,7 +174,7 @@ describe('DeviceListBroadcaster', () => {
 
   test('coalesces a refresh requested during an in-flight poll', async () => {
     const scheduler = manualScheduler();
-    const heartbeat = manualHeartbeatScheduler();
+    const heartbeat = manualScheduler({ repeating: true });
     let resolveFirst!: (list: HubDeviceList) => void;
     let loads = 0;
     const firstLoad = new Promise<HubDeviceList>((resolve) => {
@@ -205,9 +183,9 @@ describe('DeviceListBroadcaster', () => {
     const broadcaster = new DeviceListBroadcaster({
       load: async () => (++loads === 1 ? firstLoad : LIST),
       schedule: scheduler.schedule,
-      cancelSchedule: scheduler.cancelSchedule,
-      scheduleHeartbeat: heartbeat.scheduleHeartbeat,
-      cancelHeartbeat: heartbeat.cancelHeartbeat,
+      cancelSchedule: scheduler.cancel,
+      scheduleHeartbeat: heartbeat.schedule,
+      cancelHeartbeat: heartbeat.cancel,
     });
 
     broadcaster.subscribe(new FakeSocket());

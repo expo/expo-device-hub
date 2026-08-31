@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+
 import {
   Button,
   CableDisconnectIcon,
@@ -5,6 +7,7 @@ import {
   RefreshIcon,
   bg,
   border,
+  font,
   heading,
   icon,
   radius,
@@ -18,17 +21,68 @@ export type ServerConnectionOverlayProps = {
   onReload: () => void;
 };
 
+type InertableElement = Pick<HTMLElement, 'inert'>;
+
+/** Temporarily removes a body-level portal from pointer, keyboard, and assistive-tech access. */
+export function temporarilyInertElement(element: InertableElement): (() => void) | null {
+  if (element.inert) return null;
+  element.inert = true;
+  return () => {
+    element.inert = false;
+  };
+}
+
 /** Full-page blocker shown until the dashboard can verify its dev server connection. */
 export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOverlayProps) {
   const connecting = status === 'connecting';
+  const overlayRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const overlay = overlayRef.current;
+    if (!overlay) return;
+
+    const restorers = new Map<HTMLElement, () => void>();
+    const blockBodyChild = (node: Node) => {
+      if (!(node instanceof HTMLElement) || node === overlay || node.contains(overlay)) return;
+      const restore = temporarilyInertElement(node);
+      if (restore) restorers.set(node, restore);
+    };
+
+    for (const child of document.body.children) blockBodyChild(child);
+
+    // A pending dashboard action can open a new Radix portal after the
+    // connection drops, so block body children added while the overlay is live.
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.addedNodes) blockBodyChild(node);
+      }
+    });
+    observer.observe(document.body, { childList: true });
+
+    // Move focus out of any dialog focus trap that was open when the server
+    // disconnected. Its portal is inert by this point and cannot reclaim focus.
+    overlay.focus({ preventScroll: true });
+
+    return () => {
+      observer.disconnect();
+      for (const restore of restorers.values()) restore();
+    };
+  }, []);
 
   return (
     <main
+      ref={overlayRef}
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="server-connection-overlay-title"
+      aria-describedby="server-connection-overlay-description"
       aria-busy={connecting}
+      tabIndex={-1}
       style={{
         position: 'fixed',
         inset: 0,
-        zIndex: 100,
+        // Above the shared dialog/select portal stack, which tops out at 605.
+        zIndex: 610,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -40,7 +94,9 @@ export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOv
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
         color: text.default,
-        fontFamily: 'var(--expo-font-sans)',
+        fontFamily: font.sans,
+        outline: 'none',
+        pointerEvents: 'auto',
       }}>
       <section
         style={{
@@ -78,10 +134,13 @@ export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOv
           )}
         </div>
         <div aria-live="assertive">
-          <h1 style={{ ...heading['2xl'], margin: 0, color: text.default }}>
+          <h1
+            id="server-connection-overlay-title"
+            style={{ ...heading['2xl'], margin: 0, color: text.default }}>
             {connecting ? 'Connecting to the Expo dev server' : 'Server disconnected'}
           </h1>
           <p
+            id="server-connection-overlay-description"
             style={{
               ...textSize.sm,
               maxWidth: 360,
