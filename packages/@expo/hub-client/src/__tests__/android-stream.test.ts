@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
+import {
+  androidStreamSettingsPatch,
+  parseAndroidStreamSettings,
+} from '../android-stream-settings';
 import { androidWsUrlFor, parseServeEmuStreamSettings } from '../useAndroidDevice';
 
 describe('serve-emu stream contract', () => {
@@ -62,5 +66,43 @@ describe('serve-emu stream contract', () => {
         iceTransportPolicy: 'all',
       }),
     ).toBeNull();
+  });
+});
+
+describe('serve-emu runtime stream settings contract', () => {
+  test('patches only Android resolution with a validated max dimension', () => {
+    expect(
+      androidStreamSettingsPatch({
+        maxDimension: 720,
+        mjpegFps: 15,
+        mjpegQuality: 0.45,
+        h264Fps: 30,
+        h264Bitrate: 3_000_000,
+      }),
+    ).toEqual({ maxDimension: 720 });
+    expect(androidStreamSettingsPatch({ h264Fps: 30 })).toBeNull();
+    expect(androidStreamSettingsPatch({ maxDimension: Number.NaN })).toBeNull();
+    expect(androidStreamSettingsPatch({ maxDimension: 720.5 })).toBeNull();
+    expect(androidStreamSettingsPatch({ maxDimension: -1 })).toBeNull();
+    expect(androidStreamSettingsPatch({ maxDimension: 4_097 })).toBeNull();
+  });
+
+  test('accepts only authoritative responses that include a valid max dimension', () => {
+    expect(
+      parseAndroidStreamSettings({
+        maxDimension: 720,
+        h264Bitrate: 8_000_000,
+        h264Fps: 30,
+      }),
+    ).toEqual({
+      maxDimension: 720,
+      mjpegFps: 60,
+      mjpegQuality: 0.7,
+      h264Bitrate: 8_000_000,
+      h264Fps: 30,
+    });
+    expect(parseAndroidStreamSettings({ h264Bitrate: 8_000_000, h264Fps: 30 })).toBeNull();
+    expect(parseAndroidStreamSettings({ maxDimension: '720' })).toBeNull();
+    expect(parseAndroidStreamSettings({ maxDimension: 720.5 })).toBeNull();
   });
 });

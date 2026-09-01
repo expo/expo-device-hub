@@ -1418,7 +1418,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       deviceSettings: !!execWsUrl && !!execToken && !!deviceUdid,
       activity: !!metricsPath,
       events: !!eventsPath,
-      streamSettings: !!streamSettingsUrl,
+      streamSettings: streamSettingsUrl
+        ? {
+            mjpegFps: true,
+            mjpegQuality: true,
+            maxDimension: true,
+            h264Bitrate: true,
+            h264Fps: true,
+          }
+        : false,
     },
     foregroundApp,
     videoKind: useWebRtc ? 'video' : useAvcc ? 'canvas' : 'img',
