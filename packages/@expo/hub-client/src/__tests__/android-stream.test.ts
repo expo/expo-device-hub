@@ -4,6 +4,7 @@ import {
   androidStreamSettingsPatch,
   parseAndroidStreamSettings,
 } from '../android-stream-settings';
+import { parseAndroidStreamSource } from '../android-stream-source';
 import { androidWsUrlFor, parseServeEmuStreamSettings } from '../useAndroidDevice';
 
 describe('serve-emu stream contract', () => {
@@ -104,5 +105,64 @@ describe('serve-emu runtime stream settings contract', () => {
     expect(parseAndroidStreamSettings({ h264Bitrate: 8_000_000, h264Fps: 30 })).toBeNull();
     expect(parseAndroidStreamSettings({ maxDimension: '720' })).toBeNull();
     expect(parseAndroidStreamSettings({ maxDimension: 720.5 })).toBeNull();
+  });
+});
+
+describe('serve-emu capture source contract', () => {
+  test('accepts authoritative scrcpy and gRPC source responses', () => {
+    expect(
+      parseAndroidStreamSource({
+        ok: true,
+        serial: 'emulator-5554',
+        mode: 'grpc-screenshot',
+        availableModes: ['scrcpy', 'grpc-screenshot'],
+        sessionGeneration: 2,
+      }),
+    ).toEqual({
+      mode: 'grpc-screenshot',
+      availableModes: ['scrcpy', 'grpc-screenshot'],
+      sessionGeneration: 2,
+    });
+    expect(
+      parseAndroidStreamSource({
+        ok: true,
+        serial: 'usb-device',
+        mode: 'scrcpy',
+        availableModes: ['scrcpy'],
+        sessionGeneration: 0,
+      }),
+    ).toEqual({
+      mode: 'scrcpy',
+      availableModes: ['scrcpy'],
+      sessionGeneration: 0,
+    });
+  });
+
+  test('rejects malformed, inconsistent, and unsupported source responses', () => {
+    expect(parseAndroidStreamSource({ ok: false })).toBeNull();
+    expect(
+      parseAndroidStreamSource({
+        ok: true,
+        mode: 'grpc-screenshot',
+        availableModes: ['scrcpy'],
+        sessionGeneration: 0,
+      }),
+    ).toBeNull();
+    expect(
+      parseAndroidStreamSource({
+        ok: true,
+        mode: 'camera',
+        availableModes: ['camera'],
+        sessionGeneration: 0,
+      }),
+    ).toBeNull();
+    expect(
+      parseAndroidStreamSource({
+        ok: true,
+        mode: 'scrcpy',
+        availableModes: ['scrcpy', 'scrcpy'],
+        sessionGeneration: -1,
+      }),
+    ).toBeNull();
   });
 });

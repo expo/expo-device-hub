@@ -6,6 +6,7 @@ import {
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
   type DeviceStreamMode,
+  type DeviceStreamSource,
   type DeviceWebRtcCodec,
 } from '@expo/hub-client';
 import {
@@ -61,6 +62,10 @@ const DEFAULT_STREAM_CAPABILITIES = {
 } as const satisfies DeviceStreamCapabilities;
 
 const STREAM_MODE_ORDER: readonly DeviceStreamMode[] = ['mjpeg', 'h264', 'webrtc'];
+const STREAM_SOURCE_OPTIONS: ReadonlyArray<{ value: DeviceStreamSource; label: string }> = [
+  { value: 'scrcpy', label: 'scrcpy' },
+  { value: 'grpc-screenshot', label: 'gRPC' },
+];
 const STREAM_SETTING_ORDER: readonly (keyof DeviceStreamEncoderSettings)[] = [
   'maxDimension',
   'mjpegFps',
@@ -617,6 +622,10 @@ export function StreamOptionsSection({
     ? STREAM_SETTING_ORDER.filter((key) => settingsCapabilities[key])
     : [];
   const finalSettingKey = supportedSettingKeys.at(-1);
+  const streamSource = client.streamSource;
+  const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
+    streamSource?.availableModes.includes(option.value),
+  );
   const settingsReady = client.streamSettings !== null;
   const settingsDisabled = !settingsReady || client.streamSettingsPending;
   const transport: StreamTransport =
@@ -681,6 +690,19 @@ export function StreamOptionsSection({
 
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
+      {streamSource && sourceOptions.length > 1 && (
+        <SidebarRow label="Source">
+          <SegmentedControl
+            ariaLabel="Stream source"
+            options={sourceOptions.map((option) => ({
+              ...option,
+              disabled: client.streamSourcePending,
+            }))}
+            value={streamSource.mode}
+            onChange={client.setStreamSource}
+          />
+        </SidebarRow>
+      )}
       <SidebarRow label="Transport">
         <SegmentedControl
           ariaLabel="Stream transport"

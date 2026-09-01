@@ -35,6 +35,7 @@ import {
   androidStreamSettingsPatch,
   parseAndroidStreamSettings,
 } from './android-stream-settings';
+import { parseAndroidStreamSource } from './android-stream-source';
 import {
   DeviceSettingWriteTracker,
   mergeAuthoritativeDeviceSetting,
@@ -57,6 +58,8 @@ import {
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamEncoderSettings,
+  type DeviceStreamSource,
+  type DeviceStreamSourceStatus,
   type ForegroundApp,
   type HardwareButton,
   type KeyboardInput,
@@ -72,6 +75,7 @@ const FOREGROUND_POLL_MS = 5000;
 const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_SETTINGS_POLL_MS = 3000;
+const STREAM_SOURCE_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
 
 const ANDROID_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = [
@@ -228,6 +232,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   >(() => new Set());
   const [streamSettings, setStreamSettings] = useState<DeviceStreamEncoderSettings | null>(null);
   const [streamSettingsPending, setStreamSettingsPending] = useState(false);
+  const [streamSource, setStreamSourceState] = useState<DeviceStreamSourceStatus | null>(null);
+  const [streamSourcePending, setStreamSourcePending] = useState(false);
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
   const [serverStreamSettings, setServerStreamSettings] =
@@ -259,9 +265,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const streamSettingsRef = useRef<DeviceStreamEncoderSettings | null>(null);
   const streamSettingsPendingRef = useRef(false);
   const streamSettingsControllerRef = useRef<AbortController | null>(null);
+  const streamSourceRequestRef = useRef(0);
+  const streamSourceRef = useRef<DeviceStreamSourceStatus | null>(null);
+  const streamSourcePendingRef = useRef(false);
+  const streamSourceControllerRef = useRef<AbortController | null>(null);
   useEffect(
     () => () => {
       streamSettingsControllerRef.current?.abort();
+      streamSourceControllerRef.current?.abort();
     },
     [],
   );
@@ -434,6 +445,122 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const streamSettingsUrl =
     active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-settings', targetDevice) : null;
+  const streamSourceUrl =
+    active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-mode', targetDevice) : null;
+
+  const setStreamSource = useCallback(
+    (source: DeviceStreamSource) => {
+      const previous = streamSourceRef.current;
+      if (
+        !streamSourceUrl ||
+        !previous ||
+        previous.mode === source ||
+        !previous.availableModes.includes(source) ||
+        streamSourcePendingRef.current
+      ) {
+        return;
+      }
+      const request = ++streamSourceRequestRef.current;
+      const controller = new AbortController();
+      streamSourceControllerRef.current = controller;
+      streamSourcePendingRef.current = true;
+      setStreamSourcePending(true);
+      void fetch(streamSourceUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: source }),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Stream source update failed (${response.status})`);
+          const next = parseAndroidStreamSource(await response.json());
+          if (!next) throw new Error('Stream source update returned an invalid response');
+          if (streamSourceRequestRef.current === request) {
+            streamSourceRef.current = next;
+            setStreamSourceState(next);
+          }
+        })
+        .catch(() => {
+          // The server stages source changes atomically, so the previous source
+          // remains authoritative when a replacement fails.
+        })
+        .finally(() => {
+          if (streamSourceControllerRef.current === controller) {
+            streamSourceControllerRef.current = null;
+          }
+          if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
+            streamSourcePendingRef.current = false;
+            setStreamSourcePending(false);
+          }
+        });
+    },
+    [streamSourceUrl],
+  );
+
+  // ── Android capture source (serve-emu device-scoped GET/PUT endpoint) ──
+  useEffect(() => {
+    streamSourceControllerRef.current?.abort();
+    streamSourceControllerRef.current = null;
+    ++streamSourceRequestRef.current;
+    streamSourceRef.current = null;
+    setStreamSourceState(null);
+    if (!streamSourceUrl) {
+      streamSourcePendingRef.current = false;
+      setStreamSourcePending(false);
+      return;
+    }
+
+    streamSourcePendingRef.current = true;
+    setStreamSourcePending(true);
+    let cancelled = false;
+    let polling = false;
+    let initial = true;
+    let controller: AbortController | null = null;
+
+    const refresh = async () => {
+      if (cancelled || polling || streamSourceControllerRef.current) return;
+      polling = true;
+      const request = ++streamSourceRequestRef.current;
+      controller = new AbortController();
+      try {
+        const response = await fetch(streamSourceUrl, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Stream source request failed (${response.status})`);
+        const next = parseAndroidStreamSource(await response.json());
+        if (!next) throw new Error('Stream source request returned an invalid response');
+        if (!cancelled && streamSourceRequestRef.current === request) {
+          streamSourceRef.current = next;
+          setStreamSourceState((current) =>
+            current?.mode === next.mode &&
+            current.sessionGeneration === next.sessionGeneration &&
+            current.availableModes.join() === next.availableModes.join()
+              ? current
+              : next,
+          );
+        }
+      } catch {
+        // Device startup and source replacement are transient; keep polling.
+      } finally {
+        controller = null;
+        polling = false;
+        if (!cancelled && initial && streamSourceRequestRef.current === request) {
+          initial = false;
+          streamSourcePendingRef.current = false;
+          setStreamSourcePending(false);
+        }
+      }
+    };
+
+    void refresh();
+    const timer = setInterval(refresh, STREAM_SOURCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      controller?.abort();
+    };
+  }, [streamSourceUrl]);
 
   const updateStreamSettings = useCallback(
     (patch: Partial<DeviceStreamEncoderSettings>) => {
@@ -1382,6 +1509,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSettings,
     streamSettingsPending,
     updateStreamSettings,
+    streamSource,
+    streamSourcePending,
+    setStreamSource,
     streamStats,
     webRtcCodec: 'h264',
     setWebRtcCodec: () => {},

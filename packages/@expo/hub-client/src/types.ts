@@ -146,6 +146,16 @@ export interface DeviceStreamEncoderSettings {
   h264Fps: number;
 }
 
+/** Android capture implementations exposed by serve-emu. */
+export type DeviceStreamSource = 'scrcpy' | 'grpc-screenshot';
+
+/** Authoritative source state for the selected Android device session. */
+export interface DeviceStreamSourceStatus {
+  mode: DeviceStreamSource;
+  availableModes: readonly DeviceStreamSource[];
+  sessionGeneration: number;
+}
+
 /** Runtime encoder values the active backend can change without restarting the Hub. */
 export type DeviceStreamSettingCapabilities =
   | false
@@ -406,6 +416,11 @@ export interface DeviceClient {
   streamSettingsPending: boolean;
   /** Patch one or more runtime encoder values. */
   updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => void;
+  /** Active Android capture source; null when the backend does not expose source switching. */
+  streamSource: DeviceStreamSourceStatus | null;
+  streamSourcePending: boolean;
+  /** Stage and atomically activate another Android capture source. */
+  setStreamSource: (source: DeviceStreamSource) => void;
   /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */
   streamStats: DeviceStreamStats | null;
   /** Requested WebRTC codec for this viewer. */
