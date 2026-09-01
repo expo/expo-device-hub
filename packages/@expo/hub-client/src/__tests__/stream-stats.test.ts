@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   appendStreamStatsSample,
   describeWebRtcClientCounters,
+  describeWebRtcPublisherCounters,
   readWebRtcClientCounters,
   readWebRtcServerStats,
   type WebRtcClientCounters,
@@ -392,6 +393,10 @@ describe('readWebRtcServerStats', () => {
         framesDropped: 4,
         packetLossRatio: 0.01,
         qualityLimitationReason: 'cpu',
+        publisherFps: null,
+        publisherSubmittedFrames: null,
+        publisherDroppedFrames: null,
+        payloadBitrateBps: null,
       },
       capture: {
         screenFrames: 900,
@@ -400,48 +405,67 @@ describe('readWebRtcServerStats', () => {
         forwardedFrames: 830,
         pumpRestarts: 2,
       },
+      publisherCounters: null,
     });
   });
 
-  test('accepts the direct normalized Android response', () => {
+  test('combines serve-emu source metrics with only the requested publisher session', () => {
     expect(
       readWebRtcServerStats(
         {
-          serverFps: 24,
-          encoder: {
-            codec: 'H264',
-            encodeFps: 23.5,
-            targetBitrateBps: 6_000_000,
-            encodeMsPerFrame: 3.5,
-            framesEncoded: 100,
-            framesSent: 99,
-            framesDropped: 1,
-            packetLossRatio: 0.02,
-            qualityLimitationReason: 'bandwidth',
+          sampledAt: 2_000,
+          source: {
+            codec: 'h264',
+            fps: 23.5,
+            configuredBitrateBps: 6_000_000,
+            frames: 100,
           },
-          capture: { screenFrames: 80, idleFrames: 20, offeredFrames: 100 },
+          sessions: [
+            {
+              sessionId: 'other',
+              submittedFrames: 500,
+              publisherDroppedFrames: 50,
+              payloadBytesSubmitted: 5_000_000,
+            },
+            {
+              sessionId: 'viewer',
+              submittedFrames: 99,
+              publisherDroppedFrames: 1,
+              payloadBytesSubmitted: 750_000,
+            },
+          ],
+          capture: { offeredFrames: 100, forwardedFrames: 98 },
         },
         'viewer',
       ),
     ).toEqual({
-      serverFps: 24,
+      serverFps: 23.5,
       encoder: {
-        codec: 'H264',
+        codec: 'h264',
         encodeFps: 23.5,
         targetBitrateBps: 6_000_000,
-        encodeMsPerFrame: 3.5,
+        encodeMsPerFrame: null,
         framesEncoded: 100,
-        framesSent: 99,
-        framesDropped: 1,
-        packetLossRatio: 0.02,
-        qualityLimitationReason: 'bandwidth',
+        framesSent: null,
+        framesDropped: null,
+        packetLossRatio: null,
+        qualityLimitationReason: null,
+        publisherFps: null,
+        publisherSubmittedFrames: 99,
+        publisherDroppedFrames: 1,
+        payloadBitrateBps: null,
       },
       capture: {
-        screenFrames: 80,
-        idleFrames: 20,
+        screenFrames: null,
+        idleFrames: null,
         offeredFrames: 100,
-        forwardedFrames: null,
+        forwardedFrames: 98,
         pumpRestarts: null,
+      },
+      publisherCounters: {
+        atMs: 2_000,
+        submittedFrames: 99,
+        payloadBytesSubmitted: 750_000,
       },
     });
   });
@@ -465,12 +489,54 @@ describe('readWebRtcServerStats', () => {
         forwardedFrames: null,
         pumpRestarts: null,
       },
+      publisherCounters: null,
     });
     expect(readWebRtcServerStats(null, 'viewer')).toEqual({
       serverFps: null,
       encoder: null,
       capture: null,
+      publisherCounters: null,
     });
+  });
+});
+
+describe('describeWebRtcPublisherCounters', () => {
+  test('derives accepted frame and H.264 payload rates over the real server window', () => {
+    expect(
+      describeWebRtcPublisherCounters(
+        { atMs: 1_000, submittedFrames: 100, payloadBytesSubmitted: 1_000_000 },
+        { atMs: 2_250, submittedFrames: 130, payloadBytesSubmitted: 1_500_000 },
+      ),
+    ).toEqual({ publisherFps: 24, payloadBitrateBps: 3_200_000 });
+  });
+
+  test('keeps first, short, and independently reset counter windows unmeasured', () => {
+    const current = { atMs: 1_000, submittedFrames: 100, payloadBytesSubmitted: 1_000_000 };
+    expect(describeWebRtcPublisherCounters(null, current)).toEqual({
+      publisherFps: null,
+      payloadBitrateBps: null,
+    });
+    expect(
+      describeWebRtcPublisherCounters(current, {
+        atMs: 1_200,
+        submittedFrames: 110,
+        payloadBytesSubmitted: 1_100_000,
+      }),
+    ).toEqual({ publisherFps: null, payloadBitrateBps: null });
+    expect(
+      describeWebRtcPublisherCounters(current, {
+        atMs: 2_000,
+        submittedFrames: 90,
+        payloadBytesSubmitted: 1_500_000,
+      }),
+    ).toEqual({ publisherFps: null, payloadBitrateBps: 4_000_000 });
+    expect(
+      describeWebRtcPublisherCounters(current, {
+        atMs: 2_000,
+        submittedFrames: 130,
+        payloadBytesSubmitted: 900_000,
+      }),
+    ).toEqual({ publisherFps: 30, payloadBitrateBps: null });
   });
 });
 
