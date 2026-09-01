@@ -22,8 +22,7 @@ export type ButtonTheme =
   | 'quaternary'
   | 'primary-destructive'
   | 'secondary-destructive'
-  | 'tertiary-destructive'
-  | 'agent-overlay';
+  | 'tertiary-destructive';
 
 export type ButtonSize = '2xs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl';
 
@@ -46,7 +45,6 @@ const THEME_TOKENS: Record<ButtonTheme, ThemeTokens> = {
   'primary-destructive': cssTheme('primary-destructive'),
   'secondary-destructive': cssTheme('secondary-destructive'),
   'tertiary-destructive': cssTheme('tertiary-destructive'),
-  'agent-overlay': cssTheme('agent-overlay'),
 };
 
 function cssTheme(name: string): ThemeTokens {

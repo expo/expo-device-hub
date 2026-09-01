@@ -1,6 +1,6 @@
 import { type RefObject } from 'react';
 
-import { icon, radius, text, textSize } from '../theme/tokens';
+import { agent, radius, textSize } from '../theme/tokens';
 
 /** Reserved device-row status that appears without shifting the device name. */
 export function AgentDeviceStatus({
@@ -22,7 +22,7 @@ export function AgentDeviceStatus({
         gap: compact ? 0 : 5,
         flexShrink: 0,
         visibility: active ? 'visible' : 'hidden',
-        color: text.info,
+        color: agent.text,
         ...textSize['2xs'],
       }}>
       <span
@@ -32,7 +32,7 @@ export function AgentDeviceStatus({
           height: 7,
           flexShrink: 0,
           borderRadius: radius.full,
-          backgroundColor: icon.info,
+          backgroundColor: agent.accent,
         }}
       />
       <span

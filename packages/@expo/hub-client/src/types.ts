@@ -422,6 +422,8 @@ export interface DeviceScreenProps {
   client: DeviceClient;
   /** Last active Argent gesture for the streamed device; removed after its idle timeout. */
   agentInteraction?: AgentInteraction | null;
+  /** Optional unclipped host for the agent cursor, aligned to the rendered stream. */
+  agentInteractionPortalTarget?: HTMLElement | null;
   /** Corner radius for the video surface (matches the PhoneFrame placeholder). */
   borderRadius?: CSSProperties['borderRadius'];
   /** Apply the iOS `corner-shape: squircle`. */

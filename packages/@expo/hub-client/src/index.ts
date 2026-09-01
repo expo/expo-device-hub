@@ -18,7 +18,17 @@ export {
   agentInteractionEndMs,
   agentInteractionPointsAt,
 } from './agent-interaction-animation';
+export {
+  DEVICE_POINTER_LABEL_OFFSET_X,
+  DEVICE_POINTER_LABEL_OFFSET_Y,
+  DEVICE_POINTER_LABEL_STYLE,
+  DEVICE_POINTER_SIZE,
+  DEVICE_POINTER_STYLE,
+  devicePointerLabelRadius,
+  type DevicePointerLabelPlacement,
+} from './device-pointer-presentation';
 export { displayScreen, streamGeometry } from './orientation';
 export { useIosDeviceClient } from './useIosDevice';
 export { useAndroidDeviceClient } from './useAndroidDevice';
+export { useActiveAgentInteraction } from './useActiveAgentInteraction';
 export { useActiveDeviceClient, type ActiveDeviceTarget } from './useActiveDeviceClient';

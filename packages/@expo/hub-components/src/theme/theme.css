@@ -29,27 +29,26 @@
   --expo-radius-3xl: 24px;
   --expo-radius-full: 9999px;
 
-  /* Agent takeover prompt — stays bright against the dark status overlay. */
-  --expo-theme-button-agent-overlay-background: var(--expo-color-white);
-  --expo-theme-button-agent-overlay-border: transparent;
-  --expo-theme-button-agent-overlay-hover: var(--slate-2);
-  --expo-theme-button-agent-overlay-text: var(--slate-12);
-  --expo-theme-button-agent-overlay-disabled-background: var(--slate-2);
-  --expo-theme-button-agent-overlay-disabled-border: transparent;
-  --expo-theme-button-agent-overlay-disabled-text: var(--slate-9);
-}
+  /* Shared cross-package binding for the `textSize.xs` scale. */
+  --expo-text-size-xs-font-size: 12px;
+  --expo-text-size-xs-font-weight: 400;
+  --expo-text-size-xs-line-height: 1.6;
+  --expo-text-size-xs-letter-spacing: 0;
 
-.dark-theme {
-  --expo-theme-button-agent-overlay-background: var(--slate-3);
-  --expo-theme-button-agent-overlay-border: transparent;
-  --expo-theme-button-agent-overlay-hover: var(--slate-5);
-  --expo-theme-button-agent-overlay-text: var(--expo-color-white);
-  --expo-theme-button-agent-overlay-disabled-background: var(--slate-2);
-  --expo-theme-button-agent-overlay-disabled-border: transparent;
-  --expo-theme-button-agent-overlay-disabled-text: var(--slate-11);
+  /* Agent-owned interaction — based on the pink shared-cursor treatment. */
+  --expo-theme-agent-accent: var(--pink-9);
+  --expo-theme-agent-surface: color-mix(in srgb, var(--pink-9) 30%, transparent);
+  --expo-theme-agent-border: var(--pink-7);
+  --expo-theme-agent-text: var(--pink-11);
+  --expo-theme-agent-on-accent: var(--expo-color-white);
 }
 
 /* React's inline-style serialization does not yet expose this new CSS property. */
 [data-device-frame-screen='true'] {
   corner-shape: var(--expo-device-frame-corner-shape, round);
+}
+
+/* The pointer-following “you” marker replaces DeviceScreen's native cursor while an agent is active. */
+[data-agent-active='true'] [role='application'] {
+  cursor: none !important;
 }

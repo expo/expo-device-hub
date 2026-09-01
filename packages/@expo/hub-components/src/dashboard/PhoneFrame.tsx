@@ -1,13 +1,21 @@
-import { type ComponentType, type CSSProperties, useState } from 'react';
+import {
+  type ComponentType,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 
 import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
   type ScreenSize,
+  useActiveAgentInteraction,
 } from '@expo/hub-client';
 import { bg } from '../primitives';
-import { AgentDeviceOverlay } from './AgentDeviceOverlay';
+import { AgentDeviceOverlay, type AgentDeviceOverlayHandle } from './AgentDeviceOverlay';
 import { type Device } from './data';
 import {
   deviceFramePresentation,
@@ -73,7 +81,10 @@ export function PhoneFrame({
   deviceFrameAssets?: DeviceFrameAssets;
 }) {
   const [hovered, setHovered] = useState(false);
-  const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
+  const [warningDismissed, setWarningDismissed] = useState(false);
+  const [agentInteractionPortalTarget, setAgentInteractionPortalTarget] =
+    useState<HTMLDivElement | null>(null);
+  const pointerOverlayRef = useRef<AgentDeviceOverlayHandle>(null);
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[device.platform];
 
   // Prefer the live screen's aspect ratio once known, so the stream fills the
@@ -97,30 +108,35 @@ export function PhoneFrame({
   const radiusCqw = (radiusFraction / Math.max(ratio, 1)) * 100;
   const borderRadius = `${radiusCqw.toFixed(3)}cqw`;
   const live = client && client.status !== 'idle';
-  const overlayVisible =
-    !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
+  const activeAgentInteraction = useActiveAgentInteraction(agentInteraction);
+  const overlayVisible = !!activeAgentInteraction && hovered;
+  const warningVisible = overlayVisible && !warningDismissed;
+
+  useEffect(() => {
+    if (!activeAgentInteraction) setWarningDismissed(false);
+  }, [activeAgentInteraction]);
+
+  const positionPointerCallout = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const frame = event.currentTarget.getBoundingClientRect();
+    pointerOverlayRef.current?.position({
+      clientX: event.clientX,
+      clientY: event.clientY,
+      frameLeft: frame.left,
+      frameTop: frame.top,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
+  };
 
   const deviceSurface = live ? (
-    <DeviceScreen client={client} agentInteraction={agentInteraction} />
+    <DeviceScreen
+      client={client}
+      agentInteraction={activeAgentInteraction}
+      agentInteractionPortalTarget={agentInteractionPortalTarget}
+    />
   ) : (
     <div style={{ position: 'absolute', inset: 0, backgroundColor: bg.element }} />
   );
-  const takeoverOverlay = (
-    <div
-      data-testid="agent-device-overlay-clip"
-      style={{
-        position: 'absolute',
-        inset: 0,
-        zIndex: 2,
-        pointerEvents: overlayVisible ? 'auto' : 'none',
-      }}>
-      <AgentDeviceOverlay
-        visible={overlayVisible}
-        onTakeOver={() => setDismissedInteractionId(agentInteraction?.id ?? null)}
-      />
-    </div>
-  );
-
   const frameAsset =
     showDeviceFrame && device.deviceFrame ? deviceFrameAssets?.[device.deviceFrame] : undefined;
   const framed = frameAsset
@@ -136,31 +152,56 @@ export function PhoneFrame({
     : {
         position: 'absolute',
         inset: 0,
-        // One responsive path clips both the stream and every overlay, which
-        // avoids fractional seams between separate composited masks.
+        // Keep the stream clipped to the device screen while pointer notices
+        // can use the nearby panel space outside the physical frame.
         clipPath: deviceScreenClipPath(radiusCqw, squircle),
       };
+  const agentInteractionOverlayStyle: CSSProperties = {
+    ...screenStyle,
+    zIndex: 3,
+    overflow: 'visible',
+    borderRadius: undefined,
+    backgroundColor: 'transparent',
+    clipPath: undefined,
+    pointerEvents: 'none',
+  };
 
   return (
     <div
       data-testid="device-screen-frame"
       data-device-frame-kind={framed ? device.deviceFrame : 'none'}
-      data-agent-active={agentInteraction ? 'true' : 'false'}
-      style={framed ? framed.frameStyle : { ...wrapperStyle, borderRadius }}
-      onPointerEnter={(event) => {
-        if (event.pointerType === 'mouse') setHovered(true);
+      data-agent-active={activeAgentInteraction ? 'true' : 'false'}
+      style={{
+        ...(framed ? framed.frameStyle : { ...wrapperStyle, borderRadius }),
+        cursor: activeAgentInteraction ? 'none' : undefined,
       }}
-      onPointerLeave={() => setHovered(false)}>
+      onPointerEnter={(event) => {
+        if (event.pointerType !== 'touch') {
+          positionPointerCallout(event);
+          setHovered(true);
+        }
+      }}
+      onPointerMove={(event) => {
+        if (event.pointerType !== 'touch' && activeAgentInteraction) positionPointerCallout(event);
+      }}
+      onPointerDown={(event) => {
+        if (!activeAgentInteraction) return;
+        if (event.pointerType !== 'touch') positionPointerCallout(event);
+        setWarningDismissed(true);
+      }}
+      onPointerLeave={() => setHovered(false)}
+    >
       <div
         data-testid="device-screen-clip"
         data-device-frame-screen={framed ? 'true' : undefined}
-        style={screenStyle}>
+        style={screenStyle}
+      >
         <div
           data-testid="device-frame-stream-cover"
-          style={framed ? framed.streamStyle : { position: 'absolute', inset: 0 }}>
+          style={framed ? framed.streamStyle : { position: 'absolute', inset: 0 }}
+        >
           {deviceSurface}
         </div>
-        {takeoverOverlay}
       </div>
       {deviceFrameAssets
         ? (Object.keys(deviceFrameAssets) as (keyof DeviceFrameAssets)[]).map((kind) => {
@@ -183,6 +224,27 @@ export function PhoneFrame({
             );
           })
         : null}
+      <div
+        aria-hidden="true"
+        data-testid="agent-interaction-overlay"
+        style={agentInteractionOverlayStyle}
+      >
+        <div
+          data-testid="agent-interaction-stream-alignment"
+          style={framed ? framed.streamStyle : { position: 'absolute', inset: 0 }}
+        >
+          <div
+            ref={setAgentInteractionPortalTarget}
+            data-testid="agent-interaction-portal-target"
+            style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}
+          />
+        </div>
+      </div>
+      <AgentDeviceOverlay
+        ref={pointerOverlayRef}
+        visible={overlayVisible}
+        warningVisible={warningVisible}
+      />
     </div>
   );
 }

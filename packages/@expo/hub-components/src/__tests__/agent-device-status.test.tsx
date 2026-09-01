@@ -1,11 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { type DeviceClient } from '@expo/hub-client';
+import { devicePointerLabelRadius } from '@expo/hub-client';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { DeviceListItem } from '../components/DeviceListItem';
 import { shouldCompactAgentDeviceStatus } from '../components/useCompactAgentDeviceStatus';
-import { AgentDeviceOverlay } from '../dashboard/AgentDeviceOverlay';
+import { AgentDeviceOverlay, agentDeviceOverlayPlacement } from '../dashboard/AgentDeviceOverlay';
 import { type Device } from '../dashboard/data';
 import { type DeviceFrameAssets } from '../dashboard/deviceFrame';
 import { PhoneFrame } from '../dashboard/PhoneFrame';
@@ -55,14 +56,16 @@ const LANDSCAPE_CLIENT = {
 } as DeviceClient;
 
 describe('agent device status', () => {
-  test('labels active device rows and renders the blue status badge', () => {
+  test('labels active device rows and renders the pink status badge', () => {
     const markup = renderToStaticMarkup(
-      <DeviceListItem name="iPhone 16 Pro" version="iOS 18.6" usedByAgent />
+      <DeviceListItem name="iPhone 16 Pro" version="iOS 18.6" usedByAgent />,
     );
 
     expect(markup).toContain('aria-label="iPhone 16 Pro, iOS 18.6, used by agent"');
     expect(markup).toContain('data-agent-device-status="active"');
     expect(markup).toContain('data-agent-device-badge="true"');
+    expect(markup).toContain('color:var(--expo-theme-agent-text)');
+    expect(markup).toContain('background-color:var(--expo-theme-agent-accent)');
     expect(markup).toContain('Used by agent');
   });
 
@@ -76,7 +79,7 @@ describe('agent device status', () => {
 
   test('keeps long device rows contained and compacts agent status when needed', () => {
     const markup = renderToStaticMarkup(
-      <DeviceListItem name="Medium_Phone_API_36.1" version="Android 16.0" usedByAgent />
+      <DeviceListItem name="Medium_Phone_API_36.1" version="Android 16.0" usedByAgent />,
     );
     const buttonTag = markup.slice(0, markup.indexOf('>') + 1);
 
@@ -91,7 +94,7 @@ describe('agent device status', () => {
         version: 82,
         badge: 7,
         label: 66,
-      })
+      }),
     ).toBeTrue();
     expect(
       shouldCompactAgentDeviceStatus({
@@ -100,67 +103,147 @@ describe('agent device status', () => {
         version: 58,
         badge: 7,
         label: 66,
-      })
+      }),
     ).toBeFalse();
   });
 
-  test('only reveals the phone overlay while hover state is active', () => {
-    const hidden = renderToStaticMarkup(
-      <AgentDeviceOverlay visible={false} onTakeOver={() => {}} />
+  test('renders a non-blocking user pointer label and neutral interruption warning', () => {
+    const hidden = renderToStaticMarkup(<AgentDeviceOverlay visible={false} />);
+    const visible = renderToStaticMarkup(<AgentDeviceOverlay visible />);
+    const afterUserInteraction = renderToStaticMarkup(
+      <AgentDeviceOverlay visible warningVisible={false} />,
     );
-    const visible = renderToStaticMarkup(<AgentDeviceOverlay visible onTakeOver={() => {}} />);
     const visibleOverlayTag = visible.slice(0, visible.indexOf('>') + 1);
+    const warningStart = visible.indexOf('data-testid="agent-interruption-warning"');
+    const warningTag = visible.slice(warningStart, visible.indexOf('>', warningStart) + 1);
 
     expect(hidden).toContain('hidden=""');
     expect(hidden).toContain('display:none');
     expect(visible).not.toContain('hidden=""');
-    expect(visible).toContain('display:flex');
+    expect(visible).toContain('display:block');
     expect(visibleOverlayTag).not.toContain('border-radius');
-    expect(visible).toContain('color:rgba(218, 233, 255, 0.74)');
+    expect(visibleOverlayTag).toContain('pointer-events:none');
+    expect(visibleOverlayTag).toContain('overflow:visible');
     expect(visibleOverlayTag).not.toContain('backdrop-filter');
-    expect(visibleOverlayTag).toContain('background-color:rgba(0, 0, 0, 0.55)');
-    expect(visible).toContain('Agent is using this device');
-    expect(visible).toContain('color:rgba(255, 255, 255, 0.7)');
-    expect(visible).toContain('Taking over might collide with what the agent is doing.');
-    expect(visible).toContain('Take over anyway');
-    expect(visible).toContain('background-color:var(--expo-theme-button-agent-overlay-background)');
-    expect(visible).toContain('font-family:inherit');
+    expect(visibleOverlayTag).not.toContain('background-color');
+    expect(visible).not.toContain('role="dialog"');
+    expect(visible).toContain('data-testid="user-pointer-cursor"');
+    expect(visible).toContain('data-testid="user-pointer-label"');
+    expect(visible).toContain('width:31px;height:31px;transform:translate(-50%, -50%)');
+    expect(visible).toContain('left:31px;top:23px');
     expect(visible).toContain(
-      '<span style="font-size:12px;font-weight:500;line-height:1.6;letter-spacing:0">Take over anyway</span>'
+      'border-radius:var(--expo-radius-sm) var(--expo-radius-xl) var(--expo-radius-xl) var(--expo-radius-xl)',
+    );
+    expect(visible).toContain('border:1px solid var(--expo-theme-border-secondary)');
+    expect(visible).toContain('>you</span>');
+    expect(visible).toContain('role="note"');
+    expect(visible).toContain('background-color:var(--expo-theme-background-overlay)');
+    expect(warningTag).toContain('width:max-content');
+    expect(warningTag).toContain('max-width:calc(100vw - 32px)');
+    expect(warningTag).toContain('padding:6px 8px');
+    expect(warningTag).toContain('font-size:10px');
+    expect(warningTag).not.toContain('border:');
+    expect(visible).toContain('Interacting could interrupt');
+    expect(visible).toContain('the agent&#x27;s current work.');
+    expect(afterUserInteraction).toContain('data-testid="user-pointer-cursor"');
+    expect(afterUserInteraction).toContain('data-testid="user-pointer-label"');
+    expect(afterUserInteraction).toContain('>you</span>');
+    expect(afterUserInteraction).not.toContain('data-testid="agent-interruption-warning"');
+    expect(visible).not.toContain('Take over anyway');
+  });
+
+  test('places pointer notices on whichever side has browser viewport space', () => {
+    expect(
+      agentDeviceOverlayPlacement({
+        clientX: 100,
+        clientY: 100,
+        viewportWidth: 1200,
+        viewportHeight: 900,
+      }),
+    ).toEqual({ horizontal: 'right', vertical: 'below' });
+    expect(
+      agentDeviceOverlayPlacement({
+        clientX: 1100,
+        clientY: 840,
+        viewportWidth: 1200,
+        viewportHeight: 900,
+      }),
+    ).toEqual({ horizontal: 'left', vertical: 'above' });
+    expect(devicePointerLabelRadius({ horizontal: 'left', vertical: 'below' })).toBe(
+      'var(--expo-radius-xl) var(--expo-radius-sm) var(--expo-radius-xl) var(--expo-radius-xl)',
     );
   });
 
-  test('keeps the agent takeover button borderless in light mode', () => {
+  test('leaves the normal device cursor visible when no agent is interacting', () => {
+    const markup = renderToStaticMarkup(
+      <PhoneFrame
+        device={{ ...IPHONE, deviceFrame: null }}
+        client={STREAMING_CLIENT}
+        DeviceScreen={() => <div role="application" style={{ cursor: 'crosshair' }} />}
+        displayScreen={() => null}
+      />,
+    );
+    const frameStart = markup.indexOf('data-testid="device-screen-frame"');
+    const frameTag = markup.slice(frameStart, markup.indexOf('>', frameStart) + 1);
+    const overlayStart = markup.indexOf('data-testid="agent-device-overlay"');
+    const overlayTagStart = markup.lastIndexOf('<div', overlayStart);
+    const overlayTag = markup.slice(overlayTagStart, markup.indexOf('>', overlayStart) + 1);
+
+    expect(frameTag).toContain('data-agent-active="false"');
+    expect(frameTag).not.toContain('cursor:none');
+    expect(markup).toContain('role="application" style="cursor:crosshair"');
+    expect(overlayTag).toContain('hidden=""');
+    expect(overlayTag).toContain('display:none');
+  });
+
+  test('defines a dedicated pink semantic palette for agent-owned UI', () => {
     const themeCss = readFileSync(new URL('../theme/theme.css', import.meta.url), 'utf8');
     const lightTheme = themeCss.slice(themeCss.indexOf(':root {'), themeCss.indexOf('.dark-theme'));
 
-    expect(lightTheme).toContain('--expo-theme-button-agent-overlay-border: transparent;');
-    expect(lightTheme).toContain('--expo-theme-button-agent-overlay-disabled-border: transparent;');
+    expect(lightTheme).toContain('--expo-theme-agent-accent: var(--pink-9);');
+    expect(lightTheme).toContain(
+      '--expo-theme-agent-surface: color-mix(in srgb, var(--pink-9) 30%, transparent);',
+    );
+    expect(lightTheme).toContain('--expo-theme-agent-border: var(--pink-7);');
+    expect(lightTheme).not.toMatch(/--expo-theme-agent-[^:]+:\s*(?:#|rgba?\()/);
   });
 
-  test('clips the stream and unshaped overlay with one shared iOS screen shape', () => {
+  test('clips the stream while keeping the pointer notice free to use nearby space', () => {
     const markup = renderToStaticMarkup(
       <PhoneFrame
         device={{ ...IPHONE, deviceFrame: null }}
         DeviceScreen={() => null}
         displayScreen={() => null}
-      />
+      />,
     );
     const screenClipStart = markup.indexOf('data-testid="device-screen-clip"');
     const screenClipTag = markup.slice(screenClipStart, markup.indexOf('>', screenClipStart) + 1);
     const frameStart = markup.indexOf('data-testid="device-screen-frame"');
     const frameTag = markup.slice(frameStart, markup.indexOf('>', frameStart) + 1);
-    const overlayStart = markup.indexOf('data-testid="agent-device-overlay-clip"');
+    const overlayStart = markup.indexOf('data-testid="agent-device-overlay"');
     const overlayTag = markup.slice(overlayStart, markup.indexOf('>', overlayStart) + 1);
+    const agentOverlayStart = markup.indexOf('data-testid="agent-interaction-overlay"');
+    const agentOverlayTag = markup.slice(
+      agentOverlayStart,
+      markup.indexOf('>', agentOverlayStart) + 1,
+    );
 
     expect(screenClipTag).not.toContain('overflow:hidden');
     expect(screenClipTag).not.toContain('border-radius');
     expect(screenClipTag).not.toContain('corner-shape');
     expect(screenClipTag).toContain('clip-path:shape(');
     expect(frameTag).not.toContain('box-shadow');
-    expect(overlayTag).not.toContain('overflow:hidden');
+    expect(markup).not.toContain('data-testid="agent-device-overlay-clip"');
+    expect(overlayTag).toContain('overflow:visible');
+    expect(overlayTag).toContain('pointer-events:none');
     expect(overlayTag).not.toContain('border-radius');
     expect(overlayTag).not.toContain('corner-shape');
+    expect(agentOverlayTag).toContain('overflow:visible');
+    expect(agentOverlayTag).toContain('pointer-events:none');
+    expect(agentOverlayTag).not.toContain('overflow:hidden');
+    expect(agentOverlayTag).not.toContain('clip-path');
+    expect(agentOverlayTag).not.toContain('border-radius');
+    expect(agentOverlayStart).toBeGreaterThan(screenClipStart);
   });
 
   test('clips the stream to the calibrated opening below iPhone artwork', () => {
@@ -170,7 +253,7 @@ describe('agent device status', () => {
         deviceFrameAssets={FRAME_ASSETS}
         DeviceScreen={() => null}
         displayScreen={() => null}
-      />
+      />,
     );
     const screenStart = markup.indexOf('data-testid="device-screen-clip"');
     const screenTag = markup.slice(screenStart, markup.indexOf('>', screenStart) + 1);
@@ -180,6 +263,16 @@ describe('agent device status', () => {
     const streamTag = markup.slice(streamStart, markup.indexOf('>', streamStart) + 1);
     const artworkStart = markup.indexOf('data-testid="device-frame-artwork"');
     const artworkTag = markup.slice(artworkStart, markup.indexOf('>', artworkStart) + 1);
+    const agentOverlayStart = markup.indexOf('data-testid="agent-interaction-overlay"');
+    const agentOverlayTag = markup.slice(
+      agentOverlayStart,
+      markup.indexOf('>', agentOverlayStart) + 1,
+    );
+    const agentAlignmentStart = markup.indexOf('data-testid="agent-interaction-stream-alignment"');
+    const agentAlignmentTag = markup.slice(
+      agentAlignmentStart,
+      markup.indexOf('>', agentAlignmentStart) + 1,
+    );
 
     expect(markup).toContain('data-device-frame-kind="ios:iphone-17-pro"');
     expect(frameTag).toContain('flex-shrink:0');
@@ -203,6 +296,15 @@ describe('agent device status', () => {
     expect(streamStart).toBeLessThan(artworkStart);
     expect(artworkTag).toContain('src="/iphone.png"');
     expect(artworkTag).toContain('pointer-events:none');
+    expect(agentOverlayTag).toContain('left:calc(3.9695% - 1px)');
+    expect(agentOverlayTag).toContain('top:calc(1.6236% - 1px)');
+    expect(agentOverlayTag).toContain('overflow:visible');
+    expect(agentOverlayTag).toContain('z-index:3');
+    expect(agentOverlayTag).not.toContain('overflow:hidden');
+    expect(agentOverlayTag).not.toContain('border-radius');
+    expect(agentAlignmentTag).toContain('width:max(100cqw, 46.043165cqh)');
+    expect(agentAlignmentTag).toContain('height:max(100cqh, 217.187500cqw)');
+    expect(agentOverlayStart).toBeGreaterThan(artworkStart);
     expect(artworkTag).toContain('z-index:2');
 
     const stableArtworkTags = [
@@ -231,7 +333,7 @@ describe('agent device status', () => {
           <div data-testid="connection-state-surface" data-status={client.status} />
         )}
         displayScreen={() => null}
-      />
+      />,
     );
     const viewportStart = markup.indexOf('data-testid="device-frame-viewport"');
     const viewportTag = markup.slice(viewportStart, markup.indexOf('>', viewportStart) + 1);
@@ -241,7 +343,7 @@ describe('agent device status', () => {
     expect(viewportTag).toContain('min-height:0');
     expect(viewportTag).toContain('width:100%');
     expect(markup).toMatch(
-      /data-testid="device-frame-viewport"[^>]*><div data-testid="device-screen-frame"[\s\S]*data-testid="device-frame-stream-cover"[^>]*><div data-testid="connection-state-surface" data-status="connecting"><\/div>/
+      /data-testid="device-frame-viewport"[^>]*><div data-testid="device-screen-frame"[\s\S]*data-testid="device-frame-stream-cover"[^>]*><div data-testid="connection-state-surface" data-status="connecting"><\/div>/,
     );
   });
 
@@ -253,7 +355,7 @@ describe('agent device status', () => {
         deviceFrameAssets={FRAME_ASSETS}
         DeviceScreen={() => null}
         displayScreen={(screen) => screen ?? null}
-      />
+      />,
     );
     const screenStart = markup.indexOf('data-testid="device-screen-clip"');
     const screenTag = markup.slice(screenStart, markup.indexOf('>', screenStart) + 1);
@@ -281,7 +383,7 @@ describe('agent device status', () => {
         deviceFrameAssets={FRAME_ASSETS}
         DeviceScreen={StableDeviceScreen}
         displayScreen={() => null}
-      />
+      />,
     );
     const hidden = renderToStaticMarkup(
       <PhoneFrame
@@ -291,7 +393,7 @@ describe('agent device status', () => {
         showDeviceFrame={false}
         DeviceScreen={StableDeviceScreen}
         displayScreen={() => null}
-      />
+      />,
     );
     expect(shown).toContain('data-device-frame-kind="android:pixel-10-pro"');
     expect(shown).toContain('src="/pixel.png"');
@@ -299,7 +401,7 @@ describe('agent device status', () => {
     expect(hidden).not.toContain('data-testid="device-frame-artwork"');
     for (const markup of [shown, hidden]) {
       expect(markup).toMatch(
-        /data-testid="device-frame-stream-cover"[^>]*><div data-testid="stable-device-screen"><\/div><\/div>/
+        /data-testid="device-frame-stream-cover"[^>]*><div data-testid="stable-device-screen"><\/div><\/div>/,
       );
     }
   });
