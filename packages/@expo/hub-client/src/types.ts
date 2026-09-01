@@ -184,6 +184,14 @@ export interface DeviceStreamEncoderStats {
   framesDropped: number | null;
   packetLossRatio: number | null;
   qualityLimitationReason: string | null;
+  /** Android publisher submissions per second, derived from consecutive server snapshots. */
+  publisherFps: number | null;
+  /** H.264 frames accepted by serve-emu's native media track. */
+  publisherSubmittedFrames: number | null;
+  /** Frames rejected by serve-emu's keyframe gate or native backpressure. */
+  publisherDroppedFrames: number | null;
+  /** Submitted H.264 payload bitrate, excluding RTP/SRTP/transport overhead and retransmits. */
+  payloadBitrateBps: number | null;
 }
 
 /** Latest cumulative server-side capture and pacing counters. */

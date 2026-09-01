@@ -158,6 +158,10 @@ const encoderStats = {
   framesDropped: 10,
   packetLossRatio: 0.012,
   qualityLimitationReason: 'bandwidth',
+  publisherFps: null,
+  publisherSubmittedFrames: null,
+  publisherDroppedFrames: null,
+  payloadBitrateBps: null,
 } satisfies NonNullable<WebRtcStreamStats['encoder']>;
 
 const captureStats = {
@@ -408,6 +412,10 @@ test('keeps measured zero distinct from unavailable WebRTC values', () => {
           framesDropped: 0,
           packetLossRatio: 0,
           qualityLimitationReason: 'none',
+          publisherFps: null,
+          publisherSubmittedFrames: null,
+          publisherDroppedFrames: null,
+          payloadBitrateBps: null,
         },
       },
     ),
@@ -457,12 +465,16 @@ test('shows only the server statistics that serve-emu can provide', () => {
           framesDropped: null,
           packetLossRatio: null,
           qualityLimitationReason: null,
+          publisherFps: 29.5,
+          publisherSubmittedFrames: 1_190,
+          publisherDroppedFrames: 10,
+          payloadBitrateBps: 5_750_000,
         },
         capture: {
           screenFrames: null,
           idleFrames: null,
           offeredFrames: 1_200,
-          forwardedFrames: null,
+          forwardedFrames: 1_180,
           pumpRestarts: null,
         },
       },
@@ -490,9 +502,14 @@ test('shows only the server statistics that serve-emu can provide', () => {
   expect(streamStatisticValue(encoder, 'Output FPS')).toBe('30 FPS');
   expect(streamStatisticValue(encoder, 'Configured bitrate')).toBe('8.00 Mbps');
   expect(streamStatisticValue(encoder, 'Output frames')).toBe('1.2k');
+  expect(streamStatisticValue(encoder, 'Publisher FPS')).toBe('30 FPS');
+  expect(streamStatisticValue(encoder, 'Payload bitrate')).toBe('5.75 Mbps');
+  expect(streamStatisticValue(encoder, 'Publisher submissions')).toBe('1.2k');
+  expect(streamStatisticValue(encoder, 'Publisher drops')).toBe('10');
   expect(streamStatisticValue(capture, 'Publisher offers')).toBe('1.2k');
-  expect(encoder.match(/data-stream-statistic=/g)).toHaveLength(4);
-  expect(capture.match(/data-stream-statistic=/g)).toHaveLength(1);
+  expect(streamStatisticValue(capture, 'Publisher forwards')).toBe('1.2k');
+  expect(encoder.match(/data-stream-statistic=/g)).toHaveLength(8);
+  expect(capture.match(/data-stream-statistic=/g)).toHaveLength(2);
   for (const label of [
     'Encode FPS',
     'Target bitrate',

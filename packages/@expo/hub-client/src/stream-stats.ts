@@ -38,7 +38,19 @@ export type WebRtcServerStats = {
   serverFps: number | null;
   encoder: DeviceStreamEncoderStats | null;
   capture: DeviceStreamCaptureStats | null;
+  publisherCounters: WebRtcPublisherCounters | null;
 };
+
+export type WebRtcPublisherCounters = {
+  atMs: number;
+  submittedFrames: number;
+  payloadBytesSubmitted: number;
+};
+
+export type WebRtcPublisherDescription = Pick<
+  DeviceStreamEncoderStats,
+  'publisherFps' | 'payloadBitrateBps'
+>;
 
 type WebRtcClientDescription = Pick<
   DeviceStreamStatsSample,
@@ -247,6 +259,11 @@ function readWebRtcEncoderStats(value: unknown): DeviceStreamEncoderStats | null
     framesDropped: finiteNumber(value.framesDropped) ?? finiteNumber(value.sourceFramesDropped),
     packetLossRatio: finiteNumber(value.packetLossRatio) ?? finiteNumber(value.lossRatio),
     qualityLimitationReason: nonEmptyString(value.qualityLimitationReason),
+    publisherFps: finiteNumber(value.publisherFps),
+    publisherSubmittedFrames:
+      finiteNumber(value.publisherSubmittedFrames) ?? finiteNumber(value.submittedFrames),
+    publisherDroppedFrames: finiteNumber(value.publisherDroppedFrames),
+    payloadBitrateBps: finiteNumber(value.payloadBitrateBps),
   };
 }
 
@@ -261,14 +278,59 @@ function readWebRtcCaptureStats(value: unknown): DeviceStreamCaptureStats | null
   };
 }
 
-/** Normalize either the Hub Android response or serve-sim's matching sender-session response. */
+function readServeEmuEncoderStats(
+  source: Record<string, unknown>,
+  session: Record<string, unknown> | null,
+): DeviceStreamEncoderStats {
+  return {
+    codec: nonEmptyString(source.codec),
+    encodeFps: finiteNumber(source.fps),
+    targetBitrateBps: finiteNumber(source.configuredBitrateBps),
+    encodeMsPerFrame: null,
+    framesEncoded: finiteNumber(source.frames),
+    framesSent: null,
+    framesDropped: null,
+    packetLossRatio: null,
+    qualityLimitationReason: null,
+    publisherFps: null,
+    publisherSubmittedFrames: finiteNumber(session?.submittedFrames),
+    publisherDroppedFrames: finiteNumber(session?.publisherDroppedFrames),
+    payloadBitrateBps: null,
+  };
+}
+
+function readWebRtcPublisherCounters(
+  value: Record<string, unknown>,
+  session: Record<string, unknown> | null,
+): WebRtcPublisherCounters | null {
+  if (session === null) return null;
+  const atMs = finiteNumber(value.sampledAt);
+  const submittedFrames = finiteNumber(session.submittedFrames);
+  const payloadBytesSubmitted = finiteNumber(session.payloadBytesSubmitted);
+  if (atMs === null || submittedFrames === null || payloadBytesSubmitted === null) return null;
+  return { atMs, submittedFrames, payloadBytesSubmitted };
+}
+
+/** Normalize serve-emu's source/viewer response or serve-sim's sender-session response. */
 export function readWebRtcServerStats(value: unknown, sessionId: string): WebRtcServerStats {
-  if (!isRecord(value)) return { serverFps: null, encoder: null, capture: null };
+  if (!isRecord(value)) {
+    return { serverFps: null, encoder: null, capture: null, publisherCounters: null };
+  }
 
   const session = Array.isArray(value.sessions)
     ? value.sessions.find((candidate) => isRecord(candidate) && candidate.sessionId === sessionId)
     : null;
   const matchingSession = isRecord(session) ? session : null;
+  const source = isRecord(value.source) ? value.source : null;
+  if (source !== null) {
+    return {
+      serverFps: finiteNumber(source.fps),
+      encoder: readServeEmuEncoderStats(source, matchingSession),
+      capture: readWebRtcCaptureStats(value.capture),
+      publisherCounters: readWebRtcPublisherCounters(value, matchingSession),
+    };
+  }
+
   const directServerFps = finiteNumber(value.serverFps);
   const serverFps =
     matchingSession === null
@@ -281,6 +343,25 @@ export function readWebRtcServerStats(value: unknown, sessionId: string): WebRtc
     serverFps,
     encoder: readWebRtcEncoderStats(matchingSession ?? value.encoder),
     capture: readWebRtcCaptureStats(value.capture),
+    publisherCounters: null,
+  };
+}
+
+/** Derive per-viewer publisher rates from cumulative package-owned serve-emu counters. */
+export function describeWebRtcPublisherCounters(
+  previous: WebRtcPublisherCounters | null,
+  current: WebRtcPublisherCounters,
+): WebRtcPublisherDescription {
+  if (previous === null) return { publisherFps: null, payloadBitrateBps: null };
+  const elapsedMs = current.atMs - previous.atMs;
+  if (elapsedMs < MIN_WINDOW_MS) return { publisherFps: null, payloadBitrateBps: null };
+
+  const submittedFrames = current.submittedFrames - previous.submittedFrames;
+  const payloadBytes = current.payloadBytesSubmitted - previous.payloadBytesSubmitted;
+  const elapsedSeconds = elapsedMs / 1_000;
+  return {
+    publisherFps: submittedFrames < 0 ? null : submittedFrames / elapsedSeconds,
+    payloadBitrateBps: payloadBytes < 0 ? null : (payloadBytes * 8) / elapsedSeconds,
   };
 }
 
@@ -339,7 +420,13 @@ export function useWebRtcStreamStats(
     let stopped = false;
     let clientPolling = false;
     let serverPolling = false;
-    let serverStats: WebRtcServerStats = { serverFps: null, encoder: null, capture: null };
+    let serverStats: WebRtcServerStats = {
+      serverFps: null,
+      encoder: null,
+      capture: null,
+      publisherCounters: null,
+    };
+    let previousPublisherCounters: WebRtcPublisherCounters | null = null;
     let lastServerSampleAt = 0;
     let serverController: AbortController | null = null;
 
@@ -356,13 +443,18 @@ export function useWebRtcStreamStats(
           controller.signal,
         );
         if (stopped) return;
-        serverStats = next;
+        const publisher = next.publisherCounters
+          ? describeWebRtcPublisherCounters(previousPublisherCounters, next.publisherCounters)
+          : { publisherFps: null, payloadBitrateBps: null };
+        if (next.publisherCounters) previousPublisherCounters = next.publisherCounters;
+        const encoder = next.encoder ? { ...next.encoder, ...publisher } : null;
+        serverStats = { ...next, encoder };
         lastServerSampleAt = Date.now();
         setStats((current) =>
           current
             ? {
                 ...current,
-                encoder: next.encoder,
+                encoder,
                 capture: next.capture,
                 serverStale: false,
               }
