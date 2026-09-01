@@ -162,6 +162,22 @@ export function androidWsUrlFor(
   return u.toString();
 }
 
+/** Count frames presented between browser callbacks, including skipped callbacks. */
+export function presentedVideoFrameDelta(
+  previousPresentedFrames: number | null,
+  presentedFrames: number,
+): number {
+  if (!Number.isSafeInteger(presentedFrames) || presentedFrames < 0) return 1;
+  if (
+    previousPresentedFrames === null ||
+    !Number.isSafeInteger(previousPresentedFrames) ||
+    presentedFrames <= previousPresentedFrames
+  ) {
+    return 1;
+  }
+  return presentedFrames - previousPresentedFrames;
+}
+
 type ServeEmuStreamSettings =
   | { transport: 'websocket' }
   | {
@@ -788,8 +804,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let frameCallback = 0;
     let fpsCount = 0;
     let fpsStartedAt = performance.now();
+    let previousPresentedFrames: number | null = null;
 
-    const markFrame = () => {
+    const markFrame = (presentedFrameDelta = 1) => {
       if (stopped) return;
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         const width = video.videoWidth;
@@ -802,8 +819,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         firstFrame = false;
         setWebRtcVideoReady(true);
       }
-      markWebRtcFrameDecoded();
-      fpsCount++;
+      markWebRtcFrameDecoded(presentedFrameDelta);
+      fpsCount += presentedFrameDelta;
       const now = performance.now();
       if (now - fpsStartedAt >= 1000) {
         const next = Math.round((fpsCount * 1000) / (now - fpsStartedAt));
@@ -812,11 +829,22 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         setFps((current) => (current === next ? current : next));
       }
     };
-    const onVideoFrame = () => {
-      markFrame();
+    const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      const presentedFrameDelta = presentedVideoFrameDelta(
+        previousPresentedFrames,
+        metadata.presentedFrames,
+      );
+      if (
+        Number.isSafeInteger(metadata.presentedFrames) &&
+        metadata.presentedFrames >= 0
+      ) {
+        previousPresentedFrames = metadata.presentedFrames;
+      }
+      markFrame(presentedFrameDelta);
       frameCallback = video.requestVideoFrameCallback(onVideoFrame);
     };
     const onTimeUpdate = () => markFrame();
+    const onLoadedData = () => markFrame(0);
 
     video.srcObject = webRtcStream;
     setWebRtcVideoReady(false);
@@ -826,13 +854,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       } else {
         video.addEventListener('timeupdate', onTimeUpdate);
       }
-      video.addEventListener('loadeddata', markFrame, { once: true });
+      video.addEventListener('loadeddata', onLoadedData, { once: true });
       void video.play().catch(() => {});
     }
 
     return () => {
       stopped = true;
-      video.removeEventListener('loadeddata', markFrame);
+      video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
         video.cancelVideoFrameCallback(frameCallback);

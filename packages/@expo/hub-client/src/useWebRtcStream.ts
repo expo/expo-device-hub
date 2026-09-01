@@ -142,8 +142,8 @@ export function useWebRtcStream({
   const transportRetryAttemptRef = useRef(0);
   const streamStats = useWebRtcStreamStats(statsConnection, statsUrl, presentedFramesRef);
 
-  const markFrameDecoded = useCallback(() => {
-    presentedFramesRef.current++;
+  const markFrameDecoded = useCallback((presentedFrameDelta = 1) => {
+    presentedFramesRef.current += presentedFrameDelta;
     if (firstFrameDecodedRef.current) return;
     firstFrameDecodedRef.current = true;
     transportRetryAttemptRef.current = 0;
