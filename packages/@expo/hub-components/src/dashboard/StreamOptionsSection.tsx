@@ -350,6 +350,22 @@ function StreamStatistics({
               label: 'Output frames',
               value: formatCount(encoder.framesEncoded),
             },
+            {
+              label: 'Publisher FPS',
+              value: formatFps(encoder.publisherFps),
+            },
+            {
+              label: 'Payload bitrate',
+              value: formatBitrate(encoder.payloadBitrateBps),
+            },
+            {
+              label: 'Publisher submissions',
+              value: formatCount(encoder.publisherSubmittedFrames),
+            },
+            {
+              label: 'Publisher drops',
+              value: formatCount(encoder.publisherDroppedFrames),
+            },
           ]
         : [
             { label: 'Codec', value: formatCodec(encoder.codec) },
@@ -376,6 +392,10 @@ function StreamStatistics({
             {
               label: 'Publisher offers',
               value: formatCount(capture.offeredFrames),
+            },
+            {
+              label: 'Publisher forwards',
+              value: formatCount(capture.forwardedFrames),
             },
           ]
         : [
