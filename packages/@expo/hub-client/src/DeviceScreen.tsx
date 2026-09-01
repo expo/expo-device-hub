@@ -30,7 +30,6 @@ export const DEVICE_SCREEN_SURFACE_LAYOUT_STYLE: CSSProperties = {
   inset: 0,
   containerType: 'size',
   overflow: 'hidden',
-  backgroundColor: '#000',
 };
 
 export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
@@ -47,6 +46,15 @@ export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
   fontSize: 13,
   fontFamily: 'var(--expo-font-mono)',
 };
+
+export function deviceScreenSurfaceStyle(
+  status: DeviceScreenProps['client']['status']
+): CSSProperties {
+  return {
+    ...DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
+    ...(status === 'streaming' ? {} : { backgroundColor: '#000' }),
+  };
+}
 
 /** Keep media geometry tied to the same synchronous size container as the frame. */
 export function deviceScreenMediaStyle(rotation: number): CSSProperties {
@@ -319,7 +327,7 @@ export function DeviceScreen({
   const rotation = geometry.rotationDegrees;
 
   const surfaceStyle: CSSProperties = {
-    ...DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
+    ...deviceScreenSurfaceStyle(status),
     borderRadius,
     ...(squircle ? ({ cornerShape: 'superellipse(1.3)' } as Record<string, unknown>) : {}),
   };
