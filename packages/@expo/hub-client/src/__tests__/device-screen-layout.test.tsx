@@ -3,6 +3,7 @@ import {
   DEVICE_SCREEN_STATUS_LAYOUT_STYLE,
   DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
   deviceScreenMediaStyle,
+  deviceScreenSurfaceStyle,
 } from '../DeviceScreen';
 
 describe('DeviceScreen layout', () => {
@@ -24,5 +25,10 @@ describe('DeviceScreen layout', () => {
     expect(DEVICE_SCREEN_STATUS_LAYOUT_STYLE.position).toBe('absolute');
     expect(DEVICE_SCREEN_STATUS_LAYOUT_STYLE.inset).toBe(0);
     expect(DEVICE_SCREEN_STATUS_LAYOUT_STYLE.boxSizing).toBe('border-box');
+  });
+
+  test('leaves only the live stream surface background transparent', () => {
+    expect(deviceScreenSurfaceStyle('streaming').backgroundColor).toBeUndefined();
+    expect(deviceScreenSurfaceStyle('connecting').backgroundColor).toBe('#000');
   });
 });
