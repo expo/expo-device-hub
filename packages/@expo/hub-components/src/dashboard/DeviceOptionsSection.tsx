@@ -197,7 +197,6 @@ export function DeviceOptionsSection({
         )}
 
       {showDeviceSettings &&
-        platform === 'ios' &&
         SWITCH_OPTIONS.map(({ key, label }) =>
           visible(key) ? (
             <SidebarRow key={key} label={label} borderBottom={hasFollowingRow(key)}>
