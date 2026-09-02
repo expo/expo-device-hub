@@ -15,6 +15,7 @@ const DEVICE_OPTION_COMPAT_PATHNAMES = new Set([
   '/api/font-scale',
   '/api/reduce-motion',
   '/api/high-text-contrast',
+  '/api/font-weight',
 ]);
 
 const router = createRouter(readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]));
