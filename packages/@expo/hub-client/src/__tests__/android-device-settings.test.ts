@@ -4,6 +4,7 @@ import {
   ANDROID_DEVICE_SETTING_KEYS,
   ANDROID_POLLED_DEVICE_SETTING_KEYS,
   androidDeviceSettingRequest,
+  androidDisplayWidthDpFromPayload,
   androidFontScaleForTextSize,
   androidTextSizeForFontScale,
   createAndroidDeviceSettingVersions,
@@ -57,6 +58,58 @@ describe('Android device setting contract', () => {
       'unknown',
     );
     expect(parseAndroidDeviceSetting('text-size', { ok: false })).toBeNull();
+  });
+
+  test('builds display-size payloads from the shared size steps', () => {
+    expect(androidDeviceSettingRequest('display-size', 'small')).toEqual({
+      path: '/api/display-density',
+      body: { scale: 0.85 },
+    });
+    expect(androidDeviceSettingRequest('display-size', 'extra-large')).toEqual({
+      path: '/api/display-density',
+      body: { scale: 1.3 },
+    });
+    expect(androidDeviceSettingRequest('display-size', 'gigantic')).toBeNull();
+  });
+
+  test('snaps reported display densities onto the nearest step', () => {
+    expect(
+      parseAndroidDeviceSetting('display-size', { ok: true, displayDensity: { scale: 1 } }),
+    ).toBe('medium');
+    expect(
+      parseAndroidDeviceSetting('display-size', { ok: true, displayDensity: { scale: 1.3 } }),
+    ).toBe('extra-large');
+    expect(
+      parseAndroidDeviceSetting('display-size', { ok: true, displayDensity: { scale: 1.143 } }),
+    ).toBe('large');
+    expect(parseAndroidDeviceSetting('display-size', { ok: true })).toBeNull();
+  });
+
+  test('reads the smallest-width dp out of a display-density payload', () => {
+    expect(
+      androidDisplayWidthDpFromPayload({
+        ok: true,
+        displayDensity: { scale: 1, widthDp: 411, raw: 'Physical density: 420' },
+      }),
+    ).toBe(411);
+  });
+
+  test('reports no smallest-width dp when the payload cannot supply one', () => {
+    expect(androidDisplayWidthDpFromPayload({ ok: true })).toBeNull();
+    expect(androidDisplayWidthDpFromPayload({ ok: true, displayDensity: { scale: 1 } })).toBeNull();
+    expect(
+      androidDisplayWidthDpFromPayload({ ok: true, displayDensity: { widthDp: 0 } }),
+    ).toBeNull();
+    expect(
+      androidDisplayWidthDpFromPayload({ ok: true, displayDensity: { widthDp: -411 } }),
+    ).toBeNull();
+    expect(
+      androidDisplayWidthDpFromPayload({ ok: true, displayDensity: { widthDp: '411' } }),
+    ).toBeNull();
+    expect(androidDisplayWidthDpFromPayload('411')).toBeNull();
+    expect(
+      androidDisplayWidthDpFromPayload({ ok: false, displayDensity: { widthDp: 411 } }),
+    ).toBeNull();
   });
 
   test('builds accessibility toggle payloads in both directions', () => {
@@ -167,6 +220,7 @@ describe('Android device setting table', () => {
       'appearance',
       'network',
       'text-size',
+      'display-size',
       'reduce-motion',
       'bold-text',
       'increase-contrast',
@@ -174,6 +228,7 @@ describe('Android device setting table', () => {
     expect(ANDROID_POLLED_DEVICE_SETTING_KEYS).toEqual([
       'network',
       'text-size',
+      'display-size',
       'reduce-motion',
       'bold-text',
       'increase-contrast',
@@ -186,6 +241,7 @@ describe('Android device setting table', () => {
       appearance: 0,
       network: 0,
       'text-size': 0,
+      'display-size': 0,
       'reduce-motion': 0,
       'bold-text': 0,
       'increase-contrast': 0,

@@ -13,6 +13,7 @@ const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
   'liquid-glass': 'clear',
   'color-filter': 'none',
   'text-size': 'large',
+  'display-size': 'medium',
   'reduce-motion': 'off',
   'bold-text': 'off',
   'increase-contrast': 'off',
@@ -61,6 +62,13 @@ const ANDROID_TEXT_SIZE_OPTIONS: SelectOption[] = [
   { value: 'extra-large', label: 'XL' },
 ];
 
+const ANDROID_DISPLAY_SIZE_OPTIONS: SelectOption[] = [
+  { value: 'small', label: 'S' },
+  { value: 'medium', label: 'M' },
+  { value: 'large', label: 'L' },
+  { value: 'extra-large', label: 'XL' },
+];
+
 const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = [
   { key: 'reduce-motion', label: 'Reduce motion' },
   { key: 'bold-text', label: 'Bold text' },
@@ -103,9 +111,11 @@ export function DeviceOptionsSection({
 }) {
   const [open, setOpen] = useState(true);
   const unavailableFrameDescriptionId = useId();
+  const displaySizeDescriptionId = useId();
   const settings = client?.deviceSettings ?? null;
   const pending = client?.deviceSettingsPending ?? EMPTY_PENDING_SETTINGS;
   const platform = client?.platform;
+  const displayWidthDp = client?.displayWidthDp ?? null;
 
   function visible(key: DeviceSettingKey) {
     if (settings === null) return key === 'appearance' || platform === 'ios';
@@ -169,6 +179,22 @@ export function DeviceOptionsSection({
           'Text size',
           platform === 'android' ? ANDROID_TEXT_SIZE_OPTIONS : TEXT_SIZE_OPTIONS,
         )}
+
+      {showDeviceSettings && platform === 'android' && visible('display-size') && (
+        <SidebarRow
+          label="Display size"
+          description={displayWidthDp === null ? undefined : `sw${displayWidthDp}dp`}
+          descriptionId={displayWidthDp === null ? undefined : displaySizeDescriptionId}>
+          <Select
+            ariaLabel="Display size"
+            ariaDescribedBy={displayWidthDp === null ? undefined : displaySizeDescriptionId}
+            options={ANDROID_DISPLAY_SIZE_OPTIONS}
+            value={value('display-size')}
+            disabled={disabled('display-size')}
+            onChange={(nextValue) => setValue('display-size', nextValue)}
+          />
+        </SidebarRow>
+      )}
 
       {showDeviceSettings &&
         SWITCH_OPTIONS.map(({ key, label }) =>
