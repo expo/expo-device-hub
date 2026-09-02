@@ -13,6 +13,7 @@ const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
   'color-filter': 'none',
   'text-size': 'large',
   'reduce-motion': 'off',
+  'bold-text': 'off',
   'increase-contrast': 'off',
   'show-borders': 'off',
   'reduce-transparency': 'off',
@@ -61,6 +62,7 @@ const ANDROID_TEXT_SIZE_OPTIONS = [
 
 const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = [
   { key: 'reduce-motion', label: 'Reduce motion' },
+  { key: 'bold-text', label: 'Bold text' },
   { key: 'increase-contrast', label: 'Increase contrast' },
   { key: 'show-borders', label: 'Show borders' },
   { key: 'reduce-transparency', label: 'Reduce transparency' },
