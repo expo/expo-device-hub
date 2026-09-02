@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import {
   type DeviceClient,
+  type DeviceGrpcImageMode,
   type DeviceHttpCodec,
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
@@ -65,6 +66,13 @@ const STREAM_MODE_ORDER: readonly DeviceStreamMode[] = ['mjpeg', 'h264', 'webrtc
 const STREAM_SOURCE_OPTIONS: ReadonlyArray<{ value: DeviceStreamSource; label: string }> = [
   { value: 'scrcpy', label: 'scrcpy' },
   { value: 'grpc-screenshot', label: 'gRPC' },
+];
+const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<{
+  value: DeviceGrpcImageMode;
+  label: string;
+}> = [
+  { value: 'png', label: 'PNG' },
+  { value: 'mmap', label: 'MMAP' },
 ];
 const STREAM_SETTING_ORDER: readonly (keyof DeviceStreamEncoderSettings)[] = [
   'maxDimension',
@@ -160,6 +168,21 @@ function formatCount(value: number | null) {
   if (safeValue < 1_000) return String(Math.round(safeValue));
   if (safeValue < 999_950) return `${(safeValue / 1_000).toFixed(1)}k`;
   return `${(safeValue / 1_000_000).toFixed(2)}M`;
+}
+
+function formatBytes(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return UNAVAILABLE_VALUE;
+  const safeValue = Math.max(0, value);
+  if (safeValue < 1_024) return `${Math.round(safeValue)} B`;
+  if (safeValue < 1_048_576) return `${(safeValue / 1_024).toFixed(1)} KiB`;
+  return `${(safeValue / 1_048_576).toFixed(2)} MiB`;
+}
+
+function formatTimingPair(p50: number | null, p95: number | null) {
+  if (p50 === null && p95 === null) return UNAVAILABLE_VALUE;
+  return `${p50 === null ? UNAVAILABLE_VALUE : p50.toFixed(1)} / ${
+    p95 === null ? UNAVAILABLE_VALUE : p95.toFixed(1)
+  } ms`;
 }
 
 function formatFreezes(count: number | null, durationMs: number | null) {
@@ -402,6 +425,102 @@ function StreamStatistics({
               label: 'Publisher forwards',
               value: formatCount(capture.forwardedFrames),
             },
+            ...(capture.grpcImageMode
+              ? [
+                  {
+                    label: 'gRPC image mode',
+                    value: capture.grpcImageMode.toUpperCase(),
+                  },
+                  {
+                    label: 'Emulator producer FPS',
+                    value: formatFps(capture.grpcProducerFps ?? null),
+                  },
+                  {
+                    label: 'Host receive FPS',
+                    value: formatFps(capture.grpcReceiveFps ?? null),
+                  },
+                  {
+                    label: 'Usable image FPS',
+                    value: formatFps(capture.grpcUsableImageFps ?? null),
+                  },
+                  {
+                    label: 'Encoder input FPS',
+                    value: formatFps(capture.grpcEncoderInputFps ?? null),
+                  },
+                  {
+                    label: 'gRPC notifications',
+                    value: formatCount(capture.grpcMessagesReceived ?? null),
+                  },
+                  {
+                    label: 'Selected notifications',
+                    value: formatCount(capture.grpcMessagesEmitted ?? null),
+                  },
+                  {
+                    label: 'Coalesced notifications',
+                    value: formatCount(capture.grpcMessagesCoalesced ?? null),
+                  },
+                  {
+                    label: 'Sequence gaps',
+                    value: formatCount(capture.grpcSequenceGaps ?? null),
+                  },
+                  {
+                    label: 'Latest image payload',
+                    value: formatBytes(capture.grpcImagePayloadBytes ?? null),
+                  },
+                  {
+                    label: 'Logical transport bytes',
+                    value: formatBytes(capture.grpcTransportBytes ?? null),
+                  },
+                  {
+                    label: 'gRPC message bytes',
+                    value: formatBytes(capture.grpcMessageBytesReceived ?? null),
+                  },
+                  {
+                    label: 'Produce→receive p50 / p95',
+                    value: formatTimingPair(
+                      capture.grpcProductionToReceiveP50Ms ?? null,
+                      capture.grpcProductionToReceiveP95Ms ?? null,
+                    ),
+                  },
+                  {
+                    label: 'Produce→usable p50 / p95',
+                    value: formatTimingPair(
+                      capture.grpcProductionToUsableP50Ms ?? null,
+                      capture.grpcProductionToUsableP95Ms ?? null,
+                    ),
+                  },
+                  {
+                    label: 'Protobuf decode p50 / p95',
+                    value: formatTimingPair(
+                      capture.grpcProtobufDecodeP50Ms ?? null,
+                      capture.grpcProtobufDecodeP95Ms ?? null,
+                    ),
+                  },
+                  ...(capture.grpcImageMode === 'mmap'
+                    ? [
+                        {
+                          label: 'MMAP bytes read',
+                          value: formatBytes(capture.mmapFileBytesRead ?? null),
+                        },
+                        {
+                          label: 'MMAP read p50 / p95',
+                          value: formatTimingPair(
+                            capture.mmapReadCopyP50Ms ?? null,
+                            capture.mmapReadCopyP95Ms ?? null,
+                          ),
+                        },
+                        {
+                          label: 'MMAP read retries',
+                          value: formatCount(capture.mmapReadRetries ?? null),
+                        },
+                        {
+                          label: 'Torn frames dropped',
+                          value: formatCount(capture.mmapTornFramesDropped ?? null),
+                        },
+                      ]
+                    : []),
+                ]
+              : []),
           ]
         : [
             { label: 'Screen frames', value: formatCount(capture.screenFrames) },
@@ -700,6 +819,19 @@ export function StreamOptionsSection({
             }))}
             value={streamSource.mode}
             onChange={client.setStreamSource}
+          />
+        </SidebarRow>
+      )}
+      {streamSource?.mode === 'grpc-screenshot' && (
+        <SidebarRow label="gRPC frames">
+          <SegmentedControl
+            ariaLabel="gRPC image mode"
+            options={GRPC_IMAGE_MODE_OPTIONS.map((option) => ({
+              ...option,
+              disabled: client.streamSourcePending,
+            }))}
+            value={streamSource.grpcImageMode}
+            onChange={client.setGrpcImageMode}
           />
         </SidebarRow>
       )}

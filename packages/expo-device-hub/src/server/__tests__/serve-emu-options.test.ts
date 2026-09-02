@@ -44,6 +44,23 @@ describe('standaloneServeEmuOptions', () => {
     });
   });
 
+  test('maps the selected gRPC source and MMAP image mode', () => {
+    expect(
+      standaloneServeEmuOptions(
+        parseCliOptions([
+          '--stream-source',
+          'grpc-screenshot',
+          '--grpc-image-mode',
+          'mmap',
+        ]),
+      ),
+    ).toEqual({
+      streamMode: 'grpc-screenshot',
+      grpcImageMode: 'mmap',
+      streamSettings: { transport: 'websocket' },
+    });
+  });
+
   test('maps host WebRTC settings while keeping Android on H.264', () => {
     expect(
       standaloneServeEmuOptions(
@@ -113,7 +130,16 @@ describe('standaloneServeEmuOptions', () => {
   });
 
   test('round-trips through the server environment payload', () => {
-    const options = parseCliOptions(['--transport', 'webrtc', '--video-fps', '30']);
+    const options = parseCliOptions([
+      '--transport',
+      'webrtc',
+      '--video-fps',
+      '30',
+      '--stream-source',
+      'grpc-screenshot',
+      '--grpc-image-mode',
+      'mmap',
+    ]);
     expect(readStandaloneServeEmuOptions(encodeStandaloneServeEmuOptions(options))).toEqual(
       standaloneServeEmuOptions(options),
     );

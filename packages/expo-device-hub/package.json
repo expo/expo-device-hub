@@ -38,6 +38,7 @@
     "vendor/serve-sim/LICENSE",
     "vendor/serve-sim/NOTICE",
     "vendor/serve-emu/dist/*.js",
+    "vendor/serve-emu/dist/shared/*.js",
     "vendor/serve-emu/vendor",
     "vendor/serve-emu/LICENSE",
     "/expo-module.config.json"
@@ -82,7 +83,8 @@
     "web": "expo start --web",
     "cli": "bun dist/server/cli.mjs",
     "test": "bun test",
-    "build": "bun run build:web && bun run build:vendor && bun run build:server",
+    "test:package": "bun run scripts/package-smoke.ts",
+    "build": "bun run build:web && bun run build:vendor && bun run build:server && bun run test:package",
     "build:web": "expo export --platform web --output-dir dist/client",
     "build:vendor": "bun run scripts/vendor.ts",
     "build:server": "bun run scripts/build-plugin-server.ts"

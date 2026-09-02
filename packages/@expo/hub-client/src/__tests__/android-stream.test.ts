@@ -127,11 +127,13 @@ describe('serve-emu capture source contract', () => {
         ok: true,
         serial: 'emulator-5554',
         mode: 'grpc-screenshot',
+        grpcImageMode: 'mmap',
         availableModes: ['scrcpy', 'grpc-screenshot'],
         sessionGeneration: 2,
       }),
     ).toEqual({
       mode: 'grpc-screenshot',
+      grpcImageMode: 'mmap',
       availableModes: ['scrcpy', 'grpc-screenshot'],
       sessionGeneration: 2,
     });
@@ -140,11 +142,13 @@ describe('serve-emu capture source contract', () => {
         ok: true,
         serial: 'usb-device',
         mode: 'scrcpy',
+        grpcImageMode: 'png',
         availableModes: ['scrcpy'],
         sessionGeneration: 0,
       }),
     ).toEqual({
       mode: 'scrcpy',
+      grpcImageMode: 'png',
       availableModes: ['scrcpy'],
       sessionGeneration: 0,
     });

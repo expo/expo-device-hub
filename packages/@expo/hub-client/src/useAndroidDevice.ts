@@ -54,6 +54,7 @@ import {
   type DeviceClient,
   type DeviceConnectionOptions,
   type DeviceEvent,
+  type DeviceGrpcImageMode,
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
@@ -513,6 +514,54 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [streamSourceUrl],
   );
 
+  const setGrpcImageMode = useCallback(
+    (grpcImageMode: DeviceGrpcImageMode) => {
+      const previous = streamSourceRef.current;
+      if (
+        !streamSourceUrl ||
+        !previous ||
+        previous.mode !== 'grpc-screenshot' ||
+        previous.grpcImageMode === grpcImageMode ||
+        streamSourcePendingRef.current
+      ) {
+        return;
+      }
+      const request = ++streamSourceRequestRef.current;
+      const controller = new AbortController();
+      streamSourceControllerRef.current = controller;
+      streamSourcePendingRef.current = true;
+      setStreamSourcePending(true);
+      void fetch(streamSourceUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: previous.mode, grpcImageMode }),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`gRPC image mode update failed (${response.status})`);
+          const next = parseAndroidStreamSource(await response.json());
+          if (!next) throw new Error('gRPC image mode update returned an invalid response');
+          if (streamSourceRequestRef.current === request) {
+            streamSourceRef.current = next;
+            setStreamSourceState(next);
+          }
+        })
+        .catch(() => {
+          // Source replacement is atomic; retain the previous authoritative mode.
+        })
+        .finally(() => {
+          if (streamSourceControllerRef.current === controller) {
+            streamSourceControllerRef.current = null;
+          }
+          if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
+            streamSourcePendingRef.current = false;
+            setStreamSourcePending(false);
+          }
+        });
+    },
+    [streamSourceUrl],
+  );
+
   // ── Android capture source (serve-emu device-scoped GET/PUT endpoint) ──
   useEffect(() => {
     streamSourceControllerRef.current?.abort();
@@ -550,6 +599,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           streamSourceRef.current = next;
           setStreamSourceState((current) =>
             current?.mode === next.mode &&
+            current.grpcImageMode === next.grpcImageMode &&
             current.sessionGeneration === next.sessionGeneration &&
             current.availableModes.join() === next.availableModes.join()
               ? current
@@ -1540,6 +1590,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSource,
     streamSourcePending,
     setStreamSource,
+    setGrpcImageMode,
     streamStats,
     webRtcCodec: 'h264',
     setWebRtcCodec: () => {},

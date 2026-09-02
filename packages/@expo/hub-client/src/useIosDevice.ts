@@ -1417,6 +1417,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     streamSource: null,
     streamSourcePending: false,
     setStreamSource: () => {},
+    setGrpcImageMode: () => {},
     streamStats,
     webRtcCodec,
     setWebRtcCodec,
