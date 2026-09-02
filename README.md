@@ -75,7 +75,14 @@ This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://
 
 ## Getting started
 
-Install dependencies and build every package once from the repo root:
+`packages/serve-sim` and `packages/serve-emu` are git submodules. Check them out first,
+or `bun install` fails with `listed in bun.lock but not on disk`:
+
+```sh
+bun run submodule:init   # git submodule update --init --recursive
+```
+
+Then install dependencies and build every package once from the repo root:
 
 ```sh
 bun install
