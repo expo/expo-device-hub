@@ -6,6 +6,7 @@ import {
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
   type DeviceStreamMode,
+  type DeviceStreamSource,
   type DeviceWebRtcCodec,
 } from '@expo/hub-client';
 import {
@@ -54,6 +55,17 @@ const DEFAULT_STREAM_CAPABILITIES = {
 } as const satisfies DeviceStreamCapabilities;
 
 const STREAM_MODE_ORDER: readonly DeviceStreamMode[] = ['mjpeg', 'h264', 'webrtc'];
+const STREAM_SOURCE_OPTIONS: ReadonlyArray<{ value: DeviceStreamSource; label: string }> = [
+  { value: 'scrcpy', label: 'scrcpy' },
+  { value: 'grpc-screenshot', label: 'gRPC' },
+];
+const STREAM_SETTING_ORDER: readonly (keyof DeviceStreamEncoderSettings)[] = [
+  'maxDimension',
+  'mjpegFps',
+  'mjpegQuality',
+  'h264Fps',
+  'h264Bitrate',
+];
 
 const HTTP_CODEC_OPTIONS = [
   { value: 'auto', label: 'Auto' },
@@ -144,6 +156,15 @@ export function StreamOptionsSection({
     backend.webRtcCodecs.includes(option.value),
   );
   const settings = client.streamSettings ?? DEFAULT_SETTINGS;
+  const settingsCapabilities = client.capabilities.streamSettings;
+  const supportedSettingKeys = settingsCapabilities
+    ? STREAM_SETTING_ORDER.filter((key) => settingsCapabilities[key])
+    : [];
+  const finalSettingKey = supportedSettingKeys.at(-1);
+  const streamSource = client.streamSource;
+  const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
+    streamSource?.availableModes.includes(option.value),
+  );
   const settingsReady = client.streamSettings !== null;
   const settingsDisabled = !settingsReady || client.streamSettingsPending;
   const transport: StreamTransport =
@@ -214,6 +235,19 @@ export function StreamOptionsSection({
 
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
+      {streamSource && sourceOptions.length > 1 && (
+        <SidebarRow label="Source">
+          <SegmentedControl
+            ariaLabel="Stream source"
+            options={sourceOptions.map((option) => ({
+              ...option,
+              disabled: client.streamSourcePending,
+            }))}
+            value={streamSource.mode}
+            onChange={client.setStreamSource}
+          />
+        </SidebarRow>
+      )}
       <SidebarRow label="Transport">
         <SegmentedControl
           ariaLabel="Stream transport"
@@ -244,7 +278,7 @@ export function StreamOptionsSection({
       {webRtcCodecOptions.length > 0 && (
         <SidebarRow
           label="WebRTC codec"
-          borderBottom={client.capabilities.streamSettings || transport === 'webrtc'}
+          borderBottom={supportedSettingKeys.length > 0 || transport === 'webrtc'}
         >
           <SegmentedControl
             ariaLabel="WebRTC codec"
@@ -273,63 +307,76 @@ export function StreamOptionsSection({
           Start the standalone server with --transport webrtc to enable WebRTC.
         </span>
       )}
-      {client.capabilities.streamSettings && (
+      {settingsCapabilities && (
         <>
-          <SidebarRow label="Max size">
-            <Select
-              ariaLabel="Max size"
-              value={String(settings.maxDimension)}
-              options={withCurrentValue(settings.maxDimension, MAX_DIMENSION_OPTIONS, (value) =>
-                value === 0 ? 'Full' : `${value} px`,
-              )}
-              disabled={settingsDisabled}
-              onChange={(value) => patchSetting('maxDimension', Number(value))}
-            />
-          </SidebarRow>
-          <SidebarRow label="MJPEG FPS">
-            <Select
-              ariaLabel="MJPEG FPS"
-              value={String(settings.mjpegFps)}
-              options={withCurrentValue(settings.mjpegFps, FPS_OPTIONS, (value) => `${value} FPS`)}
-              disabled={settingsDisabled || transport !== 'http'}
-              onChange={(value) => patchSetting('mjpegFps', Number(value))}
-            />
-          </SidebarRow>
-          <SidebarRow label="MJPEG quality">
-            <Select
-              ariaLabel="MJPEG quality"
-              value={String(settings.mjpegQuality)}
-              options={withCurrentValue(
-                settings.mjpegQuality,
-                QUALITY_OPTIONS,
-                (value) => `${Math.round(value * 100)}%`,
-              )}
-              disabled={settingsDisabled || transport !== 'http'}
-              onChange={(value) => patchSetting('mjpegQuality', Number(value))}
-            />
-          </SidebarRow>
-          <SidebarRow label="Video FPS">
-            <Select
-              ariaLabel="Video FPS"
-              value={String(settings.h264Fps)}
-              options={withCurrentValue(settings.h264Fps, FPS_OPTIONS, (value) => `${value} FPS`)}
-              disabled={settingsDisabled || !h264Active}
-              onChange={(value) => patchSetting('h264Fps', Number(value))}
-            />
-          </SidebarRow>
-          <SidebarRow label="Video bitrate" borderBottom={transport === 'webrtc'}>
-            <Select
-              ariaLabel="Video bitrate"
-              value={String(settings.h264Bitrate)}
-              options={withCurrentValue(
-                settings.h264Bitrate,
-                BITRATE_OPTIONS,
-                (value) => `${value / 1_000_000} Mbps`,
-              )}
-              disabled={settingsDisabled || !h264Active}
-              onChange={(value) => patchSetting('h264Bitrate', Number(value))}
-            />
-          </SidebarRow>
+          {settingsCapabilities.maxDimension && (
+            <SidebarRow label="Max size" borderBottom={finalSettingKey !== 'maxDimension'}>
+              <Select
+                ariaLabel="Max size"
+                value={String(settings.maxDimension)}
+                options={withCurrentValue(settings.maxDimension, MAX_DIMENSION_OPTIONS, (value) =>
+                  value === 0 ? 'Full' : `${value} px`,
+                )}
+                disabled={settingsDisabled}
+                onChange={(value) => patchSetting('maxDimension', Number(value))}
+              />
+            </SidebarRow>
+          )}
+          {settingsCapabilities.mjpegFps && (
+            <SidebarRow label="MJPEG FPS" borderBottom={finalSettingKey !== 'mjpegFps'}>
+              <Select
+                ariaLabel="MJPEG FPS"
+                value={String(settings.mjpegFps)}
+                options={withCurrentValue(settings.mjpegFps, FPS_OPTIONS, (value) => `${value} FPS`)}
+                disabled={settingsDisabled || transport !== 'http'}
+                onChange={(value) => patchSetting('mjpegFps', Number(value))}
+              />
+            </SidebarRow>
+          )}
+          {settingsCapabilities.mjpegQuality && (
+            <SidebarRow label="MJPEG quality" borderBottom={finalSettingKey !== 'mjpegQuality'}>
+              <Select
+                ariaLabel="MJPEG quality"
+                value={String(settings.mjpegQuality)}
+                options={withCurrentValue(
+                  settings.mjpegQuality,
+                  QUALITY_OPTIONS,
+                  (value) => `${Math.round(value * 100)}%`,
+                )}
+                disabled={settingsDisabled || transport !== 'http'}
+                onChange={(value) => patchSetting('mjpegQuality', Number(value))}
+              />
+            </SidebarRow>
+          )}
+          {settingsCapabilities.h264Fps && (
+            <SidebarRow label="Video FPS" borderBottom={finalSettingKey !== 'h264Fps'}>
+              <Select
+                ariaLabel="Video FPS"
+                value={String(settings.h264Fps)}
+                options={withCurrentValue(settings.h264Fps, FPS_OPTIONS, (value) => `${value} FPS`)}
+                disabled={settingsDisabled || !h264Active}
+                onChange={(value) => patchSetting('h264Fps', Number(value))}
+              />
+            </SidebarRow>
+          )}
+          {settingsCapabilities.h264Bitrate && (
+            <SidebarRow
+              label="Video bitrate"
+              borderBottom={finalSettingKey !== 'h264Bitrate' || transport === 'webrtc'}
+            >
+              <Select
+                ariaLabel="Video bitrate"
+                value={String(settings.h264Bitrate)}
+                options={withCurrentValue(
+                  settings.h264Bitrate,
+                  BITRATE_OPTIONS,
+                  (value) => `${value / 1_000_000} Mbps`,
+                )}
+                disabled={settingsDisabled || !h264Active}
+                onChange={(value) => patchSetting('h264Bitrate', Number(value))}
+              />
+            </SidebarRow>
+          )}
         </>
       )}
       {transport === 'webrtc' && (

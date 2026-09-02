@@ -32,12 +32,21 @@ import {
   parseAndroidDeviceSetting,
 } from './android-device-settings';
 import {
+  androidStreamSettingsPatch,
+  parseAndroidStreamSettings,
+} from './android-stream-settings';
+import { parseAndroidStreamSource } from './android-stream-source';
+import {
   DeviceSettingWriteTracker,
   mergeAuthoritativeDeviceSetting,
 } from './device-setting-writes';
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
 import { androidMessageForKeyboardInput } from './keyboard';
 import { MsePlayer } from './mse-player';
+import {
+  DEFAULT_DEVICE_STREAM_SETTINGS,
+  normalizeDeviceStreamSettings,
+} from './stream-settings';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import {
   type ConnectionStatus,
@@ -48,6 +57,9 @@ import {
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
+  type DeviceStreamEncoderSettings,
+  type DeviceStreamSource,
+  type DeviceStreamSourceStatus,
   type ForegroundApp,
   type HardwareButton,
   type KeyboardInput,
@@ -62,6 +74,8 @@ const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 const FOREGROUND_POLL_MS = 5000;
 const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
+const STREAM_SETTINGS_POLL_MS = 3000;
+const STREAM_SOURCE_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
 
 const ANDROID_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = [
@@ -87,6 +101,19 @@ function sameForegroundApp(a: ForegroundApp, b: ForegroundApp): boolean {
     a.build === b.build &&
     a.minSdk === b.minSdk &&
     a.debuggable === b.debuggable
+  );
+}
+
+function sameStreamSettings(
+  a: DeviceStreamEncoderSettings | null,
+  b: DeviceStreamEncoderSettings,
+): boolean {
+  return (
+    a?.mjpegFps === b.mjpegFps &&
+    a.mjpegQuality === b.mjpegQuality &&
+    a.maxDimension === b.maxDimension &&
+    a.h264Bitrate === b.h264Bitrate &&
+    a.h264Fps === b.h264Fps
   );
 }
 
@@ -133,6 +160,22 @@ export function androidWsUrlFor(
   // serve-emu routes the stream to this device; omitted → first available.
   if (device) u.searchParams.set('device', device);
   return u.toString();
+}
+
+/** Count frames presented between browser callbacks, including skipped callbacks. */
+export function presentedVideoFrameDelta(
+  previousPresentedFrames: number | null,
+  presentedFrames: number,
+): number {
+  if (!Number.isSafeInteger(presentedFrames) || presentedFrames < 0) return 1;
+  if (
+    previousPresentedFrames === null ||
+    !Number.isSafeInteger(previousPresentedFrames) ||
+    presentedFrames <= previousPresentedFrames
+  ) {
+    return 1;
+  }
+  return presentedFrames - previousPresentedFrames;
 }
 
 type ServeEmuStreamSettings =
@@ -203,6 +246,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [deviceSettingsPending, setDeviceSettingsPending] = useState<
     ReadonlySet<DeviceSettingKey>
   >(() => new Set());
+  const [streamSettings, setStreamSettings] = useState<DeviceStreamEncoderSettings | null>(null);
+  const [streamSettingsPending, setStreamSettingsPending] = useState(false);
+  const [streamSource, setStreamSourceState] = useState<DeviceStreamSourceStatus | null>(null);
+  const [streamSourcePending, setStreamSourcePending] = useState(false);
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
   const [serverStreamSettings, setServerStreamSettings] =
@@ -230,6 +277,21 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   useLayoutEffect(() => {
     deviceSettingScopeRef.current = deviceSettingScope;
   }, [deviceSettingScope]);
+  const streamSettingsRequestRef = useRef(0);
+  const streamSettingsRef = useRef<DeviceStreamEncoderSettings | null>(null);
+  const streamSettingsPendingRef = useRef(false);
+  const streamSettingsControllerRef = useRef<AbortController | null>(null);
+  const streamSourceRequestRef = useRef(0);
+  const streamSourceRef = useRef<DeviceStreamSourceStatus | null>(null);
+  const streamSourcePendingRef = useRef(false);
+  const streamSourceControllerRef = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      streamSettingsControllerRef.current?.abort();
+      streamSourceControllerRef.current?.abort();
+    },
+    [],
+  );
 
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
@@ -397,6 +459,235 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [setDeviceSetting],
   );
 
+  const streamSettingsUrl =
+    active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-settings', targetDevice) : null;
+  const streamSourceUrl =
+    active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-mode', targetDevice) : null;
+
+  const setStreamSource = useCallback(
+    (source: DeviceStreamSource) => {
+      const previous = streamSourceRef.current;
+      if (
+        !streamSourceUrl ||
+        !previous ||
+        previous.mode === source ||
+        !previous.availableModes.includes(source) ||
+        streamSourcePendingRef.current
+      ) {
+        return;
+      }
+      const request = ++streamSourceRequestRef.current;
+      const controller = new AbortController();
+      streamSourceControllerRef.current = controller;
+      streamSourcePendingRef.current = true;
+      setStreamSourcePending(true);
+      void fetch(streamSourceUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: source }),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Stream source update failed (${response.status})`);
+          const next = parseAndroidStreamSource(await response.json());
+          if (!next) throw new Error('Stream source update returned an invalid response');
+          if (streamSourceRequestRef.current === request) {
+            streamSourceRef.current = next;
+            setStreamSourceState(next);
+          }
+        })
+        .catch(() => {
+          // The server stages source changes atomically, so the previous source
+          // remains authoritative when a replacement fails.
+        })
+        .finally(() => {
+          if (streamSourceControllerRef.current === controller) {
+            streamSourceControllerRef.current = null;
+          }
+          if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
+            streamSourcePendingRef.current = false;
+            setStreamSourcePending(false);
+          }
+        });
+    },
+    [streamSourceUrl],
+  );
+
+  // ── Android capture source (serve-emu device-scoped GET/PUT endpoint) ──
+  useEffect(() => {
+    streamSourceControllerRef.current?.abort();
+    streamSourceControllerRef.current = null;
+    ++streamSourceRequestRef.current;
+    streamSourceRef.current = null;
+    setStreamSourceState(null);
+    if (!streamSourceUrl) {
+      streamSourcePendingRef.current = false;
+      setStreamSourcePending(false);
+      return;
+    }
+
+    streamSourcePendingRef.current = true;
+    setStreamSourcePending(true);
+    let cancelled = false;
+    let polling = false;
+    let initial = true;
+    let controller: AbortController | null = null;
+
+    const refresh = async () => {
+      if (cancelled || polling || streamSourceControllerRef.current) return;
+      polling = true;
+      const request = ++streamSourceRequestRef.current;
+      controller = new AbortController();
+      try {
+        const response = await fetch(streamSourceUrl, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Stream source request failed (${response.status})`);
+        const next = parseAndroidStreamSource(await response.json());
+        if (!next) throw new Error('Stream source request returned an invalid response');
+        if (!cancelled && streamSourceRequestRef.current === request) {
+          streamSourceRef.current = next;
+          setStreamSourceState((current) =>
+            current?.mode === next.mode &&
+            current.sessionGeneration === next.sessionGeneration &&
+            current.availableModes.join() === next.availableModes.join()
+              ? current
+              : next,
+          );
+        }
+      } catch {
+        // Device startup and source replacement are transient; keep polling.
+      } finally {
+        controller = null;
+        polling = false;
+        if (!cancelled && initial && streamSourceRequestRef.current === request) {
+          initial = false;
+          streamSourcePendingRef.current = false;
+          setStreamSourcePending(false);
+        }
+      }
+    };
+
+    void refresh();
+    const timer = setInterval(refresh, STREAM_SOURCE_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      controller?.abort();
+    };
+  }, [streamSourceUrl]);
+
+  const updateStreamSettings = useCallback(
+    (patch: Partial<DeviceStreamEncoderSettings>) => {
+      const requestPatch = androidStreamSettingsPatch(patch);
+      if (!streamSettingsUrl || !requestPatch || streamSettingsPendingRef.current) return;
+      const previous = streamSettingsRef.current ?? DEFAULT_DEVICE_STREAM_SETTINGS;
+      const optimistic = normalizeDeviceStreamSettings({ ...previous, ...requestPatch }, previous);
+      const request = ++streamSettingsRequestRef.current;
+      const controller = new AbortController();
+      streamSettingsControllerRef.current = controller;
+      streamSettingsPendingRef.current = true;
+      streamSettingsRef.current = optimistic;
+      setStreamSettings(optimistic);
+      setStreamSettingsPending(true);
+      void fetch(streamSettingsUrl, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestPatch),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) throw new Error(`Stream settings update failed (${response.status})`);
+          const next = parseAndroidStreamSettings(await response.json(), optimistic);
+          if (!next) throw new Error('Stream settings update returned an invalid response');
+          if (streamSettingsRequestRef.current === request) {
+            streamSettingsRef.current = next;
+            setStreamSettings(next);
+          }
+        })
+        .catch(() => {
+          if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
+            streamSettingsRef.current = previous;
+            setStreamSettings(previous);
+          }
+        })
+        .finally(() => {
+          if (streamSettingsControllerRef.current === controller) {
+            streamSettingsControllerRef.current = null;
+          }
+          if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
+            streamSettingsPendingRef.current = false;
+            setStreamSettingsPending(false);
+          }
+        });
+    },
+    [streamSettingsUrl],
+  );
+
+  // ── Runtime encoder settings (serve-emu device-scoped GET/PATCH endpoint) ──
+  useEffect(() => {
+    streamSettingsControllerRef.current?.abort();
+    streamSettingsControllerRef.current = null;
+    ++streamSettingsRequestRef.current;
+    streamSettingsRef.current = null;
+    setStreamSettings(null);
+    if (!streamSettingsUrl) {
+      streamSettingsPendingRef.current = false;
+      setStreamSettingsPending(false);
+      return;
+    }
+
+    streamSettingsPendingRef.current = true;
+    setStreamSettingsPending(true);
+    let cancelled = false;
+    let polling = false;
+    let initial = true;
+    let controller: AbortController | null = null;
+
+    const refresh = async () => {
+      if (cancelled || polling || streamSettingsControllerRef.current) return;
+      polling = true;
+      const request = ++streamSettingsRequestRef.current;
+      controller = new AbortController();
+      try {
+        const response = await fetch(streamSettingsUrl, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Stream settings request failed (${response.status})`);
+        const next = parseAndroidStreamSettings(
+          await response.json(),
+          streamSettingsRef.current ?? DEFAULT_DEVICE_STREAM_SETTINGS,
+        );
+        if (!next) throw new Error('Stream settings request returned an invalid response');
+        if (!cancelled && streamSettingsRequestRef.current === request) {
+          streamSettingsRef.current = next;
+          setStreamSettings((current) => (sameStreamSettings(current, next) ? current : next));
+        }
+      } catch {
+        // Keep the last authoritative value and retry. On initial failure the
+        // control remains disabled because no resolution has been invented.
+      } finally {
+        controller = null;
+        polling = false;
+        if (!cancelled && initial) {
+          initial = false;
+          streamSettingsPendingRef.current = false;
+          setStreamSettingsPending(false);
+        }
+      }
+    };
+
+    void refresh();
+    const timer = setInterval(refresh, STREAM_SETTINGS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      controller?.abort();
+    };
+  }, [streamSettingsUrl]);
+
   // ── Stream metadata ──
   // serve-emu locks its host transport at launch. Poll the device-scoped API so
   // the viewer only offers WebRTC when that transport is actually configured,
@@ -514,8 +805,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let frameCallback = 0;
     let fpsCount = 0;
     let fpsStartedAt = performance.now();
+    let previousPresentedFrames: number | null = null;
 
-    const markFrame = () => {
+    const markFrame = (presentedFrameDelta = 1) => {
       if (stopped) return;
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         const width = video.videoWidth;
@@ -528,8 +820,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         firstFrame = false;
         setWebRtcVideoReady(true);
       }
-      markWebRtcFrameDecoded();
-      fpsCount++;
+      markWebRtcFrameDecoded(presentedFrameDelta);
+      fpsCount += presentedFrameDelta;
       const now = performance.now();
       if (now - fpsStartedAt >= 1000) {
         const next = Math.round((fpsCount * 1000) / (now - fpsStartedAt));
@@ -538,11 +830,22 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         setFps((current) => (current === next ? current : next));
       }
     };
-    const onVideoFrame = () => {
-      markFrame();
+    const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      const presentedFrameDelta = presentedVideoFrameDelta(
+        previousPresentedFrames,
+        metadata.presentedFrames,
+      );
+      if (
+        Number.isSafeInteger(metadata.presentedFrames) &&
+        metadata.presentedFrames >= 0
+      ) {
+        previousPresentedFrames = metadata.presentedFrames;
+      }
+      markFrame(presentedFrameDelta);
       frameCallback = video.requestVideoFrameCallback(onVideoFrame);
     };
     const onTimeUpdate = () => markFrame();
+    const onLoadedData = () => markFrame(0);
 
     video.srcObject = webRtcStream;
     setWebRtcVideoReady(false);
@@ -552,13 +855,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       } else {
         video.addEventListener('timeupdate', onTimeUpdate);
       }
-      video.addEventListener('loadeddata', markFrame, { once: true });
+      video.addEventListener('loadeddata', onLoadedData, { once: true });
       void video.play().catch(() => {});
     }
 
     return () => {
       stopped = true;
-      video.removeEventListener('loadeddata', markFrame);
+      video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
         video.cancelVideoFrameCallback(frameCallback);
@@ -1232,9 +1535,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
-    streamSettings: null,
-    streamSettingsPending: false,
-    updateStreamSettings: () => {},
+    streamSettings,
+    streamSettingsPending,
+    updateStreamSettings,
+    streamSource,
+    streamSourcePending,
+    setStreamSource,
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec: 'h264',
@@ -1252,7 +1558,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       deviceSettings: true,
       activity: false,
       events: true,
-      streamSettings: false,
+      streamSettings: { maxDimension: true },
     },
     foregroundApp,
     videoKind: useWebRtc ? 'video' : 'canvas',

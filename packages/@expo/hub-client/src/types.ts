@@ -146,6 +146,21 @@ export interface DeviceStreamEncoderSettings {
   h264Fps: number;
 }
 
+/** Android capture implementations exposed by serve-emu. */
+export type DeviceStreamSource = 'scrcpy' | 'grpc-screenshot';
+
+/** Authoritative source state for the selected Android device session. */
+export interface DeviceStreamSourceStatus {
+  mode: DeviceStreamSource;
+  availableModes: readonly DeviceStreamSource[];
+  sessionGeneration: number;
+}
+
+/** Runtime encoder values the active backend can change without restarting the Hub. */
+export type DeviceStreamSettingCapabilities =
+  | false
+  | Readonly<Partial<Record<keyof DeviceStreamEncoderSettings, true>>>;
+
 /** One WebRTC telemetry sample, normally collected once per second. */
 export interface DeviceStreamStatsSample {
   atMs: number;
@@ -219,8 +234,8 @@ export interface DeviceCapabilities {
   deviceSettings: boolean;
   activity: boolean;
   events: boolean;
-  /** Runtime encoder settings can be read and patched. */
-  streamSettings: boolean;
+  /** Runtime encoder settings that can be read and patched. */
+  streamSettings: DeviceStreamSettingCapabilities;
 }
 
 /** The app currently in the foreground on the device. */
@@ -396,11 +411,16 @@ export interface DeviceClient {
 
   /** Backend-supported viewer transport and codec choices; null hides stream controls. */
   streamCapabilities: DeviceStreamCapabilities | null;
-  /** Runtime encoder settings, available only when `capabilities.streamSettings` is true. */
+  /** Runtime encoder settings, available when `capabilities.streamSettings` lists any keys. */
   streamSettings: DeviceStreamEncoderSettings | null;
   streamSettingsPending: boolean;
   /** Patch one or more runtime encoder values. */
   updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => void;
+  /** Active Android capture source; null when the backend does not expose source switching. */
+  streamSource: DeviceStreamSourceStatus | null;
+  streamSourcePending: boolean;
+  /** Stage and atomically activate another Android capture source. */
+  setStreamSource: (source: DeviceStreamSource) => void;
   /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */
   streamStats: DeviceStreamStats | null;
   /** Enable telemetry polling while a consumer is displaying WebRTC statistics. */
