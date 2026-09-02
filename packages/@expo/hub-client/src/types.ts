@@ -101,6 +101,7 @@ export type DeviceSettingKey =
   | 'color-filter'
   | 'text-size'
   | 'reduce-motion'
+  | 'bold-text'
   | 'increase-contrast'
   | 'show-borders'
   | 'reduce-transparency'
