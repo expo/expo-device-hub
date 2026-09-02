@@ -12,6 +12,7 @@ const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
   'liquid-glass': 'clear',
   'color-filter': 'none',
   'text-size': 'large',
+  'display-size': 'medium',
   'reduce-motion': 'off',
   'bold-text': 'off',
   'increase-contrast': 'off',
@@ -60,6 +61,13 @@ const ANDROID_TEXT_SIZE_OPTIONS = [
   { value: 'extra-large', label: 'XL' },
 ] as const;
 
+const ANDROID_DISPLAY_SIZE_OPTIONS = [
+  { value: 'small', label: 'S' },
+  { value: 'medium', label: 'M' },
+  { value: 'large', label: 'L' },
+  { value: 'extra-large', label: 'XL' },
+] as const;
+
 const SWITCH_OPTIONS: ReadonlyArray<{ key: DeviceSettingKey; label: string }> = [
   { key: 'reduce-motion', label: 'Reduce motion' },
   { key: 'bold-text', label: 'Bold text' },
@@ -75,6 +83,7 @@ const SETTING_ORDER: ReadonlyArray<DeviceSettingKey> = [
   'liquid-glass',
   'color-filter',
   'text-size',
+  'display-size',
   ...SWITCH_OPTIONS.map(({ key }) => key),
 ];
 
@@ -104,9 +113,11 @@ export function DeviceOptionsSection({
 }) {
   const [open, setOpen] = useState(true);
   const unavailableFrameDescriptionId = useId();
+  const displaySizeDescriptionId = useId();
   const settings = client?.deviceSettings ?? null;
   const pending = client?.deviceSettingsPending ?? EMPTY_PENDING_SETTINGS;
   const platform = client?.platform;
+  const displayWidthDp = client?.displayWidthDp ?? null;
 
   function visible(key: DeviceSettingKey) {
     if (settings === null) return key === 'appearance' || platform === 'ios';
@@ -197,6 +208,23 @@ export function DeviceOptionsSection({
             />
           </SidebarRow>
         )}
+
+      {showDeviceSettings && platform === 'android' && visible('display-size') && (
+        <SidebarRow
+          compact
+          label="Display size"
+          description={displayWidthDp === null ? undefined : `sw${displayWidthDp}dp`}
+          descriptionId={displayWidthDp === null ? undefined : displaySizeDescriptionId}
+          borderBottom={hasFollowingRow('display-size')}>
+          <SegmentedControl
+            ariaLabel="Display size"
+            ariaDescribedBy={displayWidthDp === null ? undefined : displaySizeDescriptionId}
+            options={pillOptions('display-size', ANDROID_DISPLAY_SIZE_OPTIONS)}
+            value={value('display-size') as (typeof ANDROID_DISPLAY_SIZE_OPTIONS)[number]['value']}
+            onChange={(nextValue) => setValue('display-size', nextValue)}
+          />
+        </SidebarRow>
+      )}
 
       {showDeviceSettings &&
         SWITCH_OPTIONS.map(({ key, label }) =>

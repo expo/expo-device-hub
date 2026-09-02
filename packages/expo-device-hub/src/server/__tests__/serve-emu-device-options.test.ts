@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   type AdbRunner,
   getBoldText,
+  getDisplayDensity,
   getHighTextContrast,
   getNetworkStatus,
   getReduceMotion,
@@ -18,12 +19,20 @@ function deviceRunner(initial?: {
   animatorScale?: string;
   highTextContrast?: string;
   boldText?: string;
+  physicalDensity?: string;
+  overrideDensity?: string;
+  physicalSize?: string;
+  overrideSize?: string;
 }) {
   let wifi = initial?.wifi ?? '1';
   let mobileData = initial?.mobileData ?? '1';
   let fontScale = initial?.fontScale ?? '1';
   let highTextContrast = initial?.highTextContrast ?? 'null';
   let boldText = initial?.boldText ?? 'null';
+  const physicalDensity = initial?.physicalDensity ?? '420';
+  let overrideDensity: string | null = initial?.overrideDensity ?? null;
+  const physicalSize = initial?.physicalSize ?? '1080x2400';
+  const overrideSize = initial?.overrideSize ?? null;
   const animationScales: Record<string, string> = {
     transition_animation_scale: initial?.transitionScale ?? 'null',
     window_animation_scale: initial?.windowScale ?? 'null',
@@ -79,6 +88,20 @@ function deviceRunner(initial?: {
     if (shell.join(' ').startsWith('settings put secure font_weight_adjustment ')) {
       boldText = shell[4]!;
       return { status: 0, stdout: '', stderr: '' };
+    }
+    if (shell.join(' ') === 'wm density') {
+      const lines = [`Physical density: ${physicalDensity}`];
+      if (overrideDensity !== null) lines.push(`Override density: ${overrideDensity}`);
+      return { status: 0, stdout: `${lines.join('\n')}\n`, stderr: '' };
+    }
+    if (shell[0] === 'wm' && shell[1] === 'density' && shell[2] !== undefined) {
+      overrideDensity = shell[2] === 'reset' ? null : shell[2];
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    if (shell.join(' ') === 'wm size') {
+      const lines = [`Physical size: ${physicalSize}`];
+      if (overrideSize !== null) lines.push(`Override size: ${overrideSize}`);
+      return { status: 0, stdout: `${lines.join('\n')}\n`, stderr: '' };
     }
     return { status: 1, stdout: '', stderr: `unexpected command: ${shell.join(' ')}` };
   };
@@ -527,5 +550,197 @@ describe('serve-emu font-weight compatibility route', () => {
       error: 'bold text payload must be an object',
     });
     expect(unsupported?.status).toBe(405);
+  });
+});
+
+describe('serve-emu display-density compatibility route', () => {
+  test('reports an unoverridden device as the neutral scale', async () => {
+    const { runner, commands, timeouts } = deviceRunner();
+    const response = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/display-density'),
+      'emulator-5554',
+      runner,
+    );
+
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toEqual({
+      ok: true,
+      displayDensity: { scale: 1, widthDp: 411, raw: 'Physical density: 420' },
+    });
+    expect(commands).toEqual([
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'size'],
+    ]);
+    expect(timeouts).toEqual([2_000, 2_000]);
+  });
+
+  test('reads an externally-set override as a ratio of the physical density', async () => {
+    const { runner } = deviceRunner({ overrideDensity: '480' });
+    const response = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/display-density'),
+      'emulator-5554',
+      runner,
+    );
+
+    expect(await response?.json()).toEqual({
+      ok: true,
+      displayDensity: {
+        scale: 1.143,
+        widthDp: 360,
+        raw: 'Physical density: 420\nOverride density: 480',
+      },
+    });
+  });
+
+  test('writes each S–XL step and clears the override at the default step', async () => {
+    const cases: Array<[number, number, string]> = [
+      [0.85, 484, 'Physical density: 420\nOverride density: 357'],
+      [1, 411, 'Physical density: 420'],
+      [1.15, 358, 'Physical density: 420\nOverride density: 483'],
+      [1.3, 316, 'Physical density: 420\nOverride density: 546'],
+    ];
+    const { runner, commands, timeouts } = deviceRunner();
+
+    for (const [scale, widthDp, raw] of cases) {
+      const response = await handleServeEmuDeviceOptionRequest(
+        new Request('http://localhost/api/display-density', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scale }),
+        }),
+        'emulator-5554',
+        runner,
+      );
+      expect(await response?.json()).toEqual({ ok: true, displayDensity: { scale, widthDp, raw } });
+    }
+
+    expect(commands).toEqual([
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density', '357'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'size'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density', 'reset'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'size'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density', '483'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'size'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density', '546'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'density'],
+      ['-s', 'emulator-5554', 'shell', 'wm', 'size'],
+    ]);
+    expect(timeouts).toEqual([
+      2_000, 5_000, 2_000, 2_000, 2_000, 5_000, 2_000, 2_000, 2_000, 5_000, 2_000, 2_000, 2_000,
+      5_000, 2_000, 2_000,
+    ]);
+  });
+
+  test('enforces the scale bounds serve-emu would enforce', async () => {
+    const { runner } = deviceRunner();
+    const response = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/display-density', {
+        method: 'POST',
+        body: JSON.stringify({ scale: 2.5 }),
+      }),
+      'emulator-5554',
+      runner,
+    );
+
+    expect(response?.status).toBe(400);
+    expect(await response?.json()).toEqual({
+      ok: false,
+      error: 'scale must be a number between 0.5 and 2.0',
+    });
+  });
+
+  test('refuses a density below the Android minimum', async () => {
+    const { runner } = deviceRunner({ physicalDensity: '100' });
+    const response = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/display-density', {
+        method: 'POST',
+        body: JSON.stringify({ scale: 0.5 }),
+      }),
+      'emulator-5554',
+      runner,
+    );
+
+    expect(response?.status).toBe(400);
+    expect(await response?.json()).toEqual({
+      ok: false,
+      error: 'display density 50 is below the Android minimum of 72',
+    });
+  });
+
+  test('rejects malformed writes and unsupported methods', async () => {
+    const { runner } = deviceRunner();
+    const malformed = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/display-density', { method: 'POST', body: '[]' }),
+      'emulator-5554',
+      runner,
+    );
+    const unsupported = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/display-density', { method: 'DELETE' }),
+      'emulator-5554',
+      runner,
+    );
+
+    expect(malformed?.status).toBe(400);
+    expect(await malformed?.json()).toEqual({
+      ok: false,
+      error: 'display density payload must be an object',
+    });
+    expect(unsupported?.status).toBe(405);
+  });
+
+  test('reports the smallest-width dp Android derives from each density', async () => {
+    // Measured with `adb shell am get-config` on a real 1080x2400 device.
+    const cases: Array<[string | undefined, number]> = [
+      ['357', 484],
+      [undefined, 411],
+      ['483', 358],
+      ['546', 316],
+    ];
+
+    for (const [overrideDensity, widthDp] of cases) {
+      const { runner } = deviceRunner({ overrideDensity });
+      const response = await handleServeEmuDeviceOptionRequest(
+        new Request('http://localhost/api/display-density'),
+        'emulator-5554',
+        runner,
+      );
+
+      expect((await response?.json()).displayDensity.widthDp).toBe(widthDp);
+    }
+  });
+
+  test('measures the dp against an override size when one is set', async () => {
+    const { runner } = deviceRunner({ overrideSize: '720x1600' });
+    const response = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/display-density'),
+      'emulator-5554',
+      runner,
+    );
+
+    expect(await response?.json()).toEqual({
+      ok: true,
+      displayDensity: { scale: 1, widthDp: 274, raw: 'Physical density: 420' },
+    });
+  });
+
+  test('throws when it cannot find a physical density to scale against', async () => {
+    const { runner } = deviceRunner({ physicalDensity: 'not-a-density' });
+    await expect(getDisplayDensity('emulator-5554', runner)).rejects.toThrow(
+      'Could not parse wm density output',
+    );
+  });
+
+  test('throws when it cannot find a display size to convert to dp', async () => {
+    const { runner } = deviceRunner({ physicalSize: 'not-a-size' });
+    await expect(getDisplayDensity('emulator-5554', runner)).rejects.toThrow(
+      'Could not parse wm size output',
+    );
   });
 });

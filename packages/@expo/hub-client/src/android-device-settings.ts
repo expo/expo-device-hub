@@ -2,13 +2,19 @@ import { type DeviceSettingKey } from './types';
 
 export type AndroidDeviceSettingKey = Extract<
   DeviceSettingKey,
-  'appearance' | 'network' | 'text-size' | 'reduce-motion' | 'bold-text' | 'increase-contrast'
+  | 'appearance'
+  | 'network'
+  | 'text-size'
+  | 'display-size'
+  | 'reduce-motion'
+  | 'bold-text'
+  | 'increase-contrast'
 >;
 
-export type AndroidTextSize = 'small' | 'medium' | 'large' | 'extra-large';
+export type AndroidSizeStep = 'small' | 'medium' | 'large' | 'extra-large';
 
-const ANDROID_FONT_SCALES: ReadonlyArray<{
-  value: AndroidTextSize;
+const ANDROID_SIZE_SCALES: ReadonlyArray<{
+  value: AndroidSizeStep;
   scale: number;
 }> = [
   { value: 'small', scale: 0.85 },
@@ -17,23 +23,29 @@ const ANDROID_FONT_SCALES: ReadonlyArray<{
   { value: 'extra-large', scale: 1.3 },
 ];
 
-export function androidFontScaleForTextSize(value: string): number | null {
-  return ANDROID_FONT_SCALES.find((preset) => preset.value === value)?.scale ?? null;
+export function androidScaleForSizeStep(value: string): number | null {
+  return ANDROID_SIZE_SCALES.find((preset) => preset.value === value)?.scale ?? null;
 }
 
 /** Map externally-set Android scales onto the nearest S–XL Hub option. */
-export function androidTextSizeForFontScale(value: unknown): AndroidTextSize | null {
+export function androidSizeStepForScale(value: unknown): AndroidSizeStep | null {
   const scale = Number(value);
   if (!Number.isFinite(scale) || scale <= 0) return null;
-  return ANDROID_FONT_SCALES.reduce((nearest, preset) =>
+  return ANDROID_SIZE_SCALES.reduce((nearest, preset) =>
     Math.abs(preset.scale - scale) < Math.abs(nearest.scale - scale) ? preset : nearest,
   ).value;
 }
+
+/** The text-size spelling of the shared step helpers. */
+export type AndroidTextSize = AndroidSizeStep;
+export const androidFontScaleForTextSize = androidScaleForSizeStep;
+export const androidTextSizeForFontScale = androidSizeStepForScale;
 
 export type AndroidDeviceSettingPath =
   | '/api/uimode'
   | '/api/network'
   | '/api/font-scale'
+  | '/api/display-density'
   | '/api/reduce-motion'
   | '/api/font-weight'
   | '/api/high-text-contrast';
@@ -97,12 +109,24 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
     path: '/api/font-scale',
     polled: true,
     encode: (value) => {
-      const scale = androidFontScaleForTextSize(value);
+      const scale = androidScaleForSizeStep(value);
       return scale === null ? null : { scale };
     },
     decode: (data) => {
       const fontScale = asRecord(data.fontScale);
-      return fontScale === null ? null : androidTextSizeForFontScale(fontScale.scale);
+      return fontScale === null ? null : androidSizeStepForScale(fontScale.scale);
+    },
+  },
+  'display-size': {
+    path: '/api/display-density',
+    polled: true,
+    encode: (value) => {
+      const scale = androidScaleForSizeStep(value);
+      return scale === null ? null : { scale };
+    },
+    decode: (data) => {
+      const displayDensity = asRecord(data.displayDensity);
+      return displayDensity === null ? null : androidSizeStepForScale(displayDensity.scale);
     },
   },
   'reduce-motion': {
@@ -166,4 +190,12 @@ export function parseAndroidDeviceSetting(
   const data = asRecord(payload);
   if (!data || data.ok !== true) return null;
   return ANDROID_DEVICE_SETTINGS[key].decode(data);
+}
+
+/** The smallest-width dp a display-density payload reports, in `swNNNdp` terms. */
+export function androidDisplayWidthDpFromPayload(payload: unknown): number | null {
+  const data = asRecord(payload);
+  if (!data || data.ok !== true) return null;
+  const widthDp = asRecord(data.displayDensity)?.widthDp;
+  return typeof widthDp === 'number' && Number.isFinite(widthDp) && widthDp > 0 ? widthDp : null;
 }
