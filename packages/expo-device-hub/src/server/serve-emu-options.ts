@@ -31,8 +31,15 @@ export const DEFAULT_SERVE_EMU_ICE_SERVERS: StandaloneServeEmuIceServer[] = [
   { urls: ['stun:stun1.l.google.com:19302'] },
 ];
 
+/**
+ * The vendored serve-emu asks the encoder for a keyframe every second. Ten
+ * matches upstream serve-emu; late joiners get keyframes on demand anyway.
+ */
+export const DEFAULT_SERVE_EMU_KEY_FRAME_INTERVAL_SECONDS = 10;
+
 export type StandaloneServeEmuOptions = {
   maxFps?: number;
+  keyFrameInterval?: number;
   bitRate?: number;
   maxSize?: number;
   streamMode?: AndroidStreamSource;
@@ -42,6 +49,7 @@ export type StandaloneServeEmuOptions = {
 
 function defaultServeEmuOptions(): StandaloneServeEmuOptions {
   return {
+    keyFrameInterval: DEFAULT_SERVE_EMU_KEY_FRAME_INTERVAL_SECONDS,
     streamMode: DEFAULT_ANDROID_STREAM_SOURCE,
     grpcImageMode: DEFAULT_GRPC_IMAGE_MODE,
     streamSettings: { transport: 'websocket' },
@@ -68,6 +76,7 @@ function webRtcIceServers(options: CliOptions): StandaloneServeEmuIceServer[] {
 /** Map the Hub's cross-platform CLI flags onto serve-emu's router defaults. */
 export function standaloneServeEmuOptions(options: CliOptions): StandaloneServeEmuOptions {
   return {
+    keyFrameInterval: DEFAULT_SERVE_EMU_KEY_FRAME_INTERVAL_SECONDS,
     ...(options.videoFps !== undefined ? { maxFps: options.videoFps } : {}),
     ...(options.videoBitrate !== undefined ? { bitRate: options.videoBitrate } : {}),
     ...(options.maxDimension !== undefined ? { maxSize: options.maxDimension } : {}),

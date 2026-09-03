@@ -10,12 +10,13 @@ import {
 } from '../serve-emu-options';
 
 const DEFAULT_ANDROID_STREAM = {
+  keyFrameInterval: 10,
   streamMode: 'grpc-screenshot',
   grpcImageMode: 'mmap',
 } as const;
 
 describe('standaloneServeEmuOptions', () => {
-  test('defaults Android streaming to gRPC with MMAP', () => {
+  test('uses a 10 s keyframe interval and defaults Android streaming to gRPC with MMAP', () => {
     expect(standaloneServeEmuOptions(parseCliOptions([]))).toEqual({
       ...DEFAULT_ANDROID_STREAM,
       streamSettings: { transport: 'websocket' },
@@ -64,6 +65,7 @@ describe('standaloneServeEmuOptions', () => {
         ]),
       ),
     ).toEqual({
+      keyFrameInterval: 10,
       streamMode: 'scrcpy',
       grpcImageMode: 'png',
       streamSettings: { transport: 'websocket' },
