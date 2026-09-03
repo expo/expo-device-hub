@@ -56,6 +56,7 @@ import {
   type DeviceConnectionOptions,
   type DeviceEvent,
   type DeviceGrpcImageMode,
+  type DeviceInputSource,
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
@@ -448,7 +449,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   });
 
   const putStreamMode = useCallback(
-    (body: { mode: DeviceStreamSource; grpcImageMode?: DeviceGrpcImageMode }) => {
+    (body: {
+      mode: DeviceStreamSource;
+      grpcImageMode?: DeviceGrpcImageMode;
+      inputSource?: DeviceInputSource;
+    }) => {
       if (!streamSourceUrl || streamSourcePendingRef.current) return;
       const request = ++streamSourceRequestRef.current;
       const controller = new AbortController();
@@ -510,7 +515,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       ) {
         return;
       }
-      putStreamMode({ mode: source });
+      putStreamMode({
+        mode: source,
+        ...(source === 'grpc-screenshot' ? { inputSource: 'scrcpy' as const } : {}),
+      });
     },
     [putStreamMode],
   );
@@ -525,7 +533,31 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       ) {
         return;
       }
-      putStreamMode({ mode: previous.mode, grpcImageMode });
+      putStreamMode({
+        mode: previous.mode,
+        grpcImageMode,
+        inputSource: previous.inputSource,
+      });
+    },
+    [putStreamMode],
+  );
+
+  const setGrpcInputSource = useCallback(
+    (inputSource: DeviceInputSource) => {
+      const previous = streamSourceRef.current;
+      if (
+        !previous ||
+        previous.mode !== 'grpc-screenshot' ||
+        previous.inputSource === inputSource ||
+        !previous.availableInputSources.includes(inputSource)
+      ) {
+        return;
+      }
+      putStreamMode({
+        mode: previous.mode,
+        grpcImageMode: previous.grpcImageMode,
+        inputSource,
+      });
     },
     [putStreamMode],
   );
@@ -555,8 +587,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           setStreamSourceState((current) =>
             current?.mode === next.mode &&
             current.grpcImageMode === next.grpcImageMode &&
+            current.inputSource === next.inputSource &&
             current.sessionGeneration === next.sessionGeneration &&
-            current.availableModes.join() === next.availableModes.join()
+            current.availableModes.join() === next.availableModes.join() &&
+            current.availableInputSources.join() === next.availableInputSources.join()
               ? current
               : next,
           );
@@ -1473,6 +1507,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSourceError,
     setStreamSource,
     setGrpcImageMode,
+    setGrpcInputSource,
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec: 'h264',

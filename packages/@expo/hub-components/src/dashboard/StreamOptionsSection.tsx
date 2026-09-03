@@ -4,6 +4,7 @@ import {
   type DeviceClient,
   type DeviceGrpcImageMode,
   type DeviceHttpCodec,
+  type DeviceInputSource,
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
   type DeviceStreamMode,
@@ -66,6 +67,13 @@ const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<{
 }> = [
   { value: 'png', label: 'PNG' },
   { value: 'mmap', label: 'MMAP' },
+];
+const GRPC_INPUT_SOURCE_OPTIONS: ReadonlyArray<{
+  value: DeviceInputSource;
+  label: string;
+}> = [
+  { value: 'scrcpy', label: 'scrcpy' },
+  { value: 'grpc', label: 'gRPC' },
 ];
 const STREAM_SETTING_ORDER: readonly (keyof DeviceStreamEncoderSettings)[] = [
   'maxDimension',
@@ -173,6 +181,9 @@ export function StreamOptionsSection({
   const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableModes.includes(option.value),
   );
+  const inputSourceOptions = GRPC_INPUT_SOURCE_OPTIONS.filter((option) =>
+    streamSource?.availableInputSources.includes(option.value),
+  );
   const settingsReady = client.streamSettings !== null;
   const settingsDisabled = !settingsReady || client.streamSettingsPending;
   const transport: StreamTransport =
@@ -272,17 +283,32 @@ export function StreamOptionsSection({
         </>
       )}
       {streamSource?.mode === 'grpc-screenshot' && (
-        <SidebarRow label="gRPC frames">
-          <SegmentedControl
-            ariaLabel="gRPC image mode"
-            options={GRPC_IMAGE_MODE_OPTIONS.map((option) => ({
-              ...option,
-              disabled: client.streamSourcePending,
-            }))}
-            value={streamSource.grpcImageMode}
-            onChange={client.setGrpcImageMode}
-          />
-        </SidebarRow>
+        <>
+          {inputSourceOptions.length > 1 && (
+            <SidebarRow label="Input">
+              <SegmentedControl
+                ariaLabel="Input source"
+                options={inputSourceOptions.map((option) => ({
+                  ...option,
+                  disabled: client.streamSourcePending,
+                }))}
+                value={streamSource.inputSource}
+                onChange={client.setGrpcInputSource}
+              />
+            </SidebarRow>
+          )}
+          <SidebarRow label="gRPC frames">
+            <SegmentedControl
+              ariaLabel="gRPC image mode"
+              options={GRPC_IMAGE_MODE_OPTIONS.map((option) => ({
+                ...option,
+                disabled: client.streamSourcePending,
+              }))}
+              value={streamSource.grpcImageMode}
+              onChange={client.setGrpcImageMode}
+            />
+          </SidebarRow>
+        </>
       )}
       <SidebarRow label="Transport">
         <SegmentedControl

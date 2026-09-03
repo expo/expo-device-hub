@@ -1,5 +1,6 @@
 import {
   type DeviceGrpcImageMode,
+  type DeviceInputSource,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
 } from './types';
@@ -34,6 +35,10 @@ function isGrpcImageMode(value: unknown): value is DeviceGrpcImageMode {
   return value === 'png' || value === 'mmap';
 }
 
+function isInputSource(value: unknown): value is DeviceInputSource {
+  return value === 'scrcpy' || value === 'grpc';
+}
+
 /** Parse serve-emu's authoritative device-scoped `/api/stream-mode` response. */
 export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStatus | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -41,7 +46,17 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
   if (
     candidate.ok !== true ||
     !isAndroidStreamSource(candidate.mode) ||
-    !isGrpcImageMode(candidate.grpcImageMode)
+    !isGrpcImageMode(candidate.grpcImageMode) ||
+    !isInputSource(candidate.inputSource)
+  ) {
+    return null;
+  }
+  if (
+    !Array.isArray(candidate.availableInputSources) ||
+    candidate.availableInputSources.length === 0 ||
+    !candidate.availableInputSources.every(isInputSource) ||
+    new Set(candidate.availableInputSources).size !== candidate.availableInputSources.length ||
+    !candidate.availableInputSources.includes(candidate.inputSource)
   ) {
     return null;
   }
@@ -64,6 +79,8 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
   return {
     mode: candidate.mode,
     grpcImageMode: candidate.grpcImageMode,
+    inputSource: candidate.inputSource,
+    availableInputSources: candidate.availableInputSources,
     availableModes: candidate.availableModes,
     sessionGeneration: candidate.sessionGeneration,
   };
