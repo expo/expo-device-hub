@@ -36,6 +36,12 @@ const STATUS_APPEARANCE: Record<
     ringColor: border.warning,
     labelColor: text.secondary,
   },
+  reconnecting: {
+    label: 'Reconnecting',
+    dotColor: icon.warning,
+    ringColor: border.warning,
+    labelColor: text.secondary,
+  },
   streaming: {
     label: 'Live',
     dotColor: text.success,

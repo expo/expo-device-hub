@@ -445,12 +445,43 @@ test('disables the Android capture source select while replacement is pending', 
     ...inspectorClient('android'),
     streamSourcePending: true,
   } satisfies DeviceClient;
-  const source = selectMarkup(
-    renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />),
-    'Stream source',
-  );
+  const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+  const source = selectMarkup(html, 'Stream source');
 
   expect(source).toContain('disabled=""');
+  // The previous source stays selected until the replacement stream renders.
+  expect(selectValue(html, 'Stream source')).toBe('scrcpy');
+  expect(html).toContain('role="status"');
+  expect(html).toContain('Switching stream source…');
+});
+
+test('disables every gRPC capture control while replacement is pending', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSource: {
+      mode: 'grpc-screenshot',
+      grpcImageMode: 'mmap',
+      inputSource: 'scrcpy',
+      availableInputSources: ['scrcpy', 'grpc'],
+      availableModes: ['scrcpy', 'grpc-screenshot'],
+      sessionGeneration: 1,
+    },
+    streamSourcePending: true,
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+
+  // Input source and image mode restart the same capture session as Source.
+  expect(selectMarkup(html, 'Input source')).toContain('disabled=""');
+  expect(selectMarkup(html, 'gRPC image mode')).toContain('disabled=""');
+  expect(html).toContain('Switching stream source…');
+});
+
+test('shows no switching hint once the capture source is settled', () => {
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
+  );
+
+  expect(html).not.toContain('Switching stream source…');
 });
 
 test('shows an Android capture source failure below the switch', () => {

@@ -117,10 +117,17 @@ function withCurrentValue(
     : [{ value: current, label: label(value) }, ...options];
 }
 
-function SectionNote({ children, role }: { children: string; role?: 'alert' }) {
+function SectionNote({
+  children,
+  role,
+}: {
+  children: string;
+  role?: 'alert' | 'status';
+}) {
   return (
     <span
       role={role}
+      aria-live={role === 'status' ? 'polite' : undefined}
       style={{
         ...textSize.xs,
         display: 'block',
@@ -172,6 +179,10 @@ export function StreamOptionsSection({
   const inputSourceOptions = GRPC_INPUT_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableInputSources.includes(option.value),
   );
+  // Every one of these controls restarts the capture session, so they share the
+  // pending state and the switching note.
+  const sourceControlsVisible =
+    !!streamSource && (sourceOptions.length > 1 || streamSource.mode === 'grpc-screenshot');
   const settingsReady = client.streamSettings !== null;
   const settingsDisabled = !settingsReady || client.streamSettingsPending;
   const transport: StreamTransport =
@@ -285,6 +296,9 @@ export function StreamOptionsSection({
             />
           </SidebarRow>
         </>
+      )}
+      {sourceControlsVisible && client.streamSourcePending && !client.streamSourceError && (
+        <SectionNote role="status">Switching stream source…</SectionNote>
       )}
       <SidebarRow label="Transport">
         <Select

@@ -24,4 +24,13 @@ describe('device title', () => {
     expect(markup).toContain('white-space:nowrap');
     expect(markup).toContain(`title="${name}"`);
   });
+
+  test('labels a live stream that is re-establishing its transport', () => {
+    const markup = renderToStaticMarkup(
+      <DeviceTitle device={{ id: 'emulator-5554', name: 'Pixel' }} status="reconnecting" />
+    );
+
+    expect(markup).toContain('>Reconnecting</span>');
+    expect(markup).not.toContain('>Error</span>');
+  });
 });
