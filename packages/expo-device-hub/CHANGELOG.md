@@ -1,5 +1,12 @@
 # expo-device-hub
 
+## 0.8.0
+
+### Minor Changes
+
+- c56f6d5: Add runtime Android stream resolution and capture-source controls, explicit PNG/MMAP delivery for the emulator gRPC source in the CLI and UI, use the 60 FPS capture default, expose producer-to-client pipeline diagnostics, and accurately count browser-presented frames while preserving the Hub session across stream restarts.
+- d6c1ae8: Add WebRTC stream statistics. Move Android network and font-scale compatibility routes to serve-emu.
+
 ## 0.7.1
 
 ### Patch Changes
