@@ -10,6 +10,13 @@ import { handleServeEmuDeviceOptionRequest } from './serve-emu-device-options';
 
 export const EMU_PREFIX = '/vendor/serve-emu';
 
+const DEVICE_OPTION_COMPAT_PATHNAMES = new Set([
+  '/api/network',
+  '/api/font-scale',
+  '/api/reduce-motion',
+  '/api/high-text-contrast',
+]);
+
 const router = createRouter(readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]));
 
 function stopAll(): void {
@@ -26,7 +33,7 @@ export function handleEmuRequest(request: Request): Promise<Response> {
   const rest = `${url.pathname.slice(EMU_PREFIX.length) || '/'}${url.search}`;
   const forwarded = new Request(`${url.origin}${rest}`, request);
   const pathname = new URL(forwarded.url).pathname;
-  if (pathname === '/api/network' || pathname === '/api/font-scale') {
+  if (DEVICE_OPTION_COMPAT_PATHNAMES.has(pathname)) {
     return router
       .ensure(url.searchParams.get('device'))
       .then(async ({ serial }) =>

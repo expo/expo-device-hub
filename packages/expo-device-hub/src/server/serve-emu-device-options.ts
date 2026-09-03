@@ -25,6 +25,20 @@ export interface FontScaleStatus {
   raw: string;
 }
 
+export interface ReduceMotionStatus {
+  enabled: boolean;
+  raw: {
+    transition: string;
+    window: string;
+    animator: string;
+  };
+}
+
+export interface HighTextContrastStatus {
+  enabled: boolean;
+  raw: string;
+}
+
 export interface AdbCommandResult {
   status: number | null;
   stdout: string;
@@ -170,6 +184,86 @@ export async function setFontScale(
   return getFontScale(serial, runner);
 }
 
+/** Android's "Remove animations" toggle moves all three scales, so read and write them as one. */
+const ANIMATION_SCALE_KEYS = [
+  'transition_animation_scale',
+  'window_animation_scale',
+  'animator_duration_scale',
+] as const;
+
+/** Mirrors React Native's `AccessibilityInfoModule`, which is on only at exactly zero. */
+function reduceMotionFromScale(raw: string): boolean {
+  return raw !== '' && Number(raw.replace(',', '.')) === 0;
+}
+
+/** Mirrors React Native's `AccessibilityInfoModule`, which is on for any non-zero int. */
+function highTextContrastFromSetting(raw: string): boolean {
+  return /^[+-]?\d+$/.test(raw) && Number(raw) !== 0;
+}
+
+/** Read the animation scales, with `transition_animation_scale` as the authority. */
+export async function getReduceMotion(
+  serial: string,
+  runner: AdbRunner = runSystemAdb,
+): Promise<ReduceMotionStatus> {
+  const [transitionRaw, windowRaw, animatorRaw] = await Promise.all(
+    ANIMATION_SCALE_KEYS.map((key) =>
+      runAdb(serial, ['settings', 'get', 'global', key], runner, ADB_QUERY_TIMEOUT_MS),
+    ),
+  );
+  return {
+    enabled: reduceMotionFromScale(transitionRaw),
+    raw: { transition: transitionRaw, window: windowRaw, animator: animatorRaw },
+  };
+}
+
+/** Write `0` to disable animations and `1` to restore the Android defaults. */
+export async function setReduceMotion(
+  serial: string,
+  enabled: boolean,
+  runner: AdbRunner = runSystemAdb,
+): Promise<ReduceMotionStatus> {
+  const value = enabled ? '0' : '1';
+  for (const key of ANIMATION_SCALE_KEYS) {
+    await runAdb(
+      serial,
+      ['settings', 'put', 'global', key, value],
+      runner,
+      ADB_MUTATION_TIMEOUT_MS,
+    );
+  }
+  return getReduceMotion(serial, runner);
+}
+
+/** Read Android's `settings secure high_text_contrast_enabled` flag. */
+export async function getHighTextContrast(
+  serial: string,
+  runner: AdbRunner = runSystemAdb,
+): Promise<HighTextContrastStatus> {
+  const raw = await runAdb(
+    serial,
+    ['settings', 'get', 'secure', 'high_text_contrast_enabled'],
+    runner,
+    ADB_QUERY_TIMEOUT_MS,
+  );
+  return { enabled: highTextContrastFromSetting(raw), raw };
+}
+
+/** Write the flag as the `1` or `0` int Android's `Settings.Secure` stores. */
+export async function setHighTextContrast(
+  serial: string,
+  enabled: boolean,
+  runner: AdbRunner = runSystemAdb,
+): Promise<HighTextContrastStatus> {
+  await runAdb(
+    serial,
+    ['settings', 'put', 'secure', 'high_text_contrast_enabled', enabled ? '1' : '0'],
+    runner,
+    ADB_MUTATION_TIMEOUT_MS,
+  );
+  return getHighTextContrast(serial, runner);
+}
+
 async function readJsonBody(request: Request): Promise<unknown> {
   const contentLength = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) {
@@ -266,6 +360,63 @@ export async function handleServeEmuDeviceOptionRequest(
         return Response.json({
           ok: true,
           fontScale: await setFontScale(serial, scale, runner),
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    return new Response('method not allowed', { status: 405 });
+  }
+
+  if (pathname === '/api/reduce-motion') {
+    if (request.method === 'GET') {
+      try {
+        return Response.json({ ok: true, reduceMotion: await getReduceMotion(serial, runner) });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (request.method === 'POST') {
+      try {
+        const payload = await readJsonBody(request);
+        if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+          throw new Error('reduce motion payload must be an object');
+        }
+        const enabled = (payload as Record<string, unknown>).enabled;
+        if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean');
+        return Response.json({
+          ok: true,
+          reduceMotion: await setReduceMotion(serial, enabled, runner),
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    return new Response('method not allowed', { status: 405 });
+  }
+
+  if (pathname === '/api/high-text-contrast') {
+    if (request.method === 'GET') {
+      try {
+        return Response.json({
+          ok: true,
+          highTextContrast: await getHighTextContrast(serial, runner),
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (request.method === 'POST') {
+      try {
+        const payload = await readJsonBody(request);
+        if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+          throw new Error('high text contrast payload must be an object');
+        }
+        const enabled = (payload as Record<string, unknown>).enabled;
+        if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean');
+        return Response.json({
+          ok: true,
+          highTextContrast: await setHighTextContrast(serial, enabled, runner),
         });
       } catch (error) {
         return errorResponse(error);
