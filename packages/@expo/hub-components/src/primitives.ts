@@ -20,6 +20,8 @@ export * from './components/Select';
 export * from './components/SidebarToggle';
 export * from './components/Switch';
 export * from './components/cx';
+export * from './components/focusVisible';
 export * from './components/pill';
+export * from './components/usePrefersReducedMotion';
 export * from './components/icons';
 export * from './theme/tokens';

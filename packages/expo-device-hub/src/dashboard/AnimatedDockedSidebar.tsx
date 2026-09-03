@@ -11,6 +11,7 @@ export function AnimatedDockedSidebar({
   width,
   open,
   sidebarOpen,
+  resizing = false,
   children,
 }: {
   side: 'left' | 'right';
@@ -18,14 +19,20 @@ export function AnimatedDockedSidebar({
   open: boolean;
   /** Whether the sidebar is still open in another layout mode. */
   sidebarOpen: boolean;
+  /**
+   * Whether the user is dragging the resize handle. The width then follows the
+   * pointer directly instead of easing toward each new value.
+   */
+  resizing?: boolean;
   children: ReactNode;
 }) {
   const { present, reducedMotion, visible } = useSidebarPresence(open, !sidebarOpen);
   if (!present) return null;
 
-  const transition = reducedMotion
-    ? undefined
-    : `width ${SIDEBAR_TRANSITION_MS}ms ${SIDEBAR_TRANSITION_EASING}`;
+  const transition =
+    reducedMotion || resizing
+      ? undefined
+      : `width ${SIDEBAR_TRANSITION_MS}ms ${SIDEBAR_TRANSITION_EASING}`;
   const panelTransition = reducedMotion
     ? undefined
     : `transform ${SIDEBAR_TRANSITION_MS}ms ${SIDEBAR_TRANSITION_EASING}`;

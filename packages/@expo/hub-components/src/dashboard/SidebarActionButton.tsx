@@ -1,6 +1,6 @@
 import { type ReactNode, useState } from 'react';
 
-import { pillControlStyle, text } from '../primitives';
+import { isFocusVisible, pillControlStyle, text } from '../primitives';
 
 /** A compact action button that matches the inspector's select pills. */
 export function SidebarActionButton({
@@ -25,7 +25,7 @@ export function SidebarActionButton({
       onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onFocus={() => setFocused(true)}
+      onFocus={(event) => setFocused(isFocusVisible(event))}
       onBlur={() => setFocused(false)}
       style={{
         ...pillControlStyle({ hovered, focused, disabled }),

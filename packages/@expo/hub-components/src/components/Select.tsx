@@ -14,6 +14,7 @@ import { useState } from 'react';
 
 import { bg, border, icon, radius, shadow, text, textSize } from '../theme/tokens';
 import { CheckIcon, ChevronDownIcon } from './icons';
+import { isFocusVisible } from './focusVisible';
 import { pillControlStyle } from './pill';
 
 export type SelectOption<Value extends string = string> = {
@@ -62,7 +63,7 @@ export function Select<Value extends string>({
       <Trigger
         aria-label={ariaLabel}
         aria-describedby={ariaDescribedBy}
-        onFocus={() => setFocused(true)}
+        onFocus={(event) => setFocused(isFocusVisible(event))}
         onBlur={() => setFocused(false)}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}

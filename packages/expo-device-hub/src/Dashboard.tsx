@@ -143,6 +143,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const resizeSidebar = useDashboardStore((state) => state.resizeSidebar);
   const sidebarWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   const logsWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
+  // While a resize handle is dragged the docked sidebars must not ease toward
+  // each new width, or they wobble behind the pointer.
+  const [resizing, setResizing] = useState(false);
   const sidebars = useSidebarLayout({
     leftWidth: sidebarWidth,
     rightWidth: logsWidth,
@@ -309,7 +312,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         side="left"
         width={sidebarWidth}
         open={sidebars.leftDocked}
-        sidebarOpen={sidebars.leftOpen}>
+        sidebarOpen={sidebars.leftOpen}
+        resizing={resizing}>
         <Sidebar
           simulators={simulators}
           emulators={emulators}
@@ -332,7 +336,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           offset={sidebarWidth}
           onResizeStart={() => {
             sidebarWidthStart.current = sidebarWidth;
+            setResizing(true);
           }}
+          onResizeEnd={() => setResizing(false)}
           onResize={(delta) =>
             resizeSidebar(
               'left',
@@ -369,7 +375,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           offset={logsWidth}
           onResizeStart={() => {
             logsWidthStart.current = logsWidth;
+            setResizing(true);
           }}
+          onResizeEnd={() => setResizing(false)}
           onResize={(delta) =>
             resizeSidebar(
               'right',
@@ -385,7 +393,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         side="right"
         width={logsWidth}
         open={sidebars.rightDocked}
-        sidebarOpen={sidebars.rightOpen}>
+        sidebarOpen={sidebars.rightOpen}
+        resizing={resizing}>
         <LogSidebar
           device={selected}
           client={client}

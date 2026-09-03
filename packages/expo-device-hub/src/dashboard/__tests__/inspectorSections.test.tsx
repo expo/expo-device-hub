@@ -314,9 +314,14 @@ test('renders every supported iOS inspector section and option', () => {
   for (const label of ['Activity', 'Events', 'Stream options', 'Logs']) {
     expect(sectionExpanded(html, label)).toBe(false);
     expect(openingTag(html, `<section aria-label="${label}"`)).toContain('border-top:');
-    expect(openingTag(html, `<section aria-label="${label}"`)).toContain('padding:0 16px 0');
+    expect(openingTag(html, `<section aria-label="${label}"`)).toContain('padding:0 16px;');
+    expect(sectionMarkup(html, label)).toContain('grid-template-rows:0fr');
   }
-  expect(openingTag(html, '<section aria-label="Device options"')).toContain('padding:0 16px 12px');
+  expect(openingTag(html, '<section aria-label="Device options"')).toContain('padding:0 16px;');
+  expect(sectionMarkup(html, 'Device options')).toContain('grid-template-rows:1fr');
+  expect(sectionMarkup(html, 'Device options')).toContain('padding-bottom:12px');
+  // The title sits centered in its row, so collapsed sections line up evenly.
+  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain('padding:18px 0');
 });
 
 test('renders Android stream options while omitting unsupported and iOS-only sections', () => {

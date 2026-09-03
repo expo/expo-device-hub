@@ -1,13 +1,14 @@
 import { type ButtonHTMLAttributes, forwardRef, type ReactNode, useState } from 'react';
 
 import { bg, border, icon as iconColor, radius, text, textSize } from '../theme/tokens';
+import { isFocusVisible } from './focusVisible';
 
-export const CONTROL_BUTTON_SIZE = 44;
+export const CONTROL_BUTTON_SIZE = 36;
 
 /**
  * An icon button in the toolbar under the device stream. The label is the
  * button's accessible name and appears as a tooltip above the button while it
- * is hovered or focused.
+ * is hovered or keyboard-focused; a pointer click leaves no lingering state.
  *
  * Forwards its ref and spreads extra props onto the underlying `<button>`, so
  * it can also serve as a Radix `asChild` trigger.
@@ -51,7 +52,7 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
             onMouseUp?.(event);
           }}
           onFocus={(event) => {
-            setFocused(true);
+            setFocused(isFocusVisible(event));
             onFocus?.(event);
           }}
           onBlur={(event) => {

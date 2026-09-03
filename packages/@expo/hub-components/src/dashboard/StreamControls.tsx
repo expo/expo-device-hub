@@ -14,8 +14,9 @@ import {
 import { type ColorScheme } from './data';
 
 const GROUP_PADDING = 4;
-const ICON_SIZE = 20;
-const ICON_STROKE = 1.67;
+const GROUP_GAP = 16;
+const ICON_SIZE = 18;
+const ICON_STROKE = 1.5;
 
 /** A pill that groups toolbar buttons on the shared element surface. */
 function ControlGroup({ children }: { children: ReactNode }) {
@@ -71,7 +72,7 @@ export function StreamControls({
     <div
       role="toolbar"
       aria-label="Device controls"
-      style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+      style={{ display: 'flex', alignItems: 'center', gap: GROUP_GAP }}>
       <ControlGroup>
         <ControlButton
           icon={<CameraIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}

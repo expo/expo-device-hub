@@ -1,4 +1,4 @@
-import { bg, font, text, textSize } from '../primitives';
+import { font, text, textSize } from '../primitives';
 import { SidebarActionButton } from './SidebarActionButton';
 
 /** Compact stream toolbar for pausing, resuming, and clearing device logs. */
@@ -26,7 +26,6 @@ export function LogControls({
         width: '100%',
         minWidth: 0,
         boxSizing: 'border-box',
-        backgroundColor: bg.subtle,
       }}>
       <span
         style={{
