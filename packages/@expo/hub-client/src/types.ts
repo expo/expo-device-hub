@@ -149,9 +149,13 @@ export interface DeviceStreamEncoderSettings {
 /** Android capture implementations exposed by serve-emu. */
 export type DeviceStreamSource = 'scrcpy' | 'grpc-screenshot';
 
+/** Pixel delivery selected for the emulator gRPC screenshot source. */
+export type DeviceGrpcImageMode = 'png' | 'mmap';
+
 /** Authoritative source state for the selected Android device session. */
 export interface DeviceStreamSourceStatus {
   mode: DeviceStreamSource;
+  grpcImageMode: DeviceGrpcImageMode;
   availableModes: readonly DeviceStreamSource[];
   sessionGeneration: number;
 }
@@ -209,6 +213,43 @@ export interface DeviceStreamEncoderStats {
   payloadBitrateBps: number | null;
 }
 
+/** Median and 95th-percentile timings in milliseconds. */
+export interface DeviceStreamTimingQuantiles {
+  p50: number | null;
+  p95: number | null;
+}
+
+/** Latest gRPC screenshot producer, transport, and host-copy diagnostics. */
+export interface DeviceGrpcCaptureStats {
+  /** Selected emulator screenshot delivery strategy. */
+  imageMode: DeviceGrpcImageMode | null;
+  /** Emulator frame-production cadence inferred from source timestamps. */
+  producerFps: number | null;
+  /** Raw screenshot messages reaching serve-emu. */
+  receiveFps: number | null;
+  /** Valid images available to the host encoder. */
+  usableImageFps: number | null;
+  /** Fresh images submitted to FFmpeg, excluding deliberate idle repeats. */
+  encoderInputFps: number | null;
+  /** Raw screenshot notifications received from the emulator. */
+  messagesReceived: number | null;
+  /** Notifications selected for decoding/copying after capture pacing. */
+  messagesEmitted: number | null;
+  /** Pending notifications replaced by a newer frame before capture. */
+  messagesCoalesced: number | null;
+  sequenceGaps: number | null;
+  imagePayloadBytes: number | null;
+  transportBytes: number | null;
+  messageBytesReceived: number | null;
+  mmapFileBytesRead: number | null;
+  mmapReadRetries: number | null;
+  mmapTornFramesDropped: number | null;
+  productionToReceiveLatencyMs: DeviceStreamTimingQuantiles;
+  productionToUsableLatencyMs: DeviceStreamTimingQuantiles;
+  protobufDecodeTimeMs: DeviceStreamTimingQuantiles;
+  mmapReadCopyTimeMs: DeviceStreamTimingQuantiles;
+}
+
 /** Latest cumulative server-side capture and pacing counters. */
 export interface DeviceStreamCaptureStats {
   screenFrames: number | null;
@@ -216,6 +257,8 @@ export interface DeviceStreamCaptureStats {
   offeredFrames: number | null;
   forwardedFrames: number | null;
   pumpRestarts: number | null;
+  /** Null when the active capture source does not expose gRPC diagnostics. */
+  grpc: DeviceGrpcCaptureStats | null;
 }
 
 /** Bounded WebRTC telemetry history owned by the device connection. */
@@ -423,6 +466,8 @@ export interface DeviceClient {
   streamSourceError: string | null;
   /** Stage and atomically activate another Android capture source. */
   setStreamSource: (source: DeviceStreamSource) => void;
+  /** Restart the gRPC source with compressed PNG or shared-memory RGB delivery. */
+  setGrpcImageMode: (mode: DeviceGrpcImageMode) => void;
   /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */
   streamStats: DeviceStreamStats | null;
   /** Enable telemetry polling while a consumer is displaying WebRTC statistics. */

@@ -57,6 +57,25 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
+For Android, the standalone CLI can start directly with the emulator screenshot gRPC
+source and choose how each frame reaches the host. PNG sends a compressed image in the
+gRPC message; MMAP sends frame metadata over gRPC while the emulator writes RGB pixels
+to a shared file-backed memory region:
+
+```sh
+npx expo-device-hub --platform android --transport webrtc \
+  --stream-source grpc-screenshot --grpc-image-mode mmap
+```
+
+The same PNG/MMAP choice is available at runtime under **Stream options** while the gRPC
+capture source is active. Run `npx expo-device-hub --help` for the full option list.
+
+MMAP support is experimental and depends on the Android Emulator build. Google
+tracks an Apple Silicon `streamScreenshot` MMAP fix as issue
+[#537802959](https://issuetracker.google.com/issues/537802959), included in
+Emulator 37.2.3 Canary. If an affected emulator crashes or stops producing
+frames, select PNG explicitly or upgrade to a build containing that fix.
+
 ## Acknowledgements
 
 Device streaming and control are powered by two vendored, Apache-2.0-licensed

@@ -55,6 +55,7 @@ import {
   type DeviceClient,
   type DeviceConnectionOptions,
   type DeviceEvent,
+  type DeviceGrpcImageMode,
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
@@ -446,18 +447,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     toPatch: androidStreamSettingsPatch,
   });
 
-  const setStreamSource = useCallback(
-    (source: DeviceStreamSource) => {
-      const previous = streamSourceRef.current;
-      if (
-        !streamSourceUrl ||
-        !previous ||
-        previous.mode === source ||
-        !previous.availableModes.includes(source) ||
-        streamSourcePendingRef.current
-      ) {
-        return;
-      }
+  const putStreamMode = useCallback(
+    (body: { mode: DeviceStreamSource; grpcImageMode?: DeviceGrpcImageMode }) => {
+      if (!streamSourceUrl || streamSourcePendingRef.current) return;
       const request = ++streamSourceRequestRef.current;
       const controller = new AbortController();
       streamSourceControllerRef.current = controller;
@@ -467,7 +459,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       void fetch(streamSourceUrl, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: source }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       })
         .then(async (response) => {
@@ -479,7 +471,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             throw new Error(androidStreamSourceErrorMessage(response.status, payload));
           }
           const next = parseAndroidStreamSource(await response.json());
-          if (!next) throw new Error('Stream source update returned an invalid response');
+          if (!next) throw new Error('Stream mode update returned an invalid response');
           if (streamSourceRequestRef.current === request) {
             streamSourceRef.current = next;
             setStreamSourceState(next);
@@ -508,6 +500,36 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [streamSourceUrl],
   );
 
+  const setStreamSource = useCallback(
+    (source: DeviceStreamSource) => {
+      const previous = streamSourceRef.current;
+      if (
+        !previous ||
+        previous.mode === source ||
+        !previous.availableModes.includes(source)
+      ) {
+        return;
+      }
+      putStreamMode({ mode: source });
+    },
+    [putStreamMode],
+  );
+
+  const setGrpcImageMode = useCallback(
+    (grpcImageMode: DeviceGrpcImageMode) => {
+      const previous = streamSourceRef.current;
+      if (
+        !previous ||
+        previous.mode !== 'grpc-screenshot' ||
+        previous.grpcImageMode === grpcImageMode
+      ) {
+        return;
+      }
+      putStreamMode({ mode: previous.mode, grpcImageMode });
+    },
+    [putStreamMode],
+  );
+
   const refreshStreamSource = useCallback(
     async (clearPendingWhenDone = false) => {
       if (
@@ -532,6 +554,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           streamSourceRef.current = next;
           setStreamSourceState((current) =>
             current?.mode === next.mode &&
+            current.grpcImageMode === next.grpcImageMode &&
             current.sessionGeneration === next.sessionGeneration &&
             current.availableModes.join() === next.availableModes.join()
               ? current
@@ -1449,6 +1472,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSourcePending,
     streamSourceError,
     setStreamSource,
+    setGrpcImageMode,
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec: 'h264',

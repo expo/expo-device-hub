@@ -70,12 +70,14 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       ? null
       : {
           mode: 'scrcpy',
+          grpcImageMode: 'png',
           availableModes: ['scrcpy', 'grpc-screenshot'],
           sessionGeneration: 0,
         },
     streamSourcePending: false,
     streamSourceError: null,
     setStreamSource: () => {},
+    setGrpcImageMode: () => {},
     streamStats: null,
     setStreamStatsEnabled: () => {},
     webRtcCodec: 'h264',
@@ -188,6 +190,7 @@ const captureStats = {
   offeredFrames: 105_469,
   forwardedFrames: 4_414,
   pumpRestarts: 2,
+  grpc: null,
 } satisfies NonNullable<WebRtcStreamStats['capture']>;
 
 function rowOpeningTag(html: string, label: string) {
@@ -347,6 +350,32 @@ test('shows the Android emulator capture source switch', () => {
   expect(source).not.toContain('disabled=""');
 });
 
+test('shows PNG and MMAP only while the gRPC source is active', () => {
+  const scrcpyHtml = renderToStaticMarkup(
+    <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
+  );
+  expect(scrcpyHtml).not.toContain('aria-label="gRPC image mode"');
+
+  const grpcClient = {
+    ...inspectorClient('android'),
+    streamSource: {
+      mode: 'grpc-screenshot',
+      grpcImageMode: 'mmap',
+      availableModes: ['scrcpy', 'grpc-screenshot'],
+      sessionGeneration: 1,
+    },
+  } satisfies DeviceClient;
+  const grpcHtml = renderToStaticMarkup(
+    <StreamOptionsSection client={grpcClient} defaultOpen />,
+  );
+  const imageMode = segmentedControlMarkup(grpcHtml, 'gRPC image mode');
+
+  expect(grpcHtml).toContain('>gRPC frames</span>');
+  expect(imageMode).toContain('>PNG</button>');
+  expect(imageMode).toContain('>MMAP</button>');
+  expect(imageMode).toMatch(/aria-pressed="true"[^>]*>MMAP<\/button>/);
+});
+
 test('disables the Android capture source switch while replacement is pending', () => {
   const client = {
     ...inspectorClient('android'),
@@ -376,6 +405,7 @@ test('hides the Android capture source row when gRPC is unavailable', () => {
     ...inspectorClient('android'),
     streamSource: {
       mode: 'scrcpy',
+      grpcImageMode: 'png',
       availableModes: ['scrcpy'],
       sessionGeneration: 0,
     },
@@ -569,6 +599,7 @@ test('shows only the server statistics that serve-emu can provide', () => {
           offeredFrames: 1_200,
           forwardedFrames: 1_180,
           pumpRestarts: null,
+          grpc: null,
         },
       },
     ),
@@ -621,6 +652,68 @@ test('shows only the server statistics that serve-emu can provide', () => {
     expect(`${encoder}${capture}`).not.toContain(`data-stream-statistic="${label}"`);
   }
   expect(`${encoder}${capture}`).not.toContain('>—</span>');
+});
+
+test('shows the gRPC producer-to-client pipeline diagnostics', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamStats: streamStats(
+      [streamSample({ serverFps: 58, clientFps: 57.5 })],
+      {
+        capture: {
+          screenFrames: null,
+          idleFrames: null,
+          offeredFrames: 580,
+          forwardedFrames: 575,
+          pumpRestarts: null,
+          grpc: {
+            imageMode: 'mmap',
+            producerFps: 60,
+            receiveFps: 59.5,
+            usableImageFps: 59,
+            encoderInputFps: 58.5,
+            messagesReceived: 600,
+            messagesEmitted: 590,
+            messagesCoalesced: 10,
+            sequenceGaps: 2,
+            imagePayloadBytes: 552_960,
+            transportBytes: 55_296_000,
+            messageBytesReceived: 12_000,
+            mmapFileBytesRead: 56_000_000,
+            mmapReadRetries: 1,
+            mmapTornFramesDropped: 0,
+            productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
+            productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
+            protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
+            mmapReadCopyTimeMs: { p50: 0.3, p95: 0.6 },
+          },
+        },
+      },
+    ),
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={client}
+      defaultOpen
+      streamMode="webrtc"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+    />,
+  );
+  const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
+
+  expect(streamStatisticValue(capture, 'gRPC image mode')).toBe('MMAP');
+  expect(streamStatisticValue(capture, 'Emulator producer FPS')).toBe('60 FPS');
+  expect(streamStatisticValue(capture, 'Host receive FPS')).toBe('60 FPS');
+  expect(streamStatisticValue(capture, 'Usable image FPS')).toBe('59 FPS');
+  expect(streamStatisticValue(capture, 'Encoder input FPS')).toBe('59 FPS');
+  expect(streamStatisticValue(capture, 'gRPC notifications')).toBe('600');
+  expect(streamStatisticValue(capture, 'Selected notifications')).toBe('590');
+  expect(streamStatisticValue(capture, 'Coalesced notifications')).toBe('10');
+  expect(streamStatisticValue(capture, 'Latest image payload')).toBe('540.0 KiB');
+  expect(streamStatisticValue(capture, 'Produce→usable p50 / p95')).toBe('4.7 / 9.2 ms');
+  expect(streamStatisticValue(capture, 'MMAP read p50 / p95')).toBe('0.3 / 0.6 ms');
+  expect(streamStatisticValue(capture, 'Torn frames dropped')).toBe('0');
 });
 
 test('shows the WebRTC measuring state without inventing zero readings', () => {

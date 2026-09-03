@@ -269,12 +269,45 @@ function readWebRtcEncoderStats(value: unknown): DeviceStreamEncoderStats | null
 
 function readWebRtcCaptureStats(value: unknown): DeviceStreamCaptureStats | null {
   if (!isRecord(value)) return null;
+  const grpc = isRecord(value.grpc) ? value.grpc : null;
+  const timing = (name: string) => {
+    const quantiles = grpc !== null && isRecord(grpc[name]) ? grpc[name] : null;
+    return {
+      p50: finiteNumber(quantiles?.p50),
+      p95: finiteNumber(quantiles?.p95),
+    };
+  };
   return {
     screenFrames: finiteNumber(value.screenFrames),
     idleFrames: finiteNumber(value.idleFrames),
     offeredFrames: finiteNumber(value.offeredFrames),
     forwardedFrames: finiteNumber(value.forwardedFrames),
     pumpRestarts: finiteNumber(value.pumpRestarts),
+    grpc:
+      grpc === null
+        ? null
+        : {
+            imageMode:
+              grpc.imageMode === 'png' || grpc.imageMode === 'mmap' ? grpc.imageMode : null,
+            producerFps: finiteNumber(grpc.sourceTimestampFps),
+            receiveFps: finiteNumber(grpc.rawMessageReceiveFps),
+            usableImageFps: finiteNumber(grpc.usableImageFps),
+            encoderInputFps: finiteNumber(grpc.freshEncoderWriteFps),
+            messagesReceived: finiteNumber(grpc.rawGrpcMessagesReceived),
+            messagesEmitted: finiteNumber(grpc.rawGrpcMessagesEmitted),
+            messagesCoalesced: finiteNumber(grpc.rawGrpcMessagesCoalesced),
+            sequenceGaps: finiteNumber(grpc.sequenceGaps),
+            imagePayloadBytes: finiteNumber(grpc.imagePayloadBytes),
+            transportBytes: finiteNumber(grpc.transportBytes),
+            messageBytesReceived: finiteNumber(grpc.grpcMessageBytesReceived),
+            mmapFileBytesRead: finiteNumber(grpc.mmapFileBytesRead),
+            mmapReadRetries: finiteNumber(grpc.mmapReadRetries),
+            mmapTornFramesDropped: finiteNumber(grpc.mmapTornFramesDropped),
+            productionToReceiveLatencyMs: timing('productionToReceiveLatencyMs'),
+            productionToUsableLatencyMs: timing('productionToUsableLatencyMs'),
+            protobufDecodeTimeMs: timing('protobufDecodeTimeMs'),
+            mmapReadCopyTimeMs: timing('sharedReadCopyTimeMs'),
+          },
   };
 }
 
