@@ -236,17 +236,32 @@ export function StreamOptionsSection({
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
       {streamSource && sourceOptions.length > 1 && (
-        <SidebarRow label="Source">
-          <SegmentedControl
-            ariaLabel="Stream source"
-            options={sourceOptions.map((option) => ({
-              ...option,
-              disabled: client.streamSourcePending,
-            }))}
-            value={streamSource.mode}
-            onChange={client.setStreamSource}
-          />
-        </SidebarRow>
+        <>
+          <SidebarRow label="Source">
+            <SegmentedControl
+              ariaLabel="Stream source"
+              options={sourceOptions.map((option) => ({
+                ...option,
+                disabled: client.streamSourcePending,
+              }))}
+              value={streamSource.mode}
+              onChange={client.setStreamSource}
+            />
+          </SidebarRow>
+          {client.streamSourceError && (
+            <span
+              role="alert"
+              style={{
+                ...textSize.xs,
+                display: 'block',
+                padding: '0 0 8px',
+                color: text.danger,
+              }}
+            >
+              {client.streamSourceError}
+            </span>
+          )}
+        </>
       )}
       <SidebarRow label="Transport">
         <SegmentedControl

@@ -4,22 +4,13 @@ import {
   androidStreamSettingsPatch,
   parseAndroidStreamSettings,
 } from '../android-stream-settings';
-import { parseAndroidStreamSource } from '../android-stream-source';
 import {
-  androidWsUrlFor,
-  parseServeEmuStreamSettings,
-  presentedVideoFrameDelta,
-} from '../useAndroidDevice';
+  androidStreamSourceErrorMessage,
+  parseAndroidStreamSource,
+} from '../android-stream-source';
+import { androidWsUrlFor, parseServeEmuStreamSettings } from '../useAndroidDevice';
 
 describe('serve-emu stream contract', () => {
-  test('counts frames skipped between video-frame callbacks', () => {
-    expect(presentedVideoFrameDelta(null, 40)).toBe(1);
-    expect(presentedVideoFrameDelta(40, 43)).toBe(3);
-    expect(presentedVideoFrameDelta(43, 43)).toBe(1);
-    expect(presentedVideoFrameDelta(43, 2)).toBe(1);
-    expect(presentedVideoFrameDelta(43, Number.NaN)).toBe(1);
-  });
-
   test('uses a metadata video socket for H.264 and an input-only socket for WebRTC', () => {
     expect(androidWsUrlFor('http://localhost:3400/vendor/serve-emu', 'emulator-5554', true)).toBe(
       'ws://localhost:3400/vendor/serve-emu/ws?frame-meta=1&device=emulator-5554',
@@ -121,6 +112,15 @@ describe('serve-emu runtime stream settings contract', () => {
 });
 
 describe('serve-emu capture source contract', () => {
+  test('surfaces backend source-switch failures with an HTTP fallback', () => {
+    expect(
+      androidStreamSourceErrorMessage(503, { error: 'Emulator gRPC endpoint is unavailable' }),
+    ).toBe('Unable to change stream source: Emulator gRPC endpoint is unavailable');
+    expect(androidStreamSourceErrorMessage(500, null)).toBe(
+      'Unable to change stream source (HTTP 500).',
+    );
+  });
+
   test('accepts authoritative scrcpy and gRPC source responses', () => {
     expect(
       parseAndroidStreamSource({

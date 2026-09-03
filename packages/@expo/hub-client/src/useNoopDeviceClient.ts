@@ -29,6 +29,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   updateStreamSettings: () => {},
   streamSource: null,
   streamSourcePending: false,
+  streamSourceError: null,
   setStreamSource: () => {},
   streamStats: null,
   setStreamStatsEnabled: () => {},

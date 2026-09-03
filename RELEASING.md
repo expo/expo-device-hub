@@ -1,11 +1,11 @@
 # Releasing
 
-This monorepo publishes two public packages:
+This monorepo publishes one public package:
 
 - **`expo-device-hub`** — the DevTools plugin.
-- **`@expo/hub-client`** — device-client hooks and types.
 
-Every other workspace package is marked `private` and is skipped by the release tooling.
+Every other workspace package, including the internal **`@expo/hub-client`** device-client
+layer, is marked `private` and is skipped by the release tooling.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): the version
 bump and changelog for each package are computed from the `.changeset/*.md` entries that have
@@ -23,10 +23,11 @@ Any change that should ship needs a changeset. From the repo root:
 bun changeset
 ```
 
-Select the package(s) you changed (`expo-device-hub` and/or `@expo/hub-client`), choose the
-bump level (`patch` / `minor` / `major`), and write a summary. Commit the generated
-`.changeset/*.md` file with your PR. Multiple PRs accumulate multiple changesets — the release
-folds them all together, and each package's final bump is the largest one requested for it.
+Select `expo-device-hub`, choose the bump level (`patch` / `minor` / `major`), and write a
+summary. Changes to private workspace packages that ship inside `expo-device-hub` belong in the
+`expo-device-hub` changeset. Commit the generated `.changeset/*.md` file with your PR. Multiple
+PRs accumulate multiple changesets — the release folds them together, and the final bump is the
+largest one requested.
 
 ### 2. When ready to publish — run the workflow
 
@@ -46,5 +47,5 @@ bumps a package, the canary uses that version directly (e.g. `0.3.0` with a mino
 `expo-device-hub@0.2.0-canary-20260429-a5e59cf`). Unlike a real release, a canary does not require
 a pending changeset, so you can publish one from any commit.
 
-Real releases only version and publish packages with changesets. Canary releases assign a canary
-version to every public package so they can also run without pending changesets.
+Real releases only version and publish `expo-device-hub` when it has a changeset. Canary releases
+assign it a canary version so they can also run without pending changesets.

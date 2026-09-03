@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   DEFAULT_DEVICE_STREAM_SETTINGS,
   normalizeDeviceStreamSettings,
+  sameDeviceStreamSettings,
 } from '../stream-settings';
 
 describe('device stream settings', () => {
@@ -26,5 +27,20 @@ describe('device stream settings', () => {
       h264Bitrate: 100_000,
       h264Fps: 4,
     });
+  });
+
+  test('compares every normalized setting before publishing a refresh', () => {
+    expect(
+      sameDeviceStreamSettings(DEFAULT_DEVICE_STREAM_SETTINGS, {
+        ...DEFAULT_DEVICE_STREAM_SETTINGS,
+      }),
+    ).toBe(true);
+    expect(
+      sameDeviceStreamSettings(DEFAULT_DEVICE_STREAM_SETTINGS, {
+        ...DEFAULT_DEVICE_STREAM_SETTINGS,
+        maxDimension: 720,
+      }),
+    ).toBe(false);
+    expect(sameDeviceStreamSettings(null, DEFAULT_DEVICE_STREAM_SETTINGS)).toBe(false);
   });
 });

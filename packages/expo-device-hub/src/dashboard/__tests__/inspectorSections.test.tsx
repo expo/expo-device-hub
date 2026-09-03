@@ -74,6 +74,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           sessionGeneration: 0,
         },
     streamSourcePending: false,
+    streamSourceError: null,
     setStreamSource: () => {},
     streamStats: null,
     setStreamStatsEnabled: () => {},
@@ -357,6 +358,17 @@ test('disables the Android capture source switch while replacement is pending', 
   );
 
   expect(source.match(/disabled=""/g)).toHaveLength(2);
+});
+
+test('shows an Android capture source failure below the switch', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSourceError: 'Unable to change stream source: Emulator gRPC endpoint is unavailable',
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+
+  expect(html).toContain('role="alert"');
+  expect(html).toContain('Unable to change stream source: Emulator gRPC endpoint is unavailable');
 });
 
 test('hides the Android capture source row when gRPC is unavailable', () => {

@@ -137,7 +137,7 @@ export interface DeviceStreamCapabilities {
   webRtcCodecs: readonly DeviceWebRtcCodec[];
 }
 
-/** Runtime encoder settings supported by serve-sim's `/stream-settings` endpoint. */
+/** Runtime encoder settings exposed by a backend's stream-settings endpoint. */
 export interface DeviceStreamEncoderSettings {
   mjpegFps: number;
   mjpegQuality: number;
@@ -419,6 +419,8 @@ export interface DeviceClient {
   /** Active Android capture source; null when the backend does not expose source switching. */
   streamSource: DeviceStreamSourceStatus | null;
   streamSourcePending: boolean;
+  /** Last capture-source write failure; cleared when another write begins. */
+  streamSourceError: string | null;
   /** Stage and atomically activate another Android capture source. */
   setStreamSource: (source: DeviceStreamSource) => void;
   /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */

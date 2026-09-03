@@ -22,7 +22,7 @@
  * helper because doing so drops the middleware/helper path from stream URLs.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
 import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
 import {
@@ -73,12 +73,11 @@ import {
   mergeAuthoritativeDeviceSetting,
 } from './device-setting-writes';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
-import {
-  DEFAULT_DEVICE_STREAM_SETTINGS,
-  normalizeDeviceStreamSettings,
-} from './stream-settings';
+import { normalizeDeviceStreamSettings } from './stream-settings';
 import { useAvccStream } from './useAvccStream';
+import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
+import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
   type WebRtcCodec,
   webRtcFallbackDecision,
@@ -158,6 +157,19 @@ const BUTTON_NAME: Record<HardwareButton, string | null> = {
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
+
+function parseIosStreamSettings(
+  value: unknown,
+  fallback: DeviceStreamEncoderSettings,
+): DeviceStreamEncoderSettings {
+  return normalizeDeviceStreamSettings(value, fallback);
+}
+
+function iosStreamSettingsPatch(
+  patch: Partial<DeviceStreamEncoderSettings>,
+): Partial<DeviceStreamEncoderSettings> | null {
+  return Object.keys(patch).length > 0 ? patch : null;
+}
 
 // Returns an `ArrayBuffer`-backed view (not the default `Uint8Array<ArrayBufferLike>`)
 // so it satisfies `WebSocket.send`'s `BufferSource` under strict lib.dom typings.
@@ -380,8 +392,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [deviceSettingsPending, setDeviceSettingsPending] = useState<
     ReadonlySet<DeviceSettingKey>
   >(() => new Set());
-  const [streamSettings, setStreamSettings] = useState<DeviceStreamEncoderSettings | null>(null);
-  const [streamSettingsPending, setStreamSettingsPending] = useState(false);
   // Browser HID injection remains active when this is false. Disabling the
   // Simulator-owned host connection lets iOS keep its software keyboard open.
   const [hardwareKeyboardConnected, setHardwareKeyboardConnectedState] = useState<boolean | null>(
@@ -410,17 +420,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useLayoutEffect(() => {
     deviceSettingConfigRef.current = config;
   }, [config]);
-  const streamSettingsRequestRef = useRef(0);
-  const streamSettingsRef = useRef<DeviceStreamEncoderSettings | null>(null);
-  const streamSettingsPendingRef = useRef(false);
-  const streamSettingsControllerRef = useRef<AbortController | null>(null);
   const activityLastSampleAtRef = useRef(0);
-  useEffect(
-    () => () => {
-      streamSettingsControllerRef.current?.abort();
-    },
-    [],
-  );
   const useWebRtc = streamMode === 'webrtc' && !webRtcHttpFallback;
   const wantsAvcc = streamMode === 'h264' || webRtcHttpFallback;
   const useAvcc = wantsAvcc && isAvccSupported() && !avccFallback.fellBack;
@@ -627,52 +627,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setWebRtcHttpFallback(false);
   }, []);
 
-  const updateStreamSettings = useCallback(
-    (patch: Partial<DeviceStreamEncoderSettings>) => {
-      const endpoint = config?.streamSettingsUrl;
-      if (!endpoint || streamSettingsPendingRef.current || Object.keys(patch).length === 0) return;
-      const previous = streamSettingsRef.current ?? DEFAULT_DEVICE_STREAM_SETTINGS;
-      const optimistic = normalizeDeviceStreamSettings({ ...previous, ...patch }, previous);
-      const request = ++streamSettingsRequestRef.current;
-      const controller = new AbortController();
-      streamSettingsControllerRef.current = controller;
-      streamSettingsPendingRef.current = true;
-      streamSettingsRef.current = optimistic;
-      setStreamSettings(optimistic);
-      setStreamSettingsPending(true);
-      void fetch(endpoint, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
-        signal: controller.signal,
-      })
-        .then(async (response) => {
-          if (!response.ok) throw new Error(`Stream settings update failed (${response.status})`);
-          const next = normalizeDeviceStreamSettings(await response.json(), optimistic);
-          if (streamSettingsRequestRef.current === request) {
-            streamSettingsRef.current = next;
-            setStreamSettings(next);
-          }
-        })
-        .catch(() => {
-          if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
-            streamSettingsRef.current = previous;
-            setStreamSettings(previous);
-          }
-        })
-        .finally(() => {
-          if (streamSettingsControllerRef.current === controller) {
-            streamSettingsControllerRef.current = null;
-          }
-          if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
-            streamSettingsPendingRef.current = false;
-            setStreamSettingsPending(false);
-          }
-        });
-    },
-    [config?.streamSettingsUrl],
-  );
-
   const attachLogs = useCallback(() => setLogsEnabled(true), []);
   const detachLogs = useCallback(() => setLogsEnabled(false), []);
   const clearLogs = useCallback(() => setLogs([]), []);
@@ -783,11 +737,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [active, baseUrl, targetDevice, setWebRtcCodec]);
 
   const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
-  const onAvccFrame = useCallback(() => {
+  const onAvccFrame = useCallback((frameDelta = 1) => {
     const now = performance.now();
     const counter = fpsCounterRef.current;
     if (counter.startedAt === 0) counter.startedAt = now;
-    counter.frames++;
+    counter.frames += frameDelta;
     if (now - counter.startedAt < 1_000) return;
     const next = Math.round((counter.frames * 1_000) / (now - counter.startedAt));
     counter.frames = 0;
@@ -841,38 +795,47 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let stopped = false;
     let firstFrame = true;
     let frameCallback = 0;
+    let previousPresentedFrames: number | null = null;
 
-    const markFrame = () => {
+    const markFrame = (presentedFrameDelta = 1) => {
       if (stopped) return;
       if (video.videoWidth > 0 && video.videoHeight > 0 && !hasWsConfigRef.current) {
         setScreen({ width: video.videoWidth, height: video.videoHeight });
       }
-      onAvccFrame();
-      markWebRtcFrameDecoded();
+      onAvccFrame(presentedFrameDelta);
+      markWebRtcFrameDecoded(presentedFrameDelta);
       if (firstFrame) {
         firstFrame = false;
         setStatus('streaming');
         setError(null);
       }
     };
-    const onVideoFrame = () => {
-      markFrame();
+    const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      const presentedFrameDelta = presentedVideoFrameDelta(
+        previousPresentedFrames,
+        metadata.presentedFrames,
+      );
+      if (Number.isSafeInteger(metadata.presentedFrames) && metadata.presentedFrames >= 0) {
+        previousPresentedFrames = metadata.presentedFrames;
+      }
+      markFrame(presentedFrameDelta);
       frameCallback = video.requestVideoFrameCallback(onVideoFrame);
     };
     const onTimeUpdate = () => markFrame();
+    const onLoadedData = () => markFrame(0);
 
     video.srcObject = webRtcStream;
     if (webRtcStream) {
       const supportsVideoFrameCallback = typeof video.requestVideoFrameCallback === 'function';
       if (supportsVideoFrameCallback) frameCallback = video.requestVideoFrameCallback(onVideoFrame);
       else video.addEventListener('timeupdate', onTimeUpdate);
-      video.addEventListener('loadeddata', markFrame, { once: true });
+      video.addEventListener('loadeddata', onLoadedData, { once: true });
       void video.play().catch(() => {});
     }
 
     return () => {
       stopped = true;
-      video.removeEventListener('loadeddata', markFrame);
+      video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
         video.cancelVideoFrameCallback(frameCallback);
@@ -1262,41 +1225,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
   const initialStreamSettings = config?.initialStreamSettings;
-  useEffect(() => {
-    streamSettingsControllerRef.current?.abort();
-    streamSettingsControllerRef.current = null;
-    streamSettingsPendingRef.current = false;
-    const request = ++streamSettingsRequestRef.current;
-    if (!streamSettingsUrl) {
-      streamSettingsRef.current = null;
-      setStreamSettings(null);
-      setStreamSettingsPending(false);
-      return;
-    }
-    const initial = normalizeDeviceStreamSettings(initialStreamSettings);
-    streamSettingsRef.current = initial;
-    setStreamSettings(initial);
-    streamSettingsPendingRef.current = true;
-    setStreamSettingsPending(true);
-    const controller = new AbortController();
-    void fetch(streamSettingsUrl, { cache: 'no-store', signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`Stream settings request failed (${response.status})`);
-        const next = normalizeDeviceStreamSettings(await response.json(), initial);
-        if (streamSettingsRequestRef.current === request) {
-          streamSettingsRef.current = next;
-          setStreamSettings(next);
-        }
-      })
-      .catch(() => {})
-      .finally(() => {
-        if (!controller.signal.aborted && streamSettingsRequestRef.current === request) {
-          streamSettingsPendingRef.current = false;
-          setStreamSettingsPending(false);
-        }
-      });
-    return () => controller.abort();
-  }, [streamSettingsUrl, initialStreamSettings]);
+  const normalizedInitialStreamSettings = useMemo(
+    () => (streamSettingsUrl ? normalizeDeviceStreamSettings(initialStreamSettings) : null),
+    [initialStreamSettings, streamSettingsUrl],
+  );
+  const { streamSettings, streamSettingsPending, updateStreamSettings } = useStreamSettingsResource(
+    {
+      url: streamSettingsUrl,
+      initialSettings: normalizedInitialStreamSettings,
+      parse: parseIosStreamSettings,
+      toPatch: iosStreamSettingsPatch,
+    },
+  );
 
   // ── Foreground app (middleware /appstate SSE) — the middleware bootstraps a
   //    fresh subscriber with the current frontmost app, then pushes changes as
@@ -1417,6 +1357,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     updateStreamSettings,
     streamSource: null,
     streamSourcePending: false,
+    streamSourceError: null,
     setStreamSource: () => {},
     streamStats,
     setStreamStatsEnabled,

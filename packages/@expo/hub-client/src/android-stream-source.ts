@@ -9,6 +9,23 @@ function isAndroidStreamSource(value: unknown): value is DeviceStreamSource {
   return ANDROID_STREAM_SOURCES.some((source) => source === value);
 }
 
+/** Prefer serve-emu's actionable failure detail, falling back to the HTTP status. */
+export function androidStreamSourceErrorMessage(status: number, value: unknown): string {
+  const candidate =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const detail =
+    typeof candidate?.error === 'string'
+      ? candidate.error.trim()
+      : typeof candidate?.message === 'string'
+        ? candidate.message.trim()
+        : '';
+  return detail
+    ? `Unable to change stream source: ${detail}`
+    : `Unable to change stream source (HTTP ${status}).`;
+}
+
 /** Parse serve-emu's authoritative device-scoped `/api/stream-mode` response. */
 export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStatus | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
