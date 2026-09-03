@@ -841,6 +841,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let decoder: VideoDecoder | null = null;
     let sawKeyframe = false;
     let droppingUntilKeyframe = false;
+    let sessionSize: ScreenSize | null = null;
     let lastKeyframeRequestAt = 0;
     let frameIdx = 0;
     let fpsCount = 0;
@@ -1080,14 +1081,25 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
               Number.isFinite(msg.size.width) &&
               Number.isFinite(msg.size.height)
             ) {
-              closeDecoder();
-              msePlayer?.destroy();
-              msePlayer = null;
-              frameIdx = 0;
-              sawKeyframe = false;
+              // The server sends this after every encoder restart, including the
+              // one our own keyframe request causes. Asking again would loop.
+              const size = { width: msg.size.width, height: msg.size.height };
+              const first = sessionSize === null;
+              const changed =
+                sessionSize === null ||
+                sessionSize.width !== size.width ||
+                sessionSize.height !== size.height;
+              sessionSize = size;
+              if (changed) {
+                closeDecoder();
+                msePlayer?.destroy();
+                msePlayer = null;
+                frameIdx = 0;
+                sawKeyframe = false;
+              }
               droppingUntilKeyframe = true;
-              setScreen({ width: msg.size.width, height: msg.size.height });
-              requestKeyframe();
+              setScreen(size);
+              if (first) requestKeyframe();
             }
           } catch {}
           return;
