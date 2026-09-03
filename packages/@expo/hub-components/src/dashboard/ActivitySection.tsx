@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { type DeviceActivitySample, type DeviceClient } from '@expo/hub-client';
-import { text, textSize } from '../primitives';
+import { icon, text, textSize } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import {
   MetricChart,
@@ -10,6 +10,8 @@ import {
 } from './MetricChart';
 
 const MAX_SAMPLES = 60;
+/** The CPU sparkline always shows at least one full core of headroom. */
+const MIN_CPU_SCALE_PCT = 100;
 
 function formatBytes(value: number) {
   const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -33,24 +35,24 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
   const latest = latestSample(samples);
 
   const cpuSeries: MetricChartSeries[] = [
-    { label: 'CPU', color: text.info, values: samples.map((sample) => sample.cpuPct) },
+    { label: 'CPU', color: icon.success, values: samples.map((sample) => sample.cpuPct) },
   ];
   const memorySeries: MetricChartSeries[] = [
-    { label: 'Memory', color: text.preview, values: samples.map((sample) => sample.memBytes) },
+    { label: 'Memory', color: icon.info, values: samples.map((sample) => sample.memBytes) },
   ];
   const networkSeries: MetricChartSeries[] = [
     {
       label: 'Inbound',
-      color: text.success,
+      color: icon.preview,
       values: samples.map((sample) => sample.netInBytesPerSec),
     },
     {
       label: 'Outbound',
-      color: text.warning,
+      color: icon.preview,
+      dashed: true,
       values: samples.map((sample) => sample.netOutBytesPerSec),
     },
   ];
-  const cpuCapacity = Math.max(100, (activity?.hostCores ?? 0) * 100);
 
   let message: string | null = null;
   if (activity?.errored) message = 'Activity data is unavailable for this app.';
@@ -68,7 +70,15 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
         </span>
       )}
       {latest && (
-        <div style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 8 }}>
+        <div
+          style={{
+            display: 'flex',
+            minWidth: 0,
+            flexDirection: 'column',
+            gap: 4,
+            paddingTop: message ? 0 : 12,
+          }}
+        >
           <MetricChart
             title="CPU"
             value={`${Math.round(latest.cpuPct)}%`}
@@ -78,7 +88,7 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
                 : undefined
             }
             series={cpuSeries}
-            maxValue={Math.max(cpuCapacity, maxChartValue(cpuSeries))}
+            maxValue={maxChartValue(cpuSeries, MIN_CPU_SCALE_PCT)}
           />
           <MetricChart
             title="Memory"
@@ -88,7 +98,8 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
           />
           <MetricChart
             title="Network"
-            value={`↓ ${formatBytes(latest.netInBytesPerSec)}/s · ↑ ${formatBytes(latest.netOutBytesPerSec)}/s`}
+            value={`↑ ${formatBytes(latest.netOutBytesPerSec)}/s · ↓ ${formatBytes(latest.netInBytesPerSec)}/s`}
+            description="Solid line: inbound. Dashed line: outbound."
             series={networkSeries}
             maxValue={maxChartValue(networkSeries)}
           />

@@ -1,7 +1,7 @@
 import { type DeviceStreamMode } from '@expo/hub-client';
 import { useId } from 'react';
 
-import { SegmentedControl } from '../components/SegmentedControl';
+import { Select } from '../components/Select';
 import { text, textSize } from '../primitives';
 import { SidebarRow } from './SidebarRow';
 
@@ -33,7 +33,7 @@ export function StreamSection({
   return (
     <>
       <SidebarRow label="Stream">
-        <SegmentedControl
+        <Select
           ariaLabel="Stream mode"
           ariaDescribedBy={restricted ? helpId : undefined}
           options={options}

@@ -1,5 +1,5 @@
 import { type DeviceClient } from '@expo/hub-client';
-import { bg, border, radius, text, textSize } from '../primitives';
+import { bg, border, icon, radius, text, textSize } from '../primitives';
 import {
   MetricChart,
   type MetricChartSeries,
@@ -207,7 +207,7 @@ export function StreamStatistics({
   const clientFpsSeries: MetricChartSeries[] = [
     {
       label: 'Client FPS',
-      color: text.info,
+      color: icon.info,
       values: samples.flatMap((sample) =>
         sample.clientFps === null ? [] : [sample.clientFps],
       ),
@@ -216,7 +216,7 @@ export function StreamStatistics({
   const clientBitrateSeries: MetricChartSeries[] = [
     {
       label: 'Client bitrate',
-      color: text.preview,
+      color: icon.preview,
       values: samples.flatMap((sample) =>
         sample.clientBitrateBps === null ? [] : [sample.clientBitrateBps],
       ),
@@ -413,7 +413,7 @@ export function StreamStatistics({
         style={{
           width: '100%',
           overflow: 'visible',
-          borderRadius: radius.md,
+          borderRadius: radius.lg,
           backgroundColor: bg.subtle,
         }}
       >
@@ -541,7 +541,6 @@ export function StreamStatistics({
             description="Last 60 samples"
             series={clientFpsSeries}
             maxValue={maxChartValue(clientFpsSeries)}
-            bordered={false}
           />
           <MetricChart
             title="Client bitrate"
@@ -549,7 +548,6 @@ export function StreamStatistics({
             description="Last 60 samples"
             series={clientBitrateSeries}
             maxValue={maxChartValue(clientBitrateSeries)}
-            bordered={false}
           />
         </div>
       )}

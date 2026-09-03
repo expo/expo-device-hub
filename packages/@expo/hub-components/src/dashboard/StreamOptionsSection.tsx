@@ -11,13 +11,7 @@ import {
   type DeviceStreamSource,
   type DeviceWebRtcCodec,
 } from '@expo/hub-client';
-import {
-  SegmentedControl,
-  Select,
-  type SelectOption,
-  text,
-  textSize,
-} from '../primitives';
+import { Select, type SelectOption, text, textSize } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { SidebarRow } from './SidebarRow';
 import { type StreamModeAvailability } from './StreamSection';
@@ -57,43 +51,30 @@ const DEFAULT_STREAM_CAPABILITIES = {
 } as const satisfies DeviceStreamCapabilities;
 
 const STREAM_MODE_ORDER: readonly DeviceStreamMode[] = ['mjpeg', 'h264', 'webrtc'];
-const STREAM_SOURCE_OPTIONS: ReadonlyArray<{ value: DeviceStreamSource; label: string }> = [
+const STREAM_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceStreamSource>> = [
   { value: 'scrcpy', label: 'scrcpy' },
   { value: 'grpc-screenshot', label: 'gRPC' },
 ];
-const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<{
-  value: DeviceGrpcImageMode;
-  label: string;
-}> = [
+const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<SelectOption<DeviceGrpcImageMode>> = [
   { value: 'png', label: 'PNG' },
   { value: 'mmap', label: 'MMAP' },
 ];
-const GRPC_INPUT_SOURCE_OPTIONS: ReadonlyArray<{
-  value: DeviceInputSource;
-  label: string;
-}> = [
+const GRPC_INPUT_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceInputSource>> = [
   { value: 'scrcpy', label: 'scrcpy' },
   { value: 'grpc', label: 'gRPC' },
 ];
-const STREAM_SETTING_ORDER: readonly (keyof DeviceStreamEncoderSettings)[] = [
-  'maxDimension',
-  'mjpegFps',
-  'mjpegQuality',
-  'h264Fps',
-  'h264Bitrate',
-];
 
-const HTTP_CODEC_OPTIONS = [
+const HTTP_CODEC_OPTIONS: ReadonlyArray<SelectOption<DeviceHttpCodec>> = [
   { value: 'auto', label: 'Auto' },
   { value: 'h264', label: 'H.264' },
   { value: 'mjpeg', label: 'MJPEG' },
-] as const;
+];
 
-const WEBRTC_CODEC_OPTIONS = [
+const WEBRTC_CODEC_OPTIONS: ReadonlyArray<SelectOption<DeviceWebRtcCodec>> = [
   { value: 'h264', label: 'H.264' },
   { value: 'vp9', label: 'VP9' },
   { value: 'vp8', label: 'VP8' },
-] as const;
+];
 
 const MAX_DIMENSION_OPTIONS: SelectOption[] = [
   { value: '0', label: 'Full' },
@@ -136,6 +117,21 @@ function withCurrentValue(
     : [{ value: current, label: label(value) }, ...options];
 }
 
+function SectionNote({ children, role }: { children: string; role?: 'alert' }) {
+  return (
+    <span
+      role={role}
+      style={{
+        ...textSize.xs,
+        display: 'block',
+        padding: '0 0 8px',
+        color: role === 'alert' ? text.danger : text.tertiary,
+      }}
+    >
+      {children}
+    </span>
+  );
+}
 
 /** Viewer transport, backend-supported codecs, and optional runtime encoder controls. */
 export function StreamOptionsSection({
@@ -161,10 +157,6 @@ export function StreamOptionsSection({
   const primaryTransport: Exclude<StreamTransport, 'webrtc'> =
     client.platform === 'android' ? 'websocket' : 'http';
   const primaryTransportLabel = client.platform === 'android' ? 'WebSocket' : 'HTTP';
-  const transportOptions: ReadonlyArray<{ value: StreamTransport; label: string }> = [
-    { value: primaryTransport, label: primaryTransportLabel },
-    { value: 'webrtc', label: 'WebRTC' },
-  ];
   const httpCodecOptions = HTTP_CODEC_OPTIONS.filter((option) =>
     backend.httpCodecs.includes(option.value),
   );
@@ -173,10 +165,6 @@ export function StreamOptionsSection({
   );
   const settings = client.streamSettings ?? DEFAULT_SETTINGS;
   const settingsCapabilities = client.capabilities.streamSettings;
-  const supportedSettingKeys = settingsCapabilities
-    ? STREAM_SETTING_ORDER.filter((key) => settingsCapabilities[key])
-    : [];
-  const finalSettingKey = supportedSettingKeys.at(-1);
   const streamSource = client.streamSource;
   const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableModes.includes(option.value),
@@ -190,6 +178,10 @@ export function StreamOptionsSection({
     activeStreamMode === 'webrtc' ? 'webrtc' : primaryTransport;
   const setStreamStatsEnabled = client.setStreamStatsEnabled;
   const httpAvailable = availability.mjpeg || availability.h264;
+  const transportOptions: ReadonlyArray<SelectOption<StreamTransport>> = [
+    { value: primaryTransport, label: primaryTransportLabel, disabled: !httpAvailable },
+    { value: 'webrtc', label: 'WebRTC', disabled: !availability.webrtc },
+  ];
 
   useEffect(() => {
     setStreamStatsEnabled(open && transport === 'webrtc');
@@ -257,28 +249,16 @@ export function StreamOptionsSection({
       {streamSource && sourceOptions.length > 1 && (
         <>
           <SidebarRow label="Source">
-            <SegmentedControl
+            <Select
               ariaLabel="Stream source"
-              options={sourceOptions.map((option) => ({
-                ...option,
-                disabled: client.streamSourcePending,
-              }))}
+              options={sourceOptions}
               value={streamSource.mode}
+              disabled={client.streamSourcePending}
               onChange={client.setStreamSource}
             />
           </SidebarRow>
           {client.streamSourceError && (
-            <span
-              role="alert"
-              style={{
-                ...textSize.xs,
-                display: 'block',
-                padding: '0 0 8px',
-                color: text.danger,
-              }}
-            >
-              {client.streamSourceError}
-            </span>
+            <SectionNote role="alert">{client.streamSourceError}</SectionNote>
           )}
         </>
       )}
@@ -286,93 +266,74 @@ export function StreamOptionsSection({
         <>
           {inputSourceOptions.length > 1 && (
             <SidebarRow label="Input">
-              <SegmentedControl
+              <Select
                 ariaLabel="Input source"
-                options={inputSourceOptions.map((option) => ({
-                  ...option,
-                  disabled: client.streamSourcePending,
-                }))}
+                options={inputSourceOptions}
                 value={streamSource.inputSource}
+                disabled={client.streamSourcePending}
                 onChange={client.setGrpcInputSource}
               />
             </SidebarRow>
           )}
           <SidebarRow label="gRPC frames">
-            <SegmentedControl
+            <Select
               ariaLabel="gRPC image mode"
-              options={GRPC_IMAGE_MODE_OPTIONS.map((option) => ({
-                ...option,
-                disabled: client.streamSourcePending,
-              }))}
+              options={GRPC_IMAGE_MODE_OPTIONS}
               value={streamSource.grpcImageMode}
+              disabled={client.streamSourcePending}
               onChange={client.setGrpcImageMode}
             />
           </SidebarRow>
         </>
       )}
       <SidebarRow label="Transport">
-        <SegmentedControl
+        <Select
           ariaLabel="Stream transport"
-          options={transportOptions.map((option) => ({
-            ...option,
-            disabled:
-              !onStreamModeChange ||
-              (option.value === 'webrtc' ? !availability.webrtc : !httpAvailable),
-          }))}
+          options={transportOptions}
           value={transport}
+          disabled={!onStreamModeChange}
           onChange={changeTransport}
         />
       </SidebarRow>
       {httpCodecOptions.length > 0 && (
         <SidebarRow label={`${primaryTransportLabel} codec`}>
-          <SegmentedControl
+          <Select
             ariaLabel={`${primaryTransportLabel} codec`}
             options={httpCodecOptions.map((option) => ({
               ...option,
-              disabled:
-                transport === 'webrtc' || !onHttpCodecChange || !httpCodecAvailable(option.value),
+              disabled: !httpCodecAvailable(option.value),
             }))}
             value={selectedHttpCodec}
+            disabled={transport === 'webrtc' || !onHttpCodecChange}
             onChange={changeHttpCodec}
           />
         </SidebarRow>
       )}
       {webRtcCodecOptions.length > 0 && (
-        <SidebarRow
-          label="WebRTC codec"
-          borderBottom={supportedSettingKeys.length > 0 || transport === 'webrtc'}
-        >
-          <SegmentedControl
+        <SidebarRow label="WebRTC codec">
+          <Select
             ariaLabel="WebRTC codec"
-            options={webRtcCodecOptions.map((option) => ({
-              ...option,
-              disabled: transport !== 'webrtc' || !availability.webrtc,
-            }))}
+            options={webRtcCodecOptions}
             value={selectedWebRtcCodec}
+            disabled={transport !== 'webrtc' || !availability.webrtc}
             onChange={(codec: DeviceWebRtcCodec) => client.setWebRtcCodec(codec)}
           />
         </SidebarRow>
       )}
       {restricted && (
-        <span
-          style={{ ...textSize.xs, display: 'block', padding: '0 0 8px', color: text.tertiary }}
-        >
+        <SectionNote>
           {client.platform === 'android'
             ? 'WebRTC requires localhost or HTTPS.'
             : 'H.264 and WebRTC require localhost or HTTPS. MJPEG remains available on insecure HTTP.'}
-        </span>
+        </SectionNote>
       )}
       {hostWebRtcDisabled && (
-        <span
-          style={{ ...textSize.xs, display: 'block', padding: '0 0 8px', color: text.tertiary }}
-        >
-          Start the standalone server with --transport webrtc to enable WebRTC.
-        </span>
+        <SectionNote>Start the standalone server with --transport webrtc to enable WebRTC.</SectionNote>
       )}
       {settingsCapabilities && (
         <>
           {settingsCapabilities.maxDimension && (
-            <SidebarRow label="Max size" borderBottom={finalSettingKey !== 'maxDimension'}>
+            <SidebarRow label="Max size">
               <Select
                 ariaLabel="Max size"
                 value={String(settings.maxDimension)}
@@ -385,7 +346,7 @@ export function StreamOptionsSection({
             </SidebarRow>
           )}
           {settingsCapabilities.mjpegFps && (
-            <SidebarRow label="MJPEG FPS" borderBottom={finalSettingKey !== 'mjpegFps'}>
+            <SidebarRow label="MJPEG FPS">
               <Select
                 ariaLabel="MJPEG FPS"
                 value={String(settings.mjpegFps)}
@@ -396,7 +357,7 @@ export function StreamOptionsSection({
             </SidebarRow>
           )}
           {settingsCapabilities.mjpegQuality && (
-            <SidebarRow label="MJPEG quality" borderBottom={finalSettingKey !== 'mjpegQuality'}>
+            <SidebarRow label="MJPEG quality">
               <Select
                 ariaLabel="MJPEG quality"
                 value={String(settings.mjpegQuality)}
@@ -411,7 +372,7 @@ export function StreamOptionsSection({
             </SidebarRow>
           )}
           {settingsCapabilities.h264Fps && (
-            <SidebarRow label="Video FPS" borderBottom={finalSettingKey !== 'h264Fps'}>
+            <SidebarRow label="Video FPS">
               <Select
                 ariaLabel="Video FPS"
                 value={String(settings.h264Fps)}
@@ -422,10 +383,7 @@ export function StreamOptionsSection({
             </SidebarRow>
           )}
           {settingsCapabilities.h264Bitrate && (
-            <SidebarRow
-              label="Video bitrate"
-              borderBottom={finalSettingKey !== 'h264Bitrate' || transport === 'webrtc'}
-            >
+            <SidebarRow label="Video bitrate">
               <Select
                 ariaLabel="Video bitrate"
                 value={String(settings.h264Bitrate)}

@@ -5,6 +5,7 @@ import {
 } from '@expo/hub-client';
 import { SidebarToggle } from '../primitives';
 import { ActivitySection } from './ActivitySection';
+import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
 import { CurrentAppSection } from './CurrentAppSection';
 import { DeviceOptionsSection } from './DeviceOptionsSection';
 import { EventsSection } from './EventsSection';
@@ -72,12 +73,17 @@ export function LogSidebar({
         flexShrink: 0,
         height: '100vh',
         boxSizing: 'border-box',
-        gap: 12,
-        padding: '32px 24px',
+        padding: '32px 0 0',
         overflow: 'hidden',
       }}>
       {onToggle && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            padding: `0 ${SIDEBAR_SECTION_INSET}px 12px`,
+          }}>
           <SidebarToggle side="right" onClick={onToggle} />
         </div>
       )}

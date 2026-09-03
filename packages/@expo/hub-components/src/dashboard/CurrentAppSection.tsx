@@ -1,5 +1,6 @@
 import { type DeviceClient } from '@expo/hub-client';
 import { bg, border, font, heading, icon, radius, text, textSize } from '../primitives';
+import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
 import { SidebarSectionHeading } from './SidebarRow';
 
 const APP_ICON_SIZE = 52;
@@ -36,7 +37,9 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   ];
 
   return (
-    <section aria-label="Current app" style={{ padding: '18px 0 20px' }}>
+    <section
+      aria-label="Current app"
+      style={{ padding: `18px ${SIDEBAR_SECTION_INSET}px 20px` }}>
       <div
         style={{
           display: 'flex',

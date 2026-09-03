@@ -23,15 +23,24 @@ export type SelectOption<Value extends string = string> = {
 
 export type SelectProps<Value extends string> = {
   ariaLabel: string;
+  ariaDescribedBy?: string;
   value: Value;
   options: ReadonlyArray<SelectOption<Value>>;
   disabled?: boolean;
   onChange: (value: Value) => void;
 };
 
-/** A compact single-value select whose trigger is sized by its longest option. */
+const TRIGGER_HEIGHT = 28;
+const ITEM_HEIGHT = 28;
+
+/**
+ * A compact single-value select rendered as a soft pill: the current value
+ * followed by a chevron. The trigger is sized by its longest option so it
+ * never jumps as the value changes.
+ */
 export function Select<Value extends string>({
   ariaLabel,
+  ariaDescribedBy,
   value,
   options,
   disabled = false,
@@ -39,6 +48,7 @@ export function Select<Value extends string>({
 }: SelectProps<Value>) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const selectedLabel = options.find((option) => option.value === value)?.label ?? value;
 
   return (
@@ -51,28 +61,32 @@ export function Select<Value extends string>({
     >
       <Trigger
         aria-label={ariaLabel}
+        aria-describedby={ariaDescribedBy}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={{
-          ...textSize.xs,
+          ...textSize.sm,
           display: 'inline-flex',
           width: 'max-content',
-          height: 30,
+          height: TRIGGER_HEIGHT,
           flexShrink: 0,
           alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 8,
+          gap: 6,
           boxSizing: 'border-box',
-          padding: '0 7px 0 9px',
+          padding: '0 8px 0 10px',
           border: `1px solid ${border.default}`,
-          borderRadius: radius.md,
+          borderRadius: radius.lg,
           outline: 'none',
-          backgroundColor: bg.subtle,
+          backgroundColor: hovered && !disabled ? bg.hover : bg.element,
           boxShadow: focused ? `0 0 0 2px ${border.secondary}` : shadow.none,
           color: text.default,
           fontFamily: 'inherit',
           cursor: disabled ? 'default' : 'pointer',
           opacity: disabled ? 0.5 : 1,
+          transition: 'background-color 120ms ease',
         }}
       >
         <span
@@ -105,12 +119,12 @@ export function Select<Value extends string>({
           style={{
             display: 'flex',
             flexShrink: 0,
-            color: icon.secondary,
+            color: icon.default,
             transform: open ? 'rotate(180deg)' : undefined,
             transition: 'transform 120ms ease',
           }}
         >
-          <ChevronDownIcon size={14} />
+          <ChevronDownIcon size={16} strokeWidth={1.5} />
         </SelectIcon>
       </Trigger>
       <Portal>
@@ -121,7 +135,7 @@ export function Select<Value extends string>({
           collisionPadding={8}
           className="will-change-[opacity,transform] data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade data-[side=right]:animate-slideLeftAndFade data-[side=top]:animate-slideDownAndFade"
           style={{
-            ...textSize.xs,
+            ...textSize.sm,
             zIndex: 605,
             width: 'var(--radix-select-trigger-width)',
             minWidth: 'var(--radix-select-trigger-width)',
@@ -130,9 +144,9 @@ export function Select<Value extends string>({
             overflow: 'hidden',
             padding: 4,
             border: `1px solid ${border.default}`,
-            borderRadius: radius.md,
+            borderRadius: radius.lg,
             outline: 'none',
-            backgroundColor: bg.subtle,
+            backgroundColor: bg.default,
             boxShadow: shadow.md,
             color: text.default,
             fontFamily: 'inherit',
@@ -149,13 +163,13 @@ export function Select<Value extends string>({
                 style={{
                   display: 'flex',
                   width: '100%',
-                  height: 30,
+                  height: ITEM_HEIGHT,
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  gap: 4,
+                  gap: 8,
                   boxSizing: 'border-box',
-                  padding: '0 4px',
-                  borderRadius: radius.sm,
+                  padding: '0 6px',
+                  borderRadius: radius.md,
                   outline: 'none',
                   color: text.default,
                   cursor: option.disabled ? 'default' : 'pointer',
