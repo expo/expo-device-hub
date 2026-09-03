@@ -352,8 +352,6 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
           displayScreen={displayScreen}
-          onShutdown={() => handleShutdown(selected)}
-          onRemove={() => handleRemove(selected)}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           showDeviceFrame={showDeviceFrame}
           deviceFrameAssets={DEVICE_FRAME_ASSETS}
@@ -398,6 +396,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
+          onShutdown={selected ? () => handleShutdown(selected) : undefined}
+          onRemove={selected ? () => handleRemove(selected) : undefined}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -442,6 +442,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
+          onShutdown={selected ? () => handleShutdown(selected) : undefined}
+          onRemove={selected ? () => handleRemove(selected) : undefined}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />

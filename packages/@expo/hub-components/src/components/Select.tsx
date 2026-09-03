@@ -14,6 +14,7 @@ import { useState } from 'react';
 
 import { bg, border, icon, radius, shadow, text, textSize } from '../theme/tokens';
 import { CheckIcon, ChevronDownIcon } from './icons';
+import { pillControlStyle } from './pill';
 
 export type SelectOption<Value extends string = string> = {
   value: Value;
@@ -30,7 +31,6 @@ export type SelectProps<Value extends string> = {
   onChange: (value: Value) => void;
 };
 
-const TRIGGER_HEIGHT = 28;
 const ITEM_HEIGHT = 28;
 
 /**
@@ -67,26 +67,10 @@ export function Select<Value extends string>({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         style={{
-          ...textSize.sm,
-          display: 'inline-flex',
+          ...pillControlStyle({ hovered, focused, disabled }),
           width: 'max-content',
-          height: TRIGGER_HEIGHT,
-          flexShrink: 0,
-          alignItems: 'center',
           justifyContent: 'space-between',
-          gap: 6,
-          boxSizing: 'border-box',
           padding: '0 8px 0 10px',
-          border: `1px solid ${border.default}`,
-          borderRadius: radius.lg,
-          outline: 'none',
-          backgroundColor: hovered && !disabled ? bg.hover : bg.element,
-          boxShadow: focused ? `0 0 0 2px ${border.secondary}` : shadow.none,
-          color: text.default,
-          fontFamily: 'inherit',
-          cursor: disabled ? 'default' : 'pointer',
-          opacity: disabled ? 0.5 : 1,
-          transition: 'background-color 120ms ease',
         }}
       >
         <span

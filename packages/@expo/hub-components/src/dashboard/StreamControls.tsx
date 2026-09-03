@@ -1,98 +1,108 @@
+import { type ReactNode } from 'react';
+
 import {
-  BackIcon,
   CameraIcon,
   ControlButton,
-  DotsIcon,
-  Dropdown,
-  DropdownItem,
   HomeIcon,
-  PowerIcon,
-  RecentsIcon,
   RefreshIcon,
   RotateIcon,
-  Switch,
-  TrashIcon,
+  ThemeIcon,
+  bg,
+  border,
+  radius,
 } from '../primitives';
-import { type ColorScheme, type Platform } from './data';
+import { type ColorScheme } from './data';
+
+const GROUP_PADDING = 4;
+const ICON_SIZE = 20;
+const ICON_STROKE = 1.67;
+
+/** A pill that groups toolbar buttons on the shared element surface. */
+function ControlGroup({ children }: { children: ReactNode }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        padding: GROUP_PADDING,
+        boxSizing: 'border-box',
+        border: `1px solid ${border.default}`,
+        borderRadius: radius.xl,
+        backgroundColor: bg.element,
+      }}>
+      {children}
+    </div>
+  );
+}
 
 /**
- * Controls under the device stream. Both platforms share one bar:
- *  - Save · Theme · Home · Reload · More.
- *  - Android's hardware Back + Recents keys live in the More menu (iOS lacks them).
+ * Controls under the device stream. Both platforms share one toolbar: a pill
+ * with Save · Theme · Home · Reload, plus a separate Rotate button. Each button
+ * shows its label as a tooltip on hover. Device-level actions (Android Back and
+ * Recents keys, shutting down or removing the device) live in the inspector's
+ * Device options section.
  *
  * "Reload" reloads the running React Native/Expo bundle via the active device
  * client. "Theme" toggles the **device's** system dark/light appearance (not
  * Hub's own theme).
  */
 export function StreamControls({
-  platform,
-  physical,
   appearance,
   onToggleAppearance,
   onHome,
-  onBack,
-  onRecents,
   onReload,
   onRotate,
   onSave,
-  onShutdown,
-  onRemove,
 }: {
-  platform: Platform;
-  physical: boolean;
   /** The device's current dark/light appearance; null while unknown. */
   appearance: ColorScheme | null;
   /** Flip the device's system appearance (dark ↔ light). */
   onToggleAppearance: () => void;
   /** Press the device Home button. */
   onHome?: () => void;
-  /** Press the Android Back key. */
-  onBack?: () => void;
-  /** Press the Android Recents key. */
-  onRecents?: () => void;
   /** Reload the running React Native/Expo bundle. */
   onReload?: () => void;
-  /** Rotate the device (More menu). */
+  /** Rotate the device. */
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  /** Shut the device down (More menu). */
-  onShutdown?: () => void;
-  /** Remove/delete the device (More menu; hidden for physical devices). */
-  onRemove?: () => void;
 }) {
-  const isAndroid = platform === 'android';
-
-  const more = (
-    <Dropdown
-      side="top"
-      align="end"
-      alignOffset={-80}
-      // Don't return focus to the trigger on close, so it isn't left with a focus ring.
-      onCloseAutoFocus={(event) => event.preventDefault()}
-      trigger={<ControlButton icon={<DotsIcon />} label="More" />}>
-      {isAndroid && <DropdownItem label="Back" Icon={BackIcon} onSelect={onBack} />}
-      {isAndroid && <DropdownItem label="Recents" Icon={RecentsIcon} onSelect={onRecents} />}
-      <DropdownItem label="Rotate" Icon={RotateIcon} onSelect={onRotate} />
-      <DropdownItem label="Shutdown" Icon={PowerIcon} onSelect={onShutdown} />
-      {!physical && (
-        <DropdownItem label="Remove" Icon={TrashIcon} destructive onSelect={onRemove} />
-      )}
-    </Dropdown>
-  );
-
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 24 }}>
-      <ControlButton icon={<CameraIcon />} label="Save" onClick={onSave} />
-
-      {/* Theme toggle — same on both platforms; uses the reusable Switch. */}
-      <Switch checked={appearance === 'dark'} onChange={onToggleAppearance} label="Theme" />
-
-      <ControlButton icon={<HomeIcon />} label="Home" variant="primary" onClick={onHome} />
-
-      <ControlButton icon={<RefreshIcon />} label="Reload" onClick={onReload} />
-
-      {more}
+    <div
+      role="toolbar"
+      aria-label="Device controls"
+      style={{ display: 'flex', alignItems: 'center', gap: 24 }}>
+      <ControlGroup>
+        <ControlButton
+          icon={<CameraIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          label="Save"
+          onClick={onSave}
+        />
+        <ControlButton
+          icon={<ThemeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          label="Theme"
+          role="switch"
+          aria-checked={appearance === 'dark'}
+          onClick={onToggleAppearance}
+        />
+        <ControlButton
+          icon={<HomeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          label="Home"
+          onClick={onHome}
+        />
+        <ControlButton
+          icon={<RefreshIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          label="Reload"
+          onClick={onReload}
+        />
+      </ControlGroup>
+      <ControlGroup>
+        <ControlButton
+          icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+          label="Rotate"
+          onClick={onRotate}
+        />
+      </ControlGroup>
     </div>
   );
 }

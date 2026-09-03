@@ -955,6 +955,53 @@ test('renders boolean device options as compact switches', () => {
   expect(reduceMotion).toContain('transform:translateX(0px)');
 });
 
+test('moves device actions into Device options and hides Remove for physical devices', () => {
+  const android = renderToStaticMarkup(
+    <LogSidebar
+      client={inspectorClient('android')}
+      device={device('android', 'android:pixel-10-pro')}
+      onShutdown={() => {}}
+      onRemove={() => {}}
+    />,
+  );
+  const section = sectionMarkup(android, 'Device options');
+
+  for (const label of ['Back button', 'Recents button', 'Shut down device', 'Remove device']) {
+    expect(section).toContain(`>${label}</span>`);
+  }
+  expect(section.match(/>Press</g)).toHaveLength(2);
+  expect(section).toContain('>Shut down<');
+  expect(section).toContain('>Remove<');
+  expect(section.indexOf('>Back button</span>')).toBeGreaterThan(section.indexOf('>Text size</span>'));
+
+  const physical = renderToStaticMarkup(
+    <LogSidebar
+      client={inspectorClient('android')}
+      device={{ ...device('android', 'android:pixel-10-pro'), physical: true }}
+      onShutdown={() => {}}
+      onRemove={() => {}}
+    />,
+  );
+  expect(physical).toContain('>Shut down device</span>');
+  expect(physical).not.toContain('>Remove device</span>');
+
+  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
+  for (const label of ['Back button', 'Recents button', 'Shut down device', 'Remove device']) {
+    expect(ios).not.toContain(`>${label}</span>`);
+  }
+});
+
+test('styles sidebar action buttons like the select pills', () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} onShutdown={() => {}} />);
+  const toggle = html.slice(html.lastIndexOf('<button', html.indexOf('>Toggle<')), html.indexOf('>Toggle<') + 1);
+  const select = selectMarkup(html, 'Appearance');
+
+  for (const style of ['height:28px', 'border:1px solid var(--expo-theme-border-default)', 'border-radius:var(--expo-radius-lg)', 'background-color:var(--expo-theme-background-element)', 'font-size:14px']) {
+    expect(toggle).toContain(style);
+    expect(select).toContain(style);
+  }
+});
+
 test('disables only the pending Android device setting', () => {
   const client = {
     ...inspectorClient('android'),

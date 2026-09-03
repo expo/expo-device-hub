@@ -1,31 +1,37 @@
-import { type ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
-import { Button, radius, textSize } from '../primitives';
+import { pillControlStyle, text } from '../primitives';
 
-/** A compact secondary button sized like the inspector's select pills. */
+/** A compact action button that matches the inspector's select pills. */
 export function SidebarActionButton({
   children,
-  disabled,
+  disabled = false,
+  destructive = false,
   onClick,
 }: {
   children: ReactNode;
   disabled?: boolean;
+  /** Color the label as a destructive action (e.g. removing a device). */
+  destructive?: boolean;
   onClick: () => void;
 }) {
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+
   return (
-    <Button
-      size="2xs"
-      theme="secondary"
+    <button
+      type="button"
       disabled={disabled}
       onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
       style={{
-        ...textSize.sm,
-        flexShrink: 0,
-        borderRadius: radius.lg,
-        paddingInline: 10,
-        fontWeight: 500,
+        ...pillControlStyle({ hovered, focused, disabled }),
+        color: destructive ? text.danger : text.default,
       }}>
       {children}
-    </Button>
+    </button>
   );
 }

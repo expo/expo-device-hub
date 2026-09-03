@@ -35,6 +35,10 @@ export type LogSidebarProps = {
   onStreamModeChange?: (mode: DeviceStreamMode) => void;
   /** Change the viewer-local HTTP codec. */
   onHttpCodecChange?: (codec: DeviceHttpCodec) => void;
+  /** Shut the selected device down on the host. */
+  onShutdown?: () => void;
+  /** Remove/delete the selected device on the host. Ignored for physical devices. */
+  onRemove?: () => void;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
 };
@@ -54,6 +58,8 @@ export function LogSidebar({
   streamModeAvailability,
   onStreamModeChange,
   onHttpCodecChange,
+  onShutdown,
+  onRemove,
   width = 400,
 }: LogSidebarProps) {
   const deviceFrame = device
@@ -98,11 +104,16 @@ export function LogSidebar({
           overflowY: 'auto',
         }}>
         <CurrentAppSection client={client} />
-        {(client?.capabilities.deviceSettings || deviceFrame) && (
+        {(client?.capabilities.deviceSettings ||
+          client?.platform === 'android' ||
+          deviceFrame ||
+          (client && (onShutdown || onRemove))) && (
           <DeviceOptionsSection
             client={client}
             deviceFrame={deviceFrame}
             showDeviceSettings={client?.capabilities.deviceSettings ?? false}
+            onShutdown={onShutdown}
+            onRemove={device?.physical ? undefined : onRemove}
           />
         )}
         {client?.capabilities.activity && <ActivitySection client={client} />}

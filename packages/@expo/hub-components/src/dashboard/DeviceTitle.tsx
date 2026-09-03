@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { type ConnectionStatus } from '@expo/hub-client';
-import { border, Button, font, icon, radius, text } from '../primitives';
+import { bg, border, Button, font, icon, radius, text } from '../primitives';
 import { type Device } from './data';
 
 export type DeviceTitleProps = {
@@ -95,6 +95,8 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
         borderWidth: 0.5,
         borderColor: border.default,
         borderRadius: radius.full,
+        // Sits on the gray stream canvas, so it takes the sidebar surface color.
+        backgroundColor: bg.default,
       }}
     />
   );

@@ -4,6 +4,7 @@ import { type DeviceClient, type DeviceSettingKey } from '@expo/hub-client';
 import { Select, type SelectOption } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { KeyboardSection } from './KeyboardSection';
+import { SidebarActionButton } from './SidebarActionButton';
 import { SidebarRow, SidebarSwitch } from './SidebarRow';
 
 const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
@@ -79,17 +80,24 @@ export type DeviceFrameOption = {
 
 /**
  * Device-wide appearance, connectivity, and accessibility settings, plus iOS
- * keyboard controls and the viewer-local device frame option.
+ * keyboard controls, the viewer-local device frame option, and device-level
+ * actions (Android Back and Recents keys, shutting down or removing the device).
  */
 export function DeviceOptionsSection({
   client,
   deviceFrame,
   showDeviceSettings = true,
+  onShutdown,
+  onRemove,
 }: {
   client?: DeviceClient;
   deviceFrame?: DeviceFrameOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
   showDeviceSettings?: boolean;
+  /** Shut the device down on the host. */
+  onShutdown?: () => void;
+  /** Remove/delete the device on the host. Omit for physical devices. */
+  onRemove?: () => void;
 }) {
   const [open, setOpen] = useState(true);
   const unavailableFrameDescriptionId = useId();
@@ -191,6 +199,33 @@ export function DeviceOptionsSection({
       )}
 
       {keyboardVisible && client && <KeyboardSection client={client} />}
+
+      {client && platform === 'android' && (
+        <>
+          <SidebarRow label="Back button">
+            <SidebarActionButton onClick={() => client.pressButton('back')}>Press</SidebarActionButton>
+          </SidebarRow>
+          <SidebarRow label="Recents button">
+            <SidebarActionButton onClick={() => client.pressButton('recents')}>
+              Press
+            </SidebarActionButton>
+          </SidebarRow>
+        </>
+      )}
+
+      {client && onShutdown && (
+        <SidebarRow label="Shut down device">
+          <SidebarActionButton onClick={onShutdown}>Shut down</SidebarActionButton>
+        </SidebarRow>
+      )}
+
+      {client && onRemove && (
+        <SidebarRow label="Remove device">
+          <SidebarActionButton destructive onClick={onRemove}>
+            Remove
+          </SidebarActionButton>
+        </SidebarRow>
+      )}
     </CollapsibleSection>
   );
 }

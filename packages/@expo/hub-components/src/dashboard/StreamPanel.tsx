@@ -45,8 +45,6 @@ export function StreamPanel({
   agentInteraction,
   DeviceScreen,
   displayScreen,
-  onShutdown,
-  onRemove,
   framed = true,
   showDeviceFrame = true,
   deviceFrameAssets,
@@ -58,10 +56,6 @@ export function StreamPanel({
   DeviceScreen: ComponentType<DeviceScreenProps>;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
-  /** Shut the streamed device down (More menu). */
-  onShutdown?: () => void;
-  /** Remove/delete the streamed device (More menu). */
-  onRemove?: () => void;
   /**
    * Whether to draw the hairline seams toward the sidebars. Compact layouts
    * disable this so the center view reaches every viewport edge unbroken.
@@ -125,23 +119,17 @@ export function StreamPanel({
         </div>
       </div>
       <StreamControls
-        platform={device.platform}
-        physical={device.physical}
         appearance={client.appearance}
         onToggleAppearance={() =>
           client.setAppearance(client.appearance === 'dark' ? 'light' : 'dark')
         }
         onHome={() => client.pressButton('home')}
-        onBack={() => client.pressButton('back')}
-        onRecents={() => client.pressButton('recents')}
         onReload={() => client.reload()}
         onRotate={() => client.rotate()}
         onSave={async () => {
           const blob = await client.screenshot();
           if (blob) downloadBlob(blob, screenshotFilename(device.name));
         }}
-        onShutdown={onShutdown}
-        onRemove={onRemove}
       />
     </section>
   );
