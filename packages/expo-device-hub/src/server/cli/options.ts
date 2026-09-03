@@ -18,8 +18,10 @@ export const WEBRTC_ICE_POLICIES = ['all', 'relay'] as const;
 export type WebRtcIcePolicy = (typeof WEBRTC_ICE_POLICIES)[number];
 export const ANDROID_STREAM_SOURCES = ['scrcpy', 'grpc-screenshot'] as const;
 export type AndroidStreamSource = (typeof ANDROID_STREAM_SOURCES)[number];
+export const DEFAULT_ANDROID_STREAM_SOURCE: AndroidStreamSource = 'grpc-screenshot';
 export const GRPC_IMAGE_MODES = ['png', 'mmap'] as const;
 export type GrpcImageMode = (typeof GRPC_IMAGE_MODES)[number];
+export const DEFAULT_GRPC_IMAGE_MODE: GrpcImageMode = 'mmap';
 
 export const HELP = `expo-device-hub — manage iOS simulators and Android emulators from the browser
 
@@ -35,8 +37,8 @@ Options:
       --mjpeg-quality <quality> MJPEG quality (0.05-1)
       --video-bitrate <bps>  H.264/WebRTC target bitrate (100000-50000000)
       --video-fps <fps>      H.264/WebRTC frame rate (1-120)
-      --stream-source <source> Android capture source: ${ANDROID_STREAM_SOURCES.join(', ')} (default: scrcpy)
-      --grpc-image-mode <mode> gRPC frames: ${GRPC_IMAGE_MODES.join(', ')} (default: png; used when the gRPC source is active)
+      --stream-source <source> Android capture source: ${ANDROID_STREAM_SOURCES.join(', ')} (default: ${DEFAULT_ANDROID_STREAM_SOURCE})
+      --grpc-image-mode <mode> gRPC frames: ${GRPC_IMAGE_MODES.join(', ')} (default: ${DEFAULT_GRPC_IMAGE_MODE}; used when the gRPC source is active)
       --stun-url <urls>      Comma-separated STUN URL(s) for WebRTC ICE
       --turn-url <urls>      Comma-separated TURN URL(s) for WebRTC ICE
       --turn-username <name> TURN username (requires --turn-credential and --turn-url)

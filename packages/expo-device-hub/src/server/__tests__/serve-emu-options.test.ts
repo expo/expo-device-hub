@@ -9,20 +9,28 @@ import {
   standaloneServeEmuOptions,
 } from '../serve-emu-options';
 
+const DEFAULT_ANDROID_STREAM = {
+  streamMode: 'grpc-screenshot',
+  grpcImageMode: 'mmap',
+} as const;
+
 describe('standaloneServeEmuOptions', () => {
-  test('uses serve-emu WebSocket defaults without Hub stream flags', () => {
+  test('defaults Android streaming to gRPC with MMAP', () => {
     expect(standaloneServeEmuOptions(parseCliOptions([]))).toEqual({
+      ...DEFAULT_ANDROID_STREAM,
       streamSettings: { transport: 'websocket' },
     });
     expect(standaloneServeEmuOptions(parseCliOptions(['--transport', 'mjpeg']))).toEqual({
+      ...DEFAULT_ANDROID_STREAM,
       streamSettings: { transport: 'websocket' },
     });
     expect(standaloneServeEmuOptions(parseCliOptions(['--transport', 'h264']))).toEqual({
+      ...DEFAULT_ANDROID_STREAM,
       streamSettings: { transport: 'websocket' },
     });
   });
 
-  test('maps shared encoder flags onto scrcpy startup options', () => {
+  test('maps shared encoder flags onto Android startup options', () => {
     expect(
       standaloneServeEmuOptions(
         parseCliOptions([
@@ -37,6 +45,7 @@ describe('standaloneServeEmuOptions', () => {
         ]),
       ),
     ).toEqual({
+      ...DEFAULT_ANDROID_STREAM,
       maxSize: 1280,
       bitRate: 4_000_000,
       maxFps: 24,
@@ -44,19 +53,19 @@ describe('standaloneServeEmuOptions', () => {
     });
   });
 
-  test('maps the selected gRPC source and MMAP image mode', () => {
+  test('allows opting out of the gRPC and MMAP defaults', () => {
     expect(
       standaloneServeEmuOptions(
         parseCliOptions([
           '--stream-source',
-          'grpc-screenshot',
+          'scrcpy',
           '--grpc-image-mode',
-          'mmap',
+          'png',
         ]),
       ),
     ).toEqual({
-      streamMode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
+      streamMode: 'scrcpy',
+      grpcImageMode: 'png',
       streamSettings: { transport: 'websocket' },
     });
   });
@@ -82,6 +91,7 @@ describe('standaloneServeEmuOptions', () => {
         ]),
       ),
     ).toEqual({
+      ...DEFAULT_ANDROID_STREAM,
       streamSettings: {
         transport: 'webrtc',
         codec: 'h264',
@@ -100,6 +110,7 @@ describe('standaloneServeEmuOptions', () => {
 
   test('uses serve-emu WebRTC ICE defaults', () => {
     expect(standaloneServeEmuOptions(parseCliOptions(['--transport', 'webrtc']))).toEqual({
+      ...DEFAULT_ANDROID_STREAM,
       streamSettings: {
         transport: 'webrtc',
         codec: 'h264',
@@ -129,21 +140,20 @@ describe('standaloneServeEmuOptions', () => {
     });
   });
 
-  test('round-trips through the server environment payload', () => {
-    const options = parseCliOptions([
-      '--transport',
-      'webrtc',
-      '--video-fps',
-      '30',
-      '--stream-source',
-      'grpc-screenshot',
-      '--grpc-image-mode',
-      'mmap',
-    ]);
+  test('round-trips the defaults through the standalone server environment payload', () => {
+    const options = parseCliOptions(['--transport', 'webrtc', '--video-fps', '30']);
     expect(readStandaloneServeEmuOptions(encodeStandaloneServeEmuOptions(options))).toEqual(
       standaloneServeEmuOptions(options),
     );
+  });
+
+  test('uses the defaults when loaded as an Expo CLI plugin without a payload', () => {
+    expect(readStandaloneServeEmuOptions(undefined)).toEqual({
+      ...DEFAULT_ANDROID_STREAM,
+      streamSettings: { transport: 'websocket' },
+    });
     expect(readStandaloneServeEmuOptions('not json')).toEqual({
+      ...DEFAULT_ANDROID_STREAM,
       streamSettings: { transport: 'websocket' },
     });
   });
