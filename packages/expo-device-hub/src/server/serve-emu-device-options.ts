@@ -44,6 +44,12 @@ export interface BoldTextStatus {
   raw: string;
 }
 
+export interface DisplayDensityStatus {
+  scale: number;
+  widthDp: number;
+  raw: string;
+}
+
 export interface AdbCommandResult {
   status: number | null;
   stdout: string;
@@ -311,6 +317,92 @@ export async function setBoldText(
   return getBoldText(serial, runner);
 }
 
+const DISPLAY_DENSITY_MIN_DPI = 72;
+
+interface DisplayDensityReading {
+  physical: number;
+  override: number | null;
+  raw: string;
+}
+
+/** `wm density` reports the physical density and, only when set, the override. */
+async function readDisplayDensity(
+  serial: string,
+  runner: AdbRunner,
+): Promise<DisplayDensityReading> {
+  const raw = await runAdb(serial, ['wm', 'density'], runner, ADB_QUERY_TIMEOUT_MS);
+  const physical = Number(/Physical density:\s*(\d+)/.exec(raw)?.[1]);
+  if (!Number.isFinite(physical) || physical <= 0) {
+    throw new Error(`Could not parse wm density output: ${raw}`);
+  }
+  const override = /Override density:\s*(\d+)/.exec(raw)?.[1];
+  return { physical, override: override === undefined ? null : Number(override), raw };
+}
+
+interface DisplaySizeReading {
+  widthPx: number;
+  heightPx: number;
+}
+
+/** `wm size` reports the physical size and, only when set, the override. */
+async function readDisplaySize(
+  serial: string,
+  runner: AdbRunner,
+): Promise<DisplaySizeReading> {
+  const raw = await runAdb(serial, ['wm', 'size'], runner, ADB_QUERY_TIMEOUT_MS);
+  const size =
+    /Override size:\s*(\d+)x(\d+)/.exec(raw) ?? /Physical size:\s*(\d+)x(\d+)/.exec(raw);
+  const widthPx = Number(size?.[1]);
+  const heightPx = Number(size?.[2]);
+  if (!Number.isFinite(widthPx) || widthPx <= 0 || !Number.isFinite(heightPx) || heightPx <= 0) {
+    throw new Error(`Could not parse wm size output: ${raw}`);
+  }
+  return { widthPx, heightPx };
+}
+
+/** Report the override as a ratio of the device's own physical density. */
+export async function getDisplayDensity(
+  serial: string,
+  runner: AdbRunner = runSystemAdb,
+): Promise<DisplayDensityStatus> {
+  const [{ physical, override, raw }, { widthPx, heightPx }] = await Promise.all([
+    readDisplayDensity(serial, runner),
+    readDisplaySize(serial, runner),
+  ]);
+  const density = override ?? physical;
+  return {
+    scale: Math.round((density / physical) * 1000) / 1000,
+    // `swNNNdp` keys off the smallest dimension, so this survives rotation.
+    widthDp: Math.round((Math.min(widthPx, heightPx) * 160) / density),
+    raw,
+  };
+}
+
+/** The default step must clear the override, not pin it to the physical density. */
+export async function setDisplayDensity(
+  serial: string,
+  scale: number,
+  runner: AdbRunner = runSystemAdb,
+): Promise<DisplayDensityStatus> {
+  if (!Number.isFinite(scale) || scale < 0.5 || scale > 2) {
+    throw new Error('display size scale must be between 0.5 and 2.0');
+  }
+  const { physical } = await readDisplayDensity(serial, runner);
+  const density = Math.round(physical * scale);
+  if (density < DISPLAY_DENSITY_MIN_DPI) {
+    throw new Error(
+      `display density ${density} is below the Android minimum of ${DISPLAY_DENSITY_MIN_DPI}`,
+    );
+  }
+  await runAdb(
+    serial,
+    ['wm', 'density', density === physical ? 'reset' : String(density)],
+    runner,
+    ADB_MUTATION_TIMEOUT_MS,
+  );
+  return getDisplayDensity(serial, runner);
+}
+
 async function readJsonBody(request: Request): Promise<unknown> {
   const contentLength = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) {
@@ -491,6 +583,38 @@ export async function handleServeEmuDeviceOptionRequest(
         return Response.json({
           ok: true,
           fontWeight: await setBoldText(serial, enabled, runner),
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    return new Response('method not allowed', { status: 405 });
+  }
+
+  if (pathname === '/api/display-density') {
+    if (request.method === 'GET') {
+      try {
+        return Response.json({
+          ok: true,
+          displayDensity: await getDisplayDensity(serial, runner),
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (request.method === 'POST') {
+      try {
+        const payload = await readJsonBody(request);
+        if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+          throw new Error('display density payload must be an object');
+        }
+        const scale = Number((payload as Record<string, unknown>).scale);
+        if (!Number.isFinite(scale) || scale < 0.5 || scale > 2) {
+          throw new Error('scale must be a number between 0.5 and 2.0');
+        }
+        return Response.json({
+          ok: true,
+          displayDensity: await setDisplayDensity(serial, scale, runner),
         });
       } catch (error) {
         return errorResponse(error);
