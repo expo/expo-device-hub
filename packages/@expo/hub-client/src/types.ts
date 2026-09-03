@@ -146,6 +146,74 @@ export interface DeviceStreamEncoderSettings {
   h264Fps: number;
 }
 
+/** One WebRTC telemetry sample, normally collected once per second. */
+export interface DeviceStreamStatsSample {
+  atMs: number;
+  /** Frames produced by the active backend WebRTC source/encoder. */
+  serverFps: number | null;
+  /** Video frames actually presented by the browser. */
+  clientFps: number | null;
+  /** Actual inbound video media bitrate, derived from `bytesReceived`. */
+  clientBitrateBps: number | null;
+  /** Packet loss over this sample window, expressed as a ratio from 0 to 1. */
+  clientPacketLossRatio: number | null;
+  /** Current inbound RTP jitter reported by the browser. */
+  clientJitterMs: number | null;
+  /** Mean jitter-buffer delay per emitted frame over this sample window. */
+  clientJitterBufferMs: number | null;
+  /** Browser-decoded frames dropped during this sample window. */
+  clientDroppedFrames: number | null;
+  /** Playback freezes reported during this sample window. */
+  clientFreezeCount: number | null;
+  /** Total time spent frozen during this sample window. */
+  clientFreezeDurationMs: number | null;
+  /** Current round-trip time for the browser's selected ICE candidate pair. */
+  clientRoundTripMs: number | null;
+  /** Whether the browser's selected ICE path is direct, relayed, or unknown. */
+  clientIcePath: 'direct' | 'relay' | 'unknown';
+}
+
+/** Latest server-side WebRTC encoder statistics for this viewer. */
+export interface DeviceStreamEncoderStats {
+  codec: string | null;
+  encodeFps: number | null;
+  targetBitrateBps: number | null;
+  encodeMsPerFrame: number | null;
+  framesEncoded: number | null;
+  framesSent: number | null;
+  framesDropped: number | null;
+  packetLossRatio: number | null;
+  qualityLimitationReason: string | null;
+  /** Android publisher submissions per second, derived from consecutive server snapshots. */
+  publisherFps: number | null;
+  /** H.264 frames accepted by serve-emu's native media track. */
+  publisherSubmittedFrames: number | null;
+  /** Frames rejected by serve-emu's keyframe gate or native backpressure. */
+  publisherDroppedFrames: number | null;
+  /** Submitted H.264 payload bitrate, excluding RTP/SRTP/transport overhead and retransmits. */
+  payloadBitrateBps: number | null;
+}
+
+/** Latest cumulative server-side capture and pacing counters. */
+export interface DeviceStreamCaptureStats {
+  screenFrames: number | null;
+  idleFrames: number | null;
+  offeredFrames: number | null;
+  forwardedFrames: number | null;
+  pumpRestarts: number | null;
+}
+
+/** Bounded WebRTC telemetry history owned by the device connection. */
+export interface DeviceStreamStats {
+  samples: readonly DeviceStreamStatsSample[];
+  encoder: DeviceStreamEncoderStats | null;
+  capture: DeviceStreamCaptureStats | null;
+  /** True when the peer has not produced a successful sample for four seconds. */
+  stale: boolean;
+  /** True when the server-side statistics poll has not succeeded for four seconds. */
+  serverStale: boolean;
+}
+
 /** Explicit backend feature flags used to omit unsupported inspector sections and controls. */
 export interface DeviceCapabilities {
   deviceSettings: boolean;
@@ -333,6 +401,10 @@ export interface DeviceClient {
   streamSettingsPending: boolean;
   /** Patch one or more runtime encoder values. */
   updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => void;
+  /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */
+  streamStats: DeviceStreamStats | null;
+  /** Enable telemetry polling while a consumer is displaying WebRTC statistics. */
+  setStreamStatsEnabled: (enabled: boolean) => void;
   /** Requested WebRTC codec for this viewer. */
   webRtcCodec: DeviceWebRtcCodec;
   setWebRtcCodec: (codec: DeviceWebRtcCodec) => void;

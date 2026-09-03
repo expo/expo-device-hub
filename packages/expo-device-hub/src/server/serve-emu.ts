@@ -6,11 +6,11 @@ import {
   SERVE_EMU_OPTIONS_ENV,
   serveEmuWebSocketOptions,
 } from './serve-emu-options';
-import { handleServeEmuDeviceOptionRequest } from './serve-emu-device-options';
 
 export const EMU_PREFIX = '/vendor/serve-emu';
 
-const router = createRouter(readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]));
+const serveEmuOptions = readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]);
+const router = createRouter(serveEmuOptions);
 
 function stopAll(): void {
   try {
@@ -25,21 +25,6 @@ export function handleEmuRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
   const rest = `${url.pathname.slice(EMU_PREFIX.length) || '/'}${url.search}`;
   const forwarded = new Request(`${url.origin}${rest}`, request);
-  const pathname = new URL(forwarded.url).pathname;
-  if (pathname === '/api/network' || pathname === '/api/font-scale') {
-    return router
-      .ensure(url.searchParams.get('device'))
-      .then(async ({ serial }) =>
-        (await handleServeEmuDeviceOptionRequest(forwarded, serial)) ??
-        new Response('not found', { status: 404 }),
-      )
-      .catch((error) =>
-        Response.json(
-          { ok: false, error: error instanceof Error ? error.message : String(error) },
-          { status: 503 },
-        ),
-      );
-  }
   return router.handleRequest(forwarded);
 }
 

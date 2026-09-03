@@ -458,9 +458,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     stream: webRtcStream,
     error: webRtcError,
     markFrameDecoded: markWebRtcFrameDecoded,
+    streamStats,
+    setStreamStatsEnabled,
   } = useWebRtcStream({
     offerUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/offer', targetDevice) : '',
     closeUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/close', targetDevice) : '',
+    statsUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/stats', targetDevice) : '',
     enabled: active && useWebRtc,
     codec: 'h264',
     iceServers:
@@ -523,9 +526,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
       if (firstFrame) {
         firstFrame = false;
-        markWebRtcFrameDecoded();
         setWebRtcVideoReady(true);
       }
+      markWebRtcFrameDecoded();
       fpsCount++;
       const now = performance.now();
       if (now - fpsStartedAt >= 1000) {
@@ -1232,6 +1235,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSettings: null,
     streamSettingsPending: false,
     updateStreamSettings: () => {},
+    streamStats,
+    setStreamStatsEnabled,
     webRtcCodec: 'h264',
     setWebRtcCodec: () => {},
     streamCapabilities: {

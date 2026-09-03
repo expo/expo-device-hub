@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import {
   type DeviceClient,
@@ -8,10 +8,17 @@ import {
   type DeviceStreamMode,
   type DeviceWebRtcCodec,
 } from '@expo/hub-client';
-import { SegmentedControl, Select, type SelectOption, text, textSize } from '../primitives';
+import {
+  SegmentedControl,
+  Select,
+  type SelectOption,
+  text,
+  textSize,
+} from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { SidebarRow } from './SidebarRow';
 import { type StreamModeAvailability } from './StreamSection';
+import { StreamStatistics } from './StreamStatistics';
 
 type StreamTransport = 'http' | 'websocket' | 'webrtc';
 
@@ -101,6 +108,7 @@ function withCurrentValue(
     : [{ value: current, label: label(value) }, ...options];
 }
 
+
 /** Viewer transport, backend-supported codecs, and optional runtime encoder controls. */
 export function StreamOptionsSection({
   client,
@@ -140,7 +148,13 @@ export function StreamOptionsSection({
   const settingsDisabled = !settingsReady || client.streamSettingsPending;
   const transport: StreamTransport =
     activeStreamMode === 'webrtc' ? 'webrtc' : primaryTransport;
+  const setStreamStatsEnabled = client.setStreamStatsEnabled;
   const httpAvailable = availability.mjpeg || availability.h264;
+
+  useEffect(() => {
+    setStreamStatsEnabled(open && transport === 'webrtc');
+    return () => setStreamStatsEnabled(false);
+  }, [open, setStreamStatsEnabled, transport]);
 
   function httpCodecAvailable(codec: DeviceHttpCodec): boolean {
     if (codec === 'h264') return availability.h264;
@@ -228,7 +242,10 @@ export function StreamOptionsSection({
         </SidebarRow>
       )}
       {webRtcCodecOptions.length > 0 && (
-        <SidebarRow label="WebRTC codec" borderBottom={client.capabilities.streamSettings}>
+        <SidebarRow
+          label="WebRTC codec"
+          borderBottom={client.capabilities.streamSettings || transport === 'webrtc'}
+        >
           <SegmentedControl
             ariaLabel="WebRTC codec"
             options={webRtcCodecOptions.map((option) => ({
@@ -300,7 +317,7 @@ export function StreamOptionsSection({
               onChange={(value) => patchSetting('h264Fps', Number(value))}
             />
           </SidebarRow>
-          <SidebarRow label="Video bitrate" borderBottom={false}>
+          <SidebarRow label="Video bitrate" borderBottom={transport === 'webrtc'}>
             <Select
               ariaLabel="Video bitrate"
               value={String(settings.h264Bitrate)}
@@ -314,6 +331,9 @@ export function StreamOptionsSection({
             />
           </SidebarRow>
         </>
+      )}
+      {transport === 'webrtc' && (
+        <StreamStatistics stats={client.streamStats} platform={client.platform} />
       )}
     </CollapsibleSection>
   );

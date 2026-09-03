@@ -801,9 +801,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     failure: webRtcFailure,
     error: webRtcError,
     markFrameDecoded: markWebRtcFrameDecoded,
+    streamStats,
+    setStreamStatsEnabled,
   } = useWebRtcStream({
     offerUrl: config ? `${config.url}/webrtc/offer` : '',
     closeUrl: config ? `${config.url}/webrtc/close` : '',
+    statsUrl: config ? `${config.url}/webrtc/stats` : '',
     enabled: active && useWebRtc && !!config,
     codec: activeWebRtcCodec,
     iceServers: config?.webRtcIceServers,
@@ -845,9 +848,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setScreen({ width: video.videoWidth, height: video.videoHeight });
       }
       onAvccFrame();
+      markWebRtcFrameDecoded();
       if (firstFrame) {
         firstFrame = false;
-        markWebRtcFrameDecoded();
         setStatus('streaming');
         setError(null);
       }
@@ -1412,6 +1415,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     streamSettings,
     streamSettingsPending,
     updateStreamSettings,
+    streamStats,
+    setStreamStatsEnabled,
     webRtcCodec,
     setWebRtcCodec,
     capabilities: {

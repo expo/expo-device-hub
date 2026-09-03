@@ -43,7 +43,7 @@
     "/expo-module.config.json"
   ],
   "dependencies": {
-    "@fastify/busboy": "3.2.0",
+    "@fastify/busboy": "^3.2.0",
     "node-datachannel": "^0.32.3",
     "ws": "^8.21.0",
     "zustand": "^5.0.15"
@@ -76,6 +76,15 @@
   "vendorDependencies": {
     "serve-emu": "workspace:*",
     "@expo/serve-sim": "workspace:*"
+  },
+  "vendorRuntimeDependencies": {
+    "@expo/serve-sim": {
+      "ws": "^8.21.0"
+    },
+    "serve-emu": {
+      "@fastify/busboy": "^3.2.0",
+      "node-datachannel": "^0.32.3"
+    }
   },
   "scripts": {
     "start": "expo start --web",
