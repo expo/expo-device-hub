@@ -30,61 +30,105 @@ export function androidTextSizeForFontScale(value: unknown): AndroidTextSize | n
   ).value;
 }
 
+export type AndroidDeviceSettingPath = '/api/uimode' | '/api/network' | '/api/font-scale';
+
 export interface AndroidDeviceSettingRequest {
-  path: '/api/uimode' | '/api/network' | '/api/font-scale';
+  path: AndroidDeviceSettingPath;
   body: Record<string, unknown>;
 }
 
-export function androidDeviceSettingPath(
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+interface AndroidDeviceSettingSpec {
+  path: AndroidDeviceSettingPath;
+  /** Whether the 3s poll refreshes this key. */
+  polled: boolean;
+  /** Hub value to request body, or null when the value is not writable. */
+  encode: (value: string) => Record<string, unknown> | null;
+  /** Server payload to Hub value, or null when it cannot be read. */
+  decode: (data: Record<string, unknown>) => string | null;
+}
+
+const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSettingSpec> = {
+  appearance: {
+    path: '/api/uimode',
+    polled: false,
+    encode: (value) =>
+      value === 'light' || value === 'dark' ? { night: value === 'dark' ? 'yes' : 'no' } : null,
+    decode: (data) => {
+      if (data.night === 'yes') return 'dark';
+      if (data.night === 'no' || data.night === 'auto') return 'light';
+      return null;
+    },
+  },
+  network: {
+    path: '/api/network',
+    polled: true,
+    encode: (value) => (value === 'on' || value === 'off' ? { enabled: value === 'on' } : null),
+    decode: (data) => {
+      const network = asRecord(data.network);
+      if (!network) return null;
+      if (network.enabled === true) return 'on';
+      if (network.enabled === false) return 'off';
+      return network.enabled === null ? 'unknown' : null;
+    },
+  },
+  'text-size': {
+    path: '/api/font-scale',
+    polled: true,
+    encode: (value) => {
+      const scale = androidFontScaleForTextSize(value);
+      return scale === null ? null : { scale };
+    },
+    decode: (data) => {
+      const fontScale = asRecord(data.fontScale);
+      return fontScale === null ? null : androidTextSizeForFontScale(fontScale.scale);
+    },
+  },
+};
+
+export const ANDROID_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = Object.keys(
+  ANDROID_DEVICE_SETTINGS,
+) as AndroidDeviceSettingKey[];
+
+export const ANDROID_POLLED_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] =
+  ANDROID_DEVICE_SETTING_KEYS.filter((key) => ANDROID_DEVICE_SETTINGS[key].polled);
+
+export function createAndroidDeviceSettingVersions(): Record<AndroidDeviceSettingKey, number> {
+  return Object.fromEntries(ANDROID_DEVICE_SETTING_KEYS.map((key) => [key, 0])) as Record<
+    AndroidDeviceSettingKey,
+    number
+  >;
+}
+
+export function androidDeviceSettingPathFor(
   key: AndroidDeviceSettingKey,
-): AndroidDeviceSettingRequest['path'] {
-  if (key === 'appearance') return '/api/uimode';
-  if (key === 'network') return '/api/network';
-  return '/api/font-scale';
+): AndroidDeviceSettingPath {
+  return ANDROID_DEVICE_SETTINGS[key].path;
+}
+
+function isAndroidDeviceSettingKey(key: DeviceSettingKey): key is AndroidDeviceSettingKey {
+  return Object.hasOwn(ANDROID_DEVICE_SETTINGS, key);
 }
 
 export function androidDeviceSettingRequest(
   key: DeviceSettingKey,
   value: string,
 ): AndroidDeviceSettingRequest | null {
-  if (key === 'appearance' && (value === 'light' || value === 'dark')) {
-    return {
-      path: androidDeviceSettingPath(key),
-      body: { night: value === 'dark' ? 'yes' : 'no' },
-    };
-  }
-  if (key === 'network' && (value === 'on' || value === 'off')) {
-    return { path: androidDeviceSettingPath(key), body: { enabled: value === 'on' } };
-  }
-  if (key === 'text-size') {
-    const scale = androidFontScaleForTextSize(value);
-    return scale === null ? null : { path: androidDeviceSettingPath(key), body: { scale } };
-  }
-  return null;
+  if (!isAndroidDeviceSettingKey(key)) return null;
+  const spec = ANDROID_DEVICE_SETTINGS[key];
+  const body = spec.encode(value);
+  return body === null ? null : { path: spec.path, body };
 }
 
 export function parseAndroidDeviceSetting(
   key: AndroidDeviceSettingKey,
   payload: unknown,
 ): string | null {
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return null;
-  const data = payload as Record<string, unknown>;
-  if (data.ok !== true) return null;
-
-  if (key === 'appearance') {
-    if (data.night === 'yes') return 'dark';
-    if (data.night === 'no' || data.night === 'auto') return 'light';
-    return null;
-  }
-  if (key === 'network') {
-    const network = data.network;
-    if (!network || typeof network !== 'object' || Array.isArray(network)) return null;
-    const enabled = (network as Record<string, unknown>).enabled;
-    if (enabled === true) return 'on';
-    if (enabled === false) return 'off';
-    return enabled === null ? 'unknown' : null;
-  }
-  const fontScale = data.fontScale;
-  if (!fontScale || typeof fontScale !== 'object' || Array.isArray(fontScale)) return null;
-  return androidTextSizeForFontScale((fontScale as Record<string, unknown>).scale);
+  const data = asRecord(payload);
+  if (!data || data.ok !== true) return null;
+  return ANDROID_DEVICE_SETTINGS[key].decode(data);
 }
