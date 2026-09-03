@@ -3,7 +3,7 @@ import {
   type DeviceHttpCodec,
   type DeviceStreamMode,
 } from '@expo/hub-client';
-import { SidebarToggle } from '../primitives';
+import { SidebarToggle, bg } from '../primitives';
 import { ActivitySection } from './ActivitySection';
 import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
 import { CurrentAppSection } from './CurrentAppSection';
@@ -74,6 +74,7 @@ export function LogSidebar({
         height: '100vh',
         boxSizing: 'border-box',
         padding: '32px 0 0',
+        backgroundColor: bg.default,
         overflow: 'hidden',
       }}>
       {onToggle && (

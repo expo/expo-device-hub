@@ -300,7 +300,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         minWidth: 0,
         height: '100vh',
         boxSizing: 'border-box',
-        backgroundColor: bg.subtle,
+        backgroundColor: bg.default,
         color: text.default,
         fontFamily: 'var(--expo-font-sans)',
         overflow: 'hidden',
@@ -359,7 +359,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           deviceFrameAssets={DEVICE_FRAME_ASSETS}
         />
       ) : (
-        <EmptyState platform={platform} />
+        <EmptyState
+          platform={platform}
+          framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
+        />
       )}
 
       {sidebars.rightDocked && (

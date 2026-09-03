@@ -6,7 +6,7 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from '@expo/hub-client';
-import { bg, border, radius, shadow } from '../primitives';
+import { bg, border } from '../primitives';
 import { type Device } from './data';
 import { DeviceTitle } from './DeviceTitle';
 import { type DeviceFrameAssets } from './deviceFrame';
@@ -35,9 +35,9 @@ function screenshotFilename(name: string): string {
 
 /**
  * Center panel: the selected device's stream and its controls. Rendered as the
- * raised white content card from the Expo dashboard shell — `bg.default` on the
- * `bg.subtle` canvas, a `border.secondary` hairline, `radius.lg` corners and a
- * `shadow.sm` — so it floats above the gray sidebars exactly like the website.
+ * gray canvas between the white sidebars — `bg.subtle` from edge to edge,
+ * separated from each sidebar by the same `border.default` hairline that
+ * divides the inspector sections.
  */
 export function StreamPanel({
   device,
@@ -63,8 +63,8 @@ export function StreamPanel({
   /** Remove/delete the streamed device (More menu). */
   onRemove?: () => void;
   /**
-   * Whether to render the raised dashboard card around the stream. Compact
-   * layouts disable this so the center view reaches every viewport edge.
+   * Whether to draw the hairline seams toward the sidebars. Compact layouts
+   * disable this so the center view reaches every viewport edge unbroken.
    */
   framed?: boolean;
   /** Viewer-local preference for displaying supported device artwork. */
@@ -83,14 +83,10 @@ export function StreamPanel({
         justifyContent: 'center',
         gap: 40,
         padding: 40,
-        // Half margin on the sides so the stream card sits closer to the resize
-        // seams; full top/bottom margin keeps its vertical framing unchanged.
-        margin: framed ? '16px 8px' : 0,
         boxSizing: 'border-box',
-        backgroundColor: bg.default,
-        border: framed ? `1px solid ${border.secondary}` : 'none',
-        borderRadius: framed ? radius.lg : 0,
-        boxShadow: framed ? shadow.sm : 'none',
+        backgroundColor: bg.subtle,
+        borderLeft: framed ? `1px solid ${border.default}` : 'none',
+        borderRight: framed ? `1px solid ${border.default}` : 'none',
         overflow: 'hidden',
       }}>
       <div

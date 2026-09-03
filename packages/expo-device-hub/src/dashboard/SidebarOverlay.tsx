@@ -59,7 +59,7 @@ export function SidebarOverlay({
           top: 0,
           [side]: 0,
           zIndex: backdropZIndex + 1,
-          backgroundColor: bg.subtle,
+          backgroundColor: bg.default,
           boxShadow: shadow.lg,
           pointerEvents: visible ? 'auto' : 'none',
           transform: visible

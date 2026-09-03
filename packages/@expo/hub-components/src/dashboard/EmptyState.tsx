@@ -1,4 +1,4 @@
-import { PhoneIcon, bg, border, heading, icon, radius, shadow, text, textSize } from '../primitives';
+import { PhoneIcon, bg, border, heading, icon, radius, text, textSize } from '../primitives';
 import { type Platform } from './data';
 
 /**
@@ -6,7 +6,14 @@ import { type Platform } from './data';
  * booted simulators, emulators, or connected physical devices to mirror. Points
  * the user at the sidebar's + buttons to boot one.
  */
-export function EmptyState({ platform }: { platform?: Platform }) {
+export function EmptyState({
+  platform,
+  framed = true,
+}: {
+  platform?: Platform;
+  /** Whether to draw the hairline seams toward the sidebars (see StreamPanel). */
+  framed?: boolean;
+}) {
   const title =
     platform === 'ios'
       ? 'No booted simulators'
@@ -31,14 +38,11 @@ export function EmptyState({ platform }: { platform?: Platform }) {
         justifyContent: 'center',
         gap: 16,
         padding: 40,
-        // Match StreamPanel: half margin on the sides so the card sits closer to
-        // the resize seams; full top/bottom margin keeps its vertical framing.
-        margin: '16px 8px',
         boxSizing: 'border-box',
-        backgroundColor: bg.default,
-        border: `1px solid ${border.secondary}`,
-        borderRadius: radius.lg,
-        boxShadow: shadow.sm,
+        // Match StreamPanel: the gray canvas between the white sidebars.
+        backgroundColor: bg.subtle,
+        borderLeft: framed ? `1px solid ${border.default}` : 'none',
+        borderRight: framed ? `1px solid ${border.default}` : 'none',
         overflow: 'hidden',
         textAlign: 'center',
       }}>
@@ -51,7 +55,7 @@ export function EmptyState({ platform }: { platform?: Platform }) {
           height: 56,
           borderRadius: radius.full,
           border: `1px solid ${border.secondary}`,
-          backgroundColor: bg.subtle,
+          backgroundColor: bg.default,
         }}>
         <PhoneIcon size={28} color={icon.secondary} />
       </div>
