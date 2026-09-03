@@ -39,6 +39,11 @@ export interface HighTextContrastStatus {
   raw: string;
 }
 
+export interface BoldTextStatus {
+  enabled: boolean;
+  raw: string;
+}
+
 export interface AdbCommandResult {
   status: number | null;
   stdout: string;
@@ -264,6 +269,48 @@ export async function setHighTextContrast(
   return getHighTextContrast(serial, runner);
 }
 
+/** The adjustment Android's own Bold text toggle writes. */
+const BOLD_TEXT_WEIGHT_ADJUSTMENT = 300;
+
+/** An unset key reads back as the literal `null`, so anything but an int is no adjustment. */
+function boldTextAdjustmentFromSetting(raw: string): number {
+  return /^[+-]?\d+$/.test(raw) ? Number(raw) : 0;
+}
+
+export async function getBoldText(
+  serial: string,
+  runner: AdbRunner = runSystemAdb,
+): Promise<BoldTextStatus> {
+  const raw = await runAdb(
+    serial,
+    ['settings', 'get', 'secure', 'font_weight_adjustment'],
+    runner,
+    ADB_QUERY_TIMEOUT_MS,
+  );
+  return { enabled: boldTextAdjustmentFromSetting(raw) !== 0, raw };
+}
+
+/** `Configuration.fontWeightAdjustment` reads this key, so native and Compose text bold too. */
+export async function setBoldText(
+  serial: string,
+  enabled: boolean,
+  runner: AdbRunner = runSystemAdb,
+): Promise<BoldTextStatus> {
+  await runAdb(
+    serial,
+    [
+      'settings',
+      'put',
+      'secure',
+      'font_weight_adjustment',
+      String(enabled ? BOLD_TEXT_WEIGHT_ADJUSTMENT : 0),
+    ],
+    runner,
+    ADB_MUTATION_TIMEOUT_MS,
+  );
+  return getBoldText(serial, runner);
+}
+
 async function readJsonBody(request: Request): Promise<unknown> {
   const contentLength = Number(request.headers.get('content-length') ?? '0');
   if (Number.isFinite(contentLength) && contentLength > MAX_JSON_BODY_BYTES) {
@@ -417,6 +464,33 @@ export async function handleServeEmuDeviceOptionRequest(
         return Response.json({
           ok: true,
           highTextContrast: await setHighTextContrast(serial, enabled, runner),
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    return new Response('method not allowed', { status: 405 });
+  }
+
+  if (pathname === '/api/font-weight') {
+    if (request.method === 'GET') {
+      try {
+        return Response.json({ ok: true, fontWeight: await getBoldText(serial, runner) });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (request.method === 'POST') {
+      try {
+        const payload = await readJsonBody(request);
+        if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
+          throw new Error('bold text payload must be an object');
+        }
+        const enabled = (payload as Record<string, unknown>).enabled;
+        if (typeof enabled !== 'boolean') throw new Error('enabled must be a boolean');
+        return Response.json({
+          ok: true,
+          fontWeight: await setBoldText(serial, enabled, runner),
         });
       } catch (error) {
         return errorResponse(error);

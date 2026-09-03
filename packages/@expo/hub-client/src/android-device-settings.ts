@@ -2,7 +2,7 @@ import { type DeviceSettingKey } from './types';
 
 export type AndroidDeviceSettingKey = Extract<
   DeviceSettingKey,
-  'appearance' | 'network' | 'text-size' | 'reduce-motion' | 'increase-contrast'
+  'appearance' | 'network' | 'text-size' | 'reduce-motion' | 'bold-text' | 'increase-contrast'
 >;
 
 export type AndroidTextSize = 'small' | 'medium' | 'large' | 'extra-large';
@@ -35,6 +35,7 @@ export type AndroidDeviceSettingPath =
   | '/api/network'
   | '/api/font-scale'
   | '/api/reduce-motion'
+  | '/api/font-weight'
   | '/api/high-text-contrast';
 
 export interface AndroidDeviceSettingRequest {
@@ -109,6 +110,12 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
     polled: true,
     encode: enabledBodyForOnOff,
     decode: (data) => onOffForEnabledBody(data.reduceMotion),
+  },
+  'bold-text': {
+    path: '/api/font-weight',
+    polled: true,
+    encode: enabledBodyForOnOff,
+    decode: (data) => onOffForEnabledBody(data.fontWeight),
   },
   'increase-contrast': {
     path: '/api/high-text-contrast',

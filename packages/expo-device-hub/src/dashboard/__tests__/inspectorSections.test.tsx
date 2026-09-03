@@ -290,19 +290,21 @@ test('renders the Android accessibility switches the backend reports', () => {
       network: 'on',
       'text-size': 'medium',
       'reduce-motion': 'on',
+      'bold-text': 'on',
       'increase-contrast': 'off',
     },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
   expect(switchMarkup(html, 'Reduce motion')).toContain('aria-checked="true"');
+  expect(switchMarkup(html, 'Bold text')).toContain('aria-checked="true"');
   expect(switchMarkup(html, 'Increase contrast')).toContain('aria-checked="false"');
 });
 
 test('omits the Android accessibility switches the backend does not report', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
-  for (const label of ['Reduce motion', 'Increase contrast']) {
+  for (const label of ['Reduce motion', 'Bold text', 'Increase contrast']) {
     expect(html).not.toContain(`>${label}<`);
   }
 });

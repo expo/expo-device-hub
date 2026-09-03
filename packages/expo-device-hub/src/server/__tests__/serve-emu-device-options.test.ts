@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   type AdbRunner,
+  getBoldText,
   getHighTextContrast,
   getNetworkStatus,
   getReduceMotion,
@@ -16,11 +17,13 @@ function deviceRunner(initial?: {
   windowScale?: string;
   animatorScale?: string;
   highTextContrast?: string;
+  boldText?: string;
 }) {
   let wifi = initial?.wifi ?? '1';
   let mobileData = initial?.mobileData ?? '1';
   let fontScale = initial?.fontScale ?? '1';
   let highTextContrast = initial?.highTextContrast ?? 'null';
+  let boldText = initial?.boldText ?? 'null';
   const animationScales: Record<string, string> = {
     transition_animation_scale: initial?.transitionScale ?? 'null',
     window_animation_scale: initial?.windowScale ?? 'null',
@@ -46,6 +49,9 @@ function deviceRunner(initial?: {
     if (shell.join(' ') === 'settings get secure high_text_contrast_enabled') {
       return { status: 0, stdout: `${highTextContrast}\n`, stderr: '' };
     }
+    if (shell.join(' ') === 'settings get secure font_weight_adjustment') {
+      return { status: 0, stdout: `${boldText}\n`, stderr: '' };
+    }
     if (shell[0] === 'settings' && shell[2] === 'global' && shell[3]! in animationScales) {
       const key = shell[3]!;
       if (shell[1] === 'get') {
@@ -68,6 +74,10 @@ function deviceRunner(initial?: {
     }
     if (shell.join(' ').startsWith('settings put secure high_text_contrast_enabled ')) {
       highTextContrast = shell[4]!;
+      return { status: 0, stdout: '', stderr: '' };
+    }
+    if (shell.join(' ').startsWith('settings put secure font_weight_adjustment ')) {
+      boldText = shell[4]!;
       return { status: 0, stdout: '', stderr: '' };
     }
     return { status: 1, stdout: '', stderr: `unexpected command: ${shell.join(' ')}` };
@@ -423,6 +433,98 @@ describe('serve-emu high-text-contrast compatibility route', () => {
     expect(await malformed?.json()).toEqual({
       ok: false,
       error: 'high text contrast payload must be an object',
+    });
+    expect(unsupported?.status).toBe(405);
+  });
+});
+
+describe('serve-emu font-weight compatibility route', () => {
+  test('reports the unset emulator baseline as off', async () => {
+    const { runner } = deviceRunner();
+    const response = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/font-weight'),
+      'emulator-5554',
+      runner,
+    );
+
+    expect(response?.status).toBe(200);
+    expect(await response?.json()).toEqual({
+      ok: true,
+      fontWeight: { enabled: false, raw: 'null' },
+    });
+  });
+
+  test('reads the weight adjustment as an int and treats anything else as none', async () => {
+    const cases: Array<[string, boolean]> = [
+      ['300', true],
+      ['0', false],
+      ['null', false],
+      ['', false],
+      ['1.9', false],
+      ['not-an-int', false],
+    ];
+
+    for (const [boldText, enabled] of cases) {
+      const { runner } = deviceRunner({ boldText });
+      expect(await getBoldText('emulator-5554', runner)).toEqual({ enabled, raw: boldText });
+    }
+  });
+
+  test('writes the weight adjustment in both directions before reading it back', async () => {
+    const { runner, commands, timeouts } = deviceRunner();
+    const turnedOn = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/font-weight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: true }),
+      }),
+      'emulator-5554',
+      runner,
+    );
+    const turnedOff = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/font-weight', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: false }),
+      }),
+      'emulator-5554',
+      runner,
+    );
+
+    expect(await turnedOn?.json()).toEqual({
+      ok: true,
+      fontWeight: { enabled: true, raw: '300' },
+    });
+    expect(await turnedOff?.json()).toEqual({
+      ok: true,
+      fontWeight: { enabled: false, raw: '0' },
+    });
+    expect(commands).toEqual([
+      ['-s', 'emulator-5554', 'shell', 'settings', 'put', 'secure', 'font_weight_adjustment', '300'],
+      ['-s', 'emulator-5554', 'shell', 'settings', 'get', 'secure', 'font_weight_adjustment'],
+      ['-s', 'emulator-5554', 'shell', 'settings', 'put', 'secure', 'font_weight_adjustment', '0'],
+      ['-s', 'emulator-5554', 'shell', 'settings', 'get', 'secure', 'font_weight_adjustment'],
+    ]);
+    expect(timeouts).toEqual([5_000, 2_000, 5_000, 2_000]);
+  });
+
+  test('rejects malformed writes and unsupported methods', async () => {
+    const { runner } = deviceRunner();
+    const malformed = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/font-weight', { method: 'POST', body: '[]' }),
+      'emulator-5554',
+      runner,
+    );
+    const unsupported = await handleServeEmuDeviceOptionRequest(
+      new Request('http://localhost/api/font-weight', { method: 'DELETE' }),
+      'emulator-5554',
+      runner,
+    );
+
+    expect(malformed?.status).toBe(400);
+    expect(await malformed?.json()).toEqual({
+      ok: false,
+      error: 'bold text payload must be an object',
     });
     expect(unsupported?.status).toBe(405);
   });
