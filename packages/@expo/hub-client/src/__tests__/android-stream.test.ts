@@ -11,6 +11,8 @@ import {
 import {
   fixedWebCodecsCodec,
   isRawVideoKeyFrame,
+  isWebCodecsUnsupportedError,
+  mseFallbackCodecError,
   parseAndroidVideoSession,
   resolveVideoKeyFrame,
   webCodecsCodec,
@@ -45,7 +47,7 @@ describe('serve-emu stream contract', () => {
         type: 'video-session',
         size: { width: 1080, height: 2400 },
       }),
-    ).toBeNull();
+    ).toEqual({ size: { width: 1080, height: 2400 }, codec: 'h264' });
     expect(
       parseAndroidVideoSession({
         type: 'video-session',
@@ -58,6 +60,15 @@ describe('serve-emu stream contract', () => {
     expect(fixedWebCodecsCodec('vp9')).toBe('vp09.00.10.08');
     expect(webCodecsCodec('h264', Uint8Array.of(0x67, 0x64, 0, 0x29))).toBe('avc1.640029');
     expect(webCodecsCodec('h264', Uint8Array.of(0x67, 0x64))).toBeNull();
+    expect(mseFallbackCodecError('h264')).toBeNull();
+    expect(mseFallbackCodecError('h264', false)).toBe(
+      'This browser cannot decode H.264 (WebCodecs unavailable).',
+    );
+    expect(mseFallbackCodecError('vp8')).toBe(
+      'VP8 WebSocket video requires WebCodecs.',
+    );
+    expect(isWebCodecsUnsupportedError({ name: 'NotSupportedError' })).toBe(true);
+    expect(isWebCodecsUnsupportedError(new Error('decode failed'))).toBe(false);
   });
 
   test('recovers VPx keyframes from raw payloads only when SEMU metadata is absent', () => {

@@ -43,6 +43,8 @@ import {
 import {
   fixedWebCodecsCodec,
   grpcVideoCodecLabel,
+  isWebCodecsUnsupportedError,
+  mseFallbackCodecError,
   parseAndroidVideoSession,
   resolveVideoKeyFrame,
   webCodecsCodec,
@@ -907,11 +909,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // Media Source Extensions — not secure-context gated — which decodes the same
     // H.264 through a <video> element blitted onto the canvas (see MsePlayer).
     const useMse = !isWebCodecsSupported();
-    if (useMse && !MsePlayer.isSupported()) {
-      setStatus('error');
-      setError('This browser cannot decode H.264 (WebCodecs unavailable).');
-      return;
-    }
+    const mseSupported = !useMse || MsePlayer.isSupported();
 
     setStatus('connecting');
     setError(null);
@@ -927,7 +925,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let reconnectDelay = 500;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let decoder: VideoDecoder | null = null;
-    let activeCodec: DeviceGrpcVideoCodec | null = null;
+    // Older H.264-only serve-emu versions send neither an initial session
+    // announcement nor a codec field on resize announcements.
+    let activeCodec: DeviceGrpcVideoCodec | null = 'h264';
     let decoderConfigFailed = false;
     let sawKeyframe = false;
     let droppingUntilKeyframe = false;
@@ -952,6 +952,17 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (now - lastKeyframeRequestAt < KEYFRAME_REQUEST_COOLDOWN_MS) return;
       lastKeyframeRequestAt = now;
       ws.send(JSON.stringify({ type: 'reset-video', ack: false }));
+    };
+
+    const reportUnsupportedDecoder = () => {
+      decoderConfigFailed = true;
+      closeDecoder();
+      setStatus('error');
+      setError(
+        activeCodec
+          ? `This browser cannot decode ${grpcVideoCodecLabel(activeCodec)}.`
+          : 'This browser cannot configure the video decoder.',
+      );
     };
 
     const paint = (frame: VideoFrame) => {
@@ -996,13 +1007,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           }
           paint(frame);
         },
-        error: () => {
-          if (decoder === created) {
-            closeDecoder();
-            sawKeyframe = false;
-            droppingUntilKeyframe = true;
-            requestKeyframe();
+        error: (error) => {
+          if (decoder !== created) return;
+          if (isWebCodecsUnsupportedError(error)) {
+            reportUnsupportedDecoder();
+            return;
           }
+          closeDecoder();
+          sawKeyframe = false;
+          droppingUntilKeyframe = true;
+          requestKeyframe();
         },
       });
       try {
@@ -1010,16 +1024,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         decoder = created;
         return true;
       } catch {
-        decoderConfigFailed = true;
         try {
           created.close();
         } catch {}
-        setStatus('error');
-        setError(
-          activeCodec
-            ? `This browser cannot decode ${grpcVideoCodecLabel(activeCodec)}.`
-            : 'This browser cannot configure the video decoder.',
-        );
+        reportUnsupportedDecoder();
         return false;
       }
     };
@@ -1132,7 +1140,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     const connect = () => {
       if (cancelled) return;
-      activeCodec = null;
+      activeCodec = 'h264';
       decoderConfigFailed = false;
       let ws: WebSocket;
       try {
@@ -1195,11 +1203,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
               droppingUntilKeyframe = true;
               setScreen({ width: msg.size.width, height: msg.size.height });
               setFps(0);
-              if (useMse && msg.codec !== 'h264') {
+              const fallbackError = useMse
+                ? mseFallbackCodecError(msg.codec, mseSupported)
+                : null;
+              if (fallbackError) {
                 setStatus('error');
-                setError(
-                  `${grpcVideoCodecLabel(msg.codec)} WebSocket video requires WebCodecs.`,
-                );
+                setError(fallbackError);
                 return;
               }
               setStatus('connecting');

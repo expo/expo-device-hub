@@ -14,7 +14,12 @@ export function isDeviceGrpcVideoCodec(value: unknown): value is DeviceGrpcVideo
 export function parseAndroidVideoSession(value: unknown): AndroidVideoSession | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
-  if (candidate.type !== 'video-session' || !isDeviceGrpcVideoCodec(candidate.codec)) return null;
+  if (
+    candidate.type !== 'video-session' ||
+    (candidate.codec !== undefined && !isDeviceGrpcVideoCodec(candidate.codec))
+  ) {
+    return null;
+  }
   if (!candidate.size || typeof candidate.size !== 'object' || Array.isArray(candidate.size)) {
     return null;
   }
@@ -31,7 +36,8 @@ export function parseAndroidVideoSession(value: unknown): AndroidVideoSession | 
   }
   return {
     size: { width: size.width, height: size.height },
-    codec: candidate.codec,
+    // Older serve-emu releases emitted H.264 and omitted the codec field.
+    codec: candidate.codec ?? 'h264',
   };
 }
 
@@ -54,6 +60,26 @@ export function webCodecsCodec(
 export function grpcVideoCodecLabel(codec: DeviceGrpcVideoCodec): string {
   if (codec === 'h264') return 'H.264';
   return codec.toUpperCase();
+}
+
+/** Report why a codec cannot use the browser's non-WebCodecs fallback. */
+export function mseFallbackCodecError(
+  codec: DeviceGrpcVideoCodec,
+  mseSupported = true,
+): string | null {
+  if (codec !== 'h264') {
+    return `${grpcVideoCodecLabel(codec)} WebSocket video requires WebCodecs.`;
+  }
+  return mseSupported ? null : 'This browser cannot decode H.264 (WebCodecs unavailable).';
+}
+
+export function isWebCodecsUnsupportedError(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'name' in error &&
+    error.name === 'NotSupportedError'
+  );
 }
 
 class BitReader {
