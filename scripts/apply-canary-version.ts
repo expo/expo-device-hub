@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun";
+import { getChangesetIgnoreList } from "./lib/changeset-ignore.ts";
 import { getPublicPackages } from "./lib/public-packages.ts";
 
 // Rewrites each public package's version into a canary prerelease. Versions
@@ -24,7 +25,13 @@ const sha = (await $`git rev-parse --short HEAD`.text()).trim();
 const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
 
 console.log(`::group::Applying canary versions (date ${date}, commit ${sha})`);
+const ignore = await getChangesetIgnoreList();
 for (const pkg of await getPublicPackages()) {
+  if (ignore.has(pkg.name)) {
+    console.log(`${pkg.name}: skipped (excluded from release)`);
+    continue;
+  }
+
   const path = `${pkg.dir}/package.json`;
   const json = await Bun.file(path).json();
   const committedVersion = JSON.parse(
