@@ -7,6 +7,7 @@ import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSi
 import {
   StreamOptionsSection,
 } from '../../../../@expo/hub-components/src/dashboard/StreamOptionsSection';
+import { StreamStatistics } from '../../../../@expo/hub-components/src/dashboard/StreamStatistics';
 
 function inspectorClient(platform: DevicePlatform): DeviceClient {
   const ios = platform === 'ios';
@@ -68,6 +69,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     streamSettingsPending: false,
     updateStreamSettings: () => {},
     streamStats: null,
+    setStreamStatsEnabled: () => {},
     webRtcCodec: 'h264',
     setWebRtcCodec: () => {},
     capabilities: {
@@ -499,7 +501,7 @@ test('shows only the server statistics that serve-emu can provide', () => {
   expect(openingTag(receiver, '<span role="columnheader"')).toContain('border-top:');
   expect(streamStatisticValue(stream, 'Server FPS')).toBe('30 FPS');
   expect(streamStatisticValue(encoder, 'Codec')).toBe('H.264');
-  expect(streamStatisticValue(encoder, 'Output FPS')).toBe('30 FPS');
+  expect(encoder).not.toContain('data-stream-statistic="Output FPS"');
   expect(streamStatisticValue(encoder, 'Configured bitrate')).toBe('8.00 Mbps');
   expect(streamStatisticValue(encoder, 'Output frames')).toBe('1.2k');
   expect(streamStatisticValue(encoder, 'Publisher FPS')).toBe('30 FPS');
@@ -508,7 +510,7 @@ test('shows only the server statistics that serve-emu can provide', () => {
   expect(streamStatisticValue(encoder, 'Publisher drops')).toBe('10');
   expect(streamStatisticValue(capture, 'Publisher offers')).toBe('1.2k');
   expect(streamStatisticValue(capture, 'Publisher forwards')).toBe('1.2k');
-  expect(encoder.match(/data-stream-statistic=/g)).toHaveLength(8);
+  expect(encoder.match(/data-stream-statistic=/g)).toHaveLength(7);
   expect(capture.match(/data-stream-statistic=/g)).toHaveLength(2);
   for (const label of [
     'Encode FPS',
@@ -593,15 +595,7 @@ test('omits unsupported server groups while retaining client statistics', () => 
 test('distinguishes paused server statistics from paused client statistics', () => {
   const sample = streamSample({ serverFps: 30, clientFps: 29, clientBitrateBps: 3_000_000 });
   const renderStats = (stats: WebRtcStreamStats) =>
-    renderToStaticMarkup(
-      <StreamOptionsSection
-        client={{ ...inspectorClient('android'), streamStats: stats }}
-        defaultOpen
-        streamMode="webrtc"
-        streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
-        onStreamModeChange={() => {}}
-      />,
-    );
+    renderToStaticMarkup(<StreamStatistics stats={stats} platform="android" />);
 
   const serverHtml = renderStats(
     streamStats([sample], { encoder: encoderStats, serverStale: true }),

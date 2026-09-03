@@ -459,6 +459,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     error: webRtcError,
     markFrameDecoded: markWebRtcFrameDecoded,
     streamStats,
+    setStreamStatsEnabled,
   } = useWebRtcStream({
     offerUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/offer', targetDevice) : '',
     closeUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/close', targetDevice) : '',
@@ -1235,6 +1236,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSettingsPending: false,
     updateStreamSettings: () => {},
     streamStats,
+    setStreamStatsEnabled,
     webRtcCodec: 'h264',
     setWebRtcCodec: () => {},
     streamCapabilities: {

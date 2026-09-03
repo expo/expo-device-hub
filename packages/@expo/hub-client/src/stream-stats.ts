@@ -402,6 +402,7 @@ export function useWebRtcStreamStats(
   connection: WebRtcStatsConnection | null,
   statsUrl: string,
   presentedFrames: Readonly<{ current: number }>,
+  enabled: boolean,
 ): DeviceStreamStats | null {
   const [stats, setStats] = useState<DeviceStreamStats | null>(null);
   const previousRef = useRef<WebRtcClientCounters | null>(null);
@@ -410,7 +411,7 @@ export function useWebRtcStreamStats(
   useEffect(() => {
     previousRef.current = null;
     lastClientSampleAtRef.current = 0;
-    if (connection === null || !statsUrl) {
+    if (!enabled || connection === null || !statsUrl) {
       setStats(null);
       return;
     }
@@ -528,7 +529,7 @@ export function useWebRtcStreamStats(
       window.clearInterval(pollTimer);
       window.clearInterval(staleTimer);
     };
-  }, [connection, presentedFrames, statsUrl]);
+  }, [connection, enabled, presentedFrames, statsUrl]);
 
   return stats;
 }

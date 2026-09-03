@@ -28,6 +28,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   streamSettingsPending: false,
   updateStreamSettings: () => {},
   streamStats: null,
+  setStreamStatsEnabled: () => {},
   webRtcCodec: 'h264',
   setWebRtcCodec: () => {},
   capabilities: {

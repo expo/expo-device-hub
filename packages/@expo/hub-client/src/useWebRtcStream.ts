@@ -135,12 +135,18 @@ export function useWebRtcStream({
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [statsConnection, setStatsConnection] = useState<WebRtcStatsConnection | null>(null);
+  const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   const [retryGeneration, setRetryGeneration] = useState(0);
   const firstFrameTimeoutRef = useRef<number | undefined>(undefined);
   const firstFrameDecodedRef = useRef(false);
   const presentedFramesRef = useRef(0);
   const transportRetryAttemptRef = useRef(0);
-  const streamStats = useWebRtcStreamStats(statsConnection, statsUrl, presentedFramesRef);
+  const streamStats = useWebRtcStreamStats(
+    statsConnection,
+    statsUrl,
+    presentedFramesRef,
+    streamStatsEnabled,
+  );
 
   const markFrameDecoded = useCallback(() => {
     presentedFramesRef.current++;
@@ -442,5 +448,5 @@ export function useWebRtcStream({
     retryGeneration,
   ]);
 
-  return { stream, failure, error, markFrameDecoded, streamStats };
+  return { stream, failure, error, markFrameDecoded, streamStats, setStreamStatsEnabled };
 }

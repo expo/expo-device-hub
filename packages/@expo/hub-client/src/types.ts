@@ -403,6 +403,8 @@ export interface DeviceClient {
   updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => void;
   /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */
   streamStats: DeviceStreamStats | null;
+  /** Enable telemetry polling while a consumer is displaying WebRTC statistics. */
+  setStreamStatsEnabled: (enabled: boolean) => void;
   /** Requested WebRTC codec for this viewer. */
   webRtcCodec: DeviceWebRtcCodec;
   setWebRtcCodec: (codec: DeviceWebRtcCodec) => void;

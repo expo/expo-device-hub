@@ -802,6 +802,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     error: webRtcError,
     markFrameDecoded: markWebRtcFrameDecoded,
     streamStats,
+    setStreamStatsEnabled,
   } = useWebRtcStream({
     offerUrl: config ? `${config.url}/webrtc/offer` : '',
     closeUrl: config ? `${config.url}/webrtc/close` : '',
@@ -1415,6 +1416,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     streamSettingsPending,
     updateStreamSettings,
     streamStats,
+    setStreamStatsEnabled,
     webRtcCodec,
     setWebRtcCodec,
     capabilities: {
