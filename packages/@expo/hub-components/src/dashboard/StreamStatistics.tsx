@@ -49,7 +49,7 @@ function formatBytes(value: number | null) {
   return `${(safeValue / 1_048_576).toFixed(2)} MiB`;
 }
 
-function formatTimingPair(p50: number | null, p95: number | null) {
+function formatTimingPair({ p50, p95 }: { p50: number | null; p95: number | null }) {
   if (p50 === null && p95 === null) return UNAVAILABLE_VALUE;
   return `${p50 === null ? UNAVAILABLE_VALUE : p50.toFixed(1)} / ${
     p95 === null ? UNAVAILABLE_VALUE : p95.toFixed(1)
@@ -200,6 +200,7 @@ export function StreamStatistics({
   const latest = samples.at(-1) ?? null;
   const encoder = stats?.encoder ?? null;
   const capture = stats?.capture ?? null;
+  const grpc = capture?.grpc ?? null;
   const hasClientMeasurement = samples.some(
     (sample) => sample.clientFps !== null || sample.clientBitrateBps !== null,
   );
@@ -292,97 +293,85 @@ export function StreamStatistics({
               label: 'Publisher forwards',
               value: formatCount(capture.forwardedFrames),
             },
-            ...(capture.grpcImageMode
+            ...(grpc
               ? [
                   {
                     label: 'gRPC image mode',
-                    value: capture.grpcImageMode.toUpperCase(),
+                    value: grpc.imageMode?.toUpperCase() ?? UNAVAILABLE_VALUE,
                   },
                   {
                     label: 'Emulator producer FPS',
-                    value: formatFps(capture.grpcProducerFps ?? null),
+                    value: formatFps(grpc.producerFps),
                   },
                   {
                     label: 'Host receive FPS',
-                    value: formatFps(capture.grpcReceiveFps ?? null),
+                    value: formatFps(grpc.receiveFps),
                   },
                   {
                     label: 'Usable image FPS',
-                    value: formatFps(capture.grpcUsableImageFps ?? null),
+                    value: formatFps(grpc.usableImageFps),
                   },
                   {
                     label: 'Encoder input FPS',
-                    value: formatFps(capture.grpcEncoderInputFps ?? null),
+                    value: formatFps(grpc.encoderInputFps),
                   },
                   {
                     label: 'gRPC notifications',
-                    value: formatCount(capture.grpcMessagesReceived ?? null),
+                    value: formatCount(grpc.messagesReceived),
                   },
                   {
                     label: 'Selected notifications',
-                    value: formatCount(capture.grpcMessagesEmitted ?? null),
+                    value: formatCount(grpc.messagesEmitted),
                   },
                   {
                     label: 'Coalesced notifications',
-                    value: formatCount(capture.grpcMessagesCoalesced ?? null),
+                    value: formatCount(grpc.messagesCoalesced),
                   },
                   {
                     label: 'Sequence gaps',
-                    value: formatCount(capture.grpcSequenceGaps ?? null),
+                    value: formatCount(grpc.sequenceGaps),
                   },
                   {
                     label: 'Latest image payload',
-                    value: formatBytes(capture.grpcImagePayloadBytes ?? null),
+                    value: formatBytes(grpc.imagePayloadBytes),
                   },
                   {
                     label: 'Logical transport bytes',
-                    value: formatBytes(capture.grpcTransportBytes ?? null),
+                    value: formatBytes(grpc.transportBytes),
                   },
                   {
                     label: 'gRPC message bytes',
-                    value: formatBytes(capture.grpcMessageBytesReceived ?? null),
+                    value: formatBytes(grpc.messageBytesReceived),
                   },
                   {
                     label: 'Produce→receive p50 / p95',
-                    value: formatTimingPair(
-                      capture.grpcProductionToReceiveP50Ms ?? null,
-                      capture.grpcProductionToReceiveP95Ms ?? null,
-                    ),
+                    value: formatTimingPair(grpc.productionToReceiveLatencyMs),
                   },
                   {
                     label: 'Produce→usable p50 / p95',
-                    value: formatTimingPair(
-                      capture.grpcProductionToUsableP50Ms ?? null,
-                      capture.grpcProductionToUsableP95Ms ?? null,
-                    ),
+                    value: formatTimingPair(grpc.productionToUsableLatencyMs),
                   },
                   {
                     label: 'Protobuf decode p50 / p95',
-                    value: formatTimingPair(
-                      capture.grpcProtobufDecodeP50Ms ?? null,
-                      capture.grpcProtobufDecodeP95Ms ?? null,
-                    ),
+                    value: formatTimingPair(grpc.protobufDecodeTimeMs),
                   },
-                  ...(capture.grpcImageMode === 'mmap'
+                  ...(grpc.imageMode === 'mmap'
                     ? [
                         {
                           label: 'MMAP bytes read',
-                          value: formatBytes(capture.mmapFileBytesRead ?? null),
+                          value: formatBytes(grpc.mmapFileBytesRead),
                         },
                         {
                           label: 'MMAP read p50 / p95',
-                          value: formatTimingPair(
-                            capture.mmapReadCopyP50Ms ?? null,
-                            capture.mmapReadCopyP95Ms ?? null,
-                          ),
+                          value: formatTimingPair(grpc.mmapReadCopyTimeMs),
                         },
                         {
                           label: 'MMAP read retries',
-                          value: formatCount(capture.mmapReadRetries ?? null),
+                          value: formatCount(grpc.mmapReadRetries),
                         },
                         {
                           label: 'Torn frames dropped',
-                          value: formatCount(capture.mmapTornFramesDropped ?? null),
+                          value: formatCount(grpc.mmapTornFramesDropped),
                         },
                       ]
                     : []),

@@ -213,6 +213,43 @@ export interface DeviceStreamEncoderStats {
   payloadBitrateBps: number | null;
 }
 
+/** Median and 95th-percentile timings in milliseconds. */
+export interface DeviceStreamTimingQuantiles {
+  p50: number | null;
+  p95: number | null;
+}
+
+/** Latest gRPC screenshot producer, transport, and host-copy diagnostics. */
+export interface DeviceGrpcCaptureStats {
+  /** Selected emulator screenshot delivery strategy. */
+  imageMode: DeviceGrpcImageMode | null;
+  /** Emulator frame-production cadence inferred from source timestamps. */
+  producerFps: number | null;
+  /** Raw screenshot messages reaching serve-emu. */
+  receiveFps: number | null;
+  /** Valid images available to the host encoder. */
+  usableImageFps: number | null;
+  /** Fresh images submitted to FFmpeg, excluding deliberate idle repeats. */
+  encoderInputFps: number | null;
+  /** Raw screenshot notifications received from the emulator. */
+  messagesReceived: number | null;
+  /** Notifications selected for decoding/copying after capture pacing. */
+  messagesEmitted: number | null;
+  /** Pending notifications replaced by a newer frame before capture. */
+  messagesCoalesced: number | null;
+  sequenceGaps: number | null;
+  imagePayloadBytes: number | null;
+  transportBytes: number | null;
+  messageBytesReceived: number | null;
+  mmapFileBytesRead: number | null;
+  mmapReadRetries: number | null;
+  mmapTornFramesDropped: number | null;
+  productionToReceiveLatencyMs: DeviceStreamTimingQuantiles;
+  productionToUsableLatencyMs: DeviceStreamTimingQuantiles;
+  protobufDecodeTimeMs: DeviceStreamTimingQuantiles;
+  mmapReadCopyTimeMs: DeviceStreamTimingQuantiles;
+}
+
 /** Latest cumulative server-side capture and pacing counters. */
 export interface DeviceStreamCaptureStats {
   screenFrames: number | null;
@@ -220,37 +257,8 @@ export interface DeviceStreamCaptureStats {
   offeredFrames: number | null;
   forwardedFrames: number | null;
   pumpRestarts: number | null;
-  /** Selected emulator screenshot delivery strategy. Null for non-gRPC sources. */
-  grpcImageMode?: DeviceGrpcImageMode | null;
-  /** Emulator frame-production cadence inferred from source timestamps. */
-  grpcProducerFps?: number | null;
-  /** Raw screenshot messages reaching serve-emu. */
-  grpcReceiveFps?: number | null;
-  /** Valid images available to the host encoder. */
-  grpcUsableImageFps?: number | null;
-  /** Fresh images submitted to FFmpeg, excluding deliberate idle repeats. */
-  grpcEncoderInputFps?: number | null;
-  /** Raw screenshot notifications received from the emulator. */
-  grpcMessagesReceived?: number | null;
-  /** Notifications selected for decoding/copying after capture pacing. */
-  grpcMessagesEmitted?: number | null;
-  /** Pending notifications replaced by a newer frame before capture. */
-  grpcMessagesCoalesced?: number | null;
-  grpcSequenceGaps?: number | null;
-  grpcImagePayloadBytes?: number | null;
-  grpcTransportBytes?: number | null;
-  grpcMessageBytesReceived?: number | null;
-  mmapFileBytesRead?: number | null;
-  mmapReadRetries?: number | null;
-  mmapTornFramesDropped?: number | null;
-  grpcProductionToReceiveP50Ms?: number | null;
-  grpcProductionToReceiveP95Ms?: number | null;
-  grpcProductionToUsableP50Ms?: number | null;
-  grpcProductionToUsableP95Ms?: number | null;
-  grpcProtobufDecodeP50Ms?: number | null;
-  grpcProtobufDecodeP95Ms?: number | null;
-  mmapReadCopyP50Ms?: number | null;
-  mmapReadCopyP95Ms?: number | null;
+  /** Null when the active capture source does not expose gRPC diagnostics. */
+  grpc: DeviceGrpcCaptureStats | null;
 }
 
 /** Bounded WebRTC telemetry history owned by the device connection. */

@@ -447,18 +447,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     toPatch: androidStreamSettingsPatch,
   });
 
-  const setStreamSource = useCallback(
-    (source: DeviceStreamSource) => {
-      const previous = streamSourceRef.current;
-      if (
-        !streamSourceUrl ||
-        !previous ||
-        previous.mode === source ||
-        !previous.availableModes.includes(source) ||
-        streamSourcePendingRef.current
-      ) {
-        return;
-      }
+  const putStreamMode = useCallback(
+    (body: { mode: DeviceStreamSource; grpcImageMode?: DeviceGrpcImageMode }) => {
+      if (!streamSourceUrl || streamSourcePendingRef.current) return;
       const request = ++streamSourceRequestRef.current;
       const controller = new AbortController();
       streamSourceControllerRef.current = controller;
@@ -468,7 +459,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       void fetch(streamSourceUrl, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: source }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       })
         .then(async (response) => {
@@ -480,7 +471,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             throw new Error(androidStreamSourceErrorMessage(response.status, payload));
           }
           const next = parseAndroidStreamSource(await response.json());
-          if (!next) throw new Error('Stream source update returned an invalid response');
+          if (!next) throw new Error('Stream mode update returned an invalid response');
           if (streamSourceRequestRef.current === request) {
             streamSourceRef.current = next;
             setStreamSourceState(next);
@@ -509,65 +500,34 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [streamSourceUrl],
   );
 
+  const setStreamSource = useCallback(
+    (source: DeviceStreamSource) => {
+      const previous = streamSourceRef.current;
+      if (
+        !previous ||
+        previous.mode === source ||
+        !previous.availableModes.includes(source)
+      ) {
+        return;
+      }
+      putStreamMode({ mode: source });
+    },
+    [putStreamMode],
+  );
+
   const setGrpcImageMode = useCallback(
     (grpcImageMode: DeviceGrpcImageMode) => {
       const previous = streamSourceRef.current;
       if (
-        !streamSourceUrl ||
         !previous ||
         previous.mode !== 'grpc-screenshot' ||
-        previous.grpcImageMode === grpcImageMode ||
-        streamSourcePendingRef.current
+        previous.grpcImageMode === grpcImageMode
       ) {
         return;
       }
-      const request = ++streamSourceRequestRef.current;
-      const controller = new AbortController();
-      streamSourceControllerRef.current = controller;
-      streamSourcePendingRef.current = true;
-      setStreamSourcePending(true);
-      setStreamSourceError(null);
-      void fetch(streamSourceUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: previous.mode, grpcImageMode }),
-        signal: controller.signal,
-      })
-        .then(async (response) => {
-          if (!response.ok) {
-            let payload: unknown = null;
-            try {
-              payload = await response.json();
-            } catch {}
-            throw new Error(androidStreamSourceErrorMessage(response.status, payload));
-          }
-          const next = parseAndroidStreamSource(await response.json());
-          if (!next) throw new Error('gRPC image mode update returned an invalid response');
-          if (streamSourceRequestRef.current === request) {
-            streamSourceRef.current = next;
-            setStreamSourceState(next);
-            setStreamSourceError(null);
-          }
-        })
-        .catch((cause: unknown) => {
-          // Source replacement is atomic; retain the previous authoritative mode.
-          if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
-            setStreamSourceError(
-              cause instanceof Error ? cause.message : 'Unable to change stream source.',
-            );
-          }
-        })
-        .finally(() => {
-          if (streamSourceControllerRef.current === controller) {
-            streamSourceControllerRef.current = null;
-          }
-          if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
-            streamSourcePendingRef.current = false;
-            setStreamSourcePending(false);
-          }
-        });
+      putStreamMode({ mode: previous.mode, grpcImageMode });
     },
-    [streamSourceUrl],
+    [putStreamMode],
   );
 
   const refreshStreamSource = useCallback(

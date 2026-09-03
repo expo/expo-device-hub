@@ -36,7 +36,7 @@ Options:
       --video-bitrate <bps>  H.264/WebRTC target bitrate (100000-50000000)
       --video-fps <fps>      H.264/WebRTC frame rate (1-120)
       --stream-source <source> Android capture source: ${ANDROID_STREAM_SOURCES.join(', ')} (default: scrcpy)
-      --grpc-image-mode <mode> gRPC frames: ${GRPC_IMAGE_MODES.join(', ')} (default: png)
+      --grpc-image-mode <mode> gRPC frames: ${GRPC_IMAGE_MODES.join(', ')} (default: png; used when the gRPC source is active)
       --stun-url <urls>      Comma-separated STUN URL(s) for WebRTC ICE
       --turn-url <urls>      Comma-separated TURN URL(s) for WebRTC ICE
       --turn-username <name> TURN username (requires --turn-credential and --turn-url)

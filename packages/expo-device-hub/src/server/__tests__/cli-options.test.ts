@@ -210,6 +210,7 @@ describe('parseCliOptions', () => {
     ]) {
       expect(HELP).toContain(flag);
     }
+    expect(HELP).toContain('used when the gRPC source is active');
   });
 
   test('hides the device list sidebar on request', () => {

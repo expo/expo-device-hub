@@ -404,6 +404,7 @@ describe('readWebRtcServerStats', () => {
         offeredFrames: 880,
         forwardedFrames: 830,
         pumpRestarts: 2,
+        grpc: null,
       },
       publisherCounters: null,
     });
@@ -461,6 +462,7 @@ describe('readWebRtcServerStats', () => {
         offeredFrames: 100,
         forwardedFrames: 98,
         pumpRestarts: null,
+        grpc: null,
       },
       publisherCounters: {
         atMs: 2_000,
@@ -488,6 +490,7 @@ describe('readWebRtcServerStats', () => {
         offeredFrames: null,
         forwardedFrames: null,
         pumpRestarts: null,
+        grpc: null,
       },
       publisherCounters: null,
     });
@@ -541,30 +544,26 @@ describe('readWebRtcServerStats', () => {
       'viewer',
     );
 
-    expect(result.capture).toMatchObject({
-      grpcImageMode: 'mmap',
-      grpcProducerFps: 60,
-      grpcReceiveFps: 59.5,
-      grpcUsableImageFps: 59,
-      grpcEncoderInputFps: 58.5,
-      grpcMessagesReceived: 600,
-      grpcMessagesEmitted: 590,
-      grpcMessagesCoalesced: 10,
-      grpcSequenceGaps: 2,
-      grpcImagePayloadBytes: 552_960,
-      grpcTransportBytes: 55_296_000,
-      grpcMessageBytesReceived: 12_000,
+    expect(result.capture?.grpc).toEqual({
+      imageMode: 'mmap',
+      producerFps: 60,
+      receiveFps: 59.5,
+      usableImageFps: 59,
+      encoderInputFps: 58.5,
+      messagesReceived: 600,
+      messagesEmitted: 590,
+      messagesCoalesced: 10,
+      sequenceGaps: 2,
+      imagePayloadBytes: 552_960,
+      transportBytes: 55_296_000,
+      messageBytesReceived: 12_000,
       mmapFileBytesRead: 56_000_000,
       mmapReadRetries: 1,
       mmapTornFramesDropped: 0,
-      grpcProductionToReceiveP50Ms: 4.2,
-      grpcProductionToReceiveP95Ms: 8.1,
-      grpcProductionToUsableP50Ms: 4.7,
-      grpcProductionToUsableP95Ms: 9.2,
-      grpcProtobufDecodeP50Ms: 0.1,
-      grpcProtobufDecodeP95Ms: 0.2,
-      mmapReadCopyP50Ms: 0.3,
-      mmapReadCopyP95Ms: 0.6,
+      productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
+      productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
+      protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
+      mmapReadCopyTimeMs: { p50: 0.3, p95: 0.6 },
     });
   });
 });
