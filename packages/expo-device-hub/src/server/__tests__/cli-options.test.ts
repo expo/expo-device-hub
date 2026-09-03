@@ -14,6 +14,8 @@ describe('parseCliOptions', () => {
       mjpegQuality: undefined,
       videoBitrate: undefined,
       videoFps: undefined,
+      streamSource: undefined,
+      grpcImageMode: undefined,
       stunUrls: undefined,
       turnUrls: undefined,
       turnUsername: undefined,
@@ -96,6 +98,34 @@ describe('parseCliOptions', () => {
     });
   });
 
+  test('selects the Android gRPC source and its explicit image mode', () => {
+    expect(
+      parseCliOptions([
+        '--platform',
+        'android',
+        '--stream-source',
+        'GRPC-SCREENSHOT',
+        '--grpc-image-mode',
+        'MMAP',
+      ]),
+    ).toMatchObject({
+      streamSource: 'grpc-screenshot',
+      grpcImageMode: 'mmap',
+    });
+  });
+
+  test('validates Android stream-source options', () => {
+    expect(() => parseCliOptions(['--stream-source', 'camera'])).toThrow(
+      'Invalid --stream-source: camera',
+    );
+    expect(() => parseCliOptions(['--grpc-image-mode', 'rgb'])).toThrow(
+      'Invalid --grpc-image-mode: rgb',
+    );
+    expect(() =>
+      parseCliOptions(['--platform', 'ios', '--stream-source', 'grpc-screenshot'])
+    ).toThrow('--stream-source and --grpc-image-mode are supported only for Android');
+  });
+
   test('validates serve-sim option ranges and values', () => {
     expect(() => parseCliOptions(['--webrtc-codec', 'av1'])).toThrow(
       'Invalid --webrtc-codec: av1'
@@ -169,6 +199,8 @@ describe('parseCliOptions', () => {
       '--mjpeg-quality',
       '--video-bitrate',
       '--video-fps',
+      '--stream-source',
+      '--grpc-image-mode',
       '--stun-url',
       '--turn-url',
       '--turn-username',
@@ -209,6 +241,8 @@ describe('parseCliOptions', () => {
       mjpegQuality: undefined,
       videoBitrate: undefined,
       videoFps: undefined,
+      streamSource: undefined,
+      grpcImageMode: undefined,
       stunUrls: undefined,
       turnUrls: undefined,
       turnUsername: undefined,

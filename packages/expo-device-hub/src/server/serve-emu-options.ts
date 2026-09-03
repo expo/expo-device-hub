@@ -1,4 +1,10 @@
-import { DEFAULT_WEBRTC_ICE_POLICY, type CliOptions, type WebRtcIcePolicy } from './cli/options';
+import {
+  DEFAULT_WEBRTC_ICE_POLICY,
+  type AndroidStreamSource,
+  type CliOptions,
+  type GrpcImageMode,
+  type WebRtcIcePolicy,
+} from './cli/options';
 
 export const SERVE_EMU_OPTIONS_ENV = 'EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS';
 
@@ -27,6 +33,8 @@ export type StandaloneServeEmuOptions = {
   maxFps?: number;
   bitRate?: number;
   maxSize?: number;
+  streamMode?: AndroidStreamSource;
+  grpcImageMode?: GrpcImageMode;
   streamSettings: StandaloneServeEmuStreamSettings;
 };
 
@@ -53,6 +61,8 @@ export function standaloneServeEmuOptions(options: CliOptions): StandaloneServeE
     ...(options.videoFps !== undefined ? { maxFps: options.videoFps } : {}),
     ...(options.videoBitrate !== undefined ? { bitRate: options.videoBitrate } : {}),
     ...(options.maxDimension !== undefined ? { maxSize: options.maxDimension } : {}),
+    ...(options.streamSource !== undefined ? { streamMode: options.streamSource } : {}),
+    ...(options.grpcImageMode !== undefined ? { grpcImageMode: options.grpcImageMode } : {}),
     streamSettings:
       options.transport === 'webrtc'
         ? {

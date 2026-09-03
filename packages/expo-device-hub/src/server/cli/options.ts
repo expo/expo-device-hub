@@ -16,6 +16,10 @@ export const WEBRTC_CODECS = ['vp8', 'vp9', 'h264'] as const satisfies readonly 
 export const DEFAULT_WEBRTC_ICE_POLICY = 'all';
 export const WEBRTC_ICE_POLICIES = ['all', 'relay'] as const;
 export type WebRtcIcePolicy = (typeof WEBRTC_ICE_POLICIES)[number];
+export const ANDROID_STREAM_SOURCES = ['scrcpy', 'grpc-screenshot'] as const;
+export type AndroidStreamSource = (typeof ANDROID_STREAM_SOURCES)[number];
+export const GRPC_IMAGE_MODES = ['png', 'mmap'] as const;
+export type GrpcImageMode = (typeof GRPC_IMAGE_MODES)[number];
 
 export const HELP = `expo-device-hub — manage iOS simulators and Android emulators from the browser
 
@@ -31,6 +35,8 @@ Options:
       --mjpeg-quality <quality> MJPEG quality (0.05-1)
       --video-bitrate <bps>  H.264/WebRTC target bitrate (100000-50000000)
       --video-fps <fps>      H.264/WebRTC frame rate (1-120)
+      --stream-source <source> Android capture source: ${ANDROID_STREAM_SOURCES.join(', ')} (default: scrcpy)
+      --grpc-image-mode <mode> gRPC frames: ${GRPC_IMAGE_MODES.join(', ')} (default: png)
       --stun-url <urls>      Comma-separated STUN URL(s) for WebRTC ICE
       --turn-url <urls>      Comma-separated TURN URL(s) for WebRTC ICE
       --turn-username <name> TURN username (requires --turn-credential and --turn-url)
@@ -52,6 +58,8 @@ export type CliOptions = {
   mjpegQuality?: number;
   videoBitrate?: number;
   videoFps?: number;
+  streamSource?: AndroidStreamSource;
+  grpcImageMode?: GrpcImageMode;
   stunUrls?: string[];
   turnUrls?: string[];
   turnUsername?: string;
@@ -119,6 +127,8 @@ export function parseCliOptions(args: string[]): CliOptions {
     'mjpeg-quality'?: string;
     'video-bitrate'?: string;
     'video-fps'?: string;
+    'stream-source'?: string;
+    'grpc-image-mode'?: string;
     'stun-url'?: string;
     'turn-url'?: string;
     'turn-username'?: string;
@@ -145,6 +155,8 @@ export function parseCliOptions(args: string[]): CliOptions {
         'mjpeg-quality': { type: 'string' },
         'video-bitrate': { type: 'string' },
         'video-fps': { type: 'string' },
+        'stream-source': { type: 'string' },
+        'grpc-image-mode': { type: 'string' },
         'stun-url': { type: 'string' },
         'turn-url': { type: 'string' },
         'turn-username': { type: 'string' },
@@ -201,6 +213,25 @@ export function parseCliOptions(args: string[]): CliOptions {
     true
   );
   const videoFps = parseNumberOption(values['video-fps'], '--video-fps', 1, 120, true);
+  const normalizedStreamSource = values['stream-source']?.toLowerCase();
+  const streamSource = ANDROID_STREAM_SOURCES.includes(
+    normalizedStreamSource as AndroidStreamSource,
+  )
+    ? (normalizedStreamSource as AndroidStreamSource)
+    : undefined;
+  if (values['stream-source'] !== undefined && streamSource === undefined) {
+    throw new Error(`Invalid --stream-source: ${values['stream-source']}\n\n${HELP}`);
+  }
+  const normalizedGrpcImageMode = values['grpc-image-mode']?.toLowerCase();
+  const grpcImageMode = GRPC_IMAGE_MODES.includes(normalizedGrpcImageMode as GrpcImageMode)
+    ? (normalizedGrpcImageMode as GrpcImageMode)
+    : undefined;
+  if (values['grpc-image-mode'] !== undefined && grpcImageMode === undefined) {
+    throw new Error(`Invalid --grpc-image-mode: ${values['grpc-image-mode']}\n\n${HELP}`);
+  }
+  if ((streamSource !== undefined || grpcImageMode !== undefined) && platform === 'ios') {
+    throw new Error(`--stream-source and --grpc-image-mode are supported only for Android.\n\n${HELP}`);
+  }
   const stunUrls = parseIceUrls(values['stun-url'], 'stun');
   const turnUrls = parseIceUrls(values['turn-url'], 'turn');
   const turnUsername = values['turn-username'];
@@ -248,6 +279,8 @@ export function parseCliOptions(args: string[]): CliOptions {
     mjpegQuality,
     videoBitrate,
     videoFps,
+    streamSource,
+    grpcImageMode,
     stunUrls,
     turnUrls,
     turnUsername,

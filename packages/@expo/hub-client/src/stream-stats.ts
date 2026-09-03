@@ -269,12 +269,47 @@ function readWebRtcEncoderStats(value: unknown): DeviceStreamEncoderStats | null
 
 function readWebRtcCaptureStats(value: unknown): DeviceStreamCaptureStats | null {
   if (!isRecord(value)) return null;
+  const grpc = isRecord(value.grpc) ? value.grpc : null;
+  const timing = (name: string, quantile: 'p50' | 'p95'): number | null => {
+    if (grpc === null || !isRecord(grpc[name])) return null;
+    return finiteNumber(grpc[name][quantile]);
+  };
+  const grpcImageMode = grpc?.imageMode === 'png' || grpc?.imageMode === 'mmap'
+    ? grpc.imageMode
+    : null;
   return {
     screenFrames: finiteNumber(value.screenFrames),
     idleFrames: finiteNumber(value.idleFrames),
     offeredFrames: finiteNumber(value.offeredFrames),
     forwardedFrames: finiteNumber(value.forwardedFrames),
     pumpRestarts: finiteNumber(value.pumpRestarts),
+    ...(grpc === null
+      ? {}
+      : {
+          grpcImageMode,
+          grpcProducerFps: finiteNumber(grpc.sourceTimestampFps),
+          grpcReceiveFps: finiteNumber(grpc.rawMessageReceiveFps),
+          grpcUsableImageFps: finiteNumber(grpc.usableImageFps),
+          grpcEncoderInputFps: finiteNumber(grpc.freshEncoderWriteFps),
+          grpcMessagesReceived: finiteNumber(grpc.rawGrpcMessagesReceived),
+          grpcMessagesEmitted: finiteNumber(grpc.rawGrpcMessagesEmitted),
+          grpcMessagesCoalesced: finiteNumber(grpc.rawGrpcMessagesCoalesced),
+          grpcSequenceGaps: finiteNumber(grpc.sequenceGaps),
+          grpcImagePayloadBytes: finiteNumber(grpc.imagePayloadBytes),
+          grpcTransportBytes: finiteNumber(grpc.transportBytes),
+          grpcMessageBytesReceived: finiteNumber(grpc.grpcMessageBytesReceived),
+          mmapFileBytesRead: finiteNumber(grpc.mmapFileBytesRead),
+          mmapReadRetries: finiteNumber(grpc.mmapReadRetries),
+          mmapTornFramesDropped: finiteNumber(grpc.mmapTornFramesDropped),
+          grpcProductionToReceiveP50Ms: timing('productionToReceiveLatencyMs', 'p50'),
+          grpcProductionToReceiveP95Ms: timing('productionToReceiveLatencyMs', 'p95'),
+          grpcProductionToUsableP50Ms: timing('productionToUsableLatencyMs', 'p50'),
+          grpcProductionToUsableP95Ms: timing('productionToUsableLatencyMs', 'p95'),
+          grpcProtobufDecodeP50Ms: timing('protobufDecodeTimeMs', 'p50'),
+          grpcProtobufDecodeP95Ms: timing('protobufDecodeTimeMs', 'p95'),
+          mmapReadCopyP50Ms: timing('sharedReadCopyTimeMs', 'p50'),
+          mmapReadCopyP95Ms: timing('sharedReadCopyTimeMs', 'p95'),
+        }),
   };
 }
 

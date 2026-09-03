@@ -31,6 +31,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   streamSourcePending: false,
   streamSourceError: null,
   setStreamSource: () => {},
+  setGrpcImageMode: () => {},
   streamStats: null,
   setStreamStatsEnabled: () => {},
   webRtcCodec: 'h264',

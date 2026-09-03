@@ -498,6 +498,75 @@ describe('readWebRtcServerStats', () => {
       publisherCounters: null,
     });
   });
+
+  test('normalizes gRPC producer, transport, and host-copy diagnostics', () => {
+    const result = readWebRtcServerStats(
+      {
+        sampledAt: 2_000,
+        source: { codec: 'h264', fps: 58, frames: 500 },
+        sessions: [
+          {
+            sessionId: 'viewer',
+            submittedFrames: 490,
+            publisherDroppedFrames: 0,
+            payloadBytesSubmitted: 2_000_000,
+          },
+        ],
+        capture: {
+          offeredFrames: 500,
+          forwardedFrames: 490,
+          grpc: {
+            imageMode: 'mmap',
+            sourceTimestampFps: 60,
+            rawMessageReceiveFps: 59.5,
+            usableImageFps: 59,
+            freshEncoderWriteFps: 58.5,
+            rawGrpcMessagesReceived: 600,
+            rawGrpcMessagesEmitted: 590,
+            rawGrpcMessagesCoalesced: 10,
+            sequenceGaps: 2,
+            imagePayloadBytes: 552_960,
+            transportBytes: 55_296_000,
+            grpcMessageBytesReceived: 12_000,
+            mmapFileBytesRead: 56_000_000,
+            mmapReadRetries: 1,
+            mmapTornFramesDropped: 0,
+            productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
+            productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
+            protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
+            sharedReadCopyTimeMs: { p50: 0.3, p95: 0.6 },
+          },
+        },
+      },
+      'viewer',
+    );
+
+    expect(result.capture).toMatchObject({
+      grpcImageMode: 'mmap',
+      grpcProducerFps: 60,
+      grpcReceiveFps: 59.5,
+      grpcUsableImageFps: 59,
+      grpcEncoderInputFps: 58.5,
+      grpcMessagesReceived: 600,
+      grpcMessagesEmitted: 590,
+      grpcMessagesCoalesced: 10,
+      grpcSequenceGaps: 2,
+      grpcImagePayloadBytes: 552_960,
+      grpcTransportBytes: 55_296_000,
+      grpcMessageBytesReceived: 12_000,
+      mmapFileBytesRead: 56_000_000,
+      mmapReadRetries: 1,
+      mmapTornFramesDropped: 0,
+      grpcProductionToReceiveP50Ms: 4.2,
+      grpcProductionToReceiveP95Ms: 8.1,
+      grpcProductionToUsableP50Ms: 4.7,
+      grpcProductionToUsableP95Ms: 9.2,
+      grpcProtobufDecodeP50Ms: 0.1,
+      grpcProtobufDecodeP95Ms: 0.2,
+      mmapReadCopyP50Ms: 0.3,
+      mmapReadCopyP95Ms: 0.6,
+    });
+  });
 });
 
 describe('describeWebRtcPublisherCounters', () => {

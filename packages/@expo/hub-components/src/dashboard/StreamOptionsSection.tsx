@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import {
   type DeviceClient,
+  type DeviceGrpcImageMode,
   type DeviceHttpCodec,
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
@@ -58,6 +59,13 @@ const STREAM_MODE_ORDER: readonly DeviceStreamMode[] = ['mjpeg', 'h264', 'webrtc
 const STREAM_SOURCE_OPTIONS: ReadonlyArray<{ value: DeviceStreamSource; label: string }> = [
   { value: 'scrcpy', label: 'scrcpy' },
   { value: 'grpc-screenshot', label: 'gRPC' },
+];
+const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<{
+  value: DeviceGrpcImageMode;
+  label: string;
+}> = [
+  { value: 'png', label: 'PNG' },
+  { value: 'mmap', label: 'MMAP' },
 ];
 const STREAM_SETTING_ORDER: readonly (keyof DeviceStreamEncoderSettings)[] = [
   'maxDimension',
@@ -262,6 +270,19 @@ export function StreamOptionsSection({
             </span>
           )}
         </>
+      )}
+      {streamSource?.mode === 'grpc-screenshot' && (
+        <SidebarRow label="gRPC frames">
+          <SegmentedControl
+            ariaLabel="gRPC image mode"
+            options={GRPC_IMAGE_MODE_OPTIONS.map((option) => ({
+              ...option,
+              disabled: client.streamSourcePending,
+            }))}
+            value={streamSource.grpcImageMode}
+            onChange={client.setGrpcImageMode}
+          />
+        </SidebarRow>
       )}
       <SidebarRow label="Transport">
         <SegmentedControl
