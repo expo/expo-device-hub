@@ -213,6 +213,13 @@ describe('parseCliOptions', () => {
     expect(HELP).toContain('used when the gRPC source is active');
   });
 
+  test('documents the default Android gRPC MMAP stream', () => {
+    expect(HELP).toContain('--stream-source <source>');
+    expect(HELP).toContain('(default: grpc-screenshot)');
+    expect(HELP).toContain('--grpc-image-mode <mode>');
+    expect(HELP).toContain('default: mmap');
+  });
+
   test('hides the device list sidebar on request', () => {
     expect(parseCliOptions(['--hide-sidebar']).hideSidebar).toBe(true);
     expect(HELP).toContain('--hide-sidebar');

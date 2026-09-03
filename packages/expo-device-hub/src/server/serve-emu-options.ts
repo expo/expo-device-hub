@@ -1,4 +1,6 @@
 import {
+  DEFAULT_ANDROID_STREAM_SOURCE,
+  DEFAULT_GRPC_IMAGE_MODE,
   DEFAULT_WEBRTC_ICE_POLICY,
   type AndroidStreamSource,
   type CliOptions,
@@ -38,6 +40,14 @@ export type StandaloneServeEmuOptions = {
   streamSettings: StandaloneServeEmuStreamSettings;
 };
 
+function defaultServeEmuOptions(): StandaloneServeEmuOptions {
+  return {
+    streamMode: DEFAULT_ANDROID_STREAM_SOURCE,
+    grpcImageMode: DEFAULT_GRPC_IMAGE_MODE,
+    streamSettings: { transport: 'websocket' },
+  };
+}
+
 function webRtcIceServers(options: CliOptions): StandaloneServeEmuIceServer[] {
   const iceServers: StandaloneServeEmuIceServer[] = options.stunUrls
     ? [{ urls: options.stunUrls }]
@@ -61,8 +71,8 @@ export function standaloneServeEmuOptions(options: CliOptions): StandaloneServeE
     ...(options.videoFps !== undefined ? { maxFps: options.videoFps } : {}),
     ...(options.videoBitrate !== undefined ? { bitRate: options.videoBitrate } : {}),
     ...(options.maxDimension !== undefined ? { maxSize: options.maxDimension } : {}),
-    ...(options.streamSource !== undefined ? { streamMode: options.streamSource } : {}),
-    ...(options.grpcImageMode !== undefined ? { grpcImageMode: options.grpcImageMode } : {}),
+    streamMode: options.streamSource ?? DEFAULT_ANDROID_STREAM_SOURCE,
+    grpcImageMode: options.grpcImageMode ?? DEFAULT_GRPC_IMAGE_MODE,
     streamSettings:
       options.transport === 'webrtc'
         ? {
@@ -84,14 +94,14 @@ export function encodeStandaloneServeEmuOptions(options: CliOptions): string {
 export function readStandaloneServeEmuOptions(
   value: string | undefined,
 ): StandaloneServeEmuOptions {
-  if (!value) return { streamSettings: { transport: 'websocket' } };
+  if (!value) return defaultServeEmuOptions();
   try {
     const parsed = JSON.parse(value);
     return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? (parsed as StandaloneServeEmuOptions)
-      : { streamSettings: { transport: 'websocket' } };
+      ? { ...defaultServeEmuOptions(), ...(parsed as Partial<StandaloneServeEmuOptions>) }
+      : defaultServeEmuOptions();
   } catch {
-    return { streamSettings: { transport: 'websocket' } };
+    return defaultServeEmuOptions();
   }
 }
 
