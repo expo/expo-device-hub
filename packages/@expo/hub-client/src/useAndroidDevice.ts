@@ -1040,6 +1040,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       const packet = parseFramePacket(raw);
 
       if (useMse) {
+        const fallbackError = mseFallbackCodecError(codec, mseSupported);
+        if (fallbackError) {
+          if (!decoderConfigFailed) {
+            decoderConfigFailed = true;
+            setStatus('error');
+            setError(fallbackError);
+          }
+          return;
+        }
         if (codec !== 'h264') return;
         const isKey = packet.isKey ?? scanAU(packet.data).isKey;
         if (!msePlayer) {
