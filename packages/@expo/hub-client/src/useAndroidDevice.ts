@@ -32,13 +32,23 @@ import {
   parseAndroidDeviceSetting,
 } from './android-device-settings';
 import {
+  androidStreamSettingsPatch,
+  parseAndroidStreamSettings,
+} from './android-stream-settings';
+import {
+  androidStreamSourceErrorMessage,
+  parseAndroidStreamSource,
+} from './android-stream-source';
+import {
   DeviceSettingWriteTracker,
   mergeAuthoritativeDeviceSetting,
 } from './device-setting-writes';
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
 import { androidMessageForKeyboardInput } from './keyboard';
 import { MsePlayer } from './mse-player';
+import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
+import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
   type ConnectionStatus,
   type DeviceAppearance,
@@ -48,6 +58,8 @@ import {
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
+  type DeviceStreamSource,
+  type DeviceStreamSourceStatus,
   type ForegroundApp,
   type HardwareButton,
   type KeyboardInput,
@@ -62,6 +74,7 @@ const KEYFRAME_REQUEST_COOLDOWN_MS = 1500;
 const FOREGROUND_POLL_MS = 5000;
 const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
+const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
 
 const ANDROID_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = [
@@ -203,6 +216,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [deviceSettingsPending, setDeviceSettingsPending] = useState<
     ReadonlySet<DeviceSettingKey>
   >(() => new Set());
+  const [streamSource, setStreamSourceState] = useState<DeviceStreamSourceStatus | null>(null);
+  const [streamSourcePending, setStreamSourcePending] = useState(false);
+  const [streamSourceError, setStreamSourceError] = useState<string | null>(null);
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
   const [serverStreamSettings, setServerStreamSettings] =
@@ -230,6 +246,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   useLayoutEffect(() => {
     deviceSettingScopeRef.current = deviceSettingScope;
   }, [deviceSettingScope]);
+  const streamSourceRequestRef = useRef(0);
+  const streamSourceRef = useRef<DeviceStreamSourceStatus | null>(null);
+  const streamSourcePendingRef = useRef(false);
+  const streamSourceControllerRef = useRef<AbortController | null>(null);
+  const streamSourceRefreshControllerRef = useRef<AbortController | null>(null);
+  const abortStreamSourceRefresh = useCallback(() => {
+    ++streamSourceRequestRef.current;
+    streamSourceRefreshControllerRef.current?.abort();
+    streamSourceRefreshControllerRef.current = null;
+  }, []);
+  useEffect(
+    () => () => {
+      streamSourceControllerRef.current?.abort();
+      streamSourceRefreshControllerRef.current?.abort();
+    },
+    [],
+  );
 
   const attachVideo = useCallback(
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
@@ -397,6 +430,171 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [setDeviceSetting],
   );
 
+  const streamSettingsUrl =
+    active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-settings', targetDevice) : null;
+  const streamSourceUrl =
+    active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-mode', targetDevice) : null;
+  const {
+    streamSettings,
+    streamSettingsPending,
+    updateStreamSettings,
+    refreshStreamSettings,
+  } = useStreamSettingsResource({
+    url: streamSettingsUrl,
+    initialSettings: null,
+    parse: parseAndroidStreamSettings,
+    toPatch: androidStreamSettingsPatch,
+  });
+
+  const setStreamSource = useCallback(
+    (source: DeviceStreamSource) => {
+      const previous = streamSourceRef.current;
+      if (
+        !streamSourceUrl ||
+        !previous ||
+        previous.mode === source ||
+        !previous.availableModes.includes(source) ||
+        streamSourcePendingRef.current
+      ) {
+        return;
+      }
+      const request = ++streamSourceRequestRef.current;
+      const controller = new AbortController();
+      streamSourceControllerRef.current = controller;
+      streamSourcePendingRef.current = true;
+      setStreamSourcePending(true);
+      setStreamSourceError(null);
+      void fetch(streamSourceUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: source }),
+        signal: controller.signal,
+      })
+        .then(async (response) => {
+          if (!response.ok) {
+            let payload: unknown = null;
+            try {
+              payload = await response.json();
+            } catch {}
+            throw new Error(androidStreamSourceErrorMessage(response.status, payload));
+          }
+          const next = parseAndroidStreamSource(await response.json());
+          if (!next) throw new Error('Stream source update returned an invalid response');
+          if (streamSourceRequestRef.current === request) {
+            streamSourceRef.current = next;
+            setStreamSourceState(next);
+            setStreamSourceError(null);
+          }
+        })
+        .catch((cause: unknown) => {
+          // The server stages source changes atomically, so the previous source
+          // remains authoritative when a replacement fails.
+          if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
+            setStreamSourceError(
+              cause instanceof Error ? cause.message : 'Unable to change stream source.',
+            );
+          }
+        })
+        .finally(() => {
+          if (streamSourceControllerRef.current === controller) {
+            streamSourceControllerRef.current = null;
+          }
+          if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
+            streamSourcePendingRef.current = false;
+            setStreamSourcePending(false);
+          }
+        });
+    },
+    [streamSourceUrl],
+  );
+
+  const refreshStreamSource = useCallback(
+    async (clearPendingWhenDone = false) => {
+      if (
+        !streamSourceUrl ||
+        streamSourceControllerRef.current ||
+        streamSourceRefreshControllerRef.current
+      ) {
+        return;
+      }
+      const request = ++streamSourceRequestRef.current;
+      const controller = new AbortController();
+      streamSourceRefreshControllerRef.current = controller;
+      try {
+        const response = await fetch(streamSourceUrl, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Stream source request failed (${response.status})`);
+        const next = parseAndroidStreamSource(await response.json());
+        if (!next) throw new Error('Stream source request returned an invalid response');
+        if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
+          streamSourceRef.current = next;
+          setStreamSourceState((current) =>
+            current?.mode === next.mode &&
+            current.sessionGeneration === next.sessionGeneration &&
+            current.availableModes.join() === next.availableModes.join()
+              ? current
+              : next,
+          );
+        }
+      } catch {
+        // Device startup and source replacement are transient; keep polling.
+      } finally {
+        if (streamSourceRefreshControllerRef.current === controller) {
+          streamSourceRefreshControllerRef.current = null;
+        }
+        if (
+          clearPendingWhenDone &&
+          !controller.signal.aborted &&
+          streamSourceRequestRef.current === request
+        ) {
+          streamSourcePendingRef.current = false;
+          setStreamSourcePending(false);
+        }
+      }
+    },
+    [streamSourceUrl],
+  );
+
+  // ── Android capture source (serve-emu device-scoped GET/PUT endpoint) ──
+  useEffect(() => {
+    streamSourceControllerRef.current?.abort();
+    streamSourceControllerRef.current = null;
+    abortStreamSourceRefresh();
+    streamSourceRef.current = null;
+    setStreamSourceState(null);
+    setStreamSourceError(null);
+    if (!streamSourceUrl) {
+      streamSourcePendingRef.current = false;
+      setStreamSourcePending(false);
+      return;
+    }
+
+    streamSourcePendingRef.current = true;
+    setStreamSourcePending(true);
+    void refreshStreamSource(true);
+    return abortStreamSourceRefresh;
+  }, [abortStreamSourceRefresh, refreshStreamSource, streamSourceUrl]);
+
+  // Stream options share one timer and pause while the page is hidden.
+  useEffect(() => {
+    if (!streamSettingsUrl && !streamSourceUrl) return;
+    const refresh = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      refreshStreamSettings();
+      void refreshStreamSource();
+    };
+    const timer = setInterval(refresh, STREAM_OPTIONS_POLL_MS);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearInterval(timer);
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', refresh);
+      }
+    };
+  }, [refreshStreamSettings, refreshStreamSource, streamSettingsUrl, streamSourceUrl]);
+
   // ── Stream metadata ──
   // serve-emu locks its host transport at launch. Poll the device-scoped API so
   // the viewer only offers WebRTC when that transport is actually configured,
@@ -514,8 +712,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let frameCallback = 0;
     let fpsCount = 0;
     let fpsStartedAt = performance.now();
+    let previousPresentedFrames: number | null = null;
 
-    const markFrame = () => {
+    const markFrame = (presentedFrameDelta = 1) => {
       if (stopped) return;
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         const width = video.videoWidth;
@@ -528,8 +727,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         firstFrame = false;
         setWebRtcVideoReady(true);
       }
-      markWebRtcFrameDecoded();
-      fpsCount++;
+      markWebRtcFrameDecoded(presentedFrameDelta);
+      fpsCount += presentedFrameDelta;
       const now = performance.now();
       if (now - fpsStartedAt >= 1000) {
         const next = Math.round((fpsCount * 1000) / (now - fpsStartedAt));
@@ -538,11 +737,22 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         setFps((current) => (current === next ? current : next));
       }
     };
-    const onVideoFrame = () => {
-      markFrame();
+    const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      const presentedFrameDelta = presentedVideoFrameDelta(
+        previousPresentedFrames,
+        metadata.presentedFrames,
+      );
+      if (
+        Number.isSafeInteger(metadata.presentedFrames) &&
+        metadata.presentedFrames >= 0
+      ) {
+        previousPresentedFrames = metadata.presentedFrames;
+      }
+      markFrame(presentedFrameDelta);
       frameCallback = video.requestVideoFrameCallback(onVideoFrame);
     };
     const onTimeUpdate = () => markFrame();
+    const onLoadedData = () => markFrame(0);
 
     video.srcObject = webRtcStream;
     setWebRtcVideoReady(false);
@@ -552,13 +762,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       } else {
         video.addEventListener('timeupdate', onTimeUpdate);
       }
-      video.addEventListener('loadeddata', markFrame, { once: true });
+      video.addEventListener('loadeddata', onLoadedData, { once: true });
       void video.play().catch(() => {});
     }
 
     return () => {
       stopped = true;
-      video.removeEventListener('loadeddata', markFrame);
+      video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
         video.cancelVideoFrameCallback(frameCallback);
@@ -1232,9 +1442,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
-    streamSettings: null,
-    streamSettingsPending: false,
-    updateStreamSettings: () => {},
+    streamSettings,
+    streamSettingsPending,
+    updateStreamSettings,
+    streamSource,
+    streamSourcePending,
+    streamSourceError,
+    setStreamSource,
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec: 'h264',
@@ -1252,7 +1466,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       deviceSettings: true,
       activity: false,
       events: true,
-      streamSettings: false,
+      streamSettings: { maxDimension: true },
     },
     foregroundApp,
     videoKind: useWebRtc ? 'video' : 'canvas',

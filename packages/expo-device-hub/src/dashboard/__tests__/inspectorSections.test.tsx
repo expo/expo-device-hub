@@ -57,17 +57,25 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           httpCodecs: ['h264'],
           webRtcCodecs: ['h264'],
         },
-    streamSettings: ios
-      ? {
-          mjpegFps: 60,
-          mjpegQuality: 0.7,
-          maxDimension: 0,
-          h264Bitrate: 6_000_000,
-          h264Fps: 60,
-        }
-      : null,
+    streamSettings: {
+      mjpegFps: 60,
+      mjpegQuality: 0.7,
+      maxDimension: 0,
+      h264Bitrate: 6_000_000,
+      h264Fps: 60,
+    },
     streamSettingsPending: false,
     updateStreamSettings: () => {},
+    streamSource: ios
+      ? null
+      : {
+          mode: 'scrcpy',
+          availableModes: ['scrcpy', 'grpc-screenshot'],
+          sessionGeneration: 0,
+        },
+    streamSourcePending: false,
+    streamSourceError: null,
+    setStreamSource: () => {},
     streamStats: null,
     setStreamStatsEnabled: () => {},
     webRtcCodec: 'h264',
@@ -76,7 +84,15 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       deviceSettings: true,
       activity: ios,
       events: true,
-      streamSettings: ios,
+      streamSettings: ios
+        ? {
+            mjpegFps: true,
+            mjpegQuality: true,
+            maxDimension: true,
+            h264Bitrate: true,
+            h264Fps: true,
+          }
+        : { maxDimension: true },
     },
     foregroundApp: null,
     videoKind: 'img',
@@ -200,6 +216,15 @@ function switchMarkup(html: string, label: string) {
   return html.slice(switchStart, switchEnd + '</button>'.length);
 }
 
+function selectMarkup(html: string, label: string) {
+  const labelIndex = html.indexOf(`aria-label="${label}"`);
+  expect(labelIndex).toBeGreaterThanOrEqual(0);
+
+  const selectStart = html.lastIndexOf('<button', labelIndex);
+  const selectEnd = html.indexOf('</button>', labelIndex);
+  return html.slice(selectStart, selectEnd + '</button>'.length);
+}
+
 function streamStatisticGroupMarkup(html: string, label: string) {
   const marker = `<div role="rowgroup" aria-label="${label}"`;
   const start = html.indexOf(marker);
@@ -280,7 +305,7 @@ test('renders Android stream options while omitting unsupported and iOS-only sec
   expect(html.match(/aria-expanded="false"/g)?.length).toBe(3);
 });
 
-test('limits Android stream controls to the transports and H.264 codecs serve-emu supports', () => {
+test('shows Android resolution while omitting encoder settings serve-emu cannot change', () => {
   const html = renderToStaticMarkup(
     <StreamOptionsSection
       client={inspectorClient('android')}
@@ -301,7 +326,73 @@ test('limits Android stream controls to the transports and H.264 codecs serve-em
   expect(html).not.toContain('>MJPEG</button>');
   expect(html).not.toContain('>VP8</button>');
   expect(html).not.toContain('>VP9</button>');
-  expect(html).not.toContain('>Max size</span>');
+  expect(html).toContain('>Max size</span>');
+  expect(selectMarkup(html, 'Max size')).not.toContain('disabled=""');
+  expect(html).not.toContain('>MJPEG FPS</span>');
+  expect(html).not.toContain('>MJPEG quality</span>');
+  expect(html).not.toContain('>Video FPS</span>');
+  expect(html).not.toContain('>Video bitrate</span>');
+});
+
+test('shows the Android emulator capture source switch', () => {
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
+  );
+  const source = segmentedControlMarkup(html, 'Stream source');
+
+  expect(html).toContain('>Source</span>');
+  expect(source).toContain('aria-pressed="true"');
+  expect(source).toContain('>scrcpy</button>');
+  expect(source).toContain('>gRPC</button>');
+  expect(source).not.toContain('disabled=""');
+});
+
+test('disables the Android capture source switch while replacement is pending', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSourcePending: true,
+  } satisfies DeviceClient;
+  const source = segmentedControlMarkup(
+    renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />),
+    'Stream source',
+  );
+
+  expect(source.match(/disabled=""/g)).toHaveLength(2);
+});
+
+test('shows an Android capture source failure below the switch', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSourceError: 'Unable to change stream source: Emulator gRPC endpoint is unavailable',
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+
+  expect(html).toContain('role="alert"');
+  expect(html).toContain('Unable to change stream source: Emulator gRPC endpoint is unavailable');
+});
+
+test('hides the Android capture source row when gRPC is unavailable', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSource: {
+      mode: 'scrcpy',
+      availableModes: ['scrcpy'],
+      sessionGeneration: 0,
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+
+  expect(html).not.toContain('aria-label="Stream source"');
+});
+
+test('disables Android resolution while a stream restart is pending', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSettingsPending: true,
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+
+  expect(selectMarkup(html, 'Max size')).toContain('disabled=""');
 });
 
 test('renders grouped WebRTC statistics with rich client, encoder, and capture values', () => {

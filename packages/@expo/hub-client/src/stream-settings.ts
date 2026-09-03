@@ -8,6 +8,20 @@ export const DEFAULT_DEVICE_STREAM_SETTINGS: DeviceStreamEncoderSettings = {
   h264Fps: 60,
 };
 
+/** Field-wise equality so resource refreshes only publish semantic changes. */
+export function sameDeviceStreamSettings(
+  a: DeviceStreamEncoderSettings | null,
+  b: DeviceStreamEncoderSettings,
+): boolean {
+  return (
+    a?.mjpegFps === b.mjpegFps &&
+    a.mjpegQuality === b.mjpegQuality &&
+    a.maxDimension === b.maxDimension &&
+    a.h264Bitrate === b.h264Bitrate &&
+    a.h264Fps === b.h264Fps
+  );
+}
+
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
