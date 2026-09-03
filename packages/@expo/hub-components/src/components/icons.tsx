@@ -41,7 +41,7 @@ export function RefreshIcon({ size = 16, color = 'currentColor', strokeWidth = 1
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
       <path
-        d="M21 12a9 9 0 1 1-2.64-6.36M21 3v4.5h-4.5"
+        d="M21 12A9 9 0 1 1 18.36 5.64L20.72 8M17.12 8H20.72V4.4"
         stroke={color}
         strokeWidth={strokeWidth}
         strokeLinecap="round"
@@ -127,14 +127,14 @@ export function SidebarIcon({ size = 20, color = 'currentColor', strokeWidth = 1
 export function RotateIcon({ size = 16, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <rect x="4.1" y="8" width="9" height="11.6" rx="2.3" stroke={color} strokeWidth={strokeWidth} />
       <path
-        d="M21 12a9 9 0 1 1-3-6.7L21 8"
+        d="M8.6 4.1A9.7 9.7 0 0 1 18.3 13.8M16.18 11.68 18.3 13.8 20.42 11.68"
         stroke={color}
         strokeWidth={strokeWidth}
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <path d="M21 3v5h-5" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
