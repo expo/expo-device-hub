@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   type DeviceClient,
   type DeviceGrpcImageMode,
+  type DeviceGrpcVideoCodec,
   type DeviceHttpCodec,
   type DeviceInputSource,
   type DeviceStreamCapabilities,
@@ -74,6 +75,14 @@ const GRPC_INPUT_SOURCE_OPTIONS: ReadonlyArray<{
 }> = [
   { value: 'scrcpy', label: 'scrcpy' },
   { value: 'grpc', label: 'gRPC' },
+];
+const GRPC_VIDEO_CODEC_OPTIONS: ReadonlyArray<{
+  value: DeviceGrpcVideoCodec;
+  label: string;
+}> = [
+  { value: 'h264', label: 'H.264' },
+  { value: 'vp8', label: 'VP8' },
+  { value: 'vp9', label: 'VP9' },
 ];
 const STREAM_SETTING_ORDER: readonly (keyof DeviceStreamEncoderSettings)[] = [
   'maxDimension',
@@ -150,10 +159,18 @@ export function StreamOptionsSection({
   const [open, setOpen] = useState(defaultOpen);
   const backend: DeviceStreamCapabilities =
     client.streamCapabilities ?? DEFAULT_STREAM_CAPABILITIES;
+  const streamSource = client.streamSource;
+  const grpcVideoUsesWebSocket =
+    client.platform === 'android' &&
+    streamSource?.mode === 'grpc-screenshot' &&
+    streamSource.grpcVideoCodec !== 'h264';
   const availability: StreamModeAvailability = {
     mjpeg: streamModeAvailability.mjpeg && backend.modeAvailability.mjpeg,
     h264: streamModeAvailability.h264 && backend.modeAvailability.h264,
-    webrtc: streamModeAvailability.webrtc && backend.modeAvailability.webrtc,
+    webrtc:
+      streamModeAvailability.webrtc &&
+      backend.modeAvailability.webrtc &&
+      !grpcVideoUsesWebSocket,
   };
   const activeStreamMode = availability[streamMode]
     ? streamMode
@@ -177,7 +194,6 @@ export function StreamOptionsSection({
     ? STREAM_SETTING_ORDER.filter((key) => settingsCapabilities[key])
     : [];
   const finalSettingKey = supportedSettingKeys.at(-1);
-  const streamSource = client.streamSource;
   const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableModes.includes(option.value),
   );
@@ -250,7 +266,9 @@ export function StreamOptionsSection({
     (backend.modeAvailability.h264 && !streamModeAvailability.h264) ||
     (backend.modeAvailability.webrtc && !streamModeAvailability.webrtc);
   const hostWebRtcDisabled =
-    client.platform === 'android' && !backend.modeAvailability.webrtc;
+    client.platform === 'android' &&
+    !backend.modeAvailability.webrtc &&
+    !grpcVideoUsesWebSocket;
 
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
@@ -308,6 +326,29 @@ export function StreamOptionsSection({
               onChange={client.setGrpcImageMode}
             />
           </SidebarRow>
+          <SidebarRow label="gRPC codec">
+            <SegmentedControl
+              ariaLabel="gRPC video codec"
+              options={GRPC_VIDEO_CODEC_OPTIONS.map((option) => ({
+                ...option,
+                disabled:
+                  client.streamSourcePending ||
+                  (transport === 'webrtc' && option.value !== 'h264'),
+              }))}
+              value={streamSource.grpcVideoCodec}
+              onChange={client.setGrpcVideoCodec}
+            />
+          </SidebarRow>
+          <span
+            style={{
+              ...textSize.xs,
+              display: 'block',
+              padding: '0 0 8px',
+              color: text.tertiary,
+            }}
+          >
+            VP8 and VP9 gRPC video require WebSocket.
+          </span>
         </>
       )}
       <SidebarRow label="Transport">
@@ -323,7 +364,7 @@ export function StreamOptionsSection({
           onChange={changeTransport}
         />
       </SidebarRow>
-      {httpCodecOptions.length > 0 && (
+      {client.platform !== 'android' && httpCodecOptions.length > 0 && (
         <SidebarRow label={`${primaryTransportLabel} codec`}>
           <SegmentedControl
             ariaLabel={`${primaryTransportLabel} codec`}

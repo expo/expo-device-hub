@@ -22,6 +22,9 @@ export const DEFAULT_ANDROID_STREAM_SOURCE: AndroidStreamSource = 'grpc-screensh
 export const GRPC_IMAGE_MODES = ['png', 'mmap'] as const;
 export type GrpcImageMode = (typeof GRPC_IMAGE_MODES)[number];
 export const DEFAULT_GRPC_IMAGE_MODE: GrpcImageMode = 'mmap';
+export const GRPC_VIDEO_CODECS = ['h264', 'vp8', 'vp9'] as const;
+export type GrpcVideoCodec = (typeof GRPC_VIDEO_CODECS)[number];
+export const DEFAULT_GRPC_VIDEO_CODEC: GrpcVideoCodec = 'h264';
 
 export const HELP = `expo-device-hub — manage iOS simulators and Android emulators from the browser
 
@@ -39,6 +42,7 @@ Options:
       --video-fps <fps>      H.264/WebRTC frame rate (1-120)
       --stream-source <source> Android capture source: ${ANDROID_STREAM_SOURCES.join(', ')} (default: ${DEFAULT_ANDROID_STREAM_SOURCE})
       --grpc-image-mode <mode> gRPC frames: ${GRPC_IMAGE_MODES.join(', ')} (default: ${DEFAULT_GRPC_IMAGE_MODE}; used when the gRPC source is active)
+      --grpc-video-codec <codec> gRPC WebSocket video codec: ${GRPC_VIDEO_CODECS.join(', ')} (default: ${DEFAULT_GRPC_VIDEO_CODEC}; used when the gRPC source is active)
       --stun-url <urls>      Comma-separated STUN URL(s) for WebRTC ICE
       --turn-url <urls>      Comma-separated TURN URL(s) for WebRTC ICE
       --turn-username <name> TURN username (requires --turn-credential and --turn-url)
@@ -62,6 +66,7 @@ export type CliOptions = {
   videoFps?: number;
   streamSource?: AndroidStreamSource;
   grpcImageMode?: GrpcImageMode;
+  grpcVideoCodec?: GrpcVideoCodec;
   stunUrls?: string[];
   turnUrls?: string[];
   turnUsername?: string;
@@ -131,6 +136,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     'video-fps'?: string;
     'stream-source'?: string;
     'grpc-image-mode'?: string;
+    'grpc-video-codec'?: string;
     'stun-url'?: string;
     'turn-url'?: string;
     'turn-username'?: string;
@@ -159,6 +165,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         'video-fps': { type: 'string' },
         'stream-source': { type: 'string' },
         'grpc-image-mode': { type: 'string' },
+        'grpc-video-codec': { type: 'string' },
         'stun-url': { type: 'string' },
         'turn-url': { type: 'string' },
         'turn-username': { type: 'string' },
@@ -231,8 +238,27 @@ export function parseCliOptions(args: string[]): CliOptions {
   if (values['grpc-image-mode'] !== undefined && grpcImageMode === undefined) {
     throw new Error(`Invalid --grpc-image-mode: ${values['grpc-image-mode']}\n\n${HELP}`);
   }
-  if ((streamSource !== undefined || grpcImageMode !== undefined) && platform === 'ios') {
-    throw new Error(`--stream-source and --grpc-image-mode are supported only for Android.\n\n${HELP}`);
+  const normalizedGrpcVideoCodec = values['grpc-video-codec']?.toLowerCase();
+  const grpcVideoCodec = GRPC_VIDEO_CODECS.includes(
+    normalizedGrpcVideoCodec as GrpcVideoCodec
+  )
+    ? (normalizedGrpcVideoCodec as GrpcVideoCodec)
+    : undefined;
+  if (values['grpc-video-codec'] !== undefined && grpcVideoCodec === undefined) {
+    throw new Error(`Invalid --grpc-video-codec: ${values['grpc-video-codec']}\n\n${HELP}`);
+  }
+  if (
+    (streamSource !== undefined || grpcImageMode !== undefined || grpcVideoCodec !== undefined) &&
+    platform === 'ios'
+  ) {
+    throw new Error(
+      `--stream-source, --grpc-image-mode, and --grpc-video-codec are supported only for Android.\n\n${HELP}`
+    );
+  }
+  if (grpcVideoCodec !== undefined && grpcVideoCodec !== 'h264' && transport === 'webrtc') {
+    throw new Error(
+      `--grpc-video-codec ${grpcVideoCodec} is incompatible with --transport webrtc; use --transport h264 (WebSocket).\n\n${HELP}`
+    );
   }
   const stunUrls = parseIceUrls(values['stun-url'], 'stun');
   const turnUrls = parseIceUrls(values['turn-url'], 'turn');
@@ -283,6 +309,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     videoFps,
     streamSource,
     grpcImageMode,
+    grpcVideoCodec,
     stunUrls,
     turnUrls,
     turnUsername,

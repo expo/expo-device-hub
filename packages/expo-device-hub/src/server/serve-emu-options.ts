@@ -1,10 +1,12 @@
 import {
   DEFAULT_ANDROID_STREAM_SOURCE,
   DEFAULT_GRPC_IMAGE_MODE,
+  DEFAULT_GRPC_VIDEO_CODEC,
   DEFAULT_WEBRTC_ICE_POLICY,
   type AndroidStreamSource,
   type CliOptions,
   type GrpcImageMode,
+  type GrpcVideoCodec,
   type WebRtcIcePolicy,
 } from './cli/options';
 
@@ -37,6 +39,7 @@ export type StandaloneServeEmuOptions = {
   maxSize?: number;
   streamMode?: AndroidStreamSource;
   grpcImageMode?: GrpcImageMode;
+  grpcVideoCodec?: GrpcVideoCodec;
   streamSettings: StandaloneServeEmuStreamSettings;
 };
 
@@ -44,6 +47,7 @@ function defaultServeEmuOptions(): StandaloneServeEmuOptions {
   return {
     streamMode: DEFAULT_ANDROID_STREAM_SOURCE,
     grpcImageMode: DEFAULT_GRPC_IMAGE_MODE,
+    grpcVideoCodec: DEFAULT_GRPC_VIDEO_CODEC,
     streamSettings: { transport: 'websocket' },
   };
 }
@@ -73,6 +77,7 @@ export function standaloneServeEmuOptions(options: CliOptions): StandaloneServeE
     ...(options.maxDimension !== undefined ? { maxSize: options.maxDimension } : {}),
     streamMode: options.streamSource ?? DEFAULT_ANDROID_STREAM_SOURCE,
     grpcImageMode: options.grpcImageMode ?? DEFAULT_GRPC_IMAGE_MODE,
+    grpcVideoCodec: options.grpcVideoCodec ?? DEFAULT_GRPC_VIDEO_CODEC,
     streamSettings:
       options.transport === 'webrtc'
         ? {

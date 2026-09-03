@@ -42,11 +42,11 @@ export function scanAU(buf: Uint8Array): ScanResult {
   return { isKey, spsBytes };
 }
 
-// serve-emu prefixes each WS frame with a 16-byte "SEMU" header carrying the
-// keyframe flag + presentation timestamp (see server.ts `withFrameMeta`).
+// serve-emu prefixes each WS frame with a versioned "SEMU" header carrying the
+// keyframe flag + presentation timestamp (see shared/frame-meta.ts).
 const FRAME_META_MAGIC = 0x53454d55; // "SEMU"
-const FRAME_META_VERSION = 1;
-const FRAME_META_HEADER_BYTES = 16;
+const FRAME_META_V1_HEADER_BYTES = 16;
+const FRAME_META_V2_HEADER_BYTES = 24;
 const FRAME_FLAG_KEY = 1 << 0;
 
 export interface FramePacket {
@@ -55,15 +55,25 @@ export interface FramePacket {
   timestamp: number | null;
 }
 
-/** Split a `/ws?frame-meta=1` binary message into its meta + Annex-B payload. */
+/** Split a `/ws?frame-meta=1` binary message into its metadata and encoded payload. */
 export function parseFramePacket(raw: ArrayBuffer | Uint8Array): FramePacket {
   const bytes = raw instanceof Uint8Array ? raw : new Uint8Array(raw);
-  if (bytes.byteLength > FRAME_META_HEADER_BYTES) {
-    const view = new DataView(bytes.buffer, bytes.byteOffset, FRAME_META_HEADER_BYTES);
-    if (view.getUint32(0, false) === FRAME_META_MAGIC && view.getUint8(4) === FRAME_META_VERSION) {
+  if (bytes.byteLength > FRAME_META_V1_HEADER_BYTES) {
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    if (view.getUint32(0, false) === FRAME_META_MAGIC) {
+      const version = view.getUint8(4);
+      const headerBytes =
+        version === 1
+          ? FRAME_META_V1_HEADER_BYTES
+          : version === 2 && bytes.byteLength > FRAME_META_V2_HEADER_BYTES
+            ? FRAME_META_V2_HEADER_BYTES
+            : null;
+      if (headerBytes === null || bytes.byteLength <= headerBytes) {
+        return { data: bytes, isKey: null, timestamp: null };
+      }
       const pts = view.getBigUint64(8, false);
       return {
-        data: bytes.subarray(FRAME_META_HEADER_BYTES),
+        data: bytes.subarray(headerBytes),
         isKey: (view.getUint8(5) & FRAME_FLAG_KEY) !== 0,
         timestamp: pts <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(pts) : null,
       };

@@ -73,6 +73,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           grpcImageMode: 'png',
           inputSource: 'scrcpy',
           availableInputSources: ['scrcpy'],
+          grpcVideoCodec: 'h264',
           availableModes: ['scrcpy', 'grpc-screenshot'],
           sessionGeneration: 0,
         },
@@ -81,6 +82,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     setStreamSource: () => {},
     setGrpcImageMode: () => {},
     setGrpcInputSource: () => {},
+    setGrpcVideoCodec: () => {},
     streamStats: null,
     setStreamStatsEnabled: () => {},
     webRtcCodec: 'h264',
@@ -326,7 +328,7 @@ test('shows Android resolution while omitting encoder settings serve-emu cannot 
 
   expect(segmentedControlMarkup(html, 'Stream transport')).toContain('>WebSocket</button>');
   expect(segmentedControlMarkup(html, 'Stream transport')).toContain('>WebRTC</button>');
-  expect(segmentedControlMarkup(html, 'WebSocket codec')).toContain('>H.264</button>');
+  expect(html).not.toContain('aria-label="WebSocket codec"');
   expect(segmentedControlMarkup(html, 'WebRTC codec')).toContain('>H.264</button>');
   expect(html).not.toContain('>HTTP</button>');
   expect(html).not.toContain('>MJPEG</button>');
@@ -353,11 +355,12 @@ test('shows the Android emulator capture source switch', () => {
   expect(source).not.toContain('disabled=""');
 });
 
-test('shows PNG and MMAP only while the gRPC source is active', () => {
+test('shows image and video codec controls only while the gRPC source is active', () => {
   const scrcpyHtml = renderToStaticMarkup(
     <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
   );
   expect(scrcpyHtml).not.toContain('aria-label="gRPC image mode"');
+  expect(scrcpyHtml).not.toContain('aria-label="gRPC video codec"');
 
   const grpcClient = {
     ...inspectorClient('android'),
@@ -366,6 +369,7 @@ test('shows PNG and MMAP only while the gRPC source is active', () => {
       grpcImageMode: 'mmap',
       inputSource: 'scrcpy',
       availableInputSources: ['scrcpy', 'grpc'],
+      grpcVideoCodec: 'vp9',
       availableModes: ['scrcpy', 'grpc-screenshot'],
       sessionGeneration: 1,
     },
@@ -384,6 +388,90 @@ test('shows PNG and MMAP only while the gRPC source is active', () => {
   expect(imageMode).toContain('>PNG</button>');
   expect(imageMode).toContain('>MMAP</button>');
   expect(imageMode).toMatch(/aria-pressed="true"[^>]*>MMAP<\/button>/);
+  const codec = segmentedControlMarkup(grpcHtml, 'gRPC video codec');
+  expect(grpcHtml).toContain('>gRPC codec</span>');
+  expect(codec).toContain('>H.264</button>');
+  expect(codec).toContain('>VP8</button>');
+  expect(codec).toContain('>VP9</button>');
+  expect(codec).toMatch(/aria-pressed="true"[^>]*>VP9<\/button>/);
+  expect(grpcHtml).toContain('VP8 and VP9 gRPC video require WebSocket.');
+});
+
+test('keeps VPx gRPC video on WebSocket', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSource: {
+      mode: 'grpc-screenshot',
+      grpcImageMode: 'mmap',
+      inputSource: 'scrcpy',
+      availableInputSources: ['scrcpy', 'grpc'],
+      grpcVideoCodec: 'vp9',
+      availableModes: ['scrcpy', 'grpc-screenshot'],
+      sessionGeneration: 1,
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={client}
+      defaultOpen
+      streamMode="webrtc"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+    />,
+  );
+  const transport = segmentedControlMarkup(html, 'Stream transport');
+
+  expect(transport).toMatch(/aria-pressed="true"[^>]*>WebSocket<\/button>/);
+  expect(transport).toMatch(/<button[^>]*disabled=""[^>]*>WebRTC<\/button>/);
+  expect(html).toContain('VP8 and VP9 gRPC video require WebSocket.');
+});
+
+test('disables VPx gRPC codecs while WebRTC is active', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSource: {
+      mode: 'grpc-screenshot',
+      grpcImageMode: 'mmap',
+      inputSource: 'scrcpy',
+      availableInputSources: ['scrcpy', 'grpc'],
+      grpcVideoCodec: 'h264',
+      availableModes: ['scrcpy', 'grpc-screenshot'],
+      sessionGeneration: 1,
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={client}
+      defaultOpen
+      streamMode="webrtc"
+      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+      onStreamModeChange={() => {}}
+    />,
+  );
+  const codec = segmentedControlMarkup(html, 'gRPC video codec');
+
+  expect(codec).toMatch(/aria-pressed="true"[^>]*>H\.264<\/button>/);
+  expect(codec.match(/disabled=""/g)).toHaveLength(2);
+});
+
+test('disables gRPC image and codec controls while source replacement is pending', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSource: {
+      mode: 'grpc-screenshot',
+      grpcImageMode: 'mmap',
+      inputSource: 'scrcpy',
+      availableInputSources: ['scrcpy', 'grpc'],
+      grpcVideoCodec: 'vp8',
+      availableModes: ['scrcpy', 'grpc-screenshot'],
+      sessionGeneration: 1,
+    },
+    streamSourcePending: true,
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+
+  expect(segmentedControlMarkup(html, 'gRPC image mode').match(/disabled=""/g)).toHaveLength(2);
+  expect(segmentedControlMarkup(html, 'gRPC video codec').match(/disabled=""/g)).toHaveLength(3);
 });
 
 test('disables the Android capture source switch while replacement is pending', () => {
@@ -418,6 +506,7 @@ test('hides the Android capture source row when gRPC is unavailable', () => {
       grpcImageMode: 'png',
       inputSource: 'scrcpy',
       availableInputSources: ['scrcpy'],
+      grpcVideoCodec: 'h264',
       availableModes: ['scrcpy'],
       sessionGeneration: 0,
     },

@@ -123,8 +123,8 @@ registers the plugin against itself, so the standalone app still gets the real
 
 [`@expo/hub-client`](packages/@expo/hub-client) is the **device-client layer**. The
 two backends speak very different wire protocols — serve-sim streams MJPEG/H.264 and
-takes binary touch packets, while serve-emu streams H.264 (WebCodecs) and takes JSON
-gestures — so this package hides that behind one shared contract:
+takes binary touch packets, while serve-emu streams H.264, VP8, or VP9 through
+WebCodecs and takes JSON gestures — so this package hides that behind one shared contract:
 
 - a hook (`useIosDeviceClient` / `useAndroidDeviceClient` and general
   `useActiveDeviceClient`) that owns the WebSocket connection and exposes the live
