@@ -515,10 +515,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       ) {
         return;
       }
-      putStreamMode({
-        mode: source,
-        ...(source === 'grpc-screenshot' ? { inputSource: 'scrcpy' as const } : {}),
-      });
+      putStreamMode({ mode: source });
     },
     [putStreamMode],
   );
