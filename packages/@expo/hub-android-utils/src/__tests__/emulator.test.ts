@@ -34,6 +34,30 @@ describe("buildEmulatorArgs", () => {
     const args = buildEmulatorArgs({ name: "x", port: 5556 });
     expect(args[args.indexOf("-port") + 1]).toBe("5556");
   });
+
+  test("appends extraArgs after the port", () => {
+    expect(
+      buildEmulatorArgs({ name: "x", port: 5554, extraArgs: ["-camera-back", "webcam0"] }),
+    ).toEqual([
+      "-avd",
+      "x",
+      "-no-audio",
+      "-no-window",
+      "-gpu",
+      "auto",
+      "-no-boot-anim",
+      "-port",
+      "5554",
+      "-camera-back",
+      "webcam0",
+    ]);
+  });
+
+  test("leaves the args unchanged when extraArgs is omitted", () => {
+    expect(buildEmulatorArgs({ name: "x", port: 5554 })).toEqual(
+      buildEmulatorArgs({ name: "x", port: 5554, extraArgs: [] }),
+    );
+  });
 });
 
 describe("formatEmulatorCommand", () => {

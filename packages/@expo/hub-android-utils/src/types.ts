@@ -106,6 +106,8 @@ export interface BootDeviceOptions {
   name: string;
   /** Console port → `emulator -port <port>`; the serial becomes `emulator-<port>`. */
   port: number;
+  /** Extra `emulator` flags appended after the standard boot args. */
+  extraArgs?: readonly string[];
 }
 
 /** How a spawned emulator process ended (see {@link BootedDevice.exited}). */
