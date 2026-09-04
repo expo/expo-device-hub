@@ -26,12 +26,12 @@ function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-/** Rendered height of the device title pill (a 2xs button). */
-const TITLE_HEIGHT = 28;
+/** Rendered height of the device title pill (an xs button). */
+const TITLE_HEIGHT = 32;
 /** Space between the title pill and the top of the device frame. */
-const TITLE_GAP = 20;
+const TITLE_GAP = 32;
 /** Space between the bottom of the device frame and the toolbar. */
-const CONTROLS_GAP = 24;
+const CONTROLS_GAP = 32;
 
 /** Filesystem-safe screenshot name, e.g. `iPhone-16-2026-06-30T12-34-56.png`. */
 function screenshotFilename(name: string): string {

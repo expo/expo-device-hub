@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { type ConnectionStatus } from '@expo/hub-client';
-import { bg, border, Button, font, icon, radius, text } from '../primitives';
+import { bg, border, Button, font, icon, radius, text, textSize } from '../primitives';
 import { type Device } from './data';
 
 export type DeviceTitleProps = {
@@ -49,7 +49,7 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
   return (
     <Button
       theme="tertiary"
-      size="2xs"
+      size="xs"
       onClick={() => setRevealedId(showingId ? null : device.id)}
       leftSlot={
         <span
@@ -95,6 +95,8 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
         borderWidth: 0.5,
         borderColor: border.default,
         borderRadius: radius.full,
+        fontSize: textSize.sm.fontSize,
+        fontWeight: 600,
         // Sits on the gray stream canvas, so it takes the sidebar surface color.
         backgroundColor: bg.default,
       }}

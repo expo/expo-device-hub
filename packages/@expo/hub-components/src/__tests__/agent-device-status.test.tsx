@@ -241,7 +241,7 @@ describe('agent device status', () => {
     expect(viewportTag).toContain('min-height:0');
     expect(viewportTag).toContain('width:100%');
     // The title and toolbar hug the frame: their heights are reserved as padding.
-    expect(viewportTag).toContain('padding:48px 0 78px');
+    expect(viewportTag).toContain('padding:64px 0 86px');
     expect(markup.indexOf('aria-label="Device controls"')).toBeGreaterThan(
       markup.indexOf('data-testid="device-frame-anchor"'),
     );
