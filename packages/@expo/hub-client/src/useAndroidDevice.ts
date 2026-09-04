@@ -2,13 +2,13 @@
  * serve-emu (Android) implementation of the {@link DeviceClient} interface.
  *
  * Wire protocol (see serve-emu `src/middleware.ts` / `src/input.ts`):
- *   - H.264 video + input share one WebSocket at `<base>/ws?frame-meta=1`.
+ *   - Encoded video + input share one WebSocket at `<base>/ws?frame-meta=1`.
  *     With WebRTC video, input stays on `<base>/ws?video=0`; signaling uses
  *     `<base>/webrtc/{offer,close}`. serve-emu is multi-device: `?device=<serial>`
  *     selects the target (omitted → first available).
- *   - Binary inbound messages are H.264 access units, each prefixed with a
- *     16-byte "SEMU" header (keyframe flag + PTS); decoded with WebCodecs into a
- *     `<canvas>`.
+ *   - Binary inbound messages are H.264, VP8, or VP9 access units, each prefixed
+ *     with a versioned "SEMU" header (keyframe flag + PTS); decoded with
+ *     WebCodecs into a `<canvas>`. H.264 retains an MSE fallback.
  *   - Outbound input is JSON on the same socket: `{type:'touch',action,x,y}`,
  *     `{type:'home'|'back'|'recents'|'power'}`, `{type:'reset-video'}`.
  *   - Screen size comes from the decoded frames; logcat is an SSE feed at
@@ -36,14 +36,24 @@ import {
   parseAndroidStreamSettings,
 } from './android-stream-settings';
 import {
+  androidStreamSourceSupportsWebRtc,
   androidStreamSourceErrorMessage,
   parseAndroidStreamSource,
 } from './android-stream-source';
 import {
+  fixedWebCodecsCodec,
+  grpcVideoCodecLabel,
+  isWebCodecsUnsupportedError,
+  mseFallbackCodecError,
+  parseAndroidVideoSession,
+  resolveVideoKeyFrame,
+  webCodecsCodec,
+} from './android-video-codec';
+import {
   DeviceSettingWriteTracker,
   mergeAuthoritativeDeviceSetting,
 } from './device-setting-writes';
-import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
+import { isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
 import { androidMessageForKeyboardInput } from './keyboard';
 import { MsePlayer } from './mse-player';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
@@ -56,6 +66,7 @@ import {
   type DeviceConnectionOptions,
   type DeviceEvent,
   type DeviceGrpcImageMode,
+  type DeviceGrpcVideoCodec,
   type DeviceInputSource,
   type DeviceLog,
   type DeviceSettingKey,
@@ -162,6 +173,7 @@ type ServeEmuStreamSettings =
 type ServeEmuApiInfo = {
   size?: { width?: unknown; height?: unknown };
   stream?: unknown;
+  viewerTransports?: unknown;
 };
 
 function isIceServer(value: unknown): value is WebRtcIceServer {
@@ -196,6 +208,24 @@ export function parseServeEmuStreamSettings(value: unknown): ServeEmuStreamSetti
     iceServers: candidate.iceServers,
     iceTransportPolicy: candidate.iceTransportPolicy,
   };
+}
+
+/** Prefer the active source's viewer catalog over the host's configured default transport. */
+export function parseServeEmuViewerTransports(value: unknown): ServeEmuStreamSettings | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (
+    !Array.isArray(candidate.available) ||
+    !candidate.available.every(
+      (transport) => transport === 'websocket' || transport === 'webrtc',
+    )
+  ) {
+    return null;
+  }
+  if (candidate.available.includes('webrtc')) {
+    return parseServeEmuStreamSettings(candidate.webrtc);
+  }
+  return candidate.available.includes('websocket') ? { transport: 'websocket' } : null;
 }
 
 export function useAndroidDeviceClient(options: DeviceConnectionOptions): DeviceClient {
@@ -453,6 +483,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       mode: DeviceStreamSource;
       grpcImageMode?: DeviceGrpcImageMode;
       inputSource?: DeviceInputSource;
+      grpcVideoCodec?: DeviceGrpcVideoCodec;
     }) => {
       if (!streamSourceUrl || streamSourcePendingRef.current) return;
       const request = ++streamSourceRequestRef.current;
@@ -534,6 +565,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         mode: previous.mode,
         grpcImageMode,
         inputSource: previous.inputSource,
+        grpcVideoCodec: previous.grpcVideoCodec,
       });
     },
     [putStreamMode],
@@ -554,6 +586,27 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         mode: previous.mode,
         grpcImageMode: previous.grpcImageMode,
         inputSource,
+        grpcVideoCodec: previous.grpcVideoCodec,
+      });
+    },
+    [putStreamMode],
+  );
+
+  const setGrpcVideoCodec = useCallback(
+    (grpcVideoCodec: DeviceGrpcVideoCodec) => {
+      const previous = streamSourceRef.current;
+      if (
+        !previous ||
+        previous.mode !== 'grpc-screenshot' ||
+        previous.grpcVideoCodec === grpcVideoCodec
+      ) {
+        return;
+      }
+      putStreamMode({
+        mode: previous.mode,
+        grpcImageMode: previous.grpcImageMode,
+        inputSource: previous.inputSource,
+        grpcVideoCodec,
       });
     },
     [putStreamMode],
@@ -585,6 +638,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             current?.mode === next.mode &&
             current.grpcImageMode === next.grpcImageMode &&
             current.inputSource === next.inputSource &&
+            current.grpcVideoCodec === next.grpcVideoCodec &&
             current.sessionGeneration === next.sessionGeneration &&
             current.availableModes.join() === next.availableModes.join() &&
             current.availableInputSources.join() === next.availableInputSources.join()
@@ -671,7 +725,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         if (!response.ok) return;
         const info = (await response.json()) as ServeEmuApiInfo;
         if (cancelled) return;
-        const next = parseServeEmuStreamSettings(info.stream) ?? { transport: 'websocket' };
+        const next =
+          parseServeEmuViewerTransports(info.viewerTransports) ??
+          parseServeEmuStreamSettings(info.stream) ??
+          { transport: 'websocket' };
         setServerStreamSettings((current) =>
           JSON.stringify(current) === JSON.stringify(next) ? current : next,
         );
@@ -700,9 +757,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   }, [active, baseUrl, targetDevice]);
 
   const webRtcRequested = streamMode === 'webrtc';
-  const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
+  const sourceSupportsWebRtc = androidStreamSourceSupportsWebRtc(streamSource);
+  const waitingForWebRtcMetadata =
+    webRtcRequested && sourceSupportsWebRtc && serverStreamSettings === null;
   const useWebRtc =
-    webRtcRequested && serverStreamSettings?.transport === 'webrtc';
+    webRtcRequested && sourceSupportsWebRtc && serverStreamSettings?.transport === 'webrtc';
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: 'reset-video' });
   }, [send]);
@@ -833,7 +892,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [useWebRtc, webRtcStream, webRtcVideoElement, markWebRtcFrameDecoded]);
 
-  // ── H.264 video + input WebSocket (with reconnect) ──
+  // ── Encoded video + input WebSocket (with reconnect) ──
   useEffect(() => {
     if (!active || !baseUrl) {
       setStatus('idle');
@@ -850,11 +909,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // Media Source Extensions — not secure-context gated — which decodes the same
     // H.264 through a <video> element blitted onto the canvas (see MsePlayer).
     const useMse = !isWebCodecsSupported();
-    if (useMse && !MsePlayer.isSupported()) {
-      setStatus('error');
-      setError('This browser cannot decode H.264 (WebCodecs unavailable).');
-      return;
-    }
+    const mseSupported = !useMse || MsePlayer.isSupported();
 
     setStatus('connecting');
     setError(null);
@@ -870,6 +925,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let reconnectDelay = 500;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let decoder: VideoDecoder | null = null;
+    // Older H.264-only serve-emu versions send neither an initial session
+    // announcement nor a codec field on resize announcements.
+    let activeCodec: DeviceGrpcVideoCodec | null = 'h264';
+    let decoderConfigFailed = false;
     let sawKeyframe = false;
     let droppingUntilKeyframe = false;
     let lastKeyframeRequestAt = 0;
@@ -893,6 +952,17 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (now - lastKeyframeRequestAt < KEYFRAME_REQUEST_COOLDOWN_MS) return;
       lastKeyframeRequestAt = now;
       ws.send(JSON.stringify({ type: 'reset-video', ack: false }));
+    };
+
+    const reportUnsupportedDecoder = () => {
+      decoderConfigFailed = true;
+      closeDecoder();
+      setStatus('error');
+      setError(
+        activeCodec
+          ? `This browser cannot decode ${grpcVideoCodecLabel(activeCodec)}.`
+          : 'This browser cannot configure the video decoder.',
+      );
     };
 
     const paint = (frame: VideoFrame) => {
@@ -925,8 +995,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
     };
 
-    const ensureDecoder = (spsBytes: Uint8Array): boolean => {
+    const ensureDecoder = (codec: string): boolean => {
       if (decoder?.state === 'configured') return true;
+      if (decoderConfigFailed) return false;
       closeDecoder();
       const created = new VideoDecoder({
         output: (frame) => {
@@ -936,32 +1007,49 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           }
           paint(frame);
         },
-        error: () => {
-          if (decoder === created) {
-            closeDecoder();
-            sawKeyframe = false;
-            droppingUntilKeyframe = true;
-            requestKeyframe();
+        error: (error) => {
+          if (decoder !== created) return;
+          if (isWebCodecsUnsupportedError(error)) {
+            reportUnsupportedDecoder();
+            return;
           }
+          closeDecoder();
+          sawKeyframe = false;
+          droppingUntilKeyframe = true;
+          requestKeyframe();
         },
       });
       try {
-        created.configure({ codec: buildCodecString(spsBytes), optimizeForLatency: true });
+        created.configure({ codec, optimizeForLatency: true });
         decoder = created;
         return true;
       } catch {
         try {
           created.close();
         } catch {}
-        requestKeyframe();
+        reportUnsupportedDecoder();
         return false;
       }
     };
 
     const feedFrame = (raw: ArrayBuffer) => {
+      const codec = activeCodec;
+      // Codec switches share a socket. Never guess while waiting for the
+      // generation boundary or bytes could enter a decoder for the old codec.
+      if (!codec) return;
       const packet = parseFramePacket(raw);
 
       if (useMse) {
+        const fallbackError = mseFallbackCodecError(codec, mseSupported);
+        if (fallbackError) {
+          if (!decoderConfigFailed) {
+            decoderConfigFailed = true;
+            setStatus('error');
+            setError(fallbackError);
+          }
+          return;
+        }
+        if (codec !== 'h264') return;
         const isKey = packet.isKey ?? scanAU(packet.data).isKey;
         if (!msePlayer) {
           const canvas = canvasRef.current;
@@ -996,13 +1084,21 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         return;
       }
 
-      const needsScan =
-        packet.isKey === null ||
-        (packet.isKey && (!decoder || decoder.state !== 'configured' || droppingUntilKeyframe));
-      const scanned = needsScan ? scanAU(packet.data) : null;
-      const isKey = packet.isKey ?? scanned?.isKey ?? false;
-      const spsBytes = scanned?.spsBytes ?? null;
-      if (spsBytes && !ensureDecoder(spsBytes)) return;
+      const needsH264Scan =
+        codec === 'h264' &&
+        (packet.isKey === null ||
+          (packet.isKey && (!decoder || decoder.state !== 'configured' || droppingUntilKeyframe)));
+      const scanned = needsH264Scan ? scanAU(packet.data) : null;
+      const isKey = resolveVideoKeyFrame(
+        codec,
+        packet.isKey ?? scanned?.isKey ?? null,
+        packet.data,
+      );
+      const decoderCodec = webCodecsCodec(codec, scanned?.spsBytes ?? null);
+      if ((!decoder || decoder.state !== 'configured') && decoderCodec) {
+        if (!ensureDecoder(decoderCodec)) return;
+      }
+      if (decoderConfigFailed) return;
 
       if (droppingUntilKeyframe) {
         if (!isKey) return;
@@ -1053,6 +1149,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     const connect = () => {
       if (cancelled) return;
+      activeCodec = 'h264';
+      decoderConfigFailed = false;
       let ws: WebSocket;
       try {
         ws = new WebSocket(androidWsUrlFor(baseUrl, targetDevice, true));
@@ -1081,6 +1179,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         closeDecoder();
         msePlayer?.destroy();
         msePlayer = null;
+        activeCodec = null;
+        decoderConfigFailed = false;
         sawKeyframe = false;
         frameIdx = 0;
         // A drop before the first frame is normal while the emulator is still
@@ -1097,27 +1197,33 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       ws.onmessage = (event) => {
         if (cancelled) return;
         if (typeof event.data === 'string') {
-          // serve-emu announces an encoder restart with a new size (device
-          // rotation) as a JSON "video-session" message. Drop the old decoder
-          // and resync onto the new stream from a fresh keyframe.
+          // Every encoded generation begins with an authoritative codec + size
+          // announcement. Drop the old decoder and resync from a fresh keyframe.
           try {
-            const msg = JSON.parse(event.data) as {
-              type?: string;
-              size?: { width: number; height: number };
-            };
-            if (
-              msg.type === 'video-session' &&
-              msg.size &&
-              Number.isFinite(msg.size.width) &&
-              Number.isFinite(msg.size.height)
-            ) {
+            const msg = parseAndroidVideoSession(JSON.parse(event.data));
+            if (msg) {
               closeDecoder();
               msePlayer?.destroy();
               msePlayer = null;
+              activeCodec = msg.codec;
+              decoderConfigFailed = false;
               frameIdx = 0;
               sawKeyframe = false;
               droppingUntilKeyframe = true;
               setScreen({ width: msg.size.width, height: msg.size.height });
+              setFps(0);
+              const fallbackError = useMse
+                ? mseFallbackCodecError(msg.codec, mseSupported)
+                : null;
+              if (fallbackError) {
+                setStatus('error');
+                setError(fallbackError);
+                return;
+              }
+              setStatus('connecting');
+              setError(null);
+              const fixedCodec = fixedWebCodecsCodec(msg.codec);
+              if (fixedCodec && !ensureDecoder(fixedCodec)) return;
               requestKeyframe();
             }
           } catch {}
@@ -1505,6 +1611,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setStreamSource,
     setGrpcImageMode,
     setGrpcInputSource,
+    setGrpcVideoCodec,
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec: 'h264',

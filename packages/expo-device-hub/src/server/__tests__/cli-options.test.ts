@@ -16,6 +16,7 @@ describe('parseCliOptions', () => {
       videoFps: undefined,
       streamSource: undefined,
       grpcImageMode: undefined,
+      grpcVideoCodec: undefined,
       stunUrls: undefined,
       turnUrls: undefined,
       turnUsername: undefined,
@@ -98,7 +99,7 @@ describe('parseCliOptions', () => {
     });
   });
 
-  test('selects the Android gRPC source and its explicit image mode', () => {
+  test('selects the Android gRPC source, image mode, and normalized video codec', () => {
     expect(
       parseCliOptions([
         '--platform',
@@ -107,10 +108,13 @@ describe('parseCliOptions', () => {
         'GRPC-SCREENSHOT',
         '--grpc-image-mode',
         'MMAP',
+        '--grpc-video-codec',
+        'VP9',
       ]),
     ).toMatchObject({
       streamSource: 'grpc-screenshot',
       grpcImageMode: 'mmap',
+      grpcVideoCodec: 'vp9',
     });
   });
 
@@ -121,9 +125,36 @@ describe('parseCliOptions', () => {
     expect(() => parseCliOptions(['--grpc-image-mode', 'rgb'])).toThrow(
       'Invalid --grpc-image-mode: rgb',
     );
+    expect(() => parseCliOptions(['--grpc-video-codec', 'av1'])).toThrow(
+      'Invalid --grpc-video-codec: av1',
+    );
     expect(() =>
       parseCliOptions(['--platform', 'ios', '--stream-source', 'grpc-screenshot'])
-    ).toThrow('--stream-source and --grpc-image-mode are supported only for Android');
+    ).toThrow(
+      '--stream-source, --grpc-image-mode, and --grpc-video-codec are supported only for Android',
+    );
+    expect(() =>
+      parseCliOptions(['--platform', 'ios', '--grpc-video-codec', 'vp8'])
+    ).toThrow(
+      '--stream-source, --grpc-image-mode, and --grpc-video-codec are supported only for Android',
+    );
+  });
+
+  test('rejects VP8 and VP9 gRPC encoding with the WebRTC transport', () => {
+    for (const codec of ['vp8', 'vp9']) {
+      expect(() =>
+        parseCliOptions([
+          '--platform',
+          'android',
+          '--transport',
+          'webrtc',
+          '--grpc-video-codec',
+          codec,
+        ])
+      ).toThrow(
+        `--grpc-video-codec ${codec} is incompatible with --transport webrtc; use --transport h264 (WebSocket)`
+      );
+    }
   });
 
   test('validates serve-sim option ranges and values', () => {
@@ -201,6 +232,7 @@ describe('parseCliOptions', () => {
       '--video-fps',
       '--stream-source',
       '--grpc-image-mode',
+      '--grpc-video-codec',
       '--stun-url',
       '--turn-url',
       '--turn-username',
@@ -218,6 +250,8 @@ describe('parseCliOptions', () => {
     expect(HELP).toContain('(default: grpc-screenshot)');
     expect(HELP).toContain('--grpc-image-mode <mode>');
     expect(HELP).toContain('default: mmap');
+    expect(HELP).toContain('--grpc-video-codec <codec>');
+    expect(HELP).toContain('default: h264');
   });
 
   test('hides the device list sidebar on request', () => {
@@ -251,6 +285,7 @@ describe('parseCliOptions', () => {
       videoFps: undefined,
       streamSource: undefined,
       grpcImageMode: undefined,
+      grpcVideoCodec: undefined,
       stunUrls: undefined,
       turnUrls: undefined,
       turnUsername: undefined,

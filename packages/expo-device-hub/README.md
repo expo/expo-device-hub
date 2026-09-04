@@ -65,10 +65,12 @@ while the emulator writes RGB pixels to a shared file-backed memory region:
 npx expo-device-hub --platform android --transport webrtc
 ```
 
-Use `--stream-source scrcpy` to select scrcpy at startup, or `--grpc-image-mode png` to
-send a compressed image in each gRPC message. The same source and PNG/MMAP choices are
-available at runtime under **Stream options**. Run `npx expo-device-hub --help` for the
-full option list.
+Use `--stream-source scrcpy` to select scrcpy at startup, `--grpc-image-mode png` to
+send a compressed image in each gRPC message, or `--grpc-video-codec vp8` (also `vp9`)
+to change the host encoder for WebSocket streaming. The same source, PNG/MMAP, and
+H.264/VP8/VP9 choices are available at runtime under **Stream options**. VP8 and VP9
+require WebCodecs and are unavailable with WebRTC. Run `npx expo-device-hub --help`
+for the full option list.
 
 MMAP support is experimental and depends on the Android Emulator build. Google
 tracks an Apple Silicon `streamScreenshot` MMAP fix as issue

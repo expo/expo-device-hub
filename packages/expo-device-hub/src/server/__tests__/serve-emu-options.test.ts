@@ -12,6 +12,7 @@ import {
 const DEFAULT_ANDROID_STREAM = {
   streamMode: 'grpc-screenshot',
   grpcImageMode: 'mmap',
+  grpcVideoCodec: 'h264',
 } as const;
 
 describe('standaloneServeEmuOptions', () => {
@@ -66,8 +67,31 @@ describe('standaloneServeEmuOptions', () => {
     ).toEqual({
       streamMode: 'scrcpy',
       grpcImageMode: 'png',
+      grpcVideoCodec: 'h264',
       streamSettings: { transport: 'websocket' },
     });
+  });
+
+  test('maps VP8 and VP9 gRPC codecs onto WebSocket startup options', () => {
+    for (const codec of ['vp8', 'vp9'] as const) {
+      expect(
+        standaloneServeEmuOptions(
+          parseCliOptions([
+            '--platform',
+            'android',
+            '--transport',
+            'h264',
+            '--grpc-video-codec',
+            codec.toUpperCase(),
+          ]),
+        ),
+      ).toEqual({
+        streamMode: 'grpc-screenshot',
+        grpcImageMode: 'mmap',
+        grpcVideoCodec: codec,
+        streamSettings: { transport: 'websocket' },
+      });
+    }
   });
 
   test('maps host WebRTC settings while keeping Android on H.264', () => {
