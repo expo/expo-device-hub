@@ -26,21 +26,21 @@ describe('stream switch tracker', () => {
   });
 
   test('a failed request ends the switch without waiting on the stream', () => {
-    const requesting = run([{ type: 'request-start' }]);
+    const requesting = run([{ type: 'request-start', live: true }]);
     expect(isStreamSwitchPending(requesting)).toBe(true);
     expect(reduceStreamSwitch(requesting, { type: 'request-failure' })).toBe(IDLE_STREAM_SWITCH);
   });
 
   test('a request that did not replace the session ends immediately', () => {
     expect(
-      run([{ type: 'request-start' }, { type: 'request-success', replaced: false }]),
+      run([{ type: 'request-start', live: true }, { type: 'request-success', replaced: false }]),
     ).toBe(IDLE_STREAM_SWITCH);
   });
 
   test('waits for the replacement frame when the stream dropped before the response', () => {
     // serve-emu closes the old viewer sockets right before it answers.
     const awaitingFrame = run([
-      { type: 'request-start' },
+      { type: 'request-start', live: true },
       { type: 'stream-interrupted' },
       { type: 'request-success', replaced: true },
     ]);
@@ -53,7 +53,7 @@ describe('stream switch tracker', () => {
   test('ends at once when the stream already recovered while the request was in flight', () => {
     expect(
       run([
-        { type: 'request-start' },
+        { type: 'request-start', live: true },
         { type: 'stream-interrupted' },
         { type: 'stream-live' },
         { type: 'request-success', replaced: true },
@@ -63,7 +63,7 @@ describe('stream switch tracker', () => {
 
   test('waits for the interruption when the response arrives before the old stream drops', () => {
     const awaitingInterruption = run([
-      { type: 'request-start' },
+      { type: 'request-start', live: true },
       { type: 'request-success', replaced: true },
     ]);
     expect(awaitingInterruption.phase).toBe('awaiting-interruption');
@@ -81,12 +81,37 @@ describe('stream switch tracker', () => {
 
   test('a new request supersedes whatever was being awaited', () => {
     const awaitingFrame = run([
-      { type: 'request-start' },
+      { type: 'request-start', live: true },
       { type: 'stream-interrupted' },
       { type: 'request-success', replaced: true },
     ]);
-    const restarted = reduceStreamSwitch(awaitingFrame, { type: 'request-start' });
+    const restarted = reduceStreamSwitch(awaitingFrame, { type: 'request-start', live: true });
     expect(restarted).toEqual({ phase: 'requesting', interrupted: false, recovered: false });
+  });
+
+  test('a switch away from a stream that is not live waits only for the replacement frame', () => {
+    // The user switches because the current source is broken (status
+    // 'connecting' or 'error'): nothing will drop, so the controls must flip on
+    // the first frame instead of waiting out the interruption timeout.
+    const requesting = run([{ type: 'request-start', live: false }]);
+    expect(requesting).toEqual({ phase: 'requesting', interrupted: true, recovered: false });
+
+    const awaitingFrame = reduceStreamSwitch(requesting, {
+      type: 'request-success',
+      replaced: true,
+    });
+    expect(awaitingFrame.phase).toBe('awaiting-frame');
+    expect(reduceStreamSwitch(awaitingFrame, { type: 'stream-live' })).toBe(IDLE_STREAM_SWITCH);
+  });
+
+  test('a switch away from a stream that is not live ends at once if the frame beat the response', () => {
+    expect(
+      run([
+        { type: 'request-start', live: false },
+        { type: 'stream-live' },
+        { type: 'request-success', replaced: true },
+      ]),
+    ).toBe(IDLE_STREAM_SWITCH);
   });
 
   test('safety timeouts release the pending state', () => {
@@ -98,7 +123,7 @@ describe('stream switch tracker', () => {
     expect(streamSwitchTimeoutMs('awaiting-frame')).toBe(STREAM_SWITCH_FRAME_TIMEOUT_MS);
 
     const awaitingInterruption = run([
-      { type: 'request-start' },
+      { type: 'request-start', live: true },
       { type: 'request-success', replaced: true },
     ]);
     expect(reduceStreamSwitch(awaitingInterruption, { type: 'timeout' })).toBe(IDLE_STREAM_SWITCH);
@@ -107,7 +132,7 @@ describe('stream switch tracker', () => {
   });
 
   test('returns the same object when nothing changes', () => {
-    const requesting = run([{ type: 'request-start' }]);
+    const requesting = run([{ type: 'request-start', live: true }]);
     expect(reduceStreamSwitch(requesting, { type: 'stream-live' })).toBe(requesting);
     expect(reduceStreamSwitch(requesting, { type: 'timeout' })).toBe(requesting);
     const interrupted = reduceStreamSwitch(requesting, { type: 'stream-interrupted' });

@@ -533,7 +533,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       const controller = new AbortController();
       streamSourceControllerRef.current = controller;
       pendingStreamSourceRef.current = null;
-      dispatchStreamSwitch({ type: 'request-start' });
+      dispatchStreamSwitch({ type: 'request-start', live: streamLiveRef.current });
       setStreamSourceError(null);
       void fetch(streamSourceUrl, {
         method: 'PUT',

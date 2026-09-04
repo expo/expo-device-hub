@@ -1,5 +1,6 @@
 /**
- * Reconnect policy shared by the device clients.
+ * Reconnect policy of the Android device client. The iOS client keeps its own
+ * inline backoff and never reports `reconnecting`.
  *
  * A stream that was already live keeps its last frame on screen for a short
  * grace period while its transport re-establishes itself, so a deliberate

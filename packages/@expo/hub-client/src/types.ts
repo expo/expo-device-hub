@@ -26,16 +26,15 @@ export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
 
 /**
  * Lifecycle of a single connection:
- *   idle       — nothing to connect to (no base URL / disabled)
- *   connecting — socket opening, no frames yet
- *   streaming  — frames are flowing
- *   error      — connection failed or dropped
- */
-/**
- * `reconnecting` means a stream that was live lost its transport and is being
- * re-established; the last frame stays on screen meanwhile (for example while
- * serve-emu swaps the Android capture source). It becomes `error` only when
- * the outage outlives the reconnect grace period.
+ *   idle         — nothing to connect to (no base URL / disabled)
+ *   connecting   — socket opening, no frames yet
+ *   reconnecting — a stream that was live lost its transport and is being
+ *                  re-established; the last frame stays on screen meanwhile
+ *                  (for example while serve-emu swaps the Android capture
+ *                  source). Becomes `error` only when the outage outlives the
+ *                  reconnect grace period. Android only.
+ *   streaming    — frames are flowing
+ *   error        — connection failed or dropped
  */
 export type ConnectionStatus = 'idle' | 'connecting' | 'reconnecting' | 'streaming' | 'error';
 

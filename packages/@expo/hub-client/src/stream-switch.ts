@@ -22,14 +22,22 @@ export type StreamSwitchPhase =
 
 export interface StreamSwitchState {
   phase: StreamSwitchPhase;
-  /** Whether the live stream dropped since the current request started. */
+  /**
+   * Whether the old stream is gone: it dropped since the current request
+   * started, or it was not live when the request started.
+   */
   interrupted: boolean;
-  /** Whether the stream came back after dropping while the request was in flight. */
+  /** Whether the stream came (back) live while the request was in flight. */
   recovered: boolean;
 }
 
 export type StreamSwitchEvent =
-  | { type: 'request-start' }
+  /**
+   * `live` is whether the stream is on screen as the request starts. A switch
+   * away from a stream that is not live (still connecting, or in error) has no
+   * old session to wait for; its first frame is the replacement.
+   */
+  | { type: 'request-start'; live: boolean }
   | { type: 'request-failure' }
   /** `replaced` is whether the server started a new session generation. */
   | { type: 'request-success'; replaced: boolean }
@@ -52,6 +60,11 @@ export const STREAM_SWITCH_INTERRUPTION_TIMEOUT_MS = 3_000;
 export const STREAM_SWITCH_FRAME_TIMEOUT_MS = 8_000;
 
 const REQUESTING: StreamSwitchState = { phase: 'requesting', interrupted: false, recovered: false };
+const REQUESTING_WITHOUT_STREAM: StreamSwitchState = {
+  phase: 'requesting',
+  interrupted: true,
+  recovered: false,
+};
 const AWAITING_INTERRUPTION: StreamSwitchState = {
   phase: 'awaiting-interruption',
   interrupted: false,
@@ -68,7 +81,7 @@ export function reduceStreamSwitch(
   state: StreamSwitchState,
   event: StreamSwitchEvent,
 ): StreamSwitchState {
-  if (event.type === 'request-start') return REQUESTING;
+  if (event.type === 'request-start') return event.live ? REQUESTING : REQUESTING_WITHOUT_STREAM;
 
   switch (state.phase) {
     case 'idle':
