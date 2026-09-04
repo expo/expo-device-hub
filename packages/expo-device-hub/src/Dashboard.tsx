@@ -143,6 +143,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const resizeSidebar = useDashboardStore((state) => state.resizeSidebar);
   const sidebarWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
   const logsWidthStart = useRef(DEFAULT_SIDEBAR_WIDTH);
+  // While a resize handle is dragged the docked sidebars must not ease toward
+  // each new width, or they wobble behind the pointer.
+  const [resizing, setResizing] = useState(false);
   const sidebars = useSidebarLayout({
     leftWidth: sidebarWidth,
     rightWidth: logsWidth,
@@ -300,7 +303,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         minWidth: 0,
         height: '100vh',
         boxSizing: 'border-box',
-        backgroundColor: bg.subtle,
+        backgroundColor: bg.default,
         color: text.default,
         fontFamily: 'var(--expo-font-sans)',
         overflow: 'hidden',
@@ -309,7 +312,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         side="left"
         width={sidebarWidth}
         open={sidebars.leftDocked}
-        sidebarOpen={sidebars.leftOpen}>
+        sidebarOpen={sidebars.leftOpen}
+        resizing={resizing}>
         <Sidebar
           simulators={simulators}
           emulators={emulators}
@@ -332,7 +336,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           offset={sidebarWidth}
           onResizeStart={() => {
             sidebarWidthStart.current = sidebarWidth;
+            setResizing(true);
           }}
+          onResizeEnd={() => setResizing(false)}
           onResize={(delta) =>
             resizeSidebar(
               'left',
@@ -352,14 +358,15 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
           displayScreen={displayScreen}
-          onShutdown={() => handleShutdown(selected)}
-          onRemove={() => handleRemove(selected)}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           showDeviceFrame={showDeviceFrame}
           deviceFrameAssets={DEVICE_FRAME_ASSETS}
         />
       ) : (
-        <EmptyState platform={platform} />
+        <EmptyState
+          platform={platform}
+          framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
+        />
       )}
 
       {sidebars.rightDocked && (
@@ -368,7 +375,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           offset={logsWidth}
           onResizeStart={() => {
             logsWidthStart.current = logsWidth;
+            setResizing(true);
           }}
+          onResizeEnd={() => setResizing(false)}
           onResize={(delta) =>
             resizeSidebar(
               'right',
@@ -384,7 +393,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         side="right"
         width={logsWidth}
         open={sidebars.rightDocked}
-        sidebarOpen={sidebars.rightOpen}>
+        sidebarOpen={sidebars.rightOpen}
+        resizing={resizing}>
         <LogSidebar
           device={selected}
           client={client}
@@ -395,6 +405,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
+          onShutdown={selected ? () => handleShutdown(selected) : undefined}
+          onRemove={selected ? () => handleRemove(selected) : undefined}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -439,6 +451,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
+          onShutdown={selected ? () => handleShutdown(selected) : undefined}
+          onRemove={selected ? () => handleRemove(selected) : undefined}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />

@@ -28,9 +28,14 @@ export {
   DialogFooter,
   DialogClose,
 } from './components/Dialog';
+// Kept for the website: Expo Hub no longer renders `Dropdown`, `DropdownItem`,
+// `SegmentedControl`, `Switch`, or `StreamSection` (its inspector uses `Select`
+// pills, and the stream toolbar has no menu). Delete them once the website
+// confirms it does not import them either.
 export { Dropdown } from './components/Dropdown';
 export { DropdownItem } from './components/DropdownItem';
 export { Logo } from './components/Logo';
+export { PillButton, type PillButtonProps } from './components/PillButton';
 export { ResizeHandle } from './components/ResizeHandle';
 export {
   SegmentedControl,
@@ -40,6 +45,7 @@ export { Select, type SelectOption, type SelectProps } from './components/Select
 export { SidebarToggle } from './components/SidebarToggle';
 export { Switch, type SwitchProps } from './components/Switch';
 export { cx } from './components/cx';
+export { usePrefersReducedMotion } from './components/usePrefersReducedMotion';
 export * from './components/icons';
 
 // ── Design tokens ──
@@ -63,7 +69,7 @@ export {
   NO_DEVICE_FRAME_DESCRIPTION,
   type DeviceFrameOption,
 } from './dashboard/DeviceOptionsSection';
-export { ActivitySection } from './dashboard/ActivitySection';
+export { ActivityCharts, ActivitySection } from './dashboard/ActivitySection';
 export { EventsSection } from './dashboard/EventsSection';
 export { LogsSection } from './dashboard/LogsSection';
 export { CollapsibleSection } from './dashboard/CollapsibleSection';

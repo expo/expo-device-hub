@@ -1,26 +1,8 @@
+import { usePrefersReducedMotion } from '@expo/hub-components';
 import { useEffect, useRef, useState } from 'react';
 
 export const SIDEBAR_TRANSITION_MS = 200;
 export const SIDEBAR_TRANSITION_EASING = 'cubic-bezier(0.16, 1, 0.3, 1)';
-
-function usePrefersReducedMotion(): boolean {
-  const [reducedMotion, setReducedMotion] = useState(
-    () =>
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true
-  );
-
-  useEffect(() => {
-    const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
-    if (!media) return;
-
-    const update = () => setReducedMotion(media.matches);
-    media.addEventListener('change', update);
-    return () => media.removeEventListener('change', update);
-  }, []);
-
-  return reducedMotion;
-}
 
 /** Keep a closing sidebar mounted long enough for its CSS transition to finish. */
 export function useSidebarPresence(open: boolean, animateExit: boolean) {

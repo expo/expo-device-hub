@@ -3,8 +3,8 @@ import {
   type DeviceHttpCodec,
   type DeviceStreamMode,
 } from '@expo/hub-client';
-import { SidebarToggle } from '../primitives';
-import { ActivitySection } from './ActivitySection';
+import { SidebarToggle, bg } from '../primitives';
+import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
 import { CurrentAppSection } from './CurrentAppSection';
 import { DeviceOptionsSection } from './DeviceOptionsSection';
 import { EventsSection } from './EventsSection';
@@ -34,6 +34,10 @@ export type LogSidebarProps = {
   onStreamModeChange?: (mode: DeviceStreamMode) => void;
   /** Change the viewer-local HTTP codec. */
   onHttpCodecChange?: (codec: DeviceHttpCodec) => void;
+  /** Shut the selected device down on the host. */
+  onShutdown?: () => void;
+  /** Remove/delete the selected device on the host. Ignored for physical devices. */
+  onRemove?: () => void;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
 };
@@ -41,6 +45,9 @@ export type LogSidebarProps = {
 /**
  * Right column: a compact inspector for the selected device, rendered directly
  * on the dashboard canvas so it matches the existing sidebar treatment.
+ *
+ * Section order: Current app (with its activity charts), Device options,
+ * Stream options, Events, Logs. The first two start open.
  */
 export function LogSidebar({
   onToggle,
@@ -53,6 +60,8 @@ export function LogSidebar({
   streamModeAvailability,
   onStreamModeChange,
   onHttpCodecChange,
+  onShutdown,
+  onRemove,
   width = 400,
 }: LogSidebarProps) {
   const deviceFrame = device
@@ -62,6 +71,8 @@ export function LogSidebar({
         onVisibleChange: onShowDeviceFrameChange ?? (() => {}),
       }
     : undefined;
+  // Physical devices cannot be deleted from the host.
+  const onRemoveDevice = device?.physical ? undefined : onRemove;
 
   return (
     <aside
@@ -72,12 +83,18 @@ export function LogSidebar({
         flexShrink: 0,
         height: '100vh',
         boxSizing: 'border-box',
-        gap: 12,
-        padding: '32px 24px',
+        padding: '32px 0 0',
+        backgroundColor: bg.default,
         overflow: 'hidden',
       }}>
       {onToggle && (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'flex-start',
+            padding: `0 ${SIDEBAR_SECTION_INSET}px 12px`,
+          }}>
           <SidebarToggle side="right" onClick={onToggle} />
         </div>
       )}
@@ -91,15 +108,18 @@ export function LogSidebar({
           overflowY: 'auto',
         }}>
         <CurrentAppSection client={client} />
-        {(client?.capabilities.deviceSettings || deviceFrame) && (
+        {(client?.capabilities.deviceSettings ||
+          client?.platform === 'android' ||
+          deviceFrame ||
+          (client && (onShutdown || onRemoveDevice))) && (
           <DeviceOptionsSection
             client={client}
             deviceFrame={deviceFrame}
             showDeviceSettings={client?.capabilities.deviceSettings ?? false}
+            onShutdown={onShutdown}
+            onRemove={onRemoveDevice}
           />
         )}
-        {client?.capabilities.activity && <ActivitySection client={client} />}
-        {client?.capabilities.events && <EventsSection client={client} />}
         {client?.streamCapabilities && (
           <StreamOptionsSection
             client={client}
@@ -110,6 +130,7 @@ export function LogSidebar({
             onHttpCodecChange={onHttpCodecChange}
           />
         )}
+        {client?.capabilities.events && <EventsSection client={client} />}
         <LogsSection client={client} />
       </div>
     </aside>

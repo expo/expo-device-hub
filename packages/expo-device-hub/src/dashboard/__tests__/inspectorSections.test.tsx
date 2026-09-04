@@ -205,12 +205,17 @@ function rowOpeningTag(html: string, label: string) {
   return html.slice(rowStart, rowEnd + 1);
 }
 
-function segmentedControlMarkup(html: string, label: string) {
-  const controlStart = html.indexOf(`<div role="group" aria-label="${label}"`);
-  expect(controlStart).toBeGreaterThanOrEqual(0);
+function sectionMarkup(html: string, title: string) {
+  const start = html.indexOf(`<section aria-label="${title}"`);
+  expect(start).toBeGreaterThanOrEqual(0);
 
-  const controlEnd = html.indexOf('</div>', controlStart);
-  return html.slice(controlStart, controlEnd + '</div>'.length);
+  const next = html.indexOf('<section ', start + 1);
+  return html.slice(start, next === -1 ? html.length : next);
+}
+
+function sectionExpanded(html: string, title: string) {
+  const section = sectionMarkup(html, title);
+  return section.slice(0, section.indexOf('</button>')).includes('aria-expanded="true"');
 }
 
 function switchMarkup(html: string, label: string) {
@@ -228,7 +233,23 @@ function selectMarkup(html: string, label: string) {
 
   const selectStart = html.lastIndexOf('<button', labelIndex);
   const selectEnd = html.indexOf('</button>', labelIndex);
-  return html.slice(selectStart, selectEnd + '</button>'.length);
+  const markup = html.slice(selectStart, selectEnd + '</button>'.length);
+  expect(markup).toContain('role="combobox"');
+  return markup;
+}
+
+/** The label the select pill currently shows: the trigger's only text, as the chevron is an svg. */
+function selectValue(html: string, label: string) {
+  return selectMarkup(html, label).replace(/<[^>]+>/g, '');
+}
+
+/** Every option label the select pill offers, in menu order. */
+function selectOptionLabels(html: string, label: string) {
+  const match = selectMarkup(html, label).match(/data-test-options="([^"]*)"/);
+  expect(match).not.toBeNull();
+  return match![1].split('\n').map((option) =>
+    option.replace(/&amp;/g, '&').replace(/&quot;/g, '"'),
+  );
 }
 
 function streamStatisticGroupMarkup(html: string, label: string) {
@@ -269,9 +290,11 @@ test('renders every supported iOS inspector section and option', () => {
     />,
   );
 
-  for (const label of ['Device options', 'Activity', 'Events', 'Stream options', 'Logs']) {
-    expect(html).toContain(`aria-label="${label}"`);
-  }
+  const order = ['Current app', 'Device options', 'Stream options', 'Events', 'Logs'];
+  const positions = order.map((label) => html.indexOf(`<section aria-label="${label}"`));
+  expect(positions.every((index) => index >= 0)).toBe(true);
+  expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  expect(html).not.toContain('aria-label="Activity"');
   for (const label of [
     'Appearance',
     'Liquid glass',
@@ -286,17 +309,43 @@ test('renders every supported iOS inspector section and option', () => {
     expect(html).toContain(label);
   }
   expect(html).not.toContain('>Network<');
-  expect(html.match(/aria-expanded="true"/g)?.length).toBe(1);
-  expect(html.match(/aria-expanded="false"/g)?.length).toBe(4);
+  expect(sectionExpanded(html, 'Current app')).toBe(true);
+  expect(sectionExpanded(html, 'Device options')).toBe(true);
+  // The first section has no separator above it; every following section does.
+  expect(openingTag(html, '<section aria-label="Current app"')).not.toContain('border-top:');
+  expect(openingTag(html, '<section aria-label="Device options"')).toContain('border-top:');
+  const currentApp = sectionMarkup(html, 'Current app');
+  for (const label of ['App ID', 'Version', 'Build number']) {
+    expect(currentApp).toContain(`>${label}<`);
+  }
+  for (const label of ['Minimum iOS', 'Minimum SDK', 'PID']) {
+    expect(currentApp).not.toContain(`>${label}<`);
+  }
+  // The identity line (name + icon) is shown for iOS apps.
+  expect(currentApp).toContain('width:40px');
+  expect(currentApp).toContain('data-testid="activity-charts"');
+  expect(currentApp).toContain('Waiting for activity data…');
+  for (const label of ['Stream options', 'Events', 'Logs']) {
+    expect(sectionExpanded(html, label)).toBe(false);
+    expect(openingTag(html, `<section aria-label="${label}"`)).toContain('border-top:');
+    expect(openingTag(html, `<section aria-label="${label}"`)).toContain('padding:0 16px;');
+    expect(sectionMarkup(html, label)).toContain('grid-template-rows:0fr');
+  }
+  expect(openingTag(html, '<section aria-label="Device options"')).toContain('padding:0 16px;');
+  expect(sectionMarkup(html, 'Device options')).toContain('grid-template-rows:1fr');
+  expect(sectionMarkup(html, 'Device options')).toContain('padding-bottom:12px');
+  // The title sits centered in its row, so collapsed sections line up evenly.
+  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain('padding:18px 0');
 });
 
 test('renders Android stream options while omitting unsupported and iOS-only sections', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
   for (const label of [
+    'Current app',
     'Device options',
-    'Events',
     'Stream options',
+    'Events',
     'Logs',
     'Appearance',
     'Network',
@@ -307,8 +356,19 @@ test('renders Android stream options while omitting unsupported and iOS-only sec
   for (const label of ['Activity', 'Liquid glass', 'VoiceOver']) {
     expect(html).not.toContain(`>${label}<`);
   }
-  expect(html.match(/aria-expanded="true"/g)?.length).toBe(1);
-  expect(html.match(/aria-expanded="false"/g)?.length).toBe(3);
+  const currentApp = sectionMarkup(html, 'Current app');
+  expect(currentApp).not.toContain('data-testid="activity-charts"');
+  // Android shows only the App ID / Version / Build number rows: no name and icon line.
+  expect(currentApp).not.toContain('width:40px');
+  for (const label of ['App ID', 'Version', 'Build number']) {
+    expect(currentApp).toContain(`>${label}<`);
+  }
+  expect(currentApp).not.toContain('>PID<');
+  expect(sectionExpanded(html, 'Current app')).toBe(true);
+  expect(sectionExpanded(html, 'Device options')).toBe(true);
+  for (const label of ['Stream options', 'Events', 'Logs']) {
+    expect(sectionExpanded(html, label)).toBe(false);
+  }
 });
 
 test('shows Android resolution while omitting encoder settings serve-emu cannot change', () => {
@@ -324,14 +384,14 @@ test('shows Android resolution while omitting encoder settings serve-emu cannot 
     />,
   );
 
-  expect(segmentedControlMarkup(html, 'Stream transport')).toContain('>WebSocket</button>');
-  expect(segmentedControlMarkup(html, 'Stream transport')).toContain('>WebRTC</button>');
-  expect(segmentedControlMarkup(html, 'WebSocket codec')).toContain('>H.264</button>');
-  expect(segmentedControlMarkup(html, 'WebRTC codec')).toContain('>H.264</button>');
-  expect(html).not.toContain('>HTTP</button>');
-  expect(html).not.toContain('>MJPEG</button>');
-  expect(html).not.toContain('>VP8</button>');
-  expect(html).not.toContain('>VP9</button>');
+  expect(selectOptionLabels(html, 'Stream transport')).toEqual(['WebSocket', 'WebRTC']);
+  expect(selectValue(html, 'Stream transport')).toBe('WebRTC');
+  expect(selectOptionLabels(html, 'WebSocket codec')).toEqual(['H.264']);
+  expect(selectOptionLabels(html, 'WebRTC codec')).toEqual(['H.264']);
+  expect(html).not.toContain('>HTTP<');
+  expect(html).not.toContain('>MJPEG<');
+  expect(html).not.toContain('>VP8<');
+  expect(html).not.toContain('>VP9<');
   expect(html).toContain('>Max size</span>');
   expect(selectMarkup(html, 'Max size')).not.toContain('disabled=""');
   expect(html).not.toContain('>MJPEG FPS</span>');
@@ -340,17 +400,15 @@ test('shows Android resolution while omitting encoder settings serve-emu cannot 
   expect(html).not.toContain('>Video bitrate</span>');
 });
 
-test('shows the Android emulator capture source switch', () => {
+test('shows the Android emulator capture source select', () => {
   const html = renderToStaticMarkup(
     <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
   );
-  const source = segmentedControlMarkup(html, 'Stream source');
 
   expect(html).toContain('>Source</span>');
-  expect(source).toContain('aria-pressed="true"');
-  expect(source).toContain('>scrcpy</button>');
-  expect(source).toContain('>gRPC</button>');
-  expect(source).not.toContain('disabled=""');
+  expect(selectValue(html, 'Stream source')).toBe('scrcpy');
+  expect(selectOptionLabels(html, 'Stream source')).toEqual(['scrcpy', 'gRPC']);
+  expect(selectMarkup(html, 'Stream source')).not.toContain('disabled=""');
 });
 
 test('shows PNG and MMAP only while the gRPC source is active', () => {
@@ -373,30 +431,26 @@ test('shows PNG and MMAP only while the gRPC source is active', () => {
   const grpcHtml = renderToStaticMarkup(
     <StreamOptionsSection client={grpcClient} defaultOpen />,
   );
-  const imageMode = segmentedControlMarkup(grpcHtml, 'gRPC image mode');
-  const inputSource = segmentedControlMarkup(grpcHtml, 'Input source');
 
   expect(grpcHtml).toContain('>Input</span>');
-  expect(inputSource).toContain('>scrcpy</button>');
-  expect(inputSource).toContain('>gRPC</button>');
-  expect(inputSource).toMatch(/aria-pressed="true"[^>]*>scrcpy<\/button>/);
+  expect(selectOptionLabels(grpcHtml, 'Input source')).toEqual(['scrcpy', 'gRPC']);
+  expect(selectValue(grpcHtml, 'Input source')).toBe('scrcpy');
   expect(grpcHtml).toContain('>gRPC frames</span>');
-  expect(imageMode).toContain('>PNG</button>');
-  expect(imageMode).toContain('>MMAP</button>');
-  expect(imageMode).toMatch(/aria-pressed="true"[^>]*>MMAP<\/button>/);
+  expect(selectOptionLabels(grpcHtml, 'gRPC image mode')).toEqual(['PNG', 'MMAP']);
+  expect(selectValue(grpcHtml, 'gRPC image mode')).toBe('MMAP');
 });
 
-test('disables the Android capture source switch while replacement is pending', () => {
+test('disables the Android capture source select while replacement is pending', () => {
   const client = {
     ...inspectorClient('android'),
     streamSourcePending: true,
   } satisfies DeviceClient;
-  const source = segmentedControlMarkup(
+  const source = selectMarkup(
     renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />),
     'Stream source',
   );
 
-  expect(source.match(/disabled=""/g)).toHaveLength(2);
+  expect(source).toContain('disabled=""');
 });
 
 test('shows an Android capture source failure below the switch', () => {
@@ -519,7 +573,7 @@ test('renders grouped WebRTC statistics with rich client, encoder, and capture v
   expect(openingTag(html, '<svg role="img" aria-label="Client bitrate: 5.75 Mbps"')).toContain(
     'overflow:visible',
   );
-  expect(html.match(/>Last 60 samples</g)).toHaveLength(2);
+  expect(html.match(/title="Last 60 samples"/g)).toHaveLength(2);
 });
 
 test('keeps measured zero distinct from unavailable WebRTC values', () => {
@@ -630,9 +684,10 @@ test('shows only the server statistics that serve-emu can provide', () => {
   const encoder = streamStatisticGroupMarkup(html, 'Encoder statistics');
   const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
 
-  expect(rowOpeningTag(html, 'WebRTC codec')).toContain('border-bottom:');
-  expect(openingTag(stream, '<span role="columnheader"')).not.toContain('border-top:');
-  expect(openingTag(receiver, '<span role="columnheader"')).toContain('border-top:');
+  // No divider lines between metrics: groups are separated by spacing only.
+  expect(stream + receiver + encoder + capture).not.toContain('border-top:');
+  expect(openingTag(stream, '<span role="columnheader"')).toContain('padding:7px 8px 5px');
+  expect(openingTag(receiver, '<span role="columnheader"')).toContain('padding:14px 8px 5px');
   expect(streamStatisticValue(stream, 'Server FPS')).toBe('30 FPS');
   expect(streamStatisticValue(encoder, 'Codec')).toBe('H.264');
   expect(encoder).not.toContain('data-stream-statistic="Output FPS"');
@@ -866,67 +921,118 @@ test('explains when the Android host was not launched with WebRTC', () => {
     />,
   );
 
-  expect(segmentedControlMarkup(html, 'Stream transport')).toContain('disabled=""');
+  expect(selectValue(html, 'Stream transport')).toBe('WebSocket');
   expect(html).toContain('Start the standalone server with --transport webrtc');
 });
 
-test('uses the shared stream-pill spacing for every device option', () => {
+test('renders every iOS device option as a select pill sized by its options', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
 
-  for (const [label, optionCount] of [
-    ['Appearance', 2],
-    ['Liquid glass', 2],
-    ['Color filter', 5],
-    ['Text size', 7],
+  for (const [label, options, selected] of [
+    ['Appearance', ['Light', 'Dark'], 'Light'],
+    ['Liquid glass', ['Clear', 'Tinted'], 'Clear'],
+    ['Color filter', ['None', 'Grayscale', 'Red-green', 'Green-red', 'Blue-yellow'], 'None'],
+    ['Text size', ['XS', 'S', 'M', 'L', 'XL', '2XL', '3XL'], 'L'],
   ] as const) {
-    const control = segmentedControlMarkup(html, label);
-
-    expect(rowOpeningTag(html, label)).toContain('flex-wrap:wrap');
-    expect(rowOpeningTag(html, label)).toContain('min-height:51px');
-    expect(rowOpeningTag(html, label)).toContain('gap:12px');
-    expect(control.match(/padding:0 8px/g)).toHaveLength(optionCount);
-    expect(control.match(/aria-pressed="true"/g)).toHaveLength(1);
-    expect(control.match(/aria-pressed="false"/g)).toHaveLength(optionCount - 1);
-    expect(html).toMatch(
-      new RegExp(
-        `<span style="[^"]*">${label}</span><div role="group" aria-label="${label}"`,
-      ),
-    );
+    expect(rowOpeningTag(html, label)).toContain('padding:12px 0');
+    expect(rowOpeningTag(html, label)).not.toContain('border-bottom:');
+    // Row labels sit between body text (400) and section titles (600).
+    expect(html).toMatch(new RegExp(`<span style="[^"]*font-weight:500[^"]*">${label}</span>`));
+    expect(selectMarkup(html, label)).toContain('height:28px');
+    expect(selectValue(html, label)).toBe(selected);
+    expect(selectOptionLabels(html, label)).toEqual([...options]);
   }
 });
 
-test('maps Android device options onto Network and S–XL controls', () => {
+test('maps Android device options onto Network and S–XL selects', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
-  const network = segmentedControlMarkup(html, 'Network');
-  const textSize = segmentedControlMarkup(html, 'Text size');
 
-  expect(network).toContain('>On</button>');
-  expect(network).toContain('>Off</button>');
-  expect(network).toMatch(/<button[^>]*aria-pressed="true"[^>]*>On<\/button>/);
-  expect(textSize).toContain('>S</button>');
-  expect(textSize).toContain('>M</button>');
-  expect(textSize).toContain('>L</button>');
-  expect(textSize).toContain('>XL</button>');
-  expect(textSize).not.toContain('>XS</button>');
-  expect(textSize).not.toContain('>2XL</button>');
-  expect(textSize.match(/padding:0 8px/g)).toHaveLength(4);
-  expect(textSize).toMatch(/<button[^>]*aria-pressed="true"[^>]*>M<\/button>/);
+  expect(selectOptionLabels(html, 'Network')).toEqual(['On', 'Off']);
+  expect(selectValue(html, 'Network')).toBe('On');
+  expect(selectOptionLabels(html, 'Text size')).toEqual(['S', 'M', 'L', 'XL']);
+  expect(selectValue(html, 'Text size')).toBe('M');
 });
 
-test('keeps keyboard controls in the device options list and omits only its final divider', () => {
+test('keeps keyboard controls at the end of the device options list', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
+  const section = sectionMarkup(html, 'Device options');
 
-  expect(rowOpeningTag(html, 'VoiceOver')).toContain('border-bottom:');
-  expect(rowOpeningTag(html, 'Hardware keyboard')).toContain('border-bottom:');
-  expect(rowOpeningTag(html, 'Software keyboard')).not.toContain('border-bottom:');
+  expect(section.indexOf('>Hardware keyboard</span>')).toBeGreaterThan(
+    section.indexOf('>VoiceOver</span>'),
+  );
+  expect(section.indexOf('>Software keyboard</span>')).toBeGreaterThan(
+    section.indexOf('>Hardware keyboard</span>'),
+  );
+  expect(section.match(/>Toggle</g)).toHaveLength(2);
 });
 
-test('omits the final device option divider when no keyboard controls follow', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+test('stacks device option rows without dividers', () => {
+  for (const platform of ['ios', 'android'] as const) {
+    const html = renderToStaticMarkup(<LogSidebar client={inspectorClient(platform)} />);
+    const section = sectionMarkup(html, 'Device options');
 
-  expect(rowOpeningTag(html, 'Appearance')).toContain('border-bottom:');
-  expect(rowOpeningTag(html, 'Network')).toContain('border-bottom:');
-  expect(rowOpeningTag(html, 'Text size')).not.toContain('border-bottom:');
+    expect(openingTag(section, '<section')).toContain('border-top:');
+    expect(section).not.toContain('border-bottom:');
+    expect(section.match(/padding:12px 0"/g)?.length).toBeGreaterThan(0);
+  }
+});
+
+test('renders boolean device options as compact switches', () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
+  const reduceMotion = switchMarkup(html, 'Reduce motion');
+
+  expect(reduceMotion).toContain('role="switch"');
+  expect(reduceMotion).toContain('aria-checked="false"');
+  expect(reduceMotion).toContain('width:36px');
+  expect(reduceMotion).toContain('height:20px');
+  expect(reduceMotion).toContain('transform:translateX(0px)');
+});
+
+test('moves device actions into Device options and hides Remove for physical devices', () => {
+  const android = renderToStaticMarkup(
+    <LogSidebar
+      client={inspectorClient('android')}
+      device={device('android', 'android:pixel-10-pro')}
+      onShutdown={() => {}}
+      onRemove={() => {}}
+    />,
+  );
+  const section = sectionMarkup(android, 'Device options');
+
+  for (const label of ['Back button', 'Recents button', 'Shut down device', 'Remove device']) {
+    expect(section).toContain(`>${label}</span>`);
+  }
+  expect(section.match(/>Press</g)).toHaveLength(2);
+  expect(section).toContain('>Shut down<');
+  expect(section).toContain('>Remove<');
+  expect(section.indexOf('>Back button</span>')).toBeGreaterThan(section.indexOf('>Text size</span>'));
+
+  const physical = renderToStaticMarkup(
+    <LogSidebar
+      client={inspectorClient('android')}
+      device={{ ...device('android', 'android:pixel-10-pro'), physical: true }}
+      onShutdown={() => {}}
+      onRemove={() => {}}
+    />,
+  );
+  expect(physical).toContain('>Shut down device</span>');
+  expect(physical).not.toContain('>Remove device</span>');
+
+  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
+  for (const label of ['Back button', 'Recents button', 'Shut down device', 'Remove device']) {
+    expect(ios).not.toContain(`>${label}</span>`);
+  }
+});
+
+test('styles sidebar action buttons like the select pills', () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} onShutdown={() => {}} />);
+  const toggle = html.slice(html.lastIndexOf('<button', html.indexOf('>Toggle<')), html.indexOf('>Toggle<') + 1);
+  const select = selectMarkup(html, 'Appearance');
+
+  for (const style of ['height:28px', 'border:1px solid var(--expo-theme-border-default)', 'border-radius:var(--expo-radius-lg)', 'background-color:var(--expo-theme-background-element)', 'font-size:14px', 'font-weight:500']) {
+    expect(toggle).toContain(style);
+    expect(select).toContain(style);
+  }
 });
 
 test('disables only the pending Android device setting', () => {
@@ -936,9 +1042,9 @@ test('disables only the pending Android device setting', () => {
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(segmentedControlMarkup(html, 'Network').match(/disabled=""/g)).toHaveLength(2);
-  expect(segmentedControlMarkup(html, 'Appearance')).not.toContain('disabled=""');
-  expect(segmentedControlMarkup(html, 'Text size')).not.toContain('disabled=""');
+  expect(selectMarkup(html, 'Network')).toContain('disabled=""');
+  expect(selectMarkup(html, 'Appearance')).not.toContain('disabled=""');
+  expect(selectMarkup(html, 'Text size')).not.toContain('disabled=""');
 });
 
 test('disables only the device setting with an in-flight update', () => {
@@ -948,8 +1054,8 @@ test('disables only the device setting with an in-flight update', () => {
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(segmentedControlMarkup(html, 'Appearance').match(/disabled=""/g)).toHaveLength(2);
-  expect(segmentedControlMarkup(html, 'Liquid glass')).not.toContain('disabled=""');
+  expect(selectMarkup(html, 'Appearance')).toContain('disabled=""');
+  expect(selectMarkup(html, 'Liquid glass')).not.toContain('disabled=""');
   expect(switchMarkup(html, 'Reduce motion')).not.toContain('disabled=""');
 });
 

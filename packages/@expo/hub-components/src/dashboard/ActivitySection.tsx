@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 import { type DeviceActivitySample, type DeviceClient } from '@expo/hub-client';
-import { text, textSize } from '../primitives';
+import { icon, text, textSize } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import {
   MetricChart,
@@ -10,6 +10,8 @@ import {
 } from './MetricChart';
 
 const MAX_SAMPLES = 60;
+/** The CPU sparkline always shows at least one full core of headroom. */
+const MIN_CPU_SCALE_PCT = 100;
 
 function formatBytes(value: number) {
   const safeValue = Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -25,32 +27,41 @@ function latestSample(samples: DeviceActivitySample[]) {
   return samples.at(-1) ?? null;
 }
 
-/** Live CPU, memory, and network history for the foreground iOS app. */
-export function ActivitySection({ client }: { client?: DeviceClient }) {
-  const [open, setOpen] = useState(false);
+/**
+ * Live CPU, memory, and network history for the foreground iOS app: a status
+ * line while data is missing or paused, then one sparkline card per metric.
+ * Rendered inside the Current app section; {@link ActivitySection} wraps it
+ * in its own collapsible section for standalone use.
+ */
+export function ActivityCharts({ client }: { client?: DeviceClient }) {
   const activity = client?.activity ?? null;
   const samples = activity?.samples.slice(-MAX_SAMPLES) ?? [];
   const latest = latestSample(samples);
 
   const cpuSeries: MetricChartSeries[] = [
-    { label: 'CPU', color: text.info, values: samples.map((sample) => sample.cpuPct) },
+    { label: 'CPU', color: icon.success, values: samples.map((sample) => sample.cpuPct) },
   ];
   const memorySeries: MetricChartSeries[] = [
-    { label: 'Memory', color: text.preview, values: samples.map((sample) => sample.memBytes) },
+    { label: 'Memory', color: icon.info, values: samples.map((sample) => sample.memBytes) },
   ];
   const networkSeries: MetricChartSeries[] = [
     {
       label: 'Inbound',
-      color: text.success,
+      color: icon.preview,
       values: samples.map((sample) => sample.netInBytesPerSec),
     },
     {
       label: 'Outbound',
-      color: text.warning,
+      color: icon.preview,
+      dashed: true,
       values: samples.map((sample) => sample.netOutBytesPerSec),
     },
   ];
-  const cpuCapacity = Math.max(100, (activity?.hostCores ?? 0) * 100);
+
+  const cores = activity?.hostCores ?? null;
+  const cpuDescription = cores
+    ? `Percent of one core. The host has ${cores} cores, so the app can reach ${cores * 100}%.`
+    : undefined;
 
   let message: string | null = null;
   if (activity?.errored) message = 'Activity data is unavailable for this app.';
@@ -58,7 +69,7 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
   else if (activity?.stale) message = 'Activity data is paused. Showing the most recent samples.';
 
   return (
-    <CollapsibleSection title="Activity" open={open} onOpenChange={setOpen}>
+    <div data-testid="activity-charts" style={{ minWidth: 0, paddingTop: 8 }}>
       {message && (
         <span
           role={activity?.errored ? 'alert' : undefined}
@@ -68,17 +79,21 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
         </span>
       )}
       {latest && (
-        <div style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 8 }}>
+        <div
+          style={{
+            display: 'flex',
+            minWidth: 0,
+            flexDirection: 'column',
+            gap: 4,
+            paddingTop: message ? 0 : 4,
+          }}
+        >
           <MetricChart
             title="CPU"
             value={`${Math.round(latest.cpuPct)}%`}
-            description={
-              activity?.hostCores
-                ? `Up to ${activity.hostCores * 100}% across host cores`
-                : undefined
-            }
+            description={cpuDescription}
             series={cpuSeries}
-            maxValue={Math.max(cpuCapacity, maxChartValue(cpuSeries))}
+            maxValue={maxChartValue(cpuSeries, MIN_CPU_SCALE_PCT)}
           />
           <MetricChart
             title="Memory"
@@ -88,12 +103,24 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
           />
           <MetricChart
             title="Network"
-            value={`↓ ${formatBytes(latest.netInBytesPerSec)}/s · ↑ ${formatBytes(latest.netOutBytesPerSec)}/s`}
+            value={`↑ ${formatBytes(latest.netOutBytesPerSec)}/s · ↓ ${formatBytes(latest.netInBytesPerSec)}/s`}
+            description="Solid line: inbound. Dashed line: outbound."
             series={networkSeries}
             maxValue={maxChartValue(networkSeries)}
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/** {@link ActivityCharts} in a standalone collapsible section. */
+export function ActivitySection({ client }: { client?: DeviceClient }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <CollapsibleSection title="Activity" open={open} onOpenChange={setOpen}>
+      <ActivityCharts client={client} />
     </CollapsibleSection>
   );
 }

@@ -240,8 +240,13 @@ describe('agent device status', () => {
     expect(viewportTag).toContain('flex:1');
     expect(viewportTag).toContain('min-height:0');
     expect(viewportTag).toContain('width:100%');
+    // The title and toolbar hug the frame: their heights are reserved as padding.
+    expect(viewportTag).toContain('padding:64px 0 86px');
+    expect(markup.indexOf('aria-label="Device controls"')).toBeGreaterThan(
+      markup.indexOf('data-testid="device-frame-anchor"'),
+    );
     expect(markup).toMatch(
-      /data-testid="device-frame-viewport"[^>]*><div data-testid="device-screen-frame"[\s\S]*data-testid="device-frame-stream-cover"[^>]*><div data-testid="connection-state-surface" data-status="connecting"><\/div>/
+      /data-testid="device-frame-viewport"[^>]*><div data-testid="device-frame-anchor"[^>]*><div data-testid="device-screen-frame"[\s\S]*data-testid="device-frame-stream-cover"[^>]*><div data-testid="connection-state-surface" data-status="connecting"><\/div>/
     );
   });
 

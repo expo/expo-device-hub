@@ -62,16 +62,27 @@ function cssTheme(name: string): ThemeTokens {
   };
 }
 
+/** Rendered height in px of each size — the website's `h-N` classes. */
+export const BUTTON_HEIGHTS: Record<ButtonSize, number> = {
+  '2xs': 28,
+  xs: 32,
+  sm: 36,
+  md: 40,
+  lg: 44,
+  xl: 48,
+  '2xl': 60,
+};
+
 // Height / horizontal padding / radius / font size per size — mirrors the
 // website's getSizeClasses (h-N, px-N, rounded, text-*).
 const SIZE_STYLES: Record<ButtonSize, CSSProperties> = {
-  '2xs': { height: 28, paddingInline: 8, borderRadius: radius.lg, ...textSize.xs },
-  xs: { height: 32, paddingInline: 12, borderRadius: radius.lg, ...textSize.xs },
-  sm: { height: 36, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
-  md: { height: 40, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
-  lg: { height: 44, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
-  xl: { height: 48, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
-  '2xl': { height: 60, paddingInline: 24, borderRadius: radius.lg, ...textSize.lg },
+  '2xs': { height: BUTTON_HEIGHTS['2xs'], paddingInline: 8, borderRadius: radius.lg, ...textSize.xs },
+  xs: { height: BUTTON_HEIGHTS.xs, paddingInline: 12, borderRadius: radius.lg, ...textSize.xs },
+  sm: { height: BUTTON_HEIGHTS.sm, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
+  md: { height: BUTTON_HEIGHTS.md, paddingInline: 16, borderRadius: radius.lg, ...textSize.sm },
+  lg: { height: BUTTON_HEIGHTS.lg, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
+  xl: { height: BUTTON_HEIGHTS.xl, paddingInline: 24, borderRadius: radius.lg, ...textSize.base },
+  '2xl': { height: BUTTON_HEIGHTS['2xl'], paddingInline: 24, borderRadius: radius.lg, ...textSize.lg },
 };
 
 export type ButtonProps = {

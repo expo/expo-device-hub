@@ -10,10 +10,12 @@ import {
   Value,
   Viewport,
 } from '@radix-ui/react-select';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { bg, border, icon, radius, shadow, text, textSize } from '../theme/tokens';
 import { CheckIcon, ChevronDownIcon } from './icons';
+import { isFocusVisible } from './focusVisible';
+import { pillControlStyle } from './pill';
 
 export type SelectOption<Value extends string = string> = {
   value: Value;
@@ -23,15 +25,51 @@ export type SelectOption<Value extends string = string> = {
 
 export type SelectProps<Value extends string> = {
   ariaLabel: string;
+  ariaDescribedBy?: string;
   value: Value;
   options: ReadonlyArray<SelectOption<Value>>;
   disabled?: boolean;
   onChange: (value: Value) => void;
 };
 
-/** A compact single-value select whose trigger is sized by its longest option. */
+const ITEM_HEIGHT = 28;
+
+type SelectRegistration = {
+  trigger: HTMLButtonElement | null;
+  disabled: boolean;
+  open: () => void;
+};
+
+/**
+ * Every mounted select. An open Radix select disables pointer events on the
+ * rest of the page, so a click on another select's trigger would only dismiss
+ * the open menu. The dismissing select looks up the trigger under the pointer
+ * here and opens it, so one click switches menus.
+ */
+const mountedSelects = new Set<SelectRegistration>();
+
+function selectAtPoint(x: number, y: number, except: SelectRegistration) {
+  for (const entry of mountedSelects) {
+    if (entry === except || entry.disabled || !entry.trigger) continue;
+    const rect = entry.trigger.getBoundingClientRect();
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return entry;
+  }
+  return null;
+}
+
+/**
+ * A compact single-value select rendered as a soft pill: the current value
+ * followed by a chevron. The closed trigger is only as wide as the selected
+ * value; the open menu grows to fit its widest option instead of wrapping.
+ * Clicking another select while this one is open closes this menu and opens
+ * the other in the same click.
+ * The offered option labels are exposed on the trigger as `data-test-options`
+ * (newline-separated) so tests can read them, since the menu only renders
+ * while open.
+ */
 export function Select<Value extends string>({
   ariaLabel,
+  ariaDescribedBy,
   value,
   options,
   disabled = false,
@@ -39,7 +77,27 @@ export function Select<Value extends string>({
 }: SelectProps<Value>) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const selectedLabel = options.find((option) => option.value === value)?.label ?? value;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const registration = useRef<SelectRegistration>({
+    trigger: null,
+    disabled,
+    open: () => setOpen(true),
+  });
+
+  useEffect(() => {
+    registration.current.disabled = disabled;
+  }, [disabled]);
+
+  useEffect(() => {
+    const entry = registration.current;
+    entry.trigger = triggerRef.current;
+    mountedSelects.add(entry);
+    return () => {
+      mountedSelects.delete(entry);
+    };
+  }, []);
 
   return (
     <Root
@@ -50,67 +108,43 @@ export function Select<Value extends string>({
       onValueChange={(nextValue) => onChange(nextValue as Value)}
     >
       <Trigger
+        ref={triggerRef}
         aria-label={ariaLabel}
-        onFocus={() => setFocused(true)}
+        aria-describedby={ariaDescribedBy}
+        data-test-options={options.map((option) => option.label).join('\n')}
+        onFocus={(event) => setFocused(isFocusVisible(event))}
         onBlur={() => setFocused(false)}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         style={{
-          ...textSize.xs,
-          display: 'inline-flex',
+          ...pillControlStyle({ hovered, focused, disabled }),
           width: 'max-content',
-          height: 30,
-          flexShrink: 0,
-          alignItems: 'center',
+          maxWidth: '100%',
           justifyContent: 'space-between',
-          gap: 8,
-          boxSizing: 'border-box',
-          padding: '0 7px 0 9px',
-          border: `1px solid ${border.default}`,
-          borderRadius: radius.md,
-          outline: 'none',
-          backgroundColor: bg.subtle,
-          boxShadow: focused ? `0 0 0 2px ${border.secondary}` : shadow.none,
-          color: text.default,
-          fontFamily: 'inherit',
-          cursor: disabled ? 'default' : 'pointer',
-          opacity: disabled ? 0.5 : 1,
+          padding: '0 8px 0 10px',
         }}
       >
         <span
           style={{
-            display: 'inline-grid',
             minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}
         >
           <Value>{selectedLabel}</Value>
-          <span
-            aria-hidden="true"
-            style={{
-              display: 'inline-grid',
-              gridArea: '2 / 1',
-              height: 0,
-              overflow: 'hidden',
-              visibility: 'hidden',
-            }}
-          >
-            {options.map((option) => (
-              <span key={option.value} style={{ gridArea: '1 / 1' }}>
-                {option.label}
-              </span>
-            ))}
-          </span>
         </span>
         <SelectIcon
           aria-hidden="true"
           style={{
             display: 'flex',
             flexShrink: 0,
-            color: icon.secondary,
+            color: icon.default,
             transform: open ? 'rotate(180deg)' : undefined,
             transition: 'transform 120ms ease',
           }}
         >
-          <ChevronDownIcon size={14} />
+          <ChevronDownIcon size={16} strokeWidth={1.5} />
         </SelectIcon>
       </Trigger>
       <Portal>
@@ -119,20 +153,33 @@ export function Select<Value extends string>({
           align="end"
           sideOffset={4}
           collisionPadding={8}
+          onPointerDownOutside={(event) => {
+            // With pointer events disabled on the page the event target is not
+            // the trigger, so hit-test the registered trigger rects instead.
+            // This assumes nothing overlaps a trigger while a menu is open,
+            // which holds in the sidebar; an element covering a trigger would
+            // open that select too.
+            const { clientX, clientY } = event.detail.originalEvent;
+            const next = selectAtPoint(clientX, clientY, registration.current);
+            // Let this menu dismiss first, then open the select under the pointer.
+            if (next) setTimeout(next.open, 0);
+          }}
           className="will-change-[opacity,transform] data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade data-[side=right]:animate-slideLeftAndFade data-[side=top]:animate-slideDownAndFade"
           style={{
-            ...textSize.xs,
+            ...textSize.sm,
+            fontWeight: 500,
             zIndex: 605,
-            width: 'var(--radix-select-trigger-width)',
+            width: 'max-content',
             minWidth: 'var(--radix-select-trigger-width)',
+            maxWidth: 'var(--radix-select-content-available-width)',
             maxHeight: 'var(--radix-select-content-available-height)',
             boxSizing: 'border-box',
             overflow: 'hidden',
             padding: 4,
             border: `1px solid ${border.default}`,
-            borderRadius: radius.md,
+            borderRadius: radius.lg,
             outline: 'none',
-            backgroundColor: bg.subtle,
+            backgroundColor: bg.default,
             boxShadow: shadow.md,
             color: text.default,
             fontFamily: 'inherit',
@@ -149,18 +196,19 @@ export function Select<Value extends string>({
                 style={{
                   display: 'flex',
                   width: '100%',
-                  height: 30,
+                  height: ITEM_HEIGHT,
                   alignItems: 'center',
                   justifyContent: 'space-between',
-                  gap: 4,
+                  gap: 8,
                   boxSizing: 'border-box',
-                  padding: '0 4px',
-                  borderRadius: radius.sm,
+                  padding: '0 6px',
+                  borderRadius: radius.md,
                   outline: 'none',
                   color: text.default,
                   cursor: option.disabled ? 'default' : 'pointer',
                   opacity: option.disabled ? 0.5 : 1,
                   userSelect: 'none',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 <ItemText>{option.label}</ItemText>

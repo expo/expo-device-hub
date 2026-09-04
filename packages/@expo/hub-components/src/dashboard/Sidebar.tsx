@@ -1,4 +1,4 @@
-import { Logo, SidebarToggle } from '../primitives';
+import { Logo, SidebarToggle, bg } from '../primitives';
 import { DeviceSection } from './DeviceSection';
 import {
   type AddDeviceOutcome,
@@ -60,6 +60,7 @@ export function Sidebar({
         height: '100vh',
         boxSizing: 'border-box',
         padding: '32px 24px',
+        backgroundColor: bg.default,
         overflow: 'hidden',
       }}>
       <div

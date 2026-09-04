@@ -1,29 +1,26 @@
 import { type ReactNode } from 'react';
 
-import { Button, radius } from '../primitives';
+import { PillButton } from '../primitives';
 
+/**
+ * The action control on an inspector row (Toggle, Press, Shut down, Remove):
+ * a {@link PillButton}, so it matches the select pills on neighbouring rows.
+ */
 export function SidebarActionButton({
   children,
-  disabled,
+  disabled = false,
+  destructive = false,
   onClick,
 }: {
   children: ReactNode;
   disabled?: boolean;
+  /** Color the label as a destructive action (e.g. removing a device). */
+  destructive?: boolean;
   onClick: () => void;
 }) {
   return (
-    <Button
-      size="2xs"
-      theme="secondary"
-      disabled={disabled}
-      onClick={onClick}
-      style={{
-        flexShrink: 0,
-        borderRadius: radius.full,
-        paddingInline: 14,
-        fontWeight: 600,
-      }}>
+    <PillButton disabled={disabled} destructive={destructive} onClick={onClick}>
       {children}
-    </Button>
+    </PillButton>
   );
 }

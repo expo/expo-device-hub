@@ -1,5 +1,5 @@
 import { type DeviceClient } from '@expo/hub-client';
-import { bg, border, radius, text, textSize } from '../primitives';
+import { bg, icon, radius, text, textSize } from '../primitives';
 import {
   MetricChart,
   type MetricChartSeries,
@@ -109,10 +109,11 @@ function formatEncoderLimitation(value: string | null) {
 
 function StreamStatisticGroupHeading({
   label,
-  showTopBorder = true,
+  first = false,
 }: {
   label: string;
-  showTopBorder?: boolean;
+  /** The first group sits flush with the table's top; later groups get extra space above. */
+  first?: boolean;
 }) {
   return (
     <div role="row" style={{ gridColumn: '1 / -1' }}>
@@ -122,8 +123,7 @@ function StreamStatisticGroupHeading({
         style={{
           ...textSize['2xs'],
           display: 'block',
-          padding: '7px 8px 5px',
-          ...(showTopBorder ? { borderTop: `1px solid ${border.secondary}` } : {}),
+          padding: first ? '7px 8px 5px' : '14px 8px 5px',
           color: text.secondary,
           fontWeight: 500,
           letterSpacing: '0.04em',
@@ -157,7 +157,6 @@ function StreamStatisticRow({
         justifyContent: 'space-between',
         gap: 4,
         padding: '5px 8px',
-        borderTop: `1px solid ${border.secondary}`,
         opacity: stale ? 0.55 : 1,
       }}
     >
@@ -207,7 +206,7 @@ export function StreamStatistics({
   const clientFpsSeries: MetricChartSeries[] = [
     {
       label: 'Client FPS',
-      color: text.info,
+      color: icon.info,
       values: samples.flatMap((sample) =>
         sample.clientFps === null ? [] : [sample.clientFps],
       ),
@@ -216,7 +215,7 @@ export function StreamStatistics({
   const clientBitrateSeries: MetricChartSeries[] = [
     {
       label: 'Client bitrate',
-      color: text.preview,
+      color: icon.preview,
       values: samples.flatMap((sample) =>
         sample.clientBitrateBps === null ? [] : [sample.clientBitrateBps],
       ),
@@ -413,7 +412,7 @@ export function StreamStatistics({
         style={{
           width: '100%',
           overflow: 'visible',
-          borderRadius: radius.md,
+          borderRadius: radius.lg,
           backgroundColor: bg.subtle,
         }}
       >
@@ -424,7 +423,7 @@ export function StreamStatistics({
           data-server-stale={stats?.serverStale || undefined}
           style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
         >
-          <StreamStatisticGroupHeading label="Stream" showTopBorder={false} />
+          <StreamStatisticGroupHeading label="Stream" first />
           <StreamStatisticRow
             label="Server FPS"
             value={formatFps(latest?.serverFps ?? null)}
@@ -541,7 +540,6 @@ export function StreamStatistics({
             description="Last 60 samples"
             series={clientFpsSeries}
             maxValue={maxChartValue(clientFpsSeries)}
-            bordered={false}
           />
           <MetricChart
             title="Client bitrate"
@@ -549,7 +547,6 @@ export function StreamStatistics({
             description="Last 60 samples"
             series={clientBitrateSeries}
             maxValue={maxChartValue(clientBitrateSeries)}
-            bordered={false}
           />
         </div>
       )}

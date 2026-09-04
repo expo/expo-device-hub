@@ -15,7 +15,7 @@ export function KeyboardSection({ client }: { client: DeviceClient }) {
           Toggle
         </SidebarActionButton>
       </SidebarRow>
-      <SidebarRow label="Software keyboard" borderBottom={false}>
+      <SidebarRow label="Software keyboard">
         <SidebarActionButton
           disabled={connected === null}
           onClick={() => client.toggleSoftwareKeyboard()}>
