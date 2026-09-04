@@ -141,12 +141,9 @@ export default async function handler(request: Request): Promise<Response | null
     try {
       const result =
         pathname === SHUTDOWN_DEVICE_ROUTE
-          ? await shutdownHubDevice(action)
-          : await removeHubDevice(action);
-      if (result.ok) {
-        if (action.platform === 'android') setEmuCameraWired(action.id, false);
-        refreshDeviceList();
-      }
+          ? await shutdownHubDevice(action, EMU_CAMERA)
+          : await removeHubDevice(action, EMU_CAMERA);
+      if (result.ok) refreshDeviceList();
       return jsonResponse(result);
     } catch (error) {
       return jsonResponse({ ok: false, error: String(error) }, 500);
@@ -186,7 +183,7 @@ export default async function handler(request: Request): Promise<Response | null
     }
 
     try {
-      const result = await createHubDevice(action);
+      const result = await createHubDevice(action, EMU_CAMERA);
       if (result.ok) refreshDeviceList();
       return jsonResponse(result);
     } catch (error) {

@@ -11,6 +11,7 @@ import {
   bootDevice as bootAndroidEmulator,
   createDevice as createAndroidDevice,
   emulatorSerial,
+  type EmulatorExit,
   freeEmulatorPort,
   removeDevice as removeAndroidDevice,
   shutdownDevice as shutdownAndroidDevice,
@@ -127,15 +128,34 @@ function errorList(error: SerializableError | null): SerializableError[] {
 const ANDROID_EXIT_TIMEOUT_MS = 30_000;
 
 /**
+ * serve-emu camera control, injected by `index.ts` so this module stays free of
+ * the vendored import. `setWired` records whether the emulator on that serial
+ * was launched with camera flags; this module owns that claim for the whole
+ * device lifecycle, since emulator ports (and so serials) get reused.
+ */
+export interface EmuCameraHooks {
+  prepareFeeds: (serial: string) => Promise<string[]>;
+  setWired: (serial: string, wired: boolean) => void;
+}
+
+/**
  * Shut an emulator down and wait for adb to release its serial. `adb emu kill`
  * returns while the emulator is still exiting. Anything that inspects adb in
  * that window fails, such as the port scan of a re-boot or `avdmanager delete avd`.
+ *
+ * The camera claim drops as soon as the kill is accepted, ahead of that wait: the
+ * emulator is on its way out regardless, so a wait that times out must not leave
+ * the claim standing for whatever boots onto the serial next.
  */
-async function shutdownAndroidHubDevice(serial: string): Promise<DeviceActionResult> {
+async function shutdownAndroidHubDevice(
+  serial: string,
+  camera?: EmuCameraHooks
+): Promise<DeviceActionResult> {
   const shutdown = await shutdownAndroidDevice({ serial });
   if (shutdown.error || !shutdown.value) {
     return { ok: false, errors: errorList(toSerializableError(shutdown.error)) };
   }
+  camera?.setWired(serial, false);
 
   const offline = await waitForAdbOffline(serial, ANDROID_EXIT_TIMEOUT_MS);
   if (offline.value) return { ok: true, errors: [] };
@@ -148,16 +168,16 @@ async function shutdownAndroidHubDevice(serial: string): Promise<DeviceActionRes
 }
 
 /** Shut a running simulator/emulator down. Resolves to whether it succeeded. */
-export async function shutdownHubDevice({
-  platform,
-  id,
-}: DeviceActionRequest): Promise<DeviceActionResult> {
+export async function shutdownHubDevice(
+  { platform, id }: DeviceActionRequest,
+  camera?: EmuCameraHooks
+): Promise<DeviceActionResult> {
   if (platform === 'ios') {
     const result = await shutdownAppleDevice({ udid: id });
     return { ok: result.value, errors: errorList(toSerializableError(result.error)) };
   }
 
-  return shutdownAndroidHubDevice(id);
+  return shutdownAndroidHubDevice(id, camera);
 }
 
 /**
@@ -165,11 +185,10 @@ export async function shutdownHubDevice({
  * cleanly deleted, so shut it down first and then delete: iOS by udid, Android
  * by AVD name. A shutdown error stops the operation before deletion.
  */
-export async function removeHubDevice({
-  platform,
-  id,
-  name,
-}: DeviceActionRequest): Promise<DeviceActionResult> {
+export async function removeHubDevice(
+  { platform, id, name }: DeviceActionRequest,
+  camera?: EmuCameraHooks
+): Promise<DeviceActionResult> {
   if (platform === 'ios') {
     const shutdown = await shutdownAppleDevice({ udid: id });
     if (shutdown.error || !shutdown.value) {
@@ -186,7 +205,7 @@ export async function removeHubDevice({
     };
   }
 
-  const shutdown = await shutdownAndroidHubDevice(id);
+  const shutdown = await shutdownAndroidHubDevice(id, camera);
   if (!shutdown.ok) return shutdown;
 
   const removed = await removeAndroidDevice({ name });
@@ -207,12 +226,6 @@ export interface BootDeviceResult {
   serial?: string;
   error?: string;
   errors: SerializableError[];
-}
-
-/** serve-emu camera control, injected by `index.ts` so this module stays free of the vendored import. */
-export interface EmuCameraHooks {
-  prepareFeeds: (serial: string) => Promise<string[]>;
-  setWired: (serial: string, wired: boolean) => void;
 }
 
 /**
@@ -241,16 +254,14 @@ export async function bootHubDevice(
   const avdName = name || id;
   if (!avdName) return { ok: false, error: 'Missing AVD name', errors: [] };
 
-  return bootAndroidHubDevice(avdName, cameraRequested ? camera : undefined);
+  return bootAndroidHubDevice(avdName, cameraRequested, camera);
 }
 
 /** Create a new virtual device, then boot it through the same platform utility. */
-export async function createHubDevice({
-  platform,
-  name,
-  runtime,
-  deviceType,
-}: CreateDeviceActionRequest): Promise<BootDeviceResult> {
+export async function createHubDevice(
+  { platform, name, runtime, deviceType }: CreateDeviceActionRequest,
+  camera?: EmuCameraHooks
+): Promise<BootDeviceResult> {
   if (platform === 'ios') {
     const created = await createAppleSimulator({ name, runtime, deviceType });
     const udid = created.value;
@@ -287,11 +298,21 @@ export async function createHubDevice({
     };
   }
 
-  return bootAndroidHubDevice(name);
+  return bootAndroidHubDevice(name, false, camera);
 }
 
+/**
+ * Boot an AVD on a free port and republish serve-emu's camera claim for the
+ * resulting serial.
+ *
+ * Port allocation hands out the lowest free port, so a serial comes back on
+ * almost every boot. The claim is therefore rewritten on every Android boot,
+ * not only on the ones that asked for feeds, and a claim that was granted is
+ * dropped again when the emulator process dies outside the Hub.
+ */
 async function bootAndroidHubDevice(
   avdName: string,
+  cameraRequested: boolean,
   camera?: EmuCameraHooks
 ): Promise<BootDeviceResult> {
   const allocated = await freeEmulatorPort();
@@ -304,9 +325,23 @@ async function bootAndroidHubDevice(
   }
 
   const serial = emulatorSerial(allocated.value);
-  const result = await bootAllocatedEmulator(avdName, allocated.value, serial, camera);
-  camera?.setWired(serial, result.ok);
-  return result;
+  const booted = await bootAllocatedEmulator(
+    avdName,
+    allocated.value,
+    serial,
+    cameraRequested ? camera : undefined
+  );
+
+  const wired = cameraRequested && booted.result.ok;
+  camera?.setWired(serial, wired);
+  if (wired) void booted.exited?.then(() => camera?.setWired(serial, false));
+  return booted.result;
+}
+
+interface AllocatedBootOutcome {
+  result: BootDeviceResult;
+  /** Settles once the emulator process dies. Absent when it never spawned. */
+  exited?: Promise<EmulatorExit>;
 }
 
 async function bootAllocatedEmulator(
@@ -314,7 +349,7 @@ async function bootAllocatedEmulator(
   port: number,
   serial: string,
   camera?: EmuCameraHooks
-): Promise<BootDeviceResult> {
+): Promise<AllocatedBootOutcome> {
   let extraArgs: string[] = [];
   if (camera) {
     try {
@@ -322,9 +357,11 @@ async function bootAllocatedEmulator(
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       return {
-        ok: false,
-        error: `Failed to prepare camera feeds for ${avdName}: ${reason}`,
-        errors: [],
+        result: {
+          ok: false,
+          error: `Failed to prepare camera feeds for ${avdName}: ${reason}`,
+          errors: [],
+        },
       };
     }
   }
@@ -333,9 +370,11 @@ async function bootAllocatedEmulator(
   const booted = bootedResult.value;
   if (bootedResult.error || !booted) {
     return {
-      ok: false,
-      error: `Failed to spawn emulator for ${avdName}`,
-      errors: errorList(toSerializableError(bootedResult.error)),
+      result: {
+        ok: false,
+        error: `Failed to spawn emulator for ${avdName}`,
+        errors: errorList(toSerializableError(bootedResult.error)),
+      },
     };
   }
 
@@ -356,33 +395,42 @@ async function bootAllocatedEmulator(
         ? `was killed by ${outcome.exit.signal}`
         : 'exited';
     return {
-      ok: false,
-      id: booted.serial,
-      serial: booted.serial,
-      error:
-        `The emulator process for "${avdName}" ${ended} before coming online.\n\n` +
-        `For details, try running it manually:\n${booted.command}`,
-      errors: errorList(toSerializableError(outcome.exit.error)),
+      exited: booted.exited,
+      result: {
+        ok: false,
+        id: booted.serial,
+        serial: booted.serial,
+        error:
+          `The emulator process for "${avdName}" ${ended} before coming online.\n\n` +
+          `For details, try running it manually:\n${booted.command}`,
+        errors: errorList(toSerializableError(outcome.exit.error)),
+      },
     };
   }
 
   if (outcome.online.error) {
     return {
-      ok: false,
-      id: booted.serial,
-      serial: booted.serial,
-      error: `Failed while waiting for ${avdName} to come online`,
-      errors: errorList(toSerializableError(outcome.online.error)),
-    };
-  }
-
-  return outcome.online.value
-    ? { ok: true, id: booted.serial, serial: booted.serial, errors: [] }
-    : {
+      exited: booted.exited,
+      result: {
         ok: false,
         id: booted.serial,
         serial: booted.serial,
-        error: 'Timed out waiting for the emulator to come online',
-        errors: [],
-      };
+        error: `Failed while waiting for ${avdName} to come online`,
+        errors: errorList(toSerializableError(outcome.online.error)),
+      },
+    };
+  }
+
+  return {
+    exited: booted.exited,
+    result: outcome.online.value
+      ? { ok: true, id: booted.serial, serial: booted.serial, errors: [] }
+      : {
+          ok: false,
+          id: booted.serial,
+          serial: booted.serial,
+          error: 'Timed out waiting for the emulator to come online',
+          errors: [],
+        },
+  };
 }
