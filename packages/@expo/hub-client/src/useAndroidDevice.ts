@@ -26,9 +26,12 @@ import {
   reconcileAndroidSessionEvents,
 } from './android-events';
 import {
+  ANDROID_DEVICE_SETTING_KEYS,
+  ANDROID_POLLED_DEVICE_SETTING_KEYS,
   type AndroidDeviceSettingKey,
-  androidDeviceSettingPath,
+  androidDeviceSettingPathFor,
   androidDeviceSettingRequest,
+  createAndroidDeviceSettingVersions,
   parseAndroidDeviceSetting,
 } from './android-device-settings';
 import {
@@ -91,16 +94,6 @@ const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
-
-const ANDROID_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = [
-  'appearance',
-  'network',
-  'text-size',
-];
-const ANDROID_POLLED_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = [
-  'network',
-  'text-size',
-];
 
 const KEYCODE_R = 46;
 
@@ -270,11 +263,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Clear is viewer-local so it does not erase serve-emu's replayable session.
   const eventCursorRef = useRef(createAndroidEventCursor());
   const deviceSettingWriteTrackerRef = useRef(new DeviceSettingWriteTracker());
-  const deviceSettingVersionsRef = useRef<Record<AndroidDeviceSettingKey, number>>({
-    appearance: 0,
-    network: 0,
-    'text-size': 0,
-  });
+  const deviceSettingVersionsRef = useRef(createAndroidDeviceSettingVersions());
   const deviceSettingScope = `${active ? 'active' : 'inactive'}\0${baseUrl ?? ''}\0${targetDevice ?? ''}`;
   const deviceSettingScopeRef = useRef(deviceSettingScope);
   useLayoutEffect(() => {
@@ -1588,7 +1577,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           nextControllers.push(controller);
           try {
             const response = await fetch(
-              deviceApiUrl(baseUrl, androidDeviceSettingPath(key), targetDevice),
+              deviceApiUrl(baseUrl, androidDeviceSettingPathFor(key), targetDevice),
               { cache: 'no-store', signal: controller.signal },
             );
             if (!response.ok) return { key, version, pendingAtStart, handled: false as const };
