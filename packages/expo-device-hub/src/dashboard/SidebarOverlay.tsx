@@ -1,4 +1,4 @@
-import { bg, shadow } from '@expo/hub-components';
+import { bg, border } from '@expo/hub-components';
 import { type ReactNode } from 'react';
 
 import {
@@ -60,7 +60,8 @@ export function SidebarOverlay({
           [side]: 0,
           zIndex: backdropZIndex + 1,
           backgroundColor: bg.default,
-          boxShadow: shadow.lg,
+          // The seam toward the content is the same hairline the docked layout uses.
+          [side === 'left' ? 'borderRight' : 'borderLeft']: `1px solid ${border.default}`,
           pointerEvents: visible ? undefined : 'none',
           transform: visible
             ? 'translateX(0)'
