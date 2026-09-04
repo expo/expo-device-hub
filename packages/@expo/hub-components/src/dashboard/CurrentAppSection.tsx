@@ -21,59 +21,56 @@ type AppDetail = {
  * the client resolves them (iOS fetches them over the exec channel after the
  * id arrives).
  *
- * A collapsible section (open by default) with the app identity, label/value
- * rows in the shared type scale, and — when the backend samples it — the
- * app's live activity charts.
+ * A collapsible section (open by default) with the app identity (iOS only —
+ * Android reports no label or icon worth a row), label/value rows in the
+ * shared type scale, and — when the backend samples it — the app's live
+ * activity charts.
  */
 export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   const [open, setOpen] = useState(true);
   const app = client?.foregroundApp ?? null;
   const name = app ? (app.label ?? app.id) : UNKNOWN_VALUE;
+  const showIdentity = client?.platform !== 'android';
 
   const details: AppDetail[] = [
     { label: 'App ID', value: app?.id ?? UNKNOWN_VALUE },
     { label: 'Version', value: app?.version ?? UNKNOWN_VALUE },
     { label: 'Build number', value: app?.build ?? UNKNOWN_VALUE },
-    client?.platform === 'android'
-      ? {
-          label: 'Minimum SDK',
-          value: app?.minSdk != null ? String(app.minSdk) : UNKNOWN_VALUE,
-        }
-      : { label: 'Minimum iOS', value: app?.minOS ?? UNKNOWN_VALUE },
-    { label: 'PID', value: app?.pid != null ? String(app.pid) : UNKNOWN_VALUE },
   ];
 
   return (
     <CollapsibleSection title="Current app" open={open} onOpenChange={setOpen}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-          padding: '4px 0 12px',
-        }}>
-        <div style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 4 }}>
-          <span
-            title={name}
-            style={{
-              ...heading.base,
-              color: app ? text.default : text.tertiary,
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-            }}>
-            {name}
-          </span>
-          {(app?.isReactNative || app?.debuggable) && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-              {app?.isReactNative && <Badge color="info">React Native</Badge>}
-              {app?.debuggable && <Badge color="warning">debuggable</Badge>}
-            </div>
-          )}
+      {showIdentity && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 16,
+            padding: '4px 0 12px',
+          }}>
+          <div style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 4 }}>
+            <span
+              title={name}
+              style={{
+                ...heading.base,
+                color: app ? text.default : text.tertiary,
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+                whiteSpace: 'nowrap',
+              }}>
+              {name}
+            </span>
+            {(app?.isReactNative || app?.debuggable) && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {app?.isReactNative && <Badge color="info">React Native</Badge>}
+                {app?.debuggable && <Badge color="warning">debuggable</Badge>}
+              </div>
+            )}
+          </div>
+          <AppIcon iconDataUrl={app?.iconDataUrl} />
         </div>
-        <AppIcon iconDataUrl={app?.iconDataUrl} />
-      </div>
+      )}
       <dl style={{ margin: 0 }}>
         {details.map((detail) => (
           <AppDetailRow key={detail.label} detail={detail} />
