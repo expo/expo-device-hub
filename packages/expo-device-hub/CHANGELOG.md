@@ -1,5 +1,16 @@
 # expo-device-hub
 
+## 0.9.0
+
+### Minor Changes
+
+- 36dd944: Add selectable scrcpy and emulator-gRPC input delivery for gRPC Android streams, defaulting gRPC capture to scrcpy input.
+- 76d7e34: Redesign the dashboard to the new Expo look.
+
+### Patch Changes
+
+- 2f34c96: Preserve 60 FPS Android gRPC MMAP capture under normal notification and encoder-timer jitter.
+
 ## 0.8.0
 
 ### Minor Changes
