@@ -5,6 +5,7 @@ import {
 } from '@expo/hub-client';
 import { SidebarToggle } from '../primitives';
 import { ActivitySection } from './ActivitySection';
+import { CameraSection } from './CameraSection';
 import { CurrentAppSection } from './CurrentAppSection';
 import { DeviceOptionsSection } from './DeviceOptionsSection';
 import { EventsSection } from './EventsSection';
@@ -34,6 +35,8 @@ export type LogSidebarProps = {
   onStreamModeChange?: (mode: DeviceStreamMode) => void;
   /** Change the viewer-local HTTP codec. */
   onHttpCodecChange?: (codec: DeviceHttpCodec) => void;
+  /** Restart the emulator so its camera feeds attach at launch. */
+  onRestartWithCamera?: () => Promise<void>;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
 };
@@ -53,6 +56,7 @@ export function LogSidebar({
   streamModeAvailability,
   onStreamModeChange,
   onHttpCodecChange,
+  onRestartWithCamera,
   width = 400,
 }: LogSidebarProps) {
   const deviceFrame = device
@@ -97,6 +101,9 @@ export function LogSidebar({
             deviceFrame={deviceFrame}
             showDeviceSettings={client?.capabilities.deviceSettings ?? false}
           />
+        )}
+        {client?.capabilities.camera && client.camera && (
+          <CameraSection client={client} onRestartWithCamera={onRestartWithCamera} />
         )}
         {client?.capabilities.activity && <ActivitySection client={client} />}
         {client?.capabilities.events && <EventsSection client={client} />}

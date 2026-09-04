@@ -16,6 +16,7 @@ import { SERVER_HIDE_BOOT_DEVICE } from './boot-device';
 import {
   bootHubDevice,
   createHubDevice,
+  type EmuCameraHooks,
   parseCreateDeviceAction,
   parseDeviceAction,
   removeHubDevice,
@@ -28,7 +29,13 @@ import { type HubDeviceList, listDevices } from './devices';
 import { handleEasEndpoint } from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
-import { EMU_PREFIX, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
+import {
+  EMU_PREFIX,
+  emuWebSocketHandler,
+  handleEmuRequest,
+  prepareEmuCameraFeeds,
+  setEmuCameraWired,
+} from './serve-emu';
 import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
 import { SERVER_HIDE_SIDEBAR } from './sidebar';
 import { listNewDeviceOptions } from './sim-options';
@@ -42,6 +49,11 @@ const CREATE_DEVICE_ROUTE = '/api/devices/create';
 const NEW_DEVICE_OPTIONS_ROUTE = '/api/new-device-options';
 const DEVICES_WEBSOCKET_ROUTE = '/api/devices/ws';
 const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = '/api/argent-interactions/ws';
+
+const EMU_CAMERA: EmuCameraHooks = {
+  prepareFeeds: prepareEmuCameraFeeds,
+  setWired: setEmuCameraWired,
+};
 
 // The exported dashboard shell (dist/client/index.html, a sibling of the
 // dist/server bundle this file becomes). Its asset URLs are relative and its
@@ -131,7 +143,10 @@ export default async function handler(request: Request): Promise<Response | null
         pathname === SHUTDOWN_DEVICE_ROUTE
           ? await shutdownHubDevice(action)
           : await removeHubDevice(action);
-      if (result.ok) refreshDeviceList();
+      if (result.ok) {
+        if (action.platform === 'android') setEmuCameraWired(action.id, false);
+        refreshDeviceList();
+      }
       return jsonResponse(result);
     } catch (error) {
       return jsonResponse({ ok: false, error: String(error) }, 500);
@@ -149,7 +164,7 @@ export default async function handler(request: Request): Promise<Response | null
     }
 
     try {
-      const result = await bootHubDevice(action);
+      const result = await bootHubDevice(action, EMU_CAMERA);
       if (result.ok) refreshDeviceList();
       return jsonResponse(result);
     } catch (error) {

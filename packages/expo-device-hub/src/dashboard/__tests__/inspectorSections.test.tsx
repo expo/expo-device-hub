@@ -9,7 +9,10 @@ import {
 } from '../../../../@expo/hub-components/src/dashboard/StreamOptionsSection';
 import { StreamStatistics } from '../../../../@expo/hub-components/src/dashboard/StreamStatistics';
 
-function inspectorClient(platform: DevicePlatform): DeviceClient {
+function inspectorClient(
+  platform: DevicePlatform,
+  overrides: Partial<DeviceClient> = {},
+): DeviceClient {
   const ios = platform === 'ios';
   return {
     platform,
@@ -46,6 +49,11 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       : { appearance: 'light', network: 'on', 'text-size': 'medium' },
     deviceSettingsPending: new Set(),
     setDeviceSetting: () => {},
+    camera: null,
+    cameraPending: new Set(),
+    cameraError: null,
+    setCameraImage: () => {},
+    clearCameraImage: () => {},
     streamCapabilities: ios
       ? {
           modeAvailability: { mjpeg: true, h264: true, webrtc: true },
@@ -86,6 +94,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       deviceSettings: true,
       activity: ios,
       events: true,
+      camera: false,
       streamSettings: ios
         ? {
             mjpegFps: true,
@@ -110,6 +119,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     hardwareKeyboardConnected: ios,
     setHardwareKeyboardConnected: () => {},
     toggleSoftwareKeyboard: () => {},
+    ...overrides,
   };
 }
 
@@ -995,6 +1005,7 @@ test('keeps the frame option disabled with an explanation for unsupported device
         deviceSettings: false,
         activity: false,
         events: true,
+        camera: false,
         streamSettings: false,
       },
     };
@@ -1022,6 +1033,7 @@ test('shows only the viewer-local frame option while iOS device settings are una
       deviceSettings: false,
       activity: false,
       events: true,
+      camera: false,
       streamSettings: false,
     },
     deviceSettings: null,
@@ -1039,4 +1051,82 @@ test('shows only the viewer-local frame option while iOS device settings are una
   expect(html).not.toContain('>Appearance</span>');
   expect(html).not.toContain('>Liquid glass</span>');
   expect(html).not.toContain('>Keyboard</span>');
+});
+
+test('offers a restart when the emulator started without camera feeds', () => {
+  const base = inspectorClient('android');
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={inspectorClient('android', {
+        camera: { wiredAtLaunch: false, launchArgs: [], feeds: [] },
+        capabilities: { ...base.capabilities, camera: true },
+      })}
+      device={device('android', 'android:pixel-10-pro')}
+    />,
+  );
+
+  expect(html).toContain('aria-label="Camera"');
+  expect(html).toContain('Camera feeds attach when the emulator starts.');
+  expect(html).toContain('Restart with camera');
+  expect(html).not.toContain('>Back</span>');
+});
+
+test('lists both feeds once the emulator started with the camera attached', () => {
+  const base = inspectorClient('android');
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={inspectorClient('android', {
+        camera: {
+          wiredAtLaunch: true,
+          launchArgs: ['-camera-back', 'webcam0'],
+          feeds: [
+            {
+              facing: 'back',
+              present: true,
+              placeholder: false,
+              width: 640,
+              height: 480,
+              bytes: 4096,
+              updatedAt: null,
+              imageUrl: 'https://hub.test/api/camera/image?facing=back&v=abc',
+            },
+            {
+              facing: 'front',
+              present: true,
+              placeholder: true,
+              width: null,
+              height: null,
+              bytes: 512,
+              updatedAt: null,
+              imageUrl: null,
+            },
+          ],
+        },
+        capabilities: { ...base.capabilities, camera: true },
+      })}
+      device={device('android', 'android:pixel-10-pro')}
+    />,
+  );
+
+  expect(html).toContain('>Back</span>');
+  expect(html).toContain('>Front</span>');
+  expect(html.indexOf('>Back</span>')).toBeLessThan(html.indexOf('>Front</span>'));
+  expect(html).toContain('640×480');
+  expect(html).toContain('No image');
+  expect(html).toContain('Choose image…');
+  expect(html).not.toContain('Restart with camera');
+});
+
+test('hides the camera section while the backend reports no camera', () => {
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={inspectorClient('android', {
+        camera: { wiredAtLaunch: true, launchArgs: [], feeds: [] },
+      })}
+      device={device('android', 'android:pixel-10-pro')}
+    />,
+  );
+
+  expect(html).not.toContain('aria-label="Camera"');
+  expect(html).not.toContain('Apps see the new image after they reopen the camera.');
 });
