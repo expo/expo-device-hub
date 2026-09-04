@@ -1,6 +1,7 @@
 // @ts-ignore vendored module, absent until `bun run build:vendor`
-import { createRouter, fromWsSocket, type WsWebSocketLike } from '../../vendor/serve-emu/dist/middleware.js';
+import { cameraLaunchArgs, createRouter, fromWsSocket, seedCameraFeeds, type WsWebSocketLike } from '../../vendor/serve-emu/dist/middleware.js';
 
+import { type EmulatorCameraFeeds } from './device-actions';
 import {
   readStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
@@ -11,6 +12,11 @@ export const EMU_PREFIX = '/vendor/serve-emu';
 
 const serveEmuOptions = readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]);
 const router = createRouter(serveEmuOptions);
+
+export const emuCameraFeeds: EmulatorCameraFeeds = {
+  launchArgs: cameraLaunchArgs,
+  seedPlaceholders: seedCameraFeeds,
+};
 
 function stopAll(): void {
   try {

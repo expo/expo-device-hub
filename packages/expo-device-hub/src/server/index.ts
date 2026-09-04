@@ -28,7 +28,7 @@ import { type HubDeviceList, listDevices } from './devices';
 import { handleEasEndpoint } from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
-import { EMU_PREFIX, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
+import { EMU_PREFIX, emuCameraFeeds, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
 import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
 import { SERVER_HIDE_SIDEBAR } from './sidebar';
 import { listNewDeviceOptions } from './sim-options';
@@ -149,7 +149,7 @@ export default async function handler(request: Request): Promise<Response | null
     }
 
     try {
-      const result = await bootHubDevice(action);
+      const result = await bootHubDevice(action, emuCameraFeeds);
       if (result.ok) refreshDeviceList();
       return jsonResponse(result);
     } catch (error) {
@@ -171,7 +171,7 @@ export default async function handler(request: Request): Promise<Response | null
     }
 
     try {
-      const result = await createHubDevice(action);
+      const result = await createHubDevice(action, emuCameraFeeds);
       if (result.ok) refreshDeviceList();
       return jsonResponse(result);
     } catch (error) {
