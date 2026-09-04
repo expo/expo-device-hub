@@ -49,11 +49,14 @@ export function CollapsibleSection({
   title,
   open,
   onOpenChange,
+  divider = true,
   children,
 }: {
   title: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Draw the hairline separator above the title. The first section omits it. */
+  divider?: boolean;
   children: ReactNode;
 }) {
   const contentId = useId();
@@ -67,7 +70,7 @@ export function CollapsibleSection({
         minWidth: 0,
         boxSizing: 'border-box',
         padding: `0 ${SIDEBAR_SECTION_INSET}px`,
-        borderTop: `1px solid ${border.default}`,
+        borderTop: divider ? `1px solid ${border.default}` : undefined,
       }}
     >
       <button

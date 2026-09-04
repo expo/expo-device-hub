@@ -45,7 +45,7 @@ export function SidebarOverlay({
           inset: 0,
           backgroundColor: bg.overlay,
           opacity: visible ? 0.35 : 0,
-          pointerEvents: visible ? 'auto' : 'none',
+          pointerEvents: visible ? undefined : 'none',
           transition: backdropTransition,
           zIndex: backdropZIndex,
         }}
@@ -61,7 +61,7 @@ export function SidebarOverlay({
           zIndex: backdropZIndex + 1,
           backgroundColor: bg.default,
           boxShadow: shadow.lg,
-          pointerEvents: visible ? 'auto' : 'none',
+          pointerEvents: visible ? undefined : 'none',
           transform: visible
             ? 'translateX(0)'
             : `translateX(${side === 'left' ? '-100%' : '100%'})`,

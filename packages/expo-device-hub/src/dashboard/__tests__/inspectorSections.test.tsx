@@ -316,6 +316,9 @@ test('renders every supported iOS inspector section and option', () => {
   expect(html).not.toContain('>Network<');
   expect(sectionExpanded(html, 'Current app')).toBe(true);
   expect(sectionExpanded(html, 'Device options')).toBe(true);
+  // The first section has no separator above it; every following section does.
+  expect(openingTag(html, '<section aria-label="Current app"')).not.toContain('border-top:');
+  expect(openingTag(html, '<section aria-label="Device options"')).toContain('border-top:');
   const currentApp = sectionMarkup(html, 'Current app');
   for (const label of ['App ID', 'Version', 'Build number']) {
     expect(currentApp).toContain(`>${label}<`);

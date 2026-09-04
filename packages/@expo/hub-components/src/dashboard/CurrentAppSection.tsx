@@ -39,7 +39,7 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   ];
 
   return (
-    <CollapsibleSection title="Current app" open={open} onOpenChange={setOpen}>
+    <CollapsibleSection title="Current app" open={open} onOpenChange={setOpen} divider={false}>
       {showIdentity && (
         <div
           style={{

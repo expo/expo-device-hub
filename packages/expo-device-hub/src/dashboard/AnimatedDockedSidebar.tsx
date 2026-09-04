@@ -47,7 +47,9 @@ export function AnimatedDockedSidebar({
         height: '100%',
         flexShrink: 0,
         overflow: 'hidden',
-        pointerEvents: visible ? 'auto' : 'none',
+        // Inherit while visible: forcing `auto` would let sidebar controls take
+        // clicks while a Radix menu has disabled pointer events on the page.
+        pointerEvents: visible ? undefined : 'none',
         transition,
       }}>
       <div

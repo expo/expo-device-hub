@@ -10,7 +10,7 @@ import {
   Value,
   Viewport,
 } from '@radix-ui/react-select';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { bg, border, icon, radius, shadow, text, textSize } from '../theme/tokens';
 import { CheckIcon, ChevronDownIcon } from './icons';
@@ -34,10 +34,35 @@ export type SelectProps<Value extends string> = {
 
 const ITEM_HEIGHT = 28;
 
+type SelectRegistration = {
+  trigger: HTMLButtonElement | null;
+  disabled: boolean;
+  open: () => void;
+};
+
+/**
+ * Every mounted select. An open Radix select disables pointer events on the
+ * rest of the page, so a click on another select's trigger would only dismiss
+ * the open menu. The dismissing select looks up the trigger under the pointer
+ * here and opens it, so one click switches menus.
+ */
+const mountedSelects = new Set<SelectRegistration>();
+
+function selectAtPoint(x: number, y: number, except: SelectRegistration) {
+  for (const entry of mountedSelects) {
+    if (entry === except || entry.disabled || !entry.trigger) continue;
+    const rect = entry.trigger.getBoundingClientRect();
+    if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) return entry;
+  }
+  return null;
+}
+
 /**
  * A compact single-value select rendered as a soft pill: the current value
  * followed by a chevron. The closed trigger is only as wide as the selected
  * value; the open menu grows to fit its widest option instead of wrapping.
+ * Clicking another select while this one is open closes this menu and opens
+ * the other in the same click.
  * The offered option labels are exposed on the trigger as `data-options`
  * (newline-separated) for tooling and tests, since the menu only renders
  * while open.
@@ -54,6 +79,22 @@ export function Select<Value extends string>({
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const selectedLabel = options.find((option) => option.value === value)?.label ?? value;
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const registration = useRef<SelectRegistration>({
+    trigger: null,
+    disabled,
+    open: () => setOpen(true),
+  });
+  registration.current.disabled = disabled;
+
+  useEffect(() => {
+    const entry = registration.current;
+    entry.trigger = triggerRef.current;
+    mountedSelects.add(entry);
+    return () => {
+      mountedSelects.delete(entry);
+    };
+  }, []);
 
   return (
     <Root
@@ -64,6 +105,7 @@ export function Select<Value extends string>({
       onValueChange={(nextValue) => onChange(nextValue as Value)}
     >
       <Trigger
+        ref={triggerRef}
         aria-label={ariaLabel}
         aria-describedby={ariaDescribedBy}
         data-options={options.map((option) => option.label).join('\n')}
@@ -108,6 +150,12 @@ export function Select<Value extends string>({
           align="end"
           sideOffset={4}
           collisionPadding={8}
+          onPointerDownOutside={(event) => {
+            const { clientX, clientY } = event.detail.originalEvent;
+            const next = selectAtPoint(clientX, clientY, registration.current);
+            // Let this menu dismiss first, then open the select under the pointer.
+            if (next) setTimeout(next.open, 0);
+          }}
           className="will-change-[opacity,transform] data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade data-[side=right]:animate-slideLeftAndFade data-[side=top]:animate-slideDownAndFade"
           style={{
             ...textSize.sm,
