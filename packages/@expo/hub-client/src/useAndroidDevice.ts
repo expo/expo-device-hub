@@ -18,6 +18,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
+import { apiUrl, deviceApiUrl } from './android-api-url';
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
@@ -39,11 +40,9 @@ import {
   androidStreamSourceErrorMessage,
   parseAndroidStreamSource,
 } from './android-stream-source';
-import {
-  DeviceSettingWriteTracker,
-  mergeAuthoritativeDeviceSetting,
-} from './device-setting-writes';
+import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
+import { KeyedWriteTracker } from './keyed-write-tracker';
 import { androidMessageForKeyboardInput } from './keyboard';
 import { MsePlayer } from './mse-player';
 import {
@@ -59,6 +58,7 @@ import {
   type StreamSwitchState,
   streamSwitchTimeoutMs,
 } from './stream-switch';
+import { useAndroidCamera } from './useAndroidCamera';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
@@ -131,23 +131,6 @@ const BUTTON_MESSAGE: Record<HardwareButton, Record<string, unknown> | null> = {
 };
 
 const TOUCH_ACTION = { begin: 'down', move: 'move', end: 'up' } as const;
-
-/**
- * Join an API path onto the base URL, **preserving any path prefix** the base
- * carries. `baseUrl` is the `expo-serve-emu` plugin mount
- * (`…/_expo/plugins/serve-emu`), so `new URL('/ws', baseUrl)` would drop
- * that prefix and miss the plugin; a plain string join keeps it (and still works
- * for a bare `http://localhost:3300` standalone serve-emu).
- */
-function apiUrl(baseUrl: string, path: string): string {
-  return `${baseUrl.replace(/\/$/, '')}${path}`;
-}
-
-function deviceApiUrl(baseUrl: string, path: string, device: string | null): string {
-  const url = new URL(apiUrl(baseUrl, path));
-  if (device) url.searchParams.set('device', device);
-  return url.toString();
-}
 
 export function androidWsUrlFor(
   baseUrl: string,
@@ -269,17 +252,17 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const logSeqRef = useRef(0);
   // Clear is viewer-local so it does not erase serve-emu's replayable session.
   const eventCursorRef = useRef(createAndroidEventCursor());
-  const deviceSettingWriteTrackerRef = useRef(new DeviceSettingWriteTracker());
+  const deviceSettingWriteTrackerRef = useRef(new KeyedWriteTracker<DeviceSettingKey>());
   const deviceSettingVersionsRef = useRef<Record<AndroidDeviceSettingKey, number>>({
     appearance: 0,
     network: 0,
     'text-size': 0,
   });
-  const deviceSettingScope = `${active ? 'active' : 'inactive'}\0${baseUrl ?? ''}\0${targetDevice ?? ''}`;
-  const deviceSettingScopeRef = useRef(deviceSettingScope);
+  const deviceScope = `${active ? 'active' : 'inactive'}\0${baseUrl ?? ''}\0${targetDevice ?? ''}`;
+  const deviceScopeRef = useRef(deviceScope);
   useLayoutEffect(() => {
-    deviceSettingScopeRef.current = deviceSettingScope;
-  }, [deviceSettingScope]);
+    deviceScopeRef.current = deviceScope;
+  }, [deviceScope]);
   const streamSourceRequestRef = useRef(0);
   const streamSourceRef = useRef<DeviceStreamSourceStatus | null>(null);
   const streamSourceLoadingRef = useRef(false);
@@ -437,7 +420,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       const request = tracker.start(key);
       if (!request) return;
       deviceSettingVersionsRef.current[settingKey]++;
-      const scope = deviceSettingScope;
+      const scope = deviceScope;
       const previous = deviceSettings?.[key];
       const url = deviceApiUrl(baseUrl, requestOptions.path, targetDevice);
 
@@ -455,12 +438,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           const payload: unknown = await response.json();
           const authoritative = parseAndroidDeviceSetting(settingKey, payload);
           if (authoritative === null) throw new Error('Device option update was rejected');
-          if (!tracker.isCurrent(request) || deviceSettingScopeRef.current !== scope) return;
+          if (!tracker.isCurrent(request) || deviceScopeRef.current !== scope) return;
           setDeviceSettings((current) => ({ ...(current ?? {}), [key]: authoritative }));
           if (key === 'appearance') setAppearanceState(authoritative as DeviceAppearance);
         })
         .catch(async () => {
-          if (!tracker.isCurrent(request) || deviceSettingScopeRef.current !== scope) return;
+          if (!tracker.isCurrent(request) || deviceScopeRef.current !== scope) return;
           let authoritative: string | null = null;
           try {
             const response = await fetch(url, { cache: 'no-store' });
@@ -473,7 +456,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             // Restore the last rendered value if both write and refresh fail.
             authoritative = previous ?? null;
           }
-          if (!tracker.isCurrent(request) || deviceSettingScopeRef.current !== scope) return;
+          if (!tracker.isCurrent(request) || deviceScopeRef.current !== scope) return;
           setDeviceSettings((current) =>
             mergeAuthoritativeDeviceSetting(
               current,
@@ -491,13 +474,22 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [baseUrl, deviceSettingScope, deviceSettings, targetDevice],
+    [baseUrl, deviceScope, deviceSettings, targetDevice],
   );
 
   const setAppearance = useCallback(
     (mode: DeviceAppearance) => setDeviceSetting('appearance', mode),
     [setDeviceSetting],
   );
+
+  const { camera, cameraSupported, cameraPending, cameraError, setCameraImage, clearCameraImage } =
+    useAndroidCamera({
+      active,
+      baseUrl: baseUrl ?? null,
+      device: targetDevice,
+      scope: deviceScope,
+      scopeRef: deviceScopeRef,
+    });
 
   const streamSettingsUrl =
     active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-settings', targetDevice) : null;
@@ -1573,7 +1565,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let cancelled = false;
     let polling = false;
     let controllers: AbortController[] = [];
-    const scope = deviceSettingScope;
+    const scope = deviceScope;
 
     const poll = async (keys: readonly AndroidDeviceSettingKey[]) => {
       if (cancelled || polling) return;
@@ -1605,7 +1597,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         }),
       );
       polling = false;
-      if (cancelled || deviceSettingScopeRef.current !== scope) return;
+      if (cancelled || deviceScopeRef.current !== scope) return;
       if (!results.some((result) => result.handled)) return;
       setDeviceSettings((current) => {
         const next = { ...(current ?? {}) };
@@ -1645,7 +1637,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       for (const controller of controllers) controller.abort();
       tracker.reset();
     };
-  }, [active, baseUrl, deviceSettingScope, targetDevice]);
+  }, [active, baseUrl, deviceScope, targetDevice]);
 
   return {
     platform: 'android',
@@ -1668,6 +1660,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
+    camera,
+    cameraPending,
+    cameraError,
+    setCameraImage,
+    clearCameraImage,
     streamSettings,
     streamSettingsPending,
     updateStreamSettings,
@@ -1694,6 +1691,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       deviceSettings: true,
       activity: false,
       events: true,
+      camera: cameraSupported,
       streamSettings: { maxDimension: true },
     },
     foregroundApp,
