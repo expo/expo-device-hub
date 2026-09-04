@@ -15,21 +15,18 @@ const FACING_LABELS: Record<CameraFacing, string> = {
   front: 'Front',
 };
 
-function CameraRestartRow({ onRestartWithCamera }: { onRestartWithCamera?: () => Promise<void> }) {
-  const [restarting, setRestarting] = useState(false);
-
+function CameraRestartRow({
+  onRestartWithCamera,
+  restarting,
+}: {
+  onRestartWithCamera?: () => Promise<void>;
+  restarting: boolean;
+}) {
   return (
     <SidebarRow label="Camera feeds attach when the emulator starts." borderBottom={false}>
       <SidebarActionButton
         disabled={!onRestartWithCamera || restarting}
-        onClick={async () => {
-          setRestarting(true);
-          try {
-            await onRestartWithCamera?.();
-          } finally {
-            setRestarting(false);
-          }
-        }}>
+        onClick={() => void onRestartWithCamera?.()}>
         Restart with camera
       </SidebarActionButton>
     </SidebarRow>
@@ -142,9 +139,12 @@ function CameraFeedRow({
 export function CameraSection({
   client,
   onRestartWithCamera,
+  restarting = false,
 }: {
   client: DeviceClient;
   onRestartWithCamera?: () => Promise<void>;
+  /** A restart is already in flight. */
+  restarting?: boolean;
 }) {
   const [open, setOpen] = useState(true);
   const camera = client.camera;
@@ -163,7 +163,7 @@ export function CameraSection({
           />
         ))
       ) : (
-        <CameraRestartRow onRestartWithCamera={onRestartWithCamera} />
+        <CameraRestartRow onRestartWithCamera={onRestartWithCamera} restarting={restarting} />
       )}
       {client.cameraError && (
         <span

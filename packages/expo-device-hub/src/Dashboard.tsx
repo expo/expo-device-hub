@@ -19,7 +19,11 @@ import {
   StreamPanel,
   type StreamModeAvailability,
   bg,
+  border,
+  radius,
+  shadow,
   text,
+  textSize,
   type AddDeviceOutcome,
   type AddDeviceTarget,
   type Device,
@@ -87,6 +91,34 @@ const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
 };
 
 /**
+ * A restart swaps the emulator's adb serial, so the device drops out of the
+ * booted list and every panel bound to it unmounts. This pill is anchored to the
+ * dashboard itself and is the only progress the user sees across that gap.
+ */
+function CameraRestartStatus({ deviceName }: { deviceName: string }) {
+  return (
+    <div
+      role="status"
+      style={{
+        position: 'absolute',
+        bottom: 24,
+        left: '50%',
+        zIndex: 20,
+        transform: 'translateX(-50%)',
+        padding: '8px 16px',
+        ...textSize.sm,
+        color: text.secondary,
+        backgroundColor: bg.default,
+        border: `1px solid ${border.default}`,
+        borderRadius: radius.full,
+        boxShadow: shadow.md,
+      }}>
+      Restarting {deviceName} with camera…
+    </div>
+  );
+}
+
+/**
  * Clamp a dragged sidebar width to `[MIN_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH]`, and
  * also cap it so the stream keeps at least `MIN_STREAM_WIDTH` next to the other
  * sidebar (`otherWidth` is 0 when that sidebar is collapsed/overlaid).
@@ -140,6 +172,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     deviceName: string;
     message: string;
   } | null>(null);
+  const [restartingDeviceName, setRestartingDeviceName] = useState<string | null>(null);
   // Draggable widths for each inline sidebar. The `*Start` refs snapshot the
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
@@ -246,24 +279,36 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   }
 
   // The emulator reads its camera flags only at startup, so attaching feeds to a
-  // running emulator means shutting it down and booting it again.
+  // running emulator means shutting it down and booting it again. A shutdown
+  // that fails ends the restart rather than booting a second copy of the AVD.
   async function handleRestartWithCamera(device: Device) {
-    await shutdownDevice(device);
-    const result = await bootDevice(device, { camera: true });
+    setRestartingDeviceName(device.name);
+    try {
+      if (!(await shutdownDevice(device))) {
+        setBootError({
+          deviceName: device.name,
+          message: 'The emulator did not shut down, so it was not restarted with camera feeds.',
+        });
+        return;
+      }
 
-    if (!result.id) {
-      setBootError({
-        deviceName: device.name,
-        message: result.error ?? 'The device did not come online.',
-      });
-      return;
+      const result = await bootDevice(device, { camera: true });
+      if (!result.id) {
+        setBootError({
+          deviceName: device.name,
+          message: result.error ?? 'The device did not come online.',
+        });
+        return;
+      }
+
+      trackAddedDevice({ ...device, id: result.id, booted: true, lastUsedAt: Date.now() }, [
+        device.name,
+        device.id,
+        result.id,
+      ]);
+    } finally {
+      setRestartingDeviceName(null);
     }
-
-    trackAddedDevice({ ...device, id: result.id, booted: true, lastUsedAt: Date.now() }, [
-      device.name,
-      device.id,
-      result.id,
-    ]);
   }
 
   // Mirror the theme onto the document root so Radix portals (e.g. the dropdown
@@ -298,6 +343,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   };
   const restartSelectedWithCamera =
     selected?.platform === 'android' ? () => handleRestartWithCamera(selected) : undefined;
+  const restartingWithCamera = restartingDeviceName !== null;
 
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
@@ -424,6 +470,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
           onRestartWithCamera={restartSelectedWithCamera}
+          restartingWithCamera={restartingWithCamera}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -469,6 +516,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
           onRestartWithCamera={restartSelectedWithCamera}
+          restartingWithCamera={restartingWithCamera}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -505,6 +553,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           />,
           document.body
         )}
+      {restartingDeviceName && <CameraRestartStatus deviceName={restartingDeviceName} />}
       <BootErrorModal
         open={bootError !== null}
         onClose={() => setBootError(null)}

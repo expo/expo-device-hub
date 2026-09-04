@@ -37,6 +37,8 @@ export type LogSidebarProps = {
   onHttpCodecChange?: (codec: DeviceHttpCodec) => void;
   /** Restart the emulator so its camera feeds attach at launch. */
   onRestartWithCamera?: () => Promise<void>;
+  /** A camera restart is already in flight. */
+  restartingWithCamera?: boolean;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
 };
@@ -57,6 +59,7 @@ export function LogSidebar({
   onStreamModeChange,
   onHttpCodecChange,
   onRestartWithCamera,
+  restartingWithCamera = false,
   width = 400,
 }: LogSidebarProps) {
   const deviceFrame = device
@@ -103,7 +106,11 @@ export function LogSidebar({
           />
         )}
         {client?.capabilities.camera && client.camera && (
-          <CameraSection client={client} onRestartWithCamera={onRestartWithCamera} />
+          <CameraSection
+            client={client}
+            onRestartWithCamera={onRestartWithCamera}
+            restarting={restartingWithCamera}
+          />
         )}
         {client?.capabilities.activity && <ActivitySection client={client} />}
         {client?.capabilities.events && <EventsSection client={client} />}
