@@ -1,14 +1,24 @@
+import { homedir } from "node:os";
+import { runAdbDevices } from "./adb";
 import { type AndroidUtilsError, type AndroidUtilsResult, reportError, result } from "./errors";
-import { listDevices } from "./list-devices";
-import type { AndroidDevice } from "./types";
+import { parseAdbDevices } from "./parse-adb-devices";
+import { resolveAdbPath } from "./sdk-paths";
 
 /** Default delay between adb-offline polls in {@link waitForAdbOffline}. */
 export const SHUTDOWN_POLL_INTERVAL_MS = 1500;
 
+/** The serials `adb devices -l` currently lists, whatever state each is in. */
+async function listAdbSerials(): Promise<AndroidUtilsResult<string[]>> {
+  const adb = resolveAdbPath(process.env, homedir());
+  const listed = await runAdbDevices(adb);
+  if (listed.error) return result([], listed.error);
+  return result(listed.value ? parseAdbDevices(listed.value).map((device) => device.serial) : []);
+}
+
 /** Options for {@link waitForAdbOffline}; the first two are injectable for testing. */
 export interface WaitForAdbOfflineOptions {
-  /** Device lister to poll. Defaults to {@link listDevices}. */
-  listDevicesFn?: () => Promise<AndroidUtilsResult<AndroidDevice[]>>;
+  /** Serial lister to poll. Defaults to {@link listAdbSerials}. */
+  listSerialsFn?: () => Promise<AndroidUtilsResult<string[]>>;
   /** Delay between polls in ms. Defaults to {@link SHUTDOWN_POLL_INTERVAL_MS}. */
   pollIntervalMs?: number;
   /** Stops the wait early (resolving `false`). */
@@ -16,19 +26,21 @@ export interface WaitForAdbOfflineOptions {
 }
 
 /**
- * Poll `listDevices` until `serial` is gone from adb, or time out.
+ * Poll `adb devices -l` until `serial` is gone from it, or time out.
  *
- * Its result `value` becomes `true` on the first clean listing that no longer
- * carries `serial`, or `false` once the timeout elapses or the signal aborts.
- * A failed listing counts as still attached: adb keeps serving the serial of an
- * exiting emulator, and `getprop` against it fails for the whole of that
- * window. The last such failure comes back in `error` alongside `false`.
+ * Its result `value` becomes `true` on the first successful listing that no
+ * longer carries `serial`, or `false` once the timeout elapses or the signal
+ * aborts. Only the raw listing is read: inspecting each device (as
+ * `listDevices` does) fails for the whole listing whenever any one device is
+ * locked or on its way out, which is exactly the window this waits through. A
+ * listing that fails outright means adb itself is unreachable, so the wait
+ * keeps polling and returns that last failure in `error` alongside `false`.
  */
 export async function waitForAdbOffline(
   serial: string,
   timeoutMs: number,
   {
-    listDevicesFn = listDevices,
+    listSerialsFn = listAdbSerials,
     pollIntervalMs = SHUTDOWN_POLL_INTERVAL_MS,
     signal,
   }: WaitForAdbOfflineOptions = {},
@@ -38,15 +50,15 @@ export async function waitForAdbOffline(
   while (Date.now() < deadline) {
     if (signal?.aborted) return result(false, lastError);
     try {
-      const listed = await listDevicesFn();
+      const listed = await listSerialsFn();
       if (listed.error) {
         lastError = listed.error;
-      } else if (!listed.value.some((device) => device.serial === serial)) {
+      } else if (!listed.value.includes(serial)) {
         return result(true);
       }
     } catch (error) {
       lastError = reportError(
-        "[android-utils] Failed to poll devices while waiting for adb to release the serial:",
+        "[android-utils] Failed to poll adb while waiting for it to release the serial:",
         error,
       );
     }
