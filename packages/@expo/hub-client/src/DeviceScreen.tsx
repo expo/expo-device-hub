@@ -47,12 +47,23 @@ export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
   fontFamily: 'var(--expo-font-mono)',
 };
 
+/**
+ * Whether the surface should present the media element as-is. While
+ * `reconnecting`, the element still holds the last frame (a canvas keeps its
+ * pixels, a video keeps the final frame of an ended track), so nothing must
+ * cover or blank it — that is what keeps an Android capture-source switch or
+ * a brief socket drop from flashing black.
+ */
+export function deviceScreenPresentsMedia(status: DeviceScreenProps['client']['status']): boolean {
+  return status === 'streaming' || status === 'reconnecting';
+}
+
 export function deviceScreenSurfaceStyle(
   status: DeviceScreenProps['client']['status']
 ): CSSProperties {
   return {
     ...DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
-    ...(status === 'streaming' ? {} : { backgroundColor: '#000' }),
+    ...(deviceScreenPresentsMedia(status) ? {} : { backgroundColor: '#000' }),
   };
 }
 
@@ -380,7 +391,7 @@ export function DeviceScreen({
 
       <AgentInteractionIndicator interaction={agentInteraction} />
 
-      {status !== 'streaming' && (
+      {!deviceScreenPresentsMedia(status) && (
         <div
           style={{
             ...DEVICE_SCREEN_STATUS_LAYOUT_STYLE,

@@ -26,12 +26,17 @@ export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
 
 /**
  * Lifecycle of a single connection:
- *   idle       — nothing to connect to (no base URL / disabled)
- *   connecting — socket opening, no frames yet
- *   streaming  — frames are flowing
- *   error      — connection failed or dropped
+ *   idle         — nothing to connect to (no base URL / disabled)
+ *   connecting   — socket opening, no frames yet
+ *   reconnecting — a stream that was live lost its transport and is being
+ *                  re-established; the last frame stays on screen meanwhile
+ *                  (for example while serve-emu swaps the Android capture
+ *                  source). Becomes `error` only when the outage outlives the
+ *                  reconnect grace period. Android only.
+ *   streaming    — frames are flowing
+ *   error        — connection failed or dropped
  */
-export type ConnectionStatus = 'idle' | 'connecting' | 'streaming' | 'error';
+export type ConnectionStatus = 'idle' | 'connecting' | 'reconnecting' | 'streaming' | 'error';
 
 /** Device orientation, as reported by serve-sim's stream config. */
 export type DeviceOrientation =
@@ -466,6 +471,10 @@ export interface DeviceClient {
   updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => void;
   /** Active Android capture source; null when the backend does not expose source switching. */
   streamSource: DeviceStreamSourceStatus | null;
+  /**
+   * True from a capture-source request until the replacement stream is on
+   * screen (or the request fails), so controls and frame change together.
+   */
   streamSourcePending: boolean;
   /** Last capture-source write failure; cleared when another write begins. */
   streamSourceError: string | null;
