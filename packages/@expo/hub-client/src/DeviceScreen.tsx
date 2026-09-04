@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { createPortal } from 'react-dom';
 
 import { streamGeometry } from './orientation';
 import { AgentInteractionIndicator } from './AgentInteractionIndicator';
@@ -107,6 +108,7 @@ export function DeviceScreen({
   borderRadius,
   squircle,
   agentInteraction,
+  agentInteractionPortalTarget,
 }: DeviceScreenProps) {
   const { videoKind, attachVideo, sendTouch, sendMultiTouch, sendKey, screen, status, error } =
     client;
@@ -378,7 +380,14 @@ export function DeviceScreen({
         </>
       )}
 
-      <AgentInteractionIndicator interaction={agentInteraction} />
+      {agentInteractionPortalTarget === undefined ? (
+        <AgentInteractionIndicator interaction={agentInteraction} />
+      ) : agentInteractionPortalTarget ? (
+        createPortal(
+          <AgentInteractionIndicator interaction={agentInteraction} />,
+          agentInteractionPortalTarget
+        )
+      ) : null}
 
       {status !== 'streaming' && (
         <div

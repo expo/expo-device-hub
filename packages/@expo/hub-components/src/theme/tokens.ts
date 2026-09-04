@@ -68,6 +68,15 @@ export const border = {
   preview: 'var(--expo-theme-border-preview)',
 } as const;
 
+/** Agent-owned interaction colors, separate from informational blue UI. */
+export const agent = {
+  accent: 'var(--expo-theme-agent-accent)',
+  surface: 'var(--expo-theme-agent-surface)',
+  border: 'var(--expo-theme-agent-border)',
+  text: 'var(--expo-theme-agent-text)',
+  onAccent: 'var(--expo-theme-agent-on-accent)',
+} as const;
+
 /** Border radii. Tailwind: `rounded-*`. */
 export const radius = {
   none: '0',
@@ -98,9 +107,9 @@ export const font = {
 } as const;
 
 type TextStyle = {
-  fontSize: number;
-  fontWeight: number;
-  lineHeight: number;
+  fontSize: number | string;
+  fontWeight: number | string;
+  lineHeight: number | string;
   letterSpacing: string;
 };
 
@@ -114,7 +123,12 @@ export const textSize: Record<'2xl' | 'xl' | 'lg' | 'base' | 'sm' | 'xs' | '2xs'
   lg: { fontSize: 18, fontWeight: 400, lineHeight: 1.4, letterSpacing: '0' },
   base: { fontSize: 16, fontWeight: 400, lineHeight: 1.6, letterSpacing: '0' },
   sm: { fontSize: 14, fontWeight: 400, lineHeight: 1.6, letterSpacing: '0' },
-  xs: { fontSize: 12, fontWeight: 400, lineHeight: 1.6, letterSpacing: '0' },
+  xs: {
+    fontSize: 'var(--expo-text-size-xs-font-size)',
+    fontWeight: 'var(--expo-text-size-xs-font-weight)',
+    lineHeight: 'var(--expo-text-size-xs-line-height)',
+    letterSpacing: 'var(--expo-text-size-xs-letter-spacing)',
+  },
   '2xs': { fontSize: 10, fontWeight: 500, lineHeight: 1.6, letterSpacing: '0' },
 };
 
@@ -142,6 +156,7 @@ export const tokens = {
   text,
   icon,
   border,
+  agent,
   radius,
   shadow,
   font,

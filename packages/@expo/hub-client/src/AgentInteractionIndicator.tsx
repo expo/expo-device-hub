@@ -7,6 +7,13 @@ import {
   agentInteractionPointsWithTravelAt,
   agentInteractionTravelMs,
 } from './agent-interaction-animation';
+import {
+  DEVICE_POINTER_LABEL_OFFSET_X,
+  DEVICE_POINTER_LABEL_OFFSET_Y,
+  DEVICE_POINTER_LABEL_STYLE,
+  DEVICE_POINTER_STYLE,
+  devicePointerLabelRadius,
+} from './device-pointer-presentation';
 import { AGENT_TOUCH_INDICATOR_STYLE } from './TouchIndicator';
 import { type AgentInteraction, type AgentInteractionPoint } from './types';
 
@@ -90,7 +97,7 @@ export function AgentInteractionIndicator({
       paint(
         reduceMotion
           ? agentInteractionPointsAt(activeInteraction, elapsedMs)
-          : agentInteractionPointsWithTravelAt(activeInteraction, previousPoints, elapsedMs)
+          : agentInteractionPointsWithTravelAt(activeInteraction, previousPoints, elapsedMs),
       );
       if (!reduceMotion && elapsedMs < endMs) scheduleUpdate();
     }
@@ -107,7 +114,7 @@ export function AgentInteractionIndicator({
     <div
       aria-hidden="true"
       data-testid="agent-interaction-indicator"
-      style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}
+      style={{ position: 'absolute', inset: 0, overflow: 'visible', pointerEvents: 'none' }}
     >
       {[0, 1].map((index) => (
         <div
@@ -116,17 +123,37 @@ export function AgentInteractionIndicator({
             layerRefs.current[index] = element;
           }}
           hidden
-          style={{ position: 'absolute', inset: 0, willChange: 'transform' }}
+          style={{ position: 'absolute', inset: 0, zIndex: 2 - index, willChange: 'transform' }}
         >
           <div
-            data-agent-touch={index}
+            data-agent-cursor={index}
             style={{
-              ...AGENT_TOUCH_INDICATOR_STYLE,
-              left: 0,
-              top: 0,
-              transform: 'translate(-50%, -50%)',
+              ...DEVICE_POINTER_STYLE,
             }}
-          />
+          >
+            <span data-agent-touch={index} style={AGENT_TOUCH_INDICATOR_STYLE} />
+            {index === 0 && (
+              <span
+                data-agent-cursor-label
+                style={{
+                  ...DEVICE_POINTER_LABEL_STYLE,
+                  position: 'absolute',
+                  left: DEVICE_POINTER_LABEL_OFFSET_X,
+                  top: DEVICE_POINTER_LABEL_OFFSET_Y,
+                  minWidth: 58,
+                  borderRadius: devicePointerLabelRadius({
+                    horizontal: 'right',
+                    vertical: 'below',
+                  }),
+                  backgroundColor: 'var(--expo-theme-agent-accent)',
+                  color: 'var(--expo-theme-agent-on-accent)',
+                  fontWeight: 500,
+                }}
+              >
+                agent
+              </span>
+            )}
+          </div>
         </div>
       ))}
     </div>
