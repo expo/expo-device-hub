@@ -1,6 +1,9 @@
+import { useState } from 'react';
+
 import { type DeviceClient } from '@expo/hub-client';
 import { bg, border, font, heading, icon, radius, text, textSize } from '../primitives';
-import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
+import { ActivityCharts } from './ActivitySection';
+import { CollapsibleSection } from './CollapsibleSection';
 
 const APP_ICON_SIZE = 40;
 const UNKNOWN_VALUE = 'unknown';
@@ -18,10 +21,12 @@ type AppDetail = {
  * the client resolves them (iOS fetches them over the exec channel after the
  * id arrives).
  *
- * Laid out like the collapsible inspector sections: a section title row, then
- * label/value rows in the same type scale.
+ * A collapsible section (open by default) with the app identity, label/value
+ * rows in the shared type scale, and — when the backend samples it — the
+ * app's live activity charts.
  */
 export function CurrentAppSection({ client }: { client?: DeviceClient }) {
+  const [open, setOpen] = useState(true);
   const app = client?.foregroundApp ?? null;
   const name = app ? (app.label ?? app.id) : UNKNOWN_VALUE;
 
@@ -39,12 +44,7 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   ];
 
   return (
-    <section
-      aria-label="Current app"
-      style={{ minWidth: 0, boxSizing: 'border-box', padding: `0 ${SIDEBAR_SECTION_INSET}px 12px` }}>
-      <div style={{ display: 'flex', alignItems: 'center', padding: '18px 0' }}>
-        <span style={{ ...heading.sm, color: text.default }}>Current app</span>
-      </div>
+    <CollapsibleSection title="Current app" open={open} onOpenChange={setOpen}>
       <div
         style={{
           display: 'flex',
@@ -79,7 +79,8 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
           <AppDetailRow key={detail.label} detail={detail} />
         ))}
       </dl>
-    </section>
+      {client?.capabilities.activity && <ActivityCharts client={client} />}
+    </CollapsibleSection>
   );
 }
 

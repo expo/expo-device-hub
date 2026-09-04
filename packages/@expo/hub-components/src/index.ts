@@ -63,7 +63,7 @@ export {
   NO_DEVICE_FRAME_DESCRIPTION,
   type DeviceFrameOption,
 } from './dashboard/DeviceOptionsSection';
-export { ActivitySection } from './dashboard/ActivitySection';
+export { ActivityCharts, ActivitySection } from './dashboard/ActivitySection';
 export { EventsSection } from './dashboard/EventsSection';
 export { LogsSection } from './dashboard/LogsSection';
 export { CollapsibleSection } from './dashboard/CollapsibleSection';

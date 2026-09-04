@@ -295,9 +295,11 @@ test('renders every supported iOS inspector section and option', () => {
     />,
   );
 
-  for (const label of ['Device options', 'Activity', 'Events', 'Stream options', 'Logs']) {
-    expect(html).toContain(`aria-label="${label}"`);
-  }
+  const order = ['Current app', 'Device options', 'Stream options', 'Events', 'Logs'];
+  const positions = order.map((label) => html.indexOf(`<section aria-label="${label}"`));
+  expect(positions.every((index) => index >= 0)).toBe(true);
+  expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  expect(html).not.toContain('aria-label="Activity"');
   for (const label of [
     'Appearance',
     'Liquid glass',
@@ -312,8 +314,13 @@ test('renders every supported iOS inspector section and option', () => {
     expect(html).toContain(label);
   }
   expect(html).not.toContain('>Network<');
+  expect(sectionExpanded(html, 'Current app')).toBe(true);
   expect(sectionExpanded(html, 'Device options')).toBe(true);
-  for (const label of ['Activity', 'Events', 'Stream options', 'Logs']) {
+  const currentApp = sectionMarkup(html, 'Current app');
+  expect(currentApp).toContain('>App ID<');
+  expect(currentApp).toContain('data-testid="activity-charts"');
+  expect(currentApp).toContain('Waiting for activity data…');
+  for (const label of ['Stream options', 'Events', 'Logs']) {
     expect(sectionExpanded(html, label)).toBe(false);
     expect(openingTag(html, `<section aria-label="${label}"`)).toContain('border-top:');
     expect(openingTag(html, `<section aria-label="${label}"`)).toContain('padding:0 16px;');
@@ -330,9 +337,10 @@ test('renders Android stream options while omitting unsupported and iOS-only sec
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
   for (const label of [
+    'Current app',
     'Device options',
-    'Events',
     'Stream options',
+    'Events',
     'Logs',
     'Appearance',
     'Network',
@@ -343,8 +351,10 @@ test('renders Android stream options while omitting unsupported and iOS-only sec
   for (const label of ['Activity', 'Liquid glass', 'VoiceOver']) {
     expect(html).not.toContain(`>${label}<`);
   }
+  expect(sectionMarkup(html, 'Current app')).not.toContain('data-testid="activity-charts"');
+  expect(sectionExpanded(html, 'Current app')).toBe(true);
   expect(sectionExpanded(html, 'Device options')).toBe(true);
-  for (const label of ['Events', 'Stream options', 'Logs']) {
+  for (const label of ['Stream options', 'Events', 'Logs']) {
     expect(sectionExpanded(html, label)).toBe(false);
   }
 });

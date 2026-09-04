@@ -27,9 +27,13 @@ function latestSample(samples: DeviceActivitySample[]) {
   return samples.at(-1) ?? null;
 }
 
-/** Live CPU, memory, and network history for the foreground iOS app. */
-export function ActivitySection({ client }: { client?: DeviceClient }) {
-  const [open, setOpen] = useState(false);
+/**
+ * Live CPU, memory, and network history for the foreground iOS app: a status
+ * line while data is missing or paused, then one sparkline card per metric.
+ * Rendered inside the Current app section; {@link ActivitySection} wraps it
+ * in its own collapsible section for standalone use.
+ */
+export function ActivityCharts({ client }: { client?: DeviceClient }) {
   const activity = client?.activity ?? null;
   const samples = activity?.samples.slice(-MAX_SAMPLES) ?? [];
   const latest = latestSample(samples);
@@ -60,7 +64,7 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
   else if (activity?.stale) message = 'Activity data is paused. Showing the most recent samples.';
 
   return (
-    <CollapsibleSection title="Activity" open={open} onOpenChange={setOpen}>
+    <div data-testid="activity-charts" style={{ minWidth: 0, paddingTop: 8 }}>
       {message && (
         <span
           role={activity?.errored ? 'alert' : undefined}
@@ -76,7 +80,7 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
             minWidth: 0,
             flexDirection: 'column',
             gap: 4,
-            paddingTop: message ? 0 : 12,
+            paddingTop: message ? 0 : 4,
           }}
         >
           <MetricChart
@@ -105,6 +109,17 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
           />
         </div>
       )}
+    </div>
+  );
+}
+
+/** {@link ActivityCharts} in a standalone collapsible section. */
+export function ActivitySection({ client }: { client?: DeviceClient }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <CollapsibleSection title="Activity" open={open} onOpenChange={setOpen}>
+      <ActivityCharts client={client} />
     </CollapsibleSection>
   );
 }

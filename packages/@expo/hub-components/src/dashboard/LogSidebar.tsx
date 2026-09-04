@@ -4,7 +4,6 @@ import {
   type DeviceStreamMode,
 } from '@expo/hub-client';
 import { SidebarToggle, bg } from '../primitives';
-import { ActivitySection } from './ActivitySection';
 import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
 import { CurrentAppSection } from './CurrentAppSection';
 import { DeviceOptionsSection } from './DeviceOptionsSection';
@@ -46,6 +45,9 @@ export type LogSidebarProps = {
 /**
  * Right column: a compact inspector for the selected device, rendered directly
  * on the dashboard canvas so it matches the existing sidebar treatment.
+ *
+ * Section order: Current app (with its activity charts), Device options,
+ * Stream options, Events, Logs. The first two start open.
  */
 export function LogSidebar({
   onToggle,
@@ -116,8 +118,6 @@ export function LogSidebar({
             onRemove={device?.physical ? undefined : onRemove}
           />
         )}
-        {client?.capabilities.activity && <ActivitySection client={client} />}
-        {client?.capabilities.events && <EventsSection client={client} />}
         {client?.streamCapabilities && (
           <StreamOptionsSection
             client={client}
@@ -128,6 +128,7 @@ export function LogSidebar({
             onHttpCodecChange={onHttpCodecChange}
           />
         )}
+        {client?.capabilities.events && <EventsSection client={client} />}
         <LogsSection client={client} />
       </div>
     </aside>
