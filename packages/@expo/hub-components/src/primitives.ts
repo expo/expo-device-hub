@@ -14,6 +14,7 @@ export * from './components/Dialog';
 export * from './components/Dropdown';
 export * from './components/DropdownItem';
 export * from './components/Logo';
+export * from './components/PillButton';
 export * from './components/ResizeHandle';
 export * from './components/SegmentedControl';
 export * from './components/Select';

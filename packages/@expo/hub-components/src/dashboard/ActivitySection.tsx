@@ -58,6 +58,11 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
     },
   ];
 
+  const cores = activity?.hostCores ?? null;
+  const cpuDescription = cores
+    ? `Percent of one core. The host has ${cores} cores, so the app can reach ${cores * 100}%.`
+    : undefined;
+
   let message: string | null = null;
   if (activity?.errored) message = 'Activity data is unavailable for this app.';
   else if (!latest) message = 'Waiting for activity data…';
@@ -86,11 +91,7 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
           <MetricChart
             title="CPU"
             value={`${Math.round(latest.cpuPct)}%`}
-            description={
-              activity?.hostCores
-                ? `Up to ${activity.hostCores * 100}% across host cores`
-                : undefined
-            }
+            description={cpuDescription}
             series={cpuSeries}
             maxValue={maxChartValue(cpuSeries, MIN_CPU_SCALE_PCT)}
           />

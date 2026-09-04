@@ -1,3 +1,4 @@
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useId } from 'react';
 
 import { bg, radius, text, textSize } from '../primitives';
@@ -68,12 +69,16 @@ export function MetricChart({
 }: {
   title: string;
   value: string;
-  /** Extra context for the chart, exposed as its tooltip. */
+  /**
+   * Extra context for the chart: the card's hover tooltip, and the chart's
+   * accessible description for assistive technology.
+   */
   description?: string;
   series: readonly MetricChartSeries[];
   maxValue: number;
 }) {
   const gradientId = useId();
+  const descriptionId = description ? `${gradientId}-description` : undefined;
   const drawn = series
     .filter((entry) => entry.values.length > 0)
     .map((entry, index) => ({ ...entry, points: chartPoints(entry.values, maxValue), index }));
@@ -92,6 +97,7 @@ export function MetricChart({
       <svg
         role="img"
         aria-label={`${title}: ${value}${legend}`}
+        aria-describedby={descriptionId}
         viewBox={`0 0 ${CHART_WIDTH} ${CHART_HEIGHT}`}
         preserveAspectRatio="none"
         style={{ display: 'block', width: '100%', height: CHART_HEIGHT, overflow: 'visible' }}
@@ -156,6 +162,7 @@ export function MetricChart({
           {value}
         </span>
       </div>
+      {description && <VisuallyHidden id={descriptionId}>{description}</VisuallyHidden>}
     </div>
   );
 }

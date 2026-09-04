@@ -1,7 +1,18 @@
 import { useState } from 'react';
 
 import { type ConnectionStatus } from '@expo/hub-client';
-import { bg, border, Button, font, icon, radius, text, textSize } from '../primitives';
+import {
+  bg,
+  border,
+  Button,
+  BUTTON_HEIGHTS,
+  type ButtonSize,
+  font,
+  icon,
+  radius,
+  text,
+  textSize,
+} from '../primitives';
 import { type Device } from './data';
 
 export type DeviceTitleProps = {
@@ -39,6 +50,10 @@ const STATUS_APPEARANCE: Record<
   },
 };
 
+const DEVICE_TITLE_SIZE: ButtonSize = 'xs';
+/** Rendered height of the title pill, for layouts that reserve room above the frame. */
+export const DEVICE_TITLE_HEIGHT = BUTTON_HEIGHTS[DEVICE_TITLE_SIZE];
+
 /** Compact stream-status pill that toggles between a device's name and identifier. */
 export function DeviceTitle({ device, status }: DeviceTitleProps) {
   const [revealedId, setRevealedId] = useState<string | null>(null);
@@ -49,7 +64,7 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
   return (
     <Button
       theme="tertiary"
-      size="xs"
+      size={DEVICE_TITLE_SIZE}
       onClick={() => setRevealedId(showingId ? null : device.id)}
       leftSlot={
         <span

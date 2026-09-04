@@ -63,8 +63,8 @@ function selectAtPoint(x: number, y: number, except: SelectRegistration) {
  * value; the open menu grows to fit its widest option instead of wrapping.
  * Clicking another select while this one is open closes this menu and opens
  * the other in the same click.
- * The offered option labels are exposed on the trigger as `data-options`
- * (newline-separated) for tooling and tests, since the menu only renders
+ * The offered option labels are exposed on the trigger as `data-test-options`
+ * (newline-separated) so tests can read them, since the menu only renders
  * while open.
  */
 export function Select<Value extends string>({
@@ -85,7 +85,10 @@ export function Select<Value extends string>({
     disabled,
     open: () => setOpen(true),
   });
-  registration.current.disabled = disabled;
+
+  useEffect(() => {
+    registration.current.disabled = disabled;
+  }, [disabled]);
 
   useEffect(() => {
     const entry = registration.current;
@@ -108,7 +111,7 @@ export function Select<Value extends string>({
         ref={triggerRef}
         aria-label={ariaLabel}
         aria-describedby={ariaDescribedBy}
-        data-options={options.map((option) => option.label).join('\n')}
+        data-test-options={options.map((option) => option.label).join('\n')}
         onFocus={(event) => setFocused(isFocusVisible(event))}
         onBlur={() => setFocused(false)}
         onMouseEnter={() => setHovered(true)}
@@ -151,6 +154,11 @@ export function Select<Value extends string>({
           sideOffset={4}
           collisionPadding={8}
           onPointerDownOutside={(event) => {
+            // With pointer events disabled on the page the event target is not
+            // the trigger, so hit-test the registered trigger rects instead.
+            // This assumes nothing overlaps a trigger while a menu is open,
+            // which holds in the sidebar; an element covering a trigger would
+            // open that select too.
             const { clientX, clientY } = event.detail.originalEvent;
             const next = selectAtPoint(clientX, clientY, registration.current);
             // Let this menu dismiss first, then open the select under the pointer.

@@ -71,6 +71,8 @@ export function LogSidebar({
         onVisibleChange: onShowDeviceFrameChange ?? (() => {}),
       }
     : undefined;
+  // Physical devices cannot be deleted from the host.
+  const onRemoveDevice = device?.physical ? undefined : onRemove;
 
   return (
     <aside
@@ -109,13 +111,13 @@ export function LogSidebar({
         {(client?.capabilities.deviceSettings ||
           client?.platform === 'android' ||
           deviceFrame ||
-          (client && (onShutdown || onRemove))) && (
+          (client && (onShutdown || onRemoveDevice))) && (
           <DeviceOptionsSection
             client={client}
             deviceFrame={deviceFrame}
             showDeviceSettings={client?.capabilities.deviceSettings ?? false}
             onShutdown={onShutdown}
-            onRemove={device?.physical ? undefined : onRemove}
+            onRemove={onRemoveDevice}
           />
         )}
         {client?.streamCapabilities && (

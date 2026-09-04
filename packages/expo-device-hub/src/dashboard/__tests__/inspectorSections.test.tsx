@@ -238,19 +238,14 @@ function selectMarkup(html: string, label: string) {
   return markup;
 }
 
-/** The label the select pill currently shows. */
+/** The label the select pill currently shows: the trigger's only text, as the chevron is an svg. */
 function selectValue(html: string, label: string) {
-  const markup = selectMarkup(html, label);
-  const marker = '<span style="pointer-events:none">';
-  const valueStart = markup.indexOf(marker);
-  expect(valueStart).toBeGreaterThanOrEqual(0);
-
-  return markup.slice(valueStart + marker.length, markup.indexOf('</span>', valueStart));
+  return selectMarkup(html, label).replace(/<[^>]+>/g, '');
 }
 
-/** Every option label the select pill is sized by, in menu order. */
+/** Every option label the select pill offers, in menu order. */
 function selectOptionLabels(html: string, label: string) {
-  const match = selectMarkup(html, label).match(/data-options="([^"]*)"/);
+  const match = selectMarkup(html, label).match(/data-test-options="([^"]*)"/);
   expect(match).not.toBeNull();
   return match![1].split('\n').map((option) =>
     option.replace(/&amp;/g, '&').replace(/&quot;/g, '"'),

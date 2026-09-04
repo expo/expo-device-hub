@@ -8,7 +8,7 @@ import {
 } from '@expo/hub-client';
 import { bg, border } from '../primitives';
 import { type Device } from './data';
-import { DeviceTitle } from './DeviceTitle';
+import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
 import { type DeviceFrameAssets } from './deviceFrame';
 import { PhoneFrame } from './PhoneFrame';
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from './StreamControls';
@@ -26,8 +26,6 @@ function downloadBlob(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-/** Rendered height of the device title pill (an xs button). */
-const TITLE_HEIGHT = 32;
 /** Space between the title pill and the top of the device frame. */
 const TITLE_GAP = 32;
 /** Space between the bottom of the device frame and the toolbar. */
@@ -101,7 +99,7 @@ export function StreamPanel({
           boxSizing: 'border-box',
           // Container-query units resolve against the content box, so this
           // padding keeps the frame clear of the title above and toolbar below.
-          padding: `${TITLE_HEIGHT + TITLE_GAP}px 0 ${STREAM_CONTROLS_HEIGHT + CONTROLS_GAP}px`,
+          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${STREAM_CONTROLS_HEIGHT + CONTROLS_GAP}px`,
           containerType: 'size',
           display: 'flex',
           alignItems: 'center',
@@ -122,22 +120,25 @@ export function StreamPanel({
           <div
             style={{
               position: 'absolute',
-              left: 0,
-              right: 0,
+              left: '50%',
               bottom: `calc(100% + ${TITLE_GAP}px)`,
               display: 'flex',
               justifyContent: 'center',
+              width: 'max-content',
+              // Bound by the panel, not the frame: `cqw` resolves against the
+              // viewport container, so long names keep the panel's width.
+              maxWidth: '100cqw',
+              transform: 'translateX(-50%)',
             }}>
             <DeviceTitle key={device.id} device={device} status={client.status} />
           </div>
           <div
             style={{
               position: 'absolute',
-              left: 0,
-              right: 0,
+              left: '50%',
               top: `calc(100% + ${CONTROLS_GAP}px)`,
-              display: 'flex',
-              justifyContent: 'center',
+              width: 'max-content',
+              transform: 'translateX(-50%)',
             }}>
             <StreamControls
               appearance={client.appearance}
