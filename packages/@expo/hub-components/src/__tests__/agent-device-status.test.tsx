@@ -32,6 +32,13 @@ const PIXEL: Device = {
 };
 
 const FRAME_ASSETS: DeviceFrameAssets = {
+  'android:pixel-9': {
+    src: '/pixel-9.png',
+    width: 1935,
+    height: 4096,
+    screen: { x: 95, y: 94, width: 1737, height: 3907 },
+    screenRadius: 240,
+  },
   'android:pixel-10-pro': {
     src: '/pixel.png',
     width: 1250,
@@ -208,9 +215,10 @@ describe('agent device status', () => {
     const stableArtworkTags = [
       ...markup.matchAll(/<img[^>]*data-device-frame-artwork-kind="([^"]+)"[^>]*>/g),
     ];
-    expect(stableArtworkTags).toHaveLength(2);
+    expect(stableArtworkTags).toHaveLength(3);
     expect(stableArtworkTags.map((match) => match[1]).sort()).toEqual([
       'android:pixel-10-pro',
+      'android:pixel-9',
       'ios:iphone-17-pro',
     ]);
     const pixelArtworkTag = stableArtworkTags.find(

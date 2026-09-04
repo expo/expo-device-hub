@@ -73,7 +73,12 @@ describe('androidImagesToOptions', () => {
           value: 'system-images;android-35;google_apis_playstore;arm64-v8a',
           label: 'Android 35 · Google Play · arm64-v8a',
           models: [
-            { value: 'pixel_9', label: 'Pixel 9', supported: true, deviceFrame: null },
+            {
+              value: 'pixel_9',
+              label: 'Pixel 9',
+              supported: true,
+              deviceFrame: 'android:pixel-9',
+            },
             {
               value: 'pixel_10_pro',
               label: 'Pixel 10 Pro',
@@ -86,7 +91,12 @@ describe('androidImagesToOptions', () => {
           value: 'system-images;android-34;google_apis;arm64-v8a',
           label: 'Android 34 · Google APIs · arm64-v8a',
           models: [
-            { value: 'pixel_9', label: 'Pixel 9', supported: true, deviceFrame: null },
+            {
+              value: 'pixel_9',
+              label: 'Pixel 9',
+              supported: true,
+              deviceFrame: 'android:pixel-9',
+            },
             {
               value: 'pixel_10_pro',
               label: 'Pixel 10 Pro',
