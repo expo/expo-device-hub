@@ -22,6 +22,7 @@ export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
     "-no-boot-anim",
     "-port",
     String(options.port),
+    ...(options.extraArgs ?? []),
   ];
 }
 
