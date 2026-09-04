@@ -37,7 +37,7 @@ const FRAME_ASSETS: DeviceFrameAssets = {
     width: 1935,
     height: 4096,
     screen: { x: 95, y: 94, width: 1737, height: 3907 },
-    screenRadius: 239,
+    screenRadius: 236,
   },
   'android:pixel-10-pro': {
     src: '/pixel.png',
