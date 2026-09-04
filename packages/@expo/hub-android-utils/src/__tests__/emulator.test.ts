@@ -34,6 +34,21 @@ describe("buildEmulatorArgs", () => {
     const args = buildEmulatorArgs({ name: "x", port: 5556 });
     expect(args[args.indexOf("-port") + 1]).toBe("5556");
   });
+
+  test("appends extraArgs verbatim after the port", () => {
+    const args = buildEmulatorArgs({
+      name: "x",
+      port: 5554,
+      extraArgs: ["-camera-back", "imagefile:/tmp/a.png"],
+    });
+    expect(args.slice(-4)).toEqual(["-port", "5554", "-camera-back", "imagefile:/tmp/a.png"]);
+  });
+
+  test("adds nothing when extraArgs is empty or omitted", () => {
+    const plain = buildEmulatorArgs({ name: "x", port: 5554 });
+    expect(buildEmulatorArgs({ name: "x", port: 5554, extraArgs: [] })).toEqual(plain);
+    expect(plain.at(-1)).toBe("5554");
+  });
 });
 
 describe("formatEmulatorCommand", () => {
@@ -41,6 +56,15 @@ describe("formatEmulatorCommand", () => {
     const command = formatEmulatorCommand("/sdk/emulator/emulator", { name: "x", port: 5556 });
     expect(command.startsWith("/sdk/emulator/emulator ")).toBe(true);
     expect(command).toContain("-port 5556");
+  });
+
+  test("includes the extra args", () => {
+    const command = formatEmulatorCommand("/sdk/emulator/emulator", {
+      name: "x",
+      port: 5554,
+      extraArgs: ["-camera-back", "imagefile:/tmp/a.png"],
+    });
+    expect(command.endsWith("-port 5554 -camera-back imagefile:/tmp/a.png")).toBe(true);
   });
 
   test("quotes parts containing whitespace", () => {
