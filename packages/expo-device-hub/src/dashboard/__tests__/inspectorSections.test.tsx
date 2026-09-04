@@ -939,6 +939,8 @@ test('renders every iOS device option as a select pill sized by its options', ()
   ] as const) {
     expect(rowOpeningTag(html, label)).toContain('padding:12px 0');
     expect(rowOpeningTag(html, label)).not.toContain('border-bottom:');
+    // Row labels sit between body text (400) and section titles (600).
+    expect(html).toMatch(new RegExp(`<span style="[^"]*font-weight:500[^"]*">${label}</span>`));
     expect(selectMarkup(html, label)).toContain('height:28px');
     expect(selectValue(html, label)).toBe(selected);
     expect(selectOptionLabels(html, label)).toEqual([...options]);
@@ -1030,7 +1032,7 @@ test('styles sidebar action buttons like the select pills', () => {
   const toggle = html.slice(html.lastIndexOf('<button', html.indexOf('>Toggle<')), html.indexOf('>Toggle<') + 1);
   const select = selectMarkup(html, 'Appearance');
 
-  for (const style of ['height:28px', 'border:1px solid var(--expo-theme-border-default)', 'border-radius:var(--expo-radius-lg)', 'background-color:var(--expo-theme-background-element)', 'font-size:14px']) {
+  for (const style of ['height:28px', 'border:1px solid var(--expo-theme-border-default)', 'border-radius:var(--expo-radius-lg)', 'background-color:var(--expo-theme-background-element)', 'font-size:14px', 'font-weight:500']) {
     expect(toggle).toContain(style);
     expect(select).toContain(style);
   }

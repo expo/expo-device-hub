@@ -19,6 +19,7 @@ export function pillControlStyle({
 } = {}): CSSProperties {
   return {
     ...textSize.sm,
+    fontWeight: 500,
     display: 'inline-flex',
     height: PILL_CONTROL_HEIGHT,
     flexShrink: 0,

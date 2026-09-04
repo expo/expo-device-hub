@@ -127,7 +127,7 @@ function AppDetailRow({ detail }: { detail: AppDetail }) {
         gap: 16,
         padding: '8px 0',
       }}>
-      <dt style={{ ...textSize.sm, flexShrink: 0, margin: 0, color: text.secondary }}>
+      <dt style={{ ...textSize.sm, fontWeight: 500, flexShrink: 0, margin: 0, color: text.secondary }}>
         {detail.label}
       </dt>
       <dd

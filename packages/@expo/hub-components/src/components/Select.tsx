@@ -159,6 +159,7 @@ export function Select<Value extends string>({
           className="will-change-[opacity,transform] data-[side=bottom]:animate-slideUpAndFade data-[side=left]:animate-slideRightAndFade data-[side=right]:animate-slideLeftAndFade data-[side=top]:animate-slideDownAndFade"
           style={{
             ...textSize.sm,
+            fontWeight: 500,
             zIndex: 605,
             width: 'max-content',
             minWidth: 'var(--radix-select-trigger-width)',
