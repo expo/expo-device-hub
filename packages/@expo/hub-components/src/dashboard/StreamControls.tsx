@@ -1,6 +1,7 @@
 import { type ReactNode } from 'react';
 
 import {
+  CONTROL_BUTTON_SIZE,
   CameraIcon,
   ControlButton,
   HomeIcon,
@@ -14,9 +15,12 @@ import {
 import { type ColorScheme } from './data';
 
 const GROUP_PADDING = 4;
-const GROUP_GAP = 16;
-const ICON_SIZE = 18;
-const ICON_STROKE = 1.5;
+const GROUP_GAP = 24;
+const ICON_SIZE = 20;
+const ICON_STROKE = 1.67;
+
+/** Rendered height of the toolbar: a button plus the group's padding and hairline border. */
+export const STREAM_CONTROLS_HEIGHT = CONTROL_BUTTON_SIZE + GROUP_PADDING * 2 + 2;
 
 /** A pill that groups toolbar buttons on the shared element surface. */
 function ControlGroup({ children }: { children: ReactNode }) {

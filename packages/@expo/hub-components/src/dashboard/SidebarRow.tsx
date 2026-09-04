@@ -1,14 +1,6 @@
 import { type ReactNode } from "react";
 
-import { bg, border, font, radius, shadow, text, textSize } from "../primitives";
-
-export function SidebarSectionHeading({ children }: { children: ReactNode }) {
-  return (
-    <span style={{ ...textSize.xs, display: "block", fontFamily: font.mono, color: text.tertiary }}>
-      {children}
-    </span>
-  );
-}
+import { bg, border, radius, shadow, text, textSize } from "../primitives";
 
 /**
  * A label on the left and its control on the right. Rows stack without

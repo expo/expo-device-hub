@@ -1,9 +1,8 @@
 import { type DeviceClient } from '@expo/hub-client';
 import { bg, border, font, heading, icon, radius, text, textSize } from '../primitives';
 import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
-import { SidebarSectionHeading } from './SidebarRow';
 
-const APP_ICON_SIZE = 52;
+const APP_ICON_SIZE = 40;
 const UNKNOWN_VALUE = 'unknown';
 
 type AppDetail = {
@@ -18,6 +17,9 @@ type AppDetail = {
  * shows until the backend reports an app, and the detail fields fill in as
  * the client resolves them (iOS fetches them over the exec channel after the
  * id arrives).
+ *
+ * Laid out like the collapsible inspector sections: a section title row, then
+ * label/value rows in the same type scale.
  */
 export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   const app = client?.foregroundApp ?? null;
@@ -39,45 +41,42 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   return (
     <section
       aria-label="Current app"
-      style={{ padding: `18px ${SIDEBAR_SECTION_INSET}px 20px` }}>
+      style={{ minWidth: 0, boxSizing: 'border-box', padding: `0 ${SIDEBAR_SECTION_INSET}px 12px` }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '18px 0' }}>
+        <span style={{ ...heading.sm, color: text.default }}>Current app</span>
+      </div>
       <div
         style={{
           display: 'flex',
-          alignItems: 'flex-start',
+          alignItems: 'center',
           justifyContent: 'space-between',
           gap: 16,
-          marginBottom: 18,
+          padding: '4px 0 12px',
         }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
-          <SidebarSectionHeading>Current app</SidebarSectionHeading>
-          <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-            <span
-              title={name}
-              style={{
-                ...heading.xl,
-                color: app ? text.default : text.tertiary,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}>
-              {name}
-            </span>
-            {app?.isReactNative && <Badge color="info">React Native</Badge>}
-            {app?.debuggable && <Badge color="warning">debuggable</Badge>}
-          </div>
+        <div style={{ display: 'flex', minWidth: 0, flexDirection: 'column', gap: 4 }}>
+          <span
+            title={name}
+            style={{
+              ...heading.base,
+              color: app ? text.default : text.tertiary,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}>
+            {name}
+          </span>
+          {(app?.isReactNative || app?.debuggable) && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {app?.isReactNative && <Badge color="info">React Native</Badge>}
+              {app?.debuggable && <Badge color="warning">debuggable</Badge>}
+            </div>
+          )}
         </div>
         <AppIcon iconDataUrl={app?.iconDataUrl} />
       </div>
-      <dl
-        style={{
-          display: 'grid',
-          gridTemplateColumns: 'auto minmax(0, 1fr)',
-          rowGap: 4,
-          columnGap: 16,
-          margin: 0,
-        }}>
+      <dl style={{ margin: 0 }}>
         {details.map((detail) => (
-          <AppDetailLine key={detail.label} detail={detail} />
+          <AppDetailRow key={detail.label} detail={detail} />
         ))}
       </dl>
     </section>
@@ -110,7 +109,7 @@ function AppIcon({ iconDataUrl }: { iconDataUrl?: string }) {
           style={{ display: 'block', width: '100%', height: '100%', objectFit: 'cover' }}
         />
       ) : (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <rect x="2" y="4" width="20" height="16" rx="2" stroke={icon.quaternary} />
           <path d="M10 4v4h12" stroke={icon.quaternary} />
         </svg>
@@ -119,25 +118,37 @@ function AppIcon({ iconDataUrl }: { iconDataUrl?: string }) {
   );
 }
 
-function AppDetailLine({ detail }: { detail: AppDetail }) {
+/** One label/value line, in the same scale as the other sections' rows. */
+function AppDetailRow({ detail }: { detail: AppDetail }) {
   return (
-    <>
-      <dt style={{ ...textSize.xs, color: text.tertiary }}>{detail.label}</dt>
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        gap: 16,
+        padding: '8px 0',
+      }}>
+      <dt style={{ ...textSize.sm, flexShrink: 0, margin: 0, color: text.secondary }}>
+        {detail.label}
+      </dt>
       <dd
         title={detail.value}
         style={{
-          ...textSize.xs,
+          ...textSize.sm,
           minWidth: 0,
           margin: 0,
           color: text.default,
           fontFamily: font.mono,
           textAlign: 'right',
-          overflowWrap: 'anywhere',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
           fontVariantNumeric: 'tabular-nums',
         }}>
         {detail.value}
       </dd>
-    </>
+    </div>
   );
 }
 
@@ -145,11 +156,12 @@ function Badge({ color, children }: { color: 'info' | 'warning'; children: strin
   return (
     <span
       style={{
-        ...textSize['2xs'],
+        ...textSize.xs,
         color: text[color],
         background: bg[color],
         borderRadius: radius.full,
         padding: '0 8px',
+        fontWeight: 500,
         flexShrink: 0,
       }}>
       {children}

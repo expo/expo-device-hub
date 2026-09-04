@@ -46,8 +46,8 @@ describe('StreamControls', () => {
     expect(theme).toContain('role="switch"');
     expect(theme).toContain('aria-checked="true"');
     for (const tag of buttonTags(markup)) {
-      expect(tag).toContain('width:36px');
-      expect(tag).toContain('height:36px');
+      expect(tag).toContain('width:44px');
+      expect(tag).toContain('height:44px');
     }
   });
 });

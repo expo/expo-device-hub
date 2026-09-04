@@ -3,7 +3,7 @@ import { type ButtonHTMLAttributes, forwardRef, type ReactNode, useState } from 
 import { bg, border, icon as iconColor, radius, text, textSize } from '../theme/tokens';
 import { isFocusVisible } from './focusVisible';
 
-export const CONTROL_BUTTON_SIZE = 36;
+export const CONTROL_BUTTON_SIZE = 44;
 
 /**
  * An icon button in the toolbar under the device stream. The label is the
