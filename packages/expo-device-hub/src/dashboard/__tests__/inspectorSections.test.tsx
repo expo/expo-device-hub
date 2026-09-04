@@ -46,6 +46,11 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       : { appearance: 'light', network: 'on', 'text-size': 'medium' },
     deviceSettingsPending: new Set(),
     setDeviceSetting: () => {},
+    camera: null,
+    cameraPending: new Set(),
+    cameraError: null,
+    setCameraImage: () => {},
+    clearCameraImage: () => {},
     streamCapabilities: ios
       ? {
           modeAvailability: { mjpeg: true, h264: true, webrtc: true },
@@ -89,6 +94,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       deviceSettings: true,
       activity: ios,
       events: true,
+      camera: false,
       streamSettings: ios
         ? {
             mjpegFps: true,
@@ -1146,9 +1152,10 @@ test('keeps the frame option disabled with an explanation for unsupported device
         deviceSettings: false,
         activity: false,
         events: true,
+        camera: false,
         streamSettings: false,
       },
-    };
+    } satisfies DeviceClient;
     const html = renderToStaticMarkup(
       <LogSidebar
         client={client}
@@ -1173,10 +1180,11 @@ test('shows only the viewer-local frame option while iOS device settings are una
       deviceSettings: false,
       activity: false,
       events: true,
+      camera: false,
       streamSettings: false,
     },
     deviceSettings: null,
-  };
+  } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <LogSidebar
       client={client}

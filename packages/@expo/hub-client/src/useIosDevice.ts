@@ -68,10 +68,9 @@ import {
   type ScreenSize,
   type TouchSample,
 } from './types';
-import {
-  DeviceSettingWriteTracker,
-  mergeAuthoritativeDeviceSetting,
-} from './device-setting-writes';
+import { NO_PENDING_CAMERA_WRITES } from './device-camera';
+import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
+import { KeyedWriteTracker } from './keyed-write-tracker';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { normalizeDeviceStreamSettings } from './stream-settings';
 import { useAvccStream } from './useAvccStream';
@@ -413,7 +412,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [webRtcCodec, setWebRtcCodecState] = useState<DeviceWebRtcCodec>('h264');
   const [activeWebRtcCodec, setActiveWebRtcCodec] = useState<WebRtcCodec>('h264');
   const [webRtcHttpFallback, setWebRtcHttpFallback] = useState(false);
-  const deviceSettingWriteTrackerRef = useRef(new DeviceSettingWriteTracker());
+  const deviceSettingWriteTrackerRef = useRef(new KeyedWriteTracker<DeviceSettingKey>());
   // Async option writes capture their config. Track only committed config so
   // an interrupted concurrent render cannot invalidate a legitimate rollback.
   const deviceSettingConfigRef = useRef(config);
@@ -1351,6 +1350,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
+    camera: null,
+    cameraPending: NO_PENDING_CAMERA_WRITES,
+    cameraError: null,
+    setCameraImage: () => {},
+    clearCameraImage: () => {},
     streamCapabilities: IOS_STREAM_CAPABILITIES,
     streamSettings,
     streamSettingsPending,
@@ -1369,6 +1373,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       deviceSettings: !!execWsUrl && !!execToken && !!deviceUdid,
       activity: !!metricsPath,
       events: !!eventsPath,
+      camera: false,
       streamSettings: streamSettingsUrl
         ? {
             mjpegFps: true,

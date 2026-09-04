@@ -109,6 +109,28 @@ export type DeviceSettingKey =
 /** Current backend-reported values. Missing keys are unavailable; `unsupported` keys are hidden. */
 export type DeviceSettings = Partial<Record<DeviceSettingKey, string>>;
 
+/** Which emulator camera a feed drives. */
+export type DeviceCameraFacing = 'back' | 'front';
+
+/** One emulator camera fed from a PNG on the host. */
+export interface DeviceCameraFeed {
+  facing: DeviceCameraFacing;
+  /** True while the feed still holds the backend's "no image set" test card. */
+  placeholder: boolean;
+  width: number | null;
+  height: number | null;
+  bytes: number | null;
+  /** Same-origin URL of the current PNG, or null when no file exists yet. Embeds the digest so a changed image refetches. */
+  imageUrl: string | null;
+}
+
+/** Host-side still-image camera feeds for an Android emulator. */
+export interface DeviceCameraStatus {
+  /** True when the emulator was launched with the feed files attached. False means images are stored but never shown. */
+  wiredAtLaunch: boolean;
+  feeds: readonly DeviceCameraFeed[];
+}
+
 /** One live CPU, memory, and network sample for the foreground iOS app. */
 export interface DeviceActivitySample {
   /** Milliseconds since the backend sampler started. */
@@ -287,6 +309,8 @@ export interface DeviceCapabilities {
   deviceSettings: boolean;
   activity: boolean;
   events: boolean;
+  /** Host-fed emulator camera images that the backend can read and replace. */
+  camera: boolean;
   /** Runtime encoder settings that can be read and patched. */
   streamSettings: DeviceStreamSettingCapabilities;
 }
@@ -461,6 +485,17 @@ export interface DeviceClient {
   deviceSettingsPending: ReadonlySet<DeviceSettingKey>;
   /** Change one simulator/device option. Unsupported keys are ignored by each backend. */
   setDeviceSetting: (key: DeviceSettingKey, value: string) => void;
+
+  /** Emulator camera feeds, or null before the first read or when the backend has none. */
+  camera: DeviceCameraStatus | null;
+  /** Facings with an image write or reset in flight. */
+  cameraPending: ReadonlySet<DeviceCameraFacing>;
+  /** Last failed camera write, cleared when the next write starts. */
+  cameraError: string | null;
+  /** Replace one facing's picture with a PNG. The backend refuses other formats. */
+  setCameraImage: (facing: DeviceCameraFacing, png: Blob) => void;
+  /** Restore the backend's "no image set" card for one facing. */
+  clearCameraImage: (facing: DeviceCameraFacing) => void;
 
   /** Backend-supported viewer transport and codec choices; null hides stream controls. */
   streamCapabilities: DeviceStreamCapabilities | null;
