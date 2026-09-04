@@ -10,6 +10,7 @@ import {
   type DeviceStreamMode,
 } from '@expo/hub-client';
 import {
+  BootErrorModal,
   EmptyState,
   LogSidebar,
   ResizeHandle,
@@ -135,6 +136,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto'
   );
+  const [bootError, setBootError] = useState<{
+    deviceName: string;
+    message: string;
+  } | null>(null);
   // Draggable widths for each inline sidebar. The `*Start` refs snapshot the
   // width when a drag begins so each move re-derives width from the start point
   // (delta-from-start), which clamps cleanly without drifting.
@@ -240,6 +245,27 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     dismissDevice(device.id);
   }
 
+  // The emulator reads its camera flags only at startup, so attaching feeds to a
+  // running emulator means shutting it down and booting it again.
+  async function handleRestartWithCamera(device: Device) {
+    await shutdownDevice(device);
+    const result = await bootDevice(device, { camera: true });
+
+    if (!result.id) {
+      setBootError({
+        deviceName: device.name,
+        message: result.error ?? 'The device did not come online.',
+      });
+      return;
+    }
+
+    trackAddedDevice({ ...device, id: result.id, booted: true, lastUsedAt: Date.now() }, [
+      device.name,
+      device.id,
+      result.id,
+    ]);
+  }
+
   // Mirror the theme onto the document root so Radix portals (e.g. the dropdown
   // menu), which mount on document.body outside the wrapper below, still pick up
   // the dark `--expo-theme-*` variables.
@@ -270,6 +296,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const handleStreamModeChange = (mode: DeviceStreamMode) => {
     chooseStreamMode(mode, selectedStreamModeAvailability);
   };
+  const restartSelectedWithCamera =
+    selected?.platform === 'android' ? () => handleRestartWithCamera(selected) : undefined;
 
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
@@ -395,6 +423,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
+          onRestartWithCamera={restartSelectedWithCamera}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -439,6 +468,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
+          onRestartWithCamera={restartSelectedWithCamera}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -475,6 +505,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           />,
           document.body
         )}
+      <BootErrorModal
+        open={bootError !== null}
+        onClose={() => setBootError(null)}
+        deviceName={bootError?.deviceName ?? ''}
+        message={bootError?.message ?? ''}
+      />
     </div>
   );
 }
