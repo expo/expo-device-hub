@@ -28,6 +28,7 @@ import {
 import {
   androidCameraErrorMessage,
   androidCameraImageUrl,
+  androidCameraUnsupported,
   parseAndroidCamera,
 } from './android-camera';
 import {
@@ -487,7 +488,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           );
         } finally {
           pending.delete(facing);
-          setCameraPending(new Set(pending));
+          if (cameraPendingRef.current === pending) setCameraPending(new Set(pending));
         }
       })();
     },
@@ -1531,7 +1532,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Polling keeps Hub in sync with feeds replaced outside this tab, and it is
   // also how an unsupported or unwired camera becomes visible after a restart.
   useEffect(() => {
-    cameraPendingRef.current.clear();
+    // A fresh Set rather than a clear: a write from the previous scope still
+    // holds the old one and would otherwise re-publish into this scope.
+    cameraPendingRef.current = new Set();
     setCamera(null);
     setCameraSupported(false);
     setCameraPending(new Set());
@@ -1548,20 +1551,26 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       // A write answers with the authoritative status, so a read straddling one
       // would undo it. Re-check after the await, not only before the request.
       if (cancelled || cameraPendingRef.current.size > 0) return;
-      let status: DeviceCamera | null = null;
+      // `undefined` until the backend answers for itself. A dropped request or
+      // an unreadable payload keeps the last status, because clearing it
+      // unmounts the whole camera section for the tick until the next poll.
+      let next: DeviceCamera | null | undefined;
       try {
         const response = await fetch(deviceApiUrl(baseUrl, '/api/camera', targetDevice), {
           cache: 'no-store',
           signal: controller.signal,
         });
-        if (response.ok) status = parseAndroidCamera(await response.json(), cameraImageUrl);
-      } catch {
-        status = null;
-      }
-      if (cancelled || cameraPendingRef.current.size > 0) return;
+        if (response.ok) {
+          const payload: unknown = await response.json();
+          const parsed = parseAndroidCamera(payload, cameraImageUrl);
+          if (parsed) next = parsed;
+          else if (androidCameraUnsupported(payload)) next = null;
+        }
+      } catch {}
+      if (next === undefined || cancelled || cameraPendingRef.current.size > 0) return;
       if (connectionScopeRef.current !== scope) return;
-      setCamera(status);
-      if (status) setCameraSupported(true);
+      setCamera(next);
+      if (next) setCameraSupported(true);
     };
 
     void poll();

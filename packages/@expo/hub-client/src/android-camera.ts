@@ -86,6 +86,17 @@ export function parseAndroidCamera(
   return { wiredAtLaunch, launchArgs, feeds: parsed };
 }
 
+/**
+ * Whether a `/api/camera` payload states the device has no camera wiring, as
+ * opposed to being unreadable. `parseAndroidCamera` folds both into `null`, so
+ * only this separates "the backend says no" from "we could not tell".
+ */
+export function androidCameraUnsupported(payload: unknown): boolean {
+  const root = plainObject(payload);
+  if (!root || root.ok !== true) return false;
+  return plainObject(root.camera)?.supported === false;
+}
+
 /** The `error` string from a `{ ok: false, error }` write response; null when absent. */
 export function androidCameraErrorMessage(payload: unknown): string | null {
   const root = plainObject(payload);

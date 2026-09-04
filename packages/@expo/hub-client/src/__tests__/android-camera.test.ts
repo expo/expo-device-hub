@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   androidCameraErrorMessage,
   androidCameraImageUrl,
+  androidCameraUnsupported,
   parseAndroidCamera,
 } from '../android-camera';
 import { type CameraFacing } from '../types';
@@ -150,5 +151,18 @@ describe('androidCameraErrorMessage', () => {
   test('returns null when there is no error string', () => {
     expect(androidCameraErrorMessage({ ok: false })).toBeNull();
     expect(androidCameraErrorMessage(null)).toBeNull();
+  });
+});
+
+describe('androidCameraUnsupported', () => {
+  test('is true only when the backend states the camera is unsupported', () => {
+    expect(androidCameraUnsupported(payload({ supported: false }))).toBe(true);
+    expect(androidCameraUnsupported(payload())).toBe(false);
+  });
+
+  test('is false for a payload it cannot read', () => {
+    expect(androidCameraUnsupported(null)).toBe(false);
+    expect(androidCameraUnsupported({ ok: false, error: 'no device' })).toBe(false);
+    expect(androidCameraUnsupported({ ok: true })).toBe(false);
   });
 });
