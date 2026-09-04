@@ -250,8 +250,10 @@ function selectValue(html: string, label: string) {
 
 /** Every option label the select pill is sized by, in menu order. */
 function selectOptionLabels(html: string, label: string) {
-  return [...selectMarkup(html, label).matchAll(/<span style="grid-area:1 \/ 1">([^<]*)<\/span>/g)].map(
-    (match) => match[1],
+  const match = selectMarkup(html, label).match(/data-options="([^"]*)"/);
+  expect(match).not.toBeNull();
+  return match![1].split('\n').map((option) =>
+    option.replace(/&amp;/g, '&').replace(/&quot;/g, '"'),
   );
 }
 

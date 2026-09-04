@@ -36,8 +36,11 @@ const ITEM_HEIGHT = 28;
 
 /**
  * A compact single-value select rendered as a soft pill: the current value
- * followed by a chevron. The trigger is sized by its longest option so it
- * never jumps as the value changes.
+ * followed by a chevron. The closed trigger is only as wide as the selected
+ * value; the open menu grows to fit its widest option instead of wrapping.
+ * The offered option labels are exposed on the trigger as `data-options`
+ * (newline-separated) for tooling and tests, since the menu only renders
+ * while open.
  */
 export function Select<Value extends string>({
   ariaLabel,
@@ -63,6 +66,7 @@ export function Select<Value extends string>({
       <Trigger
         aria-label={ariaLabel}
         aria-describedby={ariaDescribedBy}
+        data-options={options.map((option) => option.label).join('\n')}
         onFocus={(event) => setFocused(isFocusVisible(event))}
         onBlur={() => setFocused(false)}
         onMouseEnter={() => setHovered(true)}
@@ -70,34 +74,20 @@ export function Select<Value extends string>({
         style={{
           ...pillControlStyle({ hovered, focused, disabled }),
           width: 'max-content',
+          maxWidth: '100%',
           justifyContent: 'space-between',
           padding: '0 8px 0 10px',
         }}
       >
         <span
           style={{
-            display: 'inline-grid',
             minWidth: 0,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
           }}
         >
           <Value>{selectedLabel}</Value>
-          <span
-            aria-hidden="true"
-            style={{
-              display: 'inline-grid',
-              gridArea: '2 / 1',
-              height: 0,
-              overflow: 'hidden',
-              visibility: 'hidden',
-            }}
-          >
-            {options.map((option) => (
-              <span key={option.value} style={{ gridArea: '1 / 1' }}>
-                {option.label}
-              </span>
-            ))}
-          </span>
         </span>
         <SelectIcon
           aria-hidden="true"
@@ -122,8 +112,9 @@ export function Select<Value extends string>({
           style={{
             ...textSize.sm,
             zIndex: 605,
-            width: 'var(--radix-select-trigger-width)',
+            width: 'max-content',
             minWidth: 'var(--radix-select-trigger-width)',
+            maxWidth: 'var(--radix-select-content-available-width)',
             maxHeight: 'var(--radix-select-content-available-height)',
             boxSizing: 'border-box',
             overflow: 'hidden',
@@ -160,6 +151,7 @@ export function Select<Value extends string>({
                   cursor: option.disabled ? 'default' : 'pointer',
                   opacity: option.disabled ? 0.5 : 1,
                   userSelect: 'none',
+                  whiteSpace: 'nowrap',
                 }}
               >
                 <ItemText>{option.label}</ItemText>
