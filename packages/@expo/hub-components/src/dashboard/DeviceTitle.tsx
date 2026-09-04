@@ -96,7 +96,7 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
         borderColor: border.default,
         borderRadius: radius.full,
         fontSize: textSize.sm.fontSize,
-        fontWeight: 600,
+        fontWeight: 500,
         // Sits on the gray stream canvas, so it takes the sidebar surface color.
         backgroundColor: bg.default,
       }}
