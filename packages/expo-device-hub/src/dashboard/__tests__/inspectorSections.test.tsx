@@ -379,6 +379,30 @@ test('renders Android stream options while omitting unsupported and iOS-only sec
   }
 });
 
+test('shows the Camera section only when the client reports camera feeds', () => {
+  const android = inspectorClient('android');
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={{
+        ...android,
+        camera: { wiredAtLaunch: true, feeds: [] },
+        capabilities: { ...android.capabilities, camera: true },
+      }}
+    />,
+  );
+
+  expect(html).toContain('<section aria-label="Camera"');
+  const camera = sectionMarkup(html, 'Camera');
+  expect(camera).toContain('>Camera</span>');
+  expect(camera).toContain('aria-expanded="false"');
+  const cameraIndex = html.indexOf('<section aria-label="Camera"');
+  expect(cameraIndex).toBeGreaterThan(html.indexOf('<section aria-label="Stream options"'));
+  expect(cameraIndex).toBeLessThan(html.indexOf('<section aria-label="Events"'));
+
+  const iosHtml = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
+  expect(iosHtml).not.toContain('<section aria-label="Camera"');
+});
+
 test('shows Android resolution while omitting encoder settings serve-emu cannot change', () => {
   const html = renderToStaticMarkup(
     <StreamOptionsSection
