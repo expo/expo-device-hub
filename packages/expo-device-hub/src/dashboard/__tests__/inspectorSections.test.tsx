@@ -122,9 +122,11 @@ function device(platform: DevicePlatform, deviceFrame: Device['deviceFrame']): D
     name:
       deviceFrame === 'ios:iphone-17-pro'
         ? 'iPhone 17 Pro'
-        : deviceFrame === 'android:pixel-10-pro'
-          ? 'Pixel 10 Pro'
-          : 'Other',
+        : deviceFrame === 'android:pixel-9'
+          ? 'Pixel 9'
+          : deviceFrame === 'android:pixel-10-pro'
+            ? 'Pixel 10 Pro'
+            : 'Other',
     version: platform === 'ios' ? 'iOS 27.0' : 'Android 17.0',
     platform,
     booted: true,

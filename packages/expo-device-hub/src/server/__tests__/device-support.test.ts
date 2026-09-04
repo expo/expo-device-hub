@@ -69,7 +69,7 @@ describe('Android device support', () => {
     );
     expect(androidDeviceProfileFrame(profile('pixel_6', 'Pixel 6'))).toBeNull();
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9', 'Pixel 9'))).toBe(true);
-    expect(androidDeviceProfileFrame(profile('pixel_9', 'Pixel 9'))).toBeNull();
+    expect(androidDeviceProfileFrame(profile('pixel_9', 'Pixel 9'))).toBe('android:pixel-9');
     expect(isSupportedAndroidDeviceProfile(profile('pixel_9_pro_fold', 'Pixel 9 Pro Fold'))).toBe(
       false,
     );
@@ -97,6 +97,9 @@ describe('Android device support', () => {
     ).toBe('android:pixel-10-pro');
     expect(androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_6' } }))).toBeNull();
     expect(androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_8' } }))).toBeNull();
+    expect(
+      androidDeviceFrame(androidDevice({ config: { 'hw.device.name': 'pixel_9' } })),
+    ).toBe('android:pixel-9');
     expect(
       isSupportedAndroidDevice(
         androidDevice({
@@ -131,6 +134,11 @@ describe('Android device support', () => {
         androidDevice({ type: 'device', properties: { 'ro.product.model': 'Pixel 10 Pro' } }),
       ),
     ).toBe('android:pixel-10-pro');
+    expect(
+      androidDeviceFrame(
+        androidDevice({ type: 'device', properties: { 'ro.product.model': 'Pixel 9' } }),
+      ),
+    ).toBe('android:pixel-9');
     expect(
       androidDeviceFrame(
         androidDevice({ type: 'device', properties: { 'ro.product.model': 'Pixel 9 Pro' } }),

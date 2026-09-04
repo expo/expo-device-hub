@@ -4,6 +4,7 @@ import { type DeviceFrameProfileId } from '@expo/hub-components';
 
 const IPHONE_17_PRO_DEVICE_TYPE = 'com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro';
 const IPHONE_17_PRO_FRAME = 'ios:iphone-17-pro';
+const PIXEL_9_FRAME = 'android:pixel-9';
 const PIXEL_10_PRO_FRAME = 'android:pixel-10-pro';
 
 export function appleDeviceTypeFrame(
@@ -21,6 +22,7 @@ export function appleDeviceFrame(
 export function androidDeviceProfileFrame(
   profile: Pick<AndroidDeviceProfile, 'id' | 'name' | 'tag'>,
 ): DeviceFrameProfileId | null {
+  if (isPixel9(profile.id, profile.name)) return PIXEL_9_FRAME;
   return isPixel10Pro(profile.id, profile.name) ? PIXEL_10_PRO_FRAME : null;
 }
 
@@ -29,6 +31,7 @@ export function androidDeviceFrame(device: AndroidDevice): DeviceFrameProfileId 
     device.type === 'device'
       ? (device.properties['ro.product.model'] ?? device.name)
       : (device.config['hw.device.name'] ?? device.properties.Device);
+  if (isPixel9(profile ?? device.name)) return PIXEL_9_FRAME;
   return isPixel10Pro(profile ?? device.name) ? PIXEL_10_PRO_FRAME : null;
 }
 
@@ -76,6 +79,10 @@ function isPixel10Pro(...candidates: Array<string | undefined>): boolean {
   return candidates.some(
     (candidate) => normalizeDeviceName(candidate) === 'pixel 10 pro',
   );
+}
+
+function isPixel9(...candidates: Array<string | undefined>): boolean {
+  return candidates.some((candidate) => normalizeDeviceName(candidate) === 'pixel 9');
 }
 
 function normalizeDeviceName(candidate: string | undefined): string | null {

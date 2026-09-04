@@ -11,6 +11,7 @@ export type Platform = 'ios' | 'android';
 /** Exact device profile with frame artwork bundled by Hub. */
 export const DEVICE_FRAME_PROFILE_IDS = [
   'ios:iphone-17-pro',
+  'android:pixel-9',
   'android:pixel-10-pro',
 ] as const;
 export type DeviceFrameProfileId = (typeof DEVICE_FRAME_PROFILE_IDS)[number];

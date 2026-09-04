@@ -28,6 +28,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import pixelDeviceFrame from '../assets/device-frames/google-pixel-10-pro.png';
+import pixel9DeviceFrame from '../assets/device-frames/pixel_9_obsidian.png';
 import iphoneDeviceFrame from '../assets/device-frames/iphone-17-pro-silver.png';
 import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
 import { dashboardHideBootDevice } from './boot-device';
@@ -69,6 +70,13 @@ const MAX_SIDEBAR_WIDTH = 560;
 const MIN_STREAM_WIDTH = 320;
 
 const DEVICE_FRAME_ASSETS: DeviceFrameAssets = {
+  'android:pixel-9': {
+    src: String(pixel9DeviceFrame),
+    width: 1935,
+    height: 4096,
+    screen: { x: 95, y: 94, width: 1737, height: 3907 },
+    screenRadius: 236,
+  },
   'android:pixel-10-pro': {
     src: String(pixelDeviceFrame),
     width: 1250,
