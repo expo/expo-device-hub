@@ -10,6 +10,7 @@
 import {
   bootDevice as bootAndroidEmulator,
   createDevice as createAndroidDevice,
+  emulatorSerial,
   freeEmulatorPort,
   removeDevice as removeAndroidDevice,
   shutdownDevice as shutdownAndroidDevice,
@@ -37,6 +38,8 @@ export interface DeviceActionRequest {
    * remove needs it; iOS acts purely by udid and ignores it.
    */
   name: string;
+  /** Boot with the serve-emu camera feeds attached (Android only). */
+  camera: boolean;
 }
 
 /** Parsed body for `POST /api/devices/create`. */
@@ -62,13 +65,18 @@ export async function parseDeviceAction(request: Request): Promise<DeviceActionR
   }
 
   if (!data || typeof data !== 'object') return null;
-  const { platform, id, name } = data as Record<string, unknown>;
+  const { platform, id, name, camera } = data as Record<string, unknown>;
 
-  if ((platform !== 'ios' && platform !== 'android') || typeof id !== 'string' || !id) {
+  if (
+    (platform !== 'ios' && platform !== 'android') ||
+    typeof id !== 'string' ||
+    !id ||
+    (camera !== undefined && typeof camera !== 'boolean')
+  ) {
     return null;
   }
 
-  return { platform, id, name: typeof name === 'string' ? name : '' };
+  return { platform, id, name: typeof name === 'string' ? name : '', camera: camera === true };
 }
 
 /** Parse and validate the stable toolchain identifiers needed to create a device. */
@@ -183,6 +191,12 @@ export interface BootDeviceResult {
   errors: SerializableError[];
 }
 
+/** serve-emu camera control, injected by `index.ts` so this module stays free of the vendored import. */
+export interface EmuCameraHooks {
+  prepareFeeds: (serial: string) => Promise<string[]>;
+  setWired: (serial: string, wired: boolean) => void;
+}
+
 /**
  * Boot a shut-down simulator/emulator through the platform utility. Android
  * waits until the new adb serial is online; iOS returns after `simctl` accepts
@@ -194,11 +208,10 @@ export interface BootDeviceResult {
  * output isn't captured (the detached child outlives this server), so an early
  * exit reports the exit code plus the exact command to re-run for the details.
  */
-export async function bootHubDevice({
-  platform,
-  id,
-  name,
-}: DeviceActionRequest): Promise<BootDeviceResult> {
+export async function bootHubDevice(
+  { platform, id, name, camera: cameraRequested }: DeviceActionRequest,
+  camera?: EmuCameraHooks
+): Promise<BootDeviceResult> {
   if (platform === 'ios') {
     const booted = await bootAppleSimulator({ udid: id });
     const errors = errorList(toSerializableError(booted.error));
@@ -210,7 +223,7 @@ export async function bootHubDevice({
   const avdName = name || id;
   if (!avdName) return { ok: false, error: 'Missing AVD name', errors: [] };
 
-  return bootAndroidHubDevice(avdName);
+  return bootAndroidHubDevice(avdName, cameraRequested ? camera : undefined);
 }
 
 /** Create a new virtual device, then boot it through the same platform utility. */
@@ -259,7 +272,10 @@ export async function createHubDevice({
   return bootAndroidHubDevice(name);
 }
 
-async function bootAndroidHubDevice(avdName: string): Promise<BootDeviceResult> {
+async function bootAndroidHubDevice(
+  avdName: string,
+  camera?: EmuCameraHooks
+): Promise<BootDeviceResult> {
   const allocated = await freeEmulatorPort();
   if (allocated.error || allocated.value === null) {
     return {
@@ -269,7 +285,33 @@ async function bootAndroidHubDevice(avdName: string): Promise<BootDeviceResult> 
     };
   }
 
-  const bootedResult = await bootAndroidEmulator({ name: avdName, port: allocated.value });
+  const serial = emulatorSerial(allocated.value);
+  const result = await bootAllocatedEmulator(avdName, allocated.value, serial, camera);
+  camera?.setWired(serial, result.ok);
+  return result;
+}
+
+async function bootAllocatedEmulator(
+  avdName: string,
+  port: number,
+  serial: string,
+  camera?: EmuCameraHooks
+): Promise<BootDeviceResult> {
+  let extraArgs: string[] = [];
+  if (camera) {
+    try {
+      extraArgs = await camera.prepareFeeds(serial);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return {
+        ok: false,
+        error: `Failed to prepare camera feeds for ${avdName}: ${reason}`,
+        errors: [],
+      };
+    }
+  }
+
+  const bootedResult = await bootAndroidEmulator({ name: avdName, port, extraArgs });
   const booted = bootedResult.value;
   if (bootedResult.error || !booted) {
     return {

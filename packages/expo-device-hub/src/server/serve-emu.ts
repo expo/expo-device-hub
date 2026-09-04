@@ -1,5 +1,5 @@
 // @ts-ignore vendored module, absent until `bun run build:vendor`
-import { createRouter, fromWsSocket, type WsWebSocketLike } from '../../vendor/serve-emu/dist/middleware.js';
+import { cameraLaunchArgs, createRouter, fromWsSocket, seedCameraFeeds, type WsWebSocketLike } from '../../vendor/serve-emu/dist/middleware.js';
 
 import {
   readStandaloneServeEmuOptions,
@@ -26,6 +26,19 @@ export function handleEmuRequest(request: Request): Promise<Response> {
   const rest = `${url.pathname.slice(EMU_PREFIX.length) || '/'}${url.search}`;
   const forwarded = new Request(`${url.origin}${rest}`, request);
   return router.handleRequest(forwarded);
+}
+
+/**
+ * The `emulator` camera flags for a serial, with its feed files already seeded.
+ * The emulator opens the PNGs at startup, so both must precede the spawn.
+ */
+export async function prepareEmuCameraFeeds(serial: string): Promise<string[]> {
+  await seedCameraFeeds(serial);
+  return cameraLaunchArgs(serial);
+}
+
+export function setEmuCameraWired(serial: string, wired: boolean): void {
+  router.setCameraWired(serial, wired);
 }
 
 async function attachEmuSocket(socket: WsWebSocketLike, request: Request): Promise<void> {

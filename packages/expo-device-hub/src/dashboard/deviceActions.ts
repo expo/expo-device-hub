@@ -59,11 +59,15 @@ export interface StartDeviceOutcome {
  * Boot a shut-down simulator/emulator on the host, resolving to its iOS UDID or
  * Android adb serial once accepted/online. Never throws.
  */
-export async function bootDevice(device: Device): Promise<StartDeviceOutcome> {
+export async function bootDevice(
+  device: Device,
+  options?: { camera?: boolean }
+): Promise<StartDeviceOutcome> {
   return postStartDevice(bootEndpoint(), {
     platform: device.platform,
     id: device.id,
     name: device.name,
+    camera: options?.camera === true,
   });
 }
 
@@ -79,7 +83,7 @@ export async function createDevice(device: NewDeviceRequest): Promise<StartDevic
 
 async function postStartDevice(
   endpoint: string,
-  body: Record<string, string>
+  body: Record<string, string | boolean>
 ): Promise<StartDeviceOutcome> {
   try {
     const response = await fetch(endpoint, {
