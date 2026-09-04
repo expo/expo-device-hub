@@ -152,10 +152,15 @@ export type DeviceStreamSource = 'scrcpy' | 'grpc-screenshot';
 /** Pixel delivery selected for the emulator gRPC screenshot source. */
 export type DeviceGrpcImageMode = 'png' | 'mmap';
 
+/** Input transport used while gRPC provides emulator video. */
+export type DeviceInputSource = 'scrcpy' | 'grpc';
+
 /** Authoritative source state for the selected Android device session. */
 export interface DeviceStreamSourceStatus {
   mode: DeviceStreamSource;
   grpcImageMode: DeviceGrpcImageMode;
+  inputSource: DeviceInputSource;
+  availableInputSources: readonly DeviceInputSource[];
   availableModes: readonly DeviceStreamSource[];
   sessionGeneration: number;
 }
@@ -468,6 +473,8 @@ export interface DeviceClient {
   setStreamSource: (source: DeviceStreamSource) => void;
   /** Restart the gRPC source with compressed PNG or shared-memory RGB delivery. */
   setGrpcImageMode: (mode: DeviceGrpcImageMode) => void;
+  /** Restart gRPC streaming with scrcpy or emulator-gRPC input delivery. */
+  setGrpcInputSource: (source: DeviceInputSource) => void;
   /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */
   streamStats: DeviceStreamStats | null;
   /** Enable telemetry polling while a consumer is displaying WebRTC statistics. */

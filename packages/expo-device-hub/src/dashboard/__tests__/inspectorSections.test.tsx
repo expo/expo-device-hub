@@ -71,6 +71,8 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       : {
           mode: 'scrcpy',
           grpcImageMode: 'png',
+          inputSource: 'scrcpy',
+          availableInputSources: ['scrcpy'],
           availableModes: ['scrcpy', 'grpc-screenshot'],
           sessionGeneration: 0,
         },
@@ -78,6 +80,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     streamSourceError: null,
     setStreamSource: () => {},
     setGrpcImageMode: () => {},
+    setGrpcInputSource: () => {},
     streamStats: null,
     setStreamStatsEnabled: () => {},
     webRtcCodec: 'h264',
@@ -361,6 +364,8 @@ test('shows PNG and MMAP only while the gRPC source is active', () => {
     streamSource: {
       mode: 'grpc-screenshot',
       grpcImageMode: 'mmap',
+      inputSource: 'scrcpy',
+      availableInputSources: ['scrcpy', 'grpc'],
       availableModes: ['scrcpy', 'grpc-screenshot'],
       sessionGeneration: 1,
     },
@@ -369,7 +374,12 @@ test('shows PNG and MMAP only while the gRPC source is active', () => {
     <StreamOptionsSection client={grpcClient} defaultOpen />,
   );
   const imageMode = segmentedControlMarkup(grpcHtml, 'gRPC image mode');
+  const inputSource = segmentedControlMarkup(grpcHtml, 'Input source');
 
+  expect(grpcHtml).toContain('>Input</span>');
+  expect(inputSource).toContain('>scrcpy</button>');
+  expect(inputSource).toContain('>gRPC</button>');
+  expect(inputSource).toMatch(/aria-pressed="true"[^>]*>scrcpy<\/button>/);
   expect(grpcHtml).toContain('>gRPC frames</span>');
   expect(imageMode).toContain('>PNG</button>');
   expect(imageMode).toContain('>MMAP</button>');
@@ -406,6 +416,8 @@ test('hides the Android capture source row when gRPC is unavailable', () => {
     streamSource: {
       mode: 'scrcpy',
       grpcImageMode: 'png',
+      inputSource: 'scrcpy',
+      availableInputSources: ['scrcpy'],
       availableModes: ['scrcpy'],
       sessionGeneration: 0,
     },
