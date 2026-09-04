@@ -26,6 +26,11 @@ import {
   reconcileAndroidSessionEvents,
 } from './android-events';
 import {
+  androidCameraErrorMessage,
+  androidCameraImageUrl,
+  parseAndroidCamera,
+} from './android-camera';
+import {
   type AndroidDeviceSettingKey,
   androidDeviceSettingPath,
   androidDeviceSettingRequest,
@@ -39,6 +44,7 @@ import {
   androidStreamSourceErrorMessage,
   parseAndroidStreamSource,
 } from './android-stream-source';
+import { toPngBlob } from './camera-image';
 import {
   DeviceSettingWriteTracker,
   mergeAuthoritativeDeviceSetting,
@@ -50,8 +56,10 @@ import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
+  type CameraFacing,
   type ConnectionStatus,
   type DeviceAppearance,
+  type DeviceCamera,
   type DeviceClient,
   type DeviceConnectionOptions,
   type DeviceEvent,
@@ -77,6 +85,7 @@ const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
+const CAMERA_POLL_MS = 3000;
 
 const ANDROID_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = [
   'appearance',
@@ -220,6 +229,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [streamSource, setStreamSourceState] = useState<DeviceStreamSourceStatus | null>(null);
   const [streamSourcePending, setStreamSourcePending] = useState(false);
   const [streamSourceError, setStreamSourceError] = useState<string | null>(null);
+  const [camera, setCamera] = useState<DeviceCamera | null>(null);
+  const [cameraSupported, setCameraSupported] = useState(false);
+  const [cameraPending, setCameraPending] = useState<ReadonlySet<CameraFacing>>(
+    () => new Set(),
+  );
+  const [cameraError, setCameraError] = useState<string | null>(null);
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
   const [serverStreamSettings, setServerStreamSettings] =
@@ -242,11 +257,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     network: 0,
     'text-size': 0,
   });
-  const deviceSettingScope = `${active ? 'active' : 'inactive'}\0${baseUrl ?? ''}\0${targetDevice ?? ''}`;
-  const deviceSettingScopeRef = useRef(deviceSettingScope);
+  const connectionScope = `${active ? 'active' : 'inactive'}\0${baseUrl ?? ''}\0${targetDevice ?? ''}`;
+  const connectionScopeRef = useRef(connectionScope);
   useLayoutEffect(() => {
-    deviceSettingScopeRef.current = deviceSettingScope;
-  }, [deviceSettingScope]);
+    connectionScopeRef.current = connectionScope;
+  }, [connectionScope]);
+  const cameraPendingRef = useRef(new Set<CameraFacing>());
   const streamSourceRequestRef = useRef(0);
   const streamSourceRef = useRef<DeviceStreamSourceStatus | null>(null);
   const streamSourcePendingRef = useRef(false);
@@ -369,7 +385,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       const request = tracker.start(key);
       if (!request) return;
       deviceSettingVersionsRef.current[settingKey]++;
-      const scope = deviceSettingScope;
+      const scope = connectionScope;
       const previous = deviceSettings?.[key];
       const url = deviceApiUrl(baseUrl, requestOptions.path, targetDevice);
 
@@ -387,12 +403,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           const payload: unknown = await response.json();
           const authoritative = parseAndroidDeviceSetting(settingKey, payload);
           if (authoritative === null) throw new Error('Device option update was rejected');
-          if (!tracker.isCurrent(request) || deviceSettingScopeRef.current !== scope) return;
+          if (!tracker.isCurrent(request) || connectionScopeRef.current !== scope) return;
           setDeviceSettings((current) => ({ ...(current ?? {}), [key]: authoritative }));
           if (key === 'appearance') setAppearanceState(authoritative as DeviceAppearance);
         })
         .catch(async () => {
-          if (!tracker.isCurrent(request) || deviceSettingScopeRef.current !== scope) return;
+          if (!tracker.isCurrent(request) || connectionScopeRef.current !== scope) return;
           let authoritative: string | null = null;
           try {
             const response = await fetch(url, { cache: 'no-store' });
@@ -405,7 +421,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             // Restore the last rendered value if both write and refresh fail.
             authoritative = previous ?? null;
           }
-          if (!tracker.isCurrent(request) || deviceSettingScopeRef.current !== scope) return;
+          if (!tracker.isCurrent(request) || connectionScopeRef.current !== scope) return;
           setDeviceSettings((current) =>
             mergeAuthoritativeDeviceSetting(
               current,
@@ -423,12 +439,79 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [baseUrl, deviceSettingScope, deviceSettings, targetDevice],
+    [baseUrl, connectionScope, deviceSettings, targetDevice],
   );
 
   const setAppearance = useCallback(
     (mode: DeviceAppearance) => setDeviceSetting('appearance', mode),
     [setDeviceSetting],
+  );
+
+  const cameraImageUrl = useCallback(
+    (facing: CameraFacing, digest: string | null): string =>
+      baseUrl ? androidCameraImageUrl(baseUrl, targetDevice, facing, digest) : '',
+    [baseUrl, targetDevice],
+  );
+
+  // Every write answers with the authoritative status, so unlike device options
+  // there is no optimistic value to publish and roll back.
+  const writeCameraImage = useCallback(
+    (facing: CameraFacing, send: (url: string) => Promise<Response>) => {
+      if (!baseUrl) return;
+      const pending = cameraPendingRef.current;
+      if (pending.has(facing)) return;
+      pending.add(facing);
+      setCameraPending(new Set(pending));
+      setCameraError(null);
+      const scope = connectionScope;
+      const url = new URL(deviceApiUrl(baseUrl, '/api/camera/image', targetDevice));
+      url.searchParams.set('facing', facing);
+
+      void (async () => {
+        try {
+          const response = await send(url.toString());
+          const payload: unknown = await response.json().catch(() => null);
+          const status = parseAndroidCamera(payload, cameraImageUrl);
+          if (!status) {
+            throw new Error(
+              androidCameraErrorMessage(payload) ?? 'The camera image was rejected.',
+            );
+          }
+          if (connectionScopeRef.current !== scope) return;
+          setCamera(status);
+          setCameraSupported(true);
+        } catch (cause) {
+          if (connectionScopeRef.current !== scope) return;
+          setCameraError(
+            cause instanceof Error ? cause.message : 'Unable to update the camera image.',
+          );
+        } finally {
+          pending.delete(facing);
+          setCameraPending(new Set(pending));
+        }
+      })();
+    },
+    [baseUrl, cameraImageUrl, connectionScope, targetDevice],
+  );
+
+  const setCameraImage = useCallback(
+    (facing: CameraFacing, image: Blob) => {
+      writeCameraImage(facing, async (url) =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'image/png' },
+          body: await toPngBlob(image),
+        }),
+      );
+    },
+    [writeCameraImage],
+  );
+
+  const clearCameraImage = useCallback(
+    (facing: CameraFacing) => {
+      writeCameraImage(facing, (url) => fetch(url, { method: 'DELETE' }));
+    },
+    [writeCameraImage],
   );
 
   const streamSettingsUrl =
@@ -1370,7 +1453,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let cancelled = false;
     let polling = false;
     let controllers: AbortController[] = [];
-    const scope = deviceSettingScope;
+    const scope = connectionScope;
 
     const poll = async (keys: readonly AndroidDeviceSettingKey[]) => {
       if (cancelled || polling) return;
@@ -1402,7 +1485,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         }),
       );
       polling = false;
-      if (cancelled || deviceSettingScopeRef.current !== scope) return;
+      if (cancelled || connectionScopeRef.current !== scope) return;
       if (!results.some((result) => result.handled)) return;
       setDeviceSettings((current) => {
         const next = { ...(current ?? {}) };
@@ -1442,7 +1525,53 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       for (const controller of controllers) controller.abort();
       tracker.reset();
     };
-  }, [active, baseUrl, deviceSettingScope, targetDevice]);
+  }, [active, baseUrl, connectionScope, targetDevice]);
+
+  // ── Emulator camera feeds (best-effort) ──
+  // Polling keeps Hub in sync with feeds replaced outside this tab, and it is
+  // also how an unsupported or unwired camera becomes visible after a restart.
+  useEffect(() => {
+    cameraPendingRef.current.clear();
+    setCamera(null);
+    setCameraSupported(false);
+    setCameraPending(new Set());
+    setCameraError(null);
+    if (!active || !baseUrl) {
+      return;
+    }
+
+    let cancelled = false;
+    const scope = connectionScope;
+    const controller = new AbortController();
+
+    const poll = async () => {
+      // A write answers with the authoritative status, so a read straddling one
+      // would undo it. Re-check after the await, not only before the request.
+      if (cancelled || cameraPendingRef.current.size > 0) return;
+      let status: DeviceCamera | null = null;
+      try {
+        const response = await fetch(deviceApiUrl(baseUrl, '/api/camera', targetDevice), {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (response.ok) status = parseAndroidCamera(await response.json(), cameraImageUrl);
+      } catch {
+        status = null;
+      }
+      if (cancelled || cameraPendingRef.current.size > 0) return;
+      if (connectionScopeRef.current !== scope) return;
+      setCamera(status);
+      if (status) setCameraSupported(true);
+    };
+
+    void poll();
+    const timer = setInterval(() => void poll(), CAMERA_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+      controller.abort();
+    };
+  }, [active, baseUrl, cameraImageUrl, connectionScope, targetDevice]);
 
   return {
     platform: 'android',
@@ -1465,6 +1594,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
+    camera,
+    cameraPending,
+    cameraError,
+    setCameraImage,
+    clearCameraImage,
     streamSettings,
     streamSettingsPending,
     updateStreamSettings,
@@ -1490,6 +1624,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       deviceSettings: true,
       activity: false,
       events: true,
+      camera: cameraSupported,
       streamSettings: { maxDimension: true },
     },
     foregroundApp,

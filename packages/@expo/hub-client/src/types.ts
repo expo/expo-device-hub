@@ -104,6 +104,29 @@ export type DeviceSettingKey =
 /** Current backend-reported values. Missing keys are unavailable; `unsupported` keys are hidden. */
 export type DeviceSettings = Partial<Record<DeviceSettingKey, string>>;
 
+export type CameraFacing = 'back' | 'front';
+
+/** One emulator camera feed backed by a PNG file the emulator re-reads on open. */
+export interface DeviceCameraFeed {
+  facing: CameraFacing;
+  present: boolean;
+  /** True while the feed still holds serve-emu's built-in "no image set" checkerboard. */
+  placeholder: boolean;
+  width: number | null;
+  height: number | null;
+  bytes: number | null;
+  updatedAt: string | null;
+  /** Absolute Hub URL of the current PNG, versioned by digest; null when absent. */
+  imageUrl: string | null;
+}
+
+export interface DeviceCamera {
+  /** False when the emulator started without the camera flags, which only a restart can add. */
+  wiredAtLaunch: boolean;
+  launchArgs: string[];
+  feeds: DeviceCameraFeed[];
+}
+
 /** One live CPU, memory, and network sample for the foreground iOS app. */
 export interface DeviceActivitySample {
   /** Milliseconds since the backend sampler started. */
@@ -277,6 +300,7 @@ export interface DeviceCapabilities {
   deviceSettings: boolean;
   activity: boolean;
   events: boolean;
+  camera: boolean;
   /** Runtime encoder settings that can be read and patched. */
   streamSettings: DeviceStreamSettingCapabilities;
 }
@@ -451,6 +475,17 @@ export interface DeviceClient {
   deviceSettingsPending: ReadonlySet<DeviceSettingKey>;
   /** Change one simulator/device option. Unsupported keys are ignored by each backend. */
   setDeviceSetting: (key: DeviceSettingKey, value: string) => void;
+
+  /** Emulator camera feeds; null until the backend reports a supported camera. */
+  camera: DeviceCamera | null;
+  /** Feeds currently being written. Writes to the other facing remain available. */
+  cameraPending: ReadonlySet<CameraFacing>;
+  /** Last camera write failure; cleared when another write begins. */
+  cameraError: string | null;
+  /** Replace one feed's PNG. Non-PNG images are converted before upload. */
+  setCameraImage: (facing: CameraFacing, image: Blob) => void;
+  /** Restore one feed's built-in placeholder image. */
+  clearCameraImage: (facing: CameraFacing) => void;
 
   /** Backend-supported viewer transport and codec choices; null hides stream controls. */
   streamCapabilities: DeviceStreamCapabilities | null;

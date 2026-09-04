@@ -1358,6 +1358,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     streamSource: null,
     streamSourcePending: false,
     streamSourceError: null,
+    camera: null,
+    cameraPending: new Set(),
+    cameraError: null,
+    setCameraImage: () => {},
+    clearCameraImage: () => {},
     setStreamSource: () => {},
     setGrpcImageMode: () => {},
     streamStats,
@@ -1368,6 +1373,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       deviceSettings: !!execWsUrl && !!execToken && !!deviceUdid,
       activity: !!metricsPath,
       events: !!eventsPath,
+      camera: false,
       streamSettings: streamSettingsUrl
         ? {
             mjpegFps: true,
