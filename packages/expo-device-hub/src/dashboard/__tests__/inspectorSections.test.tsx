@@ -689,8 +689,10 @@ test('shows only the server statistics that serve-emu can provide', () => {
   const encoder = streamStatisticGroupMarkup(html, 'Encoder statistics');
   const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
 
-  expect(openingTag(stream, '<span role="columnheader"')).not.toContain('border-top:');
-  expect(openingTag(receiver, '<span role="columnheader"')).toContain('border-top:');
+  // No divider lines between metrics: groups are separated by spacing only.
+  expect(stream + receiver + encoder + capture).not.toContain('border-top:');
+  expect(openingTag(stream, '<span role="columnheader"')).toContain('padding:7px 8px 5px');
+  expect(openingTag(receiver, '<span role="columnheader"')).toContain('padding:14px 8px 5px');
   expect(streamStatisticValue(stream, 'Server FPS')).toBe('30 FPS');
   expect(streamStatisticValue(encoder, 'Codec')).toBe('H.264');
   expect(encoder).not.toContain('data-stream-statistic="Output FPS"');
