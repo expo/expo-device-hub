@@ -10,7 +10,7 @@ import { font } from '../theme/tokens';
 describe('ServerConnectionOverlay', () => {
   test('renders above shared portals with the typed font token', () => {
     const markup = renderToStaticMarkup(
-      <ServerConnectionOverlay status="disconnected" onReload={() => {}} />,
+      <ServerConnectionOverlay status="disconnected" onReconnect={() => {}} />,
     );
     const overlayTag = markup.slice(0, markup.indexOf('>') + 1);
 
@@ -21,6 +21,17 @@ describe('ServerConnectionOverlay', () => {
     expect(overlayTag).toContain('z-index:610');
     expect(overlayTag).toContain('pointer-events:auto');
     expect(overlayTag).toContain(`font-family:${font.sans}`);
+  });
+
+  test('offers an in-place reconnect without suggesting a page reload', () => {
+    for (const status of ['connecting', 'disconnected'] as const) {
+      const markup = renderToStaticMarkup(
+        <ServerConnectionOverlay status={status} onReconnect={() => {}} />,
+      );
+
+      expect(markup).toContain('Reconnect');
+      expect(markup.toLowerCase()).not.toContain('reload');
+    }
   });
 
   test('temporarily makes a portal inert without changing an existing blocker', () => {

@@ -18,7 +18,7 @@ import {
 
 export type ServerConnectionOverlayProps = {
   status: 'connecting' | 'disconnected';
-  onReload: () => void;
+  onReconnect: () => void;
 };
 
 type InertableElement = Pick<HTMLElement, 'inert'>;
@@ -33,7 +33,7 @@ export function temporarilyInertElement(element: InertableElement): (() => void)
 }
 
 /** Full-page blocker shown until the dashboard can verify its dev server connection. */
-export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOverlayProps) {
+export function ServerConnectionOverlay({ status, onReconnect }: ServerConnectionOverlayProps) {
   const connecting = status === 'connecting';
   const overlayRef = useRef<HTMLElement>(null);
 
@@ -148,12 +148,12 @@ export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOv
               color: text.secondary,
             }}>
             {connecting ? (
-              'If this takes more than a few seconds, restart the Expo dev server in your terminal. Once it is running, reload this page.'
+              'If this takes more than a few seconds, restart the Expo dev server in your terminal. Expo Hub will reconnect automatically once it is available.'
             ) : (
               <>
                 Restart the server in your terminal.
                 <br />
-                Once started reload this page if necessary.
+                Once it is running, reconnect without losing this page.
               </>
             )}
           </p>
@@ -162,9 +162,9 @@ export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOv
           theme="primary"
           size="lg"
           leftSlot={<RefreshIcon size={18} />}
-          onClick={onReload}
+          onClick={onReconnect}
           style={{ marginTop: 24 }}>
-          Reload page
+          Reconnect
         </Button>
       </section>
     </main>

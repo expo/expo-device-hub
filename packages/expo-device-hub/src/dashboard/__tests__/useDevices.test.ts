@@ -144,7 +144,7 @@ describe('device-list WebSocket subscription', () => {
     const timers = manualTimers();
     const socket = new FakeSocket();
     const statuses: string[] = [];
-    const unsubscribe = subscribeToDeviceList({
+    const subscription = subscribeToDeviceList({
       url: 'ws://localhost/devices',
       createSocket: () => socket,
       schedule: timers.schedule,
@@ -160,14 +160,14 @@ describe('device-list WebSocket subscription', () => {
     socket.onclose?.();
 
     expect(statuses).toEqual(['connecting', 'connected', 'disconnected']);
-    unsubscribe();
+    subscription.unsubscribe();
   });
 
   test('times out when the server never sends a valid protocol message', () => {
     const timers = manualTimers();
     const socket = new FakeSocket();
     const statuses: string[] = [];
-    const unsubscribe = subscribeToDeviceList({
+    const subscription = subscribeToDeviceList({
       url: 'ws://localhost/devices',
       createSocket: () => socket,
       schedule: timers.schedule,
@@ -184,7 +184,7 @@ describe('device-list WebSocket subscription', () => {
 
     expect(socket.closed).toBe(true);
     expect(statuses).toEqual(['connecting', 'disconnected']);
-    unsubscribe();
+    subscription.unsubscribe();
   });
 
   test('requires valid messages, detects a missed heartbeat, and reconnects', () => {
@@ -192,7 +192,7 @@ describe('device-list WebSocket subscription', () => {
     const sockets: FakeSocket[] = [];
     const statuses: string[] = [];
     const snapshots: unknown[] = [];
-    const unsubscribe = subscribeToDeviceList({
+    const subscription = subscribeToDeviceList({
       url: 'ws://localhost/devices',
       createSocket: () => {
         const socket = new FakeSocket();
@@ -225,15 +225,55 @@ describe('device-list WebSocket subscription', () => {
     expect(statuses).toEqual(['connecting', 'connected', 'disconnected', 'connected']);
     expect(snapshots).toEqual([list]);
 
-    unsubscribe();
+    subscription.unsubscribe();
     expect(sockets[1].closed).toBe(true);
+  });
+
+  test('reconnects immediately on demand without waiting for backoff', () => {
+    const timers = manualTimers();
+    const sockets: FakeSocket[] = [];
+    const statuses: string[] = [];
+    const subscription = subscribeToDeviceList({
+      url: 'ws://localhost/devices',
+      createSocket: () => {
+        const socket = new FakeSocket();
+        sockets.push(socket);
+        return socket;
+      },
+      schedule: timers.schedule,
+      cancelSchedule: timers.cancelSchedule,
+      reconnectMinMs: 5,
+      reconnectMaxMs: 20,
+      heartbeatTimeoutMs: 60,
+      onSnapshot: () => {},
+      onStatus: (status) => statuses.push(status),
+    });
+
+    sockets[0].message(JSON.stringify({ type: HEARTBEAT_MESSAGE_TYPE }));
+    sockets[0].onclose?.();
+    expect(statuses).toEqual(['connecting', 'connected', 'disconnected']);
+
+    subscription.reconnect();
+
+    expect(sockets).toHaveLength(2);
+    expect(statuses).toEqual(['connecting', 'connected', 'disconnected', 'connecting']);
+    sockets[1].message(JSON.stringify({ type: HEARTBEAT_MESSAGE_TYPE }));
+    expect(statuses).toEqual([
+      'connecting',
+      'connected',
+      'disconnected',
+      'connecting',
+      'connected',
+    ]);
+
+    subscription.unsubscribe();
   });
 
   test('marks connection failures as disconnected and retries with backoff', () => {
     const timers = manualTimers();
     let attempts = 0;
     const statuses: string[] = [];
-    const unsubscribe = subscribeToDeviceList({
+    const subscription = subscribeToDeviceList({
       url: 'ws://localhost/devices',
       createSocket: () => {
         attempts++;
@@ -255,6 +295,6 @@ describe('device-list WebSocket subscription', () => {
     expect(attempts).toBe(3);
     expect(statuses).toEqual(['connecting', 'disconnected']);
 
-    unsubscribe();
+    subscription.unsubscribe();
   });
 });
