@@ -13,6 +13,7 @@ import {
   freeEmulatorPort,
   removeDevice as removeAndroidDevice,
   shutdownDevice as shutdownAndroidDevice,
+  waitForAdbOffline,
   waitForAdbOnline,
 } from '@expo/hub-android-utils';
 import {
@@ -115,6 +116,24 @@ function errorList(error: SerializableError | null): SerializableError[] {
   return error ? [error] : [];
 }
 
+const ANDROID_EXIT_TIMEOUT_MS = 30_000;
+
+async function shutdownAndroidHubDevice(serial: string): Promise<DeviceActionResult> {
+  const shutdown = await shutdownAndroidDevice({ serial });
+  if (shutdown.error || !shutdown.value) {
+    return { ok: false, errors: errorList(toSerializableError(shutdown.error)) };
+  }
+
+  const offline = await waitForAdbOffline(serial, ANDROID_EXIT_TIMEOUT_MS);
+  if (offline.value) return { ok: true, errors: [] };
+
+  const timedOut = {
+    message: `${serial} did not exit within ${ANDROID_EXIT_TIMEOUT_MS / 1000}s of the shutdown`,
+    error: offline.error?.error ?? null,
+  };
+  return { ok: false, errors: errorList(toSerializableError(timedOut)) };
+}
+
 /** Shut a running simulator/emulator down. Resolves to whether it succeeded. */
 export async function shutdownHubDevice({
   platform,
@@ -125,8 +144,7 @@ export async function shutdownHubDevice({
     return { ok: result.value, errors: errorList(toSerializableError(result.error)) };
   }
 
-  const result = await shutdownAndroidDevice({ serial: id });
-  return { ok: result.value, errors: errorList(toSerializableError(result.error)) };
+  return shutdownAndroidHubDevice(id);
 }
 
 /**
@@ -155,13 +173,8 @@ export async function removeHubDevice({
     };
   }
 
-  const shutdown = await shutdownAndroidDevice({ serial: id });
-  if (shutdown.error || !shutdown.value) {
-    return {
-      ok: false,
-      errors: errorList(toSerializableError(shutdown.error)),
-    };
-  }
+  const shutdown = await shutdownAndroidHubDevice(id);
+  if (!shutdown.ok) return shutdown;
 
   const removed = await removeAndroidDevice({ name });
   return {
