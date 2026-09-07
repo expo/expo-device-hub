@@ -987,13 +987,16 @@ export function resolveGrpcDisplayGeometry(options: {
   inputHeight: number;
   nativeWidth: number;
   nativeHeight: number;
+  rotation?: number;
 }): GrpcDisplayGeometry {
   const croppedWidth = options.inputWidth - (options.inputWidth % 2);
   const croppedHeight = options.inputHeight - (options.inputHeight % 2);
   const encodedSize = { width: croppedWidth, height: croppedHeight };
+  const rotation = options.rotation ?? 0;
+  const swappedAxes = rotation === 1 || rotation === 3;
   const touchSize = {
-    width: options.nativeWidth,
-    height: options.nativeHeight,
+    width: swappedAxes ? options.nativeHeight : options.nativeWidth,
+    height: swappedAxes ? options.nativeWidth : options.nativeHeight,
   };
 
   const toPixel = (unit: number, size: number) =>
@@ -1003,8 +1006,11 @@ export function resolveGrpcDisplayGeometry(options: {
     encodedSize,
     touchSize,
     mapTouch(unitX, unitY) {
-      // Emulator screenshots are already oriented and touch coordinates use
-      // that same physical top-left coordinate space.
+      // Screenshots are oriented, but sendTouch injects coordinates into the
+      // unrotated framebuffer. Undo the image rotation before scaling.
+      if (rotation === 1) [unitX, unitY] = [1 - unitY, unitX];
+      else if (rotation === 2) [unitX, unitY] = [1 - unitX, 1 - unitY];
+      else if (rotation === 3) [unitX, unitY] = [unitY, 1 - unitX];
       return {
         x: toPixel(unitX, touchSize.width),
         y: toPixel(unitY, touchSize.height),
@@ -1915,6 +1921,7 @@ export async function startGrpcSession(
       inputHeight: image.height,
       nativeWidth: nativeTouchSize.width,
       nativeHeight: nativeTouchSize.height,
+      rotation: image.rotation,
     });
   };
   encoderLifecycle = new GrpcEncoderLifecycle<GrpcSessionEncoder>((restart) => {

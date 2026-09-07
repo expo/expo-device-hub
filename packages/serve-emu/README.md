@@ -406,6 +406,10 @@ subscribers; the ninth is refused with `metrics-subscriber-limit` and HTTP 429.
 
 ### Device Settings
 
+On emulators, selecting portrait or landscape updates both Android's rotation
+lock and the simulated accelerometer, keeping gRPC screenshots upright. Selecting
+auto releases the Android lock and preserves the current simulated orientation.
+
 ```sh
 curl "$BASE/api/orientation"
 curl -X POST "$BASE/api/orientation" \
