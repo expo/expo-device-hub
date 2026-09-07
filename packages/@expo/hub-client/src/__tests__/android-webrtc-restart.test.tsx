@@ -4,6 +4,7 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 
 import { useAndroidDeviceClient } from '../useAndroidDevice';
+import { DeviceScreen } from '../DeviceScreen';
 import type { DeviceClient, DeviceStreamSourceStatus } from '../types';
 
 class Peer extends EventTarget {
@@ -30,6 +31,7 @@ class Peer extends EventTarget {
   }
   async setRemoteDescription() {}
   close() {
+    if (video?.srcObject) frameVisibleAtClose.push(retainedFrame()?.style.visibility === 'visible');
     this.closed = true;
   }
   deliverTrack() {
@@ -73,6 +75,9 @@ let browser: Window;
 let root: Root;
 let client: DeviceClient;
 let video: HTMLVideoElement;
+let container: HTMLDivElement;
+let savedFrames: number;
+let frameVisibleAtClose: boolean[];
 let metadata: ReturnType<typeof deferred<Response>>;
 let replacement: ReturnType<typeof deferred<Response>>;
 let authoritative: ReturnType<typeof source>;
@@ -107,6 +112,8 @@ beforeEach(() => {
   authoritative = source(1);
   puts = 0;
   offers = 0;
+  savedFrames = 0;
+  frameVisibleAtClose = [];
   intervals.clear();
   timeouts.clear();
   let timerId = 0;
@@ -150,12 +157,14 @@ beforeEach(() => {
     }
     return Response.json({});
   });
-  root = createRoot(document.createElement('div'));
-  video = document.createElement('video');
-  Object.defineProperties(video, {
-    videoWidth: { value: 1080 },
-    videoHeight: { value: 1920 },
-    play: { value: async () => {} },
+  container = document.createElement('div');
+  root = createRoot(container);
+  Object.defineProperty(browser.HTMLCanvasElement.prototype, 'getContext', {
+    value: () => ({
+      drawImage: () => {
+        savedFrames++;
+      },
+    }),
   });
 });
 
@@ -165,21 +174,28 @@ afterEach(async () => {
   for (const restore of restoreGlobals.splice(0).reverse()) restore();
 });
 
-function Harness() {
+function Harness({ device = 'emulator-5554', enabled = true } = {}) {
   client = useAndroidDeviceClient({
     baseUrl: 'http://device.test',
-    device: 'emulator-5554',
+    device,
+    enabled,
     streamMode: 'webrtc',
   });
-  return null;
+  return <DeviceScreen client={client} />;
 }
 
 async function mount() {
   await act(async () => root.render(<Harness />));
   expect(offers).toBe(1);
+  video = container.querySelector('video')!;
+  Object.defineProperties(video, {
+    videoWidth: { value: 1080 },
+    videoHeight: { value: 1920 },
+    readyState: { value: 2, configurable: true },
+    play: { value: async () => {} },
+  });
   await act(async () => {
     metadata.resolve(Response.json(authoritative));
-    client.attachVideo(video);
     ControlSocket.instances[0].onopen?.();
     Peer.instances[0].deliverTrack();
   });
@@ -188,6 +204,10 @@ async function mount() {
   // Initial source metadata must not replace the already connecting peer.
   expect(offers).toBe(1);
   expect(Peer.instances).toHaveLength(1);
+}
+
+function retainedFrame() {
+  return container.querySelector('canvas');
 }
 
 async function paintFrame() {
@@ -207,6 +227,40 @@ async function reconnectControl() {
 }
 
 describe('Android WebRTC capture replacement hooks', () => {
+  test('retains the last frame from the switch request until replacement video paints', async () => {
+    await mount();
+    await act(async () => client.setStreamSource('grpc-screenshot'));
+    expect(savedFrames).toBe(1);
+    expect(retainedFrame()?.style.visibility).toBe('visible');
+    await confirmReplacement();
+    expect(frameVisibleAtClose).toEqual([true]);
+    expect(retainedFrame()?.style.visibility).toBe('visible');
+    await act(async () => Peer.instances[1].deliverTrack());
+    expect(retainedFrame()?.style.visibility).toBe('visible');
+    expect(savedFrames).toBe(1);
+    await paintFrame();
+    expect(retainedFrame()?.style.visibility).toBe('hidden');
+    expect(client.status).toBe('streaming');
+  });
+
+  test.each(['device change', 'disabled'] as const)(
+    'clears a retained frame on %s',
+    async (change) => {
+      await mount();
+      await act(async () => client.setStreamSource('grpc-screenshot'));
+      expect(retainedFrame()?.style.visibility).toBe('visible');
+      await act(async () =>
+        root.render(
+          <Harness
+            device={change === 'device change' ? 'emulator-5556' : undefined}
+            enabled={change !== 'disabled'}
+          />,
+        ),
+      );
+      expect(retainedFrame()?.style.visibility).not.toBe('visible');
+    },
+  );
+
   test('restarts once on confirmation and keeps the replacement peer when its frame commits', async () => {
     await mount();
     await act(async () => client.setStreamSource('grpc-screenshot'));
@@ -235,6 +289,7 @@ describe('Android WebRTC capture replacement hooks', () => {
     async (timing) => {
       await mount();
       await act(async () => client.setStreamSource('grpc-screenshot'));
+      expect(retainedFrame()?.style.visibility).toBe('visible');
       await act(async () => ControlSocket.instances[0].onclose?.({ code: 1012 }));
       expect(client.status).toBe('reconnecting');
       await reconnectControl();
@@ -285,6 +340,7 @@ describe('Android WebRTC capture replacement hooks', () => {
       expect(offers).toBe(1);
       expect(Peer.instances).toHaveLength(1);
       expect(Peer.instances[0].closed).toBe(false);
+      expect(retainedFrame()?.style.visibility).toBe('hidden');
       if (result === 'failed') expect(client.streamSourceError).toContain('Capture unavailable');
     },
   );
@@ -329,6 +385,13 @@ describe('Android WebRTC capture replacement hooks', () => {
       expect(client.streamSource?.sessionGeneration).toBe(generation);
       expect(offers).toBe(expectedOffers);
       expect(Peer.instances).toHaveLength(expectedOffers);
+      expect(retainedFrame()?.style.visibility).toBe('visible');
+      // Repeated replacements without a new frame must keep the original snapshot.
+      expect(savedFrames).toBe(1);
     }
+    expect(frameVisibleAtClose).toEqual([true, true]);
+    await act(async () => Peer.instances[2].deliverTrack());
+    await paintFrame();
+    expect(retainedFrame()?.style.visibility).toBe('hidden');
   });
 });

@@ -11,6 +11,7 @@ import {
 import { streamGeometry } from './orientation';
 import { AgentInteractionIndicator } from './AgentInteractionIndicator';
 import { TouchIndicator } from './TouchIndicator';
+import { VideoSurface } from './VideoSurface';
 import {
   type DeviceScreenProps,
   type KeyboardInput,
@@ -48,11 +49,8 @@ export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
 };
 
 /**
- * Whether the surface should present the media element as-is. While
- * `reconnecting`, the element still holds the last frame (a canvas keeps its
- * pixels, a video keeps the final frame of an ended track), so nothing must
- * cover or blank it — that is what keeps an Android capture-source switch or
- * a brief socket drop from flashing black.
+ * Keep live media or its retained frame visible during brief reconnections.
+ * A status overlay must not cover the saved picture while video is replaced.
  */
 export function deviceScreenPresentsMedia(status: DeviceScreenProps['client']['status']): boolean {
   return status === 'streaming' || status === 'reconnecting';
@@ -350,7 +348,7 @@ export function DeviceScreen({
       {videoKind === 'canvas' ? (
         <canvas ref={attachVideo} style={mediaStyle} />
       ) : videoKind === 'video' ? (
-        <video ref={attachVideo} autoPlay muted playsInline style={mediaStyle} />
+        <VideoSurface attachVideo={attachVideo} style={mediaStyle} />
       ) : (
         <img ref={attachVideo} alt="Device screen" draggable={false} style={mediaStyle} />
       )}

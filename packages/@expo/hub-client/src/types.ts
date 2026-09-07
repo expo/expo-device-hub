@@ -508,9 +508,14 @@ export interface DeviceClient {
   /**
    * Ref callback for the paint target. The hook owns the element: `canvas`
    * receives decoded H.264 frames, `img` points at MJPEG, and `video` receives
-   * a WebRTC MediaStream.
+   * a WebRTC MediaStream. The optional canvas covers video with a retained
+   * frame while a replacement stream is connecting; the hook owns its pixels
+   * and visibility.
    */
-  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => void;
+  attachVideo: (
+    el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null,
+    retainedFrame?: HTMLCanvasElement | null,
+  ) => void;
 
   /** Forward a normalized touch/drag to the device. */
   sendTouch: (sample: TouchSample) => void;
