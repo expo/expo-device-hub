@@ -37,6 +37,7 @@ import {
 } from './android-stream-settings';
 import {
   androidStreamSourceErrorMessage,
+  androidWebRtcRestartKey,
   parseAndroidStreamSource,
 } from './android-stream-source';
 import {
@@ -829,6 +830,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendIceServersInOffer: false,
     allowCodecFallback: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
+    restartKey: androidWebRtcRestartKey(streamSource, pendingStreamSourceRef.current),
   });
 
   const webRtcLive =
@@ -866,9 +868,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       setStatus('streaming');
       setError(null);
     } else if (webRtcWasLive && !webRtcGraceExpired) {
-      // When serve-emu swaps the capture source the RTP video usually keeps
-      // flowing; only the control socket is closed and reopened. Keep the frame
-      // and report a reconnect instead of an error while that settles.
+      // A capture generation change renegotiates video and reopens control.
+      // Keep the last frame and report a reconnect while they settle.
       setStatus('reconnecting');
       setError(null);
     } else if (webRtcError) {
