@@ -1,4 +1,4 @@
-export type WebRtcRestartKey = string | number | null;
+export type WebRtcRestartKey = number | null;
 
 export type WebRtcRestartState = {
   key: WebRtcRestartKey;

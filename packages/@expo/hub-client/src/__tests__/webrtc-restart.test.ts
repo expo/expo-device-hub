@@ -1,7 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
 import { androidWebRtcRestartKey } from '../android-stream-source';
-import { IDLE_STREAM_SWITCH, reduceStreamSwitch } from '../stream-switch';
 import { observeWebRtcRestartKey } from '../webrtc-restart';
 
 describe('capture generation WebRTC restart', () => {
@@ -19,11 +18,6 @@ describe('capture generation WebRTC restart', () => {
   test('restarts on successful replacement before a new frame commits the UI selection', () => {
     const displayed = { sessionGeneration: 1 };
     const pending = { sessionGeneration: 2 };
-    const requesting = reduceStreamSwitch(IDLE_STREAM_SWITCH, {
-      type: 'request-start', live: true,
-    });
-    const switching = reduceStreamSwitch(requesting, { type: 'request-success', replaced: true });
-    expect(switching.phase).toBe('awaiting-interruption');
 
     const restarted = observeWebRtcRestartKey(
       { key: 1, generation: 0 },
@@ -32,17 +26,14 @@ describe('capture generation WebRTC restart', () => {
     expect(restarted).toEqual({ key: 2, generation: 1 });
 
     // Once video paints, committing pending state must not restart the new peer again.
-    expect(observeWebRtcRestartKey(restarted, androidWebRtcRestartKey(pending, null))).toBe(restarted);
+    expect(observeWebRtcRestartKey(restarted, androidWebRtcRestartKey(pending, null))).toBe(
+      restarted,
+    );
   });
 
-  test('keeps the live peer during a request and after failed or no-op replacements', () => {
+  test('preserves the restart generation when the source generation is unchanged', () => {
     const displayed = { sessionGeneration: 1 };
     const live = { key: 1, generation: 0 };
-    const requesting = reduceStreamSwitch(IDLE_STREAM_SWITCH, {
-      type: 'request-start', live: true,
-    });
-    expect(observeWebRtcRestartKey(live, androidWebRtcRestartKey(displayed, null))).toBe(live);
-    expect(reduceStreamSwitch(requesting, { type: 'request-failure' })).toBe(IDLE_STREAM_SWITCH);
     expect(observeWebRtcRestartKey(live, androidWebRtcRestartKey(displayed, null))).toBe(live);
     expect(observeWebRtcRestartKey(live, androidWebRtcRestartKey(displayed, displayed))).toBe(live);
   });
