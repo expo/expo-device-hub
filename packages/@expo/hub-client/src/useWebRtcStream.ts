@@ -137,6 +137,9 @@ export function useWebRtcStream({
   const [statsConnection, setStatsConnection] = useState<WebRtcStatsConnection | null>(null);
   const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   const [retryGeneration, setRetryGeneration] = useState(0);
+  // Playback can stall while ICE still reports a connected peer. Let the
+  // renderer request a fresh session after its foreground recovery times out.
+  const reconnect = useCallback(() => setRetryGeneration((generation) => generation + 1), []);
   const firstFrameTimeoutRef = useRef<number | undefined>(undefined);
   const firstFrameDecodedRef = useRef(false);
   const presentedFramesRef = useRef(0);
@@ -448,5 +451,5 @@ export function useWebRtcStream({
     retryGeneration,
   ]);
 
-  return { stream, failure, error, markFrameDecoded, streamStats, setStreamStatsEnabled };
+  return { stream, failure, error, markFrameDecoded, reconnect, streamStats, setStreamStatsEnabled };
 }

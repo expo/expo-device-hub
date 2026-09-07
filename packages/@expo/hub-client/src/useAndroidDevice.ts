@@ -91,6 +91,8 @@ const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
+const WEBRTC_RESUME_KEYFRAME_DELAY_MS = 1_000;
+const WEBRTC_RESUME_TIMEOUT_MS = 4_000;
 
 const ANDROID_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = [
   'appearance',
@@ -810,6 +812,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     stream: webRtcStream,
     error: webRtcError,
     markFrameDecoded: markWebRtcFrameDecoded,
+    reconnect: reconnectWebRtcStream,
     streamStats,
     setStreamStatsEnabled,
   } = useWebRtcStream({
@@ -900,9 +903,54 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let fpsCount = 0;
     let fpsStartedAt = performance.now();
     let previousPresentedFrames: number | null = null;
+    let previousCurrentTime = video.currentTime;
+    let resuming = false;
+    let wasHidden = document.hidden;
+    let keyframeTimer: number | undefined;
+    let resumeTimer: number | undefined;
+
+    const clearResumeTimers = () => {
+      if (keyframeTimer !== undefined) window.clearTimeout(keyframeTimer);
+      if (resumeTimer !== undefined) window.clearTimeout(resumeTimer);
+      keyframeTimer = undefined;
+      resumeTimer = undefined;
+    };
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        wasHidden = true;
+        clearResumeTimers();
+        return;
+      }
+      if (stopped || !wasHidden) return;
+      wasHidden = false;
+      resuming = true;
+      firstFrame = true;
+      previousCurrentTime = video.currentTime;
+      fpsCount = 0;
+      fpsStartedAt = performance.now();
+      setWebRtcVideoReady(false);
+      setFps(0);
+      void video.play().catch(() => {});
+      // A healthy player resumes without disturbing its peer or encoder. Give
+      // it a moment, then request a keyframe; replace the session only if fresh
+      // frames still do not arrive. Hidden time never consumes this deadline.
+      keyframeTimer = window.setTimeout(requestWebRtcKeyframe, WEBRTC_RESUME_KEYFRAME_DELAY_MS);
+      resumeTimer = window.setTimeout(() => {
+        clearResumeTimers();
+        reconnectWebRtcStream();
+      }, WEBRTC_RESUME_TIMEOUT_MS);
+    };
 
     const markFrame = (presentedFrameDelta = 1) => {
       if (stopped) return;
+      // loadeddata can describe a buffered old frame. Foreground recovery
+      // requires actual presentation progress, not just media readiness.
+      if (resuming && (document.hidden || presentedFrameDelta === 0)) return;
+      if (resuming) {
+        resuming = false;
+        clearResumeTimers();
+      }
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         const width = video.videoWidth;
         const height = video.videoHeight;
@@ -925,10 +973,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
     };
     const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
-      const presentedFrameDelta = presentedVideoFrameDelta(
-        previousPresentedFrames,
-        metadata.presentedFrames,
-      );
+      const presentedFrameDelta =
+        resuming && metadata.presentedFrames === previousPresentedFrames
+          ? 0
+          : presentedVideoFrameDelta(previousPresentedFrames, metadata.presentedFrames);
       if (
         Number.isSafeInteger(metadata.presentedFrames) &&
         metadata.presentedFrames >= 0
@@ -938,7 +986,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       markFrame(presentedFrameDelta);
       frameCallback = video.requestVideoFrameCallback(onVideoFrame);
     };
-    const onTimeUpdate = () => markFrame();
+    const onTimeUpdate = () => {
+      if (video.paused || video.currentTime === previousCurrentTime) return;
+      previousCurrentTime = video.currentTime;
+      markFrame();
+    };
     const onLoadedData = () => markFrame(0);
 
     video.srcObject = webRtcStream;
@@ -949,10 +1001,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       video.addEventListener('timeupdate', onTimeUpdate);
     }
     video.addEventListener('loadeddata', onLoadedData, { once: true });
+    document.addEventListener('visibilitychange', onVisibilityChange);
     void video.play().catch(() => {});
 
     return () => {
       stopped = true;
+      clearResumeTimers();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
@@ -961,7 +1016,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       setWebRtcVideoReady(false);
       setFps(0);
     };
-  }, [useWebRtc, webRtcStream, webRtcVideoElement, markWebRtcFrameDecoded]);
+  }, [
+    useWebRtc,
+    webRtcStream,
+    webRtcVideoElement,
+    markWebRtcFrameDecoded,
+    reconnectWebRtcStream,
+    requestWebRtcKeyframe,
+  ]);
 
   // Detach the media only when this surface stops showing WebRTC or moves to
   // another device; a lost stream alone keeps its last frame (see above).
