@@ -19,7 +19,7 @@ export type WebRtcIcePolicy = (typeof WEBRTC_ICE_POLICIES)[number];
 export const ANDROID_STREAM_SOURCES = ['scrcpy', 'grpc-screenshot'] as const;
 export type AndroidStreamSource = (typeof ANDROID_STREAM_SOURCES)[number];
 export const DEFAULT_ANDROID_STREAM_SOURCE: AndroidStreamSource = 'grpc-screenshot';
-export const GRPC_IMAGE_MODES = ['png', 'mmap'] as const;
+export const GRPC_IMAGE_MODES = ['png', 'rgb', 'mmap'] as const;
 export type GrpcImageMode = (typeof GRPC_IMAGE_MODES)[number];
 export const DEFAULT_GRPC_IMAGE_MODE: GrpcImageMode = 'mmap';
 

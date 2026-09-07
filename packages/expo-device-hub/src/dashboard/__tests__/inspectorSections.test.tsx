@@ -413,7 +413,7 @@ test('shows the Android emulator capture source select', () => {
   expect(selectMarkup(html, 'Stream source')).not.toContain('disabled=""');
 });
 
-test('shows PNG and MMAP only while the gRPC source is active', () => {
+test.each(['png', 'rgb', 'mmap'] as const)('shows %s selected with all image modes while gRPC is active', (grpcImageMode) => {
   const scrcpyHtml = renderToStaticMarkup(
     <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
   );
@@ -423,7 +423,7 @@ test('shows PNG and MMAP only while the gRPC source is active', () => {
     ...inspectorClient('android'),
     streamSource: {
       mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
+      grpcImageMode,
       inputSource: 'scrcpy',
       availableInputSources: ['scrcpy', 'grpc'],
       availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -438,8 +438,8 @@ test('shows PNG and MMAP only while the gRPC source is active', () => {
   expect(selectOptionLabels(grpcHtml, 'Input source')).toEqual(['scrcpy', 'gRPC']);
   expect(selectValue(grpcHtml, 'Input source')).toBe('scrcpy');
   expect(grpcHtml).toContain('>gRPC frames</span>');
-  expect(selectOptionLabels(grpcHtml, 'gRPC image mode')).toEqual(['PNG', 'MMAP']);
-  expect(selectValue(grpcHtml, 'gRPC image mode')).toBe('MMAP');
+  expect(selectOptionLabels(grpcHtml, 'gRPC image mode')).toEqual(['PNG', 'RGB', 'MMAP']);
+  expect(selectValue(grpcHtml, 'gRPC image mode')).toBe(grpcImageMode.toUpperCase());
 });
 
 test('disables the Android capture source select while replacement is pending', () => {

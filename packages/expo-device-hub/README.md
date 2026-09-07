@@ -65,16 +65,25 @@ while the emulator writes RGB pixels to a shared file-backed memory region:
 npx expo-device-hub --platform android --transport webrtc
 ```
 
-Use `--stream-source scrcpy` to select scrcpy at startup, or `--grpc-image-mode png` to
-send a compressed image in each gRPC message. The same source and PNG/MMAP choices are
-available at runtime under **Stream options**. Run `npx expo-device-hub --help` for the
-full option list.
+Use `--stream-source scrcpy` to select scrcpy at startup, `--grpc-image-mode png` to
+send compressed images over gRPC, or `--grpc-image-mode rgb` to send raw RGB888 pixels
+in each `streamScreenshot` message. RGB uses the same host H.264 encoder as MMAP and
+does not require a shared memory region. The source and PNG/RGB/MMAP choices are
+available at runtime under **Stream options**. For example:
+
+```sh
+npx expo-device-hub --platform android --transport webrtc --grpc-image-mode rgb --video-fps 60
+```
+
+`--video-fps` sets the capture limit; actual frame rates depend on the emulator and
+browser. **Stream options** shows WebRTC client FPS and gRPC capture diagnostics for
+comparing RGB and MMAP. Run `npx expo-device-hub --help` for the full option list.
 
 MMAP support is experimental and depends on the Android Emulator build. Google
 tracks an Apple Silicon `streamScreenshot` MMAP fix as issue
 [#537802959](https://issuetracker.google.com/issues/537802959), included in
 Emulator 37.2.3 Canary. If an affected emulator crashes or stops producing
-frames, select PNG explicitly or upgrade to a build containing that fix.
+frames, select PNG or RGB explicitly, or upgrade to a build containing that fix.
 
 ## Acknowledgements
 

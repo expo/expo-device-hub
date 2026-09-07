@@ -98,7 +98,7 @@ describe('parseCliOptions', () => {
     });
   });
 
-  test('selects the Android gRPC source and its explicit image mode', () => {
+  test.each(['png', 'rgb', 'mmap'])('selects the Android gRPC source with %s delivery', (grpcImageMode) => {
     expect(
       parseCliOptions([
         '--platform',
@@ -106,11 +106,11 @@ describe('parseCliOptions', () => {
         '--stream-source',
         'GRPC-SCREENSHOT',
         '--grpc-image-mode',
-        'MMAP',
+        grpcImageMode.toUpperCase(),
       ]),
     ).toMatchObject({
       streamSource: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
+      grpcImageMode,
     });
   });
 
@@ -118,8 +118,8 @@ describe('parseCliOptions', () => {
     expect(() => parseCliOptions(['--stream-source', 'camera'])).toThrow(
       'Invalid --stream-source: camera',
     );
-    expect(() => parseCliOptions(['--grpc-image-mode', 'rgb'])).toThrow(
-      'Invalid --grpc-image-mode: rgb',
+    expect(() => parseCliOptions(['--grpc-image-mode', 'auto'])).toThrow(
+      'Invalid --grpc-image-mode: auto',
     );
     expect(() =>
       parseCliOptions(['--platform', 'ios', '--stream-source', 'grpc-screenshot'])
@@ -217,6 +217,7 @@ describe('parseCliOptions', () => {
     expect(HELP).toContain('--stream-source <source>');
     expect(HELP).toContain('(default: grpc-screenshot)');
     expect(HELP).toContain('--grpc-image-mode <mode>');
+    expect(HELP).toContain('gRPC frames: png, rgb, mmap');
     expect(HELP).toContain('default: mmap');
   });
 

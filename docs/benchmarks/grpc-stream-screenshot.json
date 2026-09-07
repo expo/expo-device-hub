@@ -1,0 +1,3298 @@
+{
+  "environment": {
+    "date": "2026-09-07",
+    "host": "Apple M2, 8 GB RAM, macOS",
+    "emulator": "37.2.7.0 / Android 17, Pixel_10",
+    "emulatorRenderer": "Android Emulator OpenGL ES Translator (Apple M2), Metal",
+    "emulatorArgs": "-no-window -no-audio -no-snapshot-save -gpu host -grpc 8554",
+    "browser": "Chrome for Testing 152.0.7977.64, headed, Metal, 60 Hz",
+    "inputSource": "scrcpy",
+    "outputSize": "570x1280",
+    "configuredFps": 60,
+    "configuredBitrateBps": 8000000,
+    "hostEncoder": "CPU libx264 ultrafast/zerolatency/baseline, rgb24 -> yuv420p",
+    "browserDecoder": "VideoToolboxVideoDecoder",
+    "workload": "css-motion.html; compositor-driven bars, same emulator and workload across modes"
+  },
+  "browserHardwareEvidence": {
+    "name": "MojoVideoDecoderService::OnDecoderOutput",
+    "args": {
+      "video_frame": "format:PIXEL_FORMAT_NV12 storage_type:OPAQUE coded_size:570x1280 visible_rect:0,0 570x1280 natural_size:570x1280 timestamp:9651831 color_space: {primaries:BT709, transfer:BT709_APPLE, matrix:BT709, range:LIMITED} hdr_metadata: {} shared_image: { format: (Y_UV, 420, 8unorm, ExtSamplerOff) usage: Gles2Read|RasterRead|DisplayRead|Scanout|WebgpuRead|MacosVideoToolbox label: VideoToolboxVideoDecoder }"
+    }
+  },
+  "runs": [
+    {
+      "label": "host-rgb-webrtc-final-1",
+      "seconds": 30.6815,
+      "summary": {
+        "browserDecodedFps": 0,
+        "videoPresentedFps": 59.221354888124765,
+        "videoCallbackFps": 46.44492609552988,
+        "rtcReceivedFps": 59.90580643058521,
+        "rtcDecodedFps": 59.90580643058521,
+        "rtcDropped": 0,
+        "browserCanvasDrawFps": 0,
+        "browserPresentedRafFps": 0,
+        "browserRafFps": 60.00358522236527,
+        "encodedFps": 59.90580643058521,
+        "freshWriteFps": 59.64506298583837,
+        "repeatWriteFps": 0.4237080977136059,
+        "sourceMessagesFps": 59.71024884702508,
+        "usableFps": 59.64506298583837,
+        "grpcMBps": 130.6960891742581,
+        "mmapReadMBps": 0,
+        "backpressure": 5,
+        "latencyP50": 8.8,
+        "latencyP95": 13.7
+      },
+      "meanBrowserDecodeMs": 0.9149809575625678,
+      "start": {
+        "elapsedSeconds": 0.0,
+        "capture": {
+          "imageMode": "rgb",
+          "rawGrpcMessagesReceived": 15312,
+          "rawGrpcMessagesEmitted": 15302,
+          "rawGrpcMessagesCoalesced": 10,
+          "usableImages": 15302,
+          "sourceTimestampFps": 60,
+          "rawMessageReceiveFps": 59.9,
+          "usableImageFps": 60,
+          "freshEncoderWriteFps": 59.9,
+          "sequenceGaps": 88,
+          "imagePayloadBytes": 2188800,
+          "transportBytes": 33493017600,
+          "grpcMessageBytesReceived": 33515487359,
+          "mmapFileBytesRead": 0,
+          "mmapReadRetries": 0,
+          "mmapTornFramesDropped": 0,
+          "sourceTimestampIntervalMs": {
+            "windowSamples": 240,
+            "latest": 16.8,
+            "p50": 16.7,
+            "p95": 18.3,
+            "max": 25.2
+          },
+          "rawMessageReceiveIntervalMs": {
+            "windowSamples": 240,
+            "latest": 23.5,
+            "p50": 16.6,
+            "p95": 21.9,
+            "max": 35.7
+          },
+          "productionToReceiveLatencyMs": {
+            "windowSamples": 240,
+            "latest": 13.7,
+            "p50": 8.3,
+            "p95": 13.9,
+            "max": 24.6
+          },
+          "productionToUsableLatencyMs": {
+            "windowSamples": 240,
+            "latest": 13.7,
+            "p50": 12.8,
+            "p95": 14.6,
+            "max": 24.6
+          },
+          "protobufDecodeTimeMs": {
+            "windowSamples": 240,
+            "latest": 0,
+            "p50": 0,
+            "p95": 0,
+            "max": 0.1
+          },
+          "sharedReadCopyTimeMs": null,
+          "freshEncoderWriteAttempts": 15419,
+          "repeatEncoderWriteAttempts": 927,
+          "acceptedEncoderWrites": 16212,
+          "encoderBackpressureRejections": 134
+        },
+        "encodedFrames": 16208,
+        "browser": {
+          "decoded": 0,
+          "painted": 0,
+          "presented": 0,
+          "raf": 13293,
+          "videoPresented": 14931,
+          "videoCallbacks": 10155
+        },
+        "receiver": [
+          {
+            "framesReceived": 16106,
+            "framesDecoded": 15774,
+            "framesDropped": 15,
+            "totalDecodeTime": 14.997307
+          }
+        ],
+        "metrics": {
+          "source": {
+            "streamMode": "grpc-screenshot",
+            "codec": "h264",
+            "width": 570,
+            "height": 1280,
+            "frames": 16208,
+            "fps": 58.94105894105894,
+            "configuredFps": 60,
+            "configuredBitrateBps": 8000000,
+            "frameStats": {
+              "windowFrames": 240,
+              "intervalMs": {
+                "p50": 17,
+                "p95": 21,
+                "max": 33
+              },
+              "avgKeyFrameBytes": null,
+              "avgDeltaFrameBytes": 3498,
+              "keyFramesInWindow": 0
+            }
+          },
+          "capture": {
+            "offeredFrames": 16189,
+            "forwardedFrames": 16107,
+            "grpc": {
+              "imageMode": "rgb",
+              "rawGrpcMessagesReceived": 15312,
+              "rawGrpcMessagesEmitted": 15302,
+              "rawGrpcMessagesCoalesced": 10,
+              "usableImages": 15302,
+              "sourceTimestampFps": 60,
+              "rawMessageReceiveFps": 59.9,
+              "usableImageFps": 60,
+              "freshEncoderWriteFps": 59.9,
+              "sequenceGaps": 88,
+              "imagePayloadBytes": 2188800,
+              "transportBytes": 33493017600,
+              "grpcMessageBytesReceived": 33515487359,
+              "mmapFileBytesRead": 0,
+              "mmapReadRetries": 0,
+              "mmapTornFramesDropped": 0,
+              "sourceTimestampIntervalMs": {
+                "windowSamples": 240,
+                "latest": 16.8,
+                "p50": 16.7,
+                "p95": 18.3,
+                "max": 25.2
+              },
+              "rawMessageReceiveIntervalMs": {
+                "windowSamples": 240,
+                "latest": 23.5,
+                "p50": 16.6,
+                "p95": 21.9,
+                "max": 35.7
+              },
+              "productionToReceiveLatencyMs": {
+                "windowSamples": 240,
+                "latest": 13.7,
+                "p50": 8.3,
+                "p95": 13.9,
+                "max": 24.6
+              },
+              "productionToUsableLatencyMs": {
+                "windowSamples": 240,
+                "latest": 13.7,
+                "p50": 12.8,
+                "p95": 14.6,
+                "max": 24.6
+              },
+              "protobufDecodeTimeMs": {
+                "windowSamples": 240,
+                "latest": 0,
+                "p50": 0,
+                "p95": 0,
+                "max": 0.1
+              },
+              "sharedReadCopyTimeMs": null,
+              "freshEncoderWriteAttempts": 15420,
+              "repeatEncoderWriteAttempts": 927,
+              "acceptedEncoderWrites": 16213,
+              "encoderBackpressureRejections": 134
+            }
+          },
+          "sessions": [
+            {
+              "state": "connected",
+              "iceState": "completed",
+              "connected": true,
+              "submittedFrames": 16107,
+              "publisherDroppedFrames": 77,
+              "payloadBytesSubmitted": 63486625,
+              "localCandidateType": "host",
+              "remoteCandidateType": "prflx",
+              "localCandidateTransport": "UDP",
+              "remoteCandidateTransport": "UDP",
+              "path": "direct"
+            }
+          ]
+        }
+      },
+      "end": {
+        "elapsedSeconds": 30.681,
+        "capture": {
+          "imageMode": "rgb",
+          "rawGrpcMessagesReceived": 17144,
+          "rawGrpcMessagesEmitted": 17132,
+          "rawGrpcMessagesCoalesced": 12,
+          "usableImages": 17132,
+          "sourceTimestampFps": 59.8,
+          "rawMessageReceiveFps": 59.2,
+          "usableImageFps": 59.3,
+          "freshEncoderWriteFps": 59.3,
+          "sequenceGaps": 98,
+          "imagePayloadBytes": 2188800,
+          "transportBytes": 37498521600,
+          "grpcMessageBytesReceived": 37525439419,
+          "mmapFileBytesRead": 0,
+          "mmapReadRetries": 0,
+          "mmapTornFramesDropped": 0,
+          "sourceTimestampIntervalMs": {
+            "windowSamples": 240,
+            "latest": 14.1,
+            "p50": 16.6,
+            "p95": 19.1,
+            "max": 25.4
+          },
+          "rawMessageReceiveIntervalMs": {
+            "windowSamples": 240,
+            "latest": 18.2,
+            "p50": 16.6,
+            "p95": 20.8,
+            "max": 76.7
+          },
+          "productionToReceiveLatencyMs": {
+            "windowSamples": 240,
+            "latest": 11.8,
+            "p50": 8.8,
+            "p95": 13.7,
+            "max": 70.5
+          },
+          "productionToUsableLatencyMs": {
+            "windowSamples": 240,
+            "latest": 12.8,
+            "p50": 12.5,
+            "p95": 14.2,
+            "max": 70.5
+          },
+          "protobufDecodeTimeMs": {
+            "windowSamples": 240,
+            "latest": 0,
+            "p50": 0,
+            "p95": 0,
+            "max": 0.1
+          },
+          "sharedReadCopyTimeMs": null,
+          "freshEncoderWriteAttempts": 17249,
+          "repeatEncoderWriteAttempts": 940,
+          "acceptedEncoderWrites": 18050,
+          "encoderBackpressureRejections": 139
+        },
+        "encodedFrames": 18046,
+        "browser": {
+          "decoded": 0,
+          "painted": 0,
+          "presented": 0,
+          "raf": 15134,
+          "videoPresented": 16748,
+          "videoCallbacks": 11580
+        },
+        "receiver": [
+          {
+            "framesReceived": 17944,
+            "framesDecoded": 17612,
+            "framesDropped": 15,
+            "totalDecodeTime": 16.679042
+          }
+        ],
+        "metrics": {
+          "source": {
+            "streamMode": "grpc-screenshot",
+            "codec": "h264",
+            "width": 570,
+            "height": 1280,
+            "frames": 18046,
+            "fps": 58,
+            "configuredFps": 60,
+            "configuredBitrateBps": 8000000,
+            "frameStats": {
+              "windowFrames": 240,
+              "intervalMs": {
+                "p50": 17,
+                "p95": 20,
+                "max": 56
+              },
+              "avgKeyFrameBytes": null,
+              "avgDeltaFrameBytes": 3492,
+              "keyFramesInWindow": 0
+            }
+          },
+          "capture": {
+            "offeredFrames": 18027,
+            "forwardedFrames": 17945,
+            "grpc": {
+              "imageMode": "rgb",
+              "rawGrpcMessagesReceived": 17144,
+              "rawGrpcMessagesEmitted": 17132,
+              "rawGrpcMessagesCoalesced": 12,
+              "usableImages": 17132,
+              "sourceTimestampFps": 59.8,
+              "rawMessageReceiveFps": 59.2,
+              "usableImageFps": 59.3,
+              "freshEncoderWriteFps": 59.3,
+              "sequenceGaps": 98,
+              "imagePayloadBytes": 2188800,
+              "transportBytes": 37498521600,
+              "grpcMessageBytesReceived": 37525439419,
+              "mmapFileBytesRead": 0,
+              "mmapReadRetries": 0,
+              "mmapTornFramesDropped": 0,
+              "sourceTimestampIntervalMs": {
+                "windowSamples": 240,
+                "latest": 14.1,
+                "p50": 16.6,
+                "p95": 19.1,
+                "max": 25.4
+              },
+              "rawMessageReceiveIntervalMs": {
+                "windowSamples": 240,
+                "latest": 18.2,
+                "p50": 16.6,
+                "p95": 20.8,
+                "max": 76.7
+              },
+              "productionToReceiveLatencyMs": {
+                "windowSamples": 240,
+                "latest": 11.8,
+                "p50": 8.8,
+                "p95": 13.7,
+                "max": 70.5
+              },
+              "productionToUsableLatencyMs": {
+                "windowSamples": 240,
+                "latest": 12.8,
+                "p50": 12.5,
+                "p95": 14.2,
+                "max": 70.5
+              },
+              "protobufDecodeTimeMs": {
+                "windowSamples": 240,
+                "latest": 0,
+                "p50": 0,
+                "p95": 0,
+                "max": 0.1
+              },
+              "sharedReadCopyTimeMs": null,
+              "freshEncoderWriteAttempts": 17249,
+              "repeatEncoderWriteAttempts": 940,
+              "acceptedEncoderWrites": 18050,
+              "encoderBackpressureRejections": 139
+            }
+          },
+          "sessions": [
+            {
+              "state": "connected",
+              "iceState": "completed",
+              "connected": true,
+              "submittedFrames": 17945,
+              "publisherDroppedFrames": 77,
+              "payloadBytesSubmitted": 69995405,
+              "localCandidateType": "host",
+              "remoteCandidateType": "prflx",
+              "localCandidateTransport": "UDP",
+              "remoteCandidateTransport": "UDP",
+              "path": "direct"
+            }
+          ]
+        }
+      },
+      "perSecond": [
+        {
+          "elapsedSeconds": 0.0,
+          "encodedFrames": 16208,
+          "rawGrpcMessagesReceived": 15312,
+          "usableImages": 15302,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13293,
+            "videoPresented": 14931,
+            "videoCallbacks": 10155
+          },
+          "receiver": [
+            {
+              "framesReceived": 16106,
+              "framesDecoded": 15774,
+              "framesDropped": 15,
+              "totalDecodeTime": 14.997307
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 1.02,
+          "encodedFrames": 16269,
+          "rawGrpcMessagesReceived": 15373,
+          "usableImages": 15363,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13355,
+            "videoPresented": 14993,
+            "videoCallbacks": 10200
+          },
+          "receiver": [
+            {
+              "framesReceived": 16168,
+              "framesDecoded": 15835,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.052914
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 2.041,
+          "encodedFrames": 16331,
+          "rawGrpcMessagesReceived": 15435,
+          "usableImages": 15424,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13416,
+            "videoPresented": 15055,
+            "videoCallbacks": 10251
+          },
+          "receiver": [
+            {
+              "framesReceived": 16229,
+              "framesDecoded": 15897,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.109314999999999
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 3.064,
+          "encodedFrames": 16391,
+          "rawGrpcMessagesReceived": 15494,
+          "usableImages": 15484,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13477,
+            "videoPresented": 15114,
+            "videoCallbacks": 10297
+          },
+          "receiver": [
+            {
+              "framesReceived": 16289,
+              "framesDecoded": 15957,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.163777999999999
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 4.092,
+          "encodedFrames": 16453,
+          "rawGrpcMessagesReceived": 15555,
+          "usableImages": 15545,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13539,
+            "videoPresented": 15175,
+            "videoCallbacks": 10348
+          },
+          "receiver": [
+            {
+              "framesReceived": 16351,
+              "framesDecoded": 16019,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.222608
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 5.119,
+          "encodedFrames": 16515,
+          "rawGrpcMessagesReceived": 15617,
+          "usableImages": 15607,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13600,
+            "videoPresented": 15234,
+            "videoCallbacks": 10394
+          },
+          "receiver": [
+            {
+              "framesReceived": 16413,
+              "framesDecoded": 16080,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.281523
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 6.139,
+          "encodedFrames": 16577,
+          "rawGrpcMessagesReceived": 15678,
+          "usableImages": 15668,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13662,
+            "videoPresented": 15295,
+            "videoCallbacks": 10438
+          },
+          "receiver": [
+            {
+              "framesReceived": 16475,
+              "framesDecoded": 16143,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.338016
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 7.161,
+          "encodedFrames": 16638,
+          "rawGrpcMessagesReceived": 15740,
+          "usableImages": 15730,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13723,
+            "videoPresented": 15357,
+            "videoCallbacks": 10484
+          },
+          "receiver": [
+            {
+              "framesReceived": 16536,
+              "framesDecoded": 16204,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.392012
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 8.184,
+          "encodedFrames": 16699,
+          "rawGrpcMessagesReceived": 15801,
+          "usableImages": 15791,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13784,
+            "videoPresented": 15417,
+            "videoCallbacks": 10533
+          },
+          "receiver": [
+            {
+              "framesReceived": 16597,
+              "framesDecoded": 16265,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.447522999999999
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 9.206,
+          "encodedFrames": 16760,
+          "rawGrpcMessagesReceived": 15861,
+          "usableImages": 15850,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13846,
+            "videoPresented": 15476,
+            "videoCallbacks": 10582
+          },
+          "receiver": [
+            {
+              "framesReceived": 16658,
+              "framesDecoded": 16326,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.50367
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 10.234,
+          "encodedFrames": 16822,
+          "rawGrpcMessagesReceived": 15923,
+          "usableImages": 15912,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13907,
+            "videoPresented": 15537,
+            "videoCallbacks": 10630
+          },
+          "receiver": [
+            {
+              "framesReceived": 16719,
+              "framesDecoded": 16387,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.559083
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 11.257,
+          "encodedFrames": 16883,
+          "rawGrpcMessagesReceived": 15984,
+          "usableImages": 15973,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 13969,
+            "videoPresented": 15598,
+            "videoCallbacks": 10679
+          },
+          "receiver": [
+            {
+              "framesReceived": 16781,
+              "framesDecoded": 16449,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.615616999999999
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 12.28,
+          "encodedFrames": 16944,
+          "rawGrpcMessagesReceived": 16046,
+          "usableImages": 16035,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14030,
+            "videoPresented": 15659,
+            "videoCallbacks": 10726
+          },
+          "receiver": [
+            {
+              "framesReceived": 16842,
+              "framesDecoded": 16510,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.672080999999999
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 13.3,
+          "encodedFrames": 17005,
+          "rawGrpcMessagesReceived": 16107,
+          "usableImages": 16096,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14091,
+            "videoPresented": 15720,
+            "videoCallbacks": 10774
+          },
+          "receiver": [
+            {
+              "framesReceived": 16903,
+              "framesDecoded": 16571,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.725727
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 14.321,
+          "encodedFrames": 17066,
+          "rawGrpcMessagesReceived": 16168,
+          "usableImages": 16157,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14153,
+            "videoPresented": 15782,
+            "videoCallbacks": 10821
+          },
+          "receiver": [
+            {
+              "framesReceived": 16964,
+              "framesDecoded": 16632,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.780636
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 15.342,
+          "encodedFrames": 17128,
+          "rawGrpcMessagesReceived": 16227,
+          "usableImages": 16216,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14214,
+            "videoPresented": 15841,
+            "videoCallbacks": 10869
+          },
+          "receiver": [
+            {
+              "framesReceived": 17026,
+              "framesDecoded": 16694,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.836939
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 16.371,
+          "encodedFrames": 17189,
+          "rawGrpcMessagesReceived": 16288,
+          "usableImages": 16277,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14275,
+            "videoPresented": 15902,
+            "videoCallbacks": 10917
+          },
+          "receiver": [
+            {
+              "framesReceived": 17087,
+              "framesDecoded": 16755,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.892548999999999
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 17.394,
+          "encodedFrames": 17251,
+          "rawGrpcMessagesReceived": 16350,
+          "usableImages": 16338,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14337,
+            "videoPresented": 15964,
+            "videoCallbacks": 10964
+          },
+          "receiver": [
+            {
+              "framesReceived": 17149,
+              "framesDecoded": 16817,
+              "framesDropped": 15,
+              "totalDecodeTime": 15.947847999999999
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 18.416,
+          "encodedFrames": 17313,
+          "rawGrpcMessagesReceived": 16412,
+          "usableImages": 16400,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14398,
+            "videoPresented": 16020,
+            "videoCallbacks": 11011
+          },
+          "receiver": [
+            {
+              "framesReceived": 17211,
+              "framesDecoded": 16879,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.003618
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 19.436,
+          "encodedFrames": 17374,
+          "rawGrpcMessagesReceived": 16473,
+          "usableImages": 16461,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14460,
+            "videoPresented": 16081,
+            "videoCallbacks": 11061
+          },
+          "receiver": [
+            {
+              "framesReceived": 17272,
+              "framesDecoded": 16940,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.060634999999998
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 20.457,
+          "encodedFrames": 17435,
+          "rawGrpcMessagesReceived": 16535,
+          "usableImages": 16522,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14521,
+            "videoPresented": 16138,
+            "videoCallbacks": 11106
+          },
+          "receiver": [
+            {
+              "framesReceived": 17333,
+              "framesDecoded": 17001,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.119511
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 21.48,
+          "encodedFrames": 17496,
+          "rawGrpcMessagesReceived": 16595,
+          "usableImages": 16583,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14582,
+            "videoPresented": 16199,
+            "videoCallbacks": 11151
+          },
+          "receiver": [
+            {
+              "framesReceived": 17394,
+              "framesDecoded": 17062,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.176776999999998
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 22.503,
+          "encodedFrames": 17557,
+          "rawGrpcMessagesReceived": 16657,
+          "usableImages": 16645,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14644,
+            "videoPresented": 16262,
+            "videoCallbacks": 11202
+          },
+          "receiver": [
+            {
+              "framesReceived": 17456,
+              "framesDecoded": 17124,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.232142
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 23.527,
+          "encodedFrames": 17619,
+          "rawGrpcMessagesReceived": 16719,
+          "usableImages": 16707,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14705,
+            "videoPresented": 16323,
+            "videoCallbacks": 11253
+          },
+          "receiver": [
+            {
+              "framesReceived": 17517,
+              "framesDecoded": 17185,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.285963
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 24.549,
+          "encodedFrames": 17680,
+          "rawGrpcMessagesReceived": 16779,
+          "usableImages": 16767,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14766,
+            "videoPresented": 16383,
+            "videoCallbacks": 11304
+          },
+          "receiver": [
+            {
+              "framesReceived": 17578,
+              "framesDecoded": 17246,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.345529
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 25.568,
+          "encodedFrames": 17741,
+          "rawGrpcMessagesReceived": 16840,
+          "usableImages": 16828,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14828,
+            "videoPresented": 16445,
+            "videoCallbacks": 11355
+          },
+          "receiver": [
+            {
+              "framesReceived": 17639,
+              "framesDecoded": 17307,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.40206
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 26.589,
+          "encodedFrames": 17803,
+          "rawGrpcMessagesReceived": 16901,
+          "usableImages": 16889,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14889,
+            "videoPresented": 16505,
+            "videoCallbacks": 11399
+          },
+          "receiver": [
+            {
+              "framesReceived": 17701,
+              "framesDecoded": 17369,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.45687
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 27.612,
+          "encodedFrames": 17864,
+          "rawGrpcMessagesReceived": 16963,
+          "usableImages": 16951,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 14950,
+            "videoPresented": 16567,
+            "videoCallbacks": 11448
+          },
+          "receiver": [
+            {
+              "framesReceived": 17762,
+              "framesDecoded": 17430,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.513004
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 28.637,
+          "encodedFrames": 17925,
+          "rawGrpcMessagesReceived": 17024,
+          "usableImages": 17012,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 15012,
+            "videoPresented": 16628,
+            "videoCallbacks": 11495
+          },
+          "receiver": [
+            {
+              "framesReceived": 17823,
+              "framesDecoded": 17491,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.569561
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 29.658,
+          "encodedFrames": 17987,
+          "rawGrpcMessagesReceived": 17085,
+          "usableImages": 17073,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 15073,
+            "videoPresented": 16690,
+            "videoCallbacks": 11539
+          },
+          "receiver": [
+            {
+              "framesReceived": 17885,
+              "framesDecoded": 17553,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.624155
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 30.681,
+          "encodedFrames": 18046,
+          "rawGrpcMessagesReceived": 17144,
+          "usableImages": 17132,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 15134,
+            "videoPresented": 16748,
+            "videoCallbacks": 11580
+          },
+          "receiver": [
+            {
+              "framesReceived": 17944,
+              "framesDecoded": 17612,
+              "framesDropped": 15,
+              "totalDecodeTime": 16.679042
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "host-mmap-webrtc-final-2",
+      "seconds": 30.675599999999626,
+      "summary": {
+        "browserDecodedFps": 0,
+        "videoPresentedFps": 59.6239356361415,
+        "videoCallbackFps": 58.25476926286761,
+        "rtcReceivedFps": 59.982526829141804,
+        "rtcDecodedFps": 59.949927629778145,
+        "rtcDropped": 0,
+        "browserCanvasDrawFps": 0,
+        "browserPresentedRafFps": 0,
+        "browserRafFps": 59.982526829141804,
+        "encodedFps": 59.982526829141804,
+        "freshWriteFps": 60.080324427232796,
+        "repeatWriteFps": 0.06519839872732805,
+        "sourceMessagesFps": 59.982526829141804,
+        "usableFps": 59.982526829141804,
+        "grpcMBps": 0.007857711014617576,
+        "mmapReadMBps": 262.57950944725116,
+        "backpressure": 6,
+        "latencyP50": 1.7,
+        "latencyP95": 2.4
+      },
+      "meanBrowserDecodeMs": 0.8770739532354537,
+      "start": {
+        "elapsedSeconds": 0.0,
+        "capture": {
+          "imageMode": "mmap",
+          "rawGrpcMessagesReceived": 4517,
+          "rawGrpcMessagesEmitted": 4512,
+          "rawGrpcMessagesCoalesced": 5,
+          "usableImages": 4512,
+          "sourceTimestampFps": 60,
+          "rawMessageReceiveFps": 60,
+          "usableImageFps": 60,
+          "freshEncoderWriteFps": 60,
+          "sequenceGaps": 5,
+          "imagePayloadBytes": 2188800,
+          "transportBytes": 9875865600,
+          "grpcMessageBytesReceived": 591600,
+          "mmapFileBytesRead": 19751731200,
+          "mmapReadRetries": 0,
+          "mmapTornFramesDropped": 0,
+          "sourceTimestampIntervalMs": {
+            "windowSamples": 240,
+            "latest": 17.5,
+            "p50": 16.7,
+            "p95": 19,
+            "max": 20.9
+          },
+          "rawMessageReceiveIntervalMs": {
+            "windowSamples": 240,
+            "latest": 17.4,
+            "p50": 16.7,
+            "p95": 19.4,
+            "max": 23.6
+          },
+          "productionToReceiveLatencyMs": {
+            "windowSamples": 240,
+            "latest": 1.2,
+            "p50": 1.5,
+            "p95": 2.4,
+            "max": 8.2
+          },
+          "productionToUsableLatencyMs": {
+            "windowSamples": 240,
+            "latest": 2.2,
+            "p50": 2.5,
+            "p95": 3.4,
+            "max": 9.2
+          },
+          "protobufDecodeTimeMs": {
+            "windowSamples": 240,
+            "latest": 0,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "sharedReadCopyTimeMs": {
+            "windowSamples": 240,
+            "latest": 0.6,
+            "p50": 0.8,
+            "p95": 1.2,
+            "max": 1.8
+          },
+          "freshEncoderWriteAttempts": 4530,
+          "repeatEncoderWriteAttempts": 19,
+          "acceptedEncoderWrites": 4510,
+          "encoderBackpressureRejections": 39
+        },
+        "encodedFrames": 4506,
+        "browser": {
+          "decoded": 0,
+          "painted": 0,
+          "presented": 0,
+          "raf": 20393,
+          "videoPresented": 20934,
+          "videoCallbacks": 15535
+        },
+        "receiver": [
+          {
+            "framesReceived": 3470,
+            "framesDecoded": 3470,
+            "framesDropped": 0,
+            "totalDecodeTime": 3.060533
+          }
+        ],
+        "metrics": {
+          "source": {
+            "streamMode": "grpc-screenshot",
+            "codec": "h264",
+            "width": 570,
+            "height": 1280,
+            "frames": 4506,
+            "fps": 59.94005994005994,
+            "configuredFps": 60,
+            "configuredBitrateBps": 8000000,
+            "frameStats": {
+              "windowFrames": 240,
+              "intervalMs": {
+                "p50": 17,
+                "p95": 19,
+                "max": 24
+              },
+              "avgKeyFrameBytes": null,
+              "avgDeltaFrameBytes": 3500,
+              "keyFramesInWindow": 0
+            }
+          },
+          "capture": {
+            "offeredFrames": 3520,
+            "forwardedFrames": 3471,
+            "grpc": {
+              "imageMode": "mmap",
+              "rawGrpcMessagesReceived": 4517,
+              "rawGrpcMessagesEmitted": 4512,
+              "rawGrpcMessagesCoalesced": 5,
+              "usableImages": 4512,
+              "sourceTimestampFps": 60,
+              "rawMessageReceiveFps": 60,
+              "usableImageFps": 60,
+              "freshEncoderWriteFps": 60,
+              "sequenceGaps": 5,
+              "imagePayloadBytes": 2188800,
+              "transportBytes": 9875865600,
+              "grpcMessageBytesReceived": 591600,
+              "mmapFileBytesRead": 19751731200,
+              "mmapReadRetries": 0,
+              "mmapTornFramesDropped": 0,
+              "sourceTimestampIntervalMs": {
+                "windowSamples": 240,
+                "latest": 17.5,
+                "p50": 16.7,
+                "p95": 19,
+                "max": 20.9
+              },
+              "rawMessageReceiveIntervalMs": {
+                "windowSamples": 240,
+                "latest": 17.4,
+                "p50": 16.7,
+                "p95": 19.4,
+                "max": 23.6
+              },
+              "productionToReceiveLatencyMs": {
+                "windowSamples": 240,
+                "latest": 1.2,
+                "p50": 1.5,
+                "p95": 2.4,
+                "max": 8.2
+              },
+              "productionToUsableLatencyMs": {
+                "windowSamples": 240,
+                "latest": 2.2,
+                "p50": 2.5,
+                "p95": 3.4,
+                "max": 9.2
+              },
+              "protobufDecodeTimeMs": {
+                "windowSamples": 240,
+                "latest": 0,
+                "p50": 0,
+                "p95": 0,
+                "max": 0
+              },
+              "sharedReadCopyTimeMs": {
+                "windowSamples": 240,
+                "latest": 0.6,
+                "p50": 0.8,
+                "p95": 1.2,
+                "max": 1.8
+              },
+              "freshEncoderWriteAttempts": 4530,
+              "repeatEncoderWriteAttempts": 19,
+              "acceptedEncoderWrites": 4510,
+              "encoderBackpressureRejections": 39
+            }
+          },
+          "sessions": [
+            {
+              "state": "connected",
+              "iceState": "completed",
+              "connected": true,
+              "submittedFrames": 3471,
+              "publisherDroppedFrames": 44,
+              "payloadBytesSubmitted": 12508265,
+              "localCandidateType": "host",
+              "remoteCandidateType": "prflx",
+              "localCandidateTransport": "UDP",
+              "remoteCandidateTransport": "UDP",
+              "path": "direct"
+            }
+          ]
+        }
+      },
+      "end": {
+        "elapsedSeconds": 30.676,
+        "capture": {
+          "imageMode": "mmap",
+          "rawGrpcMessagesReceived": 6357,
+          "rawGrpcMessagesEmitted": 6352,
+          "rawGrpcMessagesCoalesced": 5,
+          "usableImages": 6352,
+          "sourceTimestampFps": 59.9,
+          "rawMessageReceiveFps": 59.9,
+          "usableImageFps": 59.9,
+          "freshEncoderWriteFps": 60,
+          "sequenceGaps": 5,
+          "imagePayloadBytes": 2188800,
+          "transportBytes": 13903257600,
+          "grpcMessageBytesReceived": 832640,
+          "mmapFileBytesRead": 27806515200,
+          "mmapReadRetries": 0,
+          "mmapTornFramesDropped": 0,
+          "sourceTimestampIntervalMs": {
+            "windowSamples": 240,
+            "latest": 24,
+            "p50": 16.6,
+            "p95": 19,
+            "max": 24
+          },
+          "rawMessageReceiveIntervalMs": {
+            "windowSamples": 240,
+            "latest": 23.7,
+            "p50": 16.6,
+            "p95": 19.5,
+            "max": 23.7
+          },
+          "productionToReceiveLatencyMs": {
+            "windowSamples": 240,
+            "latest": 1.3,
+            "p50": 1.7,
+            "p95": 2.4,
+            "max": 4.6
+          },
+          "productionToUsableLatencyMs": {
+            "windowSamples": 240,
+            "latest": 2.3,
+            "p50": 2.6,
+            "p95": 3.5,
+            "max": 5.6
+          },
+          "protobufDecodeTimeMs": {
+            "windowSamples": 240,
+            "latest": 0,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "sharedReadCopyTimeMs": {
+            "windowSamples": 240,
+            "latest": 1.3,
+            "p50": 0.9,
+            "p95": 1.3,
+            "max": 2.3
+          },
+          "freshEncoderWriteAttempts": 6373,
+          "repeatEncoderWriteAttempts": 21,
+          "acceptedEncoderWrites": 6349,
+          "encoderBackpressureRejections": 45
+        },
+        "encodedFrames": 6346,
+        "browser": {
+          "decoded": 0,
+          "painted": 0,
+          "presented": 0,
+          "raf": 22233,
+          "videoPresented": 22763,
+          "videoCallbacks": 17322
+        },
+        "receiver": [
+          {
+            "framesReceived": 5310,
+            "framesDecoded": 5309,
+            "framesDropped": 0,
+            "totalDecodeTime": 4.673471999999999
+          }
+        ],
+        "metrics": {
+          "source": {
+            "streamMode": "grpc-screenshot",
+            "codec": "h264",
+            "width": 570,
+            "height": 1280,
+            "frames": 6346,
+            "fps": 60,
+            "configuredFps": 60,
+            "configuredBitrateBps": 8000000,
+            "frameStats": {
+              "windowFrames": 240,
+              "intervalMs": {
+                "p50": 17,
+                "p95": 18,
+                "max": 23
+              },
+              "avgKeyFrameBytes": null,
+              "avgDeltaFrameBytes": 3513,
+              "keyFramesInWindow": 0
+            }
+          },
+          "capture": {
+            "offeredFrames": 5360,
+            "forwardedFrames": 5311,
+            "grpc": {
+              "imageMode": "mmap",
+              "rawGrpcMessagesReceived": 6358,
+              "rawGrpcMessagesEmitted": 6353,
+              "rawGrpcMessagesCoalesced": 5,
+              "usableImages": 6353,
+              "sourceTimestampFps": 60,
+              "rawMessageReceiveFps": 60,
+              "usableImageFps": 60,
+              "freshEncoderWriteFps": 60,
+              "sequenceGaps": 5,
+              "imagePayloadBytes": 2188800,
+              "transportBytes": 13905446400,
+              "grpcMessageBytesReceived": 832771,
+              "mmapFileBytesRead": 27810892800,
+              "mmapReadRetries": 0,
+              "mmapTornFramesDropped": 0,
+              "sourceTimestampIntervalMs": {
+                "windowSamples": 240,
+                "latest": 8.5,
+                "p50": 16.6,
+                "p95": 19,
+                "max": 24
+              },
+              "rawMessageReceiveIntervalMs": {
+                "windowSamples": 240,
+                "latest": 9.6,
+                "p50": 16.6,
+                "p95": 19.5,
+                "max": 23.7
+              },
+              "productionToReceiveLatencyMs": {
+                "windowSamples": 240,
+                "latest": 2.8,
+                "p50": 1.7,
+                "p95": 2.4,
+                "max": 4.6
+              },
+              "productionToUsableLatencyMs": {
+                "windowSamples": 240,
+                "latest": 3.8,
+                "p50": 2.6,
+                "p95": 3.5,
+                "max": 5.6
+              },
+              "protobufDecodeTimeMs": {
+                "windowSamples": 240,
+                "latest": 0,
+                "p50": 0,
+                "p95": 0,
+                "max": 0
+              },
+              "sharedReadCopyTimeMs": {
+                "windowSamples": 240,
+                "latest": 1.3,
+                "p50": 0.9,
+                "p95": 1.3,
+                "max": 2.3
+              },
+              "freshEncoderWriteAttempts": 6373,
+              "repeatEncoderWriteAttempts": 21,
+              "acceptedEncoderWrites": 6349,
+              "encoderBackpressureRejections": 45
+            }
+          },
+          "sessions": [
+            {
+              "state": "connected",
+              "iceState": "completed",
+              "connected": true,
+              "submittedFrames": 5311,
+              "publisherDroppedFrames": 44,
+              "payloadBytesSubmitted": 19091487,
+              "localCandidateType": "host",
+              "remoteCandidateType": "prflx",
+              "localCandidateTransport": "UDP",
+              "remoteCandidateTransport": "UDP",
+              "path": "direct"
+            }
+          ]
+        }
+      },
+      "perSecond": [
+        {
+          "elapsedSeconds": 0.0,
+          "encodedFrames": 4506,
+          "rawGrpcMessagesReceived": 4517,
+          "usableImages": 4512,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20393,
+            "videoPresented": 20934,
+            "videoCallbacks": 15535
+          },
+          "receiver": [
+            {
+              "framesReceived": 3470,
+              "framesDecoded": 3470,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.060533
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 1.021,
+          "encodedFrames": 4568,
+          "rawGrpcMessagesReceived": 4578,
+          "usableImages": 4573,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20454,
+            "videoPresented": 20995,
+            "videoCallbacks": 15595
+          },
+          "receiver": [
+            {
+              "framesReceived": 3532,
+              "framesDecoded": 3532,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.1131189999999997
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 2.043,
+          "encodedFrames": 4629,
+          "rawGrpcMessagesReceived": 4640,
+          "usableImages": 4635,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20516,
+            "videoPresented": 21056,
+            "videoCallbacks": 15654
+          },
+          "receiver": [
+            {
+              "framesReceived": 3593,
+              "framesDecoded": 3593,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.168354
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 3.062,
+          "encodedFrames": 4690,
+          "rawGrpcMessagesReceived": 4701,
+          "usableImages": 4696,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20577,
+            "videoPresented": 21117,
+            "videoCallbacks": 15714
+          },
+          "receiver": [
+            {
+              "framesReceived": 3654,
+              "framesDecoded": 3654,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.2216549999999997
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 4.093,
+          "encodedFrames": 4751,
+          "rawGrpcMessagesReceived": 4762,
+          "usableImages": 4757,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20638,
+            "videoPresented": 21178,
+            "videoCallbacks": 15775
+          },
+          "receiver": [
+            {
+              "framesReceived": 3715,
+              "framesDecoded": 3715,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.2734829999999997
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 5.113,
+          "encodedFrames": 4813,
+          "rawGrpcMessagesReceived": 4824,
+          "usableImages": 4819,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20700,
+            "videoPresented": 21239,
+            "videoCallbacks": 15834
+          },
+          "receiver": [
+            {
+              "framesReceived": 3776,
+              "framesDecoded": 3776,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.3265949999999997
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 6.133,
+          "encodedFrames": 4874,
+          "rawGrpcMessagesReceived": 4885,
+          "usableImages": 4880,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20761,
+            "videoPresented": 21300,
+            "videoCallbacks": 15894
+          },
+          "receiver": [
+            {
+              "framesReceived": 3836,
+              "framesDecoded": 3836,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.378409
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 7.158,
+          "encodedFrames": 4936,
+          "rawGrpcMessagesReceived": 4946,
+          "usableImages": 4941,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20822,
+            "videoPresented": 21360,
+            "videoCallbacks": 15953
+          },
+          "receiver": [
+            {
+              "framesReceived": 3900,
+              "framesDecoded": 3900,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.434897
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 8.178,
+          "encodedFrames": 4997,
+          "rawGrpcMessagesReceived": 5008,
+          "usableImages": 5003,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20884,
+            "videoPresented": 21420,
+            "videoCallbacks": 16011
+          },
+          "receiver": [
+            {
+              "framesReceived": 3960,
+              "framesDecoded": 3960,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.4859999999999998
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 9.199,
+          "encodedFrames": 5058,
+          "rawGrpcMessagesReceived": 5069,
+          "usableImages": 5064,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 20945,
+            "videoPresented": 21481,
+            "videoCallbacks": 16068
+          },
+          "receiver": [
+            {
+              "framesReceived": 4022,
+              "framesDecoded": 4022,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.540168
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 10.225,
+          "encodedFrames": 5119,
+          "rawGrpcMessagesReceived": 5130,
+          "usableImages": 5125,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21006,
+            "videoPresented": 21542,
+            "videoCallbacks": 16128
+          },
+          "receiver": [
+            {
+              "framesReceived": 4083,
+              "framesDecoded": 4083,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.595329
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 11.248,
+          "encodedFrames": 5181,
+          "rawGrpcMessagesReceived": 5192,
+          "usableImages": 5187,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21068,
+            "videoPresented": 21603,
+            "videoCallbacks": 16187
+          },
+          "receiver": [
+            {
+              "framesReceived": 4145,
+              "framesDecoded": 4144,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.6498049999999997
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 12.271,
+          "encodedFrames": 5242,
+          "rawGrpcMessagesReceived": 5253,
+          "usableImages": 5248,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21129,
+            "videoPresented": 21664,
+            "videoCallbacks": 16245
+          },
+          "receiver": [
+            {
+              "framesReceived": 4206,
+              "framesDecoded": 4206,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.703878
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 13.292,
+          "encodedFrames": 5303,
+          "rawGrpcMessagesReceived": 5314,
+          "usableImages": 5309,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21191,
+            "videoPresented": 21726,
+            "videoCallbacks": 16307
+          },
+          "receiver": [
+            {
+              "framesReceived": 4267,
+              "framesDecoded": 4267,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.757824
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 14.312,
+          "encodedFrames": 5364,
+          "rawGrpcMessagesReceived": 5376,
+          "usableImages": 5371,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21252,
+            "videoPresented": 21786,
+            "videoCallbacks": 16366
+          },
+          "receiver": [
+            {
+              "framesReceived": 4328,
+              "framesDecoded": 4328,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.8116499999999998
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 15.332,
+          "encodedFrames": 5425,
+          "rawGrpcMessagesReceived": 5437,
+          "usableImages": 5432,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21313,
+            "videoPresented": 21847,
+            "videoCallbacks": 16424
+          },
+          "receiver": [
+            {
+              "framesReceived": 4389,
+              "framesDecoded": 4389,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.865316
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 16.356,
+          "encodedFrames": 5487,
+          "rawGrpcMessagesReceived": 5498,
+          "usableImages": 5493,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21374,
+            "videoPresented": 21907,
+            "videoCallbacks": 16480
+          },
+          "receiver": [
+            {
+              "framesReceived": 4451,
+              "framesDecoded": 4451,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.9192449999999996
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 17.378,
+          "encodedFrames": 5548,
+          "rawGrpcMessagesReceived": 5560,
+          "usableImages": 5555,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21436,
+            "videoPresented": 21969,
+            "videoCallbacks": 16541
+          },
+          "receiver": [
+            {
+              "framesReceived": 4512,
+              "framesDecoded": 4512,
+              "framesDropped": 0,
+              "totalDecodeTime": 3.97231
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 18.4,
+          "encodedFrames": 5609,
+          "rawGrpcMessagesReceived": 5621,
+          "usableImages": 5616,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21497,
+            "videoPresented": 22030,
+            "videoCallbacks": 16601
+          },
+          "receiver": [
+            {
+              "framesReceived": 4573,
+              "framesDecoded": 4573,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.026657999999999
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 19.426,
+          "encodedFrames": 5671,
+          "rawGrpcMessagesReceived": 5682,
+          "usableImages": 5677,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21558,
+            "videoPresented": 22091,
+            "videoCallbacks": 16662
+          },
+          "receiver": [
+            {
+              "framesReceived": 4635,
+              "framesDecoded": 4635,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.080424
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 20.445,
+          "encodedFrames": 5732,
+          "rawGrpcMessagesReceived": 5744,
+          "usableImages": 5739,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21620,
+            "videoPresented": 22152,
+            "videoCallbacks": 16722
+          },
+          "receiver": [
+            {
+              "framesReceived": 4696,
+              "framesDecoded": 4696,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.13518
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 21.467,
+          "encodedFrames": 5793,
+          "rawGrpcMessagesReceived": 5805,
+          "usableImages": 5800,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21681,
+            "videoPresented": 22213,
+            "videoCallbacks": 16783
+          },
+          "receiver": [
+            {
+              "framesReceived": 4757,
+              "framesDecoded": 4757,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.189823
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 22.488,
+          "encodedFrames": 5855,
+          "rawGrpcMessagesReceived": 5866,
+          "usableImages": 5861,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21742,
+            "videoPresented": 22274,
+            "videoCallbacks": 16842
+          },
+          "receiver": [
+            {
+              "framesReceived": 4819,
+              "framesDecoded": 4819,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.24547
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 23.511,
+          "encodedFrames": 5916,
+          "rawGrpcMessagesReceived": 5927,
+          "usableImages": 5922,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21804,
+            "videoPresented": 22336,
+            "videoCallbacks": 16904
+          },
+          "receiver": [
+            {
+              "framesReceived": 4880,
+              "framesDecoded": 4880,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.297836
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 24.537,
+          "encodedFrames": 5978,
+          "rawGrpcMessagesReceived": 5989,
+          "usableImages": 5984,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21865,
+            "videoPresented": 22397,
+            "videoCallbacks": 16963
+          },
+          "receiver": [
+            {
+              "framesReceived": 4941,
+              "framesDecoded": 4941,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.35067
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 25.569,
+          "encodedFrames": 6039,
+          "rawGrpcMessagesReceived": 6051,
+          "usableImages": 6046,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21927,
+            "videoPresented": 22458,
+            "videoCallbacks": 17023
+          },
+          "receiver": [
+            {
+              "framesReceived": 5002,
+              "framesDecoded": 5002,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.403124
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 26.592,
+          "encodedFrames": 6101,
+          "rawGrpcMessagesReceived": 6112,
+          "usableImages": 6107,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 21988,
+            "videoPresented": 22519,
+            "videoCallbacks": 17081
+          },
+          "receiver": [
+            {
+              "framesReceived": 5065,
+              "framesDecoded": 5065,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.458902
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 27.611,
+          "encodedFrames": 6162,
+          "rawGrpcMessagesReceived": 6174,
+          "usableImages": 6169,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 22050,
+            "videoPresented": 22580,
+            "videoCallbacks": 17141
+          },
+          "receiver": [
+            {
+              "framesReceived": 5126,
+              "framesDecoded": 5126,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.513646
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 28.63,
+          "encodedFrames": 6223,
+          "rawGrpcMessagesReceived": 6235,
+          "usableImages": 6230,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 22111,
+            "videoPresented": 22641,
+            "videoCallbacks": 17202
+          },
+          "receiver": [
+            {
+              "framesReceived": 5187,
+              "framesDecoded": 5187,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.566927
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 29.648,
+          "encodedFrames": 6284,
+          "rawGrpcMessagesReceived": 6296,
+          "usableImages": 6291,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 22172,
+            "videoPresented": 22702,
+            "videoCallbacks": 17263
+          },
+          "receiver": [
+            {
+              "framesReceived": 5248,
+              "framesDecoded": 5248,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.619979
+            }
+          ]
+        },
+        {
+          "elapsedSeconds": 30.676,
+          "encodedFrames": 6346,
+          "rawGrpcMessagesReceived": 6357,
+          "usableImages": 6352,
+          "browser": {
+            "decoded": 0,
+            "painted": 0,
+            "presented": 0,
+            "raf": 22233,
+            "videoPresented": 22763,
+            "videoCallbacks": 17322
+          },
+          "receiver": [
+            {
+              "framesReceived": 5310,
+              "framesDecoded": 5309,
+              "framesDropped": 0,
+              "totalDecodeTime": 4.673471999999999
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "label": "host-rgb-websocket-final",
+      "seconds": 30.60670000000112,
+      "summary": {
+        "browserDecodedFps": 60.05221079044565,
+        "videoPresentedFps": 0,
+        "videoCallbackFps": 0,
+        "rtcReceivedFps": null,
+        "rtcDecodedFps": null,
+        "rtcDropped": null,
+        "browserCanvasDrawFps": 60.05221079044565,
+        "browserPresentedRafFps": 54.53054396586169,
+        "browserRafFps": 60.019538205684796,
+        "encodedFps": 60.05221079044565,
+        "freshWriteFps": 59.72548494283713,
+        "repeatWriteFps": 0.39207101713022185,
+        "sourceMessagesFps": 59.692812358076274,
+        "usableFps": 59.627467188554576,
+        "grpcMBps": 130.65789601622697,
+        "mmapReadMBps": 0,
+        "backpressure": 3,
+        "latencyP50": 8.7,
+        "latencyP95": 13.5
+      },
+      "meanBrowserDecodeMs": null,
+      "start": {
+        "elapsedSeconds": 0.0,
+        "capture": {
+          "imageMode": "rgb",
+          "rawGrpcMessagesReceived": 275,
+          "rawGrpcMessagesEmitted": 275,
+          "rawGrpcMessagesCoalesced": 0,
+          "usableImages": 275,
+          "sourceTimestampFps": 60,
+          "rawMessageReceiveFps": 59.7,
+          "usableImageFps": 59.7,
+          "freshEncoderWriteFps": 59.5,
+          "sequenceGaps": 1,
+          "imagePayloadBytes": 2188800,
+          "transportBytes": 601920000,
+          "grpcMessageBytesReceived": 601930323,
+          "mmapFileBytesRead": 0,
+          "mmapReadRetries": 0,
+          "mmapTornFramesDropped": 0,
+          "sourceTimestampIntervalMs": {
+            "windowSamples": 240,
+            "latest": 19.9,
+            "p50": 16.6,
+            "p95": 19.1,
+            "max": 25.2
+          },
+          "rawMessageReceiveIntervalMs": {
+            "windowSamples": 240,
+            "latest": 13.2,
+            "p50": 16.5,
+            "p95": 21,
+            "max": 48.2
+          },
+          "productionToReceiveLatencyMs": {
+            "windowSamples": 240,
+            "latest": 9.7,
+            "p50": 8.3,
+            "p95": 13.6,
+            "max": 38.7
+          },
+          "productionToUsableLatencyMs": {
+            "windowSamples": 240,
+            "latest": 9.7,
+            "p50": 13,
+            "p95": 15.2,
+            "max": 38.7
+          },
+          "protobufDecodeTimeMs": {
+            "windowSamples": 240,
+            "latest": 0,
+            "p50": 0,
+            "p95": 0,
+            "max": 0
+          },
+          "sharedReadCopyTimeMs": null,
+          "freshEncoderWriteAttempts": 278,
+          "repeatEncoderWriteAttempts": 3,
+          "acceptedEncoderWrites": 274,
+          "encoderBackpressureRejections": 7
+        },
+        "encodedFrames": 271,
+        "browser": {
+          "decoded": 893,
+          "painted": 893,
+          "presented": 862,
+          "raf": 25362,
+          "videoPresented": 24982,
+          "videoCallbacks": 19503
+        },
+        "receiver": [],
+        "metrics": null
+      },
+      "end": {
+        "elapsedSeconds": 30.607,
+        "capture": {
+          "imageMode": "rgb",
+          "rawGrpcMessagesReceived": 2102,
+          "rawGrpcMessagesEmitted": 2100,
+          "rawGrpcMessagesCoalesced": 2,
+          "usableImages": 2100,
+          "sourceTimestampFps": 60,
+          "rawMessageReceiveFps": 59.5,
+          "usableImageFps": 59.5,
+          "freshEncoderWriteFps": 59.5,
+          "sequenceGaps": 9,
+          "imagePayloadBytes": 2188800,
+          "transportBytes": 4596480000,
+          "grpcMessageBytesReceived": 4600937349,
+          "mmapFileBytesRead": 0,
+          "mmapReadRetries": 0,
+          "mmapTornFramesDropped": 0,
+          "sourceTimestampIntervalMs": {
+            "windowSamples": 240,
+            "latest": 16,
+            "p50": 16.7,
+            "p95": 19,
+            "max": 24.1
+          },
+          "rawMessageReceiveIntervalMs": {
+            "windowSamples": 240,
+            "latest": 18,
+            "p50": 16.6,
+            "p95": 20.8,
+            "max": 58
+          },
+          "productionToReceiveLatencyMs": {
+            "windowSamples": 240,
+            "latest": 10.6,
+            "p50": 8.7,
+            "p95": 13.5,
+            "max": 50.6
+          },
+          "productionToUsableLatencyMs": {
+            "windowSamples": 240,
+            "latest": 13.6,
+            "p50": 12.8,
+            "p95": 14.5,
+            "max": 50.6
+          },
+          "protobufDecodeTimeMs": {
+            "windowSamples": 240,
+            "latest": 0,
+            "p50": 0,
+            "p95": 0,
+            "max": 0.2
+          },
+          "sharedReadCopyTimeMs": null,
+          "freshEncoderWriteAttempts": 2106,
+          "repeatEncoderWriteAttempts": 15,
+          "acceptedEncoderWrites": 2111,
+          "encoderBackpressureRejections": 10
+        },
+        "encodedFrames": 2109,
+        "browser": {
+          "decoded": 2731,
+          "painted": 2731,
+          "presented": 2531,
+          "raf": 27199,
+          "videoPresented": 24982,
+          "videoCallbacks": 19503
+        },
+        "receiver": [],
+        "metrics": null
+      },
+      "perSecond": [
+        {
+          "elapsedSeconds": 0.0,
+          "encodedFrames": 271,
+          "rawGrpcMessagesReceived": 275,
+          "usableImages": 275,
+          "browser": {
+            "decoded": 893,
+            "painted": 893,
+            "presented": 862,
+            "raf": 25362,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 1.02,
+          "encodedFrames": 332,
+          "rawGrpcMessagesReceived": 336,
+          "usableImages": 336,
+          "browser": {
+            "decoded": 954,
+            "painted": 954,
+            "presented": 917,
+            "raf": 25423,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 2.037,
+          "encodedFrames": 393,
+          "rawGrpcMessagesReceived": 397,
+          "usableImages": 397,
+          "browser": {
+            "decoded": 1016,
+            "painted": 1016,
+            "presented": 973,
+            "raf": 25484,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 3.055,
+          "encodedFrames": 455,
+          "rawGrpcMessagesReceived": 457,
+          "usableImages": 457,
+          "browser": {
+            "decoded": 1077,
+            "painted": 1077,
+            "presented": 1028,
+            "raf": 25545,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 4.073,
+          "encodedFrames": 515,
+          "rawGrpcMessagesReceived": 518,
+          "usableImages": 518,
+          "browser": {
+            "decoded": 1138,
+            "painted": 1138,
+            "presented": 1084,
+            "raf": 25607,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 5.094,
+          "encodedFrames": 577,
+          "rawGrpcMessagesReceived": 579,
+          "usableImages": 579,
+          "browser": {
+            "decoded": 1199,
+            "painted": 1199,
+            "presented": 1141,
+            "raf": 25668,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 6.113,
+          "encodedFrames": 638,
+          "rawGrpcMessagesReceived": 640,
+          "usableImages": 640,
+          "browser": {
+            "decoded": 1260,
+            "painted": 1260,
+            "presented": 1197,
+            "raf": 25729,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 7.133,
+          "encodedFrames": 699,
+          "rawGrpcMessagesReceived": 702,
+          "usableImages": 702,
+          "browser": {
+            "decoded": 1321,
+            "painted": 1321,
+            "presented": 1250,
+            "raf": 25790,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 8.153,
+          "encodedFrames": 760,
+          "rawGrpcMessagesReceived": 763,
+          "usableImages": 763,
+          "browser": {
+            "decoded": 1382,
+            "painted": 1382,
+            "presented": 1304,
+            "raf": 25851,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 9.177,
+          "encodedFrames": 821,
+          "rawGrpcMessagesReceived": 821,
+          "usableImages": 821,
+          "browser": {
+            "decoded": 1442,
+            "painted": 1442,
+            "presented": 1361,
+            "raf": 25912,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 10.199,
+          "encodedFrames": 882,
+          "rawGrpcMessagesReceived": 882,
+          "usableImages": 882,
+          "browser": {
+            "decoded": 1504,
+            "painted": 1504,
+            "presented": 1417,
+            "raf": 25974,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 11.224,
+          "encodedFrames": 944,
+          "rawGrpcMessagesReceived": 944,
+          "usableImages": 944,
+          "browser": {
+            "decoded": 1565,
+            "painted": 1565,
+            "presented": 1472,
+            "raf": 26035,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 12.243,
+          "encodedFrames": 1005,
+          "rawGrpcMessagesReceived": 1004,
+          "usableImages": 1004,
+          "browser": {
+            "decoded": 1627,
+            "painted": 1627,
+            "presented": 1528,
+            "raf": 26097,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 13.262,
+          "encodedFrames": 1066,
+          "rawGrpcMessagesReceived": 1066,
+          "usableImages": 1065,
+          "browser": {
+            "decoded": 1688,
+            "painted": 1688,
+            "presented": 1587,
+            "raf": 26158,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 14.281,
+          "encodedFrames": 1127,
+          "rawGrpcMessagesReceived": 1126,
+          "usableImages": 1126,
+          "browser": {
+            "decoded": 1749,
+            "painted": 1749,
+            "presented": 1645,
+            "raf": 26219,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 15.307,
+          "encodedFrames": 1188,
+          "rawGrpcMessagesReceived": 1187,
+          "usableImages": 1187,
+          "browser": {
+            "decoded": 1810,
+            "painted": 1810,
+            "presented": 1699,
+            "raf": 26280,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 16.326,
+          "encodedFrames": 1250,
+          "rawGrpcMessagesReceived": 1249,
+          "usableImages": 1249,
+          "browser": {
+            "decoded": 1873,
+            "painted": 1873,
+            "presented": 1757,
+            "raf": 26342,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 17.345,
+          "encodedFrames": 1312,
+          "rawGrpcMessagesReceived": 1310,
+          "usableImages": 1310,
+          "browser": {
+            "decoded": 1934,
+            "painted": 1934,
+            "presented": 1815,
+            "raf": 26403,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 18.363,
+          "encodedFrames": 1373,
+          "rawGrpcMessagesReceived": 1371,
+          "usableImages": 1370,
+          "browser": {
+            "decoded": 1995,
+            "painted": 1995,
+            "presented": 1871,
+            "raf": 26464,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 19.381,
+          "encodedFrames": 1434,
+          "rawGrpcMessagesReceived": 1432,
+          "usableImages": 1431,
+          "browser": {
+            "decoded": 2056,
+            "painted": 2056,
+            "presented": 1925,
+            "raf": 26525,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 20.405,
+          "encodedFrames": 1495,
+          "rawGrpcMessagesReceived": 1493,
+          "usableImages": 1492,
+          "browser": {
+            "decoded": 2117,
+            "painted": 2117,
+            "presented": 1978,
+            "raf": 26586,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 21.425,
+          "encodedFrames": 1558,
+          "rawGrpcMessagesReceived": 1554,
+          "usableImages": 1553,
+          "browser": {
+            "decoded": 2180,
+            "painted": 2180,
+            "presented": 2035,
+            "raf": 26648,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 22.445,
+          "encodedFrames": 1619,
+          "rawGrpcMessagesReceived": 1615,
+          "usableImages": 1614,
+          "browser": {
+            "decoded": 2241,
+            "painted": 2241,
+            "presented": 2091,
+            "raf": 26709,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 23.463,
+          "encodedFrames": 1680,
+          "rawGrpcMessagesReceived": 1677,
+          "usableImages": 1675,
+          "browser": {
+            "decoded": 2302,
+            "painted": 2302,
+            "presented": 2146,
+            "raf": 26770,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 24.482,
+          "encodedFrames": 1741,
+          "rawGrpcMessagesReceived": 1737,
+          "usableImages": 1735,
+          "browser": {
+            "decoded": 2363,
+            "painted": 2363,
+            "presented": 2202,
+            "raf": 26831,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 25.51,
+          "encodedFrames": 1803,
+          "rawGrpcMessagesReceived": 1798,
+          "usableImages": 1796,
+          "browser": {
+            "decoded": 2424,
+            "painted": 2424,
+            "presented": 2258,
+            "raf": 26892,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 26.527,
+          "encodedFrames": 1864,
+          "rawGrpcMessagesReceived": 1859,
+          "usableImages": 1857,
+          "browser": {
+            "decoded": 2486,
+            "painted": 2486,
+            "presented": 2317,
+            "raf": 26954,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 27.548,
+          "encodedFrames": 1924,
+          "rawGrpcMessagesReceived": 1918,
+          "usableImages": 1916,
+          "browser": {
+            "decoded": 2546,
+            "painted": 2546,
+            "presented": 2371,
+            "raf": 27015,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 28.566,
+          "encodedFrames": 1985,
+          "rawGrpcMessagesReceived": 1980,
+          "usableImages": 1978,
+          "browser": {
+            "decoded": 2607,
+            "painted": 2607,
+            "presented": 2425,
+            "raf": 27076,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 29.587,
+          "encodedFrames": 2047,
+          "rawGrpcMessagesReceived": 2041,
+          "usableImages": 2039,
+          "browser": {
+            "decoded": 2668,
+            "painted": 2668,
+            "presented": 2476,
+            "raf": 27137,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        },
+        {
+          "elapsedSeconds": 30.607,
+          "encodedFrames": 2109,
+          "rawGrpcMessagesReceived": 2102,
+          "usableImages": 2100,
+          "browser": {
+            "decoded": 2731,
+            "painted": 2731,
+            "presented": 2531,
+            "raf": 27199,
+            "videoPresented": 24982,
+            "videoCallbacks": 19503
+          },
+          "receiver": []
+        }
+      ]
+    }
+  ],
+  "switchesAfterFix": [
+    {
+      "requestedMode": "mmap",
+      "responseMs": 577.5,
+      "newPeerDecodedAndPresentationAdvancedMs": 2454.5999999996275,
+      "newPeer": true,
+      "decodedFrames": 10,
+      "presentedFrameDelta": 32
+    },
+    {
+      "requestedMode": "rgb",
+      "responseMs": 692.9000000003725,
+      "newPeerDecodedAndPresentationAdvancedMs": 2524.800000000745,
+      "newPeer": true,
+      "decodedFrames": 7,
+      "presentedFrameDelta": 41
+    }
+  ],
+  "postRestartFixConfirmation": {
+    "label": "host-rgb-webrtc-post-fix",
+    "visibility": "visible",
+    "seconds": 30.750700000001117,
+    "summary": {
+      "browserDecodedFps": 0,
+      "videoPresentedFps": 59.218164139350776,
+      "videoCallbackFps": 47.12087854910449,
+      "rtcReceivedFps": 59.77099708299106,
+      "rtcDecodedFps": 59.77099708299106,
+      "rtcDropped": 0,
+      "browserCanvasDrawFps": 0,
+      "browserPresentedRafFps": 0,
+      "browserRafFps": 59.99863417743118,
+      "encodedFps": 59.77099708299106,
+      "freshWriteFps": 59.608399158390974,
+      "repeatWriteFps": 0.3577154341201859,
+      "sourceMessagesFps": 59.705957913151025,
+      "usableFps": 59.51084040363092,
+      "grpcMBps": 130.68666950670567,
+      "mmapReadMBps": 0,
+      "backpressure": 6,
+      "latencyP50": 8.1,
+      "latencyP95": 14
+    },
+    "start": {
+      "elapsedSeconds": 0.0,
+      "capture": {
+        "imageMode": "rgb",
+        "rawGrpcMessagesReceived": 1555,
+        "rawGrpcMessagesEmitted": 1549,
+        "rawGrpcMessagesCoalesced": 6,
+        "usableImages": 1549,
+        "sourceTimestampFps": 59.9,
+        "rawMessageReceiveFps": 60,
+        "usableImageFps": 59.9,
+        "freshEncoderWriteFps": 59.8,
+        "sequenceGaps": 24,
+        "imagePayloadBytes": 2188800,
+        "transportBytes": 3390451200,
+        "grpcMessageBytesReceived": 3403642966,
+        "mmapFileBytesRead": 0,
+        "mmapReadRetries": 0,
+        "mmapTornFramesDropped": 0,
+        "sourceTimestampIntervalMs": {
+          "windowSamples": 240,
+          "latest": 19.5,
+          "p50": 16.8,
+          "p95": 20.5,
+          "max": 22.1
+        },
+        "rawMessageReceiveIntervalMs": {
+          "windowSamples": 240,
+          "latest": 18.5,
+          "p50": 16.7,
+          "p95": 21.7,
+          "max": 25
+        },
+        "productionToReceiveLatencyMs": {
+          "windowSamples": 240,
+          "latest": 8.2,
+          "p50": 7.4,
+          "p95": 11.5,
+          "max": 15.2
+        },
+        "productionToUsableLatencyMs": {
+          "windowSamples": 240,
+          "latest": 8.2,
+          "p50": 8.1,
+          "p95": 22.6,
+          "max": 23.5
+        },
+        "protobufDecodeTimeMs": {
+          "windowSamples": 240,
+          "latest": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0
+        },
+        "sharedReadCopyTimeMs": null,
+        "freshEncoderWriteAttempts": 1568,
+        "repeatEncoderWriteAttempts": 24,
+        "acceptedEncoderWrites": 1564,
+        "encoderBackpressureRejections": 28
+      },
+      "encodedFrames": 1557,
+      "browser": {
+        "decoded": 0,
+        "painted": 0,
+        "presented": 0,
+        "raf": 326,
+        "videoPresented": 278,
+        "videoCallbacks": 223
+      },
+      "receiver": [
+        {
+          "id": "IT01V132142275",
+          "timestamp": 1788798551935.928,
+          "type": "inbound-rtp",
+          "codecId": "CIT01_108_level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+          "kind": "video",
+          "mediaType": "video",
+          "ssrc": 132142275,
+          "transportId": "T01",
+          "jitter": 0,
+          "packetsLost": 0,
+          "packetsReceived": 2448,
+          "packetsReceivedWithCe": 0,
+          "packetsReceivedWithEct1": 0,
+          "bytesReceived": 1154362,
+          "firCount": 0,
+          "frameHeight": 1280,
+          "frameWidth": 570,
+          "framesAssembledFromMultiplePackets": 297,
+          "framesDecoded": 297,
+          "framesDropped": 0,
+          "framesPerSecond": 60,
+          "framesReceived": 297,
+          "freezeCount": 0,
+          "headerBytesReceived": 29376,
+          "jitterBufferDelay": 0.023568,
+          "jitterBufferEmittedCount": 297,
+          "jitterBufferMinimumDelay": 3.2721579999999997,
+          "jitterBufferTargetDelay": 3.2721579999999997,
+          "keyFramesDecoded": 2,
+          "lastPacketReceivedTimestamp": 1788798551930.594,
+          "mid": "0",
+          "nackCount": 0,
+          "pauseCount": 0,
+          "pliCount": 0,
+          "remoteId": "ROV132142275",
+          "totalAssemblyTime": 0.019472,
+          "totalDecodeTime": 0.29081599999999996,
+          "totalFreezesDuration": 0,
+          "totalInterFrameDelay": 5.014,
+          "totalPausesDuration": 0,
+          "totalProcessingDelay": 0.321289,
+          "totalSquaredInterFrameDelay": 0.08911800000000017,
+          "trackIdentifier": "ded0072a-c257-4fa2-aca5-088e1385922a"
+        }
+      ],
+      "metrics": {
+        "source": {
+          "streamMode": "grpc-screenshot",
+          "codec": "h264",
+          "width": 570,
+          "height": 1280,
+          "frames": 1557,
+          "fps": 60,
+          "configuredFps": 60,
+          "configuredBitrateBps": 8000000,
+          "frameStats": {
+            "windowFrames": 240,
+            "intervalMs": {
+              "p50": 17,
+              "p95": 20,
+              "max": 45
+            },
+            "avgKeyFrameBytes": 17067,
+            "avgDeltaFrameBytes": 3794,
+            "keyFramesInWindow": 1
+          }
+        },
+        "capture": {
+          "offeredFrames": 1544,
+          "forwardedFrames": 1452,
+          "grpc": {
+            "imageMode": "rgb",
+            "rawGrpcMessagesReceived": 1555,
+            "rawGrpcMessagesEmitted": 1549,
+            "rawGrpcMessagesCoalesced": 6,
+            "usableImages": 1549,
+            "sourceTimestampFps": 59.9,
+            "rawMessageReceiveFps": 60,
+            "usableImageFps": 59.9,
+            "freshEncoderWriteFps": 59.8,
+            "sequenceGaps": 24,
+            "imagePayloadBytes": 2188800,
+            "transportBytes": 3390451200,
+            "grpcMessageBytesReceived": 3403642966,
+            "mmapFileBytesRead": 0,
+            "mmapReadRetries": 0,
+            "mmapTornFramesDropped": 0,
+            "sourceTimestampIntervalMs": {
+              "windowSamples": 240,
+              "latest": 19.5,
+              "p50": 16.8,
+              "p95": 20.5,
+              "max": 22.1
+            },
+            "rawMessageReceiveIntervalMs": {
+              "windowSamples": 240,
+              "latest": 18.5,
+              "p50": 16.7,
+              "p95": 21.7,
+              "max": 25
+            },
+            "productionToReceiveLatencyMs": {
+              "windowSamples": 240,
+              "latest": 8.2,
+              "p50": 7.4,
+              "p95": 11.5,
+              "max": 15.2
+            },
+            "productionToUsableLatencyMs": {
+              "windowSamples": 240,
+              "latest": 8.2,
+              "p50": 8.1,
+              "p95": 22.6,
+              "max": 23.5
+            },
+            "protobufDecodeTimeMs": {
+              "windowSamples": 240,
+              "latest": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0
+            },
+            "sharedReadCopyTimeMs": null,
+            "freshEncoderWriteAttempts": 1568,
+            "repeatEncoderWriteAttempts": 24,
+            "acceptedEncoderWrites": 1564,
+            "encoderBackpressureRejections": 28
+          }
+        },
+        "sessions": [
+          {
+            "sessionId": "9e9c92f9-72cc-4ea0-9a8a-4d71b1822222",
+            "state": "connected",
+            "iceState": "completed",
+            "connected": true,
+            "submittedFrames": 298,
+            "publisherDroppedFrames": 0,
+            "payloadBytesSubmitted": 1167887,
+            "localCandidateType": "host",
+            "remoteCandidateType": "prflx",
+            "localCandidateTransport": "UDP",
+            "remoteCandidateTransport": "UDP",
+            "path": "direct"
+          }
+        ]
+      }
+    },
+    "end": {
+      "elapsedSeconds": 30.750700000001117,
+      "capture": {
+        "imageMode": "rgb",
+        "rawGrpcMessagesReceived": 3391,
+        "rawGrpcMessagesEmitted": 3379,
+        "rawGrpcMessagesCoalesced": 11,
+        "usableImages": 3379,
+        "sourceTimestampFps": 59.9,
+        "rawMessageReceiveFps": 59.8,
+        "usableImageFps": 59.7,
+        "freshEncoderWriteFps": 59.8,
+        "sequenceGaps": 39,
+        "imagePayloadBytes": 2188800,
+        "transportBytes": 7395955200,
+        "grpcMessageBytesReceived": 7422349534,
+        "mmapFileBytesRead": 0,
+        "mmapReadRetries": 0,
+        "mmapTornFramesDropped": 0,
+        "sourceTimestampIntervalMs": {
+          "windowSamples": 240,
+          "latest": 20.1,
+          "p50": 16.7,
+          "p95": 20.7,
+          "max": 26.9
+        },
+        "rawMessageReceiveIntervalMs": {
+          "windowSamples": 240,
+          "latest": 12.4,
+          "p50": 16.5,
+          "p95": 22.7,
+          "max": 50.2
+        },
+        "productionToReceiveLatencyMs": {
+          "windowSamples": 240,
+          "latest": 9.6,
+          "p50": 8.1,
+          "p95": 14,
+          "max": 42.2
+        },
+        "productionToUsableLatencyMs": {
+          "windowSamples": 240,
+          "latest": 18.6,
+          "p50": 21.1,
+          "p95": 23.1,
+          "max": 42.2
+        },
+        "protobufDecodeTimeMs": {
+          "windowSamples": 240,
+          "latest": 0,
+          "p50": 0,
+          "p95": 0,
+          "max": 0.1
+        },
+        "sharedReadCopyTimeMs": null,
+        "freshEncoderWriteAttempts": 3401,
+        "repeatEncoderWriteAttempts": 35,
+        "acceptedEncoderWrites": 3402,
+        "encoderBackpressureRejections": 34
+      },
+      "encodedFrames": 3395,
+      "browser": {
+        "decoded": 0,
+        "painted": 0,
+        "presented": 0,
+        "raf": 2171,
+        "videoPresented": 2099,
+        "videoCallbacks": 1672
+      },
+      "receiver": [
+        {
+          "id": "IT01V132142275",
+          "timestamp": 1788798582686.25,
+          "type": "inbound-rtp",
+          "codecId": "CIT01_108_level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+          "kind": "video",
+          "mediaType": "video",
+          "ssrc": 132142275,
+          "transportId": "T01",
+          "jitter": 0,
+          "packetsLost": 0,
+          "packetsReceived": 17300,
+          "packetsReceivedWithCe": 0,
+          "packetsReceivedWithEct1": 0,
+          "bytesReceived": 7675005,
+          "firCount": 0,
+          "frameHeight": 1280,
+          "frameWidth": 570,
+          "framesAssembledFromMultiplePackets": 2135,
+          "framesDecoded": 2135,
+          "framesDropped": 0,
+          "framesPerSecond": 60,
+          "framesReceived": 2135,
+          "freezeCount": 0,
+          "headerBytesReceived": 207600,
+          "jitterBufferDelay": 0.146266,
+          "jitterBufferEmittedCount": 2135,
+          "jitterBufferMinimumDelay": 24.679016999999998,
+          "jitterBufferTargetDelay": 24.679016999999998,
+          "keyFramesDecoded": 5,
+          "lastPacketReceivedTimestamp": 1788798582681.18,
+          "mid": "0",
+          "nackCount": 0,
+          "pauseCount": 0,
+          "pliCount": 0,
+          "remoteId": "ROV132142275",
+          "totalAssemblyTime": 0.118993,
+          "totalDecodeTime": 1.944645,
+          "totalFreezesDuration": 0,
+          "totalInterFrameDelay": 35.765,
+          "totalPausesDuration": 0,
+          "totalProcessingDelay": 2.135763,
+          "totalSquaredInterFrameDelay": 0.6167909999999897,
+          "trackIdentifier": "ded0072a-c257-4fa2-aca5-088e1385922a"
+        }
+      ],
+      "metrics": {
+        "source": {
+          "streamMode": "grpc-screenshot",
+          "codec": "h264",
+          "width": 570,
+          "height": 1280,
+          "frames": 3395,
+          "fps": 60,
+          "configuredFps": 60,
+          "configuredBitrateBps": 8000000,
+          "frameStats": {
+            "windowFrames": 240,
+            "intervalMs": {
+              "p50": 17,
+              "p95": 19,
+              "max": 37
+            },
+            "avgKeyFrameBytes": null,
+            "avgDeltaFrameBytes": 3482,
+            "keyFramesInWindow": 0
+          }
+        },
+        "capture": {
+          "offeredFrames": 3382,
+          "forwardedFrames": 3290,
+          "grpc": {
+            "imageMode": "rgb",
+            "rawGrpcMessagesReceived": 3391,
+            "rawGrpcMessagesEmitted": 3379,
+            "rawGrpcMessagesCoalesced": 11,
+            "usableImages": 3379,
+            "sourceTimestampFps": 59.9,
+            "rawMessageReceiveFps": 59.8,
+            "usableImageFps": 59.7,
+            "freshEncoderWriteFps": 59.8,
+            "sequenceGaps": 39,
+            "imagePayloadBytes": 2188800,
+            "transportBytes": 7395955200,
+            "grpcMessageBytesReceived": 7422349534,
+            "mmapFileBytesRead": 0,
+            "mmapReadRetries": 0,
+            "mmapTornFramesDropped": 0,
+            "sourceTimestampIntervalMs": {
+              "windowSamples": 240,
+              "latest": 20.1,
+              "p50": 16.7,
+              "p95": 20.7,
+              "max": 26.9
+            },
+            "rawMessageReceiveIntervalMs": {
+              "windowSamples": 240,
+              "latest": 12.4,
+              "p50": 16.5,
+              "p95": 22.7,
+              "max": 50.2
+            },
+            "productionToReceiveLatencyMs": {
+              "windowSamples": 240,
+              "latest": 9.6,
+              "p50": 8.1,
+              "p95": 14,
+              "max": 42.2
+            },
+            "productionToUsableLatencyMs": {
+              "windowSamples": 240,
+              "latest": 18.6,
+              "p50": 21.1,
+              "p95": 23.1,
+              "max": 42.2
+            },
+            "protobufDecodeTimeMs": {
+              "windowSamples": 240,
+              "latest": 0,
+              "p50": 0,
+              "p95": 0,
+              "max": 0.1
+            },
+            "sharedReadCopyTimeMs": null,
+            "freshEncoderWriteAttempts": 3402,
+            "repeatEncoderWriteAttempts": 35,
+            "acceptedEncoderWrites": 3403,
+            "encoderBackpressureRejections": 34
+          }
+        },
+        "sessions": [
+          {
+            "sessionId": "9e9c92f9-72cc-4ea0-9a8a-4d71b1822222",
+            "state": "connected",
+            "iceState": "completed",
+            "connected": true,
+            "submittedFrames": 2136,
+            "publisherDroppedFrames": 0,
+            "payloadBytesSubmitted": 7746688,
+            "localCandidateType": "host",
+            "remoteCandidateType": "prflx",
+            "localCandidateTransport": "UDP",
+            "remoteCandidateTransport": "UDP",
+            "path": "direct"
+          }
+        ]
+      }
+    }
+  }
+}

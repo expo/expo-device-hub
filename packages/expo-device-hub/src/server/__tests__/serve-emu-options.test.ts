@@ -70,6 +70,21 @@ describe('standaloneServeEmuOptions', () => {
     });
   });
 
+  test.each(['h264', 'webrtc'])('forwards RGB capture and its FPS limit through the %s CLI environment', (transport) => {
+    const options = parseCliOptions([
+      '--platform', 'android',
+      '--transport', transport,
+      '--grpc-image-mode', 'rgb',
+      '--video-fps', '60',
+    ]);
+    expect(readStandaloneServeEmuOptions(encodeStandaloneServeEmuOptions(options))).toMatchObject({
+      streamMode: 'grpc-screenshot',
+      grpcImageMode: 'rgb',
+      maxFps: 60,
+      streamSettings: { transport: transport === 'h264' ? 'websocket' : 'webrtc' },
+    });
+  });
+
   test('maps host WebRTC settings while keeping Android on H.264', () => {
     expect(
       standaloneServeEmuOptions(

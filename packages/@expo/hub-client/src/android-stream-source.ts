@@ -10,6 +10,14 @@ const ANDROID_STREAM_SOURCES = [
   'grpc-screenshot',
 ] as const satisfies readonly DeviceStreamSource[];
 
+/** A confirmed replacement must reconnect before its first frame commits the UI selection. */
+export function androidWebRtcRestartKey(
+  displayed: Pick<DeviceStreamSourceStatus, 'sessionGeneration'> | null,
+  pending: Pick<DeviceStreamSourceStatus, 'sessionGeneration'> | null,
+): number | null {
+  return pending?.sessionGeneration ?? displayed?.sessionGeneration ?? null;
+}
+
 function isAndroidStreamSource(value: unknown): value is DeviceStreamSource {
   return ANDROID_STREAM_SOURCES.some((source) => source === value);
 }
@@ -32,7 +40,7 @@ export function androidStreamSourceErrorMessage(status: number, value: unknown):
 }
 
 function isGrpcImageMode(value: unknown): value is DeviceGrpcImageMode {
-  return value === 'png' || value === 'mmap';
+  return value === 'png' || value === 'rgb' || value === 'mmap';
 }
 
 function isInputSource(value: unknown): value is DeviceInputSource {

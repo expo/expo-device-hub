@@ -288,7 +288,7 @@ function readWebRtcCaptureStats(value: unknown): DeviceStreamCaptureStats | null
         ? null
         : {
             imageMode:
-              grpc.imageMode === 'png' || grpc.imageMode === 'mmap' ? grpc.imageMode : null,
+              grpc.imageMode === 'png' || grpc.imageMode === 'rgb' || grpc.imageMode === 'mmap' ? grpc.imageMode : null,
             producerFps: finiteNumber(grpc.sourceTimestampFps),
             receiveFps: finiteNumber(grpc.rawMessageReceiveFps),
             usableImageFps: finiteNumber(grpc.usableImageFps),

@@ -3,12 +3,12 @@ import { describe, expect, test } from 'bun:test';
 import { parseAndroidStreamSource } from '../android-stream-source';
 
 describe('parseAndroidStreamSource', () => {
-  test('parses the authoritative gRPC image mode', () => {
+  test.each(['png', 'rgb', 'mmap'])('parses the authoritative %s image mode', (grpcImageMode) => {
     expect(
       parseAndroidStreamSource({
         ok: true,
         mode: 'grpc-screenshot',
-        grpcImageMode: 'mmap',
+        grpcImageMode,
         inputSource: 'scrcpy',
         availableInputSources: ['scrcpy', 'grpc'],
         availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -16,7 +16,7 @@ describe('parseAndroidStreamSource', () => {
       }),
     ).toEqual({
       mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
+      grpcImageMode,
       inputSource: 'scrcpy',
       availableInputSources: ['scrcpy', 'grpc'],
       availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -34,7 +34,7 @@ describe('parseAndroidStreamSource', () => {
       sessionGeneration: 1,
     };
     expect(parseAndroidStreamSource(response)).toBeNull();
-    expect(parseAndroidStreamSource({ ...response, grpcImageMode: 'rgb' })).toBeNull();
+    expect(parseAndroidStreamSource({ ...response, grpcImageMode: 'auto' })).toBeNull();
   });
 
   test('rejects unavailable or unsupported input sources', () => {

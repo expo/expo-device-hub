@@ -502,6 +502,38 @@ describe('readWebRtcServerStats', () => {
     });
   });
 
+  test('preserves RGB delivery and its wire metrics without reporting MMAP reads', () => {
+    const result = readWebRtcServerStats(
+      {
+        source: { codec: 'h264', fps: 58 },
+        capture: {
+          grpc: {
+            imageMode: 'rgb',
+            sourceTimestampFps: 60,
+            freshEncoderWriteFps: 58,
+            grpcMessageBytesReceived: 55_300_000,
+            mmapFileBytesRead: 0,
+            mmapReadRetries: 0,
+            mmapTornFramesDropped: 0,
+            sharedReadCopyTimeMs: null,
+          },
+        },
+      },
+      'viewer',
+    );
+
+    expect(result.capture?.grpc).toMatchObject({
+      imageMode: 'rgb',
+      producerFps: 60,
+      encoderInputFps: 58,
+      messageBytesReceived: 55_300_000,
+      mmapFileBytesRead: 0,
+      mmapReadRetries: 0,
+      mmapTornFramesDropped: 0,
+      mmapReadCopyTimeMs: { p50: null, p95: null },
+    });
+  });
+
   test('normalizes gRPC producer, transport, and host-copy diagnostics', () => {
     const result = readWebRtcServerStats(
       {

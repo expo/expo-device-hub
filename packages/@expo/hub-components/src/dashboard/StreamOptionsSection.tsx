@@ -57,6 +57,7 @@ const STREAM_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceStreamSource>> = [
 ];
 const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<SelectOption<DeviceGrpcImageMode>> = [
   { value: 'png', label: 'PNG' },
+  { value: 'rgb', label: 'RGB' },
   { value: 'mmap', label: 'MMAP' },
 ];
 const GRPC_INPUT_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceInputSource>> = [

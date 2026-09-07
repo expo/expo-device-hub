@@ -1,0 +1,6 @@
+<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>
+html,body{margin:0;overflow:hidden;background:#101820;color:white;font:24px sans-serif}#rate{position:fixed;top:20px;left:20px;z-index:2;background:#101820;padding:10px}.bar{position:absolute;width:45vw;height:7vh;left:0;will-change:transform;animation:motion 2s linear infinite alternate}@keyframes motion{from{transform:translate3d(-10vw,0,0)}to{transform:translate3d(65vw,0,0)}}
+</style><div id="rate">GPU motion</div><script>
+for(let i=0;i<10;i++){const bar=document.createElement('div');bar.className='bar';bar.style.top=(12+i*8)+'vh';bar.style.background=['#ff7733','#22bbaa','#6699ee'][i%3];bar.style.animationDelay=(-i*.17)+'s';document.body.append(bar)}
+let start=performance.now(),frames=0;function tick(now){frames++;if(now-start>1000){document.getElementById('rate').textContent=(frames*1000/(now-start)).toFixed(1)+' source RAF';start=now;frames=0}requestAnimationFrame(tick)}requestAnimationFrame(tick);
+</script>

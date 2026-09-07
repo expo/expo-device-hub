@@ -155,7 +155,7 @@ export interface DeviceStreamEncoderSettings {
 export type DeviceStreamSource = 'scrcpy' | 'grpc-screenshot';
 
 /** Pixel delivery selected for the emulator gRPC screenshot source. */
-export type DeviceGrpcImageMode = 'png' | 'mmap';
+export type DeviceGrpcImageMode = 'png' | 'rgb' | 'mmap';
 
 /** Input transport used while gRPC provides emulator video. */
 export type DeviceInputSource = 'scrcpy' | 'grpc';
@@ -480,7 +480,7 @@ export interface DeviceClient {
   streamSourceError: string | null;
   /** Stage and atomically activate another Android capture source. */
   setStreamSource: (source: DeviceStreamSource) => void;
-  /** Restart the gRPC source with compressed PNG or shared-memory RGB delivery. */
+  /** Restart the gRPC source with PNG, in-band RGB, or shared-memory RGB delivery. */
   setGrpcImageMode: (mode: DeviceGrpcImageMode) => void;
   /** Restart gRPC streaming with scrcpy or emulator-gRPC input delivery. */
   setGrpcInputSource: (source: DeviceInputSource) => void;
