@@ -12,6 +12,11 @@ import {
   WebRtcSignalingTimeoutError,
 } from './webrtc-negotiation';
 import { useWebRtcStreamStats, type WebRtcStatsConnection } from './stream-stats';
+import {
+  observeWebRtcRestartKey,
+  type WebRtcRestartKey,
+  type WebRtcRestartState,
+} from './webrtc-restart';
 
 export type WebRtcIceServer = {
   urls: string[];
@@ -135,6 +140,7 @@ export function useWebRtcStream({
   sendIceServersInOffer = true,
   allowCodecFallback = true,
   onKeyframeNeeded,
+  restartKey = null,
 }: {
   offerUrl: string;
   closeUrl: string;
@@ -147,6 +153,8 @@ export function useWebRtcStream({
   sendIceServersInOffer?: boolean;
   allowCodecFallback?: boolean;
   onKeyframeNeeded?: () => void;
+  /** Re-negotiate when an authoritative source generation changes; null means unknown. */
+  restartKey?: WebRtcRestartKey;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -154,6 +162,12 @@ export function useWebRtcStream({
   const [statsConnection, setStatsConnection] = useState<WebRtcStatsConnection | null>(null);
   const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   const [retryGeneration, setRetryGeneration] = useState(0);
+  const [restartState, setRestartState] = useState<WebRtcRestartState>({
+    key: restartKey,
+    generation: 0,
+  });
+  const nextRestartState = observeWebRtcRestartKey(restartState, restartKey);
+  if (nextRestartState !== restartState) setRestartState(nextRestartState);
   const firstFrameTimeoutRef = useRef<number | undefined>(undefined);
   const firstFrameDecodedRef = useRef(false);
   const presentedFramesRef = useRef(0);
@@ -196,6 +210,7 @@ export function useWebRtcStream({
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    restartState.generation,
   ]);
 
   useEffect(() => {
@@ -485,6 +500,7 @@ export function useWebRtcStream({
     allowCodecFallback,
     onKeyframeNeeded,
     retryGeneration,
+    restartState.generation,
   ]);
 
   return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };

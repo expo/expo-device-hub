@@ -52,6 +52,7 @@ import {
 } from './android-stream-settings';
 import {
   androidStreamSourceErrorMessage,
+  androidWebRtcRestartKey,
   parseAndroidStreamSource,
 } from './android-stream-source';
 import { androidTouchMessage } from './android-touch';
@@ -930,6 +931,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendIceServersInOffer: false,
     allowCodecFallback: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
+    restartKey: androidWebRtcRestartKey(streamSource, pendingStreamSourceRef.current),
   });
 
   const restartWebRtc = useCallback(() => {
