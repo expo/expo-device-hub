@@ -60,9 +60,12 @@
     "@swc/core": "^1.15.43",
     "@types/bun": "latest",
     "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
     "@types/react-test-renderer": "19.1.0",
+    "happy-dom": "^20.14.0",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
+    "react-dom": "catalog:",
     "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },

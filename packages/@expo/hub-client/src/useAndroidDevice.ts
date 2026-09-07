@@ -238,6 +238,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     ReadonlySet<DeviceSettingKey>
   >(() => new Set());
   const [streamSource, setStreamSourceState] = useState<DeviceStreamSourceStatus | null>(null);
+  const [pendingStreamSource, setPendingStreamSourceState] =
+    useState<DeviceStreamSourceStatus | null>(null);
   // True until the first authoritative read of the capture source completes.
   const [streamSourceLoading, setStreamSourceLoading] = useState(false);
   const [streamSourceError, setStreamSourceError] = useState<string | null>(null);
@@ -297,6 +299,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const streamSwitchRef = useRef<StreamSwitchState>(IDLE_STREAM_SWITCH);
   // The server's answer to a switch, held back until the new stream is on screen.
   const pendingStreamSourceRef = useRef<DeviceStreamSourceStatus | null>(null);
+  // Events read synchronously from the ref; rendering subscribes to the state copy.
+  const setPendingStreamSource = useCallback((next: DeviceStreamSourceStatus | null) => {
+    pendingStreamSourceRef.current = next;
+    setPendingStreamSourceState(next);
+  }, []);
   const streamLiveRef = useRef(false);
   const streamSourceControllerRef = useRef<AbortController | null>(null);
   const streamSourceRefreshControllerRef = useRef<AbortController | null>(null);
@@ -309,10 +316,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const commitPendingStreamSource = useCallback(() => {
     const next = pendingStreamSourceRef.current;
     if (!next) return;
-    pendingStreamSourceRef.current = null;
+    setPendingStreamSource(null);
     streamSourceRef.current = next;
     setStreamSourceState(next);
-  }, []);
+  }, [setPendingStreamSource]);
 
   /**
    * Advance the switch tracker synchronously (callers may read the result) and
@@ -332,10 +339,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   );
 
   const resetStreamSwitch = useCallback(() => {
-    pendingStreamSourceRef.current = null;
+    setPendingStreamSource(null);
     streamSwitchRef.current = IDLE_STREAM_SWITCH;
     setStreamSwitch(IDLE_STREAM_SWITCH);
-  }, []);
+  }, [setPendingStreamSource]);
   useEffect(
     () => () => {
       streamSourceControllerRef.current?.abort();
@@ -637,6 +644,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [streamSourceUrl],
   );
 
+  const webRtcRequested = streamMode === 'webrtc';
+  const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
+  const useWebRtc =
+    webRtcRequested && serverStreamSettings?.transport === 'webrtc';
+
   const putStreamMode = useCallback(
     (body: {
       mode: DeviceStreamSource;
@@ -655,7 +667,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       const request = ++streamSourceRequestRef.current;
       const controller = new AbortController();
       streamSourceControllerRef.current = controller;
-      pendingStreamSourceRef.current = null;
+      setPendingStreamSource(null);
       dispatchStreamSwitch({ type: 'request-start', live: streamLiveRef.current });
       setStreamSourceError(null);
       let failed = false;
@@ -681,10 +693,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             // and closed this viewer's sockets. Hold the new source back until
             // the replacement stream is on screen so the sidebar and the device
             // frame change together (a same-generation answer changed nothing).
-            pendingStreamSourceRef.current = next;
+            setPendingStreamSource(next);
             dispatchStreamSwitch({
               type: 'request-success',
               replaced: next.sessionGeneration !== previousGeneration,
+              restartRequired: useWebRtc,
             });
           }
         })
@@ -708,7 +721,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           }
         });
     },
-    [dispatchStreamSwitch, refreshStreamSource, streamSourceUrl],
+    [dispatchStreamSwitch, refreshStreamSource, setPendingStreamSource, streamSourceUrl, useWebRtc],
   );
 
   const setStreamSource = useCallback(
@@ -900,10 +913,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, deviceScope, targetDevice]);
 
-  const webRtcRequested = streamMode === 'webrtc';
-  const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
-  const useWebRtc =
-    webRtcRequested && serverStreamSettings?.transport === 'webrtc';
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: 'reset-video' });
   }, [send]);
@@ -931,7 +940,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendIceServersInOffer: false,
     allowCodecFallback: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
-    restartKey: androidWebRtcRestartKey(streamSource, pendingStreamSourceRef.current),
+    restartKey: androidWebRtcRestartKey(streamSource, pendingStreamSource),
   });
 
   const restartWebRtc = useCallback(() => {
