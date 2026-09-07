@@ -140,6 +140,7 @@ export function useWebRtcStream({
   sendIceServersInOffer = true,
   allowCodecFallback = true,
   onKeyframeNeeded,
+  onBeforeDisconnect,
   restartKey = null,
 }: {
   offerUrl: string;
@@ -153,6 +154,8 @@ export function useWebRtcStream({
   sendIceServersInOffer?: boolean;
   allowCodecFallback?: boolean;
   onKeyframeNeeded?: () => void;
+  /** Preserve the displayed frame before closing the current peer. */
+  onBeforeDisconnect?: () => void;
   /** Re-negotiate when an authoritative source generation changes; null means unknown. */
   restartKey?: WebRtcRestartKey;
 }) {
@@ -270,6 +273,7 @@ export function useWebRtcStream({
     };
 
     const closePeer = () => {
+      onBeforeDisconnect?.();
       clearFirstFrameTimeout();
       clearDisconnectedTimer();
       setStream(null);
@@ -476,6 +480,7 @@ export function useWebRtcStream({
 
     return () => {
       stopped = true;
+      onBeforeDisconnect?.();
       window.removeEventListener('pagehide', releaseOnPageHide);
       window.removeEventListener('beforeunload', releaseOnPageHide);
       lifecycleController.abort();
@@ -499,6 +504,7 @@ export function useWebRtcStream({
     sendIceServersInOffer,
     allowCodecFallback,
     onKeyframeNeeded,
+    onBeforeDisconnect,
     retryGeneration,
     restartState.generation,
   ]);
