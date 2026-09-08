@@ -24,6 +24,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   deviceSettings: null,
   deviceSettingsPending: new Set(),
   setDeviceSetting: () => {},
+  displayWidthDp: null,
   camera: null,
   cameraPending: NO_PENDING_CAMERA_WRITES,
   cameraError: null,

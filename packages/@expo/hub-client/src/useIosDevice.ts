@@ -1350,6 +1350,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
+    displayWidthDp: null,
     camera: null,
     cameraPending: NO_PENDING_CAMERA_WRITES,
     cameraError: null,

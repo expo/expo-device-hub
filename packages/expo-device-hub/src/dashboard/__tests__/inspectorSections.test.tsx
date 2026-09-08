@@ -46,6 +46,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       : { appearance: 'light', network: 'on', 'text-size': 'medium' },
     deviceSettingsPending: new Set(),
     setDeviceSetting: () => {},
+    displayWidthDp: null,
     camera: null,
     cameraPending: new Set(),
     cameraError: null,
@@ -1014,6 +1015,73 @@ test('maps Android device options onto Network and S–XL selects', () => {
   expect(selectValue(html, 'Network')).toBe('On');
   expect(selectOptionLabels(html, 'Text size')).toEqual(['S', 'M', 'L', 'XL']);
   expect(selectValue(html, 'Text size')).toBe('M');
+});
+
+test('renders the Android display-size control the backend reports', () => {
+  const client = {
+    ...inspectorClient('android'),
+    deviceSettings: {
+      appearance: 'light',
+      network: 'on',
+      'text-size': 'medium',
+      'display-size': 'large',
+    },
+  };
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  expect(selectOptionLabels(html, 'Display size')).toEqual(['S', 'M', 'L', 'XL']);
+  expect(selectValue(html, 'Display size')).toBe('L');
+});
+
+test('describes the Android display-size control with the resulting dp width', () => {
+  const client = {
+    ...inspectorClient('android'),
+    deviceSettings: {
+      appearance: 'light',
+      network: 'on',
+      'text-size': 'medium',
+      'display-size': 'large',
+    },
+    displayWidthDp: 411,
+  };
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  const describedBy = /aria-describedby="([^"]+)"/.exec(selectMarkup(html, 'Display size'))?.[1];
+
+  expect(html).toContain('>sw411dp<');
+  expect(describedBy).toBeTruthy();
+  expect(html).toContain(`id="${describedBy}"`);
+});
+
+test('omits the dp width when the Android device has not reported one', () => {
+  const client = {
+    ...inspectorClient('android'),
+    deviceSettings: {
+      appearance: 'light',
+      network: 'on',
+      'text-size': 'medium',
+      'display-size': 'large',
+    },
+  };
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  expect(html).not.toMatch(/sw\d+dp/);
+  expect(selectMarkup(html, 'Display size')).not.toContain('aria-describedby');
+});
+
+test('omits the Android display-size control the backend does not report', () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+
+  expect(html).not.toContain('>Display size<');
+});
+
+test('never renders the Android-only display-size control on iOS', () => {
+  const client = {
+    ...inspectorClient('ios'),
+    deviceSettings: { ...inspectorClient('ios').deviceSettings, 'display-size': 'large' },
+  };
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  expect(html).not.toContain('>Display size<');
 });
 
 test('renders the Android accessibility switches the backend reports', () => {

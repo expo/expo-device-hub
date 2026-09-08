@@ -100,6 +100,7 @@ export type DeviceSettingKey =
   | 'liquid-glass'
   | 'color-filter'
   | 'text-size'
+  | 'display-size'
   | 'reduce-motion'
   | 'bold-text'
   | 'increase-contrast'
@@ -486,6 +487,11 @@ export interface DeviceClient {
   deviceSettingsPending: ReadonlySet<DeviceSettingKey>;
   /** Change one simulator/device option. Unsupported keys are ignored by each backend. */
   setDeviceSetting: (key: DeviceSettingKey, value: string) => void;
+  /**
+   * The device's smallest-width dp that the Display size control surfaces, or
+   * null when it is unknown.
+   */
+  displayWidthDp: number | null;
 
   /** Emulator camera feeds, or null before the first read or when the backend has none. */
   camera: DeviceCameraStatus | null;

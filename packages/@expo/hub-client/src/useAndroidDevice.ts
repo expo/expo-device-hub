@@ -32,6 +32,7 @@ import {
   type AndroidDeviceSettingKey,
   androidDeviceSettingPathFor,
   androidDeviceSettingRequest,
+  androidDisplayWidthDpFromPayload,
   createAndroidDeviceSettingVersions,
   parseAndroidDeviceSetting,
 } from './android-device-settings';
@@ -204,6 +205,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // The device's system dark/light setting. null until `/api/uimode` reports it.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
+  const [displayWidthDp, setDisplayWidthDp] = useState<number | null>(null);
   const [deviceSettingsPending, setDeviceSettingsPending] = useState<
     ReadonlySet<DeviceSettingKey>
   >(() => new Set());
@@ -1547,6 +1549,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setDeviceSettingsPending(new Set());
     setDeviceSettings(null);
     setAppearanceState(null);
+    setDisplayWidthDp(null);
     if (!active || !baseUrl) {
       return;
     }
@@ -1573,12 +1576,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
               { cache: 'no-store', signal: controller.signal },
             );
             if (!response.ok) return { key, version, pendingAtStart, handled: false as const };
+            const payload: unknown = await response.json();
             return {
               key,
               version,
               pendingAtStart,
               handled: true as const,
-              value: parseAndroidDeviceSetting(key, await response.json()),
+              value: parseAndroidDeviceSetting(key, payload),
+              payload,
             };
           } catch {
             return { key, version, pendingAtStart, handled: false as const };
@@ -1609,6 +1614,19 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         (appearanceResult.value === 'light' || appearanceResult.value === 'dark')
       ) {
         setAppearanceState(appearanceResult.value);
+      }
+      const displaySizeResult = results.find((result) => result.key === 'display-size');
+      if (
+        displaySizeResult &&
+        !displaySizeResult.pendingAtStart &&
+        deviceSettingVersionsRef.current['display-size'] === displaySizeResult.version &&
+        !tracker.pending.has('display-size')
+      ) {
+        setDisplayWidthDp(
+          displaySizeResult.handled
+            ? androidDisplayWidthDpFromPayload(displaySizeResult.payload)
+            : null,
+        );
       }
     };
 
@@ -1649,6 +1667,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
+    displayWidthDp,
     camera,
     cameraPending,
     cameraError,

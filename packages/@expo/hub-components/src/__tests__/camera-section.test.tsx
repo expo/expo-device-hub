@@ -25,6 +25,7 @@ const BASE_CLIENT: DeviceClient = {
   deviceSettings: null,
   deviceSettingsPending: new Set(),
   setDeviceSetting: () => {},
+  displayWidthDp: null,
   camera: null,
   cameraPending: new Set(),
   cameraError: null,
