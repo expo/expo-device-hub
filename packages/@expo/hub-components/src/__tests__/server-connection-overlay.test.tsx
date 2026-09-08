@@ -8,6 +8,14 @@ import {
 import { font } from '../theme/tokens';
 
 describe('ServerConnectionOverlay', () => {
+  test('does not flash a connection dialog on the initial render', () => {
+    const markup = renderToStaticMarkup(
+      <ServerConnectionOverlay status="connecting" onReload={() => {}} />,
+    );
+
+    expect(markup).toBe('');
+  });
+
   test('renders above shared portals with the typed font token', () => {
     const markup = renderToStaticMarkup(
       <ServerConnectionOverlay status="disconnected" onReload={() => {}} />,
