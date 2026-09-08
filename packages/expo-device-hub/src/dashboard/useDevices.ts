@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { type Device } from '@expo/hub-components';
 
@@ -57,6 +57,12 @@ type DeviceListSubscriptionOptions = {
   onStatus: (status: DeviceListConnectionStatus) => void;
 };
 
+export type DeviceListSubscription = {
+  /** Replace the current socket with a fresh connection attempt immediately. */
+  reconnect: () => void;
+  unsubscribe: () => void;
+};
+
 /**
  * Owns the device-list socket lifecycle independently from React so reconnect
  * and heartbeat-timeout behavior can be tested with fake sockets and clocks.
@@ -71,7 +77,7 @@ export function subscribeToDeviceList({
   heartbeatTimeoutMs = HEARTBEAT_TIMEOUT_MS,
   onSnapshot,
   onStatus,
-}: DeviceListSubscriptionOptions): () => void {
+}: DeviceListSubscriptionOptions): DeviceListSubscription {
   let cancelled = false;
   let socket: DeviceListSocket | null = null;
   let reconnectTimer: ConnectionTimer | null = null;
@@ -153,7 +159,24 @@ export function subscribeToDeviceList({
   onStatus(status);
   connect();
 
-  return () => {
+  const reconnect = () => {
+    if (cancelled) return;
+    if (reconnectTimer !== null) {
+      cancelSchedule(reconnectTimer);
+      reconnectTimer = null;
+    }
+    clearWatchdog();
+    const activeSocket = socket;
+    socket = null;
+    try {
+      activeSocket?.close();
+    } catch {}
+    reconnectDelay = reconnectMinMs;
+    updateStatus('connecting');
+    connect();
+  };
+
+  const unsubscribe = () => {
     cancelled = true;
     if (reconnectTimer !== null) cancelSchedule(reconnectTimer);
     clearWatchdog();
@@ -163,6 +186,8 @@ export function subscribeToDeviceList({
       activeSocket?.close();
     } catch {}
   };
+
+  return { reconnect, unsubscribe };
 }
 
 /**
@@ -173,15 +198,17 @@ export function subscribeToDeviceList({
 function useDeviceList(): {
   devices: DeviceList;
   connectionStatus: DeviceListConnectionStatus;
+  reconnect: () => void;
 } {
   const [devices, setDevices] = useState<DeviceList>(EMPTY);
   const [connectionStatus, setConnectionStatus] =
     useState<DeviceListConnectionStatus>('connecting');
+  const subscriptionRef = useRef<DeviceListSubscription | null>(null);
 
   useEffect(() => {
     let activeErrorIds = new Set<string>();
 
-    return subscribeToDeviceList({
+    const subscription = subscribeToDeviceList({
       onSnapshot: (snapshot) => {
         activeErrorIds = logUtilityErrors(snapshot.errors, activeErrorIds);
         const { errors: _errors, ...nextDevices } = snapshot;
@@ -189,9 +216,17 @@ function useDeviceList(): {
       },
       onStatus: setConnectionStatus,
     });
+    subscriptionRef.current = subscription;
+
+    return () => {
+      if (subscriptionRef.current === subscription) subscriptionRef.current = null;
+      subscription.unsubscribe();
+    };
   }, []);
 
-  return { devices, connectionStatus };
+  const reconnect = useCallback(() => subscriptionRef.current?.reconnect(), []);
+
+  return { devices, connectionStatus, reconnect };
 }
 
 export function parseDeviceListSocketMessage(data: unknown): DeviceListSocketMessage | null {
@@ -247,8 +282,9 @@ export function useDeviceLists(): {
   booted: DeviceList;
   recent: DeviceList;
   connectionStatus: DeviceListConnectionStatus;
+  reconnect: () => void;
 } {
-  const { devices, connectionStatus } = useDeviceList();
+  const { devices, connectionStatus, reconnect } = useDeviceList();
   const lists = useMemo(() => splitDeviceList(devices), [devices]);
-  return { ...lists, connectionStatus };
+  return { ...lists, connectionStatus, reconnect };
 }
