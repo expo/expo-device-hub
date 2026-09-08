@@ -84,6 +84,7 @@ if (created) {
   detached so it keeps running after the parent exits. Returns as soon as the
   process is spawned — not once Android has finished booting — so wait for boot
   with adb using the returned `value.serial` (`emulator-<port>`).
+  `extraArgs` appends emulator flags after `-port`, verbatim.
 
 All four resolve their binaries the same way as `listDevices()` and return
 `{ value, error }`: the listers use `[]`, `createDevice` uses `false`, and
