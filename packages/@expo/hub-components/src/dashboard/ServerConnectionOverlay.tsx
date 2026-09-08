@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   Button,
@@ -23,6 +23,8 @@ export type ServerConnectionOverlayProps = {
 
 type InertableElement = Pick<HTMLElement, 'inert'>;
 
+const CONNECTING_DELAY_MS = 1_000;
+
 /** Temporarily removes a body-level portal from pointer, keyboard, and assistive-tech access. */
 export function temporarilyInertElement(element: InertableElement): (() => void) | null {
   if (element.inert) return null;
@@ -32,12 +34,24 @@ export function temporarilyInertElement(element: InertableElement): (() => void)
   };
 }
 
-/** Full-page blocker shown until the dashboard can verify its dev server connection. */
+/** Full-page blocker for a slow initial connection or a disconnected dev server. */
 export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOverlayProps) {
   const connecting = status === 'connecting';
+  const [connectionDelayElapsed, setConnectionDelayElapsed] = useState(false);
+  const visible = !connecting || connectionDelayElapsed;
   const overlayRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
+    if (!connecting) return;
+
+    // Most initial handshakes finish quickly. Only show connection feedback
+    // if the dashboard is still waiting, and cancel it when it connects.
+    const timer = setTimeout(() => setConnectionDelayElapsed(true), CONNECTING_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [connecting]);
+
+  useEffect(() => {
+    if (!visible) return;
     const overlay = overlayRef.current;
     if (!overlay) return;
 
@@ -67,7 +81,9 @@ export function ServerConnectionOverlay({ status, onReload }: ServerConnectionOv
       observer.disconnect();
       for (const restore of restorers.values()) restore();
     };
-  }, []);
+  }, [visible]);
+
+  if (!visible) return null;
 
   return (
     <main
