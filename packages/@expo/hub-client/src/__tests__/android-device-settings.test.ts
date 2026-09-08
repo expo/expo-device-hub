@@ -76,8 +76,17 @@ describe('Android device setting contract', () => {
       path: '/api/high-text-contrast',
       body: { enabled: false },
     });
+    expect(androidDeviceSettingRequest('bold-text', 'on')).toEqual({
+      path: '/api/font-weight',
+      body: { enabled: true },
+    });
+    expect(androidDeviceSettingRequest('bold-text', 'off')).toEqual({
+      path: '/api/font-weight',
+      body: { enabled: false },
+    });
     expect(androidDeviceSettingRequest('reduce-motion', 'unknown')).toBeNull();
     expect(androidDeviceSettingRequest('increase-contrast', 'unknown')).toBeNull();
+    expect(androidDeviceSettingRequest('bold-text', 'unknown')).toBeNull();
   });
 
   test('normalizes accessibility responses into on/off', () => {
@@ -98,6 +107,12 @@ describe('Android device setting contract', () => {
         ok: true,
         highTextContrast: { enabled: false },
       }),
+    ).toBe('off');
+    expect(parseAndroidDeviceSetting('bold-text', { ok: true, fontWeight: { enabled: true } })).toBe(
+      'on',
+    );
+    expect(
+      parseAndroidDeviceSetting('bold-text', { ok: true, fontWeight: { enabled: false } }),
     ).toBe('off');
   });
 
@@ -121,6 +136,12 @@ describe('Android device setting contract', () => {
         highTextContrast: { enabled: 'yes' },
       }),
     ).toBeNull();
+    expect(parseAndroidDeviceSetting('bold-text', { ok: false })).toBeNull();
+    expect(parseAndroidDeviceSetting('bold-text', { ok: true })).toBeNull();
+    expect(parseAndroidDeviceSetting('bold-text', { ok: true, fontWeight: 300 })).toBeNull();
+    expect(
+      parseAndroidDeviceSetting('bold-text', { ok: true, fontWeight: { adjustment: 300 } }),
+    ).toBeNull();
   });
 
   /** Only `network` has an unknown state; a copy-pasted decoder would regress here. */
@@ -134,6 +155,9 @@ describe('Android device setting contract', () => {
         highTextContrast: { enabled: null },
       }),
     ).toBeNull();
+    expect(
+      parseAndroidDeviceSetting('bold-text', { ok: true, fontWeight: { enabled: null } }),
+    ).toBeNull();
   });
 });
 
@@ -144,12 +168,14 @@ describe('Android device setting table', () => {
       'network',
       'text-size',
       'reduce-motion',
+      'bold-text',
       'increase-contrast',
     ]);
     expect(ANDROID_POLLED_DEVICE_SETTING_KEYS).toEqual([
       'network',
       'text-size',
       'reduce-motion',
+      'bold-text',
       'increase-contrast',
     ]);
   });
@@ -161,6 +187,7 @@ describe('Android device setting table', () => {
       network: 0,
       'text-size': 0,
       'reduce-motion': 0,
+      'bold-text': 0,
       'increase-contrast': 0,
     });
     expect(createAndroidDeviceSettingVersions()).not.toBe(versions);
