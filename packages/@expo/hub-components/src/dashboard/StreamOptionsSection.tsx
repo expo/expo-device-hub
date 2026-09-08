@@ -11,8 +11,9 @@ import {
   type DeviceStreamSource,
   type DeviceWebRtcCodec,
 } from '@expo/hub-client';
-import { Select, type SelectOption, text, textSize } from '../primitives';
+import { Select, type SelectOption } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
+import { SectionNote } from './SectionNote';
 import { SidebarRow } from './SidebarRow';
 import { type StreamModeAvailability } from './StreamSection';
 import { StreamStatistics } from './StreamStatistics';
@@ -115,29 +116,6 @@ function withCurrentValue(
   return options.some((option) => option.value === current)
     ? options
     : [{ value: current, label: label(value) }, ...options];
-}
-
-function SectionNote({
-  children,
-  role,
-}: {
-  children: string;
-  role?: 'alert' | 'status';
-}) {
-  return (
-    <span
-      role={role}
-      aria-live={role === 'status' ? 'polite' : undefined}
-      style={{
-        ...textSize.xs,
-        display: 'block',
-        padding: '0 0 8px',
-        color: role === 'alert' ? text.danger : text.tertiary,
-      }}
-    >
-      {children}
-    </span>
-  );
 }
 
 /** Viewer transport, backend-supported codecs, and optional runtime encoder controls. */
