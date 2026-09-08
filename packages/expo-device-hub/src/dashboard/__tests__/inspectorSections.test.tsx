@@ -1016,6 +1016,31 @@ test('maps Android device options onto Network and S–XL selects', () => {
   expect(selectValue(html, 'Text size')).toBe('M');
 });
 
+test('renders the Android accessibility switches the backend reports', () => {
+  const client = {
+    ...inspectorClient('android'),
+    deviceSettings: {
+      appearance: 'light',
+      network: 'on',
+      'text-size': 'medium',
+      'reduce-motion': 'on',
+      'increase-contrast': 'off',
+    },
+  };
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  expect(switchMarkup(html, 'Reduce motion')).toContain('aria-checked="true"');
+  expect(switchMarkup(html, 'Increase contrast')).toContain('aria-checked="false"');
+});
+
+test('omits the Android accessibility switches the backend does not report', () => {
+  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+
+  for (const label of ['Reduce motion', 'Increase contrast']) {
+    expect(html).not.toContain(`>${label}<`);
+  }
+});
+
 test('keeps keyboard controls at the end of the device options list', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
   const section = sectionMarkup(html, 'Device options');

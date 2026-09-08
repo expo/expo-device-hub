@@ -2,7 +2,7 @@ import { type DeviceSettingKey } from './types';
 
 export type AndroidDeviceSettingKey = Extract<
   DeviceSettingKey,
-  'appearance' | 'network' | 'text-size'
+  'appearance' | 'network' | 'text-size' | 'reduce-motion' | 'increase-contrast'
 >;
 
 export type AndroidTextSize = 'small' | 'medium' | 'large' | 'extra-large';
@@ -30,7 +30,12 @@ export function androidTextSizeForFontScale(value: unknown): AndroidTextSize | n
   ).value;
 }
 
-export type AndroidDeviceSettingPath = '/api/uimode' | '/api/network' | '/api/font-scale';
+export type AndroidDeviceSettingPath =
+  | '/api/uimode'
+  | '/api/network'
+  | '/api/font-scale'
+  | '/api/reduce-motion'
+  | '/api/high-text-contrast';
 
 export interface AndroidDeviceSettingRequest {
   path: AndroidDeviceSettingPath;
@@ -40,6 +45,17 @@ export interface AndroidDeviceSettingRequest {
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function enabledBodyForOnOff(value: string): Record<string, unknown> | null {
+  return value === 'on' || value === 'off' ? { enabled: value === 'on' } : null;
+}
+
+function onOffForEnabledBody(value: unknown): string | null {
+  const enabled = asRecord(value)?.enabled;
+  if (enabled === true) return 'on';
+  if (enabled === false) return 'off';
+  return null;
 }
 
 interface AndroidDeviceSettingSpec {
@@ -67,7 +83,7 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
   network: {
     path: '/api/network',
     polled: true,
-    encode: (value) => (value === 'on' || value === 'off' ? { enabled: value === 'on' } : null),
+    encode: enabledBodyForOnOff,
     decode: (data) => {
       const network = asRecord(data.network);
       if (!network) return null;
@@ -87,6 +103,18 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
       const fontScale = asRecord(data.fontScale);
       return fontScale === null ? null : androidTextSizeForFontScale(fontScale.scale);
     },
+  },
+  'reduce-motion': {
+    path: '/api/reduce-motion',
+    polled: true,
+    encode: enabledBodyForOnOff,
+    decode: (data) => onOffForEnabledBody(data.reduceMotion),
+  },
+  'increase-contrast': {
+    path: '/api/high-text-contrast',
+    polled: true,
+    encode: enabledBodyForOnOff,
+    decode: (data) => onOffForEnabledBody(data.highTextContrast),
   },
 };
 
