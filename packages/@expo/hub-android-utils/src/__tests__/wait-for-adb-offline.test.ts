@@ -112,6 +112,62 @@ describe("waitForAdbOffline", () => {
     expect(calls).toBe(0);
   });
 
+  test("gives up at the deadline when a listing never resolves", async () => {
+    const started = Date.now();
+    const offline = await waitForAdbOffline("emulator-5554", 40, {
+      listSerialsFn: () => new Promise(() => {}),
+      pollIntervalMs: 10,
+    });
+    expect(offline.value).toBe(false);
+    expect(Date.now() - started).toBeLessThan(1000);
+  });
+
+  test("returns false as soon as the signal aborts mid-listing", async () => {
+    const controller = new AbortController();
+    setTimeout(() => controller.abort(), 10);
+    const started = Date.now();
+    const offline = await waitForAdbOffline("emulator-5554", 5000, {
+      listSerialsFn: () => new Promise((resolve) => setTimeout(() => resolve(listed([])), 1000)),
+      pollIntervalMs: 10,
+      signal: controller.signal,
+    });
+    expect(offline.value).toBe(false);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
+  test("does not accept an empty listing that finishes after the deadline", async () => {
+    const listSerialsFn = async () => {
+      const until = Date.now() + 60;
+      while (Date.now() < until) {
+        // Hold the event loop so the listing wins its race despite the deadline passing.
+      }
+      return listed([]);
+    };
+    const offline = await waitForAdbOffline("emulator-5554", 20, {
+      listSerialsFn,
+      pollIntervalMs: 5,
+    });
+    expect(offline.value).toBe(false);
+  });
+
+  test("hands the lister the remaining budget and the signal", async () => {
+    const controller = new AbortController();
+    const seen: { timeoutMs: number; signal?: AbortSignal }[] = [];
+    const listSerialsFn = async (options: { timeoutMs: number; signal?: AbortSignal }) => {
+      seen.push(options);
+      return listed([]);
+    };
+    await waitForAdbOffline("emulator-5554", 50, {
+      listSerialsFn,
+      pollIntervalMs: 1,
+      signal: controller.signal,
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.signal).toBe(controller.signal);
+    expect(seen[0]?.timeoutMs).toBeGreaterThan(0);
+    expect(seen[0]?.timeoutMs).toBeLessThanOrEqual(50);
+  });
+
   test("stops polling once the signal aborts", async () => {
     const controller = new AbortController();
     let calls = 0;

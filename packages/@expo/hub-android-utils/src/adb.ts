@@ -6,11 +6,20 @@ const execFileAsync = promisify(execFile);
 
 /**
  * Run `adb devices -l` and return its stdout, or `null` on failure.
- * Never throws.
+ *
+ * `timeoutMs` kills the child once it elapses, and `signal` kills it as soon as
+ * the caller aborts. Both leave the failure in `error`. Without them a stalled
+ * `adb` never returns. Never throws.
  */
-export async function runAdbDevices(adbPath: string): Promise<AndroidUtilsResult<string | null>> {
+export async function runAdbDevices(
+  adbPath: string,
+  { timeoutMs, signal }: { timeoutMs?: number; signal?: AbortSignal } = {},
+): Promise<AndroidUtilsResult<string | null>> {
   try {
-    const { stdout } = await execFileAsync(adbPath, ["devices", "-l"]);
+    const { stdout } = await execFileAsync(adbPath, ["devices", "-l"], {
+      timeout: timeoutMs,
+      signal,
+    });
     return result(stdout);
   } catch (error) {
     return result(null, reportError("[android-utils] Failed to run `adb devices -l`:", error));
