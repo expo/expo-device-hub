@@ -1,3 +1,4 @@
+import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { DeviceClient } from './types';
 
 /** Inert client returned while no device is selected — module-level so its
@@ -23,6 +24,11 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   deviceSettings: null,
   deviceSettingsPending: new Set(),
   setDeviceSetting: () => {},
+  camera: null,
+  cameraPending: NO_PENDING_CAMERA_WRITES,
+  cameraError: null,
+  setCameraImage: () => {},
+  clearCameraImage: () => {},
   streamCapabilities: null,
   streamSettings: null,
   streamSettingsPending: false,
@@ -41,6 +47,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
     deviceSettings: false,
     activity: false,
     events: false,
+    camera: false,
     streamSettings: false,
   },
   foregroundApp: null,
