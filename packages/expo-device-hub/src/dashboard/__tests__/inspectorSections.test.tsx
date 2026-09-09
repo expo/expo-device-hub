@@ -8,6 +8,7 @@ import {
 } from '@expo/hub-components';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { LocationSection } from '../../../../@expo/hub-components/src/dashboard/LocationSection';
 import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
 import {
   StreamOptionsSection,
@@ -423,6 +424,34 @@ test('shows the Camera section only when the client reports camera feeds', () =>
 
   const iosHtml = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
   expect(iosHtml).not.toContain('<section aria-label="Camera"');
+});
+
+test('shows the Location section between Camera and Events, with Clear only where supported', () => {
+  const android = inspectorClient('android');
+  const client = {
+    ...android,
+    camera: { wiredAtLaunch: true, feeds: [] },
+    capabilities: { ...android.capabilities, camera: true, location: {} as const },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  const locationIndex = html.indexOf('<section aria-label="Location"');
+  expect(locationIndex).toBeGreaterThan(html.indexOf('<section aria-label="Camera"'));
+  expect(locationIndex).toBeLessThan(html.indexOf('<section aria-label="Events"'));
+  expect(
+    renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />),
+  ).not.toContain('<section aria-label="Location"');
+
+  const settable = renderToStaticMarkup(<LocationSection client={client} defaultOpen />);
+  const clearable = renderToStaticMarkup(
+    <LocationSection
+      client={{ ...client, capabilities: { ...client.capabilities, location: { clear: true } } }}
+      defaultOpen
+    />,
+  );
+  expect(settable).toContain('>Set location</span>');
+  expect(settable).not.toContain('>Clear</span>');
+  expect(clearable).toContain('>Clear</span>');
 });
 
 for (const streamMode of ['h264', 'webrtc'] as const) {
