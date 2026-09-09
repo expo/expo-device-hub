@@ -29,7 +29,7 @@ export const LOCATION_PRESETS: ReadonlyArray<{
 ];
 
 export const PRESET_OPTIONS: readonly SelectOption[] = [
-  { value: CUSTOM_PRESET, label: "Custom" },
+  { value: CUSTOM_PRESET, label: "Custom", disabled: true },
   ...LOCATION_PRESETS.map(({ value, label }) => ({ value, label })),
 ];
 
@@ -71,9 +71,14 @@ export function pastedPair(text: string): CoordinateDraft | null {
   return { latitude, longitude };
 }
 
+/** Plain decimal at the 7 places both backends keep, so the box holds text its parser accepts. */
+function coordinateText(value: number): string {
+  return value.toFixed(7).replace(/0+$/, "").replace(/\.$/, "");
+}
+
 export function draftFromFix(fix: DeviceGeoFix | null): CoordinateDraft {
   if (!fix) return { latitude: "", longitude: "" };
-  return { latitude: String(fix.latitude), longitude: String(fix.longitude) };
+  return { latitude: coordinateText(fix.latitude), longitude: coordinateText(fix.longitude) };
 }
 
 export function formatFix(fix: DeviceGeoFix): string {

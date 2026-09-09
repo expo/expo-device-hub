@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { type DeviceClient, type DeviceGeoFix } from "@expo/hub-client";
 import { Button, Select } from "../primitives";
@@ -31,6 +31,7 @@ export function LocationSection({
   const [open, setOpen] = useState(defaultOpen);
   const [draft, setDraft] = useState<CoordinateDraft | null>(null);
   const [inputError, setInputError] = useState<GeoFixInputError | null>(null);
+  const inputErrorId = useId();
 
   const capabilities = client.capabilities.location;
   if (capabilities === false) return null;
@@ -87,6 +88,7 @@ export function LocationSection({
           value={shown.latitude}
           disabled={pending}
           invalid={inputError?.field === "latitude"}
+          describedBy={inputError?.field === "latitude" ? inputErrorId : undefined}
           onChange={(value) => edit("latitude", value)}
           onPasteText={paste}
           onSubmit={applyDraft}
@@ -98,6 +100,7 @@ export function LocationSection({
           value={shown.longitude}
           disabled={pending}
           invalid={inputError?.field === "longitude"}
+          describedBy={inputError?.field === "longitude" ? inputErrorId : undefined}
           onChange={(value) => edit("longitude", value)}
           onPasteText={paste}
           onSubmit={applyDraft}
@@ -119,7 +122,11 @@ export function LocationSection({
         )}
       </div>
       {pending && <SectionNote role="status">Updating location…</SectionNote>}
-      {inputError && <SectionNote role="alert">{inputError.message}</SectionNote>}
+      {inputError && (
+        <SectionNote id={inputErrorId} role="alert">
+          {inputError.message}
+        </SectionNote>
+      )}
       {client.locationError && <SectionNote role="alert">{client.locationError}</SectionNote>}
       <SectionNote>
         {client.location

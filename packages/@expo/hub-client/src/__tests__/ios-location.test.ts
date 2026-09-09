@@ -22,7 +22,7 @@ describe("setIosLocation", () => {
   test("emits the simctl set command with a quoted udid and 7-decimal coordinates", async () => {
     const { exec, commands } = fakeExec(ok);
 
-    expect(await setIosLocation(exec, UDID, FIX)).toBe(FIX);
+    expect(await setIosLocation(exec, UDID, FIX)).toEqual(FIX);
     expect(commands).toEqual(["xcrun simctl location 'ABC-123' set 37.3349000,-122.0090000"]);
   });
 
