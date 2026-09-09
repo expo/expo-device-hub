@@ -1,16 +1,16 @@
 {
   "name": "expo-serve-device-monorepo",
   "private": true,
-  "packageManager": "bun@1.3.6",
+  "packageManager": "bun@1.3.13",
   "scripts": {
     "submodule:init": "git submodule update --init --recursive",
     "submodule:update": "git submodule update --remote --merge",
     "submodule:deinit": "git submodule deinit --all --force",
     "build": "turbo run build",
-    "typecheck": "turbo run typecheck --filter='!./packages/serve-sim/packages/*' --filter='!./packages/serve-emu/packages/*'",
-    "lint": "turbo run lint --filter='!./packages/serve-sim/packages/*' --filter='!./packages/serve-emu/packages/*'",
-    "test": "turbo run test --filter='!./packages/serve-sim/packages/*' --filter='!./packages/serve-emu/packages/*'",
-    "clean": "turbo run clean --filter='!./packages/serve-sim/packages/*' --filter='!./packages/serve-emu/packages/*'",
+    "typecheck": "turbo run typecheck --filter='!./packages/serve-sim/packages/*'",
+    "lint": "turbo run lint --filter='!./packages/serve-sim/packages/*'",
+    "test": "turbo run test --filter='!./packages/serve-sim/packages/*'",
+    "clean": "turbo run clean --filter='!./packages/serve-sim/packages/*'",
     "changeset": "changeset",
     "changeset:version": "changeset version",
     "changeset:publish": "changeset publish"
@@ -32,6 +32,9 @@
       "react-native-web": "^0.21.2"
     }
   },
+  "trustedDependencies": [
+    "node-datachannel"
+  ],
   "devDependencies": {
     "@changesets/cli": "^2.27.0",
     "@types/bun": "^1.3.14",

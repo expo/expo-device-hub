@@ -1,0 +1,26 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["bun"]
+  },
+  "include": ["tests/**/*.ts", "scripts/**/*.ts", "vite.config.ts"],
+  "exclude": [
+    "tests/api-contracts.test.ts",
+    "tests/api-routes.test.ts",
+    "tests/app-management-upload.test.ts",
+    "tests/device-grid.test.ts",
+    "tests/device-session-context.test.ts",
+    "tests/location.test.ts",
+    "tests/multipart-upload.test.ts",
+    "tests/polling.test.ts",
+    "tests/request-body.test.ts",
+    "tests/scrcpy-lifecycle.test.ts",
+    "tests/scrcpy-switch-nonblocking.test.ts",
+    "tests/server-device-session.test.ts",
+    "tests/server-http-chunked.test.ts",
+    "tests/server-upload-limits.test.ts",
+    "tests/session-recovery-watchdog.test.ts",
+    "tests/upload-manager.test.ts"
+  ]
+}

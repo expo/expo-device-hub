@@ -71,19 +71,19 @@ This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://
 | [`packages/@expo/hub-android-utils`](packages/@expo/hub-android-utils) | Lists, creates, and boots Android emulators via `avdmanager` / `sdkmanager` / `emulator`. |
 | [`packages/expo-serve-emu`](packages/expo-serve-emu) | Thin wrapper of `serve-emu`. To be replaced by [`@expo/serve-emu`](http://www.github.com/expo/serve-emu). |
 | [`packages/serve-sim`](packages/serve-sim) | Vendored source for [`@expo/serve-sim`](http://www.github.com/expo/serve-sim). |
-| [`packages/serve-emu`](packages/serve-emu) | Vendored fork of `serve-emu`. To be replaced by [`@expo/serve-emu`](http://www.github.com/expo/serve-emu). |
+| [`packages/serve-emu`](packages/serve-emu) | Source for the `serve-emu` workspace package, maintained in this monorepo. |
 | [`example`](example) | A minimal Expo app with the plugin installed. |
 
 ## Getting started
 
-`packages/serve-sim` and `packages/serve-emu` are git submodules. Check them out first,
+`packages/serve-sim` is a git submodule. Check it out first,
 or `bun install` fails with `listed in bun.lock but not on disk`:
 
 ```sh
 bun run submodule:init   # git submodule update --init --recursive
 ```
 
-Then install dependencies and build every package once from the repo root:
+Then install dependencies with Bun 1.3.13 and build every package once from the repo root:
 
 ```sh
 bun install
