@@ -50,6 +50,10 @@ export type FontWeightStatus = {
   enabled: boolean;
   raw: string;
 };
+export type SoftwareKeyboardStatus = {
+  enabled: boolean;
+  raw: string;
+};
 export type DisplayDensityStatus = {
   /** The override density as a ratio of the device's own physical density. */
   scale: number;
@@ -554,6 +558,27 @@ export async function setFontWeight(
     runExec,
   );
   return getFontWeight(serial, runExec);
+}
+
+export async function getSoftwareKeyboard(
+  serial: string,
+  runExec: typeof execText = execText,
+): Promise<SoftwareKeyboardStatus> {
+  const raw = await secureSetting(serial, "show_ime_with_hard_keyboard", runExec);
+  return { enabled: enabledFromIntSetting(raw), raw };
+}
+
+export async function setSoftwareKeyboard(
+  serial: string,
+  enabled: boolean,
+  runExec: typeof execText = execText,
+): Promise<SoftwareKeyboardStatus> {
+  await mutateShell(
+    serial,
+    ["settings", "put", "secure", "show_ime_with_hard_keyboard", enabled ? "1" : "0"],
+    runExec,
+  );
+  return getSoftwareKeyboard(serial, runExec);
 }
 
 const DISPLAY_DENSITY_MIN_DPI = 72;
