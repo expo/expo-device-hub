@@ -693,9 +693,11 @@ export function grpcImageModeBehavior(
   }
   return {
     encoderInputFormat: "rgb24",
-    // In-band RGB messages own their pixels and can use the same bounded
-    // predecode pacer as PNG. MMAP metadata must be decoded immediately.
-    predecodeMaxFps: imageMode === "rgb888" ? maxFps : undefined,
+    // Drain raw RGB responses independently of encoder FPS. Pausing HTTP/2
+    // queues old pixels upstream; onImage keeps only the newest frame and the
+    // encoder write pacer decides when to submit it. MMAP also drains metadata
+    // immediately, then selects which notifications trigger memory reads.
+    predecodeMaxFps: undefined,
     needsEncoderFollowUp: (repeat) => !repeat,
   };
 }

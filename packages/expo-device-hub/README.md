@@ -96,9 +96,11 @@ by the elapsed seconds within the same capture session. This counter increments
 when a complete gRPC response has been assembled, before protobuf decoding,
 MMAP reads, frame selection, and encoder writes. Count differences include idle
 time; the displayed **Host receive FPS** is an active-cadence estimate that can
-retain its last value while idle. RGB888's normal capture path also pauses the
-HTTP/2 stream for local pacing, so received response rate is not a measurement
-of every frame rendered internally by the emulator.
+retain its last value while idle. RGB888 continuously drains incoming gRPC
+responses and keeps only the newest image awaiting encoding. `--video-fps`
+limits fresh encoder submissions without slowing reception or queuing old
+images for playback. Received response rate measures delivered messages,
+which may differ from the emulator's internal rendering rate.
 
 MMAP uses gRPC metadata notifications to trigger selected shared-memory reads;
 it does not continuously poll the file. After the stream has delivered a message,
