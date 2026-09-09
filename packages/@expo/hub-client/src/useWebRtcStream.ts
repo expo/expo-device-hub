@@ -161,6 +161,13 @@ export function useWebRtcStream({
     setError(null);
   }, []);
 
+  // A server restart can be known before ICE detects that the old peer is gone.
+  const restart = useCallback(() => {
+    transportRetryAttemptRef.current = 0;
+    setStream(null);
+    setRetryGeneration((generation) => generation + 1);
+  }, []);
+
   useEffect(() => {
     transportRetryAttemptRef.current = 0;
   }, [
@@ -448,5 +455,5 @@ export function useWebRtcStream({
     retryGeneration,
   ]);
 
-  return { stream, failure, error, markFrameDecoded, streamStats, setStreamStatsEnabled };
+  return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };
 }
