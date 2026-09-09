@@ -61,6 +61,11 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     accessibilityPending: false,
     accessibilityError: null,
     refreshAccessibility: () => {},
+    location: null,
+    locationPending: false,
+    locationError: null,
+    setLocation: () => {},
+    clearLocation: () => {},
     streamCapabilities: ios
       ? {
           modeAvailability: { mjpeg: true, h264: true, webrtc: true },
@@ -119,6 +124,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
             h264Fps: true,
           }
         : { maxDimension: true, h264Fps: true, h264Bitrate: true },
+      location: false,
     },
     foregroundApp: null,
     videoKind: 'img',
@@ -1328,6 +1334,7 @@ test('keeps the frame option disabled with an explanation for unsupported device
         camera: false,
         accessibility: false,
         streamSettings: false,
+        location: false,
       },
     } satisfies DeviceClient;
     const html = renderToStaticMarkup(
@@ -1357,6 +1364,7 @@ test('shows only the viewer-local frame option while iOS device settings are una
       camera: false,
       accessibility: false,
       streamSettings: false,
+      location: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;
