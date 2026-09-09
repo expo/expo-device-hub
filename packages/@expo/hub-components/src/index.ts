@@ -74,6 +74,7 @@ export {
 export { ActivityCharts, ActivitySection } from './dashboard/ActivitySection';
 export { AccessibilitySection } from './dashboard/AccessibilitySection';
 export { CameraSection } from './dashboard/CameraSection';
+export { LocationSection } from './dashboard/LocationSection';
 export { EventsSection } from './dashboard/EventsSection';
 export { LogsSection } from './dashboard/LogsSection';
 export { CollapsibleSection } from './dashboard/CollapsibleSection';
