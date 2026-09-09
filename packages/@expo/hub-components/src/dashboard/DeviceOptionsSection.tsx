@@ -17,6 +17,7 @@ const DEFAULT_VALUES: Record<DeviceSettingKey, string> = {
   'reduce-motion': 'off',
   'bold-text': 'off',
   'increase-contrast': 'off',
+  'onscreen-keyboard': 'off',
   'show-borders': 'off',
   'reduce-transparency': 'off',
   voiceover: 'off',

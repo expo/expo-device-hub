@@ -104,6 +104,7 @@ export type DeviceSettingKey =
   | 'reduce-motion'
   | 'bold-text'
   | 'increase-contrast'
+  | 'onscreen-keyboard'
   | 'show-borders'
   | 'reduce-transparency'
   | 'voiceover';
