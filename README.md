@@ -70,20 +70,15 @@ This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://
 | [`packages/@expo/hub-apple-utils`](packages/@expo/hub-apple-utils) | Lists, creates, and boots Apple simulator devices via `simctl` (macOS only). |
 | [`packages/@expo/hub-android-utils`](packages/@expo/hub-android-utils) | Lists, creates, and boots Android emulators via `avdmanager` / `sdkmanager` / `emulator`. |
 | [`packages/expo-serve-emu`](packages/expo-serve-emu) | Thin wrapper of `serve-emu`. To be replaced by [`@expo/serve-emu`](http://www.github.com/expo/serve-emu). |
-| [`packages/serve-sim`](packages/serve-sim) | Vendored source for [`@expo/serve-sim`](http://www.github.com/expo/serve-sim). |
+| [`packages/serve-sim`](packages/serve-sim) | Source for the [`@expo/serve-sim`](https://www.npmjs.com/package/@expo/serve-sim) workspace. |
 | [`packages/serve-emu`](packages/serve-emu) | Source for the `serve-emu` workspace package, maintained in this monorepo. |
 | [`example`](example) | A minimal Expo app with the plugin installed. |
 
 ## Getting started
 
-`packages/serve-sim` is a git submodule. Check it out first,
-or `bun install` fails with `listed in bun.lock but not on disk`:
+Both `serve-sim` and `serve-emu` are regular workspaces in this repository.
 
-```sh
-bun run submodule:init   # git submodule update --init --recursive
-```
-
-Then install dependencies with Bun 1.3.13 and build every package once from the repo root:
+Install dependencies with Bun 1.3.13 and build every package once from the repo root:
 
 ```sh
 bun install

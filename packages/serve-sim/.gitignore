@@ -7,5 +7,5 @@ dist/
 *.swp
 .DS_Store
 *.tsbuildinfo
-/packages/serve-sim/.xcode-build
+/.xcode-build
 *.bun-build
