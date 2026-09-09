@@ -25,6 +25,9 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
   alongside `/api/network` and `/api/font-scale`. Each reads back the key its
   own framework API parses, and display density reports the resulting
   smallest-width dp.
+- Add `/api/software-keyboard`, which reads and writes
+  `secure show_ime_with_hard_keyboard`. Android hides the on-screen IME while a
+  hardware keyboard is attached, and `1` shows it anyway.
 
 ### Changed
 
