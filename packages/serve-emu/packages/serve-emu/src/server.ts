@@ -18,6 +18,7 @@ import {
   getNetworkStatus,
   getNightMode,
   getReduceMotion,
+  getSoftwareKeyboard,
   getUserRotation,
   listAllDevices,
   screencapPng,
@@ -28,6 +29,7 @@ import {
   setNetworkEnabled,
   setNightMode,
   setReduceMotion,
+  setSoftwareKeyboard,
   setUserRotation,
   type NightMode,
   type OrientationMode,
@@ -2719,6 +2721,50 @@ export async function startServer(
               ok: true,
               fontWeight: await runForContext(requestContext, (context) =>
                 setFontWeight(context.serial, enabled),
+              ),
+            });
+          } catch (err) {
+            return errorResponse(err);
+          }
+        }
+        return new Response("method not allowed", { status: 405 });
+      }
+
+      if (url.pathname === "/api/software-keyboard") {
+        if (req.method === "GET") {
+          try {
+            return Response.json({
+              ok: true,
+              softwareKeyboard: await runForContext(requestContext, (context) =>
+                getSoftwareKeyboard(context.serial),
+              ),
+            });
+          } catch (err) {
+            return errorResponse(err);
+          }
+        }
+        if (req.method === "POST") {
+          try {
+            const payload = await readJsonBody(
+              req,
+              MAX_JSON_BODY_BYTES,
+              requestContext,
+            );
+            if (
+              typeof payload !== "object" ||
+              payload === null ||
+              Array.isArray(payload)
+            ) {
+              throw new Error("software keyboard payload must be an object");
+            }
+            const enabled = (payload as Record<string, unknown>).enabled;
+            if (typeof enabled !== "boolean") {
+              throw new Error("enabled must be a boolean");
+            }
+            return Response.json({
+              ok: true,
+              softwareKeyboard: await runForContext(requestContext, (context) =>
+                setSoftwareKeyboard(context.serial, enabled),
               ),
             });
           } catch (err) {
