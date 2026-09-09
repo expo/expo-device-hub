@@ -44,7 +44,7 @@ function output(stdout: string, stderr: string): string {
   return `${stdout}${stderr}`.trim();
 }
 
-async function adb(
+export async function adb(
   serial: string,
   args: string[],
   timeout = 30_000,
@@ -311,6 +311,27 @@ export function grantPermission(
       "shell",
       "pm",
       "grant",
+      packageName(packageNameValue),
+      permissionName(permissionValue),
+    ],
+    30_000,
+    undefined,
+    dependencies.execText,
+  );
+}
+
+export function revokePermission(
+  serial: string,
+  packageNameValue: string,
+  permissionValue: string,
+  dependencies: AppManagementDependencies = {},
+): Promise<AppActionResult> {
+  return adb(
+    serial,
+    [
+      "shell",
+      "pm",
+      "revoke",
       packageName(packageNameValue),
       permissionName(permissionValue),
     ],
