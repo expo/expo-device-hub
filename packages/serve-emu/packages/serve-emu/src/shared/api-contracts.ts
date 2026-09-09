@@ -267,6 +267,11 @@ export type HighTextContrastResponse = ApiSuccess<
 export type FontWeightStatus = { enabled: boolean; raw: string };
 export type FontWeightResponse = ApiSuccess<{ fontWeight: FontWeightStatus }>;
 
+export type SoftwareKeyboardStatus = { enabled: boolean; raw: string };
+export type SoftwareKeyboardResponse = ApiSuccess<
+  { softwareKeyboard: SoftwareKeyboardStatus }
+>;
+
 export type DisplayDensityStatus = { scale: number; widthDp: number; raw: string };
 export type DisplayDensityResponse = ApiSuccess<
   { displayDensity: DisplayDensityStatus }
@@ -615,6 +620,10 @@ export type ApiContractMap = {
   "/api/font-weight": {
     GET: EndpointContract<undefined, FontWeightResponse>;
     POST: EndpointContract<{ enabled: boolean }, FontWeightResponse>;
+  };
+  "/api/software-keyboard": {
+    GET: EndpointContract<undefined, SoftwareKeyboardResponse>;
+    POST: EndpointContract<{ enabled: boolean }, SoftwareKeyboardResponse>;
   };
   "/api/display-density": {
     GET: EndpointContract<undefined, DisplayDensityResponse>;
@@ -1338,6 +1347,21 @@ export function parseFontWeightResponse(value: unknown): FontWeightResponse {
   };
 }
 
+export function parseSoftwareKeyboardResponse(
+  value: unknown,
+): SoftwareKeyboardResponse {
+  const root = record(value, "software keyboard response");
+  if (root.ok !== true) fail("software keyboard response.ok must be true");
+  const status = record(root.softwareKeyboard, "softwareKeyboard");
+  return {
+    ok: true,
+    softwareKeyboard: {
+      enabled: boolean(status.enabled, "softwareKeyboard.enabled"),
+      raw: string(status.raw, "softwareKeyboard.raw"),
+    },
+  };
+}
+
 export function parseDisplayDensityResponse(
   value: unknown,
 ): DisplayDensityResponse {
@@ -1917,6 +1941,10 @@ export const API_SUCCESS_PARSERS = {
     POST: parseHighTextContrastResponse,
   },
   "/api/font-weight": { GET: parseFontWeightResponse, POST: parseFontWeightResponse },
+  "/api/software-keyboard": {
+    GET: parseSoftwareKeyboardResponse,
+    POST: parseSoftwareKeyboardResponse,
+  },
   "/api/display-density": {
     GET: parseDisplayDensityResponse,
     POST: parseDisplayDensityResponse,

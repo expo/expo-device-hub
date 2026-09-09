@@ -27,6 +27,7 @@ import {
   parseScreenshotBase64Response,
   parseSessionMutationResponse,
   parseSessionSnapshot,
+  parseSoftwareKeyboardResponse,
   parseStreamEncoderSettingsResponse,
   type RoutePlaybackSnapshot,
   type SessionSnapshot,
@@ -290,6 +291,18 @@ describe("complete API success contracts", () => {
         fontScale: { scale: 1.15, raw: "1.15" },
       }).fontScale.scale,
     ).toBe(1.15);
+    expect(
+      parseSoftwareKeyboardResponse({
+        ok: true,
+        softwareKeyboard: { enabled: true, raw: "1" },
+      }).softwareKeyboard,
+    ).toEqual({ enabled: true, raw: "1" });
+    expect(() =>
+      parseSoftwareKeyboardResponse({
+        ok: true,
+        softwareKeyboard: { enabled: "1", raw: "1" },
+      }),
+    ).toThrow("softwareKeyboard.enabled");
     expect(
       parseNetworkResponse({
         ok: true,

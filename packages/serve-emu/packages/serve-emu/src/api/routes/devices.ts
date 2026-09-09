@@ -289,6 +289,29 @@ export function deviceRoutes(): ContractApiRoute<ApiDependencies>[] {
     },
     {
       method: "GET",
+      path: "/api/software-keyboard",
+      handler: async ({ deps }) => Response.json({
+        ok: true,
+        softwareKeyboard: await downstream("read software keyboard", deps.getSoftwareKeyboard),
+      }),
+    },
+    {
+      method: "POST",
+      path: "/api/software-keyboard",
+      handler: async ({ request, deps }) => {
+        const body = await readObject(request, "software keyboard payload");
+        const enabled = body.enabled;
+        if (typeof enabled !== "boolean") {
+          invalid("enabled must be a boolean");
+        }
+        return Response.json({
+          ok: true,
+          softwareKeyboard: await downstream("set software keyboard", () => deps.setSoftwareKeyboard(enabled)),
+        });
+      },
+    },
+    {
+      method: "GET",
       path: "/api/display-density",
       handler: async ({ deps }) => Response.json({
         ok: true,
