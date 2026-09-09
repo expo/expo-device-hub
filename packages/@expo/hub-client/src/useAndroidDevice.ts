@@ -1648,7 +1648,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   return {
     platform: 'android',
-    status,
+    // The transport can stay live while the server stages new stream settings.
+    // Show the pending change immediately without feeding it back into the
+    // switch tracker, which must observe the actual interruption and recovery.
+    status:
+      status === 'streaming' && (isStreamSwitchPending(streamSwitch) || streamSettingsPending)
+        ? 'reconnecting'
+        : status,
     error,
     screen,
     fps,
