@@ -566,7 +566,7 @@ export interface DeviceClient {
 
   /** Forward a normalized touch/drag to the device. */
   sendTouch: (sample: TouchSample) => void;
-  /** Forward a two-finger pinch/pan. Present only on backends that support it (serve-sim). */
+  /** Forward a two-finger pinch/pan. Absent only on the no-op client. */
   sendMultiTouch?: (sample: MultiTouchSample) => void;
   /**
    * Forward a physical browser-keyboard event to the device. Returns true when

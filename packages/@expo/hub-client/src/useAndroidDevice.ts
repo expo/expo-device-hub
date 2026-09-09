@@ -86,6 +86,7 @@ import {
   type ForegroundApp,
   type HardwareButton,
   type KeyboardInput,
+  type MultiTouchSample,
   type RunningDevice,
   type ScreenSize,
   type TouchSample,
@@ -338,6 +339,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const sendTouch = useCallback(
     (sample: TouchSample) => {
       send(androidTouchMessage(sample.phase, sample, 0));
+    },
+    [send],
+  );
+
+  // scrcpy derives ACTION_POINTER_DOWN from the second pointer, so 0 goes first.
+  const sendMultiTouch = useCallback(
+    (sample: MultiTouchSample) => {
+      send(androidTouchMessage(sample.phase, sample.a, 0));
+      send(androidTouchMessage(sample.phase, sample.b, 1));
     },
     [send],
   );
@@ -1810,6 +1820,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     videoKind: useWebRtc ? 'video' : 'canvas',
     attachVideo,
     sendTouch,
+    sendMultiTouch,
     sendKey,
     pressButton,
     reload,
