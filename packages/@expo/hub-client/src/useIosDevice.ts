@@ -72,6 +72,7 @@ import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
+import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
 import { useAvccStream } from './useAvccStream';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
@@ -85,32 +86,6 @@ import {
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
 const ACTIVITY_STALE_MS = 8000;
-
-interface ParsedSseBlock {
-  event: string;
-  data: string;
-}
-
-/** Append raw SSE bytes and emit every complete block, retaining a partial tail. */
-function drainSseChunk(
-  previous: string,
-  chunk: string,
-  emit: (block: ParsedSseBlock) => void,
-): string {
-  let buffer = `${previous}${chunk}`.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
-  let boundary: number;
-  while ((boundary = buffer.indexOf('\n\n')) !== -1) {
-    const lines = buffer.slice(0, boundary).split('\n');
-    buffer = buffer.slice(boundary + 2);
-    const event = lines.find((line) => line.startsWith('event:'))?.slice(6).trim() || 'message';
-    const data = lines
-      .filter((line) => line.startsWith('data:'))
-      .map((line) => line.slice(5).replace(/^ /, ''))
-      .join('\n');
-    if (data) emit({ event, data });
-  }
-  return buffer;
-}
 
 // serve-sim binary WS message tags (serve-sim-client `SimulatorView`).
 const WS_MSG_TOUCH = 0x03;
