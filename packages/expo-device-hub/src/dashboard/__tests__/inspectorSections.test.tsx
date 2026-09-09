@@ -801,10 +801,10 @@ test.each(['mmap', 'rgb888'] as const)('shows the %s producer-to-client pipeline
             producerFps: 60,
             receiveFps: 59.5,
             usableImageFps: 59,
-            encoderInputFps: 58.5,
+            encoderInputFps: 30,
             messagesReceived: 600,
-            messagesEmitted: 590,
-            messagesCoalesced: 10,
+            messagesEmitted: imageMode === 'rgb888' ? 600 : 590,
+            messagesCoalesced: imageMode === 'rgb888' ? 0 : 10,
             sequenceGaps: 2,
             imagePayloadBytes: 552_960,
             transportBytes: 55_296_000,
@@ -836,10 +836,17 @@ test.each(['mmap', 'rgb888'] as const)('shows the %s producer-to-client pipeline
   expect(streamStatisticValue(capture, 'Emulator producer FPS')).toBe('60 FPS');
   expect(streamStatisticValue(capture, 'Host receive FPS')).toBe('60 FPS');
   expect(streamStatisticValue(capture, 'Usable image FPS')).toBe('59 FPS');
-  expect(streamStatisticValue(capture, 'Encoder input FPS')).toBe('59 FPS');
+  expect(streamStatisticValue(capture, 'Encoder input FPS')).toBe('30 FPS');
   expect(streamStatisticValue(capture, 'gRPC notifications')).toBe('600');
-  expect(streamStatisticValue(capture, 'Selected notifications')).toBe('590');
-  expect(streamStatisticValue(capture, 'Coalesced notifications')).toBe('10');
+  if (imageMode === 'rgb888') {
+    expect(streamStatisticValue(capture, 'Decoded responses')).toBe('600');
+    expect(streamStatisticValue(capture, 'Predecode coalescing')).toBe('0');
+    expect(capture).not.toContain('Selected notifications');
+    expect(capture).not.toContain('Coalesced notifications');
+  } else {
+    expect(streamStatisticValue(capture, 'Selected notifications')).toBe('590');
+    expect(streamStatisticValue(capture, 'Coalesced notifications')).toBe('10');
+  }
   expect(streamStatisticValue(capture, 'Latest image payload')).toBe('540.0 KiB');
   expect(streamStatisticValue(capture, 'Produce→usable p50 / p95')).toBe('4.7 / 9.2 ms');
   if (imageMode === 'mmap') {

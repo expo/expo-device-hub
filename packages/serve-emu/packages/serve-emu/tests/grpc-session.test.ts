@@ -1,4 +1,5 @@
 import { EventEmitter } from "node:events";
+import http2, { type ServerHttp2Stream } from "node:http2";
 import { describe, expect, test } from "bun:test";
 import {
   GrpcAccessUnitBoundaryCadence,
@@ -27,6 +28,7 @@ import {
   type GrpcSessionRuntime,
 } from "../src/grpc-session.ts";
 import {
+  EmulatorGrpcClient,
   IMG_FORMAT_PNG,
   IMG_FORMAT_RGB888,
   type EmuImage,
@@ -40,6 +42,7 @@ import type {
   ScrcpyControlSession,
   VideoFrame,
 } from "../src/scrcpy.ts";
+import { encodeEmulatorImage, grpcFrame } from "./fixtures/grpc.ts";
 
 const CONFIG_FRAME: VideoFrame = {
   type: "frame",
@@ -249,7 +252,7 @@ describe("gRPC screenshot session helpers", () => {
 
     const rgbBehavior = grpcImageModeBehavior("rgb888", 24);
     expect(rgbBehavior.encoderInputFormat).toBe("rgb24");
-    expect(rgbBehavior.predecodeMaxFps).toBe(24);
+    expect(rgbBehavior.predecodeMaxFps).toBeUndefined();
     expect(rgbBehavior.needsEncoderFollowUp(false, true)).toBe(true);
     expect(rgbBehavior.needsEncoderFollowUp(true, false)).toBe(false);
 
@@ -1147,7 +1150,7 @@ function integrationImage(rotation = 0, width = 4, height = 6): EmuImage {
 }
 
 function integrationRuntime(
-  client: FakeGrpcClient,
+  client: GrpcSessionClient,
   encoders: FakeGrpcEncoder[],
   encoderBehavior: {
     writeResults?: boolean[];
@@ -1182,6 +1185,88 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe("startGrpcSession integration", () => {
+  test("RGB888 drains incoming frames independently of the encoder FPS limit", async () => {
+    const width = 192;
+    const height = 192;
+    const frameCount = 120;
+    const frame = (sequence: number): Buffer => {
+      const pixels = Buffer.alloc(width * height * 3);
+      pixels.writeUInt32LE(sequence);
+      return grpcFrame(
+        encodeEmulatorImage({
+          format: IMG_FORMAT_RGB888,
+          width,
+          height,
+          image: pixels,
+          seq: sequence,
+        }),
+      );
+    };
+    let screenshotStream: ServerHttp2Stream | undefined;
+    const server = http2.createServer();
+    server.on("stream", (stream: ServerHttp2Stream, headers) => {
+      stream.on("error", () => {});
+      stream.resume();
+      const streaming = String(headers[":path"]).endsWith("/streamScreenshot");
+      stream.respond({
+        ":status": 200,
+        "content-type": "application/grpc",
+        ...(streaming ? {} : { "grpc-status": "0" }),
+      });
+      if (streaming) {
+        screenshotStream = stream;
+        stream.write(frame(0));
+      } else {
+        stream.end(frame(0));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing gRPC port");
+    const endpoint = { port: address.port, token: null, avdName: "Pixel_9" };
+    const client = new EmulatorGrpcClient(endpoint);
+    const encoders: FakeGrpcEncoder[] = [];
+    let session: Awaited<ReturnType<typeof startGrpcSession>> | undefined;
+    try {
+      session = await startGrpcSession(
+        { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "rgb888", inputSource: "grpc", maxFps: 30 },
+        {
+          readDisplaySizeSignal: async () => "physical:192x192",
+          runtime: {
+            ...integrationRuntime(client, encoders),
+            ensureEndpoint: async () => endpoint,
+          },
+        },
+      );
+      // Large messages span multiple HTTP/2 chunks. Pausing the readable stream
+      // must not turn a finite incoming burst into seconds of stale playback.
+      for (let sequence = 1; sequence <= frameCount; sequence++) {
+        screenshotStream!.write(frame(sequence));
+      }
+      const deadline = performance.now() + 2000;
+      while (encoders[0]!.lastBuffer!.readUInt32LE() !== frameCount) {
+        if (performance.now() >= deadline) {
+          throw new Error(
+            `Timed out after 2000ms waiting for RGB888 frame ${frameCount} to reach the encoder; last frame was ${encoders[0]!.lastBuffer!.readUInt32LE()}`,
+          );
+        }
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      expect(session.diagnostics!().grpcCapture).toMatchObject({
+        rawGrpcMessagesReceived: frameCount + 1,
+        rawGrpcMessagesEmitted: frameCount + 1,
+        rawGrpcMessagesCoalesced: 0,
+      });
+      expect(encoders[0]!.lastBuffer!.readUInt32LE()).toBe(frameCount);
+      expect(encoders[0]!.options).toMatchObject({ fps: 30, inputFormat: "rgb24" });
+      expect(encoders[0]!.writes).toBeLessThan(frameCount / 2);
+    } finally {
+      await session?.close();
+      client.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
   test.each([0, 8, 1280])(
     "streams in-band RGB888 at maxSize=%s with rgb24 input and no MMAP",
     async (maxSize) => {
@@ -1215,7 +1300,7 @@ describe("startGrpcSession integration", () => {
           width: maxSize,
           height: maxSize,
         });
-        expect(client.streamMaxFps).toBe(24);
+        expect(client.streamMaxFps).toBeUndefined();
         expect(encoders[0]!.options).toMatchObject({
           width: 4,
           height: 6,

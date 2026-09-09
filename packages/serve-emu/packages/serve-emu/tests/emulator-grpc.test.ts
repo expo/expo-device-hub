@@ -16,14 +16,7 @@ import {
   parseEmulatorGrpcPort,
 } from "../src/emulator-grpc.ts";
 import type { ExecResult } from "../src/exec.ts";
-
-function grpcFrame(message: Buffer): Buffer {
-  const frame = Buffer.allocUnsafe(5 + message.length);
-  frame[0] = 0;
-  frame.writeUInt32BE(message.length, 1);
-  message.copy(frame, 5);
-  return frame;
-}
+import { encodeEmulatorImage, grpcFrame } from "./fixtures/grpc.ts";
 
 describe("gRPC message framing", () => {
   test("assembles byte-fragmented messages without cumulative concatenation", () => {
@@ -276,10 +269,14 @@ describe("emulator gRPC discovery", () => {
 
 describe("EmulatorGrpcClient HTTP/2 integration", () => {
   test("sends the discovered bearer token and decodes a screenshot", async () => {
-    const imageBody = Buffer.from([
-      0x0a, 0x06, 0x08, 0x02, 0x18, 0x02, 0x20, 0x01, 0x22, 0x06, 1, 2, 3, 4, 5,
-      6, 0x28, 0x01, 0x30, 0x01,
-    ]);
+    const imageBody = encodeEmulatorImage({
+      format: IMG_FORMAT_RGB888,
+      width: 2,
+      height: 1,
+      image: Buffer.from([1, 2, 3, 4, 5, 6]),
+      seq: 1,
+      timestampUs: 1n,
+    });
     let authorization: string | undefined;
     const server = http2.createServer();
     server.on("stream", (stream: ServerHttp2Stream, headers) => {
@@ -317,10 +314,12 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
   });
 
   test("fails a screenshot stream that stalls after a decoded image", async () => {
-    const imageBody = Buffer.from([
-      0x0a, 0x06, 0x08, 0x02, 0x18, 0x02, 0x20, 0x01, 0x22, 0x06, 1, 2, 3, 4, 5,
-      6,
-    ]);
+    const imageBody = encodeEmulatorImage({
+      format: IMG_FORMAT_RGB888,
+      width: 2,
+      height: 1,
+      image: Buffer.from([1, 2, 3, 4, 5, 6]),
+    });
     const server = http2.createServer();
     server.on("stream", (stream: ServerHttp2Stream) => {
       stream.respond({
@@ -362,10 +361,12 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
   });
 
   test("keeps a quiet static screenshot stream healthy with unary probes", async () => {
-    const imageBody = Buffer.from([
-      0x0a, 0x06, 0x08, 0x02, 0x18, 0x02, 0x20, 0x01, 0x22, 0x06, 1, 2, 3, 4, 5,
-      6,
-    ]);
+    const imageBody = encodeEmulatorImage({
+      format: IMG_FORMAT_RGB888,
+      width: 2,
+      height: 1,
+      image: Buffer.from([1, 2, 3, 4, 5, 6]),
+    });
     const requests: Buffer[] = [];
     const payloadBytes: number[] = [];
     const decodeBytes: number[] = [];

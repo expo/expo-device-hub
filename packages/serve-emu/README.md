@@ -640,12 +640,23 @@ rotation or display resizing.
 
 This path still requires GPU-to-CPU readback inside the emulator. It is not GPU
 texture sharing, zero-copy, or hardware encoding; speed depends on the workload
-and must be measured. A bounded gRPC message pacer and a single latest image
-preserve encoder backpressure. `--max-fps` paces local consumption and encoder
-submission; it does not impose a server-side screenshot FPS limit. Health
+and must be measured. RGB888 drains incoming gRPC responses continuously and
+retains only the latest image for the encoder. `--max-fps` limits fresh encoder
+submissions independently of incoming frame rate: excess images are replaced,
+so lowering encoded FPS does not queue old source frames for delayed playback.
+Encoder backpressure also retries the latest image. PNG retains its predecode
+message pacer; MMAP selects notifications before reading shared memory. None of
+these local limits impose a server-side screenshot FPS limit. Health
 reports `grpcCapture.imageMode`, actual received `grpcMessageBytesReceived`,
 protobuf decode timing, and separate received/source/encoder frame rates.
 MMAP counters remain zero and shared-memory timing remains null for RGB888.
+
+For RGB888, `rawGrpcMessagesEmitted` counts responses passed to protobuf decoding
+and matches `rawGrpcMessagesReceived`; `rawGrpcMessagesCoalesced` stays zero.
+Those message counters exclude images replaced in the latest-image slot before
+encoding. Compare `usableImageFps` with `freshEncoderWriteFps` (which excludes
+repeats) to observe the local reduction before encoder submission. Their
+rolling-rate difference is not an exact cumulative dropped-image count.
 
 ```sh
 serve-emu -s emulator-5554 --stream-mode grpc-screenshot --grpc-image-mode rgb888

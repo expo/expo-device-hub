@@ -319,11 +319,15 @@ export function StreamStatistics({
                     value: formatCount(grpc.messagesReceived),
                   },
                   {
-                    label: 'Selected notifications',
+                    label: grpc.imageMode === 'rgb888'
+                      ? 'Decoded responses'
+                      : 'Selected notifications',
                     value: formatCount(grpc.messagesEmitted),
                   },
                   {
-                    label: 'Coalesced notifications',
+                    label: grpc.imageMode === 'rgb888'
+                      ? 'Predecode coalescing'
+                      : 'Coalesced notifications',
                     value: formatCount(grpc.messagesCoalesced),
                   },
                   {
