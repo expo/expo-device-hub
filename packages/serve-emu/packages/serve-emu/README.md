@@ -414,7 +414,17 @@ curl "$BASE/api/network"
 curl -X POST "$BASE/api/network" \
   -H 'Content-Type: application/json' \
   -d '{"enabled":false}'
+
+curl "$BASE/api/software-keyboard"
+curl -X POST "$BASE/api/software-keyboard" \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled":true}'
 ```
+
+The software keyboard toggle writes `secure show_ime_with_hard_keyboard`.
+Android hides the on-screen IME while a hardware keyboard is attached, and `1`
+shows it anyway. Set it when a device reports a hardware keyboard and you still
+need the on-screen keyboard.
 
 ### Location And Routes
 
