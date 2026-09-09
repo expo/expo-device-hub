@@ -68,6 +68,9 @@ const EXPECTED_ROUTES = [
   ["POST", "/api/apps/clear"],
   ["POST", "/api/apps/force-stop"],
   ["POST", "/api/apps/grant"],
+  ["GET", "/api/apps/permissions"],
+  ["POST", "/api/apps/revoke"],
+  ["POST", "/api/apps/reset-permissions"],
   ["GET", "/api/location"],
   ["POST", "/api/location"],
   ["GET", "/api/route"],
@@ -133,6 +136,11 @@ const VALID_JSON_BODIES: Readonly<Record<string, unknown>> = {
     packageName: "com.example.app",
     permission: "android.permission.CAMERA",
   },
+  "POST /api/apps/revoke": {
+    packageName: "com.example.app",
+    permission: "android.permission.CAMERA",
+  },
+  "POST /api/apps/reset-permissions": { packageName: "com.example.app" },
   "POST /api/location": { latitude: 51.5, longitude: -0.12 },
   "POST /api/route": {
     waypoints: [{ latitude: 51.5, longitude: -0.12 }],
@@ -377,6 +385,21 @@ function fakeDependencies(
       ok: true,
       output: `granted ${permission} to ${packageName}`,
     }),
+    listPermissions: async (packageName) => ({
+      ok: true,
+      packageName,
+      permissions: [
+        { name: "android.permission.CAMERA", granted: false, flags: ["USER_SET"] },
+      ],
+    }),
+    revokePermission: async (packageName, permission) => ({
+      ok: true,
+      output: `revoked ${permission} from ${packageName}`,
+    }),
+    resetPermissions: async (packageName) => ({
+      ok: true,
+      output: `reset ${packageName}`,
+    }),
 
     getLocation: () => ({
       serial: "emulator-5554",
@@ -430,7 +453,9 @@ function validRequest(method: ApiMethod, path: string): Request {
   const body = VALID_JSON_BODIES[key];
   const requestPath = key === "GET /api/screenshot"
     ? `${path}?format=base64`
-    : path;
+    : key === "GET /api/apps/permissions"
+      ? `${path}?packageName=com.example.app`
+      : path;
   return new Request(`${BASE_URL}${requestPath}`, {
     method,
     ...(body === undefined
@@ -474,14 +499,14 @@ const silentLogger: ApiLogger = {
 };
 
 describe("domain API route table", () => {
-  test("registers the exact 59 method/path pairs across 41 paths", () => {
+  test("registers the exact 62 method/path pairs across 44 paths", () => {
     const routes = createApiRoutes();
 
     expect(routes.map(({ method, path }) => [method, path])).toEqual(
       EXPECTED_ROUTES.map(([method, path]) => [method, path]),
     );
-    expect(routes).toHaveLength(59);
-    expect(new Set(routes.map((route) => route.path)).size).toBe(41);
+    expect(routes).toHaveLength(62);
+    expect(new Set(routes.map((route) => route.path)).size).toBe(44);
     const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(
       ([path, methods]) => Object.keys(methods).map((method) => `${method} ${path}`),
     );
@@ -511,12 +536,12 @@ describe("domain API route table", () => {
     );
   });
 
-  test("returns structured OPTIONS 405 with exact Allow for all 41 paths", async () => {
+  test("returns structured OPTIONS 405 with exact Allow for all 44 paths", async () => {
     const router = createApiRouter(createApiRoutes());
     const deps = fakeDependencies();
     const paths = [...new Set(EXPECTED_ROUTES.map((route) => route[1]))];
 
-    expect(paths).toHaveLength(41);
+    expect(paths).toHaveLength(44);
     for (const path of paths) {
       const response = await router.handle(
         new Request(`${BASE_URL}${path}`, { method: "OPTIONS" }),

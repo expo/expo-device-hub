@@ -48,7 +48,9 @@ import {
   importMediaFile,
   installApk,
   launchApp,
+  revokePermission,
 } from "./app-management.ts";
+import { listPermissions, resetPermissions } from "./app-permissions.ts";
 import { getForegroundApp } from "./app-info.ts";
 import {
   terminalTransitionAllowed,
@@ -3066,6 +3068,40 @@ export async function startServer(
             String(payload.packageName ?? ""),
             String(payload.permission ?? ""),
           ),
+        );
+      }
+
+      if (url.pathname === "/api/apps/permissions") {
+        if (req.method !== "GET")
+          return new Response("method not allowed", { status: 405 });
+        try {
+          return Response.json(
+            await runForContext(requestContext, (context) =>
+              listPermissions(context.serial, url.searchParams.get("packageName") ?? ""),
+            ),
+          );
+        } catch (err) {
+          return errorResponse(err);
+        }
+      }
+
+      if (url.pathname === "/api/apps/revoke") {
+        if (req.method !== "POST")
+          return new Response("method not allowed", { status: 405 });
+        return appJsonEndpoint(requestContext, req, (payload) =>
+          revokePermission(
+            requestContext.serial,
+            String(payload.packageName ?? ""),
+            String(payload.permission ?? ""),
+          ),
+        );
+      }
+
+      if (url.pathname === "/api/apps/reset-permissions") {
+        if (req.method !== "POST")
+          return new Response("method not allowed", { status: 405 });
+        return appJsonEndpoint(requestContext, req, (payload) =>
+          resetPermissions(requestContext.serial, String(payload.packageName ?? "")),
         );
       }
 
