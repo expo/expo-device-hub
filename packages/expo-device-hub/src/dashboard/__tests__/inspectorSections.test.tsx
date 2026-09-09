@@ -52,6 +52,10 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     cameraError: null,
     setCameraImage: () => {},
     clearCameraImage: () => {},
+    accessibility: null,
+    accessibilityPending: false,
+    accessibilityError: null,
+    refreshAccessibility: () => {},
     streamCapabilities: ios
       ? {
           modeAvailability: { mjpeg: true, h264: true, webrtc: true },
@@ -100,6 +104,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       activity: ios,
       events: true,
       camera: false,
+      accessibility: true,
       streamSettings: ios
         ? {
             mjpegFps: true,
@@ -1309,6 +1314,7 @@ test('keeps the frame option disabled with an explanation for unsupported device
         activity: false,
         events: true,
         camera: false,
+        accessibility: false,
         streamSettings: false,
       },
     } satisfies DeviceClient;
@@ -1337,6 +1343,7 @@ test('shows only the viewer-local frame option while iOS device settings are una
       activity: false,
       events: true,
       camera: false,
+      accessibility: false,
       streamSettings: false,
     },
     deviceSettings: null,

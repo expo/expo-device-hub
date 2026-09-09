@@ -30,6 +30,7 @@ import {
   parseActivityHostCores,
   parseActivitySample,
 } from './activity';
+import { type AccessibilityLoader, loadIosAccessibility } from './accessibility';
 import { isAvccSupported } from './avcc';
 import {
   HID_EDGE_BOTTOM,
@@ -74,6 +75,7 @@ import { KeyedWriteTracker } from './keyed-write-tracker';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
+import { useAccessibility } from './useAccessibility';
 import { useAvccStream } from './useAvccStream';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
@@ -312,6 +314,7 @@ interface ResolvedConfig {
   eventsPath: string | null;
   /** Relative SSE path for foreground app activity. */
   metricsPath: string | null;
+  axUrl: string | null;
   /** Runtime encoder settings endpoint on the selected helper. */
   streamSettingsUrl: string | null;
   /** Initial server-provided stream settings, if present. */
@@ -333,6 +336,7 @@ interface PreviewApi {
   appStateEndpoint?: string;
   eventLogEventsEndpoint?: string;
   metricsEndpoint?: string;
+  axEndpoint?: string;
   streamSettingsEndpoint?: string;
   gridApiEndpoint?: string;
   proxyHelpers?: boolean;
@@ -652,6 +656,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         appStateUrl: absoluteMiddlewareUrl(c.appStateEndpoint),
         eventsPath: c.eventLogEventsEndpoint ?? null,
         metricsPath: c.metricsEndpoint ?? null,
+        axUrl: absoluteMiddlewareUrl(c.axEndpoint),
         // A proxied helper URL is re-anchored to the browser origin above; use
         // that canonical URL rather than an injected host port that may be 0.
         streamSettingsUrl: c.streamSettingsEndpoint
@@ -999,6 +1004,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const eventsPath = config?.eventsPath ?? null;
   const metricsPath = config?.metricsPath ?? null;
   const deviceUdid = config?.device ?? null;
+  const axUrl = config?.axUrl ?? null;
+
+  const accessibilityLoader = useMemo<AccessibilityLoader | null>(
+    () => (axUrl ? (signal) => loadIosAccessibility(axUrl, signal) : null),
+    [axUrl],
+  );
+  const accessibilityState = useAccessibility(accessibilityLoader);
 
   useEffect(() => {
     setEventLogState(createIosEventLogState());
@@ -1331,6 +1343,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     cameraError: null,
     setCameraImage: () => {},
     clearCameraImage: () => {},
+    ...accessibilityState,
     streamCapabilities: IOS_STREAM_CAPABILITIES,
     streamSettings,
     streamSettingsPending,
@@ -1351,6 +1364,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       activity: !!metricsPath,
       events: !!eventsPath,
       camera: false,
+      accessibility: accessibilityLoader !== null,
       streamSettings: streamSettingsUrl
         ? {
             mjpegFps: true,

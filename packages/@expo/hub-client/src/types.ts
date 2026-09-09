@@ -334,7 +334,6 @@ export interface AccessibilityNode {
   frame: AccessibilityFrame;
 }
 
-/** One read of the accessibility tree. Backends do not stream it. */
 export interface AccessibilitySnapshot {
   /** Epoch milliseconds. */
   capturedAt: number;
@@ -348,6 +347,8 @@ export interface DeviceCapabilities {
   events: boolean;
   /** Host-fed emulator camera images that the backend can read and replace. */
   camera: boolean;
+  /** An accessibility tree of the current screen that the backend can read on demand. */
+  accessibility: boolean;
   /** Runtime encoder settings that can be read and patched. */
   streamSettings: DeviceStreamSettingCapabilities;
 }
@@ -538,6 +539,14 @@ export interface DeviceClient {
   setCameraImage: (facing: DeviceCameraFacing, png: Blob) => void;
   /** Restore the backend's "no image set" card for one facing. */
   clearCameraImage: (facing: DeviceCameraFacing) => void;
+
+  /** Last accessibility snapshot, or null before the first successful read. */
+  accessibility: AccessibilitySnapshot | null;
+  accessibilityPending: boolean;
+  /** Last failed read, cleared when the next read starts. */
+  accessibilityError: string | null;
+  /** Read the accessibility tree of the current screen once. Backends do not stream it. */
+  refreshAccessibility: () => void;
 
   /** Backend-supported viewer transport and codec choices; null hides stream controls. */
   streamCapabilities: DeviceStreamCapabilities | null;
