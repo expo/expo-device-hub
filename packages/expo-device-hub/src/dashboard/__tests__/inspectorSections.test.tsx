@@ -1392,8 +1392,8 @@ test('shows only the viewer-local frame option while iOS device settings are una
       events: true,
       camera: false,
       accessibility: false,
-      streamSettings: false,
       location: false,
+      streamSettings: false,
     },
     deviceSettings: null,
   } satisfies DeviceClient;
@@ -1451,6 +1451,7 @@ test('keeps the Android on-screen keyboard row off iOS while device settings loa
       events: true,
       camera: false,
       accessibility: false,
+      location: false,
       streamSettings: false,
     },
     deviceSettings: null,
