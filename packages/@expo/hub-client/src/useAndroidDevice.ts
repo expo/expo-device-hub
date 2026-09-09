@@ -835,6 +835,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     restartWebRtcStream();
   }, [restartWebRtcStream, webRtcVideoElement]);
 
+  // Media remounts update the restart target without replacing the input socket.
+  const restartWebRtcRef = useRef(restartWebRtc);
+  useLayoutEffect(() => {
+    restartWebRtcRef.current = restartWebRtc;
+  }, [restartWebRtc]);
+
   const updateStreamSettings = useCallback(
     (patch: Partial<DeviceStreamEncoderSettings>) => {
       if (streamSourceLoadingRef.current || isStreamSwitchPending(streamSwitchRef.current)) return;
@@ -850,11 +856,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         }
         // Resolution changes replace the encoder without closing the input
         // socket. A new peer avoids waiting on the old decoder's video state.
-        restartWebRtc();
+        restartWebRtcRef.current();
         dispatchStreamSwitch({ type: 'request-success', replaced: true });
       });
     },
-    [dispatchStreamSwitch, restartWebRtc, useWebRtc, writeStreamSettings],
+    [dispatchStreamSwitch, useWebRtc, writeStreamSettings],
   );
 
   const webRtcLive =
@@ -891,9 +897,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     if (webRtcLive) {
       setStatus('streaming');
       setError(null);
-    } else if (webRtcWasLive && !webRtcGraceExpired) {
+    } else if (
+      webRtcWasLive && (!webRtcGraceExpired || streamSwitch.phase === 'awaiting-frame')
+    ) {
       // A source switch replaces both the control socket and the video peer.
-      // Keep the last frame until the replacement peer delivers fresh video.
+      // Its bounded frame wait can outlast the ordinary reconnect grace period.
       setStatus('reconnecting');
       setError(null);
     } else if (webRtcError) {
@@ -906,7 +914,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       setStatus('connecting');
       setError(null);
     }
-  }, [useWebRtc, webRtcError, webRtcGraceExpired, webRtcInputError, webRtcLive, webRtcWasLive]);
+  }, [
+    useWebRtc,
+    webRtcError,
+    webRtcGraceExpired,
+    webRtcInputError,
+    webRtcLive,
+    webRtcWasLive,
+    streamSwitch.phase,
+  ]);
 
   // Attach the negotiated MediaStream to DeviceScreen's current <video> node.
   // The node is stateful (rather than only a ref) so a remount reattaches the
@@ -1398,7 +1414,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           // serve-emu stops the old video peer along with this control socket.
           // Renegotiate now instead of waiting for ICE loss and its grace period;
           // the new input socket alone must not make the old video read as live.
-          restartWebRtc();
+          restartWebRtcRef.current();
         }
         retryInput('WebRTC input disconnected. Retrying...', event.code, wasHealthy);
       };
@@ -1422,7 +1438,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (wsRef.current === ws) wsRef.current = null;
       setWebRtcInputReady(false);
     };
-  }, [active, baseUrl, targetDevice, useWebRtc, restartWebRtc]);
+  }, [active, baseUrl, targetDevice, useWebRtc]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
