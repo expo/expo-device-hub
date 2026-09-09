@@ -83,6 +83,9 @@ const EMPTY_PENDING_SETTINGS: ReadonlySet<DeviceSettingKey> = new Set();
 
 export const NO_DEVICE_FRAME_DESCRIPTION = 'No device frame for selected device.';
 
+export const ONSCREEN_KEYBOARD_DESCRIPTION =
+  'Shows the on-screen keyboard even when a hardware keyboard is attached.';
+
 export type DeviceFrameOption = {
   available: boolean;
   visible: boolean;
@@ -113,6 +116,7 @@ export function DeviceOptionsSection({
   const [open, setOpen] = useState(true);
   const unavailableFrameDescriptionId = useId();
   const displaySizeDescriptionId = useId();
+  const onscreenKeyboardDescriptionId = useId();
   const settings = client?.deviceSettings ?? null;
   const pending = client?.deviceSettingsPending ?? EMPTY_PENDING_SETTINGS;
   const platform = client?.platform;
@@ -210,6 +214,21 @@ export function DeviceOptionsSection({
             </SidebarRow>
           ) : null,
         )}
+
+      {showDeviceSettings && platform === 'android' && visible('onscreen-keyboard') && (
+        <SidebarRow
+          label="On-screen keyboard"
+          description={ONSCREEN_KEYBOARD_DESCRIPTION}
+          descriptionId={onscreenKeyboardDescriptionId}>
+          <SidebarSwitch
+            checked={value('onscreen-keyboard') === 'on'}
+            disabled={disabled('onscreen-keyboard')}
+            label="On-screen keyboard"
+            descriptionId={onscreenKeyboardDescriptionId}
+            onChange={(checked) => setValue('onscreen-keyboard', checked ? 'on' : 'off')}
+          />
+        </SidebarRow>
+      )}
 
       {deviceFrame && (
         <SidebarRow
