@@ -314,6 +314,33 @@ export interface DeviceStreamStats {
   serverStale: boolean;
 }
 
+/** A rectangle in 0..1 screen fractions, so every platform taps through `sendTouch` unchanged. */
+export interface AccessibilityFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** One accessible element of the current screen, normalized across backends. */
+export interface AccessibilityNode {
+  id: string;
+  /** Never empty — the parsers drop elements that carry no name. */
+  label: string;
+  /** iOS role or element type; Android the class-name tail, e.g. `TextView`. */
+  role: string;
+  enabled: boolean;
+  clickable: boolean;
+  frame: AccessibilityFrame;
+}
+
+/** One read of the accessibility tree. Backends do not stream it. */
+export interface AccessibilitySnapshot {
+  /** Epoch milliseconds. */
+  capturedAt: number;
+  nodes: readonly AccessibilityNode[];
+}
+
 /** Explicit backend feature flags used to omit unsupported inspector sections and controls. */
 export interface DeviceCapabilities {
   deviceSettings: boolean;
