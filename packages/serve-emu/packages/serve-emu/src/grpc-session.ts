@@ -612,6 +612,8 @@ export function isUsableRgbFrame(image: EmuImage): boolean {
     image.height > 0 &&
     Number.isSafeInteger(image.width) &&
     Number.isSafeInteger(image.height) &&
+    image.width <= 16_384 &&
+    image.height <= 16_384 &&
     image.image.length === image.width * image.height * 3
   );
 }
@@ -691,7 +693,9 @@ export function grpcImageModeBehavior(
   }
   return {
     encoderInputFormat: "rgb24",
-    predecodeMaxFps: undefined,
+    // In-band RGB messages own their pixels and can use the same bounded
+    // predecode pacer as PNG. MMAP metadata must be decoded immediately.
+    predecodeMaxFps: imageMode === "rgb888" ? maxFps : undefined,
     needsEncoderFollowUp: (repeat) => !repeat,
   };
 }
@@ -850,19 +854,36 @@ function createGrpcImageCaptureTransport(options: {
   onError(error: unknown): void;
 }): GrpcImageCaptureTransport {
   const behavior = grpcImageModeBehavior(options.imageMode, options.maxFps);
-  if (options.imageMode === "png") {
+  if (options.imageMode !== "mmap") {
+    const isRgb = options.imageMode === "rgb888";
     let closed = false;
     return {
       ...behavior,
       streamFormat: {
-        format: IMG_FORMAT_PNG,
+        format: isRgb ? IMG_FORMAT_RGB888 : IMG_FORMAT_PNG,
         width: options.maxSize,
         height: options.maxSize,
       },
       push(notification, source, receivedAtMs) {
-        if (!closed && isUsablePngFrame(notification)) {
-          options.consume(notification, source, receivedAtMs);
+        if (closed || options.signal.aborted) return;
+        if (isRgb) {
+          // A metadata-only 0x0 response signals an inactive display.
+          if (
+            notification.width === 0 &&
+            notification.height === 0 &&
+            notification.image.length === 0
+          ) return;
+          if (!isUsableRgbFrame(notification)) {
+            throw new Error(
+              `emulator RGB888 screenshot must contain ${notification.width}x${notification.height} RGB888 pixels (received ${notification.image.length} bytes)`,
+            );
+          }
+        } else if (!isUsablePngFrame(notification)) {
+          return;
         }
+        // The protobuf decoder supplies a view of the owned message buffer.
+        // Keep it intact through the existing latest-frame/encoder pipeline.
+        options.consume(notification, source, receivedAtMs);
       },
       recordRawPacingEvent(event, detail) {
         options.diagnostics.recordGrpcMessage(event, detail);
@@ -2272,8 +2293,13 @@ export async function startGrpcSession(
       await runtime.wakeDevice(serial, lifetime.signal);
       await runtime.sleep(100, lifetime.signal);
     }
+    // Native geometry probes never enter the encoder. Keep RGB888 probes
+    // in-band too; inactivity probes reuse transport.streamFormat below.
+    const probeFormat = {
+      format: imageMode === "rgb888" ? IMG_FORMAT_RGB888 : IMG_FORMAT_PNG,
+    };
     let probe = await client.getScreenshot(
-      { format: IMG_FORMAT_PNG },
+      probeFormat,
       lifetime.signal,
     );
     if (probe.width <= 0 || probe.height <= 0) {
@@ -2285,7 +2311,7 @@ export async function startGrpcSession(
       ) {
         await runtime.sleep(100, lifetime.signal);
         probe = await client.getScreenshot(
-          { format: IMG_FORMAT_PNG },
+          probeFormat,
           lifetime.signal,
         );
       }
@@ -2303,7 +2329,7 @@ export async function startGrpcSession(
       initialDisplaySizeSignal,
       readDisplaySizeSignal: (signal) => readDisplaySizeSignal(serial, signal),
       readNativeImage: (signal) =>
-        client.getScreenshot({ format: IMG_FORMAT_PNG }, signal),
+        client.getScreenshot(probeFormat, signal),
       onNativeSize: (size) => {
         nativeTouchSize = size;
       },
@@ -2354,7 +2380,7 @@ export async function startGrpcSession(
       consume: onImage,
       onError: (error) =>
         emitFatal({
-          message: `emulator MMAP screenshot failed: ${error instanceof Error ? error.message : String(error)}`,
+          message: `emulator ${imageMode} screenshot failed: ${error instanceof Error ? error.message : String(error)}`,
           code: "grpc-stream-error",
         }),
     });

@@ -192,7 +192,7 @@ if (values.help) {
   console.log(`serve-emu — host an Android device over WebSocket/WebRTC
 
 Usage:
-  serve-emu [-p <port>] [--host <addr>] [--token <secret>] [-s <serial>] [--stream-mode <scrcpy|grpc-screenshot>] [--grpc-image-mode <png|mmap>] [--input-source <scrcpy|grpc>] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec] [--repeat-frame-ms ms]
+  serve-emu [-p <port>] [--host <addr>] [--token <secret>] [-s <serial>] [--stream-mode <scrcpy|grpc-screenshot>] [--grpc-image-mode <png|mmap|rgb888>] [--input-source <scrcpy|grpc>] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec] [--repeat-frame-ms ms]
   serve-emu --transport webrtc [--stun-url url[,url...]] [--turn-url url[,url...] --turn-username user --turn-credential pass]
   serve-emu --avd <name> [--restart-avd]
   serve-emu --avd-list
@@ -232,11 +232,12 @@ Options:
                          Screen capture source (default: scrcpy). The gRPC
                          screenshot source captures and encodes on the emulator
                          host and is available only for Android Emulators.
-      --grpc-image-mode <png|mmap>
-                         Emulator gRPC image delivery (default: png). PNG sends
-                         compressed images in-band; MMAP uses shared memory for
-                         raw pixels. The selected mode is strict: capture errors
-                         do not fall back to the other mode.
+      --grpc-image-mode <png|mmap|rgb888>
+                         Emulator gRPC image delivery (default: png).
+                         PNG sends compressed images in-band.
+                         RGB888 sends raw pixels over gRPC.
+                         MMAP uses shared memory for raw pixels. Capture errors
+                         do not fall back to another mode.
       --input-source <scrcpy|grpc>
                          Input transport for gRPC streaming (default: scrcpy).
                          scrcpy runs a control-only server; grpc sends input

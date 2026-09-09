@@ -41,6 +41,10 @@ const GRPC_IMAGE_MODE_COPY = {
     label: "PNG",
     description: "Compressed in-band images",
   },
+  rgb888: {
+    label: "RGB888",
+    description: "Raw pixels over gRPC",
+  },
   mmap: {
     label: "MMAP",
     description: "Shared-memory raw pixels",
@@ -375,8 +379,10 @@ export function StreamModePanel() {
         ? "gRPC screenshot is available only for Android Emulator devices."
         : loaded.mode === "grpc-screenshot"
           ? loaded.grpcImageMode === "mmap"
-            ? "Frames use the emulator's shared-memory MMAP path; input uses gRPC."
-            : "Frames use in-band PNG images; input uses gRPC."
+            ? `Frames use the emulator's shared-memory MMAP path; input uses ${loaded.inputSource}.`
+            : loaded.grpcImageMode === "rgb888"
+              ? `Frames use raw RGB888 pixels over gRPC; input uses ${loaded.inputSource}.`
+              : `Frames use in-band PNG images; input uses ${loaded.inputSource}.`
           : "Frames and input use the scrcpy server on the device.";
 
   return (

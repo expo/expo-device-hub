@@ -179,7 +179,7 @@ export interface DeviceStreamEncoderSettings {
 export type DeviceStreamSource = 'scrcpy' | 'grpc-screenshot';
 
 /** Pixel delivery selected for the emulator gRPC screenshot source. */
-export type DeviceGrpcImageMode = 'png' | 'mmap';
+export type DeviceGrpcImageMode = 'png' | 'mmap' | 'rgb888';
 
 /** Input transport used while gRPC provides emulator video. */
 export type DeviceInputSource = 'scrcpy' | 'grpc';

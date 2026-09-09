@@ -366,8 +366,14 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       0x0a, 0x06, 0x08, 0x02, 0x18, 0x02, 0x20, 0x01, 0x22, 0x06, 1, 2, 3, 4, 5,
       6,
     ]);
+    const requests: Buffer[] = [];
+    const payloadBytes: number[] = [];
+    const decodeBytes: number[] = [];
     const server = http2.createServer();
     server.on("stream", (stream: ServerHttp2Stream, headers) => {
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("end", () => requests.push(Buffer.concat(chunks)));
       stream.respond({
         ":status": 200,
         "content-type": "application/grpc",
@@ -381,9 +387,7 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
         stream.write(grpcFrame(imageBody));
       }
     });
-    await new Promise<void>((resolve) =>
-      server.listen(0, "127.0.0.1", resolve),
-    );
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
     const address = server.address();
     if (!address || typeof address === "string")
       throw new Error("missing test port");
@@ -397,17 +401,29 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
 
     try {
       await client.streamScreenshot(
-        { format: 2 },
+        { format: IMG_FORMAT_RGB888, width: 720, height: 720 },
         (image, source) => {
           images.push(image);
           sources.push(source);
           if (images.length === 2) controller.abort();
         },
         controller.signal,
-        { maxFps: 60 },
+        {
+          maxFps: 60,
+          onPacingEvent: (event, detail) => {
+            if (event === "received") payloadBytes.push(detail.messageBytes);
+          },
+          onDecode: (event) => decodeBytes.push(event.messageBytes),
+        },
       );
       expect(images).toHaveLength(2);
       expect(sources).toEqual(["stream", "probe"]);
+      const expectedRequest = grpcFrame(
+        Buffer.from([0x08, 0x02, 0x18, 0xd0, 0x05, 0x20, 0xd0, 0x05]),
+      );
+      expect(requests).toEqual([expectedRequest, expectedRequest]);
+      expect(payloadBytes).toEqual([imageBody.length]);
+      expect(decodeBytes).toEqual([imageBody.length]);
     } finally {
       client.close();
       await new Promise<void>((resolve, reject) =>
@@ -415,9 +431,20 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       );
     }
   });
+
+
 });
 
 describe("emulator image protobuf", () => {
+  test("encodes RGB888 dimensions without a transport and preserves native-size zeros", () => {
+    expect(
+      encodeImageFormat({ format: IMG_FORMAT_RGB888, width: 720, height: 720 }),
+    ).toEqual(Buffer.from([0x08, 0x02, 0x18, 0xd0, 0x05, 0x20, 0xd0, 0x05]));
+    expect(
+      encodeImageFormat({ format: IMG_FORMAT_RGB888, width: 0, height: 0 }),
+    ).toEqual(Buffer.from([0x08, 0x02]));
+  });
+
   test("encodes ImageFormat.transport field 6 with an MMAP file handle", () => {
     expect(
       encodeImageFormat({

@@ -352,49 +352,49 @@ describe("server stream source switching", () => {
     expect(openCalls).toBe(0);
   });
 
-  test("passes the configured initial gRPC image mode to capture", async () => {
-    const opened: Array<{
-      mode: StreamMode;
-      grpcImageMode: GrpcImageMode;
-    }> = [];
-    const capture = fakeSession(
-      "emulator-5554",
-      "grpc-screenshot",
-      "mmap",
-    );
-    const captured: CapturedServer = { options: null };
-    const started = await startServer(
-      {
-        serial: "emulator-5554",
-        port: 3300,
-        streamMode: "grpc-screenshot",
-        grpcImageMode: "mmap",
-      },
-      {
-        openSession: async ({ mode, grpcImageMode }) => {
-          opened.push({ mode, grpcImageMode });
-          return capture.session;
+  test.each(["mmap", "rgb888"] as const)(
+    "passes the configured initial gRPC image mode to capture",
+    async (imageMode) => {
+      const opened: Array<{
+        mode: StreamMode;
+        grpcImageMode: GrpcImageMode;
+      }> = [];
+      const capture = fakeSession("emulator-5554", "grpc-screenshot", imageMode);
+      const captured: CapturedServer = { options: null };
+      const started = await startServer(
+        {
+          serial: "emulator-5554",
+          port: 3300,
+          streamMode: "grpc-screenshot",
+          grpcImageMode: imageMode,
         },
-        serve: capturingServe(captured),
-      },
-    );
+        {
+          openSession: async ({ mode, grpcImageMode }) => {
+            opened.push({ mode, grpcImageMode });
+            return capture.session;
+          },
+          serve: capturingServe(captured),
+        },
+      );
 
-    expect(opened).toEqual([
-      { mode: "grpc-screenshot", grpcImageMode: "mmap" },
-    ]);
-    expect(
-      await (await request(captured, "/api/stream-mode")).json(),
-    ).toMatchObject({
-      mode: "grpc-screenshot",
-      grpcImageMode: "mmap",
-    });
-    expect(await (await request(captured, "/health")).json()).toMatchObject({
-      streamMode: "grpc-screenshot",
-      grpcImageMode: "mmap",
-      grpcCapture: { imageMode: "mmap", usableImages: 0 },
-    });
-    await started.stop();
-  });
+      expect(opened).toEqual([
+        { mode: "grpc-screenshot", grpcImageMode: imageMode },
+      ]);
+      expect(
+        await (await request(captured, "/api/stream-mode")).json(),
+      ).toMatchObject({
+        mode: "grpc-screenshot",
+        grpcImageMode: imageMode,
+      });
+      expect(await (await request(captured, "/health")).json()).toMatchObject({
+        streamMode: "grpc-screenshot",
+        grpcImageMode: imageMode,
+        grpcCapture: { imageMode: imageMode, usableImages: 0 },
+      });
+      await started.stop();
+    },
+  );
+
 
   test("switches gRPC input atomically and preserves it through an encoder restart", async () => {
     const opened: Array<{
@@ -571,12 +571,14 @@ describe("server stream source switching", () => {
   });
 
   test("atomically applies an explicit gRPC image mode without fallback", async () => {
+    let failRgb888 = true;
     const opened: Array<{
       mode: StreamMode;
       grpcImageMode: GrpcImageMode;
     }> = [];
     const captures = [
       fakeSession("emulator-5554", "scrcpy"),
+      fakeSession("emulator-5554", "grpc-screenshot", "rgb888"),
       fakeSession("emulator-5554", "grpc-screenshot"),
       fakeSession("emulator-5554", "grpc-screenshot"),
     ];
@@ -585,6 +587,8 @@ describe("server stream source switching", () => {
       { serial: "emulator-5554", port: 3300 },
       {
         openSession: async ({ mode, grpcImageMode }) => {
+          if (failRgb888 && grpcImageMode === "rgb888")
+            throw new Error("RGB888 startup failed");
           opened.push({ mode, grpcImageMode });
           const capture = captures[opened.length - 1];
           if (!capture) throw new Error("unexpected capture start");
@@ -594,11 +598,7 @@ describe("server stream source switching", () => {
       },
     );
 
-    const mmap = await putMode(
-      captured,
-      "grpc-screenshot",
-      "mmap",
-    );
+    const mmap = await putMode(captured, "grpc-screenshot", "mmap");
     expect(mmap.status).toBe(200);
     expect(await mmap.json()).toMatchObject({
       mode: "grpc-screenshot",
@@ -606,20 +606,56 @@ describe("server stream source switching", () => {
       sessionGeneration: 1,
     });
 
+    const failedRgb888 = await putMode(captured, "grpc-screenshot", "rgb888");
+    expect(failedRgb888.status).toBe(503);
+    expect(await failedRgb888.json()).toMatchObject({
+      error: { message: "RGB888 startup failed" },
+    });
+    expect(
+      await (await request(captured, "/api/stream-mode")).json(),
+    ).toMatchObject({
+      mode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      sessionGeneration: 1,
+    });
+    failRgb888 = false;
+
+    const rgb888 = await putMode(captured, "grpc-screenshot", "rgb888");
+    expect(rgb888.status).toBe(200);
+    expect(await rgb888.json()).toMatchObject({
+      mode: "grpc-screenshot",
+      grpcImageMode: "rgb888",
+      sessionGeneration: 2,
+    });
+    expect(
+      await (await request(captured, "/api/stream-mode")).json(),
+    ).toMatchObject({
+      mode: "grpc-screenshot",
+      grpcImageMode: "rgb888",
+      sessionGeneration: 2,
+    });
+    const unchanged = await putMode(captured, "grpc-screenshot", "rgb888");
+    expect(await unchanged.json()).toMatchObject({
+      grpcImageMode: "rgb888",
+      sessionGeneration: 2,
+    });
+
     const png = await putMode(captured, "grpc-screenshot", "png");
     expect(png.status).toBe(200);
     expect(await png.json()).toMatchObject({
       mode: "grpc-screenshot",
       grpcImageMode: "png",
-      sessionGeneration: 2,
+      sessionGeneration: 3,
     });
     expect(opened).toEqual([
       { mode: "scrcpy", grpcImageMode: "png" },
       { mode: "grpc-screenshot", grpcImageMode: "mmap" },
+      { mode: "grpc-screenshot", grpcImageMode: "rgb888" },
       { mode: "grpc-screenshot", grpcImageMode: "png" },
     ]);
     expect(captures[0]?.closeCalls()).toBe(1);
     expect(captures[1]?.closeCalls()).toBe(1);
+    expect(captures[2]?.closeCalls()).toBe(1);
 
     const invalid = await request(captured, "/api/stream-mode", {
       method: "PUT",
@@ -637,10 +673,10 @@ describe("server stream source switching", () => {
         message: "stream mode request.grpcImageMode is invalid",
       },
     });
-    expect(opened).toHaveLength(3);
+    expect(opened).toHaveLength(4);
 
     await started.stop();
-    expect(captures[2]?.closeCalls()).toBe(1);
+    expect(captures[3]?.closeCalls()).toBe(1);
   });
 
   test("reports the image mode paired with a newly published context while the old context drains", async () => {

@@ -67,9 +67,46 @@ npx expo-device-hub --platform android --transport webrtc
 ```
 
 Use `--stream-source scrcpy` to select scrcpy at startup, or `--grpc-image-mode png` to
-send a compressed image in each gRPC message. The same source and PNG/MMAP choices are
-available at runtime under **Stream options**. Run `npx expo-device-hub --help` for the
-full option list.
+send a compressed image in each gRPC message. Use `--grpc-image-mode rgb888` for raw
+RGB888 pixels inside each gRPC response. The same source and PNG/MMAP/RGB888 choices
+are available at runtime under **Stream options**. Run `npx expo-device-hub --help`
+for the full option list.
+
+```sh
+npx expo-device-hub --platform android --stream-source grpc-screenshot --grpc-image-mode rgb888
+```
+
+Programmatic serve-emu options accept
+`{ streamMode: "grpc-screenshot", grpcImageMode: "rgb888" }`. Hub's shared dashboard
+selector applies the choice through the embedded serve-emu `PUT /api/stream-mode`
+endpoint with `{ "mode": "grpc-screenshot", "grpcImageMode": "rgb888" }` (under
+`/vendor/serve-emu` in Hub). The applied selection updates when the replacement
+stream renders, and failed replacements preserve the previous selection.
+
+RGB888 response bytes are validated and passed to ffmpeg/libx264 as `rgb24`,
+without MMAP allocation or verification rereads and without PNG in the continuous
+capture stream. This still involves emulator GPU-to-CPU readback, not texture
+sharing or hardware encoding. It is not zero-copy or guaranteed faster. Source
+frame rate, locally paced encoder submissions, gRPC payload bytes and decode
+timing remain separate in capture statistics. MMAP remains the Hub default.
+
+To measure incoming gRPC responses, sample `grpcCapture.rawGrpcMessagesReceived`
+from `/vendor/serve-emu/health?device=<serial>` and divide the counter difference
+by the elapsed seconds within the same capture session. This counter increments
+when a complete gRPC response has been assembled, before protobuf decoding,
+MMAP reads, frame selection, and encoder writes. Count differences include idle
+time; the displayed **Host receive FPS** is an active-cadence estimate that can
+retain its last value while idle. RGB888's normal capture path also pauses the
+HTTP/2 stream for local pacing, so received response rate is not a measurement
+of every frame rendered internally by the emulator.
+
+MMAP uses gRPC metadata notifications to trigger selected shared-memory reads;
+it does not continuously poll the file. After the stream has delivered a message,
+10 seconds without another decoded stream message triggers a unary
+`getScreenshot` probe. A successful MMAP probe triggers a fresh shared-memory
+read. These probes do not increment the stream notification counter. Repeating
+the cached image for the encoder also does not imply a new gRPC response or a
+new MMAP read.
 
 MMAP support is experimental and depends on the Android Emulator build. Google
 tracks an Apple Silicon `streamScreenshot` MMAP fix as issue

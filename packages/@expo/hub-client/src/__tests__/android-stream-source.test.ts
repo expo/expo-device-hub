@@ -3,26 +3,29 @@ import { describe, expect, test } from 'bun:test';
 import { parseAndroidStreamSource } from '../android-stream-source';
 
 describe('parseAndroidStreamSource', () => {
-  test('parses the authoritative gRPC image mode', () => {
-    expect(
-      parseAndroidStreamSource({
-        ok: true,
+  test.each(['png', 'mmap', 'rgb888'])(
+    'parses the authoritative %s gRPC image mode',
+    (grpcImageMode) => {
+      expect(
+        parseAndroidStreamSource({
+          ok: true,
+          mode: 'grpc-screenshot',
+          grpcImageMode,
+          inputSource: 'scrcpy',
+          availableInputSources: ['scrcpy', 'grpc'],
+          availableModes: ['scrcpy', 'grpc-screenshot'],
+          sessionGeneration: 4,
+        }),
+      ).toEqual({
         mode: 'grpc-screenshot',
-        grpcImageMode: 'mmap',
+        grpcImageMode,
         inputSource: 'scrcpy',
         availableInputSources: ['scrcpy', 'grpc'],
         availableModes: ['scrcpy', 'grpc-screenshot'],
         sessionGeneration: 4,
-      }),
-    ).toEqual({
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy', 'grpc'],
-      availableModes: ['scrcpy', 'grpc-screenshot'],
-      sessionGeneration: 4,
-    });
-  });
+      });
+    },
+  );
 
   test('rejects missing or unsupported image modes', () => {
     const response = {

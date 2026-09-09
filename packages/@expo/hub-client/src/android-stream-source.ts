@@ -32,7 +32,7 @@ export function androidStreamSourceErrorMessage(status: number, value: unknown):
 }
 
 function isGrpcImageMode(value: unknown): value is DeviceGrpcImageMode {
-  return value === 'png' || value === 'mmap';
+  return value === 'png' || value === 'mmap' || value === 'rgb888';
 }
 
 function isInputSource(value: unknown): value is DeviceInputSource {

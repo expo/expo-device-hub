@@ -444,7 +444,7 @@ test('shows the Android emulator capture source select', () => {
   expect(selectMarkup(html, 'Stream source')).not.toContain('disabled=""');
 });
 
-test('shows PNG and MMAP only while the gRPC source is active', () => {
+test('shows PNG, MMAP and RGB888 only while the gRPC source is active', () => {
   const scrcpyHtml = renderToStaticMarkup(
     <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
   );
@@ -469,7 +469,7 @@ test('shows PNG and MMAP only while the gRPC source is active', () => {
   expect(selectOptionLabels(grpcHtml, 'Input source')).toEqual(['scrcpy', 'gRPC']);
   expect(selectValue(grpcHtml, 'Input source')).toBe('scrcpy');
   expect(grpcHtml).toContain('>gRPC frames</span>');
-  expect(selectOptionLabels(grpcHtml, 'gRPC image mode')).toEqual(['PNG', 'MMAP']);
+  expect(selectOptionLabels(grpcHtml, 'gRPC image mode')).toEqual(['PNG', 'MMAP', 'RGB888']);
   expect(selectValue(grpcHtml, 'gRPC image mode')).toBe('MMAP');
 });
 
@@ -484,8 +484,7 @@ test('disables the Android capture source select while replacement is pending', 
   expect(source).toContain('disabled=""');
   // The previous source stays selected until the replacement stream renders.
   expect(selectValue(html, 'Stream source')).toBe('scrcpy');
-  expect(html).toContain('role="status"');
-  expect(html).toContain('Switching stream source…');
+  expect(html).not.toContain('Switching stream source…');
 });
 
 test('disables every gRPC capture control while replacement is pending', () => {
@@ -506,7 +505,7 @@ test('disables every gRPC capture control while replacement is pending', () => {
   // Input source and image mode restart the same capture session as Source.
   expect(selectMarkup(html, 'Input source')).toContain('disabled=""');
   expect(selectMarkup(html, 'gRPC image mode')).toContain('disabled=""');
-  expect(html).toContain('Switching stream source…');
+  expect(html).not.toContain('Switching stream source…');
 });
 
 test('shows no switching hint once the capture source is settled', () => {
@@ -785,7 +784,7 @@ test('shows only the server statistics that serve-emu can provide', () => {
   expect(`${encoder}${capture}`).not.toContain('>—</span>');
 });
 
-test('shows the gRPC producer-to-client pipeline diagnostics', () => {
+test.each(['mmap', 'rgb888'] as const)('shows the %s producer-to-client pipeline diagnostics', (imageMode) => {
   const client = {
     ...inspectorClient('android'),
     streamStats: streamStats(
@@ -798,7 +797,7 @@ test('shows the gRPC producer-to-client pipeline diagnostics', () => {
           forwardedFrames: 575,
           pumpRestarts: null,
           grpc: {
-            imageMode: 'mmap',
+            imageMode,
             producerFps: 60,
             receiveFps: 59.5,
             usableImageFps: 59,
@@ -833,7 +832,7 @@ test('shows the gRPC producer-to-client pipeline diagnostics', () => {
   );
   const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
 
-  expect(streamStatisticValue(capture, 'gRPC image mode')).toBe('MMAP');
+  expect(streamStatisticValue(capture, 'gRPC image mode')).toBe(imageMode.toUpperCase());
   expect(streamStatisticValue(capture, 'Emulator producer FPS')).toBe('60 FPS');
   expect(streamStatisticValue(capture, 'Host receive FPS')).toBe('60 FPS');
   expect(streamStatisticValue(capture, 'Usable image FPS')).toBe('59 FPS');
@@ -843,8 +842,13 @@ test('shows the gRPC producer-to-client pipeline diagnostics', () => {
   expect(streamStatisticValue(capture, 'Coalesced notifications')).toBe('10');
   expect(streamStatisticValue(capture, 'Latest image payload')).toBe('540.0 KiB');
   expect(streamStatisticValue(capture, 'Produce→usable p50 / p95')).toBe('4.7 / 9.2 ms');
-  expect(streamStatisticValue(capture, 'MMAP read p50 / p95')).toBe('0.3 / 0.6 ms');
-  expect(streamStatisticValue(capture, 'Torn frames dropped')).toBe('0');
+  if (imageMode === 'mmap') {
+    expect(streamStatisticValue(capture, 'MMAP read p50 / p95')).toBe('0.3 / 0.6 ms');
+    expect(streamStatisticValue(capture, 'Torn frames dropped')).toBe('0');
+  } else {
+    expect(capture).not.toContain('MMAP');
+    expect(capture).not.toContain('Torn frames dropped');
+  }
 });
 
 test('shows the WebRTC measuring state without inventing zero readings', () => {
@@ -1317,4 +1321,31 @@ test('shows only the viewer-local frame option while iOS device settings are una
   expect(html).not.toContain('>Appearance</span>');
   expect(html).not.toContain('>Liquid glass</span>');
   expect(html).not.toContain('>Keyboard</span>');
+});
+
+test('shows RGB888 applied, pending, and failed without changing the selection', () => {
+  for (const state of ['applied', 'pending', 'failed']) {
+    const client = {
+      ...inspectorClient('android'),
+      streamSource: {
+        mode: 'grpc-screenshot',
+        grpcImageMode: 'rgb888',
+        inputSource: 'scrcpy',
+        availableInputSources: ['scrcpy', 'grpc'],
+        availableModes: ['scrcpy', 'grpc-screenshot'],
+        sessionGeneration: 2,
+      },
+      streamSourcePending: state === 'pending',
+      streamSourceError: state === 'failed' ? 'RGB888 capture failed' : null,
+    } satisfies DeviceClient;
+    const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+    expect(selectValue(html, 'gRPC image mode')).toBe('RGB888');
+    expect(html).not.toContain('Raw pixels over gRPC');
+    expect(selectMarkup(html, 'gRPC image mode').includes('disabled=""')).toBe(state === 'pending');
+    expect(html).not.toContain('Switching stream source…');
+    if (state === 'failed') {
+      expect(html).toContain('role="alert"');
+      expect(html).toContain('RGB888 capture failed');
+    }
+  }
 });

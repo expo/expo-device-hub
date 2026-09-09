@@ -15,6 +15,22 @@ const DEFAULT_ANDROID_STREAM = {
 } as const;
 
 describe('standaloneServeEmuOptions', () => {
+  test('passes RGB888 CLI and programmatic options through the embedded server payload', () => {
+    const cli = parseCliOptions(['--grpc-image-mode', 'RGB888', '--max-dimension', '0']);
+    expect(cli.grpcImageMode).toBe('rgb888');
+    const expected = {
+      streamMode: 'grpc-screenshot',
+      grpcImageMode: 'rgb888',
+      maxSize: 0,
+      streamSettings: { transport: 'websocket' },
+    };
+    expect(standaloneServeEmuOptions(cli)).toEqual(expected);
+    expect(readStandaloneServeEmuOptions(encodeStandaloneServeEmuOptions(cli))).toEqual(expected);
+    expect(
+      standaloneServeEmuOptions({ ...parseCliOptions([]), grpcImageMode: 'rgb888', maxDimension: 0 }),
+    ).toEqual(expected);
+  });
+
   test('defaults Android streaming to gRPC with MMAP', () => {
     expect(standaloneServeEmuOptions(parseCliOptions([]))).toEqual({
       ...DEFAULT_ANDROID_STREAM,

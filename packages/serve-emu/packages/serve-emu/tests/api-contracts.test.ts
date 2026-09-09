@@ -78,6 +78,10 @@ describe("API contracts", () => {
   test("recognizes only explicit gRPC image modes", () => {
     expect(isGrpcImageMode("png")).toBe(true);
     expect(isGrpcImageMode("mmap")).toBe(true);
+    expect(isGrpcImageMode("rgb888")).toBe(true);
+    expect(parseStreamModeRequest({ mode: "grpc-screenshot", grpcImageMode: "rgb888" })).toEqual({
+      mode: "grpc-screenshot", grpcImageMode: "rgb888",
+    });
     expect(isGrpcImageMode("auto")).toBe(false);
     expect(isGrpcImageMode(null)).toBe(false);
   });
