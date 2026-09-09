@@ -1,23 +1,23 @@
 name: serve-sim tests
 
 on:
-  pull_request:
-    paths:
-      - packages/serve-sim/**
-      - .eas/workflows/sim-test.yml
-  pull_request_labeled:
-    labels: [eas-approved]
+  workflow_dispatch:
+    inputs:
+      ci_ref:
+        type: string
+        description: PR number or main CI run ID, used to cancel superseded runs
+        default: manual
 
 # Cancel superseded runs so pushing twice to the same PR does not consume two
 # macOS workers in parallel.
 concurrency:
   cancel_in_progress: true
-  group: ${{ workflow.filename }}-${{ github.ref }}
+  group: expo-device-hub-${{ workflow.filename }}-${{ inputs.ci_ref }}
 
 defaults:
   tools:
-    node: 22
-    bun: 1.3.14
+    node: 24
+    bun: 1.3.13
 
 jobs:
   sim-test:
@@ -27,30 +27,33 @@ jobs:
     steps:
       - uses: eas/checkout
 
-      - uses: eas/install_node_modules
+      - name: Install monorepo dependencies
+        run: bun install --frozen-lockfile
+        working_directory: ../..
 
       # The permissions e2e test drives the built CLI (dist/serve-sim.js), so
       # build it before running the test suite.
       - name: Build serve-sim
-        run: bun run build.ts
-        working_directory: packages/serve-sim
+        run: bun run build
 
       # Packed before the tests run so the tarball exists even when they fail:
       # a build is often worth trying on a device precisely because the tests
       # did not settle the question.
       - name: Create npm package
+        id: pack
         run: |
           mkdir -p release
-          npm pack --workspace packages/serve-sim --pack-destination release --json > /tmp/npm-pack.json
+          npm pack --pack-destination release --json > /tmp/npm-pack.json
           TARBALL=$(node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename' < /tmp/npm-pack.json)
           mv "release/$TARBALL" release/serve-sim.tgz
+          set-output artifact_path "$PWD/release/serve-sim.tgz"
 
       - name: Upload npm package
         uses: eas/upload_artifact
         with:
           type: other
           name: serve-sim-npm-package
-          path: release/serve-sim.tgz
+          path: ${{ steps.pack.outputs.artifact_path }}
 
       - name: Start iOS Simulator
         uses: eas/start_ios_simulator
@@ -58,7 +61,7 @@ jobs:
       - name: Run serve-sim tests
         run: |
           run_tests() {
-            bun test --max-concurrency=1 packages/serve-sim/src/__tests__/
+            bun run test
           }
 
           if run_tests; then

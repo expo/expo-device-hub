@@ -85,6 +85,11 @@ bun install
 bun run build   # turbo build across all packages
 ```
 
+CI runs lint and typechecking for `serve-sim` with the other workspaces, then uses
+EAS macOS workers for its native build and simulator tests. See
+[serve-sim CI](packages/serve-sim/docs/ci.md) for the workflow, token setup, and
+local commands.
+
 ### Run the example
 
 The [`example`](example) app is a host Expo project that has `expo-device-hub`
