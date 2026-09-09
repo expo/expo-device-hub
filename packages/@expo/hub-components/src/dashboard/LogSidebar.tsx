@@ -4,6 +4,7 @@ import {
   type DeviceStreamMode,
 } from '@expo/hub-client';
 import { SidebarToggle, bg } from '../primitives';
+import { AccessibilitySection } from './AccessibilitySection';
 import { CameraSection } from './CameraSection';
 import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
 import { CurrentAppSection } from './CurrentAppSection';
@@ -129,6 +130,7 @@ export function LogSidebar({
           />
         )}
         {client?.capabilities.camera && <CameraSection client={client} />}
+        {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
         {client?.capabilities.events && <EventsSection client={client} />}
         <LogsSection client={client} />
       </div>

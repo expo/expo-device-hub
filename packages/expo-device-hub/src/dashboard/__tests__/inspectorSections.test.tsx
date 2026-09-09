@@ -308,7 +308,7 @@ test('renders every supported iOS inspector section and option', () => {
     />,
   );
 
-  const order = ['Current app', 'Device options', 'Stream options', 'Events', 'Logs'];
+  const order = ['Current app', 'Device options', 'Stream options', 'Accessibility', 'Events', 'Logs'];
   const positions = order.map((label) => html.indexOf(`<section aria-label="${label}"`));
   expect(positions.every((index) => index >= 0)).toBe(true);
   expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -374,6 +374,7 @@ test('renders Android stream options while omitting unsupported and iOS-only sec
   for (const label of ['Activity', 'Liquid glass', 'VoiceOver']) {
     expect(html).not.toContain(`>${label}<`);
   }
+  expect(html).toContain('<section aria-label="Accessibility"');
   const currentApp = sectionMarkup(html, 'Current app');
   expect(currentApp).not.toContain('data-testid="activity-charts"');
   // Android shows only the App ID / Version / Build number rows: no name and icon line.
