@@ -9,6 +9,7 @@ export type AndroidDeviceSettingKey = Extract<
   | 'reduce-motion'
   | 'bold-text'
   | 'increase-contrast'
+  | 'onscreen-keyboard'
 >;
 
 export type AndroidSizeStep = 'small' | 'medium' | 'large' | 'extra-large';
@@ -48,7 +49,8 @@ export type AndroidDeviceSettingPath =
   | '/api/display-density'
   | '/api/reduce-motion'
   | '/api/font-weight'
-  | '/api/high-text-contrast';
+  | '/api/high-text-contrast'
+  | '/api/software-keyboard';
 
 export interface AndroidDeviceSettingRequest {
   path: AndroidDeviceSettingPath;
@@ -146,6 +148,12 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
     polled: true,
     encode: enabledBodyForOnOff,
     decode: (data) => onOffForEnabledBody(data.highTextContrast),
+  },
+  'onscreen-keyboard': {
+    path: '/api/software-keyboard',
+    polled: true,
+    encode: enabledBodyForOnOff,
+    decode: (data) => onOffForEnabledBody(data.softwareKeyboard),
   },
 };
 
