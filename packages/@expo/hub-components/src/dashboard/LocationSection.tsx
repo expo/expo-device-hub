@@ -14,9 +14,9 @@ import {
   draftFromFix,
   formatFix,
   parseGeoFixInput,
+  pastedPair,
   presetFix,
   presetFor,
-  splitPastedPair,
 } from "./geoFixInput";
 
 /** Point the device at one coordinate: a preset, or a latitude/longitude typed by hand. */
@@ -40,7 +40,15 @@ export function LocationSection({
 
   function edit(field: CoordinateField, value: string) {
     setInputError(null);
-    setDraft(splitPastedPair(field, value, shown));
+    setDraft({ ...shown, [field]: value });
+  }
+
+  function paste(text: string) {
+    const pair = pastedPair(text);
+    if (!pair) return false;
+    setInputError(null);
+    setDraft(pair);
+    return true;
   }
 
   function apply(fix: DeviceGeoFix) {
@@ -80,6 +88,7 @@ export function LocationSection({
           disabled={pending}
           invalid={inputError?.field === "latitude"}
           onChange={(value) => edit("latitude", value)}
+          onPasteText={paste}
           onSubmit={applyDraft}
         />
       </SidebarRow>
@@ -90,6 +99,7 @@ export function LocationSection({
           disabled={pending}
           invalid={inputError?.field === "longitude"}
           onChange={(value) => edit("longitude", value)}
+          onPasteText={paste}
           onSubmit={applyDraft}
         />
       </SidebarRow>

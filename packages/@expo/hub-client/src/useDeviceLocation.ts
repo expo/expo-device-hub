@@ -9,8 +9,12 @@ export interface DeviceLocationRead {
 }
 
 export interface DeviceLocationBackend {
-  /** Backend memory of the last fix. Absent when the backend keeps none (serve-sim). */
-  read?: () => Promise<DeviceLocationRead>;
+  /**
+   * Backend memory of the last fix. Absent when the backend keeps none (serve-sim).
+   * Resolves null when the read could not be answered, which is retried; only an
+   * answered read turns support off.
+   */
+  read?: () => Promise<DeviceLocationRead | null>;
   /** Apply a fix; resolves what was applied. A rejection's message becomes `locationError`. */
   set: (fix: DeviceGeoFix) => Promise<DeviceGeoFix>;
   clear?: () => Promise<void>;
@@ -20,6 +24,8 @@ interface LocationState extends DeviceLocationRead {
   pending: boolean;
   error: string | null;
 }
+
+const READ_RETRY_MS = 2000;
 
 const NO_LOCATION: LocationState = {
   supported: false,
@@ -42,21 +48,28 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null) {
   useEffect(() => {
     const generation = ++generationRef.current;
     pendingRef.current = false;
-    if (!backend) {
-      setState(NO_LOCATION);
-      return;
-    }
-    const read = backend.read;
-    if (!read) {
-      setState({ ...NO_LOCATION, supported: true });
-      return;
-    }
     setState(NO_LOCATION);
-    void read()
-      .then((result) => {
-        if (generationRef.current === generation) setState({ ...NO_LOCATION, ...result });
-      })
-      .catch(() => {});
+    const read = backend?.read;
+    if (!read) return;
+
+    let cancelled = false;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const attempt = (remaining: number) => {
+      void read().then(
+        (result) => {
+          if (cancelled || generationRef.current !== generation) return;
+          if (result) setState({ ...NO_LOCATION, ...result });
+          else if (remaining > 0) retry = setTimeout(() => attempt(remaining - 1), READ_RETRY_MS);
+        },
+        () => {},
+      );
+    };
+    attempt(1);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(retry);
+    };
   }, [backend]);
 
   const write = useCallback((run: () => Promise<DeviceGeoFix | null>) => {
@@ -92,7 +105,8 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null) {
     write(() => clear().then(() => null));
   }, [backend, write]);
 
-  const locationCapabilities: DeviceLocationCapabilities = state.supported
+  const supported = backend ? (backend.read ? state.supported : true) : false;
+  const locationCapabilities: DeviceLocationCapabilities = supported
     ? backend?.clear
       ? { clear: true }
       : {}

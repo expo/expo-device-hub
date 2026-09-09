@@ -6,10 +6,10 @@ import {
   formatFix,
   LOCATION_PRESETS,
   parseGeoFixInput,
+  pastedPair,
   PRESET_OPTIONS,
   presetFix,
   presetFor,
-  splitPastedPair,
 } from "../dashboard/geoFixInput";
 
 const LATITUDE_MESSAGE = "Latitude must be a number from -90 to 90";
@@ -70,6 +70,26 @@ describe("parseGeoFixInput", () => {
     });
   });
 
+  test("rejects the non-decimal syntax Number would otherwise accept", () => {
+    for (const latitude of ["0x10", "1e1", "Infinity", "37,3349", "37deg"]) {
+      expect(parseGeoFixInput({ latitude, longitude: "0" })).toEqual({
+        ok: false,
+        error: { field: "latitude", message: LATITUDE_MESSAGE },
+      });
+    }
+  });
+
+  test("accepts a leading sign, a bare fraction, and a trailing point", () => {
+    expect(parseGeoFixInput({ latitude: "+51.5", longitude: ".5" })).toEqual({
+      ok: true,
+      fix: { latitude: 51.5, longitude: 0.5 },
+    });
+    expect(parseGeoFixInput({ latitude: "37.", longitude: "-0" })).toEqual({
+      ok: true,
+      fix: { latitude: 37, longitude: -0 },
+    });
+  });
+
   test("reports latitude before longitude when both are bad", () => {
     expect(parseGeoFixInput({ latitude: "north", longitude: "west" })).toEqual({
       ok: false,
@@ -78,35 +98,19 @@ describe("parseGeoFixInput", () => {
   });
 });
 
-describe("splitPastedPair", () => {
-  const current = { latitude: "1", longitude: "2" };
-
-  test("a pair pasted into latitude fills both fields", () => {
-    expect(splitPastedPair("latitude", "37.3349, -122.0090", current)).toEqual({
+describe("pastedPair", () => {
+  test("a pasted pair becomes both fields, trimmed", () => {
+    expect(pastedPair("37.3349, -122.0090")).toEqual({
       latitude: "37.3349",
       longitude: "-122.0090",
     });
   });
 
-  test("a pair pasted into longitude fills both fields", () => {
-    expect(splitPastedPair("longitude", "37.3349, -122.0090", current)).toEqual({
-      latitude: "37.3349",
-      longitude: "-122.0090",
-    });
-  });
-
-  test("a plain edit leaves the sibling field alone", () => {
-    expect(splitPastedPair("longitude", "-122.00", current)).toEqual({
-      latitude: "1",
-      longitude: "-122.00",
-    });
-  });
-
-  test("a trailing comma with nothing after it stays a plain edit", () => {
-    expect(splitPastedPair("latitude", "37.3349,", current)).toEqual({
-      latitude: "37.3349,",
-      longitude: "2",
-    });
+  test("text that is not a pair is left to the field it was pasted into", () => {
+    expect(pastedPair("-122.00")).toBeNull();
+    expect(pastedPair("37.3349,")).toBeNull();
+    expect(pastedPair(",-122.009")).toBeNull();
+    expect(pastedPair("37.3349, -122.0090, 12")).toBeNull();
   });
 });
 

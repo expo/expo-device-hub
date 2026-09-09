@@ -33,12 +33,15 @@ export const PRESET_OPTIONS: readonly SelectOption[] = [
   ...LOCATION_PRESETS.map(({ value, label }) => ({ value, label })),
 ];
 
+/** Plain decimal only, so `Number`'s hex and exponent syntax cannot reach the backend. */
+const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)$/;
+
 function parseCoordinate(field: CoordinateField, raw: string): number | null {
   const { min, max } = COORDINATE_BOUNDS[field];
   const trimmed = raw.trim();
-  if (trimmed === "") return null;
+  if (!DECIMAL.test(trimmed)) return null;
   const value = Number(trimmed);
-  return Number.isFinite(value) && value >= min && value <= max ? value : null;
+  return value >= min && value <= max ? value : null;
 }
 
 function coordinateError(field: CoordinateField): GeoFixInputError {
@@ -58,18 +61,14 @@ export function parseGeoFixInput(draft: CoordinateDraft): GeoFixInputResult {
   return { ok: true, fix: { latitude, longitude } };
 }
 
-export function splitPastedPair(
-  field: CoordinateField,
-  value: string,
-  current: CoordinateDraft,
-): CoordinateDraft {
-  const parts = value.split(",");
-  if (parts.length === 2) {
-    const latitude = parts[0].trim();
-    const longitude = parts[1].trim();
-    if (latitude !== "" && longitude !== "") return { latitude, longitude };
-  }
-  return { ...current, [field]: value };
+/** A `"lat, lng"` paste split into both fields, or null when the text is not a pair. */
+export function pastedPair(text: string): CoordinateDraft | null {
+  const parts = text.split(",");
+  if (parts.length !== 2) return null;
+  const latitude = parts[0].trim();
+  const longitude = parts[1].trim();
+  if (latitude === "" || longitude === "") return null;
+  return { latitude, longitude };
 }
 
 export function draftFromFix(fix: DeviceGeoFix | null): CoordinateDraft {

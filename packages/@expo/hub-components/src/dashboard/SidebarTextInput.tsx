@@ -16,6 +16,7 @@ export function SidebarTextInput({
   invalid = false,
   onChange,
   onSubmit,
+  onPasteText,
 }: {
   ariaLabel: string;
   value: string;
@@ -25,6 +26,8 @@ export function SidebarTextInput({
   onChange: (value: string) => void;
   /** Enter in the field. */
   onSubmit: () => void;
+  /** Offered the pasted text; return true to consume it instead of inserting it. */
+  onPasteText?: (text: string) => boolean;
 }) {
   const [focused, setFocused] = useState(false);
 
@@ -39,6 +42,9 @@ export function SidebarTextInput({
       autoComplete="off"
       spellCheck={false}
       onChange={(event) => onChange(event.currentTarget.value)}
+      onPaste={(event) => {
+        if (onPasteText?.(event.clipboardData.getData("text"))) event.preventDefault();
+      }}
       onFocus={(event) => setFocused(isFocusVisible(event))}
       onBlur={() => setFocused(false)}
       onKeyDown={(event) => {

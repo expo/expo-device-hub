@@ -1015,25 +1015,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   );
   const accessibilityState = useAccessibility(accessibilityLoader);
 
-  const locationBackend = useMemo<DeviceLocationBackend | null>(
-    () =>
-      !execWsUrl || !execToken || !deviceUdid
-        ? null
-        : {
-            set: (fix) =>
-              setIosLocation(
-                (command) => execWsCommand(execWsUrl, execToken, command),
-                deviceUdid,
-                fix,
-              ),
-            clear: () =>
-              clearIosLocation(
-                (command) => execWsCommand(execWsUrl, execToken, command),
-                deviceUdid,
-              ),
-          },
-    [execWsUrl, execToken, deviceUdid],
-  );
+  const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
+    if (!execWsUrl || !execToken || !deviceUdid) return null;
+    const exec = (command: string) => execWsCommand(execWsUrl, execToken, command);
+    return {
+      set: (fix) => setIosLocation(exec, deviceUdid, fix),
+      clear: () => clearIosLocation(exec, deviceUdid),
+    };
+  }, [execWsUrl, execToken, deviceUdid]);
   const {
     location,
     locationPending,
