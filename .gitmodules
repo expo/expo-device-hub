@@ -4,8 +4,3 @@
 	branch = expo-device-hub
 	ignore = untracked
 
-[submodule "packages/serve-emu"]
-	path = packages/serve-emu
-	url = https://github.com/expo/serve-emu.git
-	branch = expo
-	ignore = untracked
