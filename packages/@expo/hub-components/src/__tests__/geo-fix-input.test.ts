@@ -125,6 +125,13 @@ describe("draftFromFix", () => {
       longitude: "-0.1276",
     });
   });
+
+  test("a tiny coordinate seeds the box as a decimal its own parser accepts", () => {
+    const draft = draftFromFix({ latitude: 0.0000001, longitude: -0.0000001 });
+
+    expect(draft).toEqual({ latitude: "0.0000001", longitude: "-0.0000001" });
+    expect(parseGeoFixInput(draft).ok).toBe(true);
+  });
 });
 
 test("formatFix pads both coordinates to four decimals", () => {
@@ -159,5 +166,11 @@ describe("presets", () => {
       "Tokyo",
       "Sydney",
     ]);
+  });
+
+  test("Custom reports the boxes rather than offering a choice", () => {
+    expect(
+      PRESET_OPTIONS.filter((option) => option.disabled).map((option) => option.value),
+    ).toEqual([CUSTOM_PRESET]);
   });
 });

@@ -11,8 +11,8 @@ export interface DeviceLocationRead {
 export interface DeviceLocationBackend {
   /**
    * Backend memory of the last fix. Absent when the backend keeps none (serve-sim).
-   * Resolves null when the read could not be answered, which is retried; only an
-   * answered read turns support off.
+   * Resolves null when the read could not be answered, which is retried until it is,
+   * because a device the Hub just booted answers only once its backend is up.
    */
   read?: () => Promise<DeviceLocationRead | null>;
   /** Apply a fix; resolves what was applied. A rejection's message becomes `locationError`. */
@@ -25,7 +25,7 @@ interface LocationState extends DeviceLocationRead {
   error: string | null;
 }
 
-const READ_RETRY_MS = 2000;
+const READ_RETRY_MS = 3000;
 
 const NO_LOCATION: LocationState = {
   supported: false,
@@ -53,22 +53,22 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null) {
     if (!read) return;
 
     let cancelled = false;
-    let retry: ReturnType<typeof setTimeout> | undefined;
-    const attempt = (remaining: number) => {
+    const attempt = () => {
       void read().then(
         (result) => {
-          if (cancelled || generationRef.current !== generation) return;
-          if (result) setState({ ...NO_LOCATION, ...result });
-          else if (remaining > 0) retry = setTimeout(() => attempt(remaining - 1), READ_RETRY_MS);
+          if (cancelled || generationRef.current !== generation || !result) return;
+          clearInterval(retry);
+          setState((current) => ({ ...current, ...result }));
         },
         () => {},
       );
     };
-    attempt(1);
+    attempt();
+    const retry = setInterval(attempt, READ_RETRY_MS);
 
     return () => {
       cancelled = true;
-      clearTimeout(retry);
+      clearInterval(retry);
     };
   }, [backend]);
 

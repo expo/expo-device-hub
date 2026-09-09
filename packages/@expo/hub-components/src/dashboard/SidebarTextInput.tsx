@@ -14,6 +14,7 @@ export function SidebarTextInput({
   value,
   disabled = false,
   invalid = false,
+  describedBy,
   onChange,
   onSubmit,
   onPasteText,
@@ -23,6 +24,8 @@ export function SidebarTextInput({
   disabled?: boolean;
   /** Marks the field the last parse rejected. */
   invalid?: boolean;
+  /** Element holding the message for that rejection. */
+  describedBy?: string;
   onChange: (value: string) => void;
   /** Enter in the field. */
   onSubmit: () => void;
@@ -37,6 +40,7 @@ export function SidebarTextInput({
       inputMode="decimal"
       aria-label={ariaLabel}
       aria-invalid={invalid || undefined}
+      aria-describedby={describedBy}
       value={value}
       disabled={disabled}
       autoComplete="off"
