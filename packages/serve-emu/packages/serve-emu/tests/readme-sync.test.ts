@@ -56,7 +56,7 @@ describe("package README generation", () => {
         "[`package.json`](package.json)",
         "[`CHANGELOG.md`](CHANGELOG.md)",
         "[protocol](docs/protocol.md)",
-        "[contributing](https://github.com/expo/serve-emu/blob/main/CONTRIBUTING.md)",
+        "[contributing](https://github.com/expo/expo-device-hub/blob/main/packages/serve-emu/CONTRIBUTING.md)",
         "Vendored at `vendor/`.",
         "",
       ].join("\n"),
@@ -90,7 +90,7 @@ describe("package README generation", () => {
       "[protocol reference](docs/protocol.md)",
     );
     expect(packageReadme).toContain(
-      "[`CONTRIBUTING.md`](https://github.com/expo/serve-emu/blob/main/CONTRIBUTING.md)",
+      "[`CONTRIBUTING.md`](https://github.com/expo/expo-device-hub/blob/main/packages/serve-emu/CONTRIBUTING.md)",
     );
   });
 

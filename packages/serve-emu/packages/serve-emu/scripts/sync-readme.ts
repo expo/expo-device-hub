@@ -14,7 +14,7 @@ const PACKAGE_LINK_REWRITES = [
   ["packages/serve-emu/docs/protocol.md", "docs/protocol.md"],
   [
     "CONTRIBUTING.md",
-    "https://github.com/expo/serve-emu/blob/main/CONTRIBUTING.md",
+    "https://github.com/expo/expo-device-hub/blob/main/packages/serve-emu/CONTRIBUTING.md",
   ],
 ] as const;
 

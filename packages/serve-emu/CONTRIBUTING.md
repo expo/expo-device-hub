@@ -18,9 +18,10 @@ Optional prerequisites for manual runtime validation:
 - A booted Android emulator or attached Android device
 - Chrome, Edge, or Safari 16.4+ for WebCodecs support
 
-Install dependencies:
+Run commands from the `expo-device-hub` monorepo root. Install dependencies:
 
 ```sh
+bun run submodule:init
 bun install --frozen-lockfile
 ```
 
@@ -33,7 +34,7 @@ bun run --filter serve-emu setup
 Run the local server:
 
 ```sh
-bun run packages/serve-emu/src/cli.ts
+bun run --filter serve-emu start
 ```
 
 Then open `http://localhost:3300`.
@@ -41,12 +42,14 @@ Then open `http://localhost:3300`.
 Useful alternatives:
 
 ```sh
-bun run dev
+bun run --filter serve-emu dev
 bun run --filter serve-emu dev:ui
 bun run --filter serve-emu start
 ```
 
 ## Project Layout
+
+Paths in this section are relative to this document’s directory (`packages/serve-emu` in the monorepo).
 
 - `packages/serve-emu/src/cli.ts` - CLI entry point
 - `packages/serve-emu/src/server.ts` - HTTP, WebSocket, and API server
@@ -74,7 +77,7 @@ bun run --filter serve-emu build
 Run the same aggregate check used by CI before requesting review:
 
 ```sh
-bun run check
+bun run --filter serve-emu check
 ```
 
 The aggregate check verifies generated documentation, runs package coverage,
@@ -88,7 +91,7 @@ For runtime changes, optionally supplement CI with a real device or emulator:
 
 ```sh
 adb devices
-bun run packages/serve-emu/src/cli.ts
+bun run --filter serve-emu start
 ```
 
 Verify the relevant user flow in the browser, such as:
@@ -158,49 +161,21 @@ git commit -m "<scoped message>" -- path/to/file1 path/to/file2
 
 ## Release Guidelines
 
-`serve-emu` uses the package version in `packages/serve-emu/package.json` as the
-source of truth. Release tags should be named `v<version>`, for example
-`v0.1.0`.
-
-The npm package exposes its CLI plus the `serve-emu`, `serve-emu/middleware`,
-`serve-emu/stream-socket`, and `serve-emu/stream-settings` programmatic entry
-points. New entry points must be added explicitly to `exports`, documented as a
-supported API, exercised from the packed tarball in a temporary consumer, and
-reviewed for semver impact. Publishing source files does not make unlisted deep
-imports public APIs.
-
-Choose the version bump with semver:
-
-- `patch` for fixes and small internal improvements
-- `minor` for backwards-compatible user-facing features or APIs
-- `major` for breaking CLI, HTTP API, WebSocket protocol, package, or runtime behavior
-
-Prepare a release:
+`serve-emu` is bundled into `expo-device-hub` and is excluded from independent
+publishing by the monorepo's Changesets configuration. For changes that should
+ship in a Hub release, add a changeset for `expo-device-hub` from the monorepo
+root:
 
 ```sh
-bun run release -- patch
+bun run changeset
 ```
 
-You can also pass `minor`, `major`, or an exact version such as `0.1.0`.
+The monorepo Release workflow handles versioning and publication.
 
-Before publishing, review `packages/serve-emu/CHANGELOG.md`, then run:
-
-```sh
-bun run check
-```
-
-That verifies generated documentation, runs package coverage, checks the server,
-UI, and test TypeScript projects, builds the production UI, and runs the
-packed-tarball consumer smoke test.
-
-Commit only the version and changelog files, then tag and publish:
-
-```sh
-git commit -m "Release v<version>" -- packages/serve-emu/package.json packages/serve-emu/CHANGELOG.md
-git tag v<version>
-npm publish packages/serve-emu
-git push origin HEAD --tags
-```
+The package smoke check still verifies the CLI and the `serve-emu`,
+`serve-emu/middleware`, `serve-emu/stream-socket`, and
+`serve-emu/stream-settings` programmatic entry points. Add new public entry
+points to `exports`, document them, and exercise them from the packed tarball.
 
 ## Reporting Issues
 

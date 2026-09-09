@@ -4,7 +4,7 @@
 
 ## Project Layout
 
-- Root scripts delegate to the `serve-emu` workspace package.
+- This directory is part of the `expo-device-hub` monorepo. Paths below are relative to this directory; run commands from the monorepo root.
 - Main package: `packages/serve-emu`.
 - CLI entry point: `packages/serve-emu/src/cli.ts`.
 - HTTP, WebSocket, health, and REST APIs: `packages/serve-emu/src/server.ts`.
@@ -24,17 +24,18 @@ Prefer kebab-case for TypeScript and JavaScript filenames.
 ## Common Commands
 
 ```sh
-bun install
+bun run submodule:init
+bun install --frozen-lockfile
 bun run --filter serve-emu setup
-bun run packages/serve-emu/src/cli.ts
-bun run dev
+bun run --filter serve-emu start
+bun run --filter serve-emu dev
 bun run --filter serve-emu dev:ui
 bun run --filter serve-emu test
 bun run --filter serve-emu typecheck
 bun run --filter serve-emu typecheck:ui
 bun run --filter serve-emu build
-bun run docs:check
-bun run check
+bun run --filter serve-emu docs:check
+bun run --filter serve-emu check
 ```
 
 `setup` downloads the pinned scrcpy server into
@@ -92,14 +93,14 @@ second byte-layout description here that can drift from the tested reference.
 Run the aggregate check before handing off a change:
 
 ```sh
-bun run check
+bun run --filter serve-emu check
 ```
 
 For runtime or protocol changes, also test manually with a booted emulator or device:
 
 ```sh
 adb devices
-bun run packages/serve-emu/src/cli.ts
+bun run --filter serve-emu start
 ```
 
 Verify relevant flows: first video frame, browser refresh recovery, multiple tabs, tap/swipe/text/key input, `/api/screenshot`, changed REST APIs, logcat SSE, app management, location, route playback, and session replay when touched.

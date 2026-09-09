@@ -85,12 +85,13 @@ bunx serve-emu@latest
 npx serve-emu@latest
 ```
 
-Local development from this repository:
+Local development from the `expo-device-hub` monorepo root:
 
 ```sh
-bun install
+bun run submodule:init
+bun install --frozen-lockfile
 bun run --filter serve-emu setup
-bun run packages/serve-emu/src/cli.ts
+bun run --filter serve-emu start
 # -> http://localhost:3300
 ```
 
@@ -709,7 +710,7 @@ npm publish --workspace packages/serve-emu
 
 ## Contributing
 
-See [`CONTRIBUTING.md`](https://github.com/expo/serve-emu/blob/main/CONTRIBUTING.md) for development setup, validation steps, scrcpy protocol notes, and pull request guidelines.
+See [`CONTRIBUTING.md`](https://github.com/expo/expo-device-hub/blob/main/packages/serve-emu/CONTRIBUTING.md) for development setup, validation steps, scrcpy protocol notes, and pull request guidelines.
 
 ## License
 

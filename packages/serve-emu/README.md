@@ -83,12 +83,13 @@ bunx serve-emu@latest
 npx serve-emu@latest
 ```
 
-Local development from this repository:
+Local development from the `expo-device-hub` monorepo root:
 
 ```sh
-bun install
+bun run submodule:init
+bun install --frozen-lockfile
 bun run --filter serve-emu setup
-bun run packages/serve-emu/src/cli.ts
+bun run --filter serve-emu start
 # -> http://localhost:3300
 ```
 
