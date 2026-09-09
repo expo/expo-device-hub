@@ -69,10 +69,8 @@
     "coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov --coverage-dir=coverage && bun run scripts/check-coverage.ts",
     "test:package": "bun run scripts/package-smoke.ts",
     "check:unused": "knip",
-    "check": "bun run docs:check && bun run coverage && bun run typecheck && bun run typecheck:ui && bun run typecheck:tests && bun run build && bun run test:package",
-    "typecheck": "tsc --noEmit",
-    "typecheck:ui": "tsc -p src/ui --noEmit",
-    "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit",
+    "check": "bun run docs:check && bun run coverage && bun run typecheck && bun run build && bun run test:package",
+    "typecheck": "tsc --noEmit && tsc -p src/ui --noEmit && tsc -p tsconfig.tests.json --noEmit",
     "prepublishOnly": "bun run check"
   },
   "files": [

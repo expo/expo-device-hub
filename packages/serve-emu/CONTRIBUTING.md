@@ -69,10 +69,10 @@ Before opening a pull request, run the checks that match your change:
 bun run --filter serve-emu test
 bun run --filter serve-emu coverage
 bun run --filter serve-emu typecheck
-bun run --filter serve-emu typecheck:ui
-bun run --filter serve-emu typecheck:tests
 bun run --filter serve-emu build
 ```
+
+`typecheck` checks the server, browser UI, and test/script TypeScript projects.
 
 Run the same aggregate check used by CI before requesting review:
 

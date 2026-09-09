@@ -32,7 +32,6 @@ bun run --filter serve-emu dev
 bun run --filter serve-emu dev:ui
 bun run --filter serve-emu test
 bun run --filter serve-emu typecheck
-bun run --filter serve-emu typecheck:ui
 bun run --filter serve-emu build
 bun run --filter serve-emu docs:check
 bun run --filter serve-emu check

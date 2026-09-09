@@ -660,7 +660,6 @@ bun install
 bun run --filter serve-emu setup
 bun run --filter serve-emu dev
 bun run --filter serve-emu typecheck
-bun run --filter serve-emu typecheck:ui
 bun run --filter serve-emu build
 bun run check
 ```

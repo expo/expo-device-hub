@@ -45,11 +45,6 @@ jobs:
       - name: Typecheck (excluding serve-sim)
         run: bunx turbo run typecheck --filter='!@expo/serve-sim' --only
 
-      - name: Serve-emu UI and test typechecks
-        run: |
-          bun run --filter serve-emu typecheck:ui
-          bun run --filter serve-emu typecheck:tests
-
       - name: Test
         run: bun run test
 
