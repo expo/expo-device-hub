@@ -651,6 +651,13 @@ reports `grpcCapture.imageMode`, actual received `grpcMessageBytesReceived`,
 protobuf decode timing, and separate received/source/encoder frame rates.
 MMAP counters remain zero and shared-memory timing remains null for RGB888.
 
+For RGB888, `rawGrpcMessagesEmitted` counts responses passed to protobuf decoding
+and matches `rawGrpcMessagesReceived`; `rawGrpcMessagesCoalesced` stays zero.
+Those message counters exclude images replaced in the latest-image slot before
+encoding. Compare `usableImageFps` with `freshEncoderWriteFps` (which excludes
+repeats) to observe the local reduction before encoder submission. Their
+rolling-rate difference is not an exact cumulative dropped-image count.
+
 ```sh
 serve-emu -s emulator-5554 --stream-mode grpc-screenshot --grpc-image-mode rgb888
 curl -X PUT http://localhost:3300/api/stream-mode \

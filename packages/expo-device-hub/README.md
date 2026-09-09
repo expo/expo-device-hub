@@ -102,6 +102,15 @@ limits fresh encoder submissions without slowing reception or queuing old
 images for playback. Received response rate measures delivered messages,
 which may differ from the emulator's internal rendering rate.
 
+For RGB888, **Decoded responses** (`rawGrpcMessagesEmitted`) tracks every
+received stream response, and **Predecode coalescing**
+(`rawGrpcMessagesCoalesced`) stays zero. These counters describe delivery to
+protobuf decoding, not selection for the encoder. Images replaced in the
+latest-image slot before encoding are not counted as coalesced messages. Compare
+**Usable image FPS** with **Encoder input FPS** to see the reduction in fresh
+images submitted to the encoder; the latter excludes repeats. Their difference
+is a rolling cadence comparison, not an exact cumulative count of dropped images.
+
 MMAP uses gRPC metadata notifications to trigger selected shared-memory reads;
 it does not continuously poll the file. After the stream has delivered a message,
 10 seconds without another decoded stream message triggers a unary

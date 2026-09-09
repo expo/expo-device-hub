@@ -29,7 +29,6 @@ import {
 } from "../src/grpc-session.ts";
 import {
   EmulatorGrpcClient,
-  encodeImageFormat,
   IMG_FORMAT_PNG,
   IMG_FORMAT_RGB888,
   type EmuImage,
@@ -43,6 +42,7 @@ import type {
   ScrcpyControlSession,
   VideoFrame,
 } from "../src/scrcpy.ts";
+import { encodeEmulatorImage, grpcFrame } from "./fixtures/grpc.ts";
 
 const CONFIG_FRAME: VideoFrame = {
   type: "frame",
@@ -1189,27 +1189,18 @@ describe("startGrpcSession integration", () => {
     const width = 192;
     const height = 192;
     const frameCount = 120;
-    const varint = (value: number): Buffer => {
-      const bytes: number[] = [];
-      do {
-        const byte = value & 0x7f;
-        value >>>= 7;
-        bytes.push(value ? byte | 0x80 : byte);
-      } while (value);
-      return Buffer.from(bytes);
-    };
-    const format = encodeImageFormat({ format: IMG_FORMAT_RGB888, width, height });
     const frame = (sequence: number): Buffer => {
       const pixels = Buffer.alloc(width * height * 3);
       pixels.writeUInt32LE(sequence);
-      const body = Buffer.concat([
-        Buffer.from([0x0a]), varint(format.length), format,
-        Buffer.from([0x22]), varint(pixels.length), pixels,
-        Buffer.from([0x28]), varint(sequence),
-      ]);
-      const header = Buffer.alloc(5);
-      header.writeUInt32BE(body.length, 1);
-      return Buffer.concat([header, body]);
+      return grpcFrame(
+        encodeEmulatorImage({
+          format: IMG_FORMAT_RGB888,
+          width,
+          height,
+          image: pixels,
+          seq: sequence,
+        }),
+      );
     };
     let screenshotStream: ServerHttp2Stream | undefined;
     const server = http2.createServer();
@@ -1253,10 +1244,19 @@ describe("startGrpcSession integration", () => {
         screenshotStream!.write(frame(sequence));
       }
       const deadline = performance.now() + 2000;
-      while (performance.now() < deadline && encoders[0]!.lastBuffer!.readUInt32LE() !== frameCount) {
+      while (encoders[0]!.lastBuffer!.readUInt32LE() !== frameCount) {
+        if (performance.now() >= deadline) {
+          throw new Error(
+            `Timed out after 2000ms waiting for RGB888 frame ${frameCount} to reach the encoder; last frame was ${encoders[0]!.lastBuffer!.readUInt32LE()}`,
+          );
+        }
         await new Promise((resolve) => setTimeout(resolve, 5));
       }
-      expect(session.diagnostics!().grpcCapture!.rawGrpcMessagesReceived).toBe(frameCount + 1);
+      expect(session.diagnostics!().grpcCapture).toMatchObject({
+        rawGrpcMessagesReceived: frameCount + 1,
+        rawGrpcMessagesEmitted: frameCount + 1,
+        rawGrpcMessagesCoalesced: 0,
+      });
       expect(encoders[0]!.lastBuffer!.readUInt32LE()).toBe(frameCount);
       expect(encoders[0]!.options).toMatchObject({ fps: 30, inputFormat: "rgb24" });
       expect(encoders[0]!.writes).toBeLessThan(frameCount / 2);

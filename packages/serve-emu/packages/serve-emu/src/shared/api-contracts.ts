@@ -124,9 +124,15 @@ export type GrpcCaptureDiagnostics = {
   imageMode: GrpcImageMode;
   /** Raw framed protobuf messages received before either pacing stage. */
   rawGrpcMessagesReceived: number;
-  /** In-band messages decoded by the raw pacer, or MMAP notifications selected for a snapshot. */
+  /**
+   * In-band messages passed to decoding, or MMAP notifications selected for a
+   * snapshot; not encoder submissions.
+   */
   rawGrpcMessagesEmitted: number;
-  /** In-band messages replaced by a newer one, or MMAP notifications dropped/replaced by pacing. */
+  /**
+   * Messages coalesced before decoding, or MMAP notifications skipped by pacing.
+   * Excludes usable images replaced before encoding. RGB888 leaves this at zero.
+   */
   rawGrpcMessagesCoalesced: number;
   /** Complete PNG or RGB images made available to the encoder. */
   usableImages: number;
