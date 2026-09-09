@@ -128,13 +128,18 @@ describe("LocationSection", () => {
   });
 
   test("shows the preset whose coordinates the boxes hold", () => {
-    const applePark = render(
-      locationClient({ location: { latitude: 37.3349, longitude: -122.009 } }),
-    );
-    const elsewhere = render(locationClient({ location: { latitude: 1, longitude: 2 } }));
+    const selected = (client: DeviceClient) =>
+      render(client).replace(/ data-test-options="[^"]*"/g, "");
 
-    expect(applePark).toContain("Apple Park");
-    expect(elsewhere).toContain("Custom");
+    expect(
+      selected(locationClient({ location: { latitude: 37.3349, longitude: -122.009 } })),
+    ).toContain(">Apple Park</span>");
+    expect(selected(locationClient({ location: { latitude: 1, longitude: 2 } }))).toContain(
+      ">Custom</span>",
+    );
+    expect(selected(locationClient({ location: { latitude: 1, longitude: 2 } }))).not.toContain(
+      ">Apple Park</span>",
+    );
   });
 
   test("offers Clear only to a backend that can remove a fix", () => {

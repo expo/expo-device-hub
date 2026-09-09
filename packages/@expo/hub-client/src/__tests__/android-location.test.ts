@@ -81,29 +81,23 @@ describe("readAndroidLocation", () => {
     });
   });
 
-  test("reports a non-ok response or an unreadable body as unsupported", async () => {
+  test("leaves a non-ok response or an unreadable body unanswered rather than unsupported", async () => {
     const notOk = fakeFetch(() => jsonResponse({ emulator: true, location: null }, 500));
-    expect(await readAndroidLocation(notOk.fetchImpl, LOCATION_URL)).toEqual({
-      supported: false,
-      location: null,
-    });
+    expect(await readAndroidLocation(notOk.fetchImpl, LOCATION_URL)).toBeNull();
 
     const garbage = fakeFetch(() => new Response("<html>proxy error</html>"));
-    expect(await readAndroidLocation(garbage.fetchImpl, LOCATION_URL)).toEqual({
-      supported: false,
-      location: null,
-    });
+    expect(await readAndroidLocation(garbage.fetchImpl, LOCATION_URL)).toBeNull();
+
+    const noVerdict = fakeFetch(() => jsonResponse({ serial: "emulator-5554" }));
+    expect(await readAndroidLocation(noVerdict.fetchImpl, LOCATION_URL)).toBeNull();
   });
 
-  test("reports an unreachable backend as unsupported instead of rejecting", async () => {
+  test("leaves an unreachable backend unanswered instead of rejecting", async () => {
     const { fetchImpl } = fakeFetch(() => {
       throw new Error("connection refused");
     });
 
-    expect(await readAndroidLocation(fetchImpl, LOCATION_URL)).toEqual({
-      supported: false,
-      location: null,
-    });
+    expect(await readAndroidLocation(fetchImpl, LOCATION_URL)).toBeNull();
   });
 });
 

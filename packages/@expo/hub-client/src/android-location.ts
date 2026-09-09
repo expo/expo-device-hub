@@ -1,8 +1,6 @@
 import { type DeviceGeoFix } from "./types";
 import { type DeviceLocationRead } from "./useDeviceLocation";
 
-const UNSUPPORTED: DeviceLocationRead = { supported: false, location: null };
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -21,18 +19,20 @@ export function parseAndroidFix(value: unknown): DeviceGeoFix | null {
   return { latitude, longitude };
 }
 
+/** GET /api/location. Null when the read could not be answered, so the caller can retry. */
 export async function readAndroidLocation(
   fetchImpl: typeof fetch,
   url: string,
-): Promise<DeviceLocationRead> {
+): Promise<DeviceLocationRead | null> {
   try {
     const response = await fetchImpl(url, { cache: "no-store" });
-    if (!response.ok) return UNSUPPORTED;
+    if (!response.ok) return null;
     const payload = asRecord(await response.json());
-    if (!payload || payload.emulator !== true) return UNSUPPORTED;
+    if (!payload || typeof payload.emulator !== "boolean") return null;
+    if (!payload.emulator) return { supported: false, location: null };
     return { supported: true, location: parseAndroidFix(payload.location) };
   } catch {
-    return UNSUPPORTED;
+    return null;
   }
 }
 
