@@ -488,19 +488,20 @@ test("reports configured source settings and rolling encoded-frame timing", asyn
   }
 });
 
-test("includes optional gRPC session capture diagnostics in WebRTC stats", async () => {
+test.each(["mmap", "rgb888"] as const)("includes %s session capture diagnostics in WebRTC stats", async (imageMode) => {
+  const diagnostics = { ...GRPC_CAPTURE_DIAGNOSTICS, imageMode };
   const { session, drained } = fakeScrcpySession(1);
   const adapted = adaptScrcpySession(session);
   const grpcSession: EmuSession = {
     ...adapted,
     mode: "grpc-screenshot",
-    diagnostics: () => ({ grpcCapture: GRPC_CAPTURE_DIAGNOSTICS }),
+    diagnostics: () => ({ grpcCapture: diagnostics }),
   };
   const app = await createApp(
     {
       serial: session.serial,
       streamMode: "grpc-screenshot",
-      grpcImageMode: "mmap",
+      grpcImageMode: imageMode,
       streamSettings: {
         transport: "webrtc",
         codec: "h264",
@@ -519,11 +520,11 @@ test("includes optional gRPC session capture diagnostics in WebRTC stats", async
     await drained;
     expect(app.health()).toMatchObject({
       streamMode: "grpc-screenshot",
-      grpcImageMode: "mmap",
-      grpcCapture: GRPC_CAPTURE_DIAGNOSTICS,
+      grpcImageMode: imageMode,
+      grpcCapture: diagnostics,
     });
     expect(app.webRtcStats(SESSION_ID)).toMatchObject({
-      capture: { grpc: GRPC_CAPTURE_DIAGNOSTICS },
+      capture: { grpc: diagnostics },
     });
   } finally {
     await app.stop();

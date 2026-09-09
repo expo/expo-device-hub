@@ -30,6 +30,7 @@ import {
   IMG_FORMAT_PNG,
   IMG_FORMAT_RGB888,
   type EmuImage,
+  type ImageFormatRequest,
   type GrpcScreenshotImageSource,
   type KeyboardEventRequest,
 } from "../src/emulator-grpc.ts";
@@ -245,6 +246,12 @@ describe("gRPC screenshot session helpers", () => {
     expect(pngBehavior.needsEncoderFollowUp(false, true)).toBe(true);
     expect(pngBehavior.needsEncoderFollowUp(true, false)).toBe(true);
     expect(pngBehavior.needsEncoderFollowUp(true, true)).toBe(false);
+
+    const rgbBehavior = grpcImageModeBehavior("rgb888", 24);
+    expect(rgbBehavior.encoderInputFormat).toBe("rgb24");
+    expect(rgbBehavior.predecodeMaxFps).toBe(24);
+    expect(rgbBehavior.needsEncoderFollowUp(false, true)).toBe(true);
+    expect(rgbBehavior.needsEncoderFollowUp(true, false)).toBe(false);
 
     const mmapBehavior = grpcImageModeBehavior("mmap", 60);
     expect(mmapBehavior.encoderInputFormat).toBe("rgb24");
@@ -1032,12 +1039,17 @@ class FakeGrpcClient implements GrpcSessionClient {
     readonly emitInitialStreamImage = true,
   ) {}
 
-  async getScreenshot(): Promise<EmuImage> {
+  readonly probeFormats: ImageFormatRequest[] = [];
+  streamFormat: ImageFormatRequest | null = null;
+  streamMaxFps: number | undefined;
+
+  async getScreenshot(format: ImageFormatRequest): Promise<EmuImage> {
+    this.probeFormats.push(format);
     return this.probe;
   }
 
   streamScreenshot(
-    _format: unknown,
+    format: ImageFormatRequest,
     onImage: (
       image: EmuImage,
       source: GrpcScreenshotImageSource,
@@ -1049,6 +1061,8 @@ class FakeGrpcClient implements GrpcSessionClient {
       onPacingEvent?: (event: "received" | "emitted" | "coalesced") => void;
     },
   ): Promise<void> {
+    this.streamFormat = format;
+    this.streamMaxFps = _options?.maxFps;
     this.streamImage = onImage;
     if (this.emitInitialStreamImage) onImage(this.probe, "stream", Date.now());
     return new Promise((resolve) => {
@@ -1082,6 +1096,7 @@ class FakeGrpcEncoder implements GrpcSessionEncoder {
   readonly quarterTurn: QuarterTurn;
   closed = false;
   writes = 0;
+  lastBuffer: Buffer | null = null;
   acceptedWrites = 0;
   #published = false;
 
@@ -1099,6 +1114,7 @@ class FakeGrpcEncoder implements GrpcSessionEncoder {
 
   write(_rgb: Buffer, _ptsUs: bigint): boolean {
     this.writes++;
+    this.lastBuffer = _rgb;
     const accepted = this.behavior.writeResults?.shift() ?? true;
     if (!accepted) return false;
     this.acceptedWrites++;
@@ -1166,6 +1182,196 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe("startGrpcSession integration", () => {
+  test.each([0, 8, 1280])(
+    "streams in-band RGB888 at maxSize=%s with rgb24 input and no MMAP",
+    async (maxSize) => {
+      const rgb = {
+        ...integrationImage(),
+        format: IMG_FORMAT_RGB888,
+        image: Buffer.alloc(4 * 6 * 3, 123),
+      };
+      const client = new FakeGrpcClient(rgb);
+      const encoders: FakeGrpcEncoder[] = [];
+      const parent = new AbortController();
+      const session = await startGrpcSession(
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode: "rgb888",
+          inputSource: "grpc",
+          maxSize,
+          maxFps: 24,
+          signal: parent.signal,
+        },
+        {
+          readDisplaySizeSignal: async () => "physical:4x6",
+          runtime: integrationRuntime(client, encoders),
+        },
+      );
+      try {
+        expect(client.probeFormats).toEqual([{ format: IMG_FORMAT_RGB888 }]);
+        expect(client.streamFormat).toEqual({
+          format: IMG_FORMAT_RGB888,
+          width: maxSize,
+          height: maxSize,
+        });
+        expect(client.streamMaxFps).toBe(24);
+        expect(encoders[0]!.options).toMatchObject({
+          width: 4,
+          height: 6,
+          inputFormat: "rgb24",
+          quarterTurn: 0,
+        });
+        expect(encoders[0]!.lastBuffer).toBe(rgb.image);
+        expect(session.diagnostics!().grpcCapture).toMatchObject({
+          imageMode: "rgb888",
+          usableImages: 1,
+          transportBytes: 72,
+          imagePayloadBytes: 72,
+          mmapFileBytesRead: 0,
+          mmapReadRetries: 0,
+          mmapTornFramesDropped: 0,
+          sharedReadCopyTimeMs: null,
+        });
+        // Already oriented images must not be rotated again, including 180 degrees.
+        client.streamImage!({ ...rgb, rotation: 2 }, "stream", Date.now());
+        expect(encoders).toHaveLength(1);
+        const landscape = {
+          ...rgb,
+          rotation: 1,
+          width: 6,
+          height: 4,
+          image: Buffer.alloc(72, 42),
+        };
+        client.streamImage!(landscape, "stream", Date.now());
+        await waitFor(() => encoders.length === 2);
+        expect(encoders[0]!.closed).toBe(true);
+        expect(encoders[1]!.options).toMatchObject({
+          width: 6,
+          height: 4,
+          quarterTurn: 0,
+          inputFormat: "rgb24",
+        });
+        await waitFor(() => encoders[1]!.lastBuffer === landscape.image);
+        expect(session.meta).toMatchObject({ width: 6, height: 4 });
+        // A native-size display can grow; no startup-sized shared region constrains it.
+        if (maxSize === 0) {
+          const larger = {
+            ...rgb,
+            width: 8,
+            height: 10,
+            image: Buffer.alloc(240),
+          };
+          client.streamImage!(larger, "probe", Date.now());
+          await waitFor(() => encoders.length === 3);
+          await waitFor(() => encoders[2]!.lastBuffer === larger.image);
+          expect(session.meta).toMatchObject({ width: 8, height: 10 });
+        }
+        parent.abort();
+        await session.close();
+        const writes = encoders.map((encoder) => encoder.writes);
+        client.streamImage!(rgb, "stream", Date.now());
+        expect(encoders.map((encoder) => encoder.writes)).toEqual(writes);
+        expect(encoders.every((encoder) => encoder.closed)).toBe(true);
+        expect(client.closed).toBe(true);
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
+  test("ignores RGB888 inactivity markers and rejects malformed stream and fallback images", async () => {
+    const rgb = {
+      ...integrationImage(),
+      format: IMG_FORMAT_RGB888,
+      image: Buffer.alloc(72),
+    };
+    const client = new FakeGrpcClient(rgb);
+    const encoders: FakeGrpcEncoder[] = [];
+    const session = await startGrpcSession(
+      {
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+        inputSource: "grpc",
+      },
+      {
+        readDisplaySizeSignal: async () => "physical:4x6",
+        runtime: integrationRuntime(client, encoders),
+      },
+    );
+    try {
+      client.streamImage!(
+        { ...rgb, width: 0, height: 0, image: Buffer.alloc(0) },
+        "stream",
+        Date.now(),
+      );
+      expect(session.diagnostics!().grpcCapture!.usableImages).toBe(1);
+      for (const invalid of [
+        { ...rgb, image: Buffer.alloc(71) },
+        { ...rgb, image: Buffer.alloc(73) },
+        { ...rgb, image: Buffer.alloc(0) },
+        { ...rgb, format: IMG_FORMAT_PNG },
+        { ...rgb, width: 0 },
+        { ...rgb, width: -1 },
+        { ...rgb, width: 1.5 },
+        { ...rgb, width: 16_385 },
+        { ...rgb, height: Number.NaN },
+      ]) {
+        for (const source of ["stream", "probe"] as const) {
+          expect(() => client.streamImage!(invalid, source, Date.now())).toThrow(
+            "RGB888 screenshot must contain",
+          );
+        }
+      }
+      expect(session.diagnostics!().grpcCapture!.usableImages).toBe(1);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("keeps only the latest RGB888 frame during encoder backpressure", async () => {
+    const rgb = {
+      ...integrationImage(),
+      format: IMG_FORMAT_RGB888,
+      image: Buffer.alloc(72),
+    };
+    const client = new FakeGrpcClient(rgb);
+    const encoders: FakeGrpcEncoder[] = [];
+    const behavior = { writeResults: [true] };
+    const session = await startGrpcSession(
+      {
+        serial: "emulator-5554",
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+        inputSource: "grpc",
+        maxFps: 60,
+      },
+      {
+        readDisplaySizeSignal: async () => "physical:4x6",
+        runtime: integrationRuntime(client, encoders, behavior),
+      },
+    );
+    try {
+      behavior.writeResults.push(false, false, true);
+      let newest = rgb;
+      for (let seq = 2; seq < 102; seq++) {
+        newest = { ...rgb, seq, image: Buffer.alloc(72, seq) };
+        client.streamImage!(newest, "stream", Date.now());
+      }
+      await waitFor(() => encoders[0]!.acceptedWrites === 2);
+      expect(encoders[0]!.lastBuffer).toBe(newest.image);
+      expect(encoders[0]!.writes).toBe(4);
+      expect(session.diagnostics!().grpcCapture).toMatchObject({
+        usableImages: 101,
+        acceptedEncoderWrites: 2,
+        encoderBackpressureRejections: 2,
+      });
+    } finally {
+      await session.close();
+    }
+  });
+
   test("routes controls through a control-only scrcpy session", async () => {
     const client = new FakeGrpcClient(integrationImage());
     const encoders: FakeGrpcEncoder[] = [];

@@ -39,11 +39,11 @@ function fakeScrcpy(
 }
 
 describe("stream session", () => {
-  test("rejects strict gRPC selection for physical devices", async () => {
+  test.each(["png", "mmap", "rgb888"] as const)("rejects strict %s gRPC selection for physical devices", async (grpcImageMode) => {
     await expect(
       startEmuSession({
         mode: "grpc-screenshot",
-        grpcImageMode: "png",
+        grpcImageMode,
         inputSource: "grpc",
         serial: "physical-device",
       }),

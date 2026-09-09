@@ -59,6 +59,7 @@ const STREAM_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceStreamSource>> = [
 const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<SelectOption<DeviceGrpcImageMode>> = [
   { value: 'png', label: 'PNG' },
   { value: 'mmap', label: 'MMAP' },
+  { value: 'rgb888', label: 'RGB888' },
 ];
 const GRPC_INPUT_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceInputSource>> = [
   { value: 'scrcpy', label: 'scrcpy' },
@@ -157,10 +158,6 @@ export function StreamOptionsSection({
   const inputSourceOptions = GRPC_INPUT_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableInputSources.includes(option.value),
   );
-  // Every one of these controls restarts the capture session, so they share the
-  // pending state and the switching note.
-  const sourceControlsVisible =
-    !!streamSource && (sourceOptions.length > 1 || streamSource.mode === 'grpc-screenshot');
   const settingsReady = client.streamSettings !== null;
   const settingsDisabled = !settingsReady || client.streamSettingsPending;
   const transport: StreamTransport =
@@ -274,9 +271,6 @@ export function StreamOptionsSection({
             />
           </SidebarRow>
         </>
-      )}
-      {sourceControlsVisible && client.streamSourcePending && !client.streamSourceError && (
-        <SectionNote role="status">Switching stream source…</SectionNote>
       )}
       <SidebarRow label="Transport">
         <Select

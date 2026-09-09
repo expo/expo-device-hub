@@ -821,16 +821,17 @@ describe("createRouter stream mode", () => {
   });
 
   test("atomically replaces gRPC capture when its explicit image mode changes", async () => {
+    let failRgb888 = true;
     const opened: Array<{ mode: StreamMode; grpcImageMode: string }> = [];
     const router = createRouter(
       { serial: "emulator-5554" },
       {
-        listDevices: async () => [
-          { serial: "emulator-5554", state: "device" },
-        ],
+        listDevices: async () => [{ serial: "emulator-5554", state: "device" }],
         createApp: (options) =>
           createApp(options, {
             startSession: async ({ mode, grpcImageMode }) => {
+              if (failRgb888 && grpcImageMode === "rgb888")
+                throw new Error("RGB888 startup failed");
               opened.push({ mode, grpcImageMode });
               return liveStreamSession(mode);
             },
@@ -838,9 +839,7 @@ describe("createRouter stream mode", () => {
       },
     );
 
-    await router.handleRequest(
-      new Request("http://router.test/api/stream-mode"),
-    );
+    await router.handleRequest(new Request("http://router.test/api/stream-mode"));
     const mmap = await router.handleRequest(
       put("/api/stream-mode", {
         mode: "grpc-screenshot",
@@ -853,6 +852,63 @@ describe("createRouter stream mode", () => {
       sessionGeneration: 1,
     });
 
+    const failedRgb888 = await router.handleRequest(
+      put("/api/stream-mode", {
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+      }),
+    );
+    expect(failedRgb888.status).toBe(503);
+    expect(await failedRgb888.json()).toMatchObject({
+      error: { message: "RGB888 startup failed" },
+    });
+    expect(
+      await (
+        await router.handleRequest(
+          new Request("http://router.test/api/stream-mode"),
+        )
+      ).json(),
+    ).toMatchObject({
+      mode: "grpc-screenshot",
+      grpcImageMode: "mmap",
+      sessionGeneration: 1,
+    });
+    failRgb888 = false;
+
+    const rgb888 = await router.handleRequest(
+      put("/api/stream-mode", {
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+      }),
+    );
+    expect(rgb888.status).toBe(200);
+    expect(await rgb888.json()).toMatchObject({
+      mode: "grpc-screenshot",
+      grpcImageMode: "rgb888",
+      sessionGeneration: 2,
+    });
+    expect(
+      await (
+        await router.handleRequest(
+          new Request("http://router.test/api/stream-mode"),
+        )
+      ).json(),
+    ).toMatchObject({
+      mode: "grpc-screenshot",
+      grpcImageMode: "rgb888",
+      sessionGeneration: 2,
+    });
+    const unchanged = await router.handleRequest(
+      put("/api/stream-mode", {
+        mode: "grpc-screenshot",
+        grpcImageMode: "rgb888",
+      }),
+    );
+    expect(await unchanged.json()).toMatchObject({
+      grpcImageMode: "rgb888",
+      sessionGeneration: 2,
+    });
+
     const png = await router.handleRequest(
       put("/api/stream-mode", {
         mode: "grpc-screenshot",
@@ -862,11 +918,12 @@ describe("createRouter stream mode", () => {
     expect(await responseJson(png)).toMatchObject({
       mode: "grpc-screenshot",
       grpcImageMode: "png",
-      sessionGeneration: 2,
+      sessionGeneration: 3,
     });
     expect(opened).toEqual([
       { mode: "scrcpy", grpcImageMode: "png" },
       { mode: "grpc-screenshot", grpcImageMode: "mmap" },
+      { mode: "grpc-screenshot", grpcImageMode: "rgb888" },
       { mode: "grpc-screenshot", grpcImageMode: "png" },
     ]);
 
@@ -884,7 +941,7 @@ describe("createRouter stream mode", () => {
         message: "stream mode request.grpcImageMode is invalid",
       },
     });
-    expect(opened).toHaveLength(3);
+    expect(opened).toHaveLength(4);
 
     await router.stopAll();
   });

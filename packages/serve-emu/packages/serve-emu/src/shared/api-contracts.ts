@@ -99,7 +99,7 @@ export function isInputSource(value: unknown): value is InputSource {
 }
 
 /** Exact image delivery mode used by the emulator gRPC screenshot source. */
-export const GRPC_IMAGE_MODES = ["png", "mmap"] as const;
+export const GRPC_IMAGE_MODES = ["png", "mmap", "rgb888"] as const;
 export type GrpcImageMode = (typeof GRPC_IMAGE_MODES)[number];
 export const DEFAULT_GRPC_IMAGE_MODE: GrpcImageMode = "png";
 export function isGrpcImageMode(value: unknown): value is GrpcImageMode {
@@ -124,9 +124,9 @@ export type GrpcCaptureDiagnostics = {
   imageMode: GrpcImageMode;
   /** Raw framed protobuf messages received before either pacing stage. */
   rawGrpcMessagesReceived: number;
-  /** PNG messages decoded by the raw pacer, or MMAP notifications selected for a snapshot. */
+  /** In-band messages decoded by the raw pacer, or MMAP notifications selected for a snapshot. */
   rawGrpcMessagesEmitted: number;
-  /** PNG messages replaced by a newer one, or MMAP notifications dropped/replaced by pacing. */
+  /** In-band messages replaced by a newer one, or MMAP notifications dropped/replaced by pacing. */
   rawGrpcMessagesCoalesced: number;
   /** Complete PNG or RGB images made available to the encoder. */
   usableImages: number;

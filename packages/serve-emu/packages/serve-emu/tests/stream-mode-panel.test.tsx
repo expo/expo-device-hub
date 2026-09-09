@@ -122,7 +122,7 @@ describe("StreamModePanel", () => {
     expect(errorMarkup).toContain("WebRTC unavailable");
   });
 
-  test("renders an accessible explicit PNG/MMAP selector for the gRPC source", () => {
+  test("renders an accessible explicit PNG/MMAP/RGB888 selector for the gRPC source", () => {
     const markup = renderToStaticMarkup(
       <GrpcImageModeSelector
         value="mmap"
@@ -133,7 +133,7 @@ describe("StreamModePanel", () => {
 
     expect(markup).toContain("<legend>gRPC image mode</legend>");
     expect(markup).toContain('aria-describedby="stream-mode-help"');
-    expect(markup.match(/name="grpc-image-mode"/g)?.length).toBe(2);
+    expect(markup.match(/name="grpc-image-mode"/g)?.length).toBe(3);
     expect(markup).toContain('value="png"');
     expect(markup).toContain('checked="" value="mmap"');
     expect(markup).toContain("Compressed in-band images");
@@ -150,4 +150,32 @@ describe("StreamModePanel", () => {
     expect(disabledMarkup).toContain("<fieldset");
     expect(disabledMarkup).toContain("disabled=\"\"");
   });
+});
+
+test("renders RGB888 applied and disabled during a pending change", () => {
+  for (const disabled of [false, true]) {
+    const markup = renderToStaticMarkup(
+      <GrpcImageModeSelector
+        value="rgb888"
+        disabled={disabled}
+        onChange={() => {}}
+      />,
+    );
+    expect(markup).toContain('checked="" value="rgb888"');
+    expect(markup).toContain("Raw pixels over gRPC");
+    expect(markup.includes('disabled=""')).toBe(disabled);
+  }
+  let selected: string | undefined;
+  const selector = GrpcImageModeSelector({
+    value: "png",
+    disabled: false,
+    onChange: (mode) => {
+      selected = mode;
+    },
+  });
+  const options = selector.props.children[1].props.children;
+  options
+    .find((option: { key: string }) => option.key === "rgb888")
+    .props.children[0].props.onChange();
+  expect(selected).toBe("rgb888");
 });

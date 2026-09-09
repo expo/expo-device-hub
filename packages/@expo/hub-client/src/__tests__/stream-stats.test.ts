@@ -502,70 +502,73 @@ describe('readWebRtcServerStats', () => {
     });
   });
 
-  test('normalizes gRPC producer, transport, and host-copy diagnostics', () => {
-    const result = readWebRtcServerStats(
-      {
-        sampledAt: 2_000,
-        source: { codec: 'h264', fps: 58, frames: 500 },
-        sessions: [
-          {
-            sessionId: 'viewer',
-            submittedFrames: 490,
-            publisherDroppedFrames: 0,
-            payloadBytesSubmitted: 2_000_000,
-          },
-        ],
-        capture: {
-          offeredFrames: 500,
-          forwardedFrames: 490,
-          grpc: {
-            imageMode: 'mmap',
-            sourceTimestampFps: 60,
-            rawMessageReceiveFps: 59.5,
-            usableImageFps: 59,
-            freshEncoderWriteFps: 58.5,
-            rawGrpcMessagesReceived: 600,
-            rawGrpcMessagesEmitted: 590,
-            rawGrpcMessagesCoalesced: 10,
-            sequenceGaps: 2,
-            imagePayloadBytes: 552_960,
-            transportBytes: 55_296_000,
-            grpcMessageBytesReceived: 12_000,
-            mmapFileBytesRead: 56_000_000,
-            mmapReadRetries: 1,
-            mmapTornFramesDropped: 0,
-            productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
-            productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
-            protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
-            sharedReadCopyTimeMs: { p50: 0.3, p95: 0.6 },
+  test.each(['mmap', 'rgb888'])(
+    'normalizes %s producer, transport, and host-copy diagnostics',
+    (imageMode) => {
+      const result = readWebRtcServerStats(
+        {
+          sampledAt: 2_000,
+          source: { codec: 'h264', fps: 58, frames: 500 },
+          sessions: [
+            {
+              sessionId: 'viewer',
+              submittedFrames: 490,
+              publisherDroppedFrames: 0,
+              payloadBytesSubmitted: 2_000_000,
+            },
+          ],
+          capture: {
+            offeredFrames: 500,
+            forwardedFrames: 490,
+            grpc: {
+              imageMode,
+              sourceTimestampFps: 60,
+              rawMessageReceiveFps: 59.5,
+              usableImageFps: 59,
+              freshEncoderWriteFps: 58.5,
+              rawGrpcMessagesReceived: 600,
+              rawGrpcMessagesEmitted: 590,
+              rawGrpcMessagesCoalesced: 10,
+              sequenceGaps: 2,
+              imagePayloadBytes: 552_960,
+              transportBytes: 55_296_000,
+              grpcMessageBytesReceived: imageMode === 'mmap' ? 12_000 : 55_308_000,
+              mmapFileBytesRead: imageMode === 'mmap' ? 56_000_000 : 0,
+              mmapReadRetries: imageMode === 'mmap' ? 1 : 0,
+              mmapTornFramesDropped: 0,
+              productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
+              productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
+              protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
+              sharedReadCopyTimeMs: imageMode === 'mmap' ? { p50: 0.3, p95: 0.6 } : null,
+            },
           },
         },
-      },
-      'viewer',
-    );
+        'viewer',
+      );
 
-    expect(result.capture?.grpc).toEqual({
-      imageMode: 'mmap',
-      producerFps: 60,
-      receiveFps: 59.5,
-      usableImageFps: 59,
-      encoderInputFps: 58.5,
-      messagesReceived: 600,
-      messagesEmitted: 590,
-      messagesCoalesced: 10,
-      sequenceGaps: 2,
-      imagePayloadBytes: 552_960,
-      transportBytes: 55_296_000,
-      messageBytesReceived: 12_000,
-      mmapFileBytesRead: 56_000_000,
-      mmapReadRetries: 1,
-      mmapTornFramesDropped: 0,
-      productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
-      productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
-      protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
-      mmapReadCopyTimeMs: { p50: 0.3, p95: 0.6 },
-    });
-  });
+      expect(result.capture?.grpc).toEqual({
+        imageMode,
+        producerFps: 60,
+        receiveFps: 59.5,
+        usableImageFps: 59,
+        encoderInputFps: 58.5,
+        messagesReceived: 600,
+        messagesEmitted: 590,
+        messagesCoalesced: 10,
+        sequenceGaps: 2,
+        imagePayloadBytes: 552_960,
+        transportBytes: 55_296_000,
+        messageBytesReceived: imageMode === 'mmap' ? 12_000 : 55_308_000,
+        mmapFileBytesRead: imageMode === 'mmap' ? 56_000_000 : 0,
+        mmapReadRetries: imageMode === 'mmap' ? 1 : 0,
+        mmapTornFramesDropped: 0,
+        productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
+        productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
+        protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
+        mmapReadCopyTimeMs: imageMode === 'mmap' ? { p50: 0.3, p95: 0.6 } : { p50: null, p95: null },
+      });
+    },
+  );
 });
 
 describe('describeWebRtcPublisherCounters', () => {
