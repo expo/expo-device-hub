@@ -108,7 +108,8 @@ export function useStreamSettingsResource({
       settingsRef.current = optimistic;
       setStreamSettings(optimistic);
       setStreamSettingsPending(true);
-      void fetch(url, {
+      // Let the device client wait for the write before replacing its transport.
+      return fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestPatch),
@@ -121,13 +122,16 @@ export function useStreamSettingsResource({
           if (!controller.signal.aborted && requestRef.current === request) {
             settingsRef.current = next;
             setStreamSettings(next);
+            return true;
           }
+          return false;
         })
         .catch(() => {
           if (!controller.signal.aborted && requestRef.current === request) {
             settingsRef.current = previous;
             setStreamSettings(previous);
           }
+          return false;
         })
         .finally(() => {
           if (writeControllerRef.current === controller) writeControllerRef.current = null;

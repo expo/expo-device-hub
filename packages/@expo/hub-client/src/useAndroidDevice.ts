@@ -50,6 +50,7 @@ import { KeyedWriteTracker } from './keyed-write-tracker';
 import { androidMessageForKeyboardInput } from './keyboard';
 import { MsePlayer } from './mse-player';
 import {
+  isDeliberateServerClose,
   RECONNECT_BASE_DELAY_MS,
   STREAM_RECONNECT_GRACE_MS,
   scheduleReconnect,
@@ -77,6 +78,7 @@ import {
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
+  type DeviceStreamEncoderSettings,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
   type ForegroundApp,
@@ -489,7 +491,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const {
     streamSettings,
     streamSettingsPending,
-    updateStreamSettings,
+    updateStreamSettings: writeStreamSettings,
     refreshStreamSettings,
   } = useStreamSettingsResource({
     url: streamSettingsUrl,
@@ -793,6 +795,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     stream: webRtcStream,
     error: webRtcError,
     markFrameDecoded: markWebRtcFrameDecoded,
+    restart: restartWebRtcStream,
     streamStats,
     setStreamStatsEnabled,
   } = useWebRtcStream({
@@ -813,6 +816,46 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     allowCodecFallback: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
   });
+
+  const restartWebRtc = useCallback(() => {
+    const video = webRtcVideoElement;
+    // Closing the peer or replacing srcObject can clear the decoded frame.
+    // Capture it before either happens and show it until fresh video arrives.
+    if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
+      const snapshot = document.createElement('canvas');
+      snapshot.width = video.videoWidth;
+      snapshot.height = video.videoHeight;
+      const context = snapshot.getContext('2d');
+      if (context) {
+        context.drawImage(video, 0, 0);
+        video.poster = snapshot.toDataURL('image/png');
+      }
+      video.srcObject = null;
+    }
+    restartWebRtcStream();
+  }, [restartWebRtcStream, webRtcVideoElement]);
+
+  const updateStreamSettings = useCallback(
+    (patch: Partial<DeviceStreamEncoderSettings>) => {
+      if (streamSourceLoadingRef.current || isStreamSwitchPending(streamSwitchRef.current)) return;
+      const write = writeStreamSettings(patch);
+      if (!write || !useWebRtc) return;
+      const request = ++streamSourceRequestRef.current;
+      dispatchStreamSwitch({ type: 'request-start', live: streamLiveRef.current });
+      void write.then((updated) => {
+        if (streamSourceRequestRef.current !== request) return;
+        if (!updated) {
+          dispatchStreamSwitch({ type: 'request-failure' });
+          return;
+        }
+        // Resolution changes replace the encoder without closing the input
+        // socket. A new peer avoids waiting on the old decoder's video state.
+        restartWebRtc();
+        dispatchStreamSwitch({ type: 'request-success', replaced: true });
+      });
+    },
+    [dispatchStreamSwitch, restartWebRtc, useWebRtc, writeStreamSettings],
+  );
 
   const webRtcLive =
     useWebRtc &&
@@ -849,9 +892,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       setStatus('streaming');
       setError(null);
     } else if (webRtcWasLive && !webRtcGraceExpired) {
-      // When serve-emu swaps the capture source the RTP video usually keeps
-      // flowing; only the control socket is closed and reopened. Keep the frame
-      // and report a reconnect instead of an error while that settles.
+      // A source switch replaces both the control socket and the video peer.
+      // Keep the last frame until the replacement peer delivers fresh video.
       setStatus('reconnecting');
       setError(null);
     } else if (webRtcError) {
@@ -872,9 +914,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   useEffect(() => {
     if (!useWebRtc) return;
     const video = webRtcVideoElement;
-    // While the peer renegotiates (`webRtcStream` null) the element keeps its
-    // previous MediaStream, whose ended track leaves the last frame visible —
-    // the same "hold the last frame" the canvas path gets for free.
+    // A pending negotiation leaves the existing media or saved poster in place.
     if (!video || !webRtcStream) return;
 
     let stopped = false;
@@ -895,6 +935,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
       if (firstFrame) {
         firstFrame = false;
+        video.removeAttribute('poster');
         setWebRtcVideoReady(true);
       }
       markWebRtcFrameDecoded(presentedFrameDelta);
@@ -953,6 +994,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     const video = webRtcVideoElement;
     if (!video) return;
     return () => {
+      video.removeAttribute('poster');
       video.srcObject = null;
     };
   }, [useWebRtc, webRtcVideoElement, baseUrl, targetDevice]);
@@ -1348,9 +1390,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         // onclose owns retry scheduling.
       };
       ws.onclose = (event) => {
+        if (cancelled) return;
         if (wsRef.current === ws) wsRef.current = null;
         const wasHealthy = opened;
         opened = false;
+        if (wasHealthy && isDeliberateServerClose(event.code)) {
+          // serve-emu stops the old video peer along with this control socket.
+          // Renegotiate now instead of waiting for ICE loss and its grace period;
+          // the new input socket alone must not make the old video read as live.
+          restartWebRtc();
+        }
         retryInput('WebRTC input disconnected. Retrying...', event.code, wasHealthy);
       };
       ws.onmessage = (event) => {
@@ -1373,7 +1422,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (wsRef.current === ws) wsRef.current = null;
       setWebRtcInputReady(false);
     };
-  }, [active, baseUrl, targetDevice, useWebRtc]);
+  }, [active, baseUrl, targetDevice, useWebRtc, restartWebRtc]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
@@ -1680,7 +1729,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setCameraImage,
     clearCameraImage,
     streamSettings,
-    streamSettingsPending,
+    streamSettingsPending:
+      streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
     updateStreamSettings,
     streamSource,
     streamSourcePending: streamSourceLoading || isStreamSwitchPending(streamSwitch),
