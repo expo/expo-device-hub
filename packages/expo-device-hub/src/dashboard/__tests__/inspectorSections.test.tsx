@@ -1,6 +1,10 @@
 import { expect, test } from 'bun:test';
 import { type DeviceClient, type DevicePlatform } from '@expo/hub-client';
-import { type Device, NO_DEVICE_FRAME_DESCRIPTION } from '@expo/hub-components';
+import {
+  type Device,
+  NO_DEVICE_FRAME_DESCRIPTION,
+  ONSCREEN_KEYBOARD_DESCRIPTION,
+} from '@expo/hub-components';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
@@ -1149,7 +1153,7 @@ test('renders the Android accessibility switches the backend reports', () => {
 test('omits the Android accessibility switches the backend does not report', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
-  for (const label of ['Reduce motion', 'Bold text', 'Increase contrast']) {
+  for (const label of ['Reduce motion', 'Bold text', 'Increase contrast', 'On-screen keyboard']) {
     expect(html).not.toContain(`>${label}<`);
   }
 });
@@ -1392,6 +1396,48 @@ test('shows RGB888 applied, pending, and failed without changing the selection',
       expect(html).toContain('RGB888 capture failed');
     }
   }
+});
+
+test('keeps the Android on-screen keyboard row off iOS while device settings load', () => {
+  const client = {
+    ...inspectorClient('ios'),
+    capabilities: {
+      deviceSettings: true,
+      activity: false,
+      events: true,
+      camera: false,
+      accessibility: false,
+      streamSettings: false,
+    },
+    deviceSettings: null,
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={client}
+      device={device('ios', 'ios:iphone-17-pro')}
+      showDeviceFrame
+      onShowDeviceFrameChange={() => {}}
+    />,
+  );
+
+  expect(html).toContain('aria-label="Device options"');
+  expect(html).not.toContain('>On-screen keyboard</span>');
+});
+
+test('renders the Android on-screen keyboard switch the backend reports', () => {
+  const client = {
+    ...inspectorClient('android'),
+    deviceSettings: {
+      appearance: 'light',
+      network: 'on',
+      'text-size': 'medium',
+      'onscreen-keyboard': 'on',
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  expect(switchMarkup(html, 'On-screen keyboard')).toContain('aria-checked="true"');
+  expect(html).toContain(ONSCREEN_KEYBOARD_DESCRIPTION);
 });
 
 
