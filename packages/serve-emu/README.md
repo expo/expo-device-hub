@@ -244,8 +244,11 @@ curl -X POST "$BASE/api/devices/select" \
 `GET /api/stream-mode` reports `mode`, `grpcImageMode`, `inputSource`, `encoder`,
 `encoderName`, `availableEncoders`, the available stream and input sources, and the
 active session generation. `encoderName` identifies the active ffmpeg backend, or is
-`null` for scrcpy. `availableEncoders` includes `software` and lists `hardware` until
-a hardware probe fails; `hardwareEncoderError` then describes the failure.
+`null` for scrcpy. `availableEncoders` includes `software` and `hardware` so a failed
+hardware request can be retried. `hardwareEncoderError` is advisory: it describes
+the latest hardware probe or runtime encoder failure and clears after a successful
+hardware probe. Unexpected hardware encoder failures invalidate the cached probe,
+so the next hardware request probes again.
 `/health` and `/api` also report the active `encoderName`.
 
 `PUT /api/stream-mode` accepts optional `grpcImageMode` (`png`, `mmap`, or `rgb888`),

@@ -25,6 +25,7 @@ import { execText, type ExecResult } from "./exec.ts";
 import {
   H264Encoder,
   resolveFfmpegEncoder,
+  reportFfmpegEncoderFailure,
   type FfmpegEncoderName,
   type H264EncoderInputFormat,
   type H264EncoderOpts,
@@ -209,12 +210,17 @@ export class GrpcCaptureDiagnosticsTracker {
   #acceptedEncoderWrites = 0;
   #encoderBackpressureRejections = 0;
 
-  constructor(
-    imageMode: GrpcImageMode,
+  constructor({
+    imageMode,
     windowCapacity = CAPTURE_DIAGNOSTIC_WINDOW,
     cadenceIdleResetMs = CAPTURE_CADENCE_IDLE_RESET_MS,
-    encoderName: FfmpegEncoderName = "libx264",
-  ) {
+    encoderName = "libx264",
+  }: {
+    imageMode: GrpcImageMode;
+    windowCapacity?: number;
+    cadenceIdleResetMs?: number;
+    encoderName?: FfmpegEncoderName;
+  }) {
     if (!Number.isFinite(cadenceIdleResetMs) || cadenceIdleResetMs <= 0) {
       throw new RangeError("cadence idle reset must be a positive number");
     }
@@ -1374,6 +1380,7 @@ export type GrpcSessionEncoder = {
 
 export type GrpcSessionRuntime = {
   resolveEncoder(encoder: GrpcEncoder, signal: AbortSignal): Promise<FfmpegEncoderName>;
+  reportEncoderFailure(encoderName: FfmpegEncoderName, message: string): void;
   ensureEndpoint(serial: string, signal: AbortSignal): Promise<GrpcEndpoint>;
   createClient(endpoint: GrpcEndpoint): GrpcSessionClient;
   createEncoder(options: H264EncoderOpts): GrpcSessionEncoder;
@@ -1644,6 +1651,7 @@ const defaultReadDisplaySizeSignal: NonNullable<
 
 const DEFAULT_GRPC_SESSION_RUNTIME: GrpcSessionRuntime = {
   resolveEncoder: resolveFfmpegEncoder,
+  reportEncoderFailure: reportFfmpegEncoderFailure,
   ensureEndpoint: ensureEmulatorGrpcEndpoint,
   createClient: (endpoint) => new EmulatorGrpcClient(endpoint),
   createEncoder: (options) => new H264Encoder(options),
@@ -1761,9 +1769,10 @@ export async function startGrpcSession(
     options.signal?.removeEventListener("abort", abortFromParent);
     throw error;
   }
-  const captureDiagnostics = new GrpcCaptureDiagnosticsTracker(
-    imageMode, undefined, undefined, encoderName,
-  );
+  const captureDiagnostics = new GrpcCaptureDiagnosticsTracker({
+    imageMode,
+    encoderName,
+  });
   const client = runtime.createClient(endpoint);
   const listeners = new Set<(failure: StreamFailure) => void>();
   const packetQueue = new GrpcVideoPacketQueue();
@@ -1934,6 +1943,7 @@ export async function startGrpcSession(
       sessionMeta.width = size.width;
       sessionMeta.height = size.height;
     }
+    let stopping = false;
     const next = runtime.createEncoder({
       encoderName,
       width: latest.width,
@@ -1947,7 +1957,13 @@ export async function startGrpcSession(
         if (!frame.isConfig) encoderHasOutput = true;
         pushPacket(frame);
       },
-      onExit: (message) => emitFatal({ message, code: "encoder-exit" }),
+      onExit: (message) => {
+        if (stopping || closed || lifetime.signal.aborted || fatalFailure) return;
+        if (encoderName !== "libx264") {
+          runtime.reportEncoderFailure(encoderName, message);
+        }
+        emitFatal({ message, code: "encoder-exit" });
+      },
     });
     if (restart.announceSize) {
       pushPacket({
@@ -1957,7 +1973,17 @@ export async function startGrpcSession(
         clientResized: false,
       });
     }
-    return next;
+    return {
+      width: next.width,
+      height: next.height,
+      quarterTurn: next.quarterTurn,
+      write: (image, ptsUs) => next.write(image, ptsUs),
+      close: () => {
+        // A replaced encoder must not invalidate the new session's backend.
+        stopping = true;
+        return next.close();
+      },
+    };
   });
   const restartEncoder = (
     announceSize: boolean,

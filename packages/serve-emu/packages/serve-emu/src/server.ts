@@ -1,4 +1,3 @@
-import { getHardwareEncoderError } from "./h264-encoder.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -10,6 +9,7 @@ import {
   readCameraWiring,
 } from "./camera.ts";
 import { getExecSnapshot } from "./exec.ts";
+import { getHardwareEncoderError } from "./h264-encoder.ts";
 import {
   getFontWeight,
   getDisplayDensity,
@@ -324,6 +324,7 @@ const MAX_LOGCAT_QUERY_BYTES = 200;
 const MAX_WEBRTC_CLOSE_BODY_BYTES = 4 * 1024;
 
 export type ServerDependencies = {
+  getHardwareEncoderError?: typeof getHardwareEncoderError;
   openSession?: (options: StartEmuSessionOptions) => Promise<EmuSession>;
   openScrcpy?: (
     serial: string,
@@ -415,6 +416,7 @@ export async function startServer(
   }
   const defaultInputSource = requestedDefaultInputSource;
   const serve = dependencies.serve ?? Bun.serve;
+  const hardwareEncoderError = dependencies.getHardwareEncoderError ?? getHardwareEncoderError;
   const listDevices =
     dependencies.listDevices ?? dependencies.listAllDevices ?? listAllDevices;
   const launchEmulator = dependencies.startEmulator ?? startEmulator;
@@ -1710,8 +1712,8 @@ export async function startServer(
     grpcImageMode: grpcImageModeForContext(context),
     encoder: encoderForContext(context),
     encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
-    availableEncoders: getHardwareEncoderError() ? ["software"] : [...GRPC_ENCODERS],
-    ...(getHardwareEncoderError() ? { hardwareEncoderError: getHardwareEncoderError() } : {}),
+    availableEncoders: [...GRPC_ENCODERS],
+    ...(hardwareEncoderError() ? { hardwareEncoderError: hardwareEncoderError() } : {}),
     inputSource: context.stream.inputSource,
     availableInputSources:
       context.stream.mode === "grpc-screenshot"

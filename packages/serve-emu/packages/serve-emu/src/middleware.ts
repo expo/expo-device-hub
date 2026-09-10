@@ -2559,7 +2559,7 @@ export function createRouter(
     ),
     encoder: encoderForApp(app, encoderOverrides.get(serial) ?? defaults.encoder ?? DEFAULT_GRPC_ENCODER),
     encoderName: encoderNameForApp(app),
-    availableEncoders: hardwareEncoderError() ? ["software"] : [...GRPC_ENCODERS],
+    availableEncoders: [...GRPC_ENCODERS],
     ...(hardwareEncoderError() ? { hardwareEncoderError: hardwareEncoderError() } : {}),
     inputSource: inputSourceForApp(app),
     availableInputSources:

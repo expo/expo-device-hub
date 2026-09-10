@@ -1637,9 +1637,10 @@ test("router preserves a working encoder on failed switches and retains per-devi
           hardwareError = "No hardware H.264 encoder: unavailable driver";
           throw new Error(hardwareError);
         }
+        if (options.encoder === "hardware") hardwareError = undefined;
         opened.push(opts);
         const stream = liveStreamSession(options.mode);
-        const diagnostics = new GrpcCaptureDiagnosticsTracker(options.grpcImageMode).snapshot();
+        const diagnostics = new GrpcCaptureDiagnosticsTracker({ imageMode: options.grpcImageMode }).snapshot();
         return { ...stream, diagnostics: () => ({ grpcCapture: {
           ...diagnostics,
           encoderName: options.encoder === "hardware" ? "h264_videotoolbox" : "libx264",
@@ -1655,12 +1656,12 @@ test("router preserves a working encoder on failed switches and retains per-devi
     const failed = await router.handleRequest(put("/api/stream-mode", { mode: "grpc-screenshot", encoder: "hardware" }));
     expect(failed.status).toBe(503);
     expect(await failed.json()).toMatchObject({ error: { message: hardwareError } });
-    expect(await read()).toMatchObject({ encoder: "software", encoderName: "libx264", availableEncoders: ["software"], hardwareEncoderError: hardwareError, sessionGeneration: 0 });
+    expect(await read()).toMatchObject({ encoder: "software", encoderName: "libx264", availableEncoders: ["software", "hardware"], hardwareEncoderError: hardwareError, sessionGeneration: 0 });
     expect(opened).toHaveLength(1);
     failHardware = false;
-    hardwareError = undefined;
     expect((await router.handleRequest(put("/api/stream-mode", { mode: "grpc-screenshot", encoder: "hardware" }))).status).toBe(200);
     expect(await read()).toMatchObject({ encoder: "hardware", encoderName: "h264_videotoolbox", sessionGeneration: 1 });
+    expect(await read()).not.toHaveProperty("hardwareEncoderError");
     for (const path of ["/health", "/api"]) {
       expect(await read(path)).toMatchObject({ encoder: "hardware", encoderName: "h264_videotoolbox" });
     }
