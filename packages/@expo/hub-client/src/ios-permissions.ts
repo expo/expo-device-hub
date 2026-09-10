@@ -9,7 +9,6 @@ import { type AppPermission, type AppPermissionState } from "./types";
 
 const STATES: readonly AppPermissionState[] = ["granted", "denied", "limited", "undetermined"];
 
-/** One accepted serve-sim `/permissions` payload. */
 export function parseIosPermissions(payload: unknown): AppPermission[] | null {
   const data = asRecord(payload);
   if (!data || data.ok !== true || !Array.isArray(data.permissions)) return null;
@@ -25,7 +24,6 @@ export function parseIosPermissions(payload: unknown): AppPermission[] | null {
   return permissions;
 }
 
-/** serve-sim replies to every write with the fresh list. */
 export function iosPermissionsBackend(
   baseUrl: string,
   udid: string,

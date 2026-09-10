@@ -11,7 +11,6 @@ import { type AppPermission, type AppPermissionAction } from "./types";
 
 const PREFIX = "android.permission.";
 
-/** One accepted `GET /api/apps/permissions` payload. */
 export function parseAndroidPermissions(payload: unknown): AppPermission[] | null {
   const data = asRecord(payload);
   if (!data || data.ok !== true || !Array.isArray(data.permissions)) return null;
@@ -33,7 +32,6 @@ const WRITE_PATH: Record<AppPermissionAction, string> = {
   revoke: "/api/apps/revoke",
 };
 
-/** serve-emu writes reply with adb output only, so each write reads the list back. */
 export function androidPermissionsBackend(
   baseUrl: string,
   device: string | null,
