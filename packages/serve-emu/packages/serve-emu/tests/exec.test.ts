@@ -48,6 +48,7 @@ class ManualClock implements ExecClock {
 }
 
 class FakeChild extends EventEmitter {
+  readonly stdin = new PassThrough();
   readonly stdout = new PassThrough();
   readonly stderr = new PassThrough();
   readonly killSignals: NodeJS.Signals[] = [];
@@ -100,6 +101,32 @@ async function flush(): Promise<void> {
 }
 
 describe("ProcessExecutor", () => {
+  test("sends stdin only after its background job receives a slot", async () => {
+    const { executor, children } = harness({ maxActive: 1 });
+    const active = executor.execText("active", []);
+    const queued = executor.execBuffer("with-input", [], {
+      lane: "background", stdin: Buffer.from("probe input"),
+    });
+    expect(executor.snapshot().lanes.background.queued).toBe(1);
+    expect(children).toHaveLength(1);
+    children[0]!.child.close();
+    expect(children[1]!.child.stdin.read()?.toString()).toBe("probe input");
+    expect(children[1]!.child.stdin.writableEnded).toBe(true);
+    children[1]!.child.close();
+    await Promise.all([active, queued]);
+  });
+
+  test("holds the active slot until close after a stdin error", async () => {
+    const { executor, children } = harness({ maxActive: 1 });
+    const result = executor.execBuffer("broken-input", [], { stdin: Buffer.alloc(1) });
+    const error = new Error("stdin EPIPE");
+    children[0]!.child.stdin.emit("error", error);
+    expect(children[0]!.child.killSignals).toEqual(["SIGKILL"]);
+    expect(executor.snapshot().active).toBe(1);
+    children[0]!.child.close(null, "SIGKILL");
+    expect((await result).error).toBe(error);
+  });
+
   test("handles synchronous deadlines and validates timer range", async () => {
     let cleared = 0;
     const clock: ExecClock = {

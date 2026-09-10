@@ -2,8 +2,11 @@ import {
   spawn,
   type ChildProcessWithoutNullStreams,
 } from "node:child_process";
+import { access } from "node:fs/promises";
+import { constants } from "node:fs";
 import {
   execText,
+  execBuffer,
   type ExecOpts,
   type ExecResult,
 } from "./exec.ts";
@@ -12,17 +15,25 @@ import type { VideoFrame } from "./scrcpy.ts";
 /**
  * Host-side H.264 encoder used by the emulator gRPC screenshot source.
  *
- * RGB frames or complete PNG images enter through stdin and ffmpeg/libx264
- * writes Annex-B H.264 to stdout. `aud=1` gives the parser an explicit
- * access-unit boundary, while zerolatency and disabled B-frames keep input
+ * RGB frames or complete PNG images enter through stdin and ffmpeg writes
+ * Annex-B H.264 to stdout. Every backend inserts AUDs for explicit
+ * access-unit boundaries, while low-delay settings and disabled B-frames keep input
  * timestamps paired with output access units in submission order.
  */
+
+const FFMPEG_ENCODER_NAMES = [
+  "libx264", "h264_videotoolbox", "h264_nvenc", "h264_vaapi",
+] as const;
+
+export type FfmpegEncoderName = typeof FFMPEG_ENCODER_NAMES[number];
 
 export type H264EncoderInputFormat = "rgb24" | "png";
 
 export type H264EncoderOpts = {
   width: number;
   height: number;
+  /** Resolved ffmpeg backend. Defaults to the existing software encoder. */
+  encoderName?: FfmpegEncoderName;
   /** Input written to ffmpeg. Defaults to fixed-size raw RGB frames. */
   inputFormat?: H264EncoderInputFormat;
   /** Android display rotation quarter turns applied before encoding. */
@@ -43,6 +54,7 @@ const NAL_SPS = 7;
 const NAL_PPS = 8;
 const NAL_AUD = 9;
 const START_CODE = Buffer.from([0, 0, 0, 1]);
+const MAX_OUTPUT_WITHOUT_AUD_BYTES = 1024 * 1024;
 const MAX_PENDING_OUTPUT_BYTES = 64 * 1024 * 1024;
 const MAX_RAW_FRAME_BYTES = 512 * 1024 * 1024;
 const MAX_PNG_FRAME_BYTES = 64 * 1024 * 1024;
@@ -53,6 +65,10 @@ const PROCESS_GRACE_MS = 250;
 const PROCESS_TERM_MS = 500;
 const PROCESS_KILL_MS = 500;
 const FFMPEG_PROBE_TIMEOUT_MS = 10_000;
+// Turing and newer NVENC require an H.264 input width of at least 145 pixels.
+const HARDWARE_PROBE_DIMENSION = 256;
+const HARDWARE_PROBE_TIMEOUT_MS = 3_000;
+const HARDWARE_PROBE_MAX_BYTES = 1024 * 1024;
 const FFMPEG_PROBE_MAX_BYTES = 8 * 1024 * 1024;
 const MAX_FFMPEG_STDERR_BYTES = 16 * 1024;
 
@@ -131,6 +147,13 @@ function validateOptions(opts: H264EncoderOpts): number | null {
     throw new RangeError("quarterTurn must be an integer from 0 through 3");
   }
 
+  if (
+    opts.encoderName !== undefined &&
+    !FFMPEG_ENCODER_NAMES.includes(opts.encoderName)
+  ) {
+    throw new RangeError(`unsupported ffmpeg H.264 encoder ${opts.encoderName}`);
+  }
+
   const inputFormat = opts.inputFormat ?? "rgb24";
   if (inputFormat !== "rgb24" && inputFormat !== "png") {
     throw new RangeError(`unsupported H.264 encoder input format ${inputFormat}`);
@@ -194,6 +217,93 @@ export function videoFilter(quarterTurn: QuarterTurn): string {
   return filters.join(",");
 }
 
+type FfmpegEncoderArgsOptions = Pick<
+  H264EncoderOpts,
+  | "width"
+  | "height"
+  | "fps"
+  | "bitRate"
+  | "keyFrameInterval"
+  | "quarterTurn"
+  | "inputFormat"
+  | "encoderName"
+>;
+
+export function resolveVaapiDevice(): string {
+  return process.env.SERVE_EMU_VAAPI_DEVICE?.trim() || "/dev/dri/renderD128";
+}
+
+/** Shared input, geometry and Annex-B output, with backend-specific encoding. */
+export function ffmpegEncoderArgs(
+  opts: FfmpegEncoderArgsOptions,
+  vaapiDevice = resolveVaapiDevice(),
+): string[] {
+  const encoderName = opts.encoderName ?? "libx264";
+  const keyint = opts.keyFrameInterval > 0
+    ? Math.max(1, Math.round(opts.fps * opts.keyFrameInterval))
+    : 250;
+  const rate = [
+    "-b:v", String(opts.bitRate),
+    "-maxrate", String(opts.bitRate),
+    "-bufsize", String(opts.bitRate),
+  ];
+  const filter = videoFilter(opts.quarterTurn ?? 0);
+  const args = ["-hide_banner", "-loglevel", "error"];
+  if (encoderName === "h264_vaapi") {
+    args.push("-init_hw_device", `vaapi=va:${vaapiDevice}`, "-filter_hw_device", "va");
+  }
+  args.push(
+    ...ffmpegInputArgs(opts.inputFormat ?? "rgb24", opts.width, opts.height, opts.fps),
+    "-an",
+    "-vf",
+    encoderName === "h264_vaapi" ? `${filter},format=nv12,hwupload` : filter,
+  );
+  switch (encoderName) {
+    case "libx264":
+      // Preserve this command line byte for byte for existing software users.
+      args.push(
+        "-pix_fmt", "yuv420p", "-c:v", "libx264",
+        "-preset", "ultrafast", "-tune", "zerolatency",
+        "-profile:v", "baseline", ...rate,
+        "-x264-params",
+        `keyint=${keyint}:min-keyint=${keyint}:scenecut=0:repeat-headers=1:aud=1`,
+      );
+      break;
+    case "h264_videotoolbox":
+      // Real-time alone retains a frame: low_delay lets one idle duplicate
+      // provide the next AUD without waiting for further screenshot input.
+      args.push(
+        "-pix_fmt", "nv12", "-c:v", encoderName,
+        "-allow_sw", "0", "-realtime", "1", "-flags", "+low_delay",
+        "-profile:v", "baseline",
+        ...rate, "-g", String(keyint), "-bf", "0",
+        "-bsf:v", "h264_metadata=aud=insert",
+      );
+      break;
+    case "h264_nvenc":
+      args.push(
+        "-pix_fmt", "nv12", "-c:v", encoderName,
+        "-preset", "p1", "-tune", "ull", "-zerolatency", "1",
+        "-delay", "0", "-bf", "0", "-rc-lookahead", "0", "-rc", "cbr",
+        ...rate, "-g", String(keyint), "-forced-idr", "1", "-aud", "1",
+        "-profile:v", "baseline",
+      );
+      break;
+    case "h264_vaapi":
+      args.push(
+        "-c:v", encoderName, "-rc_mode", "CBR", ...rate,
+        "-g", String(keyint), "-bf", "0", "-async_depth", "1",
+        "-profile:v", "constrained_baseline",
+        "-bsf:v", "h264_metadata=aud=insert",
+      );
+      break;
+    default:
+      throw new RangeError(`unsupported ffmpeg H.264 encoder ${encoderName}`);
+  }
+  args.push("-f", "h264", "-flush_packets", "1", "pipe:1");
+  return args;
+}
+
 function wait(ms: number): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
@@ -248,6 +358,14 @@ export class H264OutputParser {
       ? Buffer.concat([this.#pending, incoming])
       : incoming;
     this.#scanNals();
+    if (
+      this.#pending.length > MAX_OUTPUT_WITHOUT_AUD_BYTES &&
+      !this.#nals.some((nal) => nal.type === NAL_AUD)
+    ) {
+      throw new Error(
+        `ffmpeg H.264 output exceeded ${MAX_OUTPUT_WITHOUT_AUD_BYTES} bytes without an AUD (access unit delimiter)`,
+      );
+    }
     this.#emitCompleteAccessUnits();
   }
 
@@ -427,6 +545,256 @@ export function createFfmpegAvailabilityProbe(
 
 export const assertFfmpegAvailable = createFfmpegAvailabilityProbe();
 
+export type FfmpegSmokeRunner = (
+  binary: string,
+  args: string[],
+  input: Buffer,
+  options: ExecOpts,
+) => Promise<ExecResult<Buffer>>;
+
+/** Share subprocess lanes, deadlines, output bounds and cancellation with other commands. */
+export const runFfmpegSmokeEncode: FfmpegSmokeRunner = (
+  binary,
+  args,
+  input,
+  options,
+) => execBuffer(binary, args, {
+  ...options,
+  stdin: input,
+  timeout: options.timeout ?? HARDWARE_PROBE_TIMEOUT_MS,
+  maxBuffer: options.maxBuffer ?? HARDWARE_PROBE_MAX_BYTES,
+});
+
+export type FfmpegEncoderResolverOptions = FfmpegAvailabilityProbeOptions & {
+  platform?: () => NodeJS.Platform;
+  hardwareEncoder?: () => string | undefined;
+  vaapiDevice?: () => string;
+  checkVaapiDevice?: (path: string) => Promise<void>;
+  runSmoke?: FfmpegSmokeRunner;
+};
+
+type GrpcEncoderSelection = "software" | "hardware";
+
+/** Require decodable Annex-B configuration, an IDR and frame boundaries. */
+function validateSmokeOutput(output: Buffer): void {
+  const types = new Set<number>();
+  let audCount = 0;
+  for (let i = 0; i + 3 < output.length; i++) {
+    if (output[i] === 0 && output[i + 1] === 0 && output[i + 2] === 1) {
+      const type = output[i + 3]! & 0x1f;
+      types.add(type);
+      if (type === NAL_AUD) audCount++;
+    }
+  }
+  const missing = [
+    ...(!types.has(NAL_SPS) ? ["SPS"] : []),
+    ...(!types.has(NAL_PPS) ? ["PPS"] : []),
+    ...(!types.has(NAL_IDR) ? ["IDR"] : []),
+    ...(audCount < 2 ? ["AUD boundaries"] : []),
+  ];
+  if (missing.length) {
+    throw new Error(`smoke encode produced H.264 without ${missing.join(", ")}`);
+  }
+}
+
+/** Strict hardware selection; cache only successes for the binary and config. */
+export function createFfmpegEncoderResolver(
+  options: FfmpegEncoderResolverOptions = {},
+): {
+  resolveEncoder: (encoder: GrpcEncoderSelection, signal?: AbortSignal) => Promise<FfmpegEncoderName>;
+  getHardwareEncoderError: () => string | undefined;
+  reportEncoderFailure: (encoderName: FfmpegEncoderName, message: string) => void;
+} {
+  const resolveBinary = options.resolveBinary ?? resolveFfmpeg;
+  const softwareProbe = createFfmpegAvailabilityProbe(options);
+  const runExec = options.runExec ?? execText;
+  const runSmoke = options.runSmoke ?? runFfmpegSmokeEncode;
+  const platform = options.platform ?? (() => process.platform);
+  const hardwareEncoder = options.hardwareEncoder ??
+    (() => process.env.SERVE_EMU_HARDWARE_ENCODER?.trim());
+  const vaapiDevice = options.vaapiDevice ?? resolveVaapiDevice;
+  const checkVaapiDevice = options.checkVaapiDevice ??
+    ((path: string) => access(path, constants.R_OK | constants.W_OK));
+  const successes = new Map<string, FfmpegEncoderName>();
+  const errors = new Map<string, string>();
+  const config = () => {
+    const binary = resolveBinary();
+    const host = platform();
+    const pin = hardwareEncoder() || "";
+    const device = vaapiDevice();
+    return { binary, host, pin, device, key: JSON.stringify([binary, host, pin, device]) };
+  };
+  type PendingProbe = {
+    controller: AbortController;
+    promise: Promise<FfmpegEncoderName>;
+    waiters: number;
+  };
+  const pending = new Map<string, PendingProbe>();
+  async function probeHardware(
+    { binary, host, pin, device, key }: ReturnType<typeof config>,
+    signal: AbortSignal,
+  ): Promise<FfmpegEncoderName> {
+    try {
+      const backendNames = {
+        videotoolbox: "h264_videotoolbox",
+        nvenc: "h264_nvenc",
+        vaapi: "h264_vaapi",
+      } as const;
+      if (pin && !Object.hasOwn(backendNames, pin)) {
+        throw new Error(
+          `SERVE_EMU_HARDWARE_ENCODER must be videotoolbox, nvenc, or vaapi (received "${pin}")`,
+        );
+      }
+      const candidates: FfmpegEncoderName[] = pin
+        ? [backendNames[pin as keyof typeof backendNames]]
+        : host === "darwin" ? ["h264_videotoolbox"]
+        : host === "linux" ? ["h264_nvenc", "h264_vaapi"] : [];
+      if (!candidates.length) {
+        throw new Error(`hardware H.264 encoding is not supported on ${host}`);
+      }
+      const listing = await runExec(binary, ["-hide_banner", "-encoders"], {
+        timeout: FFMPEG_PROBE_TIMEOUT_MS,
+        maxBuffer: FFMPEG_PROBE_MAX_BYTES,
+        signal,
+        lane: "background",
+      });
+      if (signal?.aborted) throw probeAbortReason(signal);
+      if (listing.error || listing.status !== 0) {
+        throw new Error(listing.timedOut
+          ? `capability probe timed out after ${FFMPEG_PROBE_TIMEOUT_MS}ms`
+          : listing.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
+            listing.error?.message || `exit ${listing.status}`);
+      }
+      const listed = `${listing.stdout}\n${listing.stderr}`;
+      const failures: string[] = [];
+      for (const encoderName of candidates) {
+        try {
+          if (!new RegExp(`\\b${encoderName}\\b`).test(listed)) {
+            throw new Error("encoder is not included in this ffmpeg build");
+          }
+          if (encoderName === "h264_vaapi") {
+            try {
+              await checkVaapiDevice(device);
+            } catch {
+              throw new Error(
+                `cannot access VAAPI device "${device}"; check the render group, driver and SERVE_EMU_VAAPI_DEVICE`,
+              );
+            }
+          }
+          if (signal?.aborted) throw probeAbortReason(signal);
+          const smoke = await runSmoke(binary, ffmpegEncoderArgs({
+            width: HARDWARE_PROBE_DIMENSION, height: HARDWARE_PROBE_DIMENSION,
+            fps: 30, bitRate: 1_000_000, keyFrameInterval: 1, encoderName,
+          }, device), Buffer.alloc(HARDWARE_PROBE_DIMENSION ** 2 * 3 * 4, 96), {
+            timeout: HARDWARE_PROBE_TIMEOUT_MS,
+            maxBuffer: HARDWARE_PROBE_MAX_BYTES,
+            signal,
+            lane: "background",
+          });
+          if (signal?.aborted) throw probeAbortReason(signal);
+          if (smoke.error || smoke.status !== 0) {
+            throw new Error(smoke.timedOut
+              ? `smoke encode timed out after ${HARDWARE_PROBE_TIMEOUT_MS}ms`
+              : smoke.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
+                smoke.error?.message || `exit ${smoke.status}`);
+          }
+          validateSmokeOutput(smoke.stdout);
+          successes.set(key, encoderName);
+          errors.delete(key);
+          return encoderName;
+        } catch (error) {
+          if (signal?.aborted) throw probeAbortReason(signal);
+          failures.push(`${encoderName}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      throw new Error(failures.join("; "));
+    } catch (error) {
+      if (signal?.aborted) throw probeAbortReason(signal);
+      const message = `Hardware H.264 encoder unavailable (ffmpeg "${binary}"): ${error instanceof Error ? error.message : String(error)}`;
+      errors.set(key, message);
+      throw new Error(message);
+    }
+  }
+  return {
+    getHardwareEncoderError: () => errors.get(config().key),
+    reportEncoderFailure(encoderName, detail) {
+      if (encoderName === "libx264") return;
+      const message = `Hardware H.264 encoder unavailable: ${encoderName}: ${detail.slice(-MAX_FFMPEG_STDERR_BYTES)}`;
+      for (const [key, cached] of successes) {
+        if (cached !== encoderName) continue;
+        successes.delete(key);
+        errors.set(key, message);
+      }
+      const { key } = config();
+      if (!successes.has(key)) {
+        errors.set(key, message);
+        const task = pending.get(key);
+        pending.delete(key);
+        task?.controller.abort(new Error(message));
+      }
+    },
+    async resolveEncoder(encoder, signal) {
+      if (signal?.aborted) throw probeAbortReason(signal);
+      if (encoder === "software") {
+        await softwareProbe(signal);
+        return "libx264";
+      }
+      if (encoder !== "hardware") {
+        throw new RangeError(`unsupported gRPC encoder ${encoder}`);
+      }
+      const configuration = config();
+      const { key } = configuration;
+      const cached = successes.get(key);
+      if (cached) return cached;
+      let task = pending.get(key);
+      if (!task) {
+        const controller = new AbortController();
+        task = { controller, promise: probeHardware(configuration, controller.signal), waiters: 0 };
+        pending.set(key, task);
+        const started = task;
+        // A departing last waiter removes the task before its process settles.
+        // Its cleanup must never remove a newer retry for the same key.
+        void task.promise.finally(() => {
+          if (pending.get(key) === started) pending.delete(key);
+        }).catch(() => {});
+      }
+      const shared = task;
+      shared.waiters++;
+      return new Promise<FfmpegEncoderName>((resolve, reject) => {
+        let settled = false;
+        const settle = (finish: () => void) => {
+          if (settled) return;
+          settled = true;
+          signal?.removeEventListener("abort", onAbort);
+          shared.waiters--;
+          finish();
+        };
+        const onAbort = () => {
+          if (settled) return;
+          const reason = probeAbortReason(signal!);
+          settle(() => reject(reason));
+          // One request never aborts a probe another device is still awaiting.
+          if (shared.waiters === 0) {
+            if (pending.get(key) === shared) pending.delete(key);
+            shared.controller.abort(reason);
+          }
+        };
+        shared.promise.then(
+          (name) => settle(() => resolve(name)),
+          (error) => settle(() => reject(error)),
+        );
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+      });
+    },
+  };
+}
+
+const defaultEncoderResolver = createFfmpegEncoderResolver();
+export const resolveFfmpegEncoder = defaultEncoderResolver.resolveEncoder;
+export const getHardwareEncoderError = defaultEncoderResolver.getHardwareEncoderError;
+export const reportFfmpegEncoderFailure = defaultEncoderResolver.reportEncoderFailure;
+
 export class H264Encoder {
   readonly width: number;
   readonly height: number;
@@ -465,56 +833,9 @@ export class H264Encoder {
       this.#resolveProcessDone = resolve;
     });
 
-    const keyint = opts.keyFrameInterval > 0
-      ? Math.max(1, Math.round(opts.fps * opts.keyFrameInterval))
-      : 250;
-    const x264Params = [
-      `keyint=${keyint}`,
-      `min-keyint=${keyint}`,
-      "scenecut=0",
-      "repeat-headers=1",
-      "aud=1",
-    ].join(":");
-
     this.#proc = spawn(
       resolveFfmpeg(),
-      [
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        ...ffmpegInputArgs(
-          this.inputFormat,
-          opts.width,
-          opts.height,
-          opts.fps,
-        ),
-        "-an",
-        "-vf",
-        videoFilter(this.quarterTurn),
-        "-pix_fmt",
-        "yuv420p",
-        "-c:v",
-        "libx264",
-        "-preset",
-        "ultrafast",
-        "-tune",
-        "zerolatency",
-        "-profile:v",
-        "baseline",
-        "-b:v",
-        String(opts.bitRate),
-        "-maxrate",
-        String(opts.bitRate),
-        "-bufsize",
-        String(opts.bitRate),
-        "-x264-params",
-        x264Params,
-        "-f",
-        "h264",
-        "-flush_packets",
-        "1",
-        "pipe:1",
-      ],
+      ffmpegEncoderArgs(opts),
       { stdio: ["pipe", "pipe", "pipe"] },
     );
 
