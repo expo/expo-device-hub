@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   type DeviceClient,
   type DeviceGrpcImageMode,
+  type DeviceGrpcEncoder,
   type DeviceHttpCodec,
   type DeviceInputSource,
   type DeviceStreamCapabilities,
@@ -60,6 +61,10 @@ const GRPC_IMAGE_MODE_OPTIONS: ReadonlyArray<SelectOption<DeviceGrpcImageMode>> 
   { value: 'png', label: 'PNG' },
   { value: 'mmap', label: 'MMAP' },
   { value: 'rgb888', label: 'RGB888' },
+];
+const GRPC_ENCODER_OPTIONS: ReadonlyArray<SelectOption<DeviceGrpcEncoder>> = [
+  { value: 'software', label: 'Software' },
+  { value: 'hardware', label: 'Hardware' },
 ];
 const GRPC_INPUT_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceInputSource>> = [
   { value: 'scrcpy', label: 'scrcpy' },
@@ -152,6 +157,9 @@ export function StreamOptionsSection({
   const settings = client.streamSettings ?? DEFAULT_SETTINGS;
   const settingsCapabilities = client.capabilities.streamSettings;
   const streamSource = client.streamSource;
+  const streamSourceError =
+    client.streamSourceError ??
+    (streamSource?.mode === 'grpc-screenshot' ? streamSource.hardwareEncoderError : undefined);
   const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableModes.includes(option.value),
   );
@@ -243,9 +251,6 @@ export function StreamOptionsSection({
               onChange={client.setStreamSource}
             />
           </SidebarRow>
-          {client.streamSourceError && (
-            <SectionNote role="alert">{client.streamSourceError}</SectionNote>
-          )}
         </>
       )}
       {streamSource?.mode === 'grpc-screenshot' && (
@@ -270,7 +275,25 @@ export function StreamOptionsSection({
               onChange={client.setGrpcImageMode}
             />
           </SidebarRow>
+          <SidebarRow label="Encoder">
+            <Select
+              ariaLabel="gRPC encoder"
+              options={GRPC_ENCODER_OPTIONS.map((option) => ({
+                ...option,
+                disabled: !streamSource.availableEncoders.includes(option.value),
+              }))}
+              value={streamSource.encoder}
+              disabled={client.streamSourcePending}
+              onChange={client.setGrpcEncoder}
+            />
+          </SidebarRow>
+          {streamSource.encoderName && (
+            <SectionNote>{`Active encoder: ${streamSource.encoderName}`}</SectionNote>
+          )}
         </>
+      )}
+      {streamSource && streamSourceError && (
+        <SectionNote role="alert">{streamSourceError}</SectionNote>
       )}
       <SidebarRow label="Transport">
         <Select

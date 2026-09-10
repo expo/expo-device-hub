@@ -133,6 +133,18 @@ describe('serve-emu capture source contract', () => {
     expect(
       androidStreamSourceErrorMessage(503, { error: 'Emulator gRPC endpoint is unavailable' }),
     ).toBe('Unable to change stream source: Emulator gRPC endpoint is unavailable');
+    expect(
+      androidStreamSourceErrorMessage(503, { error: 'Hardware H.264 probe failed: device unavailable' }),
+    ).toBe('Unable to change stream source: Hardware H.264 probe failed: device unavailable');
+    expect(
+      androidStreamSourceErrorMessage(503, {
+        ok: false,
+        error: {
+          code: 'service_unavailable',
+          message: 'Hardware H.264 probe failed: device unavailable',
+        },
+      }),
+    ).toBe('Unable to change stream source: Hardware H.264 probe failed: device unavailable');
     expect(androidStreamSourceErrorMessage(500, null)).toBe(
       'Unable to change stream source (HTTP 500).',
     );
@@ -145,6 +157,9 @@ describe('serve-emu capture source contract', () => {
         serial: 'emulator-5554',
         mode: 'grpc-screenshot',
         grpcImageMode: 'mmap',
+        encoder: 'software',
+        encoderName: 'libx264',
+        availableEncoders: ['software', 'hardware'],
         inputSource: 'scrcpy',
         availableInputSources: ['scrcpy', 'grpc'],
         availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -153,6 +168,9 @@ describe('serve-emu capture source contract', () => {
     ).toEqual({
       mode: 'grpc-screenshot',
       grpcImageMode: 'mmap',
+      encoder: 'software',
+      encoderName: 'libx264',
+      availableEncoders: ['software', 'hardware'],
       inputSource: 'scrcpy',
       availableInputSources: ['scrcpy', 'grpc'],
       availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -164,6 +182,9 @@ describe('serve-emu capture source contract', () => {
         serial: 'usb-device',
         mode: 'scrcpy',
         grpcImageMode: 'png',
+        encoder: 'software',
+        encoderName: 'libx264',
+        availableEncoders: ['software', 'hardware'],
         inputSource: 'scrcpy',
         availableInputSources: ['scrcpy'],
         availableModes: ['scrcpy'],
@@ -172,6 +193,9 @@ describe('serve-emu capture source contract', () => {
     ).toEqual({
       mode: 'scrcpy',
       grpcImageMode: 'png',
+      encoder: 'software',
+      encoderName: 'libx264',
+      availableEncoders: ['software', 'hardware'],
       inputSource: 'scrcpy',
       availableInputSources: ['scrcpy'],
       availableModes: ['scrcpy'],

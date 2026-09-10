@@ -1,5 +1,6 @@
 import {
   type DeviceGrpcImageMode,
+  type DeviceGrpcEncoder,
   type DeviceInputSource,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
@@ -20,12 +21,19 @@ export function androidStreamSourceErrorMessage(status: number, value: unknown):
     value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;
+  const error = candidate?.error;
+  const structuredMessage =
+    error && typeof error === 'object' && !Array.isArray(error) && 'message' in error
+      ? error.message
+      : undefined;
   const detail =
-    typeof candidate?.error === 'string'
-      ? candidate.error.trim()
-      : typeof candidate?.message === 'string'
-        ? candidate.message.trim()
-        : '';
+    typeof error === 'string'
+      ? error.trim()
+      : typeof structuredMessage === 'string'
+        ? structuredMessage.trim()
+        : typeof candidate?.message === 'string'
+          ? candidate.message.trim()
+          : '';
   return detail
     ? `Unable to change stream source: ${detail}`
     : `Unable to change stream source (HTTP ${status}).`;
@@ -33,6 +41,10 @@ export function androidStreamSourceErrorMessage(status: number, value: unknown):
 
 function isGrpcImageMode(value: unknown): value is DeviceGrpcImageMode {
   return value === 'png' || value === 'mmap' || value === 'rgb888';
+}
+
+function isGrpcEncoder(value: unknown): value is DeviceGrpcEncoder {
+  return value === 'software' || value === 'hardware';
 }
 
 function isInputSource(value: unknown): value is DeviceInputSource {
@@ -43,11 +55,29 @@ function isInputSource(value: unknown): value is DeviceInputSource {
 export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStatus | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const candidate = value as Record<string, unknown>;
+  // Older serve-emu hosts expose only software encoding and omit these fields.
+  const encoder = candidate.encoder === undefined ? 'software' : candidate.encoder;
+  const encoderName = candidate.encoderName === undefined ? null : candidate.encoderName;
+  const availableEncoders =
+    candidate.availableEncoders === undefined ? ['software'] : candidate.availableEncoders;
   if (
     candidate.ok !== true ||
     !isAndroidStreamSource(candidate.mode) ||
     !isGrpcImageMode(candidate.grpcImageMode) ||
+    !isGrpcEncoder(encoder) ||
     !isInputSource(candidate.inputSource)
+  ) {
+    return null;
+  }
+  if (
+    (encoderName !== null &&
+      (typeof encoderName !== 'string' || !encoderName.trim())) ||
+    !Array.isArray(availableEncoders) ||
+    !availableEncoders.every(isGrpcEncoder) ||
+    new Set(availableEncoders).size !== availableEncoders.length ||
+    !availableEncoders.includes('software') ||
+    (candidate.hardwareEncoderError !== undefined &&
+      (typeof candidate.hardwareEncoderError !== 'string' || !candidate.hardwareEncoderError.trim()))
   ) {
     return null;
   }
@@ -79,6 +109,12 @@ export function parseAndroidStreamSource(value: unknown): DeviceStreamSourceStat
   return {
     mode: candidate.mode,
     grpcImageMode: candidate.grpcImageMode,
+    encoder,
+    encoderName,
+    availableEncoders,
+    ...(typeof candidate.hardwareEncoderError === 'string'
+      ? { hardwareEncoderError: candidate.hardwareEncoderError }
+      : {}),
     inputSource: candidate.inputSource,
     availableInputSources: candidate.availableInputSources,
     availableModes: candidate.availableModes,

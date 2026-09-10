@@ -12,6 +12,7 @@ import {
 const DEFAULT_ANDROID_STREAM = {
   streamMode: 'grpc-screenshot',
   grpcImageMode: 'rgb888',
+  encoder: 'software',
 } as const;
 
 describe('standaloneServeEmuOptions', () => {
@@ -22,6 +23,7 @@ describe('standaloneServeEmuOptions', () => {
       streamMode: 'grpc-screenshot',
       grpcImageMode: 'rgb888',
       maxFps: 60,
+      encoder: 'software',
       maxSize: 0,
       streamSettings: { transport: 'websocket' },
     };
@@ -87,8 +89,36 @@ describe('standaloneServeEmuOptions', () => {
       streamMode: 'scrcpy',
       grpcImageMode: 'png',
       maxFps: 60,
+      encoder: 'software',
       streamSettings: { transport: 'websocket' },
     });
+  });
+
+  test('maps hardware encoding through CLI and Expo plugin JSON options', () => {
+    const cli = parseCliOptions(['--platform', 'android', '--encoder', 'hardware']);
+    const expected = {
+      ...DEFAULT_ANDROID_STREAM,
+      encoder: 'hardware',
+      maxFps: 60,
+      streamSettings: { transport: 'websocket' },
+    };
+    expect(standaloneServeEmuOptions(cli)).toEqual(expected);
+    expect(readStandaloneServeEmuOptions(encodeStandaloneServeEmuOptions(cli))).toEqual(expected);
+    expect(readStandaloneServeEmuOptions('{"encoder":"hardware"}')).toEqual(expected);
+    expect(readStandaloneServeEmuOptions('{"grpcImageMode":"png"}').encoder).toBe('software');
+  });
+
+  test('normalizes plugin JSON encoder names like the CLI', () => {
+    expect(readStandaloneServeEmuOptions('{"encoder":"HARDWARE"}').encoder).toBe('hardware');
+    expect(readStandaloneServeEmuOptions('{"encoder":"Software"}').encoder).toBe('software');
+  });
+
+  test('rejects invalid plugin JSON encoders before opening a device', () => {
+    for (const encoder of ['nvenc', '', null, 1, true, {}, []]) {
+      expect(() => readStandaloneServeEmuOptions(JSON.stringify({ encoder }))).toThrow(
+        'Invalid encoder in EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS: expected software or hardware',
+      );
+    }
   });
 
   test('maps host WebRTC settings while keeping Android on H.264', () => {

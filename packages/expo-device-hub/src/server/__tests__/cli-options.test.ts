@@ -16,6 +16,7 @@ describe('parseCliOptions', () => {
       videoFps: 60,
       streamSource: undefined,
       grpcImageMode: undefined,
+      encoder: undefined,
       stunUrls: undefined,
       turnUrls: undefined,
       turnUsername: undefined,
@@ -114,6 +115,17 @@ describe('parseCliOptions', () => {
     });
   });
 
+  test('selects software or hardware encoding for Android', () => {
+    expect(parseCliOptions(['--platform', 'android', '--encoder', 'HARDWARE']).encoder).toBe(
+      'hardware',
+    );
+    expect(parseCliOptions(['--encoder', 'software']).encoder).toBe('software');
+    expect(() => parseCliOptions(['--encoder', 'nvenc'])).toThrow('Invalid --encoder: nvenc');
+    expect(() => parseCliOptions(['--encoder', 'hardware', '--platform', 'ios'])).toThrow(
+      '--encoder is supported only for Android',
+    );
+  });
+
   test('validates Android stream-source options', () => {
     expect(() => parseCliOptions(['--stream-source', 'camera'])).toThrow(
       'Invalid --stream-source: camera',
@@ -201,6 +213,7 @@ describe('parseCliOptions', () => {
       '--video-fps',
       '--stream-source',
       '--grpc-image-mode',
+      '--encoder',
       '--stun-url',
       '--turn-url',
       '--turn-username',
@@ -218,6 +231,8 @@ describe('parseCliOptions', () => {
     expect(HELP).toContain('(default: grpc-screenshot)');
     expect(HELP).toContain('--grpc-image-mode <mode>');
     expect(HELP).toContain('default: rgb888');
+    expect(HELP).toContain('--encoder <encoder>');
+    expect(HELP).toContain('software, hardware (default: software)');
   });
 
   test('hides the device list sidebar on request', () => {
@@ -251,6 +266,7 @@ describe('parseCliOptions', () => {
       videoFps: 60,
       streamSource: undefined,
       grpcImageMode: undefined,
+      encoder: undefined,
       stunUrls: undefined,
       turnUrls: undefined,
       turnUsername: undefined,

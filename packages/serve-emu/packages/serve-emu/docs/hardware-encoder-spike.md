@@ -74,3 +74,28 @@ encode containing SPS, PPS, an IDR, and multiple AUDs before it can be selected.
 A pinned backend is the sole candidate. Failed attempts retain a bounded stderr
 tail and can be retried; they never select libx264. The VAAPI probe also checks
 read/write access to the chosen render device.
+
+## Reproducing the browser comparison
+
+From the repository root, serve the [animation fixture](fixtures/hardware-encoding-animation.html):
+
+```sh
+python3 -m http.server 3401 --bind 127.0.0.1 --directory packages/serve-emu/packages/serve-emu/docs/fixtures
+```
+
+Open `http://10.0.2.2:3401/hardware-encoding-animation.html` in Android Chrome,
+then view the emulator through Device Hub. Use the same device, image mode,
+resolution, FPS cap, bitrate, power mode and motion window for each encoder.
+Record the host, FFmpeg and emulator versions with the results.
+
+Confirm the active encoder in the device's API diagnostics and the running
+FFmpeg command. For VideoToolbox, require `-c:v h264_videotoolbox -allow_sw 0`.
+Compare FFmpeg CPU-time deltas over equal wall-clock windows alongside source
+throughput and dropped-frame deltas; a configured FPS cap is not a measured rate.
+Repeat with WebSocket and WebRTC, and check switching, refresh and a new viewer.
+
+For a failed-probe check, pin a backend unavailable on the host and start with
+Software selected. Selecting Hardware should show one error, preserve the
+current stream, and leave Hardware selectable for another attempt. Restore the
+backend configuration after the check. Keep dated performance measurements in
+the PR validation record rather than treating them as portable benchmarks.
