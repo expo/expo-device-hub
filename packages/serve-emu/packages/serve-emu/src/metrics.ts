@@ -1,4 +1,10 @@
 import { execText } from "./exec.ts";
+import {
+  FOREGROUND_ACTIVITY_GREP,
+  FOREGROUND_WINDOW_GREP,
+  parseForegroundActivityDump,
+  parseForegroundWindowDump,
+} from "./foreground-component.ts";
 import type { MetricSample, MetricsMeta } from "./shared/api-contracts.ts";
 
 const METRICS_SAMPLE_INTERVAL_MS = 1_000;
@@ -7,15 +13,24 @@ const METRICS_HEARTBEAT_MS = 15_000;
 
 // Network is device-wide: this emulator exposes no per-uid counters
 // (`xt_qtaguid` and `uid_stat` are absent, `/sys/fs/bpf` is denied).
+//
+// The device does not choose the foreground app. It echoes the dump lines the
+// shared detector reads plus the stats of every package those lines name, and
+// `parseMetricsProbe` chooses among them exactly as `/api/foreground` does.
+// Collecting stats for every candidate keeps the tick at one `adb shell`, since
+// `pidof` needs a package name before the host has parsed one.
 const METRICS_PROBE_SCRIPT = [
   "echo ---stat; head -n1 /proc/stat; grep -c '^cpu[0-9]' /proc/stat",
-  "echo ---fg; C=$(dumpsys activity activities 2>/dev/null | grep -m1 -E 'ResumedActivity[:=]'); echo \"$C\"",
-  "PKG=$(printf %s \"$C\" | sed -n 's/.*ActivityRecord{[^ ]* [^ ]* \\([A-Za-z0-9_.]*\\)\\/.*/\\1/p')",
-  'echo ---pkg; echo "$PKG"',
-  'P=; [ -n "$PKG" ] && P=$(pidof "$PKG" 2>/dev/null); P=${P%% *}',
-  'echo ---pid; echo "$P"',
-  'echo ---pstat; [ -n "$P" ] && cat /proc/$P/stat',
-  'echo ---status; [ -n "$P" ] && grep VmRSS /proc/$P/status',
+  `echo ---fgwin; W=$(dumpsys window 2>/dev/null | grep -E '${FOREGROUND_WINDOW_GREP}'); echo "$W"`,
+  `echo ---fgact; A=$(dumpsys activity activities 2>/dev/null | grep -E '${FOREGROUND_ACTIVITY_GREP}'); echo "$A"`,
+  "echo ---proc",
+  "for PKG in $(printf '%s\\n%s\\n' \"$W\" \"$A\" | grep -oE '[A-Za-z0-9_][A-Za-z0-9_.]*/[A-Za-z0-9_.$]+' | sed 's|/.*||' | sort -u); do",
+  '  P=$(pidof "$PKG" 2>/dev/null); P=${P%% *}',
+  '  [ -n "$P" ] || continue',
+  '  echo "pkg $PKG"; echo "pid $P"',
+  '  echo "stat $(cat /proc/$P/stat 2>/dev/null)"',
+  '  echo "rss $(grep VmRSS /proc/$P/status 2>/dev/null)"',
+  "done",
   "echo ---net; cat /proc/net/dev",
 ].join("\n");
 
@@ -80,6 +95,27 @@ function parseNetDev(lines: string[]): { netRxBytes: number; netTxBytes: number 
   return { netRxBytes, netTxBytes };
 }
 
+type ProcStats = { pid: number | null; procJiffies: number | null; rssBytes: number | null };
+
+function procStatsFor(lines: string[], packageName: string | null): ProcStats {
+  const stats: ProcStats = { pid: null, procJiffies: null, rssBytes: null };
+  if (packageName === null) return stats;
+  let inTarget = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const split = trimmed.indexOf(" ");
+    if (split < 0) continue;
+    const key = trimmed.slice(0, split);
+    const value = trimmed.slice(split + 1);
+    if (key === "pkg") inTarget = value === packageName;
+    else if (!inTarget) continue;
+    else if (key === "pid") stats.pid = integer(value);
+    else if (key === "stat") stats.procJiffies = parseProcJiffies(value);
+    else if (key === "rss") stats.rssBytes = parseVmRss(value);
+  }
+  return stats;
+}
+
 export function parseMetricsProbe(stdout: string): MetricsProbe | null {
   const parts = sections(stdout);
   const stat = parts.get("stat") ?? [];
@@ -92,15 +128,15 @@ export function parseMetricsProbe(stdout: string): MetricsProbe | null {
     .reduce((sum, field) => sum + (integer(field) ?? Number.NaN), 0);
   const cores = integer(stat[1]);
   if (!Number.isFinite(totalJiffies) || cores === null || cores < 1) return null;
-  const packageName = parts.get("pkg")?.[0]?.trim() || null;
-  const pid = integer(parts.get("pid")?.[0]);
+  const component =
+    parseForegroundWindowDump((parts.get("fgwin") ?? []).join("\n")) ??
+    parseForegroundActivityDump((parts.get("fgact") ?? []).join("\n"));
+  const packageName = component?.packageName ?? null;
   return {
     cores,
     totalJiffies,
     packageName,
-    pid,
-    procJiffies: pid === null ? null : parseProcJiffies(parts.get("pstat")?.[0]),
-    rssBytes: pid === null ? null : parseVmRss(parts.get("status")?.[0]),
+    ...procStatsFor(parts.get("proc") ?? [], packageName),
     ...parseNetDev(parts.get("net") ?? []),
   };
 }

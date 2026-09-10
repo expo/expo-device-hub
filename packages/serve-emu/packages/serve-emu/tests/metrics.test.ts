@@ -15,8 +15,31 @@ const NET = [
   " wlan0: 315405369  291595    0    0    0     0          0         0 23652167   96780    0    0    0     0       0          0",
 ].join("\n");
 
+const MAPS = "com.google.android.apps.maps";
+
+function procLines(
+  packageName: string,
+  { pid = "27093", utime = 3367, rss = 340668, comm = "droid.apps.maps" } = {},
+) {
+  return [
+    `pkg ${packageName}`,
+    `pid ${pid}`,
+    `stat ${pid} (${comm}) S 449 449 0 0 -1 4194624 955035 0 20041 0 ${utime} 25845 0 0 10 -10 106 0 24944777 20191551488 85167 18446744073709551615 1 1 0 0 0 0 4612 1 1098945784 0 0 0 17 3 0 0 0 0 0 0 0 0 0 0 0 0 0`,
+    `rss VmRSS:\t  ${rss} kB`,
+  ];
+}
+
 function probeText(
-  overrides: { cpu?: string; pid?: string; utime?: number; rss?: number; comm?: string } = {},
+  overrides: {
+    cpu?: string;
+    pid?: string;
+    utime?: number;
+    rss?: number;
+    comm?: string;
+    fgwin?: string[];
+    fgact?: string[];
+    proc?: string[];
+  } = {},
 ) {
   const {
     cpu = "932141 45478 2020577 94137975 45606 2982022 52833 0 0 0",
@@ -24,21 +47,22 @@ function probeText(
     utime = 3367,
     rss = 340668,
     comm = "droid.apps.maps",
+    fgwin = [`    mCurrentFocus=Window{9b3d4d5 u0 ${MAPS}/com.google.android.maps.MapsActivity}`],
+    fgact = [
+      `    topResumedActivity=ActivityRecord{132647058 u0 ${MAPS}/com.google.android.maps.MapsActivity t42}`,
+    ],
+    proc = procLines(MAPS, { pid, utime, rss, comm }),
   } = overrides;
   return [
     "---stat",
     `cpu  ${cpu}`,
     "4",
-    "---fg",
-    "    topResumedActivity=ActivityRecord{132647058 u0 com.google.android.apps.maps/com.google.android.maps.MapsActivity t42}",
-    "---pkg",
-    "com.google.android.apps.maps",
-    "---pid",
-    pid,
-    "---pstat",
-    `${pid} (${comm}) S 449 449 0 0 -1 4194624 955035 0 20041 0 ${utime} 25845 0 0 10 -10 106 0 24944777 20191551488 85167 18446744073709551615 1 1 0 0 0 0 4612 1 1098945784 0 0 0 17 3 0 0 0 0 0 0 0 0 0 0 0 0 0`,
-    "---status",
-    `VmRSS:\t  ${rss} kB`,
+    "---fgwin",
+    ...fgwin,
+    "---fgact",
+    ...fgact,
+    "---proc",
+    ...proc,
     "---net",
     NET,
     "",
@@ -49,14 +73,11 @@ const NO_APP = [
   "---stat",
   "cpu  10 0 10 80 0 0 0 0 0 0",
   "2",
-  "---fg",
+  "---fgwin",
   "",
-  "---pkg",
+  "---fgact",
   "",
-  "---pid",
-  "",
-  "---pstat",
-  "---status",
+  "---proc",
   "---net",
   NET,
   "",
@@ -96,6 +117,63 @@ describe("parseMetricsProbe", () => {
   test("reads a comm containing spaces and parentheses", () => {
     const probe = parseMetricsProbe(probeText({ comm: "Web Content (x)" }));
     expect(probe!.procJiffies).toBe(3367 + 25845);
+  });
+
+  test("prefers the window dump, as /api/foreground does", () => {
+    const probe = parseMetricsProbe(
+      probeText({
+        fgwin: ["    mCurrentFocus=Window{9b3d4d5 u0 com.example.focused/.MainActivity}"],
+        proc: [
+          ...procLines("com.example.focused", { pid: "800", utime: 11, rss: 2048 }),
+          ...procLines(MAPS, { pid: "27093" }),
+        ],
+      }),
+    );
+    expect(probe).toMatchObject({
+      packageName: "com.example.focused",
+      pid: 800,
+      procJiffies: 11 + 25845,
+      rssBytes: 2048 * 1024,
+    });
+  });
+
+  test("falls back to the activity dump when no window line names a component", () => {
+    const probe = parseMetricsProbe(probeText({ fgwin: ["    mCurrentFocus=null"] }));
+    expect(probe).toMatchObject({ packageName: MAPS, pid: 27093 });
+  });
+
+  test("ignores a resumed-activity line the shared detector rejects", () => {
+    const probe = parseMetricsProbe(
+      probeText({
+        fgwin: [""],
+        fgact: [
+          `    topResumedActivity=ActivityRecord{132647058 u0 ${MAPS}/com.google.android.maps.MapsActivity}`,
+        ],
+      }),
+    );
+    expect(probe).toMatchObject({ packageName: null, pid: null, rssBytes: null });
+  });
+
+  test("ranks the resumed-activity detectors by kind, not by line order", () => {
+    const probe = parseMetricsProbe(
+      probeText({
+        fgwin: [""],
+        fgact: [
+          "    mResumedActivity: ActivityRecord{1 u0 com.example.earlier/.Home t1}",
+          `    topResumedActivity=ActivityRecord{2 u0 ${MAPS}/com.google.android.maps.MapsActivity t42}`,
+        ],
+        proc: [
+          ...procLines("com.example.earlier", { pid: "800" }),
+          ...procLines(MAPS, { pid: "27093" }),
+        ],
+      }),
+    );
+    expect(probe).toMatchObject({ packageName: MAPS, pid: 27093 });
+  });
+
+  test("leaves process fields null when no candidate matches the foreground package", () => {
+    const probe = parseMetricsProbe(probeText({ proc: procLines("com.example.other") }));
+    expect(probe).toMatchObject({ packageName: MAPS, pid: null, procJiffies: null });
   });
 
   test("rejects output without a cpu line", () => {

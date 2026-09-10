@@ -394,8 +394,9 @@ not keep receiving and discarding device output.
 `/api/metrics` is an SSE stream of the foreground app's resource use, one
 `data:` frame per second with `{t, bundleId, cpuPct, memBytes, netInBytesPerSec,
 netOutBytesPerSec}` after an `event: meta` frame that carries the guest core
-count as `hostCores`. `cpuPct` is percent of one guest core, so it can exceed
-100 on a multi-core emulator. Network counters are device-wide (`/proc/net/dev`
+count as `hostCores`. The foreground app is identified by the same detector
+`/api/foreground` uses, so the two never name different packages. `cpuPct` is
+percent of one guest core, so it can exceed 100 on a multi-core emulator. Network counters are device-wide (`/proc/net/dev`
 minus `lo`); the emulator exposes no per-app counters. CPU and memory come from
 the process that `pidof <package>` resolves, so an app that declares
 `android:process` for its activity reports zero, and a multi-process app such as
