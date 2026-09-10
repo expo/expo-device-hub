@@ -6,6 +6,7 @@ import { access } from "node:fs/promises";
 import { constants } from "node:fs";
 import {
   execText,
+  execBuffer,
   type ExecOpts,
   type ExecResult,
 } from "./exec.ts";
@@ -20,11 +21,11 @@ import type { VideoFrame } from "./scrcpy.ts";
  * timestamps paired with output access units in submission order.
  */
 
-export type FfmpegEncoderName =
-  | "libx264"
-  | "h264_videotoolbox"
-  | "h264_nvenc"
-  | "h264_vaapi";
+const FFMPEG_ENCODER_NAMES = [
+  "libx264", "h264_videotoolbox", "h264_nvenc", "h264_vaapi",
+] as const;
+
+export type FfmpegEncoderName = typeof FFMPEG_ENCODER_NAMES[number];
 
 export type H264EncoderInputFormat = "rgb24" | "png";
 
@@ -148,7 +149,7 @@ function validateOptions(opts: H264EncoderOpts): number | null {
 
   if (
     opts.encoderName !== undefined &&
-    !["libx264", "h264_videotoolbox", "h264_nvenc", "h264_vaapi"].includes(opts.encoderName)
+    !FFMPEG_ENCODER_NAMES.includes(opts.encoderName)
   ) {
     throw new RangeError(`unsupported ffmpeg H.264 encoder ${opts.encoderName}`);
   }
@@ -551,85 +552,17 @@ export type FfmpegSmokeRunner = (
   options: ExecOpts,
 ) => Promise<ExecResult<Buffer>>;
 
-/** The smoke encode needs stdin; keep its process, output and lifetime bounded. */
+/** Share subprocess lanes, deadlines, output bounds and cancellation with other commands. */
 export const runFfmpegSmokeEncode: FfmpegSmokeRunner = (
   binary,
   args,
   input,
   options,
-) => new Promise((resolve) => {
-  const stderr = new FfmpegStderrTail();
-  const stdout: Buffer[] = [];
-  let outputBytes = 0;
-  let settled = false;
-  let terminalError: Error | null = null;
-  let timedOut = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let killTimer: ReturnType<typeof setTimeout> | undefined;
-  let proc: ChildProcessWithoutNullStreams | undefined;
-  const finish = (status: number | null, signal: NodeJS.Signals | null) => {
-    if (settled) return;
-    settled = true;
-    clearTimeout(timer);
-    clearTimeout(killTimer);
-    options.signal?.removeEventListener("abort", onAbort);
-    resolve({
-      status, signal, stdout: Buffer.concat(stdout), stderr: stderr.text(),
-      timedOut, error: terminalError,
-    });
-  };
-  const fail = (error: Error) => {
-    if (settled || terminalError) return;
-    terminalError = error;
-    if (!proc) {
-      finish(null, null);
-      return;
-    }
-    try { proc.kill("SIGKILL"); } catch {}
-    // Even a broken driver/process must not retain the caller indefinitely.
-    killTimer = setTimeout(() => {
-      proc?.stdin.destroy();
-      proc?.stdout.destroy();
-      proc?.stderr.destroy();
-      finish(null, "SIGKILL");
-    }, PROCESS_KILL_MS);
-  };
-  const onAbort = () => fail(probeAbortReason(options.signal!));
-  if (options.signal?.aborted) {
-    onAbort();
-    return;
-  }
-  try {
-    proc = spawn(binary, args, { stdio: ["pipe", "pipe", "pipe"] });
-  } catch (error) {
-    fail(error instanceof Error ? error : new Error(String(error)));
-    return;
-  }
-  options.signal?.addEventListener("abort", onAbort, { once: true });
-  timer = setTimeout(() => {
-    timedOut = true;
-    fail(new Error(`smoke encode timed out after ${options.timeout}ms`));
-  }, options.timeout ?? HARDWARE_PROBE_TIMEOUT_MS);
-  const collect = (chunk: Buffer, isStderr: boolean) => {
-    if (settled) return;
-    if (isStderr) stderr.append(chunk);
-    if (terminalError) return;
-    outputBytes += chunk.length;
-    if (outputBytes > (options.maxBuffer ?? HARDWARE_PROBE_MAX_BYTES)) {
-      fail(new Error("smoke encode exceeded its output limit"));
-    } else if (!isStderr) {
-      stdout.push(chunk);
-    }
-  };
-  proc.stdout.on("data", (chunk: Buffer) => collect(chunk, false));
-  proc.stderr.on("data", (chunk: Buffer) => collect(chunk, true));
-  proc.stdin.once("error", fail);
-  proc.stdout.once("error", fail);
-  proc.stderr.once("error", fail);
-  proc.once("error", fail);
-  proc.once("close", finish);
-  if (options.signal?.aborted) onAbort();
-  if (!terminalError) proc.stdin.end(input);
+) => execBuffer(binary, args, {
+  ...options,
+  stdin: input,
+  timeout: options.timeout ?? HARDWARE_PROBE_TIMEOUT_MS,
+  maxBuffer: options.maxBuffer ?? HARDWARE_PROBE_MAX_BYTES,
 });
 
 export type FfmpegEncoderResolverOptions = FfmpegAvailabilityProbeOptions & {
@@ -670,6 +603,7 @@ export function createFfmpegEncoderResolver(
 ): {
   resolveEncoder: (encoder: GrpcEncoderSelection, signal?: AbortSignal) => Promise<FfmpegEncoderName>;
   getHardwareEncoderError: () => string | undefined;
+  reportEncoderFailure: (encoderName: FfmpegEncoderName, message: string) => void;
 } {
   const resolveBinary = options.resolveBinary ?? resolveFfmpeg;
   const softwareProbe = createFfmpegAvailabilityProbe(options);
@@ -690,8 +624,115 @@ export function createFfmpegEncoderResolver(
     const device = vaapiDevice();
     return { binary, host, pin, device, key: JSON.stringify([binary, host, pin, device]) };
   };
+  type PendingProbe = {
+    controller: AbortController;
+    promise: Promise<FfmpegEncoderName>;
+    waiters: number;
+  };
+  const pending = new Map<string, PendingProbe>();
+  async function probeHardware(
+    { binary, host, pin, device, key }: ReturnType<typeof config>,
+    signal: AbortSignal,
+  ): Promise<FfmpegEncoderName> {
+    try {
+      const backendNames = {
+        videotoolbox: "h264_videotoolbox",
+        nvenc: "h264_nvenc",
+        vaapi: "h264_vaapi",
+      } as const;
+      if (pin && !Object.hasOwn(backendNames, pin)) {
+        throw new Error(
+          `SERVE_EMU_HARDWARE_ENCODER must be videotoolbox, nvenc, or vaapi (received "${pin}")`,
+        );
+      }
+      const candidates: FfmpegEncoderName[] = pin
+        ? [backendNames[pin as keyof typeof backendNames]]
+        : host === "darwin" ? ["h264_videotoolbox"]
+        : host === "linux" ? ["h264_nvenc", "h264_vaapi"] : [];
+      if (!candidates.length) {
+        throw new Error(`hardware H.264 encoding is not supported on ${host}`);
+      }
+      const listing = await runExec(binary, ["-hide_banner", "-encoders"], {
+        timeout: FFMPEG_PROBE_TIMEOUT_MS,
+        maxBuffer: FFMPEG_PROBE_MAX_BYTES,
+        signal,
+        lane: "background",
+      });
+      if (signal?.aborted) throw probeAbortReason(signal);
+      if (listing.error || listing.status !== 0) {
+        throw new Error(listing.timedOut
+          ? `capability probe timed out after ${FFMPEG_PROBE_TIMEOUT_MS}ms`
+          : listing.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
+            listing.error?.message || `exit ${listing.status}`);
+      }
+      const listed = `${listing.stdout}\n${listing.stderr}`;
+      const failures: string[] = [];
+      for (const encoderName of candidates) {
+        try {
+          if (!new RegExp(`\\b${encoderName}\\b`).test(listed)) {
+            throw new Error("encoder is not included in this ffmpeg build");
+          }
+          if (encoderName === "h264_vaapi") {
+            try {
+              await checkVaapiDevice(device);
+            } catch {
+              throw new Error(
+                `cannot access VAAPI device "${device}"; check the render group, driver and SERVE_EMU_VAAPI_DEVICE`,
+              );
+            }
+          }
+          if (signal?.aborted) throw probeAbortReason(signal);
+          const smoke = await runSmoke(binary, ffmpegEncoderArgs({
+            width: HARDWARE_PROBE_DIMENSION, height: HARDWARE_PROBE_DIMENSION,
+            fps: 30, bitRate: 1_000_000, keyFrameInterval: 1, encoderName,
+          }, device), Buffer.alloc(HARDWARE_PROBE_DIMENSION ** 2 * 3 * 4, 96), {
+            timeout: HARDWARE_PROBE_TIMEOUT_MS,
+            maxBuffer: HARDWARE_PROBE_MAX_BYTES,
+            signal,
+            lane: "background",
+          });
+          if (signal?.aborted) throw probeAbortReason(signal);
+          if (smoke.error || smoke.status !== 0) {
+            throw new Error(smoke.timedOut
+              ? `smoke encode timed out after ${HARDWARE_PROBE_TIMEOUT_MS}ms`
+              : smoke.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
+                smoke.error?.message || `exit ${smoke.status}`);
+          }
+          validateSmokeOutput(smoke.stdout);
+          successes.set(key, encoderName);
+          errors.delete(key);
+          return encoderName;
+        } catch (error) {
+          if (signal?.aborted) throw probeAbortReason(signal);
+          failures.push(`${encoderName}: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      }
+      throw new Error(failures.join("; "));
+    } catch (error) {
+      if (signal?.aborted) throw probeAbortReason(signal);
+      const message = `Hardware H.264 encoder unavailable (ffmpeg "${binary}"): ${error instanceof Error ? error.message : String(error)}`;
+      errors.set(key, message);
+      throw new Error(message);
+    }
+  }
   return {
     getHardwareEncoderError: () => errors.get(config().key),
+    reportEncoderFailure(encoderName, detail) {
+      if (encoderName === "libx264") return;
+      const message = `Hardware H.264 encoder unavailable: ${encoderName}: ${detail.slice(-MAX_FFMPEG_STDERR_BYTES)}`;
+      for (const [key, cached] of successes) {
+        if (cached !== encoderName) continue;
+        successes.delete(key);
+        errors.set(key, message);
+      }
+      const { key } = config();
+      if (!successes.has(key)) {
+        errors.set(key, message);
+        const task = pending.get(key);
+        pending.delete(key);
+        task?.controller.abort(new Error(message));
+      }
+    },
     async resolveEncoder(encoder, signal) {
       if (signal?.aborted) throw probeAbortReason(signal);
       if (encoder === "software") {
@@ -701,89 +742,50 @@ export function createFfmpegEncoderResolver(
       if (encoder !== "hardware") {
         throw new RangeError(`unsupported gRPC encoder ${encoder}`);
       }
-      const { binary, host, pin, device, key } = config();
+      const configuration = config();
+      const { key } = configuration;
       const cached = successes.get(key);
       if (cached) return cached;
-      try {
-        const backendNames = {
-          videotoolbox: "h264_videotoolbox",
-          nvenc: "h264_nvenc",
-          vaapi: "h264_vaapi",
-        } as const;
-        if (pin && !Object.hasOwn(backendNames, pin)) {
-          throw new Error(
-            `SERVE_EMU_HARDWARE_ENCODER must be videotoolbox, nvenc, or vaapi (received "${pin}")`,
-          );
-        }
-        const candidates: FfmpegEncoderName[] = pin
-          ? [backendNames[pin as keyof typeof backendNames]]
-          : host === "darwin" ? ["h264_videotoolbox"]
-          : host === "linux" ? ["h264_nvenc", "h264_vaapi"] : [];
-        if (!candidates.length) {
-          throw new Error(`hardware H.264 encoding is not supported on ${host}`);
-        }
-        const listing = await runExec(binary, ["-hide_banner", "-encoders"], {
-          timeout: FFMPEG_PROBE_TIMEOUT_MS,
-          maxBuffer: FFMPEG_PROBE_MAX_BYTES,
-          signal,
-          lane: "background",
-        });
-        if (signal?.aborted) throw probeAbortReason(signal);
-        if (listing.error || listing.status !== 0) {
-          throw new Error(listing.timedOut
-            ? `capability probe timed out after ${FFMPEG_PROBE_TIMEOUT_MS}ms`
-            : listing.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
-              listing.error?.message || `exit ${listing.status}`);
-        }
-        const listed = `${listing.stdout}\n${listing.stderr}`;
-        const failures: string[] = [];
-        for (const encoderName of candidates) {
-          try {
-            if (!new RegExp(`\\b${encoderName}\\b`).test(listed)) {
-              throw new Error("encoder is not included in this ffmpeg build");
-            }
-            if (encoderName === "h264_vaapi") {
-              try {
-                await checkVaapiDevice(device);
-              } catch {
-                throw new Error(
-                  `cannot access VAAPI device "${device}"; check the render group, driver and SERVE_EMU_VAAPI_DEVICE`,
-                );
-              }
-            }
-            if (signal?.aborted) throw probeAbortReason(signal);
-            const smoke = await runSmoke(binary, ffmpegEncoderArgs({
-              width: HARDWARE_PROBE_DIMENSION, height: HARDWARE_PROBE_DIMENSION,
-              fps: 30, bitRate: 1_000_000, keyFrameInterval: 1, encoderName,
-            }, device), Buffer.alloc(HARDWARE_PROBE_DIMENSION ** 2 * 3 * 4, 96), {
-              timeout: HARDWARE_PROBE_TIMEOUT_MS,
-              maxBuffer: HARDWARE_PROBE_MAX_BYTES,
-              signal,
-              lane: "background",
-            });
-            if (signal?.aborted) throw probeAbortReason(signal);
-            if (smoke.error || smoke.status !== 0) {
-              throw new Error(smoke.timedOut
-                ? `smoke encode timed out after ${HARDWARE_PROBE_TIMEOUT_MS}ms`
-                : smoke.stderr.trim().slice(-MAX_FFMPEG_STDERR_BYTES) ||
-                  smoke.error?.message || `exit ${smoke.status}`);
-            }
-            validateSmokeOutput(smoke.stdout);
-            successes.set(key, encoderName);
-            errors.delete(key);
-            return encoderName;
-          } catch (error) {
-            if (signal?.aborted) throw probeAbortReason(signal);
-            failures.push(`${encoderName}: ${error instanceof Error ? error.message : String(error)}`);
-          }
-        }
-        throw new Error(failures.join("; "));
-      } catch (error) {
-        if (signal?.aborted) throw probeAbortReason(signal);
-        const message = `Hardware H.264 encoder unavailable (ffmpeg "${binary}"): ${error instanceof Error ? error.message : String(error)}`;
-        errors.set(key, message);
-        throw new Error(message);
+      let task = pending.get(key);
+      if (!task) {
+        const controller = new AbortController();
+        task = { controller, promise: probeHardware(configuration, controller.signal), waiters: 0 };
+        pending.set(key, task);
+        const started = task;
+        // A departing last waiter removes the task before its process settles.
+        // Its cleanup must never remove a newer retry for the same key.
+        void task.promise.finally(() => {
+          if (pending.get(key) === started) pending.delete(key);
+        }).catch(() => {});
       }
+      const shared = task;
+      shared.waiters++;
+      return new Promise<FfmpegEncoderName>((resolve, reject) => {
+        let settled = false;
+        const settle = (finish: () => void) => {
+          if (settled) return;
+          settled = true;
+          signal?.removeEventListener("abort", onAbort);
+          shared.waiters--;
+          finish();
+        };
+        const onAbort = () => {
+          if (settled) return;
+          const reason = probeAbortReason(signal!);
+          settle(() => reject(reason));
+          // One request never aborts a probe another device is still awaiting.
+          if (shared.waiters === 0) {
+            if (pending.get(key) === shared) pending.delete(key);
+            shared.controller.abort(reason);
+          }
+        };
+        shared.promise.then(
+          (name) => settle(() => resolve(name)),
+          (error) => settle(() => reject(error)),
+        );
+        signal?.addEventListener("abort", onAbort, { once: true });
+        if (signal?.aborted) onAbort();
+      });
     },
   };
 }
@@ -791,6 +793,7 @@ export function createFfmpegEncoderResolver(
 const defaultEncoderResolver = createFfmpegEncoderResolver();
 export const resolveFfmpegEncoder = defaultEncoderResolver.resolveEncoder;
 export const getHardwareEncoderError = defaultEncoderResolver.getHardwareEncoderError;
+export const reportFfmpegEncoderFailure = defaultEncoderResolver.reportEncoderFailure;
 
 export class H264Encoder {
   readonly width: number;

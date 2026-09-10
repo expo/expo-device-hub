@@ -14,7 +14,7 @@ import {
   type H264EncoderOpts,
   type FfmpegEncoderName,
 } from "../src/h264-encoder.ts";
-import type { ExecResult } from "../src/exec.ts";
+import { ExecError, getExecSnapshot, type ExecResult } from "../src/exec.ts";
 import type { VideoFrame } from "../src/scrcpy.ts";
 
 type Deferred<T> = {
@@ -291,6 +291,108 @@ const hardwareListing = () => Promise.resolve(execResult({
 }));
 
 describe("ffmpeg hardware resolver", () => {
+  test("shares concurrent probes while cancelling only the departing caller", async () => {
+    const completion = deferred<ExecResult<Buffer>>();
+    const started = deferred<void>();
+    const signals: AbortSignal[] = [];
+    let listings = 0;
+    const resolver = createFfmpegEncoderResolver({
+      hardwareEncoder: () => "videotoolbox",
+      runExec: async () => { listings++; return hardwareListing(); },
+      runSmoke: (_binary, _args, _input, options) => {
+        signals.push(options.signal!);
+        started.resolve();
+        return completion.promise;
+      },
+    });
+    const controller = new AbortController();
+    const first = resolver.resolveEncoder("hardware", controller.signal);
+    const second = resolver.resolveEncoder("hardware");
+    await started.promise;
+    controller.abort(new Error("first device disconnected"));
+    await expect(first).rejects.toThrow("first device disconnected");
+    expect(signals).toHaveLength(1);
+    expect(signals[0]!.aborted).toBe(false);
+    expect(listings).toBe(1);
+    completion.resolve(smokeResult());
+    expect(await second).toBe("h264_videotoolbox");
+    expect(resolver.getHardwareEncoderError()).toBeUndefined();
+  });
+
+  test("runtime failure invalidates hardware success and allows a fresh probe", async () => {
+    let calls = 0;
+    const resolver = createFfmpegEncoderResolver({
+      hardwareEncoder: () => "videotoolbox", runExec: hardwareListing,
+      runSmoke: async () => { calls++; return smokeResult(); },
+    });
+    await resolver.resolveEncoder("hardware");
+    resolver.reportEncoderFailure("h264_videotoolbox", "encoder exited unexpectedly");
+    expect(resolver.getHardwareEncoderError()).toContain("encoder exited unexpectedly");
+    await resolver.resolveEncoder("hardware");
+    expect(calls).toBe(2);
+    expect(resolver.getHardwareEncoderError()).toBeUndefined();
+    resolver.reportEncoderFailure("libx264", "software failure");
+    expect(resolver.getHardwareEncoderError()).toBeUndefined();
+  });
+
+  test("cancels a shared probe when all callers leave and isolates its late result from retries", async () => {
+    const firstCompletion = deferred<ExecResult<Buffer>>();
+    const retryCompletion = deferred<ExecResult<Buffer>>();
+    const started = deferred<void>();
+    const retryStarted = deferred<void>();
+    const signals: AbortSignal[] = [];
+    const resolver = createFfmpegEncoderResolver({
+      hardwareEncoder: () => "videotoolbox", runExec: hardwareListing,
+      runSmoke: (_binary, _args, _input, options) => {
+        signals.push(options.signal!);
+        if (signals.length === 1) {
+          started.resolve();
+          return firstCompletion.promise;
+        }
+        retryStarted.resolve();
+        return retryCompletion.promise;
+      },
+    });
+    const firstController = new AbortController();
+    const secondController = new AbortController();
+    const first = resolver.resolveEncoder("hardware", firstController.signal);
+    const second = resolver.resolveEncoder("hardware", secondController.signal);
+    await started.promise;
+    firstController.abort(new Error("first caller left"));
+    await expect(first).rejects.toThrow("first caller left");
+    expect(signals[0]!.aborted).toBe(false);
+    secondController.abort(new Error("last caller left"));
+    await expect(second).rejects.toThrow("last caller left");
+    expect(signals[0]!.aborted).toBe(true);
+    const retry = resolver.resolveEncoder("hardware");
+    await retryStarted.promise;
+    firstCompletion.resolve(smokeResult());
+    await Promise.resolve();
+    await Promise.resolve();
+    const joinedRetry = resolver.resolveEncoder("hardware");
+    retryCompletion.resolve(smokeResult());
+    expect(await Promise.all([retry, joinedRetry])).toEqual([
+      "h264_videotoolbox", "h264_videotoolbox",
+    ]);
+    expect(signals).toHaveLength(2);
+    expect(resolver.getHardwareEncoderError()).toBeUndefined();
+  });
+
+  test("runtime failure cannot be cleared by a stale pending success", async () => {
+    const completion = deferred<ExecResult<Buffer>>();
+    const started = deferred<void>();
+    const resolver = createFfmpegEncoderResolver({
+      hardwareEncoder: () => "videotoolbox", runExec: hardwareListing,
+      runSmoke: () => { started.resolve(); return completion.promise; },
+    });
+    const pending = resolver.resolveEncoder("hardware");
+    await started.promise;
+    resolver.reportEncoderFailure("h264_videotoolbox", "device lost");
+    completion.resolve(smokeResult());
+    await expect(pending).rejects.toThrow("device lost");
+    expect(resolver.getHardwareEncoderError()).toContain("device lost");
+  });
+
   test("software ignores hardware configuration and retains the libx264 check", async () => {
     const resolver = createFfmpegEncoderResolver({
       runExec: hardwareListing,
@@ -468,6 +570,17 @@ describe("ffmpeg hardware resolver", () => {
 });
 
 describe("smoke subprocess bounds", () => {
+  test("uses executor background accounting and the effective default deadline", async () => {
+    const started = getExecSnapshot().totals.started;
+    const pending = runFfmpegSmokeEncode(process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"], Buffer.alloc(0), { lane: "background" });
+    expect(getExecSnapshot().lanes.background.active).toBeGreaterThan(0);
+    const result = await pending;
+    expect(getExecSnapshot().totals.started).toBe(started + 1);
+    expect(result.timedOut).toBe(true);
+    expect(result.error?.message).toContain("3000ms");
+  });
+
   test("kills an encode that exceeds its timeout", async () => {
     const start = Date.now();
     const result = await runFfmpegSmokeEncode(process.execPath,
@@ -482,14 +595,16 @@ describe("smoke subprocess bounds", () => {
     const pending = runFfmpegSmokeEncode(process.execPath,
       ["-e", "setInterval(() => {}, 1000)"], Buffer.alloc(0), { timeout: 1000, signal: controller.signal });
     controller.abort(reason);
-    expect((await pending).error).toBe(reason);
+    const error = (await pending).error;
+    expect(error).toBeInstanceOf(ExecError);
+    expect(error?.cause).toBe(reason);
   });
 
   test("limits subprocess output", async () => {
     const result = await runFfmpegSmokeEncode(process.execPath,
       ["-e", "process.stdout.write('x'.repeat(65536)); setInterval(() => {}, 1000)"],
       Buffer.alloc(0), { timeout: 1000, maxBuffer: 100 });
-    expect(result.error?.message).toContain("output limit");
+    expect(result.error).toMatchObject({ code: "output-limit" });
     expect(result.stdout.length).toBeLessThanOrEqual(100);
   });
 });

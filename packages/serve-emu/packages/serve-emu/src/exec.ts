@@ -2,7 +2,7 @@ import {
   spawn,
   type ChildProcessByStdio,
 } from "node:child_process";
-import type { Readable } from "node:stream";
+import type { Readable, Writable } from "node:stream";
 
 // Bun serves HTTP and pumps video on one JS thread. All short-lived adb and
 // emulator commands go through this bounded executor so request bursts cannot
@@ -35,6 +35,8 @@ export class ExecError extends Error {
 }
 
 export type ExecOpts = {
+  /** Optional finite input, written once and followed by EOF after queue admission. */
+  stdin?: Buffer;
   /** Overall deadline, including time spent waiting for an executor slot. */
   timeout?: number;
   /** Combined stdout and stderr byte budget. */
@@ -86,6 +88,7 @@ export type ExecClock = {
 export type ExecSpawner = (
   cmd: string,
   args: string[],
+  options: { stdin: boolean },
 ) => ExecChild;
 
 export type ProcessExecutorOptions = {
@@ -114,9 +117,10 @@ const LANE_PRIORITY: Record<ExecLane, number> = {
 type ExecEncoding = "utf8" | "buffer";
 type ExecOutput = string | Buffer;
 type JobState = "queued" | "active" | "settled";
-type ExecChild = ChildProcessByStdio<null, Readable, Readable>;
+type ExecChild = ChildProcessByStdio<Writable | null, Readable, Readable>;
 
 type NormalizedExecOpts = {
+  stdin?: Buffer;
   timeout: number;
   maxBuffer: number;
   signal?: AbortSignal;
@@ -184,7 +188,10 @@ function normalizedOptions(
   ) {
     throw new TypeError("lane must be interactive, default, or background");
   }
-  return { timeout, maxBuffer, signal: options.signal, lane };
+  if (options.stdin !== undefined && !Buffer.isBuffer(options.stdin)) {
+    throw new TypeError("stdin must be a Buffer");
+  }
+  return { timeout, maxBuffer, signal: options.signal, lane, stdin: options.stdin };
 }
 
 function abortError(signal: AbortSignal): ExecError {
@@ -284,10 +291,9 @@ export class ProcessExecutor {
     );
     this.#spawn =
       options.spawn ??
-      ((cmd, args) =>
-        spawn(cmd, args, {
-          stdio: ["ignore", "pipe", "pipe"],
-        }));
+      ((cmd, args, { stdin }) => stdin
+        ? spawn(cmd, args, { stdio: ["pipe", "pipe", "pipe"] })
+        : spawn(cmd, args, { stdio: ["ignore", "pipe", "pipe"] }));
     this.#clock = options.clock ?? SYSTEM_CLOCK;
   }
 
@@ -428,7 +434,7 @@ export class ProcessExecutor {
 
     let child: ExecChild;
     try {
-      child = this.#spawn(job.cmd, job.args);
+      child = this.#spawn(job.cmd, job.args, { stdin: job.opts.stdin !== undefined });
     } catch (error) {
       job.terminalError =
         error instanceof Error ? error : new Error(String(error));
@@ -447,12 +453,21 @@ export class ProcessExecutor {
     });
     child.stdout.once("error", (error) => this.#processError(job, error));
     child.stderr.once("error", (error) => this.#processError(job, error));
+    child.stdin?.once("error", (error) => this.#processError(job, error));
     child.once("close", (status, signal) => {
       this.#finishActive(job, status, signal);
     });
 
     // Cover an abort/deadline fired synchronously inside an injected spawner.
     if (job.terminalError) this.#kill(job);
+    else if (job.opts.stdin !== undefined) {
+      try {
+        if (!child.stdin) throw new Error("subprocess stdin was not opened");
+        child.stdin.end(job.opts.stdin);
+      } catch (error) {
+        this.#processError(job, error instanceof Error ? error : new Error(String(error)));
+      }
+    }
   }
 
   #collect(
