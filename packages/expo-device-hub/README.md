@@ -58,6 +58,28 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
+The standalone CLI defaults H.264/WebRTC video to **60 FPS** on iOS and Android.
+Use `--video-fps 30` (or another integer from 1 to 120) to override it. This sets the
+capture/encoder frame-rate target or ceiling; actual delivered FPS depends on device
+rendering, screen changes, encoding, and transport performance.
+
+| Flag | Effect on frame rate |
+| --- | --- |
+| `--video-fps <fps>` | Direct H.264/WebRTC frame-rate setting; integer 1–120, default 60. For Android gRPC capture, limits fresh encoder submissions. |
+| `--max-dimension <pixels>` | Limits captured width/height (0–4096; 0 keeps native resolution). Smaller frames can reduce encoding work. |
+| `--video-bitrate <bps>` | H.264/WebRTC target bitrate (100000–50000000); controls compression and bandwidth, not FPS directly. |
+| `--transport <transport>` | Selects `mjpeg`, `h264`, or `webrtc`; performance depends on the transport. `--video-fps` does not set MJPEG FPS on iOS. |
+| `--webrtc-codec <codec>` | Selects `vp8`, `vp9`, or `h264` with `--transport webrtc`; Android uses H.264. |
+| `--stream-source <source>` | Android capture source: `scrcpy` or `grpc-screenshot` (default). |
+| `--grpc-image-mode <mode>` | Android gRPC delivery: `png`, `mmap` (default), or `rgb888`; changes capture/decoding overhead. |
+| `--mjpeg-quality <quality>` | iOS MJPEG quality (0.05–1); affects image size and processing work, not the video FPS setting. |
+
+`--video-fps` is the Hub CLI's only direct FPS flag. The underlying standalone
+`serve-emu` CLI separately exposes `--max-fps`, `--repeat-frame-ms`, and
+`--key-frame-interval`. The standalone `serve-sim` CLI also has `--mjpeg-fps`
+(1–120, default 60) and accepts `--video-fps` up to 140. Those additional flags
+and ranges are not exposed by the Hub CLI.
+
 Android streams use the emulator screenshot gRPC source with MMAP delivery by default,
 both in the Expo CLI plugin and the standalone CLI. MMAP sends frame metadata over gRPC
 while the emulator writes RGB pixels to a shared file-backed memory region:

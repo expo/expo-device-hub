@@ -11,6 +11,7 @@ import {
 } from '../../transport';
 
 export const DEFAULT_PORT = 3400;
+export const DEFAULT_VIDEO_FPS = 60;
 export const DEFAULT_WEBRTC_CODEC: WebRtcStreamCodec = 'h264';
 export const WEBRTC_CODECS = ['vp8', 'vp9', 'h264'] as const satisfies readonly WebRtcStreamCodec[];
 export const DEFAULT_WEBRTC_ICE_POLICY = 'all';
@@ -36,7 +37,7 @@ Options:
       --max-dimension <pixels> Maximum captured width or height; 0 keeps native resolution (0-4096)
       --mjpeg-quality <quality> MJPEG quality (0.05-1)
       --video-bitrate <bps>  H.264/WebRTC target bitrate (100000-50000000)
-      --video-fps <fps>      H.264/WebRTC frame rate (1-120)
+      --video-fps <fps>      H.264/WebRTC frame rate (1-120; default: ${DEFAULT_VIDEO_FPS})
       --stream-source <source> Android capture source: ${ANDROID_STREAM_SOURCES.join(', ')} (default: ${DEFAULT_ANDROID_STREAM_SOURCE})
       --grpc-image-mode <mode> gRPC frames: ${GRPC_IMAGE_MODES.join(', ')} (default: ${DEFAULT_GRPC_IMAGE_MODE}; used when the gRPC source is active)
       --stun-url <urls>      Comma-separated STUN URL(s) for WebRTC ICE
@@ -214,7 +215,8 @@ export function parseCliOptions(args: string[]): CliOptions {
     50_000_000,
     true
   );
-  const videoFps = parseNumberOption(values['video-fps'], '--video-fps', 1, 120, true);
+  const videoFps =
+    parseNumberOption(values['video-fps'], '--video-fps', 1, 120, true) ?? DEFAULT_VIDEO_FPS;
   const normalizedStreamSource = values['stream-source']?.toLowerCase();
   const streamSource = ANDROID_STREAM_SOURCES.includes(
     normalizedStreamSource as AndroidStreamSource,
