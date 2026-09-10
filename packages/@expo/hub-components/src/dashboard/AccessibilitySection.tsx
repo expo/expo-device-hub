@@ -27,7 +27,7 @@ function AccessibilityStatus({ client }: { client: DeviceClient }) {
 function tapNode(client: DeviceClient, node: AccessibilityNode) {
   const x = node.frame.x + node.frame.width / 2;
   const y = node.frame.y + node.frame.height / 2;
-  client.sendTouch({ phase: 'begin', x, y });
+  client.sendTouch({ phase: 'begin', x, y, edgeGestures: false });
   client.sendTouch({ phase: 'end', x, y });
 }
 

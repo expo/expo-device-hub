@@ -452,7 +452,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
     let displayEdge: number | undefined;
     if (sample.phase === 'begin') {
-      edgeGestureRef.current = homeIndicatorEdge(sample.y) !== undefined;
+      edgeGestureRef.current = homeIndicatorEdge(sample) !== undefined;
       if (edgeGestureRef.current) displayEdge = HID_EDGE_BOTTOM;
     } else if (edgeGestureRef.current) {
       displayEdge = HID_EDGE_BOTTOM;

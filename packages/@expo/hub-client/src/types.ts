@@ -400,6 +400,8 @@ export interface TouchSample {
   x: number;
   /** 0..1 down the screen height. */
   y: number;
+  /** Whether a `begin` at a screen edge may start a system edge gesture (the iOS swipe-to-home band). Defaults to true. */
+  edgeGestures?: boolean;
 }
 
 /** A two-finger gesture sample (pinch/pan). Both points are normalized 0..1. */
