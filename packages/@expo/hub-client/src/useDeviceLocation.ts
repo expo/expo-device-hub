@@ -14,7 +14,7 @@ export interface DeviceLocationBackend {
    * Resolves null when the read could not be answered, which is retried until it is,
    * because a device the Hub just booted answers only once its backend is up.
    */
-  read?: () => Promise<DeviceLocationRead | null>;
+  read?: (signal: AbortSignal) => Promise<DeviceLocationRead | null>;
   /** Apply a fix; resolves what was applied. A rejection's message becomes `locationError`. */
   set: (fix: DeviceGeoFix) => Promise<DeviceGeoFix>;
   clear?: () => Promise<void>;
