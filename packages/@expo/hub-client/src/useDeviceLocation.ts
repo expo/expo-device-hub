@@ -53,22 +53,31 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null) {
     if (!read) return;
 
     let cancelled = false;
-    const attempt = () => {
-      void read().then(
-        (result) => {
-          if (cancelled || generationRef.current !== generation || !result) return;
-          clearInterval(retry);
-          setState((current) => ({ ...current, ...result }));
-        },
-        () => {},
-      );
+    let reading = false;
+    let controller: AbortController | null = null;
+
+    const attempt = async () => {
+      if (cancelled || reading) return;
+      reading = true;
+      controller = new AbortController();
+      try {
+        const result = await read(controller.signal);
+        if (cancelled || generationRef.current !== generation || !result) return;
+        clearInterval(retry);
+        setState((current) => ({ ...current, ...result }));
+      } catch {
+      } finally {
+        reading = false;
+      }
     };
-    attempt();
-    const retry = setInterval(attempt, READ_RETRY_MS);
+
+    void attempt();
+    const retry = setInterval(() => void attempt(), READ_RETRY_MS);
 
     return () => {
       cancelled = true;
       clearInterval(retry);
+      controller?.abort();
     };
   }, [backend]);
 
