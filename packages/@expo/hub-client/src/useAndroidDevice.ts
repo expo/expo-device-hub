@@ -27,6 +27,7 @@ import {
 } from './android-activity';
 import { apiUrl, deviceApiUrl } from './android-api-url';
 import { readAndroidLocation, writeAndroidLocation } from './android-location';
+import { androidPermissionsBackend } from './android-permissions';
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
@@ -75,6 +76,7 @@ import {
 import { useAccessibility } from './useAccessibility';
 import { useAndroidCamera } from './useAndroidCamera';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
+import { useAppPermissions } from './useAppPermissions';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
@@ -545,6 +547,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     clearLocation,
     locationCapabilities,
   } = useDeviceLocation(locationBackend);
+
+  const permissionsBackend = useMemo(
+    () => (baseUrl ? androidPermissionsBackend(baseUrl, targetDevice) : null),
+    [baseUrl, targetDevice],
+  );
+  const appPermissions = useAppPermissions({
+    active,
+    appId: foregroundApp?.id ?? null,
+    backend: permissionsBackend,
+  });
 
   const streamSettingsUrl =
     active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-settings', targetDevice) : null;
@@ -1907,6 +1919,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     locationError,
     setLocation,
     clearLocation,
+    ...appPermissions,
     streamSettings,
     streamSettingsPending:
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
@@ -1938,6 +1951,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       camera: cameraSupported,
       accessibility: accessibilityLoader !== null,
       location: locationCapabilities,
+      permissions: true,
       streamSettings: { maxDimension: true, h264Fps: true, h264Bitrate: true },
     },
     foregroundApp,

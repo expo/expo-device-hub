@@ -1,3 +1,4 @@
+import { NO_PENDING_PERMISSION_WRITES } from './app-permissions';
 import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { DeviceClient } from './types';
 
@@ -39,6 +40,12 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   locationError: null,
   setLocation: () => {},
   clearLocation: () => {},
+  permissions: null,
+  permissionsPending: NO_PENDING_PERMISSION_WRITES,
+  permissionsError: null,
+  setPermission: () => {},
+  resetPermissions: () => {},
+  refreshPermissions: () => {},
   streamCapabilities: null,
   streamSettings: null,
   streamSettingsPending: false,
@@ -62,6 +69,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
     accessibility: false,
     streamSettings: false,
     location: false,
+    permissions: false,
   },
   foregroundApp: null,
   videoKind: 'img',
