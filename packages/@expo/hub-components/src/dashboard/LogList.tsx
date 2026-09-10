@@ -50,18 +50,14 @@ export function LogList({
   emptyMessage?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const previousLogs = useRef<ReadonlyArray<DeviceLog> | null>(null);
+  const followTail = useRef(true);
 
-  // New lines arrive at the bottom; while attached we follow the tail so the
-  // newest line stays in view. The stream stops on Detach (lines are kept), so
-  // detaching is how you pause to scroll back through history.
+  // Keep following new lines only while the user is at the bottom. Reconnecting
+  // can replay the same rows in a new array, so array identity cannot tell us
+  // whether to preserve a position in the history when Activity resumes.
   useEffect(() => {
-    // Activity reactivates effects when the inspector reopens. Only new data
-    // should scroll to the tail; unchanged rows must retain the user's position.
-    if (previousLogs.current === logs) return;
-    previousLogs.current = logs;
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && followTail.current) el.scrollTop = el.scrollHeight;
   }, [logs]);
 
   const emptyMessage =
@@ -71,7 +67,17 @@ export function LogList({
       : 'Logs are paused. Press Start to stream device logs.');
 
   return (
-    <div ref={scrollRef} className="hub-log-scroll" style={scrollStyle}>
+    <div
+      ref={scrollRef}
+      className="hub-log-scroll"
+      style={scrollStyle}
+      onScroll={({ currentTarget }) => {
+        // Hiding an Activity removes layout; its zero dimensions are not a
+        // user scroll back to the tail.
+        if (currentTarget.clientHeight === 0) return;
+        followTail.current =
+          currentTarget.scrollHeight - currentTarget.clientHeight - currentTarget.scrollTop <= 1;
+      }}>
       <style>{SCROLLBAR_CSS}</style>
       {logs.length === 0 ? (
         <div

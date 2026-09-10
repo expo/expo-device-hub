@@ -142,6 +142,16 @@ try {
     await populated.waitForTimeout(300);
     assert.deepEqual(await panes.evaluateAll((elements) => elements.map((el) => el.scrollTop)), [100, 100],
       'Populated Events and Logs must preserve their own scroll positions');
+    await populated.getByRole('button', { name: 'Refresh buffers' }).click();
+    await populated.waitForTimeout(100);
+    assert.deepEqual(await panes.evaluateAll((elements) => elements.map((el) => el.scrollTop)), [100, 100],
+      'Replayed snapshots must preserve scroll even when the arrays are replaced');
+    await populated.getByRole('button', { name: 'Append log' }).click();
+    await populated.waitForTimeout(100);
+    assert.equal(await panes.last().evaluate((el) => el.scrollTop), 100,
+      'New entries must not interrupt reading earlier logs');
+    await panes.last().evaluate((el) => { el.scrollTop = el.scrollHeight; });
+    await populated.waitForTimeout(100);
     await populated.getByRole('button', { name: 'Append log' }).click();
     await populated.waitForTimeout(100);
     assert(await panes.last().evaluate((el) => el.scrollTop === el.scrollHeight - el.clientHeight),

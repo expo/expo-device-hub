@@ -20,16 +20,23 @@ const client = {
 function Fixture() {
   const [open, setOpen] = useState(true);
   const [rows, setRows] = useState(entries);
+  const [events, setEvents] = useState(client.events);
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
       <div>
         <button onClick={() => setOpen(!open)}>Toggle inspector</button>
+        <button onClick={() => {
+          setRows(rows.map((entry) => ({ ...entry })));
+          setEvents(events.map((entry) => ({ ...entry })));
+        }}>
+          Refresh buffers
+        </button>
         <button onClick={() => setRows([...rows, { id: String(rows.length), source: 'test', message: 'New entry' }])}>
           Append log
         </button>
       </div>
       <RightSidebar open={open} overlay={false} topmost width={400} resizing={false} onDismiss={() => setOpen(false)}>
-        <LogSidebar client={{ ...client, logs: rows }} />
+        <LogSidebar client={{ ...client, logs: rows, events }} />
       </RightSidebar>
     </div>
   );
