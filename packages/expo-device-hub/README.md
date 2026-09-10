@@ -58,7 +58,8 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
-The standalone CLI defaults H.264/WebRTC video to **60 FPS** on iOS and Android.
+The standalone CLI and Expo DevTools plugin default H.264/WebRTC video to **60 FPS**
+on iOS and Android.
 Use `--video-fps 30` (or another integer from 1 to 120) to override it. This sets the
 capture/encoder frame-rate target or ceiling; actual delivered FPS depends on device
 rendering, screen changes, encoding, and transport performance.

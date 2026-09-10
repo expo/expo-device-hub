@@ -60,6 +60,7 @@ export type CliOptions = {
   maxDimension?: number;
   mjpegQuality?: number;
   videoBitrate?: number;
+  /** Parsed CLI options default to 60; hand-built options and help may omit this. */
   videoFps?: number;
   streamSource?: AndroidStreamSource;
   grpcImageMode?: GrpcImageMode;

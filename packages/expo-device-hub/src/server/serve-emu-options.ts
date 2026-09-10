@@ -1,6 +1,7 @@
 import {
   DEFAULT_ANDROID_STREAM_SOURCE,
   DEFAULT_GRPC_IMAGE_MODE,
+  DEFAULT_VIDEO_FPS,
   DEFAULT_WEBRTC_ICE_POLICY,
   type AndroidStreamSource,
   type CliOptions,
@@ -42,6 +43,7 @@ export type StandaloneServeEmuOptions = {
 
 function defaultServeEmuOptions(): StandaloneServeEmuOptions {
   return {
+    maxFps: DEFAULT_VIDEO_FPS,
     streamMode: DEFAULT_ANDROID_STREAM_SOURCE,
     grpcImageMode: DEFAULT_GRPC_IMAGE_MODE,
     streamSettings: { transport: 'websocket' },

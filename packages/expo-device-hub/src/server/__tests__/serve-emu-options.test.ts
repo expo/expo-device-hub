@@ -173,10 +173,12 @@ describe('standaloneServeEmuOptions', () => {
   test('uses the defaults when loaded as an Expo CLI plugin without a payload', () => {
     expect(readStandaloneServeEmuOptions(undefined)).toEqual({
       ...DEFAULT_ANDROID_STREAM,
+      maxFps: 60,
       streamSettings: { transport: 'websocket' },
     });
     expect(readStandaloneServeEmuOptions('not json')).toEqual({
       ...DEFAULT_ANDROID_STREAM,
+      maxFps: 60,
       streamSettings: { transport: 'websocket' },
     });
   });
