@@ -464,7 +464,7 @@ const APP_ICON_MIME_TYPES = [
 export type AppIconMimeType = (typeof APP_ICON_MIME_TYPES)[number];
 /** `data` is base64, with no `data:` URL prefix. */
 export type AppIcon = { mimeType: AppIconMimeType; data: string };
-type AppIconResponse = ApiSuccess<{
+export type AppIconResponse = ApiSuccess<{
   packageName: string;
   icon: AppIcon | null;
 }>;
@@ -1674,7 +1674,7 @@ function parseAppIcon(value: unknown): AppIcon {
   };
 }
 
-function parseAppIconResponse(value: unknown): AppIconResponse {
+export function parseAppIconResponse(value: unknown): AppIconResponse {
   const root = record(value, "app icon response");
   if (root.ok !== true) fail("app icon response.ok must be true");
   return {
