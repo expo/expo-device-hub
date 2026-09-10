@@ -6,6 +6,7 @@ import {
   parseApiResult,
   parseApiSuccess,
   parseAppActionResponse,
+  parseAppPermissionsResponse,
   parseAvdStartResponse,
   parseAvdStopResponse,
   parseDeviceListResponse,
@@ -420,6 +421,23 @@ describe("complete API success contracts", () => {
       output: "started",
     });
     expect(
+      parseAppPermissionsResponse({
+        ok: true,
+        packageName: "com.example",
+        permissions: [
+          { name: "android.permission.CAMERA", granted: false, flags: ["USER_SET"] },
+          { name: "android.permission.POST_NOTIFICATIONS", granted: true, flags: [] },
+        ],
+      }),
+    ).toEqual({
+      ok: true,
+      packageName: "com.example",
+      permissions: [
+        { name: "android.permission.CAMERA", granted: false, flags: ["USER_SET"] },
+        { name: "android.permission.POST_NOTIFICATIONS", granted: true, flags: [] },
+      ],
+    });
+    expect(
       parseFileImportResponse({
         ok: true,
         output: "pushed",
@@ -587,6 +605,16 @@ describe("API parser rejection boundaries", () => {
     ).toThrow("default must be available");
     expect(() => parseDeviceListResponse({ ok: true, devices: {} })).toThrow("must be an array");
     expect(() => parseAccessibilitySnapshot({ ok: true, nodes: {} })).toThrow("must be an array");
+    expect(() =>
+      parseAppPermissionsResponse({
+        ok: true,
+        packageName: "com.example",
+        permissions: [{ name: "android.permission.CAMERA", granted: "false", flags: [] }],
+      }),
+    ).toThrow("permissions[0].granted must be a boolean");
+    expect(() =>
+      parseAppPermissionsResponse({ ok: true, packageName: "com.example", permissions: {} }),
+    ).toThrow("permissions must be an array");
     expect(() => parseSessionSnapshot({ ...sessionSnapshot, events: [{ ...sessionSnapshot.events[0], kind: "unknown" }] })).toThrow(
       "kind is invalid",
     );
