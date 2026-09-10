@@ -10,6 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { LocationSection } from '../../../../@expo/hub-components/src/dashboard/LocationSection';
 import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
+import { PermissionsSection } from '../../../../@expo/hub-components/src/dashboard/PermissionsSection';
 import {
   StreamOptionsSection,
 } from '../../../../@expo/hub-components/src/dashboard/StreamOptionsSection';
@@ -65,6 +66,12 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     locationError: null,
     setLocation: () => {},
     clearLocation: () => {},
+    permissions: null,
+    permissionsPending: new Set(),
+    permissionsError: null,
+    setPermission: () => {},
+    resetPermissions: () => {},
+    refreshPermissions: () => {},
     streamCapabilities: ios
       ? {
           modeAvailability: { mjpeg: true, h264: true, webrtc: true },
@@ -114,6 +121,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       events: true,
       camera: false,
       accessibility: true,
+      permissions: false,
       streamSettings: ios
         ? {
             mjpegFps: true,
@@ -1352,6 +1360,40 @@ test('places the device frame option immediately above the hardware keyboard', (
   expect(frameIndex).toBeLessThan(hardwareKeyboardIndex);
 });
 
+test('shows the Permissions section only when the client can change permissions', () => {
+  const android = inspectorClient('android');
+  const client = {
+    ...android,
+    foregroundApp: { id: 'com.android.chrome', label: 'Chrome' },
+    permissions: [
+      { id: 'android.permission.CAMERA', label: 'Camera', state: 'granted' as const },
+      { id: 'android.permission.RECORD_AUDIO', label: 'Record audio', state: 'denied' as const },
+    ],
+    permissionsPending: new Set(['android.permission.RECORD_AUDIO']),
+    capabilities: { ...android.capabilities, permissions: true },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  expect(sectionMarkup(html, 'Permissions')).toContain('aria-expanded="false"');
+  const index = html.indexOf('<section aria-label="Permissions"');
+  expect(index).toBeGreaterThan(html.indexOf('<section aria-label="Stream options"'));
+  expect(index).toBeLessThan(html.indexOf('<section aria-label="Events"'));
+  expect(renderToStaticMarkup(<LogSidebar client={android} />)).not.toContain(
+    'aria-label="Permissions"',
+  );
+
+  const section = renderToStaticMarkup(<PermissionsSection client={client} defaultOpen />);
+  expect(section).toContain('>Camera</span>');
+  expect(section).toContain('>Granted</span>');
+  expect(section).toContain('>Record audio</span>');
+  expect(section).toContain('>Updating…</span>');
+  expect(section.match(/>Grant</g)).toHaveLength(2);
+  expect(section.match(/>Revoke</g)).toHaveLength(2);
+  expect(section).toContain('>Reset all<');
+  // Grant on the granted row, both buttons of the pending row, and Reset all during a write.
+  expect(section.match(/disabled=""/g)).toHaveLength(4);
+});
+
 test('keeps the frame option disabled with an explanation for unsupported devices', () => {
   for (const platform of ['ios', 'android'] as const) {
     const client = {
@@ -1362,6 +1404,7 @@ test('keeps the frame option disabled with an explanation for unsupported device
         events: true,
         camera: false,
         accessibility: false,
+        permissions: false,
         streamSettings: false,
         location: false,
       },
@@ -1393,6 +1436,7 @@ test('shows only the viewer-local frame option while iOS device settings are una
       camera: false,
       accessibility: false,
       location: false,
+      permissions: false,
       streamSettings: false,
     },
     deviceSettings: null,
