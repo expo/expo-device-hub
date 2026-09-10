@@ -1,5 +1,23 @@
 # expo-device-hub
 
+## 0.10.0
+
+### Minor Changes
+
+- 56e6f33: Add Android reduce-motion and increase-contrast controls to the shared device options UI.
+- 06df67a: Add an Android bold-text control to the shared device options UI.
+- ed1da9f: Add an Android display-size control to the shared device options UI, with the resulting smallest-width dp shown beneath it.
+- 1e08984: Add optional hardware H.264 encoding for Android gRPC streams.
+- c4418f3: Use RGB888 delivery by default for Android gRPC streaming.
+- 2f4934a: Add RGB888 image delivery over gRPC to Android streaming.
+- a18d697: Add Video FPS and Video bitrate controls to Android stream options for WebSocket and WebRTC playback.
+- 9d73330: Default to 60 FPS streaming for both iOS and Android.
+- e107419: Add camera image passthrough for Android emulators.
+
+### Patch Changes
+
+- 5755ea6: Prevent the connecting overlay from flashing during a quick initial server connection.
+
 ## 0.9.0
 
 ### Minor Changes
