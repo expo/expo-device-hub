@@ -983,7 +983,7 @@ test('hides WebRTC statistics when another transport is active', () => {
   expect(html).not.toContain('role="img"');
 });
 
-test('explains when the Android host was not launched with WebRTC', () => {
+test('explains when WebRTC is unavailable for the Android stream', () => {
   const client = {
     ...inspectorClient('android'),
     streamCapabilities: {
@@ -1005,7 +1005,8 @@ test('explains when the Android host was not launched with WebRTC', () => {
   );
 
   expect(selectValue(html, 'Stream transport')).toBe('WebSocket');
-  expect(html).toContain('Start the standalone server with --transport webrtc');
+  expect(html).toContain('WebRTC is unavailable for the current device stream.');
+  expect(html).not.toContain('--transport webrtc');
 });
 
 test('renders every iOS device option as a select pill sized by its options', () => {
