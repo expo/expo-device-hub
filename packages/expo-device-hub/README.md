@@ -58,74 +58,9 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
-Android streams use the emulator screenshot gRPC source with MMAP delivery by default,
-both in the Expo CLI plugin and the standalone CLI. MMAP sends frame metadata over gRPC
-while the emulator writes RGB pixels to a shared file-backed memory region:
-
-```sh
-npx expo-device-hub --platform android --transport webrtc
-```
-
-Use `--stream-source scrcpy` to select scrcpy at startup, or `--grpc-image-mode png` to
-send a compressed image in each gRPC message. Use `--grpc-image-mode rgb888` for raw
-RGB888 pixels inside each gRPC response. The same source and PNG/MMAP/RGB888 choices
-are available at runtime under **Stream options**. Android also exposes **Video FPS**
-and **Video bitrate** there for both WebSocket and WebRTC playback. Changing either
-restarts the stream with the selected encoder settings. Run `npx expo-device-hub --help`
-for the full option list.
-
-```sh
-npx expo-device-hub --platform android --stream-source grpc-screenshot --grpc-image-mode rgb888
-```
-
-Programmatic serve-emu options accept
-`{ streamMode: "grpc-screenshot", grpcImageMode: "rgb888" }`. Hub's shared dashboard
-selector applies the choice through the embedded serve-emu `PUT /api/stream-mode`
-endpoint with `{ "mode": "grpc-screenshot", "grpcImageMode": "rgb888" }` (under
-`/vendor/serve-emu` in Hub). The applied selection updates when the replacement
-stream renders, and failed replacements preserve the previous selection.
-
-RGB888 response bytes are validated and passed to ffmpeg/libx264 as `rgb24`,
-without MMAP allocation or verification rereads and without PNG in the continuous
-capture stream. This still involves emulator GPU-to-CPU readback, not texture
-sharing or hardware encoding. It is not zero-copy or guaranteed faster. Source
-frame rate, locally paced encoder submissions, gRPC payload bytes and decode
-timing remain separate in capture statistics. MMAP remains the Hub default.
-
-To measure incoming gRPC responses, sample `grpcCapture.rawGrpcMessagesReceived`
-from `/vendor/serve-emu/health?device=<serial>` and divide the counter difference
-by the elapsed seconds within the same capture session. This counter increments
-when a complete gRPC response has been assembled, before protobuf decoding,
-MMAP reads, frame selection, and encoder writes. Count differences include idle
-time; the displayed **Host receive FPS** is an active-cadence estimate that can
-retain its last value while idle. RGB888 continuously drains incoming gRPC
-responses and keeps only the newest image awaiting encoding. `--video-fps`
-limits fresh encoder submissions without slowing reception or queuing old
-images for playback. Received response rate measures delivered messages,
-which may differ from the emulator's internal rendering rate.
-
-For RGB888, **Decoded responses** (`rawGrpcMessagesEmitted`) tracks every
-received stream response, and **Predecode coalescing**
-(`rawGrpcMessagesCoalesced`) stays zero. These counters describe delivery to
-protobuf decoding, not selection for the encoder. Images replaced in the
-latest-image slot before encoding are not counted as coalesced messages. Compare
-**Usable image FPS** with **Encoder input FPS** to see the reduction in fresh
-images submitted to the encoder; the latter excludes repeats. Their difference
-is a rolling cadence comparison, not an exact cumulative count of dropped images.
-
-MMAP uses gRPC metadata notifications to trigger selected shared-memory reads;
-it does not continuously poll the file. After the stream has delivered a message,
-10 seconds without another decoded stream message triggers a unary
-`getScreenshot` probe. A successful MMAP probe triggers a fresh shared-memory
-read. These probes do not increment the stream notification counter. Repeating
-the cached image for the encoder also does not imply a new gRPC response or a
-new MMAP read.
-
-MMAP support is experimental and depends on the Android Emulator build. Google
-tracks an Apple Silicon `streamScreenshot` MMAP fix as issue
-[#537802959](https://issuetracker.google.com/issues/537802959), included in
-Emulator 37.2.3 Canary. If an affected emulator crashes or stops producing
-frames, select PNG explicitly or upgrade to a build containing that fix.
+Android exposes **Video FPS** and **Video bitrate** under **Stream options** for
+both WebSocket and WebRTC playback. Changing either restarts the stream with the
+selected encoder settings. Run `npx expo-device-hub --help` for the full CLI option list.
 
 ## Acknowledgements
 
