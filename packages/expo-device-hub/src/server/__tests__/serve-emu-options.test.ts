@@ -11,7 +11,7 @@ import {
 
 const DEFAULT_ANDROID_STREAM = {
   streamMode: 'grpc-screenshot',
-  grpcImageMode: 'mmap',
+  grpcImageMode: 'rgb888',
 } as const;
 
 describe('standaloneServeEmuOptions', () => {
@@ -32,7 +32,7 @@ describe('standaloneServeEmuOptions', () => {
     ).toEqual(expected);
   });
 
-  test('defaults Android streaming to 60 FPS using gRPC with MMAP', () => {
+  test('defaults Android streaming to 60 FPS using gRPC with RGB888', () => {
     expect(standaloneServeEmuOptions(parseCliOptions([]))).toEqual({
       ...DEFAULT_ANDROID_STREAM,
       maxFps: 60,
@@ -73,7 +73,7 @@ describe('standaloneServeEmuOptions', () => {
     });
   });
 
-  test('allows opting out of the gRPC and MMAP defaults', () => {
+  test('allows opting out of the gRPC and RGB888 defaults', () => {
     expect(
       standaloneServeEmuOptions(
         parseCliOptions([
