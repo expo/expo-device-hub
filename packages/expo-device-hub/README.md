@@ -58,10 +58,6 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
-Android exposes **Video FPS** and **Video bitrate** under **Stream options** for
-both WebSocket and WebRTC playback. Changing either restarts the stream with the
-selected encoder settings. Run `npx expo-device-hub --help` for the full CLI option list.
-
 ## Acknowledgements
 
 Device streaming and control are powered by two vendored, Apache-2.0-licensed
