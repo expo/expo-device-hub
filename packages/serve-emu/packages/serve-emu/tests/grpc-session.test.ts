@@ -706,6 +706,7 @@ describe("gRPC screenshot session helpers", () => {
 
     expect(diagnostics.snapshot()).toEqual({
       imageMode: "mmap",
+      encoderName: "libx264",
       rawGrpcMessagesReceived: 5,
       rawGrpcMessagesEmitted: 3,
       rawGrpcMessagesCoalesced: 2,
@@ -1158,7 +1159,7 @@ function integrationRuntime(
   } = {},
 ): GrpcSessionRuntime {
   return {
-    async assertFfmpeg() {},
+    async resolveEncoder() { return "libx264"; },
     async ensureEndpoint() {
       return { port: 8554, token: "token", avdName: "Pixel_9" };
     },
@@ -1185,6 +1186,60 @@ async function waitFor(predicate: () => boolean): Promise<void> {
 }
 
 describe("startGrpcSession integration", () => {
+  test.each(["software", "hardware"] as const)("resolves %s once and keeps the backend across size changes", async (encoder) => {
+    const client = new FakeGrpcClient(integrationImage());
+    const encoders: FakeGrpcEncoder[] = [];
+    const resolved = encoder === "hardware" ? "h264_videotoolbox" : "libx264";
+    const requests: string[] = [];
+    const session = await startGrpcSession(
+      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "png", inputSource: "grpc", encoder },
+      {
+        readDisplaySizeSignal: async () => "physical:4x6",
+        runtime: {
+          ...integrationRuntime(client, encoders),
+          async resolveEncoder(requested, signal) {
+            expect(signal.aborted).toBe(false);
+            requests.push(requested);
+            return resolved;
+          },
+        },
+      },
+    );
+    try {
+      expect(requests).toEqual([encoder]);
+      expect(encoders[0]!.options.encoderName).toBe(resolved);
+      expect(session.diagnostics?.().grpcCapture?.encoderName).toBe(resolved);
+      client.streamImage!(integrationImage(0, 6, 4), "stream", Date.now());
+      await waitFor(() => encoders.length === 2);
+      expect(encoders[1]!.options.encoderName).toBe(resolved);
+      expect(requests).toHaveLength(1);
+    } finally {
+      await session.close();
+    }
+  });
+
+  test("returns hardware probe failure before opening capture without trying software", async () => {
+    const requested: string[] = [];
+    let endpointCalls = 0;
+    await expect(startGrpcSession(
+      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "png", inputSource: "grpc", encoder: "hardware" },
+      {
+        runtime: {
+          async resolveEncoder(encoder) {
+            requested.push(encoder);
+            throw new Error("VideoToolbox hardware unavailable");
+          },
+          async ensureEndpoint() {
+            endpointCalls++;
+            throw new Error("must not open capture");
+          },
+        },
+      },
+    )).rejects.toThrow("VideoToolbox hardware unavailable");
+    expect(requested).toEqual(["hardware"]);
+    expect(endpointCalls).toBe(0);
+  });
+
   test("RGB888 drains incoming frames independently of the encoder FPS limit", async () => {
     const width = 192;
     const height = 192;
@@ -1552,6 +1607,7 @@ describe("startGrpcSession integration", () => {
       { key: "Power" },
     ]);
     expect(encoders).toHaveLength(1);
+    expect(encoders[0]!.options.encoderName).toBe("libx264");
     await waitFor(() => encoders[0]!.writes >= 2);
     await session.readFrame();
     await session.readFrame();

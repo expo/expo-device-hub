@@ -40,6 +40,7 @@ import {
   isEmulatorSerial,
 } from "./device-capabilities.ts";
 import { loadDeviceGrid } from "./device-grid.ts";
+import { getHardwareEncoderError } from "./h264-encoder.ts";
 import { FrameStatWindow } from "./frame-stat-window.ts";
 import {
   listAvds,
@@ -106,6 +107,9 @@ import {
 import {
   DEFAULT_GRPC_INPUT_SOURCE,
   DEFAULT_GRPC_IMAGE_MODE,
+  DEFAULT_GRPC_ENCODER,
+  GRPC_ENCODERS,
+  isGrpcEncoder,
   GRPC_IMAGE_MODES,
   INPUT_SOURCES,
   isGrpcImageMode,
@@ -114,6 +118,7 @@ import {
   parseFontScale,
   parseStreamModeRequest,
   type GrpcImageMode,
+  type GrpcEncoder,
   type InputSource,
   type StreamMode,
   type StreamModeResponse,
@@ -137,12 +142,15 @@ export type {
 export {
   DEFAULT_GRPC_INPUT_SOURCE,
   DEFAULT_GRPC_IMAGE_MODE,
+  DEFAULT_GRPC_ENCODER,
+  GRPC_ENCODERS,
+  isGrpcEncoder,
   GRPC_IMAGE_MODES,
   INPUT_SOURCES,
   isGrpcImageMode,
   isInputSource,
 } from "./shared/api-contracts.ts";
-export type { GrpcImageMode, InputSource } from "./shared/api-contracts.ts";
+export type { GrpcEncoder, GrpcImageMode, InputSource } from "./shared/api-contracts.ts";
 export type {
   StreamEncoderSettings,
   StreamSettings,
@@ -180,6 +188,8 @@ export type AppOptions = {
   streamMode?: StreamMode;
   /** Emulator gRPC image delivery mode. Defaults to PNG. */
   grpcImageMode?: GrpcImageMode;
+  /** Host H.264 encoder for gRPC capture. Defaults to software. */
+  encoder?: GrpcEncoder;
   /** Input transport. gRPC streaming defaults to scrcpy input. */
   inputSource?: InputSource;
   /** @internal Shared by router-managed source generations for one device. */
@@ -334,6 +344,10 @@ async function createAppInternal(
     );
   }
   const grpcImageMode = requestedGrpcImageMode;
+  const encoder: unknown = opts.encoder ?? DEFAULT_GRPC_ENCODER;
+  if (!isGrpcEncoder(encoder)) {
+    throw new Error(`encoder must be one of: ${GRPC_ENCODERS.join(", ")}`);
+  }
   const streamMode = opts.streamMode ?? "scrcpy";
   const requestedInputSource: unknown =
     opts.inputSource ??
@@ -378,6 +392,7 @@ async function createAppInternal(
       keyFrameInterval: opts.keyFrameInterval,
       mode: streamMode,
       grpcImageMode,
+      encoder,
       inputSource,
     });
     throwIfAborted(opts.signal, "serve-emu app startup aborted");
@@ -461,6 +476,8 @@ async function createAppInternal(
     device: session.meta.deviceName,
     streamMode: session.mode,
     grpcImageMode,
+    encoder,
+    encoderName: session.diagnostics?.().grpcCapture?.encoderName ?? null,
     inputSource: session.inputSource,
     grpcCapture: session.diagnostics?.().grpcCapture ?? null,
     codec: session.meta.codecId,
@@ -1028,6 +1045,7 @@ async function createAppInternal(
       keyFrameInterval: opts.keyFrameInterval,
       mode,
       grpcImageMode,
+      encoder,
       inputSource: nextInputSource,
     });
 
@@ -1223,6 +1241,10 @@ async function createAppInternal(
           serial: opts.serial,
           device: session.meta.deviceName,
           streamMode: session.mode,
+          grpcImageMode,
+          encoder,
+          encoderName: session.diagnostics?.().grpcCapture?.encoderName ?? null,
+          inputSource: session.inputSource,
           codec: session.meta.codecId,
           size: { width: screen.width, height: screen.height },
           status,
@@ -1915,6 +1937,9 @@ async function createAppInternal(
     }),
     /** Exact gRPC image mode configured for this app generation. */
     getGrpcImageMode: (): GrpcImageMode => grpcImageMode,
+    getEncoder: (): GrpcEncoder => encoder,
+    getEncoderName: (): string | null =>
+      session.diagnostics?.().grpcCapture?.encoderName ?? null,
     /** Exact input source configured for this app generation. */
     getInputSource: (): InputSource => session.inputSource,
     health,
@@ -1989,6 +2014,14 @@ function grpcImageModeForApp(
   return readMode?.() ?? fallback;
 }
 
+function encoderForApp(app: EmuApp, fallback = DEFAULT_GRPC_ENCODER): GrpcEncoder {
+  return (app as EmuApp & { getEncoder?: () => GrpcEncoder }).getEncoder?.() ?? fallback;
+}
+
+function encoderNameForApp(app: EmuApp): string | null {
+  return (app as EmuApp & { getEncoderName?: () => string | null }).getEncoderName?.() ?? null;
+}
+
 function inputSourceForApp(app: EmuApp): InputSource {
   const readSource = (
     app as EmuApp & {
@@ -2025,6 +2058,7 @@ export type RouterDependencies = {
   stopEmulator?: typeof stopEmulator;
   readCameraWiring?: typeof readCameraWiring;
   createApp?: (opts: AppOptions) => Promise<EmuApp>;
+  getHardwareEncoderError?: typeof getHardwareEncoderError;
 };
 
 /**
@@ -2048,11 +2082,13 @@ export function createRouter(
   const killEmulator = dependencies.stopEmulator ?? stopEmulator;
   const readWiring = dependencies.readCameraWiring ?? readCameraWiring;
   const createDeviceApp = dependencies.createApp ?? createApp;
+  const hardwareEncoderError = dependencies.getHardwareEncoderError ?? getHardwareEncoderError;
   const apps = new Map<string, EmuApp>();
   const pending = new Map<string, Promise<EmuApp>>();
   const failureAt = new Map<string, number>();
   const streamModeOverrides = new Map<string, StreamMode>();
   const grpcImageModeOverrides = new Map<string, GrpcImageMode>();
+  const encoderOverrides = new Map<string, GrpcEncoder>();
   const inputSourceOverrides = new Map<string, InputSource>();
   const streamModeQueues = new Map<string, Promise<void>>();
   const sessionGenerations = new Map<string, number>();
@@ -2180,6 +2216,7 @@ export function createRouter(
           defaults.inputSource ??
           DEFAULT_GRPC_INPUT_SOURCE
         : "scrcpy",
+    encoder = encoderOverrides.get(serial) ?? defaults.encoder ?? DEFAULT_GRPC_ENCODER,
   ): Promise<EmuApp> => {
     const operation = beginOperation(serial, parentSignal);
     let created: EmuApp | null = null;
@@ -2197,6 +2234,7 @@ export function createRouter(
         serial,
         streamMode,
         grpcImageMode,
+        encoder,
         inputSource,
         deviceState,
         signal: combineAbortSignals(defaults.signal, operation.signal),
@@ -2325,6 +2363,7 @@ export function createRouter(
     streamMode: StreamMode,
     requestedGrpcImageMode: GrpcImageMode | undefined,
     requestedInputSource: InputSource | undefined,
+    requestedEncoder: GrpcEncoder | undefined,
     signal: AbortSignal,
   ): Promise<EmuApp> => {
     if (stopped) throw new Error("serve-emu router is stopped");
@@ -2339,6 +2378,9 @@ export function createRouter(
     }
 
     const current = apps.get(serial);
+    const configuredEncoder = encoderOverrides.get(serial) ?? defaults.encoder ?? DEFAULT_GRPC_ENCODER;
+    const currentEncoder = current ? encoderForApp(current, configuredEncoder) : configuredEncoder;
+    const encoder = requestedEncoder ?? currentEncoder;
     const configuredGrpcImageMode =
       grpcImageModeOverrides.get(serial) ??
       defaults.grpcImageMode ??
@@ -2371,10 +2413,12 @@ export function createRouter(
       current?.isStreaming() &&
       currentMode === streamMode &&
       currentGrpcImageMode === grpcImageMode &&
+      currentEncoder === encoder &&
       currentInputSource === inputSource
     ) {
       streamModeOverrides.set(serial, streamMode);
       grpcImageModeOverrides.set(serial, grpcImageMode);
+      encoderOverrides.set(serial, encoder);
       if (streamMode === "grpc-screenshot") {
         inputSourceOverrides.set(serial, inputSource);
       }
@@ -2408,6 +2452,7 @@ export function createRouter(
         current ? streamEncoderSettingsForApp(current) : undefined,
         grpcImageMode,
         inputSource,
+        encoder,
       );
     } finally {
       await retainedDeviceState?.release(
@@ -2438,6 +2483,7 @@ export function createRouter(
     }
     streamModeOverrides.set(serial, streamMode);
     grpcImageModeOverrides.set(serial, grpcImageMode);
+    encoderOverrides.set(serial, encoder);
     if (streamMode === "grpc-screenshot") {
       inputSourceOverrides.set(serial, inputSource);
     }
@@ -2462,6 +2508,7 @@ export function createRouter(
     streamMode: StreamMode,
     grpcImageMode?: GrpcImageMode,
     inputSource?: InputSource,
+    encoder?: GrpcEncoder,
   ): Promise<EmuApp> =>
     enqueueStreamModeOperation(serial, (signal) =>
       performStreamModeSwitch(
@@ -2469,6 +2516,7 @@ export function createRouter(
         streamMode,
         grpcImageMode,
         inputSource,
+        encoder,
         signal,
       ),
     );
@@ -2509,6 +2557,10 @@ export function createRouter(
         defaults.grpcImageMode ??
         DEFAULT_GRPC_IMAGE_MODE,
     ),
+    encoder: encoderForApp(app, encoderOverrides.get(serial) ?? defaults.encoder ?? DEFAULT_GRPC_ENCODER),
+    encoderName: encoderNameForApp(app),
+    availableEncoders: hardwareEncoderError() ? ["software"] : [...GRPC_ENCODERS],
+    ...(hardwareEncoderError() ? { hardwareEncoderError: hardwareEncoderError() } : {}),
     inputSource: inputSourceForApp(app),
     availableInputSources:
       streamSessionForApp(app).mode === "grpc-screenshot"
@@ -2570,6 +2622,7 @@ export function createRouter(
     failureAt.delete(serial);
     streamModeOverrides.delete(serial);
     grpcImageModeOverrides.delete(serial);
+    encoderOverrides.delete(serial);
     inputSourceOverrides.delete(serial);
     streamModeQueues.delete(serial);
     sessionGenerations.delete(serial);
@@ -2660,6 +2713,7 @@ export function createRouter(
       let streamMode: StreamMode;
       let grpcImageMode: GrpcImageMode | undefined;
       let inputSource: InputSource | undefined;
+      let encoder: GrpcEncoder | undefined;
       try {
         const payload = await readRouterPayload(req);
         const streamModeRequest = parseStreamModeRequest(payload);
@@ -2670,6 +2724,7 @@ export function createRouter(
           );
         }
         streamMode = mode;
+        encoder = streamModeRequest.mode === "grpc-screenshot" ? streamModeRequest.encoder : undefined;
         grpcImageMode =
           streamModeRequest.mode === "grpc-screenshot"
             ? streamModeRequest.grpcImageMode
@@ -2688,6 +2743,7 @@ export function createRouter(
           streamMode,
           grpcImageMode,
           inputSource,
+          encoder,
         );
         return Response.json(streamModeResponse(serial, app));
       } catch (err) {
@@ -2931,6 +2987,7 @@ export function createRouter(
       failureAt.clear();
       streamModeOverrides.clear();
       grpcImageModeOverrides.clear();
+      encoderOverrides.clear();
       inputSourceOverrides.clear();
       streamModeQueues.clear();
       sessionGenerations.clear();

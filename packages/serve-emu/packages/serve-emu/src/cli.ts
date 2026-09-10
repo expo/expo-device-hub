@@ -29,6 +29,9 @@ import {
 } from "./stream-settings.ts";
 import packageJson from "../package.json";
 import {
+  DEFAULT_GRPC_ENCODER,
+  GRPC_ENCODERS,
+  isGrpcEncoder,
   DEFAULT_GRPC_INPUT_SOURCE,
   DEFAULT_GRPC_IMAGE_MODE,
   GRPC_IMAGE_MODES,
@@ -55,6 +58,7 @@ const { values } = parseArgs({
     "repeat-frame-ms": { type: "string", default: String(SCRCPY_DEFAULTS.repeatFrameMs) },
     "stream-mode": { type: "string" },
     "grpc-image-mode": { type: "string", default: DEFAULT_GRPC_IMAGE_MODE },
+    encoder: { type: "string", default: DEFAULT_GRPC_ENCODER },
     "input-source": { type: "string", default: DEFAULT_GRPC_INPUT_SOURCE },
     transport: { type: "string", default: "websocket" },
     "stun-url": { type: "string" },
@@ -192,7 +196,7 @@ if (values.help) {
   console.log(`serve-emu — host an Android device over WebSocket/WebRTC
 
 Usage:
-  serve-emu [-p <port>] [--host <addr>] [--token <secret>] [-s <serial>] [--stream-mode <scrcpy|grpc-screenshot>] [--grpc-image-mode <png|mmap|rgb888>] [--input-source <scrcpy|grpc>] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec] [--repeat-frame-ms ms]
+  serve-emu [-p <port>] [--host <addr>] [--token <secret>] [-s <serial>] [--stream-mode <scrcpy|grpc-screenshot>] [--grpc-image-mode <png|mmap|rgb888>] [--input-source <scrcpy|grpc>] [--encoder <software|hardware>] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec] [--repeat-frame-ms ms]
   serve-emu --transport webrtc [--stun-url url[,url...]] [--turn-url url[,url...] --turn-username user --turn-credential pass]
   serve-emu --avd <name> [--restart-avd]
   serve-emu --avd-list
@@ -238,6 +242,12 @@ Options:
                          RGB888 sends raw pixels over gRPC.
                          MMAP uses shared memory for raw pixels. Capture errors
                          do not fall back to another mode.
+      --encoder <software|hardware>
+                         Host H.264 encoder for gRPC streaming (default: software).
+                         Hardware requires a working host GPU encoder; failures
+                         are returned without falling back to software.
+                         SERVE_EMU_HARDWARE_ENCODER pins videotoolbox, nvenc, or vaapi.
+                         SERVE_EMU_VAAPI_DEVICE overrides /dev/dri/renderD128.
       --input-source <scrcpy|grpc>
                          Input transport for gRPC streaming (default: scrcpy).
                          scrcpy runs a control-only server; grpc sends input
@@ -357,6 +367,13 @@ async function main() {
     );
   }
   const inputSource = requestedInputSource;
+  const requestedEncoder = stringOption("encoder") ?? DEFAULT_GRPC_ENCODER;
+  if (!isGrpcEncoder(requestedEncoder)) {
+    throw new Error(
+      `--encoder must be one of: ${GRPC_ENCODERS.join(", ")}. Received "${requestedEncoder}".`,
+    );
+  }
+  const encoder = requestedEncoder;
 
   let emulatorLaunch: Awaited<ReturnType<typeof startEmulator>> | null = null;
   const serial = values.avd
@@ -457,6 +474,7 @@ async function main() {
     repeatFrameMs,
     streamMode,
     grpcImageMode,
+    encoder,
     inputSource,
     streamSettings,
     maxApkUploadBytes,

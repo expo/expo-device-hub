@@ -514,6 +514,9 @@ describe("server stream source switching", () => {
       grpcImageMode: "png",
       inputSource: "scrcpy",
       availableInputSources: ["scrcpy"],
+      encoder: "software",
+      encoderName: null,
+      availableEncoders: ["software", "hardware"],
       availableModes: ["scrcpy", "grpc-screenshot"],
       sessionGeneration: 0,
     });
@@ -891,4 +894,50 @@ describe("server stream source switching", () => {
     });
     await started.stop();
   });
+});
+
+
+test("standalone encoder switches preserve selection and current capture after failure", async () => {
+  const captured: CapturedServer = { options: null };
+  const opened: StartEmuSessionOptions[] = [];
+  const streams: ReturnType<typeof fakeSession>[] = [];
+  let failHardware = false;
+  const started = await startServer({ port: 3300, serial: "emulator-5554", streamMode: "grpc-screenshot", encoder: "hardware" }, {
+    serve: capturingServe(captured),
+    openSession: async (options) => {
+      if (options.encoder === "hardware" && failHardware) throw new Error("Hardware encoder unavailable");
+      opened.push(options);
+      const stream = fakeSession(options.serial, options.mode, options.grpcImageMode, options.inputSource);
+      streams.push(stream);
+      const diagnostics = new GrpcCaptureDiagnosticsTracker(options.grpcImageMode).snapshot();
+      return { ...stream.session, diagnostics: () => ({ grpcCapture: { ...diagnostics, encoderName: options.encoder === "hardware" ? "h264_videotoolbox" : "libx264" } }) };
+    },
+  });
+  const setEncoder = (encoder: string) => request(captured, "/api/stream-mode", {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "grpc-screenshot", encoder }),
+  });
+  try {
+    for (const path of ["/api/stream-mode", "/health", "/api"]) {
+      expect(await (await request(captured, path)).json()).toMatchObject({ encoder: "hardware", encoderName: "h264_videotoolbox" });
+    }
+    expect((await setEncoder("software")).status).toBe(200);
+    expect(streams[0]!.closeCalls()).toBe(1);
+    failHardware = true;
+    expect((await setEncoder("hardware")).status).toBe(503);
+    expect(streams[1]!.closeCalls()).toBe(0);
+    expect(await (await request(captured, "/api/stream-mode")).json()).toMatchObject({ encoder: "software", encoderName: "libx264", sessionGeneration: 1 });
+    await putMode(captured, "grpc-screenshot", "rgb888");
+    expect(opened.at(-1)).toMatchObject({ encoder: "software", grpcImageMode: "rgb888" });
+    await patchStreamSettings(captured, { h264Fps: 24 });
+    expect(opened.at(-1)).toMatchObject({ encoder: "software", maxFps: 24 });
+    failHardware = false;
+    expect((await setEncoder("hardware")).status).toBe(200);
+    const count = opened.length;
+    expect((await setEncoder("hardware")).status).toBe(200);
+    expect(opened).toHaveLength(count);
+    expect((await setEncoder("auto")).status).toBe(400);
+  } finally {
+    await started.stop();
+  }
 });

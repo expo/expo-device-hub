@@ -24,7 +24,8 @@ import {
 import { execText, type ExecResult } from "./exec.ts";
 import {
   H264Encoder,
-  assertFfmpegAvailable,
+  resolveFfmpegEncoder,
+  type FfmpegEncoderName,
   type H264EncoderInputFormat,
   type H264EncoderOpts,
   type QuarterTurn,
@@ -56,9 +57,11 @@ import type {
   StreamFailure,
   StreamMeta,
 } from "./stream-session.ts";
-import type {
-  GrpcImageMode,
-  InputSource,
+import {
+  DEFAULT_GRPC_ENCODER,
+  type GrpcEncoder,
+  type GrpcImageMode,
+  type InputSource,
 } from "./shared/api-contracts.ts";
 
 export { H264StartupGate } from "./h264-readiness.ts";
@@ -175,6 +178,7 @@ class RollingTimingWindow {
 /** Collects the capture counters exposed through an EmuSession diagnostics snapshot. */
 export class GrpcCaptureDiagnosticsTracker {
   readonly #imageMode: GrpcImageMode;
+  readonly #encoderName: FfmpegEncoderName;
   #rawGrpcMessagesReceived = 0;
   #rawGrpcMessagesEmitted = 0;
   #rawGrpcMessagesCoalesced = 0;
@@ -209,11 +213,13 @@ export class GrpcCaptureDiagnosticsTracker {
     imageMode: GrpcImageMode,
     windowCapacity = CAPTURE_DIAGNOSTIC_WINDOW,
     cadenceIdleResetMs = CAPTURE_CADENCE_IDLE_RESET_MS,
+    encoderName: FfmpegEncoderName = "libx264",
   ) {
     if (!Number.isFinite(cadenceIdleResetMs) || cadenceIdleResetMs <= 0) {
       throw new RangeError("cadence idle reset must be a positive number");
     }
     this.#imageMode = imageMode;
+    this.#encoderName = encoderName;
     this.#cadenceIdleResetMs = cadenceIdleResetMs;
     this.#sourceTimestampIntervals = new RollingTimingWindow(windowCapacity);
     this.#rawMessageReceiveIntervals = new RollingTimingWindow(windowCapacity);
@@ -357,6 +363,7 @@ export class GrpcCaptureDiagnosticsTracker {
   snapshot(): GrpcCaptureDiagnostics {
     return {
       imageMode: this.#imageMode,
+      encoderName: this.#encoderName,
       rawGrpcMessagesReceived: this.#rawGrpcMessagesReceived,
       rawGrpcMessagesEmitted: this.#rawGrpcMessagesEmitted,
       rawGrpcMessagesCoalesced: this.#rawGrpcMessagesCoalesced,
@@ -1366,7 +1373,7 @@ export type GrpcSessionEncoder = {
 };
 
 export type GrpcSessionRuntime = {
-  assertFfmpeg(signal: AbortSignal): Promise<void>;
+  resolveEncoder(encoder: GrpcEncoder, signal: AbortSignal): Promise<FfmpegEncoderName>;
   ensureEndpoint(serial: string, signal: AbortSignal): Promise<GrpcEndpoint>;
   createClient(endpoint: GrpcEndpoint): GrpcSessionClient;
   createEncoder(options: H264EncoderOpts): GrpcSessionEncoder;
@@ -1636,7 +1643,7 @@ const defaultReadDisplaySizeSignal: NonNullable<
 };
 
 const DEFAULT_GRPC_SESSION_RUNTIME: GrpcSessionRuntime = {
-  assertFfmpeg: assertFfmpegAvailable,
+  resolveEncoder: resolveFfmpegEncoder,
   ensureEndpoint: ensureEmulatorGrpcEndpoint,
   createClient: (endpoint) => new EmulatorGrpcClient(endpoint),
   createEncoder: (options) => new H264Encoder(options),
@@ -1728,7 +1735,6 @@ export async function startGrpcSession(
   const accessUnitBoundaryCadence = new GrpcAccessUnitBoundaryCadence(
     frameIntervalMs,
   );
-  const captureDiagnostics = new GrpcCaptureDiagnosticsTracker(imageMode);
 
   if (!isEmulatorSerial(serial)) {
     throw new Error(
@@ -1744,13 +1750,20 @@ export async function startGrpcSession(
   if (options.signal?.aborted) abortFromParent();
 
   let endpoint: Awaited<ReturnType<typeof ensureEmulatorGrpcEndpoint>>;
+  let encoderName: FfmpegEncoderName;
   try {
-    await runtime.assertFfmpeg(lifetime.signal);
+    encoderName = await runtime.resolveEncoder(
+      options.encoder ?? DEFAULT_GRPC_ENCODER,
+      lifetime.signal,
+    );
     endpoint = await runtime.ensureEndpoint(serial, lifetime.signal);
   } catch (error) {
     options.signal?.removeEventListener("abort", abortFromParent);
     throw error;
   }
+  const captureDiagnostics = new GrpcCaptureDiagnosticsTracker(
+    imageMode, undefined, undefined, encoderName,
+  );
   const client = runtime.createClient(endpoint);
   const listeners = new Set<(failure: StreamFailure) => void>();
   const packetQueue = new GrpcVideoPacketQueue();
@@ -1922,6 +1935,7 @@ export async function startGrpcSession(
       sessionMeta.height = size.height;
     }
     const next = runtime.createEncoder({
+      encoderName,
       width: latest.width,
       height: latest.height,
       quarterTurn: 0,

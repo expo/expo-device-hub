@@ -109,6 +109,17 @@ export function isGrpcImageMode(value: unknown): value is GrpcImageMode {
   );
 }
 
+/** Host H.264 implementation used by the emulator gRPC screenshot source. */
+export const GRPC_ENCODERS = ["software", "hardware"] as const;
+export type GrpcEncoder = (typeof GRPC_ENCODERS)[number];
+export const DEFAULT_GRPC_ENCODER: GrpcEncoder = "software";
+export function isGrpcEncoder(value: unknown): value is GrpcEncoder {
+  return (
+    typeof value === "string" &&
+    GRPC_ENCODERS.some((encoder) => encoder === value)
+  );
+}
+
 export type RollingTimingSummary = {
   /** Number of samples retained in the rolling window. */
   windowSamples: number;
@@ -122,6 +133,8 @@ export type RollingTimingSummary = {
 export type GrpcCaptureDiagnostics = {
   /** Exact screenshot image/delivery strategy selected by the caller. */
   imageMode: GrpcImageMode;
+  /** Resolved ffmpeg backend; null when an older server omits it. */
+  encoderName: string | null;
   /** Raw framed protobuf messages received before either pacing stage. */
   rawGrpcMessagesReceived: number;
   /**
@@ -183,6 +196,8 @@ export type StreamModeRequest =
       mode: "grpc-screenshot";
       /** Optional for backwards compatibility; omitted means keep the configured mode. */
       grpcImageMode?: GrpcImageMode;
+      /** Omitted means keep the configured encoder. Hardware selection is strict. */
+      encoder?: GrpcEncoder;
       /** Optional for backwards compatibility; omitted means keep the configured source. */
       inputSource?: InputSource;
     };
@@ -190,6 +205,10 @@ export type StreamModeResponse = ApiSuccess<{
   serial: string;
   mode: StreamMode;
   grpcImageMode: GrpcImageMode;
+  encoder: GrpcEncoder;
+  encoderName: string | null;
+  availableEncoders: GrpcEncoder[];
+  hardwareEncoderError?: string;
   inputSource: InputSource;
   availableInputSources: InputSource[];
   availableModes: StreamMode[];
@@ -470,6 +489,7 @@ export type HealthResponse = {
   serial: string;
   device: string;
   streamMode?: StreamMode;
+  encoderName?: string | null;
   grpcImageMode?: GrpcImageMode;
   inputSource?: InputSource;
   grpcCapture?: GrpcCaptureDiagnostics | null;
@@ -505,6 +525,7 @@ export type ApiInfoResponse = {
   serial: string;
   device: string;
   streamMode?: StreamMode;
+  encoderName?: string | null;
   codec: string;
   size: DeviceSize;
   status: SessionStatus;
@@ -894,6 +915,13 @@ export function parseApiInfoResponse(value: unknown): ApiInfoResponse {
             "API info response.streamMode",
           ),
         }),
+    ...(root.encoderName === undefined
+      ? {}
+      : {
+          encoderName: root.encoderName === null
+            ? null
+            : string(root.encoderName, "API info response.encoderName"),
+        }),
     codec: string(root.codec, "API info response.codec"),
     size: parseDeviceSize(root.size, "API info response.size"),
     status: oneOf(
@@ -961,10 +989,18 @@ export function parseStreamModeRequest(value: unknown): StreamModeRequest {
         "stream mode request.inputSource is available only with mode grpc-screenshot",
       );
     }
+    if (root.encoder !== undefined) {
+      fail("stream mode request.encoder is available only with mode grpc-screenshot");
+    }
     return { mode };
   }
   return {
     mode,
+    ...(root.encoder === undefined
+      ? {}
+      : {
+          encoder: oneOf(root.encoder, GRPC_ENCODERS, "stream mode request.encoder"),
+        }),
     ...(root.grpcImageMode === undefined
       ? {}
       : {
@@ -997,6 +1033,27 @@ export function parseStreamModeResponse(value: unknown): StreamModeResponse {
     GRPC_IMAGE_MODES,
     "stream mode response.grpcImageMode",
   );
+  const encoder = root.encoder === undefined
+    ? DEFAULT_GRPC_ENCODER
+    : oneOf(root.encoder, GRPC_ENCODERS, "stream mode response.encoder");
+  const encoderName = root.encoderName === undefined || root.encoderName === null
+    ? null
+    : string(root.encoderName, "stream mode response.encoderName");
+  const rawEncoders = root.availableEncoders === undefined
+    ? [DEFAULT_GRPC_ENCODER]
+    : root.availableEncoders;
+  if (!Array.isArray(rawEncoders)) {
+    fail("stream mode response.availableEncoders must be an array");
+  }
+  const availableEncoders = rawEncoders.map((value, index) =>
+    oneOf(value, GRPC_ENCODERS, `stream mode response.availableEncoders[${index}]`),
+  );
+  if (!availableEncoders.includes("software")) {
+    fail("stream mode response.availableEncoders must include software");
+  }
+  if (new Set(availableEncoders).size !== availableEncoders.length) {
+    fail("stream mode response.availableEncoders must not contain duplicates");
+  }
   const inputSource = oneOf(
     root.inputSource,
     INPUT_SOURCES,
@@ -1054,6 +1111,17 @@ export function parseStreamModeResponse(value: unknown): StreamModeResponse {
     serial,
     mode,
     grpcImageMode,
+    encoder,
+    encoderName,
+    availableEncoders,
+    ...(root.hardwareEncoderError === undefined
+      ? {}
+      : {
+          hardwareEncoderError: string(
+            root.hardwareEncoderError,
+            "stream mode response.hardwareEncoderError",
+          ),
+        }),
     inputSource,
     availableInputSources,
     availableModes,
@@ -1634,6 +1702,9 @@ function parseGrpcCaptureDiagnostics(value: unknown): GrpcCaptureDiagnostics {
       GRPC_IMAGE_MODES,
       "health response.grpcCapture.imageMode",
     ),
+    encoderName: item.encoderName === undefined || item.encoderName === null
+      ? null
+      : string(item.encoderName, "health response.grpcCapture.encoderName"),
     rawGrpcMessagesReceived: numeric("rawGrpcMessagesReceived"),
     rawGrpcMessagesEmitted: numeric("rawGrpcMessagesEmitted"),
     rawGrpcMessagesCoalesced: numeric("rawGrpcMessagesCoalesced"),
@@ -1738,6 +1809,13 @@ export function parseHealthResponse(value: unknown): HealthResponse {
             INPUT_SOURCES,
             "health response.inputSource",
           ),
+        }),
+    ...(root.encoderName === undefined
+      ? {}
+      : {
+          encoderName: root.encoderName === null
+            ? null
+            : string(root.encoderName, "health response.encoderName"),
         }),
     ...(root.grpcCapture === undefined
       ? {}

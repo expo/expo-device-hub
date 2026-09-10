@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   API_ERROR_CODES,
   API_SUCCESS_PARSERS,
+  isGrpcEncoder,
   isGrpcImageMode,
   isInputSource,
   isApiFailure,
@@ -75,6 +76,49 @@ describe("API contracts", () => {
     ).toThrow("available only with mode grpc-screenshot");
   });
 
+  test("validates strict gRPC encoder selection without changing omitted requests", () => {
+    expect(isGrpcEncoder("software")).toBe(true);
+    expect(isGrpcEncoder("hardware")).toBe(true);
+    expect(isGrpcEncoder("auto")).toBe(false);
+    expect(isGrpcEncoder(null)).toBe(false);
+    expect(parseStreamModeRequest({ mode: "grpc-screenshot", encoder: "hardware" })).toEqual({
+      mode: "grpc-screenshot", encoder: "hardware",
+    });
+    expect(() => parseStreamModeRequest({ mode: "grpc-screenshot", encoder: "auto" })).toThrow("encoder is invalid");
+    expect(() => parseStreamModeRequest({ mode: "scrcpy", encoder: "software" })).toThrow("available only with mode grpc-screenshot");
+  });
+
+  test("parses hardware status and validates encoder availability and errors", () => {
+    const status = {
+      ok: true,
+      serial: "emulator-5554",
+      mode: "grpc-screenshot",
+      grpcImageMode: "rgb888",
+      inputSource: "grpc",
+      availableInputSources: ["grpc", "scrcpy"],
+      availableModes: ["grpc-screenshot", "scrcpy"],
+      sessionGeneration: 1,
+      encoder: "hardware",
+      encoderName: "h264_videotoolbox",
+      availableEncoders: ["software", "hardware"],
+    };
+    expect(parseStreamModeResponse(status)).toEqual(status);
+    const failed = { ...status, encoderName: null, availableEncoders: ["software"], hardwareEncoderError: "GPU unavailable" };
+    expect(parseStreamModeResponse(failed)).toEqual(failed);
+    for (const patch of [
+      { encoder: "auto" },
+      { encoderName: 42 },
+      { availableEncoders: "hardware" },
+      { availableEncoders: [] },
+      { availableEncoders: ["hardware"] },
+      { availableEncoders: ["software", "software"] },
+      { availableEncoders: ["software", "auto"] },
+      { hardwareEncoderError: null },
+    ]) {
+      expect(() => parseStreamModeResponse({ ...status, ...patch })).toThrow();
+    }
+  });
+
   test("recognizes only explicit gRPC image modes", () => {
     expect(isGrpcImageMode("png")).toBe(true);
     expect(isGrpcImageMode("mmap")).toBe(true);
@@ -143,6 +187,9 @@ describe("API contracts", () => {
       ok: true,
       serial: "emulator-5554",
       mode: "grpc-screenshot",
+      encoder: "software",
+      encoderName: null,
+      availableEncoders: ["software"],
       grpcImageMode: "mmap",
       inputSource: "scrcpy",
       availableInputSources: ["scrcpy", "grpc"],

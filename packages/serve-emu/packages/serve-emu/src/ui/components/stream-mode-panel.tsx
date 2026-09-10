@@ -4,8 +4,11 @@ import {
   type StreamTransport,
 } from "../../stream-settings";
 import {
+  GRPC_ENCODERS,
+  isGrpcEncoder,
   GRPC_IMAGE_MODES,
   STREAM_MODES,
+  type GrpcEncoder,
   type GrpcImageMode,
   type StreamMode,
   type StreamModeResponse,
@@ -234,6 +237,57 @@ export function GrpcImageModeSelector({
   );
 }
 
+type GrpcEncoderSelectorProps = {
+  value: GrpcEncoder;
+  available: readonly GrpcEncoder[];
+  disabled: boolean;
+  encoderName: string | null;
+  hardwareEncoderError?: string;
+  onChange: (encoder: GrpcEncoder) => void;
+};
+
+export function GrpcEncoderSelector({
+  value,
+  available,
+  disabled,
+  encoderName,
+  hardwareEncoderError,
+  onChange,
+}: GrpcEncoderSelectorProps) {
+  return (
+    <fieldset className="stream-mode-fieldset" disabled={disabled}>
+      <legend>Encoder</legend>
+      <select
+        aria-label="Encoder"
+        aria-describedby="grpc-encoder-status"
+        value={value}
+        onChange={(event) => {
+          const encoder = event.currentTarget.value;
+          if (isGrpcEncoder(encoder)) onChange(encoder);
+        }}
+      >
+        {GRPC_ENCODERS.map((encoder) => (
+          <option
+            key={encoder}
+            value={encoder}
+            disabled={!available.includes(encoder)}
+          >
+            {encoder === "software" ? "Software" : "Hardware"}
+          </option>
+        ))}
+      </select>
+      <div id="grpc-encoder-status" aria-live="polite">
+        {encoderName ? (
+          <p className="stream-mode-help">Active encoder: {encoderName}</p>
+        ) : null}
+        {hardwareEncoderError ? (
+          <p className="stream-mode-help" role="alert">{hardwareEncoderError}</p>
+        ) : null}
+      </div>
+    </fieldset>
+  );
+}
+
 export function StreamModePanel() {
   const viewerTransport = useViewerTransportControls();
   const deviceSession = useDeviceSessionSnapshot();
@@ -295,6 +349,7 @@ export function StreamModePanel() {
     async (
       nextMode: StreamMode,
       nextGrpcImageMode: GrpcImageMode,
+      nextEncoder: GrpcEncoder,
     ) => {
       if (
         busy ||
@@ -302,7 +357,8 @@ export function StreamModePanel() {
         !loaded ||
         (
           nextMode === loaded.mode &&
-          nextGrpcImageMode === loaded.grpcImageMode
+          nextGrpcImageMode === loaded.grpcImageMode &&
+          nextEncoder === loaded.encoder
         ) ||
         !loaded.availableModes.includes(nextMode)
       ) {
@@ -320,7 +376,11 @@ export function StreamModePanel() {
         response = await apiRequest("/api/stream-mode", {
           method: "PUT",
           body: nextMode === "grpc-screenshot"
-            ? { mode: nextMode, grpcImageMode: nextGrpcImageMode }
+            ? {
+                mode: nextMode,
+                grpcImageMode: nextGrpcImageMode,
+                encoder: nextEncoder,
+              }
             : { mode: nextMode },
         });
       } catch (error) {
@@ -420,7 +480,7 @@ export function StreamModePanel() {
                   checked={displayedMode === option.mode}
                   disabled={disabled}
                   onChange={() => {
-                    if (loaded) void apply(option.mode, loaded.grpcImageMode);
+                    if (loaded) void apply(option.mode, loaded.grpcImageMode, loaded.encoder);
                   }}
                 />
                 <span>
@@ -433,11 +493,21 @@ export function StreamModePanel() {
         </div>
       </fieldset>
       {grpcSelected && loaded ? (
-        <GrpcImageModeSelector
-          value={loaded.grpcImageMode}
-          disabled={grpcImageModeDisabled}
-          onChange={(mode) => void apply("grpc-screenshot", mode)}
-        />
+        <>
+          <GrpcImageModeSelector
+            value={loaded.grpcImageMode}
+            disabled={grpcImageModeDisabled}
+            onChange={(mode) => void apply("grpc-screenshot", mode, loaded.encoder)}
+          />
+          <GrpcEncoderSelector
+            value={loaded.encoder}
+            available={loaded.availableEncoders}
+            disabled={grpcImageModeDisabled}
+            encoderName={loaded.encoderName}
+            hardwareEncoderError={loaded.hardwareEncoderError}
+            onChange={(encoder) => void apply("grpc-screenshot", loaded.grpcImageMode, encoder)}
+          />
+        </>
       ) : null}
       <p className="stream-mode-help" id="stream-mode-help">
         {help}

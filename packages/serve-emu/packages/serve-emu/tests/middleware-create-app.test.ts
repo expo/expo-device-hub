@@ -21,6 +21,7 @@ import type {
 const SESSION_ID = "00000000-0000-4000-8000-000000000000";
 
 const GRPC_CAPTURE_DIAGNOSTICS: GrpcCaptureDiagnostics = {
+  encoderName: "libx264",
   imageMode: "mmap",
   rawGrpcMessagesReceived: 120,
   rawGrpcMessagesEmitted: 100,

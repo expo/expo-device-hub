@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, test } from "bun:test";
 import type { Device } from "../src/adb.ts";
+import { GrpcCaptureDiagnosticsTracker } from "../src/grpc-session.ts";
 import { ControlInputQueue } from "../src/control-input-queue.ts";
 import {
   createApp,
@@ -760,6 +761,9 @@ describe("createRouter stream mode", () => {
       grpcImageMode: "png",
       inputSource: "scrcpy",
       availableInputSources: ["scrcpy"],
+      encoder: "software",
+      encoderName: null,
+      availableEncoders: ["software", "hardware"],
       availableModes: ["scrcpy", "grpc-screenshot"],
       sessionGeneration: 0,
     });
@@ -787,6 +791,9 @@ describe("createRouter stream mode", () => {
       grpcImageMode: "png",
       inputSource: "scrcpy",
       availableInputSources: ["scrcpy", "grpc"],
+      encoder: "software",
+      encoderName: null,
+      availableEncoders: ["software", "hardware"],
       availableModes: ["scrcpy", "grpc-screenshot"],
       sessionGeneration: 1,
     });
@@ -1611,4 +1618,61 @@ describe("createRouter stream mode", () => {
     expect((await stopping).status).toBe(200);
     expect(events.at(-1)).toBe("stop-emulator");
   });
+});
+
+
+test("router preserves a working encoder on failed switches and retains per-device selections", async () => {
+  let hardwareError: string | undefined;
+  let failHardware = false;
+  const opened: AppOptions[] = [];
+  const router = createRouter({ streamMode: "grpc-screenshot" }, {
+    listDevices: async () => [
+      { serial: "emulator-5554", state: "device" },
+      { serial: "emulator-5556", state: "device" },
+    ],
+    getHardwareEncoderError: () => hardwareError,
+    createApp: (opts) => createApp(opts, {
+      startSession: async (options) => {
+        if (options.encoder === "hardware" && failHardware) {
+          hardwareError = "No hardware H.264 encoder: unavailable driver";
+          throw new Error(hardwareError);
+        }
+        opened.push(opts);
+        const stream = liveStreamSession(options.mode);
+        const diagnostics = new GrpcCaptureDiagnosticsTracker(options.grpcImageMode).snapshot();
+        return { ...stream, diagnostics: () => ({ grpcCapture: {
+          ...diagnostics,
+          encoderName: options.encoder === "hardware" ? "h264_videotoolbox" : "libx264",
+        } }) };
+      },
+    }),
+  });
+  const read = async (path = "/api/stream-mode") =>
+    (await router.handleRequest(new Request(`http://router.test${path}`))).json();
+  try {
+    expect(await read()).toMatchObject({ encoder: "software", encoderName: "libx264", availableEncoders: ["software", "hardware"] });
+    failHardware = true;
+    const failed = await router.handleRequest(put("/api/stream-mode", { mode: "grpc-screenshot", encoder: "hardware" }));
+    expect(failed.status).toBe(503);
+    expect(await failed.json()).toMatchObject({ error: { message: hardwareError } });
+    expect(await read()).toMatchObject({ encoder: "software", encoderName: "libx264", availableEncoders: ["software"], hardwareEncoderError: hardwareError, sessionGeneration: 0 });
+    expect(opened).toHaveLength(1);
+    failHardware = false;
+    hardwareError = undefined;
+    expect((await router.handleRequest(put("/api/stream-mode", { mode: "grpc-screenshot", encoder: "hardware" }))).status).toBe(200);
+    expect(await read()).toMatchObject({ encoder: "hardware", encoderName: "h264_videotoolbox", sessionGeneration: 1 });
+    for (const path of ["/health", "/api"]) {
+      expect(await read(path)).toMatchObject({ encoder: "hardware", encoderName: "h264_videotoolbox" });
+    }
+    await router.handleRequest(put("/api/stream-mode", { mode: "grpc-screenshot", grpcImageMode: "rgb888" }));
+    expect(await read()).toMatchObject({ encoder: "hardware", grpcImageMode: "rgb888", sessionGeneration: 2 });
+    await router.handleRequest(put("/api/stream-mode", { mode: "grpc-screenshot", encoder: "hardware" }));
+    expect(opened).toHaveLength(3);
+    expect(await read("/api/stream-mode?device=emulator-5556")).toMatchObject({ encoder: "software" });
+    const invalid = await router.handleRequest(put("/api/stream-mode", { mode: "grpc-screenshot", encoder: "auto" }));
+    expect(invalid.status).toBe(400);
+    expect(opened).toHaveLength(4);
+  } finally {
+    await router.stopAll();
+  }
 });

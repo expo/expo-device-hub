@@ -1,3 +1,4 @@
+import { getHardwareEncoderError } from "./h264-encoder.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -163,6 +164,9 @@ import {
 import {
   DEFAULT_GRPC_INPUT_SOURCE,
   DEFAULT_GRPC_IMAGE_MODE,
+  DEFAULT_GRPC_ENCODER,
+  GRPC_ENCODERS,
+  isGrpcEncoder,
   GRPC_IMAGE_MODES,
   INPUT_SOURCES,
   isGrpcImageMode,
@@ -173,6 +177,7 @@ import {
   parseStreamModeRequest,
   STREAM_MODES,
   type GrpcImageMode,
+  type GrpcEncoder,
   type InputSource,
   type StreamMode,
 } from "./shared/api-contracts.ts";
@@ -205,6 +210,8 @@ export type ServerOpts = {
   streamMode?: StreamMode;
   /** Emulator gRPC image delivery mode. Defaults to PNG. */
   grpcImageMode?: GrpcImageMode;
+  /** Host H.264 encoder for gRPC capture. Defaults to software. */
+  encoder?: GrpcEncoder;
   /** Input transport. gRPC streaming defaults to scrcpy input. */
   inputSource?: InputSource;
   maxApkUploadBytes?: number;
@@ -396,6 +403,11 @@ export async function startServer(
     );
   }
   const defaultGrpcImageMode = requestedDefaultGrpcImageMode;
+  const requestedDefaultEncoder: unknown = opts.encoder ?? DEFAULT_GRPC_ENCODER;
+  if (!isGrpcEncoder(requestedDefaultEncoder)) {
+    throw new Error(`encoder must be one of: ${GRPC_ENCODERS.join(", ")}`);
+  }
+  const defaultEncoder = requestedDefaultEncoder;
   const requestedDefaultInputSource: unknown =
     opts.inputSource ?? DEFAULT_GRPC_INPUT_SOURCE;
   if (!isInputSource(requestedDefaultInputSource)) {
@@ -517,6 +529,8 @@ export async function startServer(
       : DEFAULT_WEBRTC_STREAM_SETTINGS;
   const streamModes = new Map<string, StreamMode>();
   const grpcImageModes = new Map<string, GrpcImageMode>();
+  const encoders = new Map<string, GrpcEncoder>();
+  const contextEncoders = new WeakMap<DeviceContext, GrpcEncoder>();
   const inputSources = new Map<string, InputSource>();
   const contextGrpcImageModes = new WeakMap<DeviceContext, GrpcImageMode>();
   const defaultStreamEncoderSettings: StreamEncoderSettings = {
@@ -534,6 +548,8 @@ export async function startServer(
     (isEmulatorSerial(serial) ? defaultStreamMode : "scrcpy");
   const grpcImageModeForSerial = (serial: string): GrpcImageMode =>
     grpcImageModes.get(serial) ?? defaultGrpcImageMode;
+  const encoderForSerial = (serial: string): GrpcEncoder =>
+    encoders.get(serial) ?? defaultEncoder;
   const inputSourceForSerial = (
     serial: string,
     mode: StreamMode,
@@ -549,11 +565,13 @@ export async function startServer(
     encoderSettings = encoderSettingsForSerial(serial),
     grpcImageMode = grpcImageModeForSerial(serial),
     inputSource = inputSourceForSerial(serial, mode),
+    encoder = encoderForSerial(serial),
   ) =>
     openSession({
       serial,
       mode,
       grpcImageMode,
+      encoder,
       inputSource,
       signal,
       maxFps: encoderSettings.h264Fps,
@@ -603,6 +621,7 @@ export async function startServer(
     stream: EmuSession,
     deviceState?: DeviceSessionState,
     grpcImageMode = grpcImageModeForSerial(serial),
+    encoder = encoderForSerial(serial),
   ): DeviceContext => {
     const context = new ActiveDeviceSession<Client>({
       serial,
@@ -622,6 +641,7 @@ export async function startServer(
       ),
     );
     contextGrpcImageModes.set(context, grpcImageMode);
+    contextEncoders.set(context, encoder);
     return context;
   };
 
@@ -636,6 +656,7 @@ export async function startServer(
   }
   streamModes.set(opts.serial, initialMode);
   grpcImageModes.set(opts.serial, defaultGrpcImageMode);
+  encoders.set(opts.serial, defaultEncoder);
   inputSources.set(opts.serial, defaultInputSource);
   const sessions = new DeviceSessionManager(initialContext);
   const recoveries = new WeakMap<
@@ -691,6 +712,9 @@ export async function startServer(
     codec: context.stream.meta.codecId,
     streamMode: context.stream.mode,
     grpcImageMode: grpcImageModeForContext(context),
+    encoder: encoderForContext(context),
+    encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
+    inputSource: context.stream.inputSource,
     grpcCapture: context.stream.diagnostics?.().grpcCapture ?? null,
     size: { width: context.screen.width, height: context.screen.height },
     clients: context.clients.size,
@@ -1627,6 +1651,7 @@ export async function startServer(
     encoderSettings = encoderSettingsForSerial(serial),
     grpcImageMode = grpcImageModeForSerial(serial),
     inputSource = inputSourceForSerial(serial, mode),
+    encoder = encoderForSerial(serial),
   ): Promise<DeviceContext> => {
     const stagingOwner = {};
     let retainedDeviceState =
@@ -1648,6 +1673,7 @@ export async function startServer(
         encoderSettings,
         grpcImageMode,
         inputSource,
+        encoder,
       );
       try {
         return createContext(
@@ -1656,6 +1682,7 @@ export async function startServer(
           stream,
           retainedDeviceState,
           grpcImageMode,
+          encoder,
         );
       } catch (error) {
         await stream.close().catch(() => {});
@@ -1673,11 +1700,18 @@ export async function startServer(
     contextGrpcImageModes.get(context) ??
     grpcImageModeForSerial(context.serial);
 
+  const encoderForContext = (context: DeviceContext): GrpcEncoder =>
+    contextEncoders.get(context) ?? encoderForSerial(context.serial);
+
   const streamModeResponse = (context: DeviceContext) => ({
     ok: true as const,
     serial: context.serial,
     mode: context.stream.mode,
     grpcImageMode: grpcImageModeForContext(context),
+    encoder: encoderForContext(context),
+    encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
+    availableEncoders: getHardwareEncoderError() ? ["software"] : [...GRPC_ENCODERS],
+    ...(getHardwareEncoderError() ? { hardwareEncoderError: getHardwareEncoderError() } : {}),
     inputSource: context.stream.inputSource,
     availableInputSources:
       context.stream.mode === "grpc-screenshot"
@@ -1728,6 +1762,7 @@ export async function startServer(
     );
     streamModes.set(context.serial, context.stream.mode);
     grpcImageModes.set(context.serial, grpcImageModeForContext(context));
+    encoders.set(context.serial, encoderForContext(context));
     return {
       ok: true,
       serial: context.serial,
@@ -1739,6 +1774,7 @@ export async function startServer(
     mode: StreamMode,
     requestedGrpcImageMode: GrpcImageMode | undefined,
     requestedInputSource: InputSource | undefined,
+    requestedEncoder: GrpcEncoder | undefined,
     expected?: DeviceContext,
   ) => {
     const active = sessions.current;
@@ -1753,6 +1789,7 @@ export async function startServer(
     }
     let grpcImageMode: GrpcImageMode | undefined;
     let inputSource: InputSource | undefined;
+    let encoder: GrpcEncoder | undefined;
     const context = await sessions.replace(
       (current, generation, signal) => {
         const selectedGrpcImageMode =
@@ -1760,6 +1797,7 @@ export async function startServer(
           requestedGrpcImageMode ??
           grpcImageModeForContext(current);
         grpcImageMode = selectedGrpcImageMode;
+        encoder = encoder ?? requestedEncoder ?? encoderForContext(current);
         const selectedInputSource =
           mode === "grpc-screenshot"
             ? inputSource ??
@@ -1778,6 +1816,7 @@ export async function startServer(
           encoderSettingsForSerial(current.serial),
           selectedGrpcImageMode,
           selectedInputSource,
+          encoder,
         );
       },
       activateContext,
@@ -1789,6 +1828,7 @@ export async function startServer(
             current.generation,
           );
         }
+        encoder = requestedEncoder ?? encoderForContext(current);
         grpcImageMode =
           requestedGrpcImageMode ?? grpcImageModeForContext(current);
         inputSource =
@@ -1801,6 +1841,7 @@ export async function startServer(
         return (
           current.stream.mode !== mode ||
           grpcImageModeForContext(current) !== grpcImageMode ||
+          encoderForContext(current) !== encoder ||
           current.stream.inputSource !== inputSource
         );
       },
@@ -1809,6 +1850,7 @@ export async function startServer(
       grpcImageMode ?? grpcImageModeForContext(context);
     streamModes.set(context.serial, mode);
     grpcImageModes.set(context.serial, appliedGrpcImageMode);
+    encoders.set(context.serial, encoder ?? encoderForContext(context));
     if (mode === "grpc-screenshot") {
       inputSources.set(
         context.serial,
@@ -1992,6 +2034,10 @@ export async function startServer(
             device: requestContext.stream.meta.deviceName,
             codec: requestContext.stream.meta.codecId,
             streamMode: requestContext.stream.mode,
+            grpcImageMode: grpcImageModeForContext(requestContext),
+            encoder: encoderForContext(requestContext),
+            encoderName: requestContext.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
+            inputSource: requestContext.stream.inputSource,
             size: {
               width: requestContext.screen.width,
               height: requestContext.screen.height,
@@ -2020,6 +2066,7 @@ export async function startServer(
         let mode: StreamMode;
         let grpcImageMode: GrpcImageMode | undefined;
         let inputSource: InputSource | undefined;
+        let encoder: GrpcEncoder | undefined;
         try {
           const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES);
           const streamModeRequest = parseStreamModeRequest(payload);
@@ -2033,6 +2080,7 @@ export async function startServer(
             );
           }
           mode = requestedMode;
+          encoder = streamModeRequest.mode === "grpc-screenshot" ? streamModeRequest.encoder : undefined;
           grpcImageMode =
             streamModeRequest.mode === "grpc-screenshot"
               ? streamModeRequest.grpcImageMode
@@ -2050,6 +2098,7 @@ export async function startServer(
               mode,
               grpcImageMode,
               inputSource,
+              encoder,
               requestContext,
             ),
           );
