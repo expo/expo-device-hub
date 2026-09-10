@@ -19,6 +19,9 @@ export type GrpcEndpoint = {
 };
 
 const MAX_GRPC_MESSAGE_BYTES = 64 * 1024 * 1024;
+// Allow several full RGB frames in flight without a 64 KiB flow-control cycle
+// for each chunk. Consumer pause/resume still bounds downstream buffering.
+const GRPC_RECEIVE_WINDOW_BYTES = 8 * 1024 * 1024;
 const MAX_PROTO_VARINT_BYTES = 10;
 const CONTROLLER_PREFIX = "/android.emulation.control.EmulatorController/";
 const UNARY_TIMEOUT_MS = 5_000;
@@ -851,7 +854,13 @@ export class GrpcMessagePacer {
   }
 }
 
+export type GrpcScreenshotReadControl = {
+  pause(): void;
+  resume(): void;
+};
+
 type RequestOptions = {
+  onReadControl?: (control: GrpcScreenshotReadControl) => void;
   onMessage?: (message: Buffer, receivedAtMs: number) => void;
   onPacingEvent?: (
     event: GrpcMessagePacingEvent,
@@ -897,7 +906,14 @@ export class EmulatorGrpcClient {
       options.streamInactivityTimeoutMs ?? STREAM_INACTIVITY_TIMEOUT_MS,
       "streamInactivityTimeoutMs",
     );
-    this.#session = http2.connect(`http://127.0.0.1:${endpoint.port}`);
+    this.#session = http2.connect(`http://127.0.0.1:${endpoint.port}`, {
+      settings: { initialWindowSize: GRPC_RECEIVE_WINDOW_BYTES },
+    });
+    this.#session.once("connect", () => {
+      if (!this.#closed) {
+        this.#session.setLocalWindowSize(GRPC_RECEIVE_WINDOW_BYTES);
+      }
+    });
     this.#session.on("error", (error: Error) => {
       if (!this.#closed) {
         for (const listener of this.#errorListeners) listener(error);
@@ -945,6 +961,7 @@ export class EmulatorGrpcClient {
       let timer: ReturnType<typeof setTimeout> | null = null;
       let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
       let activityGeneration = 0;
+      let consumerPaused = false;
       let pacer: GrpcMessagePacer | null = null;
 
       const settle = (error?: Error) => {
@@ -958,7 +975,7 @@ export class EmulatorGrpcClient {
         else resolve(messages);
       };
       const resetInactivityTimer = () => {
-        if (!options.inactivityTimeoutMs || settled) return;
+        if (!options.inactivityTimeoutMs || settled || consumerPaused) return;
         if (inactivityTimer) clearTimeout(inactivityTimer);
         const generation = ++activityGeneration;
         inactivityTimer = setTimeout(() => {
@@ -1079,6 +1096,23 @@ export class EmulatorGrpcClient {
         }, options.timeoutMs);
       }
       options.signal?.addEventListener("abort", onAbort, { once: true });
+      options.onReadControl?.({
+        pause() {
+          if (settled) return;
+          consumerPaused = true;
+          // An intentional consumer stall is not a failed screenshot source.
+          activityGeneration++;
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          inactivityTimer = null;
+          stream.pause();
+        },
+        resume() {
+          if (settled || !consumerPaused) return;
+          consumerPaused = false;
+          stream.resume();
+          resetInactivityTimer();
+        },
+      });
       stream.end(grpcFrame(message));
     });
   }
@@ -1106,6 +1140,7 @@ export class EmulatorGrpcClient {
     signal: AbortSignal,
     options: {
       maxFps?: number;
+      onReadControl?: (control: GrpcScreenshotReadControl) => void;
       onPacingEvent?: (
         event: GrpcMessagePacingEvent,
         detail: GrpcMessagePacingDetail,
@@ -1126,6 +1161,7 @@ export class EmulatorGrpcClient {
       await this.#request("streamScreenshot", encodeImageFormat(format), {
         signal,
         messageIntervalMs,
+        onReadControl: options.onReadControl,
         inactivityTimeoutMs: this.#streamInactivityTimeoutMs,
         onInactivity: async () => {
           // Static emulator displays may legitimately stop producing stream

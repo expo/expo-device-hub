@@ -216,7 +216,7 @@ Options:
       --unsafe-no-auth   Allow a non-loopback bind with NO authentication.
                          Anyone who can reach the port can control the device.
   -s, --serial <serial>  adb device serial (defaults to the only booted device)
-      --max-fps <n>      Cap source frame rate (default: ${SCRCPY_DEFAULTS.maxFps})
+      --max-fps <n>      Frame-rate target; RGB888 handoff is uncapped (default: ${SCRCPY_DEFAULTS.maxFps})
       --bit-rate <bps>   H.264 bit rate (default: ${SCRCPY_DEFAULTS.bitRate})
       --max-size <px>    Cap longest screen edge in pixels; 0 = native. The
                          gRPC screenshot source uses host-side software H.264

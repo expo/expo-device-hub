@@ -121,7 +121,7 @@ serve-emu --running-avds
 | `--encoder` | `software` | Host H.264 encoder for gRPC streaming: `software` uses libx264; `hardware` requires VideoToolbox, NVENC, or VAAPI. No software fallback |
 | `--grpc-image-mode` | `png` | gRPC screenshot image delivery: compressed in-band `png`, raw pixels through shared-memory `mmap`, or raw pixels in each gRPC message with `rgb888`. The selected mode is strict; capture errors do not fall back to another mode |
 | `--input-source` | `scrcpy` | Input transport for gRPC streaming: a control-only `scrcpy` server, or the emulator's `grpc` endpoint |
-| `--max-fps` | `60` | Cap source frame rate |
+| `--max-fps` | `60` | Frame-rate target for capture and encoding; RGB888 forwards received frames whenever ffmpeg is ready without a local FPS cap |
 | `--bit-rate` | `8000000` | H.264 bit rate in bps |
 | `--max-size` | `1280` | Downscale the longest edge to N pixels; `0` keeps native size. The default balances detail and throughput, especially for the host-side software encoder used by `grpc-screenshot` |
 | `--key-frame-interval` | `10` | Ask the encoder for regular keyframes; `0` disables this codec option. Late joiners get keyframes on demand, so a long interval avoids periodic keyframe bursts |
@@ -662,13 +662,18 @@ rotation or display resizing.
 
 This path still requires GPU-to-CPU readback inside the emulator. It is not GPU
 texture sharing, zero-copy, or hardware encoding; speed depends on the workload
-and must be measured. RGB888 drains incoming gRPC responses continuously and
-retains only the latest image for the encoder. `--max-fps` limits fresh encoder
-submissions independently of incoming frame rate: excess images are replaced,
-so lowering encoded FPS does not queue old source frames for delayed playback.
-Encoder backpressure also retries the latest image. PNG retains its predecode
-message pacer; MMAP selects notifications before reading shared memory. None of
-these local limits impose a server-side screenshot FPS limit. Health
+and must be measured. All gRPC image modes submit usable images as soon as
+ffmpeg can accept them. Backpressure waits for ffmpeg's `drain` event, retaining
+only the newest pending image; there is no encoder write pacer or retry polling.
+RGB888 pauses screenshot reads while ffmpeg is blocked and resumes on drain.
+The gRPC connection and stream receive windows are 8 MiB so large RGB frames do
+not cycle through the default 64 KiB window. No experimental flags are needed.
+
+For RGB888, `--max-fps` configures ffmpeg's nominal input rate and the idle
+boundary cadence; it does not cap fresh frame submissions. PNG retains its
+predecode message pacer; MMAP selects notifications before reading shared
+memory so metadata remains paired with current pixels. Neither sets a
+server-side screenshot FPS limit. Health
 reports `grpcCapture.imageMode`, actual received `grpcMessageBytesReceived`,
 protobuf decode timing, and separate received/source/encoder frame rates.
 MMAP counters remain zero and shared-memory timing remains null for RGB888.

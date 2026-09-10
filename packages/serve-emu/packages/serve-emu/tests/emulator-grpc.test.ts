@@ -14,6 +14,7 @@ import {
   IMAGE_TRANSPORT_MMAP,
   IMG_FORMAT_RGB888,
   parseEmulatorGrpcPort,
+  type GrpcScreenshotReadControl,
 } from "../src/emulator-grpc.ts";
 import type { ExecResult } from "../src/exec.ts";
 import { encodeEmulatorImage, grpcFrame } from "./fixtures/grpc.ts";
@@ -278,9 +279,11 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       timestampUs: 1n,
     });
     let authorization: string | undefined;
+    let receiveWindow: number | undefined;
     const server = http2.createServer();
     server.on("stream", (stream: ServerHttp2Stream, headers) => {
       authorization = headers.authorization as string | undefined;
+      receiveWindow = stream.session?.remoteSettings.initialWindowSize;
       stream.respond({
         ":status": 200,
         "content-type": "application/grpc",
@@ -303,6 +306,7 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
     try {
       const image = await client.getScreenshot({ format: 2 });
       expect(authorization).toBe("Bearer discovered-token");
+      expect(receiveWindow).toBe(8 * 1024 * 1024);
       expect(image).toMatchObject({ width: 2, height: 1, format: 2, seq: 1 });
       expect(image.image).toEqual(Buffer.from([1, 2, 3, 4, 5, 6]));
     } finally {
@@ -310,6 +314,80 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );
+    }
+  });
+
+  test("consumer backpressure pauses delivery and inactivity probes until resumed", async () => {
+    const frame = (seq: number) => grpcFrame(encodeEmulatorImage({
+      format: IMG_FORMAT_RGB888,
+      width: 2,
+      height: 1,
+      image: Buffer.alloc(6, seq),
+      seq,
+    }));
+    let screenshotStream: ServerHttp2Stream | undefined;
+    let probes = 0;
+    const server = http2.createServer();
+    server.on("stream", (stream: ServerHttp2Stream, headers) => {
+      stream.on("error", () => {});
+      stream.resume();
+      const streaming = String(headers[":path"]).endsWith("/streamScreenshot");
+      stream.respond({
+        ":status": 200,
+        "content-type": "application/grpc",
+        ...(streaming ? {} : { "grpc-status": "0" }),
+      });
+      if (streaming) {
+        screenshotStream = stream;
+        stream.write(frame(1));
+      } else {
+        probes++;
+        stream.end(frame(3));
+      }
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing test port");
+    const client = new EmulatorGrpcClient(
+      { port: address.port, token: null, avdName: null },
+      { streamInactivityTimeoutMs: 25 },
+    );
+    const controller = new AbortController();
+    let control!: GrpcScreenshotReadControl;
+    let firstImage!: () => void;
+    const first = new Promise<void>((resolve) => { firstImage = resolve; });
+    const images: number[] = [];
+    const streaming = client.streamScreenshot(
+      { format: IMG_FORMAT_RGB888 },
+      (image) => {
+        images.push(image.seq);
+        if (image.seq === 1) {
+          control.pause();
+          firstImage();
+        } else if (image.seq === 3) {
+          controller.abort();
+        }
+      },
+      controller.signal,
+      { onReadControl: (value) => { control = value; } },
+    );
+    try {
+      await first;
+      screenshotStream!.write(frame(2));
+      await new Promise((resolve) => setTimeout(resolve, 75));
+      expect(images).toEqual([1]);
+      expect(probes).toBe(0);
+      control.resume();
+      await streaming;
+      expect(images).toEqual([1, 2, 3]);
+      expect(probes).toBe(1);
+      // A late encoder drain after close must be harmless.
+      expect(() => { control.pause(); control.resume(); }).not.toThrow();
+    } finally {
+      controller.abort();
+      await streaming;
+      client.close();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
