@@ -108,6 +108,19 @@ describe('standaloneServeEmuOptions', () => {
     expect(readStandaloneServeEmuOptions('{"grpcImageMode":"png"}').encoder).toBe('software');
   });
 
+  test('normalizes plugin JSON encoder names like the CLI', () => {
+    expect(readStandaloneServeEmuOptions('{"encoder":"HARDWARE"}').encoder).toBe('hardware');
+    expect(readStandaloneServeEmuOptions('{"encoder":"Software"}').encoder).toBe('software');
+  });
+
+  test('rejects invalid plugin JSON encoders before opening a device', () => {
+    for (const encoder of ['nvenc', '', null, 1, true, {}, []]) {
+      expect(() => readStandaloneServeEmuOptions(JSON.stringify({ encoder }))).toThrow(
+        'Invalid encoder in EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS: expected software or hardware',
+      );
+    }
+  });
+
   test('maps host WebRTC settings while keeping Android on H.264', () => {
     expect(
       standaloneServeEmuOptions(

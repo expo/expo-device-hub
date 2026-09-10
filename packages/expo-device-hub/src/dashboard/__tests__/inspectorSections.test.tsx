@@ -1395,22 +1395,38 @@ test('shows hardware probe failures and the encoder still streaming with a singl
       grpcImageMode: 'rgb888',
       encoder: 'software',
       encoderName: 'libx264',
-      availableEncoders: ['software'],
+      availableEncoders: ['software', 'hardware'],
       hardwareEncoderError: 'No hardware H.264 encoder is available: VideoToolbox device failed.',
       inputSource: 'grpc',
       availableInputSources: ['grpc'],
       availableModes: ['grpc-screenshot'],
       sessionGeneration: 1,
     },
-    streamSourceError: 'Unable to change stream source: No hardware H.264 encoder is available.',
+    streamSourceError:
+      'Unable to change stream source: No hardware H.264 encoder is available: VideoToolbox device failed.',
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
   expect(selectValue(html, 'gRPC encoder')).toBe('Software');
   expect(selectMarkup(html, 'gRPC encoder')).not.toContain('disabled=""');
   expect(html).toContain('VideoToolbox device failed.');
-  expect(html).toContain('Unable to change stream source: No hardware H.264 encoder is available.');
+  expect(html).toContain(client.streamSourceError);
+  expect(html.match(/role="alert"/g)).toHaveLength(1);
+  expect(html.match(/VideoToolbox device failed\./g)).toHaveLength(1);
   expect(html).toContain('Active encoder: libx264');
+
+  const advisory = renderToStaticMarkup(
+    <StreamOptionsSection client={{ ...client, streamSourceError: null }} defaultOpen />,
+  );
+  expect(advisory).toContain(client.streamSource.hardwareEncoderError);
+  expect(advisory.match(/role="alert"/g)).toHaveLength(1);
+
+  const unrelated = renderToStaticMarkup(
+    <StreamOptionsSection client={{ ...client, streamSourceError: 'RGB888 capture failed' }} defaultOpen />,
+  );
+  expect(unrelated).toContain('RGB888 capture failed');
+  expect(unrelated).not.toContain(client.streamSource.hardwareEncoderError);
+  expect(unrelated.match(/role="alert"/g)).toHaveLength(1);
 });
 
 test('shows the active hardware encoder and hides unresolved encoder names', () => {

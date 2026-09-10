@@ -157,6 +157,9 @@ export function StreamOptionsSection({
   const settings = client.streamSettings ?? DEFAULT_SETTINGS;
   const settingsCapabilities = client.capabilities.streamSettings;
   const streamSource = client.streamSource;
+  const streamSourceError =
+    client.streamSourceError ??
+    (streamSource?.mode === 'grpc-screenshot' ? streamSource.hardwareEncoderError : undefined);
   const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableModes.includes(option.value),
   );
@@ -284,16 +287,13 @@ export function StreamOptionsSection({
               onChange={client.setGrpcEncoder}
             />
           </SidebarRow>
-          {streamSource.hardwareEncoderError && (
-            <SectionNote role="alert">{streamSource.hardwareEncoderError}</SectionNote>
-          )}
           {streamSource.encoderName && (
             <SectionNote>{`Active encoder: ${streamSource.encoderName}`}</SectionNote>
           )}
         </>
       )}
-      {streamSource && client.streamSourceError && (
-        <SectionNote role="alert">{client.streamSourceError}</SectionNote>
+      {streamSource && streamSourceError && (
+        <SectionNote role="alert">{streamSourceError}</SectionNote>
       )}
       <SidebarRow label="Transport">
         <Select

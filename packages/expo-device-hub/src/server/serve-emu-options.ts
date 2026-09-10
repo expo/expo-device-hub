@@ -4,6 +4,7 @@ import {
   DEFAULT_VIDEO_FPS,
   DEFAULT_GRPC_ENCODER,
   DEFAULT_WEBRTC_ICE_POLICY,
+  GRPC_ENCODERS,
   type AndroidStreamSource,
   type CliOptions,
   type GrpcImageMode,
@@ -102,14 +103,27 @@ export function readStandaloneServeEmuOptions(
   value: string | undefined,
 ): StandaloneServeEmuOptions {
   if (!value) return defaultServeEmuOptions();
+  let parsed: unknown;
   try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
-      ? { ...defaultServeEmuOptions(), ...(parsed as Partial<StandaloneServeEmuOptions>) }
-      : defaultServeEmuOptions();
+    parsed = JSON.parse(value);
   } catch {
     return defaultServeEmuOptions();
   }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return defaultServeEmuOptions();
+  }
+
+  const rawEncoder = 'encoder' in parsed ? parsed.encoder : undefined;
+  const normalizedEncoder = typeof rawEncoder === 'string' ? rawEncoder.toLowerCase() : undefined;
+  const encoder = GRPC_ENCODERS.find((option) => option === normalizedEncoder);
+  if (rawEncoder !== undefined && encoder === undefined) {
+    throw new Error(`Invalid encoder in ${SERVE_EMU_OPTIONS_ENV}: expected software or hardware`);
+  }
+  return {
+    ...defaultServeEmuOptions(),
+    ...(parsed as Partial<StandaloneServeEmuOptions>),
+    encoder: encoder ?? DEFAULT_GRPC_ENCODER,
+  };
 }
 
 /** Parse the video-channel flags that the serve-emu router expects at upgrade time. */
