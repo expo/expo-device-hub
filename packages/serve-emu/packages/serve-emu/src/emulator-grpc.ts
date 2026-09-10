@@ -19,6 +19,9 @@ export type GrpcEndpoint = {
 };
 
 const MAX_GRPC_MESSAGE_BYTES = 64 * 1024 * 1024;
+// Allow several full RGB frames in flight without a 64 KiB flow-control cycle
+// for each chunk. Cooperative reads yield after a bounded amount of work.
+const GRPC_RECEIVE_WINDOW_BYTES = 8 * 1024 * 1024;
 const MAX_PROTO_VARINT_BYTES = 10;
 const CONTROLLER_PREFIX = "/android.emulation.control.EmulatorController/";
 const UNARY_TIMEOUT_MS = 5_000;
@@ -661,6 +664,93 @@ type PausableGrpcStream = {
   resume(): void;
 };
 
+/** Yield receive work between bounded batches, independently of FFmpeg. */
+export class GrpcReadScheduler {
+  readonly #stream: PausableGrpcStream;
+  readonly #consume: (chunk: Buffer) => void;
+  readonly #onError: (error: unknown) => void;
+  readonly #batchBytes: number;
+  #remainingBytes: number;
+  #pending: Buffer | null = null;
+  #immediate: ReturnType<typeof setImmediate> | null = null;
+  #paused = false;
+  #closed = false;
+  #onFinish: (() => void) | null = null;
+
+  constructor(options: {
+    stream: PausableGrpcStream;
+    consume(chunk: Buffer): void;
+    onError(error: unknown): void;
+    batchBytes?: number;
+  }) {
+    // Match an I/O-sized quantum: a full RGB frame per turn can still starve
+    // pipe progress when an unrestricted source stays continuously readable.
+    this.#batchBytes = options.batchBytes ?? 64 * 1024;
+    if (!Number.isSafeInteger(this.#batchBytes) || this.#batchBytes <= 0) {
+      throw new RangeError("batchBytes must be a positive safe integer");
+    }
+    this.#remainingBytes = this.#batchBytes;
+    this.#stream = options.stream;
+    this.#consume = options.consume;
+    this.#onError = options.onError;
+  }
+
+  push(chunk: Buffer): void {
+    if (this.#closed || chunk.length === 0) return;
+    try {
+      // pause() prevents another data event until the retained suffix is read.
+      if (this.#pending) throw new Error("gRPC source emitted data while paused");
+      const bytes = Math.min(chunk.length, this.#remainingBytes);
+      this.#remainingBytes -= bytes;
+      this.#consume(chunk.subarray(0, bytes));
+      if (this.#closed) return;
+      if (bytes < chunk.length) this.#pending = chunk.subarray(bytes);
+      if (this.#remainingBytes === 0) {
+        this.#paused = true;
+        this.#stream.pause();
+      }
+      if (!this.#immediate) {
+        this.#immediate = setImmediate(() => this.#continue());
+      }
+    } catch (error) {
+      this.close();
+      this.#onError(error);
+    }
+  }
+
+  finish(callback: () => void): void {
+    if (this.#closed) return;
+    if (this.#pending) this.#onFinish = callback;
+    else callback();
+  }
+
+  close(): void {
+    this.#closed = true;
+    if (this.#immediate) clearImmediate(this.#immediate);
+    this.#immediate = null;
+    this.#pending = null;
+    this.#onFinish = null;
+  }
+
+  #continue(): void {
+    this.#immediate = null;
+    if (this.#closed) return;
+    this.#remainingBytes = this.#batchBytes;
+    const pending = this.#pending;
+    this.#pending = null;
+    if (pending) this.push(pending);
+    if (this.#closed) return;
+    if (this.#onFinish && !this.#pending) {
+      const finish = this.#onFinish;
+      this.#onFinish = null;
+      finish();
+    } else if (this.#paused && this.#remainingBytes > 0) {
+      this.#paused = false;
+      this.#stream.resume();
+    }
+  }
+}
+
 export type GrpcMessagePacingEvent = "received" | "emitted" | "coalesced";
 
 export type GrpcMessagePacingDetail = {
@@ -897,7 +987,14 @@ export class EmulatorGrpcClient {
       options.streamInactivityTimeoutMs ?? STREAM_INACTIVITY_TIMEOUT_MS,
       "streamInactivityTimeoutMs",
     );
-    this.#session = http2.connect(`http://127.0.0.1:${endpoint.port}`);
+    this.#session = http2.connect(`http://127.0.0.1:${endpoint.port}`, {
+      settings: { initialWindowSize: GRPC_RECEIVE_WINDOW_BYTES },
+    });
+    this.#session.once("connect", () => {
+      if (!this.#closed) {
+        this.#session.setLocalWindowSize(GRPC_RECEIVE_WINDOW_BYTES);
+      }
+    });
     this.#session.on("error", (error: Error) => {
       if (!this.#closed) {
         for (const listener of this.#errorListeners) listener(error);
@@ -946,6 +1043,7 @@ export class EmulatorGrpcClient {
       let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
       let activityGeneration = 0;
       let pacer: GrpcMessagePacer | null = null;
+      let readScheduler: GrpcReadScheduler | null = null;
 
       const settle = (error?: Error) => {
         if (settled) return;
@@ -953,6 +1051,7 @@ export class EmulatorGrpcClient {
         if (timer) clearTimeout(timer);
         if (inactivityTimer) clearTimeout(inactivityTimer);
         pacer?.close();
+        readScheduler?.close();
         options.signal?.removeEventListener("abort", onAbort);
         if (error) reject(error);
         else resolve(messages);
@@ -988,6 +1087,7 @@ export class EmulatorGrpcClient {
         inactivityTimer.unref?.();
       };
       const onMessage = (body: Buffer, receivedAtMs = Date.now()) => {
+        if (settled) return;
         if (options.onMessage) options.onMessage(body, receivedAtMs);
         else messages.push(body);
         resetInactivityTimer();
@@ -1037,6 +1137,12 @@ export class EmulatorGrpcClient {
           onError: cancelForFrameError,
           signal: options.signal,
         });
+      } else if (options.onMessage) {
+        readScheduler = new GrpcReadScheduler({
+          stream,
+          consume: (chunk) => parser!.push(chunk),
+          onError: cancelForFrameError,
+        });
       }
 
       stream.on("response", (values) =>
@@ -1049,6 +1155,7 @@ export class EmulatorGrpcClient {
         if (settled) return;
         try {
           if (pacer) pacer.push(chunk);
+          else if (readScheduler) readScheduler.push(chunk);
           else parser!.push(chunk);
         } catch (error) {
           cancelForFrameError(error);
@@ -1059,8 +1166,10 @@ export class EmulatorGrpcClient {
       });
       stream.on("close", () => {
         if (settled) return;
-        if (grpcStatus === "0") settle();
-        else if (grpcStatus !== null) {
+        if (grpcStatus === "0") {
+          if (readScheduler) readScheduler.finish(() => settle());
+          else settle();
+        } else if (grpcStatus !== null) {
           settle(
             new Error(
               `${method}: grpc-status ${grpcStatus}${grpcMessage ? ` (${grpcMessage})` : ""}`,

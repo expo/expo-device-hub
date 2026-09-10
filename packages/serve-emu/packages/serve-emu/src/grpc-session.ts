@@ -78,8 +78,8 @@ const ACCESS_UNIT_CADENCE_WINDOW = 8;
 const ACCESS_UNIT_CADENCE_OUTLIER_FLOOR_MS = 250;
 const ACCESS_UNIT_CADENCE_OUTLIER_MULTIPLIER = 4;
 const ACCESS_UNIT_SLOW_CADENCE_SIMILARITY = 1.5;
-const ENCODER_WRITE_RETRY_DELAY_MS = 8;
 const DEFAULT_IDLE_REPEAT_MS = 500;
+const ENCODER_DRAIN_TIMEOUT_MS = 5_000;
 const FIRST_FRAME_TIMEOUT_MS = 10_000;
 const MAX_QUEUED_PACKET_BYTES = 64 * 1024 * 1024;
 const DISPLAY_SIZE_POLL_MS = 2_000;
@@ -706,12 +706,13 @@ export function grpcImageModeBehavior(
   }
   return {
     encoderInputFormat: "rgb24",
-    // Drain raw RGB responses independently of encoder FPS. Pausing HTTP/2
-    // queues old pixels upstream; onImage keeps only the newest frame and the
-    // encoder write pacer decides when to submit it. MMAP also drains metadata
-    // immediately, then selects which notifications trigger memory reads.
+    // Keep receiving RGB independently of encoder readiness so the latest
+    // image stays fresh. MMAP selects metadata before shared-memory reads.
     predecodeMaxFps: undefined,
-    needsEncoderFollowUp: (repeat) => !repeat,
+    // A static source may send only one image. Keep warming the encoder until
+    // it emits output; the regular idle timer starts after that startup gate.
+    needsEncoderFollowUp: (repeat, encoderHasOutput) =>
+      !repeat || !encoderHasOutput,
   };
 }
 
@@ -1012,34 +1013,6 @@ export function resolveGrpcDisplayGeometry(options: {
   };
 }
 
-export class GrpcFrameWritePacer {
-  readonly #frameIntervalMs: number;
-  #nextFreshWriteAt = 0;
-
-  constructor(frameIntervalMs: number) {
-    if (!Number.isFinite(frameIntervalMs) || frameIntervalMs <= 0) {
-      throw new RangeError("frameIntervalMs must be a positive number");
-    }
-    this.#frameIntervalMs = frameIntervalMs;
-  }
-
-  reset(now: number): void {
-    this.#nextFreshWriteAt = now;
-  }
-
-  recordWrite(now: number, repeat: boolean, accepted = true): void {
-    if (repeat || !accepted) return;
-    this.#nextFreshWriteAt = Math.max(
-      this.#nextFreshWriteAt + this.#frameIntervalMs,
-      now + this.#frameIntervalMs,
-    );
-  }
-
-  waitMs(now: number): number {
-    return Math.max(0, this.#nextFreshWriteAt - now);
-  }
-}
-
 export class GrpcAccessUnitBoundaryCadence {
   readonly #minimumIntervalMs: number;
   #lastFreshImageAt: number | null = null;
@@ -1334,6 +1307,8 @@ export class GrpcNativeTouchGeometryMonitor {
 }
 
 export type GrpcSessionDependencies = {
+  /** Override the stall deadline for deterministic runtime tests. */
+  encoderDrainTimeoutMs?: number;
   readDisplaySizeSignal?: (
     serial: string,
     signal: AbortSignal,
@@ -1371,6 +1346,7 @@ export type GrpcSessionClient = {
 };
 
 export type GrpcSessionEncoder = {
+  readonly writable: boolean;
   readonly width: number;
   readonly height: number;
   readonly quarterTurn: QuarterTurn;
@@ -1738,8 +1714,12 @@ export async function startGrpcSession(
     configuredRepeatFrameMs > 0
       ? configuredRepeatFrameMs
       : DEFAULT_IDLE_REPEAT_MS;
+  const encoderDrainTimeoutMs = positiveNumber(
+    dependencies.encoderDrainTimeoutMs ?? ENCODER_DRAIN_TIMEOUT_MS,
+    "encoderDrainTimeoutMs",
+    60_000,
+  );
   const frameIntervalMs = 1_000 / maxFps;
-  const frameWritePacer = new GrpcFrameWritePacer(frameIntervalMs);
   const accessUnitBoundaryCadence = new GrpcAccessUnitBoundaryCadence(
     frameIntervalMs,
   );
@@ -1785,8 +1765,11 @@ export async function startGrpcSession(
   let encoderHasOutput = false;
   let captureTransport: GrpcImageCaptureTransport | null = null;
   let latest: EmuImage | null = null;
+  let lastSubmittedImage: EmuImage | null = null;
+  let waitingForEncoder = false;
+  let pendingRepeat = false;
+  let encoderDrainTimer: ReturnType<typeof setTimeout> | null = null;
   let lastWriteAt = 0;
-  let writeTimer: ReturnType<typeof setTimeout> | null = null;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let idleTimer: ReturnType<typeof setInterval> | null = null;
   let displaySizePollTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1837,11 +1820,49 @@ export async function startGrpcSession(
     return new Promise((resolve) => waiters.push(resolve));
   };
 
-  const clearWriteTimers = () => {
-    if (writeTimer) clearTimeout(writeTimer);
+  const clearBoundaryTimer = () => {
     if (flushTimer) clearTimeout(flushTimer);
-    writeTimer = null;
     flushTimer = null;
+  };
+  const clearEncoderDrainTimer = () => {
+    if (encoderDrainTimer) clearTimeout(encoderDrainTimer);
+    encoderDrainTimer = null;
+  };
+  const encoderWritable = (encoder: GrpcSessionEncoder) => {
+    if (
+      closed || lifetime.signal.aborted || fatalFailure ||
+      encoderLifecycle?.current !== encoder
+    ) return;
+    clearEncoderDrainTimer();
+    waitingForEncoder = false;
+    if (latest !== lastSubmittedImage) {
+      pendingRepeat = false;
+      writeFrame(false);
+    } else if (pendingRepeat) {
+      pendingRepeat = false;
+      writeFrame(true);
+    }
+  };
+  const watchEncoderDrain = (encoder: GrpcSessionEncoder) => {
+    if (encoderDrainTimer || closed || lifetime.signal.aborted || fatalFailure) return;
+    encoderDrainTimer = setTimeout(() => {
+      encoderDrainTimer = null;
+      if (
+        closed || lifetime.signal.aborted || fatalFailure ||
+        encoderLifecycle?.current !== encoder || !waitingForEncoder
+      ) return;
+      if (encoder.writable) {
+        // Recover a missed notification only when the encoder confirms it can
+        // accept input. A timer must never force more bytes into a blocked pipe.
+        encoderWritable(encoder);
+      } else {
+        emitFatal({
+          message: `ffmpeg input remained backpressured for ${encoderDrainTimeoutMs}ms`,
+          code: "encoder-exit",
+        });
+      }
+    }, encoderDrainTimeoutMs);
+    encoderDrainTimer.unref?.();
   };
   const nowUs = () => BigInt(Math.round(performance.now() * 1_000));
   const writeFrame = (repeat: boolean) => {
@@ -1856,9 +1877,18 @@ export async function startGrpcSession(
     ) {
       return;
     }
+    if (waitingForEncoder) {
+      if (repeat) pendingRepeat = true;
+      return;
+    }
+    if (!repeat && latest === lastSubmittedImage) return;
     const now = performance.now();
     const accepted = encoder.write(latest.image, nowUs());
-    frameWritePacer.recordWrite(now, repeat, accepted);
+    waitingForEncoder = !accepted || !encoder.writable;
+    pendingRepeat = !accepted && repeat;
+    if (accepted) lastSubmittedImage = latest;
+    if (waitingForEncoder) watchEncoderDrain(encoder);
+    else clearEncoderDrainTimer();
     captureDiagnostics.recordEncoderWrite(
       repeat,
       accepted,
@@ -1866,56 +1896,17 @@ export async function startGrpcSession(
       now,
     );
     if (accepted) lastWriteAt = Date.now();
-    const needsFollowUp = captureTransport.needsEncoderFollowUp(
-      repeat,
-      encoderHasOutput,
-    );
-    if (repeat) {
-      if (flushTimer) clearTimeout(flushTimer);
-      flushTimer = null;
-      if (!accepted || needsFollowUp) {
-        flushTimer = setTimeout(
-          () => {
-            flushTimer = null;
-            writeFrame(true);
-          },
-          accepted
-            ? accessUnitBoundaryCadence.boundaryDelayMs()
-            : Math.min(ENCODER_WRITE_RETRY_DELAY_MS, frameIntervalMs),
-        );
-        flushTimer.unref?.();
-      }
-      return;
-    }
-    if (accepted && needsFollowUp) {
-      if (flushTimer) clearTimeout(flushTimer);
+    // Keep receiving while ffmpeg is blocked so drain submits the newest
+    // complete image, without building a FIFO of stale frames upstream.
+    if (!accepted) return;
+    clearBoundaryTimer();
+    if (captureTransport.needsEncoderFollowUp(repeat, encoderHasOutput)) {
       flushTimer = setTimeout(() => {
         flushTimer = null;
         writeFrame(true);
       }, accessUnitBoundaryCadence.boundaryDelayMs());
       flushTimer.unref?.();
-    } else if (needsFollowUp && !writeTimer) {
-      writeTimer = setTimeout(
-        () => {
-          writeTimer = null;
-          scheduleWrite();
-        },
-        Math.min(ENCODER_WRITE_RETRY_DELAY_MS, frameIntervalMs),
-      );
-      writeTimer.unref?.();
     }
-  };
-  const scheduleWrite = () => {
-    if (writeTimer || closed || !encoderLifecycle?.current || !latest) return;
-    const waitMs = frameWritePacer.waitMs(performance.now());
-    if (waitMs <= 0) {
-      writeFrame(false);
-      return;
-    }
-    writeTimer = setTimeout(() => {
-      writeTimer = null;
-      writeFrame(false);
-    }, waitMs);
   };
   const currentGeometry = (image = latest) => {
     if (!image) return null;
@@ -1937,13 +1928,16 @@ export async function startGrpcSession(
       emitFatal({ message: "emulator returned an image too small to encode" });
       return null;
     }
-    frameWritePacer.reset(performance.now());
+    waitingForEncoder = false;
+    pendingRepeat = false;
+    lastSubmittedImage = null;
     encoderHasOutput = false;
     if (sessionMeta) {
       sessionMeta.width = size.width;
       sessionMeta.height = size.height;
     }
     let stopping = false;
+    let managed: GrpcSessionEncoder | null = null;
     const next = runtime.createEncoder({
       encoderName,
       width: latest.width,
@@ -1964,6 +1958,10 @@ export async function startGrpcSession(
         }
         emitFatal({ message, code: "encoder-exit" });
       },
+      onWritable: () => {
+        // A runtime adapter may notify synchronously during construction.
+        if (!stopping && managed) encoderWritable(managed);
+      },
     });
     if (restart.announceSize) {
       pushPacket({
@@ -1973,7 +1971,8 @@ export async function startGrpcSession(
         clientResized: false,
       });
     }
-    return {
+    managed = {
+      get writable() { return next.writable; },
       width: next.width,
       height: next.height,
       quarterTurn: next.quarterTurn,
@@ -1984,13 +1983,15 @@ export async function startGrpcSession(
         return next.close();
       },
     };
+    return managed;
   });
   const restartEncoder = (
     announceSize: boolean,
     clearPending: boolean,
   ): Promise<void> => {
     if (closed || lifetime.signal.aborted || !latest) return Promise.resolve();
-    clearWriteTimers();
+    clearBoundaryTimer();
+    clearEncoderDrainTimer();
     return encoderLifecycle!
       .restart({ announceSize, clearPending })
       .then((started) => {
@@ -2077,7 +2078,7 @@ export async function startGrpcSession(
       );
       return;
     }
-    scheduleWrite();
+    writeFrame(false);
   };
 
   const inputState = new GrpcInputState(client);
@@ -2269,7 +2270,8 @@ export async function startGrpcSession(
     transportToClose?.stop();
     options.signal?.removeEventListener("abort", abortFromParent);
     lifetime.abort(new Error("gRPC screenshot session closed"));
-    clearWriteTimers();
+    clearBoundaryTimer();
+    clearEncoderDrainTimer();
     if (idleTimer) clearInterval(idleTimer);
     idleTimer = null;
     if (displaySizePollTimer) clearTimeout(displaySizePollTimer);

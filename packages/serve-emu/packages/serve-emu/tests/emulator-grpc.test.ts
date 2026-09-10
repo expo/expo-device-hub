@@ -14,6 +14,7 @@ import {
   IMAGE_TRANSPORT_MMAP,
   IMG_FORMAT_RGB888,
   parseEmulatorGrpcPort,
+  GrpcReadScheduler,
 } from "../src/emulator-grpc.ts";
 import type { ExecResult } from "../src/exec.ts";
 import { encodeEmulatorImage, grpcFrame } from "./fixtures/grpc.ts";
@@ -267,6 +268,69 @@ describe("emulator gRPC discovery", () => {
   });
 });
 
+describe("gRPC receive work scheduling", () => {
+  test("splits a large chunk across turns and drains its suffix before finishing", async () => {
+    const messages: string[] = [];
+    const events: string[] = [];
+    const parser = new GrpcMessageParser(100, (body) => {
+      messages.push(body.toString());
+      events.push(body.toString());
+    });
+    const chunks: number[] = [];
+    const scheduler = new GrpcReadScheduler({
+      stream: { pause() {}, resume() {} },
+      batchBytes: 8,
+      consume(chunk) { chunks.push(chunk.length); parser.push(chunk); },
+      onError(error) { throw error; },
+    });
+    scheduler.push(Buffer.concat(["one", "two", "end"].map((s) => grpcFrame(Buffer.from(s)))));
+    expect(messages).toEqual(["one"]);
+    setImmediate(() => events.push("other I/O"));
+    await new Promise<void>((resolve) => scheduler.finish(resolve));
+    expect(messages).toEqual(["one", "two", "end"]);
+    expect(events.indexOf("other I/O")).toBeLessThan(events.indexOf("end"));
+    expect(chunks).toEqual([8, 8, 8]);
+    scheduler.close();
+  });
+
+  test("budgets multiple data events together and resumes on the next turn", async () => {
+    let paused = false;
+    let bytes = 0;
+    const scheduler = new GrpcReadScheduler({
+      stream: { pause() { paused = true; }, resume() { paused = false; } },
+      batchBytes: 4,
+      consume(chunk) { bytes += chunk.length; },
+      onError(error) { throw error; },
+    });
+    scheduler.push(Buffer.alloc(2));
+    expect(paused).toBe(false);
+    scheduler.push(Buffer.alloc(2));
+    expect(paused).toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(paused).toBe(false);
+    expect(bytes).toBe(4);
+    scheduler.close();
+  });
+
+  test("close and parse errors cancel pending receive work", async () => {
+    for (const fails of [false, true]) {
+      let bytes = 0;
+      const errors: unknown[] = [];
+      const scheduler = new GrpcReadScheduler({
+        stream: { pause() {}, resume() {} }, batchBytes: 4,
+        consume(chunk) { bytes += chunk.length; if (fails) throw new Error("bad frame"); },
+        onError(error) { errors.push(error); },
+      });
+      scheduler.push(Buffer.alloc(20));
+      scheduler.close();
+      scheduler.push(Buffer.alloc(20));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(bytes).toBe(4);
+      expect(errors).toHaveLength(fails ? 1 : 0);
+    }
+  });
+});
+
 describe("EmulatorGrpcClient HTTP/2 integration", () => {
   test("sends the discovered bearer token and decodes a screenshot", async () => {
     const imageBody = encodeEmulatorImage({
@@ -278,9 +342,11 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       timestampUs: 1n,
     });
     let authorization: string | undefined;
+    let receiveWindow: number | undefined;
     const server = http2.createServer();
     server.on("stream", (stream: ServerHttp2Stream, headers) => {
       authorization = headers.authorization as string | undefined;
+      receiveWindow = stream.session?.remoteSettings.initialWindowSize;
       stream.respond({
         ":status": 200,
         "content-type": "application/grpc",
@@ -303,6 +369,7 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
     try {
       const image = await client.getScreenshot({ format: 2 });
       expect(authorization).toBe("Bearer discovered-token");
+      expect(receiveWindow).toBe(8 * 1024 * 1024);
       expect(image).toMatchObject({ width: 2, height: 1, format: 2, seq: 1 });
       expect(image.image).toEqual(Buffer.from([1, 2, 3, 4, 5, 6]));
     } finally {

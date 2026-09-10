@@ -802,6 +802,42 @@ describe("H264Encoder validation", () => {
     await encoder.close();
   });
 
+  realFfmpegTest("signals readiness after RGB frames backpressure stdin", async () => {
+    let resolveDrain!: () => void;
+    let rejectDrain!: (error: Error) => void;
+    const drained = new Promise<void>((resolve, reject) => {
+      resolveDrain = resolve;
+      rejectDrain = reject;
+    });
+    const timeout = setTimeout(() => rejectDrain(new Error("ffmpeg did not drain")), 2_000);
+    const encoder = new H264Encoder({
+      ...valid,
+      width: 512,
+      height: 512,
+      onWritable: resolveDrain,
+      onExit: (reason) => rejectDrain(new Error(reason)),
+    });
+    const pixels = Buffer.alloc(512 * 512 * 3);
+    try {
+      expect(encoder.writable).toBe(true);
+      // Node and Bun have different pipe buffering capacities. Fill the pipe
+      // without yielding, then verify the readiness contract at its actual limit.
+      let pts = 1n;
+      while (encoder.writable && pts <= 64n) {
+        expect(encoder.write(pixels, pts++)).toBe(true);
+      }
+      expect(encoder.writable).toBe(false);
+      expect(encoder.write(pixels, pts)).toBe(false);
+      await drained;
+      expect(encoder.writable).toBe(true);
+      expect(encoder.write(pixels, pts)).toBe(true);
+    } finally {
+      clearTimeout(timeout);
+      await encoder.close();
+    }
+    expect(encoder.writable).toBe(false);
+  });
+
   realFfmpegTest(
     "accepts concatenated PNG images through image2pipe",
     async () => {

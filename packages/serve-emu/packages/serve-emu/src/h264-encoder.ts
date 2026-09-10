@@ -45,6 +45,8 @@ export type H264EncoderOpts = {
   onFrame: (frame: VideoFrame) => void;
   /** Called once when ffmpeg or its output parser fails unexpectedly. */
   onExit: (reason: string) => void;
+  /** Input backpressure cleared; a previously rejected frame can be retried. */
+  onWritable?: () => void;
 };
 
 export type QuarterTurn = 0 | 1 | 2 | 3;
@@ -810,6 +812,7 @@ export class H264Encoder {
   readonly #stderr = new FfmpegStderrTail();
   #resolveProcessDone!: () => void;
   #closed = false;
+  #waitingForDrain = false;
   #failureReported = false;
   #closeTask: Promise<void> | null = null;
 
@@ -851,6 +854,10 @@ export class H264Encoder {
     this.#proc.stdin.once("error", (error) => {
       this.#reportFailure(`ffmpeg stdin failed: ${error.message}`);
     });
+    this.#proc.stdin.on("drain", () => {
+      this.#waitingForDrain = false;
+      if (!this.#closed) this.#opts.onWritable?.();
+    });
     this.#proc.once("error", (error) => {
       this.#reportFailure(`ffmpeg failed to start: ${error.message}`);
       this.#resolveProcessDone();
@@ -864,6 +871,16 @@ export class H264Encoder {
       }
       this.#resolveProcessDone();
     });
+  }
+
+  /** Whether one more complete source image can be accepted now. */
+  get writable(): boolean {
+    return (
+      !this.#closed &&
+      !this.#waitingForDrain &&
+      this.#proc.stdin.writable &&
+      !this.#proc.stdin.writableNeedDrain
+    );
   }
 
   /** Feed one complete source image; false means backpressure rejected it. */
@@ -894,17 +911,13 @@ export class H264Encoder {
     if (typeof ptsUs !== "bigint" || ptsUs < 0n) {
       throw new RangeError("ptsUs must be a non-negative bigint");
     }
-    if (
-      this.#closed ||
-      !this.#proc.stdin.writable ||
-      this.#proc.stdin.writableNeedDrain
-    ) {
-      return false;
-    }
+    if (!this.writable) return false;
     try {
       // A false return from Writable.write means "accepted, wait for drain",
       // not "rejected", so every successful call receives a PTS entry.
-      this.#proc.stdin.write(image);
+      // Bun's child-process stdin can leave writableNeedDrain false after a
+      // backpressured write, so retain the write result until drain fires.
+      this.#waitingForDrain = !this.#proc.stdin.write(image);
       this.#parser.enqueuePts(ptsUs);
       return true;
     } catch (error) {
