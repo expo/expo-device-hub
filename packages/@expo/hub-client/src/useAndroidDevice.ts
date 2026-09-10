@@ -549,8 +549,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   } = useDeviceLocation(locationBackend);
 
   const permissionsBackend = useMemo(
-    () => (baseUrl ? androidPermissionsBackend(baseUrl, targetDevice) : null),
-    [baseUrl, targetDevice],
+    () => (active && baseUrl ? androidPermissionsBackend(baseUrl, targetDevice) : null),
+    [active, baseUrl, targetDevice],
   );
   const appPermissions = useAppPermissions({
     active,
