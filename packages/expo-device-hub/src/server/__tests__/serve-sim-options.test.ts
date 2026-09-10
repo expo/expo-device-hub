@@ -8,12 +8,15 @@ import {
 } from '../serve-sim-options';
 
 describe('standaloneServeSimOptions', () => {
-  test('maps Hub HTTP transports to serve-sim codecs', () => {
+  test('maps Hub HTTP transports with the default 60 FPS to serve-sim', () => {
+    expect(standaloneServeSimOptions(parseCliOptions([]))).toEqual({
+      streamSettings: { transport: 'http', h264Fps: 60 },
+    });
     expect(standaloneServeSimOptions(parseCliOptions(['--transport', 'mjpeg']))).toEqual({
-      streamSettings: { transport: 'http', codec: 'mjpeg' },
+      streamSettings: { transport: 'http', codec: 'mjpeg', h264Fps: 60 },
     });
     expect(standaloneServeSimOptions(parseCliOptions(['--transport', 'h264']))).toEqual({
-      streamSettings: { transport: 'http', codec: 'h264' },
+      streamSettings: { transport: 'http', codec: 'h264', h264Fps: 60 },
     });
   });
 
@@ -39,6 +42,7 @@ describe('standaloneServeSimOptions', () => {
       streamSettings: {
         transport: 'webrtc',
         codec: 'vp9',
+        h264Fps: 60,
         iceServers: [
           { urls: ['stun:one.test', 'stun:two.test'] },
           {
@@ -53,7 +57,7 @@ describe('standaloneServeSimOptions', () => {
 
   test('uses the serve-sim WebRTC codec default', () => {
     expect(standaloneServeSimOptions(parseCliOptions(['--transport', 'webrtc']))).toEqual({
-      streamSettings: { transport: 'webrtc', codec: 'h264' },
+      streamSettings: { transport: 'webrtc', codec: 'h264', h264Fps: 60 },
     });
   });
 

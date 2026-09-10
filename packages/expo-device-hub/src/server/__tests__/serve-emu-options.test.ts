@@ -21,6 +21,7 @@ describe('standaloneServeEmuOptions', () => {
     const expected = {
       streamMode: 'grpc-screenshot',
       grpcImageMode: 'rgb888',
+      maxFps: 60,
       maxSize: 0,
       streamSettings: { transport: 'websocket' },
     };
@@ -31,17 +32,20 @@ describe('standaloneServeEmuOptions', () => {
     ).toEqual(expected);
   });
 
-  test('defaults Android streaming to gRPC with RGB888', () => {
+  test('defaults Android streaming to 60 FPS using gRPC with RGB888', () => {
     expect(standaloneServeEmuOptions(parseCliOptions([]))).toEqual({
       ...DEFAULT_ANDROID_STREAM,
+      maxFps: 60,
       streamSettings: { transport: 'websocket' },
     });
     expect(standaloneServeEmuOptions(parseCliOptions(['--transport', 'mjpeg']))).toEqual({
       ...DEFAULT_ANDROID_STREAM,
+      maxFps: 60,
       streamSettings: { transport: 'websocket' },
     });
     expect(standaloneServeEmuOptions(parseCliOptions(['--transport', 'h264']))).toEqual({
       ...DEFAULT_ANDROID_STREAM,
+      maxFps: 60,
       streamSettings: { transport: 'websocket' },
     });
   });
@@ -82,6 +86,7 @@ describe('standaloneServeEmuOptions', () => {
     ).toEqual({
       streamMode: 'scrcpy',
       grpcImageMode: 'png',
+      maxFps: 60,
       streamSettings: { transport: 'websocket' },
     });
   });
@@ -108,6 +113,7 @@ describe('standaloneServeEmuOptions', () => {
       ),
     ).toEqual({
       ...DEFAULT_ANDROID_STREAM,
+      maxFps: 60,
       streamSettings: {
         transport: 'webrtc',
         codec: 'h264',
@@ -127,6 +133,7 @@ describe('standaloneServeEmuOptions', () => {
   test('uses serve-emu WebRTC ICE defaults', () => {
     expect(standaloneServeEmuOptions(parseCliOptions(['--transport', 'webrtc']))).toEqual({
       ...DEFAULT_ANDROID_STREAM,
+      maxFps: 60,
       streamSettings: {
         transport: 'webrtc',
         codec: 'h264',
@@ -166,10 +173,12 @@ describe('standaloneServeEmuOptions', () => {
   test('uses the defaults when loaded as an Expo CLI plugin without a payload', () => {
     expect(readStandaloneServeEmuOptions(undefined)).toEqual({
       ...DEFAULT_ANDROID_STREAM,
+      maxFps: 60,
       streamSettings: { transport: 'websocket' },
     });
     expect(readStandaloneServeEmuOptions('not json')).toEqual({
       ...DEFAULT_ANDROID_STREAM,
+      maxFps: 60,
       streamSettings: { transport: 'websocket' },
     });
   });
