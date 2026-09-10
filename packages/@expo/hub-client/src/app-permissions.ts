@@ -23,7 +23,7 @@ export function humanize(name: string): string {
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
-function errorMessage(payload: unknown, fallback: string): string {
+export function errorMessage(payload: unknown, fallback: string): string {
   const error = asRecord(payload)?.error;
   return typeof error === "string" && error ? error : fallback;
 }
