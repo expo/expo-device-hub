@@ -55,8 +55,7 @@ function unit(value: number): number {
   return Math.min(Math.max(value, 0), 1);
 }
 
-/** The visible part of a rectangle as screen fractions, or null when nothing of it is on screen. */
-function normalizedFrame(
+function visibleFrame(
   left: number,
   top: number,
   right: number,
@@ -96,9 +95,9 @@ function androidBounds(value: unknown): AndroidBounds | null {
 }
 
 /**
- * Parse serve-emu `GET /api/accessibility`: `{ok, capturedAt, nodes[{id, text,
- * contentDescription, resourceId, className, clickable, enabled, bounds{left, top,
- * right, bottom}}]}` in device pixels, or `{ok: false, error}`.
+ * Parse serve-emu `GET /api/accessibility`: `{ok, capturedAt, screen{width, height},
+ * nodes[{id, text, contentDescription, resourceId, className, clickable, enabled,
+ * bounds{left, top, right, bottom}}]}` in device pixels, or `{ok: false, error}`.
  */
 export function parseAndroidAccessibility(value: unknown): AccessibilityRead {
   const body = asRecord(value);
@@ -106,30 +105,29 @@ export function parseAndroidAccessibility(value: unknown): AccessibilityRead {
   if (body.ok === false) return { ok: false, error: failureText(body.error) || MALFORMED };
 
   const capturedAt = Date.parse(str(body.capturedAt));
-  if (body.ok !== true || !Array.isArray(body.nodes) || !Number.isFinite(capturedAt)) {
+  const screen = asRecord(body.screen);
+  const width = screen ? finiteNumber(screen.width) : null;
+  const height = screen ? finiteNumber(screen.height) : null;
+  if (
+    body.ok !== true ||
+    !Array.isArray(body.nodes) ||
+    !Number.isFinite(capturedAt) ||
+    width === null ||
+    height === null ||
+    width <= 0 ||
+    height <= 0
+  ) {
     return { ok: false, error: MALFORMED };
   }
 
-  const entries: { raw: Record<string, unknown>; bounds: AndroidBounds }[] = [];
-  // The snapshot carries no screen size, but uiautomator's root node spans the
-  // display, so the widest bounds are the extent to normalize against.
-  let width = 0;
-  let height = 0;
+  const nodes: AccessibilityNode[] = [];
   for (const node of body.nodes) {
     const raw = asRecord(node);
     const bounds = raw ? androidBounds(raw.bounds) : null;
     if (!raw || !bounds) continue;
-    entries.push({ raw, bounds });
-    width = Math.max(width, bounds.right);
-    height = Math.max(height, bounds.bottom);
-  }
-  if (width <= 0 || height <= 0) return { ok: true, snapshot: { capturedAt, nodes: [] } };
-
-  const nodes: AccessibilityNode[] = [];
-  for (const { raw, bounds } of entries) {
     const label =
       str(raw.contentDescription) || str(raw.text) || tailAfter(str(raw.resourceId), '/');
-    const frame = normalizedFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, width, height);
+    const frame = visibleFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, width, height);
     if (!label || !frame) continue;
     nodes.push({
       id: str(raw.id),
@@ -175,7 +173,7 @@ export function parseIosAccessibility(value: unknown, capturedAt: number): Acces
     const frameHeight = finiteNumber(frame.height);
     if (x === null || y === null || frameWidth === null || frameHeight === null) continue;
     const label = str(raw.label) || str(raw.value);
-    const nodeFrame = normalizedFrame(x, y, x + frameWidth, y + frameHeight, width, height);
+    const nodeFrame = visibleFrame(x, y, x + frameWidth, y + frameHeight, width, height);
     if (!label || !nodeFrame) continue;
     const role = str(raw.role) || str(raw.type);
     nodes.push({

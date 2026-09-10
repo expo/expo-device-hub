@@ -33,14 +33,8 @@ function androidNode(overrides: Record<string, unknown>) {
   };
 }
 
-const ANDROID_ROOT = androidNode({
-  id: 'root',
-  className: 'android.widget.FrameLayout',
-  bounds: { left: 0, top: 0, right: 1080, bottom: 2400 },
-});
-
-function androidBody(nodes: unknown) {
-  return { ok: true, capturedAt: CAPTURED_AT, nodes };
+function androidBody(nodes: unknown, screen: unknown = { width: 1080, height: 2400 }) {
+  return { ok: true, capturedAt: CAPTURED_AT, screen, nodes };
 }
 
 function iosBody(elements: readonly unknown[], errors?: readonly string[]) {
@@ -62,10 +56,9 @@ function iosElement(overrides: Record<string, unknown>) {
 }
 
 describe('parseAndroidAccessibility', () => {
-  test('normalizes bounds against the widest node and reads capturedAt', () => {
+  test('normalizes bounds against the reported screen and reads capturedAt', () => {
     const read = parseAndroidAccessibility(
       androidBody([
-        ANDROID_ROOT,
         androidNode({ text: 'Sign in', bounds: { left: 108, top: 240, right: 540, bottom: 480 } }),
       ]),
     );
@@ -78,7 +71,6 @@ describe('parseAndroidAccessibility', () => {
   test('prefers contentDescription, then text, then the resourceId tail', () => {
     const read = parseAndroidAccessibility(
       androidBody([
-        ANDROID_ROOT,
         androidNode({ contentDescription: 'Close', text: 'X', resourceId: 'com.app:id/close' }),
         androidNode({ text: 'Body copy', resourceId: 'com.app:id/body' }),
         androidNode({ resourceId: 'com.app:id/submit_button' }),
@@ -93,7 +85,7 @@ describe('parseAndroidAccessibility', () => {
 
   test('drops nodes with no name and nodes with unusable bounds', () => {
     const read = parseAndroidAccessibility(
-      androidBody([ANDROID_ROOT, androidNode({ text: 'Kept' }), androidNode({ bounds: null })]),
+      androidBody([androidNode({ text: 'Kept' }), androidNode({ bounds: null })]),
     );
     expect(snapshotOf(read).nodes.map((node) => node.label)).toEqual(['Kept']);
   });
@@ -101,7 +93,6 @@ describe('parseAndroidAccessibility', () => {
   test('reads the class-name tail as the role and carries clickable and enabled', () => {
     const read = parseAndroidAccessibility(
       androidBody([
-        ANDROID_ROOT,
         androidNode({ text: 'Tap me', className: 'android.widget.Button', clickable: true }),
         androidNode({ text: 'Dimmed', enabled: false }),
       ]),
@@ -111,7 +102,13 @@ describe('parseAndroidAccessibility', () => {
     expect(nodes[1]).toMatchObject({ role: 'TextView', clickable: false, enabled: false });
   });
 
-  test('returns an empty snapshot when the dump has no usable extent', () => {
+  test('keeps the screen as the extent when the dump does not span the display', () => {
+    const dialog = androidNode({ text: 'Dialog', bounds: { left: 0, top: 0, right: 540, bottom: 1200 } });
+    const nodes = snapshotOf(parseAndroidAccessibility(androidBody([dialog]))).nodes;
+    expect(nodes[0]?.frame).toEqual({ x: 0, y: 0, width: 0.5, height: 0.5 });
+  });
+
+  test('returns an empty snapshot for an empty dump', () => {
     expect(snapshotOf(parseAndroidAccessibility(androidBody([]))).nodes).toEqual([]);
   });
 
@@ -137,7 +134,6 @@ describe('parseAndroidAccessibility', () => {
     const nodes = snapshotOf(
       parseAndroidAccessibility(
         androidBody([
-          ANDROID_ROOT,
           androidNode({ text: 'Scrolled out', bounds: { left: -40, top: -20, right: 200, bottom: 100 } }),
         ]),
       ),
@@ -148,7 +144,6 @@ describe('parseAndroidAccessibility', () => {
   test('drops nodes with no visible area', () => {
     const read = parseAndroidAccessibility(
       androidBody([
-        ANDROID_ROOT,
         androidNode({ text: 'Collapsed', bounds: { left: 0, top: 300, right: 1080, bottom: 300 } }),
         androidNode({ text: 'Kept' }),
       ]),
@@ -157,7 +152,16 @@ describe('parseAndroidAccessibility', () => {
   });
 
   test('rejects a malformed body', () => {
-    for (const body of [null, 'nope', {}, { ok: true, nodes: [] }, androidBody('x')]) {
+    for (const body of [
+      null,
+      'nope',
+      {},
+      { ok: true, nodes: [] },
+      { ok: true, capturedAt: CAPTURED_AT, nodes: [] },
+      androidBody([], { width: 1080 }),
+      androidBody([], { width: 0, height: 2400 }),
+      androidBody('x'),
+    ]) {
       expect(parseAndroidAccessibility(body)).toEqual({
         ok: false,
         error: 'Malformed accessibility response',
@@ -265,7 +269,7 @@ describe('loadAndroidAccessibility', () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const fetchImpl: SseFetch = (url, init) => {
       calls.push({ url, init });
-      return Promise.resolve(Response.json(androidBody([ANDROID_ROOT, androidNode({ text: 'Hi' })])));
+      return Promise.resolve(Response.json(androidBody([androidNode({ text: 'Hi' })])));
     };
     const read = await loadAndroidAccessibility(
       'http://emu/api/accessibility?device=emulator-5554',
