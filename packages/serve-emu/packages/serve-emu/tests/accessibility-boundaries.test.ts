@@ -3,6 +3,8 @@ import {
   findAccessibilityNode,
   parseAccessibilitySelector,
   parseAccessibilityXml,
+  screenForDump,
+  snapshotFromDump,
   type AccessibilityNode,
 } from "../src/accessibility.ts";
 
@@ -146,6 +148,29 @@ describe("uiautomator XML parsing", () => {
         bounds: { left: 10, top: 20, right: 210, bottom: 80 },
       },
     ]);
+  });
+
+  test("swaps the natural display size for a dump taken in landscape", () => {
+    const natural = { width: 1080, height: 2400 };
+    expect(screenForDump(`<hierarchy rotation="0"><node bounds="[0,0][1080,2400]" /></hierarchy>`, natural)).toEqual(natural);
+    expect(screenForDump(`<hierarchy rotation="1"><node bounds="[0,0][2400,1080]" /></hierarchy>`, natural)).toEqual({ width: 2400, height: 1080 });
+    expect(screenForDump(`<hierarchy rotation="3"></hierarchy>`, natural)).toEqual({ width: 2400, height: 1080 });
+    expect(screenForDump(`<hierarchy></hierarchy>`, natural)).toEqual(natural);
+  });
+
+  test("falls back to the dump's own extent when the display size is unavailable", () => {
+    const xml = `<hierarchy rotation="0">
+      <node bounds="[0,0][1080,2400]" />
+      <node text="row" bounds="[0,100][540,200]" />
+    </hierarchy>`;
+    const at = "2026-01-01T00:00:00.000Z";
+    expect(snapshotFromDump(xml, { width: 720, height: 1600 }, at)).toMatchObject({
+      ok: true,
+      capturedAt: at,
+      screen: { width: 720, height: 1600 },
+    });
+    expect(snapshotFromDump(xml, null, at).screen).toEqual({ width: 1080, height: 2400 });
+    expect(snapshotFromDump(xml, null, at).nodes).toHaveLength(2);
   });
 
   test("supplies empty defaults and stable IDs for valid nodes only", () => {

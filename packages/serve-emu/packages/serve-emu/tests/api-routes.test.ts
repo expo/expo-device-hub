@@ -317,6 +317,7 @@ function fakeDependencies(
     getAccessibility: async () => ({
       ok: true,
       capturedAt: "2026-01-01T00:00:00.000Z",
+      screen: { width: 1080, height: 2400 },
       nodes: [],
     }),
     tapAccessibility: async () => ({
