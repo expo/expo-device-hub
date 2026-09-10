@@ -1,6 +1,7 @@
 import { deviceApiUrl } from "./android-api-url";
 import {
   asRecord,
+  errorMessage,
   humanize,
   type PermissionsBackend,
   type PermissionsFetch,
@@ -51,8 +52,7 @@ export function androidPermissionsBackend(
     });
     if (response.ok) return;
     const payload: unknown = await response.json().catch(() => null);
-    const error = asRecord(payload)?.error;
-    throw new Error(typeof error === "string" && error ? error : "Permission update failed");
+    throw new Error(errorMessage(payload, "Permission update failed"));
   };
   return {
     list,

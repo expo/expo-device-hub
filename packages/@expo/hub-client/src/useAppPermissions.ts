@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 
 import {
   applyPermissionsRead,
@@ -37,14 +37,18 @@ export function useAppPermissions({ active, appId, backend }: UseAppPermissionsO
     [active, backend, appId],
   );
 
-  useEffect(() => {
+  // Reset during render, not in an effect: the section's own effect reads the
+  // new app first, and an effect here would run after it and drop that result.
+  const [seenTarget, setSeenTarget] = useState(target);
+  if (seenTarget !== target) {
+    setSeenTarget(target);
     sessionRef.current++;
     trackerRef.current.reset();
     versionsRef.current = {};
     setPermissions(null);
     setPermissionsPending(NO_PENDING_PERMISSION_WRITES);
     setPermissionsError(null);
-  }, [target]);
+  }
 
   const request = useCallback(
     (ownIds: readonly string[], run: ListRequest): Promise<void> => {
