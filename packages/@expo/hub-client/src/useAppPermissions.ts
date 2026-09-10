@@ -5,24 +5,19 @@ import {
   NO_PENDING_PERMISSION_WRITES,
   type PermissionsBackend,
   type PermissionWriteVersions,
-  stalePermissionIds,
+  heldPermissionIds,
 } from "./app-permissions";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
 import { type AppPermission, type AppPermissionAction } from "./types";
 
 interface UseAppPermissionsOptions {
   active: boolean;
-  /** Foreground app id. A change discards in-flight results and clears the list. */
   appId: string | null;
   backend: PermissionsBackend | null;
 }
 
 type ListRequest = (backend: PermissionsBackend, appId: string) => Promise<AppPermission[]>;
 
-/**
- * Permissions of the foreground app. Nothing reads on a timer: the section
- * calls `refreshPermissions` when it opens, and every write reads the list back.
- */
 export function useAppPermissions({ active, backend, appId }: UseAppPermissionsOptions) {
   const [permissions, setPermissions] = useState<readonly AppPermission[] | null>(null);
   const [permissionsPending, setPermissionsPending] = useState<ReadonlySet<string>>(
@@ -59,7 +54,7 @@ export function useAppPermissions({ active, backend, appId }: UseAppPermissionsO
       return run(target.backend, target.appId).then(
         (next) => {
           if (target !== targetRef.current) return;
-          const held = stalePermissionIds(
+          const held = heldPermissionIds(
             tracker.pending,
             versionsAtStart,
             versionsRef.current,

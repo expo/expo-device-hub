@@ -1390,8 +1390,16 @@ test('shows the Permissions section only when the client can change permissions'
   expect(section.match(/>Grant</g)).toHaveLength(2);
   expect(section.match(/>Revoke</g)).toHaveLength(2);
   expect(section).toContain('>Reset all<');
-  // Grant on the granted row, both buttons of the pending row, and Reset all during a write.
-  expect(section.match(/disabled=""/g)).toHaveLength(4);
+  const buttons = [...section.matchAll(/<button[^>]*><span[^>]*>(Grant|Revoke|Reset all)<\/span>/g)].map(
+    (match) => `${match[1]}:${match[0].includes('disabled=""') ? 'disabled' : 'enabled'}`,
+  );
+  expect(buttons).toEqual([
+    'Grant:disabled',
+    'Revoke:enabled',
+    'Grant:disabled',
+    'Revoke:disabled',
+    'Reset all:disabled',
+  ]);
 });
 
 test('keeps the frame option disabled with an explanation for unsupported devices', () => {

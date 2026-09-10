@@ -3,7 +3,7 @@ import {
   applyPermissionsRead,
   humanize,
   readPermissions,
-  stalePermissionIds,
+  heldPermissionIds,
 } from "../app-permissions";
 import { type AppPermission } from "../types";
 
@@ -21,9 +21,9 @@ describe("humanize", () => {
   });
 });
 
-describe("stalePermissionIds", () => {
+describe("heldPermissionIds", () => {
   test("holds pending ids and ids written during the request, except its own", () => {
-    const held = stalePermissionIds(new Set(["a", "own"]), { b: 1 }, { b: 2, c: 1 }, ["own"]);
+    const held = heldPermissionIds(new Set(["a", "own"]), { b: 1 }, { b: 2, c: 1 }, ["own"]);
     expect([...held].sort()).toEqual(["a", "b", "c"]);
   });
 });

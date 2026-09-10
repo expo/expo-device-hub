@@ -60,11 +60,7 @@ export async function listPermissions(
   return { ok: true, packageName: pkg, permissions: parseRuntimePermissions(output) };
 }
 
-/**
- * Per-package reset. `pm reset-permissions` is device-wide, so each runtime
- * permission returns to its manifest default (granted only when Android granted
- * it by default), user-decision flags are cleared, and app ops are reset.
- */
+/** Per package: `pm reset-permissions` is device-wide. */
 export async function resetPermissions(
   serial: string,
   packageNameValue: string,
