@@ -434,6 +434,7 @@ test('shows the Location section between Camera and Events, with Clear only wher
     capabilities: { ...android.capabilities, camera: true, location: {} as const },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  expect(html.match(/<section aria-label="Location"/g)).toHaveLength(1);
 
   const locationIndex = html.indexOf('<section aria-label="Location"');
   expect(locationIndex).toBeGreaterThan(html.indexOf('<section aria-label="Camera"'));

@@ -132,7 +132,6 @@ export function LogSidebar({
         )}
         {client?.capabilities.camera && <CameraSection client={client} />}
         {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
-        {client?.capabilities.location && <LocationSection client={client} />}
         {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
         {client?.capabilities.events && <EventsSection client={client} />}
         <LogsSection client={client} />
