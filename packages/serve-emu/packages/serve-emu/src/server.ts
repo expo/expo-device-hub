@@ -49,9 +49,11 @@ import {
   installApk,
   launchApp,
   revokePermission,
+  packageName,
 } from "./app-management.ts";
 import { listPermissions, resetPermissions } from "./app-permissions.ts";
 import { getForegroundApp } from "./app-info.ts";
+import { readAppIcon } from "./apk-icon.ts";
 import {
   terminalTransitionAllowed,
   type SessionStatus,
@@ -3103,6 +3105,23 @@ export async function startServer(
         return appJsonEndpoint(requestContext, req, (payload) =>
           resetPermissions(requestContext.serial, String(payload.packageName ?? "")),
         );
+      }
+
+      if (url.pathname === "/api/apps/icon") {
+        if (req.method !== "GET")
+          return new Response("method not allowed", { status: 405 });
+        try {
+          const pkg = packageName(url.searchParams.get("packageName"));
+          return Response.json({
+            ok: true,
+            packageName: pkg,
+            icon: await runForContext(requestContext, (context) =>
+              readAppIcon(context.serial, pkg),
+            ),
+          });
+        } catch (err) {
+          return errorResponse(err);
+        }
       }
 
       if (url.pathname === "/api/location") {
