@@ -1,5 +1,13 @@
 import { type DeviceStreamEncoderSettings } from './types';
 
+export const DEVICE_STREAM_SETTING_BOUNDS = {
+  mjpegFps: [1, 120],
+  mjpegQuality: [0.05, 1],
+  maxDimension: [0, 4096],
+  h264Bitrate: [100_000, 50_000_000],
+  h264Fps: [1, 120],
+} as const satisfies Record<keyof DeviceStreamEncoderSettings, readonly [number, number]>;
+
 export const DEFAULT_DEVICE_STREAM_SETTINGS: DeviceStreamEncoderSettings = {
   mjpegFps: 60,
   mjpegQuality: 0.7,
@@ -45,10 +53,30 @@ export function normalizeDeviceStreamSettings(
       ? (value as Record<string, unknown>)
       : {};
   return {
-    mjpegFps: integerInRange(settings.mjpegFps, fallback.mjpegFps, 1, 120),
-    mjpegQuality: numberInRange(settings.mjpegQuality, fallback.mjpegQuality, 0.05, 1),
-    maxDimension: integerInRange(settings.maxDimension, fallback.maxDimension, 0, 4096),
-    h264Bitrate: integerInRange(settings.h264Bitrate, fallback.h264Bitrate, 100_000, 50_000_000),
-    h264Fps: integerInRange(settings.h264Fps, fallback.h264Fps, 1, 120),
+    mjpegFps: integerInRange(
+      settings.mjpegFps,
+      fallback.mjpegFps,
+      ...DEVICE_STREAM_SETTING_BOUNDS.mjpegFps,
+    ),
+    mjpegQuality: numberInRange(
+      settings.mjpegQuality,
+      fallback.mjpegQuality,
+      ...DEVICE_STREAM_SETTING_BOUNDS.mjpegQuality,
+    ),
+    maxDimension: integerInRange(
+      settings.maxDimension,
+      fallback.maxDimension,
+      ...DEVICE_STREAM_SETTING_BOUNDS.maxDimension,
+    ),
+    h264Bitrate: integerInRange(
+      settings.h264Bitrate,
+      fallback.h264Bitrate,
+      ...DEVICE_STREAM_SETTING_BOUNDS.h264Bitrate,
+    ),
+    h264Fps: integerInRange(
+      settings.h264Fps,
+      fallback.h264Fps,
+      ...DEVICE_STREAM_SETTING_BOUNDS.h264Fps,
+    ),
   };
 }

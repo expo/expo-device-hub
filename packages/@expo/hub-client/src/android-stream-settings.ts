@@ -1,5 +1,6 @@
 import {
   DEFAULT_DEVICE_STREAM_SETTINGS,
+  DEVICE_STREAM_SETTING_BOUNDS,
   normalizeDeviceStreamSettings,
 } from './stream-settings';
 import { type DeviceStreamEncoderSettings } from './types';
@@ -13,11 +14,8 @@ export function androidStreamSettingsPatch(
   patch: Partial<DeviceStreamEncoderSettings>,
 ): AndroidStreamSettingsPatch | null {
   const result: AndroidStreamSettingsPatch = {};
-  for (const [key, min, max] of [
-    ['maxDimension', 0, 4096],
-    ['h264Fps', 1, 120],
-    ['h264Bitrate', 100_000, 50_000_000],
-  ] as const) {
+  for (const key of ['maxDimension', 'h264Fps', 'h264Bitrate'] as const) {
+    const [min, max] = DEVICE_STREAM_SETTING_BOUNDS[key];
     const value = patch[key];
     if (value === undefined) continue;
     if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
@@ -35,11 +33,12 @@ export function parseAndroidStreamSettings(
 ): DeviceStreamEncoderSettings | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const maxDimension = (value as Record<string, unknown>).maxDimension;
+  const [min, max] = DEVICE_STREAM_SETTING_BOUNDS.maxDimension;
   if (
     typeof maxDimension !== 'number' ||
     !Number.isInteger(maxDimension) ||
-    maxDimension < 0 ||
-    maxDimension > 4096
+    maxDimension < min ||
+    maxDimension > max
   ) {
     return null;
   }

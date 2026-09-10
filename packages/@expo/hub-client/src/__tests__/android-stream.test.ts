@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { DEVICE_STREAM_SETTING_BOUNDS } from '../stream-settings';
+
 import {
   androidStreamSettingsPatch,
   parseAndroidStreamSettings,
@@ -95,10 +97,8 @@ describe('serve-emu runtime stream settings contract', () => {
   });
 
   test('validates FPS and bitrate bounds without sending partial invalid updates', () => {
-    for (const [key, min, max] of [
-      ['h264Fps', 1, 120],
-      ['h264Bitrate', 100_000, 50_000_000],
-    ] as const) {
+    for (const key of ['h264Fps', 'h264Bitrate'] as const) {
+      const [min, max] = DEVICE_STREAM_SETTING_BOUNDS[key];
       for (const value of [min, max]) {
         expect(androidStreamSettingsPatch({ [key]: value })).toEqual({ [key]: value });
       }
