@@ -21,7 +21,7 @@ export type AndroidStreamSource = (typeof ANDROID_STREAM_SOURCES)[number];
 export const DEFAULT_ANDROID_STREAM_SOURCE: AndroidStreamSource = 'grpc-screenshot';
 export const GRPC_IMAGE_MODES = ['png', 'mmap', 'rgb888'] as const;
 export type GrpcImageMode = (typeof GRPC_IMAGE_MODES)[number];
-export const DEFAULT_GRPC_IMAGE_MODE: GrpcImageMode = 'mmap';
+export const DEFAULT_GRPC_IMAGE_MODE: GrpcImageMode = 'rgb888';
 
 export const HELP = `expo-device-hub — manage iOS simulators and Android emulators from the browser
 
