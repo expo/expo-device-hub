@@ -1,7 +1,25 @@
 import { deviceApiUrl } from './android-api-url';
+import { asRecord } from './app-permissions';
 import { type ForegroundApp } from './types';
 
 type FetchImpl = typeof fetch;
+
+/** Mirrors `APP_ICON_MIME_TYPES` in serve-emu's API contracts. */
+const APP_ICON_MIME_TYPES = ['image/png', 'image/webp', 'image/jpeg', 'image/gif'];
+
+export function parseAndroidAppIcon(payload: unknown): string | null {
+  const body = asRecord(payload);
+  if (!body || body.ok !== true) throw new Error('app icon response is invalid');
+  if (body.icon === null) return null;
+  const icon = asRecord(body.icon);
+  if (!icon) throw new Error('app icon must be an object');
+  const { mimeType, data } = icon;
+  if (typeof mimeType !== 'string' || !APP_ICON_MIME_TYPES.includes(mimeType)) {
+    throw new Error('app icon mimeType is invalid');
+  }
+  if (typeof data !== 'string' || !data) throw new Error('app icon data is invalid');
+  return `data:${mimeType};base64,${data}`;
+}
 
 export async function fetchAndroidAppIcon(
   baseUrl: string,
@@ -13,13 +31,7 @@ export async function fetchAndroidAppIcon(
   url.searchParams.set('packageName', packageName);
   const res = await fetchImpl(url.toString(), { cache: 'no-store' });
   if (!res.ok) throw new Error(`app icon request failed with ${res.status}`);
-  const data = (await res.json()) as {
-    ok?: boolean;
-    icon?: { mimeType?: string; data?: string } | null;
-  };
-  const icon = data.ok ? data.icon : null;
-  if (!icon?.mimeType || !icon.data) return null;
-  return `data:${icon.mimeType};base64,${icon.data}`;
+  return parseAndroidAppIcon(await res.json());
 }
 
 const iconCache = new Map<string, Promise<string | null>>();
