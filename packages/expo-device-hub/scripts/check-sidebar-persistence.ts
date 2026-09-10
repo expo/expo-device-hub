@@ -1,18 +1,31 @@
 /**
- * Browser regression against the exported dashboard, with an empty device host.
+ * Browser regressions for the exported dashboard and populated inspector panes.
  * Run build:web first, then `bun run test:sidebar` (install Chromium once with
  * `bunx playwright install chromium`). Set SIDEBAR_VIDEO_DIR to record the run.
  */
 import assert from 'node:assert/strict';
 import { resolve, sep } from 'node:path';
-import { chromium, type Browser } from 'playwright';
+import { chromium, type Browser, type BrowserContext } from 'playwright';
 
 const root = resolve(import.meta.dir, '../dist/client');
 assert(await Bun.file(resolve(root, 'index.html')).exists(), 'Run build:web first');
+const fixture = await Bun.build({
+  entrypoints: [resolve(import.meta.dir, 'fixtures/sidebar-logs.tsx')],
+  target: 'browser',
+  define: { 'process.env.NODE_ENV': JSON.stringify('production') },
+});
+assert(fixture.success, String(fixture.logs));
 const server = Bun.serve({
+  hostname: '127.0.0.1',
   port: 0,
   async fetch(request) {
     const pathname = decodeURIComponent(new URL(request.url).pathname);
+    if (pathname === '/sidebar-logs.js') return new Response(fixture.outputs[0]);
+    if (pathname === '/sidebar-logs') {
+      return new Response('<html><body style="margin:0"><div id="root"></div><script type="module" src="/sidebar-logs.js"></script></body></html>', {
+        headers: { 'Content-Type': 'text/html' },
+      });
+    }
     const path = resolve(root, `.${pathname === '/' ? '/index.html' : pathname}`);
     if (!path.startsWith(root + sep)) return new Response(null, { status: 403 });
     const file = Bun.file(path);
@@ -29,7 +42,7 @@ let browser: Browser | undefined;
 try {
   browser = await chromium.launch();
   for (const reducedMotion of ['no-preference', 'reduce'] as const) {
-    const context = await browser.newContext({
+    const context: BrowserContext = await browser.newContext({
       viewport: { width: 1280, height: 440 },
       reducedMotion,
       recordVideo: process.env.SIDEBAR_VIDEO_DIR
@@ -111,6 +124,30 @@ try {
     await context.close();
     if (video) console.log(`Video: ${await video.path()}`);
     console.log(`PASS: sidebar persistence (${reducedMotion})`);
+
+    // Actual inspector sections with static populated buffers: Activity must not
+    // mistake effect reactivation for new data and jump their panes to the tail.
+    const populated = await browser.newPage({ reducedMotion, viewport: { width: 1200, height: 800 } });
+    await populated.goto(new URL('/sidebar-logs', server.url).toString());
+    await populated.getByRole('button', { name: 'Events', exact: true }).click();
+    await populated.getByRole('button', { name: 'Logs', exact: true }).click();
+    await populated.waitForTimeout(300);
+    const panes = populated.locator('.hub-log-scroll');
+    assert.equal(await panes.count(), 2);
+    await panes.evaluateAll((elements) => elements.forEach((el) => { el.scrollTop = 100; }));
+    assert.deepEqual(await panes.evaluateAll((elements) => elements.map((el) => el.scrollTop)), [100, 100]);
+    await populated.getByRole('button', { name: 'Toggle inspector' }).click();
+    await populated.waitForTimeout(300);
+    await populated.getByRole('button', { name: 'Toggle inspector' }).click();
+    await populated.waitForTimeout(300);
+    assert.deepEqual(await panes.evaluateAll((elements) => elements.map((el) => el.scrollTop)), [100, 100],
+      'Populated Events and Logs must preserve their own scroll positions');
+    await populated.getByRole('button', { name: 'Append log' }).click();
+    await populated.waitForTimeout(100);
+    assert(await panes.last().evaluate((el) => el.scrollTop === el.scrollHeight - el.clientHeight),
+      'New log entries should still scroll to the tail');
+    await populated.close();
+    console.log(`PASS: populated inspector persistence (${reducedMotion})`);
   }
 } finally {
   for (const heartbeat of heartbeats) clearInterval(heartbeat);

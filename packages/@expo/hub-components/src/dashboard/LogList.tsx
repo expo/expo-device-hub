@@ -50,11 +50,16 @@ export function LogList({
   emptyMessage?: string;
 }) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const previousLogs = useRef<ReadonlyArray<DeviceLog> | null>(null);
 
   // New lines arrive at the bottom; while attached we follow the tail so the
   // newest line stays in view. The stream stops on Detach (lines are kept), so
   // detaching is how you pause to scroll back through history.
   useEffect(() => {
+    // Activity reactivates effects when the inspector reopens. Only new data
+    // should scroll to the tail; unchanged rows must retain the user's position.
+    if (previousLogs.current === logs) return;
+    previousLogs.current = logs;
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [logs]);
