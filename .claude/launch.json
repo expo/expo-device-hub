@@ -18,7 +18,7 @@
     {
       "name": "serve-sim",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["packages/serve-sim/packages/serve-sim/dist/serve-sim.js", "--port", "3200"],
+      "runtimeArgs": ["packages/serve-sim/dist/serve-sim.js", "--port", "3200"],
       "port": 3200,
       "autoPort": false
     },

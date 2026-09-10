@@ -1,0 +1,88 @@
+name: serve-sim tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      ci_ref:
+        type: string
+        description: PR number or main CI run ID, used to cancel superseded runs
+        default: manual
+
+# Cancel superseded runs so pushing twice to the same PR does not consume two
+# macOS workers in parallel.
+concurrency:
+  cancel_in_progress: true
+  group: expo-device-hub-${{ workflow.filename }}-${{ inputs.ci_ref }}
+
+defaults:
+  tools:
+    node: 24
+    bun: 1.3.13
+
+jobs:
+  sim-test:
+    name: Build and test serve-sim
+    runs_on: macos-medium
+    image: latest
+    steps:
+      - uses: eas/checkout
+
+      - name: Install monorepo dependencies
+        run: bun install --frozen-lockfile
+        working_directory: ../..
+
+      # The permissions e2e test drives the built CLI (dist/serve-sim.js), so
+      # build it before running the test suite.
+      - name: Build serve-sim
+        run: bun run build
+
+      # Packed before the tests run so the tarball exists even when they fail:
+      # a build is often worth trying on a device precisely because the tests
+      # did not settle the question.
+      - name: Create npm package
+        id: pack
+        run: |
+          mkdir -p release
+          npm pack --pack-destination release --json > /tmp/npm-pack.json
+          TARBALL=$(node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename' < /tmp/npm-pack.json)
+          mv "release/$TARBALL" release/serve-sim.tgz
+          set-output artifact_path "$PWD/release/serve-sim.tgz"
+
+      - name: Upload npm package
+        uses: eas/upload_artifact
+        with:
+          type: other
+          name: serve-sim-npm-package
+          path: ${{ steps.pack.outputs.artifact_path }}
+
+      - name: Start iOS Simulator
+        uses: eas/start_ios_simulator
+
+      - name: Run serve-sim tests
+        run: |
+          run_tests() {
+            bun run test
+          }
+
+          if run_tests; then
+            exit 0
+          fi
+
+          # The simulator-backed e2e tests share one simulator. Reboot and retry
+          # once to clear transient stuck input or native-process failures.
+          UDID=$(xcrun simctl list devices booted -j | node -e '
+            const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+            for (const devices of Object.values(data.devices)) {
+              for (const device of devices) {
+                console.log(device.udid);
+                process.exit(0);
+              }
+            }
+            process.exit(1);
+          ')
+          echo "Test run failed; rebooting $UDID and retrying once"
+          xcrun simctl shutdown "$UDID" || true
+          sleep 3
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b || true
+          run_tests

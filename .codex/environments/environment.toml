@@ -23,7 +23,7 @@ command = "bun run --cwd packages/serve-emu/packages/serve-emu start"
 [[actions]]
 name = "Start serve-sim"
 icon = "run"
-command = "node packages/serve-sim/packages/serve-sim/dist/serve-sim.js --port 3200"
+command = "node packages/serve-sim/dist/serve-sim.js --port 3200"
 
 [[actions]]
 name = "Start hub CLI (Node)"

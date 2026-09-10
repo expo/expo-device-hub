@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -42,8 +40,8 @@ jobs:
       - name: Build packages (excluding serve-sim)
         run: bun run build --filter='!@expo/serve-sim' --only
 
-      - name: Typecheck (excluding serve-sim)
-        run: bunx turbo run typecheck --filter='!@expo/serve-sim' --only
+      - name: Typecheck
+        run: bunx turbo run typecheck --only
 
       - name: Test
         run: bun run test
@@ -55,3 +53,38 @@ jobs:
         run: |
           bun run --filter serve-emu docs:check
           bun run --filter serve-emu test:package
+
+  serve-sim:
+    name: serve-sim (EAS)
+    # Fork PRs do not receive the Expo token. Their lint/typecheck still run above.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+          package-manager-cache: false
+
+      - name: Build and test serve-sim with EAS
+        working-directory: packages/serve-sim
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN }}
+          CI_REF: ${{ github.event.pull_request.number || github.run_id }}
+        # Upload this checkout, including serve-emu, instead of resolving --ref
+        # against the repository currently linked to the serve-sim EAS project.
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo "::error::Expose EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN to this repository to run serve-sim CI."
+            exit 1
+          fi
+          npx --yes eas-cli@23.2.0 workflow:run .eas/workflows/sim-test.yml \
+            --input "ci_ref=$CI_REF" \
+            --wait \
+            --non-interactive

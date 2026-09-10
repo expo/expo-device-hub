@@ -1,6 +1,0 @@
-[submodule "packages/serve-sim"]
-	path = packages/serve-sim
-	url = https://github.com/expo/serve-sim.git
-	branch = expo-device-hub
-	ignore = untracked
-
