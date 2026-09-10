@@ -142,7 +142,18 @@ describe('parseAndroidAccessibility', () => {
         ]),
       ),
     ).nodes;
-    expect(nodes[0].frame).toEqual({ x: 0, y: 0, width: 240 / 1080, height: 120 / 2400 });
+    expect(nodes[0].frame).toEqual({ x: 0, y: 0, width: 200 / 1080, height: 100 / 2400 });
+  });
+
+  test('drops nodes with no visible area', () => {
+    const read = parseAndroidAccessibility(
+      androidBody([
+        ANDROID_ROOT,
+        androidNode({ text: 'Collapsed', bounds: { left: 0, top: 300, right: 1080, bottom: 300 } }),
+        androidNode({ text: 'Kept' }),
+      ]),
+    );
+    expect(snapshotOf(read).nodes.map((node) => node.label)).toEqual(['Kept']);
   });
 
   test('rejects a malformed body', () => {
@@ -163,7 +174,8 @@ describe('parseIosAccessibility', () => {
     );
     const snapshot = snapshotOf(read);
     expect(snapshot.capturedAt).toBe(CAPTURED_AT_MS);
-    expect(snapshot.nodes[0]?.frame).toEqual({ x: 0.1, y: 0.1, width: 0.5, height: 0.05 });
+    expect(snapshot.nodes[0]?.frame).toMatchObject({ x: 0.1, y: 0.1, width: 0.5 });
+    expect(snapshot.nodes[0]?.frame.height).toBeCloseTo(0.05);
   });
 
   test('falls back from label to value and from role to type', () => {
@@ -204,6 +216,29 @@ describe('parseIosAccessibility', () => {
       ),
     ).nodes;
     expect(nodes[0].frame).toEqual({ x: 0, y: 800 / 844, width: 1, height: 1 - 800 / 844 });
+  });
+
+  test('keeps only the visible part of a cell scrolled under the top edge', () => {
+    const nodes = snapshotOf(
+      parseIosAccessibility(
+        iosBody([iosElement({ label: 'Cell', frame: { x: 0, y: -30, width: 390, height: 44 } })]),
+        CAPTURED_AT_MS,
+      ),
+    ).nodes;
+    expect(nodes[0].frame).toEqual({ x: 0, y: 0, width: 1, height: 14 / 844 });
+  });
+
+  test('drops an element scrolled fully off the screen', () => {
+    const nodes = snapshotOf(
+      parseIosAccessibility(
+        iosBody([
+          iosElement({ label: 'Gone', frame: { x: 0, y: -50, width: 390, height: 44 } }),
+          iosElement({ label: 'Here' }),
+        ]),
+        CAPTURED_AT_MS,
+      ),
+    ).nodes;
+    expect(nodes.map((node) => node.label)).toEqual(['Here']);
   });
 
   test('surfaces the helper errors instead of an empty tree', () => {

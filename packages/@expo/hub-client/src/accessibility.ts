@@ -51,6 +51,11 @@ function failureText(value: unknown): string {
   return str(detail?.message) || str(value);
 }
 
+function unit(value: number): number {
+  return Math.min(Math.max(value, 0), 1);
+}
+
+/** The visible part of a rectangle as screen fractions, or null when nothing of it is on screen. */
 function normalizedFrame(
   left: number,
   top: number,
@@ -58,15 +63,13 @@ function normalizedFrame(
   bottom: number,
   extentX: number,
   extentY: number,
-): AccessibilityFrame {
-  const x = Math.min(Math.max(left / extentX, 0), 1);
-  const y = Math.min(Math.max(top / extentY, 0), 1);
-  return {
-    x,
-    y,
-    width: Math.min((right - left) / extentX, 1 - x),
-    height: Math.min((bottom - top) / extentY, 1 - y),
-  };
+): AccessibilityFrame | null {
+  const x = unit(left / extentX);
+  const y = unit(top / extentY);
+  const width = unit(right / extentX) - x;
+  const height = unit(bottom / extentY) - y;
+  if (width <= 0 || height <= 0) return null;
+  return { x, y, width, height };
 }
 
 function tailAfter(value: string, separator: string): string {
@@ -126,14 +129,15 @@ export function parseAndroidAccessibility(value: unknown): AccessibilityRead {
   for (const { raw, bounds } of entries) {
     const label =
       str(raw.contentDescription) || str(raw.text) || tailAfter(str(raw.resourceId), '/');
-    if (!label) continue;
+    const frame = normalizedFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, width, height);
+    if (!label || !frame) continue;
     nodes.push({
       id: str(raw.id),
       label,
       role: tailAfter(str(raw.className), '.'),
       enabled: raw.enabled !== false,
       clickable: raw.clickable === true,
-      frame: normalizedFrame(bounds.left, bounds.top, bounds.right, bounds.bottom, width, height),
+      frame,
     });
   }
   return { ok: true, snapshot: { capturedAt, nodes } };
@@ -171,7 +175,8 @@ export function parseIosAccessibility(value: unknown, capturedAt: number): Acces
     const frameHeight = finiteNumber(frame.height);
     if (x === null || y === null || frameWidth === null || frameHeight === null) continue;
     const label = str(raw.label) || str(raw.value);
-    if (!label) continue;
+    const nodeFrame = normalizedFrame(x, y, x + frameWidth, y + frameHeight, width, height);
+    if (!label || !nodeFrame) continue;
     const role = str(raw.role) || str(raw.type);
     nodes.push({
       id: str(raw.id),
@@ -179,7 +184,7 @@ export function parseIosAccessibility(value: unknown, capturedAt: number): Acces
       role,
       enabled: raw.enabled !== false,
       clickable: IOS_CLICKABLE_ROLES.has(role.toLowerCase()),
-      frame: normalizedFrame(x, y, x + frameWidth, y + frameHeight, width, height),
+      frame: nodeFrame,
     });
   }
   return { ok: true, snapshot: { capturedAt, nodes } };
