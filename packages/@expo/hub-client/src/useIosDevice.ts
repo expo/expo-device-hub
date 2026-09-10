@@ -1035,8 +1035,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   } = useDeviceLocation(locationBackend);
 
   const permissionsBackend = useMemo(
-    () => (baseUrl && deviceUdid ? iosPermissionsBackend(baseUrl, deviceUdid) : null),
-    [baseUrl, deviceUdid],
+    () =>
+      active && baseUrl && deviceUdid ? iosPermissionsBackend(baseUrl, deviceUdid) : null,
+    [active, baseUrl, deviceUdid],
   );
   const appPermissions = useAppPermissions({
     active,
