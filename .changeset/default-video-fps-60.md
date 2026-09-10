@@ -1,5 +1,5 @@
 ---
-"expo-device-hub": patch
+"expo-device-hub": minor
 ---
 
-Default standalone CLI and Expo DevTools plugin H.264/WebRTC video to 60 FPS on iOS and Android, while preserving explicit --video-fps overrides.
+Default to 60 FPS streaming for both iOS and Android.
