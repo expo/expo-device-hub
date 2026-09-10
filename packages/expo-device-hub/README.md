@@ -69,7 +69,9 @@ npx expo-device-hub --platform android --transport webrtc
 Use `--stream-source scrcpy` to select scrcpy at startup, or `--grpc-image-mode png` to
 send a compressed image in each gRPC message. Use `--grpc-image-mode rgb888` for raw
 RGB888 pixels inside each gRPC response. The same source and PNG/MMAP/RGB888 choices
-are available at runtime under **Stream options**. Run `npx expo-device-hub --help`
+are available at runtime under **Stream options**. Android also exposes **Video FPS**
+and **Video bitrate** there for both WebSocket and WebRTC playback. Changing either
+restarts the stream with the selected encoder settings. Run `npx expo-device-hub --help`
 for the full option list.
 
 ```sh

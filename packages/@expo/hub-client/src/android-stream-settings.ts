@@ -4,21 +4,28 @@ import {
 } from './stream-settings';
 import { type DeviceStreamEncoderSettings } from './types';
 
-export type AndroidStreamSettingsPatch = Pick<DeviceStreamEncoderSettings, 'maxDimension'>;
+export type AndroidStreamSettingsPatch = Partial<
+  Pick<DeviceStreamEncoderSettings, 'maxDimension' | 'h264Fps' | 'h264Bitrate'>
+>;
 
-/** Restrict the shared encoder patch API to the setting serve-emu can change at runtime. */
+/** Forward supported Android encoder settings with serve-emu's runtime bounds. */
 export function androidStreamSettingsPatch(
   patch: Partial<DeviceStreamEncoderSettings>,
 ): AndroidStreamSettingsPatch | null {
-  if (
-    typeof patch.maxDimension !== 'number' ||
-    !Number.isInteger(patch.maxDimension) ||
-    patch.maxDimension < 0 ||
-    patch.maxDimension > 4096
-  ) {
-    return null;
+  const result: AndroidStreamSettingsPatch = {};
+  for (const [key, min, max] of [
+    ['maxDimension', 0, 4096],
+    ['h264Fps', 1, 120],
+    ['h264Bitrate', 100_000, 50_000_000],
+  ] as const) {
+    const value = patch[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < min || value > max) {
+      return null;
+    }
+    result[key] = value;
   }
-  return { maxDimension: patch.maxDimension };
+  return Object.keys(result).length > 0 ? result : null;
 }
 
 /** Parse the authoritative serve-emu response without inventing a resolution. */
