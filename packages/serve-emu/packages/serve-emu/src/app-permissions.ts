@@ -60,7 +60,10 @@ export async function listPermissions(
   return { ok: true, packageName: pkg, permissions: parseRuntimePermissions(output) };
 }
 
-/** Per package: `pm reset-permissions` is device-wide. */
+/**
+ * Per package: `pm reset-permissions` is device-wide. Permissions already at their default are
+ * left alone because every `pm revoke` stops the app.
+ */
 export async function resetPermissions(
   serial: string,
   packageNameValue: string,
@@ -68,10 +71,14 @@ export async function resetPermissions(
 ): Promise<AppActionResult> {
   const pkg = packageName(packageNameValue);
   const { permissions } = await listPermissions(serial, pkg, dependencies);
-  const commands = permissions.flatMap(({ name, flags }) => [
-    `pm ${flags.includes("GRANTED_BY_DEFAULT") ? "grant" : "revoke"} ${pkg} ${name}`,
-    `pm clear-permission-flags ${pkg} ${name} user-set user-fixed`,
-  ]);
+  const commands = permissions.flatMap(({ name, granted, flags }) => {
+    const grantedByDefault = flags.includes("GRANTED_BY_DEFAULT");
+    const change = grantedByDefault ? "grant" : "revoke";
+    return [
+      ...(granted === grantedByDefault ? [] : [`pm ${change} ${pkg} ${name}`]),
+      `pm clear-permission-flags ${pkg} ${name} user-set user-fixed`,
+    ];
+  });
   commands.push(`appops reset ${pkg}`);
   const result = await adb(
     serial,

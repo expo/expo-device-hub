@@ -84,11 +84,19 @@ describe("listPermissions", () => {
   });
 });
 
+const RESET_DUMP = `
+      runtime permissions:
+        android.permission.CAMERA: granted=false, flags=[ USER_SET]
+        android.permission.ACCESS_FINE_LOCATION: granted=true, flags=[ GRANTED_BY_DEFAULT]
+        android.permission.RECORD_AUDIO: granted=true, flags=[ USER_SET]
+        android.permission.POST_NOTIFICATIONS: granted=false, flags=[ GRANTED_BY_DEFAULT|USER_FIXED]
+`;
+
 describe("resetPermissions", () => {
-  test("restores manifest defaults, clears user flags, and resets app ops in one shell", async () => {
+  test("changes only permissions off their default, clears user flags, and resets app ops in one shell", async () => {
     const calls: string[][] = [];
     await resetPermissions("emulator-5554", "com.example.app", {
-      execText: recordingExec(calls),
+      execText: recordingExec(calls, RESET_DUMP),
     });
     expect(calls).toHaveLength(2);
     expect(calls[1]).toEqual([
@@ -96,10 +104,12 @@ describe("resetPermissions", () => {
       "emulator-5554",
       "shell",
       [
-        "pm revoke com.example.app android.permission.CAMERA",
         "pm clear-permission-flags com.example.app android.permission.CAMERA user-set user-fixed",
-        "pm grant com.example.app android.permission.ACCESS_FINE_LOCATION",
         "pm clear-permission-flags com.example.app android.permission.ACCESS_FINE_LOCATION user-set user-fixed",
+        "pm revoke com.example.app android.permission.RECORD_AUDIO",
+        "pm clear-permission-flags com.example.app android.permission.RECORD_AUDIO user-set user-fixed",
+        "pm grant com.example.app android.permission.POST_NOTIFICATIONS",
+        "pm clear-permission-flags com.example.app android.permission.POST_NOTIFICATIONS user-set user-fixed",
         "appops reset com.example.app",
       ]
         .map((command) => `${command} || echo 'PERMISSION_RESET_FAILED: ${command}'`)
