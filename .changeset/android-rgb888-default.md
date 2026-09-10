@@ -1,5 +1,5 @@
 ---
-'expo-device-hub': patch
+'expo-device-hub': minor
 ---
 
-Use RGB888 delivery by default for Android gRPC streaming in the standalone CLI and Expo CLI plugin.
+Use RGB888 delivery by default for Android gRPC streaming.
