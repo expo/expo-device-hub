@@ -1,5 +1,11 @@
 # expo-device-hub
 
+## 0.10.1
+
+### Patch Changes
+
+- 5ee7d90: Forward gRPC frames to FFmpeg as soon as its input is ready.
+
 ## 0.10.0
 
 ### Minor Changes
