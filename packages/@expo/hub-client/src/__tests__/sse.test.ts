@@ -119,6 +119,18 @@ describe('readSseSnapshot', () => {
     ).rejects.toThrow('connection reset');
   });
 
+  test('rejects a non-2xx answer with its status instead of draining the body as SSE', async () => {
+    const fetchImpl: SseFetch = () =>
+      Promise.resolve(new Response('No serve-sim device', { status: 404 }));
+    await expect(
+      readSseSnapshot('http://sim/ax', {
+        fetchImpl,
+        signal: new AbortController().signal,
+        settleMs: 500,
+      }),
+    ).rejects.toThrow('HTTP 404');
+  });
+
   test('returns null when the stream ends before any block', async () => {
     const fetchImpl = sseFetch(({ close }) => close());
     const snapshot = await readSseSnapshot('http://sim/ax', {

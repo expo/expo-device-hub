@@ -319,6 +319,14 @@ describe('loadIosAccessibility', () => {
     expect(snapshot.nodes.map((node) => node.label)).toEqual(['Fresh']);
   });
 
+  test('surfaces the HTTP status when the route refuses the device', async () => {
+    const fetchImpl: SseFetch = () =>
+      Promise.resolve(new Response('No serve-sim device', { status: 404 }));
+    await expect(
+      loadIosAccessibility('http://sim/ax', new AbortController().signal, fetchImpl, () => CAPTURED_AT_MS),
+    ).rejects.toThrow('HTTP 404');
+  });
+
   test('reports nothing when the signal is already aborted', async () => {
     const read = await loadIosAccessibility(
       'http://sim/ax',

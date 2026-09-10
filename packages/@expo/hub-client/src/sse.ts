@@ -50,6 +50,7 @@ export async function readSseSnapshot(
       headers: { accept: 'text/event-stream' },
       signal: controller.signal,
     });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     if (!response.body) return null;
 
     const reader = response.body.getReader();
