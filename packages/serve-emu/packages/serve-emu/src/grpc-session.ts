@@ -17,7 +17,6 @@ import {
   type GrpcMessagePacingEvent,
   type GrpcMessagePacingDetail,
   type GrpcScreenshotImageSource,
-  type GrpcScreenshotReadControl,
   type ImageFormatRequest,
   type KeyboardEventRequest,
   type TouchPoint,
@@ -80,6 +79,7 @@ const ACCESS_UNIT_CADENCE_OUTLIER_FLOOR_MS = 250;
 const ACCESS_UNIT_CADENCE_OUTLIER_MULTIPLIER = 4;
 const ACCESS_UNIT_SLOW_CADENCE_SIMILARITY = 1.5;
 const DEFAULT_IDLE_REPEAT_MS = 500;
+const ENCODER_DRAIN_TIMEOUT_MS = 5_000;
 const FIRST_FRAME_TIMEOUT_MS = 10_000;
 const MAX_QUEUED_PACKET_BYTES = 64 * 1024 * 1024;
 const DISPLAY_SIZE_POLL_MS = 2_000;
@@ -706,10 +706,13 @@ export function grpcImageModeBehavior(
   }
   return {
     encoderInputFormat: "rgb24",
-    // In-band RGB uses encoder readiness for flow control. MMAP drains
-    // metadata immediately, then selects notifications for memory reads.
+    // Keep receiving RGB independently of encoder readiness so the latest
+    // image stays fresh. MMAP selects metadata before shared-memory reads.
     predecodeMaxFps: undefined,
-    needsEncoderFollowUp: (repeat) => !repeat,
+    // A static source may send only one image. Keep warming the encoder until
+    // it emits output; the regular idle timer starts after that startup gate.
+    needsEncoderFollowUp: (repeat, encoderHasOutput) =>
+      !repeat || !encoderHasOutput,
   };
 }
 
@@ -1304,6 +1307,8 @@ export class GrpcNativeTouchGeometryMonitor {
 }
 
 export type GrpcSessionDependencies = {
+  /** Override the stall deadline for deterministic runtime tests. */
+  encoderDrainTimeoutMs?: number;
   readDisplaySizeSignal?: (
     serial: string,
     signal: AbortSignal,
@@ -1327,7 +1332,6 @@ export type GrpcSessionClient = {
     signal: AbortSignal,
     options?: {
       maxFps?: number;
-      onReadControl?: (control: GrpcScreenshotReadControl) => void;
       onPacingEvent?: (
         event: GrpcMessagePacingEvent,
         detail: GrpcMessagePacingDetail,
@@ -1710,6 +1714,11 @@ export async function startGrpcSession(
     configuredRepeatFrameMs > 0
       ? configuredRepeatFrameMs
       : DEFAULT_IDLE_REPEAT_MS;
+  const encoderDrainTimeoutMs = positiveNumber(
+    dependencies.encoderDrainTimeoutMs ?? ENCODER_DRAIN_TIMEOUT_MS,
+    "encoderDrainTimeoutMs",
+    60_000,
+  );
   const frameIntervalMs = 1_000 / maxFps;
   const accessUnitBoundaryCadence = new GrpcAccessUnitBoundaryCadence(
     frameIntervalMs,
@@ -1759,7 +1768,7 @@ export async function startGrpcSession(
   let lastSubmittedImage: EmuImage | null = null;
   let waitingForEncoder = false;
   let pendingRepeat = false;
-  let screenshotReadControl: GrpcScreenshotReadControl | null = null;
+  let encoderDrainTimer: ReturnType<typeof setTimeout> | null = null;
   let lastWriteAt = 0;
   let flushTimer: ReturnType<typeof setTimeout> | null = null;
   let idleTimer: ReturnType<typeof setInterval> | null = null;
@@ -1815,6 +1824,46 @@ export async function startGrpcSession(
     if (flushTimer) clearTimeout(flushTimer);
     flushTimer = null;
   };
+  const clearEncoderDrainTimer = () => {
+    if (encoderDrainTimer) clearTimeout(encoderDrainTimer);
+    encoderDrainTimer = null;
+  };
+  const encoderWritable = (encoder: GrpcSessionEncoder) => {
+    if (
+      closed || lifetime.signal.aborted || fatalFailure ||
+      encoderLifecycle?.current !== encoder
+    ) return;
+    clearEncoderDrainTimer();
+    waitingForEncoder = false;
+    if (latest !== lastSubmittedImage) {
+      pendingRepeat = false;
+      writeFrame(false);
+    } else if (pendingRepeat) {
+      pendingRepeat = false;
+      writeFrame(true);
+    }
+  };
+  const watchEncoderDrain = (encoder: GrpcSessionEncoder) => {
+    if (encoderDrainTimer || closed || lifetime.signal.aborted || fatalFailure) return;
+    encoderDrainTimer = setTimeout(() => {
+      encoderDrainTimer = null;
+      if (
+        closed || lifetime.signal.aborted || fatalFailure ||
+        encoderLifecycle?.current !== encoder || !waitingForEncoder
+      ) return;
+      if (encoder.writable) {
+        // Recover a missed notification only when the encoder confirms it can
+        // accept input. A timer must never force more bytes into a blocked pipe.
+        encoderWritable(encoder);
+      } else {
+        emitFatal({
+          message: `ffmpeg input remained backpressured for ${encoderDrainTimeoutMs}ms`,
+          code: "encoder-exit",
+        });
+      }
+    }, encoderDrainTimeoutMs);
+    encoderDrainTimer.unref?.();
+  };
   const nowUs = () => BigInt(Math.round(performance.now() * 1_000));
   const writeFrame = (repeat: boolean) => {
     const encoder = encoderLifecycle?.current;
@@ -1838,8 +1887,8 @@ export async function startGrpcSession(
     waitingForEncoder = !accepted || !encoder.writable;
     pendingRepeat = !accepted && repeat;
     if (accepted) lastSubmittedImage = latest;
-    if (waitingForEncoder) screenshotReadControl?.pause();
-    else screenshotReadControl?.resume();
+    if (waitingForEncoder) watchEncoderDrain(encoder);
+    else clearEncoderDrainTimer();
     captureDiagnostics.recordEncoderWrite(
       repeat,
       accepted,
@@ -1847,8 +1896,8 @@ export async function startGrpcSession(
       now,
     );
     if (accepted) lastWriteAt = Date.now();
-    // No timer or extra buffering while ffmpeg is blocked. Its drain event
-    // resumes the newest pending image; incoming images can still replace it.
+    // Keep receiving while ffmpeg is blocked so drain submits the newest
+    // complete image, without building a FIFO of stale frames upstream.
     if (!accepted) return;
     clearBoundaryTimer();
     if (captureTransport.needsEncoderFollowUp(repeat, encoderHasOutput)) {
@@ -1888,6 +1937,7 @@ export async function startGrpcSession(
       sessionMeta.height = size.height;
     }
     let stopping = false;
+    let managed: GrpcSessionEncoder | null = null;
     const next = runtime.createEncoder({
       encoderName,
       width: latest.width,
@@ -1909,29 +1959,8 @@ export async function startGrpcSession(
         emitFatal({ message, code: "encoder-exit" });
       },
       onWritable: () => {
-        if (
-          stopping || closed || lifetime.signal.aborted || fatalFailure ||
-          encoderLifecycle?.current !== managed
-        ) return;
-        waitingForEncoder = false;
-        const repeat = latest === lastSubmittedImage;
-        if (!repeat) {
-          pendingRepeat = false;
-          writeFrame(false);
-        } else {
-          screenshotReadControl?.resume();
-          if (pendingRepeat) {
-            pendingRepeat = false;
-            // Let already-buffered source data arrive before deciding the
-            // source is idle and submitting a duplicate boundary frame.
-            if (flushTimer) clearTimeout(flushTimer);
-            flushTimer = setTimeout(() => {
-              flushTimer = null;
-              writeFrame(true);
-            }, accessUnitBoundaryCadence.boundaryDelayMs());
-            flushTimer.unref?.();
-          }
-        }
+        // A runtime adapter may notify synchronously during construction.
+        if (!stopping && managed) encoderWritable(managed);
       },
     });
     if (restart.announceSize) {
@@ -1942,7 +1971,7 @@ export async function startGrpcSession(
         clientResized: false,
       });
     }
-    const managed: GrpcSessionEncoder = {
+    managed = {
       get writable() { return next.writable; },
       width: next.width,
       height: next.height,
@@ -1962,6 +1991,7 @@ export async function startGrpcSession(
   ): Promise<void> => {
     if (closed || lifetime.signal.aborted || !latest) return Promise.resolve();
     clearBoundaryTimer();
+    clearEncoderDrainTimer();
     return encoderLifecycle!
       .restart({ announceSize, clearPending })
       .then((started) => {
@@ -2241,6 +2271,7 @@ export async function startGrpcSession(
     options.signal?.removeEventListener("abort", abortFromParent);
     lifetime.abort(new Error("gRPC screenshot session closed"));
     clearBoundaryTimer();
+    clearEncoderDrainTimer();
     if (idleTimer) clearInterval(idleTimer);
     idleTimer = null;
     if (displaySizePollTimer) clearTimeout(displaySizePollTimer);
@@ -2441,12 +2472,6 @@ export async function startGrpcSession(
         lifetime.signal,
         {
           maxFps: transport.predecodeMaxFps,
-          // PNG owns predecode pacing; MMAP must consume metadata promptly
-          // before its shared pixels are reused. Only in-band RGB applies
-          // FFmpeg backpressure directly to the HTTP/2 source.
-          onReadControl: imageMode === "rgb888" ? (control) => {
-            screenshotReadControl = control;
-          } : undefined,
           onPacingEvent: (event, detail) =>
             transport.recordRawPacingEvent(event, detail),
           onDecode: (event) => captureDiagnostics.recordImageDecode(event),

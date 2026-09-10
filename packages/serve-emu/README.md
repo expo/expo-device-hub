@@ -663,9 +663,14 @@ texture sharing, zero-copy, or hardware encoding; speed depends on the workload
 and must be measured. All gRPC image modes submit usable images as soon as
 ffmpeg can accept them. Backpressure waits for ffmpeg's `drain` event, retaining
 only the newest pending image; there is no encoder write pacer or retry polling.
-RGB888 pauses screenshot reads while ffmpeg is blocked and resumes on drain.
+RGB888 keeps consuming screenshots while ffmpeg is blocked, replacing the
+pending image so a slow encoder does not create a FIFO of stale frames. Receive
+work yields after each 64 KiB batch to let encoder callbacks and other I/O run.
 The gRPC connection and stream receive windows are 8 MiB so large RGB frames do
 not cycle through the default 64 KiB window. No experimental flags are needed.
+A one-shot five-second stall watchdog rechecks encoder readiness after a missed
+`drain`; it resumes only if writable, otherwise reports an `encoder-exit` error.
+Screenshot inactivity probes remain active while ffmpeg is backpressured.
 
 For RGB888, `--max-fps` configures ffmpeg's nominal input rate and the idle
 boundary cadence; it does not cap fresh frame submissions. PNG retains its

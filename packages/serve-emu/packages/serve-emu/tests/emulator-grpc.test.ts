@@ -14,7 +14,7 @@ import {
   IMAGE_TRANSPORT_MMAP,
   IMG_FORMAT_RGB888,
   parseEmulatorGrpcPort,
-  type GrpcScreenshotReadControl,
+  GrpcReadScheduler,
 } from "../src/emulator-grpc.ts";
 import type { ExecResult } from "../src/exec.ts";
 import { encodeEmulatorImage, grpcFrame } from "./fixtures/grpc.ts";
@@ -268,6 +268,69 @@ describe("emulator gRPC discovery", () => {
   });
 });
 
+describe("gRPC receive work scheduling", () => {
+  test("splits a large chunk across turns and drains its suffix before finishing", async () => {
+    const messages: string[] = [];
+    const events: string[] = [];
+    const parser = new GrpcMessageParser(100, (body) => {
+      messages.push(body.toString());
+      events.push(body.toString());
+    });
+    const chunks: number[] = [];
+    const scheduler = new GrpcReadScheduler({
+      stream: { pause() {}, resume() {} },
+      batchBytes: 8,
+      consume(chunk) { chunks.push(chunk.length); parser.push(chunk); },
+      onError(error) { throw error; },
+    });
+    scheduler.push(Buffer.concat(["one", "two", "end"].map((s) => grpcFrame(Buffer.from(s)))));
+    expect(messages).toEqual(["one"]);
+    setImmediate(() => events.push("other I/O"));
+    await new Promise<void>((resolve) => scheduler.finish(resolve));
+    expect(messages).toEqual(["one", "two", "end"]);
+    expect(events.indexOf("other I/O")).toBeLessThan(events.indexOf("end"));
+    expect(chunks).toEqual([8, 8, 8]);
+    scheduler.close();
+  });
+
+  test("budgets multiple data events together and resumes on the next turn", async () => {
+    let paused = false;
+    let bytes = 0;
+    const scheduler = new GrpcReadScheduler({
+      stream: { pause() { paused = true; }, resume() { paused = false; } },
+      batchBytes: 4,
+      consume(chunk) { bytes += chunk.length; },
+      onError(error) { throw error; },
+    });
+    scheduler.push(Buffer.alloc(2));
+    expect(paused).toBe(false);
+    scheduler.push(Buffer.alloc(2));
+    expect(paused).toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(paused).toBe(false);
+    expect(bytes).toBe(4);
+    scheduler.close();
+  });
+
+  test("close and parse errors cancel pending receive work", async () => {
+    for (const fails of [false, true]) {
+      let bytes = 0;
+      const errors: unknown[] = [];
+      const scheduler = new GrpcReadScheduler({
+        stream: { pause() {}, resume() {} }, batchBytes: 4,
+        consume(chunk) { bytes += chunk.length; if (fails) throw new Error("bad frame"); },
+        onError(error) { errors.push(error); },
+      });
+      scheduler.push(Buffer.alloc(20));
+      scheduler.close();
+      scheduler.push(Buffer.alloc(20));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(bytes).toBe(4);
+      expect(errors).toHaveLength(fails ? 1 : 0);
+    }
+  });
+});
+
 describe("EmulatorGrpcClient HTTP/2 integration", () => {
   test("sends the discovered bearer token and decodes a screenshot", async () => {
     const imageBody = encodeEmulatorImage({
@@ -314,80 +377,6 @@ describe("EmulatorGrpcClient HTTP/2 integration", () => {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),
       );
-    }
-  });
-
-  test("consumer backpressure pauses delivery and inactivity probes until resumed", async () => {
-    const frame = (seq: number) => grpcFrame(encodeEmulatorImage({
-      format: IMG_FORMAT_RGB888,
-      width: 2,
-      height: 1,
-      image: Buffer.alloc(6, seq),
-      seq,
-    }));
-    let screenshotStream: ServerHttp2Stream | undefined;
-    let probes = 0;
-    const server = http2.createServer();
-    server.on("stream", (stream: ServerHttp2Stream, headers) => {
-      stream.on("error", () => {});
-      stream.resume();
-      const streaming = String(headers[":path"]).endsWith("/streamScreenshot");
-      stream.respond({
-        ":status": 200,
-        "content-type": "application/grpc",
-        ...(streaming ? {} : { "grpc-status": "0" }),
-      });
-      if (streaming) {
-        screenshotStream = stream;
-        stream.write(frame(1));
-      } else {
-        probes++;
-        stream.end(frame(3));
-      }
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const address = server.address();
-    if (!address || typeof address === "string") throw new Error("missing test port");
-    const client = new EmulatorGrpcClient(
-      { port: address.port, token: null, avdName: null },
-      { streamInactivityTimeoutMs: 25 },
-    );
-    const controller = new AbortController();
-    let control!: GrpcScreenshotReadControl;
-    let firstImage!: () => void;
-    const first = new Promise<void>((resolve) => { firstImage = resolve; });
-    const images: number[] = [];
-    const streaming = client.streamScreenshot(
-      { format: IMG_FORMAT_RGB888 },
-      (image) => {
-        images.push(image.seq);
-        if (image.seq === 1) {
-          control.pause();
-          firstImage();
-        } else if (image.seq === 3) {
-          controller.abort();
-        }
-      },
-      controller.signal,
-      { onReadControl: (value) => { control = value; } },
-    );
-    try {
-      await first;
-      screenshotStream!.write(frame(2));
-      await new Promise((resolve) => setTimeout(resolve, 75));
-      expect(images).toEqual([1]);
-      expect(probes).toBe(0);
-      control.resume();
-      await streaming;
-      expect(images).toEqual([1, 2, 3]);
-      expect(probes).toBe(1);
-      // A late encoder drain after close must be harmless.
-      expect(() => { control.pause(); control.resume(); }).not.toThrow();
-    } finally {
-      controller.abort();
-      await streaming;
-      client.close();
-      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
