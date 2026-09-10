@@ -21,12 +21,19 @@ export function androidStreamSourceErrorMessage(status: number, value: unknown):
     value && typeof value === 'object' && !Array.isArray(value)
       ? (value as Record<string, unknown>)
       : null;
+  const error = candidate?.error;
+  const structuredMessage =
+    error && typeof error === 'object' && !Array.isArray(error) && 'message' in error
+      ? error.message
+      : undefined;
   const detail =
-    typeof candidate?.error === 'string'
-      ? candidate.error.trim()
-      : typeof candidate?.message === 'string'
-        ? candidate.message.trim()
-        : '';
+    typeof error === 'string'
+      ? error.trim()
+      : typeof structuredMessage === 'string'
+        ? structuredMessage.trim()
+        : typeof candidate?.message === 'string'
+          ? candidate.message.trim()
+          : '';
   return detail
     ? `Unable to change stream source: ${detail}`
     : `Unable to change stream source (HTTP ${status}).`;

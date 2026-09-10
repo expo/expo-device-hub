@@ -136,6 +136,15 @@ describe('serve-emu capture source contract', () => {
     expect(
       androidStreamSourceErrorMessage(503, { error: 'Hardware H.264 probe failed: device unavailable' }),
     ).toBe('Unable to change stream source: Hardware H.264 probe failed: device unavailable');
+    expect(
+      androidStreamSourceErrorMessage(503, {
+        ok: false,
+        error: {
+          code: 'service_unavailable',
+          message: 'Hardware H.264 probe failed: device unavailable',
+        },
+      }),
+    ).toBe('Unable to change stream source: Hardware H.264 probe failed: device unavailable');
     expect(androidStreamSourceErrorMessage(500, null)).toBe(
       'Unable to change stream source (HTTP 500).',
     );
