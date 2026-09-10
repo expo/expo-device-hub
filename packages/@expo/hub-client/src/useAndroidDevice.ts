@@ -28,6 +28,7 @@ import {
 import { apiUrl, deviceApiUrl } from './android-api-url';
 import { readAndroidLocation, writeAndroidLocation } from './android-location';
 import { androidPermissionsBackend } from './android-permissions';
+import { carryForwardAppIcon, getAndroidAppIcon } from './android-app-icon';
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
@@ -1744,7 +1745,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           minSdk: data.app.minSdk ?? undefined,
           debuggable: data.app.debuggable ?? undefined,
         };
-        setForegroundApp((prev) => (prev && sameForegroundApp(prev, next) ? prev : next));
+        setForegroundApp((prev) =>
+          prev && sameForegroundApp(prev, next) ? prev : carryForwardAppIcon(prev, next),
+        );
       } catch {
         /* offline / unsupported — keep the last known app */
       }
@@ -1756,6 +1759,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       clearInterval(timer);
     };
   }, [active, baseUrl, targetDevice]);
+
+  const foregroundAppId = foregroundApp?.id ?? null;
+  useEffect(() => {
+    if (!active || !baseUrl || !foregroundAppId) return;
+    let cancelled = false;
+    getAndroidAppIcon(baseUrl, targetDevice, foregroundAppId)
+      .then((iconDataUrl) => {
+        if (cancelled || !iconDataUrl) return;
+        setForegroundApp((prev) =>
+          prev && prev.id === foregroundAppId ? { ...prev, iconDataUrl } : prev,
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [active, baseUrl, targetDevice, foregroundAppId]);
 
   // ── Device options (best-effort) ──
   // Keep Hub in sync with changes made on-device or through serve-emu's own UI.
