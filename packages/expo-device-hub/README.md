@@ -58,17 +58,17 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
-Android streams use the emulator screenshot gRPC source with MMAP delivery by default,
-both in the Expo CLI plugin and the standalone CLI. MMAP sends frame metadata over gRPC
-while the emulator writes RGB pixels to a shared file-backed memory region:
+Android streams use the emulator screenshot gRPC source with RGB888 delivery by default,
+both in the Expo CLI plugin and the standalone CLI. RGB888 sends raw RGB pixels inside
+each gRPC response:
 
 ```sh
 npx expo-device-hub --platform android --transport webrtc
 ```
 
 Use `--stream-source scrcpy` to select scrcpy at startup, or `--grpc-image-mode png` to
-send a compressed image in each gRPC message. Use `--grpc-image-mode rgb888` for raw
-RGB888 pixels inside each gRPC response. The same source and PNG/MMAP/RGB888 choices
+send a compressed image in each gRPC message. Use `--grpc-image-mode mmap` for frame
+metadata over gRPC and RGB pixels in shared memory. The same source and PNG/MMAP/RGB888 choices
 are available at runtime under **Stream options**. Run `npx expo-device-hub --help`
 for the full option list.
 
@@ -88,7 +88,7 @@ without MMAP allocation or verification rereads and without PNG in the continuou
 capture stream. This still involves emulator GPU-to-CPU readback, not texture
 sharing or hardware encoding. It is not zero-copy or guaranteed faster. Source
 frame rate, locally paced encoder submissions, gRPC payload bytes and decode
-timing remain separate in capture statistics. MMAP remains the Hub default.
+timing remain separate in capture statistics.
 
 To measure incoming gRPC responses, sample `grpcCapture.rawGrpcMessagesReceived`
 from `/vendor/serve-emu/health?device=<serial>` and divide the counter difference
