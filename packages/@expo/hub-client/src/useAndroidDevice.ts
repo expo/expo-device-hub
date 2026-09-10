@@ -74,6 +74,7 @@ import {
   type DeviceConnectionOptions,
   type DeviceEvent,
   type DeviceGrpcImageMode,
+  type DeviceGrpcEncoder,
   type DeviceInputSource,
   type DeviceLog,
   type DeviceSettingKey,
@@ -500,10 +501,69 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     toPatch: androidStreamSettingsPatch,
   });
 
+  const refreshStreamSource = useCallback(
+    async (clearPendingWhenDone = false) => {
+      // A pending switch owns the source state until its stream is on screen.
+      if (
+        !streamSourceUrl ||
+        streamSourceControllerRef.current ||
+        streamSourceRefreshControllerRef.current ||
+        isStreamSwitchPending(streamSwitchRef.current)
+      ) {
+        return;
+      }
+      const request = ++streamSourceRequestRef.current;
+      const controller = new AbortController();
+      streamSourceRefreshControllerRef.current = controller;
+      try {
+        const response = await fetch(streamSourceUrl, {
+          cache: 'no-store',
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`Stream source request failed (${response.status})`);
+        const next = parseAndroidStreamSource(await response.json());
+        if (!next) throw new Error('Stream source request returned an invalid response');
+        if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
+          streamSourceRef.current = next;
+          setStreamSourceState((current) =>
+            current?.mode === next.mode &&
+            current.grpcImageMode === next.grpcImageMode &&
+            current.encoder === next.encoder &&
+            current.encoderName === next.encoderName &&
+            current.availableEncoders.join() === next.availableEncoders.join() &&
+            current.hardwareEncoderError === next.hardwareEncoderError &&
+            current.inputSource === next.inputSource &&
+            current.sessionGeneration === next.sessionGeneration &&
+            current.availableModes.join() === next.availableModes.join() &&
+            current.availableInputSources.join() === next.availableInputSources.join()
+              ? current
+              : next,
+          );
+        }
+      } catch {
+        // Device startup and source replacement are transient; keep polling.
+      } finally {
+        if (streamSourceRefreshControllerRef.current === controller) {
+          streamSourceRefreshControllerRef.current = null;
+        }
+        if (
+          clearPendingWhenDone &&
+          !controller.signal.aborted &&
+          streamSourceRequestRef.current === request
+        ) {
+          streamSourceLoadingRef.current = false;
+          setStreamSourceLoading(false);
+        }
+      }
+    },
+    [streamSourceUrl],
+  );
+
   const putStreamMode = useCallback(
     (body: {
       mode: DeviceStreamSource;
       grpcImageMode?: DeviceGrpcImageMode;
+      encoder?: DeviceGrpcEncoder;
       inputSource?: DeviceInputSource;
     }) => {
       if (
@@ -520,6 +580,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       pendingStreamSourceRef.current = null;
       dispatchStreamSwitch({ type: 'request-start', live: streamLiveRef.current });
       setStreamSourceError(null);
+      let failed = false;
       void fetch(streamSourceUrl, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -556,16 +617,20 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             setStreamSourceError(
               cause instanceof Error ? cause.message : 'Unable to change stream source.',
             );
+            failed = true;
             dispatchStreamSwitch({ type: 'request-failure' });
           }
         })
         .finally(() => {
           if (streamSourceControllerRef.current === controller) {
             streamSourceControllerRef.current = null;
+            // A failed hardware probe changes host availability, even though the
+            // server keeps the current capture and its generation running.
+            if (failed) void refreshStreamSource();
           }
         });
     },
-    [dispatchStreamSwitch, streamSourceUrl],
+    [dispatchStreamSwitch, refreshStreamSource, streamSourceUrl],
   );
 
   const setStreamSource = useCallback(
@@ -602,6 +667,27 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [putStreamMode],
   );
 
+  const setGrpcEncoder = useCallback(
+    (encoder: DeviceGrpcEncoder) => {
+      const previous = streamSourceRef.current;
+      if (
+        !previous ||
+        previous.mode !== 'grpc-screenshot' ||
+        previous.encoder === encoder ||
+        !previous.availableEncoders.includes(encoder)
+      ) {
+        return;
+      }
+      putStreamMode({
+        mode: previous.mode,
+        grpcImageMode: previous.grpcImageMode,
+        inputSource: previous.inputSource,
+        encoder,
+      });
+    },
+    [putStreamMode],
+  );
+
   const setGrpcInputSource = useCallback(
     (inputSource: DeviceInputSource) => {
       const previous = streamSourceRef.current;
@@ -620,60 +706,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       });
     },
     [putStreamMode],
-  );
-
-  const refreshStreamSource = useCallback(
-    async (clearPendingWhenDone = false) => {
-      // A pending switch owns the source state until its stream is on screen.
-      if (
-        !streamSourceUrl ||
-        streamSourceControllerRef.current ||
-        streamSourceRefreshControllerRef.current ||
-        isStreamSwitchPending(streamSwitchRef.current)
-      ) {
-        return;
-      }
-      const request = ++streamSourceRequestRef.current;
-      const controller = new AbortController();
-      streamSourceRefreshControllerRef.current = controller;
-      try {
-        const response = await fetch(streamSourceUrl, {
-          cache: 'no-store',
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`Stream source request failed (${response.status})`);
-        const next = parseAndroidStreamSource(await response.json());
-        if (!next) throw new Error('Stream source request returned an invalid response');
-        if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
-          streamSourceRef.current = next;
-          setStreamSourceState((current) =>
-            current?.mode === next.mode &&
-            current.grpcImageMode === next.grpcImageMode &&
-            current.inputSource === next.inputSource &&
-            current.sessionGeneration === next.sessionGeneration &&
-            current.availableModes.join() === next.availableModes.join() &&
-            current.availableInputSources.join() === next.availableInputSources.join()
-              ? current
-              : next,
-          );
-        }
-      } catch {
-        // Device startup and source replacement are transient; keep polling.
-      } finally {
-        if (streamSourceRefreshControllerRef.current === controller) {
-          streamSourceRefreshControllerRef.current = null;
-        }
-        if (
-          clearPendingWhenDone &&
-          !controller.signal.aborted &&
-          streamSourceRequestRef.current === request
-        ) {
-          streamSourceLoadingRef.current = false;
-          setStreamSourceLoading(false);
-        }
-      }
-    },
-    [streamSourceUrl],
   );
 
   // ── Android capture source (serve-emu device-scoped GET/PUT endpoint) ──
@@ -1753,6 +1785,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSourceError,
     setStreamSource,
     setGrpcImageMode,
+    setGrpcEncoder,
     setGrpcInputSource,
     streamStats,
     setStreamStatsEnabled,

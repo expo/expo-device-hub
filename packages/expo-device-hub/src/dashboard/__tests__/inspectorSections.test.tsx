@@ -77,6 +77,9 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       : {
           mode: 'scrcpy',
           grpcImageMode: 'png',
+          encoder: 'software',
+          encoderName: 'libx264',
+          availableEncoders: ['software', 'hardware'],
           inputSource: 'scrcpy',
           availableInputSources: ['scrcpy'],
           availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -86,6 +89,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     streamSourceError: null,
     setStreamSource: () => {},
     setGrpcImageMode: () => {},
+    setGrpcEncoder: () => {},
     setGrpcInputSource: () => {},
     streamStats: null,
     setStreamStatsEnabled: () => {},
@@ -455,12 +459,16 @@ test('shows PNG, MMAP and RGB888 only while the gRPC source is active', () => {
     <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
   );
   expect(scrcpyHtml).not.toContain('aria-label="gRPC image mode"');
+  expect(scrcpyHtml).not.toContain('aria-label="gRPC encoder"');
 
   const grpcClient = {
     ...inspectorClient('android'),
     streamSource: {
       mode: 'grpc-screenshot',
       grpcImageMode: 'mmap',
+      encoder: 'software',
+      encoderName: 'libx264',
+      availableEncoders: ['software', 'hardware'],
       inputSource: 'scrcpy',
       availableInputSources: ['scrcpy', 'grpc'],
       availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -477,6 +485,9 @@ test('shows PNG, MMAP and RGB888 only while the gRPC source is active', () => {
   expect(grpcHtml).toContain('>gRPC frames</span>');
   expect(selectOptionLabels(grpcHtml, 'gRPC image mode')).toEqual(['PNG', 'MMAP', 'RGB888']);
   expect(selectValue(grpcHtml, 'gRPC image mode')).toBe('MMAP');
+  expect(selectOptionLabels(grpcHtml, 'gRPC encoder')).toEqual(['Software', 'Hardware']);
+  expect(selectValue(grpcHtml, 'gRPC encoder')).toBe('Software');
+  expect(grpcHtml).toContain('Active encoder: libx264');
 });
 
 test('disables the Android capture source select while replacement is pending', () => {
@@ -499,6 +510,9 @@ test('disables every gRPC capture control while replacement is pending', () => {
     streamSource: {
       mode: 'grpc-screenshot',
       grpcImageMode: 'mmap',
+      encoder: 'software',
+      encoderName: 'libx264',
+      availableEncoders: ['software', 'hardware'],
       inputSource: 'scrcpy',
       availableInputSources: ['scrcpy', 'grpc'],
       availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -511,6 +525,7 @@ test('disables every gRPC capture control while replacement is pending', () => {
   // Input source and image mode restart the same capture session as Source.
   expect(selectMarkup(html, 'Input source')).toContain('disabled=""');
   expect(selectMarkup(html, 'gRPC image mode')).toContain('disabled=""');
+  expect(selectMarkup(html, 'gRPC encoder')).toContain('disabled=""');
   expect(html).not.toContain('Switching stream source…');
 });
 
@@ -539,6 +554,9 @@ test('hides the Android capture source row when gRPC is unavailable', () => {
     streamSource: {
       mode: 'scrcpy',
       grpcImageMode: 'png',
+      encoder: 'software',
+      encoderName: 'libx264',
+      availableEncoders: ['software', 'hardware'],
       inputSource: 'scrcpy',
       availableInputSources: ['scrcpy'],
       availableModes: ['scrcpy'],
@@ -1345,6 +1363,9 @@ test('shows RGB888 applied, pending, and failed without changing the selection',
       streamSource: {
         mode: 'grpc-screenshot',
         grpcImageMode: 'rgb888',
+        encoder: 'software',
+        encoderName: 'libx264',
+        availableEncoders: ['software', 'hardware'],
         inputSource: 'scrcpy',
         availableInputSources: ['scrcpy', 'grpc'],
         availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -1363,4 +1384,56 @@ test('shows RGB888 applied, pending, and failed without changing the selection',
       expect(html).toContain('RGB888 capture failed');
     }
   }
+});
+
+
+test('shows hardware probe failures and the encoder still streaming with a single gRPC source', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSource: {
+      mode: 'grpc-screenshot',
+      grpcImageMode: 'rgb888',
+      encoder: 'software',
+      encoderName: 'libx264',
+      availableEncoders: ['software'],
+      hardwareEncoderError: 'No hardware H.264 encoder is available: VideoToolbox device failed.',
+      inputSource: 'grpc',
+      availableInputSources: ['grpc'],
+      availableModes: ['grpc-screenshot'],
+      sessionGeneration: 1,
+    },
+    streamSourceError: 'Unable to change stream source: No hardware H.264 encoder is available.',
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+
+  expect(selectValue(html, 'gRPC encoder')).toBe('Software');
+  expect(selectMarkup(html, 'gRPC encoder')).not.toContain('disabled=""');
+  expect(html).toContain('VideoToolbox device failed.');
+  expect(html).toContain('Unable to change stream source: No hardware H.264 encoder is available.');
+  expect(html).toContain('Active encoder: libx264');
+});
+
+test('shows the active hardware encoder and hides unresolved encoder names', () => {
+  const client = {
+    ...inspectorClient('android'),
+    streamSource: {
+      mode: 'grpc-screenshot',
+      grpcImageMode: 'mmap',
+      encoder: 'hardware',
+      encoderName: 'h264_videotoolbox',
+      availableEncoders: ['software', 'hardware'],
+      inputSource: 'scrcpy',
+      availableInputSources: ['scrcpy', 'grpc'],
+      availableModes: ['scrcpy', 'grpc-screenshot'],
+      sessionGeneration: 1,
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
+  expect(selectValue(html, 'gRPC encoder')).toBe('Hardware');
+  expect(html).toContain('Active encoder: h264_videotoolbox');
+
+  const unresolved = { ...client, streamSource: { ...client.streamSource, encoderName: null } };
+  expect(renderToStaticMarkup(<StreamOptionsSection client={unresolved} defaultOpen />)).not.toContain(
+    'Active encoder:',
+  );
 });

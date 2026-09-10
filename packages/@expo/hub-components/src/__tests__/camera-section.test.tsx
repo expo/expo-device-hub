@@ -40,6 +40,7 @@ const BASE_CLIENT: DeviceClient = {
   streamSourceError: null,
   setStreamSource: () => {},
   setGrpcImageMode: () => {},
+  setGrpcEncoder: () => {},
   setGrpcInputSource: () => {},
   streamStats: null,
   setStreamStatsEnabled: () => {},

@@ -181,6 +181,9 @@ export type DeviceStreamSource = 'scrcpy' | 'grpc-screenshot';
 /** Pixel delivery selected for the emulator gRPC screenshot source. */
 export type DeviceGrpcImageMode = 'png' | 'mmap' | 'rgb888';
 
+/** Host H.264 encoder used for emulator gRPC screenshots. */
+export type DeviceGrpcEncoder = 'software' | 'hardware';
+
 /** Input transport used while gRPC provides emulator video. */
 export type DeviceInputSource = 'scrcpy' | 'grpc';
 
@@ -188,6 +191,11 @@ export type DeviceInputSource = 'scrcpy' | 'grpc';
 export interface DeviceStreamSourceStatus {
   mode: DeviceStreamSource;
   grpcImageMode: DeviceGrpcImageMode;
+  encoder: DeviceGrpcEncoder;
+  /** Active ffmpeg encoder; null before capture starts or when using scrcpy. */
+  encoderName: string | null;
+  availableEncoders: readonly DeviceGrpcEncoder[];
+  hardwareEncoderError?: string;
   inputSource: DeviceInputSource;
   availableInputSources: readonly DeviceInputSource[];
   availableModes: readonly DeviceStreamSource[];
@@ -524,6 +532,8 @@ export interface DeviceClient {
   setStreamSource: (source: DeviceStreamSource) => void;
   /** Restart the gRPC source with compressed PNG or shared-memory RGB delivery. */
   setGrpcImageMode: (mode: DeviceGrpcImageMode) => void;
+  /** Restart gRPC capture with software or strictly hardware H.264 encoding. */
+  setGrpcEncoder: (encoder: DeviceGrpcEncoder) => void;
   /** Restart gRPC streaming with scrcpy or emulator-gRPC input delivery. */
   setGrpcInputSource: (source: DeviceInputSource) => void;
   /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */

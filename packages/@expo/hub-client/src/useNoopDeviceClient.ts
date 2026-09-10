@@ -39,6 +39,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   streamSourceError: null,
   setStreamSource: () => {},
   setGrpcImageMode: () => {},
+  setGrpcEncoder: () => {},
   setGrpcInputSource: () => {},
   streamStats: null,
   setStreamStatsEnabled: () => {},
