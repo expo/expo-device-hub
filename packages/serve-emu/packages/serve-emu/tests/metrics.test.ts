@@ -145,7 +145,7 @@ describe("parseMetricsProbe", () => {
   test("ignores a resumed-activity line the shared detector rejects", () => {
     const probe = parseMetricsProbe(
       probeText({
-        fgwin: [""],
+        fgwin: [],
         fgact: [
           `    topResumedActivity=ActivityRecord{132647058 u0 ${MAPS}/com.google.android.maps.MapsActivity}`,
         ],
@@ -157,7 +157,7 @@ describe("parseMetricsProbe", () => {
   test("ranks the resumed-activity detectors by kind, not by line order", () => {
     const probe = parseMetricsProbe(
       probeText({
-        fgwin: [""],
+        fgwin: [],
         fgact: [
           "    mResumedActivity: ActivityRecord{1 u0 com.example.earlier/.Home t1}",
           `    topResumedActivity=ActivityRecord{2 u0 ${MAPS}/com.google.android.maps.MapsActivity t42}`,

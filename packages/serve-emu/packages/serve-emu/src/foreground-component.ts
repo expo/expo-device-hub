@@ -32,9 +32,6 @@ const ACTIVITY_DETECTORS: Detector[] = [
   },
 ];
 
-// The metrics probe ships one `adb shell` per tick, so it greps the dumps down to
-// the lines these detectors read. Deriving the filter from the same list keeps the
-// two in step when a detector is added.
 export const FOREGROUND_WINDOW_GREP = WINDOW_DETECTORS.map(({ key }) => key).join("|");
 export const FOREGROUND_ACTIVITY_GREP = ACTIVITY_DETECTORS.map(({ key }) => key).join("|");
 
