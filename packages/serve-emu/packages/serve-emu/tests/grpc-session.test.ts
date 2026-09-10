@@ -1218,10 +1218,12 @@ describe("startGrpcSession integration", () => {
     try {
       expect(requests).toEqual([encoder]);
       expect(encoders[0]!.options.encoderName).toBe(resolved);
+      expect(encoders[0]!.options.keyFrameInterval).toBe(1);
       expect(session.diagnostics?.().grpcCapture?.encoderName).toBe(resolved);
       client.streamImage!(integrationImage(0, 6, 4), "stream", Date.now());
       await waitFor(() => encoders.length === 2);
       expect(encoders[1]!.options.encoderName).toBe(resolved);
+      expect(encoders[1]!.options.keyFrameInterval).toBe(1);
       expect(requests).toHaveLength(1);
     } finally {
       await session.close();

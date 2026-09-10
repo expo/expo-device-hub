@@ -132,9 +132,9 @@ export const SCRCPY_DEFAULTS = {
   // (c2.android.avc.encoder) only sustains 60fps below roughly a megapixel,
   // so cap the longest edge at 1280 unless the caller overrides it.
   maxSize: 1280,
-  // Late joiners get keyframes on demand via reset-video, so a long interval
-  // avoids periodic keyframe bursts.
-  keyFrameInterval: 10,
+  // Frequent keyframes give decoders another recovery point after lost frames.
+  // Late joiners can still request an immediate keyframe via reset-video.
+  keyFrameInterval: 1,
   repeatFrameMs: 0,
 } as const;
 
