@@ -262,12 +262,13 @@ async function readFrames(response: Response, count: number): Promise<string[]> 
 }
 
 describe("MetricsSampler", () => {
-  function sampler() {
+  function sampler(overrides: { maxSubscribers?: number } = {}) {
     const calls: { args: string[]; lane: string | undefined }[] = [];
     let tick = 0;
     const instance = new MetricsSampler({
       serial: "emulator-5554",
       intervalMs: 5,
+      ...overrides,
       now: () => tick * 1000,
       runExec: async (_cmd, args, opts) => {
         calls.push({ args, lane: opts?.lane });
@@ -386,6 +387,30 @@ describe("MetricsSampler", () => {
     expect(started).toBe(1);
     expect(instance.running).toBe(false);
     expect(instance.subscriberCount).toBe(0);
+  });
+
+  test("rejects a subscriber past the cap and admits one after a slot frees", async () => {
+    const { instance } = sampler({ maxSubscribers: 2 });
+    const first = new AbortController();
+    const admitted = [
+      instance.subscribe(first.signal),
+      instance.subscribe(new AbortController().signal),
+    ];
+    expect(admitted.map(({ status }) => status)).toEqual([200, 200]);
+
+    const rejected = instance.subscribe();
+    expect(rejected.status).toBe(429);
+    expect(await rejected.json()).toEqual({
+      ok: false,
+      code: "metrics-subscriber-limit",
+      error: "metrics subscriber limit is 2",
+    });
+    expect(instance.subscriberCount).toBe(2);
+
+    first.abort();
+    await Bun.sleep(10);
+    expect(instance.subscribe(new AbortController().signal).status).toBe(200);
+    instance.close();
   });
 
   test("cancelling the consumer drops the subscriber", async () => {

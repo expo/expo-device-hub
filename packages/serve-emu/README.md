@@ -401,7 +401,8 @@ minus `lo`); the emulator exposes no per-app counters. CPU and memory come from
 the process that `pidof <package>` resolves, so an app that declares
 `android:process` for its activity reports zero, and a multi-process app such as
 Chrome excludes its renderer children. Subscribers share one sampler per device,
-and sampling stops when the last stream closes.
+and sampling stops when the last stream closes. A device accepts eight metrics
+subscribers; the ninth is refused with `metrics-subscriber-limit` and HTTP 429.
 
 ### Device Settings
 
