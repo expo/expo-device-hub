@@ -10,6 +10,8 @@ import type {
 } from "./shared/api-contracts.ts";
 
 const BLOCK_HEADER = /^\s*runtime permissions:\s*$/;
+/** `adb shell` exits with the last command's status, so each command marks its own failure. */
+const FAILED = "PERMISSION_RESET_FAILED:";
 const PERMISSION_LINE =
   /^\s*([A-Za-z][\w.]*): granted=(true|false)(?:, flags=\[([^\]]*)\])?/;
 
@@ -75,11 +77,14 @@ export async function resetPermissions(
     `pm clear-permission-flags ${pkg} ${name} user-set user-fixed`,
   ]);
   commands.push(`appops reset ${pkg}`);
-  return adb(
+  const result = await adb(
     serial,
-    ["shell", commands.join("; ")],
+    ["shell", commands.map((command) => `${command} || echo '${FAILED} ${command}'`).join("; ")],
     30_000,
     undefined,
     dependencies.execText,
   );
+  const failed = result.output.split("\n").filter((line) => line.startsWith(FAILED));
+  if (failed.length > 0) throw new Error(`Permission reset failed: ${failed.join("; ")}`);
+  return result;
 }

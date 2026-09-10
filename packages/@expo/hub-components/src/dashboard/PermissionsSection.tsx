@@ -35,7 +35,15 @@ export function PermissionsSection({
       {appId === null ? (
         <SectionNote>No app is in the foreground.</SectionNote>
       ) : permissions === null ? (
-        <SectionNote>Reading permissions…</SectionNote>
+        permissionsError ? (
+          <div style={{ padding: "0 0 12px" }}>
+            <Button theme="secondary" size="xs" onClick={refreshPermissions}>
+              Retry
+            </Button>
+          </div>
+        ) : (
+          <SectionNote>Reading permissions…</SectionNote>
+        )
       ) : permissions.length === 0 ? (
         <SectionNote>This app declares no runtime permissions.</SectionNote>
       ) : (

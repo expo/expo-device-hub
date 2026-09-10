@@ -101,7 +101,23 @@ describe("resetPermissions", () => {
         "pm grant com.example.app android.permission.ACCESS_FINE_LOCATION",
         "pm clear-permission-flags com.example.app android.permission.ACCESS_FINE_LOCATION user-set user-fixed",
         "appops reset com.example.app",
-      ].join("; "),
+      ]
+        .map((command) => `${command} || echo 'PERMISSION_RESET_FAILED: ${command}'`)
+        .join("; "),
     ]);
+  });
+
+  test("fails when any command in the chain fails", async () => {
+    const calls: string[][] = [];
+    const list = recordingExec(calls);
+    const chain = recordingExec(
+      calls,
+      "PERMISSION_RESET_FAILED: pm revoke com.example.app android.permission.CAMERA\n",
+    );
+    const execText: typeof list = (cmd, args, opts) =>
+      (calls.length === 0 ? list : chain)(cmd, args, opts);
+    await expect(
+      resetPermissions("emulator-5554", "com.example.app", { execText }),
+    ).rejects.toThrow("pm revoke com.example.app android.permission.CAMERA");
   });
 });

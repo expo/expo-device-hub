@@ -1951,7 +1951,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       camera: cameraSupported,
       accessibility: accessibilityLoader !== null,
       location: locationCapabilities,
-      permissions: true,
+      permissions: permissionsBackend !== null,
       streamSettings: { maxDimension: true, h264Fps: true, h264Bitrate: true },
     },
     foregroundApp,
