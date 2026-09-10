@@ -6,6 +6,7 @@ import {
 import { SidebarToggle, bg } from '../primitives';
 import { AccessibilitySection } from './AccessibilitySection';
 import { CameraSection } from './CameraSection';
+import { PermissionsSection } from './PermissionsSection';
 import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
 import { CurrentAppSection } from './CurrentAppSection';
 import { DeviceOptionsSection } from './DeviceOptionsSection';
@@ -133,6 +134,7 @@ export function LogSidebar({
         {client?.capabilities.camera && <CameraSection client={client} />}
         {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
         {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
+        {client?.capabilities.permissions && <PermissionsSection client={client} />}
         {client?.capabilities.events && <EventsSection client={client} />}
         <LogsSection client={client} />
       </div>
