@@ -59,7 +59,9 @@ describe('Android app icon', () => {
   test('throws on a failure response so the cache does not keep the miss', async () => {
     const { fetchImpl } = jsonFetch({ ok: false, error: 'packageName is invalid' }, 400);
 
-    expect(fetchAndroidAppIcon(BASE, null, 'com.example.app', fetchImpl)).rejects.toThrow('400');
+    await expect(fetchAndroidAppIcon(BASE, null, 'com.example.app', fetchImpl)).rejects.toThrow(
+      '400',
+    );
   });
 
   test('caches a resolved icon and retries after a failure', async () => {
