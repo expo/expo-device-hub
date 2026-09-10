@@ -10,8 +10,41 @@ layer, is marked `private` and is skipped by the release tooling.
 Releases are driven by [changesets](https://github.com/changesets/changesets): the version
 bump and changelog for each package are computed from the `.changeset/*.md` entries that have
 accumulated since the last release. The **Release** GitHub Actions workflow
-(`.github/workflows/release.yml`) is dispatched manually and publishes to npm using **OIDC
-Trusted Publishing** (no long-lived `NPM_TOKEN`).
+(`.github/workflows/release.yml`) runs on Ubuntu and publishes to npm using **OIDC
+Trusted Publishing** (no long-lived `NPM_TOKEN`). Pushes to `main` publish canaries;
+manual dispatch selects a stable or canary release. The build runs on EAS macOS.
+
+## GitHub and EAS handoff
+
+The root `.eas/workflows/build-release.yml` installs the monorepo's locked dependencies,
+builds all workspaces (including serve-sim's native helpers), runs tests, and uploads the
+final npm tarball. Root `app.config.js` shares the existing hub EAS project identity from
+`packages/expo-device-hub/app.json`.
+
+GitHub calculates the final version with Changesets, then dispatches EAS at the triggering
+commit SHA with that version as an explicit workflow input. EAS initializes the pinned
+submodules and applies the version before building. This also supports canaries without
+pushing temporary version commits. The tarball's published files do not include the changelog;
+GitHub retains the locally generated changelog for its release notes.
+
+The Ubuntu job waits for EAS, downloads the named artifact, and verifies its package name,
+version, web/server output, native helpers, and WebRTC runtime files. Stable releases then
+commit/push the version changes, publish the downloaded tarball, create/push the npm-version
+tag, and attach the same tarball to the GitHub release. Canaries publish the tarball under
+`canary` without creating commits, tags, or GitHub releases. Publishing uses `npm publish`
+directly so the EAS artifact is never repacked on Ubuntu.
+
+Before using the pipeline, link the hub EAS project to this GitHub repository with the
+project directory at the repository root, and make
+`EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN` available to the GitHub `npm-publish` environment
+(an organization or repository secret also works). The token needs access to that EAS
+project. Keep the existing npm trusted publisher configured for `.github/workflows/release.yml`
+and the `npm-publish` environment. No npm publish credentials are required in EAS.
+
+This first version rebuilds on each release; it does not yet cache native artifacts. A failed
+EAS build stops before version changes are pushed or npm is published. Failures after the
+version push can still leave a release commit without a published package; inspect the npm
+version and Git tags before retrying. GitHub's 90-minute timeout includes EAS queue time.
 
 ## Cutting a release
 
@@ -33,10 +66,10 @@ largest one requested.
 
 Go to **Actions → Release → Run workflow**. The only input is **canary**:
 
-- **off** (default) → real release. The workflow tests, builds, versions, publishes to npm,
+- **off** (default) → real release. The workflow versions, builds/tests on EAS, publishes to npm,
   pushes the release commit and tags, and creates GitHub releases.
-- **on** → canary release. The workflow tests, builds, and versions as usual, then rewrites each
-  published package's version into a prerelease and publishes it under the **`canary`** npm
+- **on** → canary release. The workflow calculates a prerelease version, builds/tests it on
+  EAS, and publishes it under the **`canary`** npm
   dist-tag — without committing the version bump, pushing tags, or creating GitHub releases.
   Install it with `npm install expo-device-hub@canary`, and `latest` stays untouched.
 

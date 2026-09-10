@@ -18,7 +18,8 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
     environment: npm-publish
     env:
       IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
@@ -42,15 +43,10 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: "24.x"
+          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
-
-      - name: Build packages
-        run: bun run build
-
-      - name: Test
-        run: bun run test
 
       - name: Configure git
         run: |
@@ -71,6 +67,36 @@ jobs:
       - name: Summarize versions
         run: ./scripts/summarize-versions.ts
 
+      - name: Read release version
+        id: release
+        run: echo "version=$(node -p 'require("./packages/expo-device-hub/package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Build npm package with EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          npx --yes eas-cli@24.0.0 workflow:run .eas/workflows/build-release.yml \
+            --ref "$RELEASE_SHA" \
+            --input "version=$RELEASE_VERSION" \
+            --wait --non-interactive --json > "$RUNNER_TEMP/eas-workflow.json"
+
+      - name: Download and verify EAS package
+        env:
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          ARTIFACT_URL=$(jq -er '
+            if .status != "SUCCESS" then error("EAS workflow did not succeed") else . end
+            | [.jobs[].turtleJobRun.artifacts[]?
+                | select(.name == "expo-device-hub-package") | .downloadUrl]
+            | if length == 1 then .[0] else error("Expected exactly one npm artifact") end
+          ' "$RUNNER_TEMP/eas-workflow.json")
+          mkdir -p release-artifacts
+          curl --fail --location --retry 3 "$ARTIFACT_URL" \
+            --output "release-artifacts/expo-device-hub-${RELEASE_VERSION}.tgz"
+          bun scripts/verify-release-artifact.ts "release-artifacts/expo-device-hub-${RELEASE_VERSION}.tgz"
+
       - name: Commit & push version bump
         if: ${{ env.IS_CANARY != 'true' }}
         run: |
@@ -78,20 +104,21 @@ jobs:
           git commit -m "chore(release): version packages"
           git push origin "HEAD:${{ github.ref_name }}"
 
-      - name: Ignore packages excluded from release
-        run: ./scripts/ignore-packages.ts
-
       - name: Publish to npm
         if: ${{ env.IS_CANARY != 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: bun run changeset:publish
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          npm publish "release-artifacts/expo-device-hub-${RELEASE_VERSION}.tgz" --access public
+          git tag "expo-device-hub@${RELEASE_VERSION}"
 
       - name: Publish canary to npm
         if: ${{ env.IS_CANARY == 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: bun run changeset:publish -- --tag canary
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: npm publish "release-artifacts/expo-device-hub-${RELEASE_VERSION}.tgz" --access public --tag canary
 
       - name: Push git tags
         if: ${{ env.IS_CANARY != 'true' }}
