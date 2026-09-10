@@ -1,6 +1,7 @@
 import type { Gesture } from "./input.ts";
 import type { GeoFix } from "./location.ts";
 import { LogcatHub } from "./logcat.ts";
+import { MetricsSampler } from "./metrics.ts";
 import {
   RoutePlayback,
   type RoutePlaybackClock,
@@ -51,6 +52,7 @@ export class DeviceSessionState {
   readonly serial: string;
   readonly recorder: SessionRecorder;
   readonly logcat: LogcatHub;
+  readonly metrics: MetricsSampler;
   readonly route: RoutePlayback;
   readonly abortController = new AbortController();
   readonly replayHandlers: ReplayHandlers;
@@ -70,6 +72,7 @@ export class DeviceSessionState {
     this.#now = options.now ?? Date.now;
     this.recorder = options.recorder ?? new SessionRecorder();
     this.logcat = options.logcat ?? new LogcatHub(options.serial);
+    this.metrics = new MetricsSampler({ serial: options.serial });
     this.route = new RoutePlayback({
       applyLocation: async (fix, signal) => {
         await this.#setLocation(fix, signal, false);
@@ -183,6 +186,7 @@ export class DeviceSessionState {
     this.route.stop();
     this.route.close();
     this.logcat.close(reason);
+    this.metrics.close();
     this.#disposeTask = (async () => {
       await this.recorder.dispose();
       // A start awaiting its first fix may otherwise install a timer after the

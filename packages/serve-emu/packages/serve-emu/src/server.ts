@@ -2835,6 +2835,18 @@ export async function startServer(
         }
       }
 
+      if (url.pathname === "/api/metrics") {
+        if (req.method !== "GET")
+          return new Response("method not allowed", { status: 405 });
+        try {
+          sessions.assertCurrent(requestContext);
+          srv.timeout(req, 0);
+          return requestContext.metrics.subscribe(req.signal);
+        } catch (err) {
+          return errorResponse(err);
+        }
+      }
+
       if (url.pathname === "/api/screenshot") {
         if (req.method !== "GET" && req.method !== "POST") {
           return new Response("method not allowed", { status: 405 });

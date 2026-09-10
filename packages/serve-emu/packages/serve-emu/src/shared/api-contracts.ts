@@ -472,6 +472,22 @@ export type LogcatEventMap = {
   close: { code: number | null; signal: string | null };
 };
 
+export type MetricsMeta = {
+  schemaVersion: 1;
+  udid: string;
+  hostCores: number;
+  sampleIntervalMs: number;
+};
+
+export type MetricSample = {
+  t: number;
+  bundleId: string | null;
+  cpuPct: number;
+  memBytes: number;
+  netInBytesPerSec: number;
+  netOutBytesPerSec: number;
+};
+
 export type FrameStatsSummary = {
   windowFrames: number;
   intervalMs: { p50: number; p95: number; max: number } | null;
@@ -630,6 +646,7 @@ export type ApiContractMap = {
     POST: EndpointContract<{ scale: number }, DisplayDensityResponse>;
   };
   "/api/logcat": { GET: EndpointContract<undefined, never> };
+  "/api/metrics": { GET: EndpointContract<undefined, never> };
   "/api/screenshot": {
     GET: EndpointContract<undefined, ScreenshotBase64Response | BinaryPngResponse>;
     POST: EndpointContract<undefined, ScreenshotBase64Response | BinaryPngResponse>;
@@ -1951,6 +1968,7 @@ export const API_SUCCESS_PARSERS = {
     POST: parseDisplayDensityResponse,
   },
   "/api/logcat": { GET: unsupportedStreamingResponse },
+  "/api/metrics": { GET: unsupportedStreamingResponse },
   "/api/screenshot": { GET: parseScreenshotResponse, POST: parseScreenshotResponse },
   "/api/foreground": { GET: parseForegroundResponse },
   "/api/accessibility": { GET: parseAccessibilitySnapshot },
