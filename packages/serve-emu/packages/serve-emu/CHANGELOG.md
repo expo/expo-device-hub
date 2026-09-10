@@ -18,6 +18,8 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 - Add `GET /api/apps/permissions`, `POST /api/apps/revoke`, and
   `POST /api/apps/reset-permissions` to list, revoke, and reset one package's
   runtime permissions.
+- Add `GET /api/apps/icon`, which returns a package's launcher bitmap as base64
+  by pulling the base APK and resolving its adaptive icon with `aapt2`.
 - Add emulator-only gRPC screenshot streaming with host-side H.264 encoding,
   a CLI source flag, a runtime HTTP API, and a browser UI source selector.
 - Add strict PNG and shared-memory MMAP image modes for gRPC capture, selectable

@@ -7,6 +7,7 @@ import type {
   ApiRequest,
   AppActionResponse,
   AppPermissionsResponse,
+  AppIcon,
   AppliedGeoFix,
   AvdStartResponse,
   AvdStopResponse,
@@ -112,6 +113,7 @@ export type ApiDependencies = {
   listPermissions: (packageName: string) => Promise<AppPermissionsResponse>;
   revokePermission: (packageName: string, permission: string) => Promise<AppActionResponse>;
   resetPermissions: (packageName: string) => Promise<AppActionResponse>;
+  readAppIcon: (packageName: string) => Promise<AppIcon | null>;
 
   getLocation: () => LocationResponse;
   setLocation: (fix: GeoFix) => Promise<AppliedGeoFix>;

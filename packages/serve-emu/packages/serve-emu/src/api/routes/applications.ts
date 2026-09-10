@@ -144,5 +144,19 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
         );
       },
     },
+    {
+      method: "GET",
+      path: "/api/apps/icon",
+      handler: async ({ url, deps }) => {
+        const pkg = parseInput(() =>
+          packageName(url.searchParams.get("packageName")),
+        );
+        return Response.json({
+          ok: true,
+          packageName: pkg,
+          icon: await downstream("read app icon", () => deps.readAppIcon(pkg)),
+        });
+      },
+    },
   ];
 }
