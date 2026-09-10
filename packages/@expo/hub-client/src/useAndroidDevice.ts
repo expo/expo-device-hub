@@ -523,7 +523,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       locationUrl === null
         ? null
         : {
-            read: () => readAndroidLocation(fetch, locationUrl),
+            read: (signal) => readAndroidLocation(fetch, locationUrl, signal),
             set: (fix) => writeAndroidLocation(fetch, locationUrl, fix),
           },
     [locationUrl],

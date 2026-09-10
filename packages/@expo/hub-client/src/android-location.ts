@@ -23,9 +23,10 @@ export function parseAndroidFix(value: unknown): DeviceGeoFix | null {
 export async function readAndroidLocation(
   fetchImpl: typeof fetch,
   url: string,
+  signal?: AbortSignal,
 ): Promise<DeviceLocationRead | null> {
   try {
-    const response = await fetchImpl(url, { cache: "no-store" });
+    const response = await fetchImpl(url, { cache: "no-store", signal });
     if (!response.ok) return null;
     const payload = asRecord(await response.json());
     if (!payload || typeof payload.emulator !== "boolean") return null;
