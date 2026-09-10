@@ -2,6 +2,9 @@ import { spawnSync } from "node:child_process";
 import { describe, expect, test } from "bun:test";
 import {
   createFfmpegAvailabilityProbe,
+  createFfmpegEncoderResolver,
+  ffmpegEncoderArgs,
+  runFfmpegSmokeEncode,
   FfmpegStderrTail,
   ffmpegInputArgs,
   H264Encoder,
@@ -9,6 +12,7 @@ import {
   resolveFfmpeg,
   videoFilter,
   type H264EncoderOpts,
+  type FfmpegEncoderName,
 } from "../src/h264-encoder.ts";
 import type { ExecResult } from "../src/exec.ts";
 import type { VideoFrame } from "../src/scrcpy.ts";
@@ -51,6 +55,9 @@ function hasFfmpegWithLibx264(): boolean {
 }
 
 const realFfmpegTest = hasFfmpegWithLibx264() ? test : test.skip;
+const hostResolver = createFfmpegEncoderResolver();
+const hostHardwareEncoder = await hostResolver.resolveEncoder("hardware").catch(() => null);
+const realHardwareTest = hostHardwareEncoder ? test : test.skip;
 
 function nal(
   typeByte: number,
@@ -188,12 +195,288 @@ describe("H264OutputParser", () => {
     expect(frames.map((frame) => frame.pts)).toEqual([16_667n, 33_334n]);
   });
 
+  test("fails bounded output with no AUD instead of silently buffering forever", () => {
+    const parser = new H264OutputParser({ fps: 30, onFrame: () => {} });
+    parser.push(nal(0x65));
+    expect(() => parser.push(Buffer.alloc(1024 * 1024, 0xff))).toThrow(
+      "without an AUD (access unit delimiter)",
+    );
+  });
+
   test("rejects invalid parser timing and timestamps", () => {
     expect(() => new H264OutputParser({ fps: 0, onFrame: () => {} })).toThrow(
       "fps must be greater than 0",
     );
     const parser = new H264OutputParser({ fps: 60, onFrame: () => {} });
     expect(() => parser.enqueuePts(-1n)).toThrow("non-negative bigint");
+  });
+});
+
+describe("ffmpeg backend arguments", () => {
+  const options = {
+    width: 360, height: 641, fps: 30, bitRate: 8_000_000,
+    keyFrameInterval: 2, quarterTurn: 1 as const,
+  };
+
+  test("preserves the complete existing software command exactly", () => {
+    const expected = [
+      "-hide_banner", "-loglevel", "error",
+      "-f", "rawvideo", "-pix_fmt", "rgb24", "-video_size", "360x641",
+      "-framerate", "30", "-i", "pipe:0", "-an", "-vf",
+      "crop=trunc(iw/2)*2:trunc(ih/2)*2,transpose=cclock",
+      "-pix_fmt", "yuv420p", "-c:v", "libx264",
+      "-preset", "ultrafast", "-tune", "zerolatency", "-profile:v", "baseline",
+      "-b:v", "8000000", "-maxrate", "8000000", "-bufsize", "8000000",
+      "-x264-params", "keyint=60:min-keyint=60:scenecut=0:repeat-headers=1:aud=1",
+      "-f", "h264", "-flush_packets", "1", "pipe:1",
+    ];
+    expect(ffmpegEncoderArgs(options)).toEqual(expected);
+    expect(ffmpegEncoderArgs({ ...options, encoderName: "libx264" })).toEqual(expected);
+    expect(ffmpegEncoderArgs({ ...options, keyFrameInterval: 0 })).toContain(
+      "keyint=250:min-keyint=250:scenecut=0:repeat-headers=1:aud=1",
+    );
+    expect(ffmpegEncoderArgs({ ...options, inputFormat: "png" })).toEqual([
+      ...expected.slice(0, 3), ...ffmpegInputArgs("png", 360, 641, 30),
+      ...expected.slice(13),
+    ]);
+  });
+
+  test.each([
+    ["h264_videotoolbox", [
+      "-pix_fmt", "nv12", "-c:v", "h264_videotoolbox",
+      "-allow_sw", "0", "-realtime", "1", "-flags", "+low_delay",
+      "-profile:v", "baseline",
+      "-b:v", "8000000", "-maxrate", "8000000", "-bufsize", "8000000",
+      "-g", "60", "-bf", "0", "-bsf:v", "h264_metadata=aud=insert",
+    ]],
+    ["h264_nvenc", [
+      "-pix_fmt", "nv12", "-c:v", "h264_nvenc",
+      "-preset", "p1", "-tune", "ull", "-zerolatency", "1",
+      "-delay", "0", "-bf", "0", "-rc-lookahead", "0", "-rc", "cbr",
+      "-b:v", "8000000", "-maxrate", "8000000", "-bufsize", "8000000",
+      "-g", "60", "-forced-idr", "1", "-aud", "1", "-profile:v", "baseline",
+    ]],
+    ["h264_vaapi", [
+      "-c:v", "h264_vaapi", "-rc_mode", "CBR",
+      "-b:v", "8000000", "-maxrate", "8000000", "-bufsize", "8000000",
+      "-g", "60", "-bf", "0", "-async_depth", "1",
+      "-profile:v", "constrained_baseline", "-bsf:v", "h264_metadata=aud=insert",
+    ]],
+  ] as const)("builds low-delay %s with the shared geometry and Annex-B tail", (encoderName, backendArgs) => {
+    const args = ffmpegEncoderArgs({ ...options, encoderName }, "/dev/dri/custom");
+    expect(args).toEqual([
+      "-hide_banner", "-loglevel", "error",
+      ...(encoderName === "h264_vaapi"
+        ? ["-init_hw_device", "vaapi=va:/dev/dri/custom", "-filter_hw_device", "va"] : []),
+      ...ffmpegInputArgs("rgb24", 360, 641, 30), "-an", "-vf",
+      "crop=trunc(iw/2)*2:trunc(ih/2)*2,transpose=cclock" +
+        (encoderName === "h264_vaapi" ? ",format=nv12,hwupload" : ""),
+      ...backendArgs, "-f", "h264", "-flush_packets", "1", "pipe:1",
+    ]);
+    expect(args).not.toContain("libx264");
+    expect(args).not.toContain("-x264-params");
+  });
+});
+
+function smokeResult(overrides: Partial<ExecResult<Buffer>> = {}): ExecResult<Buffer> {
+  return {
+    ...execResult(),
+    stdout: Buffer.concat([aud(), nal(0x67), nal(0x68), nal(0x65), aud(), nal(0x41)]),
+    ...overrides,
+  };
+}
+
+const hardwareListing = () => Promise.resolve(execResult({
+  stdout: "V..... libx264\nV..... h264_videotoolbox\nV..... h264_nvenc\nV..... h264_vaapi",
+}));
+
+describe("ffmpeg hardware resolver", () => {
+  test("software ignores hardware configuration and retains the libx264 check", async () => {
+    const resolver = createFfmpegEncoderResolver({
+      runExec: hardwareListing,
+      hardwareEncoder: () => "invalid",
+      runSmoke: async () => { throw new Error("unexpected smoke encode"); },
+    });
+    expect(await resolver.resolveEncoder("software")).toBe("libx264");
+    expect(resolver.getHardwareEncoderError()).toBeUndefined();
+  });
+
+  test("selects VideoToolbox on macOS, passes bounded input, and caches the binary/config", async () => {
+    let binary = "ffmpeg-one";
+    let pin: string | undefined;
+    const calls: string[] = [];
+    const resolver = createFfmpegEncoderResolver({
+      platform: () => "darwin", resolveBinary: () => binary,
+      hardwareEncoder: () => pin, runExec: hardwareListing,
+      runSmoke: async (exe, args, input, opts) => {
+        calls.push(exe);
+        expect(args).toContain(pin === "nvenc" ? "h264_nvenc" : "h264_videotoolbox");
+        expect(input.length).toBe(128 * 128 * 3 * 4);
+        expect(opts).toMatchObject({ timeout: 3_000, maxBuffer: 1024 * 1024 });
+        return smokeResult();
+      },
+    });
+    expect(await resolver.resolveEncoder("hardware")).toBe("h264_videotoolbox");
+    await resolver.resolveEncoder("hardware");
+    expect(calls).toHaveLength(1);
+    binary = "ffmpeg-two";
+    await resolver.resolveEncoder("hardware");
+    pin = "nvenc";
+    expect(await resolver.resolveEncoder("hardware")).toBe("h264_nvenc");
+    expect(calls).toEqual(["ffmpeg-one", "ffmpeg-two", "ffmpeg-two"]);
+  });
+
+  test("tries NVENC then VAAPI on Linux, passing the configured VAAPI device", async () => {
+    const calls: string[] = [];
+    const checked: string[] = [];
+    const resolver = createFfmpegEncoderResolver({
+      platform: () => "linux", hardwareEncoder: () => undefined,
+      runExec: hardwareListing, vaapiDevice: () => "/dev/dri/renderD129",
+      checkVaapiDevice: async (path) => { checked.push(path); },
+      runSmoke: async (_binary, args) => {
+        const name = args[args.indexOf("-c:v") + 1]!;
+        calls.push(name);
+        if (name === "h264_nvenc") return smokeResult({ status: 1, stderr: "Cannot load libcuda.so.1" });
+        expect(args).toContain("vaapi=va:/dev/dri/renderD129");
+        return smokeResult();
+      },
+    });
+    expect(await resolver.resolveEncoder("hardware")).toBe("h264_vaapi");
+    expect(calls).toEqual(["h264_nvenc", "h264_vaapi"]);
+    expect(checked).toEqual(["/dev/dri/renderD129"]);
+  });
+
+  test("a pinned backend never falls back, and failed probes remain retryable", async () => {
+    let fail = true;
+    const calls: string[] = [];
+    const resolver = createFfmpegEncoderResolver({
+      platform: () => "linux", hardwareEncoder: () => "nvenc", runExec: hardwareListing,
+      runSmoke: async (_binary, args) => {
+        calls.push(args[args.indexOf("-c:v") + 1]!);
+        return fail ? smokeResult({ status: 1, stderr: "NVIDIA driver unavailable" }) : smokeResult();
+      },
+    });
+    await expect(resolver.resolveEncoder("hardware")).rejects.toThrow("NVIDIA driver unavailable");
+    expect(resolver.getHardwareEncoderError()).toContain("h264_nvenc");
+    fail = false;
+    expect(await resolver.resolveEncoder("hardware")).toBe("h264_nvenc");
+    expect(resolver.getHardwareEncoderError()).toBeUndefined();
+    expect(calls).toEqual(["h264_nvenc", "h264_nvenc"]);
+  });
+
+  test("a changed VAAPI device requires a new probe and scopes its failure", async () => {
+    let device = "/dev/dri/renderD128";
+    const resolver = createFfmpegEncoderResolver({
+      hardwareEncoder: () => "vaapi", vaapiDevice: () => device,
+      runExec: hardwareListing, runSmoke: async () => smokeResult(),
+      checkVaapiDevice: async (path) => { if (path.endsWith("129")) throw new Error("EACCES"); },
+    });
+    expect(await resolver.resolveEncoder("hardware")).toBe("h264_vaapi");
+    device = "/dev/dri/renderD129";
+    await expect(resolver.resolveEncoder("hardware")).rejects.toThrow("check the render group");
+    expect(resolver.getHardwareEncoderError()).toContain(device);
+    device = "/dev/dri/renderD128";
+    expect(resolver.getHardwareEncoderError()).toBeUndefined();
+  });
+
+  test.each(["SPS", "PPS", "IDR", "AUD boundaries"])("rejects smoke output missing %s", async (missing) => {
+    const output = Buffer.concat([
+      ...(missing === "AUD boundaries" ? [] : [aud()]),
+      ...(missing === "SPS" ? [] : [nal(0x67)]),
+      ...(missing === "PPS" ? [] : [nal(0x68)]),
+      ...(missing === "IDR" ? [] : [nal(0x65)]),
+      aud(),
+    ]);
+    const resolver = createFfmpegEncoderResolver({
+      hardwareEncoder: () => "videotoolbox", runExec: hardwareListing,
+      runSmoke: async () => smokeResult({ stdout: output }),
+    });
+    await expect(resolver.resolveEncoder("hardware")).rejects.toThrow(missing);
+  });
+
+  test("reports invalid pins, unsupported platforms and missing encoder builds", async () => {
+    for (const [pin, platform, message] of [
+      ["unknown", "darwin", "must be videotoolbox, nvenc, or vaapi"],
+      [undefined, "win32", "not supported on win32"],
+      ["nvenc", "linux", "encoder is not included"],
+    ] as const) {
+      const resolver = createFfmpegEncoderResolver({
+        hardwareEncoder: () => pin, platform: () => platform,
+        runExec: async () => execResult(),
+      });
+      await expect(resolver.resolveEncoder("hardware")).rejects.toThrow(message);
+    }
+  });
+
+  test("retains the stderr tail and reports timeout failures", async () => {
+    const resolver = createFfmpegEncoderResolver({
+      hardwareEncoder: () => "videotoolbox", runExec: hardwareListing,
+      runSmoke: async () => smokeResult({ status: 1, stderr: "discard" + "x".repeat(20_000) + " useful driver error" }),
+    });
+    await expect(resolver.resolveEncoder("hardware")).rejects.toThrow("useful driver error");
+    expect(resolver.getHardwareEncoderError()).not.toContain("discard");
+    const timeout = createFfmpegEncoderResolver({
+      hardwareEncoder: () => "videotoolbox", runExec: hardwareListing,
+      runSmoke: async () => smokeResult({ status: null, timedOut: true, error: new Error("deadline") }),
+    });
+    await expect(timeout.resolveEncoder("hardware")).rejects.toThrow("timed out after 3000ms");
+  });
+
+  test("cancels before and during probing without caching a hardware failure", async () => {
+    let calls = 0;
+    const resolver = createFfmpegEncoderResolver({
+      hardwareEncoder: () => "videotoolbox", runExec: hardwareListing,
+      runSmoke: async (_binary, _args, _input, options) => {
+        calls++;
+        if (calls === 1) await new Promise<void>((resolve) => {
+          options.signal!.addEventListener("abort", () => resolve(), { once: true });
+        });
+        return smokeResult();
+      },
+    });
+    const controller = new AbortController();
+    const reason = new Error("capture cancelled");
+    const active = resolver.resolveEncoder("hardware", controller.signal);
+    await Promise.resolve();
+    await Promise.resolve();
+    controller.abort(reason);
+    await expect(active).rejects.toBe(reason);
+    expect(resolver.getHardwareEncoderError()).toBeUndefined();
+    await expect(resolver.resolveEncoder("hardware", controller.signal)).rejects.toBe(reason);
+    expect(await resolver.resolveEncoder("hardware")).toBe("h264_videotoolbox");
+    expect(calls).toBe(2);
+  });
+
+  realFfmpegTest("the host provides a working hardware encoder or an actionable strict failure", () => {
+    if (hostHardwareEncoder) expect(hostHardwareEncoder).toMatch(/^h264_(videotoolbox|nvenc|vaapi)$/);
+    else expect(hostResolver.getHardwareEncoderError()).toContain("Hardware H.264 encoder unavailable");
+  });
+});
+
+describe("smoke subprocess bounds", () => {
+  test("kills an encode that exceeds its timeout", async () => {
+    const start = Date.now();
+    const result = await runFfmpegSmokeEncode(process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"], Buffer.alloc(0), { timeout: 30 });
+    expect(result.timedOut).toBe(true);
+    expect(Date.now() - start).toBeLessThan(1_500);
+  });
+
+  test("terminates an aborted encode", async () => {
+    const controller = new AbortController();
+    const reason = new Error("cancel test encode");
+    const pending = runFfmpegSmokeEncode(process.execPath,
+      ["-e", "setInterval(() => {}, 1000)"], Buffer.alloc(0), { timeout: 1000, signal: controller.signal });
+    controller.abort(reason);
+    expect((await pending).error).toBe(reason);
+  });
+
+  test("limits subprocess output", async () => {
+    const result = await runFfmpegSmokeEncode(process.execPath,
+      ["-e", "process.stdout.write('x'.repeat(65536)); setInterval(() => {}, 1000)"],
+      Buffer.alloc(0), { timeout: 1000, maxBuffer: 100 });
+    expect(result.error?.message).toContain("output limit");
+    expect(result.stdout.length).toBeLessThanOrEqual(100);
   });
 });
 
@@ -572,4 +855,41 @@ describe("ffmpeg diagnostics", () => {
     expect(stderr.text()).not.toContain("discarded:");
     expect(stderr.text()).toEndWith(":actionable failure");
   });
+});
+
+realHardwareTest("streams real hardware H.264 after only one idle duplicate, before stdin closes", async () => {
+  const frames: VideoFrame[] = [];
+  let resolveFrame!: () => void;
+  let rejectFrame!: (error: Error) => void;
+  const ready = new Promise<void>((resolve, reject) => {
+    resolveFrame = resolve;
+    rejectFrame = reject;
+  });
+  const encoder = new H264Encoder({
+    width: 128, height: 128, fps: 30, bitRate: 1_000_000, keyFrameInterval: 1,
+    encoderName: hostHardwareEncoder as FfmpegEncoderName,
+    onFrame(frame) { frames.push(frame); if (frame.isKey) resolveFrame(); },
+    onExit(reason) { rejectFrame(new Error(reason)); },
+  });
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const image = Buffer.alloc(128 * 128 * 3, 96);
+    // Honour pipe backpressure, as the actual gRPC capture session does.
+    for (let index = 1; index <= 2; index++) {
+      const deadline = Date.now() + 1_000;
+      while (!encoder.write(image, BigInt(index))) {
+        if (Date.now() >= deadline) throw new Error("hardware input never drained");
+        await Bun.sleep(10);
+      }
+      await Bun.sleep(100);
+    }
+    await Promise.race([ready, new Promise<never>((_, reject) => {
+      timeout = setTimeout(() => reject(new Error("hardware did not stream before EOF")), 2_000);
+    })]);
+    expect(frames.some((frame) => frame.isConfig)).toBe(true);
+    expect(frames.some((frame) => frame.isKey && frame.pts === 1n)).toBe(true);
+  } finally {
+    clearTimeout(timeout);
+    await encoder.close();
+  }
 });
