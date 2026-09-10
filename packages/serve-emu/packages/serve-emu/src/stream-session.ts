@@ -10,6 +10,7 @@ import {
 } from "./scrcpy.ts";
 import type {
   GrpcCaptureDiagnostics,
+  GrpcEncoder,
   GrpcImageMode,
   InputSource,
   StreamMode,
@@ -65,6 +66,8 @@ export type StartEmuSessionOptions = StartOpts & {
   mode: StreamMode;
   /** Exact emulator screenshot image mode. Capture never silently falls back. */
   grpcImageMode: GrpcImageMode;
+  /** Host H.264 encoder used only for gRPC capture; defaults to software. */
+  encoder?: GrpcEncoder;
   /** Exact input source. scrcpy capture always requires scrcpy input. */
   inputSource: InputSource;
 };
@@ -87,8 +90,9 @@ export async function startEmuSession(
   if (options.inputSource !== "scrcpy") {
     throw new Error("scrcpy streaming requires scrcpy input");
   }
+  const { encoder: _encoder, ...scrcpyOptions } = options;
   return prepareDecodableScrcpySession(
-    await startScrcpy(options),
+    await startScrcpy(scrcpyOptions),
     options.signal,
   );
 }

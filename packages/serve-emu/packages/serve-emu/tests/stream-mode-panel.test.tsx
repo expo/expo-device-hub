@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  GrpcEncoderSelector,
   GrpcImageModeSelector,
   StreamStatsDownloadControl,
   StreamModePanel,
@@ -178,4 +179,21 @@ test("renders RGB888 applied and disabled during a pending change", () => {
     .find((option: { key: string }) => option.key === "rgb888")
     .props.children[0].props.onChange();
   expect(selected).toBe("rgb888");
+});
+
+test("renders the active hardware encoder and disables an unavailable hardware option", () => {
+  const hardware = renderToStaticMarkup(
+    <GrpcEncoderSelector value="hardware" available={["software", "hardware"]} disabled={false} encoderName="h264_videotoolbox" onChange={() => {}} />,
+  );
+  expect(hardware).toContain('aria-label="Encoder"');
+  expect(hardware).toContain('aria-describedby="grpc-encoder-status"');
+  expect(hardware).toContain('<option value="hardware" selected="">Hardware</option>');
+  expect(hardware).toContain('Active encoder: h264_videotoolbox');
+  const unavailable = renderToStaticMarkup(
+    <GrpcEncoderSelector value="software" available={["software"]} disabled encoderName="libx264" hardwareEncoderError="Hardware encoder unavailable" onChange={() => {}} />,
+  );
+  expect(unavailable).toContain('<fieldset class="stream-mode-fieldset" disabled="">');
+  expect(unavailable).toContain('<option value="hardware" disabled="">Hardware</option>');
+  expect(unavailable).toContain('role="alert"');
+  expect(unavailable).toContain('Hardware encoder unavailable');
 });

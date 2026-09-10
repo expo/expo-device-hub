@@ -58,7 +58,10 @@ Planned:
 - `adb` on PATH from Android platform-tools
 - A booted device/emulator from `adb devices`, or an AVD name passed with `--avd`
 - A modern browser with H.264 WebRTC support or WebCodecs; MSE is used when WebCodecs is unavailable
-- `ffmpeg` with `libx264` when using `--stream-mode grpc-screenshot`
+- `ffmpeg` with `libx264` when using `--stream-mode grpc-screenshot` (the default software encoder)
+- For `--encoder hardware`: macOS uses VideoToolbox (included in Homebrew ffmpeg); Linux tries NVENC, then VAAPI. NVENC requires the NVIDIA driver. On Ubuntu/Debian, install `ffmpeg` and a VAAPI driver such as `intel-media-va-driver-non-free` or `mesa-va-drivers` for Intel/AMD, with access to `/dev/dri/renderD128` through the `render` group. Docker also needs `--device /dev/dri`.
+
+Hardware selection runs a short encode probe and requires a working hardware backend. It never falls back to software. `SERVE_EMU_HARDWARE_ENCODER=videotoolbox|nvenc|vaapi` pins a backend; `SERVE_EMU_VAAPI_DEVICE` overrides the VAAPI device path.
 
 Node.js 18+ can invoke the published package through `npx`, but local development and server runtime use Bun.
 
@@ -100,7 +103,7 @@ bun run --filter serve-emu start
 ## CLI
 
 ```text
-serve-emu [-p <port>] [--host <addr>] [--token <secret>] [-s <serial>] [--stream-mode scrcpy|grpc-screenshot] [--grpc-image-mode png|mmap|rgb888] [--input-source scrcpy|grpc] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec] [--repeat-frame-ms ms] [--max-apk-upload-bytes N] [--max-media-upload-bytes N]
+serve-emu [-p <port>] [--host <addr>] [--token <secret>] [-s <serial>] [--stream-mode scrcpy|grpc-screenshot] [--grpc-image-mode png|mmap|rgb888] [--input-source scrcpy|grpc] [--encoder software|hardware] [--max-fps N] [--bit-rate N] [--max-size N] [--key-frame-interval sec] [--repeat-frame-ms ms] [--max-apk-upload-bytes N] [--max-media-upload-bytes N]
 serve-emu --transport webrtc [--stun-url url[,url...]] [--turn-url url[,url...] --turn-username user --turn-credential pass]
 serve-emu --avd <name> [--gpu <mode>] [--restart-avd] [--camera] [--camera-image <path.png>]
 serve-emu --avd-list
@@ -115,6 +118,7 @@ serve-emu --running-avds
 | `--unsafe-no-auth` | false | Allow a non-loopback bind with **no** authentication (dangerous) |
 | `-s, --serial` | auto | adb device serial; required when multiple devices are online |
 | `--stream-mode` | `scrcpy` | Screen capture source: `scrcpy`, or emulator-only host capture through `grpc-screenshot` |
+| `--encoder` | `software` | Host H.264 encoder for gRPC streaming: `software` uses libx264; `hardware` requires VideoToolbox, NVENC, or VAAPI. No software fallback |
 | `--grpc-image-mode` | `png` | gRPC screenshot image delivery: compressed in-band `png`, raw pixels through shared-memory `mmap`, or raw pixels in each gRPC message with `rgb888`. The selected mode is strict; capture errors do not fall back to another mode |
 | `--input-source` | `scrcpy` | Input transport for gRPC streaming: a control-only `scrcpy` server, or the emulator's `grpc` endpoint |
 | `--max-fps` | `60` | Cap source frame rate |
@@ -239,13 +243,29 @@ curl -X POST "$BASE/api/devices/select" \
   -d '{"serial":"emulator-5554"}'
 ```
 
-`GET /api/stream-mode` reports `mode`, `grpcImageMode`, `inputSource`, the
-available stream and input sources, and the active session generation. `PUT
-/api/stream-mode` accepts an optional `grpcImageMode` of `png`, `mmap`, or `rgb888` and an
-optional `inputSource` of `scrcpy` or `grpc` when `mode` is `grpc-screenshot`.
-gRPC streaming defaults to the control-only scrcpy input transport.
-Changing either value stages one replacement capture atomically; an MMAP error
-is returned to the caller and never retried as PNG.
+`GET /api/stream-mode` reports `mode`, `grpcImageMode`, `inputSource`, `encoder`,
+`encoderName`, `availableEncoders`, the available stream and input sources, and the
+active session generation. `encoderName` identifies the active ffmpeg backend, or is
+`null` for scrcpy. `availableEncoders` includes `software` and `hardware` so a failed
+hardware request can be retried. `hardwareEncoderError` is advisory: it describes
+the latest hardware probe or runtime encoder failure and clears after a successful
+hardware probe. Unexpected hardware encoder failures invalidate the cached probe,
+so the next hardware request probes again.
+`/health` and `/api` also report the active `encoderName`.
+
+`PUT /api/stream-mode` accepts optional `grpcImageMode` (`png`, `mmap`, or `rgb888`),
+`inputSource` (`scrcpy` or `grpc`), and `encoder` (`software` or `hardware`) when
+`mode` is `grpc-screenshot`. Omitted settings keep their configured values.
+gRPC streaming defaults to software encoding and the control-only scrcpy input
+transport. Changing these settings stages a replacement capture atomically; any
+failure is returned while the current capture keeps running. Hardware never falls
+back to software, and MMAP never falls back to PNG.
+
+```sh
+curl -X PUT "$BASE/api/stream-mode" \
+  -H 'Content-Type: application/json' \
+  -d '{"mode":"grpc-screenshot","encoder":"hardware"}'
+```
 
 `/health` includes bounded subprocess executor activity, queue depth, lane
 counts, deadlines, overload rejections, and output-limit totals. Device-grid
@@ -677,11 +697,12 @@ when one is present. If an explicitly selected emulator exposes an endpoint
 without a token, `serve-emu` prints a warning before using that local endpoint;
 only select this mode for an emulator you trust.
 
-`serve-emu` encodes all three modes with ffmpeg/libx264 into the same Annex-B H.264
+`serve-emu` encodes all three modes with ffmpeg, using libx264 by default or the
+selected hardware backend, into the same Annex-B H.264
 packet shape, so browser streaming, backpressure recovery, recording, and the
 REST and WebSocket control APIs remain unchanged. The selected gRPC image mode
 never falls back automatically. The UI can replace either source or gRPC image
-mode at runtime; the current stream stays live until the replacement is ready.
+mode or encoder at runtime; the current stream stays live until the replacement is ready.
 
 For MMAP, `--max-size 0` allocates the fixed shared region from the display's
 native size at session startup. Rotation remains native-size, but a foldable or

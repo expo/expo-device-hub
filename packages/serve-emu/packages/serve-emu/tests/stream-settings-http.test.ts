@@ -11,6 +11,7 @@ import type { StreamSocket } from "../src/stream-socket.ts";
 type CapturedStartOpts = StartOpts & {
   mode?: "scrcpy";
   grpcImageMode?: "png" | "mmap";
+  encoder?: "software" | "hardware";
   inputSource?: "scrcpy" | "grpc";
 };
 
@@ -172,6 +173,7 @@ describe("stream settings HTTP API", () => {
         keyFrameInterval: undefined,
         mode: "scrcpy",
         grpcImageMode: "png",
+        encoder: "software",
         inputSource: "scrcpy",
       });
       expect(app.health().encoderSettings).toEqual({
@@ -236,6 +238,7 @@ describe("stream settings HTTP API", () => {
         keyFrameInterval: undefined,
         mode: "scrcpy",
         grpcImageMode: "png",
+        encoder: "software",
         inputSource: "scrcpy",
       });
     } finally {

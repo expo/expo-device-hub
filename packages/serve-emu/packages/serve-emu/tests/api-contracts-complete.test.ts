@@ -35,6 +35,7 @@ import {
 const timestamp = "2026-07-12T10:00:00.000Z";
 
 const grpcCaptureDiagnostics = {
+  encoderName: "h264_videotoolbox",
   imageMode: "mmap" as const,
   rawGrpcMessagesReceived: 120,
   rawGrpcMessagesEmitted: 100,
@@ -152,6 +153,7 @@ describe("complete API success contracts", () => {
         generation: 3,
         serial: "emulator-5554",
         device: "Pixel 8",
+        encoderName: "h264_videotoolbox",
         codec: "h264",
         size: { width: 1080, height: 1920 },
         status: "streaming",
@@ -174,6 +176,7 @@ describe("complete API success contracts", () => {
       generation: 3,
       serial: "emulator-5554",
       device: "Pixel 8",
+      encoderName: "h264_videotoolbox",
       codec: "h264",
       size: { width: 1080, height: 1920 },
       status: "streaming",
@@ -454,6 +457,7 @@ describe("generic and detailed API contracts", () => {
       device: "Pixel 8",
       streamMode: "grpc-screenshot",
       grpcImageMode: "mmap",
+      encoderName: "h264_videotoolbox",
       grpcCapture: grpcCaptureDiagnostics,
       codec: "h264",
       size: { width: 1080, height: 1920 },
@@ -503,6 +507,7 @@ describe("generic and detailed API contracts", () => {
 
     expect(health.frameStats?.intervalMs?.p95).toBe(20.1);
     expect(health.grpcImageMode).toBe("mmap");
+    expect(health.encoderName).toBe("h264_videotoolbox");
     expect(health.grpcCapture).toEqual(grpcCaptureDiagnostics);
     expect(health.frameStats?.avgKeyFrameBytes).toBe(50_000);
     expect(health.clientsDetail[0]).toMatchObject({ id: 7, frameMeta: true });
