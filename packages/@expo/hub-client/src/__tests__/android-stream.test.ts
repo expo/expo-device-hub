@@ -10,9 +10,57 @@ import {
   androidStreamSourceErrorMessage,
   parseAndroidStreamSource,
 } from '../android-stream-source';
-import { androidWsUrlFor, parseServeEmuStreamSettings } from '../useAndroidDevice';
+import {
+  androidWsUrlFor,
+  parseServeEmuStreamSettings,
+  parseServeEmuViewerStreamSettings,
+} from '../useAndroidDevice';
 
 describe('serve-emu stream contract', () => {
+  const webRtcSettings = {
+    transport: 'webrtc',
+    codec: 'h264',
+    iceServers: [{ urls: ['turn:relay.test'], username: 'hub', credential: 'secret' }],
+    iceTransportPolicy: 'relay',
+  } satisfies ReturnType<typeof parseServeEmuViewerStreamSettings>;
+
+  test('offers the advertised WebRTC profile when the host defaults to WebSocket', () => {
+    expect(
+      parseServeEmuViewerStreamSettings({
+        stream: { transport: 'websocket' },
+        viewerTransports: {
+          default: 'websocket',
+          available: ['websocket', 'webrtc'],
+          webrtc: webRtcSettings,
+        },
+      }),
+    ).toEqual(webRtcSettings);
+  });
+
+  test('keeps legacy hosts compatible when viewer capabilities are absent', () => {
+    expect(parseServeEmuViewerStreamSettings({ stream: webRtcSettings })).toEqual(webRtcSettings);
+    expect(parseServeEmuViewerStreamSettings({ stream: { transport: 'websocket' } })).toEqual({
+      transport: 'websocket',
+    });
+  });
+
+  test('does not enable WebRTC from launch settings when the catalog excludes it or is invalid', () => {
+    for (const viewerTransports of [
+      { available: ['websocket'], webrtc: null },
+      { available: ['websocket'], webrtc: webRtcSettings },
+      { available: ['websocket', 'webrtc'], webrtc: null },
+      { available: ['webrtc'], webrtc: { ...webRtcSettings, codec: 'vp8' } },
+      { available: ['webrtc'], webrtc: { ...webRtcSettings, iceTransportPolicy: 'invalid' } },
+      { available: 'webrtc', webrtc: webRtcSettings },
+      null,
+      [],
+    ]) {
+      expect(parseServeEmuViewerStreamSettings({ stream: webRtcSettings, viewerTransports })).toEqual({
+        transport: 'websocket',
+      });
+    }
+  });
+
   test('uses a metadata video socket for H.264 and an input-only socket for WebRTC', () => {
     expect(androidWsUrlFor('http://localhost:3400/vendor/serve-emu', 'emulator-5554', true)).toBe(
       'ws://localhost:3400/vendor/serve-emu/ws?frame-meta=1&device=emulator-5554',

@@ -314,7 +314,7 @@ export function StreamOptionsSection({
         </SectionNote>
       )}
       {hostWebRtcDisabled && (
-        <SectionNote>Start the standalone server with --transport webrtc to enable WebRTC.</SectionNote>
+        <SectionNote>WebRTC is unavailable for the current device stream.</SectionNote>
       )}
       {settingsCapabilities && (
         <>

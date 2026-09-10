@@ -154,6 +154,7 @@ type ServeEmuStreamSettings =
 type ServeEmuApiInfo = {
   size?: { width?: unknown; height?: unknown };
   stream?: unknown;
+  viewerTransports?: unknown;
 };
 
 function isIceServer(value: unknown): value is WebRtcIceServer {
@@ -188,6 +189,26 @@ export function parseServeEmuStreamSettings(value: unknown): ServeEmuStreamSetti
     iceServers: candidate.iceServers,
     iceTransportPolicy: candidate.iceTransportPolicy,
   };
+}
+
+/** Prefer advertised viewer capabilities; older hosts only expose their launch settings. */
+export function parseServeEmuViewerStreamSettings(info: ServeEmuApiInfo): ServeEmuStreamSettings {
+  if (info.viewerTransports === undefined) {
+    return parseServeEmuStreamSettings(info.stream) ?? { transport: 'websocket' };
+  }
+  const catalog = info.viewerTransports;
+  if (catalog && typeof catalog === 'object' && !Array.isArray(catalog)) {
+    const { available, webrtc } = catalog as Record<string, unknown>;
+    const settings = parseServeEmuStreamSettings(webrtc);
+    if (
+      Array.isArray(available) &&
+      available.includes('webrtc') &&
+      settings?.transport === 'webrtc'
+    ) {
+      return settings;
+    }
+  }
+  return { transport: 'websocket' };
 }
 
 export function useAndroidDeviceClient(options: DeviceConnectionOptions): DeviceClient {
@@ -735,9 +756,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   }, [refreshStreamSettings, refreshStreamSource, streamSettingsUrl, streamSourceUrl]);
 
   // ── Stream metadata ──
-  // serve-emu locks its host transport at launch. Poll the device-scoped API so
-  // the viewer only offers WebRTC when that transport is actually configured,
-  // and so the peer uses the host's ICE servers/policy rather than client input.
+  // Poll the device-scoped capabilities independently of the host's default
+  // transport, and use the advertised ICE servers/policy for WebRTC peers.
   useEffect(() => {
     setServerStreamSettings(null);
     if (!active || !baseUrl) return;
@@ -756,7 +776,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         if (!response.ok) return;
         const info = (await response.json()) as ServeEmuApiInfo;
         if (cancelled) return;
-        const next = parseServeEmuStreamSettings(info.stream) ?? { transport: 'websocket' };
+        const next = parseServeEmuViewerStreamSettings(info);
         setServerStreamSettings((current) =>
           JSON.stringify(current) === JSON.stringify(next) ? current : next,
         );
