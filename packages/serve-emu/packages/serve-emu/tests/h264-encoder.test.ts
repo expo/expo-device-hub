@@ -311,7 +311,7 @@ describe("ffmpeg hardware resolver", () => {
       runSmoke: async (exe, args, input, opts) => {
         calls.push(exe);
         expect(args).toContain(pin === "nvenc" ? "h264_nvenc" : "h264_videotoolbox");
-        expect(input.length).toBe(128 * 128 * 3 * 4);
+        expect(input.length).toBe(256 * 256 * 3 * 4);
         expect(opts).toMatchObject({ timeout: 3_000, maxBuffer: 1024 * 1024 });
         return smokeResult();
       },
@@ -324,6 +324,20 @@ describe("ffmpeg hardware resolver", () => {
     pin = "nvenc";
     expect(await resolver.resolveEncoder("hardware")).toBe("h264_nvenc");
     expect(calls).toEqual(["ffmpeg-one", "ffmpeg-two", "ffmpeg-two"]);
+  });
+
+  test("probes NVENC above its Turing minimum dimensions with complete RGB frames", async () => {
+    const resolver = createFfmpegEncoderResolver({
+      platform: () => "linux", hardwareEncoder: () => "nvenc",
+      runExec: hardwareListing,
+      runSmoke: async (_binary, args, input) => {
+        expect(args[args.indexOf("-c:v") + 1]).toBe("h264_nvenc");
+        expect(args[args.indexOf("-video_size") + 1]).toBe("256x256");
+        expect(input.length).toBe(256 * 256 * 3 * 4);
+        return smokeResult();
+      },
+    });
+    expect(await resolver.resolveEncoder("hardware")).toBe("h264_nvenc");
   });
 
   test("tries NVENC then VAAPI on Linux, passing the configured VAAPI device", async () => {
@@ -866,14 +880,14 @@ realHardwareTest("streams real hardware H.264 after only one idle duplicate, bef
     rejectFrame = reject;
   });
   const encoder = new H264Encoder({
-    width: 128, height: 128, fps: 30, bitRate: 1_000_000, keyFrameInterval: 1,
+    width: 256, height: 256, fps: 30, bitRate: 1_000_000, keyFrameInterval: 1,
     encoderName: hostHardwareEncoder as FfmpegEncoderName,
     onFrame(frame) { frames.push(frame); if (frame.isKey) resolveFrame(); },
     onExit(reason) { rejectFrame(new Error(reason)); },
   });
   let timeout: ReturnType<typeof setTimeout> | undefined;
   try {
-    const image = Buffer.alloc(128 * 128 * 3, 96);
+    const image = Buffer.alloc(256 * 256 * 3, 96);
     // Honour pipe backpressure, as the actual gRPC capture session does.
     for (let index = 1; index <= 2; index++) {
       const deadline = Date.now() + 1_000;

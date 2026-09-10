@@ -27,7 +27,8 @@ Adding `-flags +low_delay` produces both access units before EOF, preserving the
 existing idle-flush behavior. FFmpeg's [VideoToolbox implementation](https://www.ffmpeg.org/doxygen/7.1/videotoolboxenc_8c_source.html)
 maps this flag to `EnableLowLatencyRateControl`.
 
-With six 128×128 RGB24 frames, 30 fps, 1 Mbps and a two-frame keyframe interval,
+The original spike used six 128×128 RGB24 frames, 30 fps, 1 Mbps and a two-frame
+keyframe interval. For that experiment,
 `ffprobe -show_frames -show_streams` reported:
 
 | Encoder | Decoded frame types | Profile | B frames | AUD count | SPS/PPS count |
@@ -41,8 +42,17 @@ six-frame encode, and process-exit runs took 320, 306 and 310 ms for VideoToolbo
 software took 31, 31 and 30 ms. These tiny-frame startup measurements are not a
 sustained CPU or browser-latency benchmark.
 
-The automated real-hardware test keeps stdin open, submits only an original frame
-and one duplicate, and requires configuration plus the original keyframe. Run:
+The production smoke encode and the automated real-hardware test use 256×256
+RGB24 frames. This exceeds the H.264 minimum width of 145 pixels on Turing and
+newer NVENC hardware, avoiding a false unavailable result from a too-small probe.
+NVIDIA confirms that [Turing and newer GPUs require larger minimum dimensions](https://forums.developer.nvidia.com/t/minimum-width-in-turing-gpus/155566).
+A resolver regression test checks the NVENC command's actual input dimensions and
+that stdin contains four complete RGB24 frames.
+
+The updated 256×256 real-hardware test keeps stdin open, submits only an original
+frame and one duplicate, and requires configuration plus the original keyframe.
+The VideoToolbox probe and this streaming test passed after the dimension change.
+The 128×128 measurements above remain the original spike results. Run:
 
 ```sh
 bun test packages/serve-emu/packages/serve-emu/tests/h264-encoder.test.ts

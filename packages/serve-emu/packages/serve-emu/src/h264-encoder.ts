@@ -64,6 +64,8 @@ const PROCESS_GRACE_MS = 250;
 const PROCESS_TERM_MS = 500;
 const PROCESS_KILL_MS = 500;
 const FFMPEG_PROBE_TIMEOUT_MS = 10_000;
+// Turing and newer NVENC require an H.264 input width of at least 145 pixels.
+const HARDWARE_PROBE_DIMENSION = 256;
 const HARDWARE_PROBE_TIMEOUT_MS = 3_000;
 const HARDWARE_PROBE_MAX_BYTES = 1024 * 1024;
 const FFMPEG_PROBE_MAX_BYTES = 8 * 1024 * 1024;
@@ -751,9 +753,9 @@ export function createFfmpegEncoderResolver(
             }
             if (signal?.aborted) throw probeAbortReason(signal);
             const smoke = await runSmoke(binary, ffmpegEncoderArgs({
-              width: 128, height: 128, fps: 30, bitRate: 1_000_000,
-              keyFrameInterval: 1, encoderName,
-            }, device), Buffer.alloc(128 * 128 * 3 * 4, 96), {
+              width: HARDWARE_PROBE_DIMENSION, height: HARDWARE_PROBE_DIMENSION,
+              fps: 30, bitRate: 1_000_000, keyFrameInterval: 1, encoderName,
+            }, device), Buffer.alloc(HARDWARE_PROBE_DIMENSION ** 2 * 3 * 4, 96), {
               timeout: HARDWARE_PROBE_TIMEOUT_MS,
               maxBuffer: HARDWARE_PROBE_MAX_BYTES,
               signal,
