@@ -1772,7 +1772,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       activity: false,
       events: true,
       camera: cameraSupported,
-      streamSettings: { maxDimension: true },
+      streamSettings: { maxDimension: true, h264Fps: true, h264Bitrate: true },
     },
     foregroundApp,
     videoKind: useWebRtc ? 'video' : 'canvas',

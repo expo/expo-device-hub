@@ -104,7 +104,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
             h264Bitrate: true,
             h264Fps: true,
           }
-        : { maxDimension: true },
+        : { maxDimension: true, h264Fps: true, h264Bitrate: true },
     },
     foregroundApp: null,
     videoKind: 'img',
@@ -404,34 +404,40 @@ test('shows the Camera section only when the client reports camera feeds', () =>
   expect(iosHtml).not.toContain('<section aria-label="Camera"');
 });
 
-test('shows Android resolution while omitting encoder settings serve-emu cannot change', () => {
-  const html = renderToStaticMarkup(
-    <StreamOptionsSection
-      client={inspectorClient('android')}
-      defaultOpen
-      streamMode="webrtc"
-      httpCodec="h264"
-      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
-      onStreamModeChange={() => {}}
-      onHttpCodecChange={() => {}}
-    />,
-  );
+for (const streamMode of ['h264', 'webrtc'] as const) {
+  test(`shows Android encoder controls over ${streamMode}`, () => {
+    const html = renderToStaticMarkup(
+      <StreamOptionsSection
+        client={inspectorClient('android')}
+        defaultOpen
+        streamMode={streamMode}
+        httpCodec="h264"
+        streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+        onStreamModeChange={() => {}}
+        onHttpCodecChange={() => {}}
+      />,
+    );
 
-  expect(selectOptionLabels(html, 'Stream transport')).toEqual(['WebSocket', 'WebRTC']);
-  expect(selectValue(html, 'Stream transport')).toBe('WebRTC');
-  expect(selectOptionLabels(html, 'WebSocket codec')).toEqual(['H.264']);
-  expect(selectOptionLabels(html, 'WebRTC codec')).toEqual(['H.264']);
-  expect(html).not.toContain('>HTTP<');
-  expect(html).not.toContain('>MJPEG<');
-  expect(html).not.toContain('>VP8<');
-  expect(html).not.toContain('>VP9<');
-  expect(html).toContain('>Max size</span>');
-  expect(selectMarkup(html, 'Max size')).not.toContain('disabled=""');
-  expect(html).not.toContain('>MJPEG FPS</span>');
-  expect(html).not.toContain('>MJPEG quality</span>');
-  expect(html).not.toContain('>Video FPS</span>');
-  expect(html).not.toContain('>Video bitrate</span>');
-});
+    expect(selectOptionLabels(html, 'Stream transport')).toEqual(['WebSocket', 'WebRTC']);
+    expect(selectValue(html, 'Stream transport')).toBe(
+      streamMode === 'webrtc' ? 'WebRTC' : 'WebSocket',
+    );
+    expect(selectOptionLabels(html, 'WebSocket codec')).toEqual(['H.264']);
+    expect(selectOptionLabels(html, 'WebRTC codec')).toEqual(['H.264']);
+    expect(html).not.toContain('>HTTP<');
+    expect(html).not.toContain('>MJPEG<');
+    expect(html).not.toContain('>VP8<');
+    expect(html).not.toContain('>VP9<');
+    expect(html).toContain('>Max size</span>');
+    expect(selectMarkup(html, 'Max size')).not.toContain('disabled=""');
+    expect(html).not.toContain('>MJPEG FPS</span>');
+    expect(html).not.toContain('>MJPEG quality</span>');
+    expect(selectValue(html, 'Video FPS')).toBe('60 FPS');
+    expect(selectValue(html, 'Video bitrate')).toBe('6 Mbps');
+    expect(selectMarkup(html, 'Video FPS')).not.toContain('disabled=""');
+    expect(selectMarkup(html, 'Video bitrate')).not.toContain('disabled=""');
+  });
+}
 
 test('shows the Android emulator capture source select', () => {
   const html = renderToStaticMarkup(
@@ -544,14 +550,16 @@ test('hides the Android capture source row when gRPC is unavailable', () => {
   expect(html).not.toContain('aria-label="Stream source"');
 });
 
-test('disables Android resolution while a stream restart is pending', () => {
+test('disables Android encoder controls while a stream restart is pending', () => {
   const client = {
     ...inspectorClient('android'),
     streamSettingsPending: true,
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
-  expect(selectMarkup(html, 'Max size')).toContain('disabled=""');
+  for (const label of ['Max size', 'Video FPS', 'Video bitrate']) {
+    expect(selectMarkup(html, label)).toContain('disabled=""');
+  }
 });
 
 test('renders grouped WebRTC statistics with rich client, encoder, and capture values', () => {

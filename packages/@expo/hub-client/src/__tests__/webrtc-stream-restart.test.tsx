@@ -136,7 +136,7 @@ for (const outcome of ['success', 'failure', 'superseded'] as const) {
     await act(async () => {
       renderer = create(<Harness />);
     });
-    expect(settings!.updateStreamSettings({ h264Fps: 30 })).toBeUndefined();
+    expect(settings!.updateStreamSettings({ mjpegFps: 30 })).toBeUndefined();
     let write: Promise<boolean> | undefined;
     await act(async () => {
       write = settings!.updateStreamSettings({ maxDimension: 720 });
@@ -239,7 +239,7 @@ async function androidHarness({ delaySource = false } = {}) {
     availableInputSources: ['scrcpy', 'grpc'],
     sessionGeneration: 1,
   };
-  const writes: { path: string; finish: (response: Response) => void }[] = [];
+  const writes: { path: string; body: unknown; finish: (response: Response) => void }[] = [];
   let finishSource!: (response: Response) => void;
   const sourceRead = new Promise<Response>((resolve) => {
     finishSource = resolve;
@@ -248,10 +248,12 @@ async function androidHarness({ delaySource = false } = {}) {
     const path = new URL(url).pathname;
     if (init?.method === 'PATCH' || init?.method === 'PUT') {
       return new Promise<Response>((finish) => {
-        writes.push({ path, finish });
+        writes.push({ path, body: JSON.parse(String(init.body)), finish });
       });
     }
-    if (path === '/api/stream-settings') return Response.json({ maxDimension: 1280 });
+    if (path === '/api/stream-settings') {
+      return Response.json({ maxDimension: 1280, h264Fps: 60, h264Bitrate: 6_000_000 });
+    }
     if (path === '/api/stream-mode') return delaySource ? sourceRead : Response.json(source);
     if (path === '/api') {
       return Response.json({
@@ -351,6 +353,35 @@ test('Android settings wait for fresh video, preserve the poster past grace, and
   expect(hub.client.status).toBe('streaming');
   expect(hub.video.poster).toBe('');
 });
+
+for (const patch of [{ h264Fps: 24 }, { h264Bitrate: 8_000_000 }]) {
+  for (const success of [true, false]) {
+    test(`Android ${Object.keys(patch)[0]} changes ${success ? 'restart after commit' : 'roll back on failure'}`, async () => {
+      const hub = await androidHarness();
+      expect(hub.client.capabilities.streamSettings).toMatchObject({
+        h264Fps: true,
+        h264Bitrate: true,
+      });
+      const previous = hub.client.streamSettings;
+      await act(async () => hub.client.updateStreamSettings(patch));
+      expect(hub.writes).toHaveLength(1);
+      expect(hub.writes[0]).toMatchObject({ path: '/api/stream-settings', body: patch });
+      expect(hub.client.streamSettingsPending).toBe(true);
+      expect(Peer.instances).toHaveLength(1);
+      await hub.finishWrite({ ...previous, ...patch }, success ? 200 : 503);
+      if (success) {
+        expect(Peer.instances).toHaveLength(2);
+        expect(hub.client.streamSettings).toMatchObject(patch);
+        await hub.paintReplacement();
+      } else {
+        expect(Peer.instances).toHaveLength(1);
+        expect(hub.client.streamSettings).toEqual(previous);
+      }
+      expect(hub.client.status).toBe('streaming');
+      expect(hub.client.streamSettingsPending).toBe(false);
+    });
+  }
+}
 
 test('Android source changes reject overlapping settings writes and wait for replacement frames', async () => {
   const hub = await androidHarness({ delaySource: true });

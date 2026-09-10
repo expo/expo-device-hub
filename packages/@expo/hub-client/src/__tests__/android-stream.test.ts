@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
+import { DEVICE_STREAM_SETTING_BOUNDS } from '../stream-settings';
+
 import {
   androidStreamSettingsPatch,
   parseAndroidStreamSettings,
@@ -74,7 +76,7 @@ describe('serve-emu stream contract', () => {
 });
 
 describe('serve-emu runtime stream settings contract', () => {
-  test('patches only Android resolution with a validated max dimension', () => {
+  test('patches Android encoder settings while omitting MJPEG-only fields', () => {
     expect(
       androidStreamSettingsPatch({
         maxDimension: 720,
@@ -83,12 +85,27 @@ describe('serve-emu runtime stream settings contract', () => {
         h264Fps: 30,
         h264Bitrate: 3_000_000,
       }),
-    ).toEqual({ maxDimension: 720 });
-    expect(androidStreamSettingsPatch({ h264Fps: 30 })).toBeNull();
+    ).toEqual({ maxDimension: 720, h264Fps: 30, h264Bitrate: 3_000_000 });
+    expect(androidStreamSettingsPatch({ h264Fps: 30 })).toEqual({ h264Fps: 30 });
+    expect(androidStreamSettingsPatch({ h264Bitrate: 8_000_000 })).toEqual({ h264Bitrate: 8_000_000 });
+    expect(androidStreamSettingsPatch({})).toBeNull();
+    expect(androidStreamSettingsPatch({ mjpegFps: 30 })).toBeNull();
     expect(androidStreamSettingsPatch({ maxDimension: Number.NaN })).toBeNull();
     expect(androidStreamSettingsPatch({ maxDimension: 720.5 })).toBeNull();
     expect(androidStreamSettingsPatch({ maxDimension: -1 })).toBeNull();
     expect(androidStreamSettingsPatch({ maxDimension: 4_097 })).toBeNull();
+  });
+
+  test('validates FPS and bitrate bounds without sending partial invalid updates', () => {
+    for (const key of ['h264Fps', 'h264Bitrate'] as const) {
+      const [min, max] = DEVICE_STREAM_SETTING_BOUNDS[key];
+      for (const value of [min, max]) {
+        expect(androidStreamSettingsPatch({ [key]: value })).toEqual({ [key]: value });
+      }
+      for (const value of [min - 1, max + 1, min + 0.5, Number.NaN, Infinity]) {
+        expect(androidStreamSettingsPatch({ maxDimension: 720, [key]: value })).toBeNull();
+      }
+    }
   });
 
   test('accepts only authoritative responses that include a valid max dimension', () => {
