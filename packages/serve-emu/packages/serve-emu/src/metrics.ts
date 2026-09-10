@@ -7,6 +7,8 @@ import {
 } from "./foreground-component.ts";
 import type { MetricSample, MetricsMeta } from "./shared/api-contracts.ts";
 
+export const DEFAULT_MAX_METRICS_SUBSCRIBERS = 8;
+
 const METRICS_SAMPLE_INTERVAL_MS = 1_000;
 const METRICS_PROBE_TIMEOUT_MS = 4_000;
 const METRICS_HEARTBEAT_MS = 15_000;
@@ -176,6 +178,7 @@ type MetricsSamplerOptions = {
   serial: string;
   runExec?: typeof execText;
   intervalMs?: number;
+  maxSubscribers?: number;
   now?: () => number;
 };
 
@@ -198,6 +201,7 @@ export class MetricsSampler {
   readonly serial: string;
   readonly #runExec: typeof execText;
   readonly #intervalMs: number;
+  readonly #maxSubscribers: number;
   readonly #now: () => number;
   readonly #subscribers = new Set<Subscriber>();
   readonly #encoder = new TextEncoder();
@@ -213,6 +217,7 @@ export class MetricsSampler {
     this.serial = options.serial;
     this.#runExec = options.runExec ?? execText;
     this.#intervalMs = options.intervalMs ?? METRICS_SAMPLE_INTERVAL_MS;
+    this.#maxSubscribers = options.maxSubscribers ?? DEFAULT_MAX_METRICS_SUBSCRIBERS;
     this.#now = options.now ?? (() => performance.now());
   }
 
@@ -245,6 +250,16 @@ export class MetricsSampler {
       return Response.json(
         { ok: false, code: "metrics-request-aborted", error: "request was aborted" },
         { status: 499 },
+      );
+    }
+    if (this.#subscribers.size >= this.#maxSubscribers) {
+      return Response.json(
+        {
+          ok: false,
+          code: "metrics-subscriber-limit",
+          error: `metrics subscriber limit is ${this.#maxSubscribers}`,
+        },
+        { status: 429 },
       );
     }
     let subscriber: Subscriber | null = null;
