@@ -47,6 +47,7 @@ import {
 } from './ios-events';
 import { type ExecResult, getIosAppDetails } from './ios-app-details';
 import { clearIosLocation, setIosLocation } from './ios-location';
+import { iosPermissionsBackend } from './ios-permissions';
 import { fetchIosScreenshot } from './ios-screenshot';
 import { hidUsageForCode } from './keyboard';
 import {
@@ -77,6 +78,7 @@ import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
 import { useAccessibility } from './useAccessibility';
+import { useAppPermissions } from './useAppPermissions';
 import { useAvccStream } from './useAvccStream';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
@@ -1032,6 +1034,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     locationCapabilities,
   } = useDeviceLocation(locationBackend);
 
+  const permissionsBackend = useMemo(
+    () => (baseUrl && deviceUdid ? iosPermissionsBackend(baseUrl, deviceUdid) : null),
+    [baseUrl, deviceUdid],
+  );
+  const appPermissions = useAppPermissions({
+    active,
+    appId: foregroundApp?.id ?? null,
+    backend: permissionsBackend,
+  });
+
   useEffect(() => {
     setEventLogState(createIosEventLogState());
   }, [eventsPath, deviceUdid]);
@@ -1369,6 +1381,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     locationError,
     setLocation,
     clearLocation,
+    ...appPermissions,
     streamCapabilities: IOS_STREAM_CAPABILITIES,
     streamSettings,
     streamSettingsPending,
@@ -1400,6 +1413,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
         : false,
       location: locationCapabilities,
+      permissions: permissionsBackend !== null,
     },
     foregroundApp,
     videoKind: useWebRtc ? 'video' : useAvcc ? 'canvas' : 'img',
