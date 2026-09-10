@@ -52,6 +52,7 @@ const EXPECTED_ROUTES = [
   ["GET", "/api/display-density"],
   ["POST", "/api/display-density"],
   ["GET", "/api/logcat"],
+  ["GET", "/api/metrics"],
   ["GET", "/api/screenshot"],
   ["POST", "/api/screenshot"],
   ["GET", "/api/foreground"],
@@ -309,6 +310,8 @@ function fakeDependencies(
       new Response("event: ready\ndata: {}\n\n", {
         headers: { "Content-Type": "text/event-stream" },
       }),
+    openMetrics: () =>
+      new Response(":\n\n", { headers: { "Content-Type": "text/event-stream" } }),
     takeScreenshot: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]),
     getForegroundApp: async () => ({
       packageName: "com.example.app",
@@ -471,14 +474,14 @@ const silentLogger: ApiLogger = {
 };
 
 describe("domain API route table", () => {
-  test("registers the exact 58 method/path pairs across 40 paths", () => {
+  test("registers the exact 59 method/path pairs across 41 paths", () => {
     const routes = createApiRoutes();
 
     expect(routes.map(({ method, path }) => [method, path])).toEqual(
       EXPECTED_ROUTES.map(([method, path]) => [method, path]),
     );
-    expect(routes).toHaveLength(58);
-    expect(new Set(routes.map((route) => route.path)).size).toBe(40);
+    expect(routes).toHaveLength(59);
+    expect(new Set(routes.map((route) => route.path)).size).toBe(41);
     const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(
       ([path, methods]) => Object.keys(methods).map((method) => `${method} ${path}`),
     );

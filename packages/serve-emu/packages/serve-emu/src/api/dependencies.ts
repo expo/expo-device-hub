@@ -82,6 +82,7 @@ export type ApiDependencies = {
   setDisplayDensity: (scale: number) => Promise<DisplayDensityStatus>;
 
   openLogcat: (url: URL) => Response;
+  openMetrics: () => Response;
   takeScreenshot: () => Promise<Uint8Array>;
   getForegroundApp: () => Promise<ForegroundApp>;
   getAccessibility: () => Promise<AccessibilitySnapshot>;
