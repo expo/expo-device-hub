@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   applyPermissionsRead,
@@ -23,7 +23,7 @@ type ListRequest = (backend: PermissionsBackend, appId: string) => Promise<AppPe
  * Permissions of the foreground app. Nothing reads on a timer: the section
  * calls `refreshPermissions` when it opens, and every write reads the list back.
  */
-export function useAppPermissions({ active, appId, backend }: UseAppPermissionsOptions) {
+export function useAppPermissions({ active, backend, appId }: UseAppPermissionsOptions) {
   const [permissions, setPermissions] = useState<readonly AppPermission[] | null>(null);
   const [permissionsPending, setPermissionsPending] = useState<ReadonlySet<string>>(
     NO_PENDING_PERMISSION_WRITES,
@@ -31,34 +31,34 @@ export function useAppPermissions({ active, appId, backend }: UseAppPermissionsO
   const [permissionsError, setPermissionsError] = useState<string | null>(null);
   const trackerRef = useRef(new KeyedWriteTracker<string>());
   const versionsRef = useRef<PermissionWriteVersions>({});
-  const sessionRef = useRef(0);
   const target = useMemo(
     () => (active && backend && appId ? { backend, appId } : null),
     [active, backend, appId],
   );
+  const targetRef = useRef(target);
 
-  // Reset during render, not in an effect: the section's own effect reads the
-  // new app first, and an effect here would run after it and drop that result.
-  const [seenTarget, setSeenTarget] = useState(target);
-  if (seenTarget !== target) {
-    setSeenTarget(target);
-    sessionRef.current++;
+  useEffect(() => {
+    targetRef.current = target;
     trackerRef.current.reset();
     versionsRef.current = {};
     setPermissions(null);
     setPermissionsPending(NO_PENDING_PERMISSION_WRITES);
     setPermissionsError(null);
-  }
+  }, [target]);
+
+  const publishPending = (tracker: KeyedWriteTracker<string>) => {
+    const pending = tracker.pending;
+    setPermissionsPending(pending.size === 0 ? NO_PENDING_PERMISSION_WRITES : pending);
+  };
 
   const request = useCallback(
     (ownIds: readonly string[], run: ListRequest): Promise<void> => {
       if (!target) return Promise.resolve();
-      const session = sessionRef.current;
       const tracker = trackerRef.current;
       const versionsAtStart = versionsRef.current;
       return run(target.backend, target.appId).then(
         (next) => {
-          if (session !== sessionRef.current) return;
+          if (target !== targetRef.current) return;
           const held = stalePermissionIds(
             tracker.pending,
             versionsAtStart,
@@ -66,9 +66,10 @@ export function useAppPermissions({ active, appId, backend }: UseAppPermissionsO
             ownIds,
           );
           setPermissions((current) => applyPermissionsRead(current, next, held));
+          setPermissionsError(null);
         },
         (error: unknown) => {
-          if (session !== sessionRef.current) return;
+          if (target !== targetRef.current) return;
           setPermissionsError(error instanceof Error ? error.message : "Permission request failed");
         },
       );
@@ -79,7 +80,8 @@ export function useAppPermissions({ active, appId, backend }: UseAppPermissionsO
   const write = useCallback(
     (ids: readonly string[], run: ListRequest) => {
       const tracker = trackerRef.current;
-      if (ids.length === 0 || ids.some((id) => tracker.pending.has(id))) return;
+      const pending = tracker.pending;
+      if (ids.length === 0 || ids.some((id) => pending.has(id))) return;
       const tokens = ids.flatMap((id) => {
         const token = tracker.start(id);
         return token ? [token] : [];
@@ -88,11 +90,11 @@ export function useAppPermissions({ active, appId, backend }: UseAppPermissionsO
       for (const id of ids) versions[id] = (versions[id] ?? 0) + 1;
       versionsRef.current = versions;
       setPermissionsError(null);
-      setPermissionsPending(tracker.pending);
+      publishPending(tracker);
       void request(ids, run).finally(() => {
         let changed = false;
         for (const token of tokens) changed = tracker.finish(token) || changed;
-        if (changed) setPermissionsPending(tracker.pending);
+        if (changed) publishPending(tracker);
       });
     },
     [request],

@@ -1496,6 +1496,7 @@ test('keeps the Android on-screen keyboard row off iOS while device settings loa
       camera: false,
       accessibility: false,
       location: false,
+      permissions: false,
       streamSettings: false,
     },
     deviceSettings: null,
