@@ -21,6 +21,17 @@ export function isDeviceFrameProfileId(value: unknown): value is DeviceFrameProf
   return DEVICE_FRAME_PROFILE_IDS.some((profileId) => profileId === value);
 }
 
+/** Browser-owned lifecycle state, independent of host discovery and streaming. */
+export type DeviceStartup =
+  | { phase: 'creating' | 'booting' }
+  | { phase: 'failed'; action: 'create' | 'boot'; message: string };
+
+export function deviceStartupLabel(startup: DeviceStartup): string {
+  if (startup.phase === 'failed')
+    return startup.action === 'create' ? 'Creation failed' : 'Boot failed';
+  return startup.phase === 'creating' ? 'Creating…' : 'Booting…';
+}
+
 export type Device = {
   id: string;
   name: string;
@@ -42,6 +53,8 @@ export type Device = {
    * add-device picker.
    */
   lastUsedAt?: number;
+  /** Present only on locally requested devices while starting or after a failure. */
+  startup?: DeviceStartup;
 };
 
 export type LogEntry = {

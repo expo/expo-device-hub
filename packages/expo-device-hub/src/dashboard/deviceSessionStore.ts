@@ -1,9 +1,20 @@
-import { type Device, type Platform } from '@expo/hub-components';
+import { type AddDeviceTarget, type Device, type Platform } from '@expo/hub-components';
 import { create } from 'zustand';
 
 import { type DeviceList, type DeviceListConnectionStatus } from './useDevices';
 
+export type LocalDeviceStartup = {
+  requestId: string;
+  device: Device;
+  target: AddDeviceTarget;
+  /** False after HTTP success while waiting for discovery to confirm it online. */
+  pending: boolean;
+};
+
 type DeviceSession = {
+  startups: Record<string, LocalDeviceStartup>;
+  aliases: Record<string, string>;
+  discovery: SessionUpdate;
   simulators: Device[];
   emulators: Device[];
   recent: DeviceList;
@@ -50,9 +61,28 @@ export function reconcileDeviceSession(
 ): DeviceSession {
   const { booted, recent, selectedId, platform } = update;
   const running = [...booted.simulators, ...booted.emulators];
-  const online = running.find((device) => device.id === selectedId);
+  const matches = (local: Device, device: Device) =>
+    local.platform === device.platform &&
+    (local.id === device.id || (local.platform === 'android' && local.name === device.name));
+  const retained = Object.values(previous.startups).filter(
+    (entry) =>
+      entry.pending ||
+      entry.device.startup?.phase === 'failed' ||
+      !running.some(
+        (device) => device.platform === entry.device.platform && device.id === entry.device.id
+      )
+  );
+  const startups =
+    retained.length === Object.keys(previous.startups).length
+      ? previous.startups
+      : Object.fromEntries(retained.map((entry) => [entry.requestId, entry]));
+  const locals = retained.map((entry) => entry.device);
+  const displayed = [
+    ...running.filter((device) => !locals.some((local) => matches(local, device))),
+    ...locals,
+  ];
   const known =
-    online ??
+    displayed.find((device) => device.id === selectedId) ??
     [...recent.simulators, ...recent.emulators].find((device) => device.id === selectedId);
   const selectedDevice = selectedId
     ? (known ??
@@ -60,18 +90,28 @@ export function reconcileDeviceSession(
         ? previous.selectedDevice
         : unknownDevice(selectedId, platform)))
     : undefined;
-  const selectedAvailable = !!online;
-  const withOfflineDevice = (devices: Device[], section: Platform) =>
-    selectedDevice?.platform === section && !selectedAvailable
-      ? [...devices, selectedDevice]
+  const selectedAvailable =
+    !selectedDevice?.startup && running.some((device) => device.id === selectedId);
+  const withLocalDevices = (devices: Device[], section: Platform) => {
+    const localDevices = locals.filter((device) => device.platform === section);
+    const result = localDevices.length
+      ? [
+          ...devices.filter((device) => !localDevices.some((local) => matches(local, device))),
+          ...localDevices,
+        ]
       : devices;
+    return selectedDevice?.platform === section &&
+      !result.some((device) => device.id === selectedId)
+      ? [...result, selectedDevice]
+      : result;
+  };
   const simulators = sameDevices(
     previous.simulators,
-    platform === 'android' ? EMPTY_DEVICES : withOfflineDevice(booted.simulators, 'ios')
+    platform === 'android' ? EMPTY_DEVICES : withLocalDevices(booted.simulators, 'ios')
   );
   const emulators = sameDevices(
     previous.emulators,
-    platform === 'ios' ? EMPTY_DEVICES : withOfflineDevice(booted.emulators, 'android')
+    platform === 'ios' ? EMPTY_DEVICES : withLocalDevices(booted.emulators, 'android')
   );
 
   if (
@@ -79,32 +119,82 @@ export function reconcileDeviceSession(
     emulators === previous.emulators &&
     recent === previous.recent &&
     selectedDevice === previous.selectedDevice &&
-    selectedAvailable === previous.selectedAvailable
+    selectedAvailable === previous.selectedAvailable &&
+    startups === previous.startups &&
+    previous.discovery.booted === booted &&
+    previous.discovery.recent === recent &&
+    previous.discovery.selectedId === selectedId &&
+    previous.discovery.platform === platform
   )
     return previous;
-  return { ...previous, simulators, emulators, recent, selectedDevice, selectedAvailable };
+  return {
+    ...previous,
+    simulators,
+    emulators,
+    recent,
+    selectedDevice,
+    selectedAvailable,
+    startups,
+    discovery: update,
+  };
 }
 
 export function createDeviceSessionStore() {
   return create<
     DeviceSession & {
       update: (update: SessionUpdate) => void;
-      rememberDevice: (device: Device) => void;
+      putStartup: (startup: LocalDeviceStartup, select?: boolean) => void;
+      resolveDeviceId: (id: string) => string;
       setConnectionStatus: (status: DeviceListConnectionStatus) => void;
     }
-  >()((set) => ({
+  >()((set, get) => ({
+    startups: {},
+    aliases: {},
+    discovery: {
+      booted: { simulators: EMPTY_DEVICES, emulators: EMPTY_DEVICES },
+      recent: { simulators: EMPTY_DEVICES, emulators: EMPTY_DEVICES },
+      selectedId: '',
+    },
     simulators: EMPTY_DEVICES,
     emulators: EMPTY_DEVICES,
     recent: { simulators: EMPTY_DEVICES, emulators: EMPTY_DEVICES },
     selectedAvailable: false,
     connectionStatus: 'connecting',
     update: (update) => set((state) => reconcileDeviceSession(state, update)),
-    rememberDevice: (selectedDevice) =>
-      set((state) =>
-        state.selectedAvailable && state.selectedDevice?.id === selectedDevice.id
-          ? state
-          : { selectedDevice, selectedAvailable: false }
-      ),
+    resolveDeviceId: (id) => {
+      const aliases = get().aliases;
+      const seen = new Set<string>();
+      while (Object.hasOwn(aliases, id) && !seen.has(id)) {
+        seen.add(id);
+        id = aliases[id];
+      }
+      return id;
+    },
+    putStartup: (startup, select = false) =>
+      set((state) => {
+        const previousId = state.startups[startup.requestId]?.device.id;
+        const nextId = startup.device.id;
+        let aliases =
+          previousId && previousId !== nextId
+            ? { ...state.aliases, [previousId]: nextId }
+            : state.aliases;
+        // Starting an AVD again reuses its name before a new serial exists.
+        // Its previous completed request must not redirect the new operation.
+        if (select && Object.hasOwn(aliases, nextId)) {
+          aliases = { ...aliases };
+          delete aliases[nextId];
+        }
+        const selectedId =
+          select || state.discovery.selectedId === previousId ? nextId : state.discovery.selectedId;
+        return reconcileDeviceSession(
+          {
+            ...state,
+            aliases,
+            startups: { ...state.startups, [startup.requestId]: startup },
+          },
+          { ...state.discovery, selectedId }
+        );
+      }),
     setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
   }));
 }

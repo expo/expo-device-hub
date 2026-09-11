@@ -62,6 +62,7 @@ export const StreamPanel = memo(function StreamPanel({
   showDeviceFrame = true,
   deviceFrameAssets,
   available = true,
+  onRetry,
 }: {
   device: Device;
   client: DeviceClient;
@@ -81,6 +82,8 @@ export const StreamPanel = memo(function StreamPanel({
   deviceFrameAssets?: DeviceFrameAssets;
   /** Whether the selected device is present in the host's running-device list. */
   available?: boolean;
+  /** Retry a failed locally requested device start. */
+  onRetry?: () => void;
 }) {
   return (
     <section
@@ -124,6 +127,7 @@ export const StreamPanel = memo(function StreamPanel({
             showDeviceFrame={showDeviceFrame}
             deviceFrameAssets={deviceFrameAssets}
             available={available}
+            onRetry={onRetry}
           />
           <div
             style={{

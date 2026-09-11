@@ -79,3 +79,12 @@ function jsonRequest(body: unknown): Request {
     body: JSON.stringify(body),
   });
 }
+
+test('create parser accepts an explicit create-only request and rejects invalid boot flags', async () => {
+  const device = { platform: 'ios', name: 'iPhone', runtime: 'ios-27', deviceType: 'iphone' };
+  expect(await parseCreateDeviceAction(jsonRequest({ ...device, boot: false }))).toEqual({
+    ...device,
+    boot: false,
+  });
+  expect(await parseCreateDeviceAction(jsonRequest({ ...device, boot: 'false' }))).toBeNull();
+});

@@ -7,6 +7,9 @@ import {
   type ScreenSize,
 } from '@expo/hub-client';
 import {
+  Button,
+  WarningIcon,
+  SmartphoneIcon,
   CableDisconnectIcon,
   bg,
   border,
@@ -17,7 +20,7 @@ import {
   textSize,
 } from '../primitives';
 import { AgentDeviceOverlay } from './AgentDeviceOverlay';
-import { type Device } from './data';
+import { type Device, type DeviceStartup, deviceStartupLabel } from './data';
 import {
   deviceFramePresentation,
   deviceViewportStyle,
@@ -69,6 +72,7 @@ export function PhoneFrame({
   showDeviceFrame = true,
   deviceFrameAssets,
   available = true,
+  onRetry,
 }: {
   device: Device;
   client?: DeviceClient;
@@ -83,6 +87,7 @@ export function PhoneFrame({
   deviceFrameAssets?: DeviceFrameAssets;
   /** Keep the frame visible while replacing an unavailable device's stream. */
   available?: boolean;
+  onRetry?: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
@@ -185,7 +190,7 @@ export function PhoneFrame({
           style={framed ? framed.streamStyle : { position: 'absolute', inset: 0 }}>
           {available ? deviceSurface : null}
         </div>
-        {!available && <UnavailableDeviceScreen />}
+        {!available && <UnavailableDeviceScreen startup={device.startup} onRetry={onRetry} />}
         {available && takeoverOverlay}
       </div>
       {deviceFrameAssets
@@ -214,12 +219,28 @@ export function PhoneFrame({
 }
 
 /** Stays inside the calibrated screen opening, independent of stream cropping. */
-function UnavailableDeviceScreen() {
+function UnavailableDeviceScreen({
+  startup,
+  onRetry,
+}: {
+  startup?: DeviceStartup;
+  onRetry?: () => void;
+}) {
+  const failed = startup?.phase === 'failed';
+  const pending = startup && !failed;
+  const message = failed
+    ? startup.message
+    : startup?.phase === 'creating'
+      ? 'Preparing your new device. You can keep using the dashboard while it is created.'
+      : startup?.phase === 'booting'
+        ? 'Starting the device. Its screen will appear here when it is ready.'
+        : 'This device is offline. Its screen will return when it reconnects.';
   return (
     <div
-      role="status"
-      aria-live="polite"
-      data-testid="device-unavailable-screen"
+      role={failed ? 'alert' : 'status'}
+      aria-live={failed ? 'assertive' : 'polite'}
+      aria-busy={pending ? true : undefined}
+      data-testid={startup ? 'device-startup-screen' : 'device-unavailable-screen'}
       style={{
         position: 'absolute',
         inset: 0,
@@ -232,6 +253,7 @@ function UnavailableDeviceScreen() {
         gap: 16,
         backgroundColor: bg.screen,
         textAlign: 'center',
+        overflow: 'auto',
       }}>
       <span
         aria-hidden="true"
@@ -245,15 +267,37 @@ function UnavailableDeviceScreen() {
           border: `1px solid ${border.default}`,
           borderRadius: radius.xl,
           backgroundColor: bg.default,
-          color: icon.secondary,
+          color: failed ? icon.danger : icon.secondary,
         }}>
-        <CableDisconnectIcon size={24} />
+        {failed ? (
+          <WarningIcon size={24} />
+        ) : pending ? (
+          <SmartphoneIcon size={24} />
+        ) : (
+          <CableDisconnectIcon size={24} />
+        )}
       </span>
       <div style={{ display: 'grid', gap: 8, maxWidth: 240 }}>
-        <span style={{ ...heading.base, color: text.default }}>Device unavailable</span>
-        <p style={{ ...textSize.sm, color: text.secondary, margin: 0 }}>
-          This device is offline. Its screen will return when it reconnects.
+        <span style={{ ...heading.base, color: text.default }}>
+          {startup ? deviceStartupLabel(startup) : 'Device unavailable'}
+        </span>
+        <p
+          style={{
+            ...textSize.sm,
+            color: text.secondary,
+            margin: 0,
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            maxHeight: '35cqh',
+            overflowY: 'auto',
+          }}>
+          {message}
         </p>
+        {failed && onRetry && (
+          <Button theme="secondary" onClick={onRetry}>
+            Try again
+          </Button>
+        )}
       </div>
     </div>
   );

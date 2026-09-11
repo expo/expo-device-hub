@@ -3,6 +3,7 @@ import { memo, useState } from 'react';
 import { DeviceListItem, PlusIcon, bg, border, icon, radius, text, textSize } from '../primitives';
 import { RecentDevicesModal } from './RecentDevicesModal';
 import {
+  deviceStartupLabel,
   type AddDeviceOutcome,
   type AddDeviceTarget,
   type Device,
@@ -57,9 +58,25 @@ export const DeviceSection = memo(function DeviceSection({
 
   // A retained offline row can still be restarted from the add-device picker.
   const shownIds = new Set(
-    devices.filter((device) => device.id !== offlineDeviceId).map((device) => device.id)
+    devices
+      .filter(
+        (device) =>
+          device.startup?.phase !== 'failed' && (device.id !== offlineDeviceId || !!device.startup)
+      )
+      .map((device) => device.id)
   );
-  const candidates = recent.filter((device) => !shownIds.has(device.id));
+  const startingAvds = new Set(
+    devices
+      .filter(
+        (device) =>
+          device.platform === 'android' && device.startup && device.startup.phase !== 'failed'
+      )
+      .map((device) => device.name)
+  );
+  const candidates = recent.filter(
+    (device) =>
+      !shownIds.has(device.id) && !(device.platform === 'android' && startingAvds.has(device.name))
+  );
 
   return (
     <section style={{ display: 'grid', gap: 12, minWidth: 0 }}>
@@ -156,7 +173,8 @@ const DeviceRow = memo(function DeviceRow({
       name={device.name}
       version={device.version}
       unsupported={!device.supported}
-      offline={offline}
+      offline={offline && !device.startup}
+      statusLabel={device.startup ? deviceStartupLabel(device.startup) : undefined}
       usedByAgent={usedByAgent}
       selected={selected}
       onClick={() => onSelect(device.id)}
