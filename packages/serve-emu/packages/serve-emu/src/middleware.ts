@@ -57,6 +57,7 @@ import {
 } from "./emulator.ts";
 import { getNightMode, isNightMode, setNightMode } from "./ui-mode.ts";
 import { DeviceSessionState } from "./device-session-state.ts";
+import { ScreenRecording, ScreenRecordingConflictError, type RecordingOptions } from "./screen-recording.ts";
 import { parseGesture, type Gesture, type Screen } from "./input.ts";
 import { parseGeoFix, setEmulatorLocationAsync, type GeoFix } from "./location.ts";
 import { parseRoutePlaybackRequest } from "./route-playback.ts";
@@ -100,6 +101,7 @@ import {
   type EmuSession,
 } from "./stream-session.ts";
 import {
+  streamModeConflictResponse,
   streamModeMethodNotAllowedResponse,
   streamModeRequestErrorResponse,
   streamModeUnavailableResponse,
@@ -200,6 +202,8 @@ export type AppOptions = {
   inputSource?: InputSource;
   /** @internal Shared by router-managed source generations for one device. */
   deviceState?: DeviceSessionState;
+  /** @internal The explicit single-device recording owns the capture generation. */
+  screenRecording?: ScreenRecording;
 } & BrowserOriginPolicy;
 
 export type AppClock = {
@@ -502,6 +506,7 @@ async function createAppInternal(
     location: deviceState.lastLocation,
     route: routePlayback.snapshot(),
     session: sessionRecorder.snapshot(),
+    screenRecording: opts.screenRecording?.snapshot() ?? null,
     logcat: deviceState.logcat.snapshot(),
     uploads: uploader.snapshot(),
     stream: redactedStreamSettings(streamSettings),
@@ -563,6 +568,7 @@ async function createAppInternal(
     },
   ) => {
     if (status !== "streaming") return;
+    opts.screenRecording?.fail(new Error(reason));
     status = nextStatus;
     captureRestarting = false;
     lastError = reason;
@@ -918,6 +924,7 @@ async function createAppInternal(
             markTerminal("error", "video stream ended");
             break;
           }
+          opts.screenRecording?.accept(f, screen, activeSession.mode);
           if (f.type === "session") {
             // The encoder restarted with a new size (device rotation). Adopt it so
             // touch packets keep matching the video size (scrcpy drops touches
@@ -1083,6 +1090,9 @@ async function createAppInternal(
       if (streamEncoderSettingsEqual(previousSettings, nextSettings)) {
         return { ...previousSettings };
       }
+      if (opts.screenRecording?.active) {
+        throw new ScreenRecordingConflictError("Cannot change stream settings during screen recording.");
+      }
       if (sessionRecorder.isReplaying) {
         throw new SessionReplayConflictError(
           "cannot update stream settings while session replay is running",
@@ -1223,7 +1233,7 @@ async function createAppInternal(
           headers: { "Cache-Control": "no-store" },
         });
       } catch (err) {
-        const conflict = err instanceof SessionReplayConflictError;
+        const conflict = err instanceof SessionReplayConflictError || err instanceof ScreenRecordingConflictError;
         const unavailable = err instanceof StreamSettingsUnavailableError;
         return Response.json(
           {
@@ -1983,6 +1993,7 @@ async function createAppInternal(
   let stopTask: Promise<void> | null = null;
   const stop = (): Promise<void> => {
     if (stopTask) return stopTask;
+    const recordingFinish = opts.screenRecording?.finish().catch(() => {});
     stopRequested = true;
     captureRestarting = false;
     captureRestartController?.abort(new Error("server stopping"));
@@ -2001,6 +2012,7 @@ async function createAppInternal(
     removeFatalListener = null;
     stopTask = Promise.allSettled([
       streamSettingsUpdate,
+      recordingFinish,
       uploader.close(new Error("server stopping")),
       session.close(),
       deviceState.release(deviceStateOwner, "server stopping"),
@@ -2192,6 +2204,8 @@ export function createRouter(
   let selectionRevision = 0;
   let stopped = false;
   let stopAllTask: Promise<void> | null = null;
+  let screenRecording: { serial: string; recorder: ScreenRecording } | null = null;
+  let recordingStartTask: Promise<void> | null = null;
 
   const beginOperation = (
     serial: string,
@@ -2331,6 +2345,7 @@ export function createRouter(
         encoder,
         inputSource,
         deviceState,
+        screenRecording: screenRecording?.serial === serial ? screenRecording.recorder : undefined,
         signal: combineAbortSignals(defaults.signal, operation.signal),
       });
       throwIfAborted(operation.signal, `app startup for ${serial} was aborted`);
@@ -2460,6 +2475,9 @@ export function createRouter(
     requestedEncoder: GrpcEncoder | undefined,
     signal: AbortSignal,
   ): Promise<EmuApp> => {
+    if (screenRecording?.serial === serial && screenRecording.recorder.active) {
+      throw new ScreenRecordingConflictError("Cannot change capture source during screen recording.");
+    }
     if (stopped) throw new Error("serve-emu router is stopped");
     if (stoppingSerials.has(serial)) {
       throw new Error(`device ${serial} is stopping`);
@@ -2619,6 +2637,32 @@ export function createRouter(
   const ensure = async (requested?: string | null): Promise<{ serial: string; app: EmuApp }> => {
     const serial = await resolveSerial(requested);
     return { serial, app: await getApp(serial) };
+  };
+
+  const startScreenRecording = (options: RecordingOptions): Promise<void> => {
+    if (recordingStartTask) return recordingStartTask;
+    recordingStartTask = (async () => {
+      if (stopped) throw new Error("serve-emu router is stopped");
+      if (apps.size || pending.size) throw new Error("Screen recording must start before device capture.");
+      const serial = await resolveSerial(options.udid);
+      const recorder = await ScreenRecording.create(options);
+      screenRecording = { serial, recorder };
+      try {
+        await ensure(serial);
+        await Promise.race([
+          recorder.ready,
+          new Promise<never>((_, reject) => {
+            const timeout = setTimeout(() => reject(new Error("Timed out waiting for the first recording frame.")), 15_000);
+            timeout.unref?.();
+            void recorder.ready.finally(() => clearTimeout(timeout)).catch(() => {});
+          }),
+        ]);
+      } catch (error) {
+        recorder.fail(error);
+        throw error;
+      }
+    })();
+    return recordingStartTask;
   };
 
   const devicesResponse = async (): Promise<Response> => {
@@ -2841,6 +2885,9 @@ export function createRouter(
         );
         return Response.json(streamModeResponse(serial, app));
       } catch (err) {
+        if (err instanceof ScreenRecordingConflictError) {
+          return streamModeConflictResponse(err);
+        }
         return streamModeUnavailableResponse(err);
       }
     }
@@ -3056,6 +3103,7 @@ export function createRouter(
   const stopAll = (): Promise<void> => {
     if (stopAllTask) return stopAllTask;
     stopped = true;
+    const recordingFinish = screenRecording?.recorder.finish().catch(() => {});
     abortAllOperations(new Error("serve-emu router is stopping"));
 
     // Invoke every live stop synchronously before waiting for startup/source
@@ -3067,6 +3115,8 @@ export function createRouter(
     const sourceTasks = [...streamModeQueues.values()];
     stopAllTask = (async () => {
       await Promise.allSettled([
+        recordingFinish,
+        recordingStartTask,
         ...liveStops,
         ...startupTasks,
         ...sourceTasks,
@@ -3094,6 +3144,8 @@ export function createRouter(
     resolveSerial,
     getApp,
     ensure,
+    startScreenRecording,
+    finishScreenRecording: () => screenRecording?.recorder.finish() ?? Promise.resolve(null),
     handleRequest,
     attachWebSocket,
     stopAll,

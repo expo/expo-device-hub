@@ -1,4 +1,7 @@
 import { EventEmitter } from "node:events";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import type { Device } from "../src/adb.ts";
 import { GrpcCaptureDiagnosticsTracker } from "../src/grpc-session.ts";
@@ -149,6 +152,49 @@ function routerDependencies(state: {
 }
 
 describe("createRouter DevicePanel compatibility", () => {
+  test("starts recording before viewers, pins its source, and finalizes once", async () => {
+    const root = await mkdtemp(join(tmpdir(), "router-screen-recording-"));
+    const created: string[] = [];
+    const stopped: string[] = [];
+    let finishes = 0;
+    const dependencies = routerDependencies({ devices: [{ serial: "emulator-5554", state: "device" }], avds: [], running: [], created, stopped });
+    const router = createRouter({ streamMode: "scrcpy" }, {
+      ...dependencies,
+      createApp: async (options) => {
+        created.push(options.serial);
+        const app = fakeApp(options.serial, stopped);
+        const config = Buffer.from("000000016742c01fd9005005bb0110000003001000000303c0f18324800000000168cb83cb200000000165888421", "hex");
+        options.screenRecording?.accept({ type: "frame", pts: 0n, data: config, isKey: true, isConfig: false }, { width: 1280, height: 720 }, "scrcpy");
+        return app;
+      },
+    });
+    try {
+      expect(created).toEqual([]);
+      const options = {
+        directory: join(root, "session"), udid: "emulator-5554", deviceName: "Pixel", runtimeDisplayName: "Android 16",
+        createWriter: async ({ path }: { path: string }) => {
+          await writeFile(path, "test-writer");
+          return { add: async () => {}, finish: async () => { finishes++; }, cancel: async () => {} };
+        },
+      };
+      const starting = router.startScreenRecording(options);
+      expect(router.startScreenRecording(options)).toBe(starting);
+      await starting;
+      expect(created).toEqual(["emulator-5554"]);
+      const change = await router.handleRequest(put("/api/stream-mode?device=emulator-5554", { mode: "grpc-screenshot" }));
+      expect(change.status).toBe(409);
+      const result = await router.finishScreenRecording();
+      expect(result?.directory).toBe(options.directory);
+      await router.stopAll();
+      expect(finishes).toBe(1);
+      expect(stopped).toEqual(["emulator-5554"]);
+      expect(JSON.parse(await readFile(join(options.directory, "session.json"), "utf8")).status).toBe("complete");
+    } finally {
+      await router.stopAll();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("keeps WebRTC statistics observational and validates before device lookup", async () => {
     let deviceReads = 0;
     let appCreates = 0;

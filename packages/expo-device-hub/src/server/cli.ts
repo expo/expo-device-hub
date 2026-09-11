@@ -146,13 +146,29 @@ async function main(): Promise<void> {
     wss.handleUpgrade(request, socket, head, (ws) => wss.emit('connection', ws, request));
   });
 
-  // The server module's own SIGINT/SIGTERM cleanup hooks (e.g. serve-emu's
-  // stopAll) suppress the default exit — re-establish it once they have run.
+  let shutdownTask: Promise<void> | null = null;
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
+      if (shutdownTask) return;
       server.close();
-      process.exit(0);
+      for (const wss of webSocketRoutes.values()) {
+        for (const client of wss.clients) client.close(1001, 'Server stopping');
+      }
+      const deadline = setTimeout(() => process.exit(1), 60_000);
+      shutdownTask = hubServer.shutdownAndroid().then(
+        () => { clearTimeout(deadline); process.exit(0); },
+        (error) => { console.error('Android recording shutdown failed:', error); clearTimeout(deadline); process.exit(1); },
+      );
     });
+  }
+
+  if (options.androidRecordingDirectory) {
+    try {
+      await hubServer.startAndroidScreenRecording(options.androidRecordingDirectory);
+    } catch (error) {
+      await hubServer.shutdownAndroid().catch(() => {});
+      throw error;
+    }
   }
 
   if (options.port !== undefined) {

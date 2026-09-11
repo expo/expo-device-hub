@@ -9,6 +9,7 @@
  * so it must be known server-side (see ./serve-sim.ts).
  */
 
+import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -28,11 +29,12 @@ import { type HubDeviceList, listDevices } from './devices';
 import { handleEasEndpoint } from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
-import { EMU_PREFIX, emuCameraFeeds, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
+import { EMU_PREFIX, emuCameraFeeds, emuWebSocketHandler, handleEmuRequest, finishAndroidScreenRecording } from './serve-emu';
 import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
 import { SERVER_HIDE_SIDEBAR } from './sidebar';
 import { listNewDeviceOptions } from './sim-options';
 import { SERVER_TRANSPORT } from './transport';
+export { startAndroidScreenRecording, shutdownAndroid } from './serve-emu';
 
 const DEVICES_ROUTE = '/api/devices';
 const SHUTDOWN_DEVICE_ROUTE = '/api/devices/shutdown';
@@ -92,6 +94,22 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 export default async function handler(request: Request): Promise<Response | null> {
   const { pathname, searchParams } = new URL(request.url);
+
+  if (pathname === '/_eas/android-recording/stop') {
+    const token = process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN;
+    const supplied = Buffer.from(request.headers.get('authorization') ?? '');
+    const expected = Buffer.from(`Bearer ${token}`);
+    if (!token || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
+      return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
+    }
+    if (request.method !== 'POST') return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
+    try {
+      await finishAndroidScreenRecording();
+      return jsonResponse({ ok: true });
+    } catch (error) {
+      return jsonResponse({ ok: false, error: String(error) }, 500);
+    }
+  }
 
   const easResponse = handleEasEndpoint(request, {
     mountPath: MOUNT_PATH,
