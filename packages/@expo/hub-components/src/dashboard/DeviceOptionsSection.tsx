@@ -97,6 +97,7 @@ export function DeviceOptionsSection({
   client,
   deviceFrame,
   showDeviceSettings = true,
+  available = true,
   onShutdown,
   onRemove,
 }: {
@@ -104,6 +105,8 @@ export function DeviceOptionsSection({
   deviceFrame?: DeviceFrameOption;
   /** Whether backend-controlled appearance and accessibility settings are available. */
   showDeviceSettings?: boolean;
+  /** Disable backend actions while retaining their last known values. */
+  available?: boolean;
   /** Shut the device down on the host. */
   onShutdown?: () => void;
   /** Remove/delete the device on the host. Omit for physical devices. */
@@ -127,11 +130,11 @@ export function DeviceOptionsSection({
   }
 
   function disabled(key: DeviceSettingKey) {
-    return settings === null || pending.has(key);
+    return !available || settings === null || pending.has(key);
   }
 
   function setValue(key: DeviceSettingKey, nextValue: string) {
-    if (settings !== null && !pending.has(key)) client?.setDeviceSetting(key, nextValue);
+    if (!disabled(key)) client?.setDeviceSetting(key, nextValue);
   }
 
   function settingSelect(key: DeviceSettingKey, label: string, options: SelectOption[]) {
@@ -177,7 +180,7 @@ export function DeviceOptionsSection({
         settingSelect(
           'text-size',
           'Text size',
-          platform === 'android' ? ANDROID_TEXT_SIZE_OPTIONS : TEXT_SIZE_OPTIONS,
+          platform === 'android' ? ANDROID_TEXT_SIZE_OPTIONS : TEXT_SIZE_OPTIONS
         )}
 
       {showDeviceSettings && platform === 'android' && visible('display-size') && (
@@ -207,7 +210,7 @@ export function DeviceOptionsSection({
                 onChange={(checked) => setValue(key, checked ? 'on' : 'off')}
               />
             </SidebarRow>
-          ) : null,
+          ) : null
         )}
 
       {deviceFrame && (
@@ -225,15 +228,19 @@ export function DeviceOptionsSection({
         </SidebarRow>
       )}
 
-      {keyboardVisible && client && <KeyboardSection client={client} />}
+      {keyboardVisible && client && <KeyboardSection client={client} disabled={!available} />}
 
       {client && platform === 'android' && (
         <>
           <SidebarRow label="Back button">
-            <SidebarActionButton onClick={() => client.pressButton('back')}>Press</SidebarActionButton>
+            <SidebarActionButton disabled={!available} onClick={() => client.pressButton('back')}>
+              Press
+            </SidebarActionButton>
           </SidebarRow>
           <SidebarRow label="Recents button">
-            <SidebarActionButton onClick={() => client.pressButton('recents')}>
+            <SidebarActionButton
+              disabled={!available}
+              onClick={() => client.pressButton('recents')}>
               Press
             </SidebarActionButton>
           </SidebarRow>
@@ -242,13 +249,15 @@ export function DeviceOptionsSection({
 
       {client && onShutdown && (
         <SidebarRow label="Shut down device">
-          <SidebarActionButton onClick={onShutdown}>Shut down</SidebarActionButton>
+          <SidebarActionButton disabled={!available} onClick={onShutdown}>
+            Shut down
+          </SidebarActionButton>
         </SidebarRow>
       )}
 
       {client && onRemove && (
         <SidebarRow label="Remove device">
-          <SidebarActionButton destructive onClick={onRemove}>
+          <SidebarActionButton disabled={!available} destructive onClick={onRemove}>
             Remove
           </SidebarActionButton>
         </SidebarRow>

@@ -13,10 +13,10 @@ import {
   text,
   textSize,
 } from '../primitives';
-import { type Device } from './data';
+import { type Device, deviceStartupLabel } from './data';
 
 export type DeviceTitleProps = {
-  device: Pick<Device, 'id' | 'name'>;
+  device: Pick<Device, 'id' | 'name' | 'startup'>;
   status: ConnectionStatus;
 };
 
@@ -65,7 +65,12 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
   const [revealedId, setRevealedId] = useState<string | null>(null);
   const showingId = revealedId === device.id;
   const label = showingId ? device.id : device.name;
-  const appearance = STATUS_APPEARANCE[status];
+  const startup = device.startup;
+  const baseAppearance =
+    STATUS_APPEARANCE[startup ? (startup.phase === 'failed' ? 'error' : 'connecting') : status];
+  const appearance = startup
+    ? { ...baseAppearance, label: deviceStartupLabel(startup) }
+    : baseAppearance;
 
   return (
     <Button

@@ -1,4 +1,4 @@
-import { type ComponentType } from 'react';
+import { type ComponentType, memo } from 'react';
 
 import {
   type AgentInteraction,
@@ -33,7 +33,11 @@ const CONTROLS_GAP = 32;
 
 /** Filesystem-safe screenshot name, e.g. `iPhone-16-2026-06-30T12-34-56.png`. */
 function screenshotFilename(name: string): string {
-  const slug = name.trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'device';
+  const slug =
+    name
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'device';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, '');
   return `${slug}-${stamp}.png`;
 }
@@ -48,7 +52,7 @@ function screenshotFilename(name: string): string {
  * below it, whatever the panel size: the frame viewport reserves their height
  * as padding, and both are anchored to the frame rather than the panel edges.
  */
-export function StreamPanel({
+export const StreamPanel = memo(function StreamPanel({
   device,
   client,
   agentInteraction,
@@ -57,6 +61,8 @@ export function StreamPanel({
   framed = true,
   showDeviceFrame = true,
   deviceFrameAssets,
+  available = true,
+  onRetry,
 }: {
   device: Device;
   client: DeviceClient;
@@ -74,6 +80,10 @@ export function StreamPanel({
   showDeviceFrame?: boolean;
   /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
   deviceFrameAssets?: DeviceFrameAssets;
+  /** Whether the selected device is present in the host's running-device list. */
+  available?: boolean;
+  /** Retry a failed locally requested device start. */
+  onRetry?: () => void;
 }) {
   return (
     <section
@@ -116,6 +126,8 @@ export function StreamPanel({
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
             deviceFrameAssets={deviceFrameAssets}
+            available={available}
+            onRetry={onRetry}
           />
           <div
             style={{
@@ -130,7 +142,11 @@ export function StreamPanel({
               maxWidth: '100cqw',
               transform: 'translateX(-50%)',
             }}>
-            <DeviceTitle key={device.id} device={device} status={client.status} />
+            <DeviceTitle
+              key={device.id}
+              device={device}
+              status={available ? client.status : 'idle'}
+            />
           </div>
           <div
             style={{
@@ -141,6 +157,7 @@ export function StreamPanel({
               transform: 'translateX(-50%)',
             }}>
             <StreamControls
+              disabled={!available}
               appearance={client.appearance}
               onToggleAppearance={() =>
                 client.setAppearance(client.appearance === 'dark' ? 'light' : 'dark')
@@ -158,4 +175,4 @@ export function StreamPanel({
       </div>
     </section>
   );
-}
+});

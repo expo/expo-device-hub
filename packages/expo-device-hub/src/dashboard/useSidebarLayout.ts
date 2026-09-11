@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { type SidebarPreference, useDashboardStore } from './dashboardStore';
 
@@ -32,8 +32,7 @@ export function resolveSidebarLayout({
   const rightFits = containerWidth >= rightWidth + minStreamWidth;
   const rightOpen = rightPreference === 'open' || (rightPreference === 'auto' && rightFits);
   const rightDocked = rightOpen && rightFits;
-  const leftFits =
-    containerWidth >= leftWidth + minStreamWidth + (rightDocked ? rightWidth : 0);
+  const leftFits = containerWidth >= leftWidth + minStreamWidth + (rightDocked ? rightWidth : 0);
   const leftOpen = leftPreference === 'open' || (leftPreference === 'auto' && leftFits);
   const leftDocked = leftOpen && leftFits;
 
@@ -86,16 +85,15 @@ export function useSidebarLayout({
 
   const openLeft = () => {
     const leftFits =
-      containerWidth >=
-      leftWidth + minStreamWidth + (layout.rightDocked ? rightWidth : 0);
+      containerWidth >= leftWidth + minStreamWidth + (layout.rightDocked ? rightWidth : 0);
     openSidebar('left', leftFits);
   };
-  const closeLeft = () => closeSidebar('left');
+  const closeLeft = useCallback(() => closeSidebar('left'), [closeSidebar]);
   const openRight = () => {
     const rightFits = containerWidth >= rightWidth + minStreamWidth;
     openSidebar('right', rightFits);
   };
-  const closeRight = () => closeSidebar('right');
+  const closeRight = useCallback(() => closeSidebar('right'), [closeSidebar]);
 
   return {
     ...layout,

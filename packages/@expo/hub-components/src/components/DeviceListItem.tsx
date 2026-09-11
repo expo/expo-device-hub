@@ -16,6 +16,10 @@ export type DeviceListItemProps = {
   unsupported?: boolean;
   usedByAgent?: boolean;
   selected?: boolean;
+  /** Selected device retained in the list until the viewer switches away. */
+  offline?: boolean;
+  /** Local creation, boot, or failure status shown in place of the OS version. */
+  statusLabel?: string;
   onClick?: () => void;
 };
 
@@ -25,6 +29,8 @@ export function DeviceListItem({
   unsupported = false,
   usedByAgent = false,
   selected = false,
+  offline = false,
+  statusLabel,
   onClick,
 }: DeviceListItemProps) {
   const [hovered, setHovered] = useState(false);
@@ -68,7 +74,7 @@ export function DeviceListItem({
       style={style}
       onClick={onClick}
       aria-pressed={selected}
-      aria-label={`${name}, ${version}${usedByAgent ? ', used by agent' : ''}`}
+      aria-label={`${name}, ${version}${statusLabel ? `, ${statusLabel}` : offline ? ', Offline' : usedByAgent ? ', used by agent' : ''}`}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -110,7 +116,7 @@ export function DeviceListItem({
           {name}
         </span>
         <AgentDeviceStatus
-          active={usedByAgent}
+          active={!offline && usedByAgent}
           compact={compactAgentStatus}
           labelRef={statusLabelRef}
         />
@@ -124,7 +130,7 @@ export function DeviceListItem({
           whiteSpace: 'nowrap',
           flexShrink: 0,
         }}>
-        {version}
+        {statusLabel ?? (offline ? 'Offline' : version)}
       </span>
     </button>
   );

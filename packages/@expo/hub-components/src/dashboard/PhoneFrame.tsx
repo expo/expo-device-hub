@@ -1,4 +1,4 @@
-import { type ComponentType, type CSSProperties, useState } from 'react';
+import { type ComponentType, type CSSProperties, useEffect, useRef, useState } from 'react';
 
 import {
   type AgentInteraction,
@@ -6,9 +6,21 @@ import {
   type DeviceScreenProps,
   type ScreenSize,
 } from '@expo/hub-client';
-import { bg } from '../primitives';
+import {
+  Button,
+  WarningIcon,
+  SmartphoneIcon,
+  CableDisconnectIcon,
+  bg,
+  border,
+  heading,
+  icon,
+  radius,
+  text,
+  textSize,
+} from '../primitives';
 import { AgentDeviceOverlay } from './AgentDeviceOverlay';
-import { type Device } from './data';
+import { type Device, type DeviceStartup, deviceStartupLabel } from './data';
 import {
   deviceFramePresentation,
   deviceViewportStyle,
@@ -59,6 +71,8 @@ export function PhoneFrame({
   displayScreen,
   showDeviceFrame = true,
   deviceFrameAssets,
+  available = true,
+  onRetry,
 }: {
   device: Device;
   client?: DeviceClient;
@@ -71,15 +85,31 @@ export function PhoneFrame({
   showDeviceFrame?: boolean;
   /** Consumer-owned frame artwork so this shared component remains asset-system agnostic. */
   deviceFrameAssets?: DeviceFrameAssets;
+  /** Keep the frame visible while replacing an unavailable device's stream. */
+  available?: boolean;
+  onRetry?: () => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const [dismissedInteractionId, setDismissedInteractionId] = useState<string | null>(null);
+  const lastScreen = useRef<{ deviceId: string; screen: ScreenSize } | null>(null);
+  useEffect(() => {
+    if (available && client?.screen) {
+      lastScreen.current = { deviceId: device.id, screen: client.screen };
+    } else if (lastScreen.current?.deviceId !== device.id) {
+      lastScreen.current = null;
+    }
+  }, [available, client?.screen, device.id]);
   const { ratio: fallbackRatio, radiusFraction, squircle } = CONFIG[device.platform];
 
   // Prefer the live screen's aspect ratio once known, so the stream fills the
   // frame 1:1 instead of being stretched to the placeholder's body ratio. Uses
   // the orientation-corrected (display) size so a rotated device shows landscape.
-  const display = client ? displayScreen(client.screen) : null;
+  // Disconnecting resets the client's screen. Keep the last geometry for this
+  // device so an offline landscape screen and its controls do not jump.
+  const screen =
+    (available ? client?.screen : null) ??
+    (lastScreen.current?.deviceId === device.id ? lastScreen.current.screen : null);
+  const display = displayScreen(screen);
   const ratio = display && display.height > 0 ? display.width / display.height : fallbackRatio;
 
   // The container's width is the phone width; `cqw` on the child resolves
@@ -96,9 +126,9 @@ export function PhoneFrame({
   // the *short* side so the corners look the same in portrait and landscape.
   const radiusCqw = (radiusFraction / Math.max(ratio, 1)) * 100;
   const borderRadius = `${radiusCqw.toFixed(3)}cqw`;
-  const live = client && client.status !== 'idle';
+  const live = available && client && client.status !== 'idle';
   const overlayVisible =
-    !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
+    available && !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
 
   const deviceSurface = live ? (
     <DeviceScreen client={client} agentInteraction={agentInteraction} />
@@ -126,7 +156,7 @@ export function PhoneFrame({
   const framed = frameAsset
     ? deviceFramePresentation({
         asset: frameAsset,
-        orientation: client?.screen?.orientation,
+        orientation: screen?.orientation,
         displayRatio: ratio,
         maxScreenShortSide: MAX_SHORT_SIDE,
       })
@@ -145,7 +175,7 @@ export function PhoneFrame({
     <div
       data-testid="device-screen-frame"
       data-device-frame-kind={framed ? device.deviceFrame : 'none'}
-      data-agent-active={agentInteraction ? 'true' : 'false'}
+      data-agent-active={available && agentInteraction ? 'true' : 'false'}
       style={framed ? framed.frameStyle : { ...wrapperStyle, borderRadius }}
       onPointerEnter={(event) => {
         if (event.pointerType === 'mouse') setHovered(true);
@@ -158,9 +188,10 @@ export function PhoneFrame({
         <div
           data-testid="device-frame-stream-cover"
           style={framed ? framed.streamStyle : { position: 'absolute', inset: 0 }}>
-          {deviceSurface}
+          {available ? deviceSurface : null}
         </div>
-        {takeoverOverlay}
+        {!available && <UnavailableDeviceScreen startup={device.startup} onRetry={onRetry} />}
+        {available && takeoverOverlay}
       </div>
       {deviceFrameAssets
         ? (Object.keys(deviceFrameAssets) as (keyof DeviceFrameAssets)[]).map((kind) => {
@@ -183,6 +214,91 @@ export function PhoneFrame({
             );
           })
         : null}
+    </div>
+  );
+}
+
+/** Stays inside the calibrated screen opening, independent of stream cropping. */
+function UnavailableDeviceScreen({
+  startup,
+  onRetry,
+}: {
+  startup?: DeviceStartup;
+  onRetry?: () => void;
+}) {
+  const failed = startup?.phase === 'failed';
+  const pending = startup && !failed;
+  const message = failed
+    ? startup.message
+    : startup?.phase === 'creating'
+      ? 'Preparing your new device. You can keep using the dashboard while it is created.'
+      : startup?.phase === 'booting'
+        ? 'Starting the device. Its screen will appear here when it is ready.'
+        : 'This device is offline. Its screen will return when it reconnects.';
+  return (
+    <div
+      role={failed ? 'alert' : 'status'}
+      aria-live={failed ? 'assertive' : 'polite'}
+      aria-busy={pending ? true : undefined}
+      data-testid={startup ? 'device-startup-screen' : 'device-unavailable-screen'}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxSizing: 'border-box',
+        padding: '24px 20px',
+        gap: 16,
+        backgroundColor: bg.screen,
+        textAlign: 'center',
+        overflow: 'auto',
+      }}>
+      <span
+        aria-hidden="true"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          flexShrink: 0,
+          width: 48,
+          height: 48,
+          border: `1px solid ${border.default}`,
+          borderRadius: radius.xl,
+          backgroundColor: bg.default,
+          color: failed ? icon.danger : icon.secondary,
+        }}>
+        {failed ? (
+          <WarningIcon size={24} />
+        ) : pending ? (
+          <SmartphoneIcon size={24} />
+        ) : (
+          <CableDisconnectIcon size={24} />
+        )}
+      </span>
+      <div style={{ display: 'grid', gap: 8, maxWidth: 240 }}>
+        <span style={{ ...heading.base, color: text.default }}>
+          {startup ? deviceStartupLabel(startup) : 'Device unavailable'}
+        </span>
+        <p
+          style={{
+            ...textSize.sm,
+            color: text.secondary,
+            margin: 0,
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            maxHeight: '35cqh',
+            overflowY: 'auto',
+          }}>
+          {message}
+        </p>
+        {failed && onRetry && (
+          <Button theme="secondary" onClick={onRetry}>
+            Try again
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

@@ -18,6 +18,7 @@ export function Sidebar({
   emulatorOptions,
   agentDeviceIds = [],
   selectedId,
+  offlineDeviceId,
   onSelect,
   onAddDevice,
   onToggle,
@@ -39,6 +40,8 @@ export function Sidebar({
   /** Devices with an unexpired Argent interaction. */
   agentDeviceIds?: readonly string[];
   selectedId: string;
+  /** Retained selected device missing from the running-device list. */
+  offlineDeviceId?: string;
   onSelect: (id: string) => void;
   /** Starts the existing or new device chosen in either add-device picker. */
   onAddDevice?: (target: AddDeviceTarget) => Promise<AddDeviceOutcome>;
@@ -83,6 +86,7 @@ export function Sidebar({
           options={simulatorOptions}
           agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
+          offlineDeviceId={offlineDeviceId}
           onSelect={onSelect}
           onAdd={onAddDevice}
         />
@@ -102,6 +106,7 @@ export function Sidebar({
           options={emulatorOptions}
           agentDeviceIds={agentDeviceIds}
           selectedId={selectedId}
+          offlineDeviceId={offlineDeviceId}
           onSelect={onSelect}
           onAdd={onAddDevice}
         />

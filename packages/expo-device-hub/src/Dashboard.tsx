@@ -19,12 +19,10 @@ import {
   type StreamModeAvailability,
   bg,
   text,
-  type AddDeviceOutcome,
-  type AddDeviceTarget,
   type Device,
   type DeviceFrameAssets,
 } from '@expo/hub-components';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 import pixelDeviceFrame from '../assets/device-frames/google-pixel-10-pro.png';
@@ -33,7 +31,7 @@ import iphoneDeviceFrame from '../assets/device-frames/iphone-17-pro-silver.png'
 import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
 import { dashboardHideBootDevice } from './boot-device';
 import { basePath } from './dashboard/basePath';
-import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
+import { removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from './dashboard/dashboardStore';
 import {
   useHideUnsupportedDevices,
@@ -41,13 +39,19 @@ import {
   visibleNewDeviceOptions,
 } from './dashboard/deviceVisibility';
 import { useColorScheme } from './dashboard/useColorScheme';
-import { useDeviceLists } from './dashboard/useDevices';
+import { DeviceDiscovery } from './dashboard/DeviceDiscovery';
+import { startDevice } from './dashboard/startDevice';
+import { selectDeviceRoute } from './dashboard/deviceRoute';
+import { useDeviceSessionStore } from './dashboard/deviceSessionStore';
 import {
   FloatingSidebarToggle,
   floatingSidebarToggleInset,
 } from './dashboard/FloatingSidebarToggle';
 import { useArgentInteractions } from './dashboard/useArgentInteraction';
-import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
+import {
+  useNewDeviceOptions,
+  type NewDeviceOptionsByPlatform,
+} from './dashboard/useNewDeviceOptions';
 import { SidebarOverlay } from './dashboard/SidebarOverlay';
 import { useSidebarLayout } from './dashboard/useSidebarLayout';
 import {
@@ -55,12 +59,6 @@ import {
   browserStreamModeAvailability,
 } from './dashboard/streamMode';
 import { dashboardPlatformFilter } from './platform-filter';
-
-/** Append `extra` devices not already present in `base` (deduped by id). */
-function mergeById(base: Device[], extra: Device[]): Device[] {
-  const ids = new Set(base.map((device) => device.id));
-  return [...base, ...extra.filter((device) => !ids.has(device.id))];
-}
 
 // Resizable-sidebar bounds. Each column starts at the original fixed width and
 // can be dragged between MIN and MAX — never so wide that the stream, alongside
@@ -116,26 +114,22 @@ function clampSidebarWidth(width: number, otherWidth: number): number {
  * and become toggleable overlays otherwise.
  */
 export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps }) {
+  return (
+    <>
+      <DeviceDiscovery />
+      <DashboardLayout />
+    </>
+  );
+}
+
+const DashboardLayout = memo(function DashboardLayout() {
   const scheme = useColorScheme();
-  const hideBootDevice = dashboardHideBootDevice();
   const platform = dashboardPlatformFilter();
-  const { booted, recent, connectionStatus } = useDeviceLists();
-  // Installed runtimes/system images and models for the new-device forms.
+  const selected = useDeviceSessionStore((state) => state.selectedDevice);
+  const selectedAvailable = useDeviceSessionStore((state) => state.selectedAvailable);
+  const connectionStatus = useDeviceSessionStore((state) => state.connectionStatus);
   const newDeviceOptions = useNewDeviceOptions();
-  const hideUnsupportedDevices = useHideUnsupportedDevices();
-  const selectedId = useDashboardStore((state) => state.selectedDeviceId);
-  const selectDevice = useDashboardStore((state) => state.selectDevice);
-  const reconcileSelectedDevice = useDashboardStore(
-    (state) => state.reconcileSelectedDevice
-  );
-  // Devices started through the picker are retained until host discovery catches up.
-  const added = useDashboardStore((state) => state.addedDevices);
-  const trackAddedDevice = useDashboardStore((state) => state.trackAddedDevice);
-  const dismissDevice = useDashboardStore((state) => state.dismissDevice);
-  const streamModeAvailability = useMemo<StreamModeAvailability>(
-    browserStreamModeAvailability,
-    []
-  );
+  const streamModeAvailability = useMemo<StreamModeAvailability>(browserStreamModeAvailability, []);
   const streamMode = useDashboardStore((state) => state.streamMode);
   const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
   const showDeviceFrame = useDashboardStore((state) => state.showDeviceFrame);
@@ -160,97 +154,6 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     minStreamWidth: MIN_STREAM_WIDTH,
   });
 
-  // Merge booted devices (from the server) with any the user added, deduped by
-  // id and split back into the two sections by platform.
-  const simulators = useMemo(
-    () =>
-      platform === 'android'
-        ? []
-        : mergeById(
-            booted.simulators,
-            added.filter((device) => device.platform === 'ios')
-          ),
-    [booted.simulators, added, platform]
-  );
-  const emulators = useMemo(
-    () =>
-      platform === 'ios'
-        ? []
-        : mergeById(
-            booted.emulators,
-            added.filter((device) => device.platform === 'android')
-          ),
-    [booted.emulators, added, platform]
-  );
-  // The browser flag affects only shut-down recents and creation choices. Every
-  // running device remains visible in the sidebar, including untested models.
-  const recentSimulators = useMemo(
-    () => visibleDevices(recent.simulators, hideUnsupportedDevices),
-    [recent.simulators, hideUnsupportedDevices]
-  );
-  const recentEmulators = useMemo(
-    () => visibleDevices(recent.emulators, hideUnsupportedDevices),
-    [recent.emulators, hideUnsupportedDevices]
-  );
-  const simulatorOptions = useMemo(
-    () => visibleNewDeviceOptions(newDeviceOptions.ios, hideUnsupportedDevices),
-    [newDeviceOptions.ios, hideUnsupportedDevices]
-  );
-  const emulatorOptions = useMemo(
-    () => visibleNewDeviceOptions(newDeviceOptions.android, hideUnsupportedDevices),
-    [newDeviceOptions.android, hideUnsupportedDevices]
-  );
-
-  // Create/boot the chosen target on the host. The modal awaits this result, so
-  // it stays open during slow Android boots and can show failures in context.
-  async function handleAddDevice(target: AddDeviceTarget): Promise<AddDeviceOutcome> {
-    const result =
-      target.kind === 'new'
-        ? await createDevice(target.device)
-        : target.device.booted
-          ? { id: target.device.id, error: null }
-          : await bootDevice(target.device);
-
-    if (!result.id) {
-      return { ok: false, error: result.error ?? 'The device did not come online.' };
-    }
-
-    const device: Device =
-      target.kind === 'new'
-        ? {
-            id: result.id,
-            name: target.device.name,
-            version: target.device.version,
-            platform: target.device.platform,
-            physical: false,
-            booted: true,
-            supported: target.device.supported,
-            deviceFrame: target.device.deviceFrame,
-            lastUsedAt: Date.now(),
-          }
-        : { ...target.device, id: result.id, booted: true, lastUsedAt: Date.now() };
-
-    const replacedIds =
-      target.kind === 'new'
-        ? [target.device.name, result.id]
-        : [target.device.name, target.device.id, result.id];
-    trackAddedDevice(device, replacedIds);
-    return { ok: true };
-  }
-
-  // Shut down / remove the selected device on the host, then drop it from the
-  // UI. The device leaves the polled booted list within a tick, and the
-  // selection effect re-selects the next device (or falls back to EmptyState).
-  async function handleShutdown(device: Device) {
-    await shutdownDevice(device);
-    dismissDevice(device.id);
-  }
-
-  async function handleRemove(device: Device) {
-    await removeDevice(device);
-    dismissDevice(device.id);
-  }
-
   // Mirror the theme onto the document root so Radix portals (e.g. the dropdown
   // menu), which mount on document.body outside the wrapper below, still pick up
   // the dark `--expo-theme-*` variables.
@@ -260,40 +163,46 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     return () => root.classList.remove('dark-theme');
   }, [scheme]);
 
-  // Keep a valid selection — default to the first device once the list loads.
-  // Selecting a device streams it (its helper is attached on demand); the
-  // sidebar lists only booted devices, so the default selection streams an
-  // already-running sim and never boots anything.
-  useEffect(() => {
-    const devices = [...simulators, ...emulators];
-    reconcileSelectedDevice(devices.map((device) => device.id));
-  }, [simulators, emulators, reconcileSelectedDevice]);
+  const selectedStreamModeAvailability = useMemo(
+    () =>
+      selected?.platform === 'android'
+        ? androidStreamModeAvailability(
+            streamModeAvailability,
+            typeof window.MediaSource !== 'undefined'
+          )
+        : streamModeAvailability,
+    [selected?.platform, streamModeAvailability]
+  );
+  const handleStreamModeChange = useCallback(
+    (mode: DeviceStreamMode) => {
+      chooseStreamMode(mode, selectedStreamModeAvailability);
+    },
+    [chooseStreamMode, selectedStreamModeAvailability]
+  );
+  const handleShutdown = useCallback(async () => {
+    if (selected) await shutdownDevice(selected);
+  }, [selected]);
+  const handleRemove = useCallback(async () => {
+    if (selected) await removeDevice(selected);
+  }, [selected]);
 
-  const devices = [...simulators, ...emulators];
-  const selected = devices.find((device) => device.id === selectedId) ?? devices[0];
-  const selectedStreamModeAvailability =
-    selected?.platform === 'android'
-      ? androidStreamModeAvailability(
-          streamModeAvailability,
-          typeof window.MediaSource !== 'undefined'
-        )
-      : streamModeAvailability;
-  const handleStreamModeChange = (mode: DeviceStreamMode) => {
-    chooseStreamMode(mode, selectedStreamModeAvailability);
-  };
-
-  // One shared connection to the serve-sim/serve-emu server, wired to the
-  // selected device. Null until the user picks one, so nothing connects (or
-  // boots) on load.
+  // Connect only while discovery confirms the URL-selected device is running.
   const client = useActiveDeviceClient(
-    connectionStatus === 'connected' && selected
+    connectionStatus === 'connected' && selectedAvailable && selected
       ? { platform: selected.platform, device: selected.id, streamMode }
       : null,
     basePath()
   );
   const agentInteractions = useArgentInteractions();
-  const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
-  const agentDeviceIds = Object.keys(agentInteractions);
+  const agentInteraction = selected ? (agentInteractions[selected.id] ?? null) : null;
+  const agentDeviceIds = useMemo(() => Object.keys(agentInteractions), [agentInteractions]);
+
+  const retrySelectedDevice = useCallback(() => {
+    const entry = Object.values(useDeviceSessionStore.getState().startups).find(
+      (entry) => entry.device.id === selected?.id && entry.device.startup?.phase === 'failed'
+    );
+    if (entry) void startDevice(entry.target);
+  }, [selected?.id]);
 
   const connectionBlocked = connectionStatus !== 'connected';
 
@@ -322,17 +231,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         open={sidebars.leftDocked}
         sidebarOpen={sidebars.leftOpen}
         resizing={resizing}>
-        <Sidebar
-          simulators={simulators}
-          emulators={emulators}
-          recentSimulators={recentSimulators}
-          recentEmulators={recentEmulators}
-          simulatorOptions={simulatorOptions}
-          emulatorOptions={emulatorOptions}
+        <DeviceSidebar
+          newDeviceOptions={newDeviceOptions}
           agentDeviceIds={agentDeviceIds}
-          selectedId={selectedId}
-          onSelect={selectDevice}
-          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
           onToggle={sidebars.closeLeft}
           platform={platform}
           width={sidebarWidth}
@@ -362,8 +263,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
       {selected ? (
         <StreamPanel
           device={selected}
+          available={selectedAvailable}
           client={client}
           agentInteraction={agentInteraction}
+          onRetry={retrySelectedDevice}
           DeviceScreen={DeviceScreen}
           displayScreen={displayScreen}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
@@ -405,6 +308,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         resizing={resizing}>
         <LogSidebar
           device={selected}
+          available={selectedAvailable}
           client={client}
           showDeviceFrame={showDeviceFrame}
           onShowDeviceFrameChange={setShowDeviceFrame}
@@ -413,8 +317,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={selected ? () => handleRemove(selected) : undefined}
+          onShutdown={selected ? handleShutdown : undefined}
+          onRemove={selected ? handleRemove : undefined}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -426,17 +330,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         sidebarOpen={sidebars.leftOpen}
         topmost={sidebars.lastOpened === 'left' || !sidebars.rightOverlay}
         onDismiss={sidebars.closeLeft}>
-        <Sidebar
-          simulators={simulators}
-          emulators={emulators}
-          recentSimulators={recentSimulators}
-          recentEmulators={recentEmulators}
-          simulatorOptions={simulatorOptions}
-          emulatorOptions={emulatorOptions}
+        <DeviceSidebar
+          newDeviceOptions={newDeviceOptions}
           agentDeviceIds={agentDeviceIds}
-          selectedId={selectedId}
-          onSelect={selectDevice}
-          onAddDevice={hideBootDevice ? undefined : handleAddDevice}
           onToggle={sidebars.closeLeft}
           platform={platform}
           width={sidebarWidth}
@@ -451,6 +347,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         onDismiss={sidebars.closeRight}>
         <LogSidebar
           device={selected}
+          available={selectedAvailable}
           client={client}
           showDeviceFrame={showDeviceFrame}
           onShowDeviceFrameChange={setShowDeviceFrame}
@@ -459,8 +356,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           streamModeAvailability={selectedStreamModeAvailability}
           onStreamModeChange={handleStreamModeChange}
           onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={selected ? () => handleRemove(selected) : undefined}
+          onShutdown={selected ? handleShutdown : undefined}
+          onRemove={selected ? handleRemove : undefined}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -499,4 +396,61 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         )}
     </div>
   );
-}
+});
+
+/** Only this column subscribes to changes in the other devices. */
+const DeviceSidebar = memo(function DeviceSidebar({
+  newDeviceOptions,
+  agentDeviceIds,
+  onToggle,
+  platform,
+  width,
+}: {
+  newDeviceOptions: NewDeviceOptionsByPlatform;
+  agentDeviceIds: string[];
+  onToggle: () => void;
+  platform?: Device['platform'];
+  width: number;
+}) {
+  const simulators = useDeviceSessionStore((state) => state.simulators);
+  const emulators = useDeviceSessionStore((state) => state.emulators);
+  const recent = useDeviceSessionStore((state) => state.recent);
+  const selectedId = useDeviceSessionStore((state) => state.selectedDevice?.id ?? '');
+  const available = useDeviceSessionStore((state) => state.selectedAvailable);
+  const hideUnsupportedDevices = useHideUnsupportedDevices();
+  const recentSimulators = useMemo(
+    () => visibleDevices(recent.simulators, hideUnsupportedDevices),
+    [recent.simulators, hideUnsupportedDevices]
+  );
+  const recentEmulators = useMemo(
+    () => visibleDevices(recent.emulators, hideUnsupportedDevices),
+    [recent.emulators, hideUnsupportedDevices]
+  );
+  const simulatorOptions = useMemo(
+    () => visibleNewDeviceOptions(newDeviceOptions.ios, hideUnsupportedDevices),
+    [newDeviceOptions.ios, hideUnsupportedDevices]
+  );
+  const emulatorOptions = useMemo(
+    () => visibleNewDeviceOptions(newDeviceOptions.android, hideUnsupportedDevices),
+    [newDeviceOptions.android, hideUnsupportedDevices]
+  );
+
+  return (
+    <Sidebar
+      simulators={simulators}
+      emulators={emulators}
+      recentSimulators={recentSimulators}
+      recentEmulators={recentEmulators}
+      simulatorOptions={simulatorOptions}
+      emulatorOptions={emulatorOptions}
+      agentDeviceIds={agentDeviceIds}
+      selectedId={selectedId}
+      offlineDeviceId={available ? undefined : selectedId}
+      onSelect={selectDeviceRoute}
+      onAddDevice={dashboardHideBootDevice() ? undefined : startDevice}
+      onToggle={onToggle}
+      platform={platform}
+      width={width}
+    />
+  );
+});
