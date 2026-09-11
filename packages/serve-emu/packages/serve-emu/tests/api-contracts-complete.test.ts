@@ -294,15 +294,21 @@ describe("complete API success contracts", () => {
     expect(
       parseSoftwareKeyboardResponse({
         ok: true,
-        softwareKeyboard: { enabled: true, raw: "1" },
+        softwareKeyboard: { enabled: true, raw: "1", hardwareKeyboard: false },
       }).softwareKeyboard,
-    ).toEqual({ enabled: true, raw: "1" });
+    ).toEqual({ enabled: true, raw: "1", hardwareKeyboard: false });
     expect(() =>
       parseSoftwareKeyboardResponse({
         ok: true,
-        softwareKeyboard: { enabled: "1", raw: "1" },
+        softwareKeyboard: { enabled: "1", raw: "1", hardwareKeyboard: false },
       }),
     ).toThrow("softwareKeyboard.enabled");
+    expect(() =>
+      parseSoftwareKeyboardResponse({
+        ok: true,
+        softwareKeyboard: { enabled: true, raw: "1" },
+      }),
+    ).toThrow("softwareKeyboard.hardwareKeyboard");
     expect(
       parseNetworkResponse({
         ok: true,

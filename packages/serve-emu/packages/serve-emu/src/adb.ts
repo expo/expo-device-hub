@@ -53,6 +53,8 @@ export type FontWeightStatus = {
 export type SoftwareKeyboardStatus = {
   enabled: boolean;
   raw: string;
+  /** False when no physical keyboard is attached, which makes the setting inert. */
+  hardwareKeyboard: boolean;
 };
 export type DisplayDensityStatus = {
   /** The override density as a ratio of the device's own physical density. */
@@ -560,12 +562,50 @@ export async function setFontWeight(
   return getFontWeight(serial, runExec);
 }
 
+/** `dumpsys input` lists one `Classes:` line per device; a physical keyboard types letters and is not virtual. */
+export function hardwareKeyboardFromClasses(dump: string): boolean {
+  return dump.split("\n").some((line) => {
+    const classes = /^\s*Classes:\s*(.+)$/.exec(line)?.[1];
+    if (!classes) return false;
+    const parts = classes.split("|").map((part) => part.trim());
+    return parts.includes("ALPHAKEY") && !parts.includes("VIRTUAL");
+  });
+}
+
+const HARDWARE_KEYBOARD_TTL_MS = 60_000;
+const hardwareKeyboardCache = new Map<string, { at: number; present: boolean }>();
+
+/** Cached because the settings poll is frequent and an attached keyboard rarely changes. */
+async function hardwareKeyboardPresent(
+  serial: string,
+  runExec: typeof execText,
+  now: () => number = Date.now,
+): Promise<boolean> {
+  const cached = hardwareKeyboardCache.get(serial);
+  if (cached && now() - cached.at < HARDWARE_KEYBOARD_TTL_MS) return cached.present;
+  const result = await runExec(
+    "adb",
+    ["-s", serial, "shell", "dumpsys input | grep Classes:"],
+    { timeout: ADB_QUERY_TIMEOUT_MS, lane: "background" },
+  );
+  const present = hardwareKeyboardFromClasses(result.stdout ?? "");
+  hardwareKeyboardCache.set(serial, { at: now(), present });
+  return present;
+}
+
+export function clearHardwareKeyboardCache(): void {
+  hardwareKeyboardCache.clear();
+}
+
 export async function getSoftwareKeyboard(
   serial: string,
   runExec: typeof execText = execText,
 ): Promise<SoftwareKeyboardStatus> {
-  const raw = await secureSetting(serial, "show_ime_with_hard_keyboard", runExec);
-  return { enabled: enabledFromIntSetting(raw), raw };
+  const [raw, hardwareKeyboard] = await Promise.all([
+    secureSetting(serial, "show_ime_with_hard_keyboard", runExec),
+    hardwareKeyboardPresent(serial, runExec),
+  ]);
+  return { enabled: enabledFromIntSetting(raw), raw, hardwareKeyboard };
 }
 
 export async function setSoftwareKeyboard(

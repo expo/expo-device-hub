@@ -267,7 +267,7 @@ export type HighTextContrastResponse = ApiSuccess<
 export type FontWeightStatus = { enabled: boolean; raw: string };
 export type FontWeightResponse = ApiSuccess<{ fontWeight: FontWeightStatus }>;
 
-export type SoftwareKeyboardStatus = { enabled: boolean; raw: string };
+export type SoftwareKeyboardStatus = { enabled: boolean; raw: string; hardwareKeyboard: boolean };
 export type SoftwareKeyboardResponse = ApiSuccess<
   { softwareKeyboard: SoftwareKeyboardStatus }
 >;
@@ -1358,6 +1358,7 @@ export function parseSoftwareKeyboardResponse(
     softwareKeyboard: {
       enabled: boolean(status.enabled, "softwareKeyboard.enabled"),
       raw: string(status.raw, "softwareKeyboard.raw"),
+      hardwareKeyboard: boolean(status.hardwareKeyboard, "softwareKeyboard.hardwareKeyboard"),
     },
   };
 }
