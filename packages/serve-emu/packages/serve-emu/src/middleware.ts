@@ -475,6 +475,8 @@ async function createAppInternal(
     serial: opts.serial,
     device: session.meta.deviceName,
     streamMode: session.mode,
+    captureBackend: session.diagnostics?.().experimentalGpuCapture?.backend ?? session.mode,
+    experimentalGpuCapture: session.diagnostics?.().experimentalGpuCapture ?? null,
     grpcImageMode,
     encoder,
     encoderName: session.diagnostics?.().grpcCapture?.encoderName ?? null,
