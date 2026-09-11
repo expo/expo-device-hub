@@ -1204,10 +1204,16 @@ test('moves device actions into Device options and hides Remove for physical dev
   );
   const section = sectionMarkup(android, 'Device options');
 
-  for (const label of ['Back button', 'Recents button', 'Shut down device', 'Remove device']) {
+  for (const label of [
+    'Back button',
+    'Recents button',
+    'Dismiss on-screen keyboard',
+    'Shut down device',
+    'Remove device',
+  ]) {
     expect(section).toContain(`>${label}</span>`);
   }
-  expect(section.match(/>Press</g)).toHaveLength(2);
+  expect(section.match(/>Press</g)).toHaveLength(3);
   expect(section).toContain('>Shut down<');
   expect(section).toContain('>Remove<');
   expect(section.indexOf('>Back button</span>')).toBeGreaterThan(section.indexOf('>Text size</span>'));
@@ -1422,6 +1428,15 @@ test('keeps the Android on-screen keyboard row off iOS while device settings loa
 
   expect(html).toContain('aria-label="Device options"');
   expect(html).not.toContain('>Force on-screen keyboard</span>');
+});
+
+test('offers a keyboard dismiss action on Android only', () => {
+  const android = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+  const options = sectionMarkup(android, 'Device options');
+  expect(options).toContain('>Dismiss on-screen keyboard</span>');
+
+  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
+  expect(sectionMarkup(ios, 'Device options')).not.toContain('>Dismiss on-screen keyboard</span>');
 });
 
 test('renders the Android on-screen keyboard switch the backend reports', () => {

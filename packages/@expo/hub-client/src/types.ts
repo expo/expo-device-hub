@@ -385,7 +385,14 @@ export interface ForegroundApp {
 }
 
 /** Hardware buttons. Implementations ignore the ones their platform lacks. */
-export type HardwareButton = 'home' | 'back' | 'recents' | 'power' | 'appSwitcher';
+export type HardwareButton =
+  | 'home'
+  | 'back'
+  | 'recents'
+  | 'power'
+  | 'appSwitcher'
+  /** Dismisses the on-screen keyboard. Not a physical button; grouped here because it presses one key. */
+  | 'hideKeyboard';
 
 /**
  * Device system appearance. Binary on purpose — the Hub exposes a plain

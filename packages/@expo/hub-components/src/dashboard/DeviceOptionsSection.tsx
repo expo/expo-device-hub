@@ -257,6 +257,11 @@ export function DeviceOptionsSection({
               Press
             </SidebarActionButton>
           </SidebarRow>
+          <SidebarRow label="Dismiss on-screen keyboard">
+            <SidebarActionButton onClick={() => client.pressButton('hideKeyboard')}>
+              Press
+            </SidebarActionButton>
+          </SidebarRow>
         </>
       )}
 
