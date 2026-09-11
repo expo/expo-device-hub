@@ -715,6 +715,8 @@ export async function startServer(
     streamMode: context.stream.mode,
     grpcImageMode: grpcImageModeForContext(context),
     encoder: encoderForContext(context),
+    captureBackend: context.stream.diagnostics?.().experimentalGpuCapture?.backend ?? context.stream.mode,
+    experimentalGpuCapture: context.stream.diagnostics?.().experimentalGpuCapture ?? null,
     encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
     inputSource: context.stream.inputSource,
     grpcCapture: context.stream.diagnostics?.().grpcCapture ?? null,

@@ -3,6 +3,7 @@
 #include <EGL/egl.h>
 #include <GL/gl.h>
 #include <dlfcn.h>
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -28,6 +29,8 @@ extern "C" {
 
 using Clock = std::chrono::steady_clock;
 static double ms(Clock::time_point t) { return std::chrono::duration<double,std::milli>(Clock::now()-t).count(); }
+#include "socket-output.h"
+
 template<class T> static T sym(void* lib, const char* name) {
     void* p = dlsym(lib,name);
     if (!p) throw std::runtime_error(std::string("missing symbol: ")+name);
@@ -73,6 +76,8 @@ struct Capture {
     std::atomic<uint64_t> seen{0},captured{0},dropped{0},encoded{0},errors{0};
     Clock::time_point start=Clock::now();
     std::string outputPath;
+    SocketOutput socketOutput; bool live=false;
+    int64_t lastEncodedPts=-1;
 
     template<class T> T ef(int index) {return reinterpret_cast<T>(egl[index]);}
     void init(const char* path,const char* out,int rate,int count) {
@@ -107,7 +112,10 @@ struct Capture {
         LOAD(array,"cuGraphicsSubResourceGetMappedArray"); LOAD(copy,"cuMemcpy2D_v2");
         LOAD(arrayDesc,"cuArrayGetDescriptor_v2");
 #undef LOAD
-        fps=rate; limit=count; outputPath=out; enabled=true;
+        fps=rate; limit=count; outputPath=out;
+        live=outputPath.rfind("unix:",0)==0;
+        if(live)socketOutput.open(outputPath.substr(5));
+        enabled=true;
         fprintf(stderr,"[gpu-poc] armed fps=%d limit=%d output=%s\n",fps,limit,out);
     }
     void setupEncoder(int w,int h) {
@@ -123,16 +131,17 @@ struct Capture {
         if(!encoder) throw std::runtime_error("h264_nvenc unavailable");
         encoder->width=w; encoder->height=h; encoder->pix_fmt=AV_PIX_FMT_CUDA;
         encoder->hw_frames_ctx=av_buffer_ref(frames);
-        encoder->time_base={1,fps}; encoder->framerate={fps,1}; encoder->bit_rate=12000000;
+        encoder->time_base=live?AVRational{1,1000000}:AVRational{1,fps}; encoder->framerate={fps,1}; encoder->bit_rate=12000000;
         encoder->gop_size=fps; encoder->max_b_frames=0;
         AVDictionary* opts=nullptr;
         av_dict_set(&opts,"preset","p1",0); av_dict_set(&opts,"tune","ull",0);
+        av_dict_set(&opts,"forced-idr","1",0);
         av_dict_set(&opts,"zerolatency","1",0); av_dict_set(&opts,"delay","0",0);
         int r=avcodec_open2(encoder,encoder->codec,&opts); av_dict_free(&opts); avcheck(r,"open NVENC");
         for(auto& slot:slots) { slot.frame=av_frame_alloc(); avcheck(av_hwframe_get_buffer(frames,slot.frame,0),"allocate GPU frame"); }
-        output=fopen(outputPath.c_str(),"wb");
-        metrics=fopen((outputPath+".csv").c_str(),"w");
-        if(!output||!metrics) throw std::runtime_error("output file creation failed");
+        if(!live)output=fopen(outputPath.c_str(),"wb");
+        metrics=fopen(((live?outputPath.substr(5):outputPath)+".csv").c_str(),"w");
+        if((!live&&!output)||!metrics) throw std::runtime_error("output file creation failed");
         fprintf(metrics,"frame,elapsed_ms,capture_ms,copy_ms,native_texture\n");
         start=Clock::now(); ready=true;
         worker=std::thread([this]{encodeLoop();});
@@ -144,28 +153,51 @@ struct Capture {
             int r=avcodec_receive_packet(encoder,pkt);
             if(r==AVERROR(EAGAIN)||r==AVERROR_EOF) break;
             avcheck(r,"receive packet");
-            if(fwrite(pkt->data,1,pkt->size,output)!=(size_t)pkt->size) {av_packet_free(&pkt);throw std::runtime_error("write failed");}
+            if(live) {
+                socketOutput.packet(pkt->data,pkt->size,pkt->pts<0?0:pkt->pts,
+                    (pkt->flags&AV_PKT_FLAG_KEY)?1:0,encoder->width,encoder->height,fps);
+            } else if(fwrite(pkt->data,1,pkt->size,output)!=(size_t)pkt->size) {av_packet_free(&pkt);throw std::runtime_error("write failed");}
             encoded++; av_packet_unref(pkt);
         }
         av_packet_free(&pkt);
     }
     void encodeLoop() {
+        AVFrame* latest=av_frame_alloc();auto lastSend=Clock::now();
         try {
             while(true) {
-                int i;
-                { std::unique_lock<std::mutex> l(mutex);cv.wait(l,[this]{return stopping||!queue.empty();});
-                  if(queue.empty()) break; i=queue.front();queue.pop_front(); }
-                avcheck(avcodec_send_frame(encoder,slots[i].frame),"send frame"); drain();
-                {std::lock_guard<std::mutex> l(mutex);slots[i].queued=false;}
+                int i=-1;
+                { std::unique_lock<std::mutex> l(mutex);
+                  cv.wait_for(l,std::chrono::milliseconds(25),[this]{return stopping||!queue.empty();});
+                  if(stopping&&queue.empty())break;
+                  if(!queue.empty()){i=queue.front();queue.pop_front();} }
+                if(live)socketOutput.pollCommands(encoder->width,encoder->height,fps);
+                bool repeat=i<0&&live&&socketOutput.client>=0&&latest->buf[0]&&
+                    (socketOutput.needsKey||ms(lastSend)>=500);
+                if(i<0&&!repeat)continue;
+                AVFrame* frame=i>=0?slots[i].frame:av_frame_clone(latest);
+                if(!frame)throw std::runtime_error("repeat frame allocation failed");
+                if(live) {
+                    if(repeat)frame->pts=static_cast<int64_t>(ms(start)*1000);
+                    frame->pts=std::max(frame->pts,lastEncodedPts+1);lastEncodedPts=frame->pts;
+                }
+                frame->pict_type=(live&&socketOutput.needsKey)?AV_PICTURE_TYPE_I:AV_PICTURE_TYPE_NONE;
+                socketOutput.needsKey=false;
+                avcheck(avcodec_send_frame(encoder,frame),"send frame");drain();lastSend=Clock::now();
+                if(i>=0) {
+                    av_frame_unref(latest);avcheck(av_frame_ref(latest,frame),"retain latest GPU frame");
+                    std::lock_guard<std::mutex> l(mutex);slots[i].queued=false;
+                } else av_frame_free(&frame);
             }
-            avcheck(avcodec_send_frame(encoder,nullptr),"flush");drain();fflush(output);
+            avcheck(avcodec_send_frame(encoder,nullptr),"flush");drain();if(output)fflush(output);
         } catch(const std::exception& e) {errors++;enabled=false;fprintf(stderr,"[gpu-poc] worker error: %s\n",e.what());}
+        av_frame_free(&latest);
     }
     void onFrame(void* fb,uint32_t handle);
     void stop() {
         enabled=false;
         // Caller first detaches hooks and waits for in-flight callbacks.
         stopping=true;cv.notify_all();if(worker.joinable())worker.join();
+        socketOutput.close();
         if(output){fclose(output);output=nullptr;}if(metrics){fclose(metrics);metrics=nullptr;}
         fprintf(stderr,"[gpu-poc] summary seen=%lu captured=%lu encoded=%lu dropped=%lu errors=%lu elapsed_ms=%.3f\n",
                 seen.load(),captured.load(),encoded.load(),dropped.load(),errors.load(),ms(start));
@@ -266,7 +298,7 @@ void Capture::onFrame(void* fb,uint32_t handle) {
         if(oldCtx)makeCurrent(oldDisplay,oldDraw,oldRead,oldCtx);
         fbUnlock(fb);locked=false;
         uint64_t n=captured++;
-        frame->pts=n;
+        frame->pts=live?static_cast<int64_t>(ms(start)*1000):n;
         fprintf(metrics,"%lu,%.3f,%.3f,%.3f,%u\n",n,ms(start),ms(begin),copyMs,texture);
         {std::lock_guard<std::mutex> l(mutex);queue.push_back(slotIndex);}
         cv.notify_one();
