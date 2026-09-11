@@ -2,7 +2,7 @@ import { createConnection } from "node:net";
 import { setTimeout as delay } from "node:timers/promises";
 import { ControlInputQueue, SocketControlWriter } from "./control-input-queue.ts";
 import { GrpcVideoPacketQueue } from "./grpc-session.ts";
-import { GpuPacketReader, splitGpuAccessUnit } from "./gpu-packet.ts";
+import { GpuPacketReader, gpuSettingsCommand, gpuStreamSize, splitGpuAccessUnit } from "./gpu-packet.ts";
 import { H264StartupGate } from "./h264-readiness.ts";
 import { compileGesture } from "./input.ts";
 import { startScrcpyControl, type ScrcpyControlSession, type VideoPacket } from "./scrcpy.ts";
@@ -19,7 +19,7 @@ export async function startGpuExperimentSession(
     throw new Error("GPU experiment requires scrcpy control mode; capture comes from the native socket");
   if (!socketPath.startsWith("/")) throw new Error("GPU experiment socket path must be absolute");
   if (activeSerials.has(options.serial))
-    throw new Error("GPU experiment settings are fixed; stop the session before replacing it");
+    throw new Error("GPU experiment already has a session for this device");
   activeSerials.add(options.serial);
   const socket = createConnection(socketPath);
   const queue = new GrpcVideoPacketQueue(16 * 1024 * 1024);
@@ -36,7 +36,9 @@ export async function startGpuExperimentSession(
   let lastPts = -1n;
   let sps: Buffer | null = null, pps: Buffer | null = null, config: Buffer | null = null;
   const meta = { deviceName: "GPU capture experiment", codecId: "h264", width: 0, height: 0 };
-  let sourceFps = 0;
+  let sourceFps = 0, streamFps = 0, configured = false;
+  const nativeSize = { width: 0, height: 0 };
+  const maxSize = options.maxSize ?? 0;
   const fail = (error: unknown) => {
     if (failed || closed) return;
     const cause = error instanceof Error ? error : new Error(String(error));
@@ -64,15 +66,19 @@ export async function startGpuExperimentSession(
   const reader = new GpuPacketReader(record => {
     if (record.flags === 2) {
       if (hello) throw new Error("Unexpected second GPU stream handshake");
-      hello = true;meta.width = record.width;meta.height = record.height;sourceFps = record.fps;
-      if (options.maxSize && Math.max(meta.width, meta.height) > options.maxSize)
-        throw new Error("GPU experiment does not resize; use --max-dimension 0 for native resolution");
-      if (options.maxFps && options.maxFps !== sourceFps)
-        throw new Error("GPU experiment FPS must match the injected encoder");
-      requestKey();return;
+      hello = true;nativeSize.width = record.width;nativeSize.height = record.height;sourceFps = record.fps;
+      Object.assign(meta, gpuStreamSize(nativeSize.width, nativeSize.height, maxSize));
+      streamFps = options.maxFps || sourceFps;
+      socket.write(gpuSettingsCommand(maxSize, streamFps, options.bitRate ?? 12_000_000), error => { if (error) fail(error); });
+      return;
     }
-    if (!hello || record.width !== meta.width || record.height !== meta.height || record.fps !== sourceFps)
-      throw new Error("GPU stream dimensions changed; restart the fixed-size experiment");
+    if (!hello || record.width !== meta.width || record.height !== meta.height || record.fps !== streamFps)
+      throw new Error("GPU stream does not match the requested settings");
+    if (record.flags === 3) {
+      if (configured) throw new Error("Unexpected second GPU settings acknowledgement");
+      configured = true;requestKey();return;
+    }
+    if (!configured) throw new Error("GPU stream arrived before settings acknowledgement");
     if (record.pts <= lastPts) throw new Error("GPU stream timestamp did not increase");
     lastPts = record.pts;packets++;bytes += record.data.length;
     const unit = splitGpuAccessUnit(record.data);
@@ -108,7 +114,7 @@ export async function startGpuExperimentSession(
     control.proc.on("exit", () => fail(new Error("GPU experiment control process exited")));
     controls = new ControlInputQueue({ dispatcher: {
       async dispatchGesture(gesture, _screen, inputSignal) {
-        for (const step of compileGesture(gesture, meta).steps) {
+        for (const step of compileGesture(gesture, nativeSize).steps) {
           if (step.delayMs > 0) await delay(step.delayMs, undefined, { signal: inputSignal });
           await writer.write(step.packet, inputSignal);
         }
@@ -116,14 +122,15 @@ export async function startGpuExperimentSession(
       async resetVideo(inputSignal) { inputSignal.throwIfAborted();requestKey(); },
       close(reason) { writer.close(reason); },
     } });
-    console.warn(`[GPU EXPERIMENT] ${options.serial}: gfxstream → CUDA → NVENC, ${meta.width}x${meta.height}@${sourceFps}; scrcpy controls only`);
+    console.warn(`[GPU EXPERIMENT] ${options.serial}: gfxstream → CUDA → NVENC, ${meta.width}x${meta.height}@${streamFps} (native ${nativeSize.width}x${nativeSize.height}); scrcpy controls only`);
     return {
       // Preserve the existing public mode contract under the private override.
       // /health.captureBackend identifies the actual capture implementation.
       mode: options.mode, inputSource: "scrcpy", serial: options.serial, meta, controls,
       diagnostics: () => ({ experimentalGpuCapture: {
         backend: "gfxstream-cuda-nvenc", encoderName: "h264_nvenc", packets, bytes,
-        requestedKeyFrames: keyRequests, queuedBytes: queue.byteLength, fps: sourceFps,
+        requestedKeyFrames: keyRequests, queuedBytes: queue.byteLength, fps: streamFps,
+        nativeSize: { ...nativeSize }, streamSize: { width: meta.width, height: meta.height }, maxSize,
       } }),
       readFrame() {
         if (closed || failed) return Promise.resolve(null);

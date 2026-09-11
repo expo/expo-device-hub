@@ -23,8 +23,8 @@ export class GpuPacketReader {
       const length = b.readUInt32BE(4);
       const flags = b.readUInt32BE(16);
       const width = b.readUInt32BE(20), height = b.readUInt32BE(24), fps = b.readUInt32BE(28);
-      if (length > MAX_GPU_PACKET_BYTES || flags > 2 ||
-          (flags === 2 ? length !== 0 : length === 0) ||
+      if (length > MAX_GPU_PACKET_BYTES || flags > 3 ||
+          (flags >= 2 ? length !== 0 : length === 0) ||
           width < 1 || width > 4096 || height < 1 || height > 4096 || fps < 1 || fps > 120)
         throw new Error("Invalid GPU stream header");
       if (b.length < GPU_HEADER_BYTES + length) return;
@@ -64,4 +64,25 @@ export function splitGpuAccessUnit(data: Buffer): {
     else { picture.push(nal); isIdr ||= type === 5; hasPicture ||= type === 1 || type === 5; }
   }
   return { sps, pps, data: hasPicture ? Buffer.concat(picture) : Buffer.alloc(0), isIdr };
+}
+
+/** Match the experiment's even-sized, aspect-preserving longest-edge cap. */
+export function gpuStreamSize(width: number, height: number, maxSize: number) {
+  if (!Number.isInteger(maxSize) || maxSize < 0 || maxSize > 4096)
+    throw new Error("Invalid GPU stream max size");
+  const edge = Math.max(width, height), target = maxSize > 0 ? Math.min(maxSize, edge) : edge;
+  const size = { width: Math.floor(width * target / edge / 2) * 2, height: Math.floor(height * target / edge / 2) * 2 };
+  if (size.width < 2 || size.height < 2) throw new Error("GPU stream size is too small for H.264");
+  return size;
+}
+
+export function gpuSettingsCommand(maxSize: number, fps: number, bitRate: number): Buffer {
+  if (!Number.isInteger(maxSize) || maxSize < 0 || maxSize > 4096 ||
+      !Number.isInteger(fps) || fps < 1 || fps > 120 ||
+      !Number.isInteger(bitRate) || bitRate < 100_000 || bitRate > 50_000_000)
+    throw new Error("Invalid GPU stream settings");
+  const command = Buffer.alloc(13);
+  command[0] = 83; // S
+  command.writeUInt32BE(maxSize, 1);command.writeUInt32BE(fps, 5);command.writeUInt32BE(bitRate, 9);
+  return command;
 }
