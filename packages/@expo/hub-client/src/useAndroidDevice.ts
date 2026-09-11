@@ -129,6 +129,8 @@ const BUTTON_MESSAGE: Record<HardwareButton, Record<string, unknown> | null> = {
   recents: { type: 'recents' },
   appSwitcher: { type: 'recents' },
   power: { type: 'power' },
+  // KEYCODE_ESCAPE dismisses the IME without the navigation a Back press would trigger.
+  hideKeyboard: { type: 'key', keycode: 111 },
 };
 
 export function androidWsUrlFor(
