@@ -36,7 +36,7 @@ import {
   type KeyboardEventRequest,
 } from "../src/emulator-grpc.ts";
 import type { H264EncoderOpts, QuarterTurn } from "../src/h264-encoder.ts";
-import { compileGesture, parseGesture } from "../src/input.ts";
+import { compileGesture, parseGesture, type Gesture, type Screen } from "../src/input.ts";
 import type {
   ScrcpyControlSession,
   VideoFrame,
@@ -286,7 +286,7 @@ describe("gRPC screenshot session helpers", () => {
     expect(readCalls).toBe(0);
   });
 
-  test("uses the oriented screenshot dimensions and touch coordinate space", () => {
+  test("crops the encoded image and scales portrait touches to native pixels", () => {
     const geometry = resolveGrpcDisplayGeometry({
       inputWidth: 289,
       inputHeight: 641,
@@ -1183,6 +1183,33 @@ async function waitFor(predicate: () => boolean): Promise<void> {
   throw new Error("condition was not reached");
 }
 
+function scrcpyControlFixture() {
+  const packets: Buffer[] = [];
+  let controlCloseCalls = 0;
+  const controlSocket = Object.assign(new EventEmitter(), {
+    destroyed: false,
+    writable: true,
+    write(packet: Buffer, callback: (error?: Error | null) => void) {
+      packets.push(Buffer.from(packet));
+      callback();
+      return true;
+    },
+  });
+  const controlProcess = new EventEmitter();
+  const controlSession = {
+    transport: "scrcpy-control",
+    serial: "emulator-5554",
+    scid: "00000001",
+    localPort: 27_183,
+    controlSocket,
+    proc: controlProcess,
+    async close() {
+      controlCloseCalls++;
+    },
+  } as unknown as ScrcpyControlSession;
+  return { controlSession, packets, get closeCalls() { return controlCloseCalls; } };
+}
+
 describe("startGrpcSession integration", () => {
   test("consumes buffered RGB frames during encoder backpressure and submits the newest", async () => {
     const width = 540, height = 1170, count = 8;
@@ -1836,71 +1863,172 @@ describe("startGrpcSession integration", () => {
     }
   });
 
-  test("routes controls through a control-only scrcpy session", async () => {
-    const client = new FakeGrpcClient(integrationImage());
-    const encoders: FakeGrpcEncoder[] = [];
-    const packets: Buffer[] = [];
-    let controlCloseCalls = 0;
-    let probeStarted = false;
-    client.getScreenshot = async () => {
-      probeStarted = true;
-      return client.probe;
+  test.each([
+    { rotation: 0, width: 100, height: 200, x: 20, y: 120 },
+    { rotation: 1, width: 200, height: 100, x: 40, y: 40 },
+    { rotation: 2, width: 100, height: 200, x: 80, y: 80 },
+    { rotation: 3, width: 200, height: 100, x: 60, y: 160 },
+  ])(
+    "maps a gRPC touch at rotation $rotation back to the unrotated framebuffer",
+    async ({ rotation, width, height, x, y }) => {
+      const client = new FakeGrpcClient(integrationImage(rotation, width, height));
+      const session = await startGrpcSession(
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode: "png",
+          inputSource: "grpc",
+        },
+        {
+          readDisplaySizeSignal: async () => "physical:100x200",
+          runtime: integrationRuntime(client, []),
+        },
+      );
+      try {
+        await session.controls.enqueue(
+          { type: "tap", x: 0.2, y: 0.6 },
+          { width, height },
+        ).completion;
+        expect(client.touches).toEqual([
+          [{ x, y, identifier: 0, pressure: 1 }],
+          [{ x, y, identifier: 0, pressure: 0 }],
+        ]);
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
+  test.each([
+    { rotation: 0, displayRotation: 0, width: 4, height: 6, x: 0.25, y: 0.5, touchWidth: 4, touchHeight: 6 },
+    { rotation: 1, displayRotation: 1, width: 6, height: 4, x: 0.25, y: 0.5, touchWidth: 6, touchHeight: 4 },
+    { rotation: 2, displayRotation: 2, width: 4, height: 6, x: 0.25, y: 0.5, touchWidth: 4, touchHeight: 6 },
+    { rotation: 3, displayRotation: 3, width: 6, height: 4, x: 0.25, y: 0.5, touchWidth: 6, touchHeight: 4 },
+    { rotation: 1, displayRotation: 0, width: 6, height: 4, x: 0.5, y: 0.25, touchWidth: 4, touchHeight: 6 },
+    { rotation: 3, displayRotation: 0, width: 6, height: 4, x: 0.5, y: 0.75, touchWidth: 4, touchHeight: 6 },
+    { rotation: 2, displayRotation: 0, width: 4, height: 6, x: 0.75, y: 0.5, touchWidth: 4, touchHeight: 6 },
+    { rotation: 0, displayRotation: 1, width: 4, height: 6, x: 0.5, y: 0.75, touchWidth: 6, touchHeight: 4 },
+  ])(
+    "maps scrcpy touches from image rotation $rotation to display rotation $displayRotation",
+    async ({ rotation, displayRotation, width, height, x, y, touchWidth, touchHeight }) => {
+      const client = new FakeGrpcClient(integrationImage(rotation, width, height));
+      const encoders: FakeGrpcEncoder[] = [];
+      let probeStarted = false;
+      client.getScreenshot = async () => {
+        probeStarted = true;
+        return client.probe;
+      };
+      const fixture = scrcpyControlFixture();
+      const { controlSession, packets } = fixture;
+      let resolveControl!: (session: ScrcpyControlSession) => void;
+      const controlReady = new Promise<ScrcpyControlSession>((resolve) => {
+        resolveControl = resolve;
+      });
+      const starting = startGrpcSession(
+        {
+          serial: "emulator-5554",
+          mode: "grpc-screenshot",
+          grpcImageMode: "png",
+          inputSource: "scrcpy",
+        },
+        {
+          readDisplaySizeSignal: async () => "physical:4x6",
+          runtime: integrationRuntime(client, encoders),
+          startScrcpyControl: () => controlReady,
+          readDisplayRotation: async () => displayRotation as QuarterTurn,
+        },
+      );
+      await waitFor(() => probeStarted);
+      expect(fixture.closeCalls).toBe(0);
+      resolveControl(controlSession);
+      const session = await starting;
+
+      const gesture = { type: "tap", x: 0.25, y: 0.5 } as const;
+      await session.controls.enqueue(gesture, { width: 2, height: 3 }).completion;
+
+      expect(session.inputSource).toBe("scrcpy");
+      expect(packets).toEqual(
+        compileGesture({ ...gesture, x, y }, { width: touchWidth, height: touchHeight }).steps.map(
+          (step) => step.packet,
+        ),
+      );
+      expect(client.keys).toEqual([]);
+      expect(client.touches).toEqual([]);
+      await session.close();
+      expect(fixture.closeCalls).toBe(1);
+    },
+  );
+
+  test("refreshes scrcpy mapping between apps without a video resize and holds it through multi-touch", async () => {
+    const client = new FakeGrpcClient(integrationImage(1, 600, 400));
+    const fixture = scrcpyControlFixture();
+    let displayRotation: QuarterTurn = 1;
+    let reads = 0;
+    let failRead = false;
+    const session = await startGrpcSession(
+      { serial: "emulator-5554", mode: "grpc-screenshot", grpcImageMode: "png", inputSource: "scrcpy" },
+      {
+        readDisplaySizeSignal: async () => "physical:400x600",
+        runtime: integrationRuntime(client, []),
+        startScrcpyControl: async () => fixture.controlSession,
+        readDisplayRotation: async () => {
+          reads++;
+          if (failRead) throw new Error("ADB unavailable");
+          return displayRotation;
+        },
+      },
+    );
+    const videoScreen = { width: 600, height: 400 };
+    const portraitScreen = { width: 400, height: 600 };
+    const send = async (gesture: Gesture, expected: Gesture = gesture, screen: Screen = videoScreen) => {
+      fixture.packets.length = 0;
+      await session.controls.enqueue(gesture, videoScreen).completion;
+      expect(fixture.packets).toEqual(compileGesture(expected, screen).steps.map((step) => step.packet));
     };
-    const controlSocket = Object.assign(new EventEmitter(), {
-      destroyed: false,
-      writable: true,
-      write(packet: Buffer, callback: (error?: Error | null) => void) {
-        packets.push(Buffer.from(packet));
-        callback();
-        return true;
-      },
-    });
-    const controlProcess = new EventEmitter();
-    const controlSession = {
-      transport: "scrcpy-control",
-      serial: "emulator-5554",
-      scid: "00000001",
-      localPort: 27_183,
-      controlSocket,
-      proc: controlProcess,
-      async close() {
-        controlCloseCalls++;
-      },
-    } as unknown as ScrcpyControlSession;
-    let resolveControl!: (session: ScrcpyControlSession) => void;
-    const controlReady = new Promise<ScrcpyControlSession>((resolve) => {
-      resolveControl = resolve;
-    });
-    const starting = startGrpcSession(
-      {
-        serial: "emulator-5554",
-        mode: "grpc-screenshot",
-        grpcImageMode: "png",
-        inputSource: "scrcpy",
-      },
-      {
-        readDisplaySizeSignal: async () => "physical:4x6",
-        runtime: integrationRuntime(client, encoders),
-        startScrcpyControl: () => controlReady,
-      },
-    );
-    await waitFor(() => probeStarted);
-    expect(controlCloseCalls).toBe(0);
-    resolveControl(controlSession);
-    const session = await starting;
+    try {
+      await send({ type: "home" });
+      expect(reads).toBe(0);
+      const tap = { type: "tap", x: 0.25, y: 0.5 } as const;
+      await send(tap);
+      displayRotation = 0;
+      await send(tap, { ...tap, x: 0.5, y: 0.25 }, portraitScreen);
+      expect(reads).toBe(2);
 
-    const gesture = { type: "tap", x: 0.25, y: 0.5 } as const;
-    await session.controls.enqueue(gesture, { width: 2, height: 3 }).completion;
+      const down = { type: "touch", action: "down", x: 0.25, y: 0.5 } as const;
+      await send(down, { ...down, x: 0.5, y: 0.25 }, portraitScreen);
+      displayRotation = 1;
+      const second = { ...down, pointerId: 1 };
+      await send(second, { ...second, x: 0.5, y: 0.25 }, portraitScreen);
+      const move = { ...down, action: "move", x: 0.75 } as const;
+      await send(move, { ...move, x: 0.5, y: 0.75 }, portraitScreen);
+      for (const pointerId of [0, 1]) {
+        const up = { ...down, action: "up", pointerId } as const;
+        await send(up, { ...up, x: 0.5, y: 0.25 }, portraitScreen);
+      }
+      expect(reads).toBe(3);
+      await send(down);
+      await send({ ...down, action: "up" });
+      expect(reads).toBe(4);
 
-    expect(session.inputSource).toBe("scrcpy");
-    expect(packets).toEqual(
-      compileGesture(gesture, { width: 4, height: 6 }).steps.map(
-        (step) => step.packet,
-      ),
-    );
-    expect(client.keys).toEqual([]);
-    await session.close();
-    expect(controlCloseCalls).toBe(1);
+      displayRotation = 0;
+      const swipe = { type: "swipe", x1: 0.1, y1: 0.5, x2: 0.8, y2: 0.25, durationMs: 100 } as const;
+      await send(swipe, { ...swipe, x1: 0.5, y1: 0.1, x2: 0.75, y2: 0.8 }, portraitScreen);
+      expect(reads).toBe(5);
+
+      failRead = true;
+      fixture.packets.length = 0;
+      await expect(session.controls.enqueue(down, videoScreen).completion).rejects.toThrow("Could not determine Android display rotation");
+      await session.controls.enqueue(move, videoScreen).completion;
+      await session.controls.enqueue({ ...down, action: "up" }, videoScreen).completion;
+      expect(fixture.packets).toEqual([]);
+      await send({ type: "back" });
+      failRead = false;
+      displayRotation = 1;
+      await send(tap);
+      expect(reads).toBe(7);
+    } finally {
+      await session.close();
+    }
   });
 
   test("starts, routes hardware controls through gRPC keys, and closes resources", async () => {
@@ -2035,9 +2163,17 @@ describe("startGrpcSession integration", () => {
 
     client.streamImage!(integrationImage(2), "stream", Date.now());
     await Promise.resolve();
+    await session.controls.enqueue(
+      { type: "tap", x: 0.25, y: 0.75 },
+      { width: 4, height: 6 },
+    ).completion;
 
     expect(encoders.map((encoder) => encoder.quarterTurn)).toEqual([0]);
     expect(encoders[0]!.closed).toBe(false);
+    expect(client.touches).toEqual([
+      [{ x: 3, y: 2, identifier: 0, pressure: 1 }],
+      [{ x: 3, y: 2, identifier: 0, pressure: 0 }],
+    ]);
     await session.close();
   });
 

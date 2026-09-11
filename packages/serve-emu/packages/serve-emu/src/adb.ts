@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { isEmulatorSerial } from "./device-capabilities.ts";
 import { execBuffer, execText, type ExecResult } from "./exec.ts";
 
 const ADB_QUERY_TIMEOUT_MS = 2_000;
@@ -264,6 +265,24 @@ export async function setUserRotation(
     throw new Error(
       `adb shell ${args.join(" ")} failed: ${execFailure(r)}`,
     );
+  }
+  if (isEmulatorSerial(serial) && orientation !== "auto") {
+    // gRPC screenshots follow the emulator's accelerometer, independently of
+    // Android's user-rotation lock. Keep both in the same orientation so the
+    // streamed image is upright and its dimensions follow the Rotate control.
+    const acceleration = orientation === "portrait" ? "0:9.8:0" : "9.8:0:0";
+    const sensor = await runExec(
+      "adb",
+      ["-s", serial, "emu", "sensor", "set", "acceleration", acceleration],
+      { timeout: ADB_MUTATION_TIMEOUT_MS },
+    );
+    // The emulator console can report KO while adb exits successfully.
+    const output = `${sensor.stdout}\n${sensor.stderr}`.trim();
+    if (execFailed(sensor) || /^KO\b/m.test(output)) {
+      throw new Error(
+        `adb emu sensor set acceleration failed: ${execFailure(sensor)}`,
+      );
+    }
   }
   return getUserRotation(serial, runExec);
 }
