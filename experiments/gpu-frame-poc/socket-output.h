@@ -21,7 +21,7 @@ struct SocketOutput {
             ::close(listener);listener=-1;throw std::runtime_error("socket bind failed; choose a fresh path");
         }
         path=name;::chmod(path.c_str(),0600);
-        if(::listen(listener,1)<0)throw std::runtime_error("socket listen failed");
+        if(::listen(listener,1)<0){close();throw std::runtime_error("socket listen failed");}
     }
     void disconnect(){if(client>=0)::close(client);client=-1;needsKey=true;}
     bool writeAll(const uint8_t* bytes,size_t size) {
@@ -56,5 +56,5 @@ struct SocketOutput {
         if(n<0&&errno!=EAGAIN&&errno!=EWOULDBLOCK&&errno!=EINTR){disconnect();return;}
         for(ssize_t i=0;i<n;i++)if(commands[i]=='K')needsKey=true;
     }
-    void close(){disconnect();if(listener>=0)::close(listener);listener=-1;if(!path.empty())::unlink(path.c_str());}
+    void close(){disconnect();if(listener>=0)::close(listener);listener=-1;if(!path.empty())::unlink(path.c_str());path.clear();}
 };
