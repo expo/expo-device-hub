@@ -318,6 +318,14 @@ extern "C" int poc_init(const char* backend,const char* out,int fps,int count) {
 }
 extern "C" void* poc_cuda_copy_address(){return reinterpret_cast<void*>(capture.copy);}
 extern "C" void poc_frame(void* fb,uint32_t handle){capture.onFrame(fb,handle);}
+extern "C" const char* poc_status(){
+    static thread_local char status[512];
+    snprintf(status,sizeof(status),
+        "{\"captured\":%lu,\"encoded\":%lu,\"dropped\":%lu,\"errors\":%lu,\"captureGlReadPixels\":%lu,\"captureGlGetTexImage\":%lu}",
+        capture.captured.load(),capture.encoded.load(),capture.dropped.load(),capture.errors.load(),
+        readPixelsCapture.load(),getTexCapture.load());
+    return status;
+}
 extern "C" void poc_stop(){std::lock_guard<std::mutex> l(captureMutex);capture.stop();
     fprintf(stderr,"[gpu-poc] native audit glReadPixels_total=%lu capture=%lu glGetTexImage_total=%lu capture=%lu\n",
       readPixelsTotal.load(),readPixelsCapture.load(),getTexTotal.load(),getTexCapture.load());
