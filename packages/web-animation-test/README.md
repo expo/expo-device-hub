@@ -2,7 +2,13 @@
 
 A minimal Expo web app for comparing hardware and software H.264 encoding in
 Expo Device Hub. It preserves the original fixture: a yellow shape rotating once
-every two seconds over a striped background.
+every two seconds over a striped background, with FPS and total frame counters
+in place of the original heading and comparison text.
+
+The counters measure browser `requestAnimationFrame` callbacks, not encoded or
+decoded video frames. FPS updates once per second; the total increments every
+frame and resets on page reload. Returning from a hidden tab starts a fresh FPS
+sample so time spent in the background does not lower the next reading.
 
 Open [the hosted animation](https://krystof-web-animation-test.expo.app) in the
 device's browser, view the device through Expo Device Hub, and switch encoders to

@@ -10,10 +10,19 @@ body {
   display: block;
 }
 
-h1 {
-  font-size: 24px;
-  text-align: center;
-  margin-top: 28px;
+.counters {
+  position: fixed;
+  top: 28px;
+  left: 20px;
+  right: 20px;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px;
+  background: #102020;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
 }
 
 section {
@@ -32,12 +41,6 @@ section {
   animation: spin 2s linear infinite;
   left: 17vw;
   top: 200px;
-}
-
-p {
-  position: absolute;
-  bottom: 10px;
-  left: 20px;
 }
 
 @keyframes spin {
