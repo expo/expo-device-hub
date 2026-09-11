@@ -50,12 +50,30 @@ Chrome 150 on macOS decoded the stream. The worker ran Bun 1.3.14.
 
 ![Live browser](browser.png)
 
+## Follow-up: 4K and WebRTC
+
+The live emulator was subsequently restarted at **2160×3840, 120 Hz**, with
+`POC_VSYNC=120 POC_TRANSPORT=webrtc` (`--video-fps 120 --transport webrtc
+--max-dimension 0`). Android's active display mode reports 120 Hz and the browser
+video element reports 2160×3840. WebRTC connected through direct ICE; ngrok carries
+the UI and signaling.
+
+The [WebRTC screenshot](4k-webrtc.png) shows **98 server FPS and 59 client FPS**,
+zero reported packet loss, client dropped frames and freezes, and roughly 120 ms
+RTT. The configured 120 FPS is a target: this live interactive workload did not
+reproduce the standalone benchmark's sustained 120 FPS. The publisher's displayed
+configured bitrate can differ from the injected encoder's fixed 12 Mbps setting.
+No end-to-end latency or cause of the lower delivered rate was established.
+
+The new capture expires by 13:52 UTC; the worker watchdog remains at 13:53 UTC.
+
 ## Limits
 
 The 60 FPS figure is the server's source rate, not a measurement of browser
 presentation rate or end-to-end latency. This run is distinct from the earlier
-[4K/120 native capture benchmark](../README.md). We did not measure 4K/120 over
-ngrok, compare CPU utilization, test WebRTC delivery, or load-test slow receivers.
+[4K/120 native capture benchmark](../README.md). The initial run did not test WebRTC; the follow-up above verifies connectivity
+and records the lower delivered rates. We did not compare CPU utilization or
+load-test slow receivers.
 The native readback counters cover this capture path, not every possible driver
 operation. Resolution/orientation and encoder settings remain fixed, and native
 capture allocations live until emulator exit.
