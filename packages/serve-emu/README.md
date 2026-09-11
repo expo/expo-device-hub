@@ -122,7 +122,7 @@ serve-emu --running-avds
 | `--max-fps` | `60` | Frame-rate target for capture and encoding; RGB888 forwards received frames whenever ffmpeg is ready without a local FPS cap |
 | `--bit-rate` | `8000000` | H.264 bit rate in bps |
 | `--max-size` | `1280` | Downscale the longest edge to N pixels; `0` keeps native size. The default balances detail and throughput, especially for the host-side software encoder used by `grpc-screenshot` |
-| `--key-frame-interval` | `10` | Ask the encoder for regular keyframes; `0` disables this codec option. Late joiners get keyframes on demand, so a long interval avoids periodic keyframe bursts |
+| `--key-frame-interval` | `1` | Ask the encoder for regular keyframes in seconds; `0` disables this codec option. Frequent keyframes help decoders recover after lost frames. Late joiners also get keyframes on demand |
 | `--repeat-frame-ms` | `0` | Re-encode the previous frame after N ms without screen changes (`16` ≈ steady 60fps on static screens, at extra CPU/bandwidth cost); `0` keeps the source default: 100ms for scrcpy and 500ms for `grpc-screenshot` |
 | `--transport` | `websocket` | Initial browser video transport: `websocket` or `webrtc`. Each tab can switch independently in the UI |
 | `--stun-url` | public STUN defaults | Comma-separated STUN URL(s) for WebRTC ICE |
