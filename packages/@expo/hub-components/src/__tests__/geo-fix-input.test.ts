@@ -158,10 +158,11 @@ describe("presets", () => {
     expect(presetFor({ latitude: "", longitude: "" })).toBe(CUSTOM_PRESET);
   });
 
-  test("the offered options are Custom then the four presets in order", () => {
+  test("the offered options are Custom then the five presets in order", () => {
     expect(PRESET_OPTIONS.map((option) => option.label)).toEqual([
       "Custom",
       "Apple Park",
+      "Googleplex",
       "London",
       "Tokyo",
       "Sydney",

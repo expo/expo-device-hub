@@ -23,6 +23,7 @@ export const LOCATION_PRESETS: ReadonlyArray<{
   fix: DeviceGeoFix;
 }> = [
   { value: "apple-park", label: "Apple Park", fix: { latitude: 37.3349, longitude: -122.009 } },
+  { value: "googleplex", label: "Googleplex", fix: { latitude: 37.422, longitude: -122.0841 } },
   { value: "london", label: "London", fix: { latitude: 51.5072, longitude: -0.1276 } },
   { value: "tokyo", label: "Tokyo", fix: { latitude: 35.6762, longitude: 139.6503 } },
   { value: "sydney", label: "Sydney", fix: { latitude: -33.8688, longitude: 151.2093 } },
