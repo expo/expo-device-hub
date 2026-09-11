@@ -4,7 +4,7 @@
 
 **Measured on the L4: 2160 × 3840 at 119.96 fps, 3,600 encoded frames, zero capture drops or errors.** See [results](results/README.md).
 
-A standalone Linux/NVIDIA experiment. No Device Hub application code changes, emulator rebuild, gRPC screenshot API, or raw-video pipe. Attach only to a disposable emulator: this uses private renderer ABI and native injection.
+A Linux/NVIDIA experiment with standalone file capture and an opt-in Device Hub live adapter. No emulator rebuild, gRPC screenshot API, or raw-video pipe. Attach only to a disposable emulator: this uses private renderer ABI and native injection.
 
 ```text
 Posted Android display color buffer (RGBA8 GL texture)
@@ -14,7 +14,8 @@ Posted Android display color buffer (RGBA8 GL texture)
   → GPU-to-GPU copy into one of four FFmpeg CUDA RGB0 frames
   → unmap, wait for CUDA completion, restore EGL context, release renderer lock
   → worker calls FFmpeg h264_nvenc
-  → compressed H.264 packets written to a file
+  → compressed H.264 packets written to a file OR a Unix socket
+  → experimental serve-emu adapter → existing Device Hub WebSocket/WebCodecs UI
 ```
 
 There is one GPU copy. NVENC accepts RGB input and handles the conversion needed by its YUV420 H.264 output. This avoids an application-side RGB→YUV conversion pass; it does not eliminate the encoder's internal conversion or all GPU memory traffic. CPU code schedules work and writes compressed packets.
@@ -58,7 +59,60 @@ Native wrappers count `glReadPixels` and `glGetTexImage` calls through the rende
 - Copies synchronously before returning to the renderer; holds source references and renderer lock while reading. Encoder output retrieval runs separately.
 - Buffer queue is bounded and drops capture attempts if no writable input slot is available.
 - Private object offsets, dispatch order and function signatures require a matching binary. Small instruction guards are not general ABI compatibility verification.
-- No reconnect, resize/rotation handling, keyframe control, network backpressure, repeated capture sessions or production teardown.
+- Live socket mode supports reconnect, keyframe requests and bounded output; resize/rotation, repeated native capture sessions and production teardown remain unsupported.
 - This proves the Linux NVIDIA path. It does not measure Apple Silicon/IOSurface/VideoToolbox.
 
 For product integration, put the hook inside a matching renderer build, expose a supported capture session API, implement teardown and display changes, preserve presentation timestamps, and deliver compressed packets to the existing transport.
+
+## Live Device Hub experiment
+
+Use the same driver, encoder build and disposable emulator setup above. Build the
+adapter from the repository root with `bun install --frozen-lockfile`,
+`bun run --filter serve-emu setup` and `bun run --filter serve-emu build`.
+Run `bash experiments/gpu-frame-poc/install-hub.sh` to install the published
+`expo-device-hub@0.10.1` UI and replace only its vendored Android backend with this
+checkout's build. This avoids rebuilding the Hub UI and iOS native tools.
+
+From this experiment directory, after boot and APK installation:
+
+```sh
+# Use the PID written by launch.sh; start this before opening the Hub.
+sudo .venv/bin/python inject.py "$(cat emulator.pid)" \
+  --seconds 6000 --frames 100000000 --fps 60 \
+  --output unix:/tmp/gpu-live.sock > live-capture.log 2>&1 &
+# A first display post initializes the encoder. The interactive fixture also
+# exercises tap, text, swipe and fully static screen refresh.
+adb -s emulator-5554 shell -n am start -n dev.expo.gpupoc/.LiveActivity
+SERVE_EMU_EXPERIMENTAL_GPU_SOCKET=/tmp/gpu-live.sock bash run-hub.sh
+# In another shell, using the worker's existing NGROK_AUTHTOKEN:
+ngrok http http://127.0.0.1:3400
+```
+
+The native module must remain mapped in the emulator for the entire demo. Choose
+a fresh socket path on each run. Keep the worker and injector lifetime within the
+allocated two-hour window. Restart the emulator before reinjecting native changes.
+
+The private environment override requires an explicit emulator serial and applies
+only to that device. The public source setting remains `scrcpy` for compatibility;
+`/health.captureBackend` and `experimentalGpuCapture` identify the real video path
+as `gfxstream-cuda-nvenc`. scrcpy runs **with video and audio disabled**, for controls
+only. Unset both experiment variables to return to normal capture. Settings are
+fixed at native resolution, orientation, FPS and 12 Mbps for the demo. Do not use
+the stream settings controls to change them while it is active.
+
+The socket carries a 32-byte big-endian header followed by one complete FFmpeg
+AVPacket: magic `GPC1`, payload length u32, presentation timestamp in microseconds
+u64, flags u32 (0=delta, 1=keyframe, 2=empty handshake), width u32, height u32 and
+FPS u32. A client sends `K` to request an IDR. The adapter extracts SPS/PPS and
+forwards the existing serve-emu video packet shape, so the browser wire protocol
+and input routing do not change. Fragmented or coalesced socket reads do not
+change frame boundaries. Invalid, oversized, truncated and changed-size records
+fail the session visibly. The adapter waits for configuration plus a keyframe
+before reporting startup success.
+
+Only the encoder worker writes to the socket. A stalled receiver is disconnected
+after a bounded write wait; existing browser queues handle their own backpressure.
+The worker retains the latest CUDA frame and can encode it again for keyframe
+requests or a 500 ms idle heartbeat. This keeps a fully static screen joinable
+without a GPU→CPU frame transfer. One native socket consumer fans out to multiple
+browser viewers through the existing Hub session.

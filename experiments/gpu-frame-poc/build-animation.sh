@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 sdk=${ANDROID_HOME:?}; bt="$sdk/build-tools/36.0.0"; jar="$sdk/platforms/android-35/android.jar"
 mkdir -p animation/build/classes animation/build/dex
-javac -source 8 -target 8 -classpath "$jar" -d animation/build/classes animation/MainActivity.java
+javac -source 8 -target 8 -classpath "$jar" -d animation/build/classes animation/*.java
 "$bt/d8" --lib "$jar" --output animation/build/dex animation/build/classes/dev/expo/gpupoc/*.class
 "$bt/aapt" package -f -M animation/AndroidManifest.xml -I "$jar" -F animation/build/unsigned.apk
 (cd animation/build/dex; "$bt/aapt" add ../unsigned.apk classes.dex)
