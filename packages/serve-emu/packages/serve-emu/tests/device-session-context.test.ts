@@ -27,7 +27,7 @@ function deferred<T>(): Deferred<T> {
 }
 
 function snapshot(capturedAt: string): AccessibilitySnapshot {
-  return { ok: true, capturedAt, nodes: [] };
+  return { ok: true, capturedAt, screen: { width: 1080, height: 2400 }, nodes: [] };
 }
 
 function fakeStream(serial: string, onClose: () => void = () => {}): EmuSession {

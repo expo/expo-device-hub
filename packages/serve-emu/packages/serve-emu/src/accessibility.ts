@@ -1,3 +1,4 @@
+import { readEffectiveDisplaySize } from "./adb.ts";
 import { execText } from "./exec.ts";
 import type {
   AccessibilityNode,
@@ -219,12 +220,50 @@ export async function getAccessibilitySnapshot(
   serial: string,
   signal?: AbortSignal,
 ): Promise<AccessibilitySnapshot> {
-  const xml = await dumpXml(serial, signal);
+  // The size query runs on the default lane and can be refused under queue
+  // pressure; the dump itself is the read that matters, so it decides success.
+  const [xml, size] = await Promise.all([
+    dumpXml(serial, signal),
+    readEffectiveDisplaySize(serial).then(
+      ({ widthPx, heightPx }) => ({ width: widthPx, height: heightPx }),
+      () => null,
+    ),
+  ]);
+  return snapshotFromDump(xml, size, new Date().toISOString());
+}
+
+type ScreenPx = { width: number; height: number };
+
+export function snapshotFromDump(
+  xml: string,
+  naturalSize: ScreenPx | null,
+  capturedAt: string,
+): AccessibilitySnapshot {
+  const nodes = parseAccessibilityXml(xml);
   return {
     ok: true,
-    capturedAt: new Date().toISOString(),
-    nodes: parseAccessibilityXml(xml),
+    capturedAt,
+    screen: naturalSize ? screenForDump(xml, naturalSize) : dumpExtent(nodes),
+    nodes,
   };
+}
+
+/** `wm size` is the natural (portrait) size; a dump taken at rotation 1 or 3 reports bounds with the axes swapped. */
+export function screenForDump(xml: string, naturalSize: ScreenPx): ScreenPx {
+  const rotation = Number(xml.match(/<hierarchy\b[^>]*\brotation="(\d)"/)?.[1] ?? 0);
+  return rotation % 2 === 1
+    ? { width: naturalSize.height, height: naturalSize.width }
+    : naturalSize;
+}
+
+function dumpExtent(nodes: readonly AccessibilityNode[]): ScreenPx {
+  let width = 0;
+  let height = 0;
+  for (const node of nodes) {
+    width = Math.max(width, node.bounds.right);
+    height = Math.max(height, node.bounds.bottom);
+  }
+  return { width, height };
 }
 
 /** Parse a uiautomator XML dump without requiring a live Android device. */

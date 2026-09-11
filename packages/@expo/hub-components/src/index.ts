@@ -70,6 +70,7 @@ export {
   type DeviceFrameOption,
 } from './dashboard/DeviceOptionsSection';
 export { ActivityCharts, ActivitySection } from './dashboard/ActivitySection';
+export { AccessibilitySection } from './dashboard/AccessibilitySection';
 export { CameraSection } from './dashboard/CameraSection';
 export { EventsSection } from './dashboard/EventsSection';
 export { LogsSection } from './dashboard/LogsSection';

@@ -333,6 +333,8 @@ export type AccessibilitySelector = {
 };
 export type AccessibilitySnapshot = ApiSuccess<{
   capturedAt: string;
+  /** Display size in the same pixel space and rotation as `nodes[].bounds`. */
+  screen: { width: number; height: number };
   nodes: AccessibilityNode[];
 }>;
 export type AccessibilityTapResponse = ApiSuccess<{
@@ -1397,9 +1399,14 @@ export function parseAccessibilitySnapshot(value: unknown): AccessibilitySnapsho
   const root = record(value, "accessibility snapshot");
   if (root.ok !== true) fail("accessibility snapshot.ok must be true");
   if (!Array.isArray(root.nodes)) fail("accessibility snapshot.nodes must be an array");
+  const screen = record(root.screen, "accessibility snapshot.screen");
   return {
     ok: true,
     capturedAt: string(root.capturedAt, "accessibility snapshot.capturedAt"),
+    screen: {
+      width: number(screen.width, "accessibility snapshot.screen.width"),
+      height: number(screen.height, "accessibility snapshot.screen.height"),
+    },
     nodes: root.nodes.map((node, index) => parseAccessibilityNode(node, `nodes[${index}]`)),
   };
 }

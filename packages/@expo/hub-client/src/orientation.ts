@@ -10,7 +10,7 @@
  *     device, the client rotates the video for display ({@link streamGeometry}).
  */
 
-import { type DeviceOrientation, type ScreenSize } from './types';
+import { type DeviceOrientation, type ScreenSize, type TouchSample } from './types';
 
 export const HID_EDGE_LEFT = 1;
 export const HID_EDGE_TOP = 2;
@@ -25,9 +25,11 @@ export const HID_EDGE_RIGHT = 4;
  */
 export const HOME_INDICATOR_BAND_NORM = 0.93;
 
-/** `HID_EDGE_BOTTOM` when a display-space `y` is in the hot zone, else undefined. */
-export function homeIndicatorEdge(y: number): number | undefined {
-  return y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
+export function homeIndicatorEdge({
+  y,
+  edgeGestures = true,
+}: Pick<TouchSample, 'y' | 'edgeGestures'>): number | undefined {
+  return edgeGestures && y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
 }
 
 export function isLandscapeOrientation(orientation?: DeviceOrientation | null): boolean {

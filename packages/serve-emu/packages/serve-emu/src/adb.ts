@@ -580,7 +580,7 @@ async function readDisplayDensity(
  * `wm size` with the override preferred, unlike {@link getDeviceSize}, which
  * reports the panel the stream is encoded from.
  */
-async function readEffectiveDisplaySize(
+export async function readEffectiveDisplaySize(
   serial: string,
   runExec: typeof execText = execText,
 ): Promise<{ widthPx: number; heightPx: number }> {
