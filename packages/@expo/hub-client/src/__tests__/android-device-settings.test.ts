@@ -137,9 +137,18 @@ describe('Android device setting contract', () => {
       path: '/api/font-weight',
       body: { enabled: false },
     });
+    expect(androidDeviceSettingRequest('onscreen-keyboard', 'on')).toEqual({
+      path: '/api/software-keyboard',
+      body: { enabled: true },
+    });
+    expect(androidDeviceSettingRequest('onscreen-keyboard', 'off')).toEqual({
+      path: '/api/software-keyboard',
+      body: { enabled: false },
+    });
     expect(androidDeviceSettingRequest('reduce-motion', 'unknown')).toBeNull();
     expect(androidDeviceSettingRequest('increase-contrast', 'unknown')).toBeNull();
     expect(androidDeviceSettingRequest('bold-text', 'unknown')).toBeNull();
+    expect(androidDeviceSettingRequest('onscreen-keyboard', 'unknown')).toBeNull();
   });
 
   test('normalizes accessibility responses into on/off', () => {
@@ -166,6 +175,18 @@ describe('Android device setting contract', () => {
     );
     expect(
       parseAndroidDeviceSetting('bold-text', { ok: true, fontWeight: { enabled: false } }),
+    ).toBe('off');
+    expect(
+      parseAndroidDeviceSetting('onscreen-keyboard', {
+        ok: true,
+        softwareKeyboard: { enabled: true },
+      }),
+    ).toBe('on');
+    expect(
+      parseAndroidDeviceSetting('onscreen-keyboard', {
+        ok: true,
+        softwareKeyboard: { enabled: false },
+      }),
     ).toBe('off');
   });
 
@@ -195,6 +216,17 @@ describe('Android device setting contract', () => {
     expect(
       parseAndroidDeviceSetting('bold-text', { ok: true, fontWeight: { adjustment: 300 } }),
     ).toBeNull();
+    expect(parseAndroidDeviceSetting('onscreen-keyboard', { ok: false })).toBeNull();
+    expect(parseAndroidDeviceSetting('onscreen-keyboard', { ok: true })).toBeNull();
+    expect(
+      parseAndroidDeviceSetting('onscreen-keyboard', { ok: true, softwareKeyboard: 'shown' }),
+    ).toBeNull();
+    expect(
+      parseAndroidDeviceSetting('onscreen-keyboard', {
+        ok: true,
+        softwareKeyboard: { shown: true },
+      }),
+    ).toBeNull();
   });
 
   /** Only `network` has an unknown state; a copy-pasted decoder would regress here. */
@@ -211,6 +243,12 @@ describe('Android device setting contract', () => {
     expect(
       parseAndroidDeviceSetting('bold-text', { ok: true, fontWeight: { enabled: null } }),
     ).toBeNull();
+    expect(
+      parseAndroidDeviceSetting('onscreen-keyboard', {
+        ok: true,
+        softwareKeyboard: { enabled: null },
+      }),
+    ).toBeNull();
   });
 });
 
@@ -224,6 +262,7 @@ describe('Android device setting table', () => {
       'reduce-motion',
       'bold-text',
       'increase-contrast',
+      'onscreen-keyboard',
     ]);
     expect(ANDROID_POLLED_DEVICE_SETTING_KEYS).toEqual([
       'network',
@@ -232,6 +271,7 @@ describe('Android device setting table', () => {
       'reduce-motion',
       'bold-text',
       'increase-contrast',
+      'onscreen-keyboard',
     ]);
   });
 
@@ -245,6 +285,7 @@ describe('Android device setting table', () => {
       'reduce-motion': 0,
       'bold-text': 0,
       'increase-contrast': 0,
+      'onscreen-keyboard': 0,
     });
     expect(createAndroidDeviceSettingVersions()).not.toBe(versions);
   });

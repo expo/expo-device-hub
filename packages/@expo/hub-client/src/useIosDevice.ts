@@ -129,6 +129,7 @@ const BUTTON_NAME: Record<HardwareButton, string | null> = {
   power: 'lock',
   back: null,
   recents: null,
+  hideKeyboard: null,
 };
 
 const encoder = new TextEncoder();
