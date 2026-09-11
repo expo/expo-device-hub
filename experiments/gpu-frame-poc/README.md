@@ -121,3 +121,11 @@ browser viewers through the existing Hub session.
 
 See [live validation and screenshots](results/live/README.md) for the ngrok browser,
 controls, idle refresh, multiple-tab and Hub restart checks.
+
+For the live 4K/WebRTC configuration, stop and restart the dedicated emulator with
+2160×3840, density 720, `hw.lcd.vsync=120` and `POC_VSYNC=120 bash launch.sh`.
+Inject with `--fps 120` and a fresh socket path, then launch the Hub using
+`POC_VSYNC=120 POC_TRANSPORT=webrtc SERVE_EMU_EXPERIMENTAL_GPU_SOCKET=<path> bash run-hub.sh`.
+The interactive fixture requests 120 Hz and scales its layout with display density.
+Check measured server/client rates in Stream options; the configured rate does
+not guarantee that the full browser loop delivers 120 FPS.
