@@ -157,3 +157,17 @@ describe("CameraSection", () => {
     expect(alert?.[1]).toBe("The emulator rejected the image.");
   });
 });
+
+test("retains camera previews while disabling every offline upload control", () => {
+  const html = renderToStaticMarkup(
+    <CameraSection client={cameraClient({ camera: cameraStatus(true) })} available={false} defaultOpen />
+  );
+  expect(html).toContain('/camera/back.png');
+  expect(html).toContain('/camera/front.png');
+  const pickers = [...html.matchAll(/<div[^>]*role="button"[^>]*>/g)].map((match) => match[0]);
+  expect(pickers).toHaveLength(2);
+  for (const picker of pickers) expect(picker).toContain('aria-disabled="true"');
+  const inputs = [...html.matchAll(/<input[^>]*type="file"[^>]*>/g)].map((match) => match[0]);
+  expect(inputs).toHaveLength(2);
+  for (const input of inputs) expect(input).toContain('disabled');
+});

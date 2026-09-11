@@ -1,5 +1,5 @@
 import { type DeviceStreamMode } from '@expo/hub-client';
-import { type Device, type StreamModeAvailability } from '@expo/hub-components';
+import { type StreamModeAvailability } from '@expo/hub-components';
 import { create } from 'zustand';
 
 import { dashboardHideSidebar } from '../sidebar';
@@ -13,8 +13,6 @@ export type SidebarPreference = 'auto' | 'open' | 'hidden';
 export type SidebarSide = 'left' | 'right';
 
 type DashboardStoreValues = {
-  selectedDeviceId: string;
-  addedDevices: Device[];
   streamMode: DeviceStreamMode;
   sidebarWidths: Record<SidebarSide, number>;
   sidebarPreferences: Record<SidebarSide, SidebarPreference>;
@@ -24,10 +22,6 @@ type DashboardStoreValues = {
 };
 
 export type DashboardStore = DashboardStoreValues & {
-  selectDevice: (id: string) => void;
-  reconcileSelectedDevice: (availableIds: readonly string[]) => void;
-  trackAddedDevice: (device: Device, replacedIds: readonly string[]) => void;
-  dismissDevice: (id: string) => void;
   chooseStreamMode: (mode: DeviceStreamMode, availability: StreamModeAvailability) => void;
   resizeSidebar: (side: SidebarSide, width: number) => void;
   openSidebar: (side: SidebarSide, canDock: boolean) => void;
@@ -71,8 +65,6 @@ function initialHideUnsupportedDevices(): boolean {
 function defaultDashboardStoreValues(): DashboardStoreValues {
   const availability = browserStreamModeAvailability();
   return {
-    selectedDeviceId: '',
-    addedDevices: [],
     streamMode: resolveStreamMode(dashboardTransport(), availability),
     sidebarWidths: { left: DEFAULT_SIDEBAR_WIDTH, right: DEFAULT_SIDEBAR_WIDTH },
     sidebarPreferences: {
@@ -89,26 +81,6 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
   return create<DashboardStore>()((set) => ({
     ...defaultDashboardStoreValues(),
     ...initialState,
-    selectDevice: (selectedDeviceId) => set({ selectedDeviceId }),
-    reconcileSelectedDevice: (availableIds) =>
-      set((state) =>
-        availableIds.includes(state.selectedDeviceId)
-          ? state
-          : { selectedDeviceId: availableIds[0] ?? '' },
-      ),
-    trackAddedDevice: (device, replacedIds) =>
-      set((state) => {
-        const replaced = new Set([...replacedIds, device.id]);
-        return {
-          addedDevices: [...state.addedDevices.filter((item) => !replaced.has(item.id)), device],
-          selectedDeviceId: device.id,
-        };
-      }),
-    dismissDevice: (id) =>
-      set((state) => ({
-        addedDevices: state.addedDevices.filter((item) => item.id !== id),
-        selectedDeviceId: state.selectedDeviceId === id ? '' : state.selectedDeviceId,
-      })),
     chooseStreamMode: (mode, availability) =>
       set({ streamMode: resolveStreamMode(mode, availability) }),
     resizeSidebar: (side, width) =>

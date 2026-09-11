@@ -20,7 +20,19 @@ export type ControlButtonProps = {
 
 export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
   function ControlButton(
-    { icon, label, style, onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, onFocus, onBlur, ...rest },
+    {
+      icon,
+      label,
+      disabled,
+      style,
+      onMouseEnter,
+      onMouseLeave,
+      onMouseDown,
+      onMouseUp,
+      onFocus,
+      onBlur,
+      ...rest
+    },
     ref
   ) {
     const [hovered, setHovered] = useState(false);
@@ -33,6 +45,7 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
         <button
           ref={ref}
           type="button"
+          disabled={disabled}
           aria-label={label}
           onMouseEnter={(event) => {
             setHovered(true);
@@ -70,13 +83,13 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
             // Concentric with the surrounding group (radius.xl minus its padding).
             borderRadius: `calc(${radius.xl} - 4px)`,
             outline: 'none',
-            backgroundColor: hovered ? bg.hover : 'transparent',
+            backgroundColor: hovered && !disabled ? bg.hover : 'transparent',
             boxShadow: focused ? `0 0 0 2px ${border.secondary}` : 'none',
-            color: iconColor.default,
-            cursor: 'pointer',
+            color: disabled ? iconColor.quaternary : iconColor.default,
+            cursor: disabled ? 'not-allowed' : 'pointer',
             fontFamily: 'inherit',
             transition: 'background-color 150ms ease, transform 100ms ease',
-            transform: pressed ? 'scale(0.96)' : undefined,
+            transform: pressed && !disabled ? 'scale(0.96)' : undefined,
             ...style,
           }}
           {...rest}>
