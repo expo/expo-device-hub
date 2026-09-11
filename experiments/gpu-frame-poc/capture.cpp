@@ -184,13 +184,14 @@ struct Capture {
                 socketOutput.needsKey=false;
                 avcheck(avcodec_send_frame(encoder,frame),"send frame");drain();lastSend=Clock::now();
                 if(i>=0) {
-                    av_frame_unref(latest);avcheck(av_frame_ref(latest,frame),"retain latest GPU frame");
+                    if(live){av_frame_unref(latest);avcheck(av_frame_ref(latest,frame),"retain latest GPU frame");}
                     std::lock_guard<std::mutex> l(mutex);slots[i].queued=false;
                 } else av_frame_free(&frame);
             }
             avcheck(avcodec_send_frame(encoder,nullptr),"flush");drain();if(output)fflush(output);
         } catch(const std::exception& e) {errors++;enabled=false;fprintf(stderr,"[gpu-poc] worker error: %s\n",e.what());}
         av_frame_free(&latest);
+        if(live)socketOutput.close();
     }
     void onFrame(void* fb,uint32_t handle);
     void stop() {
@@ -310,7 +311,8 @@ void Capture::onFrame(void* fb,uint32_t handle) {
         if(oldCtx)makeCurrent(oldDisplay,oldDraw,oldRead,oldCtx);
         if(locked)fbUnlock(fb);
         if(slotIndex>=0){std::lock_guard<std::mutex> l(mutex);slots[slotIndex].queued=false;}
-        errors++;enabled=false;fprintf(stderr,"[gpu-poc] capture error: %s\n",e.what());
+        errors++;enabled=false;stopping=true;cv.notify_all();
+        fprintf(stderr,"[gpu-poc] capture error: %s\n",e.what());
     }
 }
 extern "C" int poc_init(const char* backend,const char* out,int fps,int count) {
