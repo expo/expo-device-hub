@@ -15,7 +15,7 @@ if [[ -e "$HOME/.android/avd/gpu_poc.ini" ]]; then
   exit 0
 fi
 printf 'no\n' | "$sdk/cmdline-tools/latest/bin/avdmanager" create avd \
-  --name gpu_poc --package 'system-images;android-36;google_apis;x86_64' --device pixel_9
+  --name gpu_poc --package 'system-images;android-36;google_apis;x86_64' --device "${POC_DEVICE_PROFILE:-pixel_9}"
 python3 - <<'PY'
 from pathlib import Path
 p=Path.home()/'.android/avd/gpu_poc.avd/config.ini'
