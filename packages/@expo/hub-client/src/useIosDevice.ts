@@ -47,7 +47,6 @@ import {
 } from './ios-events';
 import { type ExecResult, getIosAppDetails } from './ios-app-details';
 import { clearIosLocation, setIosLocation } from './ios-location';
-import { iosPermissionsBackend } from './ios-permissions';
 import { fetchIosScreenshot } from './ios-screenshot';
 import { hidUsageForCode } from './keyboard';
 import {
@@ -1034,16 +1033,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     locationCapabilities,
   } = useDeviceLocation(locationBackend);
 
-  const permissionsBackend = useMemo(
-    () =>
-      active && baseUrl && deviceUdid ? iosPermissionsBackend(baseUrl, deviceUdid) : null,
-    [active, baseUrl, deviceUdid],
-  );
-  const appPermissions = useAppPermissions({
-    active,
-    appId: foregroundApp?.id ?? null,
-    backend: permissionsBackend,
-  });
+  // serve-sim exposes permissions over its CLI channel only, so the Hub has no
+  // route to read them. The section stays hidden until serve-sim serves them.
+  const appPermissions = useAppPermissions({ active, appId: null, backend: null });
 
   useEffect(() => {
     setEventLogState(createIosEventLogState());
@@ -1414,7 +1406,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
         : false,
       location: locationCapabilities,
-      permissions: permissionsBackend !== null,
+      permissions: false,
     },
     foregroundApp,
     videoKind: useWebRtc ? 'video' : useAvcc ? 'canvas' : 'img',

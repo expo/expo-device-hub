@@ -29,12 +29,16 @@ afterEach(async () => {
   originals.clear();
 });
 
+// serve-sim serves no permissions route, so iOS reports the capability off either way.
 const clients = {
-  android: useAndroidDeviceClient,
-  ios: useIosDeviceClient,
-} satisfies Record<string, (options: DeviceConnectionOptions) => DeviceClient>;
+  android: { useClient: useAndroidDeviceClient, whenEnabled: true },
+  ios: { useClient: useIosDeviceClient, whenEnabled: false },
+} satisfies Record<
+  string,
+  { useClient: (options: DeviceConnectionOptions) => DeviceClient; whenEnabled: boolean }
+>;
 
-for (const [platform, useClient] of Object.entries(clients)) {
+for (const [platform, { useClient, whenEnabled }] of Object.entries(clients)) {
   test(`${platform} client reports no permissions capability while disabled`, async () => {
     stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
     stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
@@ -59,7 +63,7 @@ for (const [platform, useClient] of Object.entries(clients)) {
     expect(client.capabilities.accessibility).toBe(false);
 
     await act(async () => renderer!.update(<Harness enabled />));
-    expect(client.capabilities.permissions).toBe(true);
+    expect(client.capabilities.permissions).toBe(whenEnabled);
 
     await act(async () => renderer!.update(<Harness enabled={false} />));
     expect(client.capabilities.permissions).toBe(false);
