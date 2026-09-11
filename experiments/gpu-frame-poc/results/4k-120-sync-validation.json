@@ -1,0 +1,13 @@
+{
+  "file": "4k-120-sync.h264",
+  "width": 2160,
+  "height": 3840,
+  "decoded_frames": 3600,
+  "first_barcode": 2562,
+  "last_barcode": 6161,
+  "unique_barcodes": 3600,
+  "duplicate_adjacent": 0,
+  "forward_one": 3599,
+  "forward_gaps": 0,
+  "backward_or_corrupt": 0
+}
