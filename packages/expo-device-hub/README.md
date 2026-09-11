@@ -22,6 +22,7 @@ with it, and manage which devices are running from one place.
 - Boot, shut down, and add devices without opening Xcode or Android Studio.
 - Follows your system light/dark theme, and can flip the device's appearance too.
 - Feed an Android emulator's camera a PNG from the inspector's Camera section.
+- Point an emulator or simulator at a coordinate from the inspector's Location section.
 
 > iOS simulators require macOS with Xcode. Android emulators require the Android SDK
 > (`emulator`, `adb`).

@@ -20,6 +20,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { type AccessibilityLoader, loadAndroidAccessibility } from './accessibility';
 import { apiUrl, deviceApiUrl } from './android-api-url';
+import { readAndroidLocation, writeAndroidLocation } from './android-location';
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
@@ -67,6 +68,7 @@ import {
 } from './stream-switch';
 import { useAccessibility } from './useAccessibility';
 import { useAndroidCamera } from './useAndroidCamera';
+import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
@@ -513,6 +515,27 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [active, baseUrl, targetDevice],
   );
   const accessibilityState = useAccessibility(accessibilityLoader);
+
+  const locationUrl =
+    active && baseUrl ? deviceApiUrl(baseUrl, '/api/location', targetDevice) : null;
+  const locationBackend = useMemo<DeviceLocationBackend | null>(
+    () =>
+      locationUrl === null
+        ? null
+        : {
+            read: (signal) => readAndroidLocation(fetch, locationUrl, signal),
+            set: (fix) => writeAndroidLocation(fetch, locationUrl, fix),
+          },
+    [locationUrl],
+  );
+  const {
+    location,
+    locationPending,
+    locationError,
+    setLocation,
+    clearLocation,
+    locationCapabilities,
+  } = useDeviceLocation(locationBackend);
 
   const streamSettingsUrl =
     active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-settings', targetDevice) : null;
@@ -1822,6 +1845,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setCameraImage,
     clearCameraImage,
     ...accessibilityState,
+    location,
+    locationPending,
+    locationError,
+    setLocation,
+    clearLocation,
     streamSettings,
     streamSettingsPending:
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
@@ -1852,6 +1880,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       events: true,
       camera: cameraSupported,
       accessibility: accessibilityLoader !== null,
+      location: locationCapabilities,
       streamSettings: { maxDimension: true, h264Fps: true, h264Bitrate: true },
     },
     foregroundApp,

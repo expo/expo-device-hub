@@ -1,8 +1,18 @@
 import { text, textSize } from "../primitives";
 
-export function SectionNote({ children, role }: { children: string; role?: "alert" | "status" }) {
+export function SectionNote({
+  children,
+  role,
+  id,
+}: {
+  children: string;
+  role?: "alert" | "status";
+  /** Lets a control point `aria-describedby` at this note. */
+  id?: string;
+}) {
   return (
     <span
+      id={id}
       role={role}
       aria-live={role === "status" ? "polite" : undefined}
       style={{
