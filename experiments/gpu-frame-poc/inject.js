@@ -5,6 +5,7 @@ const plugin=Module.load(POC_CONFIG.library);
 const init=new NativeFunction(plugin.getExportByName('poc_init'),'int',['pointer','pointer','int','int']);
 const frame=new NativeFunction(plugin.getExportByName('poc_frame'),'void',['pointer','uint']);
 const stop=new NativeFunction(plugin.getExportByName('poc_stop'),'void',[]);
+const status=new NativeFunction(plugin.getExportByName('poc_status'),'pointer',[]);
 const getFB=new NativeFunction(backend.getExportByName('_ZN9gfxstream4host11FrameBuffer5getFBEv'),'pointer',[]);
 const out=Memory.allocUtf8String(POC_CONFIG.output);
 const path=Memory.allocUtf8String(backend.path);
@@ -27,4 +28,4 @@ for(const e of backend.enumerateExports()){
   }
 }
 send({ready:true,backend:backend.path,output:out.readUtf8String()});
-rpc.exports={stop(){for(const h of hooks)h.detach();Interceptor.flush();stop();Interceptor.revert(read);Interceptor.revert(get);return {stopped:true};}};
+rpc.exports={status(){return JSON.parse(status().readUtf8String());},stop(){for(const h of hooks)h.detach();Interceptor.flush();stop();Interceptor.revert(read);Interceptor.revert(get);return {stopped:true};}};
