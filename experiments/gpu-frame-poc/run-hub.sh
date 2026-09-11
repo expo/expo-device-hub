@@ -5,5 +5,5 @@ export SERVE_EMU_EXPERIMENTAL_GPU_SERIAL=${SERVE_EMU_EXPERIMENTAL_GPU_SERIAL:-em
 hub_dir=${HUB_DIR:-/home/expo/device-hub-live}
 exec bun "$hub_dir/node_modules/expo-device-hub/dist/server/cli.mjs" \
   --platform android --host 127.0.0.1 --port 3400 \
-  --transport h264 --stream-source scrcpy --video-fps "${POC_VSYNC:-60}" \
+  --transport "${POC_TRANSPORT:-h264}" --stream-source scrcpy --video-fps "${POC_VSYNC:-60}" \
   --video-bitrate 12000000 --max-dimension 0
