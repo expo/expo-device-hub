@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { type Device } from '@expo/hub-components';
 
@@ -21,6 +21,11 @@ export function devicesWebSocketUrl(locationHref = window.location.href): string
 export type DeviceList = {
   simulators: Device[];
   emulators: Device[];
+};
+
+export type DeviceLists = {
+  booted: DeviceList;
+  recent: DeviceList;
 };
 
 export type DeviceListSnapshot = DeviceList & { errors?: UtilityError[] };
@@ -170,11 +175,11 @@ export function subscribeToDeviceList({
  * host polling once regardless of how many dashboards are open and sends only
  * changed snapshots. Returns the empty list until the first snapshot arrives.
  */
-function useDeviceList(): {
+function useDeviceList(): DeviceLists & {
   devices: DeviceList;
   connectionStatus: DeviceListConnectionStatus;
 } {
-  const [devices, setDevices] = useState<DeviceList>(EMPTY);
+  const [lists, setLists] = useState(() => ({ devices: EMPTY, ...splitDeviceList(EMPTY) }));
   const [connectionStatus, setConnectionStatus] =
     useState<DeviceListConnectionStatus>('connecting');
 
@@ -184,14 +189,18 @@ function useDeviceList(): {
     return subscribeToDeviceList({
       onSnapshot: (snapshot) => {
         activeErrorIds = logUtilityErrors(snapshot.errors, activeErrorIds);
-        const { errors: _errors, ...nextDevices } = snapshot;
-        setDevices(nextDevices);
+        setLists((previous) => {
+          const devices = reconcileDeviceList(previous.devices, snapshot);
+          return devices === previous.devices
+            ? previous
+            : { ...splitDeviceList(devices, previous), devices };
+        });
       },
       onStatus: setConnectionStatus,
     });
   }, []);
 
-  return { devices, connectionStatus };
+  return { ...lists, connectionStatus };
 }
 
 export function parseDeviceListSocketMessage(data: unknown): DeviceListSocketMessage | null {
@@ -231,24 +240,53 @@ export function parseDeviceListMessage(data: unknown): DeviceListSnapshot | null
   return message?.type === DEVICE_LIST_MESSAGE_TYPE ? message.devices : null;
 }
 
-export function splitDeviceList(all: DeviceList): {
-  booted: DeviceList;
-  recent: DeviceList;
-} {
+function sameDevice(previous: Device, next: Device): boolean {
+  if (previous === next) return true;
+  const keys = Object.keys(previous) as (keyof Device)[];
+  return (
+    keys.length === Object.keys(next).length &&
+    keys.every((key) => Object.hasOwn(next, key) && Object.is(previous[key], next[key]))
+  );
+}
+
+function reconcileDevices(previous: Device[], next: Device[]): Device[] {
+  if (previous === next) return previous;
+  const previousById = new Map(previous.map((device) => [device.id, device]));
+  const devices = next.map((device) => {
+    const existing = previousById.get(device.id);
+    return existing && sameDevice(existing, device) ? existing : device;
+  });
+  return previous.length === devices.length &&
+    devices.every((device, index) => device === previous[index])
+    ? previous
+    : devices;
+}
+
+/** Reuse unchanged records and collections despite fresh objects arriving over JSON. */
+export function reconcileDeviceList(previous: DeviceList, next: DeviceList): DeviceList {
+  const simulators = reconcileDevices(previous.simulators, next.simulators);
+  const emulators = reconcileDevices(previous.emulators, next.emulators);
+  return simulators === previous.simulators && emulators === previous.emulators
+    ? previous
+    : { simulators, emulators };
+}
+
+export function splitDeviceList(all: DeviceList, previous?: DeviceLists): DeviceLists {
   const filter = (booted: boolean) => ({
     simulators: all.simulators.filter((device) => device.booted === booted),
     emulators: all.emulators.filter((device) => device.booted === booted),
   });
-  return { booted: filter(true), recent: filter(false) };
+  const booted = reconcileDeviceList(previous?.booted ?? EMPTY, filter(true));
+  const recent = reconcileDeviceList(previous?.recent ?? EMPTY, filter(false));
+  return previous && booted === previous.booted && recent === previous.recent
+    ? previous
+    : { booted, recent };
 }
 
 /** One connection supplying both the running sidebar and recent-device picker. */
-export function useDeviceLists(): {
-  booted: DeviceList;
-  recent: DeviceList;
+export function useDeviceLists(): DeviceLists & {
   connectionStatus: DeviceListConnectionStatus;
 } {
-  const { devices, connectionStatus } = useDeviceList();
-  const lists = useMemo(() => splitDeviceList(devices), [devices]);
-  return { ...lists, connectionStatus };
+  const { booted, recent, connectionStatus } = useDeviceList();
+  return { booted, recent, connectionStatus };
 }

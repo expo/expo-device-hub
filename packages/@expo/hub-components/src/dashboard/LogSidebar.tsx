@@ -1,8 +1,6 @@
-import {
-  type DeviceClient,
-  type DeviceHttpCodec,
-  type DeviceStreamMode,
-} from '@expo/hub-client';
+import { memo, useEffect, useRef } from 'react';
+
+import { type DeviceClient, type DeviceHttpCodec, type DeviceStreamMode } from '@expo/hub-client';
 import { SidebarToggle, bg } from '../primitives';
 import { CameraSection } from './CameraSection';
 import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
@@ -21,6 +19,8 @@ export type LogSidebarProps = {
   client?: DeviceClient;
   /** Selected device metadata used by viewer-local options. */
   device?: Device;
+  /** Preserve inspector options while the selected device is offline. */
+  available?: boolean;
   /** Viewer-local preference for supported device-frame artwork. */
   showDeviceFrame?: boolean;
   /** Change the viewer-local device-frame preference. */
@@ -47,10 +47,11 @@ export type LogSidebarProps = {
  * Right column: a compact inspector for the selected device, rendered directly
  * on the dashboard canvas so it matches the existing sidebar treatment.
  */
-export function LogSidebar({
+export const LogSidebar = memo(function LogSidebar({
   onToggle,
   client,
   device,
+  available = true,
   showDeviceFrame = true,
   onShowDeviceFrameChange,
   streamMode,
@@ -62,6 +63,20 @@ export function LogSidebar({
   onRemove,
   width = 400,
 }: LogSidebarProps) {
+  const lastClient = useRef<{ deviceId: string; client: DeviceClient } | null>(null);
+  useEffect(() => {
+    if (available && device && client) {
+      lastClient.current = { deviceId: device.id, client };
+    } else if (lastClient.current?.deviceId !== device?.id) {
+      lastClient.current = null;
+    }
+  }, [available, client, device]);
+  // The connection hook resets on disconnect. Retain the selected device's
+  // metadata and values so the same inspector sections and rows stay in place.
+  const inspectorClient =
+    !available && lastClient.current?.deviceId === device?.id
+      ? (lastClient.current?.client ?? client)
+      : client;
   const deviceFrame = device
     ? {
         available: isDeviceFrameProfileId(device.deviceFrame),
@@ -105,22 +120,24 @@ export function LogSidebar({
           overflowX: 'hidden',
           overflowY: 'auto',
         }}>
-        <CurrentAppSection client={client} />
-        {(client?.capabilities.deviceSettings ||
-          client?.platform === 'android' ||
+        <CurrentAppSection client={inspectorClient} />
+        {(inspectorClient?.capabilities.deviceSettings ||
+          inspectorClient?.platform === 'android' ||
           deviceFrame ||
-          (client && (onShutdown || onRemoveDevice))) && (
+          (inspectorClient && (onShutdown || onRemoveDevice))) && (
           <DeviceOptionsSection
-            client={client}
+            client={inspectorClient}
+            available={available}
             deviceFrame={deviceFrame}
-            showDeviceSettings={client?.capabilities.deviceSettings ?? false}
+            showDeviceSettings={inspectorClient?.capabilities.deviceSettings ?? false}
             onShutdown={onShutdown}
             onRemove={onRemoveDevice}
           />
         )}
-        {client?.streamCapabilities && (
+        {inspectorClient?.streamCapabilities && (
           <StreamOptionsSection
-            client={client}
+            client={inspectorClient}
+            available={available}
             streamMode={streamMode}
             httpCodec={httpCodec}
             streamModeAvailability={streamModeAvailability}
@@ -128,10 +145,14 @@ export function LogSidebar({
             onHttpCodecChange={onHttpCodecChange}
           />
         )}
-        {client?.capabilities.camera && <CameraSection client={client} />}
-        {client?.capabilities.events && <EventsSection client={client} />}
-        <LogsSection client={client} />
+        {inspectorClient?.capabilities.camera && (
+          <CameraSection client={inspectorClient} available={available} />
+        )}
+        {inspectorClient?.capabilities.events && (
+          <EventsSection client={inspectorClient} available={available} />
+        )}
+        <LogsSection client={inspectorClient} available={available} />
       </div>
     </aside>
   );
-}
+});
