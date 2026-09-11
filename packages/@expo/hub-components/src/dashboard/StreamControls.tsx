@@ -58,6 +58,7 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
+  disabled = false,
 }: {
   /** The device's current dark/light appearance; null while unknown. */
   appearance: ColorScheme | null;
@@ -71,6 +72,8 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
+  /** Preserve the toolbar while device actions are unavailable. */
+  disabled?: boolean;
 }) {
   return (
     <div
@@ -81,11 +84,13 @@ export function StreamControls({
         <ControlButton
           icon={<CameraIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Save"
+          disabled={disabled}
           onClick={onSave}
         />
         <ControlButton
           icon={<ThemeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Theme"
+          disabled={disabled}
           role="switch"
           aria-checked={appearance === 'dark'}
           onClick={onToggleAppearance}
@@ -93,11 +98,13 @@ export function StreamControls({
         <ControlButton
           icon={<HomeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Home"
+          disabled={disabled}
           onClick={onHome}
         />
         <ControlButton
           icon={<RefreshIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Reload"
+          disabled={disabled}
           onClick={onReload}
         />
       </ControlGroup>
@@ -105,6 +112,7 @@ export function StreamControls({
         <ControlButton
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
+          disabled={disabled}
           onClick={onRotate}
         />
       </ControlGroup>

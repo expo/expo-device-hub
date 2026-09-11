@@ -22,9 +22,11 @@ import {
 /** Point the device at one coordinate: a preset, or a latitude/longitude typed by hand. */
 export function LocationSection({
   client,
+  available = true,
   defaultOpen = false,
 }: {
   client: DeviceClient;
+  available?: boolean;
   /** Whether the section is initially expanded. */
   defaultOpen?: boolean;
 }) {
@@ -53,6 +55,7 @@ export function LocationSection({
   }
 
   function apply(fix: DeviceGeoFix) {
+    if (!available) return;
     setInputError(null);
     client.setLocation(fix);
   }
@@ -73,7 +76,7 @@ export function LocationSection({
           ariaLabel="Location preset"
           value={presetFor(shown)}
           options={PRESET_OPTIONS}
-          disabled={pending}
+          disabled={!available || pending}
           onChange={(value) => {
             const fix = presetFix(value);
             if (!fix) return;
@@ -86,7 +89,7 @@ export function LocationSection({
         <SidebarTextInput
           ariaLabel="Latitude"
           value={shown.latitude}
-          disabled={pending}
+          disabled={!available || pending}
           invalid={inputError?.field === "latitude"}
           describedBy={inputError?.field === "latitude" ? inputErrorId : undefined}
           onChange={(value) => edit("latitude", value)}
@@ -98,7 +101,7 @@ export function LocationSection({
         <SidebarTextInput
           ariaLabel="Longitude"
           value={shown.longitude}
-          disabled={pending}
+          disabled={!available || pending}
           invalid={inputError?.field === "longitude"}
           describedBy={inputError?.field === "longitude" ? inputErrorId : undefined}
           onChange={(value) => edit("longitude", value)}
@@ -107,14 +110,14 @@ export function LocationSection({
         />
       </SidebarRow>
       <div style={{ display: "flex", gap: 8, padding: "4px 0 8px" }}>
-        <Button theme="secondary" size="xs" disabled={pending} onClick={applyDraft}>
+        <Button theme="secondary" size="xs" disabled={!available || pending} onClick={applyDraft}>
           Set location
         </Button>
         {capabilities.clear && (
           <Button
             theme="tertiary"
             size="xs"
-            disabled={pending}
+            disabled={!available || pending}
             onClick={() => client.clearLocation()}
           >
             Clear

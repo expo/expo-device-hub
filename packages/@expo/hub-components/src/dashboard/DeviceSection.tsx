@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 
 import { DeviceListItem, PlusIcon, bg, border, icon, radius, text, textSize } from '../primitives';
 import { RecentDevicesModal } from './RecentDevicesModal';
@@ -30,12 +30,14 @@ export type DeviceSectionProps = {
   options: NewDeviceOptions;
   agentDeviceIds?: readonly string[];
   selectedId: string;
+  /** Retained selected device missing from the running-device list. */
+  offlineDeviceId?: string;
   onSelect: (id: string) => void;
   /** Starts the existing or newly configured device selected in the modal. */
   onAdd?: (target: AddDeviceTarget) => Promise<AddDeviceOutcome>;
 };
 
-export function DeviceSection({
+export const DeviceSection = memo(function DeviceSection({
   title,
   addLabel,
   kind,
@@ -45,6 +47,7 @@ export function DeviceSection({
   options,
   agentDeviceIds = [],
   selectedId,
+  offlineDeviceId,
   onSelect,
   onAdd,
 }: DeviceSectionProps) {
@@ -52,8 +55,10 @@ export function DeviceSection({
   const [addPressed, setAddPressed] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
-  // Don't offer devices that are already in this section's list.
-  const shownIds = new Set(devices.map((device) => device.id));
+  // A retained offline row can still be restarted from the add-device picker.
+  const shownIds = new Set(
+    devices.filter((device) => device.id !== offlineDeviceId).map((device) => device.id)
+  );
   const candidates = recent.filter((device) => !shownIds.has(device.id));
 
   return (
@@ -107,14 +112,13 @@ export function DeviceSection({
           </p>
         ) : (
           devices.map((device) => (
-            <DeviceListItem
+            <DeviceRow
               key={device.id}
-              name={device.name}
-              version={device.version}
-              unsupported={!device.supported}
-              usedByAgent={agentDeviceIds.includes(device.id)}
+              device={device}
+              offline={device.id === offlineDeviceId}
+              usedByAgent={device.id !== offlineDeviceId && agentDeviceIds.includes(device.id)}
               selected={device.id === selectedId}
-              onClick={() => onSelect(device.id)}
+              onSelect={onSelect}
             />
           ))
         )}
@@ -130,4 +134,32 @@ export function DeviceSection({
       />
     </section>
   );
-}
+});
+
+// Keep the per-device click closure behind this memo boundary. A new list can
+// insert, remove, or update a row without rerendering all its unchanged peers.
+const DeviceRow = memo(function DeviceRow({
+  device,
+  offline,
+  usedByAgent,
+  selected,
+  onSelect,
+}: {
+  device: Device;
+  offline: boolean;
+  usedByAgent: boolean;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <DeviceListItem
+      name={device.name}
+      version={device.version}
+      unsupported={!device.supported}
+      offline={offline}
+      usedByAgent={usedByAgent}
+      selected={selected}
+      onClick={() => onSelect(device.id)}
+    />
+  );
+});
