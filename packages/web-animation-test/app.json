@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "H.264 encoding test",
+    "slug": "web-animation-test",
+    "owner": "krystofwoldrich",
+    "platforms": [
+      "web"
+    ],
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "7daafe62-9772-4adc-bd8d-80f4e71def8f"
+      }
+    }
+  }
+}

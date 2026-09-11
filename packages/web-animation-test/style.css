@@ -1,0 +1,47 @@
+body {
+  margin: 0;
+  background: #102020;
+  color: white;
+  font: 24px system-ui;
+  overflow: hidden;
+}
+
+#root {
+  display: block;
+}
+
+h1 {
+  font-size: 24px;
+  text-align: center;
+  margin-top: 28px;
+}
+
+section {
+  position: absolute;
+  inset: 170px 20px 60px;
+  overflow: hidden;
+  background: repeating-linear-gradient(45deg, #075e64 0 32px, #f6785f 32px 64px);
+}
+
+.shape {
+  position: absolute;
+  width: 65vw;
+  height: 65vw;
+  background: #ffda58;
+  border-radius: 20%;
+  animation: spin 2s linear infinite;
+  left: 17vw;
+  top: 200px;
+}
+
+p {
+  position: absolute;
+  bottom: 10px;
+  left: 20px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
