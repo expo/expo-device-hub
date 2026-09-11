@@ -19,6 +19,12 @@ public class LiveActivity extends Activity {
     LinearLayout root = new LinearLayout(this);
     root.setOrientation(LinearLayout.VERTICAL);
     root.setPadding(20, 40, 20, 20);
+    root.setOnApplyWindowInsetsListener((view, insets) -> {
+      android.graphics.Insets safe = insets.getInsets(
+        android.view.WindowInsets.Type.systemBars() | android.view.WindowInsets.Type.displayCutout());
+      view.setPadding(20, safe.top + 20, 20, safe.bottom + 20);
+      return insets;
+    });
     TextView title = new TextView(this);
     title.setText("GPU → NVENC → Device Hub"); title.setTextSize(22);
     root.addView(title);

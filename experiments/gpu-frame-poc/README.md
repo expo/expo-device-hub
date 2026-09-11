@@ -66,7 +66,9 @@ For product integration, put the hook inside a matching renderer build, expose a
 
 ## Live Device Hub experiment
 
-Use the same driver, encoder build and disposable emulator setup above. Build the
+Use the same driver, encoder build and disposable emulator setup above. For a
+new live-demo AVD, use `POC_DEVICE_PROFILE=pixel_2 bash setup-emulator.sh`; its
+720×1280 aspect ratio avoids mismatched Pixel 9 frame artwork in the Hub. Build the
 adapter from the repository root with `bun install --frozen-lockfile`,
 `bun run --filter serve-emu setup` and `bun run --filter serve-emu build`.
 Run `bash experiments/gpu-frame-poc/install-hub.sh` to install the published
@@ -116,3 +118,6 @@ The worker retains the latest CUDA frame and can encode it again for keyframe
 requests or a 500 ms idle heartbeat. This keeps a fully static screen joinable
 without a GPU→CPU frame transfer. One native socket consumer fans out to multiple
 browser viewers through the existing Hub session.
+
+See [live validation and screenshots](results/live/README.md) for the ngrok browser,
+controls, idle refresh, multiple-tab and Hub restart checks.
