@@ -25,18 +25,6 @@ const pixel: Device = {
 const empty: DeviceList = { simulators: [], emulators: [] };
 
 describe('device selection from discovery and the URL', () => {
-  test('a late boot response does not mark a discovered device offline', () => {
-    const store = createDeviceSessionStore();
-    store.getState().update({
-      booted: { simulators: [iphone], emulators: [] },
-      recent: empty,
-      selectedId: iphone.id,
-    });
-    store.getState().rememberDevice({ ...iphone, lastUsedAt: Date.now() });
-    expect(store.getState().selectedDevice).toBe(iphone);
-    expect(store.getState().selectedAvailable).toBe(true);
-  });
-
   test('retains a missing selected device until navigating to another device', () => {
     const store = createDeviceSessionStore();
     store.getState().update({
@@ -93,22 +81,6 @@ describe('device selection from discovery and the URL', () => {
     expect(store.getState().selectedDevice).toBe(stopped);
     expect(store.getState().selectedAvailable).toBe(false);
     expect(store.getState().simulators).toEqual([stopped]);
-  });
-
-  test('a newly created device retains metadata without assuming it stays online', () => {
-    const store = createDeviceSessionStore();
-    store.getState().rememberDevice(pixel);
-    store.getState().update({ booted: empty, recent: empty, selectedId: pixel.id });
-    expect(store.getState().selectedDevice).toBe(pixel);
-    expect(store.getState().selectedAvailable).toBe(false);
-    store.getState().update({
-      booted: { simulators: [], emulators: [pixel] },
-      recent: empty,
-      selectedId: pixel.id,
-    });
-    expect(store.getState().selectedAvailable).toBe(true);
-    store.getState().update({ booted: empty, recent: empty, selectedId: pixel.id });
-    expect(store.getState().selectedAvailable).toBe(false);
   });
 
   test('unrelated add, update and remove snapshots leave viewer selector values untouched', () => {

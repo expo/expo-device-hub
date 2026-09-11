@@ -19,8 +19,6 @@ import {
   type StreamModeAvailability,
   bg,
   text,
-  type AddDeviceOutcome,
-  type AddDeviceTarget,
   type Device,
   type DeviceFrameAssets,
 } from '@expo/hub-components';
@@ -33,7 +31,7 @@ import iphoneDeviceFrame from '../assets/device-frames/iphone-17-pro-silver.png'
 import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
 import { dashboardHideBootDevice } from './boot-device';
 import { basePath } from './dashboard/basePath';
-import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
+import { removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from './dashboard/dashboardStore';
 import {
   useHideUnsupportedDevices,
@@ -42,6 +40,7 @@ import {
 } from './dashboard/deviceVisibility';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { DeviceDiscovery } from './dashboard/DeviceDiscovery';
+import { startDevice } from './dashboard/startDevice';
 import { selectDeviceRoute } from './dashboard/deviceRoute';
 import { useDeviceSessionStore } from './dashboard/deviceSessionStore';
 import {
@@ -198,6 +197,13 @@ const DashboardLayout = memo(function DashboardLayout() {
   const agentInteraction = selected ? (agentInteractions[selected.id] ?? null) : null;
   const agentDeviceIds = useMemo(() => Object.keys(agentInteractions), [agentInteractions]);
 
+  const retrySelectedDevice = useCallback(() => {
+    const entry = Object.values(useDeviceSessionStore.getState().startups).find(
+      (entry) => entry.device.id === selected?.id && entry.device.startup?.phase === 'failed'
+    );
+    if (entry) void startDevice(entry.target);
+  }, [selected?.id]);
+
   const connectionBlocked = connectionStatus !== 'connected';
 
   return (
@@ -260,6 +266,7 @@ const DashboardLayout = memo(function DashboardLayout() {
           available={selectedAvailable}
           client={client}
           agentInteraction={agentInteraction}
+          onRetry={retrySelectedDevice}
           DeviceScreen={DeviceScreen}
           displayScreen={displayScreen}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
@@ -440,40 +447,10 @@ const DeviceSidebar = memo(function DeviceSidebar({
       selectedId={selectedId}
       offlineDeviceId={available ? undefined : selectedId}
       onSelect={selectDeviceRoute}
-      onAddDevice={dashboardHideBootDevice() ? undefined : handleAddDevice}
+      onAddDevice={dashboardHideBootDevice() ? undefined : startDevice}
       onToggle={onToggle}
       platform={platform}
       width={width}
     />
   );
 });
-
-async function handleAddDevice(target: AddDeviceTarget): Promise<AddDeviceOutcome> {
-  const result =
-    target.kind === 'new'
-      ? await createDevice(target.device)
-      : target.device.booted
-        ? { id: target.device.id, error: null }
-        : await bootDevice(target.device);
-  if (!result.id) return { ok: false, error: result.error ?? 'The device did not come online.' };
-
-  const device: Device =
-    target.kind === 'new'
-      ? {
-          id: result.id,
-          name: target.device.name,
-          version: target.device.version,
-          platform: target.device.platform,
-          physical: false,
-          booted: true,
-          supported: target.device.supported,
-          deviceFrame: target.device.deviceFrame,
-          lastUsedAt: Date.now(),
-        }
-      : { ...target.device, id: result.id, booted: true, lastUsedAt: Date.now() };
-  // Keep the returned metadata while discovery catches up; availability still
-  // comes from the server, so optimistic devices cannot stay online forever.
-  useDeviceSessionStore.getState().rememberDevice(device);
-  selectDeviceRoute(device.id);
-  return { ok: true };
-}

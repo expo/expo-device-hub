@@ -12,6 +12,11 @@ export function DeviceDiscovery() {
   const platform = dashboardPlatformFilter();
 
   useEffect(() => {
+    const resolvedId = useDeviceSessionStore.getState().resolveDeviceId(selectedId);
+    if (resolvedId !== selectedId) {
+      selectDevice(resolvedId, { replace: true });
+      return;
+    }
     if (!selectedId) {
       const first =
         (platform === 'android' ? undefined : booted.simulators[0]) ??
