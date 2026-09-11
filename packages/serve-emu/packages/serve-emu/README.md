@@ -613,7 +613,16 @@ curl -X POST "$BASE/api/apps/reset-permissions" \
 
 curl -X POST "$BASE/api/files/import" \
   -F file=@/path/to/image.png
+
+curl "$BASE/api/apps/icon?packageName=com.example.app"
 ```
+
+`GET /api/apps/icon` returns the package's launcher bitmap as
+`{"ok":true,"packageName":"…","icon":{"mimeType":"image/png","data":"<base64>"}}`.
+It pulls the base APK and reads it with `aapt2` from the Android SDK build-tools,
+resolving an adaptive icon down to its foreground bitmap. `icon` is `null` when the
+package exposes no extractable bitmap, for example a vector-only launcher icon. The
+result is cached per device, package, and installed APK path.
 
 Uploads stream to private asynchronous temporary files and are removed after
 ADB completes. Actual bytes are enforced even without `Content-Length`; a

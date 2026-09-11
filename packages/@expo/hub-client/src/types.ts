@@ -397,7 +397,7 @@ export interface ForegroundApp {
   version?: string;
   /** Build identifier — iOS `CFBundleVersion` / Android `versionCode`. */
   build?: string;
-  /** App icon as a `data:` URL, when the backend can extract one (iOS only today). */
+  /** App icon as a `data:` URL, when the backend can extract one. */
   iconDataUrl?: string;
   /** Fully-qualified foreground activity (Android). */
   activity?: string;
