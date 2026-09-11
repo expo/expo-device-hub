@@ -14,5 +14,5 @@ for attempt in {1..15}; do
 done
 nvidia-smi
 python3 -m venv .venv
-.venv/bin/pip install frida==17.18.0
+.venv/bin/pip install frida==17.18.0 nvidia-cuda-nvrtc-cu12==12.9.86
 git clone --depth 1 --branch n13.0.19.0 https://github.com/FFmpeg/nv-codec-headers.git

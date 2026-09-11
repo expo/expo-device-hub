@@ -54,12 +54,12 @@ Native wrappers count `glReadPixels` and `glGetTexImage` calls through the rende
 
 ## Boundaries
 
-- Single fixed display, fixed resolution and orientation; GL path only. Resolution changes stop capture.
+- Single fixed native display and orientation; GL path only. Changing the emulator display resolution still stops capture; encoded stream resizing is supported.
 - Hooks internal `FrameBuffer::Impl::postImpl` calls that request locking/context binding. Public wrappers were not reached in this binary's active display path.
 - Copies synchronously before returning to the renderer; holds source references and renderer lock while reading. Encoder output retrieval runs separately.
 - Buffer queue is bounded and drops capture attempts if no writable input slot is available.
 - Private object offsets, dispatch order and function signatures require a matching binary. Small instruction guards are not general ABI compatibility verification.
-- Live socket mode supports reconnect, keyframe requests and bounded output; resize/rotation, repeated native capture sessions and production teardown remain unsupported.
+- Live socket mode supports reconnect, stream size/FPS/bitrate settings, keyframe requests and bounded output; native display resize/rotation, repeated native capture sessions and production teardown remain unsupported.
 - This proves the Linux NVIDIA path. It does not measure Apple Silicon/IOSurface/VideoToolbox.
 
 For product integration, put the hook inside a matching renderer build, expose a supported capture session API, implement teardown and display changes, preserve presentation timestamps, and deliver compressed packets to the existing transport.
@@ -98,14 +98,19 @@ The private environment override requires an explicit emulator serial and applie
 only to that device. The public source setting remains `scrcpy` for compatibility;
 `/health.captureBackend` and `experimentalGpuCapture` identify the real video path
 as `gfxstream-cuda-nvenc`. scrcpy runs **with video and audio disabled**, for controls
-only. Unset both experiment variables to return to normal capture. Settings are
-fixed at native resolution, orientation, FPS and 12 Mbps for the demo. Do not use
-the stream settings controls to change them while it is active.
+only. Unset both experiment variables to return to normal capture. The existing
+Max size, Video FPS and Video bitrate controls now configure the experimental
+encoder independently of the emulator display. See the settings experiment below.
 
 The socket carries a 32-byte big-endian header followed by one complete FFmpeg
 AVPacket: magic `GPC1`, payload length u32, presentation timestamp in microseconds
-u64, flags u32 (0=delta, 1=keyframe, 2=empty handshake), width u32, height u32 and
-FPS u32. A client sends `K` to request an IDR. The adapter extracts SPS/PPS and
+u64, flags u32 (0=delta, 1=keyframe, 2=native display handshake, 3=settings
+acknowledgement), width u32, height u32 and FPS u32. Both handshake records have
+empty payloads. A client sends `K` to request an IDR, or `S` followed by three
+big-endian u32 values: longest-edge cap (0=native), FPS and bitrate. The native
+hello reports source dimensions and the injection default FPS, not measured VSync.
+The settings acknowledgement reports encoded dimensions/FPS. No video is sent
+until settings are applied. Reconnect for each settings change. The adapter extracts SPS/PPS and
 forwards the existing serve-emu video packet shape, so the browser wire protocol
 and input routing do not change. Fragmented or coalesced socket reads do not
 change frame boundaries. Invalid, oversized, truncated and changed-size records
@@ -169,3 +174,74 @@ mode. Comparing its generated config before and after launch found only
 emulator process had exited. The sampled source rate was 112 FPS; 120 remains
 the requested rate. Choose a fresh socket path for every injection and keep the
 capture duration inside the remaining worker allocation.
+
+
+## Independent stream resolution and FPS (experimental)
+
+The Pixel 9 keeps its native **1080×2424 / 420 DPI / 120 Hz** profile. The Hub's
+**Max size** setting caps the stream's longest edge, preserves aspect ratio to
+within even-pixel rounding, and never upscales. For example, 1280 produces
+570×1280; Full restores 1080×2424. **Video FPS** sets a capture/encode maximum,
+independent of Android VSync. Android's selector includes 120 FPS so it remains
+available after choosing a lower rate.
+
+A monotonic capture pacer skips samples before renderer locking, CUDA mapping or
+copying. Selected frames retain real elapsed-time timestamps; no slow motion or
+catch-up queue is introduced. Keyframe recovery can send an extra repeated frame,
+and idle streams retain the existing low-rate refresh behavior. The FPS cap does
+not promise that the app, machine or browser will sustain that rate.
+
+Captured frames stay at native size in a bounded CUDA pool. The encoder worker
+retains the latest native frame and runs a small bilinear RGBA CUDA kernel when
+scaling is requested. Full size bypasses scaling. This deliberately retains a
+native-sized GPU copy so an idle display can switch back to full resolution;
+resolution reduction alone does not reduce that copy or the emulator's rendering
+work. Lower FPS reduces capture work. Raw video never crosses to the CPU.
+
+The existing settings endpoint closes/reopens the private socket session. The
+worker discards queued old samples and recreates only NVENC/output buffers, then
+acknowledges the format and sends SPS/PPS plus an IDR. The hook, native frame pool,
+emulator and app stay alive. Control gestures use native dimensions, independent
+of encoded dimensions. `/health.experimentalGpuCapture` reports both sizes and
+the requested stream FPS. One encoder is shared by every viewer of the device.
+
+For an existing build environment, install the build-only kernel compiler once:
+
+```sh
+.venv/bin/pip install nvidia-cuda-nvrtc-cu12==12.9.86
+bash build.sh
+```
+
+`compile-scale.py` embeds PTX in the library; NVRTC is not loaded into the
+emulator. Deploy the native library and TypeScript adapter together and restart
+the emulator once for the new library. The older adapter does not understand the
+settings handshake. To include the persistent 120 FPS dropdown option, also
+build the Hub client (hub-client, hub-components, then expo-device-hub build:web)
+instead of retaining the published UI from install-hub.sh.
+
+Initial stream settings can be selected with `POC_STREAM_FPS` and
+`POC_MAX_DIMENSION` when running `run-hub.sh`. `POC_VSYNC` still controls emulator
+launch separately. Keep bitrate fixed when comparing FPS/resolution unless the
+experiment specifically measures bitrate changes.
+
+Validation on the existing L4 worker (2026-09-11): native library/PTX built;
+UI selected 1280 and 30 FPS; browser decoded 570×1280 over WebRTC; a tap on the
+scaled image paused the animation; settings restored native 1080×2424 while the
+image was static, then downscaled again without an emulator restart. Android
+still reported 1080×2424, 420 DPI and 120.00001 Hz. Capture audit reported zero
+errors and zero capture GL readbacks (some busy capture drops occurred).
+A short 30 FPS sample reported approximately 31 FPS (155 frames across the
+five-second wait plus HTTP overhead); a 60 FPS sample delivered 312 frames over
+5.357 seconds (~58 FPS). Restoring native size / 120 FPS decoded at 1080×2424.
+These are short live samples, not a sustained benchmark.
+WebRTC ICE reconnection was sometimes slow; an already connected viewer remained
+connected across changes. This experiment does not address ICE/network behavior.
+
+Checks: native stream-size/pacer assertions, private protocol tests, serve-emu
+aggregate check (996 tests, coverage, typechecks, build and package smoke), 48 Hub
+inspector tests, and Hub client build. Run the native assertions with:
+
+```sh
+clang++ -std=c++17 stream-format.test.cpp -o /tmp/gpu-stream-format-test
+/tmp/gpu-stream-format-test
+```

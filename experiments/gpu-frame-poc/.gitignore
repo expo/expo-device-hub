@@ -11,3 +11,5 @@ animation/build/
 ._*
 
 __pycache__/
+
+scale-ptx.h

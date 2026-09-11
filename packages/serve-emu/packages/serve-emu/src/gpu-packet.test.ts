@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { GpuPacketReader, MAX_GPU_PACKET_BYTES, splitGpuAccessUnit, type GpuRecord } from "./gpu-packet.ts";
+import { GpuPacketReader, gpuSettingsCommand, gpuStreamSize, MAX_GPU_PACKET_BYTES, splitGpuAccessUnit, type GpuRecord } from "./gpu-packet.ts";
 
 function record(data: Buffer, flags = 1, pts = 1234567890123n): Buffer {
   const header = Buffer.alloc(32);
@@ -36,7 +36,7 @@ describe("native GPU packet transport", () => {
     const cases = [record(idr), record(idr), record(idr), record(idr), record(idr)];
     cases[0]!.write("NOPE");
     cases[1]!.writeUInt32BE(MAX_GPU_PACKET_BYTES + 1, 4);
-    cases[2]!.writeUInt32BE(3, 16);
+    cases[2]!.writeUInt32BE(4, 16);
     cases[3]!.writeUInt32BE(0, 20);
     cases[4]!.writeUInt32BE(121, 28);
     for (const bytes of cases) expect(() => new GpuPacketReader(() => {}).push(bytes)).toThrow();
@@ -61,5 +61,30 @@ describe("native GPU packet transport", () => {
     const delta = Buffer.from([0, 0, 1, 0x41, 0x88]);
     expect(splitGpuAccessUnit(delta)).toEqual({ sps: null, pps: null, data: delta, isIdr: false });
     expect(() => splitGpuAccessUnit(Buffer.from([0, 0, 0, 2, 0x65, 0x88]))).toThrow("Annex-B");
+  });
+});
+
+describe("experimental stream settings", () => {
+  test("preserves native geometry and caps either orientation without upscaling", () => {
+    expect(gpuStreamSize(1080, 2424, 0)).toEqual({ width: 1080, height: 2424 });
+    expect(gpuStreamSize(1080, 2424, 1212)).toEqual({ width: 540, height: 1212 });
+    expect(gpuStreamSize(1080, 2424, 1280)).toEqual({ width: 570, height: 1280 });
+    expect(gpuStreamSize(2424, 1080, 1280)).toEqual({ width: 1280, height: 570 });
+    expect(gpuStreamSize(1080, 2424, 4096)).toEqual({ width: 1080, height: 2424 });
+    for (const maxSize of [-1, 1, 4097, 1.5, NaN]) expect(() => gpuStreamSize(1080, 2424, maxSize)).toThrow();
+  });
+  test("encodes the private settings request and rejects unsupported values", () => {
+    expect(gpuSettingsCommand(1280, 30, 12_000_000).toString("hex")).toBe("53000005000000001e00b71b00");
+    for (const fps of [0, 121, 29.5]) expect(() => gpuSettingsCommand(0, fps, 12_000_000)).toThrow();
+    expect(() => gpuSettingsCommand(0, 30, 0)).toThrow();
+  });
+  test("accepts a fragmented settings acknowledgement followed by an IDR", () => {
+    const received: GpuRecord[] = [];
+    const reader = new GpuPacketReader(packet => received.push(packet));
+    const bytes = Buffer.concat([record(Buffer.alloc(0), 2, 0n), record(Buffer.alloc(0), 3, 0n), record(idr)]);
+    for (let i = 0; i < bytes.length; i += 7) reader.push(bytes.subarray(i, i + 7));
+    reader.end();
+    expect(received.map(packet => packet.flags)).toEqual([2, 3, 1]);
+    expect(() => new GpuPacketReader(() => {}).push(record(idr, 3))).toThrow();
   });
 });

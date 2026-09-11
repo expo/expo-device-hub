@@ -30,6 +30,8 @@ extern "C" {
 using Clock = std::chrono::steady_clock;
 static double ms(Clock::time_point t) { return std::chrono::duration<double,std::milli>(Clock::now()-t).count(); }
 #include "socket-output.h"
+#include "stream-format.h"
+#include "scale-ptx.h"
 
 template<class T> static T sym(void* lib, const char* name) {
     void* p = dlsym(lib,name);
@@ -66,14 +68,18 @@ struct Capture {
     tcuGraphicsMapResources* map=nullptr; tcuGraphicsUnmapResources* unmap=nullptr;
     tcuGraphicsSubResourceGetMappedArray* array=nullptr; tcuMemcpy2D_v2* copy=nullptr;
     CUresult (CUDAAPI *arrayDesc)(CUDA_ARRAY_DESCRIPTOR*,CUarray)=nullptr;
+    tcuModuleLoadData* moduleLoad=nullptr; tcuModuleGetFunction* moduleFunction=nullptr;
+    tcuLaunchKernel* launchKernel=nullptr;
+    CUmodule scaleModule=nullptr; CUfunction scaleKernel=nullptr;
     std::unordered_map<GLuint,CUgraphicsResource> resources;
-    AVBufferRef* device=nullptr; AVBufferRef* frames=nullptr; AVCodecContext* encoder=nullptr;
+    AVBufferRef* device=nullptr; AVBufferRef* frames=nullptr; AVBufferRef* outputFrames=nullptr; AVCodecContext* encoder=nullptr;
     CUcontext cuda=nullptr; FILE* output=nullptr; FILE* metrics=nullptr;
     std::vector<Slot> slots=std::vector<Slot>(4);
     std::mutex mutex; std::condition_variable cv; std::deque<int> queue; std::thread worker;
     std::atomic<bool> enabled{false}, stopping{false};
-    bool ready=false, failed=false; int fps=60; int limit=1800;
-    std::atomic<uint64_t> seen{0},captured{0},dropped{0},encoded{0},errors{0};
+    bool ready=false, failed=false; int fps=60, initialFps=60; int limit=1800;
+    int nativeWidth=0,nativeHeight=0; std::atomic<int> captureFps{60}; FramePacer pacer;
+    std::atomic<uint64_t> seen{0},captured{0},skipped{0},dropped{0},encoded{0},errors{0};
     Clock::time_point start=Clock::now();
     std::string outputPath;
     SocketOutput socketOutput; bool live=false;
@@ -81,7 +87,7 @@ struct Capture {
 
     template<class T> T ef(int index) {return reinterpret_cast<T>(egl[index]);}
     void init(const char* path,const char* out,int rate,int count) {
-        if(rate<=0||count<=0)throw std::runtime_error("fps and frame count must be positive");
+        if(rate<=0||rate>120||count<=0)throw std::runtime_error("fps must be 1..120 and frame count positive");
         backend=dlopen(path,RTLD_NOW|RTLD_NOLOAD);
         if(!backend) throw std::runtime_error("renderer is not loaded");
         fbLock=sym<decltype(fbLock)>(backend,"_ZN9gfxstream4host11FrameBuffer4lockEv");
@@ -111,14 +117,16 @@ struct Capture {
         LOAD(map,"cuGraphicsMapResources"); LOAD(unmap,"cuGraphicsUnmapResources");
         LOAD(array,"cuGraphicsSubResourceGetMappedArray"); LOAD(copy,"cuMemcpy2D_v2");
         LOAD(arrayDesc,"cuArrayGetDescriptor_v2");
+        LOAD(moduleLoad,"cuModuleLoadData"); LOAD(moduleFunction,"cuModuleGetFunction"); LOAD(launchKernel,"cuLaunchKernel");
 #undef LOAD
-        fps=rate; limit=count; outputPath=out;
+        fps=initialFps=rate;captureFps=rate; limit=count; outputPath=out;
         live=outputPath.rfind("unix:",0)==0;
         if(live)socketOutput.open(outputPath.substr(5));
         enabled=true;
         fprintf(stderr,"[gpu-poc] armed fps=%d limit=%d output=%s\n",fps,limit,out);
     }
     void setupEncoder(int w,int h) {
+        nativeWidth=w;nativeHeight=h;
         avcheck(av_hwdevice_ctx_create(&device,AV_HWDEVICE_TYPE_CUDA,"0",nullptr,0),"CUDA device");
         cuda=reinterpret_cast<CudaDevicePrefix*>(reinterpret_cast<AVHWDeviceContext*>(device->data)->hwctx)->cuda_ctx;
         frames=av_hwframe_ctx_alloc(device);
@@ -127,17 +135,7 @@ struct Capture {
         f->format=AV_PIX_FMT_CUDA; f->sw_format=AV_PIX_FMT_0BGR32;
         f->width=w; f->height=h; f->initial_pool_size=8;
         avcheck(av_hwframe_ctx_init(frames),"CUDA frames");
-        encoder=avcodec_alloc_context3(avcodec_find_encoder_by_name("h264_nvenc"));
-        if(!encoder) throw std::runtime_error("h264_nvenc unavailable");
-        encoder->width=w; encoder->height=h; encoder->pix_fmt=AV_PIX_FMT_CUDA;
-        encoder->hw_frames_ctx=av_buffer_ref(frames);
-        encoder->time_base=live?AVRational{1,1000000}:AVRational{1,fps}; encoder->framerate={fps,1}; encoder->bit_rate=12000000;
-        encoder->gop_size=fps; encoder->max_b_frames=0;
-        AVDictionary* opts=nullptr;
-        av_dict_set(&opts,"preset","p1",0); av_dict_set(&opts,"tune","ull",0);
-        av_dict_set(&opts,"forced-idr","1",0);
-        av_dict_set(&opts,"zerolatency","1",0); av_dict_set(&opts,"delay","0",0);
-        int r=avcodec_open2(encoder,encoder->codec,&opts); av_dict_free(&opts); avcheck(r,"open NVENC");
+        openEncoder(w,h,fps,12000000);
         for(auto& slot:slots) { slot.frame=av_frame_alloc(); avcheck(av_hwframe_get_buffer(frames,slot.frame,0),"allocate GPU frame"); }
         if(!live)output=fopen(outputPath.c_str(),"wb");
         metrics=fopen(((live?outputPath.substr(5):outputPath)+".csv").c_str(),"w");
@@ -147,6 +145,47 @@ struct Capture {
         worker=std::thread([this]{encodeLoop();});
         fprintf(stderr,"[gpu-poc] encoder ready %dx%d CUDA RGB0 -> h264_nvenc\n",w,h);
     }
+    // Encoder/output buffers belong to the worker. Native capture buffers never resize.
+    void openEncoder(int w,int h,int rate,int bitRate) {
+        avcodec_free_context(&encoder);av_buffer_unref(&outputFrames);
+        fps=rate;
+        outputFrames=av_hwframe_ctx_alloc(device);
+        if(!outputFrames)throw std::runtime_error("output frame context allocation failed");
+        auto f=reinterpret_cast<AVHWFramesContext*>(outputFrames->data);
+        f->format=AV_PIX_FMT_CUDA;f->sw_format=AV_PIX_FMT_0BGR32;f->width=w;f->height=h;f->initial_pool_size=4;
+        avcheck(av_hwframe_ctx_init(outputFrames),"output CUDA frames");
+        encoder=avcodec_alloc_context3(avcodec_find_encoder_by_name("h264_nvenc"));
+        if(!encoder) throw std::runtime_error("h264_nvenc unavailable");
+        encoder->width=w; encoder->height=h; encoder->pix_fmt=AV_PIX_FMT_CUDA;
+        encoder->hw_frames_ctx=av_buffer_ref(outputFrames);
+        encoder->time_base=live?AVRational{1,1000000}:AVRational{1,fps}; encoder->framerate={fps,1}; encoder->bit_rate=bitRate;
+        encoder->gop_size=fps; encoder->max_b_frames=0;
+        AVDictionary* opts=nullptr;
+        av_dict_set(&opts,"preset","p1",0); av_dict_set(&opts,"tune","ull",0);
+        av_dict_set(&opts,"forced-idr","1",0);
+        av_dict_set(&opts,"zerolatency","1",0); av_dict_set(&opts,"delay","0",0);
+        int r=avcodec_open2(encoder,encoder->codec,&opts); av_dict_free(&opts); avcheck(r,"open NVENC");
+    }
+    AVFrame* scaleFrame(AVFrame* source) {
+        if(encoder->width==nativeWidth&&encoder->height==nativeHeight)return av_frame_clone(source);
+        AVFrame* out=av_frame_alloc();
+        if(!out)throw std::runtime_error("scaled frame allocation failed");
+        try {
+            avcheck(av_hwframe_get_buffer(outputFrames,out,0),"allocate scaled GPU frame");
+            cucheck(push(cuda),"push scaler CUDA");
+            try {
+                if(!scaleKernel){cucheck(moduleLoad(&scaleModule,scalePtx),"load scaler PTX");cucheck(moduleFunction(&scaleKernel,scaleModule,"scale_rgba"),"find scaler kernel");}
+                CUdeviceptr src=reinterpret_cast<CUdeviceptr>(source->data[0]),dst=reinterpret_cast<CUdeviceptr>(out->data[0]);
+                uint64_t sp=source->linesize[0],dp=out->linesize[0];
+                int w=encoder->width,h=encoder->height;
+                void* args[]={&src,&sp,&nativeWidth,&nativeHeight,&dst,&dp,&w,&h};
+                cucheck(launchKernel(scaleKernel,(w+15)/16,(h+15)/16,1,16,16,1,0,nullptr,args,nullptr),"scale RGBA on GPU");
+                cucheck(streamSync(nullptr),"wait for GPU scale");
+            } catch(...) {CUcontext old;pop(&old);throw;}
+            CUcontext old;cucheck(pop(&old),"pop scaler CUDA");
+            out->pts=source->pts;return out;
+        } catch(...) {av_frame_free(&out);throw;}
+    }
     void drain() {
         AVPacket* pkt=av_packet_alloc();
         while(true) {
@@ -154,7 +193,7 @@ struct Capture {
             if(r==AVERROR(EAGAIN)||r==AVERROR_EOF) break;
             avcheck(r,"receive packet");
             if(live) {
-                socketOutput.packet(pkt->data,pkt->size,pkt->pts<0?0:pkt->pts,
+                if(socketOutput.configured)socketOutput.packet(pkt->data,pkt->size,pkt->pts<0?0:pkt->pts,
                     (pkt->flags&AV_PKT_FLAG_KEY)?1:0,encoder->width,encoder->height,fps);
             } else if(fwrite(pkt->data,1,pkt->size,output)!=(size_t)pkt->size) {av_packet_free(&pkt);throw std::runtime_error("write failed");}
             encoded++; av_packet_unref(pkt);
@@ -165,28 +204,42 @@ struct Capture {
         AVFrame* latest=av_frame_alloc();auto lastSend=Clock::now();
         try {
             while(true) {
+                if(live) {
+                    socketOutput.pollCommands(nativeWidth,nativeHeight,initialFps);
+                    if(socketOutput.settingsPending) {
+                        auto [w,h]=streamSize(nativeWidth,nativeHeight,socketOutput.maxSize);
+                        // Discard old queued samples; retain latest at native size for idle resize.
+                        {std::lock_guard<std::mutex> l(mutex);for(int index:queue)slots[index].queued=false;queue.clear();}
+                        openEncoder(w,h,socketOutput.requestedFps,socketOutput.bitRate);
+                        captureFps=socketOutput.requestedFps;
+                        socketOutput.settingsPending=false;socketOutput.configured=true;socketOutput.needsKey=true;
+                        socketOutput.packet(nullptr,0,0,3,w,h,fps);
+                        fprintf(stderr,"[gpu-poc] stream %dx%d@%d native %dx%d (VSync unchanged)\n",w,h,fps,nativeWidth,nativeHeight);
+                    }
+                }
                 int i=-1;
                 { std::unique_lock<std::mutex> l(mutex);
-                  cv.wait_for(l,std::chrono::milliseconds(25),[this]{return stopping||!queue.empty();});
+                  cv.wait_for(l,std::chrono::milliseconds(5),[this]{return stopping||!queue.empty();});
                   if(stopping&&queue.empty())break;
                   if(!queue.empty()){i=queue.front();queue.pop_front();} }
-                if(live)socketOutput.pollCommands(encoder->width,encoder->height,fps);
+                if(i>=0) {
+                    av_frame_unref(latest);avcheck(av_frame_ref(latest,slots[i].frame),"retain native GPU frame");
+                    std::lock_guard<std::mutex> l(mutex);slots[i].queued=false;
+                }
+                if(live&&!socketOutput.configured)continue;
                 bool repeat=i<0&&live&&socketOutput.client>=0&&latest->buf[0]&&
-                    (socketOutput.needsKey||ms(lastSend)>=500);
+                    (socketOutput.needsKey||ms(lastSend)>=std::max(500.0,1000.0/fps));
                 if(i<0&&!repeat)continue;
-                AVFrame* frame=i>=0?slots[i].frame:av_frame_clone(latest);
-                if(!frame)throw std::runtime_error("repeat frame allocation failed");
+                AVFrame* frame=scaleFrame(latest);
+                if(!frame)throw std::runtime_error("encode frame allocation failed");
                 if(live) {
                     if(repeat)frame->pts=static_cast<int64_t>(ms(start)*1000);
                     frame->pts=std::max(frame->pts,lastEncodedPts+1);lastEncodedPts=frame->pts;
                 }
                 frame->pict_type=(live&&socketOutput.needsKey)?AV_PICTURE_TYPE_I:AV_PICTURE_TYPE_NONE;
                 socketOutput.needsKey=false;
-                avcheck(avcodec_send_frame(encoder,frame),"send frame");drain();lastSend=Clock::now();
-                if(i>=0) {
-                    if(live){av_frame_unref(latest);avcheck(av_frame_ref(latest,frame),"retain latest GPU frame");}
-                    std::lock_guard<std::mutex> l(mutex);slots[i].queued=false;
-                } else av_frame_free(&frame);
+                int result=avcodec_send_frame(encoder,frame);av_frame_free(&frame);
+                avcheck(result,"send frame");drain();lastSend=Clock::now();
             }
             avcheck(avcodec_send_frame(encoder,nullptr),"flush");drain();if(output)fflush(output);
         } catch(const std::exception& e) {errors++;enabled=false;fprintf(stderr,"[gpu-poc] worker error: %s\n",e.what());}
@@ -230,6 +283,7 @@ void Capture::onFrame(void* fb,uint32_t handle) {
     std::unique_lock<std::mutex> guard(captureMutex,std::try_to_lock);
     if(!guard.owns_lock()){dropped++;return;}
     if(!enabled)return;
+    if(!pacer.take(static_cast<int64_t>(ms(start)*1000),captureFps.load())){skipped++;return;}
     struct Scope { Scope(){insideCapture=true;} ~Scope(){insideCapture=false;} } scope;
     auto begin=Clock::now();
     if(captured>=static_cast<uint64_t>(limit)){enabled=false;return;}
@@ -270,7 +324,7 @@ void Capture::onFrame(void* fb,uint32_t handle) {
         GLuint texture=nativeTexture(static_cast<BorrowedGl*>(info.get())->texture);
         if(!texture)throw std::runtime_error("native texture is zero");
         if(!ready){setupEncoder(info->width,info->height);slotIndex=0;slots[0].queued=true;}
-        if((int)info->width!=encoder->width||(int)info->height!=encoder->height)throw std::runtime_error("resolution changed; fixed-size proof stopped");
+        if((int)info->width!=nativeWidth||(int)info->height!=nativeHeight)throw std::runtime_error("resolution changed; fixed-size proof stopped");
         cucheck(push(cuda),"push CUDA");pushed=true;
         auto found=resources.find(texture);
         if(found==resources.end()) {
@@ -323,8 +377,8 @@ extern "C" void poc_frame(void* fb,uint32_t handle){capture.onFrame(fb,handle);}
 extern "C" const char* poc_status(){
     static thread_local char status[512];
     snprintf(status,sizeof(status),
-        "{\"captured\":%lu,\"encoded\":%lu,\"dropped\":%lu,\"errors\":%lu,\"captureGlReadPixels\":%lu,\"captureGlGetTexImage\":%lu}",
-        capture.captured.load(),capture.encoded.load(),capture.dropped.load(),capture.errors.load(),
+        "{\"captured\":%lu,\"encoded\":%lu,\"skippedForFps\":%lu,\"dropped\":%lu,\"errors\":%lu,\"captureGlReadPixels\":%lu,\"captureGlGetTexImage\":%lu}",
+        capture.captured.load(),capture.encoded.load(),capture.skipped.load(),capture.dropped.load(),capture.errors.load(),
         readPixelsCapture.load(),getTexCapture.load());
     return status;
 }
