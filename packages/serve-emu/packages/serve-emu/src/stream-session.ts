@@ -40,6 +40,8 @@ export type EmuSessionDiagnostics = {
   experimentalGpuCapture?: {
     backend: string; encoderName: string; packets: number; bytes: number;
     requestedKeyFrames: number; queuedBytes: number; fps: number;
+    nativeSize: { width: number; height: number };
+    streamSize: { width: number; height: number }; maxSize: number;
   };
   /** Present only for the grpc-screenshot capture implementation. */
   grpcCapture?: GrpcCaptureDiagnostics;
