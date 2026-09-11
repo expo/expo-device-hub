@@ -19,6 +19,12 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { type AccessibilityLoader, loadAndroidAccessibility } from './accessibility';
+import { appendActivitySample } from './activity';
+import {
+  EMPTY_ANDROID_ACTIVITY,
+  nextAndroidActivityAfterSilence,
+  parseAndroidActivityFrame,
+} from './android-activity';
 import { apiUrl, deviceApiUrl } from './android-api-url';
 import { readAndroidLocation, writeAndroidLocation } from './android-location';
 import {
@@ -79,6 +85,7 @@ import {
   type DeviceConnectionOptions,
   type DeviceEvent,
   type DeviceGrpcImageMode,
+  type DeviceActivity,
   type DeviceGrpcEncoder,
   type DeviceInputSource,
   type DeviceLog,
@@ -229,6 +236,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [streamSwitch, setStreamSwitch] = useState<StreamSwitchState>(IDLE_STREAM_SWITCH);
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
+  const [activity, setActivity] = useState<DeviceActivity | null>(null);
+  const activityLastSampleAtRef = useRef(0);
   const [serverStreamSettings, setServerStreamSettings] =
     useState<ServeEmuStreamSettings | null>(null);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
@@ -1546,6 +1555,54 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     return () => source?.close();
   }, [logsEnabled, active, baseUrl, targetDevice]);
 
+  // ── Activity metrics (SSE) ──
+  useEffect(() => {
+    activityLastSampleAtRef.current = 0;
+    if (!active || !baseUrl) {
+      setActivity(null);
+      return;
+    }
+    setActivity(EMPTY_ANDROID_ACTIVITY);
+    let source: EventSource;
+    try {
+      source = new EventSource(deviceApiUrl(baseUrl, '/api/metrics', targetDevice));
+    } catch {
+      setActivity({ ...EMPTY_ANDROID_ACTIVITY, errored: true });
+      return;
+    }
+    const onFrame = (event: Event) => {
+      const frame = parseAndroidActivityFrame(event.type, String((event as MessageEvent).data));
+      if (!frame) return;
+      if (frame.kind === 'meta') {
+        setActivity((current) =>
+          current ? { ...current, hostCores: frame.hostCores, errored: false } : current,
+        );
+        return;
+      }
+      activityLastSampleAtRef.current = Date.now();
+      setActivity((current) => appendActivitySample(current ?? EMPTY_ANDROID_ACTIVITY, frame.sample));
+    };
+    source.addEventListener('meta', onFrame);
+    source.addEventListener('message', onFrame);
+    source.onerror = () => setActivity((current) => (current ? { ...current, errored: true } : current));
+    const openedAt = Date.now();
+    const watchdog = setInterval(() => {
+      setActivity((current) => {
+        if (!current) return current;
+        const clock = {
+          openedAt,
+          lastSampleAt: activityLastSampleAtRef.current,
+          now: Date.now(),
+        };
+        return nextAndroidActivityAfterSilence(current, clock) ?? current;
+      });
+    }, 1000);
+    return () => {
+      clearInterval(watchdog);
+      source.close();
+    };
+  }, [active, baseUrl, targetDevice]);
+
   // ── Recorded input/session events (polling, best-effort) ──
   // serve-emu records Hub-originated touches, keyboard input, hardware buttons,
   // and location changes. Its session endpoint is a snapshot rather than SSE.
@@ -1834,7 +1891,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     attachEvents,
     detachEvents,
     clearEvents,
-    activity: null,
+    activity,
     deviceSettings,
     deviceSettingsPending,
     setDeviceSetting,
@@ -1876,7 +1933,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     },
     capabilities: {
       deviceSettings: true,
-      activity: false,
+      activity: true,
       events: true,
       camera: cameraSupported,
       accessibility: accessibilityLoader !== null,

@@ -34,9 +34,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     attachEvents: () => {},
     detachEvents: () => {},
     clearEvents: () => {},
-    activity: ios
-      ? { hostCores: 8, samples: [], errored: false, stale: false }
-      : null,
+    activity: { hostCores: ios ? 8 : 4, samples: [], errored: false, stale: false },
     deviceSettings: ios
       ? {
           appearance: 'light',
@@ -112,7 +110,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     setWebRtcCodec: () => {},
     capabilities: {
       deviceSettings: true,
-      activity: ios,
+      activity: true,
       events: true,
       camera: false,
       accessibility: true,
@@ -388,7 +386,8 @@ test('renders Android stream options while omitting unsupported and iOS-only sec
   }
   expect(html).toContain('<section aria-label="Accessibility"');
   const currentApp = sectionMarkup(html, 'Current app');
-  expect(currentApp).not.toContain('data-testid="activity-charts"');
+  expect(currentApp).toContain('data-testid="activity-charts"');
+  expect(currentApp).toContain('Waiting for activity data…');
   // Android shows only the App ID / Version / Build number rows: no name and icon line.
   expect(currentApp).not.toContain('width:40px');
   for (const label of ['App ID', 'Version', 'Build number']) {

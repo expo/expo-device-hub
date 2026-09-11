@@ -1561,6 +1561,21 @@ async function createAppInternal(
       return logcatStream(req, url);
     }
 
+    if (url.pathname === "/api/metrics") {
+      if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
+      if (!isAllowedBrowserOrigin(req, opts)) {
+        return Response.json({ error: "forbidden_origin" }, { status: 403 });
+      }
+      const response = deviceState.metrics.subscribe(req.signal);
+      const headers = new Headers(response.headers);
+      for (const [name, value] of Object.entries(
+        corsHeadersForRequest(req, opts, "GET"),
+      )) {
+        headers.set(name, value);
+      }
+      return new Response(response.body, { status: response.status, headers });
+    }
+
     if (url.pathname === "/api/screenshot") {
       if (req.method !== "GET" && req.method !== "POST") {
         return new Response("method not allowed", { status: 405 });

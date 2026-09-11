@@ -31,6 +31,12 @@ export function inspectionRoutes(): ContractApiRoute<ApiDependencies>[] {
       handler: async ({ url, deps }) =>
         downstream("open logcat", () => deps.openLogcat(url)),
     },
+    {
+      method: "GET",
+      path: "/api/metrics",
+      handler: async ({ deps }) =>
+        downstream("open metrics", () => deps.openMetrics()),
+    },
     { method: "GET", path: "/api/screenshot", handler: screenshot },
     { method: "POST", path: "/api/screenshot", handler: screenshot },
     {

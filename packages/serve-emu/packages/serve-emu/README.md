@@ -381,6 +381,7 @@ curl -X POST "$BASE/api/accessibility/tap" \
   -H 'Content-Type: application/json' \
   -d '{"selector":{"textContains":"Continue","clickable":true}}'
 curl -N "$BASE/api/logcat?package=com.example.app&search=error"
+curl -N "$BASE/api/metrics"
 ```
 
 Logcat subscriptions share one `adb logcat` child for the active device.
@@ -391,6 +392,19 @@ queue/source drop counts. `/health` exposes the active child, subscriber count,
 queued bytes, limits, and cumulative delivery/drop totals under `logcat`.
 Pausing Logcat in the browser closes its SSE connection, so paused panels do
 not keep receiving and discarding device output.
+
+`/api/metrics` is an SSE stream of the foreground app's resource use, one
+`data:` frame per second with `{t, bundleId, cpuPct, memBytes, netInBytesPerSec,
+netOutBytesPerSec}` after an `event: meta` frame that carries the guest core
+count as `hostCores`. The foreground app is identified by the same detector
+`/api/foreground` uses, so the two never name different packages. `cpuPct` is
+percent of one guest core, so it can exceed 100 on a multi-core emulator. Network counters are device-wide (`/proc/net/dev`
+minus `lo`); the emulator exposes no per-app counters. CPU and memory come from
+the process that `pidof <package>` resolves, so an app that declares
+`android:process` for its activity reports zero, and a multi-process app such as
+Chrome excludes its renderer children. Subscribers share one sampler per device,
+and sampling stops when the last stream closes. A device accepts eight metrics
+subscribers; the ninth is refused with `metrics-subscriber-limit` and HTTP 429.
 
 ### Device Settings
 
