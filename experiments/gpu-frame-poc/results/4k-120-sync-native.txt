@@ -1,0 +1,34 @@
+[gpu-poc] armed fps=120 limit=3600 output=/home/expo/gpu-frame-poc/4k-120-sync.h264
+[gpu-poc] encoder ready 2160x3840 CUDA RGB0 -> h264_nvenc
+[gpu-poc] frame=0 texture=27 capture_ms=311.975 copy_ms=0.373
+[gpu-poc] frame=120 texture=27 capture_ms=0.878 copy_ms=0.297
+[gpu-poc] frame=240 texture=27 capture_ms=0.846 copy_ms=0.285
+[gpu-poc] frame=360 texture=27 capture_ms=1.018 copy_ms=0.316
+[gpu-poc] frame=480 texture=27 capture_ms=0.907 copy_ms=0.291
+[gpu-poc] frame=600 texture=27 capture_ms=0.876 copy_ms=0.279
+[gpu-poc] frame=720 texture=27 capture_ms=0.928 copy_ms=0.287
+[gpu-poc] frame=840 texture=27 capture_ms=0.874 copy_ms=0.281
+[gpu-poc] frame=960 texture=27 capture_ms=0.891 copy_ms=0.287
+[gpu-poc] frame=1080 texture=27 capture_ms=0.909 copy_ms=0.278
+[gpu-poc] frame=1200 texture=27 capture_ms=0.919 copy_ms=0.306
+[gpu-poc] frame=1320 texture=27 capture_ms=0.940 copy_ms=0.281
+[gpu-poc] frame=1440 texture=27 capture_ms=0.766 copy_ms=0.279
+[gpu-poc] frame=1560 texture=27 capture_ms=0.853 copy_ms=0.269
+[gpu-poc] frame=1680 texture=27 capture_ms=0.746 copy_ms=0.267
+[gpu-poc] frame=1800 texture=27 capture_ms=0.873 copy_ms=0.276
+[gpu-poc] frame=1920 texture=27 capture_ms=0.735 copy_ms=0.276
+[gpu-poc] frame=2040 texture=27 capture_ms=0.894 copy_ms=0.280
+[gpu-poc] frame=2160 texture=27 capture_ms=0.779 copy_ms=0.306
+[gpu-poc] frame=2280 texture=27 capture_ms=0.913 copy_ms=0.275
+[gpu-poc] frame=2400 texture=27 capture_ms=0.817 copy_ms=0.283
+[gpu-poc] frame=2520 texture=27 capture_ms=0.794 copy_ms=0.290
+[gpu-poc] frame=2640 texture=27 capture_ms=0.701 copy_ms=0.267
+[gpu-poc] frame=2760 texture=27 capture_ms=0.747 copy_ms=0.265
+[gpu-poc] frame=2880 texture=27 capture_ms=0.769 copy_ms=0.288
+[gpu-poc] frame=3000 texture=27 capture_ms=0.758 copy_ms=0.272
+[gpu-poc] frame=3120 texture=27 capture_ms=0.905 copy_ms=0.286
+[gpu-poc] frame=3240 texture=27 capture_ms=0.915 copy_ms=0.320
+[gpu-poc] frame=3360 texture=27 capture_ms=0.737 copy_ms=0.275
+[gpu-poc] frame=3480 texture=27 capture_ms=0.727 copy_ms=0.288
+[gpu-poc] summary seen=3601 captured=3600 encoded=3600 dropped=0 errors=0 elapsed_ms=34691.262
+[gpu-poc] native audit glReadPixels_total=345 capture=0 glGetTexImage_total=0 capture=0

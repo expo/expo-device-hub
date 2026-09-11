@@ -1,0 +1,140 @@
+{
+  "recordedAt": "2026-09-11T12:18:25.070413+00:00",
+  "workflowId": "01a09053-99af-7b29-b729-06f494ea0783",
+  "jobId": "01a09053-9b4a-7aed-8950-6a1195972529",
+  "health": {
+    "status": "streaming",
+    "streamMode": "scrcpy",
+    "captureBackend": "gfxstream-cuda-nvenc",
+    "experimentalGpuCapture": {
+      "backend": "gfxstream-cuda-nvenc",
+      "encoderName": "h264_nvenc",
+      "packets": 4569,
+      "bytes": 9585604,
+      "requestedKeyFrames": 3,
+      "queuedBytes": 0,
+      "fps": 60
+    },
+    "inputSource": "scrcpy",
+    "codec": "h264",
+    "size": {
+      "width": 720,
+      "height": 1280
+    },
+    "clients": 3,
+    "videoClients": 3,
+    "frames": 4569,
+    "sourceFps": 60,
+    "configPackets": 1,
+    "droppedFrames": 3,
+    "backpressureEvents": 0,
+    "lastError": null
+  },
+  "nativeSamples": [
+    {
+      "captured": 1416,
+      "encoded": 1419,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 3131,
+      "encoded": 3134,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 4828,
+      "encoded": 4832,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 6518,
+      "encoded": 6522,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 8298,
+      "encoded": 8302,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 10078,
+      "encoded": 10082,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 11862,
+      "encoded": 11866,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 13298,
+      "encoded": 13314,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 13310,
+      "encoded": 13384,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 13311,
+      "encoded": 13444,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 13313,
+      "encoded": 13505,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 14515,
+      "encoded": 14727,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    },
+    {
+      "captured": 16309,
+      "encoded": 16521,
+      "dropped": 0,
+      "errors": 0,
+      "captureGlReadPixels": 0,
+      "captureGlGetTexImage": 0
+    }
+  ],
+  "nativeModuleSha256": "df7526037538a76c0125d22607ccb40de445c653d039e6b0affd6b00921dfca3"
+}

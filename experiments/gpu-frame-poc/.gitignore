@@ -1,0 +1,15 @@
+.venv/
+nv-codec-headers/
+ffmpeg-source/
+deps/
+animation/build/
+*.so
+*.log
+*.pid
+*.h264
+*.h264.csv
+._*
+
+__pycache__/
+
+scale-ptx.h
