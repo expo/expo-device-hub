@@ -73,6 +73,7 @@ This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://
 | [`packages/serve-sim`](packages/serve-sim) | Vendored source for [`@expo/serve-sim`](http://www.github.com/expo/serve-sim). |
 | [`packages/serve-emu`](packages/serve-emu) | Source for the `serve-emu` workspace package, maintained in this monorepo. |
 | [`example`](example) | A minimal Expo app with the plugin installed. |
+| [`packages/web-animation-test`](packages/web-animation-test) | Minimal Expo web animation for comparing H.264 encoders. [Open the hosted fixture](https://krystof-web-animation-test.expo.app). |
 
 ## Getting started
 

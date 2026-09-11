@@ -1,0 +1,50 @@
+body {
+  margin: 0;
+  background: #102020;
+  color: white;
+  font: 24px system-ui;
+  overflow: hidden;
+}
+
+#root {
+  display: block;
+}
+
+.counters {
+  position: fixed;
+  top: 28px;
+  left: 20px;
+  right: 20px;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px;
+  background: #102020;
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+section {
+  position: absolute;
+  inset: 170px 20px 60px;
+  overflow: hidden;
+  background: repeating-linear-gradient(45deg, #075e64 0 32px, #f6785f 32px 64px);
+}
+
+.shape {
+  position: absolute;
+  width: 65vw;
+  height: 65vw;
+  background: #ffda58;
+  border-radius: 20%;
+  animation: spin 2s linear infinite;
+  left: 17vw;
+  top: 200px;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
