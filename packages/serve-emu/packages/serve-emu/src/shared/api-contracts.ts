@@ -449,6 +449,11 @@ export type SessionSnapshot = {
 export type SessionMutationResponse = ApiSuccess<{ session: SessionSnapshot }>;
 
 export type AppActionResponse = ApiSuccess<{ output: string }>;
+export type RuntimePermission = { name: string; granted: boolean; flags: string[] };
+export type AppPermissionsResponse = ApiSuccess<{
+  packageName: string;
+  permissions: RuntimePermission[];
+}>;
 export type FileImportResponse = ApiSuccess<{
   output: string;
   path: string;
@@ -686,6 +691,13 @@ export type ApiContractMap = {
   };
   "/api/apps/grant": {
     POST: EndpointContract<{ packageName: string; permission: string }, AppActionResponse>;
+  };
+  "/api/apps/permissions": { GET: EndpointContract<undefined, AppPermissionsResponse> };
+  "/api/apps/revoke": {
+    POST: EndpointContract<{ packageName: string; permission: string }, AppActionResponse>;
+  };
+  "/api/apps/reset-permissions": {
+    POST: EndpointContract<{ packageName: string }, AppActionResponse>;
   };
   "/api/location": {
     GET: EndpointContract<undefined, LocationResponse>;
@@ -1618,6 +1630,26 @@ export function parseAppActionResponse(value: unknown): AppActionResponse {
   return { ok: true, output: string(root.output, "app action response.output") };
 }
 
+export function parseAppPermissionsResponse(value: unknown): AppPermissionsResponse {
+  const root = record(value, "app permissions response");
+  if (root.ok !== true) fail("app permissions response.ok must be true");
+  if (!Array.isArray(root.permissions)) fail("app permissions response.permissions must be an array");
+  return {
+    ok: true,
+    packageName: string(root.packageName, "app permissions response.packageName"),
+    permissions: root.permissions.map((entry, index) => {
+      const name = `permissions[${index}]`;
+      const item = record(entry, name);
+      if (!Array.isArray(item.flags)) fail(`${name}.flags must be an array`);
+      return {
+        name: string(item.name, `${name}.name`),
+        granted: boolean(item.granted, `${name}.granted`),
+        flags: item.flags.map((flag, flagIndex) => string(flag, `${name}.flags[${flagIndex}]`)),
+      };
+    }),
+  };
+}
+
 export function parseFileImportResponse(value: unknown): FileImportResponse {
   const root = record(value, "file import response");
   if (root.ok !== true) fail("file import response.ok must be true");
@@ -1986,6 +2018,9 @@ export const API_SUCCESS_PARSERS = {
   "/api/apps/clear": { POST: parseAppActionResponse },
   "/api/apps/force-stop": { POST: parseAppActionResponse },
   "/api/apps/grant": { POST: parseAppActionResponse },
+  "/api/apps/permissions": { GET: parseAppPermissionsResponse },
+  "/api/apps/revoke": { POST: parseAppActionResponse },
+  "/api/apps/reset-permissions": { POST: parseAppActionResponse },
   "/api/location": { GET: parseLocationResponse, POST: parseLocationUpdateResponse },
   "/api/route": {
     GET: parseRoutePlaybackSnapshot,

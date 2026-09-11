@@ -367,7 +367,21 @@ export interface DeviceCapabilities {
   streamSettings: DeviceStreamSettingCapabilities;
   /** Simulated-location control, and whether the fix can also be removed. */
   location: DeviceLocationCapabilities;
+  /** Foreground-app permissions that the backend can list and change. */
+  permissions: boolean;
 }
+
+/** How the device answers one permission of the foreground app. */
+export type AppPermissionState = 'granted' | 'denied' | 'limited' | 'undetermined';
+
+/** One permission row. `id` is the backend name (`android.permission.CAMERA`, `camera`). */
+export interface AppPermission {
+  id: string;
+  label: string;
+  state: AppPermissionState;
+}
+
+export type AppPermissionAction = 'grant' | 'revoke';
 
 /** The app currently in the foreground on the device. */
 export interface ForegroundApp {
@@ -587,6 +601,19 @@ export interface DeviceClient {
   setLocation: (fix: DeviceGeoFix) => void;
   /** Remove the simulated fix. A no-op unless `capabilities.location` carries `clear`. */
   clearLocation: () => void;
+
+  /** Permissions of the foreground app, or null while unknown or without a foreground app. */
+  permissions: readonly AppPermission[] | null;
+  /** Permission ids with a write in flight. A reset holds every id. */
+  permissionsPending: ReadonlySet<string>;
+  /** Last failed permission request, cleared when the next write starts. */
+  permissionsError: string | null;
+  /** Grant or revoke one permission of the foreground app. */
+  setPermission: (id: string, action: AppPermissionAction) => void;
+  /** Return every permission of the foreground app to its default. */
+  resetPermissions: () => void;
+  /** Read the list again, for example when the section opens. */
+  refreshPermissions: () => void;
 
   /** Backend-supported viewer transport and codec choices; null hides stream controls. */
   streamCapabilities: DeviceStreamCapabilities | null;

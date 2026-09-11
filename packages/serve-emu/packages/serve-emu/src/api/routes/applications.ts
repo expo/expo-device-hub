@@ -109,5 +109,40 @@ export function applicationRoutes(): ContractApiRoute<ApiDependencies>[] {
         );
       },
     },
+    {
+      method: "GET",
+      path: "/api/apps/permissions",
+      handler: async ({ url, deps }) => {
+        const pkg = parseInput(() => packageName(url.searchParams.get("packageName")));
+        return Response.json(
+          await downstream("list app permissions", () => deps.listPermissions(pkg)),
+        );
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/apps/revoke",
+      handler: async ({ request, deps }) => {
+        const body = await readObject(request, "revoke payload");
+        const pkg = parseInput(() => packageName(body.packageName));
+        const permission = parseInput(() => permissionName(body.permission));
+        return Response.json(
+          await downstream("revoke app permission", () =>
+            deps.revokePermission(pkg, permission)
+          ),
+        );
+      },
+    },
+    {
+      method: "POST",
+      path: "/api/apps/reset-permissions",
+      handler: async ({ request, deps }) => {
+        const body = await readObject(request, "reset permissions payload");
+        const pkg = parseInput(() => packageName(body.packageName));
+        return Response.json(
+          await downstream("reset app permissions", () => deps.resetPermissions(pkg)),
+        );
+      },
+    },
   ];
 }

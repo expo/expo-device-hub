@@ -595,6 +595,20 @@ curl -X POST "$BASE/api/apps/grant" \
   -H 'Content-Type: application/json' \
   -d '{"packageName":"com.example.app","permission":"android.permission.POST_NOTIFICATIONS"}'
 
+curl -X POST "$BASE/api/apps/revoke" \
+  -H 'Content-Type: application/json' \
+  -d '{"packageName":"com.example.app","permission":"android.permission.POST_NOTIFICATIONS"}'
+
+# Runtime permissions with their granted state and flags, from `dumpsys package`.
+curl "$BASE/api/apps/permissions?packageName=com.example.app"
+
+# Per-package reset: each runtime permission returns to its manifest default,
+# user decisions are cleared, and app ops are reset. Permissions already at
+# their default are left alone; each revoke stops the app.
+curl -X POST "$BASE/api/apps/reset-permissions" \
+  -H 'Content-Type: application/json' \
+  -d '{"packageName":"com.example.app"}'
+
 curl -X POST "$BASE/api/files/import" \
   -F file=@/path/to/image.png
 ```
