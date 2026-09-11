@@ -37,6 +37,10 @@ export type StreamFailure = {
 export type StreamMeta = ScrcpySession["meta"];
 
 export type EmuSessionDiagnostics = {
+  experimentalGpuCapture?: {
+    backend: string; encoderName: string; packets: number; bytes: number;
+    requestedKeyFrames: number; queuedBytes: number; fps: number;
+  };
   /** Present only for the grpc-screenshot capture implementation. */
   grpcCapture?: GrpcCaptureDiagnostics;
 };
@@ -75,6 +79,16 @@ export type StartEmuSessionOptions = StartOpts & {
 export async function startEmuSession(
   options: StartEmuSessionOptions,
 ): Promise<EmuSession> {
+  const gpuSocket = process.env.SERVE_EMU_EXPERIMENTAL_GPU_SOCKET;
+  if (gpuSocket) {
+    const serial = process.env.SERVE_EMU_EXPERIMENTAL_GPU_SERIAL;
+    if (!serial || !isEmulatorSerial(serial))
+      throw new Error("GPU experiment requires an explicit emulator serial");
+    if (options.serial === serial) {
+      const { startGpuExperimentSession } = await import("./gpu-session.ts");
+      return startGpuExperimentSession(options, gpuSocket);
+    }
+  }
   if (options.mode === "grpc-screenshot") {
     if (!isEmulatorSerial(options.serial)) {
       throw new Error(
