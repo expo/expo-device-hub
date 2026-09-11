@@ -1,0 +1,16 @@
+{
+    "programs": [
+
+    ],
+    "stream_groups": [
+
+    ],
+    "streams": [
+        {
+            "width": 2160,
+            "height": 3840,
+            "pix_fmt": "yuv420p",
+            "nb_read_frames": "3600"
+        }
+    ]
+}
