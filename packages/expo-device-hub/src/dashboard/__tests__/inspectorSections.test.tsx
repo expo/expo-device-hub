@@ -3,6 +3,7 @@ import { type DeviceClient, type DevicePlatform } from '@expo/hub-client';
 import {
   type Device,
   NO_DEVICE_FRAME_DESCRIPTION,
+  NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
 } from '@expo/hub-components';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -1430,6 +1431,23 @@ test('keeps the Android on-screen keyboard row off iOS while device settings loa
   expect(html).not.toContain('>Force on-screen keyboard</span>');
 });
 
+test('disables the keyboard switch on a device with no hardware keyboard', () => {
+  const base = inspectorClient('android');
+  const settings = { ...base, deviceSettings: { 'onscreen-keyboard': 'off' } } as const;
+
+  const without = renderToStaticMarkup(
+    <LogSidebar client={{ ...settings, hardwareKeyboardConnected: false } satisfies DeviceClient} />,
+  );
+  expect(switchMarkup(without, 'Force on-screen keyboard')).toContain('disabled=""');
+  expect(without).toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
+
+  const with_ = renderToStaticMarkup(
+    <LogSidebar client={{ ...settings, hardwareKeyboardConnected: true } satisfies DeviceClient} />,
+  );
+  expect(switchMarkup(with_, 'Force on-screen keyboard')).not.toContain('disabled=""');
+  expect(with_).not.toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
+});
+
 test('offers a keyboard dismiss action on Android only', () => {
   const android = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
   const options = sectionMarkup(android, 'Device options');
@@ -1442,6 +1460,7 @@ test('offers a keyboard dismiss action on Android only', () => {
 test('renders the Android on-screen keyboard switch the backend reports', () => {
   const client = {
     ...inspectorClient('android'),
+    hardwareKeyboardConnected: true,
     deviceSettings: {
       appearance: 'light',
       network: 'on',
