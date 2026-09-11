@@ -26,7 +26,12 @@ def on_message(message, data):
 script.on("message", on_message)
 try:
     script.load()
-    time.sleep(a.seconds)
+    deadline = time.monotonic() + a.seconds
+    while time.monotonic() < deadline:
+        time.sleep(min(30, max(0, deadline - time.monotonic())))
+        if errors:
+            break
+        print(json.dumps({"status": script.exports_sync.status()}), flush=True)
     if errors:
         raise RuntimeError("Injection failed; see the script error above")
     print(json.dumps(script.exports_sync.stop()), flush=True)
