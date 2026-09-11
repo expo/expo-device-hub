@@ -40,7 +40,7 @@ The encoder uses its own hidden static FFmpeg symbols because the emulator expor
 5. Run `bash benchmark.sh 60 720-60`. This waits for boot, launches the animation, measures 20 seconds of display posts without capture, then captures up to 1,800 frames over a 35-second observation window. `sudo` is needed for Frida attach under this worker's ptrace policy.
 6. Run `python3 summarize.py 720-60.h264.csv` and `python3 validate.py 720-60.h264`. Use system FFmpeg/ffprobe to decode or mux the output. For the 120 fps raw stream, explicitly supply the input rate: `ffmpeg -nostdin -r 120 -i 4k-120.h264 -c copy -movflags +faststart 4k-120.mp4`. Raw H.264 has no container timestamps; demuxer rate guesses were inconsistent at 120 fps.
 
-Use a **fresh emulator process for every capture**. `bash stop-emulator.sh` stops only the PID matching the experiment’s `gpu_poc` emulator and waits for it to exit. The prototype intentionally keeps its module, registered textures, encoder allocations and shared contexts until process exit. Wait for the process to exit before restarting the same AVD; remove stale AVD lock files only after verifying its emulator has exited. Never overwrite a shared library while an emulator has it mapped.
+Use a **fresh emulator process for every capture**. `bash stop-emulator.sh` stops only the PID matching `POC_AVD` (default `gpu_poc`) and waits for it to exit. The prototype intentionally keeps its module, registered textures, encoder allocations and shared contexts until process exit. Wait for the process to exit before restarting the same AVD; remove stale AVD lock files only after verifying its emulator has exited. Never overwrite a shared library while an emulator has it mapped.
 
 For portrait 4K, stop the emulator and set `hw.lcd.width=2160` and `hw.lcd.height=3840` in the disposable AVD config. For 120 Hz set `hw.lcd.vsync=120`, launch with `POC_VSYNC=120 bash launch.sh`, then run `bash benchmark.sh 120 4k-120`. The requested rate is not evidence of actual delivered FPS; use capture timestamps and the barcode validation.
 
@@ -129,3 +129,43 @@ Inject with `--fps 120` and a fresh socket path, then launch the Hub using
 The interactive fixture requests 120 Hz and scales its layout with display density.
 Check measured server/client rates in Stream options; the configured rate does
 not guarantee that the full browser loop delivers 120 FPS.
+
+## Pixel 9 profile at 120 Hz
+
+This is the current live experiment configuration. With the SDK and native module
+already prepared, stop the old experiment before creating a **fresh** AVD. Do not
+use `setup-emulator.sh` for this case: that older benchmark helper overrides the
+profile's resolution and density.
+
+```sh
+bash stop-emulator.sh # default: the earlier gpu_poc AVD
+export POC_AVD=pixel9_gpu_live
+export POC_VSYNC=120
+export POC_TRANSPORT=webrtc
+bash setup-pixel9.sh
+bash launch.sh
+# After Android finishes booting:
+adb -s emulator-5554 install -r animation/build/animation.apk
+sudo .venv/bin/python inject.py "$(cat emulator.pid)" \
+  --seconds 1800 --frames 100000000 --fps 120 \
+  --output unix:/tmp/gpu-pixel9-120.sock > pixel9-capture.log 2>&1 &
+# Wait for the injector's ready message before launching the fixture.
+adb -s emulator-5554 shell -n am start -n dev.expo.gpupoc/.LiveActivity
+SERVE_EMU_EXPERIMENTAL_GPU_SOCKET=/tmp/gpu-pixel9-120.sock bash run-hub.sh
+# When done, keep POC_AVD set and run: bash stop-emulator.sh
+```
+
+`setup-pixel9.sh` preserves the generated Pixel 9 profile and changes only
+`hw.lcd.vsync` to 120. On the tested SDK the profile is **1080×2424 at 420 DPI**.
+The launch options remain headless host GPU, Vulkan disabled, KVM, four CPU cores,
+4096 MiB RAM and port 5554. These are the existing runtime options, not extra AVD
+configuration edits. Hub uses native size (`--max-dimension 0`),
+`--video-fps 120`, WebRTC and the same fixed 12 Mbps NVENC encoder.
+
+The fresh worker AVD was verified with `wm size` and `wm density`: physical
+1080×2424 and density 420, with no overrides. Android reported an active 120 Hz
+mode. Comparing its generated config before and after launch found only
+`hw.lcd.vsync: 60 → 120`. Chrome received 1080×2424 WebRTC video, and the old
+emulator process had exited. The sampled source rate was 112 FPS; 120 remains
+the requested rate. Choose a fresh socket path for every injection and keep the
+capture duration inside the remaining worker allocation.
