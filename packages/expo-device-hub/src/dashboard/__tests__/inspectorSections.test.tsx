@@ -1153,7 +1153,7 @@ test('renders the Android accessibility switches the backend reports', () => {
 test('omits the Android accessibility switches the backend does not report', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
-  for (const label of ['Reduce motion', 'Bold text', 'Increase contrast', 'On-screen keyboard']) {
+  for (const label of ['Reduce motion', 'Bold text', 'Increase contrast', 'Force on-screen keyboard']) {
     expect(html).not.toContain(`>${label}<`);
   }
 });
@@ -1421,7 +1421,7 @@ test('keeps the Android on-screen keyboard row off iOS while device settings loa
   );
 
   expect(html).toContain('aria-label="Device options"');
-  expect(html).not.toContain('>On-screen keyboard</span>');
+  expect(html).not.toContain('>Force on-screen keyboard</span>');
 });
 
 test('renders the Android on-screen keyboard switch the backend reports', () => {
@@ -1436,7 +1436,7 @@ test('renders the Android on-screen keyboard switch the backend reports', () => 
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(switchMarkup(html, 'On-screen keyboard')).toContain('aria-checked="true"');
+  expect(switchMarkup(html, 'Force on-screen keyboard')).toContain('aria-checked="true"');
   expect(html).toContain(ONSCREEN_KEYBOARD_DESCRIPTION);
 });
 
