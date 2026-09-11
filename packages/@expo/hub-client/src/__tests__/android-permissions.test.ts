@@ -26,7 +26,7 @@ describe("parseAndroidPermissions", () => {
       }),
     ).toEqual([
       { id: "android.permission.CAMERA", label: "Camera", state: "denied" },
-      { id: "com.example.CUSTOM_THING", label: "Com.example.custom thing", state: "granted" },
+      { id: "com.example.CUSTOM_THING", label: "Custom thing", state: "granted" },
     ]);
   });
 

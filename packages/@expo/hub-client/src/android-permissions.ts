@@ -9,8 +9,6 @@ import {
 } from "./app-permissions";
 import { type AppPermission, type AppPermissionAction } from "./types";
 
-const PREFIX = "android.permission.";
-
 export function parseAndroidPermissions(payload: unknown): AppPermission[] | null {
   const data = asRecord(payload);
   if (!data || data.ok !== true || !Array.isArray(data.permissions)) return null;
@@ -20,7 +18,7 @@ export function parseAndroidPermissions(payload: unknown): AppPermission[] | nul
     if (!item || typeof item.name !== "string" || typeof item.granted !== "boolean") return null;
     permissions.push({
       id: item.name,
-      label: humanize(item.name.startsWith(PREFIX) ? item.name.slice(PREFIX.length) : item.name),
+      label: humanize(item.name),
       state: item.granted ? "granted" : "denied",
     });
   }

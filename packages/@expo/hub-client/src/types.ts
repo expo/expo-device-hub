@@ -606,7 +606,7 @@ export interface DeviceClient {
   permissions: readonly AppPermission[] | null;
   /** Permission ids with a write in flight. A reset holds every id. */
   permissionsPending: ReadonlySet<string>;
-  /** Last failed permission request, cleared when the next write starts. */
+  /** Last failed permission request, cleared when the next write starts or a read succeeds. */
   permissionsError: string | null;
   /** Grant or revoke one permission of the foreground app. */
   setPermission: (id: string, action: AppPermissionAction) => void;

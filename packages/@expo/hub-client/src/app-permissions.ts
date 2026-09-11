@@ -16,7 +16,8 @@ export function asRecord(value: unknown): Record<string, unknown> | null {
 }
 
 export function humanize(name: string): string {
-  const words = name.toLowerCase().replace(/[_-]+/g, " ").trim();
+  const leaf = name.slice(name.lastIndexOf(".") + 1);
+  const words = leaf.toLowerCase().replace(/[_-]+/g, " ").trim();
   return words.charAt(0).toUpperCase() + words.slice(1);
 }
 

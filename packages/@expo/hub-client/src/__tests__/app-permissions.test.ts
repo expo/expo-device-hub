@@ -18,6 +18,7 @@ describe("humanize", () => {
     expect(humanize("ACCESS_FINE_LOCATION")).toBe("Access fine location");
     expect(humanize("photos-add")).toBe("Photos add");
     expect(humanize("camera")).toBe("Camera");
+    expect(humanize("com.example.app.CUSTOM_THING")).toBe("Custom thing");
   });
 });
 
