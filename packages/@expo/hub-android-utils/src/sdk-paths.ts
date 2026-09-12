@@ -22,24 +22,43 @@ export function resolveSdkRoot(env: NodeJS.ProcessEnv, homeDir: string): string 
   return join(homeDir, DEFAULT_SDK_SUBPATH);
 }
 
-/** Build the absolute path to the `avdmanager` binary inside an SDK root. */
-export function avdmanagerPath(sdkRoot: string): string {
-  return join(sdkRoot, AVDMANAGER_SUBPATH);
+/**
+ * Build the absolute path to the `avdmanager` wrapper inside an SDK root.
+ *
+ * The cmdline-tools ship as `.bat` wrappers on Windows. `adb` and `emulator`
+ * need no such suffix: Windows resolves a missing `.exe` on its own.
+ */
+export function avdmanagerPath(
+  sdkRoot: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return join(sdkRoot, cmdlineTool(AVDMANAGER_SUBPATH, platform));
 }
 
 /** Resolve the `avdmanager` path directly from the environment. */
-export function resolveAvdmanagerPath(env: NodeJS.ProcessEnv, homeDir: string): string {
-  return avdmanagerPath(resolveSdkRoot(env, homeDir));
+export function resolveAvdmanagerPath(
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return avdmanagerPath(resolveSdkRoot(env, homeDir), platform);
 }
 
-/** Build the absolute path to the `sdkmanager` binary inside an SDK root. */
-export function sdkmanagerPath(sdkRoot: string): string {
-  return join(sdkRoot, SDKMANAGER_SUBPATH);
+/** Build the absolute path to the `sdkmanager` wrapper inside an SDK root. */
+export function sdkmanagerPath(
+  sdkRoot: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return join(sdkRoot, cmdlineTool(SDKMANAGER_SUBPATH, platform));
 }
 
 /** Resolve the `sdkmanager` path directly from the environment. */
-export function resolveSdkmanagerPath(env: NodeJS.ProcessEnv, homeDir: string): string {
-  return sdkmanagerPath(resolveSdkRoot(env, homeDir));
+export function resolveSdkmanagerPath(
+  env: NodeJS.ProcessEnv,
+  homeDir: string,
+  platform: NodeJS.Platform = process.platform,
+): string {
+  return sdkmanagerPath(resolveSdkRoot(env, homeDir), platform);
 }
 
 /** Build the absolute path to the `emulator` binary inside an SDK root. */
@@ -60,6 +79,10 @@ export function adbPath(sdkRoot: string): string {
 /** Resolve the `adb` path directly from the environment. */
 export function resolveAdbPath(env: NodeJS.ProcessEnv, homeDir: string): string {
   return adbPath(resolveSdkRoot(env, homeDir));
+}
+
+function cmdlineTool(subpath: string, platform: NodeJS.Platform): string {
+  return platform === "win32" ? `${subpath}.bat` : subpath;
 }
 
 function nonEmpty(value: string | undefined): string | null {

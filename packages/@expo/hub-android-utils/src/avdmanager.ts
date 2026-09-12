@@ -1,12 +1,9 @@
-import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { promisify } from "node:util";
 import { type AndroidUtilsResult, reportError, result } from "./errors";
+import { execSdkTool } from "./exec-sdk-tool";
 import { parseConfigIni } from "./parse-config-ini";
 import type { CreateDeviceOptions } from "./types";
-
-const execFileAsync = promisify(execFile);
 
 /**
  * Run `avdmanager list avd` and return its stdout, or `null` on failure.
@@ -16,7 +13,7 @@ export async function runAvdmanagerListAvd(
   avdmanagerPath: string,
 ): Promise<AndroidUtilsResult<string | null>> {
   try {
-    const { stdout } = await execFileAsync(avdmanagerPath, ["list", "avd"]);
+    const { stdout } = await execSdkTool(avdmanagerPath, ["list", "avd"]);
     return result(stdout);
   } catch (error) {
     return result(null, reportError("[android-utils] Failed to run `avdmanager list avd`:", error));
@@ -31,7 +28,7 @@ export async function runAvdmanagerListDevice(
   avdmanagerPath: string,
 ): Promise<AndroidUtilsResult<string | null>> {
   try {
-    const { stdout } = await execFileAsync(avdmanagerPath, ["list", "device"]);
+    const { stdout } = await execSdkTool(avdmanagerPath, ["list", "device"]);
     return result(stdout);
   } catch (error) {
     return result(
@@ -92,7 +89,7 @@ export async function runAvdmanagerCreateAvd(
   const args = buildCreateAvdArgs(options);
 
   try {
-    const { stdout } = await execFileAsync(avdmanagerPath, args);
+    const { stdout } = await execSdkTool(avdmanagerPath, args);
     return result(stdout);
   } catch (error) {
     return result(
@@ -132,7 +129,7 @@ export async function runAvdmanagerDeleteAvd(
   const args = buildDeleteAvdArgs(name);
 
   try {
-    const { stdout } = await execFileAsync(avdmanagerPath, args);
+    const { stdout } = await execSdkTool(avdmanagerPath, args);
     return result(stdout);
   } catch (error) {
     return result(
