@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import {
   carryForwardAppIcon,
   fetchAndroidAppIcon,
-  getAndroidAppIcon,
   parseAndroidAppIcon,
 } from '../android-app-icon';
 
@@ -69,27 +68,6 @@ describe('Android app icon', () => {
     );
   });
 
-  test('caches a resolved icon and retries after a failure', async () => {
-    let calls = 0;
-    const fetchImpl = (async () => {
-      calls += 1;
-      return calls === 1
-        ? new Response('nope', { status: 503 })
-        : new Response(
-            JSON.stringify({ ok: true, packageName: 'com.example.app', icon: { mimeType: 'image/png', data: 'aWNvbg==' } }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } },
-          );
-    }) as unknown as typeof fetch;
-
-    await expect(getAndroidAppIcon(BASE, 'a', 'com.example.app', fetchImpl)).rejects.toThrow();
-    expect(await getAndroidAppIcon(BASE, 'a', 'com.example.app', fetchImpl)).toBe(
-      'data:image/png;base64,aWNvbg==',
-    );
-    expect(await getAndroidAppIcon(BASE, 'a', 'com.example.app', fetchImpl)).toBe(
-      'data:image/png;base64,aWNvbg==',
-    );
-    expect(calls).toBe(2);
-  });
 });
 
 describe('parseAndroidAppIcon', () => {

@@ -28,7 +28,7 @@ import {
 import { apiUrl, deviceApiUrl } from './android-api-url';
 import { readAndroidLocation, writeAndroidLocation } from './android-location';
 import { androidPermissionsBackend } from './android-permissions';
-import { carryForwardAppIcon, getAndroidAppIcon } from './android-app-icon';
+import { carryForwardAppIcon, fetchAndroidAppIcon } from './android-app-icon';
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
@@ -1764,7 +1764,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   useEffect(() => {
     if (!active || !baseUrl || !foregroundAppId) return;
     let cancelled = false;
-    getAndroidAppIcon(baseUrl, targetDevice, foregroundAppId)
+    fetchAndroidAppIcon(baseUrl, targetDevice, foregroundAppId)
       .then((iconDataUrl) => {
         if (cancelled || !iconDataUrl) return;
         setForegroundApp((prev) =>
