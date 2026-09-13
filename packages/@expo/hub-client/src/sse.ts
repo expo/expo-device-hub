@@ -3,10 +3,10 @@ export interface ParsedSseBlock {
   data: string;
 }
 
-export type SseFetch = (input: string, init?: RequestInit) => Promise<Response>;
+export type FetchLike = (input: string, init?: RequestInit) => Promise<Response>;
 
 export interface SseSnapshotOptions {
-  fetchImpl?: SseFetch;
+  fetchImpl?: FetchLike;
   signal: AbortSignal;
   settleMs: number;
 }

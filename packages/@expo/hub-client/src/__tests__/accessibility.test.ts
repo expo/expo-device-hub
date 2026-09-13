@@ -7,7 +7,7 @@ import {
   parseAndroidAccessibility,
   parseIosAccessibility,
 } from '../accessibility';
-import { type SseFetch } from '../sse';
+import { type FetchLike } from '../sse';
 import { type AccessibilitySnapshot } from '../types';
 
 const CAPTURED_AT = '2026-09-09T10:00:00.000Z';
@@ -267,7 +267,7 @@ describe('parseIosAccessibility', () => {
 describe('loadAndroidAccessibility', () => {
   test('reads the given URL without a cache and parses the body', async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
-    const fetchImpl: SseFetch = (url, init) => {
+    const fetchImpl: FetchLike = (url, init) => {
       calls.push({ url, init });
       return Promise.resolve(Response.json(androidBody([androidNode({ text: 'Hi' })])));
     };
@@ -282,7 +282,7 @@ describe('loadAndroidAccessibility', () => {
   });
 
   test('reports the status when the body is not JSON', async () => {
-    const fetchImpl: SseFetch = () => Promise.resolve(new Response('Bad Gateway', { status: 502 }));
+    const fetchImpl: FetchLike = () => Promise.resolve(new Response('Bad Gateway', { status: 502 }));
     const read = await loadAndroidAccessibility(
       'http://emu/api/accessibility',
       new AbortController().signal,
@@ -293,7 +293,7 @@ describe('loadAndroidAccessibility', () => {
 });
 
 describe('loadIosAccessibility', () => {
-  function axFetch(payloads: readonly unknown[]): SseFetch {
+  function axFetch(payloads: readonly unknown[]): FetchLike {
     return () => {
       const encoder = new TextEncoder();
       const stream = new ReadableStream<Uint8Array>({
@@ -324,7 +324,7 @@ describe('loadIosAccessibility', () => {
   });
 
   test('surfaces the HTTP status when the route refuses the device', async () => {
-    const fetchImpl: SseFetch = () =>
+    const fetchImpl: FetchLike = () =>
       Promise.resolve(new Response('No serve-sim device', { status: 404 }));
     await expect(
       loadIosAccessibility('http://sim/ax', new AbortController().signal, fetchImpl, () => CAPTURED_AT_MS),
@@ -342,7 +342,7 @@ describe('loadIosAccessibility', () => {
   });
 
   test('rejects a block that is not JSON', async () => {
-    const fetchImpl: SseFetch = () =>
+    const fetchImpl: FetchLike = () =>
       Promise.resolve(
         new Response(
           new ReadableStream<Uint8Array>({

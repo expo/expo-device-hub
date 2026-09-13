@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type ParsedSseBlock, type SseFetch, drainSseChunk, readSseSnapshot } from '../sse';
+import { type ParsedSseBlock, type FetchLike, drainSseChunk, readSseSnapshot } from '../sse';
 
 function drainAll(chunks: readonly string[]): { blocks: ParsedSseBlock[]; tail: string } {
   const blocks: ParsedSseBlock[] = [];
@@ -44,7 +44,7 @@ interface SseScript {
   fail: (cause: Error) => void;
 }
 
-function sseFetch(script: (emit: SseScript) => void): SseFetch {
+function sseFetch(script: (emit: SseScript) => void): FetchLike {
   return (_url, init) => {
     const encoder = new TextEncoder();
     let controller!: ReadableStreamDefaultController<Uint8Array>;
@@ -120,7 +120,7 @@ describe('readSseSnapshot', () => {
   });
 
   test('rejects a non-2xx answer with its status instead of draining the body as SSE', async () => {
-    const fetchImpl: SseFetch = () =>
+    const fetchImpl: FetchLike = () =>
       Promise.resolve(new Response('No serve-sim device', { status: 404 }));
     await expect(
       readSseSnapshot('http://sim/ax', {

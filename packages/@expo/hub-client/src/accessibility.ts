@@ -1,11 +1,14 @@
-import { type SseFetch, readSseSnapshot } from './sse';
+import { type FetchLike, readSseSnapshot } from './sse';
 import {
   type AccessibilityFrame,
   type AccessibilityNode,
   type AccessibilitySnapshot,
 } from './types';
 
-/** serve-sim replays a cached snapshot on connect and writes the fresh poll ~1.3 s later. */
+/**
+ * serve-sim replays a cached snapshot on connect and writes the fresh poll ~1.3 s later, but only
+ * when the tree changed, so an unchanged screen never sends the second block and waits this out.
+ */
 export const IOS_AX_SETTLE_MS = 2000;
 
 export const IOS_CLICKABLE_ROLES: ReadonlySet<string> = new Set([
@@ -191,7 +194,7 @@ export function parseIosAccessibility(value: unknown, capturedAt: number): Acces
 export async function loadAndroidAccessibility(
   url: string,
   signal: AbortSignal,
-  fetchImpl: SseFetch = fetch,
+  fetchImpl: FetchLike = fetch,
 ): Promise<AccessibilityRead> {
   const response = await fetchImpl(url, { cache: 'no-store', signal });
   let body: unknown;
@@ -206,7 +209,7 @@ export async function loadAndroidAccessibility(
 export async function loadIosAccessibility(
   url: string,
   signal: AbortSignal,
-  fetchImpl: SseFetch = fetch,
+  fetchImpl: FetchLike = fetch,
   now: () => number = Date.now,
 ): Promise<AccessibilityRead> {
   const data = await readSseSnapshot(url, { fetchImpl, signal, settleMs: IOS_AX_SETTLE_MS });
