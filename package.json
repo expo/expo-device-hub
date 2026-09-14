@@ -19,6 +19,7 @@
     "packages": [
       "packages/expo-device-hub",
       "packages/@expo/hub-*",
+      "packages/@expo/emulator-capture",
       "packages/serve-sim/packages/*",
       "packages/serve-emu/packages/*",
       "example"

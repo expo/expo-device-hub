@@ -27,6 +27,13 @@
         "typescript": "~6.0.3",
       },
     },
+    "packages/@expo/emulator-capture": {
+      "name": "@expo/emulator-capture",
+      "version": "0.0.0-experimental.0",
+      "bin": {
+        "emulator-capture": "src/cli.mjs",
+      },
+    },
     "packages/@expo/hub-android-utils": {
       "name": "@expo/hub-android-utils",
       "version": "0.1.0",
@@ -107,7 +114,7 @@
     },
     "packages/expo-device-hub": {
       "name": "expo-device-hub",
-      "version": "0.9.0",
+      "version": "0.10.1",
       "bin": {
         "expo-device-hub": "dist/server/cli.mjs",
       },
@@ -444,6 +451,8 @@
     "@expo/config-types": ["@expo/config-types@57.0.2", "", {}, "sha512-ewW08OonrcRIsRKIlFvvcmmafE5zemb1ocu3HkNwtVPyRtj2w42pZCAkMIROYpcVBaPnc3mDT9UZDzwXWC3i6g=="],
 
     "@expo/devcert": ["@expo/devcert@1.2.1", "", { "dependencies": { "@expo/sudo-prompt": "^9.3.1", "debug": "^3.1.0" } }, "sha512-qC4eaxmKMTmJC2ahwyui6ud8f3W60Ss7pMkpBq40Hu3zyiAaugPXnZ24145U7K36qO9UHdZUVxsCvIpz2RYYCA=="],
+
+    "@expo/emulator-capture": ["@expo/emulator-capture@workspace:packages/@expo/emulator-capture"],
 
     "@expo/devtools": ["@expo/devtools@57.0.1", "", { "dependencies": { "chalk": "^4.1.2" }, "peerDependencies": { "react": "*", "react-native": "*" }, "optionalPeers": ["react", "react-native"] }, "sha512-GyUf+wFNkbttaX0jR7MZa9bm77U0IrLg6d2AjpxdyoXw/w4abHoXG0oFufwLMgP9zLTd5+Ct4X/ffNUTnlzZgg=="],
 
