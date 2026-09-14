@@ -1,0 +1,36 @@
+{
+  "name": "@expo/emulator-capture",
+  "version": "0.0.0-experimental.0",
+  "private": true,
+  "description": "Experimental Linux NVIDIA emulator GPU capture using native FridaInjector, Gum and NVENC",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "emulator-capture": "src/cli.mjs"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md",
+    "LICENSE",
+    "scripts/*.mjs",
+    "tests/*.mjs",
+    "tests/*.cpp"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "bun run setup:build && bun run setup:frida && bun run build:ffmpeg && bun run build:scale && bun run build:native",
+    "setup:build": "bun scripts/setup-build.mjs",
+    "setup:frida": "bun scripts/setup-frida.mjs",
+    "build:ffmpeg": "bun scripts/build-ffmpeg.mjs",
+    "build:scale": "bun scripts/compile-scale.mjs",
+    "build:native": "bun scripts/build.mjs",
+    "capture": "node src/cli.mjs",
+    "test": "node --test tests/package.test.mjs tests/summarize.test.mjs && npm run test:native",
+    "test:native": "bun scripts/test-native.mjs",
+    "benchmark": "bun scripts/benchmark.mjs",
+    "eval:summarize": "bun scripts/summarize.mjs"
+  }
+}
