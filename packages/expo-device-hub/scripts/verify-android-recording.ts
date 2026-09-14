@@ -81,21 +81,27 @@ try {
   assert.equal(beforeViewer.clients, 0);
   assert(beforeViewer.screenRecording.frames > 0);
 
-  const viewer = new WebSocket(`${base.replace('http:', 'ws:')}/vendor/serve-emu/ws`);
-  socket = viewer;
-  await new Promise<void>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error('No preview video received')), 10_000);
-    viewer.on('message', (_data, isBinary) => {
-      if (isBinary) {
-        clearTimeout(timeout);
-        resolve();
-      }
+  for (let visit = 0; visit < 2; visit++) {
+    const viewer = new WebSocket(`${base.replace('http:', 'ws:')}/vendor/serve-emu/ws`);
+    socket = viewer;
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('No preview video received')), 10_000);
+      viewer.on('message', (_data, isBinary) => {
+        if (isBinary) {
+          clearTimeout(timeout);
+          resolve();
+        }
+      });
+      viewer.once('error', reject);
     });
-    viewer.once('error', reject);
-  });
-  await delay(1_000);
-  socket.close();
-  await delay(3_000);
+    await delay(1_000);
+    socket.close();
+    await delay(3_000);
+    const betweenVisits = await health();
+    assert.equal(betweenVisits.clients, 0);
+    assert.equal(betweenVisits.screenRecording.firstFrameAt, initial.screenRecording.firstFrameAt);
+    assert.equal(betweenVisits.screenRecording.status, 'recording');
+  }
   const afterViewer = await health();
   assert.equal(afterViewer.clients, 0);
   assert.equal(afterViewer.screenRecording.firstFrameAt, initial.screenRecording.firstFrameAt);

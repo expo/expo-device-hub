@@ -28,16 +28,23 @@ time, frame count, queue size, and any failure.
 ## EAS integration
 
 The companion change in `eas-cli/packages/build-tools` enables recording when the
-build-step environment contains `EAS_ANDROID_SESSION_RECORDING=1`. Use a Device Hub
-package version containing this PoC through the existing `package_version` input;
-the currently published package is not changed by this branch.
+build-step environment contains `EAS_ANDROID_SESSION_RECORDING=1`. The web-preview-only
+step accepts a Device Hub version through `package_version`. Other remote-session
+steps use that input for their tool package, not Device Hub, and launch the latest
+Device Hub. Neither repository's published packages change when you check out this branch.
 
 EAS creates a fresh local directory and passes a random control token through the
 child environment. On session stop it calls `POST /_eas/android-recording/stop`
-with the token, waits up to 60 seconds for finalization, stops the preview process,
+with the token, waits up to 60 seconds for finalization, stops the local Hub process,
 then passes the result to the existing screen-recording uploader. Stop calls are
 idempotent. The process has a 70-second shutdown allowance when recording is on.
 Upload failures are logged without hiding the local artifacts.
+
+The EAS session host owns recording and the local process. Preview handles own only
+their ngrok tunnels. Closing and reopening a preview does not stop recording.
+`AndroidSession` in Hub owns startup, result publication, and shutdown, while the
+serve-emu router owns capture and MP4 muxing. This separation does not provide
+recovery after the Hub process crashes.
 
 The upload retains the existing contract: artifact kind `screen-recording`,
 `__eas_screen_recording=1`, emulator metadata, dimensions, and `firstFrameAt`.
@@ -81,7 +88,7 @@ bun packages/expo-device-hub/scripts/verify-android-recording.ts scrcpy endpoint
 ```
 
 The live script uses the built Node CLI, starts with zero viewers, connects and
-disconnects a WebSocket viewer, verifies stop-endpoint authentication, finalizes,
+disconnects a WebSocket viewer twice, verifies stop-endpoint authentication, finalizes,
 and checks the MP4 with `ffprobe` and a full ffmpeg decode. It checks increasing
 packet timestamps and compares duration to wall time. It retains the video,
 server log, and `verification.json` in a fresh temporary directory.
