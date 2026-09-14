@@ -1,7 +1,3 @@
-import { randomUUID } from 'node:crypto';
-import { mkdir, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-
 // @ts-ignore vendored module, absent until `bun run build:vendor`
 import {
   cameraLaunchArgs,
@@ -12,7 +8,7 @@ import {
 } from '../../vendor/serve-emu/dist/middleware.js';
 
 import { type EmulatorCameraFeeds } from './device-actions';
-import { listAndroidEmulators } from './devices';
+import { AndroidSession } from './android-session';
 import {
   readStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
@@ -29,53 +25,14 @@ export const emuCameraFeeds: EmulatorCameraFeeds = {
   seedPlaceholders: seedCameraFeeds,
 };
 
-let recordingDirectory: string | null = null;
-let shutdownTask: Promise<void> | null = null;
-let finishTask: Promise<void> | null = null;
+const androidSession = new AndroidSession(router);
 
-export async function startAndroidScreenRecording(directory: string): Promise<void> {
-  const { devices, error } = await listAndroidEmulators();
-  const booted = devices.filter(device => device.booted && !device.physical);
-  const device = booted[0];
-  if (booted.length !== 1 || !device) {
-    throw new Error(
-      `Android recording requires exactly one booted emulator; found ${booted.length}.${error ? ` ${error.message}` : ''}`
-    );
-  }
-  await mkdir(directory, { recursive: true });
-  // Reserve the result file exclusively so a previous session cannot be uploaded accidentally.
-  await writeFile(join(directory, 'recordings.json'), '[]', { flag: 'wx' });
-  recordingDirectory = directory;
-  await router.startScreenRecording({
-    directory: join(directory, randomUUID()),
-    udid: device.id,
-    deviceName: device.name,
-    runtimeDisplayName: device.version,
-  });
-}
+export const startAndroidScreenRecording = (directory: string): Promise<void> =>
+  androidSession.startRecording(directory);
 
-export function finishAndroidScreenRecording(): Promise<void> {
-  return (finishTask ??= (async () => {
-    const recording = await router.finishScreenRecording();
-    if (recordingDirectory && recording) {
-      const resultPath = join(recordingDirectory, 'recordings.json');
-      await writeFile(`${resultPath}.partial`, JSON.stringify([recording]));
-      await rename(`${resultPath}.partial`, resultPath);
-    }
-  })());
-}
+export const finishAndroidScreenRecording = (): Promise<void> => androidSession.finishRecording();
 
-export function shutdownAndroid(): Promise<void> {
-  if (shutdownTask) return shutdownTask;
-  shutdownTask = (async () => {
-    try {
-      await finishAndroidScreenRecording();
-    } finally {
-      await router.stopAll();
-    }
-  })();
-  return shutdownTask;
-}
+export const shutdownAndroid = (): Promise<void> => androidSession.shutdown();
 
 // Preserve embedded-host cleanup. The CLI awaits the same shutdown promise before exiting.
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {
