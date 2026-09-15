@@ -9,7 +9,7 @@ and include enough verification detail for reviewers to reproduce your results.
 
 Required for the device-free development and CI checks:
 
-- Bun 1.3.13 (the version pinned by the repository)
+- Bun 1.3.14 (the version pinned by the repository)
 - Node.js 18+
 
 Optional prerequisites for manual runtime validation:

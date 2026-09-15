@@ -83,7 +83,7 @@ or `bun install` fails with `listed in bun.lock but not on disk`:
 bun run submodule:init   # git submodule update --init --recursive
 ```
 
-Then install dependencies with Bun 1.3.13 and build every package once from the repo root:
+Then install dependencies with Bun 1.3.14 and build every package once from the repo root:
 
 ```sh
 bun install
