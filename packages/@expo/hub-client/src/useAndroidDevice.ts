@@ -44,6 +44,7 @@ import {
   androidStreamSourceErrorMessage,
   parseAndroidStreamSource,
 } from './android-stream-source';
+import { androidTouchMessage } from './android-touch';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
 import { KeyedWriteTracker } from './keyed-write-tracker';
@@ -85,6 +86,7 @@ import {
   type ForegroundApp,
   type HardwareButton,
   type KeyboardInput,
+  type MultiTouchSample,
   type RunningDevice,
   type ScreenSize,
   type TouchSample,
@@ -126,8 +128,6 @@ const BUTTON_MESSAGE: Record<HardwareButton, Record<string, unknown> | null> = {
   appSwitcher: { type: 'recents' },
   power: { type: 'power' },
 };
-
-const TOUCH_ACTION = { begin: 'down', move: 'move', end: 'up' } as const;
 
 export function androidWsUrlFor(
   baseUrl: string,
@@ -338,7 +338,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const sendTouch = useCallback(
     (sample: TouchSample) => {
-      send({ type: 'touch', action: TOUCH_ACTION[sample.phase], x: sample.x, y: sample.y, pointerId: 0 });
+      send(androidTouchMessage(sample.phase, sample, 0));
+    },
+    [send],
+  );
+
+  // scrcpy derives ACTION_POINTER_DOWN from the second pointer, so 0 goes first.
+  const sendMultiTouch = useCallback(
+    (sample: MultiTouchSample) => {
+      send(androidTouchMessage(sample.phase, sample.a, 0));
+      send(androidTouchMessage(sample.phase, sample.b, 1));
     },
     [send],
   );
@@ -1811,6 +1820,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     videoKind: useWebRtc ? 'video' : 'canvas',
     attachVideo,
     sendTouch,
+    sendMultiTouch,
     sendKey,
     pressButton,
     reload,
