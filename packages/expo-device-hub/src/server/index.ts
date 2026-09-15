@@ -21,7 +21,7 @@ import {
   removeHubDevice,
   shutdownHubDevice,
 } from './device-actions';
-import { configureClientShell } from './client-shell';
+import { configureClientShell, isClientShellRequest } from './client-shell';
 import { argentInteractionWebSocketHandler } from './argent-interaction-websocket';
 import { deviceListWebSocketHandler, refreshDeviceList } from './device-list-websocket';
 import { type HubDeviceList, listDevices } from './devices';
@@ -99,7 +99,7 @@ export default async function handler(request: Request): Promise<Response | null
   });
   if (easResponse) return easResponse;
 
-  if (request.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
+  if (isClientShellRequest(request)) {
     return serveClientIndexHtml();
   }
 
