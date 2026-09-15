@@ -1,9 +1,10 @@
 # Releasing
 
-This monorepo publishes two public packages:
+This monorepo publishes these public packages:
 
 - **`expo-device-hub`** — the DevTools plugin.
 - **`@expo/hub-client`** — the device-client hooks and the `DeviceScreen` component.
+- **`@expo/emulator-capture`** — experimental Linux x64 NVIDIA capture binaries and CLI.
 
 Every other workspace package is marked `private` and is skipped by the release tooling.
 
@@ -24,7 +25,7 @@ Any change that should ship needs a changeset. From the repo root:
 bun changeset
 ```
 
-Select the package(s) you changed (`expo-device-hub` and/or `@expo/hub-client`), choose the
+Select the package(s) you changed (`expo-device-hub`, `@expo/hub-client`, and/or `@expo/emulator-capture`), choose the
 bump level (`patch` / `minor` / `major`), and write a summary. Changes to private workspace
 packages that ship inside `expo-device-hub` belong in the `expo-device-hub` changeset. Commit
 the generated `.changeset/*.md` file with your PR. Multiple PRs accumulate multiple changesets —
@@ -53,8 +54,8 @@ bumps a package, the canary uses that version directly (e.g. `0.3.0` with a mino
 a pending changeset, so you can publish one from any commit.
 
 Real releases only version and publish the packages that have a changeset; the others stay put.
-Canary releases assign every public package a canary version so they can also run without
-pending changesets.
+Canary releases assign every public package a canary version and pin their internal runtime
+dependencies to the matching canary versions, so they can also run without pending changesets.
 
 ## One-time setup for a new public package
 
