@@ -3,10 +3,9 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { supportsNative } from "../scripts/platform.mjs";
 
-if (!supportsNative()) {
-  console.error("[emulator-capture] Capture requires Linux x64 with NVIDIA; only build/setup scripts skip unsupported hosts.");
+if (process.platform !== "linux" || process.arch !== "x64") {
+  console.error("[emulator-capture] Capture requires Linux x64 (with NVIDIA GPU).");
   process.exit(1);
 }
 const binary = fileURLToPath(new URL("../dist/linux-x64/inject", import.meta.url));

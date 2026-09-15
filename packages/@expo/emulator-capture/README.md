@@ -47,8 +47,8 @@ workflow integration helpers are maintained outside this repository.
 Build and benchmark helpers use JavaScript and Bun Shell (tested with Bun 1.3.14).
 All maintained scripts are `.mjs`; FFmpeg still uses its upstream
 configure/Makefile internally.
-Package commands invoke their script files directly; `build` chains the five
-steps below. Run them from this directory:
+Package commands invoke their script files directly; `build` runs dependency
+setup followed by the three build steps below. Run them from this directory:
 
 ```sh
 npm run build
@@ -63,9 +63,8 @@ A GPU is required to run capture, not to compile it.
 
 | Script | Role |
 | --- | --- |
-| `build` | Runs all five build steps below in order |
-| `setup:build` | Downloads checksum-verified NVRTC, fetches nv-codec-headers |
-| `setup:frida` | Downloads checksum-verified native Frida Core/Gum devkits |
+| `build` | Runs setup, then FFmpeg, scale, and native builds in order |
+| `setup:build` | Downloads checksum-verified NVRTC and Frida Core/Gum devkits; fetches nv-codec-headers and FFmpeg source |
 | `build:ffmpeg` | Builds restricted static FFmpeg libraries with Clang |
 | `build:scale` | Compiles `src/scale.cu` to `build/scale-ptx.h` using Bun FFI/NVRTC |
 | `build:native` | Links and strips both native artifacts |
@@ -84,7 +83,7 @@ hosts with limited memory.
 On macOS, Windows and unsupported architectures, build/setup/native helper
 scripts warn and exit successfully before downloads, native tools or FFI
 initialization. Bun must be installed to invoke these scripts on any host.
-They produce no Linux artifacts. Package tests still run; native tests skip. The JavaScript CSV summary works
+They produce no Linux artifacts. Native tests also skip. The JavaScript CSV summary works
 on all platforms.
 Capture itself fails explicitly on unsupported hosts. Cross-compilation and
 install/postinstall hooks are not provided.
@@ -125,8 +124,8 @@ npm run benchmark -- 12345 120 30
 npm run eval:summarize -- /absolute/capture.h264.csv
 ```
 
-`npm test` runs the Node package/platform tests and the C++ format/pacing test.
-`test:native` can also be run separately. These tests require no emulator.
+`npm test` runs the C++ format/pacing test through `test:native`.
+This test requires no emulator.
 
 `benchmark` attaches to an existing emulator: it counts posts for 10 seconds,
 then captures at the requested FPS for the requested frame count, with a
