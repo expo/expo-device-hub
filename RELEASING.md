@@ -58,8 +58,8 @@ bumps a package, the canary uses that version directly (e.g. `0.3.0` with a mino
 a pending changeset, so you can publish one from any commit.
 
 Real releases only version and publish the packages that have a changeset; the others stay put.
-Canary releases assign every public package a canary version so they can also run without
-pending changesets.
+Canary releases assign every public package a canary version and pin their internal runtime
+dependencies to the matching canary versions, so they can also run without pending changesets.
 
 ## One-time setup for a new public package
 

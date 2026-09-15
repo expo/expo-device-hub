@@ -44,6 +44,7 @@
     "/expo-module.config.json"
   ],
   "dependencies": {
+    "@expo/emulator-capture": "0.0.0",
     "@fastify/busboy": "^3.2.0",
     "mediabunny": "1.55.3",
     "node-datachannel": "^0.32.3",
