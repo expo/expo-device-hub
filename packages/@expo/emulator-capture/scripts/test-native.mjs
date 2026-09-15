@@ -1,11 +1,14 @@
-import { skipUnlessNative } from "./platform.mjs";
-
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { $, root } from "./common.mjs";
+import { unlessLinux64 } from "./platform.mjs";
 
-skipUnlessNative("test:native");
+unlessLinux64("test:native");
 
-await mkdir(join(root, "build"), { recursive: true });
-await $`clang++ -std=c++17 tests/stream-format.test.cpp -o build/stream-format-test`;
-await $`./build/stream-format-test`;
+const buildDirectory = join(root, "build");
+const testSourcePath = "tests/stream-format.test.cpp";
+const testBinaryPath = "build/stream-format-test";
+
+await mkdir(buildDirectory, { recursive: true });
+await $`clang++ -std=c++17 ${testSourcePath} -o ${testBinaryPath}`;
+await $`./${testBinaryPath}`;
