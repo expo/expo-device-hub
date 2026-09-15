@@ -107,7 +107,7 @@
     },
     "packages/expo-device-hub": {
       "name": "expo-device-hub",
-      "version": "0.9.0",
+      "version": "0.10.1",
       "bin": {
         "expo-device-hub": "dist/server/cli.mjs",
       },
@@ -192,6 +192,18 @@
         "tailwindcss": "^4.1.7",
         "typescript": "^5.7.0",
         "werift": "^0.24.4",
+      },
+    },
+    "packages/web-animation-test": {
+      "name": "web-animation-test",
+      "version": "1.0.0",
+      "dependencies": {
+        "@expo/metro-runtime": "catalog:",
+        "expo": "catalog:",
+        "react": "catalog:",
+        "react-dom": "catalog:",
+        "react-native": "catalog:",
+        "react-native-web": "catalog:",
       },
     },
   },
@@ -2178,6 +2190,8 @@
     "walker": ["walker@1.0.8", "", { "dependencies": { "makeerror": "1.0.12" } }, "sha512-ts/8E8l5b7kY0vlWLewOkDXMmPdLcVV4GmOQLyxuSswIJsweeFZtAsMF7k1Nszz+TYBQrlYRmzOnr398y1JemQ=="],
 
     "wcwidth": ["wcwidth@1.0.1", "", { "dependencies": { "defaults": "^1.0.3" } }, "sha512-XHPEwS0q6TaxcvG85+8EYkbiCux2XtWG2mkc47Ng2A77BQu9+DqIOJldST4HgPkuea7dvKSj5VgX3P1d4rW8Tg=="],
+
+    "web-animation-test": ["web-animation-test@workspace:packages/web-animation-test"],
 
     "web-worker": ["web-worker@1.5.0", "", {}, "sha512-RiMReJrTAiA+mBjGONMnjVDP2u3p9R1vkcGz6gDIrOMT3oGuYwX2WRMYI9ipkphSuE5XKEhydbhNEJh4NY9mlw=="],
 
