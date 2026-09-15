@@ -2,7 +2,7 @@
   "name": "@expo/emulator-capture",
   "version": "0.0.0-experimental.0",
   "private": true,
-  "description": "Experimental Linux NVIDIA emulator GPU capture using native FridaInjector, Gum and NVENC",
+  "description": "Experimental high performance Linux NVIDIA emulator GPU capture using native FridaInjector, Gum and NVENC",
   "license": "MIT",
   "type": "module",
   "bin": {
