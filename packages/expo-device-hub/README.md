@@ -23,6 +23,7 @@ with it, and manage which devices are running from one place.
 - Follows your system light/dark theme, and can flip the device's appearance too.
 - Feed an Android emulator's camera a PNG from the inspector's Camera section.
 - Point an emulator or simulator at a coordinate from the inspector's Location section.
+- Grant, revoke, and reset the foreground app's permissions from the inspector's Permissions section (Android).
 
 > iOS simulators require macOS with Xcode. Android emulators require the Android SDK
 > (`emulator`, `adb`).

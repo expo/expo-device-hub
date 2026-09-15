@@ -77,6 +77,7 @@ import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
 import { useAccessibility } from './useAccessibility';
+import { useAppPermissions } from './useAppPermissions';
 import { useAvccStream } from './useAvccStream';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
@@ -1032,6 +1033,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     locationCapabilities,
   } = useDeviceLocation(locationBackend);
 
+  // serve-sim exposes permissions over its CLI channel only, so the Hub has no
+  // route to read them. The section stays hidden until serve-sim serves them.
+  const appPermissions = useAppPermissions({ active, appId: null, backend: null });
+
   useEffect(() => {
     setEventLogState(createIosEventLogState());
   }, [eventsPath, deviceUdid]);
@@ -1369,6 +1374,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     locationError,
     setLocation,
     clearLocation,
+    ...appPermissions,
     streamCapabilities: IOS_STREAM_CAPABILITIES,
     streamSettings,
     streamSettingsPending,
@@ -1400,6 +1406,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
         : false,
       location: locationCapabilities,
+      permissions: false,
     },
     foregroundApp,
     videoKind: useWebRtc ? 'video' : useAvcc ? 'canvas' : 'img',
