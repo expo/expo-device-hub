@@ -1,12 +1,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import {
-  EncodedPacket,
-  EncodedVideoPacketSource,
-  FilePathTarget,
-  Mp4OutputFormat,
-  Output,
-} from "mediabunny";
+import { EncodedPacket, EncodedVideoPacketSource, Mp4OutputFormat, Output } from "mediabunny";
+import { createRecordingFileTarget } from "./recording-file-target.ts";
 import type { VideoPacket } from "./scrcpy.ts";
 
 type RecordingMetadata = {
@@ -38,23 +33,45 @@ export type RecordingWriter = {
   cancel(): Promise<void>;
 };
 
-type WriterOptions = { path: string; codec: string; width: number; height: number };
+export const DEFAULT_RECORDING_LIMITS = {
+  maxFileBytes: 2 * 1024 ** 3,
+  maxDurationMs: 60 * 60 * 1000,
+  minFreeBytes: 256 * 1024 ** 2,
+};
+type WriterOptions = {
+  path: string;
+  codec: string;
+  width: number;
+  height: number;
+  maxFileBytes: number;
+  minFreeBytes: number;
+};
+
 export type RecordingOptions = RecordingMetadata & {
   directory: string;
   maxQueuedBytes?: number;
+  maxFileBytes?: number;
+  maxDurationMs?: number;
+  minFreeBytes?: number;
   /** Test seam. Production uses a host monotonic clock paired with epoch time. */
   clock?: { monotonicUs(): bigint; epochMs(): number };
   createWriter?: (options: WriterOptions) => Promise<RecordingWriter>;
 };
 
 async function createMp4Writer(options: WriterOptions): Promise<RecordingWriter> {
+  const file = await createRecordingFileTarget(options);
   const output = new Output({
     format: new Mp4OutputFormat({ fastStart: false }),
-    target: new FilePathTarget(options.path),
+    target: file.target,
   });
   const source = new EncodedVideoPacketSource("avc");
   output.addVideoTrack(source);
-  await output.start();
+  try {
+    await output.start();
+  } catch (error) {
+    await file.close();
+    throw error;
+  }
   let sequence = 0;
   return {
     async add(sample) {
@@ -78,8 +95,20 @@ async function createMp4Writer(options: WriterOptions): Promise<RecordingWriter>
           : undefined,
       );
     },
-    finish: () => output.finalize(),
-    cancel: () => output.cancel(),
+    finish: async () => {
+      try {
+        await output.finalize();
+      } finally {
+        await file.close();
+      }
+    },
+    cancel: async () => {
+      try {
+        await output.cancel();
+      } finally {
+        await file.close();
+      }
+    },
   };
 }
 
@@ -123,6 +152,9 @@ export class ScreenRecording {
   #manifestWrites: Promise<void> = Promise.resolve();
   #queuedBytes = 0;
   #frames = 0;
+  #durationTimer: ReturnType<typeof setTimeout> | null = null;
+  #stopReason: "session-stop" | "duration-limit" = "session-stop";
+  readonly #limits: typeof DEFAULT_RECORDING_LIMITS;
   #finishTask: Promise<ScreenRecordingResult> | null = null;
   #failureTask: Promise<void> | null = null;
   #readyResolve!: () => void;
@@ -131,6 +163,11 @@ export class ScreenRecording {
 
   private constructor(options: RecordingOptions) {
     this.#options = options;
+    this.#limits = {
+      maxFileBytes: options.maxFileBytes ?? DEFAULT_RECORDING_LIMITS.maxFileBytes,
+      maxDurationMs: options.maxDurationMs ?? DEFAULT_RECORDING_LIMITS.maxDurationMs,
+      minFreeBytes: options.minFreeBytes ?? DEFAULT_RECORDING_LIMITS.minFreeBytes,
+    };
     this.#clock = options.clock ?? {
       monotonicUs: () => BigInt(Math.round(performance.now() * 1000)),
       epochMs: () => Date.now(),
@@ -144,6 +181,20 @@ export class ScreenRecording {
   }
 
   static async create(options: RecordingOptions): Promise<ScreenRecording> {
+    for (const [name, value] of Object.entries({
+      maxFileBytes: options.maxFileBytes,
+      maxDurationMs: options.maxDurationMs,
+      minFreeBytes: options.minFreeBytes,
+    })) {
+      if (
+        value !== undefined &&
+        (!Number.isSafeInteger(value) ||
+          value < (name === "minFreeBytes" ? 0 : 1) ||
+          (name === "maxDurationMs" && value > 86_400_000))
+      ) {
+        throw new Error(`Invalid recording limit ${name}.`);
+      }
+    }
     // The caller supplies a fresh session directory. Never overwrite another recording.
     await mkdir(options.directory, { recursive: false });
     const recording = new ScreenRecording(options);
@@ -221,6 +272,8 @@ export class ScreenRecording {
           path: join(this.#options.directory, "recording.mp4.partial"),
           codec,
           ...size,
+          maxFileBytes: this.#limits.maxFileBytes,
+          minFreeBytes: this.#limits.minFreeBytes,
         })
           .then((writer) => {
             this.#writer = writer;
@@ -237,9 +290,22 @@ export class ScreenRecording {
           queuedBytes: 0,
         };
         this.#frames = 1;
+        this.#durationTimer = setTimeout(
+          () => this.#finishAtDurationLimit(),
+          this.#limits.maxDurationMs,
+        );
+        this.#durationTimer.unref();
         return;
       }
       const timeUs = packet.pts - this.#first.pts;
+      if (
+        timeUs >= BigInt(this.#limits.maxDurationMs) * 1000n ||
+        this.#clock.monotonicUs() - this.#first.monotonicUs >=
+          BigInt(this.#limits.maxDurationMs) * 1000n
+      ) {
+        this.#finishAtDurationLimit();
+        return;
+      }
       if (!this.#pending || timeUs <= this.#pending.timeUs)
         throw new Error("Recording source timestamps stopped increasing.");
       this.#enqueue(this.#pending, timeUs - this.#pending.timeUs);
@@ -253,9 +319,16 @@ export class ScreenRecording {
     }
   }
 
+  #finishAtDurationLimit(): void {
+    if (!this.active) return;
+    this.#stopReason = "duration-limit";
+    void this.finish().catch(() => {});
+  }
+
   fail(reason: unknown): void {
     if (this.#status.status === "complete" || this.#status.status === "failed") return;
     const error = reason instanceof Error ? reason : new Error(String(reason));
+    if (this.#durationTimer) clearTimeout(this.#durationTimer);
     this.#status = { status: "failed", error: error.message };
     this.#pending = null;
     this.#readyReject(error);
@@ -273,6 +346,7 @@ export class ScreenRecording {
 
   finish(): Promise<ScreenRecordingResult> {
     if (this.#finishTask) return this.#finishTask;
+    if (this.#durationTimer) clearTimeout(this.#durationTimer);
     this.#finishTask = this.#finish();
     return this.#finishTask;
   }
@@ -289,7 +363,11 @@ export class ScreenRecording {
       throw error;
     }
     const first = this.#first;
-    const durationUs = this.#clock.monotonicUs() - first.monotonicUs;
+    const elapsedUs = this.#clock.monotonicUs() - first.monotonicUs;
+    const durationUs =
+      this.#stopReason === "duration-limit"
+        ? BigInt(this.#limits.maxDurationMs) * 1000n
+        : elapsedUs;
     this.#enqueue(
       this.#pending,
       durationUs > this.#pending.timeUs ? durationUs - this.#pending.timeUs : 1n,
@@ -317,6 +395,7 @@ export class ScreenRecording {
         width: first.width,
         height: first.height,
         durationSeconds: Number(durationUs) / 1e6,
+        stopReason: this.#stopReason,
         frames: this.#frames,
       });
       this.#throwIfFailed();

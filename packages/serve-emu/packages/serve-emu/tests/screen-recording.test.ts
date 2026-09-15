@@ -1,14 +1,16 @@
 import { afterEach, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { EncodedPacket, EncodedVideoPacketSource, Mp4OutputFormat, Output } from "mediabunny";
 import {
   ScreenRecording,
   type RecordingOptions,
   type RecordingWriter,
 } from "../src/screen-recording.ts";
 import type { VideoFrame } from "../src/scrcpy.ts";
+import { createRecordingFileTarget } from "../src/recording-file-target.ts";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -108,6 +110,105 @@ test("gRPC firstFrameAt accounts for encoder and read latency using its host PTS
     durationSeconds: 1.25,
   });
 });
+
+test.each(["clock", "pts"])(
+  "finishes at the duration limit using %s without another writer",
+  async (kind) => {
+    const { recording, samples, root } = await setup({ maxDurationMs: 30 });
+    recording.accept(frame(0n), size, "scrcpy");
+    await recording.ready;
+    if (kind === "clock") {
+      await Bun.sleep(60);
+    } else {
+      recording.accept(frame(30_000n, delta, false), size, "scrcpy");
+    }
+    await recording.finish();
+    expect(samples).toHaveLength(1);
+    expect(samples[0].duration).toBe(0.03);
+    expect(recording.active).toBe(false);
+    expect(() => recording.accept(frame(40_000n), size, "scrcpy")).not.toThrow();
+    expect(JSON.parse(await readFile(join(root, "session/session.json"), "utf8"))).toMatchObject({
+      status: "complete",
+      stopReason: "duration-limit",
+      durationSeconds: 0.03,
+    });
+  },
+);
+
+test.each([
+  { maxFileBytes: 0 },
+  { maxFileBytes: NaN },
+  { maxDurationMs: 0 },
+  { maxDurationMs: 86_400_001 },
+  { minFreeBytes: -1 },
+  { minFreeBytes: 1.5 },
+])("rejects invalid recording limits %j", async (limits) => {
+  await expect(setup(limits)).rejects.toThrow("Invalid recording limit");
+});
+
+test("rejects low free space before opening the output", async () => {
+  const { root } = await setup();
+  const path = join(root, "guarded.mp4");
+  await expect(
+    createRecordingFileTarget({
+      path,
+      maxFileBytes: 1024,
+      minFreeBytes: 100,
+      readFreeBytes: async () => 99,
+    }),
+  ).rejects.toThrow("free-space reserve");
+  expect(await Bun.file(path).exists()).toBe(false);
+});
+
+test("accounts for file growth between free-space probes", async () => {
+  const { root } = await setup();
+  const path = join(root, "guarded.mp4");
+  const file = await createRecordingFileTarget({
+    path,
+    maxFileBytes: 1024 * 1024,
+    minFreeBytes: 100,
+    readFreeBytes: async () => 200,
+  });
+  const source = new EncodedVideoPacketSource("avc");
+  const output = new Output({
+    format: new Mp4OutputFormat({ fastStart: false }),
+    target: file.target,
+  });
+  output.addVideoTrack(source);
+  await output.start();
+  await source.add(new EncodedPacket(key, "key", 0, 1), {
+    decoderConfig: { codec: "avc1.42c01f", codedWidth: size.width, codedHeight: size.height },
+  });
+  await expect(output.finalize()).rejects.toThrow("free-space reserve");
+  await file.close();
+  expect((await stat(path)).size).toBeLessThanOrEqual(100);
+});
+
+test.each(["bytes", "space"])(
+  "enforces the %s limit during actual MP4 finalization",
+  async (kind) => {
+    const { recording, root } = await setup({
+      createWriter: undefined,
+      maxFileBytes: kind === "bytes" ? 128 : undefined,
+      minFreeBytes: kind === "space" ? Number.MAX_SAFE_INTEGER : 0,
+    });
+    recording.accept(frame(0n), size, "scrcpy");
+    if (kind === "space") await expect(recording.ready).rejects.toThrow("free-space reserve");
+    else await recording.ready;
+    await expect(recording.finish()).rejects.toThrow(
+      kind === "bytes" ? "byte limit" : "free-space reserve",
+    );
+    expect(() => recording.accept(frame(30_000n), size, "scrcpy")).not.toThrow();
+    expect(await Bun.file(join(root, "session/recording.mp4")).exists()).toBe(false);
+    expect(JSON.parse(await readFile(join(root, "session/session.json"), "utf8"))).toMatchObject({
+      status: "failed",
+    });
+    if (kind === "bytes")
+      expect((await stat(join(root, "session/recording.mp4.partial"))).size).toBeLessThanOrEqual(
+        128,
+      );
+  },
+);
 
 test("does not publish a recording without a keyframe", async () => {
   const { recording, root } = await setup();

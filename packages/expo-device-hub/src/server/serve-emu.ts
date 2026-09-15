@@ -28,7 +28,18 @@ export const emuCameraFeeds: EmulatorCameraFeeds = {
 const androidSession = new AndroidSession(router);
 
 export const startAndroidScreenRecording = (directory: string): Promise<void> =>
-  androidSession.startRecording(directory);
+  androidSession.startRecording(directory, {
+    maxFileBytes: recordingLimitFromEnv('EXPO_DEVICE_HUB_RECORDING_MAX_BYTES'),
+    maxDurationMs: recordingLimitFromEnv('EXPO_DEVICE_HUB_RECORDING_MAX_DURATION_MS'),
+    minFreeBytes: recordingLimitFromEnv('EXPO_DEVICE_HUB_RECORDING_MIN_FREE_BYTES'),
+  });
+
+function recordingLimitFromEnv(name: string): number | undefined {
+  const value = process.env[name];
+  if (value === undefined) return undefined;
+  // ScreenRecording.create validates the public options, including environment overrides.
+  return value.trim() === '' ? NaN : Number(value);
+}
 
 export const finishAndroidScreenRecording = (): Promise<void> => androidSession.finishRecording();
 

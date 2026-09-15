@@ -9,6 +9,10 @@ type RecordingRouter = Pick<
   ReturnType<typeof createRouter>,
   'startScreenRecording' | 'finishScreenRecording' | 'stopAll'
 >;
+type RecordingLimits = Pick<
+  Parameters<RecordingRouter['startScreenRecording']>[0],
+  'maxFileBytes' | 'maxDurationMs' | 'minFreeBytes'
+>;
 
 /** Owns one Android host lifetime; the router owns its canonical capture and muxer. */
 export class AndroidSession {
@@ -21,15 +25,15 @@ export class AndroidSession {
     private readonly listEmulators: typeof listAndroidEmulators = listAndroidEmulators
   ) {}
 
-  async startRecording(directory: string): Promise<void> {
+  async startRecording(directory: string, limits: RecordingLimits = {}): Promise<void> {
     if (this.startTask || this.finishTask) {
       throw new Error('Android recording must start once, before session finalization.');
     }
-    this.startTask = this.startRecordingAsync(directory);
+    this.startTask = this.startRecordingAsync(directory, limits);
     await this.startTask;
   }
 
-  private async startRecordingAsync(directory: string): Promise<string> {
+  private async startRecordingAsync(directory: string, limits: RecordingLimits): Promise<string> {
     const { devices, error } = await this.listEmulators();
     const booted = devices.filter(device => device.booted && !device.physical);
     const device = booted[0];
@@ -42,6 +46,7 @@ export class AndroidSession {
     // Never reuse a previous session's result list.
     await writeFile(join(directory, 'recordings.json'), '[]', { flag: 'wx' });
     await this.router.startScreenRecording({
+      ...limits,
       directory: join(directory, randomUUID()),
       udid: device.id,
       deviceName: device.name,
