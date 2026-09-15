@@ -394,6 +394,14 @@ not keep receiving and discarding device output.
 
 ### Device Settings
 
+On emulators, selecting portrait or landscape updates both Android's rotation
+lock and the simulated accelerometer, keeping gRPC screenshots upright. Selecting
+auto releases the Android lock and preserves the current simulated orientation.
+When an app keeps its display portrait (such as the launcher), gRPC video can
+still turn sideways. Scrcpy touch input uses Android's active display rotation
+to stay aligned with that content. The mapping refreshes at each gesture's start
+and remains fixed throughout a drag, including additional pointers.
+
 ```sh
 curl "$BASE/api/orientation"
 curl -X POST "$BASE/api/orientation" \

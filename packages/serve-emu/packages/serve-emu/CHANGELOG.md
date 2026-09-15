@@ -12,6 +12,11 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 - Add strict host hardware H.264 encoding for Android gRPC streaming with `--encoder hardware` and an Encoder control in the standalone UI. Software remains the default; stream-mode and health APIs report the active backend and hardware probe failures.
 
+### Fixed
+
+- Synchronize emulator rotation controls with the simulated orientation used by
+  gRPC PNG and MMAP screenshots, and align gRPC touch input with rotated frames.
+
 ### Added
 
 - Add emulator-only gRPC screenshot streaming with host-side H.264 encoding,

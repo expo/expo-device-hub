@@ -300,6 +300,122 @@ describe("ADB display controls", () => {
     }
   });
 
+  for (const entry of [
+    { requested: "portrait", rotation: "0", acceleration: "0:9.8:0" },
+    { requested: "landscape", rotation: "1", acceleration: "9.8:0:0" },
+  ] as const) {
+    test(`synchronizes the emulator sensor after locking ${entry.requested} rotation`, async () => {
+      const calls: Array<{ command: string; args: string[]; timeout?: number }> = [];
+      const runExec = (async (command, args, options) => {
+        calls.push({ command, args, timeout: options?.timeout });
+        if (args[2] === "emu") return result("OK\n");
+        return result(args.at(-1) === "user-rotation" ? `lock ${entry.rotation}\n` : "");
+      }) as typeof execText;
+
+      await expect(
+        setUserRotation("emulator-5554", entry.requested, runExec),
+      ).resolves.toEqual({
+        mode: "lock",
+        rotation: Number(entry.rotation),
+        orientation: entry.requested,
+        raw: `lock ${entry.rotation}`,
+      });
+      expect(calls).toEqual([
+        {
+          command: "adb",
+          args: ["-s", "emulator-5554", "shell", "cmd", "window", "user-rotation", "lock", entry.rotation],
+          timeout: 5_000,
+        },
+        {
+          command: "adb",
+          args: ["-s", "emulator-5554", "emu", "sensor", "set", "acceleration", entry.acceleration],
+          timeout: 5_000,
+        },
+        {
+          command: "adb",
+          args: ["-s", "emulator-5554", "shell", "cmd", "window", "user-rotation"],
+          timeout: 2_000,
+        },
+      ]);
+    });
+  }
+
+  test("leaves the emulator sensor pose unchanged when enabling auto rotation", async () => {
+    const calls: string[][] = [];
+    const runExec = (async (_command, args) => {
+      calls.push(args);
+      return result(args.at(-1) === "user-rotation" ? "free 1\n" : "");
+    }) as typeof execText;
+
+    await expect(
+      setUserRotation("emulator-5554", "auto", runExec),
+    ).resolves.toEqual({ mode: "free", rotation: 1, orientation: "auto", raw: "free 1" });
+    expect(calls).toEqual([
+      ["-s", "emulator-5554", "shell", "cmd", "window", "user-rotation", "free"],
+      ["-s", "emulator-5554", "shell", "cmd", "window", "user-rotation"],
+    ]);
+  });
+
+  for (const entry of [
+    {
+      name: "console KO output with a successful process exit",
+      value: result("KO: unknown sensor: acceleration\n"),
+      detail: "KO: unknown sensor: acceleration",
+    },
+    {
+      name: "console KO diagnostic on stderr",
+      value: result("", { stderr: "KO: sensor is disabled\n" }),
+      detail: "KO: sensor is disabled",
+    },
+    {
+      name: "nonzero process exit",
+      value: result("", { status: 1, stderr: "console connection refused" }),
+      detail: "console connection refused",
+    },
+    {
+      name: "process execution error",
+      value: result("", { status: null, error: new Error("spawn ENOENT") }),
+      detail: "spawn ENOENT",
+    },
+    {
+      name: "process error despite a successful exit status",
+      value: result("", { error: new Error("emulator console interrupted") }),
+      detail: "emulator console interrupted",
+    },
+  ]) {
+    test(`rejects emulator rotation on ${entry.name}`, async () => {
+      const calls: string[][] = [];
+      const runExec = (async (_command, args) => {
+        calls.push(args);
+        if (args[2] === "emu") return entry.value;
+        return result(args.at(-1) === "user-rotation" ? "lock 1\n" : "");
+      }) as typeof execText;
+
+      await expect(
+        setUserRotation("emulator-5554", "landscape", runExec),
+      ).rejects.toThrow(entry.detail);
+      expect(calls).toEqual([
+        ["-s", "emulator-5554", "shell", "cmd", "window", "user-rotation", "lock", "1"],
+        ["-s", "emulator-5554", "emu", "sensor", "set", "acceleration", "9.8:0:0"],
+      ]);
+    });
+  }
+
+  test("does not change emulator sensors when the guest rotation lock fails", async () => {
+    const calls: string[][] = [];
+    const runExec = (async (_command, args) => {
+      calls.push(args);
+      return result("", { status: 1, stderr: "rotation denied" });
+    }) as typeof execText;
+
+    await expect(
+      setUserRotation("emulator-5554", "landscape", runExec),
+    ).rejects.toThrow("rotation denied");
+    expect(calls).toEqual([
+      ["-s", "emulator-5554", "shell", "cmd", "window", "user-rotation", "lock", "1"],
+    ]);
+  });
+
   test("reports rotation command failures", async () => {
     const failed = (async () =>
       result("", { status: 1, stderr: "rotation denied" })) as typeof execText;
