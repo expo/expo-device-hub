@@ -293,21 +293,62 @@ function queueExtraction(serial: string, baseApkPath: string): Promise<AppIcon |
   return next;
 }
 
-const iconCache = new Map<string, Promise<AppIcon | null>>();
+/** One entry per device and package, so a reinstall replaces rather than adds. */
+interface CachedIcon {
+  baseApkPath: string;
+  icon: Promise<AppIcon | null>;
+}
 
-export async function readAppIcon(serial: string, packageName: string): Promise<AppIcon | null> {
-  const baseApkPath = selectBaseApkPath(
+/** A safety net, not a tuning knob. A device holds far fewer apps than this. */
+export const MAX_CACHED_ICONS = 64;
+
+const iconCache = new Map<string, CachedIcon>();
+
+export function clearAppIconCache(): void {
+  iconCache.clear();
+}
+
+export interface AppIconDependencies {
+  readBaseApkPath?: (serial: string, packageName: string) => Promise<string | null>;
+  extractIcon?: (serial: string, baseApkPath: string) => Promise<AppIcon | null>;
+}
+
+async function readBaseApkPathFromDevice(
+  serial: string,
+  packageName: string,
+): Promise<string | null> {
+  return selectBaseApkPath(
     await adbText(serial, ["shell", "pm", "path", packageName], PM_PATH_TIMEOUT_MS),
   );
+}
+
+export async function readAppIcon(
+  serial: string,
+  packageName: string,
+  dependencies: AppIconDependencies = {},
+): Promise<AppIcon | null> {
+  const readPath = dependencies.readBaseApkPath ?? readBaseApkPathFromDevice;
+  const extract = dependencies.extractIcon ?? queueExtraction;
+
+  const baseApkPath = await readPath(serial, packageName);
   if (!baseApkPath) throw new Error(`${packageName} is not installed`);
 
-  const key = `${serial}:${packageName}:${baseApkPath}`;
+  const key = `${serial}:${packageName}`;
   const cached = iconCache.get(key);
-  if (cached) return cached;
-  const pending = queueExtraction(serial, baseApkPath).catch((error: unknown) => {
-    iconCache.delete(key);
+  // Android randomises the APK directory on install, so a changed path means a new build.
+  if (cached && cached.baseApkPath === baseApkPath) return cached.icon;
+
+  let entry: CachedIcon;
+  const icon = extract(serial, baseApkPath).catch((error: unknown) => {
+    if (iconCache.get(key) === entry) iconCache.delete(key);
     throw error;
   });
-  iconCache.set(key, pending);
-  return pending;
+  entry = { baseApkPath, icon };
+  iconCache.set(key, entry);
+
+  if (iconCache.size > MAX_CACHED_ICONS) {
+    const oldest = iconCache.keys().next();
+    if (!oldest.done) iconCache.delete(oldest.value);
+  }
+  return icon;
 }

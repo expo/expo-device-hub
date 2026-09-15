@@ -1,11 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { beforeEach, describe, expect, test } from "bun:test";
 import {
+  MAX_CACHED_ICONS,
+  clearAppIconCache,
   iconMimeType,
   parseAdaptiveForegroundId,
   selectBaseApkPath,
   selectIconEntry,
+  readAppIcon,
   selectResourceFilePath,
 } from "../src/apk-icon.ts";
+import type { AppIcon } from "../src/shared/api-contracts.ts";
 
 const SETTINGS_BADGING = [
   "application-icon-120:'res/drawable/ic_launcher_settings.xml'",
@@ -173,5 +177,153 @@ describe("iconMimeType", () => {
 
   test("returns null for a compiled binary XML drawable", () => {
     expect(iconMimeType(new Uint8Array([0x03, 0x00, 0x08, 0x00]))).toBeNull();
+  });
+});
+
+describe("readAppIcon", () => {
+  const ICON: AppIcon = { mimeType: "image/png", data: "aWNvbg==" };
+
+  function fakes(pathFor: (packageName: string) => string | null) {
+    const extracted: string[] = [];
+    return {
+      extracted,
+      deps: {
+        readBaseApkPath: (_serial: string, packageName: string) =>
+          Promise.resolve(pathFor(packageName)),
+        extractIcon: (_serial: string, baseApkPath: string) => {
+          extracted.push(baseApkPath);
+          return Promise.resolve(ICON);
+        },
+      },
+    };
+  }
+
+  beforeEach(() => {
+    clearAppIconCache();
+  });
+
+  test("extracts once for repeat reads of the same install", async () => {
+    const { extracted, deps } = fakes(() => "/data/app/~~aaa==/com.example-1/base.apk");
+
+    expect(await readAppIcon("emulator-5554", "com.example", deps)).toEqual(ICON);
+    expect(await readAppIcon("emulator-5554", "com.example", deps)).toEqual(ICON);
+
+    expect(extracted).toHaveLength(1);
+  });
+
+  test("keeps one entry per device, so the same package on two serials does not collide", async () => {
+    const { extracted, deps } = fakes(() => "/data/app/~~aaa==/com.example-1/base.apk");
+
+    await readAppIcon("emulator-5554", "com.example", deps);
+    await readAppIcon("emulator-5556", "com.example", deps);
+
+    expect(extracted).toHaveLength(2);
+  });
+
+  test("re-extracts after a reinstall moves the apk, and does not keep the old entry", async () => {
+    let path = "/data/app/~~aaa==/com.example-1/base.apk";
+    const { extracted, deps } = fakes(() => path);
+
+    await readAppIcon("emulator-5554", "com.example", deps);
+    path = "/data/app/~~bbb==/com.example-2/base.apk";
+    await readAppIcon("emulator-5554", "com.example", deps);
+    await readAppIcon("emulator-5554", "com.example", deps);
+
+    expect(extracted).toEqual([
+      "/data/app/~~aaa==/com.example-1/base.apk",
+      "/data/app/~~bbb==/com.example-2/base.apk",
+    ]);
+  });
+
+  test("drops a failed extraction so the next read retries", async () => {
+    let attempts = 0;
+    const deps = {
+      readBaseApkPath: () => Promise.resolve("/data/app/~~aaa==/com.example-1/base.apk"),
+      extractIcon: () => {
+        attempts += 1;
+        return attempts === 1 ? Promise.reject(new Error("pull failed")) : Promise.resolve(ICON);
+      },
+    };
+
+    await expect(readAppIcon("emulator-5554", "com.example", deps)).rejects.toThrow("pull failed");
+    expect(await readAppIcon("emulator-5554", "com.example", deps)).toEqual(ICON);
+    expect(attempts).toBe(2);
+  });
+
+  test("a failure does not evict the newer entry that replaced it", async () => {
+    let release: (() => void) | null = null;
+    const slowFailure = new Promise<AppIcon | null>((_resolve, reject) => {
+      release = () => {
+        reject(new Error("pull failed"));
+      };
+    });
+    let path = "/data/app/~~aaa==/com.example-1/base.apk";
+    let call = 0;
+    const deps = {
+      readBaseApkPath: () => Promise.resolve(path),
+      extractIcon: () => {
+        call += 1;
+        return call === 1 ? slowFailure : Promise.resolve(ICON);
+      },
+    };
+
+    const failing = readAppIcon("emulator-5554", "com.example", deps);
+    path = "/data/app/~~bbb==/com.example-2/base.apk";
+    expect(await readAppIcon("emulator-5554", "com.example", deps)).toEqual(ICON);
+
+    release!();
+    await expect(failing).rejects.toThrow("pull failed");
+
+    expect(await readAppIcon("emulator-5554", "com.example", deps)).toEqual(ICON);
+    expect(call).toBe(2);
+  });
+
+  test("bounds the cache, evicting the oldest package first", async () => {
+    const { extracted, deps } = fakes((packageName) => `/data/app/${packageName}/base.apk`);
+
+    for (let i = 0; i <= MAX_CACHED_ICONS; i += 1) {
+      await readAppIcon("emulator-5554", `com.example.app${i}`, deps);
+    }
+    expect(extracted).toHaveLength(MAX_CACHED_ICONS + 1);
+
+    // The newest is still cached; the first one was evicted and must be read again.
+    await readAppIcon("emulator-5554", `com.example.app${MAX_CACHED_ICONS}`, deps);
+    expect(extracted).toHaveLength(MAX_CACHED_ICONS + 1);
+
+    await readAppIcon("emulator-5554", "com.example.app0", deps);
+    expect(extracted).toHaveLength(MAX_CACHED_ICONS + 2);
+  });
+
+  test("repeated reinstalls of one package do not evict the others", async () => {
+    const paths = new Map<string, string>();
+    const extracted: string[] = [];
+    const deps = {
+      readBaseApkPath: (_serial: string, packageName: string) =>
+        Promise.resolve(paths.get(packageName) ?? `/data/app/${packageName}/base.apk`),
+      extractIcon: (_serial: string, baseApkPath: string) => {
+        extracted.push(baseApkPath);
+        return Promise.resolve(ICON);
+      },
+    };
+
+    await readAppIcon("emulator-5554", "com.example.first", deps);
+
+    // One package, reinstalled far more times than the cache can hold.
+    for (let i = 0; i < MAX_CACHED_ICONS * 2; i += 1) {
+      paths.set("com.example.churn", `/data/app/~~build${i}==/com.example.churn/base.apk`);
+      await readAppIcon("emulator-5554", "com.example.churn", deps);
+    }
+
+    const before = extracted.length;
+    await readAppIcon("emulator-5554", "com.example.first", deps);
+    expect(extracted).toHaveLength(before);
+  });
+
+  test("throws when the package is not installed", async () => {
+    const { deps } = fakes(() => null);
+
+    await expect(readAppIcon("emulator-5554", "com.missing", deps)).rejects.toThrow(
+      "com.missing is not installed",
+    );
   });
 });
