@@ -71,6 +71,7 @@ const EXPECTED_ROUTES = [
   ["GET", "/api/apps/permissions"],
   ["POST", "/api/apps/revoke"],
   ["POST", "/api/apps/reset-permissions"],
+  ["GET", "/api/apps/icon"],
   ["GET", "/api/location"],
   ["POST", "/api/location"],
   ["GET", "/api/route"],
@@ -400,6 +401,7 @@ function fakeDependencies(
       ok: true,
       output: `reset ${packageName}`,
     }),
+    readAppIcon: async () => ({ mimeType: "image/png", data: "aWNvbg==" }),
 
     getLocation: () => ({
       serial: "emulator-5554",
@@ -453,7 +455,7 @@ function validRequest(method: ApiMethod, path: string): Request {
   const body = VALID_JSON_BODIES[key];
   const requestPath = key === "GET /api/screenshot"
     ? `${path}?format=base64`
-    : key === "GET /api/apps/permissions"
+    : key === "GET /api/apps/permissions" || key === "GET /api/apps/icon"
       ? `${path}?packageName=com.example.app`
       : path;
   return new Request(`${BASE_URL}${requestPath}`, {
@@ -499,14 +501,14 @@ const silentLogger: ApiLogger = {
 };
 
 describe("domain API route table", () => {
-  test("registers the exact 62 method/path pairs across 44 paths", () => {
+  test("registers the exact 63 method/path pairs across 45 paths", () => {
     const routes = createApiRoutes();
 
     expect(routes.map(({ method, path }) => [method, path])).toEqual(
       EXPECTED_ROUTES.map(([method, path]) => [method, path]),
     );
-    expect(routes).toHaveLength(62);
-    expect(new Set(routes.map((route) => route.path)).size).toBe(44);
+    expect(routes).toHaveLength(63);
+    expect(new Set(routes.map((route) => route.path)).size).toBe(45);
     const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(
       ([path, methods]) => Object.keys(methods).map((method) => `${method} ${path}`),
     );
@@ -536,12 +538,12 @@ describe("domain API route table", () => {
     );
   });
 
-  test("returns structured OPTIONS 405 with exact Allow for all 44 paths", async () => {
+  test("returns structured OPTIONS 405 with exact Allow for all 45 paths", async () => {
     const router = createApiRouter(createApiRoutes());
     const deps = fakeDependencies();
     const paths = [...new Set(EXPECTED_ROUTES.map((route) => route[1]))];
 
-    expect(paths).toHaveLength(44);
+    expect(paths).toHaveLength(45);
     for (const path of paths) {
       const response = await router.handle(
         new Request(`${BASE_URL}${path}`, { method: "OPTIONS" }),

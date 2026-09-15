@@ -574,6 +574,7 @@ describe("server HTTP and WebSocket boundaries", () => {
       ["POST", "/api/apps/permissions"],
       ["GET", "/api/apps/revoke"],
       ["GET", "/api/apps/reset-permissions"],
+      ["POST", "/api/apps/icon"],
       ["PATCH", "/api/location"],
       ["PATCH", "/api/route"],
       ["GET", "/api/route/control"],

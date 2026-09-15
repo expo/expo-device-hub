@@ -6,6 +6,7 @@ import {
   parseApiResult,
   parseApiSuccess,
   parseAppActionResponse,
+  parseAppIconResponse,
   parseAppPermissionsResponse,
   parseAvdStartResponse,
   parseAvdStopResponse,
@@ -448,6 +449,22 @@ describe("complete API success contracts", () => {
     expect(
       parseScreenshotBase64Response({ ok: true, mimeType: "image/png", data: "iVBORw==" }),
     ).toEqual({ ok: true, mimeType: "image/png", data: "iVBORw==" });
+    for (const mimeType of ["image/png", "image/webp", "image/jpeg", "image/gif"] as const) {
+      expect(
+        parseAppIconResponse({
+          ok: true,
+          packageName: "com.android.settings",
+          icon: { mimeType, data: "aWNvbg==" },
+        }),
+      ).toEqual({
+        ok: true,
+        packageName: "com.android.settings",
+        icon: { mimeType, data: "aWNvbg==" },
+      });
+    }
+    expect(
+      parseAppIconResponse({ ok: true, packageName: "com.example.app", icon: null }),
+    ).toEqual({ ok: true, packageName: "com.example.app", icon: null });
 
     expect(
       parseLogcatEvent("ready", {
@@ -624,5 +641,28 @@ describe("API parser rejection boundaries", () => {
     expect(() =>
       parseScreenshotBase64Response({ ok: true, mimeType: "image/jpeg", data: "x" }),
     ).toThrow("must be image/png");
+    expect(() => parseAppIconResponse({ ok: false, error: "no such package" })).toThrow(
+      "app icon response.ok must be true",
+    );
+    expect(() =>
+      parseAppIconResponse({ ok: true, packageName: "com.example.app", icon: {} }),
+    ).toThrow("app icon.mimeType is invalid");
+    expect(() =>
+      parseAppIconResponse({
+        ok: true,
+        packageName: "com.example.app",
+        icon: { mimeType: "image/svg+xml", data: "PHN2Zz4=" },
+      }),
+    ).toThrow("app icon.mimeType is invalid");
+    expect(() =>
+      parseAppIconResponse({
+        ok: true,
+        packageName: "com.example.app",
+        icon: { mimeType: "image/png", data: 7 },
+      }),
+    ).toThrow("app icon.data must be a string");
+    expect(() =>
+      parseAppIconResponse({ ok: true, icon: null }),
+    ).toThrow("app icon response.packageName must be a string");
   });
 });

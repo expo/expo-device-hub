@@ -357,7 +357,6 @@ test('renders every supported iOS inspector section and option', () => {
   for (const label of ['Minimum iOS', 'Minimum SDK', 'PID']) {
     expect(currentApp).not.toContain(`>${label}<`);
   }
-  // The identity line (name + icon) is shown for iOS apps.
   expect(currentApp).toContain('width:40px');
   expect(currentApp).toContain('data-testid="activity-charts"');
   expect(currentApp).toContain('Waiting for activity data…');
@@ -396,8 +395,7 @@ test('renders Android stream options while omitting unsupported and iOS-only sec
   const currentApp = sectionMarkup(html, 'Current app');
   expect(currentApp).toContain('data-testid="activity-charts"');
   expect(currentApp).toContain('Waiting for activity data…');
-  // Android shows only the App ID / Version / Build number rows: no name and icon line.
-  expect(currentApp).not.toContain('width:40px');
+  expect(currentApp).toContain('width:40px');
   for (const label of ['App ID', 'Version', 'Build number']) {
     expect(currentApp).toContain(`>${label}<`);
   }

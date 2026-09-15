@@ -454,6 +454,21 @@ export type AppPermissionsResponse = ApiSuccess<{
   packageName: string;
   permissions: RuntimePermission[];
 }>;
+
+const APP_ICON_MIME_TYPES = [
+  "image/png",
+  "image/webp",
+  "image/jpeg",
+  "image/gif",
+] as const;
+export type AppIconMimeType = (typeof APP_ICON_MIME_TYPES)[number];
+/** `data` is base64, with no `data:` URL prefix. */
+export type AppIcon = { mimeType: AppIconMimeType; data: string };
+export type AppIconResponse = ApiSuccess<{
+  packageName: string;
+  icon: AppIcon | null;
+}>;
+
 export type FileImportResponse = ApiSuccess<{
   output: string;
   path: string;
@@ -699,6 +714,7 @@ export type ApiContractMap = {
   "/api/apps/reset-permissions": {
     POST: EndpointContract<{ packageName: string }, AppActionResponse>;
   };
+  "/api/apps/icon": { GET: EndpointContract<undefined, AppIconResponse> };
   "/api/location": {
     GET: EndpointContract<undefined, LocationResponse>;
     POST: EndpointContract<GeoFix, LocationUpdateResponse>;
@@ -1650,6 +1666,24 @@ export function parseAppPermissionsResponse(value: unknown): AppPermissionsRespo
   };
 }
 
+function parseAppIcon(value: unknown): AppIcon {
+  const item = record(value, "app icon");
+  return {
+    mimeType: oneOf(item.mimeType, APP_ICON_MIME_TYPES, "app icon.mimeType"),
+    data: string(item.data, "app icon.data"),
+  };
+}
+
+export function parseAppIconResponse(value: unknown): AppIconResponse {
+  const root = record(value, "app icon response");
+  if (root.ok !== true) fail("app icon response.ok must be true");
+  return {
+    ok: true,
+    packageName: string(root.packageName, "app icon response.packageName"),
+    icon: root.icon === null ? null : parseAppIcon(root.icon),
+  };
+}
+
 export function parseFileImportResponse(value: unknown): FileImportResponse {
   const root = record(value, "file import response");
   if (root.ok !== true) fail("file import response.ok must be true");
@@ -2021,6 +2055,7 @@ export const API_SUCCESS_PARSERS = {
   "/api/apps/permissions": { GET: parseAppPermissionsResponse },
   "/api/apps/revoke": { POST: parseAppActionResponse },
   "/api/apps/reset-permissions": { POST: parseAppActionResponse },
+  "/api/apps/icon": { GET: parseAppIconResponse },
   "/api/location": { GET: parseLocationResponse, POST: parseLocationUpdateResponse },
   "/api/route": {
     GET: parseRoutePlaybackSnapshot,

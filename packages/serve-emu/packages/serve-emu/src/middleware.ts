@@ -36,9 +36,11 @@ import {
   grantPermission,
   launchApp,
   revokePermission,
+  packageName,
 } from "./app-management.ts";
 import { listPermissions, resetPermissions } from "./app-permissions.ts";
 import { getForegroundApp } from "./app-info.ts";
+import { readAppIcon } from "./apk-icon.ts";
 import {
   availableStreamModesForSerial,
   isEmulatorSerial,
@@ -1841,6 +1843,20 @@ async function createAppInternal(
       return appJsonEndpoint(req, (payload) =>
         resetPermissions(opts.serial, String(payload.packageName ?? "")),
       );
+    }
+
+    if (url.pathname === "/api/apps/icon") {
+      if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
+      try {
+        const pkg = packageName(url.searchParams.get("packageName"));
+        return Response.json({
+          ok: true,
+          packageName: pkg,
+          icon: await readAppIcon(opts.serial, pkg),
+        });
+      } catch (err) {
+        return middlewareRequestFailure(err);
+      }
     }
 
     if (url.pathname === "/api/location") {
