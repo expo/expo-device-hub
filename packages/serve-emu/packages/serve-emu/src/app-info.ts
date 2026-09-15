@@ -1,4 +1,9 @@
 import { execText } from "./exec.ts";
+import {
+  type ForegroundComponent,
+  parseForegroundActivityDump,
+  parseForegroundWindowDump,
+} from "./foreground-component.ts";
 import type { ForegroundApp } from "./shared/api-contracts.ts";
 
 export type { ForegroundApp } from "./shared/api-contracts.ts";
@@ -24,41 +29,13 @@ async function adbShell(
   return result.stdout;
 }
 
-function firstMatch(text: string, patterns: RegExp[]): RegExpMatchArray | null {
-  for (const pattern of patterns) {
-    const match = text.match(pattern);
-    if (match) return match;
-  }
-  return null;
-}
-
-function parseComponent(value: string): { packageName: string; activity: string | null } | null {
-  const clean = value.trim().replace(/^\{|\}$/g, "");
-  const component = clean.split(/\s+/).find((part) => part.includes("/")) ?? clean;
-  const [packageName, activityRaw] = component.split("/", 2);
-  if (!packageName || !/^[A-Za-z0-9_.]+$/.test(packageName)) return null;
-  const activity = activityRaw
-    ? activityRaw.startsWith(".")
-      ? `${packageName}${activityRaw}`
-      : activityRaw
-    : null;
-  return { packageName, activity };
-}
-
 async function foregroundComponent(
   serial: string,
   runExec: typeof execText,
-): Promise<{ packageName: string; activity: string | null } | null> {
+): Promise<ForegroundComponent | null> {
   const windowDump = await adbShell(serial, ["dumpsys", "window"], 5_000, runExec);
-  const windowMatch = firstMatch(windowDump, [
-    /mCurrentFocus=Window\{[^}]*\s([A-Za-z0-9_.]+\/[A-Za-z0-9_.$]+)\}/,
-    /mFocusedApp=ActivityRecord\{[^}]*\s([A-Za-z0-9_.]+\/[A-Za-z0-9_.$]+)\s/,
-    /mInputMethodTarget=Window\{[^}]*\s([A-Za-z0-9_.]+\/[A-Za-z0-9_.$]+)\}/,
-  ]);
-  if (windowMatch?.[1]) {
-    const parsed = parseComponent(windowMatch[1]);
-    if (parsed) return parsed;
-  }
+  const fromWindow = parseForegroundWindowDump(windowDump);
+  if (fromWindow) return fromWindow;
 
   const activityDump = await adbShell(
     serial,
@@ -66,12 +43,7 @@ async function foregroundComponent(
     5_000,
     runExec,
   );
-  const activityMatch = firstMatch(activityDump, [
-    /topResumedActivity=ActivityRecord\{[^}]*\s([A-Za-z0-9_.]+\/[A-Za-z0-9_.$]+)\s/,
-    /mResumedActivity: ActivityRecord\{[^}]*\s([A-Za-z0-9_.]+\/[A-Za-z0-9_.$]+)\s/,
-    /ResumedActivity: ActivityRecord\{[^}]*\s([A-Za-z0-9_.]+\/[A-Za-z0-9_.$]+)\s/,
-  ]);
-  return activityMatch?.[1] ? parseComponent(activityMatch[1]) : null;
+  return parseForegroundActivityDump(activityDump);
 }
 
 async function packagePid(

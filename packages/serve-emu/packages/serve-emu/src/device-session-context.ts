@@ -149,6 +149,10 @@ export class ActiveDeviceSession<
     return this.deviceState.logcat;
   }
 
+  get metrics() {
+    return this.deviceState.metrics;
+  }
+
   get route() {
     return this.deviceState.route;
   }
