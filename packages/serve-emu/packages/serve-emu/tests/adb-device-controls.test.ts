@@ -10,6 +10,9 @@ import {
   getReduceMotion,
   getNetworkStatus,
   getNightMode,
+  clearHardwareKeyboardCache,
+  hardwareKeyboardFromClasses,
+  getSoftwareKeyboard,
   getUserRotation,
   listAllDevices,
   listDevices,
@@ -22,6 +25,7 @@ import {
   setNetworkEnabled,
   setReduceMotion,
   setNightMode,
+  setSoftwareKeyboard,
   setUserRotation,
   shell,
   shellSpawn,
@@ -540,6 +544,96 @@ describe("ADB accessibility controls", () => {
       enabled: false,
       raw: "0",
     });
+  });
+});
+
+describe("ADB software keyboard controls", () => {
+  test("reads show_ime_with_hard_keyboard as on for any non-zero int", async () => {
+    for (const [raw, enabled] of [
+      ["null", false],
+      ["", false],
+      ["1", true],
+      ["0", false],
+      ["2", true],
+      ["1.5", false],
+      ["yes", false],
+    ] as const) {
+      clearHardwareKeyboardCache();
+      const runExec = (async (_command, args) =>
+        args.join(" ").includes("dumpsys input")
+          ? result("      Classes: KEYBOARD | ALPHAKEY | DPAD | VIRTUAL\n")
+          : result(`${raw}\n`)) as typeof execText;
+      await expect(getSoftwareKeyboard("device-1", runExec)).resolves.toEqual({
+        enabled,
+        raw,
+        hardwareKeyboard: false,
+      });
+    }
+
+    clearHardwareKeyboardCache();
+    const failed = (async (_command, args) =>
+      args.join(" ").includes("dumpsys input")
+        ? result("")
+        : result("", { status: 1, stderr: "settings unavailable" })) as typeof execText;
+    await expect(getSoftwareKeyboard("device-1", failed)).rejects.toThrow(
+      "settings get secure show_ime_with_hard_keyboard failed: settings unavailable",
+    );
+  });
+
+  test("reads a hardware keyboard from the input device classes", () => {
+    const virtualOnly = [
+      "      Classes: KEYBOARD",
+      "      Classes: KEYBOARD | TOUCH | TOUCH_MT | SWITCH",
+      "      Classes: KEYBOARD | ALPHAKEY | DPAD | VIRTUAL",
+    ].join("\n");
+    expect(hardwareKeyboardFromClasses(virtualOnly)).toBe(false);
+
+    const withPhysical = `${virtualOnly}\n      Classes: KEYBOARD | ALPHAKEY`;
+    expect(hardwareKeyboardFromClasses(withPhysical)).toBe(true);
+    expect(hardwareKeyboardFromClasses("")).toBe(false);
+  });
+
+  test("writes the flag and reports the value read back, not the value requested", async () => {
+    function keyboardRunner(readBack: string) {
+      const calls: string[] = [];
+      const runExec = (async (_command, args) => {
+        const shell = args.slice(3).join(" ");
+        if (shell.includes("dumpsys input")) return result("");
+        calls.push(shell);
+        return result(shell.startsWith("settings get") ? `${readBack}\n` : "");
+      }) as typeof execText;
+      return { runExec, calls };
+    }
+
+    clearHardwareKeyboardCache();
+    const on = keyboardRunner("1");
+    await expect(setSoftwareKeyboard("device-1", true, on.runExec)).resolves.toEqual({
+      enabled: true,
+      raw: "1",
+      hardwareKeyboard: false,
+    });
+    expect(on.calls).toEqual([
+      "settings put secure show_ime_with_hard_keyboard 1",
+      "settings get secure show_ime_with_hard_keyboard",
+    ]);
+
+    clearHardwareKeyboardCache();
+    const off = keyboardRunner("0");
+    await expect(setSoftwareKeyboard("device-1", false, off.runExec)).resolves.toEqual({
+      enabled: false,
+      raw: "0",
+      hardwareKeyboard: false,
+    });
+    expect(off.calls).toEqual([
+      "settings put secure show_ime_with_hard_keyboard 0",
+      "settings get secure show_ime_with_hard_keyboard",
+    ]);
+
+    const failed = (async () =>
+      result("", { status: 1, stderr: "settings unavailable" })) as typeof execText;
+    await expect(setSoftwareKeyboard("device-1", true, failed)).rejects.toThrow(
+      "adb shell settings put secure show_ime_with_hard_keyboard 1 failed: settings unavailable",
+    );
   });
 });
 

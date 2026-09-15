@@ -129,6 +129,8 @@ const BUTTON_MESSAGE: Record<HardwareButton, Record<string, unknown> | null> = {
   recents: { type: 'recents' },
   appSwitcher: { type: 'recents' },
   power: { type: 'power' },
+  // KEYCODE_ESCAPE dismisses the IME without the navigation a Back press would trigger.
+  hideKeyboard: { type: 'key', keycode: 111 },
 };
 
 export function androidWsUrlFor(
@@ -211,6 +213,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
   const [displayWidthDp, setDisplayWidthDp] = useState<number | null>(null);
+  const [hardwareKeyboardConnected, setHardwareKeyboardConnected] = useState<boolean | null>(
+    null,
+  );
   const [deviceSettingsPending, setDeviceSettingsPending] = useState<
     ReadonlySet<DeviceSettingKey>
   >(() => new Set());
@@ -1671,6 +1676,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setDeviceSettings(null);
     setAppearanceState(null);
     setDisplayWidthDp(null);
+    setHardwareKeyboardConnected(null);
     if (!active || !baseUrl) {
       return;
     }
@@ -1755,6 +1761,21 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // serve-emu branch still implements `/api/uimode` synchronously. Network
     // and font scale use Hub's async compatibility routes and stay live-polled.
     void poll(ANDROID_DEVICE_SETTING_KEYS);
+    // Read once: an emulator's hardware keyboard does not come and go, and the
+    // settings poll already spawns one adb read per key every few seconds.
+    void fetch(deviceApiUrl(baseUrl, '/api/software-keyboard', targetDevice), {
+      cache: 'no-store',
+    })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: unknown) => {
+        if (cancelled || deviceScopeRef.current !== deviceScope) return;
+        const status = (payload as { softwareKeyboard?: { hardwareKeyboard?: unknown } } | null)
+          ?.softwareKeyboard;
+        if (typeof status?.hardwareKeyboard === 'boolean') {
+          setHardwareKeyboardConnected(status.hardwareKeyboard);
+        }
+      })
+      .catch(() => {});
     const timer = setInterval(
       () => void poll(ANDROID_POLLED_DEVICE_SETTING_KEYS),
       DEVICE_SETTINGS_POLL_MS,
@@ -1845,7 +1866,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     screenshot,
     appearance,
     setAppearance,
-    hardwareKeyboardConnected: null,
+    hardwareKeyboardConnected,
     setHardwareKeyboardConnected: () => {},
     toggleSoftwareKeyboard: () => {},
   };

@@ -67,6 +67,8 @@ export { CurrentAppSection } from './dashboard/CurrentAppSection';
 export {
   DeviceOptionsSection,
   NO_DEVICE_FRAME_DESCRIPTION,
+  NO_HARDWARE_KEYBOARD_DESCRIPTION,
+  ONSCREEN_KEYBOARD_DESCRIPTION,
   type DeviceFrameOption,
 } from './dashboard/DeviceOptionsSection';
 export { ActivityCharts, ActivitySection } from './dashboard/ActivitySection';

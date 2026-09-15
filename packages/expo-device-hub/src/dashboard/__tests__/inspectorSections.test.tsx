@@ -1,6 +1,11 @@
 import { expect, test } from 'bun:test';
 import { type DeviceClient, type DevicePlatform } from '@expo/hub-client';
-import { type Device, NO_DEVICE_FRAME_DESCRIPTION } from '@expo/hub-components';
+import {
+  type Device,
+  NO_DEVICE_FRAME_DESCRIPTION,
+  NO_HARDWARE_KEYBOARD_DESCRIPTION,
+  ONSCREEN_KEYBOARD_DESCRIPTION,
+} from '@expo/hub-components';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
@@ -1149,7 +1154,7 @@ test('renders the Android accessibility switches the backend reports', () => {
 test('omits the Android accessibility switches the backend does not report', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
-  for (const label of ['Reduce motion', 'Bold text', 'Increase contrast']) {
+  for (const label of ['Reduce motion', 'Bold text', 'Increase contrast', 'Force on-screen keyboard']) {
     expect(html).not.toContain(`>${label}<`);
   }
 });
@@ -1200,10 +1205,16 @@ test('moves device actions into Device options and hides Remove for physical dev
   );
   const section = sectionMarkup(android, 'Device options');
 
-  for (const label of ['Back button', 'Recents button', 'Shut down device', 'Remove device']) {
+  for (const label of [
+    'Back button',
+    'Recents button',
+    'Dismiss on-screen keyboard',
+    'Shut down device',
+    'Remove device',
+  ]) {
     expect(section).toContain(`>${label}</span>`);
   }
-  expect(section.match(/>Press</g)).toHaveLength(2);
+  expect(section.match(/>Press</g)).toHaveLength(3);
   expect(section).toContain('>Shut down<');
   expect(section).toContain('>Remove<');
   expect(section.indexOf('>Back button</span>')).toBeGreaterThan(section.indexOf('>Text size</span>'));
@@ -1392,6 +1403,75 @@ test('shows RGB888 applied, pending, and failed without changing the selection',
       expect(html).toContain('RGB888 capture failed');
     }
   }
+});
+
+test('keeps the Android on-screen keyboard row off iOS while device settings load', () => {
+  const client = {
+    ...inspectorClient('ios'),
+    capabilities: {
+      deviceSettings: true,
+      activity: false,
+      events: true,
+      camera: false,
+      accessibility: false,
+      streamSettings: false,
+    },
+    deviceSettings: null,
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <LogSidebar
+      client={client}
+      device={device('ios', 'ios:iphone-17-pro')}
+      showDeviceFrame
+      onShowDeviceFrameChange={() => {}}
+    />,
+  );
+
+  expect(html).toContain('aria-label="Device options"');
+  expect(html).not.toContain('>Force on-screen keyboard</span>');
+});
+
+test('disables the keyboard switch on a device with no hardware keyboard', () => {
+  const base = inspectorClient('android');
+  const settings = { ...base, deviceSettings: { 'onscreen-keyboard': 'off' } } as const;
+
+  const without = renderToStaticMarkup(
+    <LogSidebar client={{ ...settings, hardwareKeyboardConnected: false } satisfies DeviceClient} />,
+  );
+  expect(switchMarkup(without, 'Force on-screen keyboard')).toContain('disabled=""');
+  expect(without).toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
+
+  const with_ = renderToStaticMarkup(
+    <LogSidebar client={{ ...settings, hardwareKeyboardConnected: true } satisfies DeviceClient} />,
+  );
+  expect(switchMarkup(with_, 'Force on-screen keyboard')).not.toContain('disabled=""');
+  expect(with_).not.toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
+});
+
+test('offers a keyboard dismiss action on Android only', () => {
+  const android = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
+  const options = sectionMarkup(android, 'Device options');
+  expect(options).toContain('>Dismiss on-screen keyboard</span>');
+
+  const ios = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
+  expect(sectionMarkup(ios, 'Device options')).not.toContain('>Dismiss on-screen keyboard</span>');
+});
+
+test('renders the Android on-screen keyboard switch the backend reports', () => {
+  const client = {
+    ...inspectorClient('android'),
+    hardwareKeyboardConnected: true,
+    deviceSettings: {
+      appearance: 'light',
+      network: 'on',
+      'text-size': 'medium',
+      'onscreen-keyboard': 'on',
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  expect(switchMarkup(html, 'Force on-screen keyboard')).toContain('aria-checked="true"');
+  expect(html).toContain(ONSCREEN_KEYBOARD_DESCRIPTION);
 });
 
 

@@ -8,6 +8,7 @@ import {
   getHighTextContrast,
   getNetworkStatus,
   getReduceMotion,
+  getSoftwareKeyboard,
   getUserRotation,
   listAllDevices,
   listDevices,
@@ -18,6 +19,7 @@ import {
   setHighTextContrast,
   setNetworkEnabled,
   setReduceMotion,
+  setSoftwareKeyboard,
   setUserRotation,
   type OrientationMode,
 } from "./adb.ts";
@@ -1423,6 +1425,36 @@ async function createAppInternal(
           return Response.json({
             ok: true,
             fontWeight: await setFontWeight(opts.serial, enabled),
+          });
+        } catch (err) {
+          return middlewareRequestFailure(err);
+        }
+      }
+      return middlewareFailure("method_not_allowed", 405);
+    }
+
+    if (url.pathname === "/api/software-keyboard") {
+      if (req.method === "GET") {
+        try {
+          return Response.json({ ok: true, softwareKeyboard: await getSoftwareKeyboard(opts.serial) });
+        } catch (err) {
+          return middlewareRequestFailure(err);
+        }
+      }
+      if (req.method === "POST") {
+        if (!isAllowedBrowserOrigin(req, opts)) {
+          return middlewareFailure("forbidden_origin", 403);
+        }
+        try {
+          const payload = await readJsonBody(req);
+          if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+            throw new Error("software keyboard payload must be an object");
+          }
+          const enabled = (payload as Record<string, unknown>).enabled;
+          if (typeof enabled !== "boolean") throw new Error("enabled must be a boolean");
+          return Response.json({
+            ok: true,
+            softwareKeyboard: await setSoftwareKeyboard(opts.serial, enabled),
           });
         } catch (err) {
           return middlewareRequestFailure(err);

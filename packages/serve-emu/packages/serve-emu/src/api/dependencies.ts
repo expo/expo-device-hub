@@ -31,6 +31,7 @@ import type {
   RoutePlaybackRequest,
   RoutePlaybackSnapshot,
   SessionSnapshot,
+  SoftwareKeyboardStatus,
   StreamModeRequest,
   StreamModeResponse,
   StreamEncoderSettingsResponse,
@@ -75,6 +76,8 @@ export type ApiDependencies = {
   setHighTextContrast: (enabled: boolean) => Promise<HighTextContrastStatus>;
   getFontWeight: () => Promise<FontWeightStatus>;
   setFontWeight: (enabled: boolean) => Promise<FontWeightStatus>;
+  getSoftwareKeyboard: () => Promise<SoftwareKeyboardStatus>;
+  setSoftwareKeyboard: (enabled: boolean) => Promise<SoftwareKeyboardStatus>;
   getDisplayDensity: () => Promise<DisplayDensityStatus>;
   setDisplayDensity: (scale: number) => Promise<DisplayDensityStatus>;
 
