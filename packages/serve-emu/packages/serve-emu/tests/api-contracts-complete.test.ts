@@ -343,9 +343,14 @@ describe("complete API success contracts", () => {
     const snapshot = parseAccessibilitySnapshot({
       ok: true,
       capturedAt: timestamp,
+      screen: { width: 1080, height: 2400 },
       nodes: [accessibilityNode],
     });
     expect(snapshot.nodes[0]).toEqual(accessibilityNode);
+    expect(snapshot.screen).toEqual({ width: 1080, height: 2400 });
+    expect(() =>
+      parseAccessibilitySnapshot({ ok: true, capturedAt: timestamp, nodes: [] }),
+    ).toThrow("accessibility snapshot.screen must be an object");
     expect(
       parseAccessibilityTapResponse({
         ok: true,

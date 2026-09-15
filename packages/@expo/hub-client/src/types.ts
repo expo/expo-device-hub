@@ -314,6 +314,32 @@ export interface DeviceStreamStats {
   serverStale: boolean;
 }
 
+/** A rectangle in 0..1 screen fractions, so every platform taps through `sendTouch` unchanged. */
+export interface AccessibilityFrame {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** One accessible element of the current screen, normalized across backends. */
+export interface AccessibilityNode {
+  id: string;
+  /** Never empty — the parsers drop elements that carry no name. */
+  label: string;
+  /** iOS role or element type; Android the class-name tail, e.g. `TextView`. */
+  role: string;
+  enabled: boolean;
+  clickable: boolean;
+  frame: AccessibilityFrame;
+}
+
+export interface AccessibilitySnapshot {
+  /** Epoch milliseconds. */
+  capturedAt: number;
+  nodes: readonly AccessibilityNode[];
+}
+
 /** Explicit backend feature flags used to omit unsupported inspector sections and controls. */
 export interface DeviceCapabilities {
   deviceSettings: boolean;
@@ -321,6 +347,8 @@ export interface DeviceCapabilities {
   events: boolean;
   /** Host-fed emulator camera images that the backend can read and replace. */
   camera: boolean;
+  /** An accessibility tree of the current screen that the backend can read on demand. */
+  accessibility: boolean;
   /** Runtime encoder settings that can be read and patched. */
   streamSettings: DeviceStreamSettingCapabilities;
 }
@@ -372,6 +400,8 @@ export interface TouchSample {
   x: number;
   /** 0..1 down the screen height. */
   y: number;
+  /** Whether a `begin` at a screen edge may start a system edge gesture (the iOS swipe-to-home band). Defaults to true. */
+  edgeGestures?: boolean;
 }
 
 /** A two-finger gesture sample (pinch/pan). Both points are normalized 0..1. */
@@ -511,6 +541,14 @@ export interface DeviceClient {
   setCameraImage: (facing: DeviceCameraFacing, png: Blob) => void;
   /** Restore the backend's "no image set" card for one facing. */
   clearCameraImage: (facing: DeviceCameraFacing) => void;
+
+  /** Last accessibility snapshot, or null before the first successful read. */
+  accessibility: AccessibilitySnapshot | null;
+  accessibilityPending: boolean;
+  /** Last failed read, cleared when the next read starts. */
+  accessibilityError: string | null;
+  /** Read the accessibility tree of the current screen once. Backends do not stream it. */
+  refreshAccessibility: () => void;
 
   /** Backend-supported viewer transport and codec choices; null hides stream controls. */
   streamCapabilities: DeviceStreamCapabilities | null;

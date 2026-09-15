@@ -16,8 +16,9 @@
  *     (device-agnostic — never carries `?device=`).
  */
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { type AccessibilityLoader, loadAndroidAccessibility } from './accessibility';
 import { apiUrl, deviceApiUrl } from './android-api-url';
 import {
   type AndroidSessionEvent,
@@ -64,6 +65,7 @@ import {
   type StreamSwitchState,
   streamSwitchTimeoutMs,
 } from './stream-switch';
+import { useAccessibility } from './useAccessibility';
 import { useAndroidCamera } from './useAndroidCamera';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
@@ -493,6 +495,19 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       scope: deviceScope,
       scopeRef: deviceScopeRef,
     });
+
+  const accessibilityLoader = useMemo<AccessibilityLoader | null>(
+    () =>
+      active && baseUrl
+        ? (signal) =>
+            loadAndroidAccessibility(
+              deviceApiUrl(baseUrl, '/api/accessibility', targetDevice),
+              signal,
+            )
+        : null,
+    [active, baseUrl, targetDevice],
+  );
+  const accessibilityState = useAccessibility(accessibilityLoader);
 
   const streamSettingsUrl =
     active && baseUrl ? deviceApiUrl(baseUrl, '/api/stream-settings', targetDevice) : null;
@@ -1785,6 +1800,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     cameraError,
     setCameraImage,
     clearCameraImage,
+    ...accessibilityState,
     streamSettings,
     streamSettingsPending:
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
@@ -1814,6 +1830,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       activity: false,
       events: true,
       camera: cameraSupported,
+      accessibility: accessibilityLoader !== null,
       streamSettings: { maxDimension: true, h264Fps: true, h264Bitrate: true },
     },
     foregroundApp,
