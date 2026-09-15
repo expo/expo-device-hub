@@ -4,8 +4,29 @@
   "publishConfig": {
     "access": "public"
   },
-  "description": "Experimental high performance Linux NVIDIA emulator GPU capture using native FridaInjector, Gum and NVENC",
+  "description": "High-performance Android emulator capture",
+  "keywords": [
+    "expo",
+    "android",
+    "emulator",
+    "video-capture",
+    "streaming",
+    "linux",
+    "nvidia",
+    "cuda",
+    "nvenc"
+  ],
+  "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/@expo/emulator-capture",
+  "bugs": {
+    "url": "https://github.com/expo/expo-device-hub/issues"
+  },
   "license": "MIT",
+  "author": "Expo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/expo/expo-device-hub.git",
+    "directory": "packages/@expo/emulator-capture"
+  },
   "type": "module",
   "bin": {
     "emulator-capture": "src/cli.mjs"
