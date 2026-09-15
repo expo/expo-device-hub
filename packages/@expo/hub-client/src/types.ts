@@ -208,6 +208,19 @@ export type DeviceStreamSettingCapabilities =
   | false
   | Readonly<Partial<Record<keyof DeviceStreamEncoderSettings, true>>>;
 
+/** A WGS84 coordinate the Hub asks a device to report. */
+export interface DeviceGeoFix {
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * Location control the backend offers. `false` hides the section. Every backend that
+ * offers it can set a fix; `clear` marks one that can also remove it (serve-sim only —
+ * `adb emu geo fix` has no inverse).
+ */
+export type DeviceLocationCapabilities = false | Readonly<{ clear?: true }>;
+
 /** One WebRTC telemetry sample, normally collected once per second. */
 export interface DeviceStreamStatsSample {
   atMs: number;
@@ -352,6 +365,8 @@ export interface DeviceCapabilities {
   accessibility: boolean;
   /** Runtime encoder settings that can be read and patched. */
   streamSettings: DeviceStreamSettingCapabilities;
+  /** Simulated-location control, and whether the fix can also be removed. */
+  location: DeviceLocationCapabilities;
 }
 
 /** The app currently in the foreground on the device. */
@@ -557,6 +572,21 @@ export interface DeviceClient {
   accessibilityError: string | null;
   /** Read the accessibility tree of the current screen once. Backends do not stream it. */
   refreshAccessibility: () => void;
+
+  /**
+   * The last fix a backend confirmed applying, or null when none is known. serve-emu
+   * remembers it for the life of its session (`GET /api/location`); serve-sim has no
+   * read, so this client remembers what it applied and forgets on reload.
+   */
+  location: DeviceGeoFix | null;
+  /** True while a set or clear is in flight. Another write is ignored until it settles. */
+  locationPending: boolean;
+  /** Last failed location write, cleared when the next write starts. */
+  locationError: string | null;
+  /** Point the device at one coordinate. */
+  setLocation: (fix: DeviceGeoFix) => void;
+  /** Remove the simulated fix. A no-op unless `capabilities.location` carries `clear`. */
+  clearLocation: () => void;
 
   /** Backend-supported viewer transport and codec choices; null hides stream controls. */
   streamCapabilities: DeviceStreamCapabilities | null;

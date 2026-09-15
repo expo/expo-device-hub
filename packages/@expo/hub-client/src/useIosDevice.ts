@@ -46,6 +46,7 @@ import {
   mergeIosEventLogPayload,
 } from './ios-events';
 import { type ExecResult, getIosAppDetails } from './ios-app-details';
+import { clearIosLocation, setIosLocation } from './ios-location';
 import { fetchIosScreenshot } from './ios-screenshot';
 import { hidUsageForCode } from './keyboard';
 import {
@@ -77,6 +78,7 @@ import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
 import { useAccessibility } from './useAccessibility';
 import { useAvccStream } from './useAvccStream';
+import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
@@ -1013,6 +1015,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   );
   const accessibilityState = useAccessibility(accessibilityLoader);
 
+  const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
+    if (!execWsUrl || !execToken || !deviceUdid) return null;
+    const exec = (command: string) => execWsCommand(execWsUrl, execToken, command);
+    return {
+      set: (fix) => setIosLocation(exec, deviceUdid, fix),
+      clear: () => clearIosLocation(exec, deviceUdid),
+    };
+  }, [execWsUrl, execToken, deviceUdid]);
+  const {
+    location,
+    locationPending,
+    locationError,
+    setLocation,
+    clearLocation,
+    locationCapabilities,
+  } = useDeviceLocation(locationBackend);
+
   useEffect(() => {
     setEventLogState(createIosEventLogState());
   }, [eventsPath, deviceUdid]);
@@ -1345,6 +1364,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setCameraImage: () => {},
     clearCameraImage: () => {},
     ...accessibilityState,
+    location,
+    locationPending,
+    locationError,
+    setLocation,
+    clearLocation,
     streamCapabilities: IOS_STREAM_CAPABILITIES,
     streamSettings,
     streamSettingsPending,
@@ -1375,6 +1399,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             h264Fps: true,
           }
         : false,
+      location: locationCapabilities,
     },
     foregroundApp,
     videoKind: useWebRtc ? 'video' : useAvcc ? 'canvas' : 'img',

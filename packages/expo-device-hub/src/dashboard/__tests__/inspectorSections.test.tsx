@@ -8,6 +8,7 @@ import {
 } from '@expo/hub-components';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { LocationSection } from '../../../../@expo/hub-components/src/dashboard/LocationSection';
 import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
 import {
   StreamOptionsSection,
@@ -61,6 +62,11 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     accessibilityPending: false,
     accessibilityError: null,
     refreshAccessibility: () => {},
+    location: null,
+    locationPending: false,
+    locationError: null,
+    setLocation: () => {},
+    clearLocation: () => {},
     streamCapabilities: ios
       ? {
           modeAvailability: { mjpeg: true, h264: true, webrtc: true },
@@ -119,6 +125,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
             h264Fps: true,
           }
         : { maxDimension: true, h264Fps: true, h264Bitrate: true },
+      location: false,
     },
     foregroundApp: null,
     videoKind: 'img',
@@ -417,6 +424,35 @@ test('shows the Camera section only when the client reports camera feeds', () =>
 
   const iosHtml = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} />);
   expect(iosHtml).not.toContain('<section aria-label="Camera"');
+});
+
+test('shows the Location section between Camera and Events, with Clear only where supported', () => {
+  const android = inspectorClient('android');
+  const client = {
+    ...android,
+    camera: { wiredAtLaunch: true, feeds: [] },
+    capabilities: { ...android.capabilities, camera: true, location: {} as const },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  expect(html.match(/<section aria-label="Location"/g)).toHaveLength(1);
+
+  const locationIndex = html.indexOf('<section aria-label="Location"');
+  expect(locationIndex).toBeGreaterThan(html.indexOf('<section aria-label="Camera"'));
+  expect(locationIndex).toBeLessThan(html.indexOf('<section aria-label="Events"'));
+  expect(
+    renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />),
+  ).not.toContain('<section aria-label="Location"');
+
+  const settable = renderToStaticMarkup(<LocationSection client={client} defaultOpen />);
+  const clearable = renderToStaticMarkup(
+    <LocationSection
+      client={{ ...client, capabilities: { ...client.capabilities, location: { clear: true } } }}
+      defaultOpen
+    />,
+  );
+  expect(settable).toContain('>Set location</span>');
+  expect(settable).not.toContain('>Clear</span>');
+  expect(clearable).toContain('>Clear</span>');
 });
 
 for (const streamMode of ['h264', 'webrtc'] as const) {
@@ -1328,6 +1364,7 @@ test('keeps the frame option disabled with an explanation for unsupported device
         camera: false,
         accessibility: false,
         streamSettings: false,
+        location: false,
       },
     } satisfies DeviceClient;
     const html = renderToStaticMarkup(
@@ -1356,6 +1393,7 @@ test('shows only the viewer-local frame option while iOS device settings are una
       events: true,
       camera: false,
       accessibility: false,
+      location: false,
       streamSettings: false,
     },
     deviceSettings: null,
@@ -1414,6 +1452,7 @@ test('keeps the Android on-screen keyboard row off iOS while device settings loa
       events: true,
       camera: false,
       accessibility: false,
+      location: false,
       streamSettings: false,
     },
     deviceSettings: null,
