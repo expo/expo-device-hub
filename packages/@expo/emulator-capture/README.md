@@ -31,6 +31,16 @@ npm run build
 npm test
 ```
 
+By default, setup downloads the upstream FFmpeg `n8.0.1` source. It preserves an existing `ffmpeg-source/` directory, so you can edit those sources or supply a compatible replacement before building:
+
+```sh
+npm run setup:build
+# Apply your FFmpeg changes in ffmpeg-source/.
+npm run build
+```
+
+Each build configures FFmpeg with our CUDA/NVENC options, runs make to pick up source changes, and statically links the resulting libraries into `libgpu_capture.so`. Existing archives do not skip the build. Restart the emulator before using a replacement capture library if one is already injected.
+
 ## Benchmark
 
 Start an emulator showing continuous animation, using a fresh emulator process if it has already run a capture. From the package directory, pass its host PID, target FPS, and capture duration in seconds:
