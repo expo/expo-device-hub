@@ -63,6 +63,7 @@
     "@types/react-dom": "~19.2.0",
     "@types/ws": "^8.18.1",
     "expo": "catalog:",
+    "playwright": "^1.63.0",
     "react": "catalog:",
     "react-dom": "catalog:",
     "react-native": "catalog:",
@@ -94,6 +95,7 @@
     "build": "bun run build:web && bun run build:vendor && bun run build:server",
     "build:web": "expo export --platform web --output-dir dist/client",
     "build:vendor": "bun run scripts/vendor.ts",
-    "build:server": "bun run scripts/build-plugin-server.ts"
+    "build:server": "bun run scripts/build-plugin-server.ts",
+    "test:sidebar": "bun scripts/check-sidebar-persistence.ts"
   }
 }
