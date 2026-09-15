@@ -20,7 +20,7 @@ class Peer {
   closeCount = 0;
   ontrack?: (event: { streams: object[]; track: object }) => void;
 
-  constructor() {
+  constructor(readonly configuration?: RTCConfiguration) {
     Peer.instances.push(this);
   }
   addTransceiver() {
@@ -198,7 +198,7 @@ class Video extends EventTarget {
   }
 }
 
-async function androidHarness({ delaySource = false } = {}) {
+async function androidHarness({ delaySource = false, websocketDefault = false } = {}) {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const timers = new Map<number, { callback: () => void; delay: number }>();
   let timerId = 0;
@@ -256,21 +256,41 @@ async function androidHarness({ delaySource = false } = {}) {
     }
     if (path === '/api/stream-mode') return delaySource ? sourceRead : Response.json(source);
     if (path === '/api') {
+      const webrtc = {
+        transport: 'webrtc',
+        codec: 'h264',
+        iceServers: [{ urls: ['stun:host.test'] }],
+        iceTransportPolicy: 'all',
+      };
       return Response.json({
-        stream: { transport: 'webrtc', codec: 'h264', iceServers: [], iceTransportPolicy: 'all' },
+        stream: websocketDefault ? { transport: 'websocket' } : webrtc,
+        ...(websocketDefault
+          ? { viewerTransports: { default: 'websocket', available: ['websocket', 'webrtc'], webrtc } }
+          : {}),
       });
     }
     if (path === '/webrtc/offer') return Response.json({ type: 'answer', sdp: 'answer' });
     return Response.json({}, { status: 404 });
   });
   let client!: ReturnType<typeof useAndroidDeviceClient>;
-  function Harness({ device = 'emulator-test' }: { device?: string }) {
-    client = useAndroidDeviceClient({ baseUrl: 'https://hub.test', device, streamMode: 'webrtc' });
+  function Harness({
+    device = 'emulator-test',
+    streamMode = 'webrtc',
+  }: {
+    device?: string;
+    streamMode?: 'h264' | 'webrtc';
+  }) {
+    client = useAndroidDeviceClient({ baseUrl: 'https://hub.test', device, streamMode });
     return null;
   }
   await act(async () => {
-    renderer = create(<Harness />);
+    renderer = create(<Harness streamMode={websocketDefault ? 'h264' : 'webrtc'} />);
   });
+  if (websocketDefault) {
+    expect(client.streamCapabilities?.modeAvailability.webrtc).toBe(true);
+    expect(Peer.instances).toHaveLength(0);
+    await act(async () => renderer!.update(<Harness streamMode="webrtc" />));
+  }
   const attach = async (video: Video) => {
     await act(async () => client.attachVideo(video as unknown as HTMLVideoElement));
   };
@@ -316,6 +336,16 @@ async function androidHarness({ delaySource = false } = {}) {
     },
   };
 }
+
+test('Android streams over WebRTC with host ICE settings when the CLI defaults to WebSocket', async () => {
+  const hub = await androidHarness({ websocketDefault: true });
+  expect(hub.client.streamCapabilities?.modeAvailability.webrtc).toBe(true);
+  expect(hub.client.videoKind).toBe('video');
+  expect(Peer.instances).toHaveLength(1);
+  expect(Peer.instances[0]!.configuration?.iceServers).toEqual([{ urls: ['stun:host.test'] }]);
+  expect(ControlSocket.instances).toHaveLength(1);
+  expect(new URL(ControlSocket.instances[0]!.url).searchParams.get('video')).toBe('0');
+});
 
 test('attaching and remounting the Android video keeps one control socket and uses the latest node', async () => {
   const hub = await androidHarness();
