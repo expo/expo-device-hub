@@ -60,6 +60,36 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
+### Record an Android session
+
+Recording is opt-in and starts with the Hub, even when no browser viewer is connected.
+It records one booted Android emulator without audio. There are no recording controls
+in the Hub UI.
+
+From a built checkout, with `adb`, `ffmpeg`, and `ffprobe` on your path, run this from
+the repository root. Choose a fresh output directory and boot exactly one emulator first.
+
+```sh
+node packages/expo-device-hub/dist/server/cli.mjs \
+	--platform android \
+	--android-recording-directory /tmp/my-android-session
+```
+
+To stop, send `SIGTERM` to the Hub process, not its process group, and wait for exit.
+Signaling the whole group can kill the encoder before the recording finishes.
+On success, `recordings.json` in the output directory lists a subdirectory containing
+`recording.mp4` and `session.json`. Failed recordings leave the manifest empty.
+
+Keep the emulator's orientation and capture settings unchanged during recording.
+Rotation or capture failure invalidates the recording. A forced kill can leave
+unfinished `.partial` files that cannot be recovered by the Hub.
+
+To verify recording and MP4 playback from the repository root, run:
+
+```sh
+bun packages/expo-device-hub/scripts/verify-android-recording.ts grpc-screenshot endpoint
+```
+
 ## Acknowledgements
 
 Device streaming and control are powered by two vendored, Apache-2.0-licensed
