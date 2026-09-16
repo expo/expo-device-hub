@@ -1,5 +1,15 @@
 #!/usr/bin/env bun
-// Run after build:vendor and build:server, with exactly one booted Android emulator.
+/**
+ * Live integration test for Android session recording, used by CI and local checks.
+ * Starts the built Hub, connects and disconnects preview viewers, then verifies
+ * authenticated or signal-driven shutdown and decodes the resulting MP4.
+ * This tests local capture and finalization, not EAS uploads or website playback.
+ *
+ * Run after build:vendor and build:server with exactly one booted Android emulator
+ * and adb, ffmpeg, and ffprobe on PATH:
+ *   bun packages/expo-device-hub/scripts/verify-android-recording.ts [grpc-screenshot|scrcpy] [endpoint|signal]
+ * Video, manifests, hub.log, and verification.json stay in the printed temp directory.
+ */
 import assert from 'node:assert/strict';
 import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
