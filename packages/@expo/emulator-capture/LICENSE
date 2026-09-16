@@ -22,10 +22,17 @@ SOFTWARE.
 
 ---
 
-This repository includes third-party code that is licensed separately. See the
-vendored licenses:
+The MIT license above applies to original Expo source in this package, including
+the JavaScript CLI/API, injector/controller, injected capture and Gum hook code,
+CUDA scaling kernel, build scripts, tests, and documentation, except where a file
+states otherwise. It does not relicense third-party code or copied material.
 
-- serve-sim — Apache License 2.0:
-  packages/expo-device-hub/vendor/serve-sim/LICENSE
-- serve-emu — Apache License 2.0:
-  packages/expo-device-hub/vendor/serve-emu/LICENSE
+The native outputs contain separately licensed components. In particular,
+libgpu_capture.so links FFmpeg and Frida Gum, and inject links Frida Core. Their
+LGPL, wxWindows, and other applicable terms remain in effect for those components
+and their distribution in the combined binaries. The original Expo source being
+MIT does not make those binaries exclusively MIT-licensed.
+
+See THIRD_PARTY_LICENSES.md for the preliminary component inventory, source
+license choices, external emulator integration notes, and remaining distribution
+work. LICENSES/ contains upstream license copies and pinned source references.

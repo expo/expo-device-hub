@@ -50,3 +50,7 @@ npm run benchmark -- 12345 120 30
 ```
 
 The benchmark first measures a baseline, then records video and capture timing. Logs, recordings, timing CSVs, and a JSON summary go into `artifacts/benchmarks/run-*`. It measures capture performance, not browser playback or end-to-end visual correctness.
+
+## Licenses
+
+Original Expo source, including the injected capture code and injector, is [MIT-licensed](LICENSE). The native binaries include FFmpeg, Frida, and other components under separate licenses. See the [preliminary third-party inventory](THIRD_PARTY_LICENSES.md) and [upstream license copies](LICENSES/README.md). Final artifact attribution and source/rebuild distribution still need verification before release.
