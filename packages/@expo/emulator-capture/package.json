@@ -20,7 +20,7 @@
   "bugs": {
     "url": "https://github.com/expo/expo-device-hub/issues"
   },
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "author": "Expo",
   "repository": {
     "type": "git",
@@ -36,6 +36,8 @@
     "dist",
     "README.md",
     "LICENSE",
+    "LICENSES",
+    "THIRD_PARTY_LICENSES.md",
     "scripts/*.mjs",
     "tests/*.cpp"
   ],

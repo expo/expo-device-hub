@@ -135,3 +135,7 @@ gestures — so this package hides that behind one shared contract:
 
 It lives in its own package (rather than inside the plugin) so the **Expo dashboard
 website** can consume the exact same code to mirror devices in the browser.
+
+## Licenses
+
+Original Expo code is generally [MIT-licensed](LICENSE). Individual packages and third-party dependencies use other licenses, including Apache-2.0 and LGPL. See [third-party licenses](THIRD_PARTY_LICENSES.md) and each package's license files for the applicable terms; bundled native binaries are not covered solely by the repository's MIT license.
