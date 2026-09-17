@@ -9,7 +9,7 @@ import { CameraSection } from './CameraSection';
 import { PermissionsSection } from './PermissionsSection';
 import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
 import { CurrentAppSection } from './CurrentAppSection';
-import { DeviceOptionsSection } from './DeviceOptionsSection';
+import { DeviceOptionsSection, type DeviceGpuInfo } from './DeviceOptionsSection';
 import { EventsSection } from './EventsSection';
 import { LocationSection } from './LocationSection';
 import { LogsSection } from './LogsSection';
@@ -24,6 +24,8 @@ export type LogSidebarProps = {
   client?: DeviceClient;
   /** Selected device metadata used by viewer-local options. */
   device?: Device;
+  /** Runtime Android emulator renderer; null displays Unknown. */
+  gpuBackend?: DeviceGpuInfo | null;
   /** Viewer-local preference for supported device-frame artwork. */
   showDeviceFrame?: boolean;
   /** Change the viewer-local device-frame preference. */
@@ -54,6 +56,7 @@ export function LogSidebar({
   onToggle,
   client,
   device,
+  gpuBackend,
   showDeviceFrame = true,
   onShowDeviceFrameChange,
   streamMode,
@@ -116,6 +119,7 @@ export function LogSidebar({
           <DeviceOptionsSection
             client={client}
             deviceFrame={deviceFrame}
+            gpuBackend={device?.platform === 'android' && !device.physical ? gpuBackend : undefined}
             showDeviceSettings={client?.capabilities.deviceSettings ?? false}
             onShutdown={onShutdown}
             onRemove={onRemoveDevice}

@@ -24,6 +24,7 @@ import {
 import { configureClientShell } from './client-shell';
 import { argentInteractionWebSocketHandler } from './argent-interaction-websocket';
 import { deviceListWebSocketHandler, refreshDeviceList } from './device-list-websocket';
+import { handleDeviceGpuRequest } from './device-gpu';
 import { type HubDeviceList, listDevices } from './devices';
 import { handleEasEndpoint } from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
@@ -35,6 +36,7 @@ import { listNewDeviceOptions } from './sim-options';
 import { SERVER_TRANSPORT } from './transport';
 
 const DEVICES_ROUTE = '/api/devices';
+const DEVICE_GPU_ROUTE = '/api/devices/gpu';
 const SHUTDOWN_DEVICE_ROUTE = '/api/devices/shutdown';
 const REMOVE_DEVICE_ROUTE = '/api/devices/remove';
 const BOOT_DEVICE_ROUTE = '/api/devices/boot';
@@ -114,6 +116,10 @@ export default async function handler(request: Request): Promise<Response | null
     const devices = await listDevices(SERVER_PLATFORM_FILTER);
     const bootedOnly = searchParams.get('booted') === 'true' || searchParams.get('booted') === '1';
     return jsonResponse(bootedOnly ? filterBooted(devices) : devices);
+  }
+
+  if (pathname === DEVICE_GPU_ROUTE) {
+    return handleDeviceGpuRequest(request);
   }
 
   if (pathname === SHUTDOWN_DEVICE_ROUTE || pathname === REMOVE_DEVICE_ROUTE) {
