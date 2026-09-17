@@ -298,6 +298,37 @@ test.each([
   });
 });
 
+test("finish rejects within the bound after a failure while a write is still stalled", async () => {
+  let adds = 0;
+  const { recording, root } = await setup({
+    maxQueuedBytes: 256,
+    createWriter: async ({ path }) => {
+      await writeFile(path, "test-writer");
+      return {
+        add: () => {
+          adds++;
+          return new Promise<void>(() => {});
+        },
+        finish: async () => {},
+        cancel: async () => {},
+      };
+    },
+  });
+  recording.accept(frame(0n), size, "scrcpy");
+  await recording.ready;
+  recording.accept(frame(1000n), size, "scrcpy");
+  while (adds === 0) await new Promise((resolve) => setTimeout(resolve, 1));
+  for (let i = 2; i <= 100; i++) recording.accept(frame(BigInt(i * 1000)), size, "scrcpy");
+  expect(recording.snapshot().status).toBe("failed");
+  const startedAt = performance.now();
+  await expect(recording.finish()).rejects.toThrow("byte limit");
+  expect(performance.now() - startedAt).toBeLessThan(2_000);
+  expect(JSON.parse(await readFile(join(root, "session/session.json"), "utf8"))).toMatchObject({
+    status: "failed",
+    recording: "recording.mp4.partial",
+  });
+});
+
 test("rejects an oversized first frame and persists a failed manifest", async () => {
   const { recording, root, cancelled } = await setup({ maxQueuedBytes: 16 });
   recording.accept(frame(0n), size, "scrcpy");
