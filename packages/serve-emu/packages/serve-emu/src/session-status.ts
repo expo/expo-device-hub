@@ -24,14 +24,20 @@ export function isAbnormalExit(
   return signal !== null || (code ?? 0) !== 0;
 }
 
+const EXIT_REASON_STDERR_BYTES = 2_048;
+
 // Human-readable reason plus the structured code/meta surfaced on /health when
-// scrcpy exits abnormally.
+// scrcpy exits abnormally. The stderr tail goes into the reason only; meta
+// stays small and structured.
 export function procExitDetail(
   code: number | null,
   signal: NodeJS.Signals | null,
+  stderrTail?: string,
 ): { reason: string; code: string; meta: Record<string, string | number> } {
+  const tail = (stderrTail ?? "").trim().slice(-EXIT_REASON_STDERR_BYTES);
+  const suffix = tail ? `: ${tail}` : "";
   return {
-    reason: `scrcpy exited with code ${code ?? "null"} signal ${signal ?? "null"}`,
+    reason: `scrcpy exited with code ${code ?? "null"} signal ${signal ?? "null"}${suffix}`,
     code: "process-exit",
     meta: {
       ...(code !== null ? { exitCode: code } : {}),

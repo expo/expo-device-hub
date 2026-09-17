@@ -26,6 +26,8 @@ type ScrcpyControlTransport = {
   localPort: number;
   serial: string;
   close: () => Promise<void>;
+  /** Last 8 KiB of scrcpy stderr, collected for the process lifetime. */
+  stderrTail?: () => string;
 };
 
 export type ScrcpySession = ScrcpyControlTransport & {
@@ -1162,6 +1164,7 @@ async function startScrcpyTransport(
         scid,
         localPort,
         serial,
+        stderrTail: () => stderrTail,
         close: () =>
           closeWithReason(new Error("scrcpy control session closed")),
       };
@@ -1202,6 +1205,7 @@ async function startScrcpyTransport(
       scid,
       localPort,
       serial,
+      stderrTail: () => stderrTail,
       readFrame: () => readFrame(reader, preamble.protocol),
       close: () => closeWithReason(new Error("scrcpy session closed")),
     };

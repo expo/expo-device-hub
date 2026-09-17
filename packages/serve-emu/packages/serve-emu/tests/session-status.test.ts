@@ -61,4 +61,21 @@ describe("procExitDetail", () => {
     const d = procExitDetail(137, "SIGKILL");
     expect(d.meta).toEqual({ exitCode: 137, signal: "SIGKILL" });
   });
+
+  test("appends the trimmed stderr tail to the reason but not to meta", () => {
+    const d = procExitDetail(255, null, "\nERROR: Could not open video stream\n");
+    expect(d.reason).toBe(
+      "scrcpy exited with code 255 signal null: ERROR: Could not open video stream",
+    );
+    expect(d.meta).toEqual({ exitCode: 255 });
+  });
+
+  test("ignores a blank stderr tail and bounds a long one to 2 KiB", () => {
+    expect(procExitDetail(1, null, "  \n").reason).toBe(
+      "scrcpy exited with code 1 signal null",
+    );
+    const long = "x".repeat(5_000);
+    const d = procExitDetail(1, null, long);
+    expect(d.reason).toBe(`scrcpy exited with code 1 signal null: ${"x".repeat(2_048)}`);
+  });
 });

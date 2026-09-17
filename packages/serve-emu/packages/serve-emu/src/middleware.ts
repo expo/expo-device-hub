@@ -568,6 +568,12 @@ async function createAppInternal(
     },
   ) => {
     if (status !== "streaming") return;
+    // /health only keeps this in memory; stderr is what reaches a CI job log.
+    const codePart = detail?.code ? ` code=${JSON.stringify(detail.code)}` : "";
+    const metaPart = detail?.meta ? ` meta=${JSON.stringify(detail.meta)}` : "";
+    console.error(
+      `[serve-emu] ${opts.serial} capture ${nextStatus}: ${reason}${codePart}${metaPart}`,
+    );
     opts.screenRecording?.fail(new Error(reason));
     status = nextStatus;
     captureRestarting = false;
