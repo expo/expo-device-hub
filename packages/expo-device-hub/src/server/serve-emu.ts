@@ -8,7 +8,7 @@ import {
 } from '../../vendor/serve-emu/dist/middleware.js';
 
 import { type EmulatorCameraFeeds } from './device-actions';
-import { AndroidSession } from './android-session';
+import { AndroidSession, type RecordingStart } from './android-session';
 import {
   readStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
@@ -27,7 +27,7 @@ export const emuCameraFeeds: EmulatorCameraFeeds = {
 
 const androidSession = new AndroidSession(router);
 
-export const startAndroidScreenRecording = (directory: string): Promise<void> =>
+export const startAndroidScreenRecording = (directory: string): Promise<RecordingStart> =>
   androidSession.startRecording(directory, {
     maxFileBytes: recordingLimitFromEnv('EXPO_DEVICE_HUB_RECORDING_MAX_BYTES'),
     maxDurationMs: recordingLimitFromEnv('EXPO_DEVICE_HUB_RECORDING_MAX_DURATION_MS'),

@@ -68,6 +68,7 @@ in the Hub UI.
 
 From a built checkout, with `adb`, `ffmpeg`, and `ffprobe` on your path, run this from
 the repository root. Choose a fresh output directory and boot exactly one emulator first.
+With zero or several booted emulators the Hub starts without recording and logs a warning.
 
 ```sh
 node packages/expo-device-hub/dist/server/cli.mjs \

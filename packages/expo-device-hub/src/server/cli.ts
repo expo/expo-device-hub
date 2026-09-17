@@ -164,7 +164,8 @@ async function main(): Promise<void> {
 
   if (options.androidRecordingDirectory) {
     try {
-      await hubServer.startAndroidScreenRecording(options.androidRecordingDirectory);
+      const start = await hubServer.startAndroidScreenRecording(options.androidRecordingDirectory);
+      if (!start.started) console.warn(`Android recording skipped: ${start.reason}`);
     } catch (error) {
       await hubServer.shutdownAndroid().catch(() => {});
       throw error;
