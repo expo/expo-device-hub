@@ -92,6 +92,7 @@ jobs:
 
       - name: Build recording test runtime
         run: |
+          bun run --filter '@expo/hub-android-utils' --filter '@expo/hub-apple-utils' build
           bun run --filter serve-emu build
           bun packages/serve-emu/packages/serve-emu/scripts/fetch-scrcpy.ts
           # Hub imports the iOS middleware on Android too. Only its JS is needed here.
