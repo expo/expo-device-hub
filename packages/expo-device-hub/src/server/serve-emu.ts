@@ -8,7 +8,8 @@ import {
 } from '../../vendor/serve-emu/dist/middleware.js';
 
 import { type EmulatorCameraFeeds } from './device-actions';
-import { AndroidSession, type RecordingStart } from './android-session';
+import { AndroidSession, type RecordingFinish, type RecordingStart } from './android-session';
+import { recordingLimitsFromEnv } from './recording-limits';
 import {
   readStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
@@ -27,21 +28,11 @@ export const emuCameraFeeds: EmulatorCameraFeeds = {
 
 const androidSession = new AndroidSession(router);
 
-export const startAndroidScreenRecording = (directory: string): Promise<RecordingStart> =>
-  androidSession.startRecording(directory, {
-    maxFileBytes: recordingLimitFromEnv('EXPO_DEVICE_HUB_RECORDING_MAX_BYTES'),
-    maxDurationMs: recordingLimitFromEnv('EXPO_DEVICE_HUB_RECORDING_MAX_DURATION_MS'),
-    minFreeBytes: recordingLimitFromEnv('EXPO_DEVICE_HUB_RECORDING_MIN_FREE_BYTES'),
-  });
+export const startAndroidScreenRecording = async (directory: string): Promise<RecordingStart> =>
+  await androidSession.startRecording(directory, recordingLimitsFromEnv(process.env));
 
-function recordingLimitFromEnv(name: string): number | undefined {
-  const value = process.env[name];
-  if (value === undefined) return undefined;
-  // ScreenRecording.create validates the public options, including environment overrides.
-  return value.trim() === '' ? NaN : Number(value);
-}
-
-export const finishAndroidScreenRecording = (): Promise<void> => androidSession.finishRecording();
+export const finishAndroidScreenRecording = (): Promise<RecordingFinish> =>
+  androidSession.finishRecording();
 
 export const shutdownAndroid = (): Promise<void> => androidSession.shutdown();
 

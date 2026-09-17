@@ -15,12 +15,13 @@ type RecordingLimits = Pick<
 >;
 
 export type RecordingStart = { started: true } | { started: false; reason: string };
+export type RecordingFinish = { recorded: true } | { recorded: false; reason: string };
 
 /** Owns one Android host lifetime; the router owns its canonical capture and muxer. */
 export class AndroidSession {
   private startTask: Promise<RecordingStart> | null = null;
   private directory: string | null = null;
-  private finishTask: Promise<void> | null = null;
+  private finishTask: Promise<RecordingFinish> | null = null;
   private shutdownTask: Promise<void> | null = null;
 
   constructor(
@@ -64,15 +65,19 @@ export class AndroidSession {
     return { started: true };
   }
 
-  finishRecording(): Promise<void> {
+  finishRecording(): Promise<RecordingFinish> {
     return (this.finishTask ??= (async () => {
       const start = await this.startTask;
+      if (!start) return { recorded: false, reason: 'Android recording was not requested.' };
+      if (!start.started) return { recorded: false, reason: start.reason };
       const recording = await this.router.finishScreenRecording();
-      if (start?.started && recording && this.directory) {
-        const resultPath = join(this.directory, 'recordings.json');
-        await writeFile(`${resultPath}.partial`, JSON.stringify([recording]));
-        await rename(`${resultPath}.partial`, resultPath);
+      if (!recording || !this.directory) {
+        return { recorded: false, reason: 'Android recording produced no result.' };
       }
+      const resultPath = join(this.directory, 'recordings.json');
+      await writeFile(`${resultPath}.partial`, JSON.stringify([recording]));
+      await rename(`${resultPath}.partial`, resultPath);
+      return { recorded: true };
     })());
   }
 

@@ -9,7 +9,6 @@
  * so it must be known server-side (see ./serve-sim.ts).
  */
 
-import { timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
@@ -95,25 +94,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 export default async function handler(request: Request): Promise<Response | null> {
   const { pathname, searchParams } = new URL(request.url);
 
-  if (pathname === '/_eas/android-recording/stop') {
-    const token = process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN;
-    const supplied = Buffer.from(request.headers.get('authorization') ?? '');
-    const expected = Buffer.from(`Bearer ${token}`);
-    if (!token || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
-      return jsonResponse({ ok: false, error: 'Unauthorized' }, 401);
-    }
-    if (request.method !== 'POST') return jsonResponse({ ok: false, error: 'Method Not Allowed' }, 405);
-    try {
-      await finishAndroidScreenRecording();
-      return jsonResponse({ ok: true });
-    } catch (error) {
-      return jsonResponse({ ok: false, error: String(error) }, 500);
-    }
-  }
-
-  const easResponse = handleEasEndpoint(request, {
+  const easResponse = await handleEasEndpoint(request, {
     mountPath: MOUNT_PATH,
     serveSimPrefix: SIM_PREFIX,
+    recordingControlToken: process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN,
+    finishAndroidRecording: finishAndroidScreenRecording,
   });
   if (easResponse) return easResponse;
 

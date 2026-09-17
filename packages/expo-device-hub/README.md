@@ -78,6 +78,15 @@ node packages/expo-device-hub/dist/server/cli.mjs \
 
 To stop, send `SIGTERM` to the Hub process, not its process group, and wait for exit.
 Signaling the whole group can kill the encoder before the recording finishes.
+
+EAS stops the recording before it signals the process. Set
+`EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN` and send
+`POST /_eas/android-recording/stop` with `Authorization: Bearer <token>`. The route answers
+200 when a recording was published, 409 with the reason when nothing was recorded, and 401
+for every request when the variable is unset. Three variables override the limits:
+`EXPO_DEVICE_HUB_RECORDING_MAX_BYTES` (default 2 GiB), `EXPO_DEVICE_HUB_RECORDING_MAX_DURATION_MS`
+(default one hour) and `EXPO_DEVICE_HUB_RECORDING_MIN_FREE_BYTES` (default 256 MiB). An invalid
+value stops the Hub at startup with the variable name in the error.
 On success, `recordings.json` in the output directory lists a subdirectory containing
 `recording.mp4` and `session.json`. Failed recordings leave the manifest empty.
 

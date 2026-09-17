@@ -54,7 +54,8 @@ describe('Android session ownership', () => {
     expect(session.finishRecording()).toBe(finishing);
     const shutdown = session.shutdown();
     expect(session.shutdown()).toBe(shutdown);
-    await Promise.all([finishing, shutdown]);
+    expect(await finishing).toEqual({ recorded: true });
+    await shutdown;
     expect(router.finishScreenRecording).toHaveBeenCalledTimes(1);
     expect(router.stopAll).toHaveBeenCalledTimes(1);
     await expect(session.startRecording(directory)).rejects.toThrow('must start once');
@@ -112,14 +113,22 @@ describe('Android session ownership', () => {
     });
     expect(router.startScreenRecording).not.toHaveBeenCalled();
     expect(await readFile(join(directory, 'recordings.json'), 'utf8')).toBe('[]');
-    router.finishScreenRecording.mockResolvedValue(null as never);
+    expect(await session.finishRecording()).toEqual({
+      recorded: false,
+      reason: expect.stringContaining('exactly one booted emulator'),
+    });
     await session.shutdown();
+    expect(router.finishScreenRecording).not.toHaveBeenCalled();
     expect(router.stopAll).toHaveBeenCalledTimes(1);
     expect(await readFile(join(directory, 'recordings.json'), 'utf8')).toBe('[]');
   });
 
   test('a host without recording can shut down but cannot start recording afterward', async () => {
     const { directory, session } = await setup();
+    expect(await session.finishRecording()).toEqual({
+      recorded: false,
+      reason: 'Android recording was not requested.',
+    });
     await session.shutdown();
     await expect(session.startRecording(directory)).rejects.toThrow('must start once');
   });
