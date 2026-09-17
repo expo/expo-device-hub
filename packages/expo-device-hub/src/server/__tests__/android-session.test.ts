@@ -103,10 +103,19 @@ describe('Android session ownership', () => {
     { devices: [] },
     { devices: [device, { ...device, id: 'emulator-5556' }] },
     { devices: [{ ...device, physical: true }] },
-  ])('rejects unsupported device counts: %j', async ({ devices }) => {
+  ])('starts without recording for unsupported device counts: %j', async ({ devices }) => {
     const { directory, router, session } = await setup(devices);
-    await expect(session.startRecording(directory)).rejects.toThrow('exactly one booted emulator');
+    const start = await session.startRecording(directory);
+    expect(start).toEqual({
+      started: false,
+      reason: expect.stringContaining('exactly one booted emulator'),
+    });
     expect(router.startScreenRecording).not.toHaveBeenCalled();
+    expect(await readFile(join(directory, 'recordings.json'), 'utf8')).toBe('[]');
+    router.finishScreenRecording.mockResolvedValue(null as never);
+    await session.shutdown();
+    expect(router.stopAll).toHaveBeenCalledTimes(1);
+    expect(await readFile(join(directory, 'recordings.json'), 'utf8')).toBe('[]');
   });
 
   test('a host without recording can shut down but cannot start recording afterward', async () => {
