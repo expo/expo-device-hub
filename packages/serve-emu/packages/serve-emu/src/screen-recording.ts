@@ -381,7 +381,7 @@ export class ScreenRecording {
           : "Recording received no decodable frame.",
       );
       this.fail(error);
-      await this.#failureTask;
+      await this.#awaitFailureRecorded();
       throw error;
     }
     const first = this.#first;
@@ -410,15 +410,19 @@ export class ScreenRecording {
       return await Promise.race([this.#finalize(durationUs), deadline]);
     } catch (error) {
       this.fail(error);
-      // A stalled writer never drains; wait for the failure manifest only, and not past a bound.
-      await Promise.race([
-        this.#failureManifest,
-        new Promise((resolve) => setTimeout(resolve, 5_000).unref()),
-      ]);
+      await this.#awaitFailureRecorded();
       throw error;
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /** A stalled writer never drains; wait for the failure manifest only, and not past a bound. */
+  async #awaitFailureRecorded(): Promise<void> {
+    await Promise.race([
+      this.#failureManifest,
+      new Promise((resolve) => setTimeout(resolve, 5_000).unref()),
+    ]);
   }
 
   async #finalize(durationUs: bigint): Promise<ScreenRecordingResult> {
