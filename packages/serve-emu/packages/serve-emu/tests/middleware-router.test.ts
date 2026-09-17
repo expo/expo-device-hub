@@ -195,6 +195,33 @@ describe("createRouter DevicePanel compatibility", () => {
     }
   });
 
+  test("fails recording startup when a viewer creates the app during startup", async () => {
+    const root = await mkdtemp(join(tmpdir(), "router-screen-recording-race-"));
+    const created: string[] = [];
+    const stopped: string[] = [];
+    const dependencies = routerDependencies({ devices: [{ serial: "emulator-5554", state: "device" }], avds: [], running: [], created, stopped });
+    const router = createRouter({ streamMode: "scrcpy" }, {
+      ...dependencies,
+      createApp: async (options) => {
+        created.push(options.serial);
+        return fakeApp(options.serial, stopped);
+      },
+    });
+    try {
+      const options = { directory: join(root, "session"), udid: "emulator-5554", deviceName: "Pixel", runtimeDisplayName: "Android 16" };
+      const starting = router.startScreenRecording(options);
+      const viewer = router.ensure("emulator-5554");
+      await expect(starting).rejects.toThrow("must start before device capture");
+      await viewer;
+      expect(created).toEqual(["emulator-5554"]);
+      await router.stopAll();
+      expect(JSON.parse(await readFile(join(options.directory, "session.json"), "utf8")).status).toBe("failed");
+    } finally {
+      await router.stopAll();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("keeps WebRTC statistics observational and validates before device lookup", async () => {
     let deviceReads = 0;
     let appCreates = 0;
