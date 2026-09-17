@@ -34,7 +34,8 @@ export type RecordingWriter = {
 };
 
 export const DEFAULT_RECORDING_LIMITS = {
-  maxFileBytes: 2 * 1024 ** 3,
+  // Above one hour at 6 Mbps, so the duration limit finalizes before the byte limit fails.
+  maxFileBytes: 4 * 1024 ** 3,
   maxDurationMs: 60 * 60 * 1000,
   minFreeBytes: 256 * 1024 ** 2,
 };

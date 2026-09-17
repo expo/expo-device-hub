@@ -84,7 +84,7 @@ EAS stops the recording before it signals the process. Set
 `POST /_eas/android-recording/stop` with `Authorization: Bearer <token>`. The route answers
 200 when a recording was published, 409 with the reason when nothing was recorded, and 401
 for every request when the variable is unset. Three variables override the limits:
-`EXPO_DEVICE_HUB_RECORDING_MAX_BYTES` (default 2 GiB), `EXPO_DEVICE_HUB_RECORDING_MAX_DURATION_MS`
+`EXPO_DEVICE_HUB_RECORDING_MAX_BYTES` (default 4 GiB), `EXPO_DEVICE_HUB_RECORDING_MAX_DURATION_MS`
 (default one hour) and `EXPO_DEVICE_HUB_RECORDING_MIN_FREE_BYTES` (default 256 MiB). An invalid
 value stops the Hub at startup with the variable name in the error.
 On success, `recordings.json` in the output directory lists a subdirectory containing
