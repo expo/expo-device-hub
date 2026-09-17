@@ -81,8 +81,10 @@ On success, `recordings.json` in the output directory lists a subdirectory conta
 `recording.mp4` and `session.json`. Failed recordings leave the manifest empty.
 
 Keep the emulator's orientation and capture settings unchanged during recording.
-Rotation or capture failure invalidates the recording. A forced kill can leave
-unfinished `.partial` files that cannot be recovered by the Hub.
+Rotation or capture failure invalidates the recording. The MP4 is fragmented, so a
+forced kill leaves a `recording.mp4.partial` that plays up to the last keyframe before
+the kill, about 10 seconds of an active screen at the default keyframe interval. The Hub
+does not publish or upload that file.
 
 To verify recording and MP4 playback from the repository root, run:
 

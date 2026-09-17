@@ -60,7 +60,8 @@ export async function createRecordingFileTarget(options: {
       close,
       abort: close,
     }),
-    { chunked: true, chunkSize: 64 * 1024 },
+    // Unchunked, so every closed fragment reaches the disk at once instead of waiting in a buffer.
+    { chunked: false },
   );
   return { target, close };
 }

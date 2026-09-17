@@ -61,7 +61,8 @@ export type RecordingOptions = RecordingMetadata & {
 async function createMp4Writer(options: WriterOptions): Promise<RecordingWriter> {
   const file = await createRecordingFileTarget(options);
   const output = new Output({
-    format: new Mp4OutputFormat({ fastStart: false }),
+    // Each closed fragment plays on its own, so a crash keeps everything before the open one.
+    format: new Mp4OutputFormat({ fastStart: "fragmented" }),
     target: file.target,
   });
   const source = new EncodedVideoPacketSource("avc");

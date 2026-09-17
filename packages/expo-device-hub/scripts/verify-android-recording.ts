@@ -225,10 +225,10 @@ try {
         encoding: 'utf8',
       })
     ).packets;
+    // Fragmented MP4 keeps sample durations in each fragment header; ffprobe reports them as N/A per packet.
     let lastPts = -1;
     for (const packet of packets) {
       assert(Number(packet.pts_time) > lastPts, 'Packet timestamps must increase');
-      assert(Number(packet.duration_time) > 0, 'Packet durations must be positive');
       lastPts = Number(packet.pts_time);
     }
     execFileSync('ffmpeg', [
