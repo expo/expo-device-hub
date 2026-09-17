@@ -267,6 +267,37 @@ test("bounds a stalled writer without blocking packet delivery", async () => {
   await expect(recording.finish()).rejects.toThrow("byte limit");
 });
 
+test.each([
+  { stall: "add", writer: { add: () => new Promise<void>(() => {}), finish: async () => {} } },
+  { stall: "finish", writer: { add: async () => {}, finish: () => new Promise<void>(() => {}) } },
+])("bounds a stalled $stall during finalization and keeps the partial file listed", async ({ writer }) => {
+  const { recording, root } = await setup({
+    finalizeTimeoutMs: 50,
+    createWriter: async ({ path }) => {
+      await writeFile(path, "test-writer");
+      return { ...writer, cancel: async () => {} };
+    },
+  });
+  recording.accept(frame(0n), size, "scrcpy");
+  await recording.ready;
+  recording.accept(frame(1_000_000n), size, "scrcpy");
+  const startedAt = performance.now();
+  await expect(recording.finish()).rejects.toThrow("finalization exceeded 50 ms");
+  expect(performance.now() - startedAt).toBeLessThan(2_000);
+  expect(recording.snapshot()).toMatchObject({
+    status: "failed",
+    error: expect.stringContaining("exceeded"),
+  });
+  expect(JSON.parse(await readFile(join(root, "session/session.json"), "utf8"))).toMatchObject({
+    status: "failed",
+    error: expect.stringContaining("exceeded"),
+    recording: "recording.mp4.partial",
+    firstFrameWallClock: { iso8601: new Date(1_800_000_000_000).toISOString() },
+    width: 1280,
+    height: 720,
+  });
+});
+
 test("rejects an oversized first frame and persists a failed manifest", async () => {
   const { recording, root, cancelled } = await setup({ maxQueuedBytes: 16 });
   recording.accept(frame(0n), size, "scrcpy");
@@ -302,7 +333,7 @@ test.each(["start", "write", "finish"])(
     await expect(recording.finish()).rejects.toThrow("disk unavailable");
     const manifest = JSON.parse(await readFile(join(root, "session/session.json"), "utf8"));
     expect(manifest.status).toBe("failed");
-    expect(manifest.recording).toBeUndefined();
+    expect(manifest.recording).toBe("recording.mp4.partial");
   },
 );
 
