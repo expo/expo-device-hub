@@ -54,6 +54,8 @@ export type RecordingOptions = RecordingMetadata & {
   maxFileBytes?: number;
   maxDurationMs?: number;
   minFreeBytes?: number;
+  /** Bound on finish(); a stalled writer fails the recording instead of hanging shutdown. */
+  finalizeTimeoutMs?: number;
   /** Test seam. Production uses a host monotonic clock paired with epoch time. */
   clock?: { monotonicUs(): bigint; epochMs(): number };
   createWriter?: (options: WriterOptions) => Promise<RecordingWriter>;
@@ -156,9 +158,11 @@ export class ScreenRecording {
   #frames = 0;
   #durationTimer: ReturnType<typeof setTimeout> | null = null;
   #stopReason: "session-stop" | "duration-limit" = "session-stop";
+  #outputName = "recording.mp4.partial";
   readonly #limits: typeof DEFAULT_RECORDING_LIMITS;
   #finishTask: Promise<ScreenRecordingResult> | null = null;
   #failureTask: Promise<void> | null = null;
+  #failureManifest: Promise<void> | null = null;
   #readyResolve!: () => void;
   #readyReject!: (reason: Error) => void;
   readonly ready: Promise<void>;
@@ -293,13 +297,9 @@ export class ScreenRecording {
         };
         this.#frames = 1;
         // A killed process never reaches finish; this lets the uploader place the partial file.
-        void this.#manifest({
-          status: "recording",
-          recording: "recording.mp4.partial",
-          firstFrameWallClock: { iso8601: this.#status.firstFrameAt },
-          width: size.width,
-          height: size.height,
-        }).catch((error) => this.fail(error));
+        void this.#manifest({ status: "recording", ...this.#fileFields() }).catch((error) =>
+          this.fail(error),
+        );
         this.#durationTimer = setTimeout(
           () => this.#finishAtDurationLimit(),
           this.#limits.maxDurationMs,
@@ -342,16 +342,28 @@ export class ScreenRecording {
     this.#status = { status: "failed", error: error.message };
     this.#pending = null;
     this.#readyReject(error);
+    // The manifest does not wait for the writer: a stalled write chain must still leave the failure on disk.
+    this.#failureManifest = this.#manifest({
+      status: "failed",
+      error: error.message,
+      ...this.#fileFields(),
+    }).catch(() => {});
     // Drain already scheduled writes before closing their file handle.
-    this.#failureTask = this.#writes
-      .then(async () => {
-        try {
-          await this.#writer?.cancel();
-        } finally {
-          await this.#manifest({ status: "failed", error: error.message });
-        }
-      })
-      .catch(() => {});
+    this.#failureTask = Promise.allSettled([
+      this.#failureManifest,
+      this.#writes.then(() => this.#writer?.cancel()),
+    ]).then(() => {});
+  }
+
+  /** Where the frames are and how to place them, once the first keyframe arrived. */
+  #fileFields(): Record<string, unknown> {
+    if (!this.#first) return {};
+    return {
+      recording: this.#outputName,
+      firstFrameWallClock: { iso8601: new Date(this.#first.epochMs).toISOString() },
+      width: this.#first.width,
+      height: this.#first.height,
+    };
   }
 
   finish(): Promise<ScreenRecordingResult> {
@@ -383,39 +395,56 @@ export class ScreenRecording {
       durationUs > this.#pending.timeUs ? durationUs - this.#pending.timeUs : 1n,
     );
     this.#pending = null;
+    const timeoutMs = this.#options.finalizeTimeoutMs ?? 30_000;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`Recording finalization exceeded ${timeoutMs} ms.`)),
+        timeoutMs,
+      );
+      timer.unref();
+    });
     try {
       this.#throwIfFailed();
       this.#status = { status: "finalizing" };
-      await this.#writes;
-      this.#throwIfFailed();
-      if (!this.#writer) throw new Error("Recording writer did not start.");
-      await this.#writer.finish();
-      this.#throwIfFailed();
-      await rename(
-        join(this.#options.directory, "recording.mp4.partial"),
-        join(this.#options.directory, "recording.mp4"),
-      );
-      this.#throwIfFailed();
-      const { udid, deviceName, runtimeDisplayName, directory } = this.#options;
-      const result = { udid, deviceName, runtimeDisplayName, directory };
-      await this.#manifest({
-        status: "complete",
-        recording: "recording.mp4",
-        firstFrameWallClock: { iso8601: new Date(first.epochMs).toISOString() },
-        width: first.width,
-        height: first.height,
-        durationSeconds: Number(durationUs) / 1e6,
-        stopReason: this.#stopReason,
-        frames: this.#frames,
-      });
-      this.#throwIfFailed();
-      this.#status = { status: "complete" };
-      return result;
+      return await Promise.race([this.#finalize(durationUs), deadline]);
     } catch (error) {
       this.fail(error);
-      await this.#failureTask;
+      // A stalled writer never drains; wait for the failure manifest only, and not past a bound.
+      await Promise.race([
+        this.#failureManifest,
+        new Promise((resolve) => setTimeout(resolve, 5_000).unref()),
+      ]);
       throw error;
+    } finally {
+      clearTimeout(timer);
     }
+  }
+
+  async #finalize(durationUs: bigint): Promise<ScreenRecordingResult> {
+    await this.#writes;
+    this.#throwIfFailed();
+    if (!this.#writer) throw new Error("Recording writer did not start.");
+    await this.#writer.finish();
+    this.#throwIfFailed();
+    await rename(
+      join(this.#options.directory, "recording.mp4.partial"),
+      join(this.#options.directory, "recording.mp4"),
+    );
+    this.#outputName = "recording.mp4";
+    this.#throwIfFailed();
+    const { udid, deviceName, runtimeDisplayName, directory } = this.#options;
+    const result = { udid, deviceName, runtimeDisplayName, directory };
+    await this.#manifest({
+      status: "complete",
+      ...this.#fileFields(),
+      durationSeconds: Number(durationUs) / 1e6,
+      stopReason: this.#stopReason,
+      frames: this.#frames,
+    });
+    this.#throwIfFailed();
+    this.#status = { status: "complete" };
+    return result;
   }
 
   #throwIfFailed(): void {
