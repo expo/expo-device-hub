@@ -16,9 +16,11 @@ const STATE_LABELS: Record<AppPermissionState, string> = {
 /** Runtime permissions of the foreground app, with grant, revoke, and reset. */
 export function PermissionsSection({
   client,
+  available = true,
   defaultOpen = false,
 }: {
   client: DeviceClient;
+  available?: boolean;
   /** Whether the section is initially expanded. */
   defaultOpen?: boolean;
 }) {
@@ -27,8 +29,8 @@ export function PermissionsSection({
   const appId = client.foregroundApp?.id ?? null;
 
   useEffect(() => {
-    if (open && appId) refreshPermissions();
-  }, [open, appId, refreshPermissions]);
+    if (open && available && appId) refreshPermissions();
+  }, [open, available, appId, refreshPermissions]);
 
   return (
     <CollapsibleSection title="Permissions" open={open} onOpenChange={setOpen}>
@@ -37,7 +39,7 @@ export function PermissionsSection({
       ) : permissions === null ? (
         permissionsError ? (
           <div style={{ padding: "0 0 12px" }}>
-            <Button theme="secondary" size="xs" onClick={refreshPermissions}>
+            <Button theme="secondary" size="xs" disabled={!available} onClick={refreshPermissions}>
               Retry
             </Button>
           </div>
@@ -60,7 +62,7 @@ export function PermissionsSection({
                   <Button
                     theme="secondary"
                     size="xs"
-                    disabled={pending || permission.state === "granted"}
+                    disabled={!available || pending || permission.state === "granted"}
                     onClick={() => client.setPermission(permission.id, "grant")}
                   >
                     Grant
@@ -68,7 +70,7 @@ export function PermissionsSection({
                   <Button
                     theme="tertiary"
                     size="xs"
-                    disabled={pending || permission.state === "denied"}
+                    disabled={!available || pending || permission.state === "denied"}
                     onClick={() => client.setPermission(permission.id, "revoke")}
                   >
                     Revoke
@@ -81,7 +83,7 @@ export function PermissionsSection({
             <Button
               theme="tertiary"
               size="xs"
-              disabled={permissionsPending.size > 0}
+              disabled={!available || permissionsPending.size > 0}
               onClick={client.resetPermissions}
             >
               Reset all
