@@ -57,7 +57,7 @@ jobs:
           bun run --filter serve-emu test:package
 
   android-recording:
-    name: Android recording (${{ matrix.source }})
+    name: Android recording (${{ matrix.source }}, ${{ matrix.limit }})
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
@@ -66,8 +66,16 @@ jobs:
         include:
           - source: grpc-screenshot
             stop: endpoint
+            limit: normal
           - source: scrcpy
             stop: signal
+            limit: normal
+          - source: grpc-screenshot
+            stop: endpoint
+            limit: duration
+          - source: scrcpy
+            stop: signal
+            limit: bytes
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -117,13 +125,13 @@ jobs:
           disable-linux-hw-accel: false
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
           script: |
-            bun packages/expo-device-hub/scripts/verify-android-recording.ts ${{ matrix.source }} ${{ matrix.stop }}
+            bun packages/expo-device-hub/scripts/verify-android-recording.ts ${{ matrix.source }} ${{ matrix.stop }} ${{ matrix.limit }}
 
       - name: Upload recordings and diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-recording-${{ matrix.source }}
+          name: android-recording-${{ matrix.source }}-${{ matrix.limit }}
           path: /tmp/android-recording-smoke-*
           retention-days: 7
           if-no-files-found: warn
