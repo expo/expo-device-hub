@@ -42,6 +42,7 @@ import {
 } from './dashboard/deviceVisibility';
 import { useColorScheme } from './dashboard/useColorScheme';
 import { useDeviceLists } from './dashboard/useDevices';
+import { useDeviceGpu } from './dashboard/useDeviceGpu';
 import {
   FloatingSidebarToggle,
   floatingSidebarToggleInset,
@@ -271,6 +272,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
 
   const devices = [...simulators, ...emulators];
   const selected = devices.find((device) => device.id === selectedId) ?? devices[0];
+  const isEmulator = selected?.platform === 'android' && !selected.physical;
+  const gpuBackend = useDeviceGpu(
+    isEmulator && connectionStatus === 'connected' ? selected.id : null
+  );
   const selectedStreamModeAvailability =
     selected?.platform === 'android'
       ? androidStreamModeAvailability(
@@ -405,6 +410,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         resizing={resizing}>
         <LogSidebar
           device={selected}
+          gpuBackend={isEmulator ? gpuBackend : undefined}
           client={client}
           showDeviceFrame={showDeviceFrame}
           onShowDeviceFrameChange={setShowDeviceFrame}
@@ -451,6 +457,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
         onDismiss={sidebars.closeRight}>
         <LogSidebar
           device={selected}
+          gpuBackend={isEmulator ? gpuBackend : undefined}
           client={client}
           showDeviceFrame={showDeviceFrame}
           onShowDeviceFrameChange={setShowDeviceFrame}

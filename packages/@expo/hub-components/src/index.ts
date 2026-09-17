@@ -70,6 +70,7 @@ export {
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
   type DeviceFrameOption,
+  type DeviceGpuInfo,
 } from './dashboard/DeviceOptionsSection';
 export { ActivityCharts, ActivitySection } from './dashboard/ActivitySection';
 export { AccessibilitySection } from './dashboard/AccessibilitySection';

@@ -1,7 +1,7 @@
 import { useId, useState } from 'react';
 
 import { type DeviceClient, type DeviceSettingKey } from '@expo/hub-client';
-import { Select, type SelectOption } from '../primitives';
+import { Select, text, textSize, type SelectOption } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { KeyboardSection } from './KeyboardSection';
 import { SidebarActionButton } from './SidebarActionButton';
@@ -95,6 +95,12 @@ export type DeviceFrameOption = {
   onVisibleChange: (visible: boolean) => void;
 };
 
+export type DeviceGpuInfo = {
+  name: string;
+  renderer: string;
+  description: string | null;
+};
+
 /**
  * Device-wide appearance, connectivity, and accessibility settings, plus iOS
  * keyboard controls, the viewer-local device frame option, and device-level
@@ -103,12 +109,15 @@ export type DeviceFrameOption = {
 export function DeviceOptionsSection({
   client,
   deviceFrame,
+  gpuBackend,
   showDeviceSettings = true,
   onShutdown,
   onRemove,
 }: {
   client?: DeviceClient;
   deviceFrame?: DeviceFrameOption;
+  /** Omit to hide the row; null means the emulator's renderer is unknown. */
+  gpuBackend?: DeviceGpuInfo | null;
   /** Whether backend-controlled appearance and accessibility settings are available. */
   showDeviceSettings?: boolean;
   /** Shut the device down on the host. */
@@ -161,6 +170,16 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
+      {gpuBackend !== undefined && (
+        <SidebarRow label="GPU backend" description={gpuBackend?.description ?? undefined}>
+          <span
+            title={gpuBackend?.renderer}
+            style={{ ...textSize.sm, color: text.secondary, maxWidth: '60%', overflowWrap: 'anywhere' }}>
+            {gpuBackend?.name ?? 'Unknown'}
+          </span>
+        </SidebarRow>
+      )}
+
       {showDeviceSettings &&
         visible('appearance') &&
         settingSelect('appearance', 'Appearance', APPEARANCE_OPTIONS)}
