@@ -18,7 +18,7 @@ export type ScreenRecordingStatus =
   | { status: "waiting" }
   | { status: "recording"; firstFrameAt: string; frames: number; queuedBytes: number }
   | { status: "finalizing" }
-  | { status: "complete"; result: ScreenRecordingResult }
+  | { status: "complete" }
   | { status: "failed"; error: string };
 
 type Sample = {
@@ -408,7 +408,7 @@ export class ScreenRecording {
         frames: this.#frames,
       });
       this.#throwIfFailed();
-      this.#status = { status: "complete", result };
+      this.#status = { status: "complete" };
       return result;
     } catch (error) {
       this.fail(error);

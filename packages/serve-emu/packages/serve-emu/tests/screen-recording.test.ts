@@ -87,6 +87,7 @@ test("preserves large source PTS deltas, long idle gaps and the final idle tail"
     [2.5, 10],
     [12.5, 7.5],
   ]);
+  expect(recording.snapshot()).toEqual({ status: "complete" });
   const manifest = JSON.parse(await readFile(join(root, "session/session.json"), "utf8"));
   expect(manifest).toMatchObject({
     status: "complete",
