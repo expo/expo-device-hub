@@ -91,7 +91,9 @@ On success, `recordings.json` in the output directory lists a subdirectory conta
 `recording.mp4` and `session.json`. Failed recordings leave the manifest empty.
 
 Keep the emulator's orientation and capture settings unchanged during recording.
-Rotation or capture failure invalidates the recording. The MP4 is fragmented, so a
+Rotation invalidates the recording. A capture failure does not: the Hub restarts the
+capture and the recording continues when the encoder configuration is unchanged. The gap
+appears as a held frame. The MP4 is fragmented, so a
 forced kill leaves a `recording.mp4.partial` that plays up to the last keyframe before
 the kill, about 10 seconds of an active screen at the default keyframe interval. A failed
 or timed-out finalization leaves the same file. The Hub does not publish it; EAS uploads it

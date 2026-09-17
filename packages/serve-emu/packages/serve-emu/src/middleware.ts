@@ -574,7 +574,7 @@ async function createAppInternal(
     console.error(
       `[serve-emu] ${opts.serial} capture ${nextStatus}: ${reason}${codePart}${metaPart}`,
     );
-    opts.screenRecording?.fail(new Error(reason));
+    // The recorder outlives this capture; the router hands it to the replacement app.
     status = nextStatus;
     captureRestarting = false;
     lastError = reason;
@@ -1999,7 +1999,6 @@ async function createAppInternal(
   let stopTask: Promise<void> | null = null;
   const stop = (): Promise<void> => {
     if (stopTask) return stopTask;
-    const recordingFinish = opts.screenRecording?.finish().catch(() => {});
     stopRequested = true;
     captureRestarting = false;
     captureRestartController?.abort(new Error("server stopping"));
@@ -2018,7 +2017,6 @@ async function createAppInternal(
     removeFatalListener = null;
     stopTask = Promise.allSettled([
       streamSettingsUpdate,
-      recordingFinish,
       uploader.close(new Error("server stopping")),
       session.close(),
       deviceState.release(deviceStateOwner, "server stopping"),
