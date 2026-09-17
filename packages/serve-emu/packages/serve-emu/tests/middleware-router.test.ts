@@ -25,6 +25,9 @@ type JsonObject = Record<string, unknown>;
 
 const SESSION_ID = "00000000-0000-4000-8000-000000000000";
 const OTHER_SESSION_ID = "11111111-1111-4111-8111-111111111111";
+// SPS + PPS + IDR slice: one self-contained H.264 keyframe.
+const RECORDING_KEYFRAME_HEX =
+  "000000016742c01fd9005005bb0110000003001000000303c0f18324800000000168cb83cb200000000165888421";
 
 async function responseJson(response: Response): Promise<JsonObject> {
   return (await response.json()) as JsonObject;
@@ -189,6 +192,94 @@ describe("createRouter DevicePanel compatibility", () => {
       expect(finishes).toBe(1);
       expect(stopped).toEqual(["emulator-5554"]);
       expect(JSON.parse(await readFile(join(options.directory, "session.json"), "utf8")).status).toBe("complete");
+    } finally {
+      await router.stopAll();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("continues the recording across a capture restart with the same codec configuration", async () => {
+    const root = await mkdtemp(join(tmpdir(), "router-screen-recording-restart-"));
+    const created: EmuApp[] = [];
+    const stopped: string[] = [];
+    const samples: Array<{ isKey: boolean; timestamp: number; duration: number }> = [];
+    const config = Buffer.from(RECORDING_KEYFRAME_HEX, "hex");
+    let recorder: AppOptions["screenRecording"];
+    const dependencies = routerDependencies({ devices: [{ serial: "emulator-5554", state: "device" }], avds: [], running: [], created: [], stopped });
+    const router = createRouter({ streamMode: "scrcpy" }, {
+      ...dependencies,
+      createApp: async (options) => {
+        const app = fakeApp(options.serial, stopped);
+        created.push(app);
+        recorder = options.screenRecording;
+        // Each generation starts 5 s later than the previous one, at the same SPS/PPS.
+        const pts = BigInt(created.length - 1) * 5_000_000n;
+        options.screenRecording?.accept({ type: "frame", pts, data: config, isKey: true, isConfig: false }, { width: 1280, height: 720 }, "scrcpy");
+        return app;
+      },
+    });
+    try {
+      const options = {
+        directory: join(root, "session"), udid: "emulator-5554", deviceName: "Pixel", runtimeDisplayName: "Android 16",
+        createWriter: async ({ path }: { path: string }) => {
+          await writeFile(path, "test-writer");
+          return { add: async (sample: { isKey: boolean; timestamp: number; duration: number }) => { samples.push(sample); }, finish: async () => {}, cancel: async () => {} };
+        },
+      };
+      await router.startScreenRecording(options);
+      expect(created).toHaveLength(1);
+      created[0].isStreaming = () => false;
+      expect(recorder?.active).toBe(true);
+      await router.ensure("emulator-5554");
+      expect(created).toHaveLength(2);
+      expect(stopped).toEqual(["emulator-5554"]);
+      expect(recorder?.active).toBe(true);
+      const result = await router.finishScreenRecording();
+      expect(result?.directory).toBe(options.directory);
+      expect(samples.map((sample) => [sample.isKey, sample.timestamp])).toEqual([[true, 0], [true, 5]]);
+      expect(samples[0].duration).toBe(5);
+      const manifest = JSON.parse(await readFile(join(options.directory, "session.json"), "utf8"));
+      expect(manifest.status).toBe("complete");
+      expect(manifest.frames).toBe(2);
+    } finally {
+      await router.stopAll();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  test("fails the recording when the recreated capture has a different codec configuration", async () => {
+    const root = await mkdtemp(join(tmpdir(), "router-screen-recording-restart-sps-"));
+    const created: EmuApp[] = [];
+    const stopped: string[] = [];
+    let recorder: AppOptions["screenRecording"];
+    const dependencies = routerDependencies({ devices: [{ serial: "emulator-5554", state: "device" }], avds: [], running: [], created: [], stopped });
+    const router = createRouter({ streamMode: "scrcpy" }, {
+      ...dependencies,
+      createApp: async (options) => {
+        const app = fakeApp(options.serial, stopped);
+        created.push(app);
+        recorder = options.screenRecording;
+        const hex = created.length === 1 ? RECORDING_KEYFRAME_HEX : RECORDING_KEYFRAME_HEX.replace("6742c01f", "6742c028");
+        const pts = BigInt(created.length - 1) * 5_000_000n;
+        options.screenRecording?.accept({ type: "frame", pts, data: Buffer.from(hex, "hex"), isKey: true, isConfig: false }, { width: 1280, height: 720 }, "scrcpy");
+        return app;
+      },
+    });
+    try {
+      const options = {
+        directory: join(root, "session"), udid: "emulator-5554", deviceName: "Pixel", runtimeDisplayName: "Android 16",
+        createWriter: async ({ path }: { path: string }) => {
+          await writeFile(path, "test-writer");
+          return { add: async () => {}, finish: async () => {}, cancel: async () => {} };
+        },
+      };
+      await router.startScreenRecording(options);
+      created[0].isStreaming = () => false;
+      await router.ensure("emulator-5554");
+      expect(created).toHaveLength(2);
+      expect(recorder?.active).toBe(false);
+      await expect(router.finishScreenRecording()).rejects.toThrow("codec configuration");
+      expect(JSON.parse(await readFile(join(options.directory, "session.json"), "utf8")).status).toBe("failed");
     } finally {
       await router.stopAll();
       await rm(root, { recursive: true, force: true });
