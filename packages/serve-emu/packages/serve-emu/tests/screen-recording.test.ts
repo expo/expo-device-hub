@@ -384,6 +384,14 @@ test.skipIf(!Bun.which("ffmpeg") || !Bun.which("ffprobe"))(
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
     const partial = join(directory, "recording.mp4.partial");
+    expect(JSON.parse(await readFile(join(directory, "session.json"), "utf8"))).toMatchObject({
+      status: "recording",
+      recording: "recording.mp4.partial",
+      firstFrameWallClock: { iso8601: new Date(1_800_000_000_000).toISOString() },
+      width: 128,
+      height: 96,
+      udid: "emulator-5554",
+    });
     expect(probePacketTimings(partial).map(([pts]) => pts)).toEqual([0, 1]);
     expect(() =>
       execFileSync("ffmpeg", ["-v", "error", "-i", partial, "-f", "null", "-"]),

@@ -291,6 +291,14 @@ export class ScreenRecording {
           queuedBytes: 0,
         };
         this.#frames = 1;
+        // A killed process never reaches finish; this lets the uploader place the partial file.
+        void this.#manifest({
+          status: "recording",
+          recording: "recording.mp4.partial",
+          firstFrameWallClock: { iso8601: this.#status.firstFrameAt },
+          width: size.width,
+          height: size.height,
+        }).catch((error) => this.fail(error));
         this.#durationTimer = setTimeout(
           () => this.#finishAtDurationLimit(),
           this.#limits.maxDurationMs,
