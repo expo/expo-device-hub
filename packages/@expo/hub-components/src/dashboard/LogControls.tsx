@@ -5,6 +5,7 @@ import { SidebarActionButton } from './SidebarActionButton';
 export function LogControls({
   count,
   running,
+  disabled = false,
   unit = 'line',
   onClear,
   onStart,
@@ -12,6 +13,7 @@ export function LogControls({
 }: {
   count: number;
   running: boolean;
+  disabled?: boolean;
   unit?: string;
   onClear: () => void;
   onStart: () => void;
@@ -41,10 +43,10 @@ export function LogControls({
         }}>
         {count} {count === 1 ? unit : `${unit}s`}
       </span>
-      <SidebarActionButton onClick={running ? onStop : onStart}>
+      <SidebarActionButton disabled={disabled} onClick={running ? onStop : onStart}>
         {running ? 'Stop' : 'Start'}
       </SidebarActionButton>
-      <SidebarActionButton disabled={count === 0} onClick={onClear}>
+      <SidebarActionButton disabled={disabled || count === 0} onClick={onClear}>
         Clear
       </SidebarActionButton>
     </div>

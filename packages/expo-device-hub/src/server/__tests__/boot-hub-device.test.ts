@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, mock, test } from 'bun:test';
+import { beforeEach, describe, expect, mock, spyOn, test } from 'bun:test';
 
 import type {
   AndroidUtilsResult,
@@ -7,7 +7,12 @@ import type {
   EmulatorExit,
 } from '@expo/hub-android-utils';
 
-import { bootHubDevice, shutdownHubDevice, type EmulatorCameraFeeds } from '../device-actions';
+import {
+  bootHubDevice,
+  createHubDevice,
+  shutdownHubDevice,
+  type EmulatorCameraFeeds,
+} from '../device-actions';
 
 const calls: string[] = [];
 
@@ -168,5 +173,64 @@ describe('shutdownHubDevice', () => {
 
     expect(calls).toEqual(['shutdownDevice emulator-5560']);
     expect(result.ok).toBe(false);
+  });
+});
+
+describe('createHubDevice phases', () => {
+  test('can create an Android AVD without launching the emulator', async () => {
+    const result = await createHubDevice(
+      {
+        platform: 'android',
+        name: 'Pixel_9',
+        runtime: 'android-35',
+        deviceType: 'pixel_9',
+        boot: false,
+      },
+      cameraFeeds()
+    );
+    expect(result).toEqual({ ok: true, id: 'Pixel_9', errors: [] });
+    expect(scenario.spawned).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  test('keeps automatic boot as the default for existing API callers', async () => {
+    const result = await createHubDevice(
+      {
+        platform: 'android',
+        name: 'Pixel_9',
+        runtime: 'android-35',
+        deviceType: 'pixel_9',
+      },
+      cameraFeeds()
+    );
+    expect(result.ok).toBe(true);
+    expect(scenario.spawned?.name).toBe('Pixel_9');
+  });
+
+  test('returns the created iOS UDID before boot when requested', async () => {
+    const apple = await import('@expo/hub-apple-utils');
+    const create = spyOn(apple, 'createDevice').mockResolvedValue({
+      value: 'created-udid',
+      error: null,
+    });
+    const boot = spyOn(apple, 'bootDevice').mockResolvedValue({ value: true, error: null });
+    try {
+      const result = await createHubDevice(
+        {
+          platform: 'ios',
+          name: 'iPhone',
+          runtime: 'ios-27',
+          deviceType: 'iphone',
+          boot: false,
+        },
+        cameraFeeds()
+      );
+      expect(result).toEqual({ ok: true, id: 'created-udid', errors: [] });
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(boot).not.toHaveBeenCalled();
+    } finally {
+      create.mockRestore();
+      boot.mockRestore();
+    }
   });
 });

@@ -49,7 +49,7 @@ export function removeDevice(device: Device): Promise<boolean> {
 
 /** Outcome of a create/boot call: exactly one of `id` and `error` is set. */
 export interface StartDeviceOutcome {
-  /** iOS simulator UDID or Android adb serial, on success. */
+  /** iOS UDID or Android serial; create-only Android requests return the AVD name. */
   id: string | null;
   /** Human-readable failure reason (may span multiple lines), on failure. */
   error: string | null;
@@ -67,19 +67,23 @@ export async function bootDevice(device: Device): Promise<StartDeviceOutcome> {
   });
 }
 
-/** Create and boot a new simulator/emulator from host toolchain identifiers. */
-export async function createDevice(device: NewDeviceRequest): Promise<StartDeviceOutcome> {
+/** Create a virtual device; boot defaults to true for existing callers. */
+export async function createDevice(
+  device: NewDeviceRequest,
+  options: { boot?: boolean } = {}
+): Promise<StartDeviceOutcome> {
   return postStartDevice(createEndpoint(), {
     platform: device.platform,
     name: device.name,
     runtime: device.runtime,
     deviceType: device.deviceType,
+    ...options,
   });
 }
 
 async function postStartDevice(
   endpoint: string,
-  body: Record<string, string>
+  body: Record<string, string | boolean>
 ): Promise<StartDeviceOutcome> {
   try {
     const response = await fetch(endpoint, {

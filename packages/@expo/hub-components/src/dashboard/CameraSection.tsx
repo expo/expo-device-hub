@@ -38,10 +38,13 @@ function feedStatus(feed: DeviceCameraFeed) {
 export function CameraSection({
   client,
   defaultOpen = false,
+  available = true,
 }: {
   client: DeviceClient;
   /** Whether the section is initially expanded. */
   defaultOpen?: boolean;
+  /** Retain camera previews while preventing changes to an offline device. */
+  available?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const inputs = useRef<Record<DeviceCameraFacing, HTMLInputElement | null>>({
@@ -68,7 +71,7 @@ export function CameraSection({
 
             const label = FACING_LABELS[facing];
             const pending = client.cameraPending.has(facing);
-            const disabled = pending || !wired;
+            const disabled = !available || pending || !wired;
             const pickerHandlers = disabled
               ? {}
               : {
@@ -76,7 +79,7 @@ export function CameraSection({
                   onDrop: (event: DragEvent<HTMLDivElement>) => {
                     event.preventDefault();
                     const file = event.dataTransfer.files[0];
-                    if (file) client.setCameraImage(facing, file);
+                    if (file && !disabled) client.setCameraImage(facing, file);
                   },
                   onClick: () => openPicker(facing),
                   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
@@ -155,10 +158,11 @@ export function CameraSection({
                     inputs.current[facing] = node;
                   }}
                   type="file"
+                  disabled={disabled}
                   accept="image/png"
                   onChange={(event) => {
                     const file = event.target.files?.[0];
-                    if (file) client.setCameraImage(facing, file);
+                    if (file && !disabled) client.setCameraImage(facing, file);
                     event.target.value = "";
                   }}
                   style={{ display: "none" }}

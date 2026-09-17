@@ -21,7 +21,9 @@ function AccessibilityStatus({ client }: { client: DeviceClient }) {
   if (snapshot.nodes.length === 0) {
     return <SectionNote>No accessible elements on this screen.</SectionNote>;
   }
-  return <SectionNote>{`Captured ${new Date(snapshot.capturedAt).toLocaleTimeString()}`}</SectionNote>;
+  return (
+    <SectionNote>{`Captured ${new Date(snapshot.capturedAt).toLocaleTimeString()}`}</SectionNote>
+  );
 }
 
 function tapNode(client: DeviceClient, node: AccessibilityNode) {
@@ -34,9 +36,11 @@ function tapNode(client: DeviceClient, node: AccessibilityNode) {
 /** The accessibility tree of the current screen: one row per element, click to tap it. */
 export function AccessibilitySection({
   client,
+  available = true,
   defaultOpen = false,
 }: {
   client: DeviceClient;
+  available?: boolean;
   /** Whether the section is initially expanded. */
   defaultOpen?: boolean;
 }) {
@@ -44,15 +48,17 @@ export function AccessibilitySection({
   const { accessibility, accessibilityPending, refreshAccessibility } = client;
 
   useEffect(() => {
-    if (open) refreshAccessibility();
-  }, [open, refreshAccessibility]);
+    if (open && available) refreshAccessibility();
+  }, [open, available, refreshAccessibility]);
 
   const nodes = accessibility?.nodes ?? [];
 
   return (
     <CollapsibleSection title="Accessibility" open={open} onOpenChange={setOpen}>
       <SidebarRow label="Elements">
-        <SidebarActionButton disabled={accessibilityPending} onClick={refreshAccessibility}>
+        <SidebarActionButton
+          disabled={!available || accessibilityPending}
+          onClick={refreshAccessibility}>
           Refresh
         </SidebarActionButton>
       </SidebarRow>
@@ -71,15 +77,13 @@ export function AccessibilitySection({
             backgroundColor: bg.subtle,
           }}>
           {nodes.map((node, index) => {
-            const meta = [node.role, node.clickable ? 'tappable' : '']
-              .filter(Boolean)
-              .join(' · ');
+            const meta = [node.role, node.clickable ? 'tappable' : ''].filter(Boolean).join(' · ');
             return (
               <button
                 key={`${node.id}-${index}`}
                 type="button"
                 aria-label={`Tap ${node.label}`}
-                disabled={!node.enabled}
+                disabled={!available || !node.enabled}
                 onClick={() => tapNode(client, node)}
                 style={{
                   display: 'flex',
@@ -95,8 +99,8 @@ export function AccessibilitySection({
                   backgroundColor: 'transparent',
                   fontFamily: 'inherit',
                   textAlign: 'left',
-                  cursor: node.enabled ? 'pointer' : 'default',
-                  opacity: node.enabled ? 1 : 0.5,
+                  cursor: available && node.enabled ? 'pointer' : 'default',
+                  opacity: available && node.enabled ? 1 : 0.5,
                 }}>
                 <span
                   style={{

@@ -4,6 +4,7 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -47,8 +48,8 @@ import {
  *
  * Both targets report through `onAdd`: a recent passes its existing `Device`;
  * a new target passes the selected host toolchain identifiers. The dialog stays
- * open while the async request runs and only closes after the host confirms the
- * device is booted.
+ * open while the async request runs, but can be dismissed at any time. The
+ * consumer owns progress and failures after dismissal.
  */
 export type RecentDevicesModalProps = {
   open: boolean;
@@ -95,6 +96,19 @@ export function RecentDevicesModal({
   const [nameEdited, setNameEdited] = useState(false);
   const [nameFocused, setNameFocused] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const submission = useRef<object | null>(null);
+
+  function closeDialog() {
+    submission.current = null;
+    onClose();
+  }
+
+  useEffect(
+    () => () => {
+      submission.current = null;
+    },
+    [open]
+  );
   const [submissionError, setSubmissionError] = useState<string | null>(null);
 
   // Reset to a clean state each time the dialog opens, and initialize again if
@@ -110,6 +124,7 @@ export function RecentDevicesModal({
     setName(suggestName(firstModel?.label ?? '', recents, platform));
     setNameEdited(false);
     setNameFocused(false);
+    submission.current = null;
     setSubmitting(false);
     setSubmissionError(null);
     // Default target: the most-recently-used recent, else the new-device form.
@@ -138,11 +153,11 @@ export function RecentDevicesModal({
         )
       : options.runtimes;
   const selectedRuntime = runtimeOptions.find((option) => option.value === runtime);
-  const modelOptions =
-    platform === 'android' ? allModelOptions : (selectedRuntime?.models ?? []);
+  const modelOptions = platform === 'android' ? allModelOptions : (selectedRuntime?.models ?? []);
   const selectedModel = selectedRuntime?.models.find((option) => option.value === model);
 
   const activateNew = () => {
+    if (submission.current) return;
     setTarget({ kind: 'new' });
     setSubmissionError(null);
   };
@@ -187,13 +202,13 @@ export function RecentDevicesModal({
     trimmedName.length > 0 &&
     !ANDROID_AVD_NAME_PATTERN.test(trimmedName);
   const nameHintId = `new-${platform}-device-name-hint`;
-  const canBoot = isNew
-    ? nameIsValid && runtime.length > 0 && model.length > 0
-    : !!selectedRecent;
+  const canBoot = isNew ? nameIsValid && runtime.length > 0 && model.length > 0 : !!selectedRecent;
 
   async function handleBoot(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!canBoot || submitting) return;
+    if (!canBoot || submission.current) return;
+    const request = {};
+    submission.current = request;
 
     setSubmitting(true);
     setSubmissionError(null);
@@ -214,15 +229,21 @@ export function RecentDevicesModal({
             }
           : { kind: 'recent', device: selectedRecent! };
       const outcome = await onAdd(addTarget);
+      if (submission.current !== request) return;
       if (outcome.ok) {
-        onClose();
+        closeDialog();
       } else {
         setSubmissionError(outcome.error);
       }
     } catch (error) {
-      setSubmissionError(error instanceof Error ? error.message : String(error));
+      if (submission.current === request) {
+        setSubmissionError(error instanceof Error ? error.message : String(error));
+      }
     } finally {
-      setSubmitting(false);
+      if (submission.current === request) {
+        submission.current = null;
+        setSubmitting(false);
+      }
     }
   }
 
@@ -230,7 +251,7 @@ export function RecentDevicesModal({
     <DialogRoot
       open={open}
       onOpenChange={(next) => {
-        if (!next) onClose();
+        if (!next) closeDialog();
       }}>
       <DialogContent>
         <DialogTitle title={title} />
@@ -253,6 +274,7 @@ export function RecentDevicesModal({
                   <RecentRow
                     key={device.id}
                     device={device}
+                    disabled={submitting}
                     selected={target.kind === 'recent' && target.id === device.id}
                     onSelect={() => {
                       setTarget({ kind: 'recent', id: device.id });
@@ -415,8 +437,8 @@ export function RecentDevicesModal({
             )}
           </DialogContentContainer>
           <DialogFooter>
-            <Button type="button" theme="quaternary" disabled={submitting} onClick={onClose}>
-              Cancel
+            <Button type="button" theme="quaternary" onClick={closeDialog}>
+              {submitting ? 'Close' : 'Cancel'}
             </Button>
             <Button type="submit" theme="primary" disabled={!canBoot || submitting}>
               {submitting ? (isNew ? 'Creating…' : 'Booting…') : isNew ? 'Create & Boot' : 'Boot'}
@@ -451,9 +473,11 @@ function SectionLabel({ children, active = false }: { children: ReactNode; activ
 function RecentRow({
   device,
   selected,
+  disabled,
   onSelect,
 }: {
   device: Device;
+  disabled: boolean;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -463,6 +487,7 @@ function RecentRow({
     <button
       type="button"
       aria-pressed={selected}
+      disabled={disabled}
       onClick={onSelect}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}

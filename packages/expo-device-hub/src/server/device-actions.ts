@@ -54,6 +54,8 @@ export interface CreateDeviceActionRequest {
   runtime: string;
   /** Simulator device type (iOS) or AVD device profile (Android). */
   deviceType: string;
+  /** Defaults to true; false creates without booting so callers can report each phase. */
+  boot?: boolean;
 }
 
 /**
@@ -90,12 +92,13 @@ export async function parseCreateDeviceAction(
   }
 
   if (!data || typeof data !== 'object') return null;
-  const { platform, name, runtime, deviceType } = data as Record<string, unknown>;
+  const { platform, name, runtime, deviceType, boot } = data as Record<string, unknown>;
   if (
     (platform !== 'ios' && platform !== 'android') ||
     !isNonEmptyString(name) ||
     !isNonEmptyString(runtime) ||
     !isNonEmptyString(deviceType) ||
+    (boot !== undefined && typeof boot !== 'boolean') ||
     (platform === 'android' && !ANDROID_AVD_NAME_PATTERN.test(name.trim()))
   ) {
     return null;
@@ -106,6 +109,7 @@ export async function parseCreateDeviceAction(
     name: name.trim(),
     runtime: runtime.trim(),
     deviceType: deviceType.trim(),
+    ...(boot === undefined ? {} : { boot }),
   };
 }
 
@@ -191,10 +195,10 @@ export async function removeHubDevice({
 
 const BOOT_READY_TIMEOUT_MS = 180_000;
 
-/** Result of a create/boot request — the streamable device id once accepted. */
+/** Result of a create/boot request; create-only Android requests identify the AVD by name. */
 export interface BootDeviceResult {
   ok: boolean;
-  /** iOS simulator UDID or Android adb serial. */
+  /** iOS simulator UDID or Android adb serial (AVD name when only creating). */
   id?: string;
   /** Backwards-compatible Android adb serial. */
   serial?: string;
@@ -233,7 +237,7 @@ export async function bootHubDevice(
 
 /** Create a new virtual device, then boot it through the same platform utility. */
 export async function createHubDevice(
-  { platform, name, runtime, deviceType }: CreateDeviceActionRequest,
+  { platform, name, runtime, deviceType, boot = true }: CreateDeviceActionRequest,
   cameraFeeds: EmulatorCameraFeeds
 ): Promise<BootDeviceResult> {
   if (platform === 'ios') {
@@ -246,6 +250,8 @@ export async function createHubDevice(
         errors: errorList(toSerializableError(created.error)),
       };
     }
+
+    if (!boot) return { ok: true, id: udid, errors: [] };
 
     const booted = await bootAppleSimulator({ udid });
     const errors = errorList(toSerializableError(booted.error));
@@ -272,6 +278,7 @@ export async function createHubDevice(
     };
   }
 
+  if (!boot) return { ok: true, id: name, errors: [] };
   return bootAndroidHubDevice(name, cameraFeeds);
 }
 
@@ -335,8 +342,8 @@ async function bootAndroidHubDevice(
       outcome.exit.code != null
         ? `exited with code ${outcome.exit.code}`
         : outcome.exit.signal
-        ? `was killed by ${outcome.exit.signal}`
-        : 'exited';
+          ? `was killed by ${outcome.exit.signal}`
+          : 'exited';
     return {
       ok: false,
       id: booted.serial,
