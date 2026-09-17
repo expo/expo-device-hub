@@ -2648,6 +2648,8 @@ export function createRouter(
       const recorder = await ScreenRecording.create(options);
       screenRecording = { serial, recorder };
       try {
+        // A viewer could have created the app during the awaits above; that app has no recorder.
+        if (apps.size || pending.size) throw new Error("Screen recording must start before device capture.");
         await ensure(serial);
         await Promise.race([
           recorder.ready,
