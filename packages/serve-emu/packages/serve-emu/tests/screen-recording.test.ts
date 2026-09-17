@@ -330,6 +330,68 @@ test("a capture failure during finalization cannot publish a complete result", a
   });
 });
 
+function encodeFixtureFrame() {
+  return execFileSync("ffmpeg", [
+    "-v",
+    "error",
+    "-f",
+    "lavfi",
+    "-i",
+    "color=c=red:s=128x96:r=1",
+    "-frames:v",
+    "1",
+    "-c:v",
+    "libx264",
+    "-profile:v",
+    "baseline",
+    "-pix_fmt",
+    "yuv420p",
+    "-f",
+    "h264",
+    "pipe:1",
+  ]);
+}
+
+function probePacketTimings(file: string): number[][] {
+  return execFileSync(
+    "ffprobe",
+    ["-v", "error", "-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", file],
+    { encoding: "utf8" },
+  )
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.split(",").map(Number));
+}
+
+test.skipIf(!Bun.which("ffmpeg") || !Bun.which("ffprobe"))(
+  "a recording cut off before finish still decodes the fragments already on disk",
+  async () => {
+    const { root } = await setup();
+    const encoded = encodeFixtureFrame();
+    const directory = join(root, "cut");
+    const recording = await ScreenRecording.create({
+      directory,
+      udid: "emulator-5554",
+      deviceName: "fixture",
+      runtimeDisplayName: "Android",
+      clock: { monotonicUs: () => 0n, epochMs: () => 1_800_000_000_000 },
+    });
+    // Each frame is 1 s apart, so every accepted frame closes the previous fragment.
+    for (let second = 0; second < 4; second++) {
+      recording.accept(frame(BigInt(second) * 1_000_000n, encoded), { width: 128, height: 96 }, "scrcpy");
+      if (second === 0) await recording.ready;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    const partial = join(directory, "recording.mp4.partial");
+    expect(probePacketTimings(partial).map(([pts]) => pts)).toEqual([0, 1]);
+    expect(() =>
+      execFileSync("ffmpeg", ["-v", "error", "-i", partial, "-f", "null", "-"]),
+    ).not.toThrow();
+    recording.fail(new Error("simulated crash"));
+  },
+);
+
 test.skipIf(!Bun.which("ffmpeg") || !Bun.which("ffprobe"))(
   "writes a decodable MP4 with independently verified packet timestamps",
   async () => {
@@ -369,19 +431,14 @@ test.skipIf(!Bun.which("ffmpeg") || !Bun.which("ffprobe"))(
     time = 20_000_000n;
     await recording.finish();
     const mp4 = join(directory, "recording.mp4");
-    const timings = execFileSync(
+    expect(probePacketTimings(mp4).map(([pts]) => pts)).toEqual([0, 2.5, 12.5]);
+    // Sample durations live in each fragment's tfhd; ffprobe reports them only as the total duration.
+    const duration = execFileSync(
       "ffprobe",
-      ["-v", "error", "-show_entries", "packet=pts_time,duration_time", "-of", "csv=p=0", mp4],
+      ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", mp4],
       { encoding: "utf8" },
-    )
-      .trim()
-      .split("\n")
-      .map((line) => line.split(",").map(Number));
-    expect(timings).toEqual([
-      [0, 2.5],
-      [2.5, 10],
-      [12.5, 7.5],
-    ]);
+    ).trim();
+    expect(Number(duration)).toBe(20);
     expect(() =>
       execFileSync("ffmpeg", ["-v", "error", "-i", mp4, "-f", "null", "-"]),
     ).not.toThrow();
