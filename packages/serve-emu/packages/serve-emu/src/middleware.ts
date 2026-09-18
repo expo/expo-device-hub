@@ -202,7 +202,11 @@ export type AppOptions = {
   inputSource?: InputSource;
   /** @internal Shared by router-managed source generations for one device. */
   deviceState?: DeviceSessionState;
-  /** @internal The explicit single-device recording owns the capture generation. */
+  /**
+   * @internal Set by the router before the first app for the serial exists and handed to every
+   * replacement app, so the recording outlives capture generations. An app created without it
+   * never records; `startScreenRecording` refuses to start once an app or pending app exists.
+   */
   screenRecording?: ScreenRecording;
 } & BrowserOriginPolicy;
 
