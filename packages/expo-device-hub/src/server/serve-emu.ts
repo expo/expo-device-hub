@@ -1,7 +1,15 @@
 // @ts-ignore vendored module, absent until `bun run build:vendor`
-import { cameraLaunchArgs, createRouter, fromWsSocket, seedCameraFeeds, type WsWebSocketLike } from '../../vendor/serve-emu/dist/middleware.js';
+import {
+  cameraLaunchArgs,
+  createRouter,
+  fromWsSocket,
+  seedCameraFeeds,
+  type WsWebSocketLike,
+} from '../../vendor/serve-emu/dist/middleware.js';
 
 import { type EmulatorCameraFeeds } from './device-actions';
+import { AndroidSession, type RecordingFinish, type RecordingStart } from './android-session';
+import { recordingLimitsFromEnv } from './recording-limits';
 import {
   readStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
@@ -18,14 +26,25 @@ export const emuCameraFeeds: EmulatorCameraFeeds = {
   seedPlaceholders: seedCameraFeeds,
 };
 
-function stopAll(): void {
-  try {
-    router.stopAll();
-  } catch {}
+const androidSession = new AndroidSession(router);
+
+export const startAndroidScreenRecording = async (directory: string): Promise<RecordingStart> =>
+  await androidSession.startRecording(directory, recordingLimitsFromEnv(process.env));
+
+export const finishAndroidScreenRecording = (): Promise<RecordingFinish> =>
+  androidSession.finishRecording();
+
+export const shutdownAndroid = (): Promise<void> => androidSession.shutdown();
+
+// Preserve embedded-host cleanup. The CLI awaits the same shutdown promise before exiting.
+for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(signal, () => {
+    void shutdownAndroid().catch(() => {});
+  });
 }
-process.once('exit', stopAll);
-process.once('SIGINT', stopAll);
-process.once('SIGTERM', stopAll);
+process.once('exit', () => {
+  void router.stopAll();
+});
 
 export function handleEmuRequest(request: Request): Promise<Response> {
   const url = new URL(request.url);
