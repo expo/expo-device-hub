@@ -1,14 +1,14 @@
 // Build-time NVRTC only. The injected library still uses the existing CUDA driver.
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { paths } from "./build-paths.mjs";
 import { unlessLinux64 } from "./platform.mjs";
 
 unlessLinux64("build:scale");
 
-const root = fileURLToPath(new URL("../", import.meta.url));
-const nvrtcLibraryPath = resolve(root, process.env.POC_NVRTC_LIBRARY || "deps/nvrtc/lib/libnvrtc.so.12");
+const { root, nvrtcLibraryPath } = paths;
 if (!existsSync(nvrtcLibraryPath))
   throw new Error("Run npm run setup:build or set POC_NVRTC_LIBRARY to an absolute NVRTC library path");
 
@@ -80,13 +80,12 @@ try {
   check(nvrtc.nvrtcGetPTXSize(programHandle, ptr(outputSizeBuffer)));
   const ptxBuffer = allocateOutputBuffer();
   check(nvrtc.nvrtcGetPTX(programHandle, ptr(ptxBuffer)));
-  const buildDirectory = join(root, "build");
-  const headerPath = join(root, "build/scale-ptx.h");
+  const { buildDirectory, kernelHeaderPath: headerPath } = paths;
   await mkdir(buildDirectory, { recursive: true });
   const ptxSource = ptxBuffer.subarray(0, -1).toString();
   const headerSource = `static const char scalePtx[] = R"PTX(${ptxSource})PTX";\n`;
   await writeFile(headerPath, headerSource);
-  console.log("Generated build/scale-ptx.h with NVRTC");
+  console.log(`Generated ${headerPath} with NVRTC`);
 } finally {
   try {
     if (programHandleBuffer[0] !== 0n) check(nvrtc.nvrtcDestroyProgram(ptr(programHandleBuffer)));

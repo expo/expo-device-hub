@@ -22,14 +22,11 @@ SOFTWARE.
 
 ---
 
-The MIT license above applies to original Expo code unless a package or file
-states otherwise. Packages, vendored code, and bundled native dependencies may
-have different licenses. This license does not replace their copyright notices,
-licenses, or distribution requirements.
+This repository includes third-party code that is licensed separately. See:
 
-See THIRD_PARTY_LICENSES.md for the repository overview and links to package
-license information, including:
-
-- packages/serve-sim/LICENSE and packages/serve-sim/NOTICE
-- packages/serve-emu/LICENSE
-- packages/@expo/emulator-capture/THIRD_PARTY_LICENSES.md
+- serve-sim — Apache License 2.0:
+  packages/serve-sim/LICENSE and packages/serve-sim/NOTICE
+- serve-emu — Apache License 2.0:
+  packages/serve-emu/LICENSE
+- emulator-capture native dependencies:
+  packages/@expo/emulator-capture/THIRD_PARTY_LICENSES.md
