@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Experimental native agent. Loaded into an already-running emulator by
 // FridaInjector, with no Frida session, GumJS, Python, or LD_PRELOAD.
 #include "frida-gum.h"

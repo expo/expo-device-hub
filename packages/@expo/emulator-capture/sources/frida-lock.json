@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "version": "17.18.0",
+  "repository": "https://github.com/frida/frida.git",
+  "ref": "refs/tags/17.18.0",
+  "revision": "5d85d2ced9de2fdce82668f1516f64866c079da4",
+  "requiredRevisions": {
+    "releng": "963fe3826f861a7d844d235957f2f13738e3a73b",
+    "subprojects/frida-core": "0602e5dca4c9d7be6098fc319edf978724dabeab",
+    "subprojects/frida-gum": "22e077120358a49b26e32110a6e2b8e80f1ed7f1"
+  },
+  "target": "linux-x86_64",
+  "upstreamDocumentation": "https://frida.re/docs/building/",
+  "sourceStrategy": "Recursive Git submodules, pinned releng dependencies, Meson wraps, and npm package-lock inputs; no downloaded Frida SDK or devkit archives."
+}

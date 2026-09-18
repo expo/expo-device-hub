@@ -1,3 +1,5 @@
+// Original Expo code is MIT-licensed; adapted interface declarations are noted below.
+// See ../LICENSE and ../THIRD_PARTY_LICENSES.md.
 // Disposable proof for Linux x86_64 emulator 36.6.11, not a supported emulator API.
 // FFmpeg owns CUDA input buffers. Only compressed packets are read by the CPU.
 #include <EGL/egl.h>
@@ -45,9 +47,11 @@ static void cucheck(CUresult r,const char* op) {
     if(r!=CUDA_SUCCESS) throw std::runtime_error(std::string(op)+": CUDA "+std::to_string(r));
 }
 // Public leading fields from gfxstream's BorrowedImageInfo / BorrowedImageInfoGl.
+// Adapted interface layouts; Apache-2.0 notices: ../LICENSES/gfxstream/.
 struct Borrowed { virtual ~Borrowed(){}; uint32_t id=0,width=0,height=0; };
 struct BorrowedGl: Borrowed { uint32_t texture=0; };
 // Leading fields of FFmpeg's AVCUDADeviceContext. Avoid a full CUDA toolkit dependency.
+// Upstream LGPL-2.1-or-later notice: ../LICENSES/ffmpeg/hwcontext_cuda.h.NOTICE.
 struct CudaDevicePrefix { CUcontext cuda_ctx; CUstream stream; };
 struct Slot { AVFrame* frame=nullptr; bool queued=false; uint64_t seq=0; };
 

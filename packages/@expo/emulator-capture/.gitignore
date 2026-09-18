@@ -6,6 +6,10 @@
 /nv-codec-headers/
 /ffmpeg-source/
 /deps/
+/sources/ffmpeg/
+/sources/nv-codec-headers/
+/sources/frida/
+/sources/emulator/
 
 # Local benchmark evidence and disposable workflow helpers.
 /artifacts/

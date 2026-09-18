@@ -22,17 +22,23 @@ SOFTWARE.
 
 ---
 
-The MIT license above applies to original Expo source in this package, including
-the JavaScript CLI/API, injector/controller, injected capture and Gum hook code,
-CUDA scaling kernel, build scripts, tests, and documentation, except where a file
-states otherwise. It does not relicense third-party code or copied material.
+Original Expo code, in source or compiled form, is covered by the MIT license
+above. This includes our injector and injected capture code. Bundled third-party
+code and adapted interfaces retain their own licenses and notices.
 
-The native outputs contain separately licensed components. In particular,
-libgpu_capture.so links FFmpeg and Frida Gum, and inject links Frida Core. Their
-LGPL, wxWindows, and other applicable terms remain in effect for those components
-and their distribution in the combined binaries. The original Expo source being
-MIT does not make those binaries exclusively MIT-licensed.
+The native binaries combine MIT-licensed Expo code with dependencies under
+LGPL, wxWindows, Apache, and other terms described in THIRD_PARTY_LICENSES.md.
+MIT does not replace those dependency terms. Adapted gfxstream declarations
+retain their Apache-2.0 notices in LICENSES/gfxstream/.
 
-See THIRD_PARTY_LICENSES.md for the preliminary component inventory, source
-license choices, external emulator integration notes, and remaining distribution
-work. LICENSES/ contains upstream license copies and pinned source references.
+The hook targets gfxstream interfaces and does not directly call QEMU APIs.
+Whether a particular host integration forms a GPL-covered combined work remains
+unresolved; no package-wide GPL version or requirement to supply all QEMU source
+is established by these notices. The emulator binary and system images are not
+included.
+
+Compatibility and corresponding-source requirements are tracked in
+sources/compliance.json and THIRD_PARTY_LICENSES.md. SOURCES.md identifies the
+matching source download when it is published. An incomplete development
+source archive is not a complete corresponding-source distribution, and this
+notice does not claim that the unresolved requirements have been satisfied.
