@@ -47,11 +47,11 @@ static void cucheck(CUresult r,const char* op) {
     if(r!=CUDA_SUCCESS) throw std::runtime_error(std::string(op)+": CUDA "+std::to_string(r));
 }
 // Public leading fields from gfxstream's BorrowedImageInfo / BorrowedImageInfoGl.
-// Adapted interface layouts; Apache-2.0 notices: ../LICENSES/gfxstream/.
+// Adapted interface layouts; Apache-2.0 notices: ../THIRD_PARTY_LICENSES.md.
 struct Borrowed { virtual ~Borrowed(){}; uint32_t id=0,width=0,height=0; };
 struct BorrowedGl: Borrowed { uint32_t texture=0; };
 // Leading fields of FFmpeg's AVCUDADeviceContext. Avoid a full CUDA toolkit dependency.
-// Upstream LGPL-2.1-or-later notice: ../LICENSES/ffmpeg/hwcontext_cuda.h.NOTICE.
+// Upstream LGPL-2.1-or-later notice: ../THIRD_PARTY_LICENSES.md.
 struct CudaDevicePrefix { CUcontext cuda_ctx; CUstream stream; };
 struct Slot { AVFrame* frame=nullptr; bool queued=false; uint64_t seq=0; };
 

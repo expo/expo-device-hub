@@ -41,8 +41,6 @@ npm run build
 
 Each build configures FFmpeg with our CUDA/NVENC options, runs make to pick up source changes, and statically links the resulting libraries into `libgpu_capture.so`. Existing archives do not skip the build. Restart the emulator before using a replacement capture library if one is already injected.
 
-For editable sources for the complete dependency set, Linux/Docker archive commands, and dependency-directory overrides, see [rebuilding from source](docs/rebuilding-from-source.md). That workflow rebuilds Frida instead of using its prebuilt devkits, records source and binary hashes, and provides a modified-FFmpeg relink check. Source-release status and the matching download location are recorded in [SOURCES.md](SOURCES.md).
-
 ## Benchmark
 
 Start an emulator showing continuous animation, using a fresh emulator process if it has already run a capture. From the package directory, pass its host PID, target FPS, and capture duration in seconds:
@@ -55,4 +53,4 @@ The benchmark first measures a baseline, then records video and capture timing. 
 
 ## Licenses
 
-Original Expo code is [MIT-licensed](LICENSE), including our contributions to the compiled binaries. Each native binary also contains dependencies under their own licenses; see the [direct and indirect dependency notices](THIRD_PARTY_LICENSES.md). The npm package and Linux binary archive include these notices and the upstream license texts.
+Original Expo code is [MIT-licensed](LICENSE). The native binaries include components under separate licenses; see [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for their notices, shared license texts, and distribution status.

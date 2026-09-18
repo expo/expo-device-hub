@@ -22,23 +22,5 @@ SOFTWARE.
 
 ---
 
-Original Expo code, in source or compiled form, is covered by the MIT license
-above. This includes our injector and injected capture code. Bundled third-party
-code and adapted interfaces retain their own licenses and notices.
-
-The native binaries combine MIT-licensed Expo code with dependencies under
-LGPL, wxWindows, Apache, and other terms described in THIRD_PARTY_LICENSES.md.
-MIT does not replace those dependency terms. Adapted gfxstream declarations
-retain their Apache-2.0 notices in LICENSES/gfxstream/.
-
-The hook targets gfxstream interfaces and does not directly call QEMU APIs.
-Whether a particular host integration forms a GPL-covered combined work remains
-unresolved; no package-wide GPL version or requirement to supply all QEMU source
-is established by these notices. The emulator binary and system images are not
-included.
-
-Compatibility and corresponding-source requirements are tracked in
-sources/compliance.json and THIRD_PARTY_LICENSES.md. SOURCES.md identifies the
-matching source download when it is published. An incomplete development
-source archive is not a complete corresponding-source distribution, and this
-notice does not claim that the unresolved requirements have been satisfied.
+Bundled third-party code and adapted interfaces retain their own licenses.
+See THIRD_PARTY_LICENSES.md and LICENSES/ for their terms and notices.
