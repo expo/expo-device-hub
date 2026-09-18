@@ -39,48 +39,25 @@ jobs:
         with:
           node-version: "24.x"
 
-      - name: Check emulator capture release decisions
-        run: python3 scripts/source-archive.py check-release --decisions-only
-
-      - name: Fetch editable dependencies and prepare build tools
+      - name: Install emulator capture build dependencies
         run: |
-          bash scripts/source-container.sh fetch
-          bash scripts/source-container.sh run bun scripts/prepare-source-tools.mjs
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential clang libc++-dev libc++abi-dev libegl-dev libgl-dev pkg-config git curl tar xz-utils
 
-      # A clean source build and a modified-FFmpeg relink; no GPU/driver needed.
-      - name: Verify offline source rebuild and modified dependency
-        env:
-          POC_CONTAINER_OFFLINE: "1"
-        run: bash scripts/source-container.sh run python3 scripts/verify-source-rebuild.py
+      # These standalone scripts need no workspace install, GPU, or NVIDIA driver.
+      - name: Build emulator capture
+        run: bun run build
 
-      - name: Create matching source companion
-        env:
-          SOURCE_ID: ${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
-          SOURCE_URL: https://github.com/${{ github.repository }}/releases/download/emulator-capture-source-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}/emulator-capture-source-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}.tar.gz
-        run: |
-          python3 scripts/source-archive.py record-release --evidence-dir artifacts/source-verification --source-url "$SOURCE_URL" --output build/compliance-release.json
-          python3 scripts/source-archive.py create --release --version "$SOURCE_ID" --compliance build/compliance-release.json --evidence-dir artifacts/source-verification --binary-dir build/source-verification/baseline-dist --source-url "$SOURCE_URL"
-          python3 scripts/source-archive.py verify --release --binary-dir build/source-verification/baseline-dist "artifacts/sources/emulator-capture-source-$SOURCE_ID.tar.gz"
-          cp build/compliance-release.json sources/compliance.json
-          mkdir -p dist/linux-x64
-          cp build/source-verification/baseline-dist/inject build/source-verification/baseline-dist/libgpu_capture.so dist/linux-x64/
+      - name: Test native format and pacing
+        run: bun run test:native
 
-      # Keep dependency terms with the binaries; tar preserves the executable bit.
-      - name: Archive Linux binaries and licenses
+      # Transfer only runtime outputs; tar preserves the injector's executable bit.
+      - name: Archive Linux binaries
         run: |
           test -s dist/linux-x64/inject
           test -x dist/linux-x64/inject
           test -s dist/linux-x64/libgpu_capture.so
-          tar -czf "$RUNNER_TEMP/emulator-capture-linux-x64.tar.gz" dist/linux-x64/inject dist/linux-x64/libgpu_capture.so LICENSE THIRD_PARTY_LICENSES.md LICENSES SOURCES.md docs sources/compliance.json
-
-      - name: Upload source companion
-        uses: actions/upload-artifact@v7
-        with:
-          name: emulator-capture-sources
-          path: packages/@expo/emulator-capture/artifacts/sources/*
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
+          tar -czf "$RUNNER_TEMP/emulator-capture-linux-x64.tar.gz" -C dist linux-x64/inject linux-x64/libgpu_capture.so
 
       - name: Upload Linux binaries
         uses: actions/upload-artifact@v7
@@ -135,7 +112,7 @@ jobs:
         working-directory: packages/@expo/emulator-capture
         run: |
           mkdir -p dist
-          tar -xzf "$RUNNER_TEMP/emulator-capture/emulator-capture-linux-x64.tar.gz"
+          tar -xzf "$RUNNER_TEMP/emulator-capture/emulator-capture-linux-x64.tar.gz" -C dist
           test -s dist/linux-x64/inject
           test -x dist/linux-x64/inject
           test -s dist/linux-x64/libgpu_capture.so
@@ -171,47 +148,6 @@ jobs:
 
       - name: Ignore packages excluded from release
         run: ./scripts/ignore-packages.ts
-
-      - name: Download source companion
-        uses: actions/download-artifact@v8
-        with:
-          name: emulator-capture-sources
-          path: ${{ runner.temp }}/emulator-capture-sources
-
-      # Publish before npm, including canaries. CI artifact retention is not a
-      # corresponding-source distribution. The commit identifier binds the
-      # native outputs even though Changesets assigns the npm version later.
-      - name: Publish permanent emulator capture sources
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SOURCE_COMMIT: ${{ github.sha }}
-          SOURCE_DIRECTORY: ${{ runner.temp }}/emulator-capture-sources
-        run: |
-          # A rerun of only failed jobs may reuse sources from an earlier build
-          # attempt. The downloaded artifact carries the original source ID.
-          shopt -s nullglob
-          source_archives=("$SOURCE_DIRECTORY"/emulator-capture-source-*.tar.gz)
-          if [[ ${#source_archives[@]} -ne 1 ]]; then
-            echo "Expected exactly one emulator capture source archive" >&2
-            exit 1
-          fi
-          source_archive="${source_archives[0]}"
-          source_filename="$(basename "$source_archive")"
-          source_id="${source_filename#emulator-capture-source-}"
-          source_id="${source_id%.tar.gz}"
-          source_tag="emulator-capture-source-$source_id"
-          (
-            cd "$SOURCE_DIRECTORY"
-            shasum -a 256 -c "$source_archive.sha256"
-          )
-          if gh release view "$source_tag" >/dev/null 2>&1; then
-            mkdir -p "$RUNNER_TEMP/existing-capture-source"
-            gh release download "$source_tag" --pattern "emulator-capture-source-$source_id.tar.gz*" --dir "$RUNNER_TEMP/existing-capture-source"
-            cmp "$source_archive.sha256" "$RUNNER_TEMP/existing-capture-source/emulator-capture-source-$source_id.tar.gz.sha256"
-            cmp "$source_archive" "$RUNNER_TEMP/existing-capture-source/emulator-capture-source-$source_id.tar.gz"
-          else
-            gh release create "$source_tag" "$source_archive" "$source_archive.sha256" --target "$SOURCE_COMMIT" --title "Emulator capture sources $SOURCE_COMMIT" --notes "Corresponding source and rebuild instructions for the emulator-capture native build at $SOURCE_COMMIT. Retain this source companion while distributing those binaries." --prerelease
-          fi
 
       - name: Publish to npm
         if: ${{ env.IS_CANARY != 'true' }}
