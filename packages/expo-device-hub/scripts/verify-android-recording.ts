@@ -11,7 +11,7 @@
  * Video, manifests, hub.log, and verification.json stay in the printed temp directory.
  */
 import assert from 'node:assert/strict';
-import { execFileSync, spawn } from 'node:child_process';
+import { execFile, execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
@@ -79,6 +79,23 @@ const health = async () => {
   return await response.json();
 };
 let socket: WebSocket | undefined;
+// The byte limit trips only once fragments land, and a fragment closes at a keyframe. An
+// idle CI screen yields no frames, so bytes mode swipes the screen until the limit trips.
+let activity: ReturnType<typeof setInterval> | undefined;
+if (limitMode === 'bytes') {
+  let direction = 1;
+  let swiping = false;
+  activity = setInterval(() => {
+    if (swiping) return;
+    swiping = true;
+    const [from, to] = direction > 0 ? ['800', '200'] : ['200', '800'];
+    direction = -direction;
+    execFile('adb', ['shell', 'input', 'swipe', '270', from, '270', to, '200'], () => {
+      swiping = false;
+    });
+  }, 500);
+  activity.unref();
+}
 try {
   const deadline = Date.now() + 45_000;
   while (true) {
@@ -132,8 +149,6 @@ try {
   } else if (limitMode === 'duration') {
     assert.equal(afterViewer.screenRecording.status, 'complete');
   } else {
-    // Bytes reach the file per fragment, and a fragment closes at a keyframe. On an idle
-    // screen the limit is crossed only when enough fragments have landed.
     const limitDeadline = Date.now() + 60_000;
     let current = afterViewer;
     while (current.screenRecording.status !== 'failed') {
@@ -141,6 +156,7 @@ try {
       await delay(1_000);
       current = await health();
     }
+    clearInterval(activity);
   }
 
   if (limitMode === 'normal') {
@@ -269,6 +285,7 @@ try {
     console.log(JSON.stringify(report, null, 2));
   }
 } finally {
+  clearInterval(activity);
   socket?.terminate();
   if (child.exitCode === null) {
     child.kill('SIGTERM');
