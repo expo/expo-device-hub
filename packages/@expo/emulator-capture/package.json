@@ -39,7 +39,15 @@
     "LICENSES",
     "THIRD_PARTY_LICENSES.md",
     "scripts/*.mjs",
-    "tests/*.cpp"
+    "tests/*.cpp",
+    "docs",
+    "SOURCES.md",
+    "sources/*.json",
+    "Dockerfile.source",
+    ".dockerignore",
+    "scripts/*.py",
+    "scripts/*.sh",
+    "tests/*.py"
   ],
   "engines": {
     "node": ">=18"
@@ -54,6 +62,11 @@
     "test": "npm run test:native",
     "test:native": "bun scripts/test-native.mjs",
     "benchmark": "bun scripts/benchmark.mjs",
-    "eval:summarize": "bun scripts/summarize.mjs"
+    "eval:summarize": "bun scripts/summarize.mjs",
+    "source:fetch": "python3 scripts/source-archive.py fetch",
+    "source:archive": "python3 scripts/source-archive.py create",
+    "source:rebuild": "bash scripts/rebuild-from-source.sh",
+    "source:verify-rebuild": "python3 scripts/verify-source-rebuild.py",
+    "test:sources": "python3 -m unittest discover -s tests -p \"test_*.py\" && python3 tests/frida-source-test.py"
   }
 }

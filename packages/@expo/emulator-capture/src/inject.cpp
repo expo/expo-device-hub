@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 // Experimental native controller. Core supplies injection only; the target
 // library uses Gum directly. No DeviceManager/Session/Script/GumJS API.
 #include "frida-core.h"
