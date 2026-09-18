@@ -129,11 +129,18 @@ try {
   if (limitMode === 'normal') {
     assert.equal(afterViewer.screenRecording.firstFrameAt, initial.screenRecording.firstFrameAt);
     assert.equal(afterViewer.screenRecording.status, 'recording');
+  } else if (limitMode === 'duration') {
+    assert.equal(afterViewer.screenRecording.status, 'complete');
   } else {
-    assert.equal(
-      afterViewer.screenRecording.status,
-      limitMode === 'duration' ? 'complete' : 'failed'
-    );
+    // Bytes reach the file per fragment, and a fragment closes at a keyframe. On an idle
+    // screen the limit is crossed only when enough fragments have landed.
+    const limitDeadline = Date.now() + 60_000;
+    let current = afterViewer;
+    while (current.screenRecording.status !== 'failed') {
+      assert(Date.now() < limitDeadline, `Byte limit not reached: ${JSON.stringify(current)}`);
+      await delay(1_000);
+      current = await health();
+    }
   }
 
   if (limitMode === 'normal') {
