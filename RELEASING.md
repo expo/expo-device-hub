@@ -6,7 +6,13 @@ This monorepo publishes three public packages:
 - **`@expo/hub-client`** — the device-client hooks and the `DeviceScreen` component.
 - **`@expo/serve-sim`** — the iOS simulator server in `packages/serve-sim/packages/serve-sim`.
 
-Every other workspace package is marked `private` and is skipped by the release tooling.
+Other workspace packages are private or excluded from publishing. In particular,
+**`@expo/emulator-capture`** remains private while the distribution prerequisites in
+its [third-party notices](packages/@expo/emulator-capture/THIRD_PARTY_LICENSES.md#distribution-status)
+are unresolved. It is not a Hub dependency. Before enabling publication, resolve
+those prerequisites, restore the Linux release-artifact build and transfer, and
+bootstrap the npm package and trusted publisher. CI still builds the native code
+and checks its package contents.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): the version
 bump and changelog for each package are computed from the `.changeset/*.md` entries that have

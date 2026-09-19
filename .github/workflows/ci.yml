@@ -45,6 +45,9 @@ jobs:
       - name: Build packages (excluding serve-sim)
         run: bun run build --filter='!@expo/serve-sim' --only
 
+      - name: Verify emulator capture package contents
+        run: bun run --filter @expo/emulator-capture check:package
+
       # --only skips the native serve-sim build; its typecheck only needs sources.
       - name: Typecheck
         run: bunx turbo run typecheck --only
