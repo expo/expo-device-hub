@@ -3,10 +3,14 @@
 This monorepo publishes these public packages:
 
 - **`expo-device-hub`** — the DevTools plugin.
-- **`@expo/emulator-capture`** — experimental Linux x64 NVIDIA capture binaries and CLI.
 
-Every other workspace package, including the internal **`@expo/hub-client`** device-client
-layer, is marked `private` and is skipped by the release tooling.
+Other workspace packages are private or excluded from publishing. In particular,
+**`@expo/emulator-capture`** remains private while the distribution prerequisites in
+its [third-party notices](packages/@expo/emulator-capture/THIRD_PARTY_LICENSES.md#distribution-status)
+are unresolved. It is not a Hub dependency. Before enabling publication, resolve
+those prerequisites, restore the Linux release-artifact build and transfer, and
+bootstrap the npm package and trusted publisher. CI still builds the native code
+and checks its package contents.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): the version
 bump and changelog for each package are computed from the `.changeset/*.md` entries that have
