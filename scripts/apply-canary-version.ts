@@ -26,7 +26,9 @@ const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
 
 console.log(`::group::Applying canary versions (date ${date}, commit ${sha})`);
 const ignore = await getChangesetIgnoreList();
-for (const pkg of await getPublicPackages()) {
+const packages = await getPublicPackages();
+const canaryVersions = new Map<string, string>();
+for (const pkg of packages) {
   if (ignore.has(pkg.name)) {
     console.log(`${pkg.name}: skipped (excluded from release)`);
     continue;
@@ -41,9 +43,24 @@ for (const pkg of await getPublicPackages()) {
     pkg.version === committedVersion ? nextMinor(pkg.version) : pkg.version;
   const canaryVersion = `${baseVersion}-canary-${date}-${sha}`;
   json.version = canaryVersion;
+  canaryVersions.set(pkg.name, canaryVersion);
   await Bun.write(path, `${JSON.stringify(json, null, 2)}\n`);
   console.log(
     `${pkg.name}: ${committedVersion} -> ${pkg.version} -> ${canaryVersion}`,
   );
+}
+
+// Runtime dependencies must resolve to this canary's packages, including first releases.
+for (const pkg of packages) {
+  if (!canaryVersions.has(pkg.name)) continue;
+  const path = `${pkg.dir}/package.json`;
+  const json = await Bun.file(path).json();
+  for (const field of ["dependencies", "optionalDependencies"]) {
+    for (const name of Object.keys(json[field] ?? {})) {
+      const version = canaryVersions.get(name);
+      if (version) json[field][name] = version;
+    }
+  }
+  await Bun.write(path, `${JSON.stringify(json, null, 2)}\n`);
 }
 console.log("::endgroup::");

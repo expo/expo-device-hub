@@ -38,9 +38,17 @@ jobs:
       - name: Lint
         run: bun run lint
 
+      - name: Install emulator capture build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libc++-dev libc++abi-dev libegl-dev libgl-dev
+
       # --only prevents dependencies from reintroducing the macOS-only serve-sim build.
       - name: Build packages (excluding serve-sim)
         run: bun run build --filter='!@expo/serve-sim' --only
+
+      - name: Verify emulator capture package contents
+        run: bun run --filter @expo/emulator-capture check:package
 
       - name: Typecheck (excluding serve-sim)
         run: bunx turbo run typecheck --filter='!@expo/serve-sim' --only

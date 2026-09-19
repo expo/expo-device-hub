@@ -1,11 +1,16 @@
 # Releasing
 
-This monorepo publishes one public package:
+This monorepo publishes these public packages:
 
 - **`expo-device-hub`** — the DevTools plugin.
 
-Every other workspace package, including the internal **`@expo/hub-client`** device-client
-layer, is marked `private` and is skipped by the release tooling.
+Other workspace packages are private or excluded from publishing. In particular,
+**`@expo/emulator-capture`** remains private while the distribution prerequisites in
+its [third-party notices](packages/@expo/emulator-capture/THIRD_PARTY_LICENSES.md#distribution-status)
+are unresolved. It is not a Hub dependency. Before enabling publication, resolve
+those prerequisites, restore the Linux release-artifact build and transfer, and
+bootstrap the npm package and trusted publisher. CI still builds the native code
+and checks its package contents.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): the version
 bump and changelog for each package are computed from the `.changeset/*.md` entries that have
@@ -23,7 +28,7 @@ Any change that should ship needs a changeset. From the repo root:
 bun changeset
 ```
 
-Select `expo-device-hub`, choose the bump level (`patch` / `minor` / `major`), and write a
+Select the affected public packages, choose the bump level (`patch` / `minor` / `major`), and write a
 summary. Changes to private workspace packages that ship inside `expo-device-hub` belong in the
 `expo-device-hub` changeset. Commit the generated `.changeset/*.md` file with your PR. Multiple
 PRs accumulate multiple changesets — the release folds them together, and the final bump is the
@@ -47,5 +52,6 @@ bumps a package, the canary uses that version directly (e.g. `0.3.0` with a mino
 `expo-device-hub@0.2.0-canary-20260429-a5e59cf`). Unlike a real release, a canary does not require
 a pending changeset, so you can publish one from any commit.
 
-Real releases only version and publish `expo-device-hub` when it has a changeset. Canary releases
-assign it a canary version so they can also run without pending changesets.
+Real releases use Changesets to version public packages and update their dependency ranges.
+Canary releases assign all public packages canary versions and pin their internal runtime
+dependencies to the matching canary versions, so they can also run without pending changesets.

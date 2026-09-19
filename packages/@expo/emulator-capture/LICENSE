@@ -22,11 +22,5 @@ SOFTWARE.
 
 ---
 
-This repository includes third-party code that is licensed separately. See:
-
-- serve-sim — Apache License 2.0:
-  packages/serve-sim/LICENSE and packages/serve-sim/NOTICE
-- serve-emu — Apache License 2.0:
-  packages/serve-emu/LICENSE
-- emulator-capture native dependencies:
-  packages/@expo/emulator-capture/THIRD_PARTY_LICENSES.md
+Bundled third-party code and adapted interfaces retain their own licenses.
+See THIRD_PARTY_LICENSES.md and LICENSES/ for their terms and notices.

@@ -1,0 +1,58 @@
+{
+  "name": "@expo/emulator-capture",
+  "version": "0.0.0",
+  "private": true,
+  "description": "High-performance Android emulator capture",
+  "keywords": [
+    "expo",
+    "android",
+    "emulator",
+    "video-capture",
+    "streaming",
+    "linux",
+    "nvidia",
+    "cuda",
+    "nvenc"
+  ],
+  "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/@expo/emulator-capture",
+  "bugs": {
+    "url": "https://github.com/expo/expo-device-hub/issues"
+  },
+  "license": "SEE LICENSE IN LICENSE",
+  "author": "Expo",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/expo/expo-device-hub.git",
+    "directory": "packages/@expo/emulator-capture"
+  },
+  "type": "module",
+  "bin": {
+    "emulator-capture": "src/cli.mjs"
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md",
+    "LICENSE",
+    "LICENSES",
+    "THIRD_PARTY_LICENSES.md",
+    "scripts/*.mjs",
+    "tests/*.cpp"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "bun run setup:build && bun run build:ffmpeg && bun run build:scale && bun run build:native",
+    "setup:build": "bun scripts/setup-build.mjs",
+    "build:ffmpeg": "bun scripts/build-ffmpeg.mjs",
+    "build:scale": "bun scripts/compile-scale.mjs",
+    "build:native": "bun scripts/build.mjs",
+    "capture": "node src/cli.mjs",
+    "test": "npm run test:native",
+    "test:native": "bun scripts/test-native.mjs",
+    "check:package": "node scripts/check-package.mjs",
+    "benchmark": "bun scripts/benchmark.mjs",
+    "eval:summarize": "bun scripts/summarize.mjs"
+  }
+}

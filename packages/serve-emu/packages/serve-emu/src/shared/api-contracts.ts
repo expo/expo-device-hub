@@ -526,12 +526,27 @@ export type HealthClient = {
   awaitingKeyFrame: boolean;
 };
 
+export type ExperimentalGpuCaptureDiagnostics = {
+  backend: "gfxstream-cuda-nvenc";
+  encoderName: "h264_nvenc";
+  packets: number;
+  bytes: number;
+  requestedKeyFrames: number;
+  queuedBytes: number;
+  fps: number;
+  nativeSize: DeviceSize;
+  streamSize: DeviceSize;
+  maxSize: number;
+};
+
 export type HealthResponse = {
   ok: boolean;
   status: SessionStatus;
   serial: string;
   device: string;
   streamMode?: StreamMode;
+  captureBackend?: StreamMode | ExperimentalGpuCaptureDiagnostics["backend"];
+  experimentalGpuCapture?: ExperimentalGpuCaptureDiagnostics | null;
   encoderName?: string | null;
   grpcImageMode?: GrpcImageMode;
   inputSource?: InputSource;
@@ -1800,6 +1815,23 @@ function parseRollingTimingSummary(
   };
 }
 
+function parseExperimentalGpuCaptureDiagnostics(value: unknown): ExperimentalGpuCaptureDiagnostics {
+  const name = "health response.experimentalGpuCapture";
+  const item = record(value, name);
+  return {
+    backend: oneOf(item.backend, ["gfxstream-cuda-nvenc"] as const, `${name}.backend`),
+    encoderName: oneOf(item.encoderName, ["h264_nvenc"] as const, `${name}.encoderName`),
+    packets: number(item.packets, `${name}.packets`),
+    bytes: number(item.bytes, `${name}.bytes`),
+    requestedKeyFrames: number(item.requestedKeyFrames, `${name}.requestedKeyFrames`),
+    queuedBytes: number(item.queuedBytes, `${name}.queuedBytes`),
+    fps: number(item.fps, `${name}.fps`),
+    nativeSize: parseDeviceSize(item.nativeSize, `${name}.nativeSize`),
+    streamSize: parseDeviceSize(item.streamSize, `${name}.streamSize`),
+    maxSize: number(item.maxSize, `${name}.maxSize`),
+  };
+}
+
 function parseGrpcCaptureDiagnostics(value: unknown): GrpcCaptureDiagnostics {
   const item = record(value, "health response.grpcCapture");
   const timing = (field: keyof GrpcCaptureDiagnostics) =>
@@ -1898,6 +1930,22 @@ export function parseHealthResponse(value: unknown): HealthResponse {
     status: oneOf(root.status, ["streaming", "stopped", "error"] as const, "health response.status"),
     serial: string(root.serial, "health response.serial"),
     device: string(root.device, "health response.device"),
+    ...(root.captureBackend === undefined
+      ? {}
+      : {
+          captureBackend: oneOf(
+            root.captureBackend,
+            [...STREAM_MODES, "gfxstream-cuda-nvenc"] as const,
+            "health response.captureBackend",
+          ),
+        }),
+    ...(root.experimentalGpuCapture === undefined
+      ? {}
+      : {
+          experimentalGpuCapture: root.experimentalGpuCapture === null
+            ? null
+            : parseExperimentalGpuCaptureDiagnostics(root.experimentalGpuCapture),
+        }),
     ...(root.streamMode === undefined
       ? {}
       : {
