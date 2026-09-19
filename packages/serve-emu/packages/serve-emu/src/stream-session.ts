@@ -9,6 +9,7 @@ import {
   type VideoPacket,
 } from "./scrcpy.ts";
 import type {
+  ExperimentalGpuCaptureDiagnostics,
   GrpcCaptureDiagnostics,
   GrpcEncoder,
   GrpcImageMode,
@@ -24,6 +25,7 @@ const STARTUP_READY: unique symbol = Symbol("scrcpy-startup-ready");
 const NEVER_ABORTED = new AbortController().signal;
 
 export type {
+  ExperimentalGpuCaptureDiagnostics,
   GrpcCaptureDiagnostics,
   RollingTimingSummary,
 } from "./shared/api-contracts.ts";
@@ -37,12 +39,7 @@ export type StreamFailure = {
 export type StreamMeta = ScrcpySession["meta"];
 
 export type EmuSessionDiagnostics = {
-  experimentalGpuCapture?: {
-    backend: string; encoderName: string; packets: number; bytes: number;
-    requestedKeyFrames: number; queuedBytes: number; fps: number;
-    nativeSize: { width: number; height: number };
-    streamSize: { width: number; height: number }; maxSize: number;
-  };
+  experimentalGpuCapture?: ExperimentalGpuCaptureDiagnostics;
   /** Present only for the grpc-screenshot capture implementation. */
   grpcCapture?: GrpcCaptureDiagnostics;
 };
