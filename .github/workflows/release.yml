@@ -17,59 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-emulator-capture:
-    # Pin the build environment instead of changing the Linux ABI with ubuntu-latest.
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    defaults:
-      run:
-        working-directory: packages/@expo/emulator-capture
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: "1.3.14"
-
-      - name: Setup Node
-        uses: actions/setup-node@v6
-        with:
-          node-version: "24.x"
-
-      - name: Install emulator capture build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential clang libc++-dev libc++abi-dev libegl-dev libgl-dev pkg-config git curl tar xz-utils
-
-      # These standalone scripts need no workspace install, GPU, or NVIDIA driver.
-      - name: Build emulator capture
-        run: bun run build
-
-      - name: Test native format and pacing
-        run: bun run test:native
-
-      # Transfer only runtime outputs; tar preserves the injector's executable bit.
-      - name: Archive Linux binaries
-        run: |
-          test -s dist/linux-x64/inject
-          test -x dist/linux-x64/inject
-          test -s dist/linux-x64/libgpu_capture.so
-          tar -czf "$RUNNER_TEMP/emulator-capture-linux-x64.tar.gz" -C dist linux-x64/inject linux-x64/libgpu_capture.so
-
-      - name: Upload Linux binaries
-        uses: actions/upload-artifact@v7
-        with:
-          name: emulator-capture-linux-x64
-          path: ${{ runner.temp }}/emulator-capture-linux-x64.tar.gz
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 7
-
   release:
-    needs: build-emulator-capture
     runs-on: macos-latest
     environment: npm-publish
     env:
@@ -99,23 +47,6 @@ jobs:
 
       - name: Build packages
         run: bun run build
-
-      # Restore after builds so the macOS skip/cache cannot replace Linux outputs.
-      # npm packs them later using the final version assigned by Changesets.
-      - name: Download Linux emulator capture binaries
-        uses: actions/download-artifact@v8
-        with:
-          name: emulator-capture-linux-x64
-          path: ${{ runner.temp }}/emulator-capture
-
-      - name: Restore Linux emulator capture binaries
-        working-directory: packages/@expo/emulator-capture
-        run: |
-          mkdir -p dist
-          tar -xzf "$RUNNER_TEMP/emulator-capture/emulator-capture-linux-x64.tar.gz" -C dist
-          test -s dist/linux-x64/inject
-          test -x dist/linux-x64/inject
-          test -s dist/linux-x64/libgpu_capture.so
 
       - name: Test
         run: bun run test

@@ -4,8 +4,9 @@ This folder is managed by [changesets](https://github.com/changesets/changesets)
 pending changelog entries that drive the next release — each published package's version bump
 and `CHANGELOG.md` are generated from these files.
 
-Three packages are published from this repo: **`expo-device-hub`**, **`@expo/hub-client`**, and **`@expo/emulator-capture`**.
-Every other workspace package is `private` and is skipped by `changeset publish`.
+Two packages are published from this repo: **`expo-device-hub`** and **`@expo/hub-client`**.
+Every other workspace package, including **`@expo/emulator-capture`**, is private or excluded
+from publishing and is skipped by the release tooling.
 
 ## Add a changeset with every change
 
