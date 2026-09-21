@@ -1,19 +1,32 @@
 {
   "name": "@expo/hub-client",
   "version": "0.2.0",
-  "private": true,
-  "description": "Device-client hooks and types for mirroring live iOS simulators and Android emulators and devices in the browser.",
-  "license": "MIT",
+  "description": "Device-client React hooks and types for mirroring live iOS simulators and Android emulators in the browser through Expo Device Hub.",
   "keywords": [
     "expo",
     "devtools",
     "simulator",
-    "emulator"
+    "emulator",
+    "ios",
+    "android",
+    "react"
   ],
+  "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/@expo/hub-client",
+  "bugs": {
+    "url": "https://github.com/expo/expo-device-hub/issues"
+  },
+  "license": "MIT",
+  "author": "Expo",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/expo/expo-device-hub.git",
+    "directory": "packages/@expo/hub-client"
+  },
   "type": "module",
   "files": [
     "dist",
-    "src"
+    "src",
+    "!src/__tests__"
   ],
   "main": "./dist/index.mjs",
   "module": "./dist/index.mjs",
@@ -26,6 +39,9 @@
     }
   },
   "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "swc src -d dist --strip-leading-paths --out-file-extension mjs --delete-dir-on-start --ignore \"**/__tests__/**\" && tsc -p tsconfig.build.json",
     "dev": "swc src -d dist --strip-leading-paths --out-file-extension mjs --ignore \"**/__tests__/**\" -w",
@@ -37,7 +53,7 @@
     "format:check": "oxfmt --check"
   },
   "peerDependencies": {
-    "react": "*"
+    "react": ">=18.0.0"
   },
   "devDependencies": {
     "@swc/cli": "^0.8.1",

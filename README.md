@@ -141,4 +141,6 @@ exec-ws actions rather than shell commands, and the vendored server in
 [`packages/serve-sim`](packages/serve-sim) is the version the client is written against.
 
 It lives in its own package (rather than inside the plugin) so the **Expo dashboard
-website** can consume the exact same code to mirror devices in the browser.
+website** can consume the exact same code to mirror devices in the browser. It is published
+to npm as [`@expo/hub-client`](https://www.npmjs.com/package/@expo/hub-client); see the
+[package README](packages/@expo/hub-client/README.md) for install and usage examples.
