@@ -95,3 +95,35 @@ Typical camera e2e flow: rebuild, `camera --stop-webcam`, `simctl terminate`
 the app, `camera <bundleId> --file <img> --mirror on` to re-inject, `openurl`
 to load the project, `tap 0.5 0.9` for the shutter, then read the saved JPEG
 off disk to verify (see the path under "agent-browser" above).
+
+## Definition of done
+
+A change is done when every point below holds. The evidence goes in the PR,
+following the template in `.github/PULL_REQUEST_TEMPLATE.md`.
+
+- **The failing test came first** where a cheap test path exists. Prefer no
+  new test over a bad one. A test encodes the intended behavior, not the
+  current implementation. Never weaken an assertion to match a wrong
+  implementation.
+- **`bun run check` is green.**
+- **`bun run build` then `bun run test` is green.** That run is isolated and
+  skips simulator-backed suites on purpose, so also run the ones for the
+  touched area on a simulator you booted:
+  `SERVE_SIM_TEST_UDID=<udid> bun run test:e2e -- <paths>`. It builds the
+  fixtures the launch suites need. Name the tests, the UDID, the device, and
+  the Xcode version in the PR. For a change under
+  `packages/serve-sim/Sources/StreamingPolicy`, also run
+  `swift test --filter StreamingPolicyTests` in `packages/serve-sim`.
+- **Evidence matches the change.** A CLI change shows the command and its
+  output. A UI change shows a screenshot or video. A native change was
+  exercised on a simulator, not only compiled. "It builds" is not evidence.
+- **One behavior change per PR, under roughly 400 changed lines.** Split a
+  larger change into a stack, each PR green on its own. A fix for one device
+  class does not change the path for other device classes. If it must, the
+  PR says so and shows a tap, a drag, and a scroll on an unaffected device.
+- **Native code changed:** restart any running `serve-sim` process before you
+  verify. The addon loads once per process.
+- **The PR says how to roll it back** when a plain revert is not enough.
+
+When a reviewer corrects the same thing twice, encode it. Add a lint rule, a
+test, or an entry in `REVIEW.md`, then delete the prose that asked for it.
