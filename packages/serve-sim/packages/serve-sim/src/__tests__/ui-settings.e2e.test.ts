@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import { existsSync } from "fs";
@@ -44,7 +44,11 @@ function simctlUiUsable(): boolean {
   }
 }
 
-const describeIfSim = udid && existsSync(CLI) && simctlUiUsable() ? describe : describe.skip;
+// The `simctl ui` probe is an intentional exclusion, not a precondition: it
+// skips on CI by design (see above), so it must not fail the required run.
+const ready = Boolean(udid && existsSync(CLI));
+requireE2E("ui-settings.e2e", ready);
+const describeIfSim = ready && simctlUiUsable() ? describe : describe.skip;
 
 // Timeouts on every child call so a wedged simulator fails the test instead
 // of hanging the CI job.

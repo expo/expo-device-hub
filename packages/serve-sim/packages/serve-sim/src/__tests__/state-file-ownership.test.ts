@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
 import { existsSync, readFileSync, unlinkSync } from "fs";
@@ -58,6 +58,7 @@ describe("clearServeSimState", () => {
 
 const bootedUdid = e2eDevice();
 const describeWithSim = bootedUdid ? describe : describe.skip;
+requireE2E("state-file-ownership", Boolean(bootedUdid));
 
 describeWithSim(`serve-sim state ownership e2e (booted sim ${bootedUdid ?? "<skipped>"})`, () => {
   let stateFile: string;

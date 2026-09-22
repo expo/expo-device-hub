@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execSync, spawnSync } from "child_process";
 import { join } from "path";
@@ -23,6 +23,7 @@ const AX_READY_POLL_INTERVAL_MS = 500;
 
 const bootedUdid = e2eDevice();
 const describeWithSim = bootedUdid ? describe : describe.skip;
+requireE2E("accessibility-endpoint", Boolean(bootedUdid));
 
 describeWithSim(`serve-sim accessibility endpoint (booted sim ${bootedUdid ?? "<skipped>"})`, () => {
   let axUrl: string;

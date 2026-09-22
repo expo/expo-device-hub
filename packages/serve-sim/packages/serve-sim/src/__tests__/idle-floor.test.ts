@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { execSync, spawnSync } from "child_process";
 import { readdirSync, readFileSync } from "fs";
@@ -37,6 +37,7 @@ const MIN_FRAMES_IN_IDLE_WINDOW = 3;
 
 const bootedUdid = e2eDevice();
 const describeWithSim = bootedUdid ? describe : describe.skip;
+requireE2E("idle-floor", Boolean(bootedUdid));
 
 // ── Multipart parser (standalone copy to keep this package self-contained). ──
 interface ParsedFrame {

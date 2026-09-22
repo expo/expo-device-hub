@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
@@ -96,6 +96,7 @@ async function negotiateAndMeasure(offerUrl: string): Promise<{ width: number; h
 
 const udid = e2eDevice();
 const describeIfSim = udid && existsSync(CLI) ? describe : describe.skip;
+requireE2E("webrtc-resolution-cap.e2e", Boolean(udid && existsSync(CLI)));
 
 describeIfSim("WebRTC resolution cap", () => {
   let server: ChildProcess | null = null;

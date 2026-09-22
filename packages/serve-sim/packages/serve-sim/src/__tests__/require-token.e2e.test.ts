@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
@@ -29,6 +29,7 @@ async function waitFor(check: () => Promise<boolean>, budgetMs: number): Promise
 
 const udid = e2eDevice();
 const describeIfSim = udid && existsSync(CLI) ? describe : describe.skip;
+requireE2E("require-token.e2e", Boolean(udid && existsSync(CLI)));
 
 describeIfSim("serve-sim --require-token (built CLI)", () => {
   let server: ChildProcess | null = null;

@@ -69,7 +69,7 @@ jobs:
         working_directory: packages/serve-sim
         run: |
           run_tests() {
-            bun test --max-concurrency=1 packages/serve-sim/src/__tests__/ &
+            bun test --max-concurrency=1 packages/serve-sim/src/__tests__/ packages/serve-sim/scripts/tart/__tests__/ &
             local pid=$!
             local waited=0
             while kill -0 "$pid" 2>/dev/null; do

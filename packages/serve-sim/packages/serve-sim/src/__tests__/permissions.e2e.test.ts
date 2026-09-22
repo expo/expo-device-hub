@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, execSync } from "child_process";
 import { existsSync } from "fs";
@@ -22,6 +22,7 @@ const udid = e2eDevice();
 // Needs both a booted iOS sim and the built CLI. CI builds serve-sim before
 // running this directory; locally, run `bun run build.ts` first or it skips.
 const describeIfSim = udid && existsSync(CLI) ? describe : describe.skip;
+requireE2E("permissions.e2e", Boolean(udid && existsSync(CLI)));
 
 function cli(...args: string[]): string {
   return execFileSync("node", [CLI, "permissions", ...args, "-d", udid!], { encoding: "utf-8" });

@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
 import { join } from "path";
@@ -39,6 +39,7 @@ function* parseEnvelope(buffer: Uint8Array): Generator<{ tag: number; consumed: 
 
 const bootedUdid = e2eDevice();
 const describeWithSim = bootedUdid ? describe : describe.skip;
+requireE2E("avcc-stream-endpoint", Boolean(bootedUdid));
 
 describeWithSim(`serve-sim AVCC endpoint (booted sim ${bootedUdid ?? "<skipped>"})`, () => {
   let avccUrl: string;
