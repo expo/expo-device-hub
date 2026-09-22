@@ -79,12 +79,14 @@ import { useAndroidCamera } from './useAndroidCamera';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useAppPermissions } from './useAppPermissions';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
+import { parseScreenRecordingStatus } from './screen-recording';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
   type ConnectionStatus,
   type DeviceAppearance,
   type DeviceClient,
+  type DeviceScreenRecordingStatus,
   type DeviceConnectionOptions,
   type DeviceEvent,
   type DeviceGrpcImageMode,
@@ -169,6 +171,7 @@ type ServeEmuStreamSettings =
     };
 
 type ServeEmuApiInfo = {
+  screenRecording?: unknown;
   size?: { width?: unknown; height?: unknown };
   stream?: unknown;
 };
@@ -274,6 +277,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const deviceSettingWriteTrackerRef = useRef(new KeyedWriteTracker<DeviceSettingKey>());
   const deviceSettingVersionsRef = useRef(createAndroidDeviceSettingVersions());
   const deviceScope = `${active ? 'active' : 'inactive'}\0${baseUrl ?? ''}\0${targetDevice ?? ''}`;
+  const [recordingSnapshot, setRecordingSnapshot] = useState<{
+    scope: string;
+    status: DeviceScreenRecordingStatus | null;
+  }>({ scope: deviceScope, status: active ? 'unknown' : null });
+  if (recordingSnapshot.scope !== deviceScope) {
+    setRecordingSnapshot({ scope: deviceScope, status: active ? 'unknown' : null });
+  }
   const deviceScopeRef = useRef(deviceScope);
   useLayoutEffect(() => {
     deviceScopeRef.current = deviceScope;
@@ -863,6 +873,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         const info = (await response.json()) as ServeEmuApiInfo;
         if (cancelled) return;
         const next = parseServeEmuStreamSettings(info.stream) ?? { transport: 'websocket' };
+        const recordingStatus = parseScreenRecordingStatus(info.screenRecording);
+        setRecordingSnapshot((current) =>
+          current.scope === deviceScope && current.status === recordingStatus
+            ? current
+            : { scope: deviceScope, status: recordingStatus },
+        );
         setServerStreamSettings((current) =>
           JSON.stringify(current) === JSON.stringify(next) ? current : next,
         );
@@ -888,7 +904,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       clearInterval(timer);
       controller?.abort();
     };
-  }, [active, baseUrl, targetDevice]);
+  }, [active, baseUrl, deviceScope, targetDevice]);
 
   const webRtcRequested = streamMode === 'webrtc';
   const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
@@ -1945,6 +1961,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       streamSettingsPending || streamSourceLoading || isStreamSwitchPending(streamSwitch),
     updateStreamSettings,
     streamSource,
+    screenRecording:
+      recordingSnapshot.scope === deviceScope
+        ? recordingSnapshot.status
+        : active ? 'unknown' : null,
     streamSourcePending: streamSourceLoading || isStreamSwitchPending(streamSwitch),
     streamSourceError,
     setStreamSource,

@@ -1278,6 +1278,7 @@ async function createAppInternal(
           lastError,
           clients: clients.size,
           stream: streamSettings,
+          screenRecording: opts.screenRecording?.snapshot() ?? null,
           viewerTransports: viewerTransportsFor(
             streamSettings,
             session.meta.codecId,

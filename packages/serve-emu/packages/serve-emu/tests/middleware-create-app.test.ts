@@ -261,6 +261,7 @@ test("advertises viewer transports and lazily creates WebRTC for a websocket def
       new Request("http://middleware.test/api"),
     );
     expect(await response.json()).toMatchObject({
+      screenRecording: null,
       stream: { transport: "websocket" },
       viewerTransports: {
         default: "websocket",
@@ -591,6 +592,8 @@ test("keeps the screen recording active when the capture ends and the app stops"
   );
   try {
     await recorder.ready;
+    const recordingInfo = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await recordingInfo.json()).toMatchObject({ screenRecording: { status: "recording" } });
     endStream();
     for (let i = 0; i < 200 && app.health().status !== "error"; i++) {
       await new Promise((resolve) => setTimeout(resolve, 5));
@@ -606,6 +609,8 @@ test("keeps the screen recording active when the capture ends and the app stops"
       "scrcpy",
     );
     await recorder.finish();
+    const completedInfo = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await completedInfo.json()).toMatchObject({ screenRecording: { status: "complete" } });
     expect(timestamps).toEqual([0, 5]);
     const manifest = JSON.parse(await readFile(join(root, "session", "session.json"), "utf8"));
     expect(manifest.status).toBe("complete");

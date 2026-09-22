@@ -4,6 +4,21 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { DeviceTitle } from '../dashboard/DeviceTitle';
 
 describe('device title', () => {
+  test.each([
+    ['unknown', 'Checking recording status'],
+    ['waiting', 'Starting recording'],
+    ['recording', 'Recording'],
+    ['finalizing', 'Finishing recording'],
+    ['complete', 'Recording complete'],
+    ['failed', 'Recording failed'],
+  ] as const)('shows %s recording independently of the stream connection', (recording, label) => {
+    const markup = renderToStaticMarkup(
+      <DeviceTitle device={{ id: 'emulator-5554', name: 'Pixel' }} status="reconnecting" recording={recording} />,
+    );
+    expect(markup).toContain('>Reconnecting</span>');
+    expect(markup).toContain('role="status"');
+    expect(markup).toContain(`>${label}</span>`);
+  });
   test('keeps the status visible when a long label needs truncating', () => {
     const name = '868BF88E-084A-4E9D-9434-C2D3C0C567F3';
     const markup = renderToStaticMarkup(

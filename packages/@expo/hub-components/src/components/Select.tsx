@@ -16,6 +16,7 @@ import { bg, border, icon, radius, shadow, text, textSize } from '../theme/token
 import { CheckIcon, ChevronDownIcon } from './icons';
 import { isFocusVisible } from './focusVisible';
 import { pillControlStyle } from './pill';
+import { DisabledControlHint } from './DisabledControlHint';
 
 export type SelectOption<Value extends string = string> = {
   value: Value;
@@ -29,6 +30,7 @@ export type SelectProps<Value extends string> = {
   value: Value;
   options: ReadonlyArray<SelectOption<Value>>;
   disabled?: boolean;
+  disabledReason?: string;
   onChange: (value: Value) => void;
 };
 
@@ -73,6 +75,7 @@ export function Select<Value extends string>({
   value,
   options,
   disabled = false,
+  disabledReason,
   onChange,
 }: SelectProps<Value>) {
   const [open, setOpen] = useState(false);
@@ -88,6 +91,7 @@ export function Select<Value extends string>({
 
   useEffect(() => {
     registration.current.disabled = disabled;
+    if (disabled) setOpen(false);
   }, [disabled]);
 
   useEffect(() => {
@@ -102,51 +106,57 @@ export function Select<Value extends string>({
   return (
     <Root
       value={value}
-      open={open}
-      onOpenChange={setOpen}
+      open={open && !disabled}
+      onOpenChange={(nextOpen) => setOpen(nextOpen && !disabled)}
       disabled={disabled}
-      onValueChange={(nextValue) => onChange(nextValue as Value)}
+      onValueChange={(nextValue) => {
+        if (!disabled) onChange(nextValue as Value);
+      }}
     >
-      <Trigger
-        ref={triggerRef}
-        aria-label={ariaLabel}
-        aria-describedby={ariaDescribedBy}
-        data-test-options={options.map((option) => option.label).join('\n')}
-        onFocus={(event) => setFocused(isFocusVisible(event))}
-        onBlur={() => setFocused(false)}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-        style={{
-          ...pillControlStyle({ hovered, focused, disabled }),
-          width: 'max-content',
-          maxWidth: '100%',
-          justifyContent: 'space-between',
-          padding: '0 8px 0 10px',
-        }}
-      >
-        <span
+      <DisabledControlHint
+        reason={disabled ? disabledReason : undefined}
+        label={`${ariaLabel}: ${selectedLabel}`}>
+        <Trigger
+          ref={triggerRef}
+          aria-label={ariaLabel}
+          aria-describedby={ariaDescribedBy}
+          data-test-options={options.map((option) => option.label).join('\n')}
+          onFocus={(event) => setFocused(isFocusVisible(event))}
+          onBlur={() => setFocused(false)}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
           style={{
-            minWidth: 0,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            ...pillControlStyle({ hovered, focused, disabled }),
+            width: 'max-content',
+            maxWidth: '100%',
+            justifyContent: 'space-between',
+            padding: '0 8px 0 10px',
           }}
         >
-          <Value>{selectedLabel}</Value>
-        </span>
-        <SelectIcon
-          aria-hidden="true"
-          style={{
-            display: 'flex',
-            flexShrink: 0,
-            color: icon.default,
-            transform: open ? 'rotate(180deg)' : undefined,
-            transition: 'transform 120ms ease',
-          }}
-        >
-          <ChevronDownIcon size={16} strokeWidth={1.5} />
-        </SelectIcon>
-      </Trigger>
+          <span
+            style={{
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            <Value>{selectedLabel}</Value>
+          </span>
+          <SelectIcon
+            aria-hidden="true"
+            style={{
+              display: 'flex',
+              flexShrink: 0,
+              color: icon.default,
+              transform: open ? 'rotate(180deg)' : undefined,
+              transition: 'transform 120ms ease',
+            }}
+          >
+            <ChevronDownIcon size={16} strokeWidth={1.5} />
+          </SelectIcon>
+        </Trigger>
+      </DisabledControlHint>
       <Portal>
         <Content
           position="popper"

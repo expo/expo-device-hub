@@ -1,5 +1,6 @@
 import { type ReactNode } from 'react';
 
+import { areRecordingControlsLocked, type DeviceScreenRecordingStatus } from '@expo/hub-client';
 import {
   CONTROL_BUTTON_SIZE,
   CameraIcon,
@@ -11,6 +12,7 @@ import {
   bg,
   border,
   radius,
+  text,
 } from '../primitives';
 import { type ColorScheme } from './data';
 
@@ -58,6 +60,7 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
+  recording = null,
 }: {
   /** The device's current dark/light appearance; null while unknown. */
   appearance: ColorScheme | null;
@@ -71,7 +74,9 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
+  recording?: DeviceScreenRecordingStatus | null;
 }) {
+  const recordingControlsLocked = areRecordingControlsLocked(recording);
   return (
     <div
       role="toolbar"
@@ -105,7 +110,14 @@ export function StreamControls({
         <ControlButton
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
-          onClick={onRotate}
+          tooltip={
+            recording === 'unknown'
+              ? 'Rotation is unavailable until recording status is known.'
+              : recordingControlsLocked ? 'Rotation is unavailable while recording.' : undefined
+          }
+          aria-disabled={recordingControlsLocked || undefined}
+          onClick={recordingControlsLocked ? undefined : onRotate}
+          style={recordingControlsLocked ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
         />
       </ControlGroup>
     </div>

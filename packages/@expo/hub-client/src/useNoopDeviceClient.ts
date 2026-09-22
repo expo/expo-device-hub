@@ -47,6 +47,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   resetPermissions: () => {},
   refreshPermissions: () => {},
   streamCapabilities: null,
+  screenRecording: null,
   streamSettings: null,
   streamSettingsPending: false,
   updateStreamSettings: () => {},

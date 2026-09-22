@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import {
+  areRecordingControlsLocked,
   type DeviceClient,
   type DeviceGrpcImageMode,
   type DeviceGrpcEncoder,
@@ -135,6 +136,12 @@ export function StreamOptionsSection({
   onHttpCodecChange,
 }: StreamOptionsSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const recordingControlsLocked = areRecordingControlsLocked(client.screenRecording);
+  const recordingDisabledReason = !recordingControlsLocked
+    ? undefined
+    : client.screenRecording === 'unknown'
+      ? 'Unavailable until recording status is known.'
+      : 'Unavailable until recording finishes.';
   const backend: DeviceStreamCapabilities =
     client.streamCapabilities ?? DEFAULT_STREAM_CAPABILITIES;
   const availability: StreamModeAvailability = {
@@ -167,7 +174,7 @@ export function StreamOptionsSection({
     streamSource?.availableInputSources.includes(option.value),
   );
   const settingsReady = client.streamSettings !== null;
-  const settingsDisabled = !settingsReady || client.streamSettingsPending;
+  const settingsDisabled = recordingControlsLocked || !settingsReady || client.streamSettingsPending;
   const transport: StreamTransport =
     activeStreamMode === 'webrtc' ? 'webrtc' : primaryTransport;
   const setStreamStatsEnabled = client.setStreamStatsEnabled;
@@ -247,7 +254,8 @@ export function StreamOptionsSection({
               ariaLabel="Stream source"
               options={sourceOptions}
               value={streamSource.mode}
-              disabled={client.streamSourcePending}
+              disabled={recordingControlsLocked || client.streamSourcePending}
+              disabledReason={recordingDisabledReason}
               onChange={client.setStreamSource}
             />
           </SidebarRow>
@@ -261,7 +269,8 @@ export function StreamOptionsSection({
                 ariaLabel="Input source"
                 options={inputSourceOptions}
                 value={streamSource.inputSource}
-                disabled={client.streamSourcePending}
+                disabled={recordingControlsLocked || client.streamSourcePending}
+                disabledReason={recordingDisabledReason}
                 onChange={client.setGrpcInputSource}
               />
             </SidebarRow>
@@ -271,7 +280,8 @@ export function StreamOptionsSection({
               ariaLabel="gRPC image mode"
               options={GRPC_IMAGE_MODE_OPTIONS}
               value={streamSource.grpcImageMode}
-              disabled={client.streamSourcePending}
+              disabled={recordingControlsLocked || client.streamSourcePending}
+              disabledReason={recordingDisabledReason}
               onChange={client.setGrpcImageMode}
             />
           </SidebarRow>
@@ -283,7 +293,8 @@ export function StreamOptionsSection({
                 disabled: !streamSource.availableEncoders.includes(option.value),
               }))}
               value={streamSource.encoder}
-              disabled={client.streamSourcePending}
+              disabled={recordingControlsLocked || client.streamSourcePending}
+              disabledReason={recordingDisabledReason}
               onChange={client.setGrpcEncoder}
             />
           </SidebarRow>
@@ -350,6 +361,7 @@ export function StreamOptionsSection({
                   value === 0 ? 'Full' : `${value} px`,
                 )}
                 disabled={settingsDisabled}
+                disabledReason={recordingDisabledReason}
                 onChange={(value) => patchSetting('maxDimension', Number(value))}
               />
             </SidebarRow>
@@ -361,6 +373,7 @@ export function StreamOptionsSection({
                 value={String(settings.mjpegFps)}
                 options={withCurrentValue(settings.mjpegFps, FPS_OPTIONS, (value) => `${value} FPS`)}
                 disabled={settingsDisabled || transport !== 'http'}
+                disabledReason={recordingDisabledReason}
                 onChange={(value) => patchSetting('mjpegFps', Number(value))}
               />
             </SidebarRow>
@@ -376,6 +389,7 @@ export function StreamOptionsSection({
                   (value) => `${Math.round(value * 100)}%`,
                 )}
                 disabled={settingsDisabled || transport !== 'http'}
+                disabledReason={recordingDisabledReason}
                 onChange={(value) => patchSetting('mjpegQuality', Number(value))}
               />
             </SidebarRow>
@@ -387,6 +401,7 @@ export function StreamOptionsSection({
                 value={String(settings.h264Fps)}
                 options={withCurrentValue(settings.h264Fps, FPS_OPTIONS, (value) => `${value} FPS`)}
                 disabled={settingsDisabled || !h264Active}
+                disabledReason={recordingDisabledReason}
                 onChange={(value) => patchSetting('h264Fps', Number(value))}
               />
             </SidebarRow>
@@ -402,6 +417,7 @@ export function StreamOptionsSection({
                   (value) => `${value / 1_000_000} Mbps`,
                 )}
                 disabled={settingsDisabled || !h264Active}
+                disabledReason={recordingDisabledReason}
                 onChange={(value) => patchSetting('h264Bitrate', Number(value))}
               />
             </SidebarRow>
