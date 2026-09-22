@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { Panel } from "../client/Panel";
+import { Panel } from "../client/panel";
 
 describe("Panel", () => {
   test("left sidebar is full height and only has a right border", () => {

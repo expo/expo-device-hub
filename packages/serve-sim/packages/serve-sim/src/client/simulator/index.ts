@@ -1,11 +1,11 @@
-export { SimulatorStream } from "./SimulatorStream.js";
-export type { SimulatorStreamProps } from "./SimulatorStream.js";
-export { SimulatorView } from "./SimulatorView.js";
-export type { SimulatorViewProps } from "./SimulatorView.js";
-export { SimulatorFrame } from "./SimulatorFrame.js";
-export type { SimulatorFrameProps } from "./SimulatorFrame.js";
-export { SimulatorToolbar } from "./SimulatorToolbar.js";
-export type { SimulatorToolbarProps, ToolbarButtonProps, TitleProps } from "./SimulatorToolbar.js";
+export { SimulatorStream } from "./simulator-stream.js";
+export type { SimulatorStreamProps } from "./simulator-stream.js";
+export { SimulatorView } from "./simulator-view.js";
+export type { SimulatorViewProps } from "./simulator-view.js";
+export { SimulatorFrame } from "./simulator-frame.js";
+export type { SimulatorFrameProps } from "./simulator-frame.js";
+export { SimulatorToolbar } from "./simulator-toolbar.js";
+export type { SimulatorToolbarProps, ToolbarButtonProps, TitleProps } from "./simulator-toolbar.js";
 export {
   DEVICE_FRAMES,
   SIMULATOR_SCREENS,
@@ -18,7 +18,7 @@ export {
   simulatorMaxWidth,
   simulatorResizeCornerArc,
   simulatorScreenCornerRadiiPx,
-} from "./deviceFrames.js";
+} from "./device-frames.js";
 export {
   displayStreamConfig,
   isLandscapeConfig,
@@ -31,11 +31,11 @@ export {
   ROTATE_RIGHT_CYCLE,
 } from "./orientation.js";
 export type { StreamDisplayGeometry } from "./orientation.js";
-export type { DeviceType } from "./deviceFrames.js";
+export type { DeviceType } from "./device-frames.js";
 export type { SimulatorOrientation, StreamConfig } from "../types.js";
 export { useAvccStream } from "./use-avcc-stream.js";
 export type { UseAvccStreamOptions } from "./use-avcc-stream.js";
-export { digitalCrownDeltaFromWheel } from "./digitalCrown.js";
+export { digitalCrownDeltaFromWheel } from "./digital-crown.js";
 export {
   AvccDemuxer,
   avcCodecString,
@@ -46,9 +46,9 @@ export {
   AVCC_TAG_SEED,
 } from "../avcc-codec.js";
 export type { AvccChunk, AvccChunkType } from "../avcc-codec.js";
-export { useSimStream } from "./useSimStream.js";
+export { useSimStream } from "./use-sim-stream.js";
 export type {
   SimStreamInfo,
   UseSimStreamOptions,
   UseSimStreamResult,
-} from "./useSimStream.js";
+} from "./use-sim-stream.js";

@@ -1,6 +1,6 @@
 import { afterEach, expect, mock, test } from "bun:test";
 import type { ComponentProps, ReactElement } from "react";
-import type { SimulatorView } from "../../client/simulator/SimulatorView";
+import type { SimulatorView } from "../../client/simulator/simulator-view";
 
 // Run the panel's effects and decoder callbacks without a browser or live feed.
 type Effect = { deps?: unknown[]; cleanup?: () => void };
@@ -22,7 +22,7 @@ mock.module("react", () => ({
     effects[index] = { deps, cleanup: run() || undefined };
   },
 }));
-mock.module("../../client/simulator/SimulatorView", () => ({ SimulatorView: () => null }));
+mock.module("../../client/simulator/simulator-view", () => ({ SimulatorView: () => null }));
 mock.module("../../client/hooks/use-mjpeg-stream", () => ({ useMjpegStream: () => ({}) }));
 mock.module("../../client/hooks/use-webrtc-stream", () => ({ useWebRtcStream: () => ({}) }));
 const { DuoPanelStreams } = await import("../../client/components/duo-panel-streams");

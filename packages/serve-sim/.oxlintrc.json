@@ -1,12 +1,51 @@
 {
   "$schema": "https://raw.githubusercontent.com/oxc-project/oxc/main/npm/oxlint/configuration_schema.json",
-  "plugins": ["typescript", "react", "import"],
+  "plugins": [
+    "typescript",
+    "react",
+    "import",
+    "unicorn"
+  ],
   "categories": {
     "correctness": "error"
   },
   "rules": {
-    "react/react-in-jsx-scope": "off"
+    "react/react-in-jsx-scope": "off",
+    "unicorn/filename-case": [
+      "error",
+      {
+        "case": "kebabCase"
+      }
+    ],
+    "unicorn/prefer-string-starts-ends-with": "off",
+    "unicorn/no-new-array": "off",
+    "unicorn/no-useless-fallback-in-spread": "off",
+    "unicorn/no-useless-spread": "off"
   },
+  "overrides": [
+    {
+      "files": [
+        "packages/serve-sim/src/client/**"
+      ],
+      "rules": {
+        "import/no-nodejs-modules": "error"
+      }
+    },
+    {
+      "files": [
+        "packages/serve-sim/src/*.ts"
+      ],
+      "rules": {
+        "no-restricted-globals": [
+          "error",
+          {
+            "name": "WebSocket",
+            "message": "Import WebSocket from 'ws'. The global is not available on every supported Node.js release the middleware runs on."
+          }
+        ]
+      }
+    }
+  ],
   "ignorePatterns": [
     "**/node_modules/**",
     "**/dist/**",

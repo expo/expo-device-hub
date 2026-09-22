@@ -15,7 +15,7 @@ import {
   rawPointForDisplayPoint,
   streamDisplayGeometry,
 } from "./orientation.js";
-import { digitalCrownDeltaFromWheel } from "./digitalCrown.js";
+import { digitalCrownDeltaFromWheel } from "./digital-crown.js";
 import { wheelDeltaToPixels } from "./scroll-wheel.js";
 import {
   resolveScreenConfigUpdate,

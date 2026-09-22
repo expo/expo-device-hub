@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PanelLeft, Search, X } from "lucide-react";
-import { Panel, PanelHeader } from "../Panel";
+import { Panel, PanelHeader } from "../panel";
 import { useGridMemory } from "../hooks/use-grid-memory";
 import { type GridDevice, type MemoryReport, runtimeLabel } from "../utils/grid";
 import { simEndpoint } from "../utils/sim-endpoint";

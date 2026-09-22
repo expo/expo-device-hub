@@ -3,7 +3,7 @@ import { Smartphone } from "lucide-react";
 import { CollapsibleSection } from "./collapsible-section";
 import { SettingSwitch } from "./setting-switch";
 import { LocationEmulationTool } from "../location-emulation-tool";
-import { Panel, PanelCloseButton, PanelHeader, PanelTitle } from "../Panel";
+import { Panel, PanelCloseButton, PanelHeader, PanelTitle } from "../panel";
 import { AppDetectionTool } from "./app-detection-tool";
 import { AppPermissionsTool } from "./app-permissions-tool";
 import { AxTreeTool } from "./ax-tree-tool";

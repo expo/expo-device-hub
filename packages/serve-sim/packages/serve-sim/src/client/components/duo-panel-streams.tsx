@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { SimulatorView } from "../simulator/SimulatorView";
+import { SimulatorView } from "../simulator/simulator-view";
 import { useMjpegStream } from "../hooks/use-mjpeg-stream";
 import { useWebRtcStream } from "../hooks/use-webrtc-stream";
 import { AVCC_FRAME_TIMEOUT_MS } from "../avcc-fallback";

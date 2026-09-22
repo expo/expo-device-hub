@@ -1,4 +1,4 @@
-import { WHEEL_LINE_HEIGHT_PX } from "./digitalCrown.js";
+import { WHEEL_LINE_HEIGHT_PX } from "./digital-crown.js";
 
 /**
  * Convert a raw `WheelEvent.deltaX/Y` (respecting `deltaMode`) into CSS pixels.
