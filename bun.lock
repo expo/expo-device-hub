@@ -64,7 +64,7 @@
     },
     "packages/@expo/hub-client": {
       "name": "@expo/hub-client",
-      "version": "0.2.0",
+      "version": "1.0.0",
       "devDependencies": {
         "@swc/cli": "^0.8.1",
         "@swc/core": "^1.15.43",
