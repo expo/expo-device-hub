@@ -245,15 +245,6 @@ export function defaultSpeed(mode: TrailMode): number {
   }
 }
 
-export function modeLabel(mode: TrailMode): string {
-  switch (mode) {
-    case "walk": return "Walk";
-    case "run": return "Run";
-    case "cycle": return "Cycle";
-    case "drive": return "Drive";
-  }
-}
-
 // ─── Default trails ───────────────────────────────────────────────────────
 //
 // Every default trail is a closed loop so playback cycles forever. Waypoints

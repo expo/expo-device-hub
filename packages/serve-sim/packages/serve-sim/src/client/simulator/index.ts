@@ -13,7 +13,6 @@ export {
   fallbackScreenSize,
   getDeviceType,
   screenBorderRadius,
-  screenInsets,
   simulatorAspectRatio,
   simulatorMaxWidth,
   simulatorResizeCornerArc,

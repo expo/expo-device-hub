@@ -305,6 +305,11 @@ async function prepare(
   };
 }
 
+/**
+ * Unused on `expo` today. Kept because #148, #102, and #53 import it; the
+ * first of them to land makes it live. Remove the tag then.
+ * @public
+ */
 export async function setCapabilityEnabled(
   udid: string,
   name: string,

@@ -26,7 +26,7 @@ simulator of its own, so it needs neither the device pin nor the private
 state directory that `test:e2e` adds for shared machines. A green local run
 predicts a green PR.
 
-- `bun run check` — lint and typecheck. Run before every commit.
+- `bun run check` — lint, typecheck, and knip. Run before every commit.
 - `bun run build` — full build: bundled JS, compiled CLI, native helpers, and
   the N-API addon. Run once before the test commands; several tests drive the
   built artifacts under `packages/serve-sim/dist/`.

@@ -146,11 +146,6 @@ export function formatGridBytes(n: number): string {
   return `${mb.toFixed(0)} MB`;
 }
 
-export function gridPreviewHref(previewEndpoint: string, udid: string): string {
-  const sep = previewEndpoint.includes("?") ? "&" : "?";
-  return `${previewEndpoint}${sep}device=${encodeURIComponent(udid)}`;
-}
-
 // Grid runtimes arrive as `iOS-26-5` / `watchOS-11-2` (simctl's SimRuntime
 // suffix). Split the OS name from its dotted version for display.
 export function parseRuntime(runtime: string): { os: string; version: string } {

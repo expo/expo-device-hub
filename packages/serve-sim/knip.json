@@ -1,27 +1,28 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "tags": [
-    "-lintignore"
-  ],
-  "ignore": [
-    "**/__tests__/**",
-    "**/*.test.{ts,tsx,js,jsx}"
-  ],
+  "ignoreExportsUsedInFile": true,
   "workspaces": {
-    ".": {},
+    ".": {
+      "entry": [
+        ".codex/skills/*/scripts/*.mjs"
+      ]
+    },
     "packages/serve-sim": {
       "ignoreDependencies": [
-        "preact"
+        "preact",
+        "node-swift"
+      ],
+      "ignoreBinaries": [
+        "Sources/ServeSimCapabilityLoader/tests/run.sh"
       ],
       "entry": [
         "src/index.ts",
-        "src/middleware.ts",
-        "src/state.ts",
         "src/client/client.tsx",
         "src/client/global.css",
-        "build.ts",
-        "dev.ts",
-        "scripts/build-trails.ts"
+        "scripts/build-trails.ts",
+        "src/__tests__/**/*.test.{ts,tsx}",
+        "src/__tests__/fixtures/*.child.ts",
+        "scripts/tart/__tests__/*.test.ts"
       ]
     }
   }

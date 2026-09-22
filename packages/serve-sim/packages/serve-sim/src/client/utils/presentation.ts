@@ -76,7 +76,6 @@ export const PRESENTATION_CORNERS = [
   "bottom-left",
 ] as const;
 export type PresentationCorner = (typeof PRESENTATION_CORNERS)[number];
-export const PRESENTATION_CORNER_STORAGE_KEY = "serve-sim:presentation-corner";
 
 export function isPresentationCorner(value: unknown): value is PresentationCorner {
   return PRESENTATION_CORNERS.includes(value as PresentationCorner);

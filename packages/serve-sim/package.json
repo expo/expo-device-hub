@@ -6,7 +6,7 @@
     "build": "bun run --filter '*' build",
     "build:fixtures": "bash packages/serve-sim/Sources/build-test-fixtures.sh",
     "dev": "bun run --filter '@expo/serve-sim' dev",
-    "check": "bun run lint && bun run typecheck",
+    "check": "bun run lint && bun run typecheck && bun run knip",
     "lint": "oxlint",
     "typecheck": "tsc --noEmit",
     "knip": "knip",

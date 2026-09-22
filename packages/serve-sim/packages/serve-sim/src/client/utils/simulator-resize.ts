@@ -26,7 +26,6 @@ export function readNativeKeyboardRaised(): boolean {
 }
 export const SIMULATOR_RESIZE_VIEWPORT_INSET_FOR_PRESENTATION = 0;
 export const SIMULATOR_RESIZE_DRAG_TRANSITION = "width 70ms linear";
-export const SIMULATOR_RESIZE_LAYOUT_TRANSITION = "width 0.24s cubic-bezier(0.22, 1, 0.36, 1)";
 // A mode change, not a drag release: the resize curve is 96% done at the
 // halfway point, which reads as a jump rather than growth.
 export const SIMULATOR_RESIZE_PRESENTATION_TRANSITION_MS = 280;
