@@ -9,12 +9,15 @@
  *      `gridApiEndpoint` route paths.
  *   2. Video: MJPEG `<img>` from the helper's `streamUrl`. Input + screen config:
  *      the helper's binary WebSocket (`0x03` touch, `0x04` button, `0x05`
- *      multi-touch out; `0x82` screen config in). Coordinates are mapped to the
- *      device's raw frame per orientation (see `./orientation`).
+ *      multi-touch, `0x06` key, `0x0b` scroll, `0x0e` hardware keyboard out;
+ *      `0x82` screen config in). Coordinates are mapped to the device's raw
+ *      frame per orientation (see `./orientation`). Input sent while the socket
+ *      is reconnecting is queued briefly (see `./ws-send-queue`).
  *   3. Logs: streamed over the middleware's **exec-ws** WebSocket exactly like
  *      the serve-sim client — `{token}` → `{sub, path: logsEndpoint}` → `{sub,
  *      data}` (raw SSE) — rather than a direct route on the helper (the helper
- *      has none).
+ *      has none). One-shot host actions (`{id, action, params}`) and
+ *      simulator-settings requests (`{id, ui}`) share that channel (`./exec-ws`).
  *   4. Devices: `GET <base>/grid/api`.
  *
  * `baseUrl` is always the mounted serve-sim middleware. Connection failures
@@ -35,6 +38,7 @@ import { isAvccSupported } from './avcc';
 import {
   HID_EDGE_BOTTOM,
   homeIndicatorEdge,
+  rawDeltaForDisplayDelta,
   rawEdgeForDisplayEdge,
   rawPointForDisplayPoint,
   streamGeometry,
@@ -45,7 +49,8 @@ import {
   createIosEventLogState,
   mergeIosEventLogPayload,
 } from './ios-events';
-import { type ExecResult, getIosAppDetails } from './ios-app-details';
+import { hostUiRequest, runHostAction } from './exec-ws';
+import { getIosAppDetails } from './ios-app-details';
 import { clearIosLocation, setIosLocation } from './ios-location';
 import { fetchIosScreenshot } from './ios-screenshot';
 import { hidUsageForCode } from './keyboard';
@@ -64,15 +69,18 @@ import {
   type DeviceOrientation,
   type ForegroundApp,
   type HardwareButton,
+  type HidKeyEvent,
   type KeyboardInput,
   type MultiTouchSample,
   type RunningDevice,
   type ScreenSize,
+  type ScrollSample,
   type TouchSample,
 } from './types';
 import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { KeyedWriteTracker } from './keyed-write-tracker';
+import { createPacedKeySender } from './paced-key-sender';
 import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
@@ -87,6 +95,11 @@ import {
   type WebRtcCodec,
   webRtcFallbackDecision,
 } from './webrtc-fallback';
+import {
+  flushWsMessageQueue,
+  type QueuedWsMessage,
+  sendOrQueueWsMessage,
+} from './ws-send-queue';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
@@ -98,13 +111,19 @@ const WS_MSG_BUTTON = 0x04;
 const WS_MSG_MULTI_TOUCH = 0x05;
 const WS_MSG_KEY = 0x06;
 const WS_MSG_ORIENTATION = 0x07;
+// Native scroll (wheel/trackpad) in raw device fractions, anchored under the pointer.
+const WS_MSG_SCROLL = 0x0b;
 const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
-const WS_MSG_HARDWARE_KEYBOARD = 0x0d;
+// Connect/disconnect the guest's hardware keyboard; serve-sim's own touch
+// client sends this too so the on-screen keyboard shows.
+const WS_MSG_HARDWARE_KEYBOARD = 0x0e;
 const WS_TAG_SCREEN_CONFIG = 0x82;
-const WS_TAG_HARDWARE_KEYBOARD = 0x83;
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
 const HID_USAGE_R = 0x15; // 'r'
+
+// The simulator-settings option behind `hardwareKeyboardConnected`.
+const UI_OPTION_HARDWARE_KEYBOARD = 'hardware-keyboard';
 
 const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'ios', name: 'iPhone Simulator', platform: 'ios', current: true },
@@ -135,7 +154,6 @@ const BUTTON_NAME: Record<HardwareButton, string | null> = {
   hideKeyboard: null,
 };
 
-const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 function parseIosStreamSettings(
@@ -149,16 +167,6 @@ function iosStreamSettingsPatch(
   patch: Partial<DeviceStreamEncoderSettings>,
 ): Partial<DeviceStreamEncoderSettings> | null {
   return Object.keys(patch).length > 0 ? patch : null;
-}
-
-// Returns an `ArrayBuffer`-backed view (not the default `Uint8Array<ArrayBufferLike>`)
-// so it satisfies `WebSocket.send`'s `BufferSource` under strict lib.dom typings.
-function taggedJson(tag: number, payload: unknown): Uint8Array<ArrayBuffer> {
-  const json = encoder.encode(JSON.stringify(payload));
-  const out = new Uint8Array(1 + json.length);
-  out[0] = tag;
-  out.set(json, 1);
-  return out;
 }
 
 function toWs(url: string): string {
@@ -178,126 +186,6 @@ export function toQueryStyleHelperWsUrl(wsUrl: string): string {
     url.searchParams.set('device', decodeURIComponent(match[2]));
   }
   return url.toString();
-}
-
-/** Response shape of a serve-sim UI (`simulator-settings`) request over exec-ws. */
-interface UiRequestResult {
-  /** Present on a read (no `option`): every UI option's current value. */
-  status?: Record<string, string>;
-  /** Present on a write. */
-  ok?: boolean;
-}
-
-/**
- * Run a single serve-sim **simulator-settings** request over a one-shot
- * middleware exec-ws connection and resolve its reply. The protocol mirrors the
- * serve-sim client: connect → `{token}` → wait for `{ready}` → `{id, ui}` →
- * `{id, ...result}`. A read omits `option` and returns `{status}`; a write sends
- * `{device, option, value}` and returns `{ok}`. Used for the appearance get/set
- * (logs use their own long-lived exec-ws below).
- */
-function execWsUiRequest(
-  execWsUrl: string,
-  execToken: string,
-  ui: Record<string, unknown>,
-): Promise<UiRequestResult> {
-  return new Promise((resolve, reject) => {
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(execWsUrl);
-    } catch (err) {
-      reject(err);
-      return;
-    }
-    let settled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const finish = (run: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        ws.close();
-      } catch {}
-      run();
-    };
-    timer = setTimeout(() => finish(() => reject(new Error('exec-ws timeout'))), 5000);
-    ws.onopen = () => ws.send(JSON.stringify({ token: execToken }));
-    ws.onmessage = (event) => {
-      let msg: { ready?: boolean; id?: number; error?: string } & UiRequestResult;
-      try {
-        msg = JSON.parse(String(event.data));
-      } catch {
-        return;
-      }
-      if (msg.ready) {
-        ws.send(JSON.stringify({ id: 1, ui }));
-        return;
-      }
-      if (msg.id === 1) {
-        if (msg.error) finish(() => reject(new Error(msg.error)));
-        else finish(() => resolve(msg));
-      }
-    };
-    ws.onerror = () => finish(() => reject(new Error('exec-ws error')));
-    ws.onclose = () => finish(() => reject(new Error('exec-ws closed')));
-  });
-}
-
-/**
- * Run a single host shell command over a one-shot middleware exec-ws
- * connection: connect → `{token}` → wait for `{ready}` → `{id, command}` →
- * `{id, stdout, stderr, exitCode}`. Same channel as {@link execWsUiRequest},
- * different request shape. Used to introspect the foreground app's bundle
- * (Info.plist, icon) — see `ios-app-details.ts`.
- */
-function execWsCommand(
-  execWsUrl: string,
-  execToken: string,
-  command: string,
-): Promise<ExecResult> {
-  return new Promise((resolve, reject) => {
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(execWsUrl);
-    } catch (err) {
-      reject(err);
-      return;
-    }
-    let settled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const finish = (run: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      try {
-        ws.close();
-      } catch {}
-      run();
-    };
-    timer = setTimeout(() => finish(() => reject(new Error('exec-ws timeout'))), 10_000);
-    ws.onopen = () => ws.send(JSON.stringify({ token: execToken }));
-    ws.onmessage = (event) => {
-      let msg: { ready?: boolean; id?: number; error?: string } & Partial<ExecResult>;
-      try {
-        msg = JSON.parse(String(event.data));
-      } catch {
-        return;
-      }
-      if (msg.ready) {
-        ws.send(JSON.stringify({ id: 1, command }));
-        return;
-      }
-      if (msg.id === 1) {
-        if (msg.error) finish(() => reject(new Error(msg.error)));
-        else
-          finish(() =>
-            resolve({ stdout: msg.stdout ?? '', stderr: msg.stderr ?? '', exitCode: msg.exitCode ?? 1 }),
-          );
-      }
-    };
-    ws.onerror = () => finish(() => reject(new Error('exec-ws error')));
-    ws.onclose = () => finish(() => reject(new Error('exec-ws closed')));
-  });
 }
 
 /** Resolved connection: where to stream video/input, and how to reach logs/devices. */
@@ -384,6 +272,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  // Input that arrived while the helper socket was down; flushed on reconnect
+  // (bounded, and stale entries are dropped — see `./ws-send-queue`).
+  const pendingWsRef = useRef<QueuedWsMessage[]>([]);
   // Monotonic log id source, persisted across log-stream reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
@@ -448,10 +339,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     [applyStreamSrc, useAvcc, useWebRtc],
   );
 
-  const sendTouch = useCallback((sample: TouchSample) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  // Every helper-socket message goes through here so a brief reconnect queues
+  // input instead of dropping it (matching serve-sim's client).
+  const sendWs = useCallback((tag: number, payload: object) => {
+    pendingWsRef.current = sendOrQueueWsMessage(wsRef.current, pendingWsRef.current, tag, payload);
+  }, []);
 
+  const sendTouch = useCallback((sample: TouchSample) => {
     const orientation = streamGeometry(screenRef.current).inputOrientation;
 
     let displayEdge: number | undefined;
@@ -467,45 +361,87 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const edge = displayEdge === undefined ? undefined : rawEdgeForDisplayEdge(orientation, displayEdge);
     const payload =
       edge === undefined ? { type: sample.phase, ...p } : { type: sample.phase, ...p, edge };
-    ws.send(taggedJson(WS_MSG_TOUCH, payload));
-  }, []);
+    sendWs(WS_MSG_TOUCH, payload);
+  }, [sendWs]);
 
-  const sendMultiTouch = useCallback((sample: MultiTouchSample) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const orientation = streamGeometry(screenRef.current).inputOrientation;
-    const a = rawPointForDisplayPoint(orientation, sample.a.x, sample.a.y);
-    const b = rawPointForDisplayPoint(orientation, sample.b.x, sample.b.y);
-    ws.send(taggedJson(WS_MSG_MULTI_TOUCH, { type: sample.phase, x1: a.x, y1: a.y, x2: b.x, y2: b.y }));
-  }, []);
+  const sendMultiTouch = useCallback(
+    (sample: MultiTouchSample) => {
+      const orientation = streamGeometry(screenRef.current).inputOrientation;
+      const a = rawPointForDisplayPoint(orientation, sample.a.x, sample.a.y);
+      const b = rawPointForDisplayPoint(orientation, sample.b.x, sample.b.y);
+      sendWs(WS_MSG_MULTI_TOUCH, { type: sample.phase, x1: a.x, y1: a.y, x2: b.x, y2: b.y });
+    },
+    [sendWs],
+  );
 
-  const sendKey = useCallback((input: KeyboardInput): boolean => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
-    const usage = hidUsageForCode(input.code);
-    if (usage === null) return false;
-    ws.send(taggedJson(WS_MSG_KEY, { type: input.phase, usage }));
-    return true;
-  }, []);
+  // Scroll-to-pan: forwarded as a native scroll event so iOS pans content
+  // exactly as it would for a physical wheel — no synthesized finger drag.
+  // Both the delta and the cursor anchor are rotated into raw device
+  // orientation so scrolling tracks the visible content on rotated devices.
+  const sendScroll = useCallback(
+    (sample: ScrollSample) => {
+      if (!Number.isFinite(sample.dx) || !Number.isFinite(sample.dy)) return;
+      if (sample.dx === 0 && sample.dy === 0) return;
+      const orientation = streamGeometry(screenRef.current).inputOrientation;
+      const delta = rawDeltaForDisplayDelta(orientation, sample.dx, sample.dy);
+      const anchor = rawPointForDisplayPoint(orientation, sample.x, sample.y);
+      sendWs(WS_MSG_SCROLL, { dx: delta.dx, dy: delta.dy, x: anchor.x, y: anchor.y });
+    },
+    [sendWs],
+  );
 
-  const setHardwareKeyboardConnected = useCallback((connected: boolean) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(taggedJson(WS_MSG_HARDWARE_KEYBOARD, { enabled: connected }));
-  }, []);
+  const sendKey = useCallback(
+    (input: KeyboardInput): boolean => {
+      const usage = hidUsageForCode(input.code);
+      if (usage === null) return false;
+      sendWs(WS_MSG_KEY, { type: input.phase, usage });
+      return true;
+    },
+    [sendWs],
+  );
+
+  // Pre-mapped key events (phone-keyboard capture) are paced a few ms apart so
+  // iOS doesn't coalesce a pasted string into a couple of lost keystrokes.
+  const keySender = useMemo(
+    () =>
+      createPacedKeySender((event) => sendWs(WS_MSG_KEY, { type: event.type, usage: event.usage })),
+    [sendWs],
+  );
+  useEffect(() => () => keySender.dispose(), [keySender]);
+  const sendKeyEvents = useCallback(
+    (events: ReadonlyArray<HidKeyEvent>) => keySender.enqueue(events),
+    [keySender],
+  );
+
+  // Connect/disconnect the Mac keyboard from the guest through serve-sim's
+  // `hardware-keyboard` simulator setting (the same request its settings panel
+  // makes). Optimistic; reverted if the middleware rejects it.
+  const setHardwareKeyboardConnected = useCallback(
+    (connected: boolean) => {
+      const c = config;
+      if (!c || !c.execWsUrl || !c.execToken || !c.device) return;
+      const previous = hardwareKeyboardConnected;
+      setHardwareKeyboardConnectedState(connected);
+      void hostUiRequest(c.execWsUrl, c.execToken, {
+        device: c.device,
+        option: UI_OPTION_HARDWARE_KEYBOARD,
+        value: connected ? 'on' : 'off',
+      }).catch(() => setHardwareKeyboardConnectedState(previous));
+    },
+    [config, hardwareKeyboardConnected],
+  );
 
   const toggleSoftwareKeyboard = useCallback(() => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    ws.send(taggedJson(WS_MSG_SOFTWARE_KEYBOARD, {}));
-  }, []);
+    sendWs(WS_MSG_SOFTWARE_KEYBOARD, {});
+  }, [sendWs]);
 
-  const pressButton = useCallback((button: HardwareButton) => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const name = BUTTON_NAME[button];
-    if (name) ws.send(taggedJson(WS_MSG_BUTTON, { button: name }));
-  }, []);
+  const pressButton = useCallback(
+    (button: HardwareButton) => {
+      const name = BUTTON_NAME[button];
+      if (name) sendWs(WS_MSG_BUTTON, { button: name });
+    },
+    [sendWs],
+  );
 
   // Reload the RN/Expo bundle by injecting ⌘R over the helper's key channel
   // (tag 0x06 → HID keystroke) — RN registers ⌘R as its reload shortcut. Mirrors
@@ -513,26 +449,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // a sequential 30ms await between each event (so the gaps can't compress under
   // timer jitter). Harmless if the foreground app isn't RN.
   const reload = useCallback(async () => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
-    const key = (type: 'down' | 'up', usage: number) =>
-      ws.send(taggedJson(WS_MSG_KEY, { type, usage }));
+    const key = (type: 'down' | 'up', usage: number) => sendWs(WS_MSG_KEY, { type, usage });
     key('down', HID_USAGE_R);
     await new Promise((r) => setTimeout(r, 30));
     key('up', HID_USAGE_R);
-  }, []);
+  }, [sendWs]);
 
   // Rotate one step counterclockwise from the last known orientation, over the
   // helper's orientation channel (tag 0x07 → HID orientation event). The helper
   // confirms by pushing an updated screen config, which keeps the cycle in sync.
   const rotate = useCallback(() => {
-    const ws = wsRef.current;
-    if (!ws || ws.readyState !== WebSocket.OPEN) return;
     const current = screenRef.current?.orientation ?? 'portrait';
     const next =
       ORIENTATION_CYCLE[(ORIENTATION_CYCLE.indexOf(current) + 1) % ORIENTATION_CYCLE.length];
-    ws.send(taggedJson(WS_MSG_ORIENTATION, { orientation: next }));
-  }, []);
+    sendWs(WS_MSG_ORIENTATION, { orientation: next });
+  }, [sendWs]);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
   // and returns the PNG bytes. Use the resolved udid from `/api` (falling back
@@ -561,7 +492,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (key === 'appearance' && (value === 'light' || value === 'dark')) {
         setAppearanceState(value);
       }
-      void execWsUiRequest(execWsUrl, execToken, {
+      void hostUiRequest(execWsUrl, execToken, {
         device,
         option: key,
         value,
@@ -569,7 +500,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         .catch(async () => {
           if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
           try {
-            const result = await execWsUiRequest(execWsUrl, execToken, { device });
+            const result = await hostUiRequest(execWsUrl, execToken, { device });
             if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
             const authoritative: DeviceSettings = {};
             for (const [nextKey, nextValue] of Object.entries(result.status ?? {})) {
@@ -937,29 +868,20 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
-      // The Hub owns keyboard forwarding while this socket is active. Keep the
-      // Simulator's separate host-keyboard connection off by default so iOS can
-      // show the software keyboard while browser HID keys continue to type.
       ws.onopen = () => {
-        ws.send(taggedJson(WS_MSG_HARDWARE_KEYBOARD, { enabled: false }));
+        // Deliver whatever the user did while the socket was down.
+        pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
+        // The Hub owns keyboard forwarding while this socket is active. Keep the
+        // Simulator's separate host-keyboard connection off so iOS shows its
+        // software keyboard while browser HID keys continue to type. serve-sim
+        // reconnects it once the last input socket detaches.
+        sendWs(WS_MSG_HARDWARE_KEYBOARD, { enabled: false });
+        if (!cancelled) setHardwareKeyboardConnectedState(false);
       };
       ws.onmessage = (event) => {
         if (!(event.data instanceof ArrayBuffer)) return;
         const bytes = new Uint8Array(event.data);
-        if (bytes.length < 1) return;
-        if (bytes[0] === WS_TAG_HARDWARE_KEYBOARD) {
-          try {
-            const result = JSON.parse(decoder.decode(bytes.subarray(1))) as {
-              enabled?: boolean;
-              ok?: boolean;
-            };
-            if (!cancelled && result.ok && typeof result.enabled === 'boolean') {
-              setHardwareKeyboardConnectedState(result.enabled);
-            }
-          } catch {}
-          return;
-        }
-        if (bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
+        if (bytes.length < 1 || bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
         try {
           const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize;
           if (c.width > 0 && c.height > 0) {
@@ -995,9 +917,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         wsRef.current?.close();
       } catch {}
       wsRef.current = null;
+      // Queued input was for this device; don't replay it on the next one.
+      pendingWsRef.current = [];
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl]);
+  }, [wsUrl, sendWs]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
@@ -1016,14 +940,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   );
   const accessibilityState = useAccessibility(accessibilityLoader);
 
+  // One-shot typed host actions (`location.*`, `app.*`) over the exec channel.
+  const runAction = useMemo(
+    () =>
+      execWsUrl && execToken
+        ? (action: string, params?: Parameters<typeof runHostAction>[3]) =>
+            runHostAction(execWsUrl, execToken, action, params)
+        : null,
+    [execWsUrl, execToken],
+  );
+
   const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
-    if (!execWsUrl || !execToken || !deviceUdid) return null;
-    const exec = (command: string) => execWsCommand(execWsUrl, execToken, command);
+    if (!runAction || !deviceUdid) return null;
     return {
-      set: (fix) => setIosLocation(exec, deviceUdid, fix),
-      clear: () => clearIosLocation(exec, deviceUdid),
+      set: (fix) => setIosLocation(runAction, deviceUdid, fix),
+      clear: () => clearIosLocation(runAction, deviceUdid),
     };
-  }, [execWsUrl, execToken, deviceUdid]);
+  }, [runAction, deviceUdid]);
   const {
     location,
     locationPending,
@@ -1213,7 +1146,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
-    execWsUiRequest(execWsUrl, execToken, { device: deviceUdid })
+    hostUiRequest(execWsUrl, execToken, { device: deviceUdid })
       .then((res) => {
         if (cancelled) return;
         const next: DeviceSettings = {};
@@ -1223,6 +1156,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setDeviceSettings(next);
         if (next.appearance === 'light' || next.appearance === 'dark') {
           setAppearanceState(next.appearance);
+        }
+        // The helper socket's open handler usually settles this first (it
+        // disconnects the hardware keyboard); only fill in an unknown.
+        const keyboardValue = res.status?.[UI_OPTION_HARDWARE_KEYBOARD];
+        if (keyboardValue === 'on' || keyboardValue === 'off') {
+          setHardwareKeyboardConnectedState((prev) => prev ?? keyboardValue === 'on');
         }
       })
       .catch(() => {
@@ -1290,13 +1229,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   //    changes. Cached per udid:bundleId, so revisits apply instantly. ──
   const foregroundAppId = foregroundApp?.id ?? null;
   useEffect(() => {
-    if (!foregroundAppId || !execWsUrl || !execToken || !deviceUdid) return;
+    if (!foregroundAppId || !runAction || !deviceUdid) return;
     let cancelled = false;
-    getIosAppDetails(
-      (command) => execWsCommand(execWsUrl, execToken, command),
-      deviceUdid,
-      foregroundAppId,
-    )
+    getIosAppDetails(runAction, deviceUdid, foregroundAppId)
       .then((details) => {
         if (cancelled || !details) return;
         setForegroundApp((prev) =>
@@ -1309,7 +1244,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
     };
-  }, [foregroundAppId, execWsUrl, execToken, deviceUdid]);
+  }, [foregroundAppId, runAction, deviceUdid]);
 
   // ── Running simulators (middleware /grid/api) ──
   const gridApiUrl = config?.gridApiUrl ?? null;
@@ -1415,6 +1350,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     sendTouch,
     sendMultiTouch,
     sendKey,
+    sendKeyEvents,
+    sendScroll,
     pressButton,
     reload,
     rotate,

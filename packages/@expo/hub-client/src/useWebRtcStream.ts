@@ -97,6 +97,23 @@ export function shouldFallbackCodecAfterFirstFrameTimeout(
   );
 }
 
+/** Whether any inbound video frame has arrived yet (serve-sim #161). */
+export async function videoRtpArriving(pc: RTCPeerConnection | null): Promise<boolean> {
+  if (!pc) return false;
+  try {
+    let arriving = false;
+    (await pc.getStats()).forEach((entry) => {
+      if (entry.type !== 'inbound-rtp') return;
+      const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number };
+      if (video.kind !== 'video') return;
+      if ((video.framesReceived ?? 0) > 0) arriving = true;
+    });
+    return arriving;
+  } catch {
+    return false;
+  }
+}
+
 function createSessionId(): string {
   if (typeof crypto.randomUUID === 'function') return crypto.randomUUID();
   const bytes = crypto.getRandomValues(new Uint8Array(16));
@@ -200,6 +217,10 @@ export function useWebRtcStream({
     let failing = false;
     let trackReceived = false;
     let connectionReady = false;
+    // One extra first-frame window when RTP is arriving, so a slow first paint
+    // is not mistaken for a broken codec (serve-sim #161). Bounded: an
+    // undecodable stream still falls back.
+    let firstFrameGraceUsed = false;
     const lifecycleController = new AbortController();
     const sessionId = createSessionId();
     const servers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS;
@@ -299,12 +320,23 @@ export function useWebRtcStream({
         firstFrameTimeoutRef.current = undefined;
         if (stopped || firstFrameDecodedRef.current) return;
         const state = peer?.connectionState ?? 'closed';
-        if (shouldFallbackCodecAfterFirstFrameTimeout(allowCodecFallback, state)) {
-          requestKeyframe();
-          failCodec();
-        } else {
-          retryTransport('WebRTC did not establish a video path.');
-        }
+        void videoRtpArriving(peer).then((mediaArriving) => {
+          if (stopped || firstFrameDecodedRef.current || firstFrameTimeoutRef.current !== undefined) {
+            return;
+          }
+          const disposition = webRtcFailureDisposition('first-frame-timeout', state, {
+            mediaArriving,
+          });
+          if (disposition === 'wait' && !firstFrameGraceUsed) {
+            firstFrameGraceUsed = true;
+            armFirstFrameTimeout();
+          } else if (disposition !== 'transport' && allowCodecFallback) {
+            requestKeyframe();
+            failCodec();
+          } else {
+            retryTransport('WebRTC did not establish a video path.');
+          }
+        });
       }, FIRST_FRAME_TIMEOUT_MS);
     };
 
