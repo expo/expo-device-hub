@@ -292,7 +292,28 @@ if (axSettingsBuild.status !== 0) {
 }
 console.log("dist/simax/serve-sim-ax-settings");
 
-// ─── 8. serve-sim-native.node — in-process N-API addon ───────────────────
+// ─── 8. simulator pasteboard tools ────────────────────────────────────────
+
+for (const [name, script] of [
+  ["SimPasteboard", "Sources/SimPasteboard/build.sh"],
+  ["SimPasteboardReader", "Sources/SimPasteboardReader/build.sh"],
+  ["SimPasteboardFixture", "Sources/SimPasteboardFixture/build.sh"],
+] as const) {
+  const result = spawnSync(
+    "bash",
+    [resolve(root, script), resolve(distDir, "simpb")],
+    { stdio: "inherit" },
+  );
+  if (result.status !== 0) {
+    console.error(`${name} build failed.`);
+    process.exit(result.status ?? 1);
+  }
+}
+console.log("dist/simpb/serve-sim-pasteboard");
+console.log("dist/simpb/libSimPasteboardReader.dylib");
+console.log("dist/simpb/PasteboardFixture.app");
+
+// ─── 9. serve-sim-native.node — in-process N-API addon ───────────────────
 // Replaces the spawned serve-sim-bin helper. Arm64 macOS binary; loaded by
 // path from both the node bundle (createRequire) and the bun-compiled executable.
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { SSH_OPTS, loadTartConfig, setupGuest, TartGuest } from "./guest";
 import { bootSim } from "./sim";
-import { GUEST_PKG, GUEST_SIMPB, stageGuest, testOnce } from "./stage";
+import { GUEST_PKG, GUEST_SIMPB, resolveTestFiles, stageGuest, testOnce } from "./stage";
 import { runDev } from "./dev";
 
 const USAGE = `bun run tart <command>
@@ -10,7 +10,7 @@ const USAGE = `bun run tart <command>
   up      start the VM and check this checkout is mounted
   boot    boot TART_DEVICE_NAME on the guest (default iPhone 17)
   stage   pack host src onto the guest
-  test    run bun test on the guest
+  test    run bun test on the guest (default: pasteboard + clipboard)
   dev     run serve-sim on the guest, print http://localhost:3200
   ssh     ssh to the guest (remaining args are a remote command)
 
@@ -64,12 +64,13 @@ async function main(): Promise<void> {
       return;
     case "test": {
       await prepare(guest);
-      if (!rest.length) {
+      const files = resolveTestFiles(guest.config.pkgDir, rest);
+      if (!files.length) {
         console.error("no test files. Pass paths after tart test.");
         process.exit(2);
       }
       const udid = await bootSim(guest);
-      process.exit(await testOnce(guest, rest, udid));
+      process.exit(await testOnce(guest, files, udid));
     }
     case "dev": {
       await prepare(guest);

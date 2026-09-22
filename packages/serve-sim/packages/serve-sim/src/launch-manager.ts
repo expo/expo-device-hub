@@ -312,7 +312,7 @@ async function prepare(
  */
 export async function setCapabilityEnabled(
   udid: string,
-  name: string,
+  capability: string | CapabilityDefinition,
   {
     bundleId = null,
     options = {},
@@ -325,20 +325,21 @@ export async function setCapabilityEnabled(
     enabled: boolean;
   } & EnableOptions,
 ): Promise<void> {
-  const definition = capabilityDefinition(name);
+  const definition =
+    typeof capability === "string" ? capabilityDefinition(capability) : capability;
   const context: CapabilityContext = { udid, bundleId, options, enabled };
 
   await withLaunchStateLock(udid, async () => {
     if (!enabled) {
       await definition.setEnabled(context);
-      await disableCapabilityUnlocked(udid, bundleId, name, { relaunch: false });
+      await disableCapabilityUnlocked(udid, bundleId, definition.name, { relaunch: false });
       return;
     }
 
     const capability = await prepare(definition, context);
     if (!capability) {
       throw new Error(
-        `Capability ${name} declined to start on ${udid}. It reported nothing to load, so there ` +
+        `Capability ${definition.name} declined to start on ${udid}. It reported nothing to load, so there ` +
           `is nothing to enable. Check the message above for why.`,
       );
     }

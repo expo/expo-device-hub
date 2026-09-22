@@ -28,8 +28,10 @@ import {
   acceptedTokenSubprotocol,
   assertPreviewAccess,
   assertUpgradeAccess,
+  matchesBearerToken,
   upgradeAuthHeaders,
 } from "./session-auth";
+import { readRequestBodyAsync, RequestBodyTooLargeError } from "./runtime-utils";
 import {
   eventLogEventForAction,
   readEventLog,
@@ -57,6 +59,7 @@ import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
+import { readSimPasteboardResult, writeSimPasteboard } from "./sim-pasteboard";
 
 type SimReq = IncomingMessage;
 type SimRes = ServerResponse;
@@ -186,6 +189,10 @@ const RN_MARKERS = [
 function isSimulatorUdid(value: string): boolean {
   return /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(value);
 }
+
+const PASTEBOARD_RESPONSE_HEADERS = {
+  "Cache-Control": "no-store",
+};
 
 /** What to do with a persisted device state when reaping during a grid poll. */
 type StaleStateAction = "keep" | "recycle-self" | "recycle-helper";
@@ -2417,6 +2424,105 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       } finally {
         // Best-effort cleanup; the PNG is already in memory by now.
         await unlink(file).catch(() => {});
+      }
+      return;
+    }
+
+    if (url === base + "/api/pasteboard") {
+      if (req.method !== "POST" && req.method !== "PUT") {
+        res.writeHead(405, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "text/plain; charset=utf-8",
+        });
+        res.end("method not allowed");
+        return;
+      }
+      if (!matchesBearerToken(req.headers.authorization, execToken)) {
+        res.writeHead(401, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
+        return;
+      }
+      let udid = selectedDevice;
+      if (udid && !isSimulatorUdid(udid)) {
+        res.writeHead(400, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: false, error: "Invalid simulator device ID" }));
+        return;
+      }
+      if (!udid) {
+        const booted = await getBootedUdids();
+        udid = (booted && [...booted][0]) ?? null;
+      }
+      if (!udid) {
+        res.writeHead(400, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: false, error: "No booted simulator available" }));
+        return;
+      }
+      try {
+        if (req.method === "PUT") {
+          let body: Buffer | undefined;
+          try {
+            body = await readRequestBodyAsync(req, 4 * 1024 * 1024);
+          } catch (error) {
+            if (!(error instanceof RequestBodyTooLargeError)) throw error;
+            res.writeHead(413, {
+              ...PASTEBOARD_RESPONSE_HEADERS,
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify({ ok: false, error: "Clipboard text is too large" }));
+            return;
+          }
+          let parsed: { text?: unknown };
+          try {
+            parsed = JSON.parse(body?.toString("utf-8") ?? "") as { text?: unknown };
+          } catch {
+            res.writeHead(400, {
+              ...PASTEBOARD_RESPONSE_HEADERS,
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+            return;
+          }
+          if (typeof parsed.text !== "string") {
+            res.writeHead(400, {
+              ...PASTEBOARD_RESPONSE_HEADERS,
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify({ ok: false, error: "Clipboard text must be a string" }));
+            return;
+          }
+          await writeSimPasteboard(udid, parsed.text);
+          res.writeHead(200, {
+            ...PASTEBOARD_RESPONSE_HEADERS,
+            "Content-Type": "application/json",
+          });
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+
+        const result = await readSimPasteboardResult(udid);
+        res.writeHead(200, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: true, ...result }));
+      } catch (error) {
+        res.writeHead(500, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({
+          ok: false,
+          error: error instanceof Error ? error.message : "Could not access the simulator pasteboard",
+        }));
       }
       return;
     }

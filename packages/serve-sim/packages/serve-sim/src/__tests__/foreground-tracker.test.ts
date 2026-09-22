@@ -63,6 +63,7 @@ describe("isUserFacingBundle", () => {
     expect(isUserFacingBundle("dev.expo.MyApp")).toBe(true);
     expect(isUserFacingBundle("com.apple.WidgetRenderer")).toBe(false);
     expect(isUserFacingBundle("dev.expo.MyApp.extension")).toBe(false);
+    expect(isUserFacingBundle("com.apple.iMessageAppsViewService")).toBe(false);
     // Generic names only match as whole components, so real apps that merely contain them stay in.
     expect(isUserFacingBundle("com.example.CustomerService")).toBe(true);
     expect(isUserFacingBundle("com.acme.InCallUITest")).toBe(true);

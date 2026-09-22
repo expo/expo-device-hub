@@ -17,6 +17,7 @@ import {
   releaseSession,
   stopLaunchSession,
   enableCapabilities,
+  setCapabilityEnabled,
   applyDefaultCapabilities,
   armCapabilityLoader,
   capabilityConfigPath,
@@ -482,6 +483,21 @@ describe("graceful launch shutdown", () => {
 
 
 describe("startup capability loading", () => {
+  test("can enable a definition without registering it globally", async () => {
+    clearRegisteredCapabilities();
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, async () => {
+      await setCapabilityEnabled(UDID, {
+        name: "clipboard",
+        defaultEnabled: true,
+        scope: "allApps",
+        async setEnabled() {
+          return { dylib: "/clipboard.dylib" };
+        },
+      }, { enabled: true, relaunch: false });
+    });
+    expect(listCapabilities(UDID)).toEqual(["clipboard"]);
+  });
+
   test("defaults do not restart a remembered app and explicit launch starts once", async () => {
     const log = join(stateDir(), "simctl-startup-calls");
     const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
