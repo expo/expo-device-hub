@@ -48,6 +48,9 @@ jobs:
       - name: Test
         run: bun run test
 
+      - name: Test release artifact verification
+        run: bun test scripts/lib/release-artifact.test.ts
+
       - name: Serve-emu critical coverage
         run: bun run --filter serve-emu coverage
 

@@ -1,11 +1,12 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun";
-import { mkdir } from "node:fs/promises";
 import { getPublicPackages } from "./lib/public-packages.ts";
+import { getChangesetIgnoreList } from "./lib/changeset-ignore.ts";
+import { verifyReleaseArtifact } from "./lib/release-artifact.ts";
 
 const artifactsDir = `${process.cwd()}/release-artifacts`;
-await mkdir(artifactsDir, { recursive: true });
+const ignore = await getChangesetIgnoreList();
 
 function changelogSection(changelog: string, version: string): string {
   const lines = changelog.split("\n");
@@ -22,9 +23,10 @@ function changelogSection(changelog: string, version: string): string {
 }
 
 for (const pkg of await getPublicPackages()) {
+  if (ignore.has(pkg.name)) continue;
   const tag = `${pkg.name}@${pkg.version}`;
 
-  // Only release packages tagged in this run (changeset publish creates the tag).
+  // The release workflow tags the version after publishing the EAS tarball.
   const tagged =
     (await $`git rev-parse -q --verify refs/tags/${tag}`.nothrow().quiet()).exitCode === 0;
   if (!tagged) {
@@ -46,9 +48,9 @@ for (const pkg of await getPublicPackages()) {
     if (section) notes = section;
   }
 
-  const packOutput = await $`npm pack --pack-destination ${artifactsDir} --json`.cwd(pkg.dir).text();
-  const tarball = `${artifactsDir}/${JSON.parse(packOutput)[0].filename}`;
+  const tarball = `${artifactsDir}/expo-device-hub-${pkg.version}.tgz`;
+  verifyReleaseArtifact(tarball, pkg.version);
 
-  console.log(`- ${tag}: creating GitHub release with ${JSON.parse(packOutput)[0].filename}`);
+  console.log(`- ${tag}: creating GitHub release with ${tarball}`);
   await $`gh release create ${tag} ${tarball} --verify-tag --title ${tag} --notes ${notes}`;
 }
