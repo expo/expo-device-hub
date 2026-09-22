@@ -9,6 +9,7 @@ const baseConfig = {
   url: 'https://tunnel.example.test:0/vendor/serve-sim/helper/DEVICE-A',
   streamUrl: 'https://tunnel.example.test:0/vendor/serve-sim/helper/DEVICE-A/stream.mjpeg',
   wsUrl: 'wss://tunnel.example.test:0/vendor/serve-sim/helper/DEVICE-A/ws',
+  streamSettingsEndpoint: 'http://127.0.0.1:49152/stream-settings',
   basePath: '/vendor/serve-sim',
   execToken: 'token',
   proxyHelpers: true as const,
@@ -26,6 +27,8 @@ describe('proxyPreviewConfigForBrowser', () => {
       url: 'https://tunnel.example.test/vendor/serve-sim/helper/DEVICE-A',
       streamUrl: 'https://tunnel.example.test/vendor/serve-sim/helper/DEVICE-A/stream.mjpeg',
       wsUrl: 'wss://tunnel.example.test/vendor/serve-sim/helper/DEVICE-A/ws',
+      streamSettingsEndpoint:
+        'https://tunnel.example.test/vendor/serve-sim/helper/DEVICE-A/stream-settings',
     });
   });
 
@@ -43,6 +46,8 @@ describe('proxyPreviewConfigForBrowser', () => {
         'http://localhost:8081/_expo/plugins/expo-device-hub/vendor/serve-sim/helper/DEVICE-A/stream.mjpeg',
       wsUrl:
         'ws://localhost:8081/_expo/plugins/expo-device-hub/vendor/serve-sim/helper/DEVICE-A/ws',
+      streamSettingsEndpoint:
+        'http://localhost:8081/_expo/plugins/expo-device-hub/vendor/serve-sim/helper/DEVICE-A/stream-settings',
     });
   });
 
