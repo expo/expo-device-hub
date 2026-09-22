@@ -1,10 +1,11 @@
-export function StreamStatusPill({ streaming }: { streaming: boolean }) {
-  const color = streaming ? "#4ade80" : "#8e8e93";
-  const label = streaming ? "live" : "connecting";
+export function StreamStatusPill({ streaming, inputUnavailable = false }: { streaming: boolean; inputUnavailable?: boolean }) {
+  const color = inputUnavailable ? "#fbbf24" : streaming ? "#4ade80" : "#8e8e93";
+  const label = inputUnavailable ? "input unavailable" : streaming ? "live" : "connecting";
 
   return (
     <span
       data-testid="stream-status-pill"
+      title={inputUnavailable ? "Touch and keyboard input are unavailable. Restart serve-sim to retry." : undefined}
       className="inline-flex items-center gap-[5px] text-[12px] font-mono font-medium leading-none whitespace-nowrap"
       style={{ color }}
       aria-live="polite"

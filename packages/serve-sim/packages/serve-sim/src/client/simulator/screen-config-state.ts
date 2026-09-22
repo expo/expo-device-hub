@@ -13,7 +13,8 @@ export function screenConfigsEqual(a: StreamConfig | null, b: StreamConfig): boo
     a.supportsHingeAngle === b.supportsHingeAngle &&
     a.supportsPhysicalOrientation === b.supportsPhysicalOrientation && a.hingePose === b.hingePose &&
     a.physicalOrientation === b.physicalOrientation &&
-    a.tableMode === b.tableMode && a.tableModeAvailable === b.tableModeAvailable;
+    a.tableMode === b.tableMode && a.tableModeAvailable === b.tableModeAvailable &&
+    a.inputUnavailable === b.inputUnavailable;
 }
 
 export function resolveScreenConfigUpdate(

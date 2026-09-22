@@ -12,6 +12,7 @@ typedef uint32_t (*DisplayIDFn)(void * __attribute__((swift_context))) __attribu
 typedef uint8_t (*DisplayActiveFn)(void * __attribute__((swift_context))) __attribute__((swiftcall));
 typedef struct SSCoreDeviceSwiftString (*OrientationFn)(void * __attribute__((swift_context))) __attribute__((swiftcall));
 typedef void (*DestroyFn)(void *, void *) __attribute__((swiftcall));
+typedef unsigned (*SinglePayloadTagFn)(const void *, unsigned, void *) __attribute__((swiftcall));
 
 static MetadataFn displayMetadata;
 static MetadataFn infoMetadata;
@@ -56,4 +57,12 @@ void SSCoreDeviceDestroyValue(void *value, void *metadata) {
     void *entry = ptrauth_strip(valueWitnesses(metadata)[1], ptrauth_key_function_pointer);
     DestroyFn destroy = ptrauth_sign_unauthenticated(entry, ptrauth_key_function_pointer, 0);
     destroy(value, metadata);
+}
+
+bool SSCoreDeviceOptionalHasValue(const void *value, void *wrappedMetadata) {
+    // Swift ABI getEnumTagSinglePayload: one empty case for Optional, tag 0
+    // for a payload. The value witness handles both spare bits and extra bytes.
+    void *entry = ptrauth_strip(valueWitnesses(wrappedMetadata)[6], ptrauth_key_function_pointer);
+    SinglePayloadTagFn getTag = ptrauth_sign_unauthenticated(entry, ptrauth_key_function_pointer, 0);
+    return getTag(value, 1, wrappedMetadata) == 0;
 }

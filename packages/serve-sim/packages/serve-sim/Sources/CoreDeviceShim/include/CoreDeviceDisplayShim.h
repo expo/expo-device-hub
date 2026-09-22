@@ -15,3 +15,4 @@ uint32_t SSCoreDeviceDisplayID(void *display);
 uint8_t SSCoreDeviceDisplayActive(void *display);
 struct SSCoreDeviceSwiftString SSCoreDeviceDisplayOrientation(void *display);
 void SSCoreDeviceDestroyValue(void *value, void *metadata);
+bool SSCoreDeviceOptionalHasValue(const void *value, void *wrappedMetadata);

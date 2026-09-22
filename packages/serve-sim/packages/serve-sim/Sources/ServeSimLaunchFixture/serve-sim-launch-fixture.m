@@ -41,6 +41,39 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
 
 @end
 
+// The typing E2E reads the same app-owned log as the launch tests. Recording
+// editing changes proves delivery to UIKit, rather than just HID dispatch.
+@interface FixtureKeyboardController : UIViewController
+@property(nonatomic, strong) UITextField *field;
+@end
+
+@implementation FixtureKeyboardController
+
+- (void)viewDidLoad {
+  [super viewDidLoad];
+  self.view.backgroundColor = UIColor.systemGreenColor;
+  self.field = [[UITextField alloc] initWithFrame:CGRectMake(24, 100, 300, 44)];
+  self.field.borderStyle = UITextBorderStyleRoundedRect;
+  self.field.accessibilityIdentifier = @"typing-field";
+  self.field.autocapitalizationType = UITextAutocapitalizationTypeNone;
+  self.field.autocorrectionType = UITextAutocorrectionTypeNo;
+  self.field.spellCheckingType = UITextSpellCheckingTypeNo;
+  [self.field addTarget:self action:@selector(textChanged:)
+      forControlEvents:UIControlEventEditingChanged];
+  [self.view addSubview:self.field];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+  [super viewDidAppear:animated];
+  if ([self.field becomeFirstResponder]) Record(@"keyboard-ready", @"");
+}
+
+- (void)textChanged:(UITextField *)field {
+  Record(@"text", field.text ?: @"");
+}
+
+@end
+
 @interface FixtureSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -51,7 +84,9 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
     willConnectToSession:(UISceneSession *)session
                  options:(UISceneConnectionOptions *)connectionOptions {
   self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-  self.window.rootViewController = [[UIViewController alloc] init];
+  self.window.rootViewController =
+      [NSProcessInfo.processInfo.arguments containsObject:@"--keyboard-test"]
+      ? [[FixtureKeyboardController alloc] init] : [[UIViewController alloc] init];
   self.window.rootViewController.view.backgroundColor = UIColor.systemGreenColor;
   [self.window makeKeyAndVisible];
   RecordURLContexts(connectionOptions.URLContexts);

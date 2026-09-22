@@ -170,10 +170,15 @@ function load(): NativeAddon {
  */
 export class NativeHid {
   private readonly handle: SimHIDHandle;
-  private inputUnavailable = false;
+  private setupFailed = false;
 
   constructor(udid: string) {
     this.handle = new (load().SimHID)(udid);
+  }
+
+  /** A failed native setup stays unavailable until this session is recreated. */
+  get inputUnavailable(): boolean {
+    return this.setupFailed;
   }
 
   // The N-API bindings throw synchronously when a JS value can't be coerced to
@@ -204,7 +209,7 @@ export class NativeHid {
     } catch (err) {
       // Native setup is cached for this handle; a failed setup cannot recover
       // until a new session. Keep capture running without calling partial HID state.
-      this.inputUnavailable = true;
+      this.setupFailed = true;
       console.error("[hid] Input setup failed; streaming will continue without input:", err instanceof Error ? err.message : err);
     }
   }

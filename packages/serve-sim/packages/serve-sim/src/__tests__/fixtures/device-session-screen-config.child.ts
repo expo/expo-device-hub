@@ -188,7 +188,9 @@ async function start(
   screenReadGate = undefined;
   session = new DeviceSession("SCREEN-TEST");
   await session.start();
-  server = createServer((req, res) => session!.handleMjpeg(req, res));
+  server = createServer((req, res) => req.url === "/config"
+    ? session!.handleConfig(req, res)
+    : session!.handleMjpeg(req, res));
   wsServer = new WebSocketServer({ server });
   wsServer.on("connection", (socket) => session!.attachHidSocket(socket));
   await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
@@ -224,6 +226,7 @@ describe("native input failure isolation", () => {
     inputSetupError = new Error("Digitizer symbols unavailable");
     const failed = new NativeHid("SCREEN-TEST");
     await failed.setScreen(3);
+    expect(failed.inputUnavailable).toBe(true);
 
     for (const { name, call, result } of inputCommands) {
       expect({ name, result: await call(failed) }).toEqual({ name, result: result === true ? false : undefined });
@@ -241,9 +244,11 @@ describe("native input failure isolation", () => {
     expect(routedScreens).toEqual([3]);
     expect(inputCalls).toEqual([]);
     expect(errorLog).toHaveBeenCalledTimes(1);
+    expect(failed.inputUnavailable).toBe(true);
 
     const recovered = new NativeHid("SCREEN-TEST");
     await recovered.setScreen(1);
+    expect(recovered.inputUnavailable).toBe(false);
     for (const { name, call, result } of inputCommands) {
       expect({ name, result: await call(recovered) }).toEqual({ name, result });
     }
@@ -261,6 +266,7 @@ describe("native input failure isolation", () => {
     await hid.setScreen(1);
     touchError = new Error("Could not convert parameter 0 to type String");
     await hid.touch("begin", 0.5, 0.5, 1398, 2034);
+    expect(hid.inputUnavailable).toBe(false);
     touchError = undefined;
     await hid.key("down", 4);
     await hid.touch("begin", 0.5, 0.5, 1398, 2034);
@@ -281,6 +287,8 @@ describe("native active screen config", () => {
       new Error("Digitizer symbols unavailable"),
     );
     await waitUntil(() => configs.length > 0);
+    expect(configs[0]).toMatchObject({ inputUnavailable: true });
+    expect(await (await fetch(`${url}/config`)).json()).toMatchObject({ inputUnavailable: true });
     expect(errorLog).toHaveBeenCalledTimes(1);
     expect(errorLog.mock.calls.flat().join(" ")).toContain("Digitizer symbols unavailable");
     expect(errorLog.mock.calls.flat().join(" ")).toContain("without input");
@@ -298,6 +306,7 @@ describe("native active screen config", () => {
       expect(Buffer.from(chunk.value!).includes(Buffer.from(jpeg))).toBe(true);
 
       ws!.send(Buffer.concat([Buffer.from([0x03]), Buffer.from(JSON.stringify({ type: "begin", x: 0.5, y: 0.5 }))]));
+      ws!.send(Buffer.concat([Buffer.from([0x06]), Buffer.from(JSON.stringify({ type: "down", usage: 4 }))]));
       ws!.send(Buffer.concat([Buffer.from([0x0f]), Buffer.from(JSON.stringify({ angle: 90 }))]));
       await waitUntil(() => hingeResults.length === 1);
       expect(hingeResults[0]?.ok).toBe(false);
@@ -306,7 +315,7 @@ describe("native active screen config", () => {
 
       screen = { width: 2007, height: 2853, orientation: "landscape_left", screenId: 3 };
       await waitUntil(() => configs.at(-1)?.screenId === 3);
-      expect(configs.at(-1)).toMatchObject({ width: 2007, height: 2853, orientation: "landscape_left" });
+      expect(configs.at(-1)).toMatchObject({ width: 2007, height: 2853, orientation: "landscape_left", inputUnavailable: true });
       expect(errorLog).toHaveBeenCalledTimes(1);
       expect(routedScreens).toEqual([screenId ?? 0]);
     } finally {
@@ -317,7 +326,7 @@ describe("native active screen config", () => {
   test("seeds a booted Duo's orientation and routes input before advertising its screen", async () => {
     const { configs } = await start({ width: 2007, height: 2853, orientation: "landscape_left", screenId: 1 });
     await waitUntil(() => configs.length > 0);
-    expect(configs[0]).toMatchObject({ width: 2007, height: 2853, orientation: "landscape_left", screenId: 1 });
+    expect(configs[0]).toMatchObject({ width: 2007, height: 2853, orientation: "landscape_left", screenId: 1, inputUnavailable: false });
     expect(routedScreens).toEqual([1]);
   });
 

@@ -2,6 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { resolveScreenConfigUpdate } from "../client/simulator/screen-config-state";
 
 describe("screen config state", () => {
+  test("reports input availability changes without a screen geometry change", () => {
+    const current = { width: 900, height: 1280, inputUnavailable: false };
+    const failed = { ...current, inputUnavailable: true };
+    expect(resolveScreenConfigUpdate(current, failed, "external")?.config.inputUnavailable).toBe(true);
+    expect(resolveScreenConfigUpdate(failed, current, "external")?.config.inputUnavailable).toBe(false);
+    expect(resolveScreenConfigUpdate(failed, { width: 450, height: 640 }, "media")?.config.inputUnavailable).toBe(true);
+  });
+
   test("adopts parent-provided config without echoing it back", () => {
     const update = resolveScreenConfigUpdate(
       null,

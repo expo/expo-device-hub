@@ -1115,7 +1115,7 @@ function AppWithConfig({
     setLiveStreamConfig((prev) =>
       screenConfigsEqual(prev, confirmedConfig) ? prev : null,
     );
-  }, [streamConfig, streamConfig?.width, streamConfig?.height, streamConfig?.orientation, streamConfig?.screenId, streamConfig?.hingeAngle, streamConfig?.supportsHingeAngle, streamConfig?.hingePose, streamConfig?.tableMode, streamConfig?.tableModeAvailable]);
+  }, [streamConfig, streamConfig?.width, streamConfig?.height, streamConfig?.orientation, streamConfig?.screenId, streamConfig?.hingeAngle, streamConfig?.supportsHingeAngle, streamConfig?.hingePose, streamConfig?.tableMode, streamConfig?.tableModeAvailable, streamConfig?.inputUnavailable]);
 
   const sendKey = useCallback((type: "down" | "up", usage: number) => {
     sendWs(0x06, { type, usage });
@@ -1557,7 +1557,7 @@ function AppWithConfig({
                 }}
               />
             </span>
-            <StreamStatusPill streaming={streaming} />
+            <StreamStatusPill streaming={streaming} inputUnavailable={streamConfig?.inputUnavailable} />
           </SimulatorToolbar>
         </div>
         )}
