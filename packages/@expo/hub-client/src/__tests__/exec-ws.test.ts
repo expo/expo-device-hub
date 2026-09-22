@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { hostUiRequest, runHostAction } from '../exec-ws';
+import { hostUiRequest, runHostAction } from '../exec-ws.js';
 
 /**
  * Minimal scripted WebSocket: records frames the client sends and lets the

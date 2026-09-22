@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { endpointFor } from '../connections';
+import { endpointFor } from '../connections.js';
 
 /** Stub just enough of `window` for endpointFor. */
 function stubWindow() {

@@ -4,9 +4,9 @@ import {
   KEYBOARD_CAPTURE_ATTRIBUTES,
   keyEventsForBeforeInput,
   keyEventsForTextChange,
-} from './mobile-keyboard';
-import { type HidKeyEvent } from './types';
-import { readNativeKeyboardRaised } from './viewport-keyboard';
+} from './mobile-keyboard.js';
+import { type HidKeyEvent } from './types.js';
+import { readNativeKeyboardRaised } from './viewport-keyboard.js';
 
 export interface KeyboardCaptureProps {
   /** Focus the hidden input (raising the phone keyboard) while true; blur when false. */

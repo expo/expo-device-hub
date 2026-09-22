@@ -1,9 +1,9 @@
-import { type FetchLike, readSseSnapshot } from './sse';
+import { type FetchLike, readSseSnapshot } from './sse.js';
 import {
   type AccessibilityFrame,
   type AccessibilityNode,
   type AccessibilitySnapshot,
-} from './types';
+} from './types.js';
 
 /**
  * serve-sim replays a cached snapshot on connect and writes the fresh poll ~1.3 s later, but only

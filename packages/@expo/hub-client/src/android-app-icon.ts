@@ -1,6 +1,6 @@
-import { deviceApiUrl } from './android-api-url';
-import { asRecord } from './app-permissions';
-import { type ForegroundApp } from './types';
+import { deviceApiUrl } from './android-api-url.js';
+import { asRecord } from './app-permissions.js';
+import { type ForegroundApp } from './types.js';
 
 type FetchImpl = typeof fetch;
 

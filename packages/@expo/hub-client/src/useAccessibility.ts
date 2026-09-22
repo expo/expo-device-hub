@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { type AccessibilityLoader } from './accessibility';
-import { type AccessibilitySnapshot, type DeviceClient } from './types';
+import { type AccessibilityLoader } from './accessibility.js';
+import { type AccessibilitySnapshot, type DeviceClient } from './types.js';
 
 type AccessibilityClientState = Pick<
   DeviceClient,

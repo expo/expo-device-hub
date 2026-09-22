@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { parseAndroidStreamSource } from '../android-stream-source';
+import { parseAndroidStreamSource } from '../android-stream-source.js';
 
 describe('parseAndroidStreamSource', () => {
   test.each(['png', 'mmap', 'rgb888'])(

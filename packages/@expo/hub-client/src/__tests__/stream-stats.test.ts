@@ -7,8 +7,8 @@ import {
   readWebRtcClientCounters,
   readWebRtcServerStats,
   type WebRtcClientCounters,
-} from '../stream-stats';
-import { type DeviceStreamStatsSample } from '../types';
+} from '../stream-stats.js';
+import { type DeviceStreamStatsSample } from '../types.js';
 
 function statsReport(...entries: Record<string, unknown>[]): RTCStatsReport {
   return new Map(

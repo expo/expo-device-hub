@@ -12,6 +12,8 @@ gesture, and keyboard input back to the device.
   `expo-device-hub` DevTools plugin installed, or run `npx expo-device-hub` standalone.
   The hooks talk to the Hub's `/vendor/serve-sim` and `/vendor/serve-emu` routes.
 - React 18 or newer.
+- TypeScript consumers can use any `moduleResolution` setting. The declaration files use
+  explicit `.js` import extensions, so `node16` and `nodenext` resolve them.
 - A browser. The package uses `WebSocket`, `EventSource`, WebCodecs, Media Source
   Extensions, and WebRTC, so it is not meant to run in Node.
 

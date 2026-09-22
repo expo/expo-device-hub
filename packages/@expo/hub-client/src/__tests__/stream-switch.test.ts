@@ -9,7 +9,7 @@ import {
   type StreamSwitchEvent,
   type StreamSwitchState,
   streamSwitchTimeoutMs,
-} from '../stream-switch';
+} from '../stream-switch.js';
 
 function run(events: StreamSwitchEvent[], from: StreamSwitchState = IDLE_STREAM_SWITCH) {
   return events.reduce(reduceStreamSwitch, from);

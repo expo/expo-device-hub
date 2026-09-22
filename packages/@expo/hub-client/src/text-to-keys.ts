@@ -8,7 +8,7 @@
  * newline, tab, and the standard ASCII punctuation reachable on a US layout.
  */
 
-import { type HidKeyEvent } from './types';
+import { type HidKeyEvent } from './types.js';
 
 const LEFT_SHIFT = 0xe1;
 

@@ -1,4 +1,4 @@
-import { type AppPermission, type AppPermissionAction } from "./types";
+import { type AppPermission, type AppPermissionAction } from "./types.js";
 
 export interface PermissionsBackend {
   list(appId: string): Promise<AppPermission[]>;

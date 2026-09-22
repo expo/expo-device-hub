@@ -1,4 +1,4 @@
-import { type DeviceSettingKey, type DeviceSettings } from './types';
+import { type DeviceSettingKey, type DeviceSettings } from './types.js';
 
 /**
  * Apply the authoritative value for one failed option write without replacing

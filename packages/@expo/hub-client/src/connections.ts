@@ -1,5 +1,5 @@
 
-import { type DevicePlatform } from './types';
+import { type DevicePlatform } from './types.js';
 
 const VENDOR_PREFIXES: Record<DevicePlatform, string> = {
   ios: '/vendor/serve-sim',

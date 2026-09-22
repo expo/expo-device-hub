@@ -1,5 +1,5 @@
-import { parseActivityHostCores, parseActivitySample } from "./activity";
-import { type DeviceActivity, type DeviceActivitySample } from "./types";
+import { parseActivityHostCores, parseActivitySample } from "./activity.js";
+import { type DeviceActivity, type DeviceActivitySample } from "./types.js";
 
 export const ANDROID_ACTIVITY_STALE_MS = 8000;
 

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { KeyedWriteTracker } from "../keyed-write-tracker";
-import { type DeviceSettingKey } from "../types";
+import { KeyedWriteTracker } from "../keyed-write-tracker.js";
+import { type DeviceSettingKey } from "../types.js";
 
 describe("KeyedWriteTracker", () => {
   test("allows different options concurrently while rejecting a repeated write to the same option", () => {

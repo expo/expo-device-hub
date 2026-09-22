@@ -9,7 +9,7 @@ import {
   mergeAndroidEventSnapshotCursor,
   reconcileAndroidSessionEvents,
   type AndroidSessionEvent,
-} from '../android-events';
+} from '../android-events.js';
 
 function gesture(
   value: NonNullable<AndroidSessionEvent['gesture']>,

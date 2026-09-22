@@ -1,4 +1,4 @@
-import { type DeviceCameraFacing, type DeviceCameraFeed, type DeviceCameraStatus } from "./types";
+import { type DeviceCameraFacing, type DeviceCameraFeed, type DeviceCameraStatus } from "./types.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;

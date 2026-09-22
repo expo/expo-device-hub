@@ -1,5 +1,5 @@
-import { type HostActionResult, type RunHostAction } from './exec-ws';
-import { type ForegroundApp } from './types';
+import { type HostActionResult, type RunHostAction } from './exec-ws.js';
+import { type ForegroundApp } from './types.js';
 
 /**
  * Host-side app-bundle introspection for iOS simulators, ported from the
@@ -9,7 +9,7 @@ import { type ForegroundApp } from './types';
  * transport `setAppearance` and logs already use — never a shell command.
  */
 
-export type { HostActionResult as ExecResult, RunHostAction } from './exec-ws';
+export type { HostActionResult as ExecResult, RunHostAction } from './exec-ws.js';
 
 /** The {@link ForegroundApp} fields resolvable from the installed app bundle. */
 export type IosAppDetails = Pick<

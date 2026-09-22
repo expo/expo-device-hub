@@ -1,6 +1,6 @@
 import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
 
-import { deviceApiUrl } from "./android-api-url";
+import { deviceApiUrl } from "./android-api-url.js";
 import {
   androidCameraErrorMessage,
   androidCameraImagePath,
@@ -9,10 +9,10 @@ import {
   NO_ANDROID_CAMERA,
   parseAndroidCameraStatus,
   staleCameraFacings,
-} from "./android-camera";
-import { NO_PENDING_CAMERA_WRITES } from "./device-camera";
-import { KeyedWriteTracker } from "./keyed-write-tracker";
-import { type DeviceCameraFacing } from "./types";
+} from "./android-camera.js";
+import { NO_PENDING_CAMERA_WRITES } from "./device-camera.js";
+import { KeyedWriteTracker } from "./keyed-write-tracker.js";
+import { type DeviceCameraFacing } from "./types.js";
 
 const CAMERA_POLL_MS = 3000;
 

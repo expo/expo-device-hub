@@ -4,7 +4,7 @@ import {
   DEFAULT_DEVICE_STREAM_SETTINGS,
   normalizeDeviceStreamSettings,
   sameDeviceStreamSettings,
-} from '../stream-settings';
+} from '../stream-settings.js';
 
 describe('device stream settings', () => {
   test('uses backend defaults for malformed input', () => {

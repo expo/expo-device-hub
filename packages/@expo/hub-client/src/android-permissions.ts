@@ -1,4 +1,4 @@
-import { deviceApiUrl } from "./android-api-url";
+import { deviceApiUrl } from "./android-api-url.js";
 import {
   asRecord,
   errorMessage,
@@ -6,8 +6,8 @@ import {
   type PermissionsBackend,
   type PermissionsFetch,
   readPermissions,
-} from "./app-permissions";
-import { type AppPermission, type AppPermissionAction } from "./types";
+} from "./app-permissions.js";
+import { type AppPermission, type AppPermissionAction } from "./types.js";
 
 export function parseAndroidPermissions(payload: unknown): AppPermission[] | null {
   const data = asRecord(payload);

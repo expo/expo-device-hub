@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { DEFAULT_DEVICE_STREAM_SETTINGS, sameDeviceStreamSettings } from './stream-settings';
-import { type DeviceStreamEncoderSettings } from './types';
+import { DEFAULT_DEVICE_STREAM_SETTINGS, sameDeviceStreamSettings } from './stream-settings.js';
+import { type DeviceStreamEncoderSettings } from './types.js';
 
 type StreamSettingsParser = (
   value: unknown,

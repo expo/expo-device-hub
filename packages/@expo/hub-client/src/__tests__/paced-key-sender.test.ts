@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 
-import { keyEventsForInputType } from '../mobile-keyboard';
-import { createPacedKeySender } from '../paced-key-sender';
-import { type HidKeyEvent } from '../types';
+import { keyEventsForInputType } from '../mobile-keyboard.js';
+import { createPacedKeySender } from '../paced-key-sender.js';
+import { type HidKeyEvent } from '../types.js';
 
 function fakeScheduler() {
   const pending: Array<() => void> = [];

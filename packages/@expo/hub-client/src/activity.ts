@@ -1,7 +1,7 @@
 import {
   type DeviceActivity,
   type DeviceActivitySample,
-} from './types';
+} from './types.js';
 
 export const MAX_ACTIVITY_SAMPLES = 60;
 

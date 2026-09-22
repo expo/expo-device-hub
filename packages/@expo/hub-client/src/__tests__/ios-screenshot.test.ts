@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fetchIosScreenshot } from '../ios-screenshot';
+import { fetchIosScreenshot } from '../ios-screenshot.js';
 
 describe('iOS screenshot capture', () => {
   test('posts to the serve-sim screenshot endpoint for the selected device', async () => {

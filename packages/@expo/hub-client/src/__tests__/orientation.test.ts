@@ -6,7 +6,7 @@ import {
   homeIndicatorEdge,
   rawDeltaForDisplayDelta,
   rawPointForDisplayPoint,
-} from '../orientation';
+} from '../orientation.js';
 
 describe('homeIndicatorEdge', () => {
   test('tags a pointer begin inside the bottom band as the home-indicator edge', () => {

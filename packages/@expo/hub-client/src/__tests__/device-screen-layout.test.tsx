@@ -5,7 +5,7 @@ import {
   deviceScreenMediaStyle,
   deviceScreenPresentsMedia,
   deviceScreenSurfaceStyle,
-} from '../DeviceScreen';
+} from '../DeviceScreen.js';
 
 describe('DeviceScreen layout', () => {
   for (const rotation of [-90, 90]) {

@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { useAndroidDeviceClient } from '../useAndroidDevice';
-import { useIosDeviceClient } from '../useIosDevice';
-import { type DeviceClient, type DeviceConnectionOptions } from '../types';
+import { useAndroidDeviceClient } from '../useAndroidDevice.js';
+import { useIosDeviceClient } from '../useIosDevice.js';
+import { type DeviceClient, type DeviceConnectionOptions } from '../types.js';
 
 const originals = new Map<string, PropertyDescriptor | undefined>();
 function stubGlobal(name: string, value: unknown) {
