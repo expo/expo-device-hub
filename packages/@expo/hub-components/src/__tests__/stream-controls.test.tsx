@@ -8,6 +8,26 @@ function buttonTags(markup: string) {
 }
 
 describe('StreamControls', () => {
+  test('locks Rotate and explains the pending recording check', () => {
+    const markup = renderToStaticMarkup(
+      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="unknown" />,
+    );
+    const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
+    expect(rotate).toContain('aria-disabled="true"');
+    expect(rotate).toContain('Rotation is unavailable until recording status is known.');
+  });
+  test('explains why Rotate is unavailable during recording without disabling app controls', () => {
+    const markup = renderToStaticMarkup(
+      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="recording" />,
+    );
+    const buttons = buttonTags(markup);
+    const rotate = buttons.find((tag) => tag.includes('aria-label="Rotate"'));
+    expect(rotate).toContain('aria-disabled="true"');
+    expect(rotate).toContain('aria-description="Rotation is unavailable while recording."');
+    for (const tag of buttons.filter((tag) => !tag.includes('aria-label="Rotate"'))) {
+      expect(tag).not.toContain('disabled');
+    }
+  });
   test('groups Save, Theme, Home, and Reload in one pill and keeps Rotate separate', () => {
     const markup = renderToStaticMarkup(
       <StreamControls appearance="dark" onToggleAppearance={() => {}} />

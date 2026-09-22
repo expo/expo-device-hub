@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { type ConnectionStatus } from '@expo/hub-client';
+import { type ConnectionStatus, type DeviceScreenRecordingStatus } from '@expo/hub-client';
 import {
   bg,
   border,
@@ -18,6 +18,16 @@ import { type Device } from './data';
 export type DeviceTitleProps = {
   device: Pick<Device, 'id' | 'name'>;
   status: ConnectionStatus;
+  recording?: DeviceScreenRecordingStatus | null;
+};
+
+const RECORDING_LABELS: Record<DeviceScreenRecordingStatus, string> = {
+  unknown: 'Checking recording status',
+  waiting: 'Starting recording',
+  recording: 'Recording',
+  finalizing: 'Finishing recording',
+  complete: 'Recording complete',
+  failed: 'Recording failed',
 };
 
 const STATUS_APPEARANCE: Record<
@@ -61,7 +71,7 @@ const DEVICE_TITLE_SIZE: ButtonSize = 'xs';
 export const DEVICE_TITLE_HEIGHT = BUTTON_HEIGHTS[DEVICE_TITLE_SIZE];
 
 /** Compact stream-status pill that toggles between a device's name and identifier. */
-export function DeviceTitle({ device, status }: DeviceTitleProps) {
+export function DeviceTitle({ device, status, recording = null }: DeviceTitleProps) {
   const [revealedId, setRevealedId] = useState<string | null>(null);
   const showingId = revealedId === device.id;
   const label = showingId ? device.id : device.name;
@@ -104,6 +114,19 @@ export function DeviceTitle({ device, status }: DeviceTitleProps) {
           <span aria-live="polite" style={{ flexShrink: 0, color: appearance.labelColor }}>
             {appearance.label}
           </span>
+          {recording && (
+            <span
+              role="status"
+              style={{
+                flexShrink: 0,
+                color:
+                  recording === 'recording' || recording === 'failed'
+                    ? text.danger
+                    : text.secondary,
+              }}>
+              {RECORDING_LABELS[recording]}
+            </span>
+          )}
         </>
       }
       style={{

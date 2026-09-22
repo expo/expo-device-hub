@@ -11,6 +11,7 @@
  */
 
 export * from './types';
+export { areRecordingControlsLocked } from './screen-recording';
 export { DeviceScreen } from './DeviceScreen';
 export {
   AGENT_INTERACTION_IDLE_TIMEOUT_MS,

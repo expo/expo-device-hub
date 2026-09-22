@@ -1376,6 +1376,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     clearLocation,
     ...appPermissions,
     streamCapabilities: IOS_STREAM_CAPABILITIES,
+    screenRecording: null,
     streamSettings,
     streamSettingsPending,
     updateStreamSettings,

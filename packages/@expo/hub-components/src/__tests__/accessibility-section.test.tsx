@@ -8,6 +8,7 @@ const BASE_CLIENT: DeviceClient = {
   platform: 'ios',
   status: 'streaming',
   error: null,
+  screenRecording: null,
   screen: { width: 390, height: 844 },
   fps: 60,
   devices: [],

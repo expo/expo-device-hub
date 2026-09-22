@@ -513,6 +513,8 @@ export interface DeviceConnectionOptions {
 /** Which element the implementation paints into. */
 export type VideoSurfaceKind = 'canvas' | 'img' | 'video';
 
+export type DeviceScreenRecordingStatus = 'unknown' | 'waiting' | 'recording' | 'finalizing' | 'complete' | 'failed';
+
 /**
  * The live state + controls for one device connection. Returned by the hook and
  * consumed by {@link DeviceScreen} (for video + input) and by the surrounding
@@ -522,6 +524,8 @@ export interface DeviceClient {
   platform: DevicePlatform;
   status: ConnectionStatus;
   error: string | null;
+  /** Host recording status; unknown until metadata loads, null when no recording was requested. */
+  screenRecording: DeviceScreenRecordingStatus | null;
   /** Screen size once known; null while connecting. */
   screen: ScreenSize | null;
   /** Best-effort frames-per-second (0 when unavailable). */

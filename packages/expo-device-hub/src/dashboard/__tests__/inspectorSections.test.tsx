@@ -22,6 +22,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     platform,
     status: 'streaming',
     error: null,
+    screenRecording: null,
     screen: { width: 390, height: 844 },
     fps: 60,
     devices: [],
@@ -1630,3 +1631,47 @@ test('shows the active hardware encoder and hides unresolved encoder names', () 
     'Active encoder:',
   );
 });
+
+test.each(['unknown', 'waiting', 'recording', 'finalizing', 'complete', 'failed', null] as const)(
+  'recording state %s locks only capture and destructive device controls', (screenRecording) => {
+    const base = inspectorClient('android');
+    const client: DeviceClient = {
+      ...base,
+      screenRecording,
+      deviceSettings: { ...base.deviceSettings, 'display-size': 'medium' },
+      streamSource: {
+        mode: 'grpc-screenshot', grpcImageMode: 'rgb888', encoder: 'software',
+        encoderName: 'libx264', availableEncoders: ['software', 'hardware'],
+        inputSource: 'grpc', availableInputSources: ['grpc', 'scrcpy'],
+        availableModes: ['grpc-screenshot', 'scrcpy'], sessionGeneration: 0,
+      },
+    };
+    const locked = screenRecording === 'unknown' || screenRecording === 'waiting' || screenRecording === 'recording' || screenRecording === 'finalizing';
+    const stream = renderToStaticMarkup(
+      <StreamOptionsSection client={client} defaultOpen streamMode="h264"
+        onStreamModeChange={() => {}} onHttpCodecChange={() => {}} />,
+    );
+    for (const label of ['Stream source', 'Input source', 'gRPC image mode', 'gRPC encoder', 'Max size', 'Video FPS', 'Video bitrate']) {
+      expect(selectMarkup(stream, label).includes('disabled=""')).toBe(locked);
+    }
+    expect(selectMarkup(stream, 'Stream transport')).not.toContain('disabled=""');
+    expect(stream).not.toContain('Capture settings are locked');
+    expect(stream.includes('until recording status is known')).toBe(screenRecording === 'unknown');
+    expect((stream.match(/role="group"/g) ?? []).length).toBe(locked ? 7 : 0);
+    if (locked) expect(stream).toContain('aria-description="Unavailable until recording');
+
+    const deviceOptions = renderToStaticMarkup(
+      <LogSidebar client={client} onShutdown={() => {}} onRemove={() => {}} />,
+    );
+    for (const label of ['Shut down', 'Remove']) {
+      const end = deviceOptions.indexOf(`>${label}<`);
+      const button = deviceOptions.slice(deviceOptions.lastIndexOf('<button', end), end);
+      expect(button.includes('disabled=""')).toBe(locked);
+    }
+    expect(deviceOptions.includes('until recording status is known')).toBe(screenRecording === 'unknown');
+    expect((deviceOptions.match(/aria-description="Unavailable/g) ?? []).length).toBe(locked ? 2 : 0);
+    for (const label of ['Appearance', 'Display size', 'Text size', 'Network']) {
+      expect(selectMarkup(deviceOptions, label)).not.toContain('disabled=""');
+    }
+  },
+);

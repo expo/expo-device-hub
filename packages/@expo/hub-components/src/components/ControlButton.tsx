@@ -16,11 +16,12 @@ export const CONTROL_BUTTON_SIZE = 44;
 export type ControlButtonProps = {
   icon: ReactNode;
   label: string;
+  tooltip?: string;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
 export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
   function ControlButton(
-    { icon, label, style, onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, onFocus, onBlur, ...rest },
+    { icon, label, tooltip, style, onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, onFocus, onBlur, ...rest },
     ref
   ) {
     const [hovered, setHovered] = useState(false);
@@ -34,6 +35,7 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
           ref={ref}
           type="button"
           aria-label={label}
+          aria-description={tooltip}
           onMouseEnter={(event) => {
             setHovered(true);
             onMouseEnter?.(event);
@@ -101,7 +103,7 @@ export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
             transform: 'translateX(-50%)',
             transition: 'opacity 120ms ease',
           }}>
-          {label}
+          {tooltip ?? label}
         </span>
       </span>
     );
