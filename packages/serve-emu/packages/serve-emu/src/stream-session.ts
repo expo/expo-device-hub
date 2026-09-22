@@ -169,7 +169,11 @@ export function adaptScrcpySession(
   };
   const onExit = (code: number | null, signal: NodeJS.Signals | null) => {
     if (!isAbnormalExit(code, signal)) return;
-    const { reason, ...detail } = procExitDetail(code, signal);
+    const { reason, ...detail } = procExitDetail(
+      code,
+      signal,
+      raw.stderrTail?.(),
+    );
     emitFatal({ message: reason, ...detail });
   };
   const onControlError = (error: Error) => {

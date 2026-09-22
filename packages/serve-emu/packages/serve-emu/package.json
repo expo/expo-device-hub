@@ -85,6 +85,7 @@
   ],
   "dependencies": {
     "@fastify/busboy": "^3.2.0",
+    "mediabunny": "1.55.3",
     "node-datachannel": "^0.32.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"

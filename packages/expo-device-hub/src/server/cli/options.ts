@@ -52,6 +52,7 @@ Options:
       --metrics-cors-origin <origin> Allow an origin to read serve-sim metrics (repeatable)
       --hide-sidebar         Hide the device list sidebar by default
       --hide-boot-device     Hide controls for booting or creating devices
+      --android-recording-directory <path> Record the only booted emulator until shutdown
   -h, --help                 Show this help
 `;
 
@@ -77,6 +78,7 @@ export type CliOptions = {
   metricsCorsOrigins?: string[];
   hideSidebar?: boolean;
   hideBootDevice?: boolean;
+  androidRecordingDirectory?: string;
   help: boolean;
 };
 
@@ -147,6 +149,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     'metrics-cors-origin': string[];
     'hide-sidebar': boolean;
     'hide-boot-device': boolean;
+    'android-recording-directory'?: string;
     help: boolean;
   };
   try {
@@ -176,6 +179,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         'metrics-cors-origin': { type: 'string', multiple: true, default: [] },
         'hide-sidebar': { type: 'boolean', default: false },
         'hide-boot-device': { type: 'boolean', default: false },
+        'android-recording-directory': { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
       },
     }));
@@ -191,6 +195,10 @@ export function parseCliOptions(args: string[]): CliOptions {
   }
 
   const platform = parsePlatformFilter(values.platform);
+  const androidRecordingDirectory = values['android-recording-directory'];
+  if (androidRecordingDirectory !== undefined && (!androidRecordingDirectory.trim() || platform !== 'android')) {
+    throw new Error('--android-recording-directory requires --platform android and a nonempty path.');
+  }
   if (values.platform !== undefined && platform === undefined) {
     throw new Error(`Invalid --platform: ${values.platform}\n\n${HELP}`);
   }
@@ -312,6 +320,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     metricsCorsOrigins: values['metrics-cors-origin'],
     hideSidebar: values['hide-sidebar'],
     hideBootDevice: values['hide-boot-device'],
+    ...(androidRecordingDirectory !== undefined ? { androidRecordingDirectory } : {}),
     help: false,
   };
 }

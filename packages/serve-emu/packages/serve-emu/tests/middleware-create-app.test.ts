@@ -1,9 +1,13 @@
 import { EventEmitter } from "node:events";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, test } from "bun:test";
 import {
   createApp,
   type AppClock,
 } from "../src/middleware.ts";
+import { ScreenRecording } from "../src/screen-recording.ts";
 import {
   type ScrcpySession,
   type VideoFrame,
@@ -529,5 +533,84 @@ test.each(["mmap", "rgb888"] as const)("includes %s session capture diagnostics 
     });
   } finally {
     await app.stop();
+  }
+});
+
+test("keeps the screen recording active when the capture ends and the app stops", async () => {
+  const root = await mkdtemp(join(tmpdir(), "create-app-screen-recording-"));
+  const keyframe = Buffer.from(
+    "000000016742c01fd9005005bb0110000003001000000303c0f18324800000000168cb83cb200000000165888421",
+    "hex",
+  );
+  const timestamps: number[] = [];
+  const recorder = await ScreenRecording.create({
+    directory: join(root, "session"),
+    udid: "device-test",
+    deviceName: "Pixel",
+    runtimeDisplayName: "Android 16",
+    createWriter: async ({ path }) => {
+      await writeFile(path, "test-writer");
+      return {
+        add: async (sample) => {
+          timestamps.push(sample.timestamp);
+        },
+        finish: async () => {},
+        cancel: async () => {},
+      };
+    },
+  });
+  const controlSocket = new EventEmitter() as EventEmitter & {
+    write(data: Uint8Array): boolean;
+  };
+  controlSocket.write = () => true;
+  let endStream!: () => void;
+  const end = new Promise<null>((resolve) => {
+    endStream = () => resolve(null);
+  });
+  let sent = false;
+  const session = {
+    transport: "scrcpy",
+    meta: { deviceName: "recording-test", codecId: "h264", width: 720, height: 1_280 },
+    protocol: 3,
+    videoReader: {},
+    controlSocket,
+    proc: new EventEmitter(),
+    scid: "00000001",
+    localPort: 27_200,
+    serial: "device-test",
+    readFrame: (): Promise<VideoFrame | null> => {
+      if (sent) return end;
+      sent = true;
+      return Promise.resolve({ type: "frame", data: keyframe, pts: 0n, isConfig: false, isKey: true });
+    },
+    close: () => endStream(),
+  } as unknown as ScrcpySession;
+  const app = await createApp(
+    { serial: session.serial, screenRecording: recorder },
+    { startSession: async () => adaptScrcpySession(session) },
+  );
+  try {
+    await recorder.ready;
+    endStream();
+    for (let i = 0; i < 200 && app.health().status !== "error"; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    expect(app.health().status).toBe("error");
+    expect(recorder.active).toBe(true);
+    await app.stop();
+    expect(recorder.active).toBe(true);
+    // The replacement capture resumes 5 s later with the same SPS/PPS.
+    recorder.accept(
+      { type: "frame", data: keyframe, pts: 5_000_000n, isConfig: false, isKey: true },
+      { width: 720, height: 1_280 },
+      "scrcpy",
+    );
+    await recorder.finish();
+    expect(timestamps).toEqual([0, 5]);
+    const manifest = JSON.parse(await readFile(join(root, "session", "session.json"), "utf8"));
+    expect(manifest.status).toBe("complete");
+  } finally {
+    await app.stop();
+    await rm(root, { recursive: true, force: true });
   }
 });

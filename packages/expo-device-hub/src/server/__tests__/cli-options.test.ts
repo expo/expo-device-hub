@@ -3,6 +3,13 @@ import { describe, expect, test } from 'bun:test';
 import { HELP, parseCliOptions } from '../cli/options';
 
 describe('parseCliOptions', () => {
+  test('accepts a recording directory only with the Android platform', () => {
+    expect(parseCliOptions(['--platform', 'android', '--android-recording-directory', '/tmp/session']).androidRecordingDirectory).toBe('/tmp/session');
+    expect(() => parseCliOptions(['--android-recording-directory', '/tmp/session'])).toThrow();
+    expect(() => parseCliOptions(['--platform', 'ios', '--android-recording-directory', '/tmp/session'])).toThrow();
+    expect(() => parseCliOptions(['--platform', 'android', '--android-recording-directory', ''])).toThrow();
+  });
+
   test('keeps the existing defaults when no options are provided', () => {
     expect(parseCliOptions([])).toEqual({
       port: undefined,

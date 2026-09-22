@@ -60,6 +60,51 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
+### Record an Android session
+
+Recording is opt-in and starts with the Hub, even when no browser viewer is connected.
+It records one booted Android emulator without audio. There are no recording controls
+in the Hub UI.
+
+From a built checkout, with `adb`, `ffmpeg`, and `ffprobe` on your path, run this from
+the repository root. Choose a fresh output directory and boot exactly one emulator first.
+With zero or several booted emulators the Hub starts without recording and logs a warning.
+
+```sh
+node packages/expo-device-hub/dist/server/cli.mjs \
+	--platform android \
+	--android-recording-directory /tmp/my-android-session
+```
+
+To stop, send `SIGTERM` to the Hub process, not its process group, and wait for exit.
+Signaling the whole group can kill the encoder before the recording finishes.
+
+EAS stops the recording before it signals the process. Set
+`EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN` and send
+`POST /_eas/android-recording/stop` with `Authorization: Bearer <token>`. The route answers
+200 when a recording was published, 409 with the reason when nothing was recorded, and 401
+for every request when the variable is unset. Three variables override the limits:
+`EXPO_DEVICE_HUB_RECORDING_MAX_BYTES` (default 4 GiB), `EXPO_DEVICE_HUB_RECORDING_MAX_DURATION_MS`
+(default one hour) and `EXPO_DEVICE_HUB_RECORDING_MIN_FREE_BYTES` (default 256 MiB). An invalid
+value stops the Hub at startup with the variable name in the error.
+On success, `recordings.json` in the output directory lists a subdirectory containing
+`recording.mp4` and `session.json`. Failed recordings leave the manifest empty.
+
+Keep the emulator's orientation and capture settings unchanged during recording.
+Rotation invalidates the recording. A capture failure does not: the Hub restarts the
+capture and the recording continues when the encoder configuration is unchanged. The gap
+appears as a held frame. The MP4 is fragmented, so a
+forced kill leaves a `recording.mp4.partial` that plays up to the last keyframe before
+the kill, about 10 seconds of an active screen at the default keyframe interval. A failed
+or timed-out finalization leaves the same file. The Hub does not publish it; EAS uploads it
+as a partial recording with the reason from `session.json`.
+
+To verify recording and MP4 playback from the repository root, run:
+
+```sh
+bun packages/expo-device-hub/scripts/verify-android-recording.ts grpc-screenshot endpoint
+```
+
 ## Acknowledgements
 
 Device streaming and control are powered by two vendored, Apache-2.0-licensed

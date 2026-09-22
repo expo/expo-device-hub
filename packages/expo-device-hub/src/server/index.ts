@@ -28,11 +28,12 @@ import { type HubDeviceList, listDevices } from './devices';
 import { handleEasEndpoint } from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
-import { EMU_PREFIX, emuCameraFeeds, emuWebSocketHandler, handleEmuRequest } from './serve-emu';
+import { EMU_PREFIX, emuCameraFeeds, emuWebSocketHandler, handleEmuRequest, finishAndroidScreenRecording } from './serve-emu';
 import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
 import { SERVER_HIDE_SIDEBAR } from './sidebar';
 import { listNewDeviceOptions } from './sim-options';
 import { SERVER_TRANSPORT } from './transport';
+export { startAndroidScreenRecording, shutdownAndroid } from './serve-emu';
 
 const DEVICES_ROUTE = '/api/devices';
 const SHUTDOWN_DEVICE_ROUTE = '/api/devices/shutdown';
@@ -93,9 +94,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 export default async function handler(request: Request): Promise<Response | null> {
   const { pathname, searchParams } = new URL(request.url);
 
-  const easResponse = handleEasEndpoint(request, {
+  const easResponse = await handleEasEndpoint(request, {
     mountPath: MOUNT_PATH,
     serveSimPrefix: SIM_PREFIX,
+    recordingControlToken: process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN,
+    finishAndroidRecording: finishAndroidScreenRecording,
   });
   if (easResponse) return easResponse;
 

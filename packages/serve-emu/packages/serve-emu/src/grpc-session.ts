@@ -2395,7 +2395,11 @@ export async function startGrpcSession(
         signal: NodeJS.Signals | null,
       ) => {
         if (!isAbnormalExit(code, signal)) return;
-        const detail = procExitDetail(code, signal);
+        const detail = procExitDetail(
+          code,
+          signal,
+          controlSession.stderrTail?.(),
+        );
         emitFatal({
           message: detail.reason,
           code: detail.code,

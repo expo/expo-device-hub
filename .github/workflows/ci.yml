@@ -55,3 +55,83 @@ jobs:
         run: |
           bun run --filter serve-emu docs:check
           bun run --filter serve-emu test:package
+
+  android-recording:
+    name: Android recording (${{ matrix.source }}, ${{ matrix.limit }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - source: grpc-screenshot
+            stop: endpoint
+            limit: normal
+          - source: scrcpy
+            stop: signal
+            limit: normal
+          - source: grpc-screenshot
+            stop: endpoint
+            limit: duration
+          - source: scrcpy
+            stop: signal
+            limit: bytes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24.x"
+
+      - name: Install dependencies
+        run: |
+          bun install --frozen-lockfile
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Build recording test runtime
+        run: |
+          bun run --filter '@expo/hub-android-utils' --filter '@expo/hub-apple-utils' build
+          bun run --filter serve-emu build
+          bun packages/serve-emu/packages/serve-emu/scripts/fetch-scrcpy.ts
+          # Hub imports the iOS middleware on Android too. Only its JS is needed here.
+          bun build packages/serve-sim/packages/serve-sim/src/middleware.ts --target node --format esm --external ws --outdir packages/serve-sim/packages/serve-sim/dist
+          bun run --filter expo-device-hub build:vendor
+          bun run --filter expo-device-hub build:server
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Verify recording on an emulator
+        timeout-minutes: 10
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_2
+          disable-linux-hw-accel: false
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-back none
+          script: |
+            bun packages/expo-device-hub/scripts/verify-android-recording.ts ${{ matrix.source }} ${{ matrix.stop }} ${{ matrix.limit }}
+
+      - name: Upload recordings and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-recording-${{ matrix.source }}-${{ matrix.limit }}
+          path: /tmp/android-recording-smoke-*
+          retention-days: 7
+          if-no-files-found: warn
