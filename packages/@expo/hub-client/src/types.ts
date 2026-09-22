@@ -459,6 +459,26 @@ export interface KeyboardInput {
   repeat: boolean;
 }
 
+/**
+ * One HID key transition (USB HID Usage Page 0x07), e.g. produced by
+ * {@link KeyboardCapture} from phone-keyboard text. Forwarded as-is over
+ * serve-sim's `0x06` key channel.
+ */
+export type HidKeyEvent = { type: 'down' | 'up'; usage: number };
+
+/**
+ * A scroll-wheel / trackpad pan over the screen, in *display* space. Deltas are
+ * a fraction of the rendered display (positive `dy` scrolls content down, as a
+ * physical wheel would); `x`/`y` (0..1) anchor the pan under the pointer so the
+ * device pans the view beneath it (e.g. a sheet rather than the map behind it).
+ */
+export interface ScrollSample {
+  dx: number;
+  dy: number;
+  x: number;
+  y: number;
+}
+
 /** A normalized point rendered over the device's display-aligned stream. */
 export interface AgentInteractionPoint {
   x: number;
@@ -681,6 +701,18 @@ export interface DeviceClient {
    * corresponding browser action while the streamed device has focus.
    */
   sendKey: (input: KeyboardInput) => boolean;
+  /**
+   * Type pre-mapped HID key events — e.g. what {@link KeyboardCapture} derives
+   * from phone-keyboard text — paced so iOS doesn't coalesce a burst into lost
+   * keystrokes. Present only on backends with a HID key channel (serve-sim).
+   */
+  sendKeyEvents?: (events: ReadonlyArray<HidKeyEvent>) => void;
+  /**
+   * Forward a scroll-wheel / trackpad pan as a native scroll, so the device
+   * pans content exactly as it would for a physical wheel (no synthesized
+   * drag). Present only on backends that support it (serve-sim).
+   */
+  sendScroll?: (sample: ScrollSample) => void;
   /** Press a hardware button. */
   pressButton: (button: HardwareButton) => void;
   /**
@@ -698,7 +730,7 @@ export interface DeviceClient {
   rotate: () => void;
   /**
    * Capture a still PNG of the device via the backend's screenshot API
-   * (serve-emu `adb screencap` / serve-sim `simctl io … screenshot`), resolving
+   * (serve-emu `adb screencap` / serve-sim `POST /api/screenshot`), resolving
    * to a `Blob`, or `null` if capture fails or nothing is connected. The caller
    * decides what to do with it (e.g. trigger a file download).
    */
@@ -719,10 +751,15 @@ export interface DeviceClient {
 
   /**
    * Whether Simulator currently treats the Mac keyboard as connected to the
-   * guest. iOS only; null while the helper is unavailable or on Android.
+   * guest. iOS only; null while the helper is unavailable or on Android. The
+   * Hub disconnects it while its input socket is attached so the on-screen
+   * keyboard shows; serve-sim reconnects it once the last client leaves.
    */
   hardwareKeyboardConnected: boolean | null;
-  /** Connect or disconnect the Mac keyboard from the iOS guest. */
+  /**
+   * Connect or disconnect the Mac keyboard from the iOS guest (serve-sim's
+   * `hardware-keyboard` simulator setting, over the middleware exec channel).
+   */
   setHardwareKeyboardConnected: (connected: boolean) => void;
   /** Toggle the iOS on-screen software keyboard without changing the hardware connection. */
   toggleSoftwareKeyboard: () => void;

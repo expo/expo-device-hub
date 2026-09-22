@@ -9,6 +9,7 @@ import {
 } from 'react';
 
 import { streamGeometry } from './orientation';
+import { wheelDeltaToPixels } from './scroll-wheel';
 import { AgentInteractionIndicator } from './AgentInteractionIndicator';
 import { TouchIndicator } from './TouchIndicator';
 import {
@@ -109,9 +110,11 @@ export function deviceScreenMediaStyle(rotation: number): CSSProperties {
  * Input is measured in *display* space (the hook remaps to the device's raw
  * frame for the current orientation). Single-finger drags go through
  * `client.sendTouch`; two-finger pinch/pan (real touch, or Alt-drag with a
- * mouse) goes through `client.sendMultiTouch` when the backend supports it. When
- * the stream is rotated for a non-portrait device, only the video element is
- * CSS-rotated — the input overlay stays display-aligned.
+ * mouse) goes through `client.sendMultiTouch` when the backend supports it, and
+ * mouse-wheel / trackpad scrolling goes through `client.sendScroll` as a native
+ * scroll when the backend supports it. When the stream is rotated for a
+ * non-portrait device, only the video element is CSS-rotated — the input
+ * overlay stays display-aligned.
  */
 export function DeviceScreen({
   client,
@@ -119,8 +122,17 @@ export function DeviceScreen({
   squircle,
   agentInteraction,
 }: DeviceScreenProps) {
-  const { videoKind, attachVideo, sendTouch, sendMultiTouch, sendKey, screen, status, error } =
-    client;
+  const {
+    videoKind,
+    attachVideo,
+    sendTouch,
+    sendMultiTouch,
+    sendScroll,
+    sendKey,
+    screen,
+    status,
+    error,
+  } = client;
   const canMulti = !!sendMultiTouch;
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -332,6 +344,38 @@ export function DeviceScreen({
     }
     pointersRef.current.delete(event.pointerId);
   };
+
+  // Scroll-to-pan: wheel/trackpad scrolling over the device is forwarded as a
+  // native scroll (see `client.sendScroll`) so iOS pans content exactly as it
+  // would for a physical wheel. A non-passive listener, because React's
+  // `onWheel` cannot preventDefault the page scroll. Never fights an
+  // in-progress drag on the same surface.
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el || !sendScroll) return;
+    const onWheel = (event: WheelEvent) => {
+      if (modeRef.current !== 'none') return;
+      const rect = el.getBoundingClientRect();
+      if (rect.width === 0 || rect.height === 0) return;
+      const dxPx = wheelDeltaToPixels(event.deltaX, event.deltaMode, rect.width);
+      const dyPx = wheelDeltaToPixels(event.deltaY, event.deltaMode, rect.height);
+      if (dxPx === 0 && dyPx === 0) return;
+      // Anchor the pan under the cursor, clamped to the display; express the
+      // delta as a fraction of the rendered display so the server can rescale
+      // to device pixels. Browser wheel deltas already reflect the natural-
+      // scroll setting, so the sign passes straight through.
+      sendScroll({
+        dx: dxPx / rect.width,
+        dy: dyPx / rect.height,
+        x: clamp01((event.clientX - rect.left) / rect.width),
+        y: clamp01((event.clientY - rect.top) / rect.height),
+      });
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [sendScroll]);
 
   // ── display geometry (rotation for non-portrait devices) ──
   const geometry = streamGeometry(screen);

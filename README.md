@@ -129,9 +129,16 @@ gestures — so this package hides that behind one shared contract:
 
 - a hook (`useIosDeviceClient` / `useAndroidDeviceClient` and general
   `useActiveDeviceClient`) that owns the WebSocket connection and exposes the live
-  connection state plus input controls, and
+  connection state plus input controls,
 - a `DeviceScreen` component that paints whichever stream is active and forwards
-  pointer/gesture/keyboard input.
+  pointer/gesture/keyboard/scroll-wheel input, and
+- a `KeyboardCapture` component (with `useCoarsePointer`) that lets touch clients
+  type into the device with their phone keyboard via `client.sendKeyEvents`.
+
+The serve-sim side tracks the [`@expo/serve-sim`](http://www.github.com/expo/serve-sim)
+web client: host work (simulator settings, app-bundle details) goes through its typed
+exec-ws actions rather than shell commands, and the vendored server in
+[`packages/serve-sim`](packages/serve-sim) is the version the client is written against.
 
 It lives in its own package (rather than inside the plugin) so the **Expo dashboard
 website** can consume the exact same code to mirror devices in the browser.

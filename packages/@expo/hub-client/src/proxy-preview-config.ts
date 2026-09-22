@@ -5,10 +5,17 @@ export interface ProxyPreviewConfig {
   url?: string;
   streamUrl?: string;
   wsUrl?: string;
+  streamSettingsEndpoint?: string;
 }
 
 type LocationLike = Pick<Location, 'host' | 'protocol'>;
 
+/**
+ * Re-anchor the helper URLs in a middleware `/api` config to the browser's own
+ * origin, mirroring serve-sim's `utils/preview-config.ts`. Only applies when the
+ * server opted into same-origin proxying (`proxyHelpers`); otherwise the config
+ * already carries the helper's direct URLs and is used as-is.
+ */
 export function proxyPreviewConfigForBrowser<T extends ProxyPreviewConfig>(
   config: T,
   location: LocationLike,
@@ -25,5 +32,6 @@ export function proxyPreviewConfigForBrowser<T extends ProxyPreviewConfig>(
     url: `${httpOrigin}${devicePath}`,
     streamUrl: `${httpOrigin}${devicePath}/stream.mjpeg`,
     wsUrl: `${wsProtocol}//${location.host}${devicePath}/ws`,
+    streamSettingsEndpoint: `${httpOrigin}${devicePath}/stream-settings`,
   };
 }

@@ -35,6 +35,7 @@
     "vendor/serve-sim/dist/simcam",
     "vendor/serve-sim/dist/native",
     "vendor/serve-sim/dist/bin",
+    "vendor/serve-sim/dist/capability-loader",
     "vendor/serve-sim/LICENSE",
     "vendor/serve-sim/NOTICE",
     "vendor/serve-emu/dist/**/*.js",
