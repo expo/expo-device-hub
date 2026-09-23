@@ -77,6 +77,8 @@
   "scripts": {
     "build": "bun run build.ts",
     "dev": "bun run dev.ts",
+    "lint": "cd ../.. && oxlint",
+    "typecheck": "tsc --noEmit -p ../../tsconfig.json",
     "test:capability-loader": "Sources/ServeSimCapabilityLoader/tests/run.sh",
     "tart": "bun scripts/tart/cli.ts",
     "tart-test": "bun scripts/tart/cli.ts test",
@@ -94,6 +96,7 @@
     "debug": "^4.4.3",
     "lucide-react": "^1.20.0",
     "node-swift": "1.5.1",
+    "oxlint": "1.63.0",
     "preact": "^10.29.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

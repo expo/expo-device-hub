@@ -16,7 +16,7 @@ concurrency:
 
 defaults:
   tools:
-    node: 22
+    node: 24
     bun: 1.3.14
 
 jobs:
@@ -27,25 +27,27 @@ jobs:
     steps:
       - uses: eas/checkout
 
+      # Installs the monorepo root lockfile (bun.lock); serve-sim resolves through it.
       - uses: eas/install_node_modules
 
       # The permissions e2e test drives the built CLI (dist/serve-sim.js), so
       # build it before running the test suite.
       - name: Build serve-sim
         run: bun run build.ts
-        working_directory: packages/serve-sim
+        working_directory: packages/serve-sim/packages/serve-sim
 
       - name: Build native test fixtures
         run: bash Sources/build-test-fixtures.sh
-        working_directory: packages/serve-sim
+        working_directory: packages/serve-sim/packages/serve-sim
 
       # Packed before the tests run so the tarball exists even when they fail:
       # a build is often worth trying on a device precisely because the tests
       # did not settle the question.
       - name: Create npm package
+        working_directory: packages/serve-sim/packages/serve-sim
         run: |
           mkdir -p release
-          npm pack --workspace packages/serve-sim --pack-destination release --json > /tmp/npm-pack.json
+          npm pack --pack-destination release --json > /tmp/npm-pack.json
           TARBALL=$(node -p 'JSON.parse(require("fs").readFileSync(0, "utf8"))[0].filename' < /tmp/npm-pack.json)
           mv "release/$TARBALL" release/serve-sim.tgz
 
@@ -54,15 +56,17 @@ jobs:
         with:
           type: other
           name: serve-sim-npm-package
-          path: release/serve-sim.tgz
+          path: packages/serve-sim/packages/serve-sim/release/serve-sim.tgz
 
       - name: Start iOS Simulator
         uses: eas/start_ios_simulator
 
       - name: Run serve-sim tests
         # An unmet precondition fails instead of skipping; see e2e-preconditions.ts.
+        # Runs from the serve-sim tree root so the attribution test finds its NOTICE.
         env:
           SERVE_SIM_E2E_REQUIRED: "1"
+        working_directory: packages/serve-sim
         run: |
           run_tests() {
             bun test --max-concurrency=1 packages/serve-sim/src/__tests__/ &
