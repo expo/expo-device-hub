@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import { stateDir } from "../state";
 import { parseDetachState } from "./detach-state";
-import { freePortAsync } from "./helpers";
+import { freePortAsync, useTempStateDir } from "./helpers";
 import { sendKeyEventsToWs } from "../text-to-keys";
 import { restoreHingeState, selectHingeControl, selectPose } from "./duo-hinge-helpers";
 import type { ServeSimDeviceState } from "../state";
@@ -42,7 +42,11 @@ requireE2E("serve-sim typing", ready);
 const describeWithSim = ready ? describe : describe.skip;
 
 function cli(...args: string[]): string {
-  return execFileSync("node", [CLI_PATH, ...args], { encoding: "utf8", timeout: 15_000 });
+  return execFileSync("node", [CLI_PATH, ...args], {
+    encoding: "utf8",
+    timeout: 15_000,
+    env: { ...process.env },
+  });
 }
 
 function simctl(...args: string[]): string {
@@ -53,6 +57,7 @@ describeWithSim(`serve-sim type e2e (booted sim ${bootedUdid ?? "<skipped>"})`, 
   let logFile: string;
   let fixtureLog: string;
   let state: ServeSimDeviceState;
+  let tempState: ReturnType<typeof useTempStateDir>;
 
   function fixtureLines(): string[] {
     try { return readFileSync(fixtureLog, "utf8").split("\n").filter(Boolean); }
@@ -78,7 +83,7 @@ describeWithSim(`serve-sim type e2e (booted sim ${bootedUdid ?? "<skipped>"})`, 
   }
 
   beforeAll(async () => {
-    try { cli("--kill", bootedUdid!); } catch {}
+    tempState = useTempStateDir();
     if (testDuo) {
       try { simctl("uninstall", bootedUdid!, APP); } catch {}
       simctl("install", bootedUdid!, FIXTURE);
@@ -110,6 +115,7 @@ describeWithSim(`serve-sim type e2e (booted sim ${bootedUdid ?? "<skipped>"})`, 
       try { simctl("terminate", bootedUdid!, APP); } catch {}
       try { simctl("uninstall", bootedUdid!, APP); } catch {}
     }
+    tempState?.restore();
   }, 60_000);
 
   test("`serve-sim type` injects HID key events into the booted simulator", async () => {
@@ -124,6 +130,7 @@ describeWithSim(`serve-sim type e2e (booted sim ${bootedUdid ?? "<skipped>"})`, 
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 15_000,
+      env: { ...process.env },
     });
     if (result.status !== 0) {
       throw new Error(

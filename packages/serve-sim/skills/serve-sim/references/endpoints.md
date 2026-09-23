@@ -67,7 +67,7 @@ mounts it at `/`. Prefix the paths below with that configured base.
 | `POST` | `/api/screenshot` | Still PNG of the selected simulator (`simctl io <udid> screenshot`). |
 | `GET` | `/api/event-log` | Recent normalized simulator input events. |
 | `GET` | `/api/event-log/events` | SSE event-log updates. |
-| `GET` | `/logs` | SSE stream of simulator console logs (NDJSON events). The preview subscribes locally by default; remote previews require `?logs=1`. |
+| `GET` | `/logs` | Simulator console log (NDJSON). SSE by default, replaying the buffered backlog before live lines; JSON on `Accept: application/json` or `?snapshot`. The preview subscribes locally by default; remote previews require `?logs=1`. |
 | `GET` | `/ax` | SSE accessibility snapshots. |
 | `POST` | `/exec` | Host command execution; requires JSON, same-origin checks, and bearer token. |
 | `GET` | `/appstate` | Frontmost-app event stream. |
@@ -86,13 +86,31 @@ const middleware = simMiddleware({ basePath: "/.sim" });
 An embedding server must also forward WebSocket upgrades to
 `middleware.handleUpgrade`; standalone serve-sim already does this.
 
+### Reading `/logs`
+
+One shared tail per device fills a byte-bounded buffer, so a reader sees recent
+history rather than only what happens next.
+
+| Param | Effect |
+|---|---|
+| `?snapshot` | Return JSON instead of SSE. `?snapshot=0` keeps SSE. |
+| `?since=<seq>` | Only lines after that cursor. Compare against `oldestSeq` to detect a gap. |
+| `?limit=<n>` | At most `n` lines, keeping the newest. |
+| `?envelope` | Wrap each SSE frame as `{seq, at, raw}` so a stream reader can track its cursor. Default frames are the bare line, which is already JSON. |
+
+The JSON body carries `lines`, `latestSeq`, `oldestSeq`, `bufferedBytes`,
+`status` (`streaming` / `restarting` / `stopped`), and `streamError`.
+
 ## Authentication and state
 
-The `/exec` route requires the per-process bearer token injected into the
-same-origin preview. Non-browser callers can obtain it from the private state
-file under `$TMPDIR/serve-sim/server-<udid>.json`. Stream, input, accessibility,
-and signaling routes are intentionally unauthenticated, so expose serve-sim only
-on trusted networks or behind an authenticated proxy.
+Started with `--require-token`, which is how EAS runs it on the network,
+serve-sim gates every route except `/healthz` and `/readyz`. The preview link
+carries `?token=`, which the first page load trades for a cookie; API and SSE
+callers send `Authorization: Bearer <token>` instead, and WebSocket upgrades
+take the bearer or the cookie but never a query token. An authenticated caller
+can read the token back as `execToken` from `GET {base}/api`.
 
-Prefer `npx @expo/serve-sim --list -q` over reading state files directly. The state
-format is internal and may also contain short-lived TURN credentials.
+Without that flag a loopback server is ungated, on the grounds that it is
+already reachable by whoever is on the machine. Expose serve-sim on a network
+only with the flag, or behind an authenticated proxy.
+

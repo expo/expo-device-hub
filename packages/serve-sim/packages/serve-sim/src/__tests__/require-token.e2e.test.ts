@@ -97,7 +97,7 @@ describeIfSim("serve-sim --require-token (built CLI)", () => {
   });
 
   test("refuses every gated surface without the token", async () => {
-    for (const path of ["/", "/api", "/metrics", `/helper/${udid}/camera/status`]) {
+    for (const path of ["/", "/api", "/metrics", "/logs", `/helper/${udid}/camera/status`]) {
       const response = await fetch(`${baseUrl}${path}`, { redirect: "manual" });
       expect(response.status).toBe(401);
     }
