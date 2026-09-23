@@ -269,7 +269,7 @@ final class WebRTCPublisher: @unchecked Sendable {
                     )
                 }
                 for session in self.sessions.values {
-                    self.applyBitrateSettings(to: session)
+                    self.applySenderParameters(to: session)
                 }
                 streamLog(
                     "[webrtc] Settings updated fps=\(frameRatePolicy.outputFramesPerSecond) " +
@@ -542,7 +542,7 @@ final class WebRTCPublisher: @unchecked Sendable {
                 fps: Int32(frameRatePolicy.sourceAdapterFramesPerSecond)
             )
             for session in sessions.values {
-                applyBitrateSettings(to: session)
+                applySenderParameters(to: session)
             }
             streamLog(
                 "[webrtc] Video source output format: \(width)x\(height) " +
@@ -814,6 +814,13 @@ final class WebRTCPublisher: @unchecked Sendable {
                                     self.failOffer(session, self.makeError("WebRTC offer was superseded"), completion)
                                     return
                                 }
+                                // Held onto so the encode size stays inside what the answer settled,
+                                // from the first frame rather than from the first re-apply.
+                                session.h264LevelIdc = H264LevelPolicy.negotiatedLevel(
+                                    offer: request.sdp,
+                                    answer: answer.sdp
+                                )
+                                self.applySenderParameters(to: session)
                                 session.waitForIceGathering { completed in
                                     self.queue.async {
                                         guard self.isPending(session) else {
@@ -899,7 +906,7 @@ final class WebRTCPublisher: @unchecked Sendable {
             guard !session.isConnected else { return }
             session.isConnected = true
             self.refreshFrameAcceptance()
-            self.applyBitrateSettings(to: session)
+            self.applySenderParameters(to: session)
             streamLog("[webrtc] Peer connected; activePeers=\(self.sessions.values.filter(\.isConnected).count)")
         }
     }
@@ -940,7 +947,7 @@ final class WebRTCPublisher: @unchecked Sendable {
         }
         session.codecName = applyVideoCodecPreference(codec, to: transceiver)
         session.videoSender = transceiver.sender
-        applyBitrateSettings(to: session)
+        applySenderParameters(to: session)
     }
 
     private func createFallbackVideoTransceiver(on peerConnection: LKRTCPeerConnection) -> LKRTCRtpTransceiver? {
@@ -1165,7 +1172,7 @@ final class WebRTCPublisher: @unchecked Sendable {
         return preferredName
     }
 
-    private func applyBitrateSettings(to session: WebRTCSession) {
+    private func applySenderParameters(to session: WebRTCSession) {
         guard let sender = session.videoSender else { return }
         let parameters = sender.parameters
         let encodings = parameters.encodings.isEmpty
@@ -1176,13 +1183,33 @@ final class WebRTCPublisher: @unchecked Sendable {
         let minBitrate = NSNumber(value: bitratePolicy.minimumBitsPerSecond)
         let senderFramesPerSecond = frameRatePolicy.senderFramesPerSecond
         let sourceMaxDimension = max(lastOutputWidth, lastOutputHeight)
-        // Temporary: H.264 stalls at larger encode sizes for reasons not yet diagnosed.
-        let maxDimension = StreamEncodePolicy.h264EncodeMaxLongEdge(
+        let levelIdc = session.h264LevelIdc ?? H264LevelPolicy.defaultLevelIdc
+        // The list is empty until the answer is set, so the first apply uses the requested
+        // name and the re-apply after connection settles on the negotiated one.
+        let negotiatedName = StreamCodecPolicy.mediaCodecName(from: parameters.codecs.map(\.name))
+        let encodeMaxLongEdge = StreamEncodePolicy.encodeMaxLongEdge(
             configuredMaxDimension: maxDimension,
-            codecName: session.codecName
+            codecName: negotiatedName ?? session.codecName,
+            sourceWidth: lastOutputWidth,
+            sourceHeight: lastOutputHeight,
+            levelIdc: levelIdc
         )
-        let scaleResolutionDownBy = maxDimension > 0 && sourceMaxDimension > maxDimension
-            ? Double(sourceMaxDimension) / Double(maxDimension)
+        session.appliedLevelMaxLongEdge = StreamEncodePolicy.levelMaxLongEdge(
+            codecName: negotiatedName ?? session.codecName,
+            sourceWidth: lastOutputWidth,
+            sourceHeight: lastOutputHeight,
+            levelIdc: levelIdc
+        )
+        // Native is the request when no size was picked, and the one the level clamps hardest.
+        let requestedLongEdge = maxDimension > 0 ? maxDimension : sourceMaxDimension
+        if encodeMaxLongEdge > 0, encodeMaxLongEdge < requestedLongEdge {
+            streamLog(
+                "[webrtc] requested \(requestedLongEdge) exceeds what H.264 level "
+                    + "\(levelIdc) allows; encoding at \(encodeMaxLongEdge)"
+            )
+        }
+        let scaleResolutionDownBy = encodeMaxLongEdge > 0 && sourceMaxDimension > encodeMaxLongEdge
+            ? Double(sourceMaxDimension) / Double(encodeMaxLongEdge)
             : 1.0
         for encoding in encodings {
             encoding.isActive = true
@@ -1207,6 +1234,7 @@ final class WebRTCPublisher: @unchecked Sendable {
             "senderFpsCap=none " +
             "minBitrate=\(minBitrate) " +
             "maxBitrate=\(maxBitrate) maxDimension=\(maxDimension) " +
+            "encodeMaxLongEdge=\(encodeMaxLongEdge) level=\(levelIdc) " +
             "scaleDown=\(String(format: "%.3f", scaleResolutionDownBy)) " +
             "applied=\(appliedScale.map { String(format: "%.3f", $0) } ?? "nil") " +
             "encodings=\(encodings.count) " +
@@ -1739,6 +1767,10 @@ private final class WebRTCSession {
     var videoSender: LKRTCRtpSender?
     var codecName = "H264"
     var isConnected = false
+    /// `level_idc` the peer advertised for H.264.
+    var h264LevelIdc: Int?
+    /// Long edge the negotiated H.264 level allowed at the last apply, nil when none bound.
+    var appliedLevelMaxLongEdge: Int?
     private let iceGatheringTimeout: DispatchTimeInterval = .milliseconds(3_000)
 
     init(id: String, peerConnection: LKRTCPeerConnection, delegate: WebRTCSessionDelegate) {

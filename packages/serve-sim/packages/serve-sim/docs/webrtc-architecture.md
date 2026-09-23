@@ -214,6 +214,15 @@ the simulator's single synthetic touch surface.
 - There is no configured WebRTC peer limit or cross-viewer control arbitration.
 - No automatic fallback from unreachable WebRTC media to HTTP video.
 - Codec configuration describes a preference, not the negotiated sender codec.
+- H.264 encode size is bounded by the negotiated level's frame size. A peer that
+  advertises Level 3.1 is scaled to fit, and an explicit `--max-dimension` is clamped the
+  same way, because exceeding the level yields no picture rather than a bigger one.
+- The level bound models frame size only, not the level's macroblock rate. A 3.1 session at
+  60 fps is over that rate on paper; measured sessions encode anyway, so nothing clamps for
+  it.
+- Raising the posted offer's level moves the bound rather than removing it: a peer is still
+  clamped to the level the answer settles for the chosen payload. With level asymmetry, as
+  browsers offer, that is the offer's level.
 - Signaling URLs are derived from the MJPEG URL rather than advertised directly.
 - Encoder resolution, frame rate, and target bitrate are shared across viewers;
   one viewer changing them affects every peer attached to that simulator.
