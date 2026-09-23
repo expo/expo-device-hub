@@ -576,7 +576,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }`;
 
     const toMiddleware = (rawConfig: PreviewApi): ResolvedConfig => {
-      const c = proxyPreviewConfigForBrowser(rawConfig, window.location);
+      const c = proxyPreviewConfigForBrowser(rawConfig, new URL(baseUrl, window.location.href));
       const basePath = c.basePath ?? '';
       const absoluteMiddlewareUrl = (path?: string): string | null =>
         path ? new URL(path, baseUrl).toString() : null;
@@ -592,8 +592,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         eventsPath: c.eventLogEventsEndpoint ?? null,
         metricsPath: c.metricsEndpoint ?? null,
         axUrl: absoluteMiddlewareUrl(c.axEndpoint),
-        // A proxied helper URL is re-anchored to the browser origin above; use
-        // that canonical URL rather than an injected host port that may be 0.
+        // A proxied helper URL uses the public middleware mount above rather
+        // than an advertised internal host port that may be 0.
         streamSettingsUrl: c.streamSettingsEndpoint
           ? c.proxyHelpers
             ? `${c.url}/stream-settings`
