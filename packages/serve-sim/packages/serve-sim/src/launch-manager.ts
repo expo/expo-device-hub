@@ -2,6 +2,7 @@ import { existsSync, unlinkSync } from "fs";
 import { basename, join } from "path";
 import {
   capabilitiesToApply,
+  rememberDisabledCapabilities,
   capabilityDefinition,
   type CapabilityContext,
   type CapabilityDefinition,
@@ -353,6 +354,7 @@ export async function applyDefaultCapabilities(
   overrides: CapabilityOverrides = {},
 ): Promise<string[]> {
   return withLaunchStateLock(udid, async () => {
+    rememberDisabledCapabilities(overrides.disable ?? []);
     const definitions = capabilitiesToApply(overrides);
     const resolved: Capability[] = [];
     for (const definition of definitions) {

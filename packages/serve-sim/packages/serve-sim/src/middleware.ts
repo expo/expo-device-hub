@@ -190,6 +190,7 @@ function isSimulatorUdid(value: string): boolean {
   return /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(value);
 }
 
+const MAX_PASTEBOARD_BODY_BYTES = 4 * 1024 * 1024;
 const PASTEBOARD_RESPONSE_HEADERS = {
   "Cache-Control": "no-store",
 };
@@ -2445,6 +2446,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
         return;
       }
+      // `connectToFetch` replays the body as soon as this handler yields, so start reading
+      // before the first await or the data events are gone and the read never settles.
+      const bodyRead =
+        req.method === "PUT" ? readRequestBodyAsync(req, MAX_PASTEBOARD_BODY_BYTES) : null;
+      bodyRead?.catch(() => {}); // the awaited copy below reports the failure
       let udid = selectedDevice;
       if (udid && !isSimulatorUdid(udid)) {
         res.writeHead(400, {
@@ -2470,7 +2476,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         if (req.method === "PUT") {
           let body: Buffer | undefined;
           try {
-            body = await readRequestBodyAsync(req, 4 * 1024 * 1024);
+            body = await (bodyRead ?? readRequestBodyAsync(req, MAX_PASTEBOARD_BODY_BYTES));
           } catch (error) {
             if (!(error instanceof RequestBodyTooLargeError)) throw error;
             res.writeHead(413, {

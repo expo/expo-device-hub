@@ -21,9 +21,12 @@ import {
   withSkipPbpaste,
   writeTestPasteboard,
 } from "./pasteboard-sim";
+import { requireE2E } from "./e2e-preconditions";
 
 const udid = firstBootedIosSim();
-const describeIfInject = udid && pasteboardTool && pasteboardDylib ? describe : describe.skip;
+const injectReady = !!(udid && pasteboardTool && pasteboardDylib);
+requireE2E("pasteboard injected reader E2E", injectReady);
+const describeIfInject = injectReady ? describe : describe.skip;
 
 describeIfInject(`injected pasteboard read (booted sim ${udid ?? "<skipped>"})`, () => {
   test.skipIf(!isHeadlessPasteboard())("simctl pbpaste fails without a GUI login session", () => {

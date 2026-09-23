@@ -3,7 +3,7 @@ import { execFileSync, spawn } from "child_process";
 import { existsSync, promises as fs } from "fs";
 import { join, resolve } from "path";
 import { setTimeout as sleep } from "timers/promises";
-import type { CapabilityDefinition } from "./capabilities";
+import { capabilityIsDisabled, type CapabilityDefinition } from "./capabilities";
 import { debugPasteboard } from "./debug";
 import { frontmostAppOf } from "./foreground-tracker";
 import { devicesArmedHere, releaseSessionSync, setCapabilityEnabled } from "./launch-manager";
@@ -190,6 +190,12 @@ export function pasteboardTarget(
 }
 
 async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult | null> {
+  if (capabilityIsDisabled(CLIPBOARD_CAPABILITY)) {
+    throw new Error(
+      "the clipboard capability is disabled for this session, so its reader cannot be loaded. " +
+        "Restart serve-sim without `--disable clipboard` to read the simulator pasteboard.",
+    );
+  }
   const frontmost = await frontmostAppOf(udid);
   const bundleId = pasteboardTarget(frontmost, readLaunchState(udid)?.bundleId ?? null);
   if (!bundleId) return null;

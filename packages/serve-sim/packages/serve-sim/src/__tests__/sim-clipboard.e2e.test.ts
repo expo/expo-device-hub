@@ -6,6 +6,7 @@ import {
   pasteboardTool as tool,
   writeTestPasteboard,
 } from "./pasteboard-sim";
+import { requireE2E } from "./e2e-preconditions";
 
 const udid = firstBootedIosSim();
 
@@ -16,7 +17,9 @@ if (skipOnCi) {
   );
 }
 
-const describeIfSim = udid && tool && !skipOnCi && !isHeadlessPasteboard() ? describe : describe.skip;
+const clipboardReady = !!(udid && tool && !skipOnCi && !isHeadlessPasteboard());
+requireE2E("simulator clipboard E2E", clipboardReady);
+const describeIfSim = clipboardReady ? describe : describe.skip;
 
 describeIfSim(`simctl pasteboard round-trip (booted sim ${udid ?? "<skipped>"})`, () => {
   test("writer and pbpaste round-trip unicode", () => {

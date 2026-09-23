@@ -15,12 +15,14 @@ import {
   sendSimSelectAllShortcut,
   withSkipPbpaste,
 } from "./pasteboard-sim";
+import { requireE2E } from "./e2e-preconditions";
 
 const TEST_TOKEN = "test-token";
 const middleware = simMiddleware({ basePath: "/preview", execToken: TEST_TOKEN });
 const udid = firstBootedIosSim();
-const describeCopy =
-  udid && pasteboardDylib && pasteboardFixture && nativeAddonExists() ? describe : describe.skip;
+const copyReady = !!(udid && pasteboardDylib && pasteboardFixture && nativeAddonExists());
+requireE2E("pasteboard copy E2E", copyReady);
+const describeCopy = copyReady ? describe : describe.skip;
 const SAFARI_COPY_TEXT = "serve-sim-safari-copy-probe";
 
 async function postPasteboard(): Promise<{ ok?: boolean; text?: string; error?: string; status: number }> {
