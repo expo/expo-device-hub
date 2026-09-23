@@ -14,18 +14,27 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-for (const { name, baseUrl, pageUrl, publicBase } of [
+for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
   {
     name: 'remote server on another origin',
     baseUrl: 'https://stream.example.test/preview/session',
     pageUrl: 'https://example.com/device',
     publicBase: 'https://stream.example.test/preview/session',
+    advertisedBasePath: '/internal',
   },
   {
     name: 'relative middleware mount',
     baseUrl: '/preview/session',
     pageUrl: 'https://example.com/device',
     publicBase: 'https://example.com/preview/session',
+    advertisedBasePath: '/internal',
+  },
+  {
+    name: 'same-origin Expo plugin mount',
+    baseUrl: '/_expo/plugins/expo-device-hub/vendor/serve-sim',
+    pageUrl: 'http://localhost:8081/index',
+    publicBase: 'http://localhost:8081/_expo/plugins/expo-device-hub/vendor/serve-sim',
+    advertisedBasePath: '/_expo/plugins/expo-device-hub/vendor/serve-sim',
   },
 ]) test(`iOS hook resolves all browser URLs from the ${name}`, async () => {
   const sockets: Array<{
@@ -82,18 +91,18 @@ for (const { name, baseUrl, pageUrl, publicBase } of [
     if (url === `${baseUrl}/api?device=DEVICE-A`) {
       return Response.json({
         device: 'DEVICE-A',
-        basePath: '/internal',
+        basePath: advertisedBasePath,
         proxyHelpers: true,
         execToken: 'existing-exec-token',
-        logsEndpoint: '/internal/logs?device=DEVICE-A',
-        eventLogEventsEndpoint: '/internal/api/event-log/events?device=DEVICE-A',
-        metricsEndpoint: '/internal/metrics?device=DEVICE-A',
-        appStateEndpoint: '/internal/appstate?device=DEVICE-A',
-        axEndpoint: '/internal/ax?device=DEVICE-A',
-        gridApiEndpoint: '/internal/grid/api',
-        url: 'https://stream.example.test:0/internal/helper/DEVICE-A',
-        streamUrl: 'https://stream.example.test:0/internal/helper/DEVICE-A/stream.mjpeg',
-        wsUrl: 'wss://stream.example.test:0/internal/helper/DEVICE-A/ws',
+        logsEndpoint: `${advertisedBasePath}/logs?device=DEVICE-A`,
+        eventLogEventsEndpoint: `${advertisedBasePath}/api/event-log/events?device=DEVICE-A`,
+        metricsEndpoint: `${advertisedBasePath}/metrics?device=DEVICE-A`,
+        appStateEndpoint: `${advertisedBasePath}/appstate?device=DEVICE-A`,
+        axEndpoint: `${advertisedBasePath}/ax?device=DEVICE-A`,
+        gridApiEndpoint: `${advertisedBasePath}/grid/api`,
+        url: `https://stream.example.test:0${advertisedBasePath}/helper/DEVICE-A`,
+        streamUrl: `https://stream.example.test:0${advertisedBasePath}/helper/DEVICE-A/stream.mjpeg`,
+        wsUrl: `wss://stream.example.test:0${advertisedBasePath}/helper/DEVICE-A/ws`,
       });
     }
     return Response.json({ devices: [] });
@@ -135,7 +144,7 @@ for (const { name, baseUrl, pageUrl, publicBase } of [
     `${publicBase.replace(/^http/, 'ws')}/exec-ws`,
   );
   const subscriptions = sockets.flatMap((socket) => socket.sent).filter((message) => 'sub' in message);
-  expect(subscriptions).toContainEqual({ sub: 1, path: '/internal/logs?device=DEVICE-A' });
-  expect(subscriptions).toContainEqual({ sub: 2, path: '/internal/api/event-log/events?device=DEVICE-A' });
-  expect(subscriptions).toContainEqual({ sub: 3, path: '/internal/metrics?device=DEVICE-A' });
+  expect(subscriptions).toContainEqual({ sub: 1, path: `${advertisedBasePath}/logs?device=DEVICE-A` });
+  expect(subscriptions).toContainEqual({ sub: 2, path: `${advertisedBasePath}/api/event-log/events?device=DEVICE-A` });
+  expect(subscriptions).toContainEqual({ sub: 3, path: `${advertisedBasePath}/metrics?device=DEVICE-A` });
 });
