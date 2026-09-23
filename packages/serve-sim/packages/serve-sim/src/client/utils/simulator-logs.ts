@@ -1,14 +1,9 @@
-import { isLoopbackPreviewHostname } from "./screenshot-capture";
-
 type PreviewLocation = Pick<Location, "hostname" | "search">;
 
 /**
- * Simulator unified logs are extremely verbose, so remote previews must opt in
- * explicitly. Keep the existing local developer experience unless the URL
- * explicitly disables it.
+ * Simulator unified logs are extremely verbose. The in-page drawer is the
+ * default reader; dumping them to the browser console is opt-in (`?logs=1`).
  */
 export function shouldStreamSimulatorLogs(location: PreviewLocation): boolean {
-  const override = new URLSearchParams(location.search).get("logs");
-  if (override !== null) return override === "1";
-  return isLoopbackPreviewHostname(location.hostname);
+  return new URLSearchParams(location.search).get("logs") === "1";
 }

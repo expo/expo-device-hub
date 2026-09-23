@@ -32,7 +32,7 @@ class FakeChild extends EventEmitter {
 let spawned: FakeChild[] = [];
 let clock = 0;
 
-function makeBuffer(maxBytes = 1024): DeviceLogBuffer {
+function makeBuffer(maxBytes = 1024, idleAfterMs = 0): DeviceLogBuffer {
   return new DeviceLogBuffer("UDID-1", {
     spawnLogStream: () => {
       const child = new FakeChild();
@@ -42,6 +42,7 @@ function makeBuffer(maxBytes = 1024): DeviceLogBuffer {
     maxBytes,
     restartDelayMs: 5,
     now: () => clock,
+    idleAfterMs,
   });
 }
 
@@ -138,11 +139,37 @@ describe("DeviceLogBuffer", () => {
     buffer.stop();
   });
 
+  test("notifies batch subscribers once per stdout burst", () => {
+    const buffer = makeBuffer();
+    buffer.start();
+    const bursts: number[][] = [];
+    buffer.subscribeBatch((lines) => bursts.push(lines.map((l) => l.seq)));
+
+    spawned[0]!.emitLines([line(1), line(2), line(3)].join("\n") + "\n");
+
+    expect(bursts).toEqual([[1, 2, 3]]);
+    buffer.stop();
+  });
+
+  test("evicts a full ring without shifting one line at a time", () => {
+    const buffer = makeBuffer(80);
+    buffer.start();
+    const started = performance.now();
+    let payload = "";
+    for (let i = 1; i <= 4000; i++) payload += line(i) + "\n";
+    spawned[0]!.emitLines(payload);
+
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(buffer.byteLength).toBeLessThanOrEqual(80);
+    expect(buffer.read().at(-1)?.seq).toBe(4000);
+    buffer.stop();
+  });
+
   test("notifies subscribers of new lines and stops on unsubscribe", () => {
     const buffer = makeBuffer();
     buffer.start();
     const seen: LogLine[] = [];
-    const unsubscribe = buffer.subscribe((l) => seen.push(l));
+    const unsubscribe = buffer.subscribeBatch((batch) => seen.push(...batch));
 
     spawned[0]!.emitLines(line(1) + "\n");
     unsubscribe();
@@ -152,14 +179,26 @@ describe("DeviceLogBuffer", () => {
     buffer.stop();
   });
 
+  test("stops the simctl child an idle window after the last reader unsubscribes", async () => {
+    const buffer = makeBuffer(1024, 15);
+    buffer.start();
+    buffer.subscribeBatch(() => {})();
+    expect(buffer.status).toBe("streaming");
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(spawned[0]!.killed).toBe(true);
+    expect(buffer.status).toBe("stopped");
+    buffer.stop();
+  });
+
   test("keeps buffering when a subscriber throws", () => {
     const buffer = makeBuffer();
     buffer.start();
-    buffer.subscribe(() => {
+    buffer.subscribeBatch(() => {
       throw new Error("closed socket");
     });
     const seen: LogLine[] = [];
-    buffer.subscribe((l) => seen.push(l));
+    buffer.subscribeBatch((batch) => seen.push(...batch));
 
     spawned[0]!.emitLines(line(1) + "\n");
     expect(seen).toHaveLength(1);
@@ -393,7 +432,7 @@ describe("DeviceLogBuffer", () => {
 });
 
 describe("createLogBufferCache", () => {
-  function makeCache() {
+  function makeCache(idleAfterMs = 0) {
     return createLogBufferCache({
       spawnLogStream: () => {
         const child = new FakeChild();
@@ -403,6 +442,7 @@ describe("createLogBufferCache", () => {
       maxBytes: 1024,
       restartDelayMs: 5,
       now: () => clock,
+      idleAfterMs,
     });
   }
 
@@ -413,6 +453,35 @@ describe("createLogBufferCache", () => {
 
     expect(first).toBe(second);
     expect(spawned).toHaveLength(1);
+    cache.stopAll();
+  });
+
+  test("ensure restarts a stream that went idle after the last reader left", async () => {
+    const cache = makeCache(15);
+    const buffer = cache.ensure("UDID-1");
+    buffer.subscribeBatch(() => {})();
+    expect(spawned[0]!.killed).toBe(false);
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(spawned[0]!.killed).toBe(true);
+
+    cache.ensure("UDID-1");
+    expect(spawned).toHaveLength(2);
+    expect(buffer.status).toBe("streaming");
+    cache.stopAll();
+  });
+
+  test("a leaving stream reader does not cut a snapshot poller off mid-poll", async () => {
+    const cache = makeCache(30);
+    const buffer = cache.ensure("UDID-1");
+    const unsubscribe = buffer.subscribeBatch(() => {});
+    unsubscribe();
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    cache.ensure("UDID-1");
+    await new Promise((resolve) => setTimeout(resolve, 25));
+
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]!.killed).toBe(false);
     cache.stopAll();
   });
 
@@ -464,5 +533,58 @@ describe("createLogBufferCache", () => {
 
     expect(cache.peek("UDID-1")).toBeNull();
     expect(spawned.every((child) => child.killed)).toBe(true);
+  });
+
+  test("idles the simctl child when nobody polls or subscribes", async () => {
+    const cache = makeCache(15);
+    cache.ensure("UDID-1");
+    expect(spawned[0]!.killed).toBe(false);
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    expect(spawned[0]!.killed).toBe(true);
+    expect(cache.peek("UDID-1")?.status).toBe("stopped");
+    cache.stopAll();
+  });
+
+  test("releases a child that keeps dying once the readers are gone", async () => {
+    const cache = makeCache(15);
+    const buffer = cache.ensure("UDID-1");
+    buffer.subscribeBatch(() => {})();
+
+    for (let i = 0; i < 3; i++) {
+      spawned.at(-1)!.emit("exit");
+      await new Promise((resolve) => setTimeout(resolve, 12));
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    const spawnsAfterRelease = spawned.length;
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    expect(buffer.status).toBe("stopped");
+    expect(spawned).toHaveLength(spawnsAfterRelease);
+    cache.stopAll();
+  });
+
+  test("a later ensure keeps a poll-only stream from idling", async () => {
+    const cache = makeCache(30);
+    cache.ensure("UDID-1");
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    cache.ensure("UDID-1");
+    await new Promise((resolve) => setTimeout(resolve, 15));
+
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]!.killed).toBe(false);
+    cache.stopAll();
+  });
+
+  test("does not idle while a subscriber is still reading", async () => {
+    const cache = makeCache(15);
+    const buffer = cache.ensure("UDID-1");
+    const unsubscribe = buffer.subscribeBatch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    expect(spawned[0]!.killed).toBe(false);
+    expect(buffer.status).toBe("streaming");
+    unsubscribe();
+    cache.stopAll();
   });
 });

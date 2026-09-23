@@ -252,7 +252,8 @@ export function matchInstalledAppByDisplayName(
 
 // Cache simctl's booted-device set briefly so per-request cost stays bounded.
 // The middleware runs inside the user's dev server (Metro etc.) and
-// readServeSimStates() is called on every /api and every page load.
+// The window has to outlast the logs drawer's poll interval.
+const BOOTED_CACHE_TTL_MS = 5_000;
 let bootedSnapshot: {
   at: number;
   booted: Set<string> | null;
@@ -266,7 +267,7 @@ let bootedSnapshot: {
 };
 async function getBootedUdids(): Promise<Set<string> | null> {
   const now = Date.now();
-  if (bootedSnapshot.booted && now - bootedSnapshot.at < 1500) {
+  if (bootedSnapshot.booted && now - bootedSnapshot.at < BOOTED_CACHE_TTL_MS) {
     return bootedSnapshot.booted;
   }
   try {
@@ -1583,26 +1584,26 @@ export function handleLogsRequest(
       ? (req.headers.accept ?? "").includes("application/json")
       : booleanParam(params, "snapshot");
   const wantsEnvelope = booleanParam(params, "envelope");
-
-  const buffer = cache.ensure(state.device);
+  const wantsFollow = booleanParam(params, "follow");
 
   if (wantsJson) {
-    const lines = buffer.read({ since, limit });
+    const buffer = wantsFollow ? cache.ensure(state.device) : cache.peek(state.device);
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     res.end(
       JSON.stringify({
         device: state.device,
-        latestSeq: buffer.latestSeq,
-        oldestSeq: buffer.oldestSeq,
-        bufferedBytes: buffer.byteLength,
-        status: buffer.status,
-        streamError: buffer.error,
-        lines,
+        latestSeq: buffer?.latestSeq ?? 0,
+        oldestSeq: buffer?.oldestSeq ?? 0,
+        bufferedBytes: buffer?.byteLength ?? 0,
+        status: buffer?.status ?? "stopped",
+        streamError: buffer?.error ?? null,
+        lines: buffer?.read({ since, limit }) ?? [],
       })
     );
     return;
   }
 
+  const buffer = cache.ensure(state.device);
   const stream = openSseStream(req, res);
 
   const frame = (line: LogLine): string =>
@@ -1619,11 +1620,15 @@ export function handleLogsRequest(
   }
 
   stream.onClose(
-    buffer.subscribe(
-      (line) => {
-        if (line.seq <= lastSent) return;
-        lastSent = line.seq;
-        stream.write(frame(line));
+    buffer.subscribeBatch(
+      (lines) => {
+        let chunk = "";
+        for (const line of lines) {
+          if (line.seq <= lastSent) continue;
+          lastSent = line.seq;
+          chunk += frame(line);
+        }
+        if (chunk) stream.write(chunk);
       },
       () => {
         if (stream.isOpen()) res.end();
@@ -1638,7 +1643,7 @@ export function handleLogsRequest(
  * Routes handled under `basePath` (default `/.sim`):
  *   GET  {basePath}         — the preview HTML page
  *   GET  {basePath}/api     — serve-sim state JSON
- *   GET  {basePath}/logs    — SSE stream of simctl logs
+ *   GET  {basePath}/logs    — simctl logs (JSON snapshot, or SSE)
  *   GET  {basePath}/ax      — SSE stream of normalized accessibility snapshots
  */
 export function handleMetricsRequest(

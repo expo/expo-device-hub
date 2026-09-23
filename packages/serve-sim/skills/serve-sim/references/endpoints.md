@@ -67,7 +67,7 @@ mounts it at `/`. Prefix the paths below with that configured base.
 | `POST` | `/api/screenshot` | Still PNG of the selected simulator (`simctl io <udid> screenshot`). |
 | `GET` | `/api/event-log` | Recent normalized simulator input events. |
 | `GET` | `/api/event-log/events` | SSE event-log updates. |
-| `GET` | `/logs` | Simulator console log (NDJSON). SSE by default, replaying the buffered backlog before live lines; JSON on `Accept: application/json` or `?snapshot`. The preview subscribes locally by default; remote previews require `?logs=1`. |
+| `GET` | `/logs` | Simulator console log (NDJSON). SSE by default, replaying the buffered backlog before live lines; JSON on `Accept: application/json` or `?snapshot`. Requires the bearer token. The preview's Logs drawer polls the JSON form; the browser console dump is opt in with `?logs=1` on the preview URL. |
 | `GET` | `/ax` | SSE accessibility snapshots. |
 | `POST` | `/exec` | Host command execution; requires JSON, same-origin checks, and bearer token. |
 | `GET` | `/appstate` | Frontmost-app event stream. |
@@ -93,10 +93,11 @@ history rather than only what happens next.
 
 | Param | Effect |
 |---|---|
-| `?snapshot` | Return JSON instead of SSE. `?snapshot=0` keeps SSE. |
+| `?snapshot` | Return JSON instead of SSE. `?snapshot=0` keeps SSE even when the request accepts JSON. |
 | `?since=<seq>` | Only lines after that cursor. Compare against `oldestSeq` to detect a gap. |
 | `?limit=<n>` | At most `n` lines, keeping the newest. |
 | `?envelope` | Wrap each SSE frame as `{seq, at, raw}` so a stream reader can track its cursor. Default frames are the bare line, which is already JSON. |
+| `?follow` | Start the device tail if it is not already running, and keep it running between polls. Without it a snapshot reads whatever is buffered and reports `status: "stopped"` when nothing is. |
 
 The JSON body carries `lines`, `latestSeq`, `oldestSeq`, `bufferedBytes`,
 `status` (`streaming` / `restarting` / `stopped`), and `streamError`.

@@ -104,6 +104,11 @@ export function webrtcSessionStatsUrl(statsUrl: string, sessionId: string): stri
   return url.toString();
 }
 
+export function simAuthHeaders(): Record<string, string> {
+  const token = window.__SIM_PREVIEW__?.execToken;
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 export function simEndpoint(path: string): string {
   // When __SIM_PREVIEW__ is injected we have the canonical base path. Without
   // it (BootEmptyState — no helper running yet) the page is still being served
