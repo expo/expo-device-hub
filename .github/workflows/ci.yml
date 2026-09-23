@@ -19,8 +19,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -42,8 +40,9 @@ jobs:
       - name: Build packages (excluding serve-sim)
         run: bun run build --filter='!@expo/serve-sim' --only
 
-      - name: Typecheck (excluding serve-sim)
-        run: bunx turbo run typecheck --filter='!@expo/serve-sim' --only
+      # --only skips the native serve-sim build; its typecheck only needs sources.
+      - name: Typecheck
+        run: bunx turbo run typecheck --only
 
       - name: Test
         run: bun run test
@@ -79,8 +78,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
-        with:
-          submodules: recursive
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
