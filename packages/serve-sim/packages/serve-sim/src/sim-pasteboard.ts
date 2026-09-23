@@ -6,7 +6,8 @@ import { setTimeout as sleep } from "timers/promises";
 import type { CapabilityDefinition } from "./capabilities";
 import { debugPasteboard } from "./debug";
 import { frontmostAppOf } from "./foreground-tracker";
-import { setCapabilityEnabled } from "./launch-manager";
+import { devicesArmedHere, releaseSessionSync, setCapabilityEnabled } from "./launch-manager";
+import { readLaunchState } from "./launch-state";
 import { dirnameOf } from "./runtime";
 import { simctl, simctlRaw } from "./simctl";
 
@@ -150,10 +151,48 @@ async function readPasteboardOnce(udid: string): Promise<PasteboardReadResult> {
   );
 }
 
+let releaseHookInstalled = false;
+
+/**
+ * `simMiddleware` inside someone else's dev server has no session lifecycle, so enabling the
+ * capability from a copy would leave the loader armed for every app the simulator starts
+ * afterwards. The CLI disarms from its own exit path; this covers the embedded host.
+ */
+function releaseArmedDevicesOnExit(): void {
+  if (releaseHookInstalled) return;
+  releaseHookInstalled = true;
+  process.once("exit", () => {
+    for (const udid of devicesArmedHere()) {
+      try {
+        releaseSessionSync(udid, process.pid, () => {});
+      } catch (error) {
+        console.error(
+          `Could not disarm the capability loader on ${udid}; clear it with: xcrun simctl spawn ` +
+            `${udid} launchctl unsetenv DYLD_INSERT_LIBRARIES ` +
+            `(${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
+    }
+  });
+}
+
+/**
+ * The app to ask for the pasteboard. The frontmost app when one is known, otherwise the app
+ * this session launched: a browser-driven headless host has no focused Simulator window for
+ * the AX bridge, and a tracker that started after the app did has seen no transition yet.
+ */
+export function pasteboardTarget(
+  frontmost: { bundleId: string } | null,
+  launched: string | null,
+): string | null {
+  if (frontmost && frontmost.bundleId !== SPRINGBOARD_BUNDLE) return frontmost.bundleId;
+  return launched && launched !== SPRINGBOARD_BUNDLE ? launched : null;
+}
+
 async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult | null> {
   const frontmost = await frontmostAppOf(udid);
-  if (!frontmost || frontmost.bundleId === SPRINGBOARD_BUNDLE) return null;
-  const bundleId = frontmost.bundleId;
+  const bundleId = pasteboardTarget(frontmost, readLaunchState(udid)?.bundleId ?? null);
+  if (!bundleId) return null;
 
   // System apps like Settings have no data container: get_app_container exits 0
   // and prints "(null)". There is nowhere to exchange files, so relaunching the
@@ -161,6 +200,7 @@ async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult
   const container = await simctl(["get_app_container", udid, bundleId, "data"]);
   if (!isContainerPath(container)) return null;
   // A denied read and an empty pasteboard both produce an empty string, so grant first.
+  releaseArmedDevicesOnExit();
   await setCapabilityEnabled(udid, clipboardCapability, {
     bundleId,
     enabled: true,

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, promises as fs, readdirSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { clipboardCapability, requestInjectedPasteboard } from "../sim-pasteboard";
+import { clipboardCapability, pasteboardTarget, requestInjectedPasteboard } from "../sim-pasteboard";
 
 function container(): string {
   return mkdtempSync(join(tmpdir(), "serve-sim-pasteboard-"));
@@ -88,5 +88,28 @@ describe("requestInjectedPasteboard", () => {
     expect(await requestInjectedPasteboard(root, 200)).toBeNull();
     const { request } = paths(root);
     expect(await fs.readFile(request, "utf-8").catch(() => null)).toBeNull();
+  });
+});
+
+describe("pasteboardTarget", () => {
+  test("asks the frontmost app", () => {
+    expect(pasteboardTarget({ bundleId: "dev.expo.App" }, "host.exp.Exponent")).toBe("dev.expo.App");
+  });
+
+  /// A browser-driven headless host has no focused Simulator window for the AX bridge, and a
+  /// cold tracker has seen no transition yet, so the first read would otherwise fail.
+  test("falls back to the app this session launched when nothing is frontmost", () => {
+    expect(pasteboardTarget(null, "host.exp.Exponent")).toBe("host.exp.Exponent");
+  });
+
+  test("falls back when SpringBoard is frontmost", () => {
+    expect(pasteboardTarget({ bundleId: "com.apple.springboard" }, "host.exp.Exponent")).toBe(
+      "host.exp.Exponent",
+    );
+  });
+
+  test("has nothing to ask when no app is known", () => {
+    expect(pasteboardTarget(null, null)).toBeNull();
+    expect(pasteboardTarget({ bundleId: "com.apple.springboard" }, null)).toBeNull();
   });
 });

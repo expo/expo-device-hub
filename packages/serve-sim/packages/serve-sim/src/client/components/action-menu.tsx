@@ -27,6 +27,7 @@ export function ActionMenu({
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const popupRef = useRef<HTMLDivElement | null>(null);
   const [pos, setPos] = useState<{ bottom: number; left: number } | null>(null);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
 
   useLayoutEffect(() => {
     if (!open) return;
@@ -34,6 +35,17 @@ export function ActionMenu({
     if (!rect) return;
     setPos({ bottom: window.innerHeight - rect.top + MENU_GAP, left: rect.left + rect.width / 2 });
   }, [open]);
+
+  // The popup only renders once its position is measured, so wait for that render.
+  useEffect(() => {
+    if (!open || !pos) return;
+    itemRefs.current[0]?.focus();
+  }, [open, pos]);
+
+  const close = (restoreFocus: boolean) => {
+    setOpen(false);
+    if (restoreFocus) triggerRef.current?.focus();
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -43,7 +55,7 @@ export function ActionMenu({
       setOpen(false);
     };
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") close(true);
     };
     window.addEventListener("pointerdown", onPointerDown, true);
     window.addEventListener("keydown", onKey);
@@ -69,18 +81,31 @@ export function ActionMenu({
             <div
               ref={popupRef}
               role="menu"
+              aria-orientation="vertical"
+              onKeyDown={(event) => {
+                if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+                event.preventDefault();
+                const buttons = itemRefs.current.filter((node): node is HTMLButtonElement => node != null);
+                if (buttons.length === 0) return;
+                const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+                const step = event.key === "ArrowDown" ? 1 : -1;
+                buttons[(at + step + buttons.length) % buttons.length]?.focus();
+              }}
               data-testid="action-menu"
               className="fixed z-50 -translate-x-1/2 min-w-[196px] p-1 bg-panel border border-white/12 rounded-lg shadow-[0_8px_24px_rgba(0,0,0,0.45)] text-white/90 text-[12px] font-mono"
               style={{ bottom: pos.bottom, left: pos.left }}
             >
-              {items.map((item) => (
+              {items.map((item, index) => (
                 <button
                   key={item.label}
+                  ref={(node) => {
+                    itemRefs.current[index] = node;
+                  }}
                   type="button"
                   role="menuitem"
                   className="block w-full text-left px-2 py-2 rounded hover:bg-white/10 active:bg-white/15"
                   onClick={() => {
-                    setOpen(false);
+                    close(true);
                     item.onSelect();
                   }}
                 >
