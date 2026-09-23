@@ -3,6 +3,9 @@ import { describe, expect, test } from 'bun:test';
 import {
   dashboardUrlWithToken,
   mintAccessToken,
+  originMatches,
+  upgradeHeadersForAllowedOrigin,
+  upgradeHeadersForMiddleware,
   upgradeHeadersWithSubprotocolToken,
 } from '../access-token';
 
@@ -71,5 +74,89 @@ describe('upgradeHeadersWithSubprotocolToken', () => {
     const original = new Headers({ 'sec-websocket-protocol': 'serve-sim.token.secret' });
     upgradeHeadersWithSubprotocolToken(original);
     expect(original.has('authorization')).toBe(false);
+  });
+});
+
+describe('originMatches', () => {
+  test('matches an exact origin, ignoring default ports and case', () => {
+    expect(originMatches('https://expo.dev', new URL('https://expo.dev'))).toBe(true);
+    expect(originMatches('https://expo.dev:443/', new URL('https://EXPO.dev'))).toBe(true);
+    expect(originMatches('http://localhost:34568', new URL('http://localhost:34568'))).toBe(true);
+    expect(originMatches('http://localhost:34568', new URL('http://localhost:34567'))).toBe(false);
+  });
+
+  test('a wildcard covers subdomains only, with the same scheme and port', () => {
+    expect(originMatches('https://*.expo.dev', new URL('https://pr-1.expo.dev'))).toBe(true);
+    expect(originMatches('https://*.expo.dev', new URL('https://expo.dev'))).toBe(false);
+    expect(originMatches('https://*.expo.dev', new URL('http://pr-1.expo.dev'))).toBe(false);
+    expect(originMatches('https://*.com', new URL('https://evil.com'))).toBe(false);
+  });
+
+  test('refuses non-web and malformed values', () => {
+    expect(originMatches('not a url', new URL('https://expo.dev'))).toBe(false);
+    expect(originMatches('chrome-extension://abc', new URL('chrome-extension://abc'))).toBe(false);
+  });
+});
+
+describe('upgradeHeadersForAllowedOrigin', () => {
+  const hub = 'http://localhost:34567/vendor/serve-sim/exec-ws';
+
+  test('rewrites an allow-listed cross-origin Origin to the Hub origin', () => {
+    const headers = upgradeHeadersForAllowedOrigin(
+      new Headers({ origin: 'http://localhost:34568' }),
+      hub,
+      ['http://localhost:34568'],
+    );
+    expect(headers.get('origin')).toBe('http://localhost:34567');
+  });
+
+  test('accepts the same wildcard shapes as --cors-origin', () => {
+    const headers = upgradeHeadersForAllowedOrigin(
+      new Headers({ origin: 'https://pr-9.expo.dev' }),
+      'https://hub.example.test/vendor/serve-sim/exec-ws',
+      ['https://*.expo.dev'],
+    );
+    expect(headers.get('origin')).toBe('https://hub.example.test');
+  });
+
+  test('leaves a same-host, unlisted, missing, or malformed Origin as sent', () => {
+    expect(
+      upgradeHeadersForAllowedOrigin(new Headers({ origin: 'http://localhost:34567' }), hub, [
+        'http://localhost:34568',
+      ]).get('origin'),
+    ).toBe('http://localhost:34567');
+    expect(
+      upgradeHeadersForAllowedOrigin(new Headers({ origin: 'http://evil.test' }), hub, [
+        'http://localhost:34568',
+      ]).get('origin'),
+    ).toBe('http://evil.test');
+    expect(
+      upgradeHeadersForAllowedOrigin(new Headers({ origin: 'http://localhost:34568' }), hub, []).get(
+        'origin',
+      ),
+    ).toBe('http://localhost:34568');
+    expect(upgradeHeadersForAllowedOrigin(new Headers(), hub, ['http://x.test']).has('origin')).toBe(
+      false,
+    );
+    expect(
+      upgradeHeadersForAllowedOrigin(new Headers({ origin: 'null' }), hub, ['http://x.test']).get(
+        'origin',
+      ),
+    ).toBe('null');
+  });
+});
+
+describe('upgradeHeadersForMiddleware', () => {
+  test('applies both the token bridge and the origin allow list', () => {
+    const headers = upgradeHeadersForMiddleware(
+      new Headers({
+        origin: 'http://localhost:34568',
+        'sec-websocket-protocol': 'serve-sim.token.secret',
+      }),
+      'http://localhost:34567/vendor/serve-sim/exec-ws',
+      ['http://localhost:34568'],
+    );
+    expect(headers.get('authorization')).toBe('Bearer secret');
+    expect(headers.get('origin')).toBe('http://localhost:34567');
   });
 });

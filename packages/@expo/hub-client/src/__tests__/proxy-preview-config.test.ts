@@ -1,6 +1,27 @@
 import { describe, expect, test } from 'bun:test';
 
-import { proxyPreviewConfigForBrowser } from '../proxy-preview-config';
+import { locationForBaseUrl, proxyPreviewConfigForBrowser } from '../proxy-preview-config';
+
+describe('locationForBaseUrl', () => {
+  const page = { protocol: 'https:', host: 'app.example.test' };
+
+  test('takes host and scheme from an absolute Hub URL, including a port', () => {
+    expect(locationForBaseUrl('http://localhost:3400/vendor/serve-sim', page)).toEqual({
+      protocol: 'http:',
+      host: 'localhost:3400',
+    });
+    expect(locationForBaseUrl('https://hub.example.test/hub/vendor/serve-sim/', page)).toEqual({
+      protocol: 'https:',
+      host: 'hub.example.test',
+    });
+  });
+
+  test('falls back to the page for a relative or non-web base URL', () => {
+    expect(locationForBaseUrl('/vendor/serve-sim', page)).toBe(page);
+    expect(locationForBaseUrl('', page)).toBe(page);
+    expect(locationForBaseUrl('file:///hub', page)).toBe(page);
+  });
+});
 
 const baseConfig = {
   pid: 101,

@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 // @ts-ignore vendored module, absent until `bun run build:vendor`
 import { simMiddleware } from '../../vendor/serve-sim/dist/middleware.js';
 
-import { upgradeHeadersWithSubprotocolToken } from './access-token';
+import { upgradeHeadersForMiddleware } from './access-token';
 import { MOUNT_PATH } from './mount';
 import {
   readStandaloneServeSimOptions,
@@ -53,11 +53,15 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
 // client names the token as the `serve-sim.token.<token>` subprotocol instead
 // (expo/serve-sim#173); it is copied into the bearer header here so the
 // middleware checks it. The middleware, not this bridge, decides if it is right.
+// The exec handler also refuses a cross-origin `Origin`; one the operator
+// allowed (`--metrics-cors-origin`, serve-sim's `corsOrigins`) is admitted here.
+const allowedUpgradeOrigins = standaloneOptions.metricsCorsOrigins ?? [];
 export const simWebSocketHandler = (socket: { close(): void }, request: Request): void => {
   const url = new URL(request.url);
-  const rewritten = new Request(`${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`, {
+  const rewrittenUrl = `${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`;
+  const rewritten = new Request(rewrittenUrl, {
     method: request.method,
-    headers: upgradeHeadersWithSubprotocolToken(request.headers),
+    headers: upgradeHeadersForMiddleware(request.headers, rewrittenUrl, allowedUpgradeOrigins),
   });
   const handled = middleware.handleWebSocket?.(rewritten, socket);
   if (!handled) socket.close();

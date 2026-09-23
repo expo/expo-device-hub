@@ -88,7 +88,7 @@ import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { createPacedKeySender } from './paced-key-sender';
-import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
+import { locationForBaseUrl, proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
 import { useAccessibility } from './useAccessibility';
@@ -585,7 +585,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }`;
 
     const toMiddleware = (rawConfig: PreviewApi): ResolvedConfig => {
-      const c = proxyPreviewConfigForBrowser(rawConfig, window.location);
+      // Anchor proxied helper URLs on the Hub's origin, not the page's: a
+      // consumer on another origin must still stream from the Hub.
+      const c = proxyPreviewConfigForBrowser(
+        rawConfig,
+        locationForBaseUrl(baseUrl, window.location),
+      );
       const basePath = c.basePath ?? '';
       const absoluteMiddlewareUrl = (path?: string): string | null =>
         path ? new URL(path, baseUrl).toString() : null;

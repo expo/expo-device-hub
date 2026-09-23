@@ -186,3 +186,49 @@ test('opens plain sockets and clean URLs without a token', async () => {
   ]);
   expect(Source.opened).toEqual(['https://hub.test/vendor/serve-sim/appstate?device=device-1']);
 });
+
+test('a consumer on another origin still streams from the Hub, not from its own page', async () => {
+  stubBrowser();
+  // The page lives on app.test; the Hub (and its proxied helpers) on hub.test.
+  (globalThis as any).window.location = {
+    origin: 'https://app.test',
+    host: 'app.test',
+    protocol: 'https:',
+    href: 'https://app.test/devices',
+  };
+  const requests: string[] = [];
+  stubGlobal('fetch', async (url: string) => {
+    requests.push(url.replace(/token=[^&]+/, 'token=<t>'));
+    if (new URL(url).pathname.endsWith('/api')) {
+      return Response.json({
+        url: 'http://127.0.0.1:0/vendor/serve-sim/helper/device-1',
+        wsUrl: 'ws://127.0.0.1:0/vendor/serve-sim/helper/device-1/ws',
+        device: 'device-1',
+        basePath: '/vendor/serve-sim',
+        appStateEndpoint: '/vendor/serve-sim/appstate?device=device-1',
+        streamSettingsEndpoint: 'http://127.0.0.1:0/stream-settings',
+        proxyHelpers: true,
+      });
+    }
+    return Response.json({ devices: [] });
+  });
+
+  const read = renderClient(TOKEN);
+  await act(async () => {
+    read();
+  });
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  const hid = Socket.opened.find((s) => s.url.includes('/helper/ws'));
+  expect(hid?.url).toBe('wss://hub.test/vendor/serve-sim/helper/ws?device=device-1');
+  expect(hid?.protocols).toEqual([`serve-sim.token.${TOKEN}`]);
+  expect(requests).toContain(
+    'https://hub.test/vendor/serve-sim/helper/device-1/stream-settings',
+  );
+  // Nothing, and in particular no token, went to the page's own origin.
+  expect(requests.some((url) => url.startsWith('https://app.test'))).toBe(false);
+  expect(Socket.opened.some((s) => s.url.includes('app.test'))).toBe(false);
+  expect(Source.opened.some((url) => url.includes('app.test'))).toBe(false);
+});

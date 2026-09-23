@@ -84,7 +84,8 @@ describe('WebRTC offer negotiation', () => {
 
 describe('WebRTC signaling with a serve-sim access token', () => {
   test('sends the offer with a bearer', async () => {
-    let authorization: string | null = null;
+    // Captured in an object: TypeScript narrows a `let` assigned inside the callback to null.
+    const seen = { authorization: null as string | null };
     await postWebRtcOffer({
       url: 'https://example.test/webrtc/offer',
       body: '{}',
@@ -93,25 +94,26 @@ describe('WebRTC signaling with a serve-sim access token', () => {
       busyRetryIntervalMs: 0,
       busyRetryCount: 0,
       fetchImpl: async (_url, init) => {
-        authorization = new Headers(init?.headers).get('authorization');
+        seen.authorization = new Headers(init?.headers).get('authorization');
         return new Response(null, { status: 200 });
       },
     });
-    expect(authorization).toBe('Bearer secret');
+    expect(seen.authorization).toBe('Bearer secret');
   });
 
   test('closes with a bearer, or with the token in the beacon query', async () => {
-    let authorization: string | null = null;
+    // Captured in an object: TypeScript narrows a `let` assigned inside the callback to null.
+    const seen = { authorization: null as string | null };
     await closeWebRtcSession({
       url: 'https://example.test/webrtc/close',
       sessionId: 'session',
       accessToken: 'secret',
       fetchImpl: async (_url, init) => {
-        authorization = new Headers(init?.headers).get('authorization');
+        seen.authorization = new Headers(init?.headers).get('authorization');
         return new Response(null, { status: 200 });
       },
     });
-    expect(authorization).toBe('Bearer secret');
+    expect(seen.authorization).toBe('Bearer secret');
 
     const beacons: string[] = [];
     await closeWebRtcSession({

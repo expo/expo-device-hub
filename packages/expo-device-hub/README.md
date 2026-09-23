@@ -82,9 +82,11 @@ subprotocol on the input and exec sockets, and as `?token=` on the MJPEG stream 
 foreground-app event stream, which cannot set a header. A request without the token gets a
 401 and the dashboard reports it.
 
-Another origin that embeds `@expo/hub-client` passes the same token as `accessToken`. This is
-iOS only for now: serve-emu has no token gate yet, so the Android routes stay open and the
-Hub's own device-list API is not gated either.
+Another origin that embeds `@expo/hub-client` passes the same token as `accessToken` and
+must be allowed on the Hub with `--metrics-cors-origin <origin>` (repeatable, accepts
+`https://*.example.com`). That flag opens the HTTP routes cross-origin and lets the page open
+the exec socket. This is iOS only for now: serve-emu has no token gate yet, so the Android
+routes stay open and the Hub's own device-list API is not gated either.
 
 ### Record an Android session
 

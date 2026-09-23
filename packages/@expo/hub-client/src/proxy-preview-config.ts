@@ -11,6 +11,22 @@ export interface ProxyPreviewConfig {
 type LocationLike = Pick<Location, 'host' | 'protocol'>;
 
 /**
+ * Where the proxied helper URLs must point: the origin the middleware was
+ * reached on. serve-sim's own UI uses `window.location`, because serve-sim
+ * serves that page itself. A hub-client consumer may run on another origin
+ * (a hosted dashboard with an `accessToken`), and its helper requests still
+ * have to go to the Hub, not to the page's own host. A relative `baseUrl`
+ * means same-origin, so the page's location is right in that case.
+ */
+export function locationForBaseUrl(baseUrl: string, fallback: LocationLike): LocationLike {
+  try {
+    const { host, protocol } = new URL(baseUrl);
+    if (host && (protocol === 'http:' || protocol === 'https:')) return { host, protocol };
+  } catch {}
+  return fallback;
+}
+
+/**
  * Re-anchor the helper URLs in a middleware `/api` config to the browser's own
  * origin, mirroring serve-sim's `utils/preview-config.ts`. Only applies when the
  * server opted into same-origin proxying (`proxyHelpers`); otherwise the config
