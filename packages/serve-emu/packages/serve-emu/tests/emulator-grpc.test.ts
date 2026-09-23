@@ -1,5 +1,7 @@
 import http2 from "node:http2";
 import type { ServerHttp2Stream } from "node:http2";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   decodeEmulatorImage,
@@ -168,6 +170,20 @@ describe("gRPC message framing", () => {
 });
 
 describe("emulator gRPC discovery", () => {
+  test("finds a token-bearing discovery file in the process temp directory", () => {
+    const file = join(tmpdir(), "avd", "running", "pid_1.ini");
+    const endpoint = findEmulatorGrpcEndpoint("emulator-5554", {
+      readDirectory: () => ["pid_1.ini"],
+      processIsAlive: () => true,
+      readText: (path) => {
+        if (path !== file) throw new Error("not the process temp directory");
+        return "port.serial=5554\ngrpc.port=8554\ngrpc.token=discovered-token";
+      },
+      modifiedMs: () => 1,
+    });
+    expect(endpoint).toEqual({ port: 8554, token: "discovered-token", avdName: null });
+  });
+
   test("parses active and newly started endpoint output", () => {
     expect(parseEmulatorGrpcPort('OK: { "port": "8554" }')).toBe(8554);
     expect(
