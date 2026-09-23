@@ -1,11 +1,13 @@
 # Releasing
 
-This monorepo publishes two public packages:
+This monorepo publishes three public packages:
 
 - **`expo-device-hub`** — the DevTools plugin.
 - **`@expo/hub-client`** — the device-client hooks and the `DeviceScreen` component.
+- **`@expo/serve-sim`** — the iOS simulator server in `packages/serve-sim/packages/serve-sim`.
 
-Every other workspace package is marked `private` and is skipped by the release tooling.
+Every other workspace package is marked `private` or listed in `.changeset/config.json` `ignore`,
+and is skipped by the release tooling.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): the version
 bump and changelog for each package are computed from the `.changeset/*.md` entries that have
@@ -24,7 +26,7 @@ Any change that should ship needs a changeset. From the repo root:
 bun changeset
 ```
 
-Select the package(s) you changed (`expo-device-hub` and/or `@expo/hub-client`), choose the
+Select the package(s) you changed (`expo-device-hub`, `@expo/hub-client`, `@expo/serve-sim`), choose the
 bump level (`patch` / `minor` / `major`), and write a summary. Changes to private workspace
 packages that ship inside `expo-device-hub` belong in the `expo-device-hub` changeset. Commit
 the generated `.changeset/*.md` file with your PR. Multiple PRs accumulate multiple changesets —
