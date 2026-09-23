@@ -310,7 +310,9 @@ actor CaptureEngine {
                 pollTicks: poll.ticks,
                 pollLateSumMs: Double(poll.lateSumNs) / 1_000_000
             ),
-            encoder: webRTCPublisher?.encoderIdentity()
+            encoder: webRTCPublisher?.encoderIdentity(
+                liveCodecs: sessions.filter(\.connected).compactMap(\.codec)
+            )
         ))
         return String(decoding: data, as: UTF8.self)
     }

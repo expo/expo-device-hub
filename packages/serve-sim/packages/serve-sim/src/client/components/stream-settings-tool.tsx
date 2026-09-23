@@ -94,6 +94,14 @@ export function StreamSettingsTool({
     webrtcStatsUrl !== undefined && peerConnection !== null && webrtcSessionId != null,
   );
   const sender = senderView.session;
+  /// `activeCodec` is the picker's setting; the answer can land on a different codec. Read
+  /// past `stale`, or the label reverts to the request exactly when a stream stops and the
+  /// user opens the panel to find out why.
+  const negotiatedCodec = senderView.session?.codec;
+  const negotiatedCodecLabel =
+    settings.transport === "webrtc" && negotiatedCodec
+      ? `webrtc/${negotiatedCodec}`
+      : activeCodec;
   const faults = stats === null || stale ? [] : describeFaults(stats, sender);
   const warning = stale ? "Stream samples have stopped" : faults.join("; ");
   const summary = stats === null ? null : summariseStream(stats);
@@ -115,7 +123,7 @@ export function StreamSettingsTool({
             {!open && summary !== null ? (
               <span className="text-[11px] text-white/40 tabular-nums">{summary}</span>
             ) : (
-              <span className="text-[11px] text-white/40 uppercase">{activeCodec}</span>
+              <span className="text-[11px] text-white/40 uppercase">{negotiatedCodecLabel}</span>
             )}
             {(faults.length > 0 || stale) && (
               <span
@@ -141,7 +149,9 @@ export function StreamSettingsTool({
           faults={faults}
           sender={sender}
           capture={senderView.captureWindow}
+          encoder={senderView.encoder}
           requestedFps={settings.h264Fps}
+          selectedMaxDimension={settings.maxDimension}
           stale={stale || senderView.stale}
           action={
             <StreamStatsDownload
@@ -151,6 +161,7 @@ export function StreamSettingsTool({
                 codec: stats?.codec,
                 sender,
                 capture: senderView.capture,
+                encoder: senderView.encoder,
               }}
             />
           }

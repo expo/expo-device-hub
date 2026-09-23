@@ -213,7 +213,6 @@ the simulator's single synthetic touch surface.
   with the number of connected peers.
 - There is no configured WebRTC peer limit or cross-viewer control arbitration.
 - No automatic fallback from unreachable WebRTC media to HTTP video.
-- Codec configuration describes a preference, not the negotiated sender codec.
 - H.264 encode size is bounded by the negotiated level's frame size. A peer that
   advertises Level 3.1 is scaled to fit, and an explicit `--max-dimension` is clamped the
   same way, because exceeding the level yields no picture rather than a bigger one.
@@ -223,6 +222,10 @@ the simulator's single synthetic touch surface.
 - Raising the posted offer's level moves the bound rather than removing it: a peer is still
   clamped to the level the answer settles for the chosen payload. With level asymmetry, as
   browsers offer, that is the offer's level.
+- The level itself is not reported; the stats carry the source size and the ceiling applied
+  to it, which is what the panel names the downscale from.
+- The encode settings are session-wide, so a second viewer's picker can read higher than the
+  size the session is actually running. The panel names the runtime cause, never that setting.
 - Signaling URLs are derived from the MJPEG URL rather than advertised directly.
 - Encoder resolution, frame rate, and target bitrate are shared across viewers;
   one viewer changing them affects every peer attached to that simulator.
@@ -330,7 +333,7 @@ to HTTP when the network cannot establish WebRTC media.
 
 - Extract browser transport state from the main preview component.
 - Extract a TypeScript `WebRtcSessionManager` from `DeviceSession`.
-- Report actual negotiated codec and structured connection state.
+- Report structured connection state.
 - Add a proactive simulator shutdown signal that closes every media transport.
 - Add a real macOS WebRTC integration test for VP8, two live viewers, and
   independent peer cleanup.

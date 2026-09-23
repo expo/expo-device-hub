@@ -81,6 +81,7 @@ const sender = {
   totalEncodeMs: 240, encodeMsPerFrame: 2.4, width: 589, height: 1280,
   packetsSent: 900, packetsLost: 0, lossRatio: 0, roundTripMs: 20,
   path: "direct" as const, sourceFrames: 120, sourceFps: 30, sourceFramesDropped: 0,
+  sourceLongEdge: 2622, levelMaxLongEdge: 0,
 };
 
 describe("describeFaults", () => {
@@ -128,9 +129,11 @@ describe("describeFaults", () => {
       .toEqual(["Encoder cannot keep up (CPU)"]);
   });
 
-  test("blames the network, not the encoder, when bandwidth is the limit", () => {
+  /// A stream can be bitrate-limited with no packet loss at all, so this never reads as a
+  /// network fault.
+  test("names the bitrate, not the network, when bandwidth is the limit", () => {
     expect(describeFaults(stats(), { ...sender, qualityLimitationReason: "bandwidth" }))
-      .toEqual(["Bitrate reduced by the network"]);
+      .toEqual(["Quality reduced to fit the bitrate"]);
   });
 
   test("keeps an unfamiliar reason code out of the UI", () => {
@@ -258,6 +261,63 @@ describe("StreamStatsBody", () => {
       <StreamStatsBody stats={stats({ path: "unknown" })} history={[stats()]} faults={describeFaults(stats({ path: "unknown" }))} />,
     );
     expect(row(markup, "ICE route")).toBeNull();
+  });
+
+  test("shows the negotiated sender codec in diagnostics", () => {
+    const markup = renderToStaticMarkup(
+      <StreamStatsBody stats={stats()} history={[stats()]} faults={[]} sender={sender} />,
+    );
+    expect(row(markup, "Codec")).toBe("vp8");
+  });
+
+  /// The row renders only when the panel is handed an encoder, so this pins the wiring.
+  test("names the live encoder when the session reports one", () => {
+    const markup = renderToStaticMarkup(
+      <StreamStatsBody
+        stats={stats()}
+        history={[stats()]}
+        faults={[]}
+        sender={sender}
+        encoder={{ id: null, hardware: false, codec: "VP8", probe: false }}
+      />,
+    );
+    expect(row(markup, "Encoder")).toBe("vp8 (CPU)");
+  });
+
+  /// A 64x64 test session cannot show what the live sender uses, so the row says what it is.
+  test("labels an H.264 encoder answer as a probe", () => {
+    const markup = renderToStaticMarkup(
+      <StreamStatsBody
+        stats={stats()}
+        history={[stats()]}
+        faults={[]}
+        sender={sender}
+        encoder={{ id: "paravirtualized:com.apple.videotoolbox.videoencoder.ave.avc", hardware: true, codec: "H264", probe: true }}
+      />,
+    );
+    expect(row(markup, "Encoder probe")).toBe("paravirt avc (hardware)");
+    expect(row(markup, "Encoder")).toBeNull();
+    expect(help(markup, "Encoder probe")).toContain("not this stream");
+  });
+
+  test("omits the encoder row when the session reports none", () => {
+    const markup = renderToStaticMarkup(
+      <StreamStatsBody stats={stats()} history={[stats()]} faults={[]} sender={sender} />,
+    );
+    expect(row(markup, "Encoder")).toBeNull();
+  });
+
+  test("names the size in force when the encode lands under the pick", () => {
+    const markup = renderToStaticMarkup(
+      <StreamStatsBody
+        stats={stats()}
+        history={[stats()]}
+        faults={[]}
+        sender={{ ...sender, width: 651, height: 1416, levelMaxLongEdge: 1416 }}
+        selectedMaxDimension={1920}
+      />,
+    );
+    expect(row(markup, "Scaled")).toBe("1416 of 1920 (codec level)");
   });
 
   test("shows the sender's encode cost with the other secondary values", () => {
