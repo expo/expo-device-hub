@@ -1,0 +1,96 @@
+name: Release @expo/serve-sim
+
+run-name: Release @expo/serve-sim (${{ inputs.bump }}) by @${{ github.triggering_actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: SemVer component to bump
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+
+# Only one release may calculate and publish the next version at a time.
+concurrency:
+  group: release-expo-serve-sim
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Release
+    if: github.repository == 'expo/serve-sim' && github.ref == 'refs/heads/expo'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: npm-release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - name: Checkout expo
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          ref: expo
+          fetch-depth: 2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Create release commit
+        id: release
+        env:
+          BUMP: ${{ inputs.bump }}
+          DISPATCH_SHA: ${{ github.sha }}
+          RELEASE_RUN_ID: ${{ github.run_id }}
+        run: |
+          LAST_RUN_ID=$(git log -1 --format='%(trailers:key=Release-Run,valueonly)')
+          if [ "$LAST_RUN_ID" = "$RELEASE_RUN_ID" ] && [ "$(git rev-parse HEAD^)" = "$DISPATCH_SHA" ]; then
+            echo "Reusing the release commit created by this run."
+          elif [ "$(git rev-parse HEAD)" != "$DISPATCH_SHA" ]; then
+            echo "::error::expo moved after this release was started. Start a new release from the latest expo."
+            exit 1
+          else
+            npm version "$BUMP" --no-git-tag-version --no-package-lock --no-workspaces-update --workspace packages/serve-sim
+            VERSION=$(node -p "require('./packages/serve-sim/package.json').version")
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add packages/serve-sim/package.json
+            git commit -m "Release @expo/serve-sim $VERSION" -m "Release-Run: $RELEASE_RUN_ID"
+            git tag "@expo/serve-sim@$VERSION"
+            git push --atomic origin HEAD:expo "refs/tags/@expo/serve-sim@$VERSION"
+          fi
+
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build npm package with EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN }}
+        run: |
+          npx --yes eas-cli@latest workflow:run .eas/workflows/build-release.yml \
+            --ref "${{ steps.release.outputs.sha }}" \
+            --wait \
+            --non-interactive \
+            --json > /tmp/eas-workflow.json
+
+      - name: Download EAS artifact
+        run: |
+          ARTIFACT_URL=$(jq -er '
+            .jobs[]
+            | .turtleJobRun.artifacts[]?
+            | select(.name == "serve-sim-npm-package")
+            | .downloadUrl
+          ' /tmp/eas-workflow.json)
+          curl --fail --location "$ARTIFACT_URL" --output /tmp/serve-sim.tgz
+
+      - name: Publish to npm with OIDC
+        run: npm publish /tmp/serve-sim.tgz

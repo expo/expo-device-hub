@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "name": "serve-sim",
+    "slug": "serve-sim",
+    "owner": "expo",
+    "extra": {
+      "eas": {
+        "projectId": "ba780de8-b202-4d47-ba03-832008afedfd"
+      }
+    }
+  }
+}
