@@ -78,11 +78,12 @@ const android = useAndroidDeviceClient({
 });
 ```
 
-When embedding the iOS screen on another site, pass the public serve-sim URL that serves
-`/api` and `/helper` (including any mount path) as `baseUrl`, for example
-`https://sim.example.test/preview/session`. The proxied stream and input URLs then use
-that server even when the page has a different origin. An Expo simulator-preview page URL
-is a wrapper, not the serve-sim base URL.
+When embedding the iOS screen on another site, pass the public serve-sim mount that serves
+`/api` and `/helper` as `baseUrl`, for example `https://sim.example.test/preview/session`.
+The stream and input URLs then use that server. An EAS Simulator Preview link at
+`expo.dev/simulator-preview/...` opens Expo's viewer page; use the serve-sim server URL
+behind that page as `baseUrl`. If the whole Device Hub is remote, pass its public mount
+to `useActiveDeviceClient`, for example `https://hub.example.test/device-hub`.
 
 ## Call device controls
 

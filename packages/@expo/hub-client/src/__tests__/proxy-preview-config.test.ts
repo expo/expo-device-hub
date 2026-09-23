@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { proxyPreviewConfigForBrowser } from '../proxy-preview-config';
+import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from '../proxy-preview-config';
 
 const baseConfig = {
   pid: 101,
@@ -80,5 +80,36 @@ describe('proxyPreviewConfigForBrowser', () => {
     expect(
       proxyPreviewConfigForBrowser(direct, new URL('https://tunnel.example.test')),
     ).toBe(direct);
+  });
+});
+
+describe('middlewareEndpointForBrowser', () => {
+  const publicMount = new URL('https://stream.example.test:8443/preview/session/');
+
+  test('maps advertised middleware routes onto the public mount and keeps their query', () => {
+    expect(
+      middlewareEndpointForBrowser('/internal/logs?device=DEVICE%20A', publicMount, '/internal'),
+    ).toBe('https://stream.example.test:8443/preview/session/logs?device=DEVICE%20A');
+    expect(
+      middlewareEndpointForBrowser('http://127.0.0.1:3200/internal/ax?device=DEVICE-A', publicMount, '/internal'),
+    ).toBe('https://stream.example.test:8443/preview/session/ax?device=DEVICE-A');
+  });
+
+  test('maps routes from a root-mounted backend without duplicating the public prefix', () => {
+    expect(middlewareEndpointForBrowser('/grid/api', publicMount, '')).toBe(
+      'https://stream.example.test:8443/preview/session/grid/api',
+    );
+    expect(middlewareEndpointForBrowser('appstate?device=DEVICE-A', publicMount, '')).toBe(
+      'https://stream.example.test:8443/preview/session/appstate?device=DEVICE-A',
+    );
+    expect(middlewareEndpointForBrowser('/preview/session/grid/api', publicMount, '')).toBe(
+      'https://stream.example.test:8443/preview/session/grid/api',
+    );
+  });
+
+  test('keeps browser requests on the public server if an advertised path lacks the base prefix', () => {
+    expect(middlewareEndpointForBrowser('/ax?device=DEVICE-A', publicMount, '/internal')).toBe(
+      'https://stream.example.test:8443/preview/session/ax?device=DEVICE-A',
+    );
   });
 });
