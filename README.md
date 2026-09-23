@@ -76,14 +76,7 @@ This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://
 
 ## Getting started
 
-`packages/serve-sim` is a git submodule. Check it out first,
-or `bun install` fails with `listed in bun.lock but not on disk`:
-
-```sh
-bun run submodule:init   # git submodule update --init --recursive
-```
-
-Then install dependencies with Bun 1.3.14 and build every package once from the repo root:
+Install dependencies with Bun 1.3.14 and build every package once from the repo root:
 
 ```sh
 bun install
