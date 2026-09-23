@@ -207,10 +207,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   async function handleAddDevice(target: AddDeviceTarget): Promise<AddDeviceOutcome> {
     const result =
       target.kind === 'new'
-        ? await createDevice(target.device)
+        ? await createDevice(target.device, accessToken)
         : target.device.booted
           ? { id: target.device.id, error: null }
-          : await bootDevice(target.device);
+          : await bootDevice(target.device, accessToken);
 
     if (!result.id) {
       return { ok: false, error: result.error ?? 'The device did not come online.' };
@@ -243,12 +243,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   // UI. The device leaves the polled booted list within a tick, and the
   // selection effect re-selects the next device (or falls back to EmptyState).
   async function handleShutdown(device: Device) {
-    await shutdownDevice(device);
+    await shutdownDevice(device, accessToken);
     dismissDevice(device.id);
   }
 
   async function handleRemove(device: Device) {
-    await removeDevice(device);
+    await removeDevice(device, accessToken);
     dismissDevice(device.id);
   }
 

@@ -30,7 +30,21 @@ describe('readAccessTokenFromUrl', () => {
       token: null,
       cleanedUrl: 'http://localhost:3400/',
     });
-    expect(readAccessTokenFromUrl('http://localhost:3400/?token=').token).toBeNull();
+    expect(readAccessTokenFromUrl('http://localhost:3400/?token=')).toEqual({
+      token: null,
+      cleanedUrl: 'http://localhost:3400/',
+    });
+  });
+
+  test('cleans both token locations while preferring a nonempty query token', () => {
+    expect(readAccessTokenFromUrl('http://localhost:3400/?token=#token=abc&tab=logs')).toEqual({
+      token: 'abc',
+      cleanedUrl: 'http://localhost:3400/#tab=logs',
+    });
+    expect(readAccessTokenFromUrl('http://localhost:3400/?token=abc#token=other')).toEqual({
+      token: 'abc',
+      cleanedUrl: 'http://localhost:3400/',
+    });
   });
 });
 
@@ -58,6 +72,14 @@ function fakeWindow(href: string, stored: string | null = null) {
 }
 
 describe('dashboardAccessToken', () => {
+  test('removes empty token parameters even when falling back to storage', () => {
+    for (const suffix of ['?token=', '#token=', '?token=#token=']) {
+      const { win, replaced } = fakeWindow(`http://localhost:3400/${suffix}`, 'stored');
+      expect(dashboardAccessToken(win)).toBe('stored');
+      expect(replaced).toEqual(['http://localhost:3400/']);
+    }
+  });
+
   test('stores a URL token for the tab and drops it from the address bar', () => {
     const { win, storage, replaced } = fakeWindow('http://localhost:3400/?token=abc');
     expect(dashboardAccessToken(win)).toBe('abc');

@@ -17,11 +17,18 @@ const removeEndpoint = () => `${basePath()}/api/devices/remove`;
 const bootEndpoint = () => `${basePath()}/api/devices/boot`;
 const createEndpoint = () => `${basePath()}/api/devices/create`;
 
-async function postAction(endpoint: string, device: Device): Promise<boolean> {
+function actionHeaders(accessToken?: string | null): HeadersInit {
+  return {
+    'Content-Type': 'application/json', Accept: 'application/json',
+    ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+  };
+}
+
+async function postAction(endpoint: string, device: Device, accessToken?: string | null): Promise<boolean> {
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: actionHeaders(accessToken),
       // `id` is the udid (iOS) / serial (Android); `name` is the AVD name that
       // Android's `avdmanager delete avd` needs. The server ignores what it
       // doesn't use per platform.
@@ -38,13 +45,13 @@ async function postAction(endpoint: string, device: Device): Promise<boolean> {
 }
 
 /** Shut the given device down. Resolves to whether the server reported success. */
-export function shutdownDevice(device: Device): Promise<boolean> {
-  return postAction(shutdownEndpoint(), device);
+export function shutdownDevice(device: Device, accessToken?: string | null): Promise<boolean> {
+  return postAction(shutdownEndpoint(), device, accessToken);
 }
 
 /** Remove/delete the given device. Resolves to whether the server reported success. */
-export function removeDevice(device: Device): Promise<boolean> {
-  return postAction(removeEndpoint(), device);
+export function removeDevice(device: Device, accessToken?: string | null): Promise<boolean> {
+  return postAction(removeEndpoint(), device, accessToken);
 }
 
 /** Outcome of a create/boot call: exactly one of `id` and `error` is set. */
@@ -59,32 +66,33 @@ export interface StartDeviceOutcome {
  * Boot a shut-down simulator/emulator on the host, resolving to its iOS UDID or
  * Android adb serial once accepted/online. Never throws.
  */
-export async function bootDevice(device: Device): Promise<StartDeviceOutcome> {
+export async function bootDevice(device: Device, accessToken?: string | null): Promise<StartDeviceOutcome> {
   return postStartDevice(bootEndpoint(), {
     platform: device.platform,
     id: device.id,
     name: device.name,
-  });
+  }, accessToken);
 }
 
 /** Create and boot a new simulator/emulator from host toolchain identifiers. */
-export async function createDevice(device: NewDeviceRequest): Promise<StartDeviceOutcome> {
+export async function createDevice(device: NewDeviceRequest, accessToken?: string | null): Promise<StartDeviceOutcome> {
   return postStartDevice(createEndpoint(), {
     platform: device.platform,
     name: device.name,
     runtime: device.runtime,
     deviceType: device.deviceType,
-  });
+  }, accessToken);
 }
 
 async function postStartDevice(
   endpoint: string,
-  body: Record<string, string>
+  body: Record<string, string>,
+  accessToken?: string | null,
 ): Promise<StartDeviceOutcome> {
   try {
     const response = await fetch(endpoint, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      headers: actionHeaders(accessToken),
       body: JSON.stringify(body),
       // A cold emulator boot can take a couple of minutes.
       signal: AbortSignal.timeout(200_000),

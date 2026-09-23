@@ -435,9 +435,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         device: c.device,
         option: UI_OPTION_HARDWARE_KEYBOARD,
         value: connected ? 'on' : 'off',
-      }).catch(() => setHardwareKeyboardConnectedState(previous));
+      }, accessToken).catch(() => setHardwareKeyboardConnectedState(previous));
     },
-    [config, hardwareKeyboardConnected],
+    [config, hardwareKeyboardConnected, accessToken],
   );
 
   const toggleSoftwareKeyboard = useCallback(() => {
@@ -505,11 +505,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         device,
         option: key,
         value,
-      })
+      }, accessToken)
         .catch(async () => {
           if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
           try {
-            const result = await hostUiRequest(execWsUrl, execToken, { device });
+            const result = await hostUiRequest(execWsUrl, execToken, { device }, accessToken);
             if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
             const authoritative: DeviceSettings = {};
             for (const [nextKey, nextValue] of Object.entries(result.status ?? {})) {
@@ -535,7 +535,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [config],
+    [config, accessToken],
   );
 
   const setAppearance = useCallback(
@@ -982,9 +982,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     () =>
       execWsUrl && execToken
         ? (action: string, params?: Parameters<typeof runHostAction>[3]) =>
-            runHostAction(execWsUrl, execToken, action, params)
+            runHostAction(execWsUrl, execToken, action, params, accessToken)
         : null,
-    [execWsUrl, execToken],
+    [execWsUrl, execToken, accessToken],
   );
 
   const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
@@ -1105,7 +1105,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (cancelled) return;
       buffers.clear();
       try {
-        ws = openAccessTokenWebSocket(execWsUrl, execToken);
+        ws = openAccessTokenWebSocket(execWsUrl, accessToken);
       } catch {
         markInterrupted();
         retryTimer = setTimeout(connect, RECONNECT_MS);
@@ -1166,6 +1166,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     eventsEnabled,
     execWsUrl,
     execToken,
+    accessToken,
     logsPath,
     eventsPath,
     metricsPath,
@@ -1183,7 +1184,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
-    hostUiRequest(execWsUrl, execToken, { device: deviceUdid })
+    hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, accessToken)
       .then((res) => {
         if (cancelled) return;
         const next: DeviceSettings = {};
@@ -1207,7 +1208,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
     };
-  }, [execWsUrl, execToken, deviceUdid]);
+  }, [execWsUrl, execToken, deviceUdid, accessToken]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;

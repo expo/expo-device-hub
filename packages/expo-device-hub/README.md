@@ -63,20 +63,26 @@ npx expo-device-hub
 ### Require an access token
 
 By default the Hub trusts everyone who can reach it. Pass `--require-token` to gate the iOS
-simulator routes (video, input, exec, grid) behind a session token:
+simulator routes (video, input, exec, grid) and Hub device lifecycle actions
+(boot, create, shutdown, remove, for both platforms) behind a session token:
 
 ```sh
 npx expo-device-hub --require-token
 ```
 
-The Hub mints the token at startup and prints the dashboard link with it:
+The Hub mints the token at startup and saves authenticated dashboard links in a private
+file (directory mode `0700`, file mode `0600`). Terminal output contains only plain URLs
+and the file path, so captured logs do not contain the credential:
 
 ```
-  Local:   http://localhost:3400/?token=<token>
+  Local:   http://localhost:3400
+  Session links: /…/expo-device-hub-…/dashboard-links.txt
 ```
 
-Open that link. The dashboard reads the token once, keeps it for the tab, and drops it from
-the address bar. Every request it makes to serve-sim then carries the token: as
+Open a link from that file. The links carry `#token=<token>` so the token does not enter
+HTTP request logs. The file is removed when the Hub exits. The dashboard reads the token
+once, keeps it for the tab, and drops it from the address bar. Lifecycle requests carry
+`Authorization: Bearer <token>`. Every request it makes to serve-sim carries the token: as
 `Authorization: Bearer <token>` on fetches, as the `serve-sim.token.<token>` WebSocket
 subprotocol on the input and exec sockets, and as `?token=` on the MJPEG stream and the
 foreground-app event stream, which cannot set a header. A request without the token gets a
@@ -85,8 +91,9 @@ foreground-app event stream, which cannot set a header. A request without the to
 Another origin that embeds `@expo/hub-client` passes the same token as `accessToken` and
 must be allowed on the Hub with `--metrics-cors-origin <origin>` (repeatable, accepts
 `https://*.example.com`). That flag opens the HTTP routes cross-origin and lets the page open
-the exec socket. This is iOS only for now: serve-emu has no token gate yet, so the Android
-routes stay open and the Hub's own device-list API is not gated either.
+the exec socket. Android streaming/control routes remain open because serve-emu has no
+token gate yet. The Hub's read-only device-list API also remains open; its lifecycle
+actions require the token for both platforms.
 
 ### Record an Android session
 

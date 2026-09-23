@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  authorizeDeviceManagement,
   dashboardUrlWithToken,
   mintAccessToken,
   originMatches,
@@ -20,11 +21,35 @@ describe('mintAccessToken', () => {
 });
 
 describe('dashboardUrlWithToken', () => {
-  test('appends the token as a query on the root, or nothing without one', () => {
+  test('keeps the token in a fragment, or adds nothing without one', () => {
     expect(dashboardUrlWithToken('http://localhost:3400', 'a+b')).toBe(
-      'http://localhost:3400/?token=a%2Bb',
+      'http://localhost:3400/#token=a%2Bb',
     );
     expect(dashboardUrlWithToken('http://localhost:3400', undefined)).toBe('http://localhost:3400');
+  });
+});
+
+describe('authorizeDeviceManagement', () => {
+  test('accepts a matching bearer, including a case-insensitive scheme', () => {
+    for (const scheme of ['Bearer', 'bearer']) {
+      expect(authorizeDeviceManagement(new Request('http://hub/api/devices/boot', {
+        headers: { authorization: `${scheme} session` },
+      }), 'session')).toBeNull();
+    }
+  });
+
+  test('rejects query tokens, wrong bearers, and an empty gated token', () => {
+    for (const token of ['', 'session']) {
+      const response = authorizeDeviceManagement(new Request('http://hub/api/devices/boot?token=session', {
+        headers: { authorization: 'Bearer wrong' },
+      }), token);
+      expect(response?.status).toBe(401);
+      expect(response?.headers.get('cache-control')).toBe('no-store');
+    }
+  });
+
+  test('leaves an ungated Hub open', () => {
+    expect(authorizeDeviceManagement(new Request('http://hub/api/devices/boot'), undefined)).toBeNull();
   });
 });
 

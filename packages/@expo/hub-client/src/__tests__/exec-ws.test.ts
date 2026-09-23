@@ -61,6 +61,15 @@ async function handshake(token: string): Promise<{ ws: FakeWebSocket; request: a
 }
 
 describe('runHostAction', () => {
+  test('authenticates the upgrade separately from the first exec frame', async () => {
+    installFakeWebSocket();
+    const pending = runHostAction('ws://hub/exec-ws', 'exec-only', 'app.container', {}, 'session');
+    const { ws } = await handshake('exec-only');
+    ws.reply({ id: 1, stdout: '', stderr: '', exitCode: 0 });
+    await pending;
+    expect(ws.protocols).toEqual(['serve-sim.token.session']);
+  });
+
   test('authenticates, sends a typed action frame, and resolves the result', async () => {
     installFakeWebSocket();
     const pending = runHostAction('ws://hub/exec-ws', 'secret', 'app.container', {
@@ -68,8 +77,6 @@ describe('runHostAction', () => {
       bundleId: 'com.example.app',
     });
     const { ws, request } = await handshake('secret');
-    // The token also rides the handshake for a `--require-token` middleware (serve-sim#173).
-    expect(ws.protocols).toEqual(['serve-sim.token.secret']);
     // `{id, action, params}` — serve-sim's action protocol, never `{command}`.
     expect(request).toEqual({
       id: 1,
@@ -79,6 +86,7 @@ describe('runHostAction', () => {
     ws.reply({ id: 1, stdout: '/path/Foo.app\n', stderr: '', exitCode: 0 });
     expect(await pending).toEqual({ stdout: '/path/Foo.app\n', stderr: '', exitCode: 0 });
     expect(ws.closed).toBe(true);
+    expect(ws.protocols).toBeUndefined();
   });
 
   test('maps a rejected action to a failed result instead of throwing', async () => {
@@ -103,6 +111,15 @@ describe('runHostAction', () => {
 });
 
 describe('hostUiRequest', () => {
+  test('uses only the access token in the upgrade and the exec token in the first frame', async () => {
+    installFakeWebSocket();
+    const pending = hostUiRequest('ws://hub/exec-ws', 'exec-only', { device: 'UDID' }, 'session');
+    const { ws } = await handshake('exec-only');
+    ws.reply({ id: 1, ok: true });
+    await pending;
+    expect(ws.protocols).toEqual(['serve-sim.token.session']);
+  });
+
   test('reads the simulator settings status', async () => {
     installFakeWebSocket();
     const pending = hostUiRequest('ws://hub/exec-ws', 'secret', { device: 'UDID' });
@@ -112,6 +129,7 @@ describe('hostUiRequest', () => {
     expect(await pending).toEqual({
       status: { appearance: 'dark', 'hardware-keyboard': 'off' },
     });
+    expect(ws.protocols).toBeUndefined();
   });
 
   test('rejects with the server message when a write is refused', async () => {

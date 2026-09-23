@@ -13,6 +13,8 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 import { SERVER_HIDE_BOOT_DEVICE } from './boot-device';
+import { authorizeDeviceManagement } from './access-token';
+import { readStandaloneServeSimOptions, SERVE_SIM_OPTIONS_ENV } from './serve-sim-options';
 import {
   bootHubDevice,
   createHubDevice,
@@ -43,6 +45,12 @@ const CREATE_DEVICE_ROUTE = '/api/devices/create';
 const NEW_DEVICE_OPTIONS_ROUTE = '/api/new-device-options';
 const DEVICES_WEBSOCKET_ROUTE = '/api/devices/ws';
 const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = '/api/argent-interactions/ws';
+const DEVICE_ACTION_ROUTES = new Set([
+  SHUTDOWN_DEVICE_ROUTE, REMOVE_DEVICE_ROUTE, BOOT_DEVICE_ROUTE, CREATE_DEVICE_ROUTE,
+]);
+const tokenOptions = readStandaloneServeSimOptions(process.env[SERVE_SIM_OPTIONS_ENV]);
+// An invalid gated configuration must fail closed rather than silently disabling the gate.
+const deviceManagementToken = tokenOptions.requirePreviewToken ? tokenOptions.execToken ?? '' : undefined;
 
 // The exported dashboard shell (dist/client/index.html, a sibling of the
 // dist/server bundle this file becomes). Its asset URLs are relative and its
@@ -93,6 +101,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 export default async function handler(request: Request): Promise<Response | null> {
   const { pathname, searchParams } = new URL(request.url);
+
+  if (DEVICE_ACTION_ROUTES.has(pathname)) {
+    const denied = authorizeDeviceManagement(request, deviceManagementToken);
+    if (denied) return denied;
+  }
 
   const easResponse = await handleEasEndpoint(request, {
     mountPath: MOUNT_PATH,

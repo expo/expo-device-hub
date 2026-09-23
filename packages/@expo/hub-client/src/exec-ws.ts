@@ -16,9 +16,9 @@
  * request here opens its own short-lived socket; the log stream keeps a
  * long-lived one (see `useIosDevice`).
  *
- * The exec token doubles as the session token of a `--require-token` server,
- * so the socket also names it as the `serve-sim.token.<token>` subprotocol
- * (see `./access-token`). The first `{token}` frame is still sent: an older
+ * An optional access token authenticates the HTTP upgrade using the
+ * `serve-sim.token.<token>` subprotocol (see `./access-token`). The exec token
+ * stays in the first `{token}` frame: an older
  * middleware needs it, and a newer one ignores a token frame once it has
  * accepted the subprotocol.
  */
@@ -34,7 +34,10 @@ export interface HostActionResult {
 export type HostActionParams = Record<string, string | number | boolean | string[] | undefined>;
 
 /** Runs one typed serve-sim host action and resolves its output. */
-export type RunHostAction = (action: string, params?: HostActionParams) => Promise<HostActionResult>;
+export type RunHostAction = (
+  action: string,
+  params?: HostActionParams,
+) => Promise<HostActionResult>;
 
 export interface UiRequestPayload {
   device: string;
@@ -65,11 +68,12 @@ function execWsRequest(
   execToken: string,
   body: Record<string, unknown>,
   timeoutMs: number,
+  accessToken?: string | null,
 ): Promise<ExecReply> {
   return new Promise((resolve, reject) => {
     let ws: WebSocket;
     try {
-      ws = openAccessTokenWebSocket(execWsUrl, execToken);
+      ws = openAccessTokenWebSocket(execWsUrl, accessToken);
     } catch (err) {
       reject(err);
       return;
@@ -118,10 +122,17 @@ export async function runHostAction(
   execToken: string,
   action: string,
   params?: HostActionParams,
+  accessToken?: string | null,
 ): Promise<HostActionResult> {
   let reply: ExecReply;
   try {
-    reply = await execWsRequest(execWsUrl, execToken, { action, params }, ACTION_TIMEOUT_MS);
+    reply = await execWsRequest(
+      execWsUrl,
+      execToken,
+      { action, params },
+      ACTION_TIMEOUT_MS,
+      accessToken,
+    );
   } catch (err) {
     if (err instanceof Error && isActionRejection(err.message)) {
       return { stdout: '', stderr: err.message, exitCode: 1 };
@@ -151,8 +162,15 @@ export async function hostUiRequest(
   execWsUrl: string,
   execToken: string,
   payload: UiRequestPayload,
+  accessToken?: string | null,
 ): Promise<UiRequestResult> {
-  const reply = await execWsRequest(execWsUrl, execToken, { ui: payload }, UI_TIMEOUT_MS);
+  const reply = await execWsRequest(
+    execWsUrl,
+    execToken,
+    { ui: payload },
+    UI_TIMEOUT_MS,
+    accessToken,
+  );
   const result: UiRequestResult = {};
   if (reply.status !== undefined) result.status = reply.status;
   if (reply.ok !== undefined) result.ok = reply.ok;

@@ -15,18 +15,24 @@ function stubGlobal(name: string, value: unknown) {
 }
 
 class Socket {
-  static opened: Array<{ url: string; protocols?: string[] }> = [];
+  static opened: Socket[] = [];
+  readonly sent: string[] = [];
   binaryType = 'blob';
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  constructor(url: string, protocols?: string[]) {
-    Socket.opened.push({ url, protocols });
+  constructor(
+    readonly url: string,
+    readonly protocols?: string[],
+  ) {
+    Socket.opened.push(this);
   }
   addEventListener() {}
   removeEventListener() {}
-  send() {}
+  send(data: string) {
+    this.sent.push(data);
+  }
   close() {}
 }
 
@@ -45,7 +51,12 @@ const BASE = 'https://hub.test/vendor/serve-sim';
 function stubBrowser() {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   stubGlobal('window', {
-    location: { origin: 'https://hub.test', host: 'hub.test', protocol: 'https:', href: 'https://hub.test/' },
+    location: {
+      origin: 'https://hub.test',
+      host: 'hub.test',
+      protocol: 'https:',
+      href: 'https://hub.test/',
+    },
     addEventListener() {},
     removeEventListener() {},
     setTimeout,
@@ -92,7 +103,10 @@ test('presents the token on every serve-sim channel', async () => {
   const requests: Array<{ path: string; authorization: string | null }> = [];
   stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const { pathname } = new URL(url);
-    requests.push({ path: pathname, authorization: new Headers(init?.headers).get('authorization') });
+    requests.push({
+      path: pathname,
+      authorization: new Headers(init?.headers).get('authorization'),
+    });
     if (pathname.endsWith('/api')) {
       // What a gated middleware answers once the bearer is right. No `execToken`
       // here so the client has to fall back to the access token for exec-ws.
@@ -152,40 +166,53 @@ test('reports a 401 from a gated serve-sim instead of looking unreachable', asyn
   expect(Socket.opened).toEqual([]);
 });
 
-test('opens plain sockets and clean URLs without a token', async () => {
-  stubBrowser();
-  const authorizations: Array<string | null> = [];
-  stubGlobal('fetch', async (url: string, init?: RequestInit) => {
-    authorizations.push(new Headers(init?.headers).get('authorization'));
-    if (new URL(url).pathname.endsWith('/api')) {
-      return Response.json({
-        url: 'https://hub.test/vendor/serve-sim/helper/device-1',
-        wsUrl: 'wss://hub.test/vendor/serve-sim/helper/device-1/ws',
-        device: 'device-1',
-        basePath: '/vendor/serve-sim',
-        appStateEndpoint: '/vendor/serve-sim/appstate?device=device-1',
-        execToken: 'exec-only',
-      });
+test.each([null, TOKEN])(
+  'keeps exec credentials in frames with accessToken=%s',
+  async (accessToken) => {
+    stubBrowser();
+    const authorizations: Array<string | null> = [];
+    stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+      authorizations.push(new Headers(init?.headers).get('authorization'));
+      if (new URL(url).pathname.endsWith('/api')) {
+        return Response.json({
+          url: 'https://hub.test/vendor/serve-sim/helper/device-1',
+          wsUrl: 'wss://hub.test/vendor/serve-sim/helper/device-1/ws',
+          device: 'device-1',
+          basePath: '/vendor/serve-sim',
+          appStateEndpoint: '/vendor/serve-sim/appstate?device=device-1',
+          execToken: 'exec-only',
+          logsEndpoint: '/logs?device=device-1',
+        });
+      }
+      return Response.json({ devices: [] });
+    });
+
+    const read = renderClient(accessToken);
+    await act(async () => {
+      read();
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(
+      authorizations.every((value) => value === (accessToken ? `Bearer ${accessToken}` : null)),
+    ).toBe(true);
+    const protocols = accessToken ? [`serve-sim.token.${accessToken}`] : undefined;
+    expect(Socket.opened.find((s) => s.url.includes('/helper/ws'))?.protocols).toEqual(protocols);
+    await act(async () => read().attachLogs());
+    const execSockets = Socket.opened.filter((s) => s.url.endsWith('/exec-ws'));
+    expect(execSockets.length).toBe(2); // Settings read and the long-lived log subscription.
+    for (const socket of execSockets) {
+      socket.onopen?.();
+      expect(socket.sent[0]).toBe(JSON.stringify({ token: 'exec-only' }));
+      expect(socket.protocols).toEqual(protocols);
     }
-    return Response.json({ devices: [] });
-  });
-
-  const read = renderClient(null);
-  await act(async () => {
-    read();
-  });
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-  });
-
-  expect(authorizations.every((value) => value === null)).toBe(true);
-  expect(Socket.opened.find((s) => s.url.includes('/helper/ws'))?.protocols).toBeUndefined();
-  // The exec token from `/api` still names itself on exec-ws; harmless for an ungated server.
-  expect(Socket.opened.find((s) => s.url.endsWith('/exec-ws'))?.protocols).toEqual([
-    'serve-sim.token.exec-only',
-  ]);
-  expect(Source.opened).toEqual(['https://hub.test/vendor/serve-sim/appstate?device=device-1']);
-});
+    expect(Source.opened).toEqual([
+      `https://hub.test/vendor/serve-sim/appstate?device=device-1${accessToken ? `&token=${accessToken}` : ''}`,
+    ]);
+  },
+);
 
 test('a consumer on another origin still streams from the Hub, not from its own page', async () => {
   stubBrowser();
@@ -224,9 +251,7 @@ test('a consumer on another origin still streams from the Hub, not from its own 
   const hid = Socket.opened.find((s) => s.url.includes('/helper/ws'));
   expect(hid?.url).toBe('wss://hub.test/vendor/serve-sim/helper/ws?device=device-1');
   expect(hid?.protocols).toEqual([`serve-sim.token.${TOKEN}`]);
-  expect(requests).toContain(
-    'https://hub.test/vendor/serve-sim/helper/device-1/stream-settings',
-  );
+  expect(requests).toContain('https://hub.test/vendor/serve-sim/helper/device-1/stream-settings');
   // Nothing, and in particular no token, went to the page's own origin.
   expect(requests.some((url) => url.startsWith('https://app.test'))).toBe(false);
   expect(Socket.opened.some((s) => s.url.includes('app.test'))).toBe(false);

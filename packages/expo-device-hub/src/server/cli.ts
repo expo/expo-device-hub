@@ -8,6 +8,7 @@ import { dashboardUrlWithToken, mintAccessToken } from './access-token';
 import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } from './cli/node-fetch-server';
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { staticFileHandler } from './cli/static-files';
+import { saveSessionLinks } from './cli/session-links';
 import {
   encodeStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
@@ -91,7 +92,7 @@ async function main(): Promise<void> {
   } else {
     delete process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE;
   }
-  // Minted here, not in the middleware, because the operator has to be told what it is.
+  // Shared by the middleware, Hub lifecycle gate, and the private session links file.
   const accessToken = options.requireToken ? mintAccessToken() : undefined;
   process.env[SERVE_EMU_OPTIONS_ENV] = encodeStandaloneServeEmuOptions(options);
   process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options, accessToken);
@@ -193,30 +194,40 @@ async function main(): Promise<void> {
   const isLoopback =
     options.host === 'localhost' || options.host === '127.0.0.1' || options.host === '::1';
   const isWildcard = options.host === '0.0.0.0' || options.host === '::';
+  const dashboardOrigins: string[] = [];
   console.log('Expo Device Hub ready\n');
   if (isLoopback || isWildcard) {
-    console.log(`  Local:   ${dashboardUrlWithToken(`http://localhost:${boundPort}`, accessToken)}`);
+    const origin = `http://localhost:${boundPort}`;
+    dashboardOrigins.push(origin);
+    console.log(`  Local:   ${origin}`);
   }
   if (isWildcard) {
-    console.log(
-      `  Network: ${dashboardUrlWithToken(`http://${lanAddress() ?? options.host}:${boundPort}`, accessToken)}`,
-    );
+    const host = lanAddress() ?? options.host;
+    const origin = `http://${host.includes(':') ? `[${host}]` : host}:${boundPort}`;
+    dashboardOrigins.push(origin);
+    console.log(`  Network: ${origin}`);
   } else if (isLoopback) {
     console.log('  Network: pass --host 0.0.0.0 to expose on your local network');
   } else {
-    console.log(`  Network: ${dashboardUrlWithToken(`http://${options.host}:${boundPort}`, accessToken)}`);
+    const host = options.host.includes(':') ? `[${options.host}]` : options.host;
+    const origin = `http://${host}:${boundPort}`;
+    dashboardOrigins.push(origin);
+    console.log(`  Network: ${origin}`);
   }
   if (accessToken) {
+    const sessionLinks = saveSessionLinks(dashboardOrigins.map((origin) => dashboardUrlWithToken(origin, accessToken)));
+    process.once('exit', sessionLinks.remove);
     console.log('');
+    console.log(`  Session links: ${sessionLinks.path}`);
     console.log(
-      '  The links above carry a session token. The iOS simulator routes refuse requests without ' +
-        'it, and anyone who has it can run commands on this machine.',
+      '  Open a dashboard link from this private file to authenticate. ' +
+        'The file is removed when the Hub exits.',
     );
   } else if (!isLoopback) {
     console.log('');
     console.log(
       '  This server is listening on the network with no token required. Pass --require-token ' +
-        'to gate the iOS simulator routes.',
+        'to gate iOS simulator routes and device lifecycle actions.',
     );
   }
 }

@@ -50,7 +50,7 @@ Options:
       --turn-credential <credential> TURN credential (requires --turn-username and --turn-url)
       --webrtc-ice-policy <policy> Android ICE policy: ${WEBRTC_ICE_POLICIES.join(', ')} (default: ${DEFAULT_WEBRTC_ICE_POLICY})
       --metrics-cors-origin <origin> Allow an origin to read serve-sim metrics (repeatable)
-      --require-token        Gate the iOS simulator routes behind a session token printed at startup
+      --require-token        Gate iOS routes and device lifecycle actions; save session links in a private file
       --hide-sidebar         Hide the device list sidebar by default
       --hide-boot-device     Hide controls for booting or creating devices
       --android-recording-directory <path> Record the only booted emulator until shutdown
@@ -77,7 +77,7 @@ export type CliOptions = {
   turnCredential?: string;
   webrtcIcePolicy?: WebRtcIcePolicy;
   metricsCorsOrigins?: string[];
-  /** Gate serve-sim behind a session token the CLI mints and prints (`serve-sim --require-token`). */
+  /** Gate serve-sim and Hub lifecycle actions behind a session token saved in a private file. */
   requireToken?: boolean;
   hideSidebar?: boolean;
   hideBootDevice?: boolean;

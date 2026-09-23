@@ -3,11 +3,11 @@
  *
  * The token is serve-sim's: the Hub mints it, hands it to the mounted serve-sim
  * middleware as both `execToken` and the preview gate (`requirePreviewToken`),
- * and prints it once in the dashboard link. serve-sim then refuses every
+ * and saves authenticated dashboard links in a private file. serve-sim then refuses every
  * simulator route (stream, input, exec, grid) that does not present it.
  */
 
-import { randomBytes } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 /** Same shape serve-sim mints: 32 random bytes, base64url, so it is safe in a URL and a subprotocol. */
 export function mintAccessToken(): string {
@@ -16,7 +16,22 @@ export function mintAccessToken(): string {
 
 /** Dashboard link that carries the token, which the dashboard reads once and drops from the URL. */
 export function dashboardUrlWithToken(origin: string, token: string | undefined): string {
-  return token ? `${origin}/?token=${encodeURIComponent(token)}` : origin;
+  return token ? `${origin}/#token=${encodeURIComponent(token)}` : origin;
+}
+
+/** Gate Hub lifecycle actions before parsing their bodies or touching a device. */
+export function authorizeDeviceManagement(request: Request, token: string | undefined): Response | null {
+  if (token === undefined) return null;
+  const supplied = request.headers.get('authorization')?.match(/^Bearer (.+)$/i)?.[1];
+  const expected = Buffer.from(token);
+  const received = Buffer.from(supplied ?? '');
+  if (expected.length > 0 && received.length === expected.length && timingSafeEqual(received, expected)) {
+    return null;
+  }
+  return Response.json({ ok: false, error: 'A valid session token is required.' }, {
+    status: 401,
+    headers: { 'Cache-Control': 'no-store', 'WWW-Authenticate': 'Bearer' },
+  });
 }
 
 /** Subprotocol a browser uses to present the token on a WebSocket (expo/serve-sim#173). */
