@@ -36,6 +36,13 @@ type DownscaleStats = Pick<
   "width" | "height" | "qualityLimitationReason" | "sourceLongEdge" | "levelMaxLongEdge"
 >;
 
+/// Whether the stream has fallen off the codec that was picked. The select still shows the
+/// request, so re-picking it is a no-op and the session has no way back on its own.
+export function codecDrifted(selected: string, negotiated: string | null | undefined): boolean {
+  if (!negotiated) return false;
+  return negotiated.toLowerCase() !== selected.toLowerCase();
+}
+
 /** Why the picture is smaller than the size that was picked. */
 /// The codec level is checked before the runtime causes: libwebrtc reports no limitation for
 /// a ceiling we applied ourselves, so whatever it does report would take the blame.

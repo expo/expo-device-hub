@@ -35,6 +35,8 @@ import { DeviceSidebarToggle } from "./components/device-sidebar-toggle";
 import { DevicePlaceholder } from "./components/device-placeholder";
 import { DuoModelView } from "./components/duo-model-view";
 import { DuoPanelStreams, type DuoPanelPeer } from "./components/duo-panel-streams";
+import { useLadderRestart } from "./hooks/use-ladder-restart";
+import type { StreamPanelPeer } from "./components/stream-settings-tool";
 import { duoIntendedScreen, duoPhysicalPoseChanged } from "./simulator/duo-pose";
 import { DUO_FACE_DOWN_HELD, duoFaceDownFraming, duoInitialView, duoPresetView, duoRotateView, type DuoFaceDownFraming, type DuoView } from "./simulator/duo-view";
 import { rotationDegreesForOrientation } from "./simulator/orientation";
@@ -714,7 +716,33 @@ function AppWithConfig({
     enabled: useWebRtcVideo && !useDuoPanelFeeds,
     codec: effectiveWebRtcCodec,
     iceServers: streamSettings.iceServers,
+    statsUrl: webrtcStatsUrlFrom(config),
   });
+  const { retry: retryWebRtcStream, markFrameDecoded: markWebRtcFrameDecoded } = webrtc;
+  /// In Duo the stream above is disabled and each screen runs its own, so a restart has to go
+  /// to whichever one is actually live.
+  const restartWebRtcStream = useCallback(() => {
+    setWebRtcCodecOverride(null);
+    (useDuoPanelFeeds ? duoPanelPeer?.retry : retryWebRtcStream)?.();
+  }, [duoPanelPeer, retryWebRtcStream, useDuoPanelFeeds]);
+  const ladderRestart = useLadderRestart(restartWebRtcStream);
+  /// The panel reads whichever stream is on screen: in Duo that is a screen's own peer, not
+  /// the disabled one above.
+  const streamPanelPeer: StreamPanelPeer = useDuoPanelFeeds
+    ? {
+        peerConnection: duoPanelPeer?.peerConnection ?? null,
+        subscribeStats: duoPanelPeer?.subscribeStats,
+        statsUrl: duoPanelPeer?.statsUrl,
+        sessionId: duoPanelPeer?.sessionId ?? null,
+        onResetCodec: restartWebRtcStream,
+      }
+    : {
+        peerConnection: webrtc.peerConnection,
+        subscribeStats: webrtc.subscribeStats,
+        statsUrl: webrtcStatsUrlFrom(config),
+        sessionId: webrtc.sessionId,
+        onResetCodec: restartWebRtcStream,
+      };
   const [avccFallback, dispatchAvccFallback] = useReducer(
     avccFallbackReducer,
     initialAvccFallback,
@@ -739,7 +767,10 @@ function AppWithConfig({
     setStreaming(false);
     dispatchAvccFallback("reset");
     setWebRtcCodecOverride(null);
+    // The session a pending restart was scheduled for is being replaced.
+    ladderRestart.cancel();
   }, [
+    ladderRestart,
     config.streamUrl,
     setStreaming,
     streamSettings.transport,
@@ -749,17 +780,35 @@ function AppWithConfig({
   const handleWebRtcFailure = useCallback((failure: WebRtcStreamFailure) => {
     if (!wantsWebRtcVideo || handledWebRtcFailureRef.current === failure.sessionId) return;
     handledWebRtcFailureRef.current = failure.sessionId;
+    ladderRestart.noteFailure(performance.now());
     const decision = webRtcFallbackDecision(configuredWebRtcCodec, effectiveWebRtcCodec, failure);
     if (!decision) return;
     if (decision.type === "switch-to-http") {
-      if (!streamTransportLocked) updateStreamPlayback({ transport: "http" });
+      if (!streamTransportLocked) {
+        updateStreamPlayback({ transport: "http" });
+        return;
+      }
+      // A locked session has nowhere to fall back to, so start over rather than stay dead.
+      // Only codec exhaustion qualifies; a permanent fault never resolves.
+      if (failure.kind === "codec") ladderRestart.schedule();
       return;
     }
     setWebRtcCodecOverride(decision.codec);
-  }, [configuredWebRtcCodec, effectiveWebRtcCodec, streamTransportLocked, updateStreamPlayback, wantsWebRtcVideo]);
+  }, [
+    configuredWebRtcCodec,
+    effectiveWebRtcCodec,
+    ladderRestart,
+    streamTransportLocked,
+    updateStreamPlayback,
+    wantsWebRtcVideo,
+  ]);
   useEffect(() => {
     if (webrtc.failure) handleWebRtcFailure(webrtc.failure);
   }, [webrtc.failure, handleWebRtcFailure]);
+  // A restart armed for the old failure would tear down the stream that recovered.
+  useEffect(() => {
+    if (!wantsWebRtcVideo || streaming) ladderRestart.cancel();
+  }, [ladderRestart, streaming, wantsWebRtcVideo]);
   const onPanelAvccError = useCallback(() => dispatchAvccFallback("error"), []);
   const lockedWebRtcError =
     streamTransportLocked && webrtc.failure && !webrtc.error
@@ -1635,7 +1684,7 @@ function AppWithConfig({
                 onStreamScroll={onStreamScroll}
                 streamMode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
                 webRtcStream={webrtc.stream}
-                onWebRtcFrame={webrtc.markFrameDecoded}
+                onWebRtcFrame={markWebRtcFrameDecoded}
                 streamError={useWebRtcVideo ? webrtc.error ?? lockedWebRtcError : null}
                 onAvccError={() => dispatchAvccFallback("error")}
                 onAvccDecodedFrame={() => dispatchAvccFallback("decoded-frame")}
@@ -1890,9 +1939,7 @@ function AppWithConfig({
         onStreamPlaybackSettingsChange={streamSettingsState.updatePlayback}
         onStreamEncoderSettingsChange={streamSettingsState.updateEncoder}
         activeCodec={useWebRtcVideo ? `webrtc/${effectiveWebRtcCodec}` : useAvccVideo ? "h264" : "mjpeg"}
-        peerConnection={useDuoPanelFeeds ? duoPanelPeer?.peerConnection ?? null : webrtc.peerConnection}
-        webrtcSessionId={useDuoPanelFeeds ? duoPanelPeer?.sessionId ?? null : webrtc.sessionId}
-        webrtcStatsUrl={useDuoPanelFeeds && duoPanelPeer ? duoPanelPeer.statsUrl : webrtcStatsUrlFrom(config)}
+        peer={streamPanelPeer}
         avccSupported={avcc.supported}
         streamSettingsPending={
           streamSettingsState.pending || !streamSettingsState.encoderSettingsAvailable

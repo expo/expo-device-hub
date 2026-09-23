@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { SimulatorView } from "../simulator/simulator-view";
 import { useMjpegStream } from "../hooks/use-mjpeg-stream";
 import { useWebRtcStream } from "../hooks/use-webrtc-stream";
+import type { StatsSubscriber } from "../hooks/use-stream-stats";
 import { AVCC_FRAME_TIMEOUT_MS } from "../avcc-fallback";
 import type { SimulatorStreamMode } from "../simulator/simulator-stream-routing";
 import type { StreamConfig } from "../types";
@@ -33,6 +34,9 @@ export interface DuoPanelPeer {
   peerConnection: RTCPeerConnection | null;
   sessionId: string | null;
   statsUrl: string;
+  /// This screen's own `getStats` reader. The panel shares it rather than opening a second.
+  subscribeStats: StatsSubscriber;
+  retry: () => void;
 }
 
 type PanelStatus = {
@@ -75,7 +79,9 @@ function DuoPanelStream({
   const mjpeg = useMjpegStream(mode === "mjpeg" ? `${url}/stream.mjpeg` : null);
   const webrtc = useWebRtcStream({
     offerUrl: `${url}/webrtc/offer`, closeUrl: `${url}/webrtc/close`,
+    statsUrl: `${url}/webrtc/stats`,
     enabled: mode === "webrtc", codec, iceServers,
+    judgeStalls: activeScreenId === screenId,
   });
   const [streaming, setStreaming] = useState(false);
   useEffect(() => {
@@ -87,9 +93,10 @@ function DuoPanelStream({
   useEffect(() => {
     onPeerChange(screenId, mode === "webrtc" ? {
       peerConnection: webrtc.peerConnection, sessionId: webrtc.sessionId, statsUrl: `${url}/webrtc/stats`,
+      subscribeStats: webrtc.subscribeStats, retry: webrtc.retry,
     } : null);
     return () => onPeerChange(screenId, null);
-  }, [mode, screenId, url, webrtc.peerConnection, webrtc.sessionId, onPeerChange]);
+  }, [mode, screenId, url, webrtc.peerConnection, webrtc.sessionId, webrtc.subscribeStats, webrtc.retry, onPeerChange]);
 
   const decoded = useRef(false);
   const onDecodedFrame = useCallback(() => { decoded.current = true; }, []);
@@ -141,7 +148,11 @@ export function DuoPanelStreams(props: DuoPanelStreamsProps) {
   const { onStreamingChange, onStreamError, onWebRtcPeerChange, activeScreenId } = props;
   const status = duoPanelStatus(props.mode, activeScreenId, statuses);
   useEffect(() => {
-    onWebRtcPeerChange(peers[activeScreenId === 1 ? 1 : 3]);
+    const shown = peers[activeScreenId === 1 ? 1 : 3];
+    onWebRtcPeerChange(shown && {
+      ...shown,
+      retry: () => { peers[1]?.retry(); peers[3]?.retry(); },
+    });
   }, [peers, activeScreenId, onWebRtcPeerChange]);
   useEffect(() => () => onWebRtcPeerChange(null), [onWebRtcPeerChange]);
   useEffect(() => {

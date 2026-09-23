@@ -1,7 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  parseInboundVideo,
+  readStatsBeforeDeadline,
+  startPlaybackStallWatchdog,
+} from "./playback-stall-watchdog";
+import type { StatsSubscriber } from "./use-stream-stats";
 import type { WebRtcCodec, WebRtcStreamFailure } from "../webrtc-codec-fallback";
 import { webRtcFailureDisposition } from "../webrtc-failure-policy";
 import { WEBRTC_ICE_TRANSPORT_POLICY, type IceServer } from "../webrtc-ice";
+import { webrtcSessionStatsUrl } from "../utils/sim-endpoint";
 import {
   closeWebRtcSession,
   postWebRtcOffer,
@@ -18,20 +25,25 @@ const ICE_GATHERING_TIMEOUT_MS = 3_000;
 // fresh browser deadline; time spent retrying 409s cannot consume it.
 const SIGNALING_REQUEST_TIMEOUT_MS = 20_000;
 const FIRST_FRAME_TIMEOUT_MS = 4_000;
-/// Whether any inbound video frame has arrived yet.
-async function videoRtpArriving(pc: RTCPeerConnection | null): Promise<boolean> {
-  if (!pc) return false;
+
+/// Whether the sender says it is producing frames. Null on any doubt, because unknown keeps
+/// the fallback.
+async function senderIsEncoding(
+  statsUrl: string | undefined,
+  sessionId: string,
+): Promise<boolean | null> {
+  if (!statsUrl) return null;
   try {
-    let arriving = false;
-    (await pc.getStats()).forEach((entry) => {
-      if (entry.type !== "inbound-rtp") return;
-      const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number };
-      if (video.kind !== "video") return;
-      if ((video.framesReceived ?? 0) > 0) arriving = true;
+    const response = await fetch(webrtcSessionStatsUrl(statsUrl, sessionId), {
+      signal: AbortSignal.timeout(2_000),
     });
-    return arriving;
+    if (!response.ok) return null;
+    const body = (await response.json()) as { sessions?: { framesEncoded?: number }[] };
+    const sessions = Array.isArray(body.sessions) ? body.sessions : [];
+    if (sessions.length === 0) return null;
+    return sessions.some((session) => (session.framesEncoded ?? 0) > 0);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -57,12 +69,18 @@ export function useWebRtcStream({
   enabled,
   codec = "h264",
   iceServers,
+  statsUrl,
+  judgeStalls = true,
 }: {
   offerUrl: string;
   closeUrl: string;
   enabled: boolean;
   codec?: WebRtcCodec;
   iceServers?: IceServer[];
+  statsUrl?: string;
+  /// Off for a stream nobody is looking at: its stats still flow, but a frozen decoder there
+  /// must not fail the codec for the one on screen.
+  judgeStalls?: boolean;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -73,6 +91,26 @@ export function useWebRtcStream({
   const firstFrameTimeoutRef = useRef<number | undefined>(undefined);
   const firstFrameDecodedRef = useRef(false);
   const transportRetryAttemptRef = useRef(0);
+  // Read at each poll rather than restarting the stream when the shown screen changes.
+  const judgeStallsRef = useRef(judgeStalls);
+  judgeStallsRef.current = judgeStalls;
+  /// One getStats per tick, shared with the stats panel so it does not poll a second time.
+  const statsListenersRef = useRef(new Set<(report: RTCStatsReport, at: number) => void>());
+  const subscribeStats: StatsSubscriber = useCallback((listener) => {
+    const listeners = statsListenersRef.current;
+    listeners.add(listener);
+    return () => { listeners.delete(listener); };
+  }, []);
+  /// When this codec was last reconnected for a stall. Cleared when the codec changes.
+  const stallReconnectAtRef = useRef<number | null>(null);
+
+  /// Re-establish after a failure the hook cannot resolve itself, such as every codec failing
+  /// with HTTP fallback turned off.
+  const retry = useCallback(() => {
+    setFailure(null);
+    setError(null);
+    setRetryGeneration((generation) => generation + 1);
+  }, []);
 
   const markFrameDecoded = useCallback(() => {
     firstFrameDecodedRef.current = true;
@@ -87,6 +125,7 @@ export function useWebRtcStream({
 
   useEffect(() => {
     transportRetryAttemptRef.current = 0;
+    stallReconnectAtRef.current = null;
   }, [enabled, offerUrl, closeUrl, codec, iceServers]);
 
   useEffect(() => {
@@ -130,6 +169,37 @@ export function useWebRtcStream({
     const releaseOnPageHide = () => void closeRemoteSession(true);
     window.addEventListener("pagehide", releaseOnPageHide);
     window.addEventListener("beforeunload", releaseOnPageHide);
+
+    let armFirstFrameWatchdog: (() => void) | null = null;
+    // One counter per watchdog, or ticks before the first paint retire the other one mid-read.
+    let firstFrameGeneration = 0;
+    const publishStats = (report: RTCStatsReport, at: number) => {
+      for (const listener of statsListenersRef.current) listener(report, at);
+    };
+    const readable = () => !stopped && pc !== null && document.visibilityState === "visible";
+    const stall = startPlaybackStallWatchdog({
+      peer: () => pc,
+      readable,
+      judgeable: () => readable() && !failing && pc?.connectionState === "connected"
+        && firstFrameDecodedRef.current && judgeStallsRef.current,
+      publish: publishStats,
+      reconnectedAt: stallReconnectAtRef,
+      failCodec: () => failCodec(),
+      retryTransport: (message: string) => retryTransport(message),
+    });
+    // A hide and resume can complete between two ticks, so the transition itself ends the run.
+    const onVisibilityChange = () => {
+      stall.invalidate();
+      firstFrameGeneration += 1;
+      if (firstFrameTimeoutRef.current !== undefined) {
+        window.clearTimeout(firstFrameTimeoutRef.current);
+        firstFrameTimeoutRef.current = undefined;
+      }
+      if (document.visibilityState === "visible" && !firstFrameDecodedRef.current && !failing) {
+        armFirstFrameWatchdog?.();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
 
     const closePeer = () => {
       setStream(null);
@@ -236,29 +306,39 @@ export function useWebRtcStream({
           }
           // One extra window when RTP is arriving, so a slow first paint is not mistaken
           // for a broken codec. Bounded: an undecodable stream still falls back.
+          stall.invalidate();
           let graceUsed = false;
-          const armFirstFrameWatchdog = () => {
+          armFirstFrameWatchdog = () => {
             firstFrameTimeoutRef.current = window.setTimeout(() => {
               firstFrameTimeoutRef.current = undefined;
-              if (stopped || firstFrameDecodedRef.current) return;
-              const state = pc?.connectionState ?? "closed";
-              void videoRtpArriving(pc).then((mediaArriving) => {
-                if (stopped || firstFrameDecodedRef.current) return;
-                const disposition = webRtcFailureDisposition("first-frame-timeout", state, {
+              if (stopped || firstFrameDecodedRef.current || document.visibilityState !== "visible") return;
+              const reading = firstFrameGeneration;
+              void (async () => {
+                const firstFrameReport = await readStatsBeforeDeadline(pc, FIRST_FRAME_TIMEOUT_MS);
+                const reports = firstFrameReport ? parseInboundVideo(firstFrameReport) : [];
+                if (stopped || firstFrameDecodedRef.current || reading !== firstFrameGeneration) return;
+                const mediaArriving = reports.some((report) => report.framesReceived > 0);
+                const senderEncoding = mediaArriving
+                  ? null
+                  : await senderIsEncoding(statsUrl, sessionId);
+                if (stopped || firstFrameDecodedRef.current || reading !== firstFrameGeneration
+                  || document.visibilityState !== "visible") return;
+                const disposition = webRtcFailureDisposition("first-frame-timeout", pc?.connectionState ?? "closed", {
                   mediaArriving,
+                  senderEncoding,
                 });
                 if (disposition === "wait" && !graceUsed) {
                   graceUsed = true;
-                  armFirstFrameWatchdog();
+                  armFirstFrameWatchdog?.();
                 } else if (disposition === "transport") {
                   retryTransport("WebRTC did not establish a video path.");
                 } else {
                   failCodec();
                 }
-              });
+              })();
             }, FIRST_FRAME_TIMEOUT_MS);
           };
-          armFirstFrameWatchdog();
+          if (document.visibilityState === "visible") armFirstFrameWatchdog();
         };
         pc.onconnectionstatechange = () => {
           if (stopped || !pc || pc.connectionState !== "failed") return;
@@ -318,6 +398,8 @@ export function useWebRtcStream({
 
     return () => {
       stopped = true;
+      stall.stop();
+      document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", releaseOnPageHide);
       window.removeEventListener("beforeunload", releaseOnPageHide);
       lifecycleController.abort();
@@ -332,7 +414,7 @@ export function useWebRtcStream({
       setSessionId(null);
       pc?.close();
     };
-  }, [enabled, offerUrl, closeUrl, codec, iceServers, retryGeneration]);
+  }, [enabled, offerUrl, closeUrl, codec, iceServers, statsUrl, retryGeneration]);
 
-  return { stream, failure, error, markFrameDecoded, peerConnection, sessionId };
+  return { stream, failure, error, markFrameDecoded, peerConnection, sessionId, retry, subscribeStats };
 }

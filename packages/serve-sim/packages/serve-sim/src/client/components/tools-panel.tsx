@@ -14,6 +14,7 @@ import { MetricsTool } from "./metrics-tool";
 import { PANEL_BACKGROUND } from "./panel-colors";
 import { SimulatorSettingsTool } from "./simulator-settings-tool";
 import { StreamSettingsTool } from "./stream-settings-tool";
+import type { StreamPanelPeer } from "./stream-settings-tool";
 import type {
   StreamControlSettings,
   StreamEncoderSettings,
@@ -23,9 +24,6 @@ import type {
 export function ToolsPanel({
   open,
   onClose,
-  peerConnection,
-  webrtcStatsUrl,
-  webrtcSessionId,
   udid,
   deviceRuntime,
   currentApp,
@@ -37,6 +35,7 @@ export function ToolsPanel({
   onStreamPlaybackSettingsChange,
   onStreamEncoderSettingsChange,
   activeCodec,
+  peer,
   avccSupported,
   streamSettingsPending,
   streamTransportLocked = false,
@@ -49,9 +48,6 @@ export function ToolsPanel({
 }: {
   open: boolean;
   onClose: () => void;
-  peerConnection: RTCPeerConnection | null;
-  webrtcStatsUrl?: string;
-  webrtcSessionId?: string | null;
   udid: string;
   deviceRuntime: string | null;
   currentApp: { bundleId: string; isReactNative: boolean; pid?: number } | null;
@@ -63,6 +59,7 @@ export function ToolsPanel({
   onStreamPlaybackSettingsChange: (patch: Partial<StreamPlaybackSettings>) => void;
   onStreamEncoderSettingsChange: (patch: Partial<StreamEncoderSettings>) => void;
   activeCodec: string;
+  peer: StreamPanelPeer;
   avccSupported: boolean;
   streamSettingsPending: boolean;
   streamTransportLocked?: boolean;
@@ -105,13 +102,11 @@ export function ToolsPanel({
             onPlaybackSettingsChange={onStreamPlaybackSettingsChange}
             onEncoderSettingsChange={onStreamEncoderSettingsChange}
             activeCodec={activeCodec}
+            peer={peer}
             avccSupported={avccSupported}
             encoderSettingsDisabled={streamSettingsPending}
             transportLocked={streamTransportLocked}
             configuredMaxDimension={streamConfiguredMaxDimension}
-            peerConnection={peerConnection}
-            webrtcStatsUrl={webrtcStatsUrl}
-            webrtcSessionId={webrtcSessionId}
           />
         </div>
       )}

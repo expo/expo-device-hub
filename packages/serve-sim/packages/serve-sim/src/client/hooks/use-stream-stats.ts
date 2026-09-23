@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 
-import { startExclusivePoll } from "../utils/exclusive-poll";
 import {
   describeStreamStats,
   readStreamStats,
@@ -8,7 +7,10 @@ import {
   type StreamStatsSample,
 } from "../utils/webrtc-stats";
 
-const POLL_MS = 1000;
+/// One `getStats` read per tick, owned by the stream hook. Returns an unsubscribe.
+export type StatsSubscriber =
+  (listener: (report: RTCStatsReport, at: number) => void) => () => void;
+
 // Well past a couple of missed polls, so a slow tick is not mistaken for a dead stream.
 const STALE_AFTER_MS = 4_000;
 /** ~10 minutes at one sample a second. */
@@ -18,6 +20,7 @@ const HISTORY_LIMIT = 600;
 // and counts are null.
 export function useStreamStats(
   peerConnection: RTCPeerConnection | null,
+  subscribeStats?: StatsSubscriber,
 ): { stats: StreamStats | null; history: StreamStats[]; stale: boolean } {
   const [stats, setStats] = useState<StreamStats | null>(null);
   const [history, setHistory] = useState<StreamStats[]>([]);
@@ -31,24 +34,14 @@ export function useStreamStats(
     previousRef.current = null;
     lastSampleAt.current = 0;
     setStale(false);
-    if (peerConnection === null) {
+    if (peerConnection === null || !subscribeStats) {
       setStats(null);
       setHistory([]);
       return;
     }
 
     let stopped = false;
-    const sample = async () => {
-      // Stamped before the call, not after: getStats latency would otherwise land in the window
-      // divisor and show false spikes under load, which is exactly when the panel gets opened.
-      const at = Date.now();
-      let report: RTCStatsReport;
-      try {
-        report = await peerConnection.getStats();
-      } catch {
-        // A closing connection rejects; the next tick either succeeds or the effect is torn down.
-        return;
-      }
+    const sample = (report: RTCStatsReport, at: number) => {
       if (stopped) return;
       const next = readStreamStats(report, at);
       const described = describeStreamStats(previousRef.current, next);
@@ -59,7 +52,7 @@ export function useStreamStats(
       previousRef.current = next;
     };
 
-    const stopPoll = startExclusivePoll(sample, POLL_MS);
+    const stopPoll = subscribeStats(sample);
     const watchdog = window.setInterval(() => {
       if (lastSampleAt.current > 0 && Date.now() - lastSampleAt.current > STALE_AFTER_MS) {
         setStale(true);
@@ -70,7 +63,7 @@ export function useStreamStats(
       stopPoll();
       window.clearInterval(watchdog);
     };
-  }, [peerConnection]);
+  }, [peerConnection, subscribeStats]);
 
   return { stats, history, stale };
 }

@@ -1,10 +1,11 @@
 import { useState } from "react";
-import { SlidersHorizontal, Video } from "lucide-react";
+import { RotateCcw, SlidersHorizontal, Video } from "lucide-react";
 import { CollapsibleSection } from "./collapsible-section";
 import { TriangleAlert } from "lucide-react";
 import { useSenderStats } from "../hooks/use-sender-stats";
-import { useStreamStats } from "../hooks/use-stream-stats";
+import { useStreamStats, type StatsSubscriber } from "../hooks/use-stream-stats";
 import { StreamStatsDownload, StreamStatsSection, describeFaults, summariseStream } from "./stream-stats-tool";
+import { codecDrifted } from "./stream-stats-labels";
 import { SettingRow, SettingSelect } from "./simulator-settings-tool";
 import { maxDimensionOptions } from "../utils/stream-max-dimension-options";
 import { streamFpsOptions } from "../utils/stream-fps-options";
@@ -61,15 +62,23 @@ function optionsWithCurrentValue(
     : [{ value: current, label: label(value) }, ...options];
 }
 
+export interface StreamPanelPeer {
+  peerConnection: RTCPeerConnection | null;
+  /// One getStats per tick, owned by the stream hook.
+  subscribeStats?: StatsSubscriber;
+  statsUrl?: string;
+  sessionId?: string | null;
+  /// Renegotiate on the selected codec. Offered only when the stream has fallen off it.
+  onResetCodec?: () => void;
+}
+
 export function StreamSettingsTool({
   settings,
   onPlaybackSettingsChange,
   onEncoderSettingsChange,
   activeCodec,
   avccSupported,
-  peerConnection,
-  webrtcStatsUrl,
-  webrtcSessionId,
+  peer,
   encoderSettingsDisabled = false,
   transportLocked = false,
   configuredMaxDimension = 0,
@@ -82,21 +91,19 @@ export function StreamSettingsTool({
   encoderSettingsDisabled?: boolean;
   transportLocked?: boolean;
   configuredMaxDimension?: number;
-  peerConnection: RTCPeerConnection | null;
-  webrtcStatsUrl?: string;
-  webrtcSessionId?: string | null;
+  peer: StreamPanelPeer;
 }) {
+  const { peerConnection, subscribeStats, statsUrl, sessionId, onResetCodec } = peer;
   const [open, setOpen] = useState(false);
-  const { stats, history, stale } = useStreamStats(peerConnection);
+  const { stats, history, stale } = useStreamStats(peerConnection, subscribeStats);
   const senderView = useSenderStats(
-    webrtcStatsUrl ?? "",
-    webrtcSessionId ?? null,
-    webrtcStatsUrl !== undefined && peerConnection !== null && webrtcSessionId != null,
+    statsUrl ?? "",
+    sessionId ?? null,
+    statsUrl !== undefined && peerConnection !== null && sessionId != null,
   );
   const sender = senderView.session;
-  /// `activeCodec` is the picker's setting; the answer can land on a different codec. Read
-  /// past `stale`, or the label reverts to the request exactly when a stream stops and the
-  /// user opens the panel to find out why.
+  /// Read past `stale`: the label must not revert to the request when a stream stops, which
+  /// is when the panel gets opened.
   const negotiatedCodec = senderView.session?.codec;
   const negotiatedCodecLabel =
     settings.transport === "webrtc" && negotiatedCodec
@@ -107,6 +114,7 @@ export function StreamSettingsTool({
   const summary = stats === null ? null : summariseStream(stats);
   const httpActive = settings.transport === "http";
   const webrtcActive = settings.transport === "webrtc";
+  const drifted = webrtcActive && codecDrifted(settings.webRtcCodec, negotiatedCodec);
 
   return (
     <CollapsibleSection
@@ -187,13 +195,26 @@ export function StreamSettingsTool({
           </SettingRow>
         )}
         <SettingRow icon={<Video className={iconClass} />} label="WebRTC codec">
-          <SettingSelect
-            label="WebRTC codec"
-            value={settings.webRtcCodec}
-            options={WEBRTC_CODEC_OPTIONS}
-            disabled={!webrtcActive}
-            onChange={(v) => onPlaybackSettingsChange({ webRtcCodec: v as WebRtcStreamCodec })}
-          />
+          <span className="flex min-w-0 items-center gap-1.5">
+            {drifted && onResetCodec && (
+              <button
+                type="button"
+                onClick={onResetCodec}
+                title={`Streaming ${negotiatedCodec}. Reconnect on ${settings.webRtcCodec}.`}
+                aria-label={`Streaming ${negotiatedCodec}, reconnect on ${settings.webRtcCodec}`}
+                className="inline-flex size-[22px] shrink-0 cursor-pointer items-center justify-center rounded text-amber-400 hover:bg-white/[0.06]"
+              >
+                <RotateCcw aria-hidden="true" className="h-3 w-3" />
+              </button>
+            )}
+            <SettingSelect
+              label="WebRTC codec"
+              value={settings.webRtcCodec}
+              options={WEBRTC_CODEC_OPTIONS}
+              disabled={!webrtcActive}
+              onChange={(v) => onPlaybackSettingsChange({ webRtcCodec: v as WebRtcStreamCodec })}
+            />
+          </span>
         </SettingRow>
         <SettingRow icon={<SlidersHorizontal className={iconClass} />} label="Max size">
           <SettingSelect
