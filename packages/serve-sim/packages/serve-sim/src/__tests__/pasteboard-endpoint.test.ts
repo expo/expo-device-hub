@@ -19,7 +19,7 @@ function pasteboardRequest(query = "", method = "POST", body?: BodyInit): Reques
   return new Request(`http://localhost:3200/preview/api/pasteboard${query}`, {
     method,
     headers: { Authorization: `Bearer ${TEST_TOKEN}` },
-    body,
+    ...(body === undefined ? {} : { body }),
   });
 }
 
