@@ -83,15 +83,6 @@ bun install
 bun run build   # turbo build across all packages
 ```
 
-### CI
-
-GitHub Actions runs lint, typecheck, build, and tests for every workspace, including
-`serve-sim`. The serve-sim native build and simulator suite run on EAS macOS workers
-through [`.eas/workflows/sim-test.yml`](.eas/workflows/sim-test.yml), on the
-[`expo-device-hub`](https://expo.dev/accounts/expo/projects/expo-device-hub) EAS project. EAS
-triggers it for pull requests that touch `packages/serve-sim`; fork PRs need the `eas-approved`
-label. Run it by hand from the repo root with `eas workflow:run .eas/workflows/sim-test.yml`.
-
 ### Run the example
 
 The [`example`](example) app is a host Expo project that has `expo-device-hub`
