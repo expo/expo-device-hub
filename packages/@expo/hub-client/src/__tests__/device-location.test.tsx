@@ -2,22 +2,15 @@ import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { type DeviceLocationRead, useDeviceLocation } from "../useDeviceLocation";
+import { createGlobalStubs } from "./test-globals";
 
-const originals = new Map<string, PropertyDescriptor | undefined>();
-function stubGlobal(name: string, value: unknown) {
-  originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
-  Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
-}
+const { stubGlobal, restoreGlobals } = createGlobalStubs();
 
 let renderer: ReactTestRenderer | undefined;
 afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = undefined;
-  for (const [name, descriptor] of originals) {
-    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-    else Reflect.deleteProperty(globalThis, name);
-  }
-  originals.clear();
+  restoreGlobals();
 });
 
 function stallingBackend() {
