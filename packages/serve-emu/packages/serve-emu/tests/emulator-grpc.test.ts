@@ -1,5 +1,9 @@
 import http2 from "node:http2";
 import type { ServerHttp2Stream } from "node:http2";
+import { createPublicKey, verify } from "node:crypto";
+import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   decodeEmulatorImage,
@@ -332,6 +336,79 @@ describe("gRPC receive work scheduling", () => {
 });
 
 describe("EmulatorGrpcClient HTTP/2 integration", () => {
+  test("authenticates a screenshot through a JWT-only emulator endpoint", async () => {
+    const root = await mkdtemp(join(tmpdir(), "emulator-grpc-jwt-"));
+    const jwks = join(root, "jwks");
+    const active = join(jwks, "active.jwk");
+    await mkdir(jwks);
+    const imageBody = encodeEmulatorImage({
+      format: IMG_FORMAT_RGB888,
+      width: 2,
+      height: 1,
+      image: Buffer.from([1, 2, 3, 4, 5, 6]),
+    });
+    let authorization: string | undefined;
+    const server = http2.createServer();
+    server.on("stream", (stream: ServerHttp2Stream, headers) => {
+      authorization = headers.authorization as string | undefined;
+      stream.respond({
+        ":status": 200,
+        "content-type": "application/grpc",
+        "grpc-status": authorization ? "0" : "16",
+        ...(!authorization ? { "grpc-message": "Missing the authorization header" } : {}),
+      });
+      stream.end(authorization ? grpcFrame(imageBody) : undefined);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing test port");
+    const discovery = `port.serial=5554\ngrpc.port=${address.port}\ngrpc.jwks=${jwks}\ngrpc.jwk_active=${active}`;
+    const loaded = (async () => {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const keyFile = (await readdir(jwks)).find((file) => file !== "active.jwk");
+        if (keyFile) {
+          const keys = await readFile(join(jwks, keyFile), "utf8");
+          await writeFile(active, keys);
+          return;
+        }
+        await Bun.sleep(10);
+      }
+      return;
+    })();
+    let client: EmulatorGrpcClient | undefined;
+    try {
+      const endpoint = await ensureEmulatorGrpcEndpoint("emulator-5554", undefined, {
+        discoveryDirs: () => [root],
+        readDirectory: () => ["pid_1.ini"],
+        processIsAlive: () => true,
+        readText: () => discovery,
+        modifiedMs: () => 1,
+        portIsReachable: async () => true,
+      });
+      client = new EmulatorGrpcClient(endpoint);
+      await client.getScreenshot({ format: IMG_FORMAT_RGB888 });
+      expect(authorization?.startsWith("Bearer ")).toBe(true);
+      const [header, claims, signature] = authorization!.slice(7).split(".");
+      expect(JSON.parse(Buffer.from(header, "base64url").toString())).toMatchObject({ alg: "ES256" });
+      expect(JSON.parse(Buffer.from(claims, "base64url").toString())).toMatchObject({
+        iss: "gradle-utp-emulator-control",
+        aud: ["/android.emulation.control.EmulatorController/getScreenshot"],
+      });
+      const key = JSON.parse(await readFile(active, "utf8")).keys[0];
+      expect(verify("sha256", Buffer.from(`${header}.${claims}`), {
+        key: createPublicKey({ key, format: "jwk" }),
+        dsaEncoding: "ieee-p1363",
+      }, Buffer.from(signature, "base64url"))).toBe(true);
+    } finally {
+      client?.close();
+      await loaded;
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   test("sends the discovered bearer token and decodes a screenshot", async () => {
     const imageBody = encodeEmulatorImage({
       format: IMG_FORMAT_RGB888,

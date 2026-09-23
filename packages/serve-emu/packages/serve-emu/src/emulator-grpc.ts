@@ -1,5 +1,7 @@
 import http2 from "node:http2";
+import { generateKeyPairSync, randomUUID, sign } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readFile, unlink, writeFile } from "node:fs/promises";
 import { createConnection, createServer } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +18,8 @@ export type GrpcEndpoint = {
   port: number;
   token: string | null;
   avdName: string | null;
+  jwks?: { directory: string; activeFile: string };
+  jwtCredential?: { sign(path: string): string; dispose(): void };
 };
 
 const MAX_GRPC_MESSAGE_BYTES = 64 * 1024 * 1024;
@@ -26,6 +30,69 @@ const MAX_PROTO_VARINT_BYTES = 10;
 const CONTROLLER_PREFIX = "/android.emulation.control.EmulatorController/";
 const UNARY_TIMEOUT_MS = 5_000;
 const STREAM_INACTIVITY_TIMEOUT_MS = 10_000;
+
+async function registerEmulatorJwt(
+  jwks: NonNullable<GrpcEndpoint["jwks"]>,
+  signal?: AbortSignal,
+): Promise<NonNullable<GrpcEndpoint["jwtCredential"]>> {
+  throwIfAborted(signal, "emulator gRPC authentication aborted");
+  const { privateKey, publicKey } = generateKeyPairSync("ec", {
+    namedCurve: "prime256v1",
+  });
+  const kid = randomUUID();
+  const keyFile = join(jwks.directory, `serve-emu-${kid}.jwk`);
+  await writeFile(
+    keyFile,
+    JSON.stringify({
+      keys: [{ ...publicKey.export({ format: "jwk" }), kid, alg: "ES256", use: "sig" }],
+    }),
+    { flag: "wx", mode: 0o600 },
+  );
+  try {
+    // The emulator watches this directory asynchronously. Wait until it has
+    // loaded our public key before sending the first screenshot request.
+    let loaded = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      throwIfAborted(signal, "emulator gRPC authentication aborted");
+      try {
+        const active = JSON.parse(await readFile(jwks.activeFile, "utf8"));
+        loaded = active.keys?.some((key: { kid?: string }) => key.kid === kid) === true;
+      } catch (error) {
+        if (
+          !(error instanceof SyntaxError) &&
+          (error as NodeJS.ErrnoException).code !== "ENOENT"
+        ) throw error;
+      }
+      if (loaded) break;
+      await sleep(100, undefined, { signal });
+    }
+    if (!loaded) throw new Error("emulator did not load the gRPC JWT key");
+  } catch (error) {
+    await unlink(keyFile).catch(() => {});
+    throw error;
+  }
+  return {
+    sign(path) {
+      const now = Math.floor(Date.now() / 1000);
+      const header = Buffer.from(JSON.stringify({ alg: "ES256", kid })).toString("base64url");
+      const claims = Buffer.from(JSON.stringify({
+        iss: "gradle-utp-emulator-control",
+        aud: [path],
+        iat: now - 1,
+        exp: now + 60,
+      })).toString("base64url");
+      const payload = `${header}.${claims}`;
+      const signature = sign("sha256", Buffer.from(payload), {
+        key: privateKey,
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url");
+      return `${payload}.${signature}`;
+    },
+    dispose() {
+      void unlink(keyFile).catch(() => {});
+    },
+  };
+}
 
 function abortReason(signal: AbortSignal, fallback: string): Error {
   return signal.reason instanceof Error
@@ -129,6 +196,12 @@ export function findEmulatorGrpcEndpoint(
         port,
         token: values.get("grpc.token") || null,
         avdName: values.get("avd.name") || null,
+        ...(values.get("grpc.jwks") && values.get("grpc.jwk_active")
+          ? { jwks: {
+              directory: values.get("grpc.jwks")!,
+              activeFile: values.get("grpc.jwk_active")!,
+            } }
+          : {}),
         modifiedMs,
       });
     }
@@ -140,6 +213,7 @@ export function findEmulatorGrpcEndpoint(
         port: endpoint.port,
         token: endpoint.token,
         avdName: endpoint.avdName,
+        ...(endpoint.jwks ? { jwks: endpoint.jwks } : {}),
       }
     : null;
 }
@@ -254,7 +328,10 @@ export async function ensureEmulatorGrpcEndpoint(
     ((ms: number, waitSignal?: AbortSignal) =>
       sleep(ms, undefined, { signal: waitSignal }));
   const warn = dependencies.warn ?? console.warn;
-  const useEndpoint = (endpoint: GrpcEndpoint): GrpcEndpoint => {
+  const useEndpoint = async (endpoint: GrpcEndpoint): Promise<GrpcEndpoint> => {
+    if (!endpoint.token && endpoint.jwks) {
+      return { ...endpoint, jwtCredential: await registerEmulatorJwt(endpoint.jwks, signal) };
+    }
     if (!endpoint.token) {
       warn(
         `serve-emu warning: emulator gRPC endpoint for ${serial} has no bearer token; grpc-screenshot will use this explicitly selected local endpoint without authentication`,
@@ -1027,7 +1104,9 @@ export class EmulatorGrpcClient {
         "content-type": "application/grpc",
         te: "trailers",
       };
-      if (this.#endpoint.token) {
+      if (this.#endpoint.jwtCredential) {
+        headers.authorization = `Bearer ${this.#endpoint.jwtCredential.sign(CONTROLLER_PREFIX + method)}`;
+      } else if (this.#endpoint.token) {
         headers.authorization = `Bearer ${this.#endpoint.token}`;
       }
       const stream = this.#session.request(headers);
@@ -1295,6 +1374,7 @@ export class EmulatorGrpcClient {
   close(): void {
     if (this.#closed) return;
     this.#closed = true;
+    this.#endpoint.jwtCredential?.dispose();
     try {
       this.#session.destroy();
     } catch {}
