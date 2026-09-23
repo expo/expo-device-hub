@@ -147,7 +147,16 @@ a frame while no peer is active exits before conversion or encoding.
 ### Signaling lifecycle
 
 1. The browser creates a receive-only video transceiver and gathers ICE.
-2. It POSTs an SDP offer, session ID, codec preference, and ICE configuration.
+2. It POSTs an SDP offer, session ID, codec preference, and ICE configuration. For
+   H.264 the posted offer has its `profile-level-id` level byte raised to 5.2; the
+   browser's own local description is left as built. Browsers advertise Level 3.1
+   whatever they can decode, and libwebrtc builds its encoder from the level in this
+   offer, producing no frames at all past that level's frame size. This is SDP
+   munging, not negotiation: `level-asymmetry-allowed=1` lets the two directions
+   differ, it does not license sending above what the peer said it decodes. It rests on
+   measurement — Chrome and Safari both decode a 1206x2622 stream while advertising 3.1 —
+   not on the fallback ladder: a decoder that limps rather than stops never trips it, and
+   intermittent decoding resets the watchdog indefinitely.
 3. Native creates a peer connection for that session, applies codec preferences,
    gathers ICE, and returns a complete SDP answer.
 4. The session joins the active peer registry. The publisher starts accepting
