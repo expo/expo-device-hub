@@ -105,6 +105,9 @@ describe('middlewareEndpointForBrowser', () => {
     expect(middlewareEndpointForBrowser('/preview/session/grid/api', publicMount, '')).toBe(
       'https://stream.example.test:8443/preview/session/grid/api',
     );
+    expect(middlewareEndpointForBrowser('/preview/session/grid/api', publicMount, '/preview')).toBe(
+      'https://stream.example.test:8443/preview/session/grid/api',
+    );
   });
 
   test('keeps browser requests on the public server if an advertised path lacks the base prefix', () => {
