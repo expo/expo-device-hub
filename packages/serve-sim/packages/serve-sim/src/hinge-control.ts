@@ -13,18 +13,21 @@ export type HingePose = typeof HINGE_POSES[number]["id"];
 export type HingeControlCommand =
   | { control: "angle"; value: number }
   | { control: "pose"; value: HingePose }
-  | { control: "table"; value: boolean };
+  | { control: "table"; value: boolean }
+  | { control: "physical"; value: "faceup" | "facedown" };
 
 export function isHingeControlCommand(value: unknown): value is HingeControlCommand {
   if (!value || typeof value !== "object") return false;
   const command = value as Record<string, unknown>;
   return command.control === "angle" ? isHingeAngle(command.value)
+    : command.control === "physical" ? command.value === "faceup" || command.value === "facedown"
     : command.control === "table" ? typeof command.value === "boolean"
     : command.control === "pose" && HINGE_POSES.some((pose) => pose.id === command.value);
 }
 
 /** Confirmed command state, separate from the app's reported screen orientation. */
 export function hingeControlState(command: HingeControlCommand): HingeControlState {
+  if (command.control === "physical") return { hingePose: null, tableMode: command.value === "facedown" };
   if (command.control === "table") return { tableMode: command.value, hingePose: null };
   if (command.control === "angle") return { hingeAngle: command.value, hingePose: null, tableMode: false };
   const pose = HINGE_POSES.find((pose) => pose.id === command.value)!;

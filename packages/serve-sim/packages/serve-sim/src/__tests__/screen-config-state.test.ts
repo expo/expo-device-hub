@@ -85,6 +85,14 @@ describe("screen config state", () => {
     )?.config.supportsHingeAngle).toBe(true);
   });
 
+  test("reports physical orientation capability changes", () => {
+    expect(resolveScreenConfigUpdate(
+      { width: 2007, height: 2853, supportsHingeAngle: true },
+      { width: 2007, height: 2853, supportsHingeAngle: true, supportsPhysicalOrientation: true },
+      "reported",
+    )?.config.supportsPhysicalOrientation).toBe(true);
+  });
+
   test("reports a display switch even when both screens have the same dimensions", () => {
     expect(resolveScreenConfigUpdate(
       { width: 900, height: 1280, screenId: 1 },

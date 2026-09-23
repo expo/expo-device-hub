@@ -237,6 +237,7 @@ export class DeviceSession {
   private height = 0;
   private orientation = "portrait";
   private supportsHingeAngle?: boolean;
+  private supportsPhysicalOrientation?: boolean;
   private hingeAngle?: number;
   private hingePose: HingePose | null = null;
   private tableMode?: boolean;
@@ -287,9 +288,13 @@ export class DeviceSession {
       this.scheduleScreenRefresh();
       // Discover fold controls without delaying the first frame or inventing
       // an initial angle when CoreDevice has not reported one.
-      void this.hid.supportsHingeAngle().then((supported) => {
+      void Promise.all([
+        this.hid.supportsHingeAngle(),
+        this.hid.supportsPhysicalOrientation(),
+      ]).then(([supportsHingeAngle, supportsPhysicalOrientation]) => {
         if (this.phase !== "running") return;
-        this.supportsHingeAngle = supported;
+        this.supportsHingeAngle = supportsHingeAngle;
+        this.supportsPhysicalOrientation = supportsPhysicalOrientation;
         this.broadcastConfig();
       });
     });
@@ -1015,7 +1020,10 @@ export class DeviceSession {
     const operation = this.hingeControlUpdate.then(async () => {
       if (this.phase !== "running") return false;
       if (command.control === "table" && command.value && !isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation)) return false;
+      if (command.control === "physical" && this.supportsPhysicalOrientation === false) return false;
+      if (command.control === "physical" && command.value === "facedown" && !(this.hingeAngle !== undefined && this.hingeAngle > 0 && this.hingeAngle < 180)) return false;
       const ok = command.control === "pose" ? await this.hid.setHingePose(command.value)
+        : command.control === "physical" ? await this.hid.setPhysicalOrientation(command.value)
         : command.control === "table" ? await this.hid.setTableMode(command.value)
         : await this.hid.setHingeAngle(command.value);
       if (ok) {
@@ -1024,6 +1032,7 @@ export class DeviceSession {
         if (state.hingeAngle !== undefined) this.hingeAngle = state.hingeAngle;
         this.hingePose = state.hingePose ?? null;
         if (state.tableMode !== undefined) this.tableMode = state.tableMode;
+        if (command.control === "physical") this.hingePhysicalOrientation = command.value;
         if (command.control === "pose") this.hingePhysicalOrientation = hingePoseOrientation(command.value);
         this.broadcastConfig();
       } else {
@@ -1211,6 +1220,7 @@ export class DeviceSession {
     orientation: string;
     screenId?: number;
     supportsHingeAngle?: boolean;
+    supportsPhysicalOrientation?: boolean;
     hingeAngle?: number;
     hingePose?: HingePose | null;
     tableMode?: boolean;
@@ -1221,6 +1231,7 @@ export class DeviceSession {
       height: this.height,
       orientation: this.orientation,
       ...(this.nativeScreen?.screenId !== undefined ? { screenId: this.nativeScreen.screenId } : {}),
+      ...(this.supportsPhysicalOrientation !== undefined ? { supportsPhysicalOrientation: this.supportsPhysicalOrientation } : {}),
       ...(this.supportsHingeAngle !== undefined ? { supportsHingeAngle: this.supportsHingeAngle } : {}),
       ...(this.hingeAngle !== undefined ? { hingeAngle: this.hingeAngle } : {}),
       ...(this.supportsHingeAngle ? { hingePose: this.hingePose, tableModeAvailable: isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation) } : {}),
