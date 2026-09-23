@@ -2022,12 +2022,6 @@ program
     (value: string, prev: string[]) => [...prev, value],
     [] as string[],
   )
-  .option(
-    "--metrics-cors-origin <origin>",
-    "Deprecated alias for --cors-origin.",
-    (value: string, prev: string[]) => [...prev, value],
-    [] as string[],
-  )
   .option("-l, --list [device]", "List running streams")
   .option("-k, --kill [device]", "Kill running stream(s)")
   .addHelpText(
@@ -2258,7 +2252,7 @@ Examples:
     } else {
       await serve(startPort ?? 3200, targets, startPort !== undefined, opts.host, {
         stream,
-        corsOrigins: [...opts.corsOrigin, ...opts.metricsCorsOrigin],
+        corsOrigins: opts.corsOrigin,
         frameAncestors: opts.frameAncestor,
         shareUrl: opts.shareUrl,
         debugStreamPath,

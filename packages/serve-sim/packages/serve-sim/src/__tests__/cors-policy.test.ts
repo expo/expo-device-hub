@@ -87,15 +87,4 @@ describe("CORS policy", () => {
 
     expect(response).toBeUndefined();
   });
-
-  test("reads the deprecated option alongside the current one", async () => {
-    const middleware = simMiddleware({
-      basePath: "/.sim",
-      corsOrigins: ["https://expo.dev"],
-      metricsCorsOrigins: ["https://staging.expo.dev"],
-    });
-    const response = await middleware(preflight("https://staging.expo.dev"));
-
-    expect(response?.headers.get("access-control-allow-origin")).toBe("https://staging.expo.dev");
-  });
 });
