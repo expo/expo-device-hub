@@ -6,7 +6,7 @@ const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
 const LINE_BUFFER_LIMIT = 1024 * 1024;
 const RESTART_DELAY_MS = 1000;
 const MAX_RESTART_DELAY_MS = 30_000;
-const POLL_IDLE_MS = 8_000;
+export const POLL_IDLE_MS = 8_000;
 
 export interface LogLine {
   seq: number;
@@ -14,10 +14,12 @@ export interface LogLine {
   raw: string;
 }
 
-function emittedBy(raw: string, processName: string): boolean {
+function emittedBy(raw: string, processName: string, processId: number | null): boolean {
   try {
-    const path = (JSON.parse(raw) as { processImagePath?: unknown }).processImagePath;
-    return typeof path === "string" && path.slice(path.lastIndexOf("/") + 1) === processName;
+    const entry = JSON.parse(raw) as { processImagePath?: unknown; processID?: unknown };
+    const path = entry.processImagePath;
+    if (typeof path !== "string" || path.slice(path.lastIndexOf("/") + 1) !== processName) return false;
+    return processId === null || entry.processID === processId;
   } catch {
     return false;
   }
@@ -135,12 +137,14 @@ export class DeviceLogBuffer {
     at,
     count,
     processName,
+    processId = null,
     maxBytes,
     maxGapMs,
   }: {
     at: number;
     count: number;
     processName: string;
+    processId?: number | null;
     maxBytes?: number;
     maxGapMs?: number;
   }): { lines: LogLine[]; reason: "app-windowed" | "buffer-rolled-past" | "no-app-lines" } {
@@ -152,7 +156,7 @@ export class DeviceLogBuffer {
       const line = this.lines[i]!;
       if (line.at > at) continue;
       newestBefore ??= line;
-      if (!emittedBy(line.raw, processName)) continue;
+      if (!emittedBy(line.raw, processName, processId)) continue;
       sawAppLine = true;
       const size = Buffer.byteLength(line.raw);
       if (maxBytes === undefined || bytes + size <= maxBytes) {

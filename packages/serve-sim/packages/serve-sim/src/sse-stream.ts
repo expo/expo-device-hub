@@ -11,7 +11,8 @@ export interface SseStream {
 /** `isOpen` is the `writableEnded`/`destroyed` pair: an aborted client only sets the latter. */
 export function openSseStream(
   req: IncomingMessage,
-  res: ServerResponse
+  res: ServerResponse,
+  opts: { onHeartbeat?: () => void } = {}
 ): SseStream {
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
@@ -24,7 +25,9 @@ export function openSseStream(
   let closed = false;
   const isOpen = (): boolean => !closed && !res.writableEnded && !res.destroyed;
   const heartbeat = setInterval(() => {
-    if (isOpen()) res.write(":\n\n");
+    if (!isOpen()) return;
+    opts.onHeartbeat?.();
+    res.write(":\n\n");
   }, SSE_HEARTBEAT_MS);
   const teardowns: (() => void)[] = [];
   const closeAll = (): void => {

@@ -284,6 +284,22 @@ describe("DeviceLogBuffer", () => {
     buffer.stop();
   });
 
+  test("keeps two processes with the same name apart by pid", () => {
+    const buffer = makeBuffer();
+    buffer.start();
+    clock = 1_000;
+    spawned[0]!.emitLines(
+      JSON.stringify({ processImagePath: "/a/Demo.app/Demo", processID: 11, eventMessage: "other app" }) +
+        "\n" +
+        JSON.stringify({ processImagePath: "/b/Demo.app/Demo", processID: 22, eventMessage: "crashed app" }) +
+        "\n"
+    );
+
+    const tail = buffer.tailBefore({ at: 1_000, count: 10, processName: "Demo", processId: 22 });
+    expect(tail.lines.map((line) => JSON.parse(line.raw).eventMessage)).toEqual(["crashed app"]);
+    buffer.stop();
+  });
+
   test("caps the tail by bytes as well as line count", () => {
     const buffer = makeBuffer();
     buffer.start();

@@ -117,6 +117,8 @@ describe("the protected surface", () => {
     "/grid/api/shutdown",
     "/metrics",
     "/logs",
+    "/crashes",
+    "/crashes/INC-1",
     "/ax",
     "/appstate",
     "/devtools",

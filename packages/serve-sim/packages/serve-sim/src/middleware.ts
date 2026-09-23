@@ -43,6 +43,10 @@ import {
 import { serveDeviceKitModelAsset } from "./devicekit-model";
 import { validatePanelRoute } from "./panel-route";
 import { createExecWebSocketHandler, type UiRequestHandler } from "./exec-ws";
+import { crashRuntime } from "./crash/runtime";
+import { handleCrashesRequestAfter, handleCrashReportRequest } from "./crash/routes";
+export { handleCrashesRequest, handleCrashReportRequest } from "./crash/routes";
+import { booleanParam } from "./request-params";
 import { logBufferCache, type LogBufferCache, type LogLine } from "./log-buffer";
 import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware-utils";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
@@ -1555,13 +1559,6 @@ function nonNegativeIntParam(params: URLSearchParams, name: string): number | un
   return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
-function booleanParam(params: URLSearchParams, name: string): boolean {
-  const raw = params.get(name);
-  if (raw === null) return false;
-  const value = raw.trim().toLowerCase();
-  return value !== "0" && value !== "false" && value !== "no";
-}
-
 export function handleLogsRequest(
   req: SimReq,
   res: SimRes,
@@ -1637,13 +1634,23 @@ export function handleLogsRequest(
   );
 }
 
+async function selectDeviceAndReap(selectedDevice: string | null): Promise<ServeSimState | null> {
+  const states = await readServeSimStates();
+  const state = selectServeSimState(states, selectedDevice);
+  const live = states.map((s) => s.device);
+  crashRuntime.prune(live);
+  logBufferCache.prune(live);
+  return state;
+}
+
 /**
  * Connect-style middleware that serves the simulator preview UI.
  *
  * Routes handled under `basePath` (default `/.sim`):
  *   GET  {basePath}         — the preview HTML page
  *   GET  {basePath}/api     — serve-sim state JSON
- *   GET  {basePath}/logs    — simctl logs (JSON snapshot, or SSE)
+ *   GET  {basePath}/logs    — simctl logs, JSON snapshot or SSE (bearer token)
+ *   GET  {basePath}/crashes — crash reports (bearer token)
  *   GET  {basePath}/ax      — SSE stream of normalized accessibility snapshots
  */
 export function handleMetricsRequest(
@@ -1703,6 +1710,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
     : {};
 
+  // The watch starts on the first `/crashes` read, so building a middleware never touches the
+  // host's crash directory.
+  crashRuntime.arm();
 
   // Simulator-settings requests run in-process (just the underlying simctl /
   // ax-tool spawn) instead of round-tripping a full `node <cli>` exec per
@@ -2523,11 +2533,41 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
+    if (url === base + "/crashes" || url === base + "/crashes/") {
+      const state = await selectDeviceAndReap(selectedDevice);
+      await handleCrashesRequestAfter(
+        () => crashRuntime.start({ deferToRetry: true }).catch(() => {}),
+        req,
+        res,
+        state
+      );
+      return;
+    }
+
+    if (url.startsWith(base + "/crashes/")) {
+      const rawId = url.slice((base + "/crashes/").length);
+      let id: string;
+      try {
+        id = decodeURIComponent(rawId);
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error:
+              `Malformed percent-escape in the crash id (${rawId}). Copy the id verbatim from ` +
+              `GET ${base}/crashes.`,
+          })
+        );
+        return;
+      }
+      const state = await selectDeviceAndReap(selectedDevice);
+      const occurrenceParam = new URL(rawUrl, "http://127.0.0.1").searchParams.get("occurrence");
+      await handleCrashReportRequest(req, res, state, id, occurrenceParam);
+      return;
+    }
+
     if (url === base + "/logs") {
-      const states = await readServeSimStates();
-      const state = selectServeSimState(states, selectedDevice);
-      logBufferCache.prune(states.map((s) => s.device));
-      handleLogsRequest(req, res, state, rawUrl);
+      handleLogsRequest(req, res, await selectDeviceAndReap(selectedDevice), rawUrl);
       return;
     }
 
@@ -2675,6 +2715,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       `${base}/grid/api/status/events`,
       `${base}/appstate`,
       `${base}/logs`,
+      `${base}/crashes`,
       `${base}/metrics`,
       `${base}/ax`,
     ],
