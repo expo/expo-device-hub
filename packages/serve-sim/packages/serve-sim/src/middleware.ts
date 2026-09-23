@@ -24,7 +24,12 @@ import {
   peekDeviceSession,
   type HidSocket,
 } from "./device-session";
-import { assertPreviewAccess, assertUpgradeAccess } from "./session-auth";
+import {
+  acceptedTokenSubprotocol,
+  assertPreviewAccess,
+  assertUpgradeAccess,
+  upgradeAuthHeaders,
+} from "./session-auth";
 import {
   eventLogEventForAction,
   readEventLog,
@@ -654,26 +659,35 @@ function webSocketBinary(payload: Buffer<ArrayBufferLike>): Uint8Array<ArrayBuff
  * handshake doesn't flush under Bun). Writes the 101 response and resumes the
  * socket on success; on a missing key writes 400 and returns false.
  */
-function writeWebSocketAccept(req: SimReq, socket: Socket): boolean {
+function writeWebSocketAccept(req: SimReq, socket: Socket, execToken: string): boolean {
   const key = req.headers["sec-websocket-key"];
   if (typeof key !== "string") {
     socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
     return false;
   }
   const accept = createHash("sha1").update(key + WS_ACCEPT_GUID).digest("base64");
+  // A client that offered subprotocols fails the handshake unless one is named back.
+  const subprotocol = acceptedTokenSubprotocol(req.headers, execToken);
   socket.write(
     "HTTP/1.1 101 Switching Protocols\r\n" +
     "Upgrade: websocket\r\n" +
     "Connection: Upgrade\r\n" +
     `Sec-WebSocket-Accept: ${accept}\r\n` +
+    (subprotocol ? `Sec-WebSocket-Protocol: ${subprotocol}\r\n` : "") +
     "\r\n",
   );
   socket.resume();
   return true;
 }
 
-function bridgeWebSocketFrames(req: SimReq, socket: Socket, head: Buffer, upstreamUrl: string): void {
-  if (!writeWebSocketAccept(req, socket)) return;
+function bridgeWebSocketFrames(
+  req: SimReq,
+  socket: Socket,
+  head: Buffer,
+  upstreamUrl: string,
+  execToken: string,
+): void {
+  if (!writeWebSocketAccept(req, socket, execToken)) return;
 
   const upstream = new WebSocket(upstreamUrl);
   upstream.binaryType = "arraybuffer";
@@ -971,6 +985,7 @@ function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
 function attachHidInProcess(
   req: SimReq,
   socket: Socket,
+  execToken: string,
   head: Buffer,
   device: string | null,
   initialStreamSettings?: StreamSettings,
@@ -982,7 +997,7 @@ function attachHidInProcess(
   } catch {
     return false;
   }
-  if (!writeWebSocketAccept(req, socket)) return true; // bad request handled
+  if (!writeWebSocketAccept(req, socket, execToken)) return true; // bad request handled
   session.attachHidSocket(rawHidSocket(socket, head));
   return true;
 }
@@ -2665,13 +2680,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // their own, so gate them here too.
     if (
       !assertUpgradeAccess(
-        {
-          authorization: req.headers.authorization,
-          cookie: req.headers.cookie,
-          origin: req.headers.origin,
-          host: req.headers.host,
-          "sec-fetch-site": req.headers["sec-fetch-site"],
-        },
+        upgradeAuthHeaders(req.headers),
         execToken,
         { required: requirePreviewToken },
       )
@@ -2687,7 +2696,13 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       (async () => {
         try {
           const bridge = await getInspectWebKitBridge();
-          bridgeWebSocketFrames(req, socket, head, `ws://127.0.0.1:${bridge.port}${devtoolsTarget.upstreamPath}`);
+          bridgeWebSocketFrames(
+            req,
+            socket,
+            head,
+            `ws://127.0.0.1:${bridge.port}${devtoolsTarget.upstreamPath}`,
+            execToken,
+          );
         } catch (err) {
           const message = err instanceof Error ? err.message : "Failed to start inspect-webkit";
           socket.end(`HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${message}`);
@@ -2702,7 +2717,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     const device = helperTarget.device ?? selectedDevice;
     if (helperTarget.upstreamPath === "/ws") {
       // HID input is delivered to the in-process DeviceSession.
-      if (attachHidInProcess(req, socket, head, device, streamSettings)) return;
+      if (attachHidInProcess(req, socket, execToken, head, device, streamSettings)) return;
       socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
       return;
     }
@@ -2717,6 +2732,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const execWebSocketHandler = createExecWebSocketHandler({
     path: `${base}/exec-ws`,
     execToken,
+    corsOrigins,
     ssePrefixes: [
       `${base}/api/events`,
       `${base}/api/event-log/events`,
@@ -2740,17 +2756,14 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   });
 
   fetchMiddleware.handleWebSocket = (request: Request, websocket: UpgradeHandlerWebSocket): boolean => {
+    // Before any refusal below can close it: an unhandled error from a peer that keeps sending
+    // would exit the process.
+    websocket.on("error", () => websocket.close());
     // Embedded hosts forward accepted sockets and bypass the request gate. The exec channel
-    // re-checks the token in its first frame; the helper HID socket does not.
+    // re-checks the token itself; the helper HID socket does not.
     if (
       !assertUpgradeAccess(
-        {
-          authorization: request.headers.get("authorization") ?? undefined,
-          cookie: request.headers.get("cookie") ?? undefined,
-          origin: request.headers.get("origin") ?? undefined,
-          host: request.headers.get("host") ?? undefined,
-          "sec-fetch-site": request.headers.get("sec-fetch-site") ?? undefined,
-        },
+        upgradeAuthHeaders(request),
         execToken,
         { required: requirePreviewToken },
       )

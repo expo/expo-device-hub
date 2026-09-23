@@ -49,11 +49,13 @@ class FakeSocket {
 }
 
 let runHostAction: typeof import("../../client/utils/exec").runHostAction;
+let offeredProtocols: string[] = [];
 
 beforeAll(async () => {
   const globals = globalThis as Record<string, unknown>;
-  globals.WebSocket = function OpenedSocket(this: FakeSocket) {
+  globals.WebSocket = function OpenedSocket(this: FakeSocket, _url: string, protocols?: string[]) {
     socket = new FakeSocket();
+    offeredProtocols = protocols ?? [];
     return socket;
   };
   (globals.WebSocket as { OPEN?: number }).OPEN = 1;
@@ -83,9 +85,10 @@ async function request(
 }
 
 describe("client runHostAction", () => {
-  it("opens the socket with the preview token before sending anything", async () => {
+  it("presents the preview token at the handshake rather than in a frame", async () => {
     await request(() => runHostAction("appearance.get", { udid: "U" }), { stdout: "", exitCode: 0 });
-    expect(sentFrames[0]).toEqual({ token: TOKEN });
+    expect(offeredProtocols).toEqual([`serve-sim.token.${TOKEN}`]);
+    expect(sentFrames[0]).toHaveProperty("id");
   });
 
   it("passes a successful result through unchanged", async () => {

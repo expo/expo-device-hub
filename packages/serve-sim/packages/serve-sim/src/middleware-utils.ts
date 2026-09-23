@@ -80,7 +80,7 @@ export function originMatches(configured: string, origin: URL): boolean {
 }
 
 /** The schemes a browser sends a CORS Origin for. Anything else serializes to "null". */
-function isWebOrigin(url: URL): boolean {
+export function isWebOrigin(url: URL): boolean {
   return url.protocol === "http:" || url.protocol === "https:";
 }
 

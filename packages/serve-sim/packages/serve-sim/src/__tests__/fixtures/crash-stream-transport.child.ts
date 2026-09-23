@@ -11,11 +11,13 @@ test("crash frames travel through the exec socket into the list reducer", async 
     static readonly OPEN = 1;
     readyState = 1;
     sent: SentFrame[] = [];
+    protocols: string[];
     onopen: (() => void) | null = null;
     onmessage: ((event: { data: string }) => void) | null = null;
     onclose: (() => void) | null = null;
     onerror: (() => void) | null = null;
-    constructor() {
+    constructor(_url: string, protocols?: string[]) {
+      this.protocols = protocols ?? [];
       sockets.push(this);
       queueMicrotask(() => {
         this.onopen?.();
@@ -62,7 +64,7 @@ test("crash frames travel through the exec socket into the list reducer", async 
       state = applyCrashFrame(state, frame);
     }, () => { errors += 1; });
     const initial = await subscribed(0);
-    expect(initial.socket.sent[0]).toEqual({ token: "test-token" });
+    expect(initial.socket.protocols).toEqual(["serve-sim.token.test-token"]);
     expect(initial.socket.sent.at(-1)?.path).toBe("/crashes?device=U&tail=1");
     const deliver = (socket: FakeSocket, sub: number, frame: CrashStreamFrame) => {
       const data = `data: ${JSON.stringify(frame)}\n\n`;

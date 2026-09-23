@@ -167,12 +167,12 @@ describe("websocket upgrades with --require-token", () => {
   }
 
   function fakeWebSocket() {
-    const calls = { closed: false, listeners: 0 };
+    const calls = { closed: false, events: [] as string[] };
     const ws: UpgradeHandlerWebSocket = {
       OPEN: 1,
       readyState: 1,
-      on: () => {
-        calls.listeners += 1;
+      on: (event: string) => {
+        calls.events.push(event);
       },
       send: () => {},
       close: () => {
@@ -201,7 +201,8 @@ describe("websocket upgrades with --require-token", () => {
 
     expect(claimed).toBe(true);
     expect(calls.closed).toBe(true);
-    expect(calls.listeners).toBe(0);
+    expect(calls.events).not.toContain("message");
+    expect(calls.events).toContain("error");
   });
 
   test("wires the exec-ws socket when it carries the cookie", () => {
@@ -216,7 +217,7 @@ describe("websocket upgrades with --require-token", () => {
     );
 
     expect(calls.closed).toBe(false);
-    expect(calls.listeners).toBeGreaterThan(0);
+    expect(calls.events).toContain("message");
   });
 
   test("leaves upgrades open when the flag is off", () => {
@@ -226,7 +227,7 @@ describe("websocket upgrades with --require-token", () => {
     handler.handleWebSocket?.(new Request(`${ORIGIN}/exec-ws`), ws);
 
     expect(calls.closed).toBe(false);
-    expect(calls.listeners).toBeGreaterThan(0);
+    expect(calls.events).toContain("message");
   });
 });
 

@@ -54,17 +54,29 @@ function rejectAllPending(reason: Error): void {
   pendingRequests.clear();
 }
 
+// A token outside the subprotocol charset cannot go in the handshake, so it goes in the first frame.
+function connectExecSocket(token: string): { ws: WebSocket; sendsToken: boolean } {
+  try {
+    return { ws: new WebSocket(execSocketUrl(), [`serve-sim.token.${token}`]), sendsToken: false };
+  } catch {
+    return { ws: new WebSocket(execSocketUrl()), sendsToken: true };
+  }
+}
+
 function openExecSocket(): Promise<WebSocket> {
   socketPromise ??= new Promise<WebSocket>((resolve, reject) => {
     let settled = false;
+    const token = window.__SIM_PREVIEW__?.execToken ?? "";
     let ws: WebSocket;
+    let sendsToken: boolean;
     try {
-      ws = new WebSocket(execSocketUrl());
+      ({ ws, sendsToken } = connectExecSocket(token));
     } catch (e) {
       socketPromise = null;
       reject(e);
       return;
     }
+    if (sendsToken) ws.onopen = () => ws.send(JSON.stringify({ token }));
     // Fail fast if the server never completes the handshake or auth — a
     // hung connection must not stall every request behind it.
     const connectTimer = setTimeout(() => {
@@ -75,9 +87,6 @@ function openExecSocket(): Promise<WebSocket> {
         ws.close();
       }
     }, CONNECT_TIMEOUT_MS);
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ token: window.__SIM_PREVIEW__?.execToken ?? "" }));
-    };
     ws.onmessage = (event) => {
       let msg: SocketReply;
       try {

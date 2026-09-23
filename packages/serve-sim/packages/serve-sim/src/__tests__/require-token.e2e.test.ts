@@ -2,6 +2,7 @@ import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
+import { connect } from "net";
 import { join } from "path";
 import WebSocket from "ws";
 
@@ -307,4 +308,28 @@ describeIfSim("serve-sim --require-token (built CLI)", () => {
     });
     expect(response.status).toBe(404);
   });
+
+  test("survives a client that keeps sending after its control socket is refused", async () => {
+    const { port } = new URL(baseUrl);
+    await new Promise<void>((resolve) => {
+      const socket = connect(Number(port), "127.0.0.1", () => {
+        socket.write(
+          `GET /exec-ws HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nUpgrade: websocket\r\n` +
+            "Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+            "Sec-WebSocket-Version: 13\r\n\r\n",
+        );
+      });
+      socket.on("data", (chunk) => {
+        if (chunk.toString().startsWith("HTTP/1.1 101")) socket.write(Buffer.from([0x81, 0x02, 0x68, 0x69]));
+      });
+      socket.on("error", () => {});
+      setTimeout(() => {
+        socket.destroy();
+        resolve();
+      }, 1_500);
+    });
+
+    expect(server?.exitCode).toBeNull();
+    expect((await fetch(`${baseUrl}/healthz`)).status).toBe(200);
+  }, 10_000);
 });

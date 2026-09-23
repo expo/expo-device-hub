@@ -43,7 +43,7 @@ function connect(token: string): Promise<{
   closed: Promise<void>;
 }> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/exec-ws`);
+    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/exec-ws`, [`serve-sim.token.${token}`]);
     const queue: Reply[] = [];
     const waiters: Array<(r: Reply) => void> = [];
     let closeResolve: () => void;
@@ -53,7 +53,6 @@ function connect(token: string): Promise<{
     const timer = setTimeout(() => reject(new Error("connect timeout")), 5000);
     ws.onopen = () => {
       clearTimeout(timer);
-      ws.send(JSON.stringify({ token }));
       resolve({
         next: () =>
           new Promise<Reply>((r, rej) => {

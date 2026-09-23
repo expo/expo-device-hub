@@ -162,6 +162,9 @@ continue to support multiple viewers as well.
 See [WebRTC architecture](docs/webrtc-architecture.md) for the current design,
 control-channel decision, known constraints, and planned direction.
 
+See [API](docs/api.md) for the HTTP routes, authentication, CORS and the
+WebSocket endpoints.
+
 ### Examples
 
 ```sh

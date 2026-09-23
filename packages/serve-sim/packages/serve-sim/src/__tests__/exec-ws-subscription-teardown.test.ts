@@ -53,8 +53,12 @@ describe("subscription teardown during an in-flight request", () => {
     });
 
     const h = fakeSocket();
-    handler(new Request("http://127.0.0.1/exec-ws"), h.ws);
-    h.deliver({ token: TOKEN });
+    handler(
+      new Request("http://127.0.0.1/exec-ws", {
+        headers: { "sec-websocket-protocol": `serve-sim.token.${TOKEN}` },
+      }),
+      h.ws,
+    );
     h.deliver({ sub: 1, path: "/api/events" });
 
     tearDown(h);
