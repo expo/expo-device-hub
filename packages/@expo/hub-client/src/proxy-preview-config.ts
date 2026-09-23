@@ -8,33 +8,26 @@ export interface ProxyPreviewConfig {
   streamSettingsEndpoint?: string;
 }
 
-/** Map a middleware route advertised under `basePath` onto its public mount. */
+/** Strip the advertised mount and resolve the route under the public `baseUrl` mount. */
 export function middlewareEndpointForBrowser(
   advertisedPath: string,
   middlewareUrl: URL,
   basePath: string = '',
 ): string {
   const mountPath = middlewareUrl.pathname.replace(/\/+$/, '');
-  const internalPath = basePath === '/' ? '' : basePath.replace(/\/+$/, '');
-  const mountUrl = new URL(middlewareUrl);
-  mountUrl.pathname = `${mountPath}/`;
-  mountUrl.search = '';
-  mountUrl.hash = '';
-
-  const endpoint = new URL(advertisedPath, mountUrl);
-  // Relative endpoints already resolve under the public mount.
-  if (!advertisedPath.startsWith('/') && !/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(advertisedPath)) {
-    return endpoint.toString();
-  }
-  const advertisedMount = internalPath &&
-    (endpoint.pathname === internalPath || endpoint.pathname.startsWith(`${internalPath}/`))
-    ? internalPath
-    : mountPath && (endpoint.pathname === mountPath || endpoint.pathname.startsWith(`${mountPath}/`))
-      ? mountPath
-      : '';
-
+  const internalPath = basePath.replace(/\/+$/, '');
   const publicEndpoint = new URL(middlewareUrl);
-  publicEndpoint.pathname = `${mountPath}${endpoint.pathname.slice(advertisedMount.length)}` || '/';
+  publicEndpoint.pathname = `${mountPath}/`;
+  publicEndpoint.search = '';
+  publicEndpoint.hash = '';
+
+  const endpoint = new URL(advertisedPath, publicEndpoint);
+  const prefix = [internalPath, mountPath]
+    .filter(Boolean)
+    .sort((a, b) => b.length - a.length)
+    .find((path) => endpoint.pathname === path || endpoint.pathname.startsWith(`${path}/`));
+  const route = endpoint.pathname.slice(prefix?.length ?? 0).replace(/^\/+/, '');
+  publicEndpoint.pathname = `${mountPath}/${route}`;
   publicEndpoint.search = endpoint.search;
   publicEndpoint.hash = endpoint.hash;
   return publicEndpoint.toString();
