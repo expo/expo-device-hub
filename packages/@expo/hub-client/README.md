@@ -59,6 +59,19 @@ export function LiveDevice({ udid }: { udid: string }) {
   supports all three. Android maps a mode it cannot serve to one it can.
 - `client.status` moves through `'idle'`, `'connecting'`, `'streaming'`, and `'error'`
   (Android also reports `'reconnecting'`). `client.error` holds the last failure message.
+- A Hub started with `--require-token` gates its iOS routes behind a session token. Pass it
+  as the third argument, `{ accessToken }`. The client sends it as a bearer on fetches, as
+  the `serve-sim.token.<token>` subprotocol on WebSockets, and as `?token=` where the browser
+  can set neither. A cross-origin page needs its origin allowed on the Hub for the exec
+  socket. iOS only for now: the Android client ignores the token.
+
+```tsx
+const client = useActiveDeviceClient(
+  { platform: 'ios', device: udid, streamMode: 'mjpeg' },
+  '',
+  { accessToken: token },
+);
+```
 
 To talk to one backend directly, use the platform hooks with the backend's base URL:
 
@@ -69,6 +82,8 @@ const ios = useIosDeviceClient({
   baseUrl: 'http://localhost:3400/vendor/serve-sim',
   device: udid,
   streamMode: 'h264',
+  // Only for a serve-sim started with --require-token.
+  accessToken: token,
 });
 
 const android = useAndroidDeviceClient({

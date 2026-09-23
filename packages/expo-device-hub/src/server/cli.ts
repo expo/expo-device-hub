@@ -4,6 +4,7 @@ import { networkInterfaces } from 'node:os';
 import { WebSocketServer } from 'ws';
 import { URL } from 'node:url';
 
+import { dashboardUrlWithToken, mintAccessToken } from './access-token';
 import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } from './cli/node-fetch-server';
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { staticFileHandler } from './cli/static-files';
@@ -90,8 +91,10 @@ async function main(): Promise<void> {
   } else {
     delete process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE;
   }
+  // Minted here, not in the middleware, because the operator has to be told what it is.
+  const accessToken = options.requireToken ? mintAccessToken() : undefined;
   process.env[SERVE_EMU_OPTIONS_ENV] = encodeStandaloneServeEmuOptions(options);
-  process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options);
+  process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options, accessToken);
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
   const hubServer = (await import('./index.mjs')) as HubServerModule;
   const handler = hubServer.default;
@@ -192,14 +195,29 @@ async function main(): Promise<void> {
   const isWildcard = options.host === '0.0.0.0' || options.host === '::';
   console.log('Expo Device Hub ready\n');
   if (isLoopback || isWildcard) {
-    console.log(`  Local:   http://localhost:${boundPort}`);
+    console.log(`  Local:   ${dashboardUrlWithToken(`http://localhost:${boundPort}`, accessToken)}`);
   }
   if (isWildcard) {
-    console.log(`  Network: http://${lanAddress() ?? options.host}:${boundPort}`);
+    console.log(
+      `  Network: ${dashboardUrlWithToken(`http://${lanAddress() ?? options.host}:${boundPort}`, accessToken)}`,
+    );
   } else if (isLoopback) {
     console.log('  Network: pass --host 0.0.0.0 to expose on your local network');
   } else {
-    console.log(`  Network: http://${options.host}:${boundPort}`);
+    console.log(`  Network: ${dashboardUrlWithToken(`http://${options.host}:${boundPort}`, accessToken)}`);
+  }
+  if (accessToken) {
+    console.log('');
+    console.log(
+      '  The links above carry a session token. The iOS simulator routes refuse requests without ' +
+        'it, and anyone who has it can run commands on this machine.',
+    );
+  } else if (!isLoopback) {
+    console.log('');
+    console.log(
+      '  This server is listening on the network with no token required. Pass --require-token ' +
+        'to gate the iOS simulator routes.',
+    );
   }
 }
 

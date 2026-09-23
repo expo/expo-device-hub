@@ -96,4 +96,31 @@ describe('standaloneServeSimOptions', () => {
     );
     expect(readStandaloneServeSimOptions('not json')).toEqual({});
   });
+
+  test('gates serve-sim behind the minted token only with --require-token', () => {
+    expect(standaloneServeSimOptions(parseCliOptions(['--require-token']), 'secret')).toEqual({
+      streamSettings: { transport: 'http', h264Fps: 60 },
+      execToken: 'secret',
+      requirePreviewToken: true,
+    });
+    // A token without the flag leaves serve-sim ungated, so nothing leaks into its options.
+    expect(standaloneServeSimOptions(parseCliOptions([]), 'secret')).toEqual({
+      streamSettings: { transport: 'http', h264Fps: 60 },
+    });
+    // The flag without a token is a programming error, not a silently open server.
+    expect(() => standaloneServeSimOptions(parseCliOptions(['--require-token']))).toThrow(
+      '--require-token needs a minted access token.',
+    );
+  });
+
+  test('round-trips the token through the server environment payload', () => {
+    const options = parseCliOptions(['--require-token']);
+    expect(
+      readStandaloneServeSimOptions(encodeStandaloneServeSimOptions(options, 'secret')),
+    ).toEqual({
+      streamSettings: { transport: 'http', h264Fps: 60 },
+      execToken: 'secret',
+      requirePreviewToken: true,
+    });
+  });
 });

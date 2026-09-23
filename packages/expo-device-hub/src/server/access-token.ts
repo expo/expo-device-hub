@@ -1,0 +1,51 @@
+/**
+ * The Hub's `--require-token` session token.
+ *
+ * The token is serve-sim's: the Hub mints it, hands it to the mounted serve-sim
+ * middleware as both `execToken` and the preview gate (`requirePreviewToken`),
+ * and prints it once in the dashboard link. serve-sim then refuses every
+ * simulator route (stream, input, exec, grid) that does not present it.
+ */
+
+import { randomBytes } from 'node:crypto';
+
+/** Same shape serve-sim mints: 32 random bytes, base64url, so it is safe in a URL and a subprotocol. */
+export function mintAccessToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/** Dashboard link that carries the token, which the dashboard reads once and drops from the URL. */
+export function dashboardUrlWithToken(origin: string, token: string | undefined): string {
+  return token ? `${origin}/?token=${encodeURIComponent(token)}` : origin;
+}
+
+/** Subprotocol a browser uses to present the token on a WebSocket (expo/serve-sim#173). */
+export const TOKEN_SUBPROTOCOL_PREFIX = 'serve-sim.token.';
+
+/**
+ * Copy a `serve-sim.token.<token>` WebSocket subprotocol into an
+ * `Authorization: Bearer` header, so the middleware's upgrade gate (which reads
+ * bearer or same-origin cookie) sees it. The token is not checked here: the
+ * middleware does that. A request that already carries `Authorization` is
+ * left alone.
+ *
+ * Both the standalone CLI and Expo CLI accept plugin sockets through `ws`,
+ * which names the first offered subprotocol back to the browser, so the
+ * browser sees the handshake it expects. This bridge can go once the vendored
+ * serve-sim reads the subprotocol itself (expo/serve-sim#173).
+ */
+export function upgradeHeadersWithSubprotocolToken(headers: Headers): Headers {
+  const result = new Headers(headers);
+  if (result.has('authorization')) return result;
+  const offered = result.get('sec-websocket-protocol');
+  if (!offered) return result;
+  const entry = offered
+    .split(',')
+    .map((value) => value.trim())
+    .find(
+      (value) => value.startsWith(TOKEN_SUBPROTOCOL_PREFIX) && value.length > TOKEN_SUBPROTOCOL_PREFIX.length,
+    );
+  if (!entry) return result;
+  result.set('authorization', `Bearer ${entry.slice(TOKEN_SUBPROTOCOL_PREFIX.length)}`);
+  return result;
+}

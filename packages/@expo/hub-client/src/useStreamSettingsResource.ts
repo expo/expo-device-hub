@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { type AccessToken, accessTokenHeaders } from './access-token';
 import { DEFAULT_DEVICE_STREAM_SETTINGS, sameDeviceStreamSettings } from './stream-settings';
 import { type DeviceStreamEncoderSettings } from './types';
 
@@ -17,6 +18,8 @@ interface UseStreamSettingsResourceOptions {
   initialSettings: DeviceStreamEncoderSettings | null;
   parse: StreamSettingsParser;
   toPatch: StreamSettingsPatchBuilder;
+  /** Session token of a `--require-token` serve-sim. */
+  accessToken?: AccessToken;
 }
 
 /** Shared GET/PATCH state machine for serve-sim and serve-emu encoder settings. */
@@ -25,6 +28,7 @@ export function useStreamSettingsResource({
   initialSettings,
   parse,
   toPatch,
+  accessToken = null,
 }: UseStreamSettingsResourceOptions) {
   const [streamSettings, setStreamSettings] = useState<DeviceStreamEncoderSettings | null>(
     initialSettings,
@@ -50,7 +54,11 @@ export function useStreamSettingsResource({
       const controller = new AbortController();
       readControllerRef.current = controller;
       try {
-        const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        const response = await fetch(url, {
+          cache: 'no-store',
+          signal: controller.signal,
+          headers: accessTokenHeaders(accessToken),
+        });
         if (!response.ok) throw new Error(`Stream settings request failed (${response.status})`);
         const next = parse(
           await response.json(),
@@ -73,7 +81,7 @@ export function useStreamSettingsResource({
         }
       }
     },
-    [parse, url],
+    [accessToken, parse, url],
   );
 
   useEffect(() => {
@@ -111,7 +119,7 @@ export function useStreamSettingsResource({
       // Let the device client wait for the write before replacing its transport.
       return fetch(url, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...accessTokenHeaders(accessToken) },
         body: JSON.stringify(requestPatch),
         signal: controller.signal,
       })
@@ -141,7 +149,7 @@ export function useStreamSettingsResource({
           }
         });
     },
-    [parse, toPatch, url],
+    [accessToken, parse, toPatch, url],
   );
 
   const refreshStreamSettings = useCallback(() => {

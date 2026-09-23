@@ -528,6 +528,14 @@ export interface DeviceConnectionOptions {
    * Each backend adapter maps unavailable choices to one of its supported modes.
    */
   streamMode: DeviceStreamMode;
+  /**
+   * Session token of a serve-sim started with `--require-token`. Sent as a
+   * bearer on every request, as the `serve-sim.token.<token>` subprotocol on
+   * every WebSocket, and as `?token=` where the browser can set neither (the
+   * MJPEG `<img>`, `EventSource`). Omit it for an ungated server. iOS only for
+   * now: serve-emu has no token gate yet, so the Android client ignores it.
+   */
+  accessToken?: string | null;
 }
 
 /** Which element the implementation paints into. */

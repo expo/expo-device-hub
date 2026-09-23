@@ -1,4 +1,4 @@
-
+import { type AccessToken, accessTokenHeaders } from './access-token';
 import { type DevicePlatform } from './types';
 
 const VENDOR_PREFIXES: Record<DevicePlatform, string> = {
@@ -40,12 +40,17 @@ export function endpointFor(
  * middleware grid. This is the **only** place the Hub boots a sim — it runs on an
  * explicit user action (selecting/adding a device), never automatically. Requires
  * `serve-sim` on PATH on the host (the middleware spawns `serve-sim --detach`).
+ * `accessToken` is the session token of a `--require-token` server.
  */
-export async function startIosHelper(udid: string, endpoint: string): Promise<void> {
+export async function startIosHelper(
+  udid: string,
+  endpoint: string,
+  accessToken?: AccessToken,
+): Promise<void> {
   const base = trimTrailingSlash(sameOrigin(endpoint));
   await fetch(`${base}/grid/api/start`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...accessTokenHeaders(accessToken) },
     body: JSON.stringify({ udid }),
     // A cold boot can take well over a minute; don't time out early.
     signal: AbortSignal.timeout(190_000),

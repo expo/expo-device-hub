@@ -81,3 +81,80 @@ describe('WebRTC offer negotiation', () => {
     expect(await beaconBodies[0]!.text()).toBe(JSON.stringify({ sessionId: 'session-1' }));
   });
 });
+
+describe('WebRTC signaling with a serve-sim access token', () => {
+  test('sends the offer with a bearer', async () => {
+    let authorization: string | null = null;
+    await postWebRtcOffer({
+      url: 'https://example.test/webrtc/offer',
+      body: '{}',
+      accessToken: 'secret',
+      requestTimeoutMs: 100,
+      busyRetryIntervalMs: 0,
+      busyRetryCount: 0,
+      fetchImpl: async (_url, init) => {
+        authorization = new Headers(init?.headers).get('authorization');
+        return new Response(null, { status: 200 });
+      },
+    });
+    expect(authorization).toBe('Bearer secret');
+  });
+
+  test('closes with a bearer, or with the token in the beacon query', async () => {
+    let authorization: string | null = null;
+    await closeWebRtcSession({
+      url: 'https://example.test/webrtc/close',
+      sessionId: 'session',
+      accessToken: 'secret',
+      fetchImpl: async (_url, init) => {
+        authorization = new Headers(init?.headers).get('authorization');
+        return new Response(null, { status: 200 });
+      },
+    });
+    expect(authorization).toBe('Bearer secret');
+
+    const beacons: string[] = [];
+    await closeWebRtcSession({
+      url: 'https://example.test/webrtc/close',
+      sessionId: 'session',
+      keepalive: true,
+      accessToken: 'secret',
+      sendBeacon: (url) => {
+        beacons.push(String(url));
+        return true;
+      },
+      fetchImpl: async () => {
+        throw new Error('beacon should have handled the close');
+      },
+    });
+    // A beacon has no headers, and this is the form the serve-sim gate accepts for it.
+    expect(beacons).toEqual(['https://example.test/webrtc/close?token=secret']);
+  });
+
+  test('leaves the requests untouched without a token', async () => {
+    const headers: Array<string | null> = [];
+    const beacons: string[] = [];
+    await postWebRtcOffer({
+      url: 'https://example.test/webrtc/offer',
+      body: '{}',
+      requestTimeoutMs: 100,
+      busyRetryIntervalMs: 0,
+      busyRetryCount: 0,
+      fetchImpl: async (_url, init) => {
+        headers.push(new Headers(init?.headers).get('authorization'));
+        return new Response(null, { status: 200 });
+      },
+    });
+    await closeWebRtcSession({
+      url: 'https://example.test/webrtc/close',
+      sessionId: 'session',
+      keepalive: true,
+      sendBeacon: (url) => {
+        beacons.push(String(url));
+        return true;
+      },
+    });
+    expect(headers).toEqual([null]);
+    expect(beacons).toEqual(['https://example.test/webrtc/close']);
+  });
+});

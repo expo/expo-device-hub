@@ -50,6 +50,7 @@ Options:
       --turn-credential <credential> TURN credential (requires --turn-username and --turn-url)
       --webrtc-ice-policy <policy> Android ICE policy: ${WEBRTC_ICE_POLICIES.join(', ')} (default: ${DEFAULT_WEBRTC_ICE_POLICY})
       --metrics-cors-origin <origin> Allow an origin to read serve-sim metrics (repeatable)
+      --require-token        Gate the iOS simulator routes behind a session token printed at startup
       --hide-sidebar         Hide the device list sidebar by default
       --hide-boot-device     Hide controls for booting or creating devices
       --android-recording-directory <path> Record the only booted emulator until shutdown
@@ -76,6 +77,8 @@ export type CliOptions = {
   turnCredential?: string;
   webrtcIcePolicy?: WebRtcIcePolicy;
   metricsCorsOrigins?: string[];
+  /** Gate serve-sim behind a session token the CLI mints and prints (`serve-sim --require-token`). */
+  requireToken?: boolean;
   hideSidebar?: boolean;
   hideBootDevice?: boolean;
   androidRecordingDirectory?: string;
@@ -147,6 +150,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     'turn-credential'?: string;
     'webrtc-ice-policy'?: string;
     'metrics-cors-origin': string[];
+    'require-token': boolean;
     'hide-sidebar': boolean;
     'hide-boot-device': boolean;
     'android-recording-directory'?: string;
@@ -177,6 +181,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         'turn-credential': { type: 'string' },
         'webrtc-ice-policy': { type: 'string' },
         'metrics-cors-origin': { type: 'string', multiple: true, default: [] },
+        'require-token': { type: 'boolean', default: false },
         'hide-sidebar': { type: 'boolean', default: false },
         'hide-boot-device': { type: 'boolean', default: false },
         'android-recording-directory': { type: 'string' },
@@ -318,6 +323,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     turnCredential,
     webrtcIcePolicy,
     metricsCorsOrigins: values['metrics-cors-origin'],
+    requireToken: values['require-token'],
     hideSidebar: values['hide-sidebar'],
     hideBootDevice: values['hide-boot-device'],
     ...(androidRecordingDirectory !== undefined ? { androidRecordingDirectory } : {}),

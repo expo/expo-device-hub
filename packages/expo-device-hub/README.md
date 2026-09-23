@@ -60,6 +60,32 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
+### Require an access token
+
+By default the Hub trusts everyone who can reach it. Pass `--require-token` to gate the iOS
+simulator routes (video, input, exec, grid) behind a session token:
+
+```sh
+npx expo-device-hub --require-token
+```
+
+The Hub mints the token at startup and prints the dashboard link with it:
+
+```
+  Local:   http://localhost:3400/?token=<token>
+```
+
+Open that link. The dashboard reads the token once, keeps it for the tab, and drops it from
+the address bar. Every request it makes to serve-sim then carries the token: as
+`Authorization: Bearer <token>` on fetches, as the `serve-sim.token.<token>` WebSocket
+subprotocol on the input and exec sockets, and as `?token=` on the MJPEG stream and the
+foreground-app event stream, which cannot set a header. A request without the token gets a
+401 and the dashboard reports it.
+
+Another origin that embeds `@expo/hub-client` passes the same token as `accessToken`. This is
+iOS only for now: serve-emu has no token gate yet, so the Android routes stay open and the
+Hub's own device-list API is not gated either.
+
 ### Record an Android session
 
 Recording is opt-in and starts with the Hub, even when no browser viewer is connected.

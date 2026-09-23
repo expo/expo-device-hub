@@ -32,6 +32,7 @@ import pixel9DeviceFrame from '../assets/device-frames/pixel_9_obsidian.png';
 import iphoneDeviceFrame from '../assets/device-frames/iphone-17-pro-silver.png';
 import { AnimatedDockedSidebar } from './dashboard/AnimatedDockedSidebar';
 import { dashboardHideBootDevice } from './boot-device';
+import { dashboardAccessToken } from './dashboard/accessToken';
 import { basePath } from './dashboard/basePath';
 import { bootDevice, createDevice, removeDevice, shutdownDevice } from './dashboard/deviceActions';
 import { DEFAULT_SIDEBAR_WIDTH, useDashboardStore } from './dashboard/dashboardStore';
@@ -282,6 +283,10 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     chooseStreamMode(mode, selectedStreamModeAvailability);
   };
 
+  // The `--require-token` session token from the dashboard link, read once per
+  // tab (see ./dashboard/accessToken). Null for an ungated Hub.
+  const accessToken = useMemo(() => dashboardAccessToken(), []);
+
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load.
@@ -289,7 +294,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     connectionStatus === 'connected' && selected
       ? { platform: selected.platform, device: selected.id, streamMode }
       : null,
-    basePath()
+    basePath(),
+    { accessToken }
   );
   const agentInteractions = useArgentInteractions();
   const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;

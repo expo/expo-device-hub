@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { type AccessToken } from './access-token';
 import {
   type WebRtcCodec,
   type WebRtcStreamFailure,
@@ -135,6 +136,7 @@ export function useWebRtcStream({
   sendIceServersInOffer = true,
   allowCodecFallback = true,
   onKeyframeNeeded,
+  accessToken = null,
 }: {
   offerUrl: string;
   closeUrl: string;
@@ -147,6 +149,8 @@ export function useWebRtcStream({
   sendIceServersInOffer?: boolean;
   allowCodecFallback?: boolean;
   onKeyframeNeeded?: () => void;
+  /** Session token of a `--require-token` serve-sim, sent with every signaling request. */
+  accessToken?: AccessToken;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -163,6 +167,7 @@ export function useWebRtcStream({
     statsUrl,
     presentedFramesRef,
     streamStatsEnabled,
+    accessToken,
   );
 
   const markFrameDecoded = useCallback((presentedFrameDelta = 1) => {
@@ -196,6 +201,7 @@ export function useWebRtcStream({
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    accessToken,
   ]);
 
   useEffect(() => {
@@ -235,7 +241,7 @@ export function useWebRtcStream({
 
     const closeRemoteSession = (keepalive = false): Promise<void> => {
       if (closePromise) return closePromise;
-      closePromise = closeWebRtcSession({ url: closeUrl, sessionId, keepalive });
+      closePromise = closeWebRtcSession({ url: closeUrl, sessionId, keepalive, accessToken });
       return closePromise;
     };
     const releaseOnPageHide = () => void closeRemoteSession(true);
@@ -413,6 +419,7 @@ export function useWebRtcStream({
         if (!local) throw new Error('WebRTC offer was not created');
         const response = await postWebRtcOffer({
           url: offerUrl,
+          accessToken,
           signal: lifecycleController.signal,
           requestTimeoutMs: SIGNALING_REQUEST_TIMEOUT_MS,
           busyRetryIntervalMs: BUSY_RETRY_INTERVAL_MS,
@@ -485,6 +492,7 @@ export function useWebRtcStream({
     allowCodecFallback,
     onKeyframeNeeded,
     retryGeneration,
+    accessToken,
   ]);
 
   return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };

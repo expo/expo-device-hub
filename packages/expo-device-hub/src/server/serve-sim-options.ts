@@ -7,6 +7,10 @@ export const SERVE_SIM_OPTIONS_ENV = 'EXPO_DEVICE_HUB_SERVE_SIM_OPTIONS';
 export type StandaloneServeSimOptions = {
   streamSettings?: StreamSettings;
   metricsCorsOrigins?: string[];
+  /** The `--require-token` session token; also serve-sim's exec token. */
+  execToken?: string;
+  /** Gate every serve-sim route behind `execToken`. */
+  requirePreviewToken?: boolean;
 };
 
 function streamSettingsFor(options: CliOptions): StreamSettings | undefined {
@@ -43,18 +47,31 @@ function streamSettingsFor(options: CliOptions): StreamSettings | undefined {
   return hasEncoderSettings ? { transport: 'http', ...encoderSettings } : undefined;
 }
 
-export function standaloneServeSimOptions(options: CliOptions): StandaloneServeSimOptions {
+/**
+ * `accessToken` is the minted `--require-token` session token. It is applied
+ * only when the flag is set, so a token without the flag leaves serve-sim ungated.
+ */
+export function standaloneServeSimOptions(
+  options: CliOptions,
+  accessToken?: string,
+): StandaloneServeSimOptions {
   const streamSettings = streamSettingsFor(options);
+  if (options.requireToken && !accessToken) {
+    throw new Error('--require-token needs a minted access token.');
+  }
   return {
     ...(streamSettings ? { streamSettings } : {}),
     ...(options.metricsCorsOrigins && options.metricsCorsOrigins.length > 0
       ? { metricsCorsOrigins: options.metricsCorsOrigins }
       : {}),
+    ...(options.requireToken && accessToken
+      ? { execToken: accessToken, requirePreviewToken: true }
+      : {}),
   };
 }
 
-export function encodeStandaloneServeSimOptions(options: CliOptions): string {
-  return JSON.stringify(standaloneServeSimOptions(options));
+export function encodeStandaloneServeSimOptions(options: CliOptions, accessToken?: string): string {
+  return JSON.stringify(standaloneServeSimOptions(options, accessToken));
 }
 
 export function readStandaloneServeSimOptions(

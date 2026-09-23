@@ -16,6 +16,15 @@ export interface ActiveDeviceTarget {
   streamMode: DeviceConnectionOptions['streamMode'];
 }
 
+export interface ActiveDeviceConnectionOptions {
+  /**
+   * Session token of a Hub started with `--require-token`. Forwarded to the
+   * iOS client (see {@link DeviceConnectionOptions.accessToken}); the Android
+   * client has no token gate yet and ignores it.
+   */
+  accessToken?: string | null;
+}
+
 /**
  * Connect to whichever device is selected and return its live {@link DeviceClient}.
  * With no target selected yet, returns {@link NOOP_DEVICE_CLIENT} so callers can render
@@ -24,6 +33,7 @@ export interface ActiveDeviceTarget {
 export function useActiveDeviceClient(
   target: ActiveDeviceTarget | null,
   hubBase: string,
+  options: ActiveDeviceConnectionOptions = {},
 ): DeviceClient {
   const iosActive = target?.platform === 'ios';
   const androidActive = target?.platform === 'android';
@@ -33,6 +43,7 @@ export function useActiveDeviceClient(
     baseUrl: iosActive ? endpointFor('ios', hubBase) : null,
     device: iosActive ? target?.device ?? null : null,
     streamMode: target?.streamMode as DeviceConnectionOptions['streamMode'],
+    accessToken: options.accessToken ?? null,
   });
   const android = useAndroidDeviceClient({
     enabled: androidActive,

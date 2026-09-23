@@ -1,11 +1,14 @@
 import { useEffect, useRef, type RefObject } from 'react';
 
+import { type AccessToken, accessTokenHeaders } from './access-token';
 import { AvccDemuxer, avcCodecString, isAvccSupported, type AvccChunkType } from './avcc';
 
 export interface UseAvccStreamOptions {
   /** Base serve-sim helper URL, without `/stream.avcc`. */
   url: string;
   enabled: boolean;
+  /** Session token of a `--require-token` serve-sim. */
+  accessToken?: AccessToken;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   onFirstFrame?: () => void;
   onFrame?: () => void;
@@ -22,6 +25,7 @@ const FRAME_DURATION_US = 16_667;
 export function useAvccStream({
   url,
   enabled,
+  accessToken = null,
   canvasRef,
   onFirstFrame,
   onFrame,
@@ -166,7 +170,10 @@ export function useAvccStream({
     const read = async () => {
       demuxer.reset();
       try {
-        const response = await fetch(`${url}/stream.avcc`, { signal: controller.signal });
+        const response = await fetch(`${url}/stream.avcc`, {
+          signal: controller.signal,
+          headers: accessTokenHeaders(accessToken),
+        });
         if (!response.ok) throw new Error(`H.264 stream failed (${response.status})`);
         const reader = response.body?.getReader();
         if (!reader) return;
@@ -197,5 +204,5 @@ export function useAvccStream({
       }
       decoder = null;
     };
-  }, [url, enabled, canvasRef]);
+  }, [url, enabled, accessToken, canvasRef]);
 }

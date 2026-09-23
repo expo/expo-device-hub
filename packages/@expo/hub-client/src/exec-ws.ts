@@ -15,7 +15,15 @@
  * link is shareable, so no value the page sends ever reaches a shell. Each
  * request here opens its own short-lived socket; the log stream keeps a
  * long-lived one (see `useIosDevice`).
+ *
+ * The exec token doubles as the session token of a `--require-token` server,
+ * so the socket also names it as the `serve-sim.token.<token>` subprotocol
+ * (see `./access-token`). The first `{token}` frame is still sent: an older
+ * middleware needs it, and a newer one ignores a token frame once it has
+ * accepted the subprotocol.
  */
+
+import { openAccessTokenWebSocket } from './access-token';
 
 export interface HostActionResult {
   stdout: string;
@@ -61,7 +69,7 @@ function execWsRequest(
   return new Promise((resolve, reject) => {
     let ws: WebSocket;
     try {
-      ws = new WebSocket(execWsUrl);
+      ws = openAccessTokenWebSocket(execWsUrl, execToken);
     } catch (err) {
       reject(err);
       return;

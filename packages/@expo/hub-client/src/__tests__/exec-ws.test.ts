@@ -16,7 +16,10 @@ class FakeWebSocket {
   onclose: (() => void) | null = null;
   closed = false;
 
-  constructor(readonly url: string) {
+  constructor(
+    readonly url: string,
+    readonly protocols?: string[],
+  ) {
     FakeWebSocket.instances.push(this);
     queueMicrotask(() => {
       this.readyState = 1;
@@ -65,6 +68,8 @@ describe('runHostAction', () => {
       bundleId: 'com.example.app',
     });
     const { ws, request } = await handshake('secret');
+    // The token also rides the handshake for a `--require-token` middleware (serve-sim#173).
+    expect(ws.protocols).toEqual(['serve-sim.token.secret']);
     // `{id, action, params}` — serve-sim's action protocol, never `{command}`.
     expect(request).toEqual({
       id: 1,

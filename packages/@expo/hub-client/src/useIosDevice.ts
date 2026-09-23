@@ -27,6 +27,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
+import {
+  accessTokenFetch,
+  accessTokenHeaders,
+  normalizeAccessToken,
+  openAccessTokenWebSocket,
+  withAccessTokenQuery,
+} from './access-token';
 import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
 import {
   appendActivitySample,
@@ -241,6 +248,8 @@ interface PreviewApi {
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
   const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
+  // The `--require-token` session token; null for an ungated serve-sim.
+  const accessToken = normalizeAccessToken(options.accessToken);
   const active = enabled && !!baseUrl;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
@@ -471,8 +480,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const screenshot = useCallback(async (): Promise<Blob | null> => {
     if (!baseUrl) return null;
     const udid = config?.device ?? targetDevice;
-    return fetchIosScreenshot(baseUrl, udid);
-  }, [baseUrl, targetDevice, config]);
+    return fetchIosScreenshot(baseUrl, udid, accessTokenFetch(accessToken));
+  }, [baseUrl, targetDevice, config, accessToken]);
 
   // Apply any serve-sim UI option over its authenticated exec-ws request
   // channel. The state is optimistic so the selected pill/switch responds at
@@ -580,15 +589,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const basePath = c.basePath ?? '';
       const absoluteMiddlewareUrl = (path?: string): string | null =>
         path ? new URL(path, baseUrl).toString() : null;
+      const appStateUrl = absoluteMiddlewareUrl(c.appStateEndpoint);
       return {
         url: c.url!,
-        streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
+        // An `<img>` cannot set a header, so the token rides in the query.
+        streamUrl: withAccessTokenQuery(c.streamUrl ?? `${c.url}/stream.mjpeg`, accessToken),
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         device: c.device ?? null,
         execWsUrl: toWs(new URL(`${basePath}/exec-ws`, baseUrl).toString()),
-        execToken: c.execToken ?? null,
+        // A gated serve-sim's exec token is its session token, so either works here.
+        execToken: c.execToken ?? accessToken,
         logsPath: c.logsEndpoint ?? null,
-        appStateUrl: absoluteMiddlewareUrl(c.appStateEndpoint),
+        // Same for `EventSource`.
+        appStateUrl: appStateUrl ? withAccessTokenQuery(appStateUrl, accessToken) : null,
         eventsPath: c.eventLogEventsEndpoint ?? null,
         metricsPath: c.metricsEndpoint ?? null,
         axUrl: absoluteMiddlewareUrl(c.axEndpoint),
@@ -615,8 +628,22 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const resolve = async () => {
       if (cancelled) return;
       try {
-        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(3000) });
+        const res = await fetch(apiUrl, {
+          signal: AbortSignal.timeout(3000),
+          headers: accessTokenHeaders(accessToken),
+        });
         if (!res.ok) {
+          // A gated serve-sim answers 401 until the right token arrives. Say so
+          // instead of looking like an unreachable server, but keep polling: the
+          // consumer may hand over a token later.
+          if (res.status === 401 && !cancelled) {
+            setStatus('error');
+            setError(
+              accessToken
+                ? 'serve-sim rejected the access token.'
+                : 'serve-sim requires an access token (started with --require-token).',
+            );
+          }
           if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
           return;
         }
@@ -635,7 +662,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         // because the user selected this device. Then poll until it attaches.
         if (targetDevice && !startRequested) {
           startRequested = true;
-          void startIosHelper(targetDevice, baseUrl).catch(() => {});
+          void startIosHelper(targetDevice, baseUrl, accessToken).catch(() => {});
         }
         if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
       } catch {
@@ -648,7 +675,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [active, baseUrl, targetDevice, setWebRtcCodec]);
+  }, [active, baseUrl, targetDevice, accessToken, setWebRtcCodec]);
 
   const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
   const onAvccFrame = useCallback((frameDelta = 1) => {
@@ -678,6 +705,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     enabled: active && useWebRtc && !!config,
     codec: activeWebRtcCodec,
     iceServers: config?.webRtcIceServers,
+    accessToken,
   });
   const handledWebRtcFailureRef = useRef<string | null>(null);
 
@@ -774,6 +802,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useAvccStream({
     url: config?.url ?? '',
     enabled: active && useAvcc && !!config,
+    accessToken,
     canvasRef,
     onFirstFrame: () => {
       setStatus('streaming');
@@ -862,7 +891,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (cancelled) return;
       let ws: WebSocket;
       try {
-        ws = new WebSocket(wsUrl);
+        ws = openAccessTokenWebSocket(wsUrl, accessToken);
       } catch {
         return;
       }
@@ -921,7 +950,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       pendingWsRef.current = [];
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, sendWs]);
+  }, [wsUrl, accessToken, sendWs]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
@@ -935,8 +964,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const axUrl = config?.axUrl ?? null;
 
   const accessibilityLoader = useMemo<AccessibilityLoader | null>(
-    () => (axUrl ? (signal) => loadIosAccessibility(axUrl, signal) : null),
-    [axUrl],
+    () =>
+      axUrl
+        ? (signal) => loadIosAccessibility(axUrl, signal, accessTokenFetch(accessToken))
+        : null,
+    [axUrl, accessToken],
   );
   const accessibilityState = useAccessibility(accessibilityLoader);
 
@@ -1068,7 +1100,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (cancelled) return;
       buffers.clear();
       try {
-        ws = new WebSocket(execWsUrl);
+        ws = openAccessTokenWebSocket(execWsUrl, execToken);
       } catch {
         markInterrupted();
         retryTimer = setTimeout(connect, RECONNECT_MS);
@@ -1185,6 +1217,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       initialSettings: normalizedInitialStreamSettings,
       parse: parseIosStreamSettings,
       toPatch: iosStreamSettingsPatch,
+      accessToken,
     },
   );
 
@@ -1254,7 +1287,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
-    fetch(gridApiUrl, { signal: AbortSignal.timeout(3000) })
+    fetch(gridApiUrl, { signal: AbortSignal.timeout(3000), headers: accessTokenHeaders(accessToken) })
       .then((r) => r.json())
       .then((data: { devices?: Array<Record<string, unknown>> }) => {
         if (cancelled || !Array.isArray(data.devices) || data.devices.length === 0) return;
@@ -1274,7 +1307,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
     };
-  }, [gridApiUrl]);
+  }, [gridApiUrl, accessToken]);
 
   return {
     platform: 'ios',

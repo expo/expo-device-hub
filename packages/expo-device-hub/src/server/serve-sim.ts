@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 // @ts-ignore vendored module, absent until `bun run build:vendor`
 import { simMiddleware } from '../../vendor/serve-sim/dist/middleware.js';
 
+import { upgradeHeadersWithSubprotocolToken } from './access-token';
 import { MOUNT_PATH } from './mount';
 import {
   readStandaloneServeSimOptions,
@@ -46,12 +47,18 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
 // Same-origin WebSockets: the exec/control channel (/exec-ws) and the HID input
 // socket (/helper/ws?device=<udid>). Expo CLI accepts the upgrade for each
 // registered route and hands us the socket; simMiddleware dispatches by path.
+//
+// With `--require-token` the middleware gates the upgrade on a bearer or a
+// same-origin cookie, and a browser can send neither on a WebSocket. The
+// client names the token as the `serve-sim.token.<token>` subprotocol instead
+// (expo/serve-sim#173); it is copied into the bearer header here so the
+// middleware checks it. The middleware, not this bridge, decides if it is right.
 export const simWebSocketHandler = (socket: { close(): void }, request: Request): void => {
   const url = new URL(request.url);
-  const rewritten = new Request(
-    `${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`,
-    request,
-  );
+  const rewritten = new Request(`${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`, {
+    method: request.method,
+    headers: upgradeHeadersWithSubprotocolToken(request.headers),
+  });
   const handled = middleware.handleWebSocket?.(rewritten, socket);
   if (!handled) socket.close();
 };

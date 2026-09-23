@@ -30,6 +30,7 @@ describe('parseCliOptions', () => {
       turnCredential: undefined,
       webrtcIcePolicy: undefined,
       metricsCorsOrigins: [],
+      requireToken: false,
       hideSidebar: false,
       hideBootDevice: false,
       help: false,
@@ -43,6 +44,12 @@ describe('parseCliOptions', () => {
 
   test('rejects unsupported platforms', () => {
     expect(() => parseCliOptions(['--platform', 'web'])).toThrow('Invalid --platform: web');
+  });
+
+  test('parses --require-token and documents it in the help text', () => {
+    expect(parseCliOptions(['--require-token']).requireToken).toBe(true);
+    expect(parseCliOptions([]).requireToken).toBe(false);
+    expect(HELP).toContain('--require-token');
   });
 
   test('accepts each supported transport', () => {
@@ -280,6 +287,7 @@ describe('parseCliOptions', () => {
       turnCredential: undefined,
       webrtcIcePolicy: undefined,
       metricsCorsOrigins: [],
+      requireToken: false,
       hideSidebar: false,
       hideBootDevice: false,
       help: false,

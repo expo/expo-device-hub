@@ -1,4 +1,10 @@
-type FetchLike = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+import {
+  type AccessToken,
+  accessTokenHeaders,
+  type FetchLike,
+  withAccessTokenQuery,
+} from './access-token';
+
 type SendBeaconLike = (url: string | URL, data?: BodyInit | null) => boolean;
 
 export class WebRtcSignalingBusyError extends Error {
@@ -41,12 +47,15 @@ export async function closeWebRtcSession({
   keepalive = false,
   sendBeacon,
   fetchImpl = fetch,
+  accessToken,
 }: {
   url: string;
   sessionId: string;
   keepalive?: boolean;
   sendBeacon?: SendBeaconLike;
   fetchImpl?: FetchLike;
+  /** Session token of a `--require-token` serve-sim. */
+  accessToken?: AccessToken;
 }): Promise<void> {
   const body = JSON.stringify({ sessionId });
   const beacon =
@@ -57,12 +66,14 @@ export async function closeWebRtcSession({
   if (keepalive && beacon) {
     try {
       // text/plain is CORS-safelisted, so unload does not rely on a preflight.
-      if (beacon(url, new Blob([body], { type: 'text/plain;charset=UTF-8' }))) return;
+      // A beacon carries no header, so the token rides in the query instead.
+      const beaconUrl = withAccessTokenQuery(url, accessToken);
+      if (beacon(beaconUrl, new Blob([body], { type: 'text/plain;charset=UTF-8' }))) return;
     } catch {}
   }
   await fetchImpl(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...accessTokenHeaders(accessToken) },
     body,
     keepalive,
   }).then(
@@ -80,6 +91,7 @@ export async function postWebRtcOffer({
   busyRetryIntervalMs,
   busyRetryCount,
   fetchImpl = fetch,
+  accessToken,
 }: {
   url: string;
   body: string;
@@ -88,6 +100,8 @@ export async function postWebRtcOffer({
   busyRetryIntervalMs: number;
   busyRetryCount: number;
   fetchImpl?: FetchLike;
+  /** Session token of a `--require-token` serve-sim. */
+  accessToken?: AccessToken;
 }): Promise<Response> {
   for (let attempt = 0; attempt <= busyRetryCount; attempt++) {
     if (signal?.aborted) throw abortError(signal);
@@ -105,7 +119,7 @@ export async function postWebRtcOffer({
     try {
       response = await fetchImpl(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...accessTokenHeaders(accessToken) },
         signal: requestController.signal,
         body,
       });
