@@ -38,7 +38,8 @@ for it.
 Go to **Actions → Release → Run workflow**. The only input is **canary**:
 
 - **off** (default) → real release. The workflow versions, pushes the release commit, builds and
-  tests it on EAS, publishes to npm, pushes tags, and creates GitHub releases.
+  tests it on EAS, publishes to npm, pushes each tag after its package publishes, and creates
+  GitHub releases.
 - **on** → canary release. EAS versions as usual, then rewrites each published package's version
   into a prerelease before packing. The workflow publishes it under the **`canary`** npm
   dist-tag — without committing the version bump, pushing tags, or creating GitHub releases.
@@ -78,5 +79,5 @@ first release. For every package that is not `private`:
 4. Add a changeset for the package so the next real release versions and publishes it.
 
 Every public package is published in the same run. If the EAS build fails or one package fails to
-publish, the workflow stops before it pushes tags or creates GitHub releases, even though the
-version commit is already on `main`.
+publish, the workflow stops before it creates GitHub releases, even though the version commit is
+already on `main`. Tags for packages published before the failure remain on the remote for a retry.

@@ -41,5 +41,8 @@ for (const { name, version, path } of tarballs) {
   if (canary || dryRun) continue;
   const tagged =
     (await $`git rev-parse -q --verify refs/tags/${spec}`.nothrow().quiet()).exitCode === 0;
-  if (!tagged) await $`git tag ${spec}`;
+  if (!tagged) {
+    await $`git tag ${spec}`;
+    await $`git push origin refs/tags/${spec}`;
+  }
 }

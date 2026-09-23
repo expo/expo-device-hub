@@ -3,8 +3,8 @@
 import { $ } from "bun";
 import { readTarballs } from "./lib/tarballs.ts";
 
-// Creates a GitHub release for every tarball that publish-packages.ts tagged in
-// this run, attaching the tarball built on EAS.
+// Creates a GitHub release for every tagged tarball, attaching the tarball
+// built on EAS. Tags from an earlier failed attempt are included on retry.
 //
 //   ./scripts/create-github-releases.ts release-artifacts
 
@@ -32,7 +32,7 @@ async function packageDir(name: string): Promise<string | undefined> {
 for (const { name, version, path } of await readTarballs(dir)) {
   const tag = `${name}@${version}`;
 
-  // Only release packages tagged in this run (publish-packages.ts creates the tag).
+  // Only release packages with a tag (publish-packages.ts creates it after publishing).
   const tagged =
     (await $`git rev-parse -q --verify refs/tags/${tag}`.nothrow().quiet()).exitCode === 0;
   if (!tagged) {
