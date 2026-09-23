@@ -47,6 +47,7 @@ function discoveryDirs(): string[] {
   if (process.env.XDG_RUNTIME_DIR) {
     dirs.push(join(process.env.XDG_RUNTIME_DIR, "avd", "running"));
   }
+  dirs.push(join(tmpdir(), "avd", "running"));
   if (process.env.LOCALAPPDATA) {
     dirs.push(join(process.env.LOCALAPPDATA, "Temp", "avd", "running"));
   }

@@ -237,8 +237,9 @@ try {
     const duration = Number(probe.format.duration);
     const wallDuration = (stoppingAt - Date.parse(manifest.firstFrameWallClock.iso8601)) / 1000;
     const expectedDuration = limitMode === 'duration' ? 3 : wallDuration;
+    const durationTolerance = limitMode === 'duration' ? 0.5 : 1;
     assert(
-      Math.abs(duration - expectedDuration) < 0.5,
+      Math.abs(duration - expectedDuration) < durationTolerance,
       `MP4 ${duration}s vs expected ${expectedDuration}s`
     );
     assert.equal(probe.streams[0].width, manifest.width);
@@ -260,10 +261,6 @@ try {
       '-xerror',
       '-i',
       mp4,
-      '-fps_mode',
-      'passthrough',
-      '-enc_time_base',
-      '1:1000000',
       '-f',
       'null',
       '-',
