@@ -1219,8 +1219,10 @@ final class WebRTCPublisher: @unchecked Sendable {
             encoding.scaleResolutionDownBy = NSNumber(value: scaleResolutionDownBy)
         }
         parameters.encodings = encodings
+        // Balanced spends some of a shortfall on frame rate. Holding frame rate outright takes
+        // a 1206-wide surface to 300x654, where UI text is unreadable.
         parameters.degradationPreference =
-            NSNumber(value: LKRTCDegradationPreference.maintainFramerate.rawValue)
+            NSNumber(value: LKRTCDegradationPreference.balanced.rawValue)
         sender.parameters = parameters
         // Read back: assigning `scaleResolutionDownBy` is not proof libwebrtc kept it.
         let appliedScale = sender.parameters.encodings.first?.scaleResolutionDownBy?.doubleValue
