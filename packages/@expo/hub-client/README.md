@@ -78,6 +78,12 @@ const android = useAndroidDeviceClient({
 });
 ```
 
+When embedding the iOS screen on another site, pass the public serve-sim URL that serves
+`/api` and `/helper` (including any mount path) as `baseUrl`, for example
+`https://sim.example.test/preview/session`. The proxied stream and input URLs then use
+that server even when the page has a different origin. An Expo simulator-preview page URL
+is a wrapper, not the serve-sim base URL.
+
 ## Call device controls
 
 Every control lives on the `DeviceClient`. Controls are no-ops while nothing is connected,
