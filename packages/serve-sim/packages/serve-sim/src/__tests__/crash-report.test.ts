@@ -101,7 +101,7 @@ describe("isSimulatorAppCrash", () => {
 });
 
 describe("parseCrashReport", () => {
-  test("projects the fields an agent needs", () => {
+  test("reads app, exception, and stack fields", () => {
     const report = parseCrashReport(ips());
     expect(report).not.toBeNull();
     expect(report?.bundleId).toBe("com.example.demo");
@@ -136,7 +136,7 @@ describe("parseCrashReport", () => {
     expect(report?.deviceUdid).toBeNull();
   });
 
-  test("picks the first app-owned frame as the culprit", () => {
+  test("picks the first app-owned frame", () => {
     const report = parseCrashReport(ips());
     expect(report?.culpritFrame).toBe("Demo specialized AppDelegate.boot()");
   });
@@ -256,7 +256,7 @@ describe("parseCrashReport", () => {
     expect(report?.frames).toHaveLength(24);
   });
 
-  test("picks the culprit from the whole stack, past the frame cap", () => {
+  test("picks the crashing frame from the whole stack, past the frame cap", () => {
     const deepStack = (appSymbol: string): string =>
       ips(
         {},
@@ -285,7 +285,6 @@ describe("parseCrashReport", () => {
     expect(first?.culpritFrame).toBe("Demo App.alpha()");
     expect(first?.frames).toHaveLength(31);
     expect(first?.frames.at(-1)).toMatchObject({ symbol: "App.alpha()", appOwned: true });
-    // Two crashes that differ only past the cap must not share a signature.
     expect(first?.signature).not.toBe(parseCrashReport(deepStack("App.beta()"))?.signature);
   });
 
@@ -327,7 +326,7 @@ describe("parseCrashReport", () => {
     expect(first!.signature).toBe(second!.signature);
   });
 
-  test("gives a different signature when the culprit frame differs", () => {
+  test("gives a different signature when the crashing frame differs", () => {
     const first = parseCrashReport(ips());
     const second = parseCrashReport(
       ips(

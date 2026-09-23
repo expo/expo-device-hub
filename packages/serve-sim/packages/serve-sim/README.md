@@ -18,9 +18,10 @@ https://github.com/user-attachments/assets/fbf890f4-c8c7-4684-82be-d677b8a188f8
 - Low-latency SimulatorKit capture with a 60 Hz IOSurface seed poll and configurable WebRTC cadence.
 - Swipe from the bottom to go home.
 - gestures like pinch to zoom by holding the option key.
-- Simulator logs are forwarded to the browser console on local previews. Remote
-  previews disable this high-volume stream by default; append `?logs=1` to the
-  preview URL to opt in explicitly.
+- Simulator logs live in the Logs drawer in the preview, and `serve-sim` also
+  serves them at `/.sim/logs` for tools that send the session bearer token.
+  Forwarding this high-volume stream to the browser console is opt in: append
+  `?logs=1` to the preview URL.
 - Recent simulator actions are available in the browser tools panel and `serve-sim event-log`.
 - Drag and drop videos and images to add them to the simulator device. 
 - Keyboard commands and hot keys are forwarded to the simulator, including CMD+SHIFT+H to go home.

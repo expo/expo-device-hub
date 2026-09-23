@@ -8,6 +8,7 @@ import { AppDetectionTool } from "./app-detection-tool";
 import { AppPermissionsTool } from "./app-permissions-tool";
 import { AxTreeTool } from "./ax-tree-tool";
 import { CameraTool } from "./camera-tool";
+import { CrashTool } from "./crash-tool";
 import { EventLogTool } from "./event-log-tool";
 import type { HingeControlsProps } from "./hinge-controls";
 import { MetricsTool } from "./metrics-tool";
@@ -29,6 +30,7 @@ export function ToolsPanel({
   currentApp,
   eventLogEventsEndpoint,
   metricsEndpoint,
+  crashesEndpoint,
   axOverlayEnabled,
   onToggleAxOverlay,
   streamSettings,
@@ -53,6 +55,7 @@ export function ToolsPanel({
   currentApp: { bundleId: string; isReactNative: boolean; pid?: number } | null;
   eventLogEventsEndpoint?: string;
   metricsEndpoint?: string;
+  crashesEndpoint?: string;
   axOverlayEnabled: boolean;
   onToggleAxOverlay: () => void;
   streamSettings: StreamControlSettings;
@@ -108,6 +111,7 @@ export function ToolsPanel({
             transportLocked={streamTransportLocked}
             configuredMaxDimension={streamConfiguredMaxDimension}
           />
+          <CrashTool udid={udid} crashesEndpoint={crashesEndpoint} />
         </div>
       )}
     </Panel>

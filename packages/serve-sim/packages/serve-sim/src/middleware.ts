@@ -998,6 +998,7 @@ export function previewConfigForState(
 ): ServeSimState & {
   basePath: string;
   logsEndpoint: string;
+  crashesEndpoint: string;
   appStateEndpoint: string;
   eventLogEndpoint: string;
   eventLogEventsEndpoint: string;
@@ -1036,6 +1037,7 @@ export function previewConfigForState(
     ...publicState,
     basePath: base,
     logsEndpoint: endpoint(base, "/logs", state.device),
+    crashesEndpoint: endpoint(base, "/crashes", state.device),
     appStateEndpoint: endpoint(base, "/appstate", state.device),
     eventLogEndpoint: endpoint(base, "/api/event-log", state.device),
     eventLogEventsEndpoint: endpoint(base, "/api/event-log/events", state.device),
@@ -1552,12 +1554,6 @@ function httpStreamSettingsFromLegacyCodec(codec: string | undefined): StreamSet
   return undefined;
 }
 
-function nonNegativeIntParam(params: URLSearchParams, name: string): number | undefined {
-  const raw = params.get(name)?.trim();
-  if (!raw) return undefined;
-  const value = Number(raw);
-  return Number.isSafeInteger(value) && value >= 0 ? value : undefined;
-}
 
 export function handleLogsRequest(
   req: SimReq,
@@ -1573,8 +1569,13 @@ export function handleLogsRequest(
   }
 
   const params = new URL(rawUrl, "http://127.0.0.1").searchParams;
-  const since = nonNegativeIntParam(params, "since");
-  const limit = nonNegativeIntParam(params, "limit");
+  const intQuery = (name: string): number | undefined => {
+    const raw = params.get(name)?.trim();
+    const n = Number(raw);
+    return raw && Number.isSafeInteger(n) && n >= 0 ? n : undefined;
+  };
+  const since = intQuery("since");
+  const limit = intQuery("limit");
   const snapshot = params.get("snapshot");
   const wantsJson =
     snapshot === null
@@ -1608,7 +1609,6 @@ export function handleLogsRequest(
     (wantsEnvelope ? JSON.stringify({ seq: line.seq, at: line.at, raw: line.raw }) : line.raw) +
     "\n\n";
 
-  // Lines arrive on a separate macrotask, so an await between read and subscribe drops them.
   let lastSent = since ?? 0;
   for (const line of buffer.read({ since, limit })) {
     if (!stream.isOpen()) break;
@@ -1710,8 +1710,6 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
     : {};
 
-  // The watch starts on the first `/crashes` read, so building a middleware never touches the
-  // host's crash directory.
   crashRuntime.arm();
 
   // Simulator-settings requests run in-process (just the underlying simctl /
@@ -2539,7 +2537,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         () => crashRuntime.start({ deferToRetry: true }).catch(() => {}),
         req,
         res,
-        state
+        state,
+        rawUrl
       );
       return;
     }
@@ -2555,14 +2554,23 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           JSON.stringify({
             error:
               `Malformed percent-escape in the crash id (${rawId}). Copy the id verbatim from ` +
-              `GET ${base}/crashes.`,
+              "GET {base}/crashes.",
           })
         );
         return;
       }
       const state = await selectDeviceAndReap(selectedDevice);
-      const occurrenceParam = new URL(rawUrl, "http://127.0.0.1").searchParams.get("occurrence");
-      await handleCrashReportRequest(req, res, state, id, occurrenceParam);
+      const params = new URL(rawUrl, "http://127.0.0.1").searchParams;
+      await handleCrashReportRequest(
+        req,
+        res,
+        state,
+        id,
+        params.get("occurrence"),
+        undefined,
+        undefined,
+        params.get("key")
+      );
       return;
     }
 

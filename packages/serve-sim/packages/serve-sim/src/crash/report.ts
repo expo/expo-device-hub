@@ -1,10 +1,10 @@
-// An `.ips` is two documents concatenated: a one-line JSON header, then a JSON body.
+// An `.ips` is a one-line JSON header, then a JSON body.
 
 const IPS_SIMULATOR_PLATFORM = 7;
 const IPS_CRASH_BUG_TYPE = "309";
 const MAX_FRAMES = 24;
 
-export interface CrashHeader {
+interface CrashHeader {
   appName: string | null;
   bundleId: string | null;
   appVersion: string | null;
@@ -183,6 +183,7 @@ export function parseCrashReport(raw: string): CrashReport | null {
 
   const exceptionType = readString(exception, "type");
   const signal = readString(exception, "signal");
+  const terminationIndicator = readString(termination, "indicator");
   const capturedAt = readString(body, "captureTime") ?? header.timestamp;
   const capturedAtMs = capturedAt ? Date.parse(capturedAt) : Number.NaN;
 
@@ -199,7 +200,7 @@ export function parseCrashReport(raw: string): CrashReport | null {
     capturedAtMs: Number.isNaN(capturedAtMs) ? null : capturedAtMs,
     exceptionType,
     signal,
-    terminationIndicator: readString(termination, "indicator"),
+    terminationIndicator,
     faultingQueue: readString(threadTriggered, "queue"),
     culpritFrame,
     frames: allFrames.slice(0, Math.max(MAX_FRAMES, appFrame + 1)),
@@ -207,7 +208,7 @@ export function parseCrashReport(raw: string): CrashReport | null {
       header.bundleId ?? "",
       exceptionType ?? "",
       signal ?? "",
-      readString(termination, "indicator") ?? "",
+      terminationIndicator ?? "",
       culpritKey,
     ].join("|"),
   };

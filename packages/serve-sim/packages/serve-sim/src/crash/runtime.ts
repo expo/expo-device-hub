@@ -12,9 +12,7 @@ import { CrashStore, type CrashEvent, type CrashRecord, type LogTailSource } fro
 const DEFAULT_REPORTS_DIR = join(homedir(), "Library", "Logs", "DiagnosticReports");
 
 const CRASH_SCHEMA_VERSION = 1;
-
 const REPORT_DELAY_SECONDS = 5;
-
 const RETRY_DELAY_MS = 1000;
 const MAX_RETRY_DELAY_MS = 30_000;
 const MAX_WATCH_RETRIES = 6;
@@ -147,17 +145,11 @@ export function createCrashRuntime(options: CrashRuntimeOptions = {}) {
     report: Pick<CrashReport, "deviceUdid" | "capturedAtMs" | "procName" | "pid">
   ): { logTail: string[]; logTailSource: LogTailSource } => {
     const none = { logTail: [], logTailSource: "none" as const };
-    if (!report.deviceUdid) return none;
+    if (!report.deviceUdid || report.capturedAtMs === null || !report.procName) return none;
     const buffer = logBuffers.peek(report.deviceUdid);
     if (!buffer) return none;
-
-    const crashedAt = report.capturedAtMs;
-    if (crashedAt === null) return none;
-
-    if (!report.procName) return none;
-
     const tail = buffer.tailBefore({
-      at: crashedAt,
+      at: report.capturedAtMs,
       count: LOG_TAIL_LINES,
       processName: report.procName,
       processId: report.pid,
@@ -281,7 +273,6 @@ export function createCrashRuntime(options: CrashRuntimeOptions = {}) {
       retryTimer = null;
     }
     try {
-      // ReportCrash only creates this directory on the first crash — the one we'd miss.
       ensureDir(reportsDir);
       running = true;
       statusError = null;

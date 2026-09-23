@@ -4,11 +4,15 @@ export const MAX_CRASHES = 20;
 export const MAX_OCCURRENCES = 5;
 
 export interface CrashOccurrence {
+  key: number;
   incidentId: string | null;
   pid: number | null;
   capturedAt: string | null;
   capturedAtMs: number | null;
   rawPath: string;
+  appVersion: string | null;
+  buildVersion: string | null;
+  faultingQueue: string | null;
   frames: CrashFrame[];
   logTail: string[];
   logTailSource: LogTailSource;
@@ -25,9 +29,17 @@ export interface CrashRecord extends CrashReport {
   lastSeen: number;
 }
 
+export type OccurrenceStamp = {
+  key: number;
+  capturedAtMs: number | null;
+  capturedAt: string | null;
+  rawPath: string;
+};
+
 export type CrashSummary = Omit<CrashRecord, "frames" | "occurrences"> & {
   logTailLines: number;
   occurrenceCount: number;
+  occurrenceTimes: OccurrenceStamp[];
 };
 
 export type LogTailSource = "none" | "buffer-rolled-past" | "no-app-lines" | "app-windowed";
@@ -43,6 +55,7 @@ export class CrashStore {
   private readonly listeners = new Set<Listener>();
   private readonly closeListeners = new Set<() => void>();
   private seq = 0;
+  private occurrenceSeq = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
@@ -59,8 +72,7 @@ export class CrashStore {
     for (const onClosed of [...this.closeListeners]) {
       try {
         onClosed();
-      } catch {
-      }
+      } catch {}
     }
     this.closeListeners.clear();
     this.listeners.clear();
@@ -75,11 +87,15 @@ export class CrashStore {
     const at = this.now();
     const existing = this.bySignature.get(report.signature);
     const occurrence: CrashOccurrence = {
+      key: ++this.occurrenceSeq,
       incidentId: report.incidentId,
       pid: report.pid,
       capturedAt: report.capturedAt,
       capturedAtMs: report.capturedAtMs,
       rawPath,
+      appVersion: report.appVersion,
+      buildVersion: report.buildVersion,
+      faultingQueue: report.faultingQueue,
       frames: copyFrames(report.frames),
       logTail: [...logTail],
       logTailSource,
@@ -133,8 +149,7 @@ export class CrashStore {
     for (const listener of this.listeners) {
       try {
         listener(delivered);
-      } catch {
-      }
+      } catch {}
     }
   }
 }

@@ -1,6 +1,6 @@
 export const LOG_ROW_HEIGHT = 22;
 export const LOG_ROW_EXPAND_EXTRA = 18;
-export const LOG_ROW_OVERSCAN = 16;
+const LOG_ROW_OVERSCAN = 16;
 
 export function logWindow(
   count: number,

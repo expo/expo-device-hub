@@ -114,8 +114,7 @@ export class DeviceLogBuffer {
     for (const onClosed of [...this.closeListeners]) {
       try {
         onClosed();
-      } catch {
-      }
+      } catch {}
     }
     this.closeListeners.clear();
   }
@@ -275,8 +274,7 @@ export class DeviceLogBuffer {
     for (const listener of this.batchListeners) {
       try {
         listener(batch);
-      } catch {
-      }
+      } catch {}
     }
   }
 
