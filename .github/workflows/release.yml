@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     environment: npm-publish
     env:
       IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
@@ -55,20 +55,12 @@ jobs:
         run: ./scripts/verify-pending-changesets.ts
 
       - name: Apply version bump & generate changelog
+        if: ${{ env.IS_CANARY != 'true' }}
         run: bun run changeset:version
 
-      - name: Apply canary version
-        if: ${{ env.IS_CANARY == 'true' }}
-        run: ./scripts/apply-canary-version.ts
-
       - name: Summarize versions
+        if: ${{ env.IS_CANARY != 'true' }}
         run: ./scripts/summarize-versions.ts
-
-      - name: Build packages
-        run: bun run build
-
-      - name: Test
-        run: bun run test
 
       - name: Commit & push version bump
         if: ${{ env.IS_CANARY != 'true' }}
@@ -77,20 +69,44 @@ jobs:
           git commit -m "chore(release): version packages"
           git push origin "HEAD:${{ github.ref_name }}"
 
-      - name: Ignore packages excluded from release
-        run: ./scripts/ignore-packages.ts
+      # EAS builds and tests the pushed commit on a macOS worker and packs the
+      # publishable packages. Canary versions are applied there; see
+      # .eas/workflows/build-release.yml.
+      - name: Build packages on EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN }}
+        run: |
+          npx --yes eas-cli@24.7.0 workflow:run .eas/workflows/build-release.yml \
+            --ref "$(git rev-parse HEAD)" \
+            --input "canary=${IS_CANARY}" \
+            --wait \
+            --non-interactive \
+            --json > /tmp/eas-workflow.json
+
+      - name: Download npm packages from EAS
+        run: |
+          ARTIFACT_URL=$(jq -er '
+            .jobs[]
+            | .turtleJobRun.artifacts[]?
+            | select(.name == "npm-packages")
+            | .downloadUrl
+          ' /tmp/eas-workflow.json)
+          curl --fail --location "$ARTIFACT_URL" --output /tmp/npm-packages.tgz
+          mkdir -p release-artifacts
+          tar -xzf /tmp/npm-packages.tgz -C release-artifacts
+          ls -l release-artifacts
 
       - name: Publish to npm
         if: ${{ env.IS_CANARY != 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: bun run changeset:publish
+        run: ./scripts/publish-packages.ts release-artifacts
 
       - name: Publish canary to npm
         if: ${{ env.IS_CANARY == 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: bun run changeset:publish -- --tag canary
+        run: ./scripts/publish-packages.ts release-artifacts --canary
 
       - name: Push git tags
         if: ${{ env.IS_CANARY != 'true' }}
@@ -100,4 +116,4 @@ jobs:
         if: ${{ env.IS_CANARY != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./scripts/create-github-releases.ts
+        run: ./scripts/create-github-releases.ts release-artifacts

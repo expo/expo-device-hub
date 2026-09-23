@@ -1,11 +1,14 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun";
-import { mkdir } from "node:fs/promises";
-import { getPublicPackages } from "./lib/public-packages.ts";
+import { readTarballs } from "./lib/tarballs.ts";
 
-const artifactsDir = `${process.cwd()}/release-artifacts`;
-await mkdir(artifactsDir, { recursive: true });
+// Creates a GitHub release for every tarball that publish-packages.ts tagged in
+// this run, attaching the tarball built on EAS.
+//
+//   ./scripts/create-github-releases.ts release-artifacts
+
+const dir = process.argv[2] ?? "release-artifacts";
 
 function changelogSection(changelog: string, version: string): string {
   const lines = changelog.split("\n");
@@ -21,10 +24,15 @@ function changelogSection(changelog: string, version: string): string {
   return lines.slice(start + 1, end).join("\n").trim();
 }
 
-for (const pkg of await getPublicPackages()) {
-  const tag = `${pkg.name}@${pkg.version}`;
+async function packageDir(name: string): Promise<string | undefined> {
+  const { getPublicPackages } = await import("./lib/public-packages.ts");
+  return (await getPublicPackages()).find((pkg) => pkg.name === name)?.dir;
+}
 
-  // Only release packages tagged in this run (changeset publish creates the tag).
+for (const { name, version, path } of await readTarballs(dir)) {
+  const tag = `${name}@${version}`;
+
+  // Only release packages tagged in this run (publish-packages.ts creates the tag).
   const tagged =
     (await $`git rev-parse -q --verify refs/tags/${tag}`.nothrow().quiet()).exitCode === 0;
   if (!tagged) {
@@ -40,15 +48,13 @@ for (const pkg of await getPublicPackages()) {
   }
 
   let notes = `Release ${tag}`;
-  const changelog = Bun.file(`${pkg.dir}/CHANGELOG.md`);
-  if (await changelog.exists()) {
-    const section = changelogSection(await changelog.text(), pkg.version);
+  const dir = await packageDir(name);
+  const changelog = Bun.file(`${dir}/CHANGELOG.md`);
+  if (dir && (await changelog.exists())) {
+    const section = changelogSection(await changelog.text(), version);
     if (section) notes = section;
   }
 
-  const packOutput = await $`npm pack --pack-destination ${artifactsDir} --json`.cwd(pkg.dir).text();
-  const tarball = `${artifactsDir}/${JSON.parse(packOutput)[0].filename}`;
-
-  console.log(`- ${tag}: creating GitHub release with ${JSON.parse(packOutput)[0].filename}`);
-  await $`gh release create ${tag} ${tarball} --verify-tag --title ${tag} --notes ${notes}`;
+  console.log(`- ${tag}: creating GitHub release with ${path}`);
+  await $`gh release create ${tag} ${path} --verify-tag --title ${tag} --notes ${notes}`;
 }
