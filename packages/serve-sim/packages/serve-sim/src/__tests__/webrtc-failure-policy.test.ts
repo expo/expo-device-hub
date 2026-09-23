@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  offerFailureIsTransient,
   playbackStallAction,
   STALL_RECONNECT_TTL_MS,
   webRtcFailureDisposition,
@@ -121,5 +122,26 @@ describe("what a stall verdict does", () => {
 
   test("does nothing when the verdict is to wait", () => {
     expect(playbackStallAction("wait", null)).toBe("none");
+  });
+});
+
+describe("a rejected offer", () => {
+  /// The reported case: the helper had restarted and the route returned before anyone looked.
+  test("treats a 404 as worth another try", () => {
+    expect(offerFailureIsTransient(404)).toBe(true);
+  });
+
+  test("retries the statuses that clear on their own", () => {
+    for (const status of [404, 408, 425, 429, 500, 502, 503, 504]) {
+      expect(offerFailureIsTransient(status)).toBe(true);
+    }
+  });
+
+  /// Server-side statuses are all treated as worth retrying; only the client-side
+  /// refusals are final, and those are the ones a retry would paper over.
+  test("gives up on a request that will never be accepted", () => {
+    for (const status of [400, 401, 403, 405, 410]) {
+      expect(offerFailureIsTransient(status)).toBe(false);
+    }
   });
 });

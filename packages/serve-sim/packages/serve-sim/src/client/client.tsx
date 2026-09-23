@@ -717,6 +717,7 @@ function AppWithConfig({
     codec: effectiveWebRtcCodec,
     iceServers: streamSettings.iceServers,
     statsUrl: webrtcStatsUrlFrom(config),
+    transportLocked: streamTransportLocked,
   });
   const { retry: retryWebRtcStream, markFrameDecoded: markWebRtcFrameDecoded } = webrtc;
   /// In Duo the stream above is disabled and each screen runs its own, so a restart has to go
@@ -1729,6 +1730,7 @@ function AppWithConfig({
                   onStreamingChange={setStreaming}
                   onAvccError={onPanelAvccError}
                   onWebRtcFailure={handleWebRtcFailure}
+                  transportLocked={streamTransportLocked}
                   onWebRtcPeerChange={setDuoPanelPeer}
                   onStreamError={setDuoPanelError}
                 /> : streamView}

@@ -17,6 +17,10 @@ let nextInterval = 0;
 const intervals = new Map<number, () => void>();
 const POLL_MS = PLAYBACK_STALL_POLL_MS;
 let clock = 0;
+/// What the signalling endpoint answers the offer with.
+let offerStatus = 200;
+let offersPosted = 0;
+let offerBody = "nope";
 
 class FakePeer {
   connectionState = "connected";
@@ -41,6 +45,14 @@ mock.module("react", () => ({
   useEffect: (effect: () => void | (() => void)) => effects.push(effect),
 }));
 
+function fakeSetTimeout(callback: () => void, delay = 0) {
+  timers.set(++nextTimer, { callback, delay });
+  return nextTimer;
+}
+function fakeClearTimeout(id: number) {
+  timers.delete(id);
+}
+
 function fakeSetInterval(callback: () => void) {
   intervals.set(++nextInterval, callback);
   return nextInterval;
@@ -50,9 +62,11 @@ function fakeClearInterval(id: number) {
 }
 
 Object.assign(globalThis, {
-  // `startExclusivePoll` reaches for the global timer, not `window`'s.
+  // `startExclusivePoll` and the signalling busy loop reach for the global timers.
   setInterval: fakeSetInterval,
   clearInterval: fakeClearInterval,
+  setTimeout: fakeSetTimeout,
+  clearTimeout: fakeClearTimeout,
   document: {
     get visibilityState() { return visibility; },
     addEventListener(name: string, listener: () => void) {
@@ -65,11 +79,8 @@ Object.assign(globalThis, {
   window: {
     setInterval: fakeSetInterval,
     clearInterval: fakeClearInterval,
-    setTimeout(callback: () => void, delay: number) {
-      timers.set(++nextTimer, { callback, delay });
-      return nextTimer;
-    },
-    clearTimeout(id: number) { timers.delete(id); },
+    setTimeout: fakeSetTimeout,
+    clearTimeout: fakeClearTimeout,
     addEventListener: () => {},
     removeEventListener: () => {},
   },
@@ -80,11 +91,16 @@ Object.assign(globalThis, {
   RTCPeerConnection: FakePeer,
   RTCRtpReceiver: { getCapabilities: () => ({ codecs: [] }) },
   MediaStream: class {},
-  fetch: async (input: string) => new Response(JSON.stringify(
-    input.includes("/stats")
-      ? { sessions: [{ framesEncoded: 0 }] }
-      : { type: "answer", sdp: "" },
-  )),
+  fetch: async (input: string) => {
+    if (input.includes("/stats")) {
+      return new Response(JSON.stringify({ sessions: [{ framesEncoded: 0 }] }));
+    }
+    if (input.includes("/offer")) offersPosted += 1;
+    if (input.includes("/offer") && offerStatus !== 200) {
+      return new Response(offerBody, { status: offerStatus });
+    }
+    return new Response(JSON.stringify({ type: "answer", sdp: "" }));
+  },
 });
 
 // Import after mocking React and the browser surface so this exercises the real hook.
@@ -97,7 +113,11 @@ let cleanup: (void | (() => void))[] = [];
 /// Options a test passes to the hook on top of the defaults. Reset by every `start`.
 let hookOptions: { judgeStalls?: boolean } = {};
 
-async function start(visible: "visible" | "hidden" = "visible") {
+async function start(
+  visible: "visible" | "hidden" = "visible",
+  offerAnswers = 200,
+  transportLocked = true,
+) {
   cleanup.forEach((stop) => stop?.());
   effects = [];
   updates = [];
@@ -105,6 +125,9 @@ async function start(visible: "visible" | "hidden" = "visible") {
   peers = [];
   closed = 0;
   visibility = visible;
+  offerStatus = offerAnswers;
+  offersPosted = 0;
+  offerBody = "nope";
   clock = 0;
   timers.clear();
   intervals.clear();
@@ -113,6 +136,7 @@ async function start(visible: "visible" | "hidden" = "visible") {
     closeUrl: "http://local/close",
     statsUrl: "http://local/stats",
     enabled: true,
+    transportLocked,
     ...hookOptions,
   });
   hookOptions = {};
@@ -333,6 +357,84 @@ test("a stream that may not judge stalls still feeds the panel but never calls o
   expect(updates).not.toContain(STALLED);
   expect(failures()).toEqual([]);
   expect(seen.length).toBe(2 * (PLAYBACK_STALL_POLLS + 1));
+});
+
+/// A helper restarting answers the offer with a 404. The route comes back on its own, so
+/// giving up on it strands a locked session until someone reloads the page.
+test("a locked session waits out an offer rejected with 404", async () => {
+  await start("visible", 404, true);
+  expect(failures()).toEqual([]);
+  expect(updates).toContain("WebRTC offer failed: HTTP 404. Retrying...");
+
+  const retry = [...timers.entries()].find(([, timer]) => timer.delay === 500);
+  if (!retry) throw new Error("Expected the transport retry to be armed");
+  timers.delete(retry[0]);
+  updates = [];
+  retry[1].callback();
+  expect(updates.some((update) => typeof update === "function")).toBe(true);
+
+  offerStatus = 200;
+  await reconnect();
+  expect(offersPosted).toBe(2);
+  expect(peers).toHaveLength(1);
+  expect(failures()).toEqual([]);
+  expect(updates).not.toContain("WebRTC offer failed: HTTP 404. Retrying...");
+});
+
+/// Retrying here would be worse than failing: the reported failure is what hands the session
+/// to HTTP, and that puts a picture back straight away.
+test("a session that can fall back to HTTP reports the 404 instead of retrying", async () => {
+  await start("visible", 404, false);
+  expect(failures()).toMatchObject([{ kind: "permanent" }]);
+  expect(updates).not.toContain("WebRTC offer failed: HTTP 404. Retrying...");
+});
+
+/// Drain the signalling busy loop, which sleeps between attempts. Only its own timers: the
+/// first-frame watchdog is armed on a different delay and firing it would fail the codec.
+const BUSY_RETRY_DELAY_MS = 500;
+async function drainBusyRetries(limit = 60) {
+  for (let i = 0; i < limit; i++) {
+    const entry = [...timers.entries()].find(([, t]) => t.delay === BUSY_RETRY_DELAY_MS);
+    if (!entry) return;
+    timers.delete(entry[0]);
+    entry[1].callback();
+    await flush();
+  }
+}
+
+/// 409 is the server saying it is busy, and its own message tells the user to reload. That is
+/// the one thing a locked session cannot do for itself.
+test("a locked session waits out signalling that stays busy", async () => {
+  await start("visible", 409, true);
+  await drainBusyRetries();
+  expect(failures()).toEqual([]);
+  expect(updates).toContain("WebRTC signaling stayed busy. Retrying...");
+});
+
+test("a session that can fall back to HTTP reports the busy signalling instead", async () => {
+  await start("visible", 409, false);
+  await drainBusyRetries();
+  expect(failures()).toMatchObject([{ kind: "permanent" }]);
+  expect(updates).not.toContain("WebRTC signaling stayed busy. Retrying...");
+});
+
+/// A device with no panel streams answers 409 too, and that never clears. Waiting it out would
+/// hold a locked Duo in a loop of identical offers.
+test("a 409 that names a lasting reason is final even for a locked session", async () => {
+  const hook = start("visible", 409, true);
+  offerBody = JSON.stringify({ error: "panel_streams_unsupported" });
+  await hook;
+  await drainBusyRetries();
+  expect(failures()).toMatchObject([{ kind: "permanent" }]);
+  expect(offersPosted).toBe(1);
+  expect(updates).not.toContain("WebRTC signaling stayed busy. Retrying...");
+});
+
+/// A refused request is not going to start working, and retrying it hides why.
+test("an offer refused with 403 is final", async () => {
+  await start("visible", 403, true);
+  expect(failures()).toMatchObject([{ kind: "permanent" }]);
+  expect(updates).toContain("WebRTC offer failed: HTTP 403.");
 });
 
 /// The panel is what gets opened when the picture is black, which is before anything paints.

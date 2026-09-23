@@ -46,3 +46,11 @@ export function playbackStallAction(
   if (msSinceCodecReconnect === null) return "retry-transport";
   return msSinceCodecReconnect < STALL_RECONNECT_TTL_MS ? "fail-codec" : "retry-transport";
 }
+
+/// Whether a rejected offer is worth trying again. The signalling path 404s while a helper
+/// restarts or a reaped session's route comes back, and that resolves on its own. A refused
+/// or malformed request never will, and retrying one only hides it.
+export function offerFailureIsTransient(status: number): boolean {
+  if (status >= 500) return true;
+  return status === 404 || status === 408 || status === 425 || status === 429;
+}

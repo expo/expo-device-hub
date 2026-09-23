@@ -7,10 +7,16 @@ import { assertHostModules, GUEST_PATH, guestPkgPath, shellEscape, type TartGues
 const PREVIEW_PORT = Number(process.env.PORT) || 3200;
 
 export function guestPreviewScript(share: string, port: number): string {
+  // Forwarded so the guest can start locked to WebRTC, like `--transport webrtc`.
+  const forwarded = (["STREAM_TRANSPORT", "WEBRTC_CODEC"] as const)
+    .filter((name) => process.env[name])
+    .map((name) => `export ${name}=${shellEscape(process.env[name] as string)}`)
+    .join("\n");
   return `${GUEST_PATH}
 set -euo pipefail
 cd ${shellEscape(share)}
 export PORT=${port}
+${forwarded}
 exec bun run dev.ts
 `;
 }

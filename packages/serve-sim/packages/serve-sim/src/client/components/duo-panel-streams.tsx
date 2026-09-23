@@ -23,6 +23,7 @@ interface DuoPanelStreamsProps {
   activeScreenId?: number;
   codec: WebRtcCodec;
   iceServers?: IceServer[];
+  transportLocked?: boolean;
   onStreamingChange: (streaming: boolean) => void;
   onStreamError?: (error: string | null) => void;
   onAvccError: () => void;
@@ -68,7 +69,7 @@ const PANEL_CONFIG: Record<1 | 3, StreamConfig> = {
 const ignoreSourceTouch = () => {};
 
 function DuoPanelStream({
-  screenId, streamUrl, mode, activeScreenId, codec, iceServers,
+  screenId, streamUrl, mode, activeScreenId, codec, iceServers, transportLocked,
   onStatusChange, onAvccError, onWebRtcFailure, onPeerChange,
 }: Omit<DuoPanelStreamsProps, "onStreamingChange" | "onWebRtcPeerChange" | "onStreamError"> & {
   screenId: 1 | 3;
@@ -80,7 +81,7 @@ function DuoPanelStream({
   const webrtc = useWebRtcStream({
     offerUrl: `${url}/webrtc/offer`, closeUrl: `${url}/webrtc/close`,
     statsUrl: `${url}/webrtc/stats`,
-    enabled: mode === "webrtc", codec, iceServers,
+    enabled: mode === "webrtc", codec, iceServers, transportLocked,
     judgeStalls: activeScreenId === screenId,
   });
   const [streaming, setStreaming] = useState(false);
