@@ -1,5 +1,4 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { readEmuConsoleValue } from "./adb.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
 import { execText } from "./exec.ts";
 import type { FoldPosture, FoldStatus } from "./shared/api-contracts.ts";
@@ -9,6 +8,8 @@ const POSTURES: Record<string, FoldPosture> = {
   HALF_OPENED: "half_opened",
   OPENED: "opened",
   REAR_DISPLAY_MODE: "flipped",
+  FLIPPED: "flipped",
+  TENT: "tent",
 };
 
 const UNSUPPORTED: FoldStatus = { supported: false, posture: null, hingeAngle: null };
@@ -19,9 +20,19 @@ export async function getFoldStatus(
 ): Promise<FoldStatus> {
   if (!isEmulatorSerial(serial)) return UNSUPPORTED;
 
-  const hinge = await readEmuConsoleValue(serial, ["sensor", "get", "hinge-angle0"], runExec);
-  const angle = Number(hinge?.match(/^hinge-angle0\s*=\s*(-?\d+(?:\.\d+)?)$/)?.[1]);
-  if (!hinge || !Number.isFinite(angle)) return UNSUPPORTED;
+  const sensor = await runExec("adb", ["-s", serial, "emu", "sensor", "get", "hinge-angle0"], {
+    timeout: 5_000,
+    lane: "interactive",
+  });
+  if (sensor.status !== 0 || sensor.timedOut || sensor.error) {
+    const detail = sensor.stderr.trim() || sensor.error?.message || sensor.stdout.trim() || "unknown error";
+    throw new Error(`Emulator hinge sensor read failed: ${detail}`);
+  }
+  if (/KO:\s*unknown sensor name:\s*hinge-angle0/.test(sensor.stdout)) return UNSUPPORTED;
+  const angle = Number(sensor.stdout.match(/hinge-angle0\s*=\s*(-?\d+(?:\.\d+)?)/)?.[1]);
+  if (!Number.isFinite(angle)) {
+    throw new Error(`Emulator hinge sensor returned an unexpected response: ${sensor.stdout.trim()}`);
+  }
 
   const state = await runExec(
     "adb",
@@ -34,7 +45,7 @@ export async function getFoldStatus(
   const posture = name ? POSTURES[name] : undefined;
   return {
     supported: true,
-    posture: posture ?? (angle <= 5 ? "closed" : angle >= 175 ? "opened" : null),
+    posture: name ? posture ?? null : angle <= 5 ? "closed" : angle >= 175 ? "opened" : null,
     hingeAngle: angle,
   };
 }

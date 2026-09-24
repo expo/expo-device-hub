@@ -68,6 +68,24 @@ describe("Android emulator fold controls", () => {
     });
   });
 
+  test("does not confuse a failed sensor read with an unsupported device", async () => {
+    const runExec = async () => result("", 1);
+    await expect(getFoldStatus("emulator-5554", runExec))
+      .rejects.toThrow("hinge sensor read failed");
+    await expect(setFoldPosture("emulator-5554", "closed", runExec))
+      .rejects.toThrow("hinge sensor read failed");
+  });
+
+  test("honors a named tent posture even at an extreme hinge angle", async () => {
+    const runExec = async (_cmd: string, args: string[]) =>
+      args.includes("sensor")
+        ? result("hinge-angle0 = 180\r\nOK")
+        : result("Committed state: DeviceState{identifier=4, name='TENT'}");
+    expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
+      supported: true, posture: "tent", hingeAngle: 180,
+    });
+  });
+
   test("rejects a refused emulator fold command", async () => {
     const runExec = async (_cmd: string, args: string[]) => {
       const command = args.slice(2).join(" ");
