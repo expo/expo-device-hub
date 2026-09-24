@@ -90,6 +90,10 @@ export function rememberDisabledCapabilities(udid: string, names: readonly strin
   disabledByDevice.set(udid, new Set(names));
 }
 
+export function forgetDisabledCapabilities(udid: string): void {
+  disabledByDevice.delete(udid);
+}
+
 export function capabilityIsDisabled(udid: string, name: string): boolean {
   const own = disabledByDevice.get(udid);
   if (own) return own.has(name);

@@ -4,6 +4,7 @@ import {
   capabilitiesToApply,
   capabilityIsDisabled,
   clearRegisteredCapabilities,
+  forgetDisabledCapabilities,
   registerCapability,
   registeredCapabilities,
   rememberDisabledCapabilities,
@@ -118,6 +119,11 @@ describe("applyDefaultCapabilities", () => {
 });
 
 describe("disabled capabilities", () => {
+  afterEach(() => {
+    forgetDisabledCapabilities("DEVICE-A");
+    forgetDisabledCapabilities("DEVICE-B");
+  });
+
   test("stay per device", () => {
     rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
     rememberDisabledCapabilities("DEVICE-B", []);
@@ -128,6 +134,13 @@ describe("disabled capabilities", () => {
   test("apply to a device the session did not launch", () => {
     rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
     expect(capabilityIsDisabled("DEVICE-PICKED-IN-GRID", "clipboard")).toBe(true);
+  });
+
+  test("end with the session that set them", () => {
+    rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
+    forgetDisabledCapabilities("DEVICE-A");
+    expect(capabilityIsDisabled("DEVICE-A", "clipboard")).toBe(false);
+    expect(capabilityIsDisabled("DEVICE-PICKED-IN-GRID", "clipboard")).toBe(false);
   });
 });
 

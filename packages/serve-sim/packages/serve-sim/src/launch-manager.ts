@@ -3,6 +3,7 @@ import { basename, join } from "path";
 import {
   capabilitiesToApply,
   capabilityDefinition,
+  forgetDisabledCapabilities,
   rememberDisabledCapabilities,
   type CapabilityContext,
   type CapabilityDefinition,
@@ -85,6 +86,7 @@ export function releaseSessionSync(
     const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
     if (!othersRemain) removeCapabilityLoaderSync(udid);
     armedHere.delete(udid);
+    forgetDisabledCapabilities(udid);
   });
 }
 
@@ -98,6 +100,7 @@ export async function releaseSession(
     const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
     if (!othersRemain) removeCapabilityLoaderSync(udid);
     armedHere.delete(udid);
+    forgetDisabledCapabilities(udid);
   });
 }
 

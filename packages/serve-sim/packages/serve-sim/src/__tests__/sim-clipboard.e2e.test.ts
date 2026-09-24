@@ -18,7 +18,7 @@ if (skipOnCi) {
 }
 
 const clipboardReady = !!(udid && tool && !skipOnCi && !isHeadlessPasteboard());
-requireE2E("simulator clipboard E2E", clipboardReady);
+if (!skipOnCi) requireE2E("simulator clipboard E2E", clipboardReady);
 const describeIfSim = clipboardReady ? describe : describe.skip;
 
 describeIfSim(`simctl pasteboard round-trip (booted sim ${udid ?? "<skipped>"})`, () => {
