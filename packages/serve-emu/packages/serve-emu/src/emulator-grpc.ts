@@ -245,8 +245,8 @@ export async function findLiveEmulatorGrpcEndpoint(
   throwIfAborted(signal, "emulator gRPC discovery aborted");
   const reachable = dependencies.portIsReachable ?? portIsReachable;
   const candidates = [
-    ...(knownEndpoint ? [knownEndpoint] : []),
     ...findEmulatorGrpcEndpoints(serial, dependencies),
+    ...(knownEndpoint ? [knownEndpoint] : []),
   ];
   const checkedPorts = new Set<number>();
   for (const endpoint of candidates) {

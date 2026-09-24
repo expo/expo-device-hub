@@ -206,6 +206,18 @@ describe("emulator gRPC discovery", () => {
     }, endpoint)).toEqual(endpoint);
   });
 
+  test("prefers current discovery credentials over a remembered token on the same port", async () => {
+    const remembered = { port: 8554, token: "old", avdName: "Pixel_Fold" };
+    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, {
+      discoveryDirs: () => ["/run"],
+      readDirectory: () => ["pid_11.ini"],
+      processIsAlive: () => true,
+      readText: () => "port.serial=5554\ngrpc.port=8554\ngrpc.token=new",
+      modifiedMs: () => 1,
+      portIsReachable: async (port) => port === 8554,
+    }, remembered)).toEqual({ port: 8554, token: "new", avdName: null });
+  });
+
   test("checks older discovery files when the newest port is stale", async () => {
     const files = new Map([
       ["/run/pid_10.ini", "port.serial=5554\ngrpc.port=8554\ngrpc.token=older"],
