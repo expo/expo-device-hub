@@ -4,6 +4,7 @@ import {
   EmulatorGrpcClient,
   ensureEmulatorGrpcEndpoint,
   findLiveEmulatorGrpcEndpoint,
+  type GrpcEndpoint,
 } from "./emulator-grpc.ts";
 import type { FoldPosture, FoldStatus } from "./shared/api-contracts.ts";
 
@@ -16,15 +17,27 @@ const POSTURES: Record<number, FoldPosture> = {
 };
 
 type FoldClient = Pick<EmulatorGrpcClient, "getPhysicalModel" | "setPosture" | "close">;
+const activatedEndpoints = new Map<string, GrpcEndpoint>();
 
 async function createReadClient(serial: string): Promise<FoldClient> {
-  const endpoint = await findLiveEmulatorGrpcEndpoint(serial);
-  if (!endpoint) throw new Error("Fold status requires an active emulator gRPC endpoint");
+  const endpoint = await findLiveEmulatorGrpcEndpoint(
+    serial,
+    undefined,
+    {},
+    activatedEndpoints.get(serial),
+  );
+  if (!endpoint) {
+    activatedEndpoints.delete(serial);
+    throw new Error("Fold status requires an active emulator gRPC endpoint");
+  }
+  activatedEndpoints.set(serial, endpoint);
   return new EmulatorGrpcClient(endpoint);
 }
 
 async function createWriteClient(serial: string): Promise<FoldClient> {
-  return new EmulatorGrpcClient(await ensureEmulatorGrpcEndpoint(serial));
+  const endpoint = await ensureEmulatorGrpcEndpoint(serial);
+  activatedEndpoints.set(serial, endpoint);
+  return new EmulatorGrpcClient(endpoint);
 }
 
 async function withClient<T>(

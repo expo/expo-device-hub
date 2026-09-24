@@ -78,12 +78,12 @@ function discoveryProcessIsAlive(file: string): boolean {
   }
 }
 
-export function findEmulatorGrpcEndpoint(
+function findEmulatorGrpcEndpoints(
   serial: string,
   dependencies: EmulatorGrpcDiscoveryDependencies = {},
-): GrpcEndpoint | null {
+): GrpcEndpoint[] {
   const parsedSerial = parseEmulatorSerial(serial);
-  if (!parsedSerial) return null;
+  if (!parsedSerial) return [];
   const directories = dependencies.discoveryDirs ?? discoveryDirs;
   const readDirectory = dependencies.readDirectory ?? readdirSync;
   const processIsAlive = dependencies.processIsAlive ?? discoveryProcessIsAlive;
@@ -135,14 +135,14 @@ export function findEmulatorGrpcEndpoint(
     }
   }
   candidates.sort((left, right) => right.modifiedMs - left.modifiedMs);
-  const endpoint = candidates[0];
-  return endpoint
-    ? {
-        port: endpoint.port,
-        token: endpoint.token,
-        avdName: endpoint.avdName,
-      }
-    : null;
+  return candidates.map(({ port, token, avdName }) => ({ port, token, avdName }));
+}
+
+export function findEmulatorGrpcEndpoint(
+  serial: string,
+  dependencies: EmulatorGrpcDiscoveryDependencies = {},
+): GrpcEndpoint | null {
+  return findEmulatorGrpcEndpoints(serial, dependencies)[0] ?? null;
 }
 
 async function portIsReachable(
@@ -240,12 +240,21 @@ export async function findLiveEmulatorGrpcEndpoint(
   serial: string,
   signal?: AbortSignal,
   dependencies: EmulatorGrpcDiscoveryDependencies = {},
+  knownEndpoint?: GrpcEndpoint,
 ): Promise<GrpcEndpoint | null> {
   throwIfAborted(signal, "emulator gRPC discovery aborted");
-  const endpoint = findEmulatorGrpcEndpoint(serial, dependencies);
-  if (!endpoint) return null;
   const reachable = dependencies.portIsReachable ?? portIsReachable;
-  return (await reachable(endpoint.port, signal)) ? endpoint : null;
+  const candidates = [
+    ...(knownEndpoint ? [knownEndpoint] : []),
+    ...findEmulatorGrpcEndpoints(serial, dependencies),
+  ];
+  const checkedPorts = new Set<number>();
+  for (const endpoint of candidates) {
+    if (checkedPorts.has(endpoint.port)) continue;
+    checkedPorts.add(endpoint.port);
+    if (await reachable(endpoint.port, signal)) return endpoint;
+  }
+  return null;
 }
 
 /** Find or explicitly activate the gRPC endpoint for a running emulator. */
