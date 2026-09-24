@@ -37,7 +37,7 @@ export async function readAvailableFoldStatus(
       client.close();
     }
   }
-  activatedEndpoints.delete(serial);
+  // A transient read failure must not erase the only port known for an emulator.
   if (lastError) throw lastError;
   throw new Error("Fold status requires an active emulator gRPC endpoint");
 }
