@@ -41,6 +41,34 @@ describe("Android emulator fold controls", () => {
     });
   });
 
+  test("an older failed read cannot delay status after a successful fold", async () => {
+    let started!: () => void;
+    let failRead!: (error: Error) => void;
+    const readStarted = new Promise<void>((resolve) => { started = resolve; });
+    const pendingResult = new Promise<{ status: number; value: number | null }>((_, reject) => {
+      failRead = reject;
+    });
+    const blocked: FoldClient = {
+      getPhysicalModel: async () => {
+        started();
+        return pendingResult;
+      },
+      setPosture: async () => {},
+      close: () => {},
+    };
+    const staleRead = getFoldStatus("emulator-5558", async () => blocked);
+    await readStarted;
+    const recovered = fakeClient({ posture: 3 });
+    await setFoldPosture("emulator-5558", "opened", async () => recovered.client);
+    failRead(new Error("old request timed out"));
+    await expect(staleRead).rejects.toThrow("old request timed out");
+    expect(await getFoldStatus("emulator-5558", async () => recovered.client)).toEqual({
+      supported: true,
+      posture: "opened",
+      hingeAngle: 180,
+    });
+  });
+
   test("retries a read with remembered credentials when discovery credentials fail", async () => {
     const endpoints: GrpcEndpoint[] = [
       { port: 8554, token: "stale", avdName: null },

@@ -19,7 +19,13 @@ const POSTURES: Record<number, FoldPosture> = {
 type FoldClient = Pick<EmulatorGrpcClient, "getPhysicalModel" | "setPosture" | "close">;
 const activatedEndpoints = new Map<string, GrpcEndpoint>();
 const readRetryAfter = new Map<string, number>();
+const successGeneration = new Map<string, number>();
 const READ_RETRY_DELAY_MS = 5_000;
+
+function markFoldSuccess(serial: string): void {
+  readRetryAfter.delete(serial);
+  successGeneration.set(serial, (successGeneration.get(serial) ?? 0) + 1);
+}
 
 export async function readAvailableFoldStatus(
   serial: string,
@@ -92,6 +98,7 @@ export async function getFoldStatus(
   if (Date.now() < (readRetryAfter.get(serial) ?? 0)) {
     throw new Error("Fold status temporarily unavailable; retry in a moment");
   }
+  const generation = successGeneration.get(serial) ?? 0;
   const endpoints = createClient ? null : await findLiveEmulatorGrpcEndpoints(
     serial,
     undefined,
@@ -103,10 +110,12 @@ export async function getFoldStatus(
     const status = createClient
       ? await withClient(serial, readFoldStatus, createClient)
       : await readAvailableFoldStatus(serial, endpoints ?? []);
-    readRetryAfter.delete(serial);
+    markFoldSuccess(serial);
     return status;
   } catch (error) {
-    readRetryAfter.set(serial, Date.now() + READ_RETRY_DELAY_MS);
+    if ((successGeneration.get(serial) ?? 0) === generation) {
+      readRetryAfter.set(serial, Date.now() + READ_RETRY_DELAY_MS);
+    }
     throw error;
   }
 }
@@ -129,6 +138,6 @@ export async function setFoldPosture(
     if (status.posture !== posture) throw new Error(`Emulator did not confirm ${posture} posture`);
     return status;
   }, createClient ?? createWriteClient);
-  readRetryAfter.delete(serial);
+  markFoldSuccess(serial);
   return status;
 }
