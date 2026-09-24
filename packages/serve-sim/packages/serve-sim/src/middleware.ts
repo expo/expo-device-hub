@@ -13,6 +13,7 @@ import type { Socket } from "net";
 // lines, and `serve-sim/middleware` is embedded in third-party dev servers, so
 // importing the dependency keeps the proxy working regardless of runtime.
 import { WebSocket } from "ws";
+import { saveScreenshotArtifact } from "./screenshot-artifacts";
 import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
 import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type CaptureRuntime } from "./capture";
@@ -2815,6 +2816,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           );
         });
         const png = await readFile(file);
+        await saveScreenshotArtifact(png);
         res.writeHead(200, {
           "Cache-Control": "no-store",
           "Content-Type": "image/png",

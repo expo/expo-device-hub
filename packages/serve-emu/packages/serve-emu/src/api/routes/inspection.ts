@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import { saveScreenshotArtifact } from "../../screenshot-artifacts.ts";
 import { parseAccessibilitySelector } from "../../accessibility.ts";
 import type { ApiDependencies } from "../dependencies.ts";
 import type { ContractApiRoute } from "./types.ts";
@@ -12,6 +13,7 @@ import {
 export function inspectionRoutes(): ContractApiRoute<ApiDependencies>[] {
   const screenshot: ContractApiRoute<ApiDependencies>["handler"] = async ({ url, deps }) => {
     const png = await downstream("capture screenshot", deps.takeScreenshot);
+    await downstream("save screenshot", () => saveScreenshotArtifact(png));
     if (url.searchParams.get("format") === "base64") {
       return Response.json({
         ok: true,

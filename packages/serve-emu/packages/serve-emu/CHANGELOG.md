@@ -14,6 +14,8 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ### Added
 
+- Persist screenshot captures for EAS artifact upload when `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` is configured.
+
 - `GET /api/metrics` streams foreground app CPU, memory, and network samples as SSE.
 - Add `GET /api/apps/permissions`, `POST /api/apps/revoke`, and
   `POST /api/apps/reset-permissions` to list, revoke, and reset one package's

@@ -8,6 +8,7 @@ import {
   handleCameraRequest,
   readCameraWiring,
 } from "./camera.ts";
+import { saveScreenshotArtifact } from "./screenshot-artifacts.ts";
 import { getExecSnapshot } from "./exec.ts";
 import { getFoldStatus, setFoldPosture } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
@@ -2896,6 +2897,7 @@ export async function startServer(
           const png = await runForContext(requestContext, (context) =>
             screencapPng(context.serial),
           );
+          await saveScreenshotArtifact(png);
           if (url.searchParams.get("format") === "base64") {
             return Response.json({
               ok: true,

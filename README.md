@@ -58,6 +58,20 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
+### Screenshots in EAS sessions
+
+The live preview's Screenshot action keeps its browser download and also saves an
+artifact when the EAS session host configures `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY`.
+Both serve-sim and serve-emu write each captured PNG to a temporary file in that
+directory, then rename it to `screenshot-<uuid>.png` when complete. A storage error
+fails the screenshot request instead of silently returning an unsaved capture.
+
+The EAS worker uploads completed PNGs every five seconds and flushes remaining
+captures at session shutdown. Failed uploads retain their files for retry. This
+requires the updated preview packages and EAS build-tools worker together; the
+worker setting alone has no effect on older preview packages. Standalone previews
+without the environment variable keep their existing download behavior.
+
 ## Repository structure
 
 This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://turbo.build).

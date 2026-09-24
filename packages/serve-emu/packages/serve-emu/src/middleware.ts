@@ -23,6 +23,7 @@ import {
   setUserRotation,
   type OrientationMode,
 } from "./adb.ts";
+import { saveScreenshotArtifact } from "./screenshot-artifacts.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import { getFoldStatus, setFoldPosture } from "./fold.ts";
 import {
@@ -1608,6 +1609,7 @@ async function createAppInternal(
       }
       try {
         const png = await screencapPng(opts.serial);
+        await saveScreenshotArtifact(png);
         if (url.searchParams.get("format") === "base64") {
           return Response.json({
             ok: true,
