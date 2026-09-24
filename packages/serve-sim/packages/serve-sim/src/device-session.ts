@@ -1021,7 +1021,16 @@ export class DeviceSession {
       if (this.phase !== "running") return false;
       if (command.control === "table" && command.value && !isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation)) return false;
       if (command.control === "physical" && this.supportsPhysicalOrientation === false) return false;
-      if (command.control === "physical" && command.value === "facedown" && !(this.hingeAngle !== undefined && this.hingeAngle > 0 && this.hingeAngle < 180)) return false;
+      if (command.control === "physical" && command.value === "facedown") {
+        if (this.hingeAngle === undefined) {
+          // Confirmed angles come from this session's commands. Read the live
+          // hinge once so a device that was already half open can turn over.
+          const { hingeAngle } = await this.hid.hingeState();
+          if (this.phase !== "running") return false;
+          this.hingeAngle = hingeAngle;
+        }
+        if (!(this.hingeAngle !== undefined && this.hingeAngle > 0 && this.hingeAngle < 180)) return false;
+      }
       const ok = command.control === "pose" ? await this.hid.setHingePose(command.value)
         : command.control === "physical" ? await this.hid.setPhysicalOrientation(command.value)
         : command.control === "table" ? await this.hid.setTableMode(command.value)
