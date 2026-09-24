@@ -1026,6 +1026,7 @@ export function SimulatorView({
           }}
           onMouseDown={(e) => {
             e.preventDefault();
+            window.focus();
             const rect = getInputRect();
             if (!rect) return;
             const x = (e.clientX - rect.left) / rect.width;
