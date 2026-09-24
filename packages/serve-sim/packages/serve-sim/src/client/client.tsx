@@ -53,7 +53,7 @@ import { IconButton } from "./components/icon-button";
 import { LogsDrawer } from "./components/logs-drawer";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
-import { ServeSimToaster } from "./components/app-toasts";
+import { ServeSimToaster, showInputSocketError } from "./components/app-toasts";
 import { ShareSessionButton } from "./components/share-session-button";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
 import { StreamStatusPill } from "./components/stream-status-pill";
@@ -84,7 +84,7 @@ import {
 import { fileExtension } from "./utils/drop";
 import { openHostEventStream, runHostAction } from "./utils/exec";
 import { hidUsageForCode } from "./utils/hid";
-import { keydownForward } from "./utils/mobile-keyboard";
+import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
 import {
   DEVICE_SIDEBAR_WIDTH,
   DEVTOOLS_PANEL_WIDTH,
@@ -1003,7 +1003,8 @@ function AppWithConfig({
           );
         } catch {}
       };
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        if (!stopped && event.code === 1013) showInputSocketError(event.reason || "The server is busy. Try again shortly.");
         if (wsRef.current === ws) wsRef.current = null;
         if (!stopped) {
           setPhysicalPose(undefined);
@@ -1043,7 +1044,7 @@ function AppWithConfig({
   }, []);
 
   const keySender = useMemo(
-    () => createPacedKeySender((e) => sendWs(0x06, { type: e.type, usage: e.usage })),
+    () => createPacedKeySender((e) => sendWs(0x06, e)),
     [sendWs],
   );
   useEffect(() => () => keySender.dispose(), [keySender]);
@@ -1468,7 +1469,11 @@ function AppWithConfig({
       if (usage == null) return;
       e.preventDefault();
       pressedKeysRef.current.add(usage);
-      sendWs(0x06, { type, usage });
+      sendWs(0x06, {
+        type,
+        usage,
+        ...(shiftedCharacter(e) !== undefined ? { key: e.key, shifted: true } : {}),
+      });
     };
     const down = (e: KeyboardEvent) => onKey(e, "down");
     const up = (e: KeyboardEvent) => onKey(e, "up");

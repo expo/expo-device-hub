@@ -74,6 +74,42 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
 
 @end
 
+@interface FixtureInputView : UIView
+@end
+
+@implementation FixtureInputView
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+  Record(@"touch-began", @"");
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+  Record(@"touch-moved", @"");
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+  Record(@"touch-ended", @"");
+}
+
+@end
+
+@interface FixtureInputController : UIViewController
+@end
+
+@implementation FixtureInputController
+
+- (void)loadView {
+  self.view = [[FixtureInputView alloc] init];
+  self.view.backgroundColor = UIColor.systemGreenColor;
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+  [super viewDidAppear:animated];
+  Record(@"input-ready", @"");
+}
+
+@end
+
 @interface FixtureSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -84,9 +120,13 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
     willConnectToSession:(UISceneSession *)session
                  options:(UISceneConnectionOptions *)connectionOptions {
   self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
-  self.window.rootViewController =
-      [NSProcessInfo.processInfo.arguments containsObject:@"--keyboard-test"]
-      ? [[FixtureKeyboardController alloc] init] : [[UIViewController alloc] init];
+  if ([NSProcessInfo.processInfo.arguments containsObject:@"--keyboard-test"]) {
+    self.window.rootViewController = [[FixtureKeyboardController alloc] init];
+  } else if ([NSProcessInfo.processInfo.arguments containsObject:@"--input-test"]) {
+    self.window.rootViewController = [[FixtureInputController alloc] init];
+  } else {
+    self.window.rootViewController = [[UIViewController alloc] init];
+  }
   self.window.rootViewController.view.backgroundColor = UIColor.systemGreenColor;
   [self.window makeKeyAndVisible];
   RecordURLContexts(connectionOptions.URLContexts);

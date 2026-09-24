@@ -216,6 +216,12 @@ function openHelperSocket(state: ServerState): WebSocket {
   );
 }
 
+function reportInputSocketClose(ws: WebSocket, reject: (error: Error) => void): void {
+  ws.on("close", (code, reason) => {
+    if (code === 1013) reject(new Error(`Simulator input rejected: ${reason.toString() || "server busy"}. Try again shortly.`));
+  });
+}
+
 function clearState(udid?: string) {
   if (udid) {
     debugState("clearState device=%s", udid);
@@ -823,6 +829,7 @@ async function gesture(jsonStr: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
@@ -857,6 +864,7 @@ async function tap(xArg: string, yArg: string, deviceArg?: string) {
   }
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
     const send = (type: "begin" | "end") => {
       const json = new TextEncoder().encode(JSON.stringify({ type, x, y }));
@@ -965,6 +973,7 @@ async function rotate(orientation: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
@@ -1008,6 +1017,7 @@ async function button(buttonName = "home", deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
@@ -1057,6 +1067,7 @@ async function caDebug(option: string, stateRaw: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(stateFile);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
     ws.onopen = () => {
       const json = new TextEncoder().encode(JSON.stringify({ option: resolved, enabled }));
@@ -1082,6 +1093,7 @@ async function memoryWarning(deviceArg?: string) {
   }
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(stateFile);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
     ws.onopen = () => {
       ws.send(new Uint8Array([0x09]));

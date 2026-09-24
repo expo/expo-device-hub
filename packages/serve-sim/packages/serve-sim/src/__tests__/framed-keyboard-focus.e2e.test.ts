@@ -157,10 +157,22 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
 
   async function typeKeys(text: string): Promise<void> {
     for (const key of text) {
-      const code = `Key${key.toUpperCase()}`;
-      const windowsVirtualKeyCode = key.toUpperCase().charCodeAt(0);
-      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", code, key, text: key, windowsVirtualKeyCode });
-      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", code, key, windowsVirtualKeyCode });
+      const shifted = key === "!" || key.toUpperCase() === key && key.toLowerCase() !== key;
+      const code = key === "!" ? "Digit1" : `Key${key.toUpperCase()}`;
+      const windowsVirtualKeyCode = key === "!" ? 49 : key.toUpperCase().charCodeAt(0);
+      if (shifted) {
+        await cdp.send("Input.dispatchKeyEvent", {
+          type: "keyDown", code: "ShiftLeft", key: "Shift", modifiers: 8, windowsVirtualKeyCode: 16,
+        });
+      }
+      const modifiers = shifted ? 8 : 0;
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyDown", code, key, text: key, modifiers, windowsVirtualKeyCode });
+      await cdp.send("Input.dispatchKeyEvent", { type: "keyUp", code, key, modifiers, windowsVirtualKeyCode });
+      if (shifted) {
+        await cdp.send("Input.dispatchKeyEvent", {
+          type: "keyUp", code: "ShiftLeft", key: "Shift", modifiers: 0, windowsVirtualKeyCode: 16,
+        });
+      }
       await Bun.sleep(50);
     }
   }
@@ -267,12 +279,12 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     expect(await cdp.evaluate<string>(`${HARDWARE_KEYBOARD_SWITCH}.getAttribute("aria-checked")`, frame)).toBe("false");
 
     await clickOnce(stream);
-    await typeKeys("xy");
-    await waitFor(() => lastText(start), "zqxy");
+    await typeKeys("X!");
+    await waitFor(() => lastText(start), "zqX!");
 
     await clickOnce(hardwareKeyboard);
     await clickOnce(stream);
     await typeKeys("w");
-    await waitFor(() => lastText(start), "zqxyw");
+    await waitFor(() => lastText(start), "zqX!w");
   }, 90_000);
 });

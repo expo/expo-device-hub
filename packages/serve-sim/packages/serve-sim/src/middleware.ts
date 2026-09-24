@@ -941,13 +941,21 @@ function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
     closed = true;
     for (const cb of closeCbs) cb();
   };
-  const shutdown = () => {
+  const shutdown = (code?: number, reason = "") => {
     fireClose();
-    try { socket.end(websocketFrame(0x8, Buffer.alloc(0))); } catch {}
-    try { socket.destroy(); } catch {}
+    const payload = code === undefined ? Buffer.alloc(0) : Buffer.alloc(2 + Buffer.byteLength(reason));
+    if (code !== undefined) {
+      payload.writeUInt16BE(code);
+      payload.write(reason, 2);
+    }
+    try {
+      socket.end(websocketFrame(0x8, payload));
+      socket.destroySoon();
+    } catch { socket.destroy(); }
   };
 
   const drain = () => {
+    if (closed) return;
     for (;;) {
       let frame: ParsedWebSocketFrame | null;
       try {

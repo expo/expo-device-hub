@@ -111,7 +111,7 @@ export class DeviceLogBuffer {
     this.child = null;
     this.partial = "";
     this.dropping = false;
-    for (const onClosed of [...this.closeListeners]) {
+    for (const onClosed of Array.from(this.closeListeners)) {
       try {
         onClosed();
       } catch {}

@@ -4,6 +4,11 @@ import { hidUsageForCode } from "./hid";
 const BACKSPACE = hidUsageForCode("Backspace")!;
 const ENTER = hidUsageForCode("Enter")!;
 
+export function shiftedCharacter(event: Pick<KeyboardEvent, "key" | "shiftKey" | "metaKey" | "ctrlKey" | "altKey">): string | undefined {
+  return event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey &&
+    event.key.length === 1 && event.key !== " " ? event.key : undefined;
+}
+
 function press(usage: number): KeyEvent[] {
   return [{ type: "down", usage }, { type: "up", usage }];
 }

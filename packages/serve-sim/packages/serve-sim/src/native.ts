@@ -77,6 +77,7 @@ interface NativeAddon {
   ) => SimCaptureHandle;
   axDescribe(udid: string): Promise<string>;
   axFrontmost(udid: string): Promise<string>;
+  axTypeKeyboardCharacter(udid: string, character: string): Promise<boolean>;
   setHardwareKeyboard(udid: string, enabled: boolean): Promise<boolean>;
 }
 
@@ -385,6 +386,10 @@ export function axDescribeAsync(udid: string): Promise<string> {
 /** Async frontmost-app probe — JSON string `{ bundleId, pid }` for the visible app. */
 export function axFrontmostAsync(udid: string): Promise<string> {
   return load().axFrontmost(udid);
+}
+
+export function axTypeKeyboardCharacterAsync(udid: string, character: string): Promise<boolean> {
+  return load().axTypeKeyboardCharacter(udid, character);
 }
 
 /**

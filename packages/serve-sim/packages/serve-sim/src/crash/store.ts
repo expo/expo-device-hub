@@ -69,7 +69,7 @@ export class CrashStore {
   }
 
   close(): void {
-    for (const onClosed of [...this.closeListeners]) {
+    for (const onClosed of Array.from(this.closeListeners)) {
       try {
         onClosed();
       } catch {}
