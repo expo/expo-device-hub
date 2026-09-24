@@ -72,12 +72,14 @@ describe("framePolicyBlocks", () => {
 });
 
 describe("frame permission requests", () => {
-  test("asks the embedding page once per tab", () => {
+  test("asks the embedding page each time, so a closed prompt can come back", () => {
     withFrame("permissionsPolicy", [], (frame) => {
       requestFramePermission("clipboard-read");
       requestFramePermission("clipboard-read");
+      const request = { type: "serve-sim:permission-request", permission: "clipboard-read" };
       expect(frame.posted).toEqual([
-        { message: { type: "serve-sim:permission-request", permission: "clipboard-read" }, targetOrigin: "*" },
+        { message: request, targetOrigin: "*" },
+        { message: request, targetOrigin: "*" },
       ]);
     });
   });

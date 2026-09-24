@@ -13,10 +13,9 @@ export function framePolicyBlocks(permission: FramePermission): boolean {
 
 const REQUESTED_KEY = "serve-sim:frame-permission-requested:";
 
-/** Asks the embedding page at most once per tab until it grants; it reloads this frame when it does. */
+/** Asks the embedding page, which ignores questions it has answered and reloads this frame when it grants. */
 export function requestFramePermission(permission: FramePermission): void {
   try {
-    if (window.sessionStorage.getItem(`${REQUESTED_KEY}${permission}`)) return;
     window.sessionStorage.setItem(`${REQUESTED_KEY}${permission}`, "1");
   } catch {}
   // The request carries no data, so any target origin is safe.
