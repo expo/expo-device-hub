@@ -354,7 +354,7 @@ export async function applyDefaultCapabilities(
   overrides: CapabilityOverrides = {},
 ): Promise<string[]> {
   return withLaunchStateLock(udid, async () => {
-    rememberDisabledCapabilities(overrides.disable ?? []);
+    rememberDisabledCapabilities(udid, overrides.disable ?? []);
     const definitions = capabilitiesToApply(overrides);
     const resolved: Capability[] = [];
     for (const definition of definitions) {

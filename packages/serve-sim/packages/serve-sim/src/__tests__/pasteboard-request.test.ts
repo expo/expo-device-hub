@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, promises as fs, readdirSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { clipboardCapability, pasteboardTarget, requestInjectedPasteboard } from "../sim-pasteboard";
+import { clipboardCapability, pasteboardTarget, requestInjectedPasteboard, writeSimPasteboard } from "../sim-pasteboard";
 
 function container(): string {
   return mkdtempSync(join(tmpdir(), "serve-sim-pasteboard-"));
@@ -111,3 +111,11 @@ describe("pasteboardTarget", () => {
     expect(pasteboardTarget({ bundleId: "com.apple.springboard" }, null)).toBeNull();
   });
 });
+
+describe("writeSimPasteboard", () => {
+  test("rejects when simctl refuses the device", async () => {
+    const text = "x".repeat(1024 * 1024);
+    await expect(writeSimPasteboard("00000000-0000-0000-0000-000000000000", text)).rejects.toThrow();
+  });
+});
+

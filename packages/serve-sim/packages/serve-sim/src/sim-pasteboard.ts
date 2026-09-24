@@ -94,6 +94,12 @@ export function writeSimPasteboard(udid: string, text: string): Promise<void> {
       if (code === 0) resolveWrite();
       else rejectWrite(new Error(stderr.trim() || `simctl pasteboard write exited ${code}`));
     });
+    // Node throws an unhandled EPIPE if simctl exits before reading the text.
+    child.stdin.once("error", (error) => {
+      clearTimeout(timeout);
+      child.kill("SIGKILL");
+      rejectWrite(error);
+    });
     child.stdin.end(text, "utf-8");
   });
 }
@@ -182,7 +188,7 @@ export function pasteboardTarget(
 }
 
 async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult | null> {
-  if (capabilityIsDisabled(CLIPBOARD_CAPABILITY)) {
+  if (capabilityIsDisabled(udid, CLIPBOARD_CAPABILITY)) {
     throw new Error(
       "the clipboard capability is disabled for this session, so its reader cannot be loaded. " +
         "Restart serve-sim without `--disable clipboard` to read the simulator pasteboard.",

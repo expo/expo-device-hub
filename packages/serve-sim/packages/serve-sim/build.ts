@@ -297,7 +297,6 @@ console.log("dist/simax/serve-sim-ax-settings");
 for (const [name, script] of [
   ["SimPasteboard", "Sources/SimPasteboard/build.sh"],
   ["SimPasteboardReader", "Sources/SimPasteboardReader/build.sh"],
-  ["SimPasteboardFixture", "Sources/SimPasteboardFixture/build.sh"],
 ] as const) {
   const result = spawnSync(
     "bash",
@@ -311,7 +310,6 @@ for (const [name, script] of [
 }
 console.log("dist/simpb/serve-sim-pasteboard");
 console.log("dist/simpb/libSimPasteboardReader.dylib");
-console.log("dist/simpb/PasteboardFixture.app");
 
 // ─── 9. serve-sim-native.node — in-process N-API addon ───────────────────
 // Replaces the spawned serve-sim-bin helper. Arm64 macOS binary; loaded by

@@ -11,8 +11,12 @@ import {
   SAFARI_BUNDLE,
   writeTestPasteboard,
 } from "./pasteboard-sim";
+import { useTempStateDir } from "./helpers";
 
 const TEST_TOKEN = "test-token";
+// Reads consult launch state, so keep a local serve-sim session's state out of it.
+const stateDir = useTempStateDir();
+afterAll(() => stateDir.restore());
 const middleware = simMiddleware({ basePath: "/preview", execToken: TEST_TOKEN });
 
 function pasteboardRequest(query = "", method = "POST", body?: BodyInit): Request {

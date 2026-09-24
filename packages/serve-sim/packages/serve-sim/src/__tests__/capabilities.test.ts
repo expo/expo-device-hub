@@ -2,9 +2,11 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   capabilitiesToApply,
+  capabilityIsDisabled,
   clearRegisteredCapabilities,
   registerCapability,
   registeredCapabilities,
+  rememberDisabledCapabilities,
   UnknownCapabilityError,
 } from "../capabilities";
 import type { CapabilityDefinition } from "../capabilities";
@@ -114,3 +116,18 @@ describe("applyDefaultCapabilities", () => {
     expect(asked).toEqual(["a-throws", "also-on"]);
   });
 });
+
+describe("disabled capabilities", () => {
+  test("stay per device", () => {
+    rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
+    rememberDisabledCapabilities("DEVICE-B", []);
+    expect(capabilityIsDisabled("DEVICE-A", "clipboard")).toBe(true);
+    expect(capabilityIsDisabled("DEVICE-B", "clipboard")).toBe(false);
+  });
+
+  test("apply to a device the session did not launch", () => {
+    rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
+    expect(capabilityIsDisabled("DEVICE-PICKED-IN-GRID", "clipboard")).toBe(true);
+  });
+});
+

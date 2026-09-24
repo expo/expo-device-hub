@@ -83,15 +83,19 @@ export class UnknownCapabilityError extends Error {
   }
 }
 
-// On-demand enables, like a clipboard read, must not override --disable.
-let disabledForSession = new Set<string>();
+// On-demand enables, like a clipboard read, must not override a device's --disable.
+const disabledByDevice = new Map<string, ReadonlySet<string>>();
 
-export function rememberDisabledCapabilities(names: readonly string[]): void {
-  disabledForSession = new Set(names);
+export function rememberDisabledCapabilities(udid: string, names: readonly string[]): void {
+  disabledByDevice.set(udid, new Set(names));
 }
 
-export function capabilityIsDisabled(name: string): boolean {
-  return disabledForSession.has(name);
+export function capabilityIsDisabled(udid: string, name: string): boolean {
+  const own = disabledByDevice.get(udid);
+  if (own) return own.has(name);
+  // A device this process did not launch, such as one picked in the grid, follows the session.
+  for (const names of disabledByDevice.values()) if (names.has(name)) return true;
+  return false;
 }
 
 export function capabilitiesToApply({
