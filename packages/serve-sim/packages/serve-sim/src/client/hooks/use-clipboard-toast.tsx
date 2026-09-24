@@ -1,6 +1,7 @@
-import { useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { toast as sonnerToast } from "sonner";
 import { ClipboardToastContent } from "../components/app-toasts";
+import { framePolicyBlocks, requestFramePermission, takeFramePermissionGrant } from "../utils/frame-permission";
 import {
   copyTextViaSelection,
   readSimClipboard,
@@ -118,11 +119,22 @@ export function useClipboardToast(
     [sendTextToSim],
   );
 
+  useEffect(() => {
+    // The toaster mounts after this component, so it cannot show a toast raised during mount.
+    const timer = setTimeout(() => {
+      if (takeFramePermissionGrant("clipboard-read")) {
+        renderToast("copied", "Clipboard allowed. Paste again", PASTE_TOAST_ID);
+      }
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
   const pasteFromDevice = useCallback(async () => {
     let text: string;
     try {
       text = await readTextFromBrowserClipboard();
     } catch {
+      if (framePolicyBlocks("clipboard-read")) requestFramePermission("clipboard-read");
       renderToast("paste", "Paste here to send it to the simulator", PASTE_TOAST_ID, {
         onPaste: (pasted) => void pasteText(pasted),
       });
