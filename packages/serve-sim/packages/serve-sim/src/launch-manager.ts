@@ -2,8 +2,8 @@ import { existsSync, unlinkSync } from "fs";
 import { basename, join } from "path";
 import {
   capabilitiesToApply,
-  rememberDisabledCapabilities,
   capabilityDefinition,
+  rememberDisabledCapabilities,
   type CapabilityContext,
   type CapabilityDefinition,
   type CapabilityOverrides,

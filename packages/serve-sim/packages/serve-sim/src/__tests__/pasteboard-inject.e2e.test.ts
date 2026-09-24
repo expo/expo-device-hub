@@ -48,7 +48,7 @@ for (const app of PASTEBOARD_TEST_APPS) {
 
     afterAll(() => {
       session?.unsubscribe();
-    });
+    }, 60_000);
 
     // vmmap refuses to examine Safari, so this runs on our own app. The
     // answer assertions below prove the load either way; this one proves it

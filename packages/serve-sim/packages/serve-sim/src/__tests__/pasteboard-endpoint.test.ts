@@ -81,7 +81,7 @@ for (const app of PASTEBOARD_TEST_APPS) {
 
     afterAll(() => {
       session?.unsubscribe();
-    });
+    }, 60_000);
 
     test("returns JSON text for an explicit device", async () => {
       const probe = `serve-sim-pasteboard-probe-${app.label.replace(/\s+/g, "-")}`;

@@ -224,11 +224,9 @@ async function finishLaunch(
 export async function openAppForPasteboard(
   udid: string,
   bundleId: string,
-  opts: { insert?: boolean } = {},
 ): Promise<{ unsubscribe: () => void; pid: number }> {
-  const withInsert = opts.insert !== false;
   const dylib = locatePasteboardReaderDylib();
-  if (withInsert && !dylib) throw new Error("libSimPasteboardReader.dylib is missing; run build.ts");
+  if (!dylib) throw new Error("libSimPasteboardReader.dylib is missing; run build.ts");
   const subscription = foregroundTracker.subscribe(udid);
 
   const cleanup = () => {
@@ -241,18 +239,13 @@ export async function openAppForPasteboard(
   try {
     await resetLaunchState(udid, bundleId);
     grantPasteboard(udid, bundleId);
-    let pid: number | null;
-    if (withInsert) {
-      await enableCapabilities(udid, bundleId, [{
-          name: CLIPBOARD_CAPABILITY,
-          dylib: dylib!,
-          scope: "allApps",
-          loadDelayMs: 0,
-        }]);
-      pid = runningPid(udid, bundleId);
-    } else {
-      pid = simctlLaunch(udid, bundleId);
-    }
+    await enableCapabilities(udid, bundleId, [{
+      name: CLIPBOARD_CAPABILITY,
+      dylib,
+      scope: "allApps",
+      loadDelayMs: 0,
+    }]);
+    const pid = runningPid(udid, bundleId);
     return { unsubscribe: cleanup, pid: await waitForLaunch(udid, bundleId, pid) };
   } catch (error: unknown) {
     cleanup();

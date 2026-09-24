@@ -16,6 +16,7 @@ const __dirname = dirnameOf(import.meta.url);
 
 export const CLIPBOARD_CAPABILITY = "clipboard";
 
+const SPRINGBOARD_BUNDLE = "com.apple.springboard";
 const INJECTED_TIMEOUT_MS = 1200;
 const INJECTED_POLL_MS = 25;
 const RELAUNCH_TIMEOUT_MS = 8000;
@@ -24,7 +25,7 @@ export function locatePasteboardTool(): string | null {
   return locateSimpbArtifact("serve-sim-pasteboard");
 }
 
-export function buildPasteboardTool(): string {
+function buildPasteboardTool(): string {
   return buildSimpbArtifact("SimPasteboard", "serve-sim-pasteboard");
 }
 
@@ -32,7 +33,7 @@ export function locatePasteboardReaderDylib(): string | null {
   return locateSimpbArtifact("libSimPasteboardReader.dylib");
 }
 
-export function buildPasteboardReaderDylib(): string {
+function buildPasteboardReaderDylib(): string {
   return buildSimpbArtifact("SimPasteboardReader", "libSimPasteboardReader.dylib");
 }
 
@@ -56,7 +57,6 @@ export function locateSimpbArtifact(file: string): string | null {
   ].find(existsSync);
   return candidate ? resolve(candidate) : null;
 }
-const SPRINGBOARD_BUNDLE = "com.apple.springboard";
 
 export const clipboardCapability: CapabilityDefinition = {
   name: CLIPBOARD_CAPABILITY,
@@ -153,7 +153,7 @@ async function readPasteboardOnce(udid: string): Promise<PasteboardReadResult> {
 
 let releaseHookInstalled = false;
 
-// An embedded simMiddleware has no session lifecycle, so disarm what a copy armed on exit.
+// An embedded simMiddleware has no session lifecycle, so disarm what a clipboard read armed on exit.
 function releaseArmedDevicesOnExit(): void {
   if (releaseHookInstalled) return;
   releaseHookInstalled = true;
@@ -249,7 +249,7 @@ async function takeInjectedAnswer(
 }
 
 /** A real data container, not "(null)" and not a relative path we would write into cwd. */
-export function isContainerPath(container: string): boolean {
+function isContainerPath(container: string): boolean {
   return container.startsWith("/");
 }
 

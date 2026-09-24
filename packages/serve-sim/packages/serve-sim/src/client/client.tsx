@@ -138,6 +138,8 @@ import {
 
 // Default CSS-pixel width of the fixed 1:1 Duo stage, independent of either screen.
 const DUO_STAGE_DEFAULT_WIDTH = 580;
+const SHORTCUT_KEY_GAP_MS = 30;
+const SIM_COPY_SETTLE_MS = 150;
 
 type PreviewConfig = NonNullable<Window["__SIM_PREVIEW__"]>;
 
@@ -1307,7 +1309,7 @@ function AppWithConfig({
     (build: (pressed: Set<number>) => HidKeyEvent[]) => {
       const run = shortcutChainRef.current.catch(() => {}).then(async () => {
         const pressed = pressedKeysRef.current;
-        const gap = () => new Promise<void>((r) => setTimeout(r, 30));
+        const gap = () => new Promise<void>((r) => setTimeout(r, SHORTCUT_KEY_GAP_MS));
         for (const ev of build(pressed)) {
           if (ev.type === "up") await gap();
           sendKey(ev.type, ev.usage);
@@ -1326,7 +1328,7 @@ function AppWithConfig({
 
   const sendSimCopy = useCallback(async () => {
     await sendShortcut(simCopyHidEvents);
-    await new Promise<void>((r) => setTimeout(r, 150));
+    await new Promise<void>((r) => setTimeout(r, SIM_COPY_SETTLE_MS));
   }, [sendShortcut]);
 
   const sendTextToSim = useCallback(

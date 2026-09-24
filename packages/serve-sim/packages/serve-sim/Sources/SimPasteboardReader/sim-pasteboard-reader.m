@@ -35,9 +35,7 @@ static void answer(void) {
     text = UIPasteboard.generalPasteboard.string ?: @"";
   });
 
-  // Publishing `done` is what makes the answer visible, so it must not happen
-  // unless the value was written whole. A short write here would otherwise
-  // reach the host as a successful read of truncated clipboard text.
+  // Publish done only after a whole write, or the host reads truncated text as success.
   NSData *data = [text dataUsingEncoding:NSUTF8StringEncoding];
   if (!write_whole_file(value, data.bytes, data.length)) {
     fprintf(stderr, "[serve-sim] could not write the pasteboard answer to %s\n", value);
