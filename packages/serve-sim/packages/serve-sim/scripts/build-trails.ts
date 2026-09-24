@@ -87,7 +87,7 @@ function near(p: LL, q: LL, tol = 20): boolean {
 
 function stitch(segments: LL[][], tol = 20): LL[] {
   if (!segments.length) return [];
-  const used = new Array(segments.length).fill(false);
+  const used = Array.from({ length: segments.length }, () => false);
   let chain: LL[] = [...segments[0]!];
   used[0] = true;
   let changed = true;

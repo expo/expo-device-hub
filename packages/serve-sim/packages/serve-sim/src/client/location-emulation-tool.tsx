@@ -501,7 +501,7 @@ interface MorphState {
 }
 
 function sampleEvenly(p: PreparedTrail, n: number): Vec3[] {
-  const out: Vec3[] = new Array(n);
+  const out = Array.from<Vec3>({ length: n });
   for (let i = 0; i < n; i++) {
     const f = n === 1 ? 0 : i / (n - 1);
     const pt = pointAtDistance(p, f * p.totalDistance);
@@ -584,7 +584,7 @@ function nearestNeighbourAlign(from: Vec3[], to: Vec3[], loop: boolean): Vec3[] 
     }
   }
   const target = bestReversed ? [...to].reverse() : to;
-  const out: Vec3[] = new Array(N);
+  const out = Array.from<Vec3>({ length: N });
   for (let i = 0; i < N; i++) out[i] = target[(i + bestOffset) % N]!;
   return out;
 }
@@ -592,7 +592,7 @@ function nearestNeighbourAlign(from: Vec3[], to: Vec3[], loop: boolean): Vec3[] 
 /** Per-frame lerp using the precomputed morph state. */
 function morphFrame(state: MorphState, t: number): PreparedTrail {
   const N = state.fromPts.length;
-  const points: RoutePoint[] = new Array(N);
+  const points = Array.from<RoutePoint>({ length: N });
   let arc = 0;
   let prev: RoutePoint | null = null;
   let xMin = Infinity, xMax = -Infinity;

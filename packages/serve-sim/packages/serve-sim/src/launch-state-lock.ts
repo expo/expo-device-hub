@@ -40,7 +40,7 @@ function lockHolderIsGone(path: string): boolean {
 const pendingLaunchUpdates = new Set<Promise<unknown>>();
 
 export async function waitForLaunchUpdates(): Promise<void> {
-  while (pendingLaunchUpdates.size) await Promise.allSettled([...pendingLaunchUpdates]);
+  while (pendingLaunchUpdates.size) await Promise.allSettled(pendingLaunchUpdates);
 }
 
 export function withLaunchStateLock<T>(udid: string, fn: () => Promise<T>): Promise<T> {

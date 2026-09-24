@@ -174,7 +174,7 @@ export function assertPreviewAccess(
     res.writeHead(401, {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store, private",
-      ...(opts.htmlHeaders ?? {}),
+      ...opts.htmlHeaders,
     });
     res.end(unauthorizedPreviewPage({ rejectedToken: !!fromQuery }));
     return false;

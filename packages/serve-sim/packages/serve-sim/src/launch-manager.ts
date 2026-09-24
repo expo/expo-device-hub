@@ -424,7 +424,7 @@ async function enableCapabilitiesUnlocked(
   );
   const state: LaunchState = {
     ...(previous ?? { launchArgs: [], capabilities: {} }),
-    capabilities: { ...(previous?.capabilities ?? {}), ...added },
+    capabilities: { ...previous?.capabilities, ...added },
   };
   const config = renderCapabilityConfig(state);
   await armInsert(udid, dylib);

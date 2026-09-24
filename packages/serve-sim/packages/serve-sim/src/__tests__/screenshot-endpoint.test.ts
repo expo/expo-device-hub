@@ -69,7 +69,7 @@ describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`
     expect(res?.headers.get("cache-control")).toBe("no-store");
     expect(res?.headers.get("access-control-allow-origin")).toBe(DASHBOARD);
     const bytes = new Uint8Array(await res!.arrayBuffer());
-    expect([...bytes.slice(0, 8)]).toEqual(PNG_MAGIC);
+    expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
   }, 45_000);
 
   test("falls back to a booted simulator when no device is given", async () => {
@@ -79,6 +79,6 @@ describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`
     expect(res?.status).toBe(200);
     expect(res?.headers.get("content-type")).toBe("image/png");
     const bytes = new Uint8Array(await res!.arrayBuffer());
-    expect([...bytes.slice(0, 8)]).toEqual(PNG_MAGIC);
+    expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
   }, 45_000);
 });

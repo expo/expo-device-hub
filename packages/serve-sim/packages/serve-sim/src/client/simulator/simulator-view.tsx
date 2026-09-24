@@ -1308,7 +1308,7 @@ export function SimulatorView({
           </>
         )}
         {!connected && !error && (
-          <div style={{...overlayStyle, ...(imageStyle || {})}}>
+          <div style={{...overlayStyle, ...imageStyle}}>
             <span style={{ color: "#888", fontSize: 14 }}>Connecting...</span>
           </div>
         )}
