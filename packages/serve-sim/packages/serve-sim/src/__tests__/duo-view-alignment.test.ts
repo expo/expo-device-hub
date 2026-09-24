@@ -242,6 +242,17 @@ describe("iPhone Duo intended display during native handoff", () => {
     }
   });
 
+  test("a half-open device turned face down targets the cover whatever its last preset", () => {
+    for (const nativeScreen of [1, 3]) {
+      for (const pose of [null, "book", "laptop"] as const) {
+        expect(duoIntendedScreen(90, pose, nativeScreen, true)).toBe(1);
+        expect(duoIntendedScreen(90, pose, nativeScreen, false)).toBe(3);
+        expect(duoIntendedScreen(180, pose, nativeScreen, true)).toBe(3);
+        expect(duoIntendedScreen(0, pose, nativeScreen, true)).toBe(1);
+      }
+    }
+  });
+
   test("uses the native active panel until the hinge angle is known", () => {
     expect(duoIntendedScreen(undefined, "tent", 3)).toBe(3);
     expect(duoIntendedScreen(undefined, "open", 1)).toBe(1);

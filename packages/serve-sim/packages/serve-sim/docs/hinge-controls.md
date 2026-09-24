@@ -98,9 +98,10 @@ are not replayed on reconnect or on another device.
 Protocol clients can select the active physical surface without moving the
 hinge by sending the acknowledged hinge command `{ control: "physical", value:
 "faceup" | "facedown" }`. The screen config advertises
-`supportsPhysicalOrientation` when this is available. Face down is accepted
-only while the hinge is partially open because it uses the simulator's Table
-Mode sensor to elect the outer surface.
+`supportsPhysicalOrientation` when this is available, and reports the confirmed
+`physicalOrientation`. Face down is accepted only while the hinge is partially
+open because it uses the simulator's Table Mode sensor to elect the outer
+surface. The 3D preview follows it to the cover, as it does for Tent.
 
 With the simulator focused, Option+Shift+1–5 (⌥⇧1–⌥⇧5) select Closed, Open,
 Laptop, Book, and Tent. Command+1–5 remain available for browser tab switching.

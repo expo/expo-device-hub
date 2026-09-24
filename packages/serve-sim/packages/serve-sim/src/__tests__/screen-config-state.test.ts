@@ -93,6 +93,14 @@ describe("screen config state", () => {
     )?.config.supportsPhysicalOrientation).toBe(true);
   });
 
+  test("reports a physical orientation change at the same hinge angle", () => {
+    expect(resolveScreenConfigUpdate(
+      { width: 2007, height: 2853, hingeAngle: 90, tableMode: true, physicalOrientation: "portrait" },
+      { width: 2007, height: 2853, hingeAngle: 90, tableMode: true, physicalOrientation: "facedown" },
+      "reported",
+    )?.config.physicalOrientation).toBe("facedown");
+  });
+
   test("reports a display switch even when both screens have the same dimensions", () => {
     expect(resolveScreenConfigUpdate(
       { width: 900, height: 1280, screenId: 1 },

@@ -29,11 +29,13 @@ export function duoIntendedScreen(
   angle: number | undefined,
   physicalPose: HingePose | null | undefined,
   nativeScreenId?: number,
+  faceDown = false,
 ): 1 | 3 {
   if (angle === undefined) return nativeScreenId === 1 ? 1 : 3;
   if (angle <= 0) return 1;
   if (angle >= 180) return 3;
-  if (physicalPose === "tent") return 1;
+  // Face down with Table Mode elects the cover, as the native Tent pose does.
+  if (physicalPose === "tent" || faceDown) return 1;
   // CoreSimulator keeps the cover active through 54° and activates the inner
   // display at 55°. Keep fractional angles between those boundaries on the
   // current panel, matching native display ownership during slider motion.

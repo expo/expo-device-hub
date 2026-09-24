@@ -11,6 +11,8 @@ export interface DuoModelViewProps {
   pose?: HingePose | null;
   /** Physical pose for display selection; undefined follows the confirmed pose, null is unknown. */
   physicalPose?: HingePose | null;
+  /** Face down with Table Mode, which elects the cover of a half-open device. */
+  faceDown?: boolean;
   view?: DuoView;
   streamConfig?: StreamConfig | null;
   hingeCommands?: DuoHingeCommands;

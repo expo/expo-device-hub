@@ -781,6 +781,8 @@ function AppWithConfig({
   const [hingePreview, setHingePreview] = useState<HingeControlState | null>(null);
   const [physicalPose, setPhysicalPose] = useState<HingePose | null | undefined>(undefined);
   const [duoView, setDuoView] = useState<DuoView | null>(null);
+  // The view before another client turned the device face down.
+  const faceDownViewRef = useRef<DuoView | null>(null);
   const [orientationOverride, setOrientationOverride] = useState(false);
   const hingePendingRef = useRef(false);
   const [hingeCommands, setHingeCommands] = useState<DuoHingeCommands>({ pending: false, coverDepartures: 0, innerDepartures: 0 });
@@ -791,6 +793,10 @@ function AppWithConfig({
   const chrome = defaultChrome ? deviceKitChromeForScreen(defaultChrome, activeScreenId) : null;
   const previewHingeAngle = hingePreview?.hingeAngle ?? hingeAngle;
   const previewHingePose = hingePreview ? hingePreview.hingePose : streamConfig?.hingePose;
+  // A pending angle or preset releases Table Mode, so the preview wins over a
+  // face-down orientation that another client confirmed.
+  const previewFaceDown = (hingePreview?.tableMode ?? activeStreamConfig.tableMode) === true &&
+    activeStreamConfig.physicalOrientation === "facedown";
   const initialDuoView = useMemo(() => duoInitialView(hingeAngle, streamConfig?.hingePose, activeStreamConfig),
     [hingeAngle, streamConfig?.hingePose, activeStreamConfig]);
   // Control callbacks read the latest native state without re-registering
@@ -999,6 +1005,7 @@ function AppWithConfig({
   const setHingeControl = useCallback((command: HingeControlCommand) => {
     const { streamConfig, initialDuoView } = duoControlStateRef.current;
     setHingeError(null);
+    faceDownViewRef.current = null;
     // Editing the hinge or Table Mode clears the named preset, but preserves
     // the simulator's physical orientation (for example Laptop on a table).
     if (command.control === "pose") {
@@ -1025,6 +1032,7 @@ function AppWithConfig({
     const turns = direction ? (direction === "left" ? -1 : 1)
       : (rotationDegreesForOrientation(current.orientation) - rotationDegreesForOrientation(orientation)) / 90;
     setDuoView((previous) => duoRotateView(previous ?? current.initialDuoView, turns));
+    faceDownViewRef.current = null;
     setHingePreview(null);
     setPhysicalPose(null);
     sentHingePoseRef.current = null;
@@ -1051,6 +1059,7 @@ function AppWithConfig({
     setHingePreview(null);
     setPhysicalPose(undefined);
     setDuoView(null);
+    faceDownViewRef.current = null;
     sentHingePoseRef.current = undefined;
     setOrientationOverride(false);
   }, [config.streamUrl]);
@@ -1082,6 +1091,21 @@ function AppWithConfig({
       sentHingePoseRef.current = streamConfig.hingePose;
     }
   }, [orientationOverride, hingePreview, hingePending, streamConfig?.hingePose]);
+
+  useEffect(() => {
+    // Another client can turn a half-open device face down without a preset.
+    // Frame the elected cover as Tent does, and restore the previous view when
+    // the device turns back. Local hinge and rotation controls own the view.
+    if (hingePreview || hingePending || streamConfig?.hingePose === "tent") return;
+    const faceDown = streamConfig?.tableMode === true && streamConfig.physicalOrientation === "facedown";
+    if (faceDown && !faceDownViewRef.current) {
+      faceDownViewRef.current = duoView ?? initialDuoView;
+      setDuoView(duoPresetView("tent"));
+    } else if (!faceDown && faceDownViewRef.current) {
+      setDuoView(faceDownViewRef.current);
+      faceDownViewRef.current = null;
+    }
+  }, [hingePreview, hingePending, streamConfig?.hingePose, streamConfig?.tableMode, streamConfig?.physicalOrientation, duoView, initialDuoView]);
 
   useEffect(() => {
     const confirmedConfig = streamConfig;
@@ -1632,6 +1656,7 @@ function AppWithConfig({
                 angle={previewHingeAngle}
                 pose={previewHingePose}
                 physicalPose={physicalPose}
+                faceDown={previewFaceDown}
                 view={duoView ?? initialDuoView}
                 streamConfig={activeStreamConfig}
                 hingeCommands={hingeCommands}
@@ -1647,7 +1672,7 @@ function AppWithConfig({
                 {useDuoPanelFeeds ? <DuoPanelStreams
                   streamUrl={config.streamUrl}
                   mode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
-                  activeScreenId={duoIntendedScreen(previewHingeAngle, physicalPose === undefined ? previewHingePose : physicalPose, activeScreenId)}
+                  activeScreenId={duoIntendedScreen(previewHingeAngle, physicalPose === undefined ? previewHingePose : physicalPose, activeScreenId, previewFaceDown)}
                   codec={effectiveWebRtcCodec}
                   iceServers={streamSettings.iceServers}
                   onStreamingChange={setStreaming}
