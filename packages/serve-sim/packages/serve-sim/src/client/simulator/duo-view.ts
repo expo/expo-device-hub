@@ -30,6 +30,26 @@ export function duoPresetView(pose: HingePose): DuoView {
   return captureView(duoPose(angle, pose, undefined, undefined, 0), pose);
 }
 
+/** The view saved before another client turned the device face down. */
+export type DuoFaceDownFraming = { saved: DuoView | null; held: boolean };
+
+/** A local hinge or rotate control keeps its view until the device leaves face down. */
+export const DUO_FACE_DOWN_HELD: DuoFaceDownFraming = { saved: null, held: true };
+
+/** Frame the cover of a device turned face down elsewhere, as Tent does, then restore the view. */
+export function duoFaceDownFraming(
+  state: DuoFaceDownFraming,
+  faceDown: boolean,
+  current: DuoView,
+): { state: DuoFaceDownFraming; view?: DuoView } {
+  if (!faceDown) {
+    const released = { saved: null, held: false };
+    return state.saved ? { state: released, view: state.saved } : { state: released };
+  }
+  if (state.held || state.saved) return { state };
+  return { state: { saved: current, held: false }, view: duoPresetView("tent") };
+}
+
 export function duoRotateView(view: DuoView, quarterTurns: number): DuoView {
   const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 0, 1), quarterTurns * Math.PI / 2);
   return { ...view, rotation: turn.multiply(new Quaternion(...view.rotation)).toArray() };

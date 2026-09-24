@@ -1,5 +1,5 @@
 import { Euler, Quaternion } from "three";
-import type { HingePose } from "../../hinge-control";
+import { hingePoseOrientation, type HingePhysicalOrientation, type HingePose } from "../../hinge-control";
 import type { StreamConfig } from "../types";
 import { streamDisplayGeometry } from "./orientation";
 
@@ -22,6 +22,14 @@ export function duoScreenRoll(config: StreamConfig) {
 /** Turn the ordinary folding view from the cover toward the inner screens. */
 export function duoFacingYaw(fold: number): number {
   return Math.PI / 2 * Math.pow(fold / (Math.PI / 2), 3);
+}
+
+/** Another client turned the device over, so a remembered preset no longer describes it. */
+export function duoPhysicalPoseChanged(
+  pose: HingePose | null | undefined,
+  orientation: HingePhysicalOrientation | undefined,
+): boolean {
+  return !!pose && orientation !== undefined && hingePoseOrientation(pose) !== orientation;
 }
 
 /** Select the requested panel before native display metadata catches up. */

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { Quaternion, Vector3 } from "three";
 import { HINGE_POSES } from "../hinge-control";
-import { duoInitialView, duoPresetView, duoRotateView, duoViewFolds, duoViewRotation } from "../client/simulator/duo-view";
+import { DUO_FACE_DOWN_HELD, duoFaceDownFraming, duoInitialView, duoPresetView, duoRotateView, duoViewFolds, duoViewRotation } from "../client/simulator/duo-view";
 
 test("hinge motion preserves the hinge angle and saved orientation controls for every preset", () => {
   for (const { id } of HINGE_POSES) {
@@ -95,4 +95,25 @@ test("native orientation is used only to initialize a view; preset selection res
   expect(new Quaternion(...portrait.rotation).angleTo(new Quaternion(...landscape.rotation))).toBeCloseTo(Math.PI / 2, 8);
   expect(duoPresetView("open")).toEqual(landscape);
   expect(duoPresetView("closed")).not.toEqual(portrait);
+});
+
+test("another client's face down frames the cover and face up restores the earlier view", () => {
+  const book = duoPresetView("book");
+  const tent = duoPresetView("tent");
+  const down = duoFaceDownFraming({ saved: null, held: false }, true, book);
+  expect(down).toEqual({ state: { saved: book, held: false }, view: tent });
+  // Later configs while face down keep the saved view and the current framing.
+  expect(duoFaceDownFraming(down.state, true, tent)).toEqual({ state: down.state });
+  expect(duoFaceDownFraming(down.state, false, tent)).toEqual({ state: { saved: null, held: false }, view: book });
+  expect(duoFaceDownFraming({ saved: null, held: false }, false, book)).toEqual({ state: { saved: null, held: false } });
+});
+
+test("a local control keeps its view until the device leaves face down", () => {
+  const rotated = duoRotateView(duoPresetView("book"), 1);
+  // A rotation or hinge edit arrives while native still reports face down.
+  expect(duoFaceDownFraming(DUO_FACE_DOWN_HELD, true, rotated)).toEqual({ state: DUO_FACE_DOWN_HELD });
+  const released = duoFaceDownFraming(DUO_FACE_DOWN_HELD, false, rotated);
+  expect(released).toEqual({ state: { saved: null, held: false } });
+  // A later external face down frames the cover again.
+  expect(duoFaceDownFraming(released.state, true, rotated).view).toEqual(duoPresetView("tent"));
 });

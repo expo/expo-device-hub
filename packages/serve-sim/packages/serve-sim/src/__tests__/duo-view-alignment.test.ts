@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { Euler, Quaternion, Vector2, Vector3 } from "three";
-import { duoFrameMatchesDisplay, duoIntendedScreen, duoPose, duoScreenMapping } from "../client/simulator/duo-pose";
+import { duoFrameMatchesDisplay, duoIntendedScreen, duoPhysicalPoseChanged, duoPose, duoScreenMapping } from "../client/simulator/duo-pose";
 import type { StreamConfig } from "../client/types";
 
 const hingeAxis = new Vector3(0, 1, 0);
@@ -251,6 +251,18 @@ describe("iPhone Duo intended display during native handoff", () => {
         expect(duoIntendedScreen(0, pose, nativeScreen, true)).toBe(1);
       }
     }
+  });
+
+  test("a remembered preset is dropped when another client turns the device over", () => {
+    // Tent turned face up must stop selecting the cover.
+    expect(duoPhysicalPoseChanged("tent", "faceup")).toBe(true);
+    expect(duoPhysicalPoseChanged("book", "facedown")).toBe(true);
+    // Hinge edits keep the preset's physical orientation, such as Laptop on a table.
+    expect(duoPhysicalPoseChanged("laptop", "landscape-left")).toBe(false);
+    expect(duoPhysicalPoseChanged("tent", "facedown")).toBe(false);
+    // Rotation leaves the physical orientation unknown.
+    expect(duoPhysicalPoseChanged("tent", undefined)).toBe(false);
+    expect(duoPhysicalPoseChanged(null, "faceup")).toBe(false);
   });
 
   test("uses the native active panel until the hinge angle is known", () => {

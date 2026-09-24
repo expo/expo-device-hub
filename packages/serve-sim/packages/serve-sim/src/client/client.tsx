@@ -35,8 +35,8 @@ import { DeviceSidebarToggle } from "./components/device-sidebar-toggle";
 import { DevicePlaceholder } from "./components/device-placeholder";
 import { DuoModelView } from "./components/duo-model-view";
 import { DuoPanelStreams, type DuoPanelPeer } from "./components/duo-panel-streams";
-import { duoIntendedScreen } from "./simulator/duo-pose";
-import { duoInitialView, duoPresetView, duoRotateView, type DuoView } from "./simulator/duo-view";
+import { duoIntendedScreen, duoPhysicalPoseChanged } from "./simulator/duo-pose";
+import { DUO_FACE_DOWN_HELD, duoFaceDownFraming, duoInitialView, duoPresetView, duoRotateView, type DuoFaceDownFraming, type DuoView } from "./simulator/duo-view";
 import { rotationDegreesForOrientation } from "./simulator/orientation";
 import { recordDuoHingeCommand, type DuoHingeCommands } from "./simulator/duo-hinge-commands";
 import { PresentationControls } from "./components/presentation-controls";
@@ -781,8 +781,7 @@ function AppWithConfig({
   const [hingePreview, setHingePreview] = useState<HingeControlState | null>(null);
   const [physicalPose, setPhysicalPose] = useState<HingePose | null | undefined>(undefined);
   const [duoView, setDuoView] = useState<DuoView | null>(null);
-  // The view before another client turned the device face down.
-  const faceDownViewRef = useRef<DuoView | null>(null);
+  const faceDownFramingRef = useRef<DuoFaceDownFraming>({ saved: null, held: false });
   const [orientationOverride, setOrientationOverride] = useState(false);
   const hingePendingRef = useRef(false);
   const [hingeCommands, setHingeCommands] = useState<DuoHingeCommands>({ pending: false, coverDepartures: 0, innerDepartures: 0 });
@@ -1005,7 +1004,7 @@ function AppWithConfig({
   const setHingeControl = useCallback((command: HingeControlCommand) => {
     const { streamConfig, initialDuoView } = duoControlStateRef.current;
     setHingeError(null);
-    faceDownViewRef.current = null;
+    faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
     // Editing the hinge or Table Mode clears the named preset, but preserves
     // the simulator's physical orientation (for example Laptop on a table).
     if (command.control === "pose") {
@@ -1032,7 +1031,7 @@ function AppWithConfig({
     const turns = direction ? (direction === "left" ? -1 : 1)
       : (rotationDegreesForOrientation(current.orientation) - rotationDegreesForOrientation(orientation)) / 90;
     setDuoView((previous) => duoRotateView(previous ?? current.initialDuoView, turns));
-    faceDownViewRef.current = null;
+    faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
     setHingePreview(null);
     setPhysicalPose(null);
     sentHingePoseRef.current = null;
@@ -1059,7 +1058,7 @@ function AppWithConfig({
     setHingePreview(null);
     setPhysicalPose(undefined);
     setDuoView(null);
-    faceDownViewRef.current = null;
+    faceDownFramingRef.current = { saved: null, held: false };
     sentHingePoseRef.current = undefined;
     setOrientationOverride(false);
   }, [config.streamUrl]);
@@ -1086,11 +1085,18 @@ function AppWithConfig({
     // must not replace the orientation chosen by the latest local request.
     // Rotate clears the known native physical pose. Ignore an older
     // preset acknowledgement until native reports that its pose was cleared.
-    if (!orientationOverride && !hingePreview && !hingePending && streamConfig?.hingePose) {
+    if (orientationOverride || hingePreview || hingePending) return;
+    if (streamConfig?.hingePose) {
       setPhysicalPose(streamConfig.hingePose);
       sentHingePoseRef.current = streamConfig.hingePose;
+    } else if (duoPhysicalPoseChanged(physicalPose, streamConfig?.physicalOrientation)) {
+      // Another client turned the device over without a preset. Frame it as
+      // on connect; face-down framing below still turns it to the cover.
+      setPhysicalPose(null);
+      sentHingePoseRef.current = null;
+      setDuoView(null);
     }
-  }, [orientationOverride, hingePreview, hingePending, streamConfig?.hingePose]);
+  }, [orientationOverride, hingePreview, hingePending, streamConfig?.hingePose, streamConfig?.physicalOrientation, physicalPose]);
 
   useEffect(() => {
     // Another client can turn a half-open device face down without a preset.
@@ -1098,13 +1104,9 @@ function AppWithConfig({
     // the device turns back. Local hinge and rotation controls own the view.
     if (hingePreview || hingePending || streamConfig?.hingePose === "tent") return;
     const faceDown = streamConfig?.tableMode === true && streamConfig.physicalOrientation === "facedown";
-    if (faceDown && !faceDownViewRef.current) {
-      faceDownViewRef.current = duoView ?? initialDuoView;
-      setDuoView(duoPresetView("tent"));
-    } else if (!faceDown && faceDownViewRef.current) {
-      setDuoView(faceDownViewRef.current);
-      faceDownViewRef.current = null;
-    }
+    const { state, view } = duoFaceDownFraming(faceDownFramingRef.current, faceDown, duoView ?? initialDuoView);
+    faceDownFramingRef.current = state;
+    if (view) setDuoView(view);
   }, [hingePreview, hingePending, streamConfig?.hingePose, streamConfig?.tableMode, streamConfig?.physicalOrientation, duoView, initialDuoView]);
 
   useEffect(() => {
