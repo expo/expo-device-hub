@@ -477,6 +477,7 @@ describe("physical hinge controls", () => {
       hingeAngle: 90,
       hingePose: null,
       tableMode: true,
+      physicalOrientation: "facedown",
       supportsPhysicalOrientation: true,
     });
 

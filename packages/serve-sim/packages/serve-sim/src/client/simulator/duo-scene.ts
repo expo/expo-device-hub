@@ -315,7 +315,7 @@ export function createDuoScene(
     }
     previousCacheScreenOnFold = cacheScreenOnFold;
     const physicalPose = current.physicalPose === undefined ? current.pose : current.physicalPose;
-    const intended = duoIntendedScreen(current.angle, physicalPose, config?.screenId);
+    const intended = duoIntendedScreen(current.angle, physicalPose, config?.screenId, current.faceDown);
     const coverHost = sourceHost.querySelector<HTMLElement>('[data-duo-panel="1"]');
     const innerHost = sourceHost.querySelector<HTMLElement>('[data-duo-panel="3"]');
     if (coverHost || innerHost) {
@@ -413,7 +413,7 @@ export function createDuoScene(
     const current = state();
     const config = current.streamConfig;
     const physicalPose = current.physicalPose === undefined ? current.pose : current.physicalPose;
-    const intended = duoIntendedScreen(current.angle, physicalPose, config?.screenId);
+    const intended = duoIntendedScreen(current.angle, physicalPose, config?.screenId, current.faceDown);
     if ((!isCover && !isInner) || intended !== (isCover ? 1 : 3)) return null;
     const surface = isCover ? cover : inner;
     const mapping = surface.mapping;

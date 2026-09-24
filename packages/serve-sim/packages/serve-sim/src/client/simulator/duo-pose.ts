@@ -1,5 +1,5 @@
 import { Euler, Quaternion } from "three";
-import type { HingePose } from "../../hinge-control";
+import { hingePoseOrientation, type HingePhysicalOrientation, type HingePose } from "../../hinge-control";
 import type { StreamConfig } from "../types";
 import { streamDisplayGeometry } from "./orientation";
 
@@ -24,16 +24,26 @@ export function duoFacingYaw(fold: number): number {
   return Math.PI / 2 * Math.pow(fold / (Math.PI / 2), 3);
 }
 
+/** Another client turned the device over, so a remembered preset no longer describes it. */
+export function duoPhysicalPoseChanged(
+  pose: HingePose | null | undefined,
+  orientation: HingePhysicalOrientation | undefined,
+): boolean {
+  return !!pose && orientation !== undefined && hingePoseOrientation(pose) !== orientation;
+}
+
 /** Select the requested panel before native display metadata catches up. */
 export function duoIntendedScreen(
   angle: number | undefined,
   physicalPose: HingePose | null | undefined,
   nativeScreenId?: number,
+  faceDown = false,
 ): 1 | 3 {
   if (angle === undefined) return nativeScreenId === 1 ? 1 : 3;
   if (angle <= 0) return 1;
   if (angle >= 180) return 3;
-  if (physicalPose === "tent") return 1;
+  // Face down with Table Mode elects the cover, as the native Tent pose does.
+  if (physicalPose === "tent" || faceDown) return 1;
   // CoreSimulator keeps the cover active through 54° and activates the inner
   // display at 55°. Keep fractional angles between those boundaries on the
   // current panel, matching native display ownership during slider motion.

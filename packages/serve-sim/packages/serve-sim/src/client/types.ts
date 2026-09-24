@@ -1,5 +1,5 @@
 // Protocol types used by the simulator UI.
-import type { HingeControlState } from "../hinge-control";
+import type { HingeControlState, HingePhysicalOrientation } from "../hinge-control";
 
 export type SimulatorOrientation =
   | "portrait"
@@ -18,6 +18,8 @@ export interface StreamConfig extends HingeControlState {
   supportsHingeAngle?: boolean;
   /** Whether the active Duo surface can be selected without changing its hinge angle. */
   supportsPhysicalOrientation?: boolean;
+  /** Last confirmed physical orientation, separate from the app's screen orientation. */
+  physicalOrientation?: HingePhysicalOrientation;
 }
 
 export type ConnectionQuality = "good" | "degraded" | "poor";

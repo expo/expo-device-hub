@@ -1232,6 +1232,7 @@ export class DeviceSession {
     supportsPhysicalOrientation?: boolean;
     hingeAngle?: number;
     hingePose?: HingePose | null;
+    physicalOrientation?: HingePhysicalOrientation;
     tableMode?: boolean;
     tableModeAvailable?: boolean;
   } {
@@ -1244,6 +1245,7 @@ export class DeviceSession {
       ...(this.supportsHingeAngle !== undefined ? { supportsHingeAngle: this.supportsHingeAngle } : {}),
       ...(this.hingeAngle !== undefined ? { hingeAngle: this.hingeAngle } : {}),
       ...(this.supportsHingeAngle ? { hingePose: this.hingePose, tableModeAvailable: isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation) } : {}),
+      ...(this.supportsHingeAngle && this.hingePhysicalOrientation !== undefined ? { physicalOrientation: this.hingePhysicalOrientation } : {}),
       ...(this.tableMode !== undefined ? { tableMode: this.tableMode } : {}),
     };
   }
