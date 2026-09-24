@@ -179,12 +179,16 @@ function releaseArmedDevicesOnExit(): void {
 }
 
 // A headless host often has no frontmost app, so fall back to the one this session launched.
+// Relaunching it over the Home screen would move the user off Home.
 export function pasteboardTarget(
   frontmost: { bundleId: string } | null,
   launched: string | null,
-): string | null {
-  if (frontmost && frontmost.bundleId !== SPRINGBOARD_BUNDLE) return frontmost.bundleId;
-  return launched && launched !== SPRINGBOARD_BUNDLE ? launched : null;
+): { bundleId: string; relaunch: boolean } | null {
+  if (frontmost && frontmost.bundleId !== SPRINGBOARD_BUNDLE) {
+    return { bundleId: frontmost.bundleId, relaunch: true };
+  }
+  if (!launched || launched === SPRINGBOARD_BUNDLE) return null;
+  return { bundleId: launched, relaunch: frontmost === null };
 }
 
 async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult | null> {
@@ -195,8 +199,9 @@ async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult
     );
   }
   const frontmost = await frontmostAppOf(udid);
-  const bundleId = pasteboardTarget(frontmost, readLaunchState(udid)?.bundleId ?? null);
-  if (!bundleId) return null;
+  const target = pasteboardTarget(frontmost, readLaunchState(udid)?.bundleId ?? null);
+  if (!target) return null;
+  const { bundleId } = target;
 
   // System apps like Settings have no data container: get_app_container exits 0
   // and prints "(null)". There is nowhere to exchange files, so relaunching the
@@ -212,6 +217,7 @@ async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult
   });
   const afterArming = await requestInjectedPasteboard(container);
   if (afterArming !== null) return { text: afterArming, relaunchedApp: null };
+  if (!target.relaunch) return null;
 
   debugPasteboard(
     "%s did not answer on %s after arming %s; relaunching as a last resort",

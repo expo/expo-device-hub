@@ -93,17 +93,24 @@ describe("requestInjectedPasteboard", () => {
 
 describe("pasteboardTarget", () => {
   test("asks the frontmost app", () => {
-    expect(pasteboardTarget({ bundleId: "dev.expo.App" }, "host.exp.Exponent")).toBe("dev.expo.App");
+    expect(pasteboardTarget({ bundleId: "dev.expo.App" }, "host.exp.Exponent")).toEqual({
+      bundleId: "dev.expo.App",
+      relaunch: true,
+    });
   });
 
   test("falls back to the app this session launched when nothing is frontmost", () => {
-    expect(pasteboardTarget(null, "host.exp.Exponent")).toBe("host.exp.Exponent");
+    expect(pasteboardTarget(null, "host.exp.Exponent")).toEqual({
+      bundleId: "host.exp.Exponent",
+      relaunch: true,
+    });
   });
 
-  test("falls back when SpringBoard is frontmost", () => {
-    expect(pasteboardTarget({ bundleId: "com.apple.springboard" }, "host.exp.Exponent")).toBe(
-      "host.exp.Exponent",
-    );
+  test("asks the launched app over the Home screen but does not relaunch it", () => {
+    expect(pasteboardTarget({ bundleId: "com.apple.springboard" }, "host.exp.Exponent")).toEqual({
+      bundleId: "host.exp.Exponent",
+      relaunch: false,
+    });
   });
 
   test("has nothing to ask when no app is known", () => {

@@ -44,10 +44,19 @@ export async function readRequestBodyAsync(
     for await (const chunk of req) append(chunk);
   } else {
     await new Promise<void>((resolve, reject) => {
+      const onAborted = () => settle(new Error("Request aborted"));
+      const settle = (error?: Error) => {
+        req.off("data", append);
+        req.off("end", settle);
+        req.off("error", settle);
+        req.off("aborted", onAborted);
+        if (error) reject(error);
+        else resolve();
+      };
       req.on("data", append);
-      req.once("end", resolve);
-      req.once("error", reject);
-      req.once("aborted", () => reject(new Error("Request aborted")));
+      req.once("end", settle);
+      req.once("error", settle);
+      req.once("aborted", onAborted);
     });
   }
   if (tooLarge) throw new RequestBodyTooLargeError();

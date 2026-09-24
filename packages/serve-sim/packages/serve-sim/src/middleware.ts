@@ -1808,7 +1808,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // A preflight carries no cookie and no token, so it has to be answered before the gate.
     if (ownPath && req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, OPTIONS",
         "Access-Control-Allow-Headers": "Authorization, Content-Type",
         "Access-Control-Max-Age": "600",
       });

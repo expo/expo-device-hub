@@ -10,24 +10,26 @@ function hidUsage(code: keyof typeof HID_USAGE_BY_CODE): number {
   return value;
 }
 
-// Ctrl+V forwards Control, and the sim ignores Control+Command+V.
+export function isControlUsage(usage: number): boolean {
+  return usage === hidUsage("ControlLeft") || usage === hidUsage("ControlRight");
+}
+
+// Ctrl+V forwards Control, and the sim ignores Control+Command+V, so lift Control and put it back.
 function simCommandShortcutHidEvents(
   pressed: ReadonlySet<number>,
   code: "KeyV" | "KeyC" | "KeyA",
 ): KeyEvent[] {
-  const controlLeft = hidUsage("ControlLeft");
-  const controlRight = hidUsage("ControlRight");
   const metaLeft = hidUsage("MetaLeft");
   const metaRight = hidUsage("MetaRight");
   const shortcutKey = hidUsage(code);
-  const events: KeyEvent[] = [];
-  if (pressed.has(controlLeft)) events.push({ type: "up", usage: controlLeft });
-  if (pressed.has(controlRight)) events.push({ type: "up", usage: controlRight });
+  const heldControls = [hidUsage("ControlLeft"), hidUsage("ControlRight")].filter((usage) => pressed.has(usage));
+  const events: KeyEvent[] = heldControls.map((usage) => ({ type: "up", usage }));
   const commandAlreadyDown = pressed.has(metaLeft) || pressed.has(metaRight);
   if (!commandAlreadyDown) events.push({ type: "down", usage: metaLeft });
   events.push({ type: "down", usage: shortcutKey });
   events.push({ type: "up", usage: shortcutKey });
   if (!commandAlreadyDown) events.push({ type: "up", usage: metaLeft });
+  for (const usage of heldControls) events.push({ type: "down", usage });
   return events;
 }
 

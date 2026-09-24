@@ -62,19 +62,22 @@ describe("sim paste HID", () => {
     ]);
   });
 
-  test("releases Control before injecting Cmd+V", () => {
+  test("lifts a held Control for Cmd+V and presses it again after", () => {
     expect(simPasteHidEvents(held(ControlLeft))).toEqual([
       { type: "up", usage: ControlLeft },
       { type: "down", usage: MetaLeft },
       { type: "down", usage: KeyV },
       { type: "up", usage: KeyV },
       { type: "up", usage: MetaLeft },
+      { type: "down", usage: ControlLeft },
     ]);
     expect(simPasteHidEvents(held(ControlLeft, ControlRight, MetaLeft))).toEqual([
       { type: "up", usage: ControlLeft },
       { type: "up", usage: ControlRight },
       { type: "down", usage: KeyV },
       { type: "up", usage: KeyV },
+      { type: "down", usage: ControlLeft },
+      { type: "down", usage: ControlRight },
     ]);
   });
 });
