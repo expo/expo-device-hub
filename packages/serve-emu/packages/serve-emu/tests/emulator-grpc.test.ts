@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   decodeEmulatorImage,
+  decodePhysicalModelValue,
   EmulatorGrpcClient,
   encodeImageFormat,
   encodeKeyboardEvent,
@@ -348,6 +349,44 @@ describe("gRPC receive work scheduling", () => {
 });
 
 describe("EmulatorGrpcClient HTTP/2 integration", () => {
+  test("reads physical model values and sends the posture enum", async () => {
+    const requests: Array<{ path: string; body: Buffer }> = [];
+    const server = http2.createServer();
+    server.on("stream", (stream: ServerHttp2Stream, headers) => {
+      const chunks: Buffer[] = [];
+      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
+      stream.on("end", () => {
+        const path = String(headers[":path"]);
+        const frame = Buffer.concat(chunks);
+        requests.push({ path, body: frame.subarray(5) });
+        const angle = Buffer.alloc(4);
+        angle.writeFloatLE(127.5);
+        const response = path.endsWith("/getPhysicalModel")
+          ? Buffer.concat([Buffer.from([0x1a, 0x06, 0x0a, 0x04]), angle])
+          : Buffer.alloc(0);
+        stream.respond({ ":status": 200, "content-type": "application/grpc", "grpc-status": "0" });
+        stream.end(grpcFrame(response));
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing test port");
+    const client = new EmulatorGrpcClient({ port: address.port, token: null, avdName: null });
+    try {
+      expect(await client.getPhysicalModel(10)).toEqual({ status: 0, value: 127.5 });
+      await client.setPosture(3);
+      expect(requests).toEqual([
+        { path: "/android.emulation.control.EmulatorController/getPhysicalModel", body: Buffer.from([0x08, 0x0a]) },
+        { path: "/android.emulation.control.EmulatorController/setPosture", body: Buffer.from([0x18, 0x03]) },
+      ]);
+      expect(decodePhysicalModelValue(Buffer.from([0x10, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01])))
+        .toEqual({ status: -2, value: null });
+    } finally {
+      client.close();
+      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
+  });
+
   test("sends the discovered bearer token and decodes a screenshot", async () => {
     const imageBody = encodeEmulatorImage({
       format: IMG_FORMAT_RGB888,

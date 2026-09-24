@@ -963,6 +963,31 @@ export type EmulatorGrpcClientOptions = {
 
 export type GrpcScreenshotImageSource = "stream" | "probe";
 
+export type PhysicalModelTarget = 10 | 16; // HINGE_ANGLE0 or POSTURE
+
+export function decodePhysicalModelValue(message: Buffer): { status: number; value: number | null } {
+  let status = 0;
+  let value: number | null = null;
+  for (const field of protoFields(message)) {
+    if (field.fieldNo === 2 && field.wire === 0) {
+      status = Number(BigInt.asIntN(32, field.varint));
+    } else if (field.fieldNo === 3 && field.wire === 2) {
+      for (const data of protoFields(field.bytes)) {
+        if (data.fieldNo !== 1) continue;
+        if (data.wire === 2 && data.bytes.length >= 4 && data.bytes.length % 4 === 0) {
+          value = data.bytes.readFloatLE(0);
+        } else if (data.wire === 5) {
+          const bytes = Buffer.allocUnsafe(4);
+          bytes.writeUInt32LE(data.fixed32);
+          value = bytes.readFloatLE(0);
+        }
+        break;
+      }
+    }
+  }
+  return { status, value };
+}
+
 function positiveTimeout(value: number, name: string): number {
   if (!Number.isFinite(value) || value <= 0) {
     throw new RangeError(`${name} must be a positive number`);
@@ -1204,6 +1229,28 @@ export class EmulatorGrpcClient {
     );
     if (!message) throw new Error("getScreenshot returned no image");
     return decodeEmulatorImage(message);
+  }
+
+  async getPhysicalModel(target: PhysicalModelTarget, signal?: AbortSignal) {
+    const request: number[] = [];
+    varintField(request, 1, target);
+    const [message] = await this.#request("getPhysicalModel", Buffer.from(request), {
+      timeoutMs: this.#unaryTimeoutMs,
+      signal,
+      maxMessageBytes: 1024,
+    });
+    if (!message) throw new Error("getPhysicalModel returned no value");
+    return decodePhysicalModelValue(message);
+  }
+
+  async setPosture(value: 1 | 3, signal?: AbortSignal): Promise<void> {
+    const request: number[] = [];
+    varintField(request, 3, value);
+    await this.#request("setPosture", Buffer.from(request), {
+      timeoutMs: this.#unaryTimeoutMs,
+      signal,
+      maxMessageBytes: 1024,
+    });
   }
 
   async streamScreenshot(

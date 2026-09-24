@@ -9,6 +9,7 @@ import {
   readCameraWiring,
 } from "./camera.ts";
 import { getExecSnapshot } from "./exec.ts";
+import { getFoldStatus, setFoldPosture } from "./fold.ts";
 import { getHardwareEncoderError } from "./h264-encoder.ts";
 import {
   getFontWeight,
@@ -2462,6 +2463,42 @@ export async function startServer(
                   context.serial,
                   orientation as OrientationMode,
                 ),
+              ),
+            });
+          } catch (err) {
+            return errorResponse(err);
+          }
+        }
+        return new Response("method not allowed", { status: 405 });
+      }
+
+      if (url.pathname === "/api/fold") {
+        if (req.method === "GET") {
+          try {
+            return Response.json({
+              ok: true,
+              fold: await runForContext(requestContext, (context) =>
+                getFoldStatus(context.serial),
+              ),
+            });
+          } catch (err) {
+            return errorResponse(err);
+          }
+        }
+        if (req.method === "POST") {
+          try {
+            const payload = await readJsonBody(req, MAX_JSON_BODY_BYTES, requestContext);
+            if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+              throw new Error("fold payload must be an object");
+            }
+            const posture = (payload as Record<string, unknown>).posture;
+            if (posture !== "closed" && posture !== "opened") {
+              throw new Error("posture must be closed or opened");
+            }
+            return Response.json({
+              ok: true,
+              fold: await runForContext(requestContext, (context) =>
+                setFoldPosture(context.serial, posture),
               ),
             });
           } catch (err) {

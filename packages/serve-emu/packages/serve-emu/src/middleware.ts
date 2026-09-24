@@ -24,6 +24,7 @@ import {
   type OrientationMode,
 } from "./adb.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
+import { getFoldStatus, setFoldPosture } from "./fold.ts";
 import {
   cameraLaunchIsWired,
   handleCameraRequest,
@@ -1733,6 +1734,38 @@ async function createAppInternal(
               orientation as OrientationMode,
             ),
           });
+        } catch (err) {
+          return Response.json(
+            { ok: false, error: err instanceof Error ? err.message : String(err) },
+            { status: 400 },
+          );
+        }
+      }
+      return new Response("method not allowed", { status: 405 });
+    }
+
+    if (url.pathname === "/api/fold") {
+      if (req.method === "GET") {
+        try {
+          return Response.json({ ok: true, fold: await getFoldStatus(opts.serial) });
+        } catch (err) {
+          return Response.json(
+            { ok: false, error: err instanceof Error ? err.message : String(err) },
+            { status: 400 },
+          );
+        }
+      }
+      if (req.method === "POST") {
+        try {
+          const payload = await readJsonBody(req);
+          if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+            throw new Error("fold payload must be an object");
+          }
+          const posture = (payload as Record<string, unknown>).posture;
+          if (posture !== "closed" && posture !== "opened") {
+            throw new Error("posture must be closed or opened");
+          }
+          return Response.json({ ok: true, fold: await setFoldPosture(opts.serial, posture) });
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },

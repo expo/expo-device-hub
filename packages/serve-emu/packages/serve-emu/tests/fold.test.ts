@@ -1,0 +1,53 @@
+import { describe, expect, test } from "bun:test";
+import { getFoldStatus, setFoldPosture } from "../src/fold.ts";
+import type { EmulatorGrpcClient } from "../src/emulator-grpc.ts";
+
+type FoldClient = Pick<EmulatorGrpcClient, "getPhysicalModel" | "setPosture" | "close">;
+
+function fakeClient(options: { supported?: boolean; posture?: number } = {}) {
+  let posture = options.posture ?? 1;
+  const commands: number[] = [];
+  let closed = false;
+  const client: FoldClient = {
+    getPhysicalModel: async (target) =>
+      options.supported === false
+        ? { status: -2, value: null }
+        : { status: 0, value: target === 16 ? posture : posture === 1 ? 0 : 180 },
+    setPosture: async (value) => {
+      commands.push(value);
+      posture = value;
+    },
+    close: () => { closed = true; },
+  };
+  return { client, commands, get closed() { return closed; } };
+}
+
+describe("Android emulator fold controls", () => {
+  test("reports posture and hinge angle, then confirms unfold without replacing the stream", async () => {
+    const fake = fakeClient();
+    const create = async () => fake.client;
+    expect(await getFoldStatus("emulator-5554", create)).toEqual({
+      supported: true,
+      posture: "closed",
+      hingeAngle: 0,
+    });
+    expect(await setFoldPosture("emulator-5554", "opened", create)).toEqual({
+      supported: true,
+      posture: "opened",
+      hingeAngle: 180,
+    });
+    expect(fake.commands).toEqual([3]);
+    expect(fake.closed).toBe(true);
+  });
+
+  test("does not send fold commands to unsupported devices", async () => {
+    const fake = fakeClient({ supported: false });
+    await expect(setFoldPosture("emulator-5554", "closed", async () => fake.client))
+      .rejects.toThrow("does not support folding");
+    expect(fake.commands).toEqual([]);
+    expect(fake.closed).toBe(true);
+    expect(await getFoldStatus("physical-1", async () => {
+      throw new Error("must not open gRPC");
+    })).toEqual({ supported: false, posture: null, hingeAngle: null });
+  });
+});

@@ -35,6 +35,8 @@ const EXPECTED_ROUTES = [
   ["POST", "/api/avds/stop"],
   ["GET", "/api/orientation"],
   ["POST", "/api/orientation"],
+  ["GET", "/api/fold"],
+  ["POST", "/api/fold"],
   ["GET", "/api/night-mode"],
   ["POST", "/api/night-mode"],
   ["GET", "/api/font-scale"],
@@ -108,6 +110,7 @@ const VALID_JSON_BODIES: Readonly<Record<string, unknown>> = {
   "POST /api/avds/start": { avd: "Pixel_8_API_35", select: true },
   "POST /api/avds/stop": { serial: "emulator-5554" },
   "POST /api/orientation": { orientation: "portrait" },
+  "POST /api/fold": { posture: "opened" },
   "POST /api/night-mode": { mode: "dark" },
   "POST /api/font-scale": { scale: 1.25 },
   "POST /api/network": { enabled: true },
@@ -273,6 +276,12 @@ function fakeDependencies(
       raw: "0 0",
     }),
     setOrientation: async (orientation) => ({ orientation }),
+    getFold: async () => ({ supported: true, posture: "closed", hingeAngle: 0 }),
+    setFold: async (posture) => ({
+      supported: true,
+      posture,
+      hingeAngle: posture === "closed" ? 0 : 180,
+    }),
     getNightMode: async () => ({ mode: "light", raw: "no" }),
     setNightMode: async (mode) => ({ mode, raw: mode }),
     getFontScale: async () => ({ scale: 1, raw: "1.0" }),
@@ -501,14 +510,14 @@ const silentLogger: ApiLogger = {
 };
 
 describe("domain API route table", () => {
-  test("registers the exact 63 method/path pairs across 45 paths", () => {
+  test("registers the exact 65 method/path pairs across 46 paths", () => {
     const routes = createApiRoutes();
 
     expect(routes.map(({ method, path }) => [method, path])).toEqual(
       EXPECTED_ROUTES.map(([method, path]) => [method, path]),
     );
-    expect(routes).toHaveLength(63);
-    expect(new Set(routes.map((route) => route.path)).size).toBe(45);
+    expect(routes).toHaveLength(65);
+    expect(new Set(routes.map((route) => route.path)).size).toBe(46);
     const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(
       ([path, methods]) => Object.keys(methods).map((method) => `${method} ${path}`),
     );
@@ -538,12 +547,12 @@ describe("domain API route table", () => {
     );
   });
 
-  test("returns structured OPTIONS 405 with exact Allow for all 45 paths", async () => {
+  test("returns structured OPTIONS 405 with exact Allow for all 46 paths", async () => {
     const router = createApiRouter(createApiRoutes());
     const deps = fakeDependencies();
     const paths = [...new Set(EXPECTED_ROUTES.map((route) => route[1]))];
 
-    expect(paths).toHaveLength(45);
+    expect(paths).toHaveLength(46);
     for (const path of paths) {
       const response = await router.handle(
         new Request(`${BASE_URL}${path}`, { method: "OPTIONS" }),
@@ -603,6 +612,17 @@ describe("domain API failures", () => {
       "invalid_request",
       "orientation must be auto, portrait, or landscape",
     );
+
+    const fold = await router.handle(
+      new Request(`${BASE_URL}/api/fold`, {
+        method: "POST",
+        body: JSON.stringify({ posture: "sideways" }),
+      }),
+      fakeDependencies({
+        setFold: async () => { throw new Error("must not run"); },
+      }),
+    );
+    await expectFailure(fold, 400, "invalid_request", "posture must be closed or opened");
 
     const streamSettings = await router.handle(
       new Request(`${BASE_URL}/api/stream-settings`, {
