@@ -126,7 +126,7 @@ actor CoreDeviceBridge {
         )
     }
 
-    private func tableModeAvailable(udid: String) async -> Bool {
+    func tableModeAvailable(udid: String) async -> Bool {
         guard SSCoreDeviceTableModeAvailable() else { return false }
         // Check the per-device capability as well as the exported symbols,
         // without sending a sensor event or moving the hinge.
@@ -166,7 +166,8 @@ actor CoreDeviceBridge {
         }
     }
 
-    private func setPhysicalOrientation(udid: String, value: String) async -> Bool {
+    func setPhysicalOrientation(udid: String, value: String) async -> Bool {
+        guard ["portrait", "pud", "landscape-left", "landscape-right", "faceup", "facedown"].contains(value) else { return false }
         guard let rawData = value.withCString({ SSCoreDeviceOrientationData($0) }) else { return false }
         let data = Unmanaged<NSData>.fromOpaque(rawData).takeRetainedValue() as Data
         let sent = await sendControl(udid: udid, data: data)

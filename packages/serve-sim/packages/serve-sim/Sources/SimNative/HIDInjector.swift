@@ -558,6 +558,24 @@ actor HIDInjector {
         isFoldable
     }
 
+    func supportsPhysicalOrientation() async -> Bool {
+        guard isFoldable, let deviceUDID else { return false }
+        return await CoreDeviceBridge.shared.tableModeAvailable(udid: deviceUDID)
+    }
+
+    func setPhysicalOrientation(_ value: String) async -> Bool {
+        guard isFoldable, let deviceUDID else { return false }
+        guard await CoreDeviceBridge.shared.tableModeAvailable(udid: deviceUDID) else { return false }
+        guard await CoreDeviceBridge.shared.setTableMode(udid: deviceUDID, enabled: false) else { return false }
+        guard await CoreDeviceBridge.shared.setPhysicalOrientation(udid: deviceUDID, value: value) else { return false }
+        // A half-open Duo elects its outer surface through the same table state
+        // used by the native Tent pose. Orientation alone does not switch it.
+        if value == "facedown" {
+            return await CoreDeviceBridge.shared.setTableMode(udid: deviceUDID, enabled: true)
+        }
+        return true
+    }
+
     func setHingePose(_ pose: String) async -> Bool {
         guard isFoldable, let deviceUDID else { return false }
         return await CoreDeviceBridge.shared.setHingePose(udid: deviceUDID, pose: pose)

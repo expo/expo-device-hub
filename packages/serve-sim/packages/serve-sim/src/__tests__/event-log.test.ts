@@ -212,7 +212,14 @@ describe("eventLogEventForHidMessage", () => {
   });
 
   test("distinguishes physical poses, fine angles, and Table Mode", () => {
-    for (const [control, value, summary] of [["pose", "laptop", "Laptop"], ["pose", "book", "Book"], ["angle", 42.5, "Hinge 42.5°"], ["table", true, "Table Mode on"]] as const) {
+    for (const [control, value, summary] of [
+      ["pose", "laptop", "Laptop"],
+      ["pose", "book", "Book"],
+      ["angle", 42.5, "Hinge 42.5°"],
+      ["table", true, "Table Mode on"],
+      ["physical", "faceup", "Physical orientation face up"],
+      ["physical", "facedown", "Physical orientation face down"],
+    ] as const) {
       expect(eventLogEventForHidMessage("UDID", 0x10, { control, value, extra: "not logged" })).toMatchObject({
         kind: "hinge", action: `set-${control}`, summary, details: { control, value },
       });

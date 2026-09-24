@@ -335,6 +335,7 @@ export function eventLogEventForHidMessage(
       if (!isHingeControlCommand(details)) return null;
       const summary = details.control === "pose" ? HINGE_POSES.find((pose) => pose.id === details.value)!.label
         : details.control === "table" ? `Table Mode ${details.value ? "on" : "off"}`
+        : details.control === "physical" ? `Physical orientation ${details.value === "faceup" ? "face up" : "face down"}`
         : `Hinge ${details.value}°`;
       return { device, source: "hid", kind: "hinge", action: `set-${details.control}`, summary, details: { control: details.control, value: details.value } };
     }

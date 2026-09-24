@@ -40,3 +40,16 @@ test("Table Mode follows physical pose eligibility", () => {
   expect(hingeControlState({ control: "table", value: true })).toEqual({ tableMode: true, hingePose: null });
   expect(isHingeControlCommand({ control: "table", value: "true" })).toBe(false);
 });
+
+test("physical display handoff preserves the hinge angle and elects the requested surface", () => {
+  for (const value of ["faceup", "facedown"] as const) {
+    expect(isHingeControlCommand({ control: "physical", value })).toBe(true);
+    expect(hingeControlState({ control: "physical", value })).toEqual({
+      hingePose: null,
+      tableMode: value === "facedown",
+    });
+  }
+  for (const value of ["portrait", "other", 5, null]) {
+    expect(isHingeControlCommand({ control: "physical", value })).toBe(false);
+  }
+});
