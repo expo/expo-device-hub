@@ -1158,6 +1158,64 @@ describe("physical hinge controls", () => {
     expect(physicalOrientations).toEqual([]);
   });
 
+  test("reports the native hinge state when a session starts", async () => {
+    let release!: () => void;
+    const { configs, controlResults } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    nativeHingeState = { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false };
+    release();
+    await waitUntil(() => configs.at(-1)?.hingeAngle === 90);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, tableMode: false, tableModeAvailable: true });
+    send(1, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(tableModes).toEqual([true]);
+  });
+
+  test("keeps a hinge command's state over a slower startup read", async () => {
+    let release!: () => void;
+    const { configs, controlResults } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    nativeHingeState = { hingeAngle: 180 };
+    ws!.send(Buffer.concat([Buffer.from([0x0f]), Buffer.from(JSON.stringify({ angle: 90 }))]));
+    await waitUntil(() => configs.at(-1)?.hingeAngle === 90);
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsPhysicalOrientation === true);
+    send(1, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90 });
+  });
+
+  test("does not restore a physical orientation that a startup rotation cleared", async () => {
+    let release!: () => void;
+    const { controlResults } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    nativeHingeState = { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false };
+    ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_left" }))]));
+    await waitUntil(() => inputCalls.includes("orientation"));
+    release();
+    send(1, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]?.ok).toBe(false);
+    expect(tableModes).toEqual([]);
+  });
+
   test("rejects physical surface selection when Table Mode is unavailable", async () => {
     const { controlResults, configs } = await start(
       { width: 2007, height: 2853 },

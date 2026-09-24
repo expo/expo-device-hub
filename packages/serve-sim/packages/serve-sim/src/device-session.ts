@@ -252,6 +252,7 @@ export class DeviceSession {
   private tableMode?: boolean;
   private hingePhysicalOrientation?: HingePhysicalOrientation;
   private hingeControlUpdate: Promise<void> = Promise.resolve();
+  private hingeControlled = false;
   private nativeScreen?: NativeScreenInfo;
   private screenRefresh?: Promise<boolean>;
   private screenRefreshRequested = false;
@@ -323,6 +324,7 @@ export class DeviceSession {
         this.supportsHingeAngle = supportsHingeAngle;
         this.supportsPhysicalOrientation = supportsPhysicalOrientation;
         this.broadcastConfig();
+        if (supportsHingeAngle) this.hydrateHingeState();
       });
     });
     return this.captureStart;
@@ -1010,6 +1012,7 @@ export class DeviceSession {
         const operation = this.hingeControlUpdate.then(async () => {
           const value = ORIENTATION_BY_NAME[m.orientation];
           if (this.phase !== "running" || value == null || !await this.hid.orientation(value)) return;
+          this.hingeControlled = true;
           this.recordHidEvent(tag, m);
           if (this.supportsHingeAngle) {
             // Rotation is panel-relative; only a named pose establishes the
@@ -1152,6 +1155,20 @@ export class DeviceSession {
     }
   }
 
+  /** Seed the hinge from native so a new session reports a device that is already open or face down. */
+  private hydrateHingeState(): void {
+    const operation = this.hingeControlUpdate.then(async () => {
+      if (this.hingeControlled) return;
+      const state = await this.hid.hingeState();
+      if (this.phase !== "running") return;
+      this.hingeAngle = state.hingeAngle;
+      this.tableMode = state.tableMode;
+      this.hingePhysicalOrientation = state.physicalOrientation;
+      this.broadcastConfig();
+    });
+    this.hingeControlUpdate = operation.catch(() => {});
+  }
+
   /** Keep pose sequences ordered across sliders, presets, and legacy CLI clients. */
   private queueHingeControl(command: HingeControlCommand): Promise<boolean> {
     const operation = this.hingeControlUpdate.then(async () => {
@@ -1168,6 +1185,7 @@ export class DeviceSession {
         }
         if (!(this.hingeAngle !== undefined && this.hingeAngle > 0 && this.hingeAngle < 180)) return false;
       }
+      this.hingeControlled = true;
       const ok = command.control === "pose" ? await this.hid.setHingePose(command.value)
         : command.control === "physical" ? await this.hid.setPhysicalOrientation(command.value)
         : command.control === "table" ? await this.hid.setTableMode(command.value)
