@@ -68,6 +68,15 @@ describe("/api/pasteboard", () => {
     expect(res?.status).toBe(400);
     expect(await res!.json()).toEqual({ ok: false, error: "Invalid JSON" });
   });
+
+  test("rejects a body that is not an object with text", async () => {
+    const unavailableUdid = "00000000-0000-0000-0000-000000000000";
+    for (const body of ["null", "\"text\"", "{\"text\":1}"]) {
+      const res = await middleware(pasteboardRequest(`?device=${unavailableUdid}`, "PUT", body));
+      expect(res?.status).toBe(400);
+      expect(await res!.json()).toEqual({ ok: false, error: "Clipboard text must be a string" });
+    }
+  });
 });
 
 const bootedUdid = firstBootedIosSim();

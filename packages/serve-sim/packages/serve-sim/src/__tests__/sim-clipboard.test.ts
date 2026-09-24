@@ -7,14 +7,16 @@ import {
   simCopyHidEvents,
   simPasteHidEvents,
   simSelectAllHidEvents,
+  trackHeldModifiers,
 } from "../client/utils/sim-clipboard";
 
+const usage = (code: string): number => {
+  const value = HID_USAGE_BY_CODE[code];
+  if (value === undefined) throw new Error(`no HID usage for ${code}`);
+  return value;
+};
+
 describe("sim paste HID", () => {
-  const usage = (code: string): number => {
-    const value = HID_USAGE_BY_CODE[code];
-    if (value === undefined) throw new Error(`no HID usage for ${code}`);
-    return value;
-  };
   const ControlLeft = usage("ControlLeft");
   const ControlRight = usage("ControlRight");
   const MetaLeft = usage("MetaLeft");
@@ -79,6 +81,53 @@ describe("sim paste HID", () => {
       { type: "down", usage: ControlLeft },
       { type: "down", usage: ControlRight },
     ]);
+  });
+
+  test("lifts a held Shift or Option for Cmd+C and Cmd+V", () => {
+    const ShiftLeft = usage("ShiftLeft");
+    const AltRight = usage("AltRight");
+    const KeyC = usage("KeyC");
+    expect(simCopyHidEvents(held(ShiftLeft))).toEqual([
+      { type: "up", usage: ShiftLeft },
+      { type: "down", usage: MetaLeft },
+      { type: "down", usage: KeyC },
+      { type: "up", usage: KeyC },
+      { type: "up", usage: MetaLeft },
+      { type: "down", usage: ShiftLeft },
+    ]);
+    expect(simPasteHidEvents(held(AltRight, MetaLeft))).toEqual([
+      { type: "up", usage: AltRight },
+      { type: "down", usage: KeyV },
+      { type: "up", usage: KeyV },
+      { type: "down", usage: AltRight },
+    ]);
+  });
+});
+
+describe("trackHeldModifiers", () => {
+  const ControlLeft = usage("ControlLeft");
+  const ControlRight = usage("ControlRight");
+  const ShiftLeft = usage("ShiftLeft");
+  const key = (code: string, flags: { ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean } = {}) => ({
+    code,
+    ctrlKey: false,
+    shiftKey: false,
+    altKey: false,
+    ...flags,
+  });
+
+  test("follows each modifier key on its own", () => {
+    const held = new Set<number>();
+    trackHeldModifiers(held, key("ControlLeft", { ctrlKey: true }), "down");
+    trackHeldModifiers(held, key("ControlRight", { ctrlKey: true }), "down");
+    trackHeldModifiers(held, key("ControlLeft", { ctrlKey: true }), "up");
+    expect([...held]).toEqual([ControlRight]);
+  });
+
+  test("drops a modifier whose flag is off, as after a keyup the page missed", () => {
+    const held = new Set<number>([ControlLeft, ShiftLeft]);
+    trackHeldModifiers(held, key("KeyA", { shiftKey: true }), "down");
+    expect([...held]).toEqual([ShiftLeft]);
   });
 });
 

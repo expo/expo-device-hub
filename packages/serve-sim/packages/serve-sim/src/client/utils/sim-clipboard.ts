@@ -10,11 +10,33 @@ function hidUsage(code: keyof typeof HID_USAGE_BY_CODE): number {
   return value;
 }
 
-export function isControlUsage(usage: number): boolean {
-  return usage === hidUsage("ControlLeft") || usage === hidUsage("ControlRight");
+// Held with Command, these make the sim read another shortcut: Ctrl+V forwards Control, and
+// Shift+Command+V is not paste. The shortcut lifts them and puts them back.
+const LIFTED_MODIFIERS = [
+  ["ControlLeft", "ctrlKey"],
+  ["ControlRight", "ctrlKey"],
+  ["ShiftLeft", "shiftKey"],
+  ["ShiftRight", "shiftKey"],
+  ["AltLeft", "altKey"],
+  ["AltRight", "altKey"],
+] as const;
+
+export function isLiftedModifier(usage: number): boolean {
+  return LIFTED_MODIFIERS.some(([code]) => hidUsage(code) === usage);
 }
 
-// Ctrl+V forwards Control, and the sim ignores Control+Command+V, so lift Control and put it back.
+export function trackHeldModifiers(
+  held: Set<number>,
+  event: Pick<KeyboardEvent, "code" | "ctrlKey" | "shiftKey" | "altKey">,
+  type: "down" | "up",
+): void {
+  for (const [code, flag] of LIFTED_MODIFIERS) {
+    const usage = hidUsage(code);
+    if (event.code === code && type === "down") held.add(usage);
+    else if (event.code === code || !event[flag]) held.delete(usage);
+  }
+}
+
 function simCommandShortcutHidEvents(
   pressed: ReadonlySet<number>,
   code: "KeyV" | "KeyC" | "KeyA",
@@ -22,14 +44,14 @@ function simCommandShortcutHidEvents(
   const metaLeft = hidUsage("MetaLeft");
   const metaRight = hidUsage("MetaRight");
   const shortcutKey = hidUsage(code);
-  const heldControls = [hidUsage("ControlLeft"), hidUsage("ControlRight")].filter((usage) => pressed.has(usage));
-  const events: KeyEvent[] = heldControls.map((usage) => ({ type: "up", usage }));
+  const lifted = LIFTED_MODIFIERS.map(([code]) => hidUsage(code)).filter((usage) => pressed.has(usage));
+  const events: KeyEvent[] = lifted.map((usage) => ({ type: "up", usage }));
   const commandAlreadyDown = pressed.has(metaLeft) || pressed.has(metaRight);
   if (!commandAlreadyDown) events.push({ type: "down", usage: metaLeft });
   events.push({ type: "down", usage: shortcutKey });
   events.push({ type: "up", usage: shortcutKey });
   if (!commandAlreadyDown) events.push({ type: "up", usage: metaLeft });
-  for (const usage of heldControls) events.push({ type: "down", usage });
+  for (const usage of lifted) events.push({ type: "down", usage });
   return events;
 }
 

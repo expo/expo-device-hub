@@ -87,9 +87,10 @@ import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
 import {
   copyTextToSim,
-  isControlUsage,
+  isLiftedModifier,
   simCopyHidEvents,
   simPasteHidEvents,
+  trackHeldModifiers,
   type HidKeyEvent,
 } from "./utils/sim-clipboard";
 import { useClipboardToast } from "./hooks/use-clipboard-toast";
@@ -1312,7 +1313,7 @@ function AppWithConfig({
         const pressed = pressedKeysRef.current;
         const gap = () => new Promise<void>((r) => setTimeout(r, SHORTCUT_KEY_GAP_MS));
         for (const ev of build(pressed)) {
-          if (ev.type === "down" && isControlUsage(ev.usage) && !heldControlsRef.current.has(ev.usage)) continue;
+          if (ev.type === "down" && isLiftedModifier(ev.usage) && !heldModifiersRef.current.has(ev.usage)) continue;
           if (ev.type === "up") await gap();
           sendKey(ev.type, ev.usage);
           if (ev.type === "up") pressed.delete(ev.usage);
@@ -1371,7 +1372,7 @@ function AppWithConfig({
   const simFocusedRef = useRef(true);
   simFocusedRef.current = simFocused;
   const pressedKeysRef = useRef<Set<number>>(new Set());
-  const heldControlsRef = useRef<Set<number>>(new Set());
+  const heldModifiersRef = useRef<Set<number>>(new Set());
   const coarsePointer = useCoarsePointer();
   coarsePointerRef.current = coarsePointer;
   useBlockPageZoom(coarsePointer);
@@ -1467,12 +1468,7 @@ function AppWithConfig({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent, type: "down" | "up") => {
-      const control = hidUsageForCode(e.code);
-      if (control != null && isControlUsage(control)) {
-        if (type === "down") heldControlsRef.current.add(control);
-        else heldControlsRef.current.delete(control);
-      }
-      if (!e.ctrlKey) heldControlsRef.current.clear();
+      trackHeldModifiers(heldModifiersRef.current, e, type);
       const simFocused = simFocusedRef.current;
       const keyboardOpen = keyboardOpenRef.current;
       // Only new presses: a key held while the simulator had focus still has to be released there.

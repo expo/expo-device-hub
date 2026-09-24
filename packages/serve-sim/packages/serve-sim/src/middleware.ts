@@ -13,6 +13,7 @@ import type { Socket } from "net";
 // lines, and `serve-sim/middleware` is embedded in third-party dev servers, so
 // importing the dependency keeps the proxy working regardless of runtime.
 import { WebSocket } from "ws";
+import { z } from "zod";
 import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
@@ -191,6 +192,7 @@ function isSimulatorUdid(value: string): boolean {
 }
 
 const MAX_PASTEBOARD_BODY_BYTES = 4 * 1024 * 1024;
+const PasteboardWriteBody = z.object({ text: z.string() });
 const PASTEBOARD_RESPONSE_HEADERS = {
   "Cache-Control": "no-store",
 };
@@ -2485,9 +2487,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
             res.end(JSON.stringify({ ok: false, error: "Clipboard text is too large" }));
             return;
           }
-          let parsed: { text?: unknown };
+          let json: unknown;
           try {
-            parsed = JSON.parse(body?.toString("utf-8") ?? "") as { text?: unknown };
+            json = JSON.parse(body?.toString("utf-8") ?? "");
           } catch {
             res.writeHead(400, {
               ...PASTEBOARD_RESPONSE_HEADERS,
@@ -2496,7 +2498,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
             res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
             return;
           }
-          if (typeof parsed.text !== "string") {
+          const parsed = PasteboardWriteBody.safeParse(json);
+          if (!parsed.success) {
             res.writeHead(400, {
               ...PASTEBOARD_RESPONSE_HEADERS,
               "Content-Type": "application/json",
@@ -2504,7 +2507,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
             res.end(JSON.stringify({ ok: false, error: "Clipboard text must be a string" }));
             return;
           }
-          await writeSimPasteboard(udid, parsed.text);
+          await writeSimPasteboard(udid, parsed.data.text);
           res.writeHead(200, {
             ...PASTEBOARD_RESPONSE_HEADERS,
             "Content-Type": "application/json",
