@@ -17,10 +17,10 @@ if (skipOnCi) {
   );
 }
 
-// The CI skip is by design, so it gates the suite but not the precondition.
-const ready = !!(udid && tool);
+// The CI skip is by design, so a working pbpaste is only required when the suite runs.
+const ready = !!(udid && tool) && (skipOnCi || !isHeadlessPasteboard());
 requireE2E("simulator clipboard E2E", ready);
-const describeIfSim = ready && !skipOnCi && !isHeadlessPasteboard() ? describe : describe.skip;
+const describeIfSim = ready && !skipOnCi ? describe : describe.skip;
 
 describeIfSim(`simctl pasteboard round-trip (booted sim ${udid ?? "<skipped>"})`, () => {
   test("writer and pbpaste round-trip unicode", () => {
