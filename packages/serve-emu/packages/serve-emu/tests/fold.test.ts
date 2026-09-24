@@ -1,124 +1,83 @@
 import { describe, expect, test } from "bun:test";
-import { getFoldStatus, readAvailableFoldStatus, setFoldPosture } from "../src/fold.ts";
-import type { EmulatorGrpcClient, GrpcEndpoint } from "../src/emulator-grpc.ts";
+import { getFoldStatus, setFoldPosture } from "../src/fold.ts";
+import type { ExecResult } from "../src/exec.ts";
 
-type FoldClient = Pick<EmulatorGrpcClient, "getPhysicalModel" | "setPosture" | "close">;
-
-function fakeClient(options: { supported?: boolean; posture?: number } = {}) {
-  let posture = options.posture ?? 1;
-  const commands: number[] = [];
-  let closed = false;
-  const client: FoldClient = {
-    getPhysicalModel: async (target) =>
-      options.supported === false
-        ? { status: -2, value: null }
-        : { status: 0, value: target === 16 ? posture : posture === 1 ? 0 : 180 },
-    setPosture: async (value) => {
-      commands.push(value);
-      posture = value;
-    },
-    close: () => { closed = true; },
-  };
-  return { client, commands, get closed() { return closed; } };
+function result(stdout: string, status = 0): ExecResult<string> {
+  return { status, stdout, stderr: "", signal: null, timedOut: false, error: null };
 }
 
 describe("Android emulator fold controls", () => {
-  test("does not repeat a failed gRPC read on every status poll", async () => {
-    let attempts = 0;
-    const create = async (): Promise<FoldClient> => {
-      attempts++;
-      throw new Error("gRPC timed out");
+  test("reads physical state and confirms fold and unfold without touching gRPC", async () => {
+    let posture = "OPENED";
+    let angle = 180;
+    const commands: string[] = [];
+    const runExec = async (_cmd: string, args: string[]) => {
+      expect(args.slice(0, 2)).toEqual(["-s", "emulator-5554"]);
+      const command = args.slice(2).join(" ");
+      commands.push(command);
+      if (command === "emu sensor get hinge-angle0") return result(`hinge-angle0 = ${angle}\r\nOK`);
+      if (command === "shell cmd device_state base-state") {
+        return result(`Committed state: DeviceState{identifier=2, name='${posture}'}`);
+      }
+      if (command === "emu fold" || command === "emu unfold") {
+        posture = command === "emu fold" ? "CLOSED" : "OPENED";
+        angle = command === "emu fold" ? 0 : 180;
+        return result("OK");
+      }
+      throw new Error(`unexpected command: ${command}`);
     };
-    await expect(getFoldStatus("emulator-5556", create)).rejects.toThrow("gRPC timed out");
-    await expect(getFoldStatus("emulator-5556", create)).rejects.toThrow("temporarily unavailable");
-    expect(attempts).toBe(1);
-    const recovered = fakeClient({ posture: 3 });
-    await setFoldPosture("emulator-5556", "opened", async () => recovered.client);
-    expect(await getFoldStatus("emulator-5556", async () => recovered.client)).toEqual({
-      supported: true,
-      posture: "opened",
-      hingeAngle: 180,
+
+    expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
+      supported: true, posture: "opened", hingeAngle: 180,
     });
+    expect(await setFoldPosture("emulator-5554", "closed", runExec)).toEqual({
+      supported: true, posture: "closed", hingeAngle: 0,
+    });
+    expect(await setFoldPosture("emulator-5554", "opened", runExec)).toEqual({
+      supported: true, posture: "opened", hingeAngle: 180,
+    });
+    expect(commands).toContain("emu fold");
+    expect(commands).toContain("emu unfold");
+    expect(commands.every((command) => !command.includes("grpc"))).toBe(true);
   });
 
-  test("an older failed read cannot delay status after a successful fold", async () => {
-    let started!: () => void;
-    let failRead!: (error: Error) => void;
-    const readStarted = new Promise<void>((resolve) => { started = resolve; });
-    const pendingResult = new Promise<{ status: number; value: number | null }>((_, reject) => {
-      failRead = reject;
-    });
-    const blocked: FoldClient = {
-      getPhysicalModel: async () => {
-        started();
-        return pendingResult;
-      },
-      setPosture: async () => {},
-      close: () => {},
+  test("does not issue fold commands on unsupported devices", async () => {
+    const commands: string[] = [];
+    const runExec = async (_cmd: string, args: string[]) => {
+      commands.push(args.slice(2).join(" "));
+      return result("KO: unknown sensor name: hinge-angle0");
     };
-    const staleRead = getFoldStatus("emulator-5558", async () => blocked);
-    await readStarted;
-    const recovered = fakeClient({ posture: 3 });
-    await setFoldPosture("emulator-5558", "opened", async () => recovered.client);
-    failRead(new Error("old request timed out"));
-    await expect(staleRead).rejects.toThrow("old request timed out");
-    expect(await getFoldStatus("emulator-5558", async () => recovered.client)).toEqual({
-      supported: true,
-      posture: "opened",
-      hingeAngle: 180,
+    expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
+      supported: false, posture: null, hingeAngle: null,
     });
-  });
-
-  test("retries a read with remembered credentials when discovery credentials fail", async () => {
-    const endpoints: GrpcEndpoint[] = [
-      { port: 8554, token: "stale", avdName: null },
-      { port: 8554, token: "current", avdName: null },
-    ];
-    const attempts: string[] = [];
-    const closed: string[] = [];
-    const connect = (endpoint: GrpcEndpoint): FoldClient => ({
-      getPhysicalModel: async (target) => {
-        attempts.push(endpoint.token!);
-        if (endpoint.token === "stale") throw new Error("unauthenticated");
-        return { status: 0, value: target === 16 ? 3 : 180 };
-      },
-      setPosture: async () => {},
-      close: () => { closed.push(endpoint.token!); },
-    });
-    expect(await readAvailableFoldStatus("emulator-5554", endpoints, connect)).toEqual({
-      supported: true,
-      posture: "opened",
-      hingeAngle: 180,
-    });
-    expect(attempts).toEqual(["stale", "stale", "current", "current"]);
-    expect(closed).toEqual(["stale", "current"]);
-  });
-
-  test("reports posture and hinge angle, then confirms unfold without replacing the stream", async () => {
-    const fake = fakeClient();
-    const create = async () => fake.client;
-    expect(await getFoldStatus("emulator-5554", create)).toEqual({
-      supported: true,
-      posture: "closed",
-      hingeAngle: 0,
-    });
-    expect(await setFoldPosture("emulator-5554", "opened", create)).toEqual({
-      supported: true,
-      posture: "opened",
-      hingeAngle: 180,
-    });
-    expect(fake.commands).toEqual([3]);
-    expect(fake.closed).toBe(true);
-  });
-
-  test("does not send fold commands to unsupported devices", async () => {
-    const fake = fakeClient({ supported: false });
-    await expect(setFoldPosture("emulator-5554", "closed", async () => fake.client))
+    await expect(setFoldPosture("emulator-5554", "closed", runExec))
       .rejects.toThrow("does not support folding");
-    expect(fake.commands).toEqual([]);
-    expect(fake.closed).toBe(true);
+    expect(commands).toEqual(["emu sensor get hinge-angle0", "emu sensor get hinge-angle0"]);
     expect(await getFoldStatus("physical-1", async () => {
-      throw new Error("must not open gRPC");
+      throw new Error("must not run adb");
     })).toEqual({ supported: false, posture: null, hingeAngle: null });
+  });
+
+  test("uses the hinge angle when Android does not report a physical state", async () => {
+    const runExec = async (_cmd: string, args: string[]) =>
+      args.includes("sensor")
+        ? result("hinge-angle0 = 0\r\nOK")
+        : result("Unknown command: device_state", 1);
+    expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
+      supported: true, posture: "closed", hingeAngle: 0,
+    });
+  });
+
+  test("rejects a refused emulator fold command", async () => {
+    const runExec = async (_cmd: string, args: string[]) => {
+      const command = args.slice(2).join(" ");
+      if (command === "emu sensor get hinge-angle0") return result("hinge-angle0 = 180\r\nOK");
+      if (command === "shell cmd device_state base-state") {
+        return result("Committed state: DeviceState{identifier=2, name='OPENED'}");
+      }
+      return result("KO: folding unavailable");
+    };
+    await expect(setFoldPosture("emulator-5554", "closed", runExec))
+      .rejects.toThrow("folding unavailable");
   });
 });

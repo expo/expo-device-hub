@@ -5,14 +5,12 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 import {
   decodeEmulatorImage,
-  decodePhysicalModelValue,
   EmulatorGrpcClient,
   encodeImageFormat,
   encodeKeyboardEvent,
   encodeTouchEvent,
   ensureEmulatorGrpcEndpoint,
   findEmulatorGrpcEndpoint,
-  findLiveEmulatorGrpcEndpoints,
   GrpcMessagePacer,
   GrpcMessageParser,
   IMAGE_TRANSPORT_MMAP,
@@ -172,70 +170,6 @@ describe("gRPC message framing", () => {
 });
 
 describe("emulator gRPC discovery", () => {
-  test("read-only discovery never activates gRPC", async () => {
-    let hasDiscoveryFile = false;
-    let reachable = false;
-    const dependencies = {
-      discoveryDirs: () => ["/run"],
-      readDirectory: () => hasDiscoveryFile ? ["pid_11.ini"] : [],
-      processIsAlive: () => true,
-      readText: () => "port.serial=5554\ngrpc.port=8554\ngrpc.token=secret",
-      modifiedMs: () => 1,
-      portIsReachable: async () => reachable,
-      runAdb: async () => { throw new Error("read-only discovery must not run adb"); },
-      pickAvailablePort: async () => { throw new Error("read-only discovery must not allocate a port"); },
-    };
-    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, dependencies)).toEqual([]);
-    hasDiscoveryFile = true;
-    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, dependencies)).toEqual([]);
-    reachable = true;
-    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, dependencies)).toEqual([{
-      port: 8554,
-      token: "secret",
-      avdName: null,
-    }]);
-  });
-
-  test("uses a remembered activated port when no discovery file appears", async () => {
-    const endpoint = { port: 43127, token: null, avdName: "Pixel_Fold" };
-    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, {
-      discoveryDirs: () => ["/run"],
-      readDirectory: () => [],
-      portIsReachable: async (port) => port === 43127,
-      runAdb: async () => { throw new Error("status reads must not activate gRPC"); },
-    }, endpoint)).toEqual([endpoint]);
-  });
-
-  test("prefers current discovery credentials over a remembered token on the same port", async () => {
-    const remembered = { port: 8554, token: "old", avdName: "Pixel_Fold" };
-    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, {
-      discoveryDirs: () => ["/run"],
-      readDirectory: () => ["pid_11.ini"],
-      processIsAlive: () => true,
-      readText: () => "port.serial=5554\ngrpc.port=8554\ngrpc.token=new",
-      modifiedMs: () => 1,
-      portIsReachable: async (port) => port === 8554,
-    }, remembered)).toEqual([
-      { port: 8554, token: "new", avdName: null },
-      remembered,
-    ]);
-  });
-
-  test("checks older discovery files when the newest port is stale", async () => {
-    const files = new Map([
-      ["/run/pid_10.ini", "port.serial=5554\ngrpc.port=8554\ngrpc.token=older"],
-      ["/run/pid_11.ini", "port.serial=5554\ngrpc.port=8555\ngrpc.token=newer"],
-    ]);
-    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, {
-      discoveryDirs: () => ["/run"],
-      readDirectory: () => ["pid_10.ini", "pid_11.ini"],
-      processIsAlive: () => true,
-      readText: (path) => files.get(path)!,
-      modifiedMs: (path) => path.includes("11") ? 20 : 10,
-      portIsReachable: async (port) => port === 8554,
-    })).toEqual([{ port: 8554, token: "older", avdName: null }]);
-  });
-
   test("finds a token-bearing discovery file in the process temp directory", () => {
     const file = join(tmpdir(), "avd", "running", "pid_1.ini");
     const endpoint = findEmulatorGrpcEndpoint("emulator-5554", {
@@ -414,44 +348,6 @@ describe("gRPC receive work scheduling", () => {
 });
 
 describe("EmulatorGrpcClient HTTP/2 integration", () => {
-  test("reads physical model values and sends the posture enum", async () => {
-    const requests: Array<{ path: string; body: Buffer }> = [];
-    const server = http2.createServer();
-    server.on("stream", (stream: ServerHttp2Stream, headers) => {
-      const chunks: Buffer[] = [];
-      stream.on("data", (chunk: Buffer) => chunks.push(chunk));
-      stream.on("end", () => {
-        const path = String(headers[":path"]);
-        const frame = Buffer.concat(chunks);
-        requests.push({ path, body: frame.subarray(5) });
-        const angle = Buffer.alloc(4);
-        angle.writeFloatLE(127.5);
-        const response = path.endsWith("/getPhysicalModel")
-          ? Buffer.concat([Buffer.from([0x1a, 0x06, 0x0a, 0x04]), angle])
-          : Buffer.alloc(0);
-        stream.respond({ ":status": 200, "content-type": "application/grpc", "grpc-status": "0" });
-        stream.end(grpcFrame(response));
-      });
-    });
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-    const address = server.address();
-    if (!address || typeof address === "string") throw new Error("missing test port");
-    const client = new EmulatorGrpcClient({ port: address.port, token: null, avdName: null });
-    try {
-      expect(await client.getPhysicalModel(10)).toEqual({ status: 0, value: 127.5 });
-      await client.setPosture(3);
-      expect(requests).toEqual([
-        { path: "/android.emulation.control.EmulatorController/getPhysicalModel", body: Buffer.from([0x08, 0x0a]) },
-        { path: "/android.emulation.control.EmulatorController/setPosture", body: Buffer.from([0x18, 0x03]) },
-      ]);
-      expect(decodePhysicalModelValue(Buffer.from([0x10, 0xfe, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01])))
-        .toEqual({ status: -2, value: null });
-    } finally {
-      client.close();
-      await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-    }
-  });
-
   test("sends the discovered bearer token and decodes a screenshot", async () => {
     const imageBody = encodeEmulatorImage({
       format: IMG_FORMAT_RGB888,

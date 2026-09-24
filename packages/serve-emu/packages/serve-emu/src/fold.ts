@@ -1,143 +1,68 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { readEmuConsoleValue } from "./adb.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
-import {
-  EmulatorGrpcClient,
-  ensureEmulatorGrpcEndpoint,
-  findLiveEmulatorGrpcEndpoints,
-  type GrpcEndpoint,
-} from "./emulator-grpc.ts";
+import { execText } from "./exec.ts";
 import type { FoldPosture, FoldStatus } from "./shared/api-contracts.ts";
 
-const POSTURES: Record<number, FoldPosture> = {
-  1: "closed",
-  2: "half_opened",
-  3: "opened",
-  4: "flipped",
-  5: "tent",
+const POSTURES: Record<string, FoldPosture> = {
+  CLOSED: "closed",
+  HALF_OPENED: "half_opened",
+  OPENED: "opened",
+  REAR_DISPLAY_MODE: "flipped",
 };
 
-type FoldClient = Pick<EmulatorGrpcClient, "getPhysicalModel" | "setPosture" | "close">;
-const activatedEndpoints = new Map<string, GrpcEndpoint>();
-const readRetryAfter = new Map<string, number>();
-const successGeneration = new Map<string, number>();
-const READ_RETRY_DELAY_MS = 5_000;
-
-function markFoldSuccess(serial: string): void {
-  readRetryAfter.delete(serial);
-  successGeneration.set(serial, (successGeneration.get(serial) ?? 0) + 1);
-}
-
-export async function readAvailableFoldStatus(
-  serial: string,
-  endpoints: GrpcEndpoint[],
-  connect: (endpoint: GrpcEndpoint) => FoldClient = (endpoint) => new EmulatorGrpcClient(endpoint),
-): Promise<FoldStatus> {
-  let lastError: unknown;
-  for (const endpoint of endpoints) {
-    const client = connect(endpoint);
-    try {
-      const status = await readFoldStatus(client);
-      activatedEndpoints.set(serial, endpoint);
-      return status;
-    } catch (error) {
-      lastError = error;
-    } finally {
-      client.close();
-    }
-  }
-  // A transient read failure must not erase the only port known for an emulator.
-  if (lastError) throw lastError;
-  throw new Error("Fold status requires an active emulator gRPC endpoint");
-}
-
-async function createWriteClient(serial: string): Promise<FoldClient> {
-  const endpoint = await ensureEmulatorGrpcEndpoint(serial);
-  activatedEndpoints.set(serial, endpoint);
-  return new EmulatorGrpcClient(endpoint);
-}
-
-async function withClient<T>(
-  serial: string,
-  action: (client: FoldClient) => Promise<T>,
-  createClient: (serial: string) => Promise<FoldClient>,
-): Promise<T> {
-  if (!isEmulatorSerial(serial)) throw new Error("Fold controls require an Android emulator");
-  const client = await createClient(serial);
-  try {
-    return await action(client);
-  } finally {
-    client.close();
-  }
-}
-
-async function readFoldStatus(client: FoldClient): Promise<FoldStatus> {
-  const [posture, hinge] = await Promise.all([
-    client.getPhysicalModel(16),
-    client.getPhysicalModel(10),
-  ]);
-  const postureValue = posture.status === 0 && posture.value !== null
-    ? POSTURES[posture.value] ?? null
-    : null;
-  const hingeAngle = hinge.status === 0 && hinge.value !== null && Number.isFinite(hinge.value)
-    ? hinge.value
-    : null;
-  return {
-    supported: hingeAngle !== null,
-    posture: hingeAngle !== null ? postureValue : null,
-    hingeAngle,
-  };
-}
+const UNSUPPORTED: FoldStatus = { supported: false, posture: null, hingeAngle: null };
 
 export async function getFoldStatus(
   serial: string,
-  createClient?: (serial: string) => Promise<FoldClient>,
+  runExec: typeof execText = execText,
 ): Promise<FoldStatus> {
-  if (!isEmulatorSerial(serial)) {
-    return { supported: false, posture: null, hingeAngle: null };
-  }
-  if (Date.now() < (readRetryAfter.get(serial) ?? 0)) {
-    throw new Error("Fold status temporarily unavailable; retry in a moment");
-  }
-  const generation = successGeneration.get(serial) ?? 0;
-  const endpoints = createClient ? null : await findLiveEmulatorGrpcEndpoints(
-    serial,
-    undefined,
-    {},
-    activatedEndpoints.get(serial),
+  if (!isEmulatorSerial(serial)) return UNSUPPORTED;
+
+  const hinge = await readEmuConsoleValue(serial, ["sensor", "get", "hinge-angle0"], runExec);
+  const angle = Number(hinge?.match(/^hinge-angle0\s*=\s*(-?\d+(?:\.\d+)?)$/)?.[1]);
+  if (!hinge || !Number.isFinite(angle)) return UNSUPPORTED;
+
+  const state = await runExec(
+    "adb",
+    ["-s", serial, "shell", "cmd", "device_state", "base-state"],
+    { timeout: 5_000, lane: "interactive" },
   );
-  if (endpoints?.length === 0) throw new Error("Fold status requires an active emulator gRPC endpoint");
-  try {
-    const status = createClient
-      ? await withClient(serial, readFoldStatus, createClient)
-      : await readAvailableFoldStatus(serial, endpoints ?? []);
-    markFoldSuccess(serial);
-    return status;
-  } catch (error) {
-    if ((successGeneration.get(serial) ?? 0) === generation) {
-      readRetryAfter.set(serial, Date.now() + READ_RETRY_DELAY_MS);
-    }
-    throw error;
-  }
+  const name = state.status === 0
+    ? state.stdout.match(/name='([A-Z_]+)'/)?.[1]
+    : undefined;
+  const posture = name ? POSTURES[name] : undefined;
+  return {
+    supported: true,
+    posture: posture ?? (angle <= 5 ? "closed" : angle >= 175 ? "opened" : null),
+    hingeAngle: angle,
+  };
 }
 
 export async function setFoldPosture(
   serial: string,
   posture: "closed" | "opened",
-  createClient?: (serial: string) => Promise<FoldClient>,
+  runExec: typeof execText = execText,
 ): Promise<FoldStatus> {
-  const status = await withClient(serial, async (client) => {
-    const current = await readFoldStatus(client);
-    if (!current.supported) throw new Error("Selected emulator does not support folding");
-    await client.setPosture(posture === "closed" ? 1 : 3);
-    const deadline = Date.now() + 2_000;
-    let status = await readFoldStatus(client);
-    while (status.posture !== posture && Date.now() < deadline) {
-      await sleep(50);
-      status = await readFoldStatus(client);
-    }
-    if (status.posture !== posture) throw new Error(`Emulator did not confirm ${posture} posture`);
-    return status;
-  }, createClient ?? createWriteClient);
-  markFoldSuccess(serial);
+  const current = await getFoldStatus(serial, runExec);
+  if (!current.supported) throw new Error("Selected emulator does not support folding");
+
+  const command = posture === "closed" ? "fold" : "unfold";
+  const result = await runExec("adb", ["-s", serial, "emu", command], {
+    timeout: 5_000,
+    lane: "interactive",
+  });
+  if (result.status !== 0 || result.timedOut || result.error || /\bKO:/.test(result.stdout)) {
+    const detail = result.stderr.trim() || result.stdout.trim() || result.error?.message || "unknown error";
+    throw new Error(`Emulator ${command} failed: ${detail}`);
+  }
+
+  const deadline = Date.now() + 2_000;
+  let status = await getFoldStatus(serial, runExec);
+  while (status.posture !== posture && Date.now() < deadline) {
+    await sleep(50);
+    status = await getFoldStatus(serial, runExec);
+  }
+  if (status.posture !== posture) throw new Error(`Emulator did not confirm ${posture} posture`);
   return status;
 }
