@@ -3,7 +3,7 @@ import { isEmulatorSerial } from "./device-capabilities.ts";
 import {
   EmulatorGrpcClient,
   ensureEmulatorGrpcEndpoint,
-  findLiveEmulatorGrpcEndpoint,
+  findLiveEmulatorGrpcEndpoints,
   type GrpcEndpoint,
 } from "./emulator-grpc.ts";
 import type { FoldPosture, FoldStatus } from "./shared/api-contracts.ts";
@@ -19,19 +19,27 @@ const POSTURES: Record<number, FoldPosture> = {
 type FoldClient = Pick<EmulatorGrpcClient, "getPhysicalModel" | "setPosture" | "close">;
 const activatedEndpoints = new Map<string, GrpcEndpoint>();
 
-async function createReadClient(serial: string): Promise<FoldClient> {
-  const endpoint = await findLiveEmulatorGrpcEndpoint(
-    serial,
-    undefined,
-    {},
-    activatedEndpoints.get(serial),
-  );
-  if (!endpoint) {
-    activatedEndpoints.delete(serial);
-    throw new Error("Fold status requires an active emulator gRPC endpoint");
+export async function readAvailableFoldStatus(
+  serial: string,
+  endpoints: GrpcEndpoint[],
+  connect: (endpoint: GrpcEndpoint) => FoldClient = (endpoint) => new EmulatorGrpcClient(endpoint),
+): Promise<FoldStatus> {
+  let lastError: unknown;
+  for (const endpoint of endpoints) {
+    const client = connect(endpoint);
+    try {
+      const status = await readFoldStatus(client);
+      activatedEndpoints.set(serial, endpoint);
+      return status;
+    } catch (error) {
+      lastError = error;
+    } finally {
+      client.close();
+    }
   }
-  activatedEndpoints.set(serial, endpoint);
-  return new EmulatorGrpcClient(endpoint);
+  activatedEndpoints.delete(serial);
+  if (lastError) throw lastError;
+  throw new Error("Fold status requires an active emulator gRPC endpoint");
 }
 
 async function createWriteClient(serial: string): Promise<FoldClient> {
@@ -43,7 +51,7 @@ async function createWriteClient(serial: string): Promise<FoldClient> {
 async function withClient<T>(
   serial: string,
   action: (client: FoldClient) => Promise<T>,
-  createClient: (serial: string) => Promise<FoldClient> = createReadClient,
+  createClient: (serial: string) => Promise<FoldClient>,
 ): Promise<T> {
   if (!isEmulatorSerial(serial)) throw new Error("Fold controls require an Android emulator");
   const client = await createClient(serial);
@@ -79,7 +87,15 @@ export async function getFoldStatus(
   if (!isEmulatorSerial(serial)) {
     return { supported: false, posture: null, hingeAngle: null };
   }
-  return withClient(serial, readFoldStatus, createClient);
+  if (createClient) return withClient(serial, readFoldStatus, createClient);
+
+  const endpoints = await findLiveEmulatorGrpcEndpoints(
+    serial,
+    undefined,
+    {},
+    activatedEndpoints.get(serial),
+  );
+  return readAvailableFoldStatus(serial, endpoints);
 }
 
 export async function setFoldPosture(

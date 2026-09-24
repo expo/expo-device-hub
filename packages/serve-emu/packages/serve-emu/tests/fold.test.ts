@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { getFoldStatus, setFoldPosture } from "../src/fold.ts";
-import type { EmulatorGrpcClient } from "../src/emulator-grpc.ts";
+import { getFoldStatus, readAvailableFoldStatus, setFoldPosture } from "../src/fold.ts";
+import type { EmulatorGrpcClient, GrpcEndpoint } from "../src/emulator-grpc.ts";
 
 type FoldClient = Pick<EmulatorGrpcClient, "getPhysicalModel" | "setPosture" | "close">;
 
@@ -23,6 +23,31 @@ function fakeClient(options: { supported?: boolean; posture?: number } = {}) {
 }
 
 describe("Android emulator fold controls", () => {
+  test("retries a read with remembered credentials when discovery credentials fail", async () => {
+    const endpoints: GrpcEndpoint[] = [
+      { port: 8554, token: "stale", avdName: null },
+      { port: 8554, token: "current", avdName: null },
+    ];
+    const attempts: string[] = [];
+    const closed: string[] = [];
+    const connect = (endpoint: GrpcEndpoint): FoldClient => ({
+      getPhysicalModel: async (target) => {
+        attempts.push(endpoint.token!);
+        if (endpoint.token === "stale") throw new Error("unauthenticated");
+        return { status: 0, value: target === 16 ? 3 : 180 };
+      },
+      setPosture: async () => {},
+      close: () => { closed.push(endpoint.token!); },
+    });
+    expect(await readAvailableFoldStatus("emulator-5554", endpoints, connect)).toEqual({
+      supported: true,
+      posture: "opened",
+      hingeAngle: 180,
+    });
+    expect(attempts).toEqual(["stale", "stale", "current", "current"]);
+    expect(closed).toEqual(["stale", "current"]);
+  });
+
   test("reports posture and hinge angle, then confirms unfold without replacing the stream", async () => {
     const fake = fakeClient();
     const create = async () => fake.client;

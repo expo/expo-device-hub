@@ -12,7 +12,7 @@ import {
   encodeTouchEvent,
   ensureEmulatorGrpcEndpoint,
   findEmulatorGrpcEndpoint,
-  findLiveEmulatorGrpcEndpoint,
+  findLiveEmulatorGrpcEndpoints,
   GrpcMessagePacer,
   GrpcMessageParser,
   IMAGE_TRANSPORT_MMAP,
@@ -185,37 +185,40 @@ describe("emulator gRPC discovery", () => {
       runAdb: async () => { throw new Error("read-only discovery must not run adb"); },
       pickAvailablePort: async () => { throw new Error("read-only discovery must not allocate a port"); },
     };
-    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, dependencies)).toBeNull();
+    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, dependencies)).toEqual([]);
     hasDiscoveryFile = true;
-    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, dependencies)).toBeNull();
+    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, dependencies)).toEqual([]);
     reachable = true;
-    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, dependencies)).toEqual({
+    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, dependencies)).toEqual([{
       port: 8554,
       token: "secret",
       avdName: null,
-    });
+    }]);
   });
 
   test("uses a remembered activated port when no discovery file appears", async () => {
     const endpoint = { port: 43127, token: null, avdName: "Pixel_Fold" };
-    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, {
+    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, {
       discoveryDirs: () => ["/run"],
       readDirectory: () => [],
       portIsReachable: async (port) => port === 43127,
       runAdb: async () => { throw new Error("status reads must not activate gRPC"); },
-    }, endpoint)).toEqual(endpoint);
+    }, endpoint)).toEqual([endpoint]);
   });
 
   test("prefers current discovery credentials over a remembered token on the same port", async () => {
     const remembered = { port: 8554, token: "old", avdName: "Pixel_Fold" };
-    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, {
+    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, {
       discoveryDirs: () => ["/run"],
       readDirectory: () => ["pid_11.ini"],
       processIsAlive: () => true,
       readText: () => "port.serial=5554\ngrpc.port=8554\ngrpc.token=new",
       modifiedMs: () => 1,
       portIsReachable: async (port) => port === 8554,
-    }, remembered)).toEqual({ port: 8554, token: "new", avdName: null });
+    }, remembered)).toEqual([
+      { port: 8554, token: "new", avdName: null },
+      remembered,
+    ]);
   });
 
   test("checks older discovery files when the newest port is stale", async () => {
@@ -223,14 +226,14 @@ describe("emulator gRPC discovery", () => {
       ["/run/pid_10.ini", "port.serial=5554\ngrpc.port=8554\ngrpc.token=older"],
       ["/run/pid_11.ini", "port.serial=5554\ngrpc.port=8555\ngrpc.token=newer"],
     ]);
-    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, {
+    expect(await findLiveEmulatorGrpcEndpoints("emulator-5554", undefined, {
       discoveryDirs: () => ["/run"],
       readDirectory: () => ["pid_10.ini", "pid_11.ini"],
       processIsAlive: () => true,
       readText: (path) => files.get(path)!,
       modifiedMs: (path) => path.includes("11") ? 20 : 10,
       portIsReachable: async (port) => port === 8554,
-    })).toEqual({ port: 8554, token: "older", avdName: null });
+    })).toEqual([{ port: 8554, token: "older", avdName: null }]);
   });
 
   test("finds a token-bearing discovery file in the process temp directory", () => {

@@ -235,26 +235,34 @@ export function parseEmulatorGrpcPort(output: string): number | null {
   return Number.isInteger(value) && value > 0 && value <= 65_535 ? value : null;
 }
 
-/** Discover an already-running gRPC endpoint without changing emulator configuration. */
-export async function findLiveEmulatorGrpcEndpoint(
+/** Discover already-running gRPC endpoints without changing emulator configuration. */
+export async function findLiveEmulatorGrpcEndpoints(
   serial: string,
   signal?: AbortSignal,
   dependencies: EmulatorGrpcDiscoveryDependencies = {},
   knownEndpoint?: GrpcEndpoint,
-): Promise<GrpcEndpoint | null> {
+): Promise<GrpcEndpoint[]> {
   throwIfAborted(signal, "emulator gRPC discovery aborted");
   const reachable = dependencies.portIsReachable ?? portIsReachable;
   const candidates = [
     ...findEmulatorGrpcEndpoints(serial, dependencies),
     ...(knownEndpoint ? [knownEndpoint] : []),
   ];
-  const checkedPorts = new Set<number>();
+  const reachablePorts = new Map<number, boolean>();
+  const live: GrpcEndpoint[] = [];
+  const checkedCredentials = new Set<string>();
   for (const endpoint of candidates) {
-    if (checkedPorts.has(endpoint.port)) continue;
-    checkedPorts.add(endpoint.port);
-    if (await reachable(endpoint.port, signal)) return endpoint;
+    const key = `${endpoint.port}:${endpoint.token ?? ""}`;
+    if (checkedCredentials.has(key)) continue;
+    checkedCredentials.add(key);
+    let active = reachablePorts.get(endpoint.port);
+    if (active === undefined) {
+      active = await reachable(endpoint.port, signal);
+      reachablePorts.set(endpoint.port, active);
+    }
+    if (active) live.push(endpoint);
   }
-  return null;
+  return live;
 }
 
 /** Find or explicitly activate the gRPC endpoint for a running emulator. */
