@@ -23,6 +23,24 @@ function fakeClient(options: { supported?: boolean; posture?: number } = {}) {
 }
 
 describe("Android emulator fold controls", () => {
+  test("does not repeat a failed gRPC read on every status poll", async () => {
+    let attempts = 0;
+    const create = async (): Promise<FoldClient> => {
+      attempts++;
+      throw new Error("gRPC timed out");
+    };
+    await expect(getFoldStatus("emulator-5556", create)).rejects.toThrow("gRPC timed out");
+    await expect(getFoldStatus("emulator-5556", create)).rejects.toThrow("temporarily unavailable");
+    expect(attempts).toBe(1);
+    const recovered = fakeClient({ posture: 3 });
+    await setFoldPosture("emulator-5556", "opened", async () => recovered.client);
+    expect(await getFoldStatus("emulator-5556", async () => recovered.client)).toEqual({
+      supported: true,
+      posture: "opened",
+      hingeAngle: 180,
+    });
+  });
+
   test("retries a read with remembered credentials when discovery credentials fail", async () => {
     const endpoints: GrpcEndpoint[] = [
       { port: 8554, token: "stale", avdName: null },

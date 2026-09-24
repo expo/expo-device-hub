@@ -18,6 +18,8 @@ const POSTURES: Record<number, FoldPosture> = {
 
 type FoldClient = Pick<EmulatorGrpcClient, "getPhysicalModel" | "setPosture" | "close">;
 const activatedEndpoints = new Map<string, GrpcEndpoint>();
+const readRetryAfter = new Map<string, number>();
+const READ_RETRY_DELAY_MS = 5_000;
 
 export async function readAvailableFoldStatus(
   serial: string,
@@ -87,15 +89,26 @@ export async function getFoldStatus(
   if (!isEmulatorSerial(serial)) {
     return { supported: false, posture: null, hingeAngle: null };
   }
-  if (createClient) return withClient(serial, readFoldStatus, createClient);
-
-  const endpoints = await findLiveEmulatorGrpcEndpoints(
+  if (Date.now() < (readRetryAfter.get(serial) ?? 0)) {
+    throw new Error("Fold status temporarily unavailable; retry in a moment");
+  }
+  const endpoints = createClient ? null : await findLiveEmulatorGrpcEndpoints(
     serial,
     undefined,
     {},
     activatedEndpoints.get(serial),
   );
-  return readAvailableFoldStatus(serial, endpoints);
+  if (endpoints?.length === 0) throw new Error("Fold status requires an active emulator gRPC endpoint");
+  try {
+    const status = createClient
+      ? await withClient(serial, readFoldStatus, createClient)
+      : await readAvailableFoldStatus(serial, endpoints ?? []);
+    readRetryAfter.delete(serial);
+    return status;
+  } catch (error) {
+    readRetryAfter.set(serial, Date.now() + READ_RETRY_DELAY_MS);
+    throw error;
+  }
 }
 
 export async function setFoldPosture(
@@ -103,7 +116,7 @@ export async function setFoldPosture(
   posture: "closed" | "opened",
   createClient?: (serial: string) => Promise<FoldClient>,
 ): Promise<FoldStatus> {
-  return withClient(serial, async (client) => {
+  const status = await withClient(serial, async (client) => {
     const current = await readFoldStatus(client);
     if (!current.supported) throw new Error("Selected emulator does not support folding");
     await client.setPosture(posture === "closed" ? 1 : 3);
@@ -116,4 +129,6 @@ export async function setFoldPosture(
     if (status.posture !== posture) throw new Error(`Emulator did not confirm ${posture} posture`);
     return status;
   }, createClient ?? createWriteClient);
+  readRetryAfter.delete(serial);
+  return status;
 }
