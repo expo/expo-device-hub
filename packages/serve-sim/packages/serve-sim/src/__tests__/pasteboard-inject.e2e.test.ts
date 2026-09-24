@@ -88,7 +88,7 @@ describeWildcard(`clipboard armed for every app (${udid ?? "<skipped>"})`, () =>
     terminatePasteboardApps(udid!);
     clearLaunchState(udid!);
     removeCapabilityLoaderSync(udid!);
-  });
+  }, 60_000);
 
   test("an app launched after arming answers without being relaunched", async () => {
     ensureFixtureInstalled(udid!);

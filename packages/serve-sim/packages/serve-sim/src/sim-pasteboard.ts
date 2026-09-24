@@ -153,11 +153,7 @@ async function readPasteboardOnce(udid: string): Promise<PasteboardReadResult> {
 
 let releaseHookInstalled = false;
 
-/**
- * `simMiddleware` inside someone else's dev server has no session lifecycle, so enabling the
- * capability from a copy would leave the loader armed for every app the simulator starts
- * afterwards. The CLI disarms from its own exit path; this covers the embedded host.
- */
+// An embedded simMiddleware has no session lifecycle, so disarm what a copy armed on exit.
 function releaseArmedDevicesOnExit(): void {
   if (releaseHookInstalled) return;
   releaseHookInstalled = true;
@@ -176,11 +172,7 @@ function releaseArmedDevicesOnExit(): void {
   });
 }
 
-/**
- * The app to ask for the pasteboard. The frontmost app when one is known, otherwise the app
- * this session launched: a browser-driven headless host has no focused Simulator window for
- * the AX bridge, and a tracker that started after the app did has seen no transition yet.
- */
+// A headless host often has no frontmost app, so fall back to the one this session launched.
 export function pasteboardTarget(
   frontmost: { bundleId: string } | null,
   launched: string | null,

@@ -96,8 +96,6 @@ describe("pasteboardTarget", () => {
     expect(pasteboardTarget({ bundleId: "dev.expo.App" }, "host.exp.Exponent")).toBe("dev.expo.App");
   });
 
-  /// A browser-driven headless host has no focused Simulator window for the AX bridge, and a
-  /// cold tracker has seen no transition yet, so the first read would otherwise fail.
   test("falls back to the app this session launched when nothing is frontmost", () => {
     expect(pasteboardTarget(null, "host.exp.Exponent")).toBe("host.exp.Exponent");
   });

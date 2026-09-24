@@ -83,8 +83,7 @@ export class UnknownCapabilityError extends Error {
   }
 }
 
-// A capability the session turned off must stay off, including for the on-demand enables
-// that happen later, such as a clipboard read arming its reader.
+// On-demand enables, like a clipboard read, must not override --disable.
 let disabledForSession = new Set<string>();
 
 export function rememberDisabledCapabilities(names: readonly string[]): void {

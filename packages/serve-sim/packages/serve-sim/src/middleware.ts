@@ -2446,8 +2446,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
         return;
       }
-      // `connectToFetch` replays the body as soon as this handler yields, so start reading
-      // before the first await or the data events are gone and the read never settles.
+      // connectToFetch replays the body once the handler yields, so read it before any await.
       const bodyRead =
         req.method === "PUT" ? readRequestBodyAsync(req, MAX_PASTEBOARD_BODY_BYTES) : null;
       bodyRead?.catch(() => {}); // the awaited copy below reports the failure
