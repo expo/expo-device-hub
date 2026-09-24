@@ -486,6 +486,25 @@ describe("physical hinge controls", () => {
     expect(controlResults[3]?.ok).toBe(false);
   });
 
+  test("reads the live hinge angle before turning a device that is already open face down", async () => {
+    const { controlResults, configs } = await start({ width: 2007, height: 2853 }, true);
+    nativeHingeState = { hingeAngle: 90 };
+    send(1, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(physicalOrientations).toEqual(["facedown"]);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, tableMode: true });
+  });
+
+  test("keeps rejecting face down when the live hinge angle is fully open", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    nativeHingeState = { hingeAngle: 180 };
+    send(1, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]?.ok).toBe(false);
+    expect(physicalOrientations).toEqual([]);
+  });
+
   test("rejects physical surface selection when Table Mode is unavailable", async () => {
     const { controlResults, configs } = await start(
       { width: 2007, height: 2853 },
