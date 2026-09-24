@@ -12,6 +12,7 @@ import {
   encodeTouchEvent,
   ensureEmulatorGrpcEndpoint,
   findEmulatorGrpcEndpoint,
+  findLiveEmulatorGrpcEndpoint,
   GrpcMessagePacer,
   GrpcMessageParser,
   IMAGE_TRANSPORT_MMAP,
@@ -171,6 +172,30 @@ describe("gRPC message framing", () => {
 });
 
 describe("emulator gRPC discovery", () => {
+  test("read-only discovery never activates gRPC", async () => {
+    let hasDiscoveryFile = false;
+    let reachable = false;
+    const dependencies = {
+      discoveryDirs: () => ["/run"],
+      readDirectory: () => hasDiscoveryFile ? ["pid_11.ini"] : [],
+      processIsAlive: () => true,
+      readText: () => "port.serial=5554\ngrpc.port=8554\ngrpc.token=secret",
+      modifiedMs: () => 1,
+      portIsReachable: async () => reachable,
+      runAdb: async () => { throw new Error("read-only discovery must not run adb"); },
+      pickAvailablePort: async () => { throw new Error("read-only discovery must not allocate a port"); },
+    };
+    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, dependencies)).toBeNull();
+    hasDiscoveryFile = true;
+    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, dependencies)).toBeNull();
+    reachable = true;
+    expect(await findLiveEmulatorGrpcEndpoint("emulator-5554", undefined, dependencies)).toEqual({
+      port: 8554,
+      token: "secret",
+      avdName: null,
+    });
+  });
+
   test("finds a token-bearing discovery file in the process temp directory", () => {
     const file = join(tmpdir(), "avd", "running", "pid_1.ini");
     const endpoint = findEmulatorGrpcEndpoint("emulator-5554", {

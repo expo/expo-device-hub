@@ -235,6 +235,19 @@ export function parseEmulatorGrpcPort(output: string): number | null {
   return Number.isInteger(value) && value > 0 && value <= 65_535 ? value : null;
 }
 
+/** Discover an already-running gRPC endpoint without changing emulator configuration. */
+export async function findLiveEmulatorGrpcEndpoint(
+  serial: string,
+  signal?: AbortSignal,
+  dependencies: EmulatorGrpcDiscoveryDependencies = {},
+): Promise<GrpcEndpoint | null> {
+  throwIfAborted(signal, "emulator gRPC discovery aborted");
+  const endpoint = findEmulatorGrpcEndpoint(serial, dependencies);
+  if (!endpoint) return null;
+  const reachable = dependencies.portIsReachable ?? portIsReachable;
+  return (await reachable(endpoint.port, signal)) ? endpoint : null;
+}
+
 /** Find or explicitly activate the gRPC endpoint for a running emulator. */
 export async function ensureEmulatorGrpcEndpoint(
   serial: string,

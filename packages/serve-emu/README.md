@@ -412,7 +412,8 @@ curl -X POST "$BASE/api/orientation" \
   -H 'Content-Type: application/json' \
   -d '{"orientation":"landscape"}'
 
-# Emulator foldables report their current posture and hinge angle.
+# Emulator foldables report their current posture and hinge angle. Status reads
+# require an active emulator gRPC endpoint; an explicit POST can activate one.
 curl "$BASE/api/fold"
 curl -X POST "$BASE/api/fold" \
   -H 'Content-Type: application/json' \

@@ -3,6 +3,7 @@ import { isEmulatorSerial } from "./device-capabilities.ts";
 import {
   EmulatorGrpcClient,
   ensureEmulatorGrpcEndpoint,
+  findLiveEmulatorGrpcEndpoint,
 } from "./emulator-grpc.ts";
 import type { FoldPosture, FoldStatus } from "./shared/api-contracts.ts";
 
@@ -16,11 +17,20 @@ const POSTURES: Record<number, FoldPosture> = {
 
 type FoldClient = Pick<EmulatorGrpcClient, "getPhysicalModel" | "setPosture" | "close">;
 
+async function createReadClient(serial: string): Promise<FoldClient> {
+  const endpoint = await findLiveEmulatorGrpcEndpoint(serial);
+  if (!endpoint) throw new Error("Fold status requires an active emulator gRPC endpoint");
+  return new EmulatorGrpcClient(endpoint);
+}
+
+async function createWriteClient(serial: string): Promise<FoldClient> {
+  return new EmulatorGrpcClient(await ensureEmulatorGrpcEndpoint(serial));
+}
+
 async function withClient<T>(
   serial: string,
   action: (client: FoldClient) => Promise<T>,
-  createClient: (serial: string) => Promise<FoldClient> = async (device) =>
-    new EmulatorGrpcClient(await ensureEmulatorGrpcEndpoint(device)),
+  createClient: (serial: string) => Promise<FoldClient> = createReadClient,
 ): Promise<T> {
   if (!isEmulatorSerial(serial)) throw new Error("Fold controls require an Android emulator");
   const client = await createClient(serial);
@@ -76,5 +86,5 @@ export async function setFoldPosture(
     }
     if (status.posture !== posture) throw new Error(`Emulator did not confirm ${posture} posture`);
     return status;
-  }, createClient);
+  }, createClient ?? createWriteClient);
 }
