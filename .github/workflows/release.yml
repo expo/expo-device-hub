@@ -105,7 +105,10 @@ jobs:
 
       - name: Push git tags
         if: ${{ env.IS_CANARY != 'true' }}
-        run: git push origin --tags
+        run: |
+          mapfile -t TAG_REFS < release-artifacts/release-tag-refs.txt
+          test "${#TAG_REFS[@]}" -gt 0
+          git push --atomic origin "${TAG_REFS[@]}"
 
       - name: Create GitHub releases
         if: ${{ env.IS_CANARY != 'true' }}

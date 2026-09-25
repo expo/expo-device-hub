@@ -88,10 +88,10 @@ If an earlier attempt already pushed package tags, a new attempt's release commi
 those tags and publication will fail until a maintainer resolves the partial release.
 
 Publication skips versions already on npm. Once every publish succeeds, it creates local package
-tags; the workflow pushes them together after updating `main`. If publishing a package fails, no
-tags are pushed by that attempt. Unchanged and ignored packages do not receive new tags. An
-existing tag pointing elsewhere causes a failure rather than being replaced. Canary and dry-run
-publication never change tags.
+tags; the workflow pushes only those release tags atomically after updating `main`. If publishing
+a package fails, no tags are pushed by that attempt. Unchanged and ignored packages do not receive
+new tags. An existing tag pointing elsewhere causes a failure rather than being replaced. Canary
+and dry-run publication never change tags.
 
 ## One-time setup for a new public package
 

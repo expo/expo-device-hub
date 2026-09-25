@@ -62,6 +62,7 @@ for (const { name, version, path } of tarballs) {
 }
 
 if (releaseSha) {
+  const tagRefs: string[] = [];
   for (const { name, version } of tarballs) {
     const spec = `${name}@${version}`;
     const ref = `refs/tags/${spec}`;
@@ -85,5 +86,7 @@ if (releaseSha) {
     } else {
       await $`git tag ${spec} ${releaseSha}`;
     }
+    tagRefs.push(ref);
   }
+  await Bun.write(`${dir}/release-tag-refs.txt`, `${tagRefs.join("\n")}\n`);
 }
