@@ -12,6 +12,7 @@
 
 - **LLM involvement:** None / assisted / primarily LLM-generated. Name the tool and the parts it produced or changed.
 - **Process and decisions:** What was the initial request? What approach was chosen, what alternatives or suggestions were rejected or corrected, and who made those decisions?
+- **Iterations:** Briefly trace the initial draft and each meaningful review or refinement round. For each, name who requested, made, and reviewed the change (human or LLM). Update this after further PR edits.
 - **Human involvement:** Who set the direction, edited the result, inspected the diff, or ran the tests? If a step had no human involvement, say "none."
 - **Review status:** Has a human reviewed the final diff? If not, say "human review pending." Who can answer questions and maintain this change?
 
