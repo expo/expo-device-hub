@@ -234,6 +234,14 @@ export type OrientationStatus = {
 };
 export type OrientationResponse = ApiSuccess<{ orientation: OrientationStatus }>;
 
+export type FoldPosture = "closed" | "half_opened" | "opened" | "flipped" | "tent";
+export type FoldStatus = {
+  supported: boolean;
+  posture: FoldPosture | null;
+  hingeAngle: number | null;
+};
+export type FoldResponse = ApiSuccess<{ fold: FoldStatus }>;
+
 export type NightMode = "auto" | "dark" | "light";
 export type NightModeStatus = { mode: NightMode | "unknown"; raw: string };
 export type NightModeResponse = ApiSuccess<{ nightMode: NightModeStatus }>;
@@ -632,6 +640,10 @@ export type ApiContractMap = {
   "/api/orientation": {
     GET: EndpointContract<undefined, OrientationResponse>;
     POST: EndpointContract<{ orientation: OrientationMode }, OrientationResponse>;
+  };
+  "/api/fold": {
+    GET: EndpointContract<undefined, FoldResponse>;
+    POST: EndpointContract<{ posture: "closed" | "opened" }, FoldResponse>;
   };
   "/api/night-mode": {
     GET: EndpointContract<undefined, NightModeResponse>;
@@ -1295,6 +1307,18 @@ export function parseOrientationResponse(value: unknown): OrientationResponse {
   const root = record(value, "orientation response");
   if (root.ok !== true) fail("orientation response.ok must be true");
   return { ok: true, orientation: parseOrientationStatus(root.orientation) };
+}
+
+export function parseFoldResponse(value: unknown): FoldResponse {
+  const root = record(value, "fold response");
+  if (root.ok !== true) fail("fold response.ok must be true");
+  const fold = record(root.fold, "fold");
+  const posture = fold.posture === null
+    ? null
+    : oneOf(fold.posture, ["closed", "half_opened", "opened", "flipped", "tent"] as const, "fold.posture");
+  const hingeAngle = fold.hingeAngle === null ? null : number(fold.hingeAngle, "fold.hingeAngle");
+  if (typeof fold.supported !== "boolean") fail("fold.supported must be a boolean");
+  return { ok: true, fold: { supported: fold.supported, posture, hingeAngle } };
 }
 
 export function parseNightModeResponse(value: unknown): NightModeResponse {
@@ -2016,6 +2040,7 @@ export const API_SUCCESS_PARSERS = {
   "/api/avds/start": { POST: parseAvdStartResponse },
   "/api/avds/stop": { POST: parseAvdStopResponse },
   "/api/orientation": { GET: parseOrientationResponse, POST: parseOrientationResponse },
+  "/api/fold": { GET: parseFoldResponse, POST: parseFoldResponse },
   "/api/night-mode": { GET: parseNightModeResponse, POST: parseNightModeResponse },
   "/api/font-scale": { GET: parseFontScaleResponse, POST: parseFontScaleResponse },
   "/api/network": { GET: parseNetworkResponse, POST: parseNetworkResponse },

@@ -412,6 +412,12 @@ curl -X POST "$BASE/api/orientation" \
   -H 'Content-Type: application/json' \
   -d '{"orientation":"landscape"}'
 
+# Emulator foldables report their current posture and hinge angle.
+curl "$BASE/api/fold"
+curl -X POST "$BASE/api/fold" \
+  -H 'Content-Type: application/json' \
+  -d '{"posture":"opened"}' # or "closed"
+
 curl "$BASE/api/night-mode"
 curl -X POST "$BASE/api/night-mode" \
   -H 'Content-Type: application/json' \

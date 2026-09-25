@@ -148,6 +148,29 @@ export function deviceRoutes(): ContractApiRoute<ApiDependencies>[] {
     },
     {
       method: "GET",
+      path: "/api/fold",
+      handler: async ({ deps }) => Response.json({
+        ok: true,
+        fold: await downstream("read fold state", deps.getFold),
+      }),
+    },
+    {
+      method: "POST",
+      path: "/api/fold",
+      handler: async ({ request, deps }) => {
+        const body = await readObject(request, "fold payload");
+        const posture = body.posture;
+        if (posture !== "closed" && posture !== "opened") {
+          invalid("posture must be closed or opened");
+        }
+        return Response.json({
+          ok: true,
+          fold: await downstream("set fold posture", () => deps.setFold(posture)),
+        });
+      },
+    },
+    {
+      method: "GET",
       path: "/api/night-mode",
       handler: async ({ deps }) => Response.json({
         ok: true,

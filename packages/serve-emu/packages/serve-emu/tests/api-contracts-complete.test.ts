@@ -14,6 +14,7 @@ import {
   parseDeviceSelectionResponse,
   parseEmptyResponse,
   parseFileImportResponse,
+  parseFoldResponse,
   parseFontScaleResponse,
   parseForegroundResponse,
   parseHealthResponse,
@@ -259,6 +260,14 @@ describe("complete API success contracts", () => {
   });
 
   test("parses orientation, appearance, and network status payloads", () => {
+    expect(parseFoldResponse({
+      ok: true,
+      fold: { supported: true, posture: "half_opened", hingeAngle: 90 },
+    }).fold).toEqual({ supported: true, posture: "half_opened", hingeAngle: 90 });
+    expect(() => parseFoldResponse({
+      ok: true,
+      fold: { supported: true, posture: "sideways", hingeAngle: 90 },
+    })).toThrow();
     expect(
       parseOrientationResponse({
         ok: true,
