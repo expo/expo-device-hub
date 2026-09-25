@@ -411,6 +411,20 @@ describe("clipboard paste input", () => {
       second.terminate();
     }
   });
+
+  test("rejects paste when native input setup has failed", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    await start({ width: 1170, height: 2532 }, false, new Error("Digitizer symbols unavailable"));
+    const replies: Array<{ requestId: number; ok: boolean }> = [];
+    ws!.on("message", (data) => {
+      const frame = Buffer.from(data as Buffer);
+      if (frame[0] === 0x92) replies.push(JSON.parse(frame.subarray(1).toString()));
+    });
+    sendTo(ws!, 1, "hello");
+    await waitUntil(() => replies.length === 1);
+    expect(replies).toMatchObject([{ requestId: 1, ok: false }]);
+    expect(pastedTexts).toEqual([]);
+  });
 });
 
 describe("shifted keyboard routing", () => {

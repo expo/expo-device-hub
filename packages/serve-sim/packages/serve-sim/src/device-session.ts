@@ -1159,6 +1159,7 @@ export class DeviceSession {
           typeof m.text === "string" && Buffer.byteLength(m.text, "utf8") <= MAX_PASTEBOARD_TEXT_BYTES) {
           const text = m.text;
           const operation = this.queueInputOperation(ws, async () => {
+            if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
             await pasteTextIntoSim(this.udid, text, async () => {
               if (!this.hidSockets.has(ws)) throw new Error("Clipboard viewer disconnected");
               const pressed = new Set(this.activeHidKeyUsages.get(ws) ?? []);
@@ -1166,6 +1167,7 @@ export class DeviceSession {
                 if (event.type === "up") await new Promise((resolve) => setTimeout(resolve, 30));
                 await this.updateHidKey(ws, event.type, event.usage);
               }
+              if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
             });
           });
           if (operation) {
