@@ -33,6 +33,11 @@ _Last updated: 2026-09-25 14:22. The integration is built, smoke-tested and comm
   - `serve-sim-vs-simstream-latency.mp4`: 17 s, the heavy clock scene with live "shown N ms old" and
     fps captions.
   - Both are 2412×1844 at 60 fps. Raw recordings are in `/tmp/fbench/rec/`.
+- **Synced route video** (`serve-sim-vs-simstream-route-synced.mp4`, 39 s, on both Desktops): the user
+  said the first route video drifted out of sync. The cause was the harness (sleep after each awaited
+  CDP input, so the drift depended on page load), not the protocols. Now inputs run on an absolute
+  schedule, and the page marks each pointerdown's frame. `bench/compose-aligned.py OUT base...` aligns
+  every input across panes. Measured input spacing is identical across modes to ±1 frame.
 - **Machine restored:** live simstream on :8765 (Tailscale and Cloudflare both answer 200). :3200 and
   :8799 are stopped.
 - **Bench tools are committed** in `~/Development/simstream` (`bench/runfork.sh`, `matrix-fork.sh`,
