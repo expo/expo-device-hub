@@ -2,22 +2,22 @@
 
 import { $ } from "bun";
 
-// Commit the version changes staged on EAS before its build and tests.
 const branch = process.env.RELEASE_BRANCH;
-if (!branch)
-  throw new Error("RELEASE_BRANCH must name the branch being released.");
+if (!branch?.startsWith("release/"))
+  throw new Error("RELEASE_BRANCH must start with release/.");
 await $`git check-ref-format ${`refs/heads/${branch}`}`;
 const source = (await $`git rev-parse HEAD`.text()).trim();
 const tree = (await $`git write-tree`.text()).trim();
 
-await $`git fetch origin ${`refs/heads/${branch}`}`;
-const remote = (await $`git rev-parse FETCH_HEAD`.text()).trim();
-if (remote === source) {
+const ref = `refs/heads/${branch}`;
+const exists = (await $`git ls-remote --heads origin ${ref}`.text()).trim();
+if (!exists) {
   await $`git commit -m ${"chore(release): version packages"}`;
-  await $`git push origin ${`HEAD:refs/heads/${branch}`}`;
+  await $`git push origin ${`HEAD:${ref}`}`;
 } else {
-  // Rerunning the same workflow after a publish/tag failure rebuilds the same
-  // source. Reuse its version commit instead of generating a different tag target.
+  await $`git fetch origin ${ref}`;
+  const remote = (await $`git rev-parse FETCH_HEAD`.text()).trim();
+  // Reuse the tested commit when a failed workflow rebuilds the same source.
   const [remoteTree, parent, subject] = (
     await $`git show -s --format=%T%n%P%n%s ${remote}`.text()
   )
@@ -29,7 +29,7 @@ if (remote === source) {
     subject !== "chore(release): version packages"
   ) {
     throw new Error(
-      "The release branch advanced to different changes; start a release from its latest commit.",
+      "The release branch does not match this run's source and version changes.",
     );
   }
   await $`git checkout --detach ${remote}`;

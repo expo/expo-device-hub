@@ -2,7 +2,6 @@ import { $ } from "bun";
 import { getChangesetIgnoreList } from "./changeset-ignore.ts";
 import { getPublicPackages } from "./public-packages.ts";
 
-/** Identifies the packages versioned by HEAD, excluding unchanged and ignored packages. */
 export async function readReleaseCommit() {
   const sha = (await $`git rev-parse HEAD`.text()).trim();
   const subject = (await $`git log -1 --format=%s`.text()).trim();
@@ -10,7 +9,6 @@ export async function readReleaseCommit() {
     throw new Error(`${sha} is not a release version commit.`);
   }
 
-  // A release commit has exactly one parent. Checkout must include that parent.
   const parents = (await $`git rev-list --parents -n 1 HEAD`.text())
     .trim()
     .split(/\s+/);

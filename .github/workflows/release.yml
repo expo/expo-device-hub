@@ -22,10 +22,11 @@ jobs:
     environment: npm-publish
     env:
       IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
+      RELEASE_BRANCH: release/${{ github.run_id }}
     permissions:
-      contents: write # push package tags and create GitHub releases
+      contents: write # push package tags and the tested release commit
       id-token: write # npm OIDC Trusted Publishing
-      pull-requests: read
+      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -45,12 +46,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # EAS versions, builds, tests, and packs the packages. For stable releases
-      # it also pushes the tested version commit and returns its SHA with the tarballs.
       - name: Build packages on EAS
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN }}
-          RELEASE_BRANCH: ${{ github.ref_name }}
         run: |
           npx --yes eas-cli@24.7.0 workflow:run .eas/workflows/build-release.yml \
             --ref "$(git rev-parse HEAD)" \
@@ -90,6 +88,21 @@ jobs:
             exit 1
           fi
 
+      - name: Open release PR
+        if: ${{ env.IS_CANARY != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          PR_URL=$(gh pr list --base main --head "$RELEASE_BRANCH" --state open --json url --jq '.[0].url // empty')
+          if [ -n "$PR_URL" ]; then
+            echo "Release PR already exists: $PR_URL"
+          else
+            gh pr create --base main --head "$RELEASE_BRANCH" \
+              --title "chore(release): version packages" \
+              --body "Updates main with the versions and changelogs from [release run ${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). This PR stays open if publication or the main branch update fails."
+          fi
+
       - name: Publish to npm
         if: ${{ env.IS_CANARY != 'true' }}
         env:
@@ -107,3 +120,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/create-github-releases.ts release-artifacts
+
+      - name: Update main and delete release branch
+        if: ${{ env.IS_CANARY != 'true' }}
+        run: |
+          git push origin HEAD:refs/heads/main
+          git push origin --delete "$RELEASE_BRANCH"

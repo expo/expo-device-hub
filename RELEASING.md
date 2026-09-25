@@ -15,9 +15,10 @@ accumulated since the last release. The **Release** GitHub Actions workflow
 as a canary release on every push to `main`. It runs `.eas/workflows/build-release.yml` on an
 EAS macOS worker (with `EXPO_TOKEN` from the `EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN` secret)
 to version, build, test, and pack the packages. EAS also commits and pushes stable version changes
-as `expo[bot]` through its GitHub checkout. GitHub Actions downloads the tarballs, checks out the
-release commit returned by EAS, and publishes to npm using **OIDC Trusted Publishing**
-(no long-lived `NPM_TOKEN`).
+as `expo[bot]` to `release/<workflow-run-id>`. GitHub Actions downloads the tarballs, checks out the
+release commit returned by EAS, opens a PR, and publishes to npm using **OIDC Trusted Publishing**
+(no long-lived `NPM_TOKEN`). Once publication and GitHub releases succeed, it pushes that same
+commit to `main`, deletes the release branch, and closes the PR.
 
 ## Cutting a release
 
@@ -38,24 +39,25 @@ for it.
 
 ### 2. When ready to publish — run the workflow
 
-Go to **Actions → Release → Run workflow**. The only input is **canary**:
+Go to **Actions → Release → Run workflow** and select `main`. The only input is **canary**:
 
 - **off** (default) → real release. EAS versions, builds, tests, and packs the packages, then
-  commits and pushes the staged version changes as `expo[bot]`. It returns the tarballs and
-  release commit SHA. GitHub checks out that commit, publishes the tarballs to npm, pushes
-  package tags, and creates GitHub releases.
+  commits and pushes the staged version changes as `expo[bot]` to `release/<workflow-run-id>`.
+  GitHub checks out that commit, opens a PR to `main`, publishes the tarballs to npm, pushes
+  package tags, and creates GitHub releases. It then pushes the tested commit to `main`, deletes
+  the release branch, and closes the PR.
 - **on** → canary release. EAS versions as usual, then rewrites each published package's version
   into a prerelease before building, testing, and packing. The workflow publishes it under the
-  **`canary`** npm dist-tag — without committing the version bump, pushing tags, or creating GitHub releases.
+  **`canary`** npm dist-tag — without committing the version bump, opening a PR, pushing tags, or creating GitHub releases.
   Install it with `npm install expo-device-hub@canary`, and `latest` stays untouched.
 
 Both paths build all packages after the final version changes so bundled version metadata and
 vendored artifacts match the versions being published. A build or test failure leaves the
-release branch and its pending changesets untouched. EAS stages version changes before building
+repository branches and pending changesets untouched. EAS stages version changes before building
 so generated build/test outputs are not included in the release commit.
 
-Every push to `main` also runs the workflow as a canary release, so `@canary` always tracks the
-latest commit on `main`.
+Development pushes to `main` also run the workflow as a canary release. The release workflow's
+own `GITHUB_TOKEN` push to `main` does not trigger another run.
 
 Canary versions are `<release-version>-canary-<YYYYMMDD>-<short-sha>`. When a pending changeset
 bumps a package, the canary uses that version directly (e.g. `0.3.0` with a minor changeset becomes
@@ -70,14 +72,17 @@ pending changesets.
 
 ### Retrying a failed release
 
-For a failed build, rerun the workflow. No version commit has been pushed yet. If the branch
-advanced during the build, start a new release from its latest commit instead.
+Use **Re-run failed jobs** on the original workflow run. It checks out the original source SHA
+and rebuilds the same release, using the same `release/<workflow-run-id>` branch even if `main`
+has advanced. EAS creates the release branch after the build, tests, and packing succeed, or
+reuses its existing version commit when the parent and tree match. Changes to that release
+branch cause a failure rather than being overwritten. Keep the release branch until the run
+has completed successfully.
 
-If publishing, tagging, or GitHub release creation failed after the version commit was pushed,
-use **Re-run failed jobs** on the original workflow run. It checks out the original source SHA
-and rebuilds the same release. EAS reuses the already-pushed version commit only if its parent
-and tree exactly match the source and staged version changes. A different branch tip stops
-publication rather than being overwritten.
+If publishing, tagging, creating GitHub releases, or pushing to `main` fails, the PR and release
+branch remain for a maintainer to inspect. The workflow reuses an open release PR on retry. A
+new workflow run creates a new release branch. If `main` advanced during the release, its
+fast-forward push fails; the maintainer must reconcile the PR before updating `main`.
 
 Publication skips versions already on npm and restores missing tags for packages versioned by
 the release commit. Unchanged and ignored packages do not receive new tags. An existing tag
@@ -98,6 +103,8 @@ first release. For every package that is not `private`:
    `https://github.com/expo/expo-device-hub.git`. npm rejects a provenance-signed publish when
    the URL does not match the repository that runs the workflow.
 4. Add a changeset for the package so the next real release versions and publishes it.
+
+The repository's GitHub Actions settings must allow workflows to create pull requests.
 
 All packages versioned by a real release are published in the same run. If one package fails
 to publish, the workflow stops before creating GitHub releases. Its tested version commit and

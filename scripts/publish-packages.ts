@@ -4,14 +4,6 @@ import { $ } from "bun";
 import { readTarballs } from "./lib/tarballs.ts";
 import { readReleaseCommit } from "./lib/release-commit.ts";
 
-// Publishes the tarballs built on EAS. Mirrors `changeset publish`: versions
-// already on npm are not republished. Real releases reconcile tags for the
-// packages versioned by the checked-out release commit, including on retries.
-//
-//   ./scripts/publish-packages.ts release-artifacts            # real release
-//   ./scripts/publish-packages.ts release-artifacts --canary   # dist-tag canary, no git tags
-//   add --dry-run to run `npm publish --dry-run`
-
 const [dir, ...flags] = process.argv.slice(2);
 if (!dir) {
   console.error("Usage: publish-packages.ts <dir> [--canary] [--dry-run]");
@@ -28,7 +20,6 @@ if (tarballs.length === 0) {
 
 const release = canary || dryRun ? undefined : await readReleaseCommit();
 if (release) {
-  // Check all release artifacts before publishing or tagging any of them.
   for (const [name, version] of release.packages) {
     const artifact = tarballs.find((pkg) => pkg.name === name);
     if (!artifact || artifact.version !== version) {

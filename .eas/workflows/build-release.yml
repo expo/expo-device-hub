@@ -1,8 +1,5 @@
 name: Build release packages
 
-# Dispatched by the GitHub Release workflow with --ref set to the commit to
-# release. Builds and tests every workspace, then packs the publishable
-# packages into one archive that the GitHub workflow downloads and publishes.
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +9,7 @@ on:
         default: false
       release_branch:
         type: string
-        description: Branch to push tested stable version changes to
+        description: Dedicated release/ branch for tested stable version changes
         required: true
 
 defaults:

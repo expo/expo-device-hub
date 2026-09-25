@@ -1,12 +1,8 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun";
+import { getPublicPackages } from "./lib/public-packages.ts";
 import { readTarballs } from "./lib/tarballs.ts";
-
-// Creates a GitHub release for every tagged tarball, attaching the tarball
-// built on EAS. Tags from an earlier failed attempt are included on retry.
-//
-//   ./scripts/create-github-releases.ts release-artifacts
 
 const dir = process.argv[2] ?? "release-artifacts";
 
@@ -21,20 +17,20 @@ function changelogSection(changelog: string, version: string): string {
       break;
     }
   }
-  return lines.slice(start + 1, end).join("\n").trim();
+  return lines
+    .slice(start + 1, end)
+    .join("\n")
+    .trim();
 }
 
-async function packageDir(name: string): Promise<string | undefined> {
-  const { getPublicPackages } = await import("./lib/public-packages.ts");
-  return (await getPublicPackages()).find((pkg) => pkg.name === name)?.dir;
-}
+const packages = await getPublicPackages();
 
 for (const { name, version, path } of await readTarballs(dir)) {
   const tag = `${name}@${version}`;
 
-  // Only release packages with a tag (publish-packages.ts creates it after publishing).
   const tagged =
-    (await $`git rev-parse -q --verify refs/tags/${tag}`.nothrow().quiet()).exitCode === 0;
+    (await $`git rev-parse -q --verify refs/tags/${tag}`.nothrow().quiet())
+      .exitCode === 0;
   if (!tagged) {
     console.log(`- ${tag}: no tag (not published this run) — skipping`);
     continue;
@@ -48,7 +44,7 @@ for (const { name, version, path } of await readTarballs(dir)) {
   }
 
   let notes = `Release ${tag}`;
-  const dir = await packageDir(name);
+  const dir = packages.find((pkg) => pkg.name === name)?.dir;
   const changelog = Bun.file(`${dir}/CHANGELOG.md`);
   if (dir && (await changelog.exists())) {
     const section = changelogSection(await changelog.text(), version);

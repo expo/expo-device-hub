@@ -239,7 +239,12 @@ for (const flag of ["--canary", "--dry-run"]) {
   });
 }
 
-type Step = { name?: string; run?: string; with?: Record<string, unknown> };
+type Step = {
+  name?: string;
+  if?: string;
+  run?: string;
+  with?: Record<string, unknown>;
+};
 type Workflow = {
   on: { workflow_dispatch: { inputs: Record<string, unknown> } };
   jobs: Record<string, { steps: Step[] }>;
@@ -284,8 +289,21 @@ test("EAS owns versioning and stable commits; GitHub only checks out the result 
     githubNames.indexOf("Download npm packages from EAS"),
   );
   expect(githubNames.indexOf("Publish to npm")).toBeGreaterThan(
+    githubNames.indexOf("Open release PR"),
+  );
+  expect(githubNames.indexOf("Open release PR")).toBeGreaterThan(
     githubNames.indexOf("Checkout release commit"),
   );
+  expect(
+    githubNames.indexOf("Update main and delete release branch"),
+  ).toBeGreaterThan(githubNames.indexOf("Create GitHub releases"));
+  for (const name of [
+    "Open release PR",
+    "Update main and delete release branch",
+  ])
+    expect(githubSteps.find((step) => step.name === name)?.if).toContain(
+      "IS_CANARY != 'true'",
+    );
   expect(
     easNames.indexOf("Apply version bump & generate changelog"),
   ).toBeLessThan(easNames.indexOf("Apply canary version"));
@@ -351,7 +369,7 @@ test("EAS commits only staged versions as expo[bot] and GitHub fetches the retur
   expect(
     (
       await command(f.repo, ["bash", "-e", "-c", commit], {
-        RELEASE_BRANCH: "main",
+        RELEASE_BRANCH: "release/test",
       })
     ).code,
   ).toBe(0);
@@ -367,6 +385,12 @@ test("EAS commits only staged versions as expo[bot] and GitHub fetches the retur
     join(f.repo, "release-artifacts/release-commit.txt"),
   ).text();
   expect(marker.trim()).toBe(releaseSha);
+  expect(await f.git("ls-remote", "origin", "refs/heads/main")).toBe(
+    `${f.source}\trefs/heads/main`,
+  );
+  expect(await f.git("ls-remote", "origin", "refs/heads/release/test")).toBe(
+    `${releaseSha}\trefs/heads/release/test`,
+  );
   await Bun.write(
     join(publisher, "release-artifacts/release-commit.txt"),
     marker,
@@ -410,24 +434,37 @@ test("GitHub rejects an artifact commit that belongs to a different source", asy
 });
 
 test("rerunning EAS reuses the pushed version commit and publication repairs its tag", async () => {
-  const f = await fixture();
+  const f = await fixture(false);
   await Bun.write(f.state, "published");
+  await stageVersions(f);
+  expect(
+    (
+      await command(
+        f.repo,
+        [process.execPath, join(scripts, "commit-release.ts")],
+        {
+          RELEASE_BRANCH: "release/test",
+        },
+      )
+    ).code,
+  ).toBe(0);
+  const releaseSha = await f.git("rev-parse", "HEAD");
   await stageVersions(f);
   const result = await command(
     f.repo,
     [process.execPath, join(scripts, "commit-release.ts")],
-    { RELEASE_BRANCH: "main" },
+    { RELEASE_BRANCH: "release/test" },
   );
   expect(result.code).toBe(0);
-  expect(await f.git("rev-parse", "HEAD")).toBe(f.sha);
+  expect(await f.git("rev-parse", "HEAD")).toBe(releaseSha);
   expect((await f.publish()).code).toBe(0);
   expect(await f.git("ls-remote", "origin", "refs/tags/changed@1.1.0")).toBe(
-    `${f.sha}\trefs/tags/changed@1.1.0`,
+    `${releaseSha}\trefs/tags/changed@1.1.0`,
   );
 });
 
-test("a release does not overwrite an unrelated change pushed while EAS was building", async () => {
-  const f = await fixture();
+test("a release branch can be created after main advances", async () => {
+  const f = await fixture(false);
   await Bun.write(join(f.repo, "later-change.txt"), "another change");
   await f.git("add", ".");
   await f.git("commit", "-m", "Later change");
@@ -437,10 +474,89 @@ test("a release does not overwrite an unrelated change pushed while EAS was buil
   const result = await command(
     f.repo,
     [process.execPath, join(scripts, "commit-release.ts")],
-    { RELEASE_BRANCH: "main" },
+    { RELEASE_BRANCH: "release/test" },
   );
-  expect(result.code).not.toBe(0);
+  expect(result.code).toBe(0);
+  const releaseSha = await f.git("rev-parse", "HEAD");
   expect(await f.git("ls-remote", "origin", "refs/heads/main")).toBe(
     `${latest}\trefs/heads/main`,
+  );
+  expect(await f.git("ls-remote", "origin", "refs/heads/release/test")).toBe(
+    `${releaseSha}\trefs/heads/release/test`,
+  );
+});
+
+test("successful publication moves the tested commit to main and removes the release branch", async () => {
+  const f = await fixture(false);
+  await stageVersions(f);
+  expect(
+    (
+      await command(
+        f.repo,
+        [process.execPath, join(scripts, "commit-release.ts")],
+        {
+          RELEASE_BRANCH: "release/test",
+        },
+      )
+    ).code,
+  ).toBe(0);
+  const releaseSha = await f.git("rev-parse", "HEAD");
+  const { github } = await workflows();
+  const finish = github.jobs.release.steps.find(
+    (step) => step.name === "Update main and delete release branch",
+  )!.run!;
+  expect(
+    (
+      await command(f.repo, ["bash", "-e", "-c", finish], {
+        RELEASE_BRANCH: "release/test",
+      })
+    ).code,
+  ).toBe(0);
+  expect(await f.git("ls-remote", "origin", "refs/heads/main")).toBe(
+    `${releaseSha}\trefs/heads/main`,
+  );
+  expect(await f.git("ls-remote", "origin", "refs/heads/release/test")).toBe(
+    "",
+  );
+});
+
+test("a failed main update keeps the release branch for recovery", async () => {
+  const f = await fixture(false);
+  await stageVersions(f);
+  expect(
+    (
+      await command(
+        f.repo,
+        [process.execPath, join(scripts, "commit-release.ts")],
+        {
+          RELEASE_BRANCH: "release/test",
+        },
+      )
+    ).code,
+  ).toBe(0);
+  const releaseSha = await f.git("rev-parse", "HEAD");
+  await f.git("checkout", "main");
+  await Bun.write(join(f.repo, "later-change.txt"), "another change");
+  await f.git("add", "later-change.txt");
+  await f.git("commit", "-m", "Later change");
+  await f.git("push", "origin", "main");
+  const latest = await f.git("rev-parse", "HEAD");
+  await f.git("checkout", "--detach", releaseSha);
+  const { github } = await workflows();
+  const finish = github.jobs.release.steps.find(
+    (step) => step.name === "Update main and delete release branch",
+  )!.run!;
+  expect(
+    (
+      await command(f.repo, ["bash", "-e", "-c", finish], {
+        RELEASE_BRANCH: "release/test",
+      })
+    ).code,
+  ).not.toBe(0);
+  expect(await f.git("ls-remote", "origin", "refs/heads/main")).toBe(
+    `${latest}\trefs/heads/main`,
+  );
+  expect(await f.git("ls-remote", "origin", "refs/heads/release/test")).toBe(
+    `${releaseSha}\trefs/heads/release/test`,
   );
 });
