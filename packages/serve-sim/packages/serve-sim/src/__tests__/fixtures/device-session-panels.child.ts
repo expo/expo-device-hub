@@ -34,6 +34,7 @@ mock.module("../../native", () => ({
   NativeHid: class {
     async setScreen(id: number) { selectedScreens.push(id); }
     async supportsHingeAngle() { return supported; }
+    async supportsPhysicalOrientation() { return supported; }
   },
 }));
 const { simMiddleware } = await import("../../middleware");
