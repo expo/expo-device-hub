@@ -260,7 +260,7 @@ try {
       '-xerror',
       '-i',
       mp4,
-      '-fps_mode',
+      '-vsync',
       'passthrough',
       '-enc_time_base',
       '1:1000000',
