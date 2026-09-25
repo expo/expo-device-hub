@@ -24,6 +24,7 @@ what each delivers at that latency (resolution, pacing, no freezes).
 ## 1. Controlled latency benchmark (same machine)
 
 **Setup:**
+
 - **Machine:** M4 Max, iPhone 16 Pro simulator on iOS 18.6.
 - **Scene:** a barcode clock page in the simulator. Headless Chrome decodes the barcode from whatever
   the viewer page displays and records how old the displayed frame is.
@@ -57,6 +58,7 @@ about 1 ms.
 ## 2. Over the network
 
 **Setup:**
+
 - **Server:** serve-sim on the Mac Mini (M4 Pro, iPhone 17 Pro Max on iOS 26.5).
 - **Viewer:** headless Chrome on an off-prem MacBook, about 13 ms away over a direct Tailscale path.
 - **Route:** the same scripted 24-input route (Settings → General → About → back → home → Calendar
