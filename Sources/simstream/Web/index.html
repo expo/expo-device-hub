@@ -136,13 +136,16 @@ function onControl(m) {
 function configure(c) {
   const same = currentConfig && decoder && decoder.state === 'configured' &&
     currentConfig.codec === c.codec && currentConfig.description === c.description &&
-    currentConfig.width === c.width && currentConfig.height === c.height;
+    currentConfig.width === c.width && currentConfig.height === c.height &&
+    currentConfig.displayWidth === c.displayWidth;
   if (same) return;
 
   teardownDecoder();
   currentConfig = c;
-  canvas.width = c.width;
-  canvas.height = c.height;
+  // Present at the full display size even when the server sends a reduced resolution (a slow link):
+  // the frame is scaled on draw, so the layout never jumps.
+  canvas.width = c.displayWidth ?? c.width;
+  canvas.height = c.displayHeight ?? c.height;
   decoder = new VideoDecoder({
     output: onDecoded,
     error: (e) => { console.warn('decoder error', e); teardownDecoder(); send({ t: 'keyframe' }); },

@@ -209,6 +209,8 @@ final class StreamServer {
         if frame.isKeyframe, let config = frame.config {
             sendJSON([
                 "t": "config", "codec": config.codec, "width": config.width, "height": config.height,
+                "displayWidth": frame.displaySize?.width ?? config.width,
+                "displayHeight": frame.displaySize?.height ?? config.height,
                 "description": config.description.base64EncodedString(),
             ], to: client)
         }

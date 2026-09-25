@@ -10,13 +10,15 @@ struct StreamConfig: Equatable {
 }
 
 struct EncodedFrame {
-    let seq: UInt32
+    var seq: UInt32
     let data: Data          // AVCC (length-prefixed NAL units)
     let isKeyframe: Bool
     let config: StreamConfig?
     let captureMs: Double
     let encodedMs: Double
     let inputSeq: UInt32    // last input event applied before this frame was captured (0 = none)
+    /// Size the client should present at, when frames are encoded at a reduced resolution.
+    var displaySize: (width: Int, height: Int)?
 }
 
 /// Hardware H.264 tuned for interactive streaming: low-latency rate control, no B-frames,
@@ -32,6 +34,8 @@ final class H264Encoder {
 
     struct Stats {
         var frames = 0, bytes = 0, keyframes = 0, maxBytes = 0, encodeMs = 0.0
+        /// Frames the encoder dropped itself (its rate control couldn't fit them in the budget).
+        var dropped = 0
         var psnrSum = 0.0, psnrMin = Double.infinity, psnrCount = 0
     }
     /// When set, every frame is decoded back and compared with its source (luma PSNR).
@@ -96,13 +100,21 @@ final class H264Encoder {
         set(kVTCompressionPropertyKey_AverageBitRate, bps as CFNumber)
     }
 
-    func encode(_ pixelBuffer: CVPixelBuffer, captureMs: Double, forceKeyframe: Bool, inputSeq: UInt32) {
+    /// `completion` runs once the encoder is done with the frame, whether or not it produced output.
+    func encode(_ pixelBuffer: CVPixelBuffer, captureMs: Double, forceKeyframe: Bool, inputSeq: UInt32,
+                completion: @escaping () -> Void = {}) {
         let pts = CMTime(value: CMTimeValue(captureMs * 1000), timescale: 1_000_000)
         let props = forceKeyframe ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary : nil
         VTCompressionSessionEncodeFrame(
             session, imageBuffer: pixelBuffer, presentationTimeStamp: pts, duration: .invalid,
             frameProperties: props, infoFlagsOut: nil
-        ) { [weak self] status, _, sampleBuffer in
+        ) { [weak self] status, infoFlags, sampleBuffer in
+            defer { completion() }
+            if infoFlags.contains(.frameDropped), let self {
+                self.statsLock.lock()
+                self.stats.dropped += 1
+                self.statsLock.unlock()
+            }
             guard let self, status == noErr, let sampleBuffer, CMSampleBufferDataIsReady(sampleBuffer) else { return }
             if let psnr = self.quality?.measure(sampleBuffer, against: pixelBuffer) {
                 self.statsLock.lock()

@@ -208,6 +208,10 @@ do {
                               viewer.id, s.frames, Double(s.bytes * 8) / 1e6, Double(cc.bitrate) / 1e6,
                               Double(s.bytes) / Double(s.frames) / 1024, Double(s.maxBytes) / 1024, s.keyframes,
                               s.encodeMs / Double(s.frames), cc.queueMs, cc.baselineOrZero)
+            line += "  \(viewer.resolution.width)×\(viewer.resolution.height)"
+            if s.dropped > 0 { line += "  dropped \(s.dropped) (encoder rate control)" }
+            let skipped = viewer.takeSkipped()
+            if skipped > 0 { line += "  skipped \(skipped) (encoder behind)" }
             if s.psnrCount > 0 {
                 line += String(format: "  psnr avg %.1f min %.1f dB", s.psnrSum / Double(s.psnrCount), s.psnrMin)
             }
