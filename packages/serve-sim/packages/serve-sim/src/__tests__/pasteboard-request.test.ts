@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, promises as fs, readdirSync } from "fs";
+import { mkdtempSync, promises as fs, readFileSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { clipboardCapability, pasteboardTarget, requestInjectedPasteboard, writeSimPasteboard } from "../sim-pasteboard";
+import { clipboardCapability, pasteboardTarget, pasteTextIntoSim, requestInjectedPasteboard, writeSimPasteboard } from "../sim-pasteboard";
+import { withShimsAsync } from "./helpers";
 
 function container(): string {
   return mkdtempSync(join(tmpdir(), "serve-sim-pasteboard-"));
@@ -51,6 +52,20 @@ describe("requestInjectedPasteboard", () => {
     const answered = answerOnce(root, "café 🎉");
     expect(await requestInjectedPasteboard(root, 3000)).toBe("café 🎉");
     expect(await answered).toBe(true);
+  });
+
+  test("serializes requests sharing an app container", async () => {
+    const root = container();
+    const answers = (async () => {
+      expect(await answerOnce(root, "first")).toBe(true);
+      expect(await answerOnce(root, "second")).toBe(true);
+    })();
+    const reads = await Promise.all([
+      requestInjectedPasteboard(root, 3000),
+      requestInjectedPasteboard(root, 3000),
+    ]);
+    await answers;
+    expect(reads.sort()).toEqual(["first", "second"]);
   });
 
   test("ignores an answer left behind by an earlier request", async () => {
@@ -120,6 +135,38 @@ describe("pasteboardTarget", () => {
 });
 
 describe("writeSimPasteboard", () => {
+  test("holds the device lock through the paste shortcut", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-paste-lock-test-"));
+    const log = join(dir, "writes");
+    const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let shortcutStarted!: () => void;
+    const shortcut = new Promise<void>((resolve) => { shortcutStarted = resolve; });
+    try {
+      await withShimsAsync({ xcrun: `#!/bin/sh\ncat >> ${quotedLog}\nprintf '\n' >> ${quotedLog}\n` }, async () => {
+        const udid = `PASTE-LOCK-TEST-${process.pid}`;
+        const first = pasteTextIntoSim(udid, "alpha", async () => {
+          shortcutStarted();
+          await gate;
+        });
+        await shortcut;
+        const second = writeSimPasteboard(udid, "beta");
+        try {
+          await Bun.sleep(100);
+          expect(readFileSync(log, "utf8")).toBe("alpha\n");
+        } finally {
+          release();
+        }
+        await Promise.all([first, second]);
+        expect(readFileSync(log, "utf8")).toBe("alpha\nbeta\n");
+      });
+    } finally {
+      release();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("rejects when simctl refuses the device", async () => {
     const text = "x".repeat(1024 * 1024);
     await expect(writeSimPasteboard("00000000-0000-0000-0000-000000000000", text)).rejects.toThrow();

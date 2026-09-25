@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { execFileSync, spawn } from "child_process";
 import { existsSync, promises as fs } from "fs";
+import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { setTimeout as sleep } from "timers/promises";
 import { capabilityIsDisabled, type CapabilityDefinition } from "./capabilities";
@@ -10,16 +11,19 @@ import { devicesArmedHere, releaseSessionSync, setCapabilityEnabled } from "./la
 import { readLaunchState } from "./launch-state";
 import { dirnameOf } from "./runtime";
 import { simctl, simctlRaw } from "./simctl";
+import { withStateLock } from "./state-lock";
 
 // Resolve this path at runtime, not during the Bun build.
 const __dirname = dirnameOf(import.meta.url);
 
 export const CLIPBOARD_CAPABILITY = "clipboard";
+export const MAX_PASTEBOARD_TEXT_BYTES = 4 * 1024 * 1024;
 
 const SPRINGBOARD_BUNDLE = "com.apple.springboard";
 const INJECTED_TIMEOUT_MS = 1200;
 const INJECTED_POLL_MS = 25;
 const RELAUNCH_TIMEOUT_MS = 8000;
+const PASTEBOARD_LOCK_TIMEOUT_MS = 90_000;
 
 export function locatePasteboardTool(): string | null {
   return locateSimpbArtifact("serve-sim-pasteboard");
@@ -70,20 +74,46 @@ export const clipboardCapability: CapabilityDefinition = {
   },
 };
 
+function withSimPasteboardLock<T>(udid: string, run: () => Promise<T>): Promise<T> {
+  const path = join(tmpdir(), "serve-sim-pasteboard-locks", `${udid}.lock`);
+  return withStateLock(
+    path,
+    PASTEBOARD_LOCK_TIMEOUT_MS,
+    () => new Error(`Timed out waiting for the simulator pasteboard on ${udid}`),
+    run,
+  );
+}
+
 export function writeSimPasteboard(udid: string, text: string): Promise<void> {
+  return withSimPasteboardLock(udid, () => writeSimPasteboardUnlocked(udid, text));
+}
+
+export function pasteTextIntoSim(
+  udid: string,
+  text: string,
+  sendPasteShortcut: () => Promise<void>,
+): Promise<void> {
+  return withSimPasteboardLock(udid, async () => {
+    await writeSimPasteboardUnlocked(udid, text);
+    await sendPasteShortcut();
+  });
+}
+
+function writeSimPasteboardUnlocked(udid: string, text: string): Promise<void> {
   const tool = locatePasteboardTool() ?? buildPasteboardTool();
   return new Promise((resolveWrite, rejectWrite) => {
     const child = spawn("xcrun", ["simctl", "spawn", udid, tool], {
       stdio: ["pipe", "ignore", "pipe"],
     });
     let stderr = "";
+    let pendingError: Error | null = null;
     child.stderr.setEncoding("utf-8");
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
     const timeout = setTimeout(() => {
+      pendingError = new Error("simctl pasteboard write timed out");
       child.kill("SIGKILL");
-      rejectWrite(new Error("simctl pasteboard write timed out"));
     }, 30_000);
     child.once("error", (error) => {
       clearTimeout(timeout);
@@ -91,14 +121,14 @@ export function writeSimPasteboard(udid: string, text: string): Promise<void> {
     });
     child.once("close", (code) => {
       clearTimeout(timeout);
-      if (code === 0) resolveWrite();
+      if (pendingError) rejectWrite(pendingError);
+      else if (code === 0) resolveWrite();
       else rejectWrite(new Error(stderr.trim() || `simctl pasteboard write exited ${code}`));
     });
     // Node throws an unhandled EPIPE if simctl exits before reading the text.
     child.stdin.once("error", (error) => {
-      clearTimeout(timeout);
+      pendingError = error;
       child.kill("SIGKILL");
-      rejectWrite(error);
     });
     child.stdin.end(text, "utf-8");
   });
@@ -214,6 +244,7 @@ async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult
     bundleId,
     enabled: true,
     relaunch: false,
+    reuseIfEnabled: true,
   });
   const afterArming = await requestInjectedPasteboard(container);
   if (afterArming !== null) return { text: afterArming, relaunchedApp: null };
@@ -229,6 +260,7 @@ async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult
     bundleId,
     enabled: true,
     relaunch: true,
+    reuseIfEnabled: true,
   });
   const afterRelaunch = await requestInjectedPasteboard(container, RELAUNCH_TIMEOUT_MS);
   return afterRelaunch === null ? null : { text: afterRelaunch, relaunchedApp: bundleId };
@@ -271,13 +303,26 @@ export async function requestInjectedPasteboard(
 ): Promise<string | null> {
   if (!isContainerPath(container)) return null;
   const tmpDir = join(container, "tmp");
+  await fs.mkdir(tmpDir, { recursive: true });
+  const lockPath = join(tmpDir, "serve-sim-pasteboard.lock");
+  return withStateLock(
+    lockPath,
+    60_000,
+    () => new Error(`Timed out waiting to read the simulator pasteboard in ${container}`),
+    () => requestInjectedPasteboardUnlocked(tmpDir, timeoutMs),
+  );
+}
+
+async function requestInjectedPasteboardUnlocked(
+  tmpDir: string,
+  timeoutMs: number,
+): Promise<string | null> {
   const valuePath = join(tmpDir, "serve-sim-pasteboard.txt");
   const donePath = `${valuePath}.done`;
   const requestPath = join(tmpDir, "serve-sim-pasteboard.request");
   // A request that timed out can still be answered afterwards, and answering it
   // consumes the next request. The nonce tells our answer from that one.
   const nonce = randomUUID();
-  await fs.mkdir(tmpDir, { recursive: true });
   await fs.rm(donePath, { force: true });
   await fs.rm(valuePath, { force: true });
   await fs.writeFile(requestPath, nonce);

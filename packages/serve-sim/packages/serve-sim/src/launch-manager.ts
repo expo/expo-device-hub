@@ -323,10 +323,12 @@ export async function setCapabilityEnabled(
     enabled,
     relaunch = true,
     ownerPid = process.pid,
+    reuseIfEnabled = false,
   }: {
     bundleId?: string | null;
     options?: Record<string, string>;
     enabled: boolean;
+    reuseIfEnabled?: boolean;
   } & EnableOptions,
 ): Promise<void> {
   const definition =
@@ -346,6 +348,11 @@ export async function setCapabilityEnabled(
         `Capability ${definition.name} declined to start on ${udid}. It reported nothing to load, so there ` +
           `is nothing to enable. Check the message above for why.`,
       );
+    }
+    const previous = readLaunchState(udid);
+    if (reuseIfEnabled && previous?.capabilities[definition.name]) {
+      if (relaunch) await relaunchTarget(udid, bundleId, previous);
+      return;
     }
     await enableCapabilitiesUnlocked(udid, bundleId, [capability], { relaunch, ownerPid });
   });

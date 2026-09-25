@@ -2523,14 +2523,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         });
         res.end(JSON.stringify({ ok: true, ...result }));
       } catch (error) {
+        console.error(`[serve-sim] Could not access the simulator pasteboard on ${udid}:`, error);
         res.writeHead(500, {
           ...PASTEBOARD_RESPONSE_HEADERS,
           "Content-Type": "application/json",
         });
-        res.end(JSON.stringify({
-          ok: false,
-          error: error instanceof Error ? error.message : "Could not access the simulator pasteboard",
-        }));
+        res.end(JSON.stringify({ ok: false, error: "Could not access the simulator pasteboard" }));
       }
       return;
     }

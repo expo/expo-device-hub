@@ -498,6 +498,35 @@ describe("startup capability loading", () => {
     expect(listCapabilities(UDID)).toEqual(["clipboard"]);
   });
 
+  test("reuses another live owner's clipboard capability", async () => {
+    const owner = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    try {
+      writeRawState(JSON.stringify({
+        launchArgs: [],
+        capabilities: {
+          clipboard: {
+            name: "clipboard", scope: "allApps", dylib: "/other-reader.dylib",
+            bundleId: null, ownerPid: owner.pid,
+          },
+        },
+      }));
+      await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, async () => {
+        await setCapabilityEnabled(UDID, {
+          name: "clipboard", defaultEnabled: true, scope: "allApps",
+          async setEnabled() { return { dylib: "/this-reader.dylib" }; },
+        }, { enabled: true, relaunch: false, reuseIfEnabled: true });
+      });
+      expect(readLaunchState(UDID)?.capabilities.clipboard).toMatchObject({
+        ownerPid: owner.pid,
+        dylib: "/other-reader.dylib",
+      });
+      releaseSessionSync(UDID, process.pid, () => {});
+      expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(owner.pid);
+    } finally {
+      owner.kill("SIGKILL");
+    }
+  });
+
   test("defaults do not restart a remembered app and explicit launch starts once", async () => {
     const log = join(stateDir(), "simctl-startup-calls");
     const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";

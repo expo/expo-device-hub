@@ -28,6 +28,8 @@ import {
   type NativeUnsubscribe,
 } from "./native";
 import { isSoftwareKeyboardVisible } from "./ax";
+import { simPasteHidEvents } from "./client/utils/sim-clipboard";
+import { MAX_PASTEBOARD_TEXT_BYTES, pasteTextIntoSim } from "./sim-pasteboard";
 import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
 import { validatePanelRoute } from "./panel-route";
@@ -870,7 +872,7 @@ export class DeviceSession {
       if (this.phase !== "running" || this.detachedHidSockets.has(ws)) return;
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
       const isOrderedMessage = buffer[0] === 0x03 || buffer[0] === 0x05 ||
-        buffer[0] === 0x06 || buffer[0] === 0x0b || buffer[0] === 0x0e;
+        buffer[0] === 0x06 || buffer[0] === 0x0b || buffer[0] === 0x0e || buffer[0] === 0x12;
       const inFlight = this.inFlightHidMessages.get(ws) ?? 0;
       if (inFlight >= MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET) {
         this.overloadHidSocket(ws);
@@ -1146,6 +1148,38 @@ export class DeviceSession {
         }
         if (this.phase === "running" && this.hidSockets.has(ws)) {
           ws.send(Buffer.from([0x91, this.failedInputSockets.has(ws) || this.hid.inputUnavailable ? 0 : 1]));
+        }
+        break;
+      }
+      case 0x12: {
+        const m = json<{ requestId: unknown; text: unknown }>();
+        const requestId = m?.requestId;
+        let ok = false;
+        if (m && typeof requestId === "number" && Number.isSafeInteger(requestId) && requestId > 0 &&
+          typeof m.text === "string" && Buffer.byteLength(m.text, "utf8") <= MAX_PASTEBOARD_TEXT_BYTES) {
+          const text = m.text;
+          const operation = this.queueInputOperation(ws, async () => {
+            await pasteTextIntoSim(this.udid, text, async () => {
+              if (!this.hidSockets.has(ws)) throw new Error("Clipboard viewer disconnected");
+              const pressed = new Set(this.activeHidKeyUsages.get(ws) ?? []);
+              for (const event of simPasteHidEvents(pressed)) {
+                if (event.type === "up") await new Promise((resolve) => setTimeout(resolve, 30));
+                await this.updateHidKey(ws, event.type, event.usage);
+              }
+            });
+          });
+          if (operation) {
+            try {
+              await operation;
+              ok = true;
+            } catch (error) {
+              console.error(`[serve-sim] Could not paste into simulator ${this.udid}:`, error);
+            }
+          }
+        }
+        if (this.hidSockets.has(ws)) {
+          try { ws.send(Buffer.concat([Buffer.from([0x92]), Buffer.from(JSON.stringify({ requestId, ok, ...(ok ? {} : { error: "Could not paste into the simulator" }) }))])); }
+          catch {}
         }
         break;
       }

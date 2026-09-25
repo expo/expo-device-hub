@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { simMiddleware } from "../middleware";
 import {
   ensureFixtureInstalled,
@@ -54,11 +54,17 @@ describe("/api/pasteboard", () => {
 
   test("returns JSON when the pasteboard read fails", async () => {
     const unavailableUdid = "00000000-0000-0000-0000-000000000000";
-    const res = await middleware(pasteboardRequest(`?device=${unavailableUdid}`));
-    expect(res?.status).toBe(500);
-    expect(res?.headers.get("access-control-allow-origin")).toBeNull();
-    const body = (await res!.json()) as { ok: boolean; error: string };
-    expect(body.ok).toBe(false);
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await middleware(pasteboardRequest(`?device=${unavailableUdid}`));
+      expect(res?.status).toBe(500);
+      expect(res?.headers.get("access-control-allow-origin")).toBeNull();
+      const body = (await res!.json()) as { ok: boolean; error: string };
+      expect(body).toEqual({ ok: false, error: "Could not access the simulator pasteboard" });
+      expect(log).toHaveBeenCalledTimes(1);
+    } finally {
+      log.mockRestore();
+    }
   });
 
   test("rejects invalid JSON before writing", async () => {

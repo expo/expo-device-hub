@@ -24,6 +24,10 @@ let inputSetupError: Error | undefined;
 let touchError: Error | undefined;
 const inputCalls: string[] = [];
 const keyEvents: { type: string; usage: number }[] = [];
+const pasteWrites: string[] = [];
+const pastedTexts: string[] = [];
+let clipboardText = "";
+let pasteGate: Promise<void> | undefined;
 const touchEvents: { kind: string; args: unknown[] }[] = [];
 const axCharacters: string[] = [];
 let axFailures = 0;
@@ -60,6 +64,7 @@ const addon = {
     async key(type: string, usage: number) {
       inputCalls.push("key");
       keyEvents.push({ type, usage });
+      if (type === "down" && usage === 0x19) pastedTexts.push(clipboardText);
     }
     async scroll() { inputCalls.push("scroll"); }
     async digitalCrown() { inputCalls.push("digitalCrown"); }
@@ -186,6 +191,16 @@ mock.module("../../ui-settings", () => ({
   },
 }));
 
+mock.module("../../sim-pasteboard", () => ({
+  MAX_PASTEBOARD_TEXT_BYTES: 4 * 1024 * 1024,
+  pasteTextIntoSim: async (_udid: string, text: string, sendPasteShortcut: () => Promise<void>) => {
+    pasteWrites.push(text);
+    clipboardText = text;
+    await pasteGate;
+    await sendPasteShortcut();
+  },
+}));
+
 const { DeviceSession } = await import("../../device-session");
 let session: InstanceType<typeof DeviceSession> | undefined;
 let server: Server | undefined;
@@ -198,6 +213,10 @@ beforeEach(() => {
   touchError = undefined;
   inputCalls.length = 0;
   keyEvents.length = 0;
+  pasteWrites.length = 0;
+  pastedTexts.length = 0;
+  clipboardText = "";
+  pasteGate = undefined;
   axCharacters.length = 0;
   axFailures = 0;
   touchEvents.length = 0;
@@ -352,6 +371,45 @@ describe("native input failure isolation", () => {
     expect(routedScreens).toEqual([1, 3]);
     expect(errorLog).toHaveBeenCalledTimes(1);
     expect(errorLog.mock.calls.flat().join(" ")).toContain("touch ignored bad input");
+  });
+});
+
+describe("clipboard paste input", () => {
+  const sendTo = (socket: WebSocket, requestId: number, text: string) => socket.send(Buffer.concat([
+    Buffer.from([0x12]), Buffer.from(JSON.stringify({ requestId, text })),
+  ]));
+
+  test("keeps each viewer's pasteboard write with its acknowledged shortcut", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    const replies: Array<{ requestId: number; ok: boolean }> = [];
+    for (const socket of [ws!, second]) {
+      socket.on("message", (data) => {
+        const frame = Buffer.from(data as Buffer);
+        if (frame[0] === 0x92) replies.push(JSON.parse(frame.subarray(1).toString()));
+      });
+    }
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    let releaseFirst!: () => void;
+    pasteGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    try {
+      sendTo(ws!, 1, "alpha");
+      await waitUntil(() => pasteWrites.length === 1);
+      sendTo(second, 2, "beta");
+      await Bun.sleep(20);
+      expect(pasteWrites).toEqual(["alpha"]);
+      releaseFirst();
+      await waitUntil(() => replies.length === 2);
+      expect(replies).toEqual([{ requestId: 1, ok: true }, { requestId: 2, ok: true }]);
+      expect(pasteWrites).toEqual(["alpha", "beta"]);
+      expect(pastedTexts).toEqual(["alpha", "beta"]);
+    } finally {
+      releaseFirst();
+      second.terminate();
+    }
   });
 });
 

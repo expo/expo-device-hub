@@ -86,10 +86,8 @@ import { openHostEventStream, runHostAction } from "./utils/exec";
 import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
 import {
-  copyTextToSim,
   isLiftedModifier,
   simCopyHidEvents,
-  simPasteHidEvents,
   trackHeldModifiers,
   type HidKeyEvent,
 } from "./utils/sim-clipboard";
@@ -928,6 +926,14 @@ function AppWithConfig({
 
   // Touch/button relay via direct WebSocket
   const wsRef = useRef<WebSocket | null>(null);
+  const pasteRequestIdRef = useRef(0);
+  const pendingPasteRef = useRef<{
+    requestId: number;
+    ws: WebSocket;
+    timeout: ReturnType<typeof setTimeout>;
+    resolve: (ok: boolean) => void;
+    reject: (error: Error) => void;
+  } | null>(null);
   if (!hingeQueueRef.current) {
     hingeQueueRef.current = createAcknowledgedControlQueue<HingeControlCommand>({
       send: (request) => {
@@ -1003,6 +1009,21 @@ function AppWithConfig({
           } catch {}
           return;
         }
+        if (bytes[0] === 0x92) {
+          try {
+            const reply = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as {
+              requestId?: unknown; ok?: unknown; error?: unknown;
+            };
+            const pending = pendingPasteRef.current;
+            if (pending?.ws === ws && reply.requestId === pending.requestId && typeof reply.ok === "boolean") {
+              clearTimeout(pending.timeout);
+              pendingPasteRef.current = null;
+              if (reply.ok) pending.resolve(true);
+              else pending.reject(new Error(typeof reply.error === "string" ? reply.error : "Could not paste into the simulator"));
+            }
+          } catch {}
+          return;
+        }
         if (bytes[0] !== 0x82) return;
         try {
           const cfg = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as StreamConfig;
@@ -1016,6 +1037,12 @@ function AppWithConfig({
         } catch {}
       };
       ws.onclose = (event) => {
+        const pending = pendingPasteRef.current;
+        if (pending?.ws === ws) {
+          clearTimeout(pending.timeout);
+          pendingPasteRef.current = null;
+          pending.reject(new Error("Simulator input disconnected during paste"));
+        }
         if (!stopped && event.code === 1013) showInputSocketError(event.reason || "The server is busy. Try again shortly.");
         if (wsRef.current === ws) wsRef.current = null;
         if (!stopped) {
@@ -1040,6 +1067,12 @@ function AppWithConfig({
     return () => {
       stopped = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      const pending = pendingPasteRef.current;
+      if (pending?.ws === currentWs) {
+        clearTimeout(pending.timeout);
+        pendingPasteRef.current = null;
+        pending.reject(new Error("Simulator input disconnected during paste"));
+      }
       if (wsRef.current === currentWs) wsRef.current = null;
       hingeQueueRef.current?.clear();
       currentWs?.close();
@@ -1327,7 +1360,6 @@ function AppWithConfig({
   );
 
   const pasteChainRef = useRef<Promise<void>>(Promise.resolve());
-  const sendSimPaste = useCallback(() => sendShortcut(simPasteHidEvents), [sendShortcut]);
 
   const sendSimCopy = useCallback(async () => {
     await sendShortcut(simCopyHidEvents);
@@ -1336,18 +1368,32 @@ function AppWithConfig({
 
   const sendTextToSim = useCallback(
     (text: string): Promise<boolean> => {
-      const run = pasteChainRef.current.catch(() => {}).then(async () => {
-        if (!(await copyTextToSim(config.device, text))) return false;
-        await sendSimPaste();
-        return true;
-      });
+      const run = pasteChainRef.current.catch(() => {}).then(() => new Promise<boolean>((resolve, reject) => {
+        const ws = wsRef.current;
+        if (ws?.readyState !== WebSocket.OPEN) {
+          reject(new Error("Simulator input disconnected during paste"));
+          return;
+        }
+        const requestId = ++pasteRequestIdRef.current;
+        const timeout = setTimeout(() => {
+          if (pendingPasteRef.current?.requestId !== requestId) return;
+          pendingPasteRef.current = null;
+          reject(new Error("Simulator paste timed out"));
+        }, 150_000);
+        pendingPasteRef.current = { requestId, ws, timeout, resolve, reject };
+        if (!trySendWsMessage(ws, 0x12, { requestId, text })) {
+          clearTimeout(timeout);
+          pendingPasteRef.current = null;
+          reject(new Error("Simulator input disconnected during paste"));
+        }
+      }));
       pasteChainRef.current = run.then(
         () => {},
         () => {},
       );
       return run;
     },
-    [config.device, sendSimPaste],
+    [],
   );
 
   const clipboard = useClipboardToast(config.device, sendSimCopy, sendTextToSim);
