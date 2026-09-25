@@ -331,12 +331,68 @@ static void test_delayed_reload(void) {
   free_load(load);
 }
 
+static unsigned startup_calls;
+
+static void startup_callback(void) {
+  CHECK(strcmp(getenv("SERVE_SIM_STARTUP_TEST"), "armed") == 0, "startup environment precedes callback");
+  startup_calls++;
+}
+
+static void test_startup_registration(void) {
+  Dl_info image;
+  CHECK(dladdr((const void *)startup_callback, &image) != 0, "startup image resolves");
+  const char *old_tmp = getenv("TMPDIR");
+  const char *old_config = getenv(CONFIG_VAR);
+  char *saved_tmp = old_tmp ? strdup(old_tmp) : NULL;
+  char *saved_config = old_config ? strdup(old_config) : NULL;
+  char line[4096];
+  snprintf(line, sizeof line, "startup\tall\t%s\tSERVE_SIM_STARTUP_TEST=armed\t0\n", image.dli_fname);
+  char *path = write_temp("startup", line, strlen(line));
+  setenv("TMPDIR", "/device/Containers/Data/Application/test/tmp", 1);
+  setenv(CONFIG_VAR, path, 1);
+  serve_sim_startup(startup_callback);
+  CHECK(startup_calls == 1, "startup authorizes the actual callback image");
+
+  const char *scopes[] = {"user", "unknown"};
+  for (size_t i = 0; i < sizeof scopes / sizeof scopes[0]; i++) {
+    snprintf(line, sizeof line, "startup\t%s\t%s\tSERVE_SIM_STARTUP_TEST=armed\t0\n", scopes[i], image.dli_fname);
+    FILE *file = fopen(path, "w");
+    if (!file) abort();
+    fputs(line, file); fclose(file);
+    unsetenv("SERVE_SIM_STARTUP_TEST");
+    serve_sim_startup(startup_callback);
+    CHECK(startup_calls == 1 && getenv("SERVE_SIM_STARTUP_TEST") == NULL, "excluded scope cannot apply environment or callback");
+  }
+  snprintf(line, sizeof line, "startup\tall\t%s\tSERVE_SIM_STARTUP_TEST=armed\t0\n", SERVE_SIM_TEST_DYLIB);
+  FILE *file = fopen(path, "w");
+  if (!file) abort();
+  fputs(line, file); fclose(file);
+  serve_sim_startup(startup_callback);
+  CHECK(startup_calls == 1, "startup refuses a different image");
+
+  struct Load *load = calloc(1, sizeof *load);
+  if (!load) abort();
+  snprintf(load->config_path, sizeof load->config_path, "%s", path);
+  unsigned before = dlopen_count;
+  load_capabilities(load);
+  CHECK(dlopen_count == before && getenv("SERVE_SIM_STARTUP_TEST") == NULL, "startup records never hotload on the deferred path");
+  free_load(load);
+
+  unlink(path);
+  serve_sim_startup(startup_callback);
+  CHECK(startup_calls == 1, "removed startup config stays inert");
+  if (saved_tmp) setenv("TMPDIR", saved_tmp, 1); else unsetenv("TMPDIR");
+  if (saved_config) setenv(CONFIG_VAR, saved_config, 1); else unsetenv(CONFIG_VAR);
+  free(saved_tmp); free(saved_config);
+}
+
 int main(void) {
   test_read_config();
   test_capability_applies();
   test_apply_env();
   test_load_capabilities();
   test_delayed_reload();
+  test_startup_registration();
   remove_temps();
   if (failures == 0) fprintf(stdout, "ok\n");
   return failures == 0 ? 0 : 1;
