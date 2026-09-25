@@ -17,9 +17,9 @@ EAS macOS worker (with `EXPO_TOKEN` from the `EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_
 to version, build, test, and pack the packages. EAS also commits and pushes stable version changes
 as `expo[bot]` to `release/<run-number>-<attempt>`. GitHub Actions downloads the tarballs, checks out the
 release commit returned by EAS, and publishes to npm using **OIDC Trusted Publishing**
-(no long-lived `NPM_TOKEN`). Once publication and GitHub releases succeed, it pushes that same
-commit to `main` and deletes the release branch. If `main` advanced, the push fails and leaves
-the release branch for manual resolution.
+(no long-lived `NPM_TOKEN`). After publication, it pushes that same commit to `main`, pushes
+package tags, creates GitHub releases, and deletes the release branch. If `main` advanced, the
+push fails before any tags are pushed and leaves the release branch for manual resolution.
 
 For regular releases, EAS packs only public packages whose versions changed. GitHub publishes
 and tags every tarball in that archive after checking that it contains exactly one tarball for
@@ -49,9 +49,8 @@ Go to **Actions → Release → Run workflow** and select `main`. The only input
 
 - **off** (default) → real release. EAS versions, builds, tests, and packs the packages, then
   commits and pushes the staged version changes as `expo[bot]` to `release/<run-number>-<attempt>`.
-  GitHub checks out that commit, publishes the tarballs to npm, pushes
-  package tags, and creates GitHub releases. It then pushes the tested commit to `main`, deletes
-  the release branch.
+  GitHub checks out that commit and publishes the tarballs to npm. It then pushes the tested
+  commit to `main`, pushes package tags, creates GitHub releases, and deletes the release branch.
 - **on** → canary release. EAS versions as usual, then rewrites each published package's version
   into a prerelease before building, testing, and packing. The workflow publishes it under the
   **`canary`** npm dist-tag — without committing the version bump, pushing tags, or creating GitHub releases.
@@ -88,10 +87,11 @@ fast-forward push fails; the maintainer must reconcile the release branch with `
 If an earlier attempt already pushed package tags, a new attempt's release commit will not match
 those tags and publication will fail until a maintainer resolves the partial release.
 
-Publication skips versions already on npm. Once every publish succeeds, it pushes package tags
-together. If publishing a package fails, no tags are pushed by that attempt. Unchanged and
-ignored packages do not receive new tags. An existing tag pointing elsewhere causes a failure
-rather than being replaced. Canary and dry-run publication never change tags.
+Publication skips versions already on npm. Once every publish succeeds, it creates local package
+tags; the workflow pushes them together after updating `main`. If publishing a package fails, no
+tags are pushed by that attempt. Unchanged and ignored packages do not receive new tags. An
+existing tag pointing elsewhere causes a failure rather than being replaced. Canary and dry-run
+publication never change tags.
 
 ## One-time setup for a new public package
 

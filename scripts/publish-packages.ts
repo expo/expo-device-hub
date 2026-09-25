@@ -86,5 +86,4 @@ if (releaseSha) {
       await $`git tag ${spec} ${releaseSha}`;
     }
   }
-  await $`git push origin --tags`;
 }

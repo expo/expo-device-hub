@@ -99,14 +99,20 @@ jobs:
           NPM_CONFIG_PROVENANCE: "true"
         run: ./scripts/publish-packages.ts release-artifacts --canary
 
+      - name: Update main
+        if: ${{ env.IS_CANARY != 'true' }}
+        run: git push origin HEAD:refs/heads/main
+
+      - name: Push git tags
+        if: ${{ env.IS_CANARY != 'true' }}
+        run: git push origin --tags
+
       - name: Create GitHub releases
         if: ${{ env.IS_CANARY != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: ./scripts/create-github-releases.ts release-artifacts
 
-      - name: Update main and delete release branch
+      - name: Delete release branch
         if: ${{ env.IS_CANARY != 'true' }}
-        run: |
-          git push origin HEAD:refs/heads/main
-          git push origin --delete "$RELEASE_BRANCH"
+        run: git push origin --delete "$RELEASE_BRANCH"
