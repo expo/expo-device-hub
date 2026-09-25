@@ -112,6 +112,20 @@ final class CongestionController {
     }
 }
 
+/// How a viewer's stream handles heavy full-screen motion (swiping home, the app switcher) when its
+/// link can't carry full-resolution 60 fps at full quality. Chosen per viewer from the page.
+enum TransitionMode: String {
+    /// Keep the bitrate within the link: briefly soft frames, lowest latency.
+    case soft
+    /// Let the encoder spend up to 2.5x the link rate and cap its quantizer, so big frames stay
+    /// sharp at the cost of a short queue (extra latency) during the transition. Sustained heavy
+    /// motion still converges back to the link rate through the congestion controller.
+    case burst
+    /// During heavy motion, encode every other frame (30 fps) so each gets twice the bits; back to
+    /// 60 as soon as frames are light again.
+    case fps30
+}
+
 /// One viewer's stream. Each viewer gets its own encoder and congestion controller (as each Stadia
 /// session had), so a slow link gets a lower bitrate at full frame rate without degrading anyone
 /// else, and keyframes for one viewer never cost the others. All state lives on the server queue.
@@ -176,6 +190,24 @@ final class Viewer {
 
     /// Backlog beyond baseline that gives up on the queue and resyncs.
     private let severeMs = 400.0
+
+    private(set) var transitionMode = TransitionMode.soft
+    private var bitrateFactor: Double {
+        switch transitionMode {
+        case .soft: 1
+        case .burst: 2.5
+        // Half the frames at the same bits per second: give the encoder twice the rate, since its
+        // per-frame budget follows the expected (60 fps) frame rate.
+        case .fps30: heavy ? 2 : 1
+        }
+    }
+    /// The bitrate the encoder is actually given: the link's target, times the burst allowance.
+    private var encoderBitrate: Int { Int(Double(congestion.bitrate) * bitrateFactor) }
+    /// fps30 mode: recent frame sizes, whether we're in a heavy stretch, and a frame counter.
+    private var recentSizes: [Int] = []
+    private var heavy = false
+    private var heavyCounter = 0
+    private(set) var halvedFrames = 0
     /// A viewer this far behind is stalled (e.g. throttled without pausing): drop its backlog.
     private let stallMs = 2000.0
 
@@ -204,6 +236,7 @@ final class Viewer {
     }
 
     private func attach(_ encoder: VideoEncoder) {
+        encoder.setMaxQP(transitionMode == .burst ? 24 : nil)
         if measureQuality { encoder.quality = QualityProbe() }
         let generation = self.generation
         encoder.onFrame = { [weak self, queue = server.queue] frame in
@@ -238,7 +271,7 @@ final class Viewer {
         let oldTier = tier
         let (w, h) = size(ofTier: target)
         do {
-            let replacement = try VideoEncoder(codec: codec, width: w, height: h, fps: fps, bitrate: congestion.bitrate)
+            let replacement = try VideoEncoder(codec: codec, width: w, height: h, fps: fps, bitrate: encoderBitrate)
             var newScaler: (VTPixelTransferSession, CVPixelBufferPool)?
             if target > 0 { newScaler = try makeScaler(width: w, height: h) }
             generation += 1
@@ -297,7 +330,7 @@ final class Viewer {
             guard backlog < 100 || backlog > stallMs else { return }
             if backlog > stallMs { unacked.removeAll() }
             draining = false
-        } else if backlog > severeMs {
+        } else if backlog > (transitionMode == .burst ? severeMs * 1.5 : severeMs) {
             if resyncs >= 2 && lastAckMs < lastResyncMs {
                 unresponsive = true
                 unacked.removeAll()
@@ -308,13 +341,20 @@ final class Viewer {
             resyncs += 1
             lastResyncMs = now
             congestion.severe(now: now)
-            encoder.setBitrate(congestion.bitrate)
+            encoder.setBitrate(encoderBitrate)
             log(String(format: "viewer %d: %.0f ms backlog, pausing encode until it drains (%.1f Mbps)", id, backlog,
                        Double(congestion.bitrate) / 1e6))
             updateTier(now: now)
             return
         }
 
+        if transitionMode == .fps30 && heavy {
+            heavyCounter += 1
+            if heavyCounter % 2 == 1 {
+                halvedFrames += 1
+                return
+            }
+        }
         guard encodesInFlight < maxEncodesInFlight else {
             skippedFrames += 1
             return
@@ -345,6 +385,7 @@ final class Viewer {
 
     private func send(_ frame: EncodedFrame) {
         guard !paused else { return }
+        if transitionMode == .fps30 { trackHeaviness(frame.data.count) }
         let now = Clock.ms()
         // Sequence numbers are per viewer, continuous across encoder switches, so acks line up.
         nextSeq &+= 1
@@ -373,8 +414,8 @@ final class Viewer {
     /// Periodic bitrate and resolution control.
     func tick() {
         let now = Clock.ms()
-        if let bitrate = congestion.update(now: now) {
-            encoder.setBitrate(bitrate)
+        if congestion.update(now: now) != nil {
+            encoder.setBitrate(encoderBitrate)
         }
         updateTier(now: now)
     }
@@ -397,12 +438,44 @@ final class Viewer {
 
     var codecName: String { encoder.codec.rawValue }
 
+    func setTransitionMode(_ mode: TransitionMode) {
+        guard mode != transitionMode else { return }
+        transitionMode = mode
+        heavy = false
+        recentSizes.removeAll()
+        encoder.setBitrate(encoderBitrate)
+        encoder.setMaxQP(mode == .burst ? 24 : nil)
+        log("viewer \(id): transitions \(mode.rawValue)")
+    }
+
+    /// fps30 mode: heavy while frames run well over their 60 fps share of the bitrate; light again
+    /// once several in a row are small (a settled screen's frames are tiny).
+    private func trackHeaviness(_ bytes: Int) {
+        recentSizes.append(bytes)
+        if recentSizes.count > 6 { recentSizes.removeFirst() }
+        let budget = Double(congestion.bitrate) / Double(fps) / 8
+        if !heavy, recentSizes.suffix(2).count == 2, recentSizes.suffix(2).allSatisfy({ Double($0) > 1.5 * budget }) {
+            heavy = true
+            heavyCounter = 0
+            // Same bits per second over half the frames: twice the bits per frame.
+            encoder.setBitrate(encoderBitrate)
+        } else if heavy, recentSizes.count == 6, recentSizes.allSatisfy({ Double($0) < 0.6 * budget }) {
+            heavy = false
+            encoder.setBitrate(encoderBitrate)
+        }
+    }
+
+    func takeHalved() -> Int {
+        defer { halvedFrames = 0 }
+        return halvedFrames
+    }
+
     /// Switches this viewer to another codec (after the client says it can decode it).
     func use(_ newCodec: VideoCodec) {
         guard newCodec != codec else { return }
         do {
             let replacement = try VideoEncoder(codec: newCodec, width: encoder.width, height: encoder.height,
-                                               fps: fps, bitrate: congestion.bitrate)
+                                               fps: fps, bitrate: encoderBitrate)
             generation += 1
             attach(replacement)
             encoder = replacement

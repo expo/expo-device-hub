@@ -36,6 +36,11 @@
     background: #17171b; color: #cfd2d6; font: inherit; cursor: pointer;
   }
   button:active { background: #24242a; }
+  button:disabled { opacity: .4; cursor: default; }
+  select {
+    flex: 3; padding: 7px 8px; border: 1px solid #2c2c32; border-radius: 8px; touch-action: manipulation;
+    background: #17171b; color: #cfd2d6; font: inherit; cursor: pointer; appearance: none; -webkit-appearance: none;
+  }
   button.on { border-color: #4a4a55; color: #fff; }
   #hud { white-space: pre; background: #131316; border: 1px solid #222228; border-radius: 8px; padding: 10px 12px; }
   #hud[hidden] { display: none; }
@@ -68,6 +73,14 @@
       <button data-button="lock">Lock</button>
       <button id="keyframe">Keyframe</button>
       <button id="stats">Stats</button>
+    </div>
+    <div class="buttons">
+      <select id="transitions" title="How heavy full-screen motion (swiping home, the app switcher) is handled on a thin link">
+        <option value="soft">Transitions: soft</option>
+        <option value="burst">Transitions: burst</option>
+        <option value="fps30">Transitions: 30 fps</option>
+      </select>
+      <button id="hevc" title="Encode this stream as HEVC instead of H.264">HEVC</button>
     </div>
     <div id="hud" hidden></div>
     <div class="hint">Click/drag to touch. Keyboard is forwarded while the page is focused (⌘-shortcuts stay local).</div>
@@ -119,6 +132,7 @@ function connect() {
     ping();
     if (document.hidden) send({ t: 'pause' });
     send({ t: 'hello', codecs: (await hevcSupported) ? ['hevc', 'h264'] : ['h264'] });
+    sendSettings();
   };
   ws.onclose = () => { setStatus('disconnected — retrying…', false); teardownDecoder(); setTimeout(connect, 1000); };
   ws.onmessage = (e) => typeof e.data === 'string' ? onControl(JSON.parse(e.data)) : onFrame(e.data);
@@ -399,6 +413,35 @@ for (const el of document.querySelectorAll('[data-button]')) {
   el.addEventListener('pointerup', () => send({ t: 'button', b, down: false }));
 }
 document.getElementById('keyframe').addEventListener('click', () => send({ t: 'keyframe' }));
+
+// Stream settings to try, per browser: how transitions are handled, and HEVC.
+const transitionsSelect = document.getElementById('transitions');
+const hevcButton = document.getElementById('hevc');
+const settings = {
+  transitions: localStorage.getItem('simstream.transitions') || 'soft',
+  hevc: localStorage.getItem('simstream.hevc') === 'on',
+};
+transitionsSelect.value = settings.transitions;
+function sendSettings() {
+  send({ t: 'settings', transitions: settings.transitions, hevc: settings.hevc });
+}
+function renderHevc(supported) {
+  hevcButton.disabled = !supported;
+  hevcButton.textContent = supported ? 'HEVC' : 'HEVC n/a';
+  hevcButton.classList.toggle('on', supported && settings.hevc);
+}
+hevcSupported.then(renderHevc);
+transitionsSelect.addEventListener('change', () => {
+  settings.transitions = transitionsSelect.value;
+  localStorage.setItem('simstream.transitions', settings.transitions);
+  sendSettings();
+});
+hevcButton.addEventListener('click', () => {
+  settings.hevc = !settings.hevc;
+  localStorage.setItem('simstream.hevc', settings.hevc ? 'on' : 'off');
+  hevcSupported.then(renderHevc);
+  sendSettings();
+});
 
 // Stats: shown by default on desktop, hidden on phones; the choice is remembered.
 const statsButton = document.getElementById('stats');

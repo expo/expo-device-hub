@@ -106,6 +106,7 @@ final class VideoEncoder {
         }
         set(kVTCompressionPropertyKey_AverageBitRate, bitrate as CFNumber)
         set(kVTCompressionPropertyKey_ExpectedFrameRate, fps as CFNumber)
+
         // Keyframes are requested per viewer (join, resume, decoder error, resync). The transport is
         // reliable, so a periodic refresh would only cost a burst of bits on constrained links.
         set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 60 as CFNumber)
@@ -122,6 +123,12 @@ final class VideoEncoder {
     @discardableResult
     private func set(_ key: CFString, _ value: CFTypeRef) -> Bool {
         VTSessionSetProperty(session, key: key, value: value) == noErr
+    }
+
+    /// Never compress a frame harder than this quantizer (nil: no cap). Keeps big frames sharp at
+    /// the cost of size.
+    func setMaxQP(_ qp: Int?) {
+        set(kVTCompressionPropertyKey_MaxAllowedFrameQP, (qp ?? 51) as CFNumber)
     }
 
     func setBitrate(_ bps: Int) {

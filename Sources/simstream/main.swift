@@ -108,6 +108,7 @@ do {
 
     // Viewers, keyed by connection; only touched on the server queue.
     var viewers: [UUID: Viewer] = [:]
+    var hevcCapable: [Int: Bool] = [:]
     var nextViewerID = 1
     func updateWatching() {
         pump.setWatching(viewers.values.contains { !$0.paused })
@@ -183,7 +184,17 @@ do {
         case "hello":
             // The client lists the codecs it can decode, best first.
             let supported = (message["codecs"] as? [String]) ?? []
+            if let viewer { hevcCapable[viewer.id] = supported.contains("hevc") }
             if options.codec != "h264", supported.contains("hevc") { viewer?.use(.hevc) }
+        case "settings":
+            // Per-viewer choices from the page's toggles.
+            guard let viewer else { return }
+            if let mode = (message["transitions"] as? String).flatMap(TransitionMode.init) {
+                viewer.setTransitionMode(mode)
+            }
+            if let hevc = message["hevc"] as? Bool {
+                viewer.use(hevc && hevcCapable[viewer.id] == true ? .hevc : .h264)
+            }
         case "keyframe":
             viewer?.requestKeyframe()
             pump.requestFrame()
@@ -231,7 +242,9 @@ do {
                               Double(s.bytes) / Double(s.frames) / 1024, Double(s.maxBytes) / 1024, s.keyframes,
                               s.queueMs / Double(s.frames), s.encodeMs / Double(s.frames), cc.queueMs, cc.baselineOrZero)
             line += "  \(viewer.resolution.width)×\(viewer.resolution.height)"
-            line += "  \(viewer.codecName)"
+            line += "  \(viewer.codecName)  transitions \(viewer.transitionMode.rawValue)"
+            let halved = viewer.takeHalved()
+            if halved > 0 { line += "  \(halved) frames skipped for 30 fps" }
             if s.dropped > 0 { line += "  dropped \(s.dropped) (encoder rate control)" }
             let skipped = viewer.takeSkipped()
             if skipped > 0 { line += "  skipped \(skipped) (encoder behind)" }
