@@ -59,7 +59,10 @@ test("names the preset that native hinge state matches", () => {
     const { hingeAngle, tableMode } = hingeControlState({ control: "pose", value: pose.id });
     expect(hingePoseForState({ hingeAngle, tableMode, physicalOrientation: hingePoseOrientation(pose.id) })).toBe(pose.id);
   }
-  expect(hingePoseForState({ hingeAngle: 0, physicalOrientation: "landscape-left" })).toBe("closed");
+  expect(hingePoseForState({ hingeAngle: 0 })).toBeNull();
+  expect(hingePoseForState({ hingeAngle: 180 })).toBeNull();
+  expect(hingePoseForState({ hingeAngle: 0, physicalOrientation: "portrait" })).toBeNull();
+  expect(hingePoseForState({ hingeAngle: 0, physicalOrientation: "landscape-left", tableMode: false })).toBeNull();
   expect(hingePoseForState({ hingeAngle: 90, physicalOrientation: "portrait", tableMode: true })).toBeNull();
   expect(hingePoseForState({ hingeAngle: 90, physicalOrientation: "facedown", tableMode: true })).toBeNull();
   expect(hingePoseForState({ hingeAngle: 120, physicalOrientation: "portrait", tableMode: false })).toBeNull();

@@ -1191,6 +1191,21 @@ describe("physical hinge controls", () => {
     expect(tableModes).toEqual([true]);
   });
 
+  test("leaves an angle-only endpoint unselected at startup", async () => {
+    let release!: () => void;
+    const { configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    nativeHingeState = { hingeAngle: 0 };
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 0, hingePose: null });
+  });
+
   test("keeps a hinge command's state over a slower startup read", async () => {
     let release!: () => void;
     const { configs, controlResults } = await start(
