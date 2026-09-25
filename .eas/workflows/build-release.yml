@@ -27,15 +27,31 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # Real releases arrive already versioned by the GitHub workflow's commit.
-      # Canary versions are never committed, so they are applied here.
+      - name: Verify pending changesets
+        run: |
+          if [ "${{ inputs.canary }}" != "true" ]; then
+            ./scripts/verify-pending-changesets.ts
+          fi
+
+      - name: Apply version bump & generate changelog
+        run: bun run changeset:version
+
       - name: Apply canary version
         run: |
           if [ "${{ inputs.canary }}" = "true" ]; then
-            bun run changeset:version
             ./scripts/apply-canary-version.ts
-          else
-            echo "Not a canary release; keeping committed versions."
+          fi
+
+      - name: Summarize versions
+        run: ./scripts/summarize-versions.ts
+
+      # Capture only versioning changes, before build/test outputs can alter the tree.
+      - name: Capture version changes
+        run: |
+          if [ "${{ inputs.canary }}" != "true" ]; then
+            mkdir -p release-artifacts
+            git add -A
+            git diff --cached --binary > release-artifacts/version.patch
           fi
 
       - name: Build packages

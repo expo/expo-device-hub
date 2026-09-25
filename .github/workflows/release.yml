@@ -30,6 +30,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
           fetch-tags: true
 
       - name: Setup Bun
@@ -45,33 +47,8 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Verify pending changesets
-        if: ${{ env.IS_CANARY != 'true' }}
-        run: ./scripts/verify-pending-changesets.ts
-
-      - name: Apply version bump & generate changelog
-        if: ${{ env.IS_CANARY != 'true' }}
-        run: bun run changeset:version
-
-      - name: Summarize versions
-        if: ${{ env.IS_CANARY != 'true' }}
-        run: ./scripts/summarize-versions.ts
-
-      - name: Commit & push version bump
-        if: ${{ env.IS_CANARY != 'true' }}
-        run: |
-          git add -A
-          git commit -m "chore(release): version packages"
-          git push origin "HEAD:${{ github.ref_name }}"
-
-      # EAS builds and tests the pushed commit on a macOS worker and packs the
-      # publishable packages. Canary versions are applied there; see
-      # .eas/workflows/build-release.yml.
+      # EAS applies all version changes before building and returns the tested
+      # tarballs plus the stable version patch. No release commit is pushed yet.
       - name: Build packages on EAS
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN }}
@@ -95,6 +72,18 @@ jobs:
           mkdir -p release-artifacts
           tar -xzf /tmp/npm-packages.tgz -C release-artifacts
           ls -l release-artifacts
+
+      - name: Configure git
+        if: ${{ env.IS_CANARY != 'true' }}
+        run: |
+          git config user.name "expo[bot]"
+          git config user.email "102182381+expo[bot]@users.noreply.github.com"
+
+      - name: Commit & push tested version changes
+        if: ${{ env.IS_CANARY != 'true' }}
+        env:
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: bun scripts/commit-release.ts release-artifacts/version.patch
 
       - name: Publish to npm
         if: ${{ env.IS_CANARY != 'true' }}

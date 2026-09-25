@@ -6,7 +6,7 @@
     "build": "turbo run build",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
-    "test": "turbo run test",
+    "test": "bun test ./scripts && turbo run test",
     "clean": "turbo run clean",
     "changeset": "changeset",
     "changeset:version": "changeset version",
