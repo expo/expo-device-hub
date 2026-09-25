@@ -257,6 +257,62 @@ describe("handleCaptureBodyRequest", () => {
   });
 });
 
+describe("capture exports for another server's device", () => {
+  test("404 even when this process captures a device with the same udid", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-owner-"));
+    const runtime = createCaptureRuntime({
+      writeDiskArtifacts: true,
+      captureDirFor: () => dir,
+      flushIntervalMs: 60_000,
+      startProxy: async () =>
+        ({
+          address: "127.0.0.1:9999",
+          portFile: "/tmp/fake-confdir/proxy-port",
+          caPem: async () => "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n",
+          close: async () => {},
+        }) as CaptureProxy,
+      trustCa: async () => {},
+      dylib: () => "/fake/libSimNetProxy.dylib",
+      configure: capabilityHarness(),
+    });
+    try {
+      await runtime.enableForDevice("UDID-1");
+      const store = runtime.storeFor("UDID-1");
+      if (!store) throw new Error("expected capture store");
+      const id = store.start("GET", "https://example.com/private");
+      store.setBody(id, {
+        requestHeaders: {},
+        responseHeaders: {},
+        requestBody: null,
+        responseBody: "secret",
+        requestTruncated: false,
+        responseTruncated: false,
+        requestBinary: false,
+        responseBinary: false,
+      });
+      store.update(id, { status: 200, durationMs: 1 }, true);
+      // The state file for this udid was written by a different serve-sim process.
+      const foreign = { ...inProcessServeSimState("UDID-1", 4000), pid: process.pid + 1 };
+
+      const body = createFakeRes();
+      handleCaptureBodyRequest(createFakeReq().req, body.res, foreign, id, runtime);
+      expect(body.status()).toBe(404);
+      expect(body.writes.join("")).not.toContain("secret");
+
+      const har = createFakeRes();
+      await handleCaptureHarRequest(createFakeReq().req, har.res, foreign, runtime);
+      expect(har.status()).toBe(404);
+      expect(har.writes.join("")).not.toContain("example.com/private");
+    } finally {
+      await runtime.disableForDevice("UDID-1");
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("handleCaptureHarRequest", () => {
   test("returns the session capture.har from disk", async () => {
     const { appendFileSync, mkdtempSync, rmSync } = await import("node:fs");

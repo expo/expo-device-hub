@@ -109,6 +109,8 @@ protection.
 Capture HTTP routes require the server's session token and a same-origin check. The preview supplies
 the token automatically. Other clients can use `Authorization: Bearer <token>`; query tokens are also
 accepted but can appear in URL logs. Capture responses use `Cache-Control: no-store, private`.
+The HAR and body routes answer only for devices this server process runs, although the device state
+directory is shared with other serve-sim servers.
 
 Use `--require-token` when exposing the standalone server beyond loopback. Without it, the preview is
 public and includes the token used by capture and control routes. Embedded hosts can enable the broader
