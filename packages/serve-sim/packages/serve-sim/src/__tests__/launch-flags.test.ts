@@ -68,4 +68,13 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
     expect(code).toBe(1);
     expect(stderr).toContain("Invalid URL 'not-a-url'");
   });
+
+  test("rejects network capture in the run modes that would record nothing", async () => {
+    // Both exit once the helpers are up, and the proxy lives in this process, so capture would stop with it.
+    for (const mode of ["--detach", "--no-preview"]) {
+      const { code, stderr } = await runCli(["--network-capture", mode]);
+      expect(code).toBe(1);
+      expect(stderr).toContain("--network-capture needs the preview server");
+    }
+  });
 });

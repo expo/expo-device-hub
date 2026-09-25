@@ -1,5 +1,9 @@
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
 import { bootDevice, shutdownDevice } from "../device";
 import { devicesArmedHere, rearmCapabilityLoader } from "../launch-manager";
+import { stateDir } from "../state";
 import { CaptureEnableError, captureRuntime, type CaptureRuntime } from "./runtime";
 import { type CaptureMeta } from "./store";
 
@@ -14,10 +18,51 @@ type InFlight = { enabled: boolean; promise: Promise<CaptureMeta> };
 const inFlight = new Map<string, InFlight>();
 const latestIntent = new Map<string, boolean>();
 
+type RebootRecord = { pid: number; endedAt?: number };
+
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function rebootRecordFile(udid: string): string {
+  return join(stateDir(), `reboot-${udid}.json`);
+}
+
+function writeRebootRecord(udid: string, record: RebootRecord): void {
+  const file = rebootRecordFile(udid);
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    mkdirSync(stateDir(), { recursive: true });
+    writeFileSync(tmp, JSON.stringify(record));
+    renameSync(tmp, file);
+  } catch {}
+}
+
 // launchctl values do not survive a reboot, so a device this process armed needs arming again.
 // A failure rejects the reboot: reporting success would hide that apps lost their capabilities.
 async function rearmCapabilities(udid: string): Promise<void> {
   if (devicesArmedHere().includes(udid)) await rearmCapabilityLoader(udid);
+}
+
+/**
+ * Whether a capture reboot, in any serve-sim process, was running at or after `since` (ms). The
+ * reboot shuts the device down on purpose, so a boot-state snapshot from that window must not be
+ * read as the device being gone.
+ */
+export function rebootedWithCaptureSince(udid: string, since: number): boolean {
+  if (inFlight.has(udid)) return true;
+  let record: RebootRecord;
+  try {
+    record = JSON.parse(readFileSync(rebootRecordFile(udid), "utf-8")) as RebootRecord;
+  } catch {
+    return false;
+  }
+  return record.endedAt === undefined ? isProcessAlive(record.pid) : record.endedAt >= since;
 }
 
 /** Tear down the old session first so injection cannot point the new boot at a dead port. */
@@ -63,9 +108,11 @@ export async function rebootWithCapture(
   })();
   const entry: InFlight = { enabled, promise: attempt };
   inFlight.set(udid, entry);
+  writeRebootRecord(udid, { pid: process.pid });
   try {
     return await attempt;
   } finally {
     if (inFlight.get(udid) === entry) inFlight.delete(udid);
+    writeRebootRecord(udid, { pid: process.pid, endedAt: Date.now() });
   }
 }
