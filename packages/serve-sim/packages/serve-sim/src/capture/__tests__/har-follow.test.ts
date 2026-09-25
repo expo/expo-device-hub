@@ -3,7 +3,16 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { toHarEntry } from "../har";
 import { captureHarPaths, followCaptureHar } from "../har-follow";
+
+type FetchStub = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+
+/** A server with no session HAR yet: the follower's seed request finds nothing. */
+function withoutSession(fetchImpl: FetchStub): FetchStub {
+  return async (input, init) =>
+    String(input).includes("/network-capture.har") ? new Response("", { status: 404 }) : fetchImpl(input, init);
+}
 
 describe("followCaptureHar", () => {
   it("fails promptly when the capture stream reports no active recording", async () => {
@@ -19,7 +28,7 @@ describe("followCaptureHar", () => {
         });
         await expect(followCaptureHar({
           baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, `${attachment}.har`), token: "test",
-          fetchImpl: async () => new Response(stream),
+          fetchImpl: withoutSession(async () => new Response(stream)),
         })).rejects.toThrow("Capture is unavailable");
       }
     } finally {
@@ -39,14 +48,14 @@ describe("followCaptureHar", () => {
     try {
       await expect(followCaptureHar({
         baseUrl: "http://127.0.0.1:3999", device: "D", outPath: join(dir, "session.har"), token: "test",
-        fetchImpl: async (input) => {
+        fetchImpl: withoutSession(async (input) => {
           if (String(input).includes("/network-capture/r1")) {
             rmSync(dir, { recursive: true, force: true });
             abortStream();
             return new Response("null");
           }
           return new Response(stream);
-        },
+        }),
       })).rejects.toThrow(/ENOENT/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
@@ -59,7 +68,7 @@ describe("followCaptureHar", () => {
     const abort = new DOMException("Stopped", "AbortError");
     try {
       await expect(followCaptureHar({ ...options, fetchImpl: async () => { throw abort; } })).rejects.toBe(abort);
-      const result = await followCaptureHar({ ...options, fetchImpl: async () => new Response("") });
+      const result = await followCaptureHar({ ...options, fetchImpl: withoutSession(async () => new Response("")) });
       expect(result.size).toBe(0);
       expect(existsSync(result.harPath)).toBe(true);
     } finally {
@@ -87,7 +96,7 @@ describe("followCaptureHar", () => {
       },
     });
 
-    const fetchImpl = async (input: RequestInfo | URL) => {
+    const fetchImpl = withoutSession(async (input: RequestInfo | URL) => {
       const url = String(input);
       if (url.includes("/network-capture/r1")) {
         return new Response(
@@ -108,7 +117,7 @@ describe("followCaptureHar", () => {
         status: 200,
         headers: { "content-type": "text/event-stream" },
       });
-    };
+    });
 
     try {
       const result = await followCaptureHar({
@@ -157,10 +166,10 @@ describe("followCaptureHar", () => {
         controller.enqueue(new TextEncoder().encode(frames[i++]));
       },
     });
-    const fetchImpl = async (input: RequestInfo | URL) => {
+    const fetchImpl = withoutSession(async (input: RequestInfo | URL) => {
       if (String(input).includes("/network-capture/r1")) return new Response("null", { status: 200 });
       return new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } });
-    };
+    });
 
     try {
       await expect(
@@ -175,6 +184,53 @@ describe("followCaptureHar", () => {
         }),
       ).rejects.toThrow(/ENOENT/);
       expect(existsSync(outPath)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("followCaptureHar started late", () => {
+  const request = (id: string, startedAt: number) => ({
+    id, method: "GET", url: `https://a.test/${id}`, status: 200, mimeType: "text/plain",
+    requestBytes: 0, responseBytes: 2, startedAt, ttfbMs: 1, durationMs: 2, failure: null,
+  });
+
+  it("keeps requests the session recorded before it started, once each", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-late-"));
+    const outPath = join(dir, "session.har");
+    // The session HAR holds r1-r3; the live store has already evicted r1 and replays r2-r3.
+    const sessionHar = {
+      log: {
+        version: "1.2",
+        creator: { name: "@expo/serve-sim", version: "test" },
+        entries: [1, 2, 3].map((n) => toHarEntry(request(`r${n}`, n))),
+      },
+    };
+    const frames = [2, 3, 4].map((n) => `data: ${JSON.stringify({ type: "finished", request: request(`r${n}`, n) })}\n\n`);
+    const bodyFetches: string[] = [];
+    try {
+      const result = await followCaptureHar({
+        baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", flushIntervalMs: 50,
+        fetchImpl: async (input) => {
+          const url = String(input);
+          if (url.includes("/network-capture.har")) return new Response(JSON.stringify(sessionHar));
+          if (url.includes("/network-capture/")) {
+            bodyFetches.push(new URL(url).pathname.split("/").pop()!);
+            return new Response("null");
+          }
+          return new Response(new ReadableStream<Uint8Array>({
+            start(controller) {
+              for (const frame of frames) controller.enqueue(new TextEncoder().encode(frame));
+              controller.close();
+            },
+          }));
+        },
+      });
+      expect(result.size).toBe(4);
+      const har = JSON.parse(readFileSync(outPath, "utf8")) as { log: { entries: { _captureId: string }[] } };
+      expect(har.log.entries.map((entry) => entry._captureId)).toEqual(["r1", "r2", "r3", "r4"]);
+      expect(bodyFetches).toEqual(["r4"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -196,10 +252,12 @@ describe("followCaptureHar under an embedded mount", () => {
         baseUrl: "http://127.0.0.1:3200/.sim", device: "D", outPath: join(dir, "session.har"), token: "test",
         fetchImpl: async (input) => {
           requested.push(String(input));
+          if (String(input).includes("/network-capture.har")) return new Response("", { status: 404 });
           return String(input).includes("/network-capture/") ? new Response("null") : new Response(stream);
         },
       });
       expect(requested).toEqual([
+        "http://127.0.0.1:3200/.sim/network-capture.har?device=D",
         "http://127.0.0.1:3200/.sim/network-capture?device=D",
         "http://127.0.0.1:3200/.sim/network-capture/r1?device=D",
       ]);
@@ -216,7 +274,7 @@ describe("capture har working files", () => {
   function follow(outPath: string, release: Promise<void>) {
     return followCaptureHar({
       baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", flushIntervalMs: 50,
-      fetchImpl: async (input) => {
+      fetchImpl: withoutSession(async (input) => {
         if (String(input).includes("/network-capture/")) return new Response("null");
         return new Response(new ReadableStream<Uint8Array>({
           async start(controller) {
@@ -225,7 +283,7 @@ describe("capture har working files", () => {
             controller.close();
           },
         }));
-      },
+      }),
     });
   }
 

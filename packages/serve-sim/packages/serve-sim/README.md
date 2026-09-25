@@ -281,7 +281,7 @@ serve-sim capture har -o ./capture.har
 | --- | --- |
 | `--network-capture` | Start capture on selected devices, including already booted ones |
 | `--network-capture-field <field>` | Keep `header`, `query`, `request-body`, and/or `response-body` beyond metadata (repeatable or comma-separated). Default: none |
-| `serve-sim capture har -o <path>` | Follow the live stream into a HAR (and JSON next to it) |
+| `serve-sim capture har -o <path>` | Copy the session's recorded requests, then follow the live stream into a HAR (and JSON next to it) |
 
 Use **Enable capture** in the tools panel to start without rebooting. Turning capture off still reboots the device so existing sessions cannot remain pointed at a stopped proxy.
 

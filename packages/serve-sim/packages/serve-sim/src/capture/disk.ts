@@ -6,7 +6,7 @@ import {
 import { join } from "node:path";
 
 import { claimCaptureDirectory, releaseCaptureDirectory } from "./artifact-owner";
-import { MAX_HAR_ENTRIES, toHarEntry } from "./har";
+import { MAX_HAR_ENTRIES, toHarEntry, type HarEntry } from "./har";
 import { compactNdjsonAndStreamHar, emptyHarText } from "./har-stream";
 import type { CapturedBody, CapturedRequest, CaptureEvent, CaptureStore } from "./store";
 import { stateDir } from "../state";
@@ -135,8 +135,13 @@ export class CaptureDiskAccumulator {
   }
 
   recordFinished(request: CapturedRequest, body: CapturedBody | null = null): void {
+    this.recordHarEntry(toHarEntry(request, body));
+  }
+
+  /** Append an entry already in HAR form, such as one copied from another recording. */
+  recordHarEntry(entry: HarEntry): void {
     if (!this.started) this.begin();
-    this.pendingEntryLines.push(JSON.stringify(toHarEntry(request, body)));
+    this.pendingEntryLines.push(JSON.stringify(entry));
     this.harDirty = true;
     this.enqueue(() => this.flushPendingEntries());
   }

@@ -1,7 +1,7 @@
 import { basename, dirname } from "node:path";
 
 import { CaptureDiskAccumulator } from "./disk";
-import { parseFinishedCaptureRequest } from "./har";
+import { parseFinishedCaptureRequest, type HarEntry, type HarFile } from "./har";
 import type { CapturedBody } from "./store";
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -90,6 +90,42 @@ async function fetchBody(
   }
 }
 
+function isAbort(error: unknown): boolean {
+  return typeof error === "object" && error !== null && (error as { name?: unknown }).name === "AbortError";
+}
+
+/**
+ * Completed entries the session already recorded. The live stream replays only the in-memory store
+ * (the newest 500 requests), so a follower started late seeds itself from the session HAR first.
+ */
+async function fetchSessionEntries(
+  baseUrl: string,
+  device: string,
+  fetchImpl: FetchLike,
+  token: string,
+  signal?: AbortSignal,
+): Promise<HarEntry[]> {
+  const url = captureRoute(baseUrl, "/network-capture.har", device);
+  try {
+    const res = await fetchImpl(url, { signal, headers: { Authorization: `Bearer ${token}` } });
+    // 404: no session recording yet, or a server without the route. The live stream still applies.
+    if (res.status === 404) return [];
+    if (!res.ok) {
+      console.warn(`Network capture: session HAR fetch HTTP ${res.status}; earlier requests are omitted.`);
+      return [];
+    }
+    const har = (await res.json()) as Partial<HarFile>;
+    return Array.isArray(har.log?.entries) ? har.log.entries : [];
+  } catch (error) {
+    if (isAbort(error)) throw error;
+    console.warn(
+      "Network capture: session HAR fetch failed; earlier requests are omitted:",
+      error instanceof Error ? error.message : error,
+    );
+    return [];
+  }
+}
+
 /** Follow /network-capture SSE into the same NDJSON → streamed HAR layout as the live session. */
 export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<FollowCaptureHarResult> {
   const fetchImpl = opts.fetchImpl ?? fetch;
@@ -115,6 +151,13 @@ export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<F
   let streamFailure: { error: unknown } | undefined;
   let flushFailure: Error | null = null;
   try {
+    // Seed from the session first, then skip live replays of the same requests.
+    const seeded = new Set<string>();
+    for (const entry of await fetchSessionEntries(opts.baseUrl, opts.device, fetchImpl, opts.token, opts.signal)) {
+      disk.recordHarEntry(entry);
+      if (entry._captureId) seeded.add(entry._captureId);
+    }
+
     const res = await fetchImpl(streamUrl, {
       headers: {
         accept: "text/event-stream",
@@ -144,7 +187,7 @@ export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<F
         if (unavailable) throw new Error(unavailable);
         disk.recordEvent(data);
         const finished = parseFinishedCaptureRequest(data);
-        if (!finished) continue;
+        if (!finished || seeded.has(finished.id)) continue;
         const body = await fetchBody(
           opts.baseUrl,
           opts.device,

@@ -95,7 +95,8 @@ session's recorded files.
 Normal session teardown removes the device's capture directory. A later capture start sweeps abandoned
 directories while preserving active recordings. Files can remain after a crash, a failed final write, or
 failed cleanup.
-`capture har --out <path>` writes a separate recording that is retained after the command stops. The
+`capture har --out <path>` writes a separate recording that is retained after the command stops. It
+starts with the completed requests in the session HAR, then adds new requests from the live stream. The
 files are named after the HAR, so several recordings can share a folder: for `morning.har`, the event
 log is `morning.network-capture.json` and the entry log is `morning.entries.ndjson`.
 
