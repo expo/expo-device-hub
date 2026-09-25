@@ -31,7 +31,7 @@ import { isSoftwareKeyboardVisible } from "./ax";
 import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
 import { validatePanelRoute } from "./panel-route";
-import { isHingeControlCommand, hingeControlState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
+import { isHingeControlCommand, hingeControlState, hingePoseForState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
 import { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } from "./ui-settings";
 import { eventLogEventForHidMessage, formatEventLogPoint, recordEventLogEvent, updateEventLogEvent } from "./event-log";
 import {
@@ -321,10 +321,13 @@ export class DeviceSession {
         this.hid.supportsPhysicalOrientation(),
       ]).then(([supportsHingeAngle, supportsPhysicalOrientation]) => {
         if (this.phase !== "running") return;
-        this.supportsHingeAngle = supportsHingeAngle;
         this.supportsPhysicalOrientation = supportsPhysicalOrientation;
+        if (supportsHingeAngle) {
+          this.hydrateHingeState();
+          return;
+        }
+        this.supportsHingeAngle = false;
         this.broadcastConfig();
-        if (supportsHingeAngle) this.hydrateHingeState();
       });
     });
     return this.captureStart;
@@ -1155,15 +1158,18 @@ export class DeviceSession {
     }
   }
 
-  /** Seed the hinge from native so a new session reports a device that is already open or face down. */
+  /** Seed the hinge from native before advertising it, so clients never see support without state. */
   private hydrateHingeState(): void {
     const operation = this.hingeControlUpdate.then(async () => {
-      if (this.hingeControlled) return;
-      const state = await this.hid.hingeState();
-      if (this.phase !== "running") return;
-      this.hingeAngle = state.hingeAngle;
-      this.tableMode = state.tableMode;
-      this.hingePhysicalOrientation = state.physicalOrientation;
+      if (!this.hingeControlled) {
+        const state = await this.hid.hingeState();
+        if (this.phase !== "running") return;
+        this.hingeAngle = state.hingeAngle;
+        this.hingePose = hingePoseForState(state);
+        this.tableMode = state.tableMode;
+        this.hingePhysicalOrientation = state.physicalOrientation;
+      }
+      this.supportsHingeAngle = true;
       this.broadcastConfig();
     });
     this.hingeControlUpdate = operation.catch(() => {});

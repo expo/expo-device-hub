@@ -1170,7 +1170,15 @@ describe("physical hinge controls", () => {
     nativeHingeState = { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false };
     release();
     await waitUntil(() => configs.at(-1)?.hingeAngle === 90);
-    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, tableMode: false, tableModeAvailable: true });
+    expect(configs.at(-1)).toMatchObject({
+      supportsHingeAngle: true,
+      hingeAngle: 90,
+      hingePose: "book",
+      physicalOrientation: "portrait",
+      tableMode: false,
+      tableModeAvailable: true,
+    });
+    expect(configs.filter((config) => config.supportsHingeAngle === true && config.hingeAngle === undefined)).toEqual([]);
     send(1, { control: "table", value: true });
     await waitUntil(() => controlResults.length === 1);
     expect(controlResults[0]).toEqual({ requestId: 1, ok: true });

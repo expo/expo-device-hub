@@ -48,6 +48,15 @@ export function hingePoseOrientation(pose: HingePose): HingePhysicalOrientation 
   return pose === "laptop" ? "landscape-left" : pose === "tent" ? "facedown" : "portrait";
 }
 
+/** Name the preset that matches native state, so a new session shows the same pose. */
+export function hingePoseForState(state: { hingeAngle?: number; physicalOrientation?: HingePhysicalOrientation; tableMode?: boolean }): HingePose | null {
+  if (state.hingeAngle === 0) return "closed";
+  if (state.hingeAngle === 180) return "open";
+  return HINGE_POSES.find((pose) => pose.angle === state.hingeAngle &&
+    hingePoseOrientation(pose.id) === state.physicalOrientation &&
+    (pose.id === "tent") === (state.tableMode === true))?.id ?? null;
+}
+
 /** Device Hub gates Table Mode by hinge state and physical (not app) orientation. */
 export function isTableModeAvailable(angle: number | undefined, orientation: HingePhysicalOrientation | undefined): boolean {
   if (angle === undefined || orientation === undefined) return false;
