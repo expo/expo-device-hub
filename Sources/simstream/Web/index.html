@@ -42,6 +42,7 @@
     background: #17171b; color: #cfd2d6; font: inherit; cursor: pointer; appearance: none; -webkit-appearance: none;
   }
   button.on { border-color: #4a4a55; color: #fff; }
+  #hevc.on { border-color: #2f7a4f; background: #14261c; color: #5fd38d; }
   #hud { white-space: pre; background: #131316; border: 1px solid #222228; border-radius: 8px; padding: 10px 12px; }
   #hud[hidden] { display: none; }
   .hint { color: #6b7079; }
@@ -178,6 +179,7 @@ function configure(c) {
 
   teardownDecoder();
   currentConfig = c;
+  renderHevc();
   // Present at the full display size even when the server sends a reduced resolution (a slow link):
   // the frame is scaled on draw, so the layout never jumps.
   canvas.width = c.displayWidth ?? c.width;
@@ -425,10 +427,21 @@ transitionsSelect.value = settings.transitions;
 function sendSettings() {
   send({ t: 'settings', transitions: settings.transitions, hevc: settings.hevc });
 }
-function renderHevc(supported) {
+// The button and status line show the codec actually streaming (from the stream's config), not
+// just the requested setting, so a request the server couldn't honor is visible too.
+let hevcAvailable = false;
+function streamingHevc() {
+  return !!currentConfig && currentConfig.codec.startsWith('hvc1');
+}
+function renderHevc(supported = hevcAvailable) {
+  hevcAvailable = supported;
+  const on = streamingHevc();
   hevcButton.disabled = !supported;
-  hevcButton.textContent = supported ? 'HEVC' : 'HEVC n/a';
-  hevcButton.classList.toggle('on', supported && settings.hevc);
+  hevcButton.textContent = !supported ? 'HEVC n/a' : on ? 'HEVC: on' : settings.hevc ? 'HEVC: switching…' : 'HEVC: off';
+  hevcButton.classList.toggle('on', on);
+  if (statusEl.classList.contains('live')) {
+    statusEl.textContent = currentConfig ? `live · ${on ? 'HEVC' : 'H.264'}` : 'live';
+  }
 }
 hevcSupported.then(renderHevc);
 transitionsSelect.addEventListener('change', () => {
