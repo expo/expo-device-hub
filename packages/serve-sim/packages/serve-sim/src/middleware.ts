@@ -1400,27 +1400,24 @@ interface MemoryReport {
   estimatedAdditional: number;
 }
 
-function readSystemMemory(): { totalBytes: number; availableBytes: number } {
+// Async on purpose: this route is polled every few seconds, and a synchronous `ps` blocks the
+// event loop for ~75ms, which stalls every stream proxied through this process.
+function run(file: string, args: string[], timeout: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(file, args, { encoding: "utf-8", timeout, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) =>
+      error ? reject(error) : resolve(stdout));
+  });
+}
+
+async function readSystemMemory(): Promise<{ totalBytes: number; availableBytes: number }> {
   try {
-    const totalBytes = Number(
-      execSync("sysctl -n hw.memsize", {
-        encoding: "utf-8",
-        stdio: ["ignore", "pipe", "ignore"],
-        timeout: 1500,
-      }).trim(),
-    );
-    const pageSize = Number(
-      execSync("sysctl -n hw.pagesize", {
-        encoding: "utf-8",
-        stdio: ["ignore", "pipe", "ignore"],
-        timeout: 1500,
-      }).trim(),
-    );
-    const vmStat = execSync("vm_stat", {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 1500,
-    });
+    const [memsize, pagesize, vmStat] = await Promise.all([
+      run("sysctl", ["-n", "hw.memsize"], 1500),
+      run("sysctl", ["-n", "hw.pagesize"], 1500),
+      run("vm_stat", [], 1500),
+    ]);
+    const totalBytes = Number(memsize.trim());
+    const pageSize = Number(pagesize.trim());
     const pages = (re: RegExp) => {
       const m = vmStat.match(re);
       return m ? Number(m[1]) : 0;
@@ -1443,14 +1440,9 @@ function readSystemMemory(): { totalBytes: number; availableBytes: number } {
 // Sum RSS across every process whose argv path includes a CoreSimulator
 // device directory. Groups by UDID so we get a real per-sim footprint that
 // covers launchd_sim plus all child processes the runtime spawns.
-function readSimulatorMemoryUsage(): { perUdid: Record<string, number>; totalBytes: number } {
+async function readSimulatorMemoryUsage(): Promise<{ perUdid: Record<string, number>; totalBytes: number }> {
   try {
-    const output = execSync("ps -axo rss=,args=", {
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 3000,
-      maxBuffer: 8 * 1024 * 1024,
-    });
+    const output = await run("ps", ["-axo", "rss=,args="], 3000);
     const perUdid: Record<string, number> = {};
     let totalBytes = 0;
     const re = /\/Devices\/([0-9A-F-]{36})\//i;
@@ -1472,9 +1464,8 @@ function readSimulatorMemoryUsage(): { perUdid: Record<string, number>; totalByt
   }
 }
 
-function buildMemoryReport(): MemoryReport {
-  const { totalBytes, availableBytes } = readSystemMemory();
-  const usage = readSimulatorMemoryUsage();
+async function buildMemoryReport(): Promise<MemoryReport> {
+  const [{ totalBytes, availableBytes }, usage] = await Promise.all([readSystemMemory(), readSimulatorMemoryUsage()]);
   const runningSimulators = Object.keys(usage.perUdid).length;
   const measuredAvg = runningSimulators > 0
     ? usage.totalBytes / runningSimulators
@@ -1790,11 +1781,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
 
     // Memory capacity estimate: how much room is left to boot more sims.
     if (url === base + "/grid/api/memory") {
+      const report = await buildMemoryReport();
       res.writeHead(200, {
         "Content-Type": "application/json",
         "Cache-Control": "no-store",
       });
-      res.end(JSON.stringify(buildMemoryReport()));
+      res.end(JSON.stringify(report));
       return;
     }
 
