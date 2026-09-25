@@ -143,4 +143,3 @@ describe("disabled capabilities", () => {
     expect(capabilityIsDisabled("DEVICE-PICKED-IN-GRID", "clipboard")).toBe(false);
   });
 });
-
