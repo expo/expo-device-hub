@@ -1,6 +1,6 @@
 import { openSseStream } from "./sse-stream";
 import { execFile, execSync } from "child_process";
-import { readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
+import { createReadStream, readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -1656,9 +1656,9 @@ export interface SimMiddlewareOptions {
   /** Pin this preview server to a specific simulator UDID. */
   device?: string;
   /**
-   * Per-session bearer token gating the `/exec` shell-exec route.
+   * Per-session bearer token gating `/exec` and network-capture HTTP routes.
    * Auto-generated if omitted. The token is injected into the preview HTML
-   * so the in-page UI can call `/exec` same-origin; LAN attackers and
+   * so the in-page UI can call those routes same-origin; LAN attackers and
    * cross-origin pages cannot read it.
    */
   execToken?: string;
@@ -1909,6 +1909,83 @@ export function handleCaptureBodyRequest(
   res.end(JSON.stringify(body));
 }
 
+function waitForResponseDrain(res: SimRes): Promise<void> {
+  if (res.destroyed) return Promise.reject(new Error("Capture download closed before it finished."));
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      res.off("drain", drained);
+      res.off("error", failed);
+      res.off("close", closed);
+    };
+    const drained = () => {
+      cleanup();
+      resolve();
+    };
+    const failed = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const closed = () => failed(new Error("Capture download closed before it finished."));
+    res.once("drain", drained);
+    res.once("error", failed);
+    res.once("close", closed);
+  });
+}
+
+/** Session capture.har from disk (flushed). Same file the CLI follow writer uses. */
+export async function handleCaptureHarRequest(
+  req: SimReq,
+  res: SimRes,
+  state: ServeSimState | null,
+  runtime: CaptureRuntime = captureRuntime,
+): Promise<void> {
+  if (!state) {
+    res.writeHead(404, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: "No capture session" }));
+    return;
+  }
+  let harPath: string | null;
+  try {
+    harPath = await runtime.flushHarPathFor(state.device);
+  } catch (error) {
+    res.writeHead(500, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return;
+  }
+  if (!harPath || !existsSync(harPath)) {
+    res.writeHead(404, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: "No capture session" }));
+    return;
+  }
+  const filename = `serve-sim-${state.device.slice(0, 8)}.har`;
+  const headers = {
+    "Content-Type": "application/json",
+    "Content-Disposition": `attachment; filename="${filename}"`,
+    ...NO_STORE,
+  };
+  if (req.method === "HEAD") {
+    res.writeHead(200, headers);
+    res.end();
+    return;
+  }
+  try {
+    res.writeHead(200, headers);
+    for await (const chunk of createReadStream(harPath)) {
+      if (res.destroyed) return;
+      if (!res.write(chunk)) await waitForResponseDrain(res);
+    }
+    res.end();
+  } catch (error) {
+    if (!res.destroyed) {
+      res.destroy(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+}
+
 export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const streamSettings = options?.streamSettings ?? httpStreamSettingsFromLegacyCodec(options?.codec);
   const base = (options?.basePath ?? "/.sim").replace(/\/+$/, "");
@@ -1917,8 +1994,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const proxyHelpers = options?.proxyHelpers ?? false;
   const getInspectWebKitBridge = options?.inspectWebKitBridge ?? ensureInspectWebKitBridge;
   // Per-process random token. Anyone who can read the preview HTML same-origin
-  // can call /exec; cross-origin pages and LAN clients cannot, because they
-  // can't read this value (it's only injected into the preview page's config).
+  // can call /exec and network-capture; cross-origin pages and LAN clients cannot,
+  // because they can't read this value (it's only injected into the preview page).
   const execToken = options?.execToken ?? randomBytes(32).toString("base64url");
   const requirePreviewToken = options?.requirePreviewToken ?? false;
   const corsOrigins = [...(options?.corsOrigins ?? [])];
@@ -2369,7 +2446,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           port,
           base,
           streamSettings,
-          requirePreviewToken ? execToken : undefined,
+          execToken,
           () => enableNetworkCaptureForStartedDevice(udid, networkCapture),
         ).then((error) => {
           if (res.writableEnded) return;
@@ -2854,6 +2931,14 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       const states = await readServeSimStates();
       const state = selectServeSimState(states, selectedDevice);
       handleNetworkCaptureRequest(req, res, state, captureRuntime);
+      return;
+    }
+
+    // Not under "/network-capture/", so it can never be read as a request id.
+    if (url === base + "/network-capture.har") {
+      const states = await readServeSimStates();
+      const state = selectServeSimState(states, selectedDevice);
+      await handleCaptureHarRequest(req, res, state, captureRuntime);
       return;
     }
 

@@ -59,6 +59,7 @@ export function inProcessServeSimState(
   base = "/",
   host = "127.0.0.1",
   streamSettings?: StreamSettings,
+  execToken?: string,
 ): ServeSimDeviceState {
   const h = host === "0.0.0.0" || host === "::" ? "127.0.0.1" : host;
   // Normalize to a leading-slash, no-trailing-slash prefix so a base without a
@@ -73,7 +74,16 @@ export function inProcessServeSimState(
     streamUrl: `http://${h}:${port}${prefix}/helper/${udid}/stream.mjpeg`,
     wsUrl: `ws://${h}:${port}${prefix}/helper/${udid}/ws`,
     ...(streamSettings ? { streamSettings } : {}),
+    ...(execToken ? { execToken } : {}),
   };
+}
+
+/** The URL a device's routes live under: the origin, plus the mount prefix of an embedded server. */
+export function serverBaseUrl(state: Pick<ServeSimDeviceState, "url" | "streamUrl" | "device">): string {
+  const stream = new URL(state.streamUrl);
+  const helperPath = `/helper/${state.device}/stream.mjpeg`;
+  if (!stream.pathname.endsWith(helperPath)) return state.url;
+  return `${stream.origin}${stream.pathname.slice(0, -helperPath.length)}`;
 }
 
 /** Persist a device's state so other processes / the grid can enumerate it.

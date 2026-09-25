@@ -2,6 +2,11 @@ import { isDeviceNotBooted } from "../device";
 import { locateProxyDylib, trustCaInSimulator, isDeviceInjected } from "./device";
 import { configureCapability } from "../launch-manager";
 import type { CapabilityDefinition, PreparedCapability } from "../capabilities";
+import { CaptureDiskAccumulator, captureArtifactPaths, sweepAbandonedCaptureDirs } from "./disk";
+import {
+  DEFAULT_CAPTURE_FIELDS,
+  type CaptureField,
+} from "./fields";
 import {
   CAPTURE_SCHEMA_VERSION,
   CaptureStore,
@@ -9,7 +14,7 @@ import {
   type CaptureMeta,
 } from "./store";
 import { startMitmProxy, type CaptureProxy, type MitmProxyDeps } from "./mitm-engine";
-import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
+import { serveSimVersion } from "./version";
 
 export class CaptureEnableError extends Error {
   readonly meta: CaptureMeta;
@@ -29,6 +34,8 @@ interface CaptureSession {
   meta: CaptureMeta;
   proxy: CaptureProxy | null;
   cleanup?: Promise<void>;
+  disk: CaptureDiskAccumulator | null;
+  stopDisk: (() => Promise<void>) | null;
   checking?: Promise<CaptureMeta>;
   checkedAt?: number;
   injectMisses?: number;
@@ -37,6 +44,7 @@ interface CaptureSession {
 interface EnableRequest {
   cancelled: boolean;
   failed: boolean;
+  fields: readonly CaptureField[];
   promise: Promise<CaptureMeta>;
 }
 
@@ -70,9 +78,14 @@ export interface CaptureRuntimeOptions {
   dylib?: () => string | null;
   isInjected?: (udid: string, portFile: string, proxyAddress: string) => Promise<boolean>;
   checkIntervalMs?: number;
+  creatorVersion?: string;
+  /** How often to stream-rebuild capture.har from the NDJSON entry log (tests). */
+  flushIntervalMs?: number;
+  writeDiskArtifacts?: boolean;
+  captureDirFor?: (udid: string) => string;
 }
 
-function notEnabledMeta(udid: string): CaptureMeta {
+function notEnabledMeta(udid: string, fields: readonly CaptureField[]): CaptureMeta {
   return {
     schemaVersion: CAPTURE_SCHEMA_VERSION,
     udid,
@@ -80,21 +93,22 @@ function notEnabledMeta(udid: string): CaptureMeta {
     attachment: "not-enabled",
     attachError: null,
     droppedOversizedBodies: 0,
+    fields: [...fields],
   };
 }
 
 export type CaptureRuntime = ReturnType<typeof createCaptureRuntime>;
 
-function cancelledMeta(udid: string): CaptureMeta {
+function cancelledMeta(udid: string, fields: readonly CaptureField[]): CaptureMeta {
   return {
-    ...notEnabledMeta(udid),
+    ...notEnabledMeta(udid, fields),
     attachment: "failed",
     attachError: "Capture was turned off while it was waiting to start. Enable it again to retry.",
   };
 }
 
 function assertRequested(udid: string, request: EnableRequest): void {
-  if (request.cancelled) throw new CaptureEnableError(cancelledMeta(udid));
+  if (request.cancelled) throw new CaptureEnableError(cancelledMeta(udid, request.fields));
 }
 
 export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
@@ -107,6 +121,9 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   const isInjected = options.isInjected ?? ((udid: string, portFile: string, proxyAddress: string) =>
     isDeviceInjected(udid, portFile, { expectedPort: Number(new URL(`http://${proxyAddress}`).port) }));
   const checkIntervalMs = options.checkIntervalMs ?? CHECK_INTERVAL_MS;
+  const writeDiskArtifacts = options.writeDiskArtifacts !== false;
+  const creatorVersion = options.creatorVersion ?? "0.0.0";
+
   const byUdid = new Map<string, CaptureSession>();
   const deviceCapture = new Map<string, boolean>();
   const operations = new DeviceOperationQueue();
@@ -126,15 +143,40 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     }
   };
   const metaOf = (udid: string): CaptureMeta =>
-    byUdid.get(udid)?.meta ?? failedStarts.get(udid) ?? notEnabledMeta(udid);
+    byUdid.get(udid)?.meta ?? failedStarts.get(udid) ?? notEnabledMeta(udid, policy);
+
+  const attachDisk = (udid: string, store: CaptureStore): Pick<CaptureSession, "disk" | "stopDisk"> => {
+    if (!writeDiskArtifacts) return { disk: null, stopDisk: null };
+    // Sweep abandoned recordings while preserving live owners.
+    if (!options.captureDirFor) sweepAbandonedCaptureDirs([...byUdid.keys(), udid]);
+    const paths = options.captureDirFor
+      ? {
+          dir: options.captureDirFor(udid),
+          networkCapturePath: undefined,
+          harPath: undefined,
+        }
+      : captureArtifactPaths(udid);
+    const disk = new CaptureDiskAccumulator({
+      dir: paths.dir,
+      networkCapturePath: paths.networkCapturePath,
+      harPath: paths.harPath,
+      creatorVersion,
+      flushIntervalMs: options.flushIntervalMs,
+    });
+    return { disk, stopDisk: disk.attach(store) };
+  };
 
   const closeSession = async (udid: string, session: CaptureSession): Promise<void> => {
     session.cleanup ??= (async () => {
       await session.proxy?.close();
       session.proxy = null;
       session.meta.proxyAddress = null;
+      await session.stopDisk?.();
+      session.stopDisk = null;
+      session.disk = null;
     })().catch((error: unknown) => {
       session.cleanup = undefined;
+      console.warn(`Network capture: cleanup for ${udid} failed:`, error);
       throw error;
     });
     await session.cleanup;
@@ -151,12 +193,13 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       return { dylib: requireDylib(), env: { SIMNET_PROXY_PORT_FILE: existing.proxy.portFile } };
     }
     const dylib = requireDylib();
+    const sessionFields = [...(request?.fields ?? policy)];
     const store = new CaptureStore();
     const meta: CaptureMeta = {
       schemaVersion: CAPTURE_SCHEMA_VERSION, udid, proxyAddress: null,
-      attachment: "starting", attachError: null, droppedOversizedBodies: 0,
+      attachment: "starting", attachError: null, droppedOversizedBodies: 0, fields: sessionFields,
     };
-    const session: CaptureSession = { store, meta, proxy: null };
+    const session: CaptureSession = { store, meta, proxy: null, ...attachDisk(udid, store) };
     store.subscribe((event) => {
       if (byUdid.get(udid) === session) notify(udid, event);
     });
@@ -167,7 +210,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     notify(udid, { type: "meta", meta });
     try {
       const proxy = await startProxy(store, {
-        fields: policy,
+        fields: sessionFields,
         onUnexpectedExit: (reason) => {
           if (byUdid.get(udid) !== session) return;
           meta.attachment = "failed";
@@ -229,7 +272,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       const session = byUdid.get(udid);
       if (session) await closeSession(udid, session);
       failedStarts.delete(udid);
-      if (!byUdid.has(udid)) notify(udid, { type: "meta", meta: notEnabledMeta(udid) });
+      if (!byUdid.has(udid)) notify(udid, { type: "meta", meta: notEnabledMeta(udid, policy) });
       return null;
     },
   };
@@ -252,6 +295,14 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     setDeviceCaptureEnabled(udid: string, enabled: boolean): void {
       deviceCapture.set(udid, enabled);
     },
+    creatorVersion,
+
+    /** Snapshot of the allowlisted capture fields for new sessions. */
+    getFields(): readonly CaptureField[] {
+      return policy;
+    },
+
+    /** Set what every device this server enables is allowed to keep. */
     setFields(next: readonly CaptureField[]): void {
       policy = next;
     },
@@ -264,7 +315,8 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       const request: EnableRequest = {
         cancelled: false,
         failed: false,
-        promise: Promise.resolve(notEnabledMeta(udid)),
+        fields: [...policy],
+        promise: Promise.resolve(notEnabledMeta(udid, policy)),
       };
       const promise = operations.enqueue(udid, async () => {
         assertRequested(udid, request);
@@ -292,7 +344,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
         } catch (error) {
           request.failed = true;
           const session = byUdid.get(udid);
-          const meta = session?.meta ?? cancelledMeta(udid);
+          const meta = session?.meta ?? cancelledMeta(udid, request.fields);
           meta.attachment = "failed";
           meta.attachError = error instanceof Error ? error.message : String(error);
           if (session) {
@@ -350,7 +402,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     /** Re-check injection; publish meta only on change. */
     async refreshForDevice(udid: string): Promise<CaptureMeta> {
       const session = byUdid.get(udid);
-      if (!session) return notEnabledMeta(udid);
+      if (!session) return notEnabledMeta(udid, policy);
       if (session.meta.attachment !== "capturing" || !session.proxy) return session.meta;
 
       const now = Date.now();
@@ -385,9 +437,8 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
 
           session.meta.attachment = "failed";
           session.meta.attachError =
-            "This device stopped capturing. It was restarted, or shut down, since capture was applied — " +
-            "capture is set up when a device boots, so it does not survive a restart. Reboot with capture " +
-            "to start again.";
+            "This device stopped capturing. It may have restarted or shut down since capture was " +
+            "enabled. Enable capture again after it boots.";
           session.store.publishMeta(session.meta);
           return session.meta;
         } finally {
@@ -400,6 +451,26 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
 
     storeFor(udid: string): CaptureStore | null {
       return byUdid.get(udid)?.store ?? null;
+    },
+
+    artifactPathsFor(
+      udid: string,
+    ): { networkCapturePath: string; harPath: string; entriesPath: string } | null {
+      const disk = byUdid.get(udid)?.disk;
+      if (!disk) return null;
+      return {
+        networkCapturePath: disk.networkCapturePath,
+        harPath: disk.harPath,
+        entriesPath: disk.entriesPath,
+      };
+    },
+
+    /** Flush NDJSON → capture.har and return its path, or null if not capturing to disk. */
+    async flushHarPathFor(udid: string): Promise<string | null> {
+      const disk = byUdid.get(udid)?.disk;
+      if (!disk) return null;
+      await disk.flush();
+      return disk.harPath;
     },
 
     clearForDevice(udid: string): boolean {
@@ -417,4 +488,6 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   };
 }
 
-export const captureRuntime = createCaptureRuntime();
+export const captureRuntime = createCaptureRuntime({
+  creatorVersion: serveSimVersion(),
+});

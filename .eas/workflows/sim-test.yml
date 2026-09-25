@@ -30,6 +30,9 @@ jobs:
       # Installs the monorepo root lockfile (bun.lock); serve-sim resolves through it.
       - uses: eas/install_node_modules
 
+      - name: Install mitmproxy
+        run: brew install --cask mitmproxy
+
       # The permissions e2e test drives the built CLI (dist/serve-sim.js), so
       # build it before running the test suite.
       - name: Build serve-sim

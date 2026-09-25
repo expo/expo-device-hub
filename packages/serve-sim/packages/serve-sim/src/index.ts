@@ -16,6 +16,7 @@ import {
   previewStartupPayload,
   writeServeSimState,
   clearServeSimState,
+  serverBaseUrl,
   type ServeSimDeviceState,
   type StreamSettings,
   type WebRtcIceServer,
@@ -66,6 +67,7 @@ import { parseIceUrlList, streamHelperArgs, streamSettingsEqual } from "./stream
 import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
 import { parseHingeAngle } from "./hinge-angle";
 import { sendHingeAngleToWs } from "./hinge-command";
+import { captureHarPaths, followCaptureHar } from "./capture";
 
 // Budget for capture teardown and capability disarming together.
 const SHUTDOWN_TIMEOUT_MS = 20_000;
@@ -761,7 +763,7 @@ async function eventLog(
     process.exit(1);
   }
 
-  const url = new URL("/api/event-log", state.url);
+  const url = new URL(`${serverBaseUrl(state)}/api/event-log`);
   if (udid) url.searchParams.set("device", state.device);
   const limit = parseEventLogLimit(opts.limit);
   if (limit != null) url.searchParams.set("limit", String(limit));
@@ -1734,6 +1736,12 @@ async function startNetworkCapture(
             "apps already running may keep existing sessions); " +
             "HTTPS is decrypted, so certificate-pinned apps will refuse to connect.",
         );
+        const artifacts = capture.captureRuntime.artifactPathsFor(udid);
+        if (artifacts) {
+          console.log(
+            `Capture artifacts (live session; removed on exit): ${artifacts.networkCapturePath}, ${artifacts.harPath}`,
+          );
+        }
       },
       onFailed: (reason) => console.error(`Network capture could not start for ${udid}. ${reason}`),
     });
@@ -1843,7 +1851,8 @@ async function serve(
   // CLI input subcommands can reach the same-origin /helper ws.
   for (const udid of targetDevices) {
     const state = inProcessServeSimState(udid, boundPort, "/", host, options.stream);
-    writeState(requirePreviewToken ? { ...state, token: previewToken } : state);
+    // Capture CLI commands need this token even when the preview is public.
+    writeState({ ...state, token: previewToken });
   }
   const clearAll = () => {
     for (const udid of targetDevices) {
@@ -2509,5 +2518,76 @@ program
   .action((args: string[]) => uiSettings(args));
 
 registerCapability(captureRuntime.capability);
+
+{
+  const capture = program.command("capture").description("Network capture helpers");
+  capture
+    .command("har")
+    .description("Follow the capture stream; write a HAR and its event log")
+    .requiredOption("-o, --out <path>", "HAR file to keep rewriting")
+    .option("--events <path>", "NDJSON event log (default: <name>.network-capture.json beside the HAR)")
+    .option(...deviceOpt)
+    .option(
+      "--flush-ms <ms>",
+      "How often to rewrite the HAR, in milliseconds (250-3600000)",
+      (value) => parseNumberInRange(value, "--flush-ms", 250, 3_600_000, true),
+      5000,
+    )
+    .action(async (opts: {
+      out: string;
+      events?: string;
+      device?: string;
+      flushMs: number;
+    }) => {
+      const udid = opts.device ? resolveDevice(opts.device) : undefined;
+      const state = readState(udid);
+      if (!state) {
+        console.error("No serve-sim server running. Run `serve-sim --network-capture` first.");
+        process.exit(1);
+      }
+      const outPath = resolve(opts.out);
+      const eventsPath = opts.events ? resolve(opts.events) : undefined;
+      const ac = new AbortController();
+      const stop = () => ac.abort();
+      process.on("SIGINT", stop);
+      process.on("SIGTERM", stop);
+      console.error(
+        `Recording capture for ${state.device} → ${outPath} (+ ${eventsPath ?? captureHarPaths(outPath).eventsPath}) (Ctrl-C to stop)`,
+      );
+      if (!state.token) {
+        console.error(
+          "This serve-sim session recorded no access token, so the capture routes cannot be reached. "  +
+            "Restart serve-sim to mint one.",
+        );
+        process.exit(1);
+      }
+      try {
+        const result = await followCaptureHar({
+          baseUrl: serverBaseUrl(state),
+          device: state.device,
+          outPath,
+          eventsPath,
+          flushIntervalMs: opts.flushMs,
+          signal: ac.signal,
+          version: resolveVersion(),
+          token: state.token,
+        });
+        console.error(
+          `The capture stream closed before you stopped the recording, so later requests are not in the HAR. ` +
+            `serve-sim stopped or the connection dropped. To keep recording, run \`serve-sim capture har\` ` +
+            `again with a new --out path. ` +
+            `Wrote ${result.size} entries to ${outPath}.`,
+        );
+        process.exit(1);
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") {
+          console.error(`Stopped. HAR at ${outPath}`);
+          return;
+        }
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+}
 
 await program.parseAsync(process.argv);

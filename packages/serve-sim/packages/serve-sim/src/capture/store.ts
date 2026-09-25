@@ -42,6 +42,7 @@ export interface CaptureMeta {
   attachment: CaptureAttachment;
   attachError: string | null;
   droppedOversizedBodies: number;
+  fields: string[];
 }
 
 type Listener = (event: CaptureEvent) => void;

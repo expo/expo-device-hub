@@ -1,12 +1,17 @@
 import { capabilityHarness } from "./capability-harness";
 import { describe, expect, test } from "bun:test";
+import { Writable } from "node:stream";
 import { EventEmitter } from "events";
 import type { IncomingMessage, ServerResponse } from "http";
 
 import { createCaptureRuntime } from "../runtime";
 import { type CaptureProxy } from "../mitm-engine";
-import { handleCaptureBodyRequest, handleNetworkCaptureRequest } from "../../middleware";
 import { type CaptureMeta } from "../store";
+import {
+  handleCaptureBodyRequest,
+  handleCaptureHarRequest,
+  handleNetworkCaptureRequest,
+} from "../../middleware";
 import { inProcessServeSimState } from "../../state";
 
 /**
@@ -19,28 +24,22 @@ function createFakeReq(): { req: IncomingMessage; close: () => void } {
   return { req: req as unknown as IncomingMessage, close: () => req.emit("close") };
 }
 
+/** A real Writable, because the HAR route pipes a file stream into the response. */
 function createFakeRes(): { res: ServerResponse; writes: string[]; status: () => number } {
   const writes: string[] = [];
   let statusCode = 0;
-  let ended = false;
-  const res = {
+  const res = new Writable({
+    write(chunk: Buffer | string, _encoding, done) {
+      writes.push(chunk.toString());
+      done();
+    },
+  });
+  Object.assign(res, {
     writeHead(status: number) {
       statusCode = status;
       return res;
     },
-    write(chunk: string) {
-      writes.push(chunk);
-      return true;
-    },
-    end(chunk?: string) {
-      if (chunk !== undefined) writes.push(chunk);
-      ended = true;
-      return res;
-    },
-    get writableEnded() {
-      return ended;
-    },
-  };
+  });
   return { res: res as unknown as ServerResponse, writes, status: () => statusCode };
 }
 
@@ -58,6 +57,7 @@ function stubRuntime() {
     trustCa: async () => {},
     dylib: () => "/fake/libSimNetProxy.dylib",
     configure: capabilityHarness(),
+    writeDiskArtifacts: false,
     isInjected: async () => true,
   });
   return { runtime, closed };
@@ -126,7 +126,8 @@ describe("handleNetworkCaptureRequest", () => {
 
     handleNetworkCaptureRequest(req, res, state, runtime);
 
-    const store = runtime.storeFor("UDID-1")!;
+    const store = runtime.storeFor("UDID-1");
+    if (!store) throw new Error("expected capture store");
     const id = store.start("GET", "https://example.com/a");
     store.update(id, { status: 200, durationMs: 5 }, /* settled */ true);
 
@@ -145,7 +146,9 @@ describe("handleNetworkCaptureRequest", () => {
     const state = inProcessServeSimState("UDID-1", 4000);
 
     // Recorded with nobody watching at all — the case boot-time capture exists for.
-    runtime.storeFor("UDID-1")!.start("GET", "https://example.com/startup");
+    const store = runtime.storeFor("UDID-1");
+    if (!store) throw new Error("expected capture store");
+    store.start("GET", "https://example.com/startup");
 
     const viewer = createFakeReq();
     const viewerRes = createFakeRes();
@@ -210,7 +213,8 @@ describe("handleCaptureBodyRequest", () => {
     await runtime.enableForDevice("UDID-1");
     const state = inProcessServeSimState("UDID-1", 4000);
 
-    const store = runtime.storeFor("UDID-1")!;
+    const store = runtime.storeFor("UDID-1");
+    if (!store) throw new Error("expected capture store");
     const id = store.start("POST", "https://example.com/upload");
     store.setBody(id, {
       requestHeaders: { "content-type": "application/json" },
@@ -250,5 +254,68 @@ describe("handleCaptureBodyRequest", () => {
     const unknown = createFakeRes();
     handleCaptureBodyRequest(createFakeReq().req, unknown.res, state, "r404", runtime);
     expect(unknown.status()).toBe(404);
+  });
+});
+
+describe("handleCaptureHarRequest", () => {
+  test("returns the session capture.har from disk", async () => {
+    const { appendFileSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-route-"));
+    const closed: string[] = [];
+    const runtime = createCaptureRuntime({
+      writeDiskArtifacts: true,
+      captureDirFor: () => dir,
+      flushIntervalMs: 60_000,
+      startProxy: async () =>
+        ({
+          address: "127.0.0.1:9999",
+          portFile: "/tmp/fake-confdir/proxy-port",
+          caPem: async () => "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n",
+          close: async () => void closed.push("x"),
+        }) as CaptureProxy,
+      trustCa: async () => {},
+      dylib: () => "/fake/libSimNetProxy.dylib",
+      configure: capabilityHarness(),
+    });
+
+    try {
+      await runtime.enableForDevice("UDID-1");
+      const state = inProcessServeSimState("UDID-1", 4000);
+      const store = runtime.storeFor("UDID-1");
+      if (!store) throw new Error("expected capture store");
+      const id = store.start("GET", "https://example.com/har");
+      store.update(id, { status: 200, durationMs: 4 }, true);
+      const harPath = await runtime.flushHarPathFor("UDID-1");
+      if (!harPath) throw new Error("expected capture HAR");
+      appendFileSync(harPath, " ".repeat(200_000));
+
+      const { req } = createFakeReq();
+      const { res, writes, status } = createFakeRes();
+      await handleCaptureHarRequest(req, res, state, runtime);
+
+      expect(status()).toBe(200);
+      const har = JSON.parse(writes.join(""));
+      expect(har.log.version).toBe("1.2");
+      expect(har.log.entries).toHaveLength(1);
+      expect(har.log.entries[0].request.url).toBe("https://example.com/har");
+      expect(writes.length).toBeGreaterThan(1);
+    } finally {
+      await runtime.disableForDevice("UDID-1");
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("404s when nothing is capturing", async () => {
+    const { runtime } = stubRuntime();
+    const { res, status } = createFakeRes();
+    await handleCaptureHarRequest(
+      createFakeReq().req,
+      res,
+      inProcessServeSimState("UDID-1", 4000),
+      runtime,
+    );
+    expect(status()).toBe(404);
   });
 });
