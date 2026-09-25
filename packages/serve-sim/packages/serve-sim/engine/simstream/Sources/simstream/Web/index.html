@@ -1,0 +1,549 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d0d0f">
+<title>simstream</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; height: 100dvh; overflow: hidden; overscroll-behavior: none; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center; gap: 32px;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    background: #0d0d0f; color: #cfd2d6; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
+  }
+  /* The canvas keeps the device's aspect ratio and shrinks to fit whichever dimension runs out first. */
+  #stage {
+    height: 92dvh; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center;
+    padding: 32px; box-sizing: border-box; touch-action: none;  /* padding: room to start drags on the bezel */
+  }
+  #screen {
+    display: block; width: auto; height: auto; max-width: 100%; max-height: 100%;
+    background: #000; border-radius: 13.5% / 6.2%; touch-action: none; cursor: default;
+    box-shadow: 0 0 0 12px #1c1c20, 0 0 0 13px #2c2c32, 0 30px 80px #000;
+  }
+  #side { display: flex; flex-direction: column; gap: 10px; width: 310px; }
+  header { display: flex; align-items: baseline; gap: 10px; }
+  h1 { font-size: 13px; margin: 0; color: #fff; letter-spacing: .04em; }
+  #status { color: #8a8f98; }
+  #status.live { color: #5fd38d; }
+  .buttons { display: flex; gap: 6px; }
+  button {
+    flex: 1; padding: 7px 0; border: 1px solid #2c2c32; border-radius: 8px; touch-action: manipulation;
+    background: #17171b; color: #cfd2d6; font: inherit; cursor: pointer;
+  }
+  button:active { background: #24242a; }
+  button:disabled { opacity: .4; cursor: default; }
+  select {
+    flex: 3; padding: 7px 8px; border: 1px solid #2c2c32; border-radius: 8px; touch-action: manipulation;
+    background: #17171b; color: #cfd2d6; font: inherit; cursor: pointer; appearance: none; -webkit-appearance: none;
+  }
+  button.on { border-color: #4a4a55; color: #fff; }
+  #hevc.on { border-color: #2f7a4f; background: #14261c; color: #5fd38d; }
+  #hud { white-space: pre; background: #131316; border: 1px solid #222228; border-radius: 8px; padding: 10px 12px; }
+  #hud[hidden] { display: none; }
+  .hint { color: #6b7079; }
+
+  /* Phones: the screen gets all the room it can; controls become a slim bar underneath and
+     stats (when on) float over the top of the stream without intercepting touches. */
+  @media (max-width: 700px), (pointer: coarse) and (orientation: portrait) {
+    body { flex-direction: column; justify-content: flex-start; gap: 8px; }
+    #stage { flex: 1; height: auto; width: 100%; padding: 8px 8px 0; }
+    #screen { box-shadow: 0 0 0 1px #2c2c32; }
+    #side { width: 100%; padding: 0 10px 8px; box-sizing: border-box; gap: 6px; }
+    h1, .hint { display: none; }
+    header { justify-content: center; font-size: 11px; }
+    button { padding: 10px 0; }
+    #hud {
+      position: fixed; z-index: 1; pointer-events: none; font-size: 10px; padding: 6px 8px;
+      top: calc(env(safe-area-inset-top) + 14px); left: calc(env(safe-area-inset-left) + 14px);
+      background: rgba(19, 19, 22, .82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+  }
+</style>
+</head>
+<body>
+  <main id="stage"><canvas id="screen" width="1206" height="2622"></canvas></main>
+  <aside id="side">
+    <header><h1>simstream</h1><span id="status">connecting…</span></header>
+    <div class="buttons">
+      <button data-button="home">Home</button>
+      <button data-button="lock">Lock</button>
+      <button id="keyframe">Keyframe</button>
+      <button id="stats">Stats</button>
+    </div>
+    <div class="buttons">
+      <select id="transitions" title="How heavy full-screen motion (swiping home, the app switcher) is handled on a thin link">
+        <option value="soft">Transitions: soft</option>
+        <option value="burst">Transitions: burst</option>
+        <option value="fps30">Transitions: 30 fps</option>
+      </select>
+      <button id="hevc" title="Encode this stream as HEVC instead of H.264">HEVC</button>
+    </div>
+    <div id="hud" hidden></div>
+    <div class="hint">Click/drag to touch. Keyboard is forwarded while the page is focused (⌘-shortcuts stay local).</div>
+  </aside>
+
+<script>
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+const statusEl = document.getElementById('status');
+const hudEl = document.getElementById('hud');
+const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/stream`;
+
+let ws = null;
+let decoder = null;
+let currentConfig = null;
+let waitingForKeyframe = true;
+
+// Clock sync (NTP-style): serverMs ≈ clientMs + clockOffset. The offset comes from the ping with the
+// lowest round trip in a recent window: it is the one least distorted by queueing (a pong stuck
+// behind video skews the midpoint), which matters because every one-way number depends on it.
+let clockOffset = 0, rtt = 0;
+const pongs = [];   // { rtt, offset, at }
+let serverStats = {};
+
+const pending = new Map();      // frame seq -> { receivedAt, server timestamps, input }
+const inputSentAt = new Map();  // input seq -> performance.now() when sent
+let inputSeq = 0;
+const debug = (window.simstreamDebug = { received: 0, drawn: 0, lastReceivedSeq: 0, lastDrawnSeq: 0 });
+let lastTouchLatency = null;   // most recent input → first changed frame drawn
+
+// Per-stage latency samples for the current one-second window (ms).
+const STAGES = ['queue', 'encode', 'send', 'network', 'decode', 'draw', 'present', 'total'];
+const INPUT_STAGES = ['up', 'ios', 'touch'];
+function resetWindow() {
+  const w = { frames: 0, bytes: 0, skipped: 0, intervals: [], start: performance.now() };
+  for (const k of [...STAGES, ...INPUT_STAGES]) w[k] = [];
+  return w;
+}
+let stats = resetWindow();
+let lastDrawnAt = 0;
+
+// ---------- transport ----------
+
+function connect() {
+  ws = new WebSocket(wsUrl);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = async () => {
+    setStatus('live', true);
+    ping();
+    if (document.hidden) send({ t: 'pause' });
+    send({ t: 'hello', codecs: (await hevcSupported) ? ['hevc', 'h264'] : ['h264'] });
+    sendSettings();
+  };
+  ws.onclose = () => { setStatus('disconnected — retrying…', false); teardownDecoder(); setTimeout(connect, 1000); };
+  ws.onmessage = (e) => typeof e.data === 'string' ? onControl(JSON.parse(e.data)) : onFrame(e.data);
+}
+
+// HEVC gives better quality at the same bitrate; use it where the browser can hardware-decode it.
+const hevcSupported = ('VideoDecoder' in window)
+  ? VideoDecoder.isConfigSupported({ codec: 'hvc1.1.6.L153.B0', codedWidth: 1206, codedHeight: 2622, hardwareAcceleration: 'prefer-hardware' })
+      .then((r) => !!r.supported).catch(() => false)
+  : Promise.resolve(false);
+
+function send(message) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
+}
+
+function ping() { send({ t: 'ping', ts: performance.now() }); }
+setInterval(ping, 250);
+
+function onControl(m) {
+  switch (m.t) {
+    case 'config': configure(m); break;
+    case 'pong': {
+      const now = performance.now();
+      pongs.push({ rtt: now - m.ts, offset: m.server - (m.ts + now) / 2, at: now });
+      while (pongs.length && now - pongs[0].at > 10000) pongs.shift();
+      const best = pongs.reduce((a, b) => (b.rtt < a.rtt ? b : a));
+      clockOffset = best.offset;
+      rtt = best.rtt;
+      break;
+    }
+    case 'stats': serverStats = m; break;
+  }
+}
+
+// ---------- decode ----------
+
+function configure(c) {
+  const same = currentConfig && decoder && decoder.state === 'configured' &&
+    currentConfig.codec === c.codec && currentConfig.description === c.description &&
+    currentConfig.width === c.width && currentConfig.height === c.height &&
+    currentConfig.displayWidth === c.displayWidth;
+  if (same) return;
+
+  teardownDecoder();
+  currentConfig = c;
+  renderHevc();
+  // Present at the full display size even when the server sends a reduced resolution (a slow link):
+  // the frame is scaled on draw, so the layout never jumps.
+  canvas.width = c.displayWidth ?? c.width;
+  canvas.height = c.displayHeight ?? c.height;
+  decoder = new VideoDecoder({
+    output: onDecoded,
+    error: (e) => { console.warn('decoder error', e); teardownDecoder(); send({ t: 'keyframe' }); },
+  });
+  decoder.configure({
+    codec: c.codec,
+    codedWidth: c.width,
+    codedHeight: c.height,
+    description: Uint8Array.from(atob(c.description), (ch) => ch.charCodeAt(0)),
+    optimizeForLatency: true,
+    hardwareAcceleration: 'prefer-hardware',
+  });
+  waitingForKeyframe = true;
+}
+
+function teardownDecoder() {
+  if (decoder && decoder.state !== 'closed') decoder.close();
+  decoder = null;
+  currentConfig = null;
+  pending.clear();
+  if (latest) { latest.frame.close(); latest = null; }
+}
+
+function onFrame(buffer) {
+  const view = new DataView(buffer);
+  const isKey = (view.getUint8(0) & 1) === 1;
+  const seq = view.getUint32(1, true);
+  const t = {
+    capture: view.getFloat64(5, true), encodeStart: view.getFloat64(13, true),
+    encoded: view.getFloat64(21, true), sent: view.getFloat64(29, true),
+    inputSeq: view.getUint32(37, true), inputReceived: view.getFloat64(41, true),
+  };
+  stats.bytes += buffer.byteLength;
+  debug.received++;
+  debug.lastReceivedSeq = seq;
+
+  if (!decoder || decoder.state !== 'configured') return;
+  if (waitingForKeyframe && !isKey) return;
+  waitingForKeyframe = false;
+
+  pending.set(seq, { receivedAt: performance.now(), t });
+  if (pending.size > 120) pending.delete(pending.keys().next().value);
+  decoder.decode(new EncodedVideoChunk({ type: isKey ? 'key' : 'delta', timestamp: seq, data: new Uint8Array(buffer, 49) }));
+}
+
+// Presentation: draw a decoded frame immediately (lowest latency), but at most one per display
+// refresh. If another frame decodes within the same refresh, e.g. queued frames arriving in a burst
+// after a network stall, only the newest is kept and drawn at the next refresh: stale frames are
+// skipped so the picture jumps to now instead of fast-forwarding, and it never runs faster than 60.
+let latest = null;              // newest decoded frame waiting for the next refresh
+let drawnThisRefresh = false;
+let refreshScheduled = false;
+
+function onDecoded(frame) {
+  const decodedAt = performance.now();
+  const seq = frame.timestamp;
+  send({ t: 'ack', seq });   // acks track decoding (the network), independent of presentation
+  debug.decodeQueueSize = decoder?.decodeQueueSize;
+  if (!drawnThisRefresh) {
+    present(frame, seq, decodedAt);
+  } else {
+    if (latest) {
+      latest.frame.close();
+      pending.delete(latest.seq);
+      stats.skipped++;
+    }
+    latest = { frame, seq, decodedAt };
+  }
+  scheduleRefresh();
+}
+
+function scheduleRefresh() {
+  if (refreshScheduled) return;
+  refreshScheduled = true;
+  requestAnimationFrame(() => {
+    refreshScheduled = false;
+    drawnThisRefresh = false;
+    if (latest) {
+      const { frame, seq, decodedAt } = latest;
+      latest = null;
+      present(frame, seq, decodedAt);
+      scheduleRefresh();
+    }
+  });
+}
+
+function present(frame, seq, decodedAt) {
+  drawnThisRefresh = true;
+  ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+  const drawnAt = performance.now();
+  frame.close();
+  debug.drawn++;
+  debug.lastDrawnSeq = seq;
+
+  // Gaps over 100 ms are idle time, not motion; they don't count toward frame pacing.
+  if (lastDrawnAt && drawnAt - lastDrawnAt < 100) stats.intervals.push(drawnAt - lastDrawnAt);
+  lastDrawnAt = drawnAt;
+  const p = pending.get(seq);
+  pending.delete(seq);
+  stats.frames++;
+  if (!p) return;
+
+  // Server timestamps → client clock.
+  const local = (serverMs) => serverMs - clockOffset;
+  const s = stats, t = p.t;
+  s.queue.push(t.encodeStart - t.capture);
+  s.encode.push(t.encoded - t.encodeStart);
+  s.send.push(t.sent - t.encoded);
+  s.network.push(Math.max(0, p.receivedAt - local(t.sent)));
+  s.decode.push(decodedAt - p.receivedAt);
+  s.draw.push(drawnAt - decodedAt);
+  s.total.push(drawnAt - local(t.capture));
+  // The drawn canvas reaches the screen with the next composited frame; the next animation frame
+  // callback approximates when that is.
+  const window_ = s;
+  requestAnimationFrame((ts) => window_.present.push(Math.max(0, ts - drawnAt)));
+
+  if (t.inputSeq) {
+    // Measure from the oldest input this frame answers (e.g. the touch-down, not the touch-up).
+    let first = null;
+    for (const [k, sentAt] of inputSentAt) {
+      if (k > t.inputSeq) break;
+      if (first === null) first = sentAt;
+      inputSentAt.delete(k);
+    }
+    if (first !== null) {
+      lastTouchLatency = drawnAt - first;
+      s.touch.push(lastTouchLatency);
+      if (t.inputReceived) {
+        s.up.push(Math.max(0, local(t.inputReceived) - first));      // client → server
+        s.ios.push(t.capture - t.inputReceived);                       // injected → changed frame captured
+      }
+    }
+  }
+}
+
+// ---------- input ----------
+
+// Edge swipes (home / app switcher from the bottom, back from the left, Notification and Control
+// Center from the top) only work when every event of the gesture carries the edge it started at,
+// as Simulator.app sends them. Values are SimulatorKit's IndigoHIDEdge.
+const EDGE = { none: 0, top: 1, left: 2, bottom: 3, right: 4 };
+// A gesture starting within this much of an edge (fraction of the screen), or out on the bezel
+// (up to BEZEL_PX past it), is an edge gesture.
+const EDGE_ZONE = { x: 0.04, y: 0.03 };
+const BEZEL_PX = 32;
+
+const stage = document.getElementById('stage');
+let gesture = null;   // { pointerId, edge } while a finger/mouse is down
+
+function position(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, r };
+}
+
+function edgeAt({ x, y }) {
+  if (y >= 1 - EDGE_ZONE.y) return EDGE.bottom;
+  if (x <= EDGE_ZONE.x) return EDGE.left;
+  if (x >= 1 - EDGE_ZONE.x) return EDGE.right;
+  if (y <= EDGE_ZONE.y) return EDGE.top;
+  return EDGE.none;
+}
+
+function touch(phase, e) {
+  const clamp = (v) => Math.min(1, Math.max(0, v));
+  let { x, y } = position(e);
+  if (phase === 'down') {
+    // Start edge gestures right on the edge, as a finger sliding in from the bezel would.
+    if (gesture.edge === EDGE.bottom) y = 0.999;
+    if (gesture.edge === EDGE.top) y = 0.001;
+    if (gesture.edge === EDGE.left) x = 0.001;
+    if (gesture.edge === EDGE.right) x = 0.999;
+  }
+  const seq = ++inputSeq;
+  inputSentAt.set(seq, performance.now());
+  if (inputSentAt.size > 500) inputSentAt.delete(inputSentAt.keys().next().value);
+  send({ t: 'touch', p: phase, x: clamp(x), y: clamp(y), seq, edge: gesture.edge });
+}
+
+stage.addEventListener('pointerdown', (e) => {
+  if (gesture) return;
+  const p = position(e);
+  const bezelX = BEZEL_PX / p.r.width, bezelY = BEZEL_PX / p.r.height;
+  const onScreen = p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
+  const onBezel = p.x >= -bezelX && p.x <= 1 + bezelX && p.y >= -bezelY && p.y <= 1 + bezelY;
+  if (!onBezel) return;
+  e.preventDefault();
+  stage.setPointerCapture(e.pointerId);
+  gesture = { pointerId: e.pointerId, edge: onScreen ? edgeAt(p) : edgeAt({ x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) }) };
+  touch('down', e);
+});
+stage.addEventListener('pointermove', (e) => {
+  if (gesture?.pointerId === e.pointerId) touch('move', e);
+});
+const release = (e) => {
+  if (gesture?.pointerId !== e.pointerId) return;
+  touch('up', e);
+  gesture = null;
+};
+stage.addEventListener('pointerup', release);
+stage.addEventListener('pointercancel', release);
+
+// KeyboardEvent.code -> USB HID usage (page 0x07)
+const HID = {
+  Enter: 0x28, Escape: 0x29, Backspace: 0x2a, Tab: 0x2b, Space: 0x2c, Minus: 0x2d, Equal: 0x2e,
+  BracketLeft: 0x2f, BracketRight: 0x30, Backslash: 0x31, Semicolon: 0x33, Quote: 0x34, Backquote: 0x35,
+  Comma: 0x36, Period: 0x37, Slash: 0x38, CapsLock: 0x39, Delete: 0x4c,
+  ArrowRight: 0x4f, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+  ControlLeft: 0xe0, ShiftLeft: 0xe1, AltLeft: 0xe2, ControlRight: 0xe4, ShiftRight: 0xe5, AltRight: 0xe6,
+};
+for (let i = 0; i < 26; i++) HID['Key' + String.fromCharCode(65 + i)] = 0x04 + i;
+for (let i = 1; i <= 9; i++) HID['Digit' + i] = 0x1d + i;
+HID.Digit0 = 0x27;
+
+function onKey(e, down) {
+  if (e.metaKey) return; // leave ⌘-shortcuts to the browser
+  const usage = HID[e.code];
+  if (usage === undefined) return;
+  e.preventDefault();
+  if (down && e.repeat) return;
+  send({ t: 'key', usage, down });
+}
+window.addEventListener('keydown', (e) => onKey(e, true));
+window.addEventListener('keyup', (e) => onKey(e, false));
+
+for (const el of document.querySelectorAll('[data-button]')) {
+  const b = el.dataset.button;
+  el.addEventListener('pointerdown', () => send({ t: 'button', b, down: true }));
+  el.addEventListener('pointerup', () => send({ t: 'button', b, down: false }));
+}
+document.getElementById('keyframe').addEventListener('click', () => send({ t: 'keyframe' }));
+
+// Stream settings to try, per browser: how transitions are handled, and HEVC.
+const transitionsSelect = document.getElementById('transitions');
+const hevcButton = document.getElementById('hevc');
+const settings = {
+  transitions: localStorage.getItem('simstream.transitions') || 'soft',
+  hevc: localStorage.getItem('simstream.hevc') === 'on',
+};
+transitionsSelect.value = settings.transitions;
+function sendSettings() {
+  send({ t: 'settings', transitions: settings.transitions, hevc: settings.hevc });
+}
+// The button is green while HEVC is actually streaming (from the stream's config), not just
+// requested, so a switch the server couldn't make is visible too.
+let hevcAvailable = false;
+function streamingHevc() {
+  return !!currentConfig && currentConfig.codec.startsWith('hvc1');
+}
+function renderHevc(supported = hevcAvailable) {
+  hevcAvailable = supported;
+  const on = streamingHevc();
+  hevcButton.disabled = !supported;
+  hevcButton.textContent = supported ? 'HEVC' : 'HEVC n/a';
+  hevcButton.classList.toggle('on', on);
+}
+hevcSupported.then(renderHevc);
+transitionsSelect.addEventListener('change', () => {
+  settings.transitions = transitionsSelect.value;
+  localStorage.setItem('simstream.transitions', settings.transitions);
+  sendSettings();
+});
+hevcButton.addEventListener('click', () => {
+  settings.hevc = !settings.hevc;
+  localStorage.setItem('simstream.hevc', settings.hevc ? 'on' : 'off');
+  hevcSupported.then(renderHevc);
+  sendSettings();
+});
+
+// Stats: shown by default on desktop, hidden on phones; the choice is remembered.
+const statsButton = document.getElementById('stats');
+const onPhone = matchMedia('(max-width: 700px), (pointer: coarse) and (orientation: portrait)').matches;
+let showStats = (localStorage.getItem('simstream.stats') ?? (onPhone ? 'off' : 'on')) === 'on';
+function applyStats() {
+  hudEl.hidden = !showStats;
+  statsButton.classList.toggle('on', showStats);
+}
+statsButton.addEventListener('click', () => {
+  showStats = !showStats;
+  localStorage.setItem('simstream.stats', showStats ? 'on' : 'off');
+  applyStats();
+});
+applyStats();
+
+// Hidden tabs get throttled and stop decoding; tell the server instead of looking congested.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    send({ t: 'pause' });
+  } else {
+    waitingForKeyframe = true;
+    send({ t: 'resume' });
+  }
+});
+
+// ---------- HUD ----------
+
+function motionFps(s) {
+  if (s.intervals.length < 5) return '–';
+  return (1000 * s.intervals.length / s.intervals.reduce((a, b) => a + b, 0)).toFixed(0);
+}
+
+// Mean frame interval ± standard deviation: the evenness of presentation, which is what reads as smooth.
+function pacing(s) {
+  const n = s.intervals.length;
+  if (n < 5) return '–';
+  const mean = s.intervals.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(s.intervals.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+  return `${mean.toFixed(1)} ms ±${sd.toFixed(1)}`;
+}
+
+function setStatus(text, live) {
+  statusEl.textContent = text;
+  statusEl.className = live ? 'live' : '';
+}
+
+const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
+const p95 = (a) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(0.95 * (a.length - 1))] : NaN);
+const fmt = (v) => (Number.isFinite(v) ? v.toFixed(1).padStart(6) : '     –');
+
+setInterval(() => {
+  const s = stats;
+  const secs = (performance.now() - s.start) / 1000;
+  const row = (label, k) => `${label.padEnd(15)}${fmt(mean(s[k]))}${fmt(p95(s[k]))}`;
+  // Exposed for scripts and measurements.
+  window.simstreamLatency = Object.fromEntries([...STAGES, ...INPUT_STAGES].map((k) => [k, { mean: mean(s[k]), p95: p95(s[k]), n: s[k].length }]));
+  window.simstreamLatency.rtt = rtt;
+  window.simstreamLatency.skipped = s.skipped;
+  window.simstreamLatency.fps = motionFps(s);
+  hudEl.textContent = [
+    `resolution   ${currentConfig ? `${currentConfig.width}×${currentConfig.height}  ${currentConfig.codec}` : '–'}`,
+    `fps          ${motionFps(s)} in motion, ${(s.frames / secs).toFixed(0)} avg  (server ${serverStats.captureFps ?? '–'})`,
+    `pacing       ${pacing(s)}${s.skipped ? `  (${s.skipped} late frames skipped)` : ''}`,
+    `bitrate      ${(s.bytes * 8 / secs / 1e6).toFixed(2)} Mbps  (target ${serverStats.bitrate ? (serverStats.bitrate / 1e6).toFixed(1) : '–'})`,
+    `rtt          ${rtt.toFixed(1)} ms (best of 10 s)`,
+    ``,
+    `frame, ms          avg   p95`,
+    row('capture→encoder', 'queue'),
+    row('encode', 'encode'),
+    row('encoded→sent', 'send'),
+    row('network ↓', 'network'),
+    row('decode', 'decode'),
+    row('draw', 'draw'),
+    row('capture→drawn', 'total'),
+    row('→next frame', 'present'),
+    ``,
+    `touch, ms          avg   p95`,
+    row('network ↑', 'up'),
+    row('iOS→captured', 'ios'),
+    row('touch→drawn', 'touch'),
+  ].join('\n');
+  stats = resetWindow();
+}, 1000);
+
+if (!('VideoDecoder' in window)) {
+  setStatus(window.isSecureContext
+    ? 'WebCodecs not supported in this browser'
+    : 'WebCodecs needs a secure context: open via https:// (e.g. tailscale serve) or localhost', false);
+} else {
+  connect();
+}
+</script>
+</body>
+</html>

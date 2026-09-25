@@ -1922,10 +1922,10 @@ program
   )
   .option(
     "--codec <codec>",
-    "Stream codec for the preview UI: 'auto', 'h264', or 'mjpeg'. Use --transport webrtc for WebRTC.",
+    "Stream codec for the preview UI: 'auto', 'h264', 'mjpeg', or 'simstream' (the simstream video engine). Use --transport webrtc for WebRTC.",
     (value) => {
       const v = value.toLowerCase();
-      const allowed = ["auto", "h264", "mjpeg"];
+      const allowed = ["auto", "h264", "mjpeg", "simstream"];
       if (!allowed.includes(v)) {
         throw new InvalidArgumentError(`Unsupported codec '${value}'. Supported: ${allowed.join(", ")}.`);
       }

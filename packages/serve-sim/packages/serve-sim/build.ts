@@ -17,7 +17,7 @@
  * via the __PREVIEW_HTML_B64__ build-time define.
  */
 import { resolve } from "path";
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync } from "fs";
+import { cpSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync } from "fs";
 import { spawnSync } from "child_process";
 import { tmpdir } from "os";
 import tailwindPlugin from "bun-plugin-tailwind";
@@ -296,18 +296,34 @@ console.log("dist/simax/serve-sim-ax-settings");
 // Replaces the spawned serve-sim-bin helper. Arm64 macOS binary; loaded by
 // path from both the node bundle (createRequire) and the bun-compiled executable.
 
-const nativeBuild = spawnSync(
-  "bash",
-  [
-    resolve(root, "Sources/SimNative/build.sh"),
-    resolve(distDir, "native"),
-  ],
-  { stdio: "inherit" },
-);
-if (nativeBuild.status !== 0) {
-  console.error("SimNative addon build failed.");
-  process.exit(nativeBuild.status ?? 1);
+// SERVE_SIM_PREBUILT_NATIVE=<a published dist dir> reuses its prebuilt addon and LiveKit WebRTC
+// framework instead of compiling them (the framework download can take a very long time).
+const prebuiltNative = process.env.SERVE_SIM_PREBUILT_NATIVE;
+if (prebuiltNative) {
+  cpSync(resolve(prebuiltNative, "native"), resolve(distDir, "native"), { recursive: true });
+  cpSync(resolve(prebuiltNative, "bin"), resolve(distDir, "bin"), { recursive: true });
+  console.log(`dist/native/serve-sim-native.node (prebuilt from ${prebuiltNative})`);
+} else {
+  const nativeBuild = spawnSync(
+    "bash",
+    [
+      resolve(root, "Sources/SimNative/build.sh"),
+      resolve(distDir, "native"),
+    ],
+    { stdio: "inherit" },
+  );
+  if (nativeBuild.status !== 0) {
+    console.error("SimNative addon build failed.");
+    process.exit(nativeBuild.status ?? 1);
+  }
+  console.log("dist/native/serve-sim-native.node");
 }
-console.log("dist/native/serve-sim-native.node");
+
+// ─── 9. simstream-engine — the `--codec simstream` video engine ──────────
+const engineBuild = spawnSync("bash", [resolve(root, "engine/build.sh"), resolve(distDir, "bin")], { stdio: "inherit" });
+if (engineBuild.status !== 0) {
+  console.error("simstream engine build failed.");
+  process.exit(engineBuild.status ?? 1);
+}
 
 console.log("Done.");

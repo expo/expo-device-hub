@@ -726,13 +726,15 @@ function AppWithConfig({
     () => new URLSearchParams(window.location.search).get("codec") === "mjpeg",
   );
   const useMjpegHttp = streamSettings.httpCodec === "mjpeg";
+  const useSimstreamVideo = !useWebRtcVideo && streamSettings.httpCodec === "simstream" && avcc.supported && !forceMjpeg;
   const useAvccVideo =
     !useWebRtcVideo &&
     !useMjpegHttp &&
+    !useSimstreamVideo &&
     avcc.supported &&
     !avccFallback.fellBack &&
     !forceMjpeg;
-  const mjpeg = useMjpegStream(useDuoPanelFeeds || useAvccVideo || useWebRtcVideo ? null : mjpegStreamUrlFrom(config));
+  const mjpeg = useMjpegStream(useDuoPanelFeeds || useAvccVideo || useWebRtcVideo || useSimstreamVideo ? null : mjpegStreamUrlFrom(config));
 
   // Re-arm AVCC whenever the target stream changes (device switch / reconnect).
   useEffect(() => {
@@ -1633,7 +1635,7 @@ function AppWithConfig({
                 onStreamButton={onStreamButton}
                 onStreamDigitalCrown={onStreamDigitalCrown}
                 onStreamScroll={onStreamScroll}
-                streamMode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
+                streamMode={useWebRtcVideo ? "webrtc" : useSimstreamVideo ? "simstream" : useAvccVideo ? "avcc" : "mjpeg"}
                 webRtcStream={webrtc.stream}
                 onWebRtcFrame={webrtc.markFrameDecoded}
                 streamError={useWebRtcVideo ? webrtc.error ?? lockedWebRtcError : null}
@@ -1889,7 +1891,7 @@ function AppWithConfig({
         streamSettings={streamSettings}
         onStreamPlaybackSettingsChange={streamSettingsState.updatePlayback}
         onStreamEncoderSettingsChange={streamSettingsState.updateEncoder}
-        activeCodec={useWebRtcVideo ? `webrtc/${effectiveWebRtcCodec}` : useAvccVideo ? "h264" : "mjpeg"}
+        activeCodec={useWebRtcVideo ? `webrtc/${effectiveWebRtcCodec}` : useSimstreamVideo ? "simstream/h264" : useAvccVideo ? "h264" : "mjpeg"}
         peerConnection={useDuoPanelFeeds ? duoPanelPeer?.peerConnection ?? null : webrtc.peerConnection}
         webrtcSessionId={useDuoPanelFeeds ? duoPanelPeer?.sessionId ?? null : webrtc.sessionId}
         webrtcStatsUrl={useDuoPanelFeeds && duoPanelPeer ? duoPanelPeer.statsUrl : webrtcStatsUrlFrom(config)}

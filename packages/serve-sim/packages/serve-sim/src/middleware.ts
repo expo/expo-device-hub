@@ -1,4 +1,5 @@
 import { execFile, execSync, spawn, type ChildProcess } from "child_process";
+import { pipeSimstreamUpgrade } from "./simstream-engine.js";
 import { readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -2606,6 +2607,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       // HID input is delivered to the in-process DeviceSession.
       if (attachHidInProcess(req, socket, head, device, streamSettings)) return;
       socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
+      return;
+    }
+    if (helperTarget.upstreamPath.split("?")[0] === "/simstream" && device) {
+      // `--codec simstream` video: piped to the device's simstream engine process.
+      void pipeSimstreamUpgrade(device, req as any, socket, head);
       return;
     }
     socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");

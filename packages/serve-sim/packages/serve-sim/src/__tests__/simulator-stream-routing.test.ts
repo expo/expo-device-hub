@@ -12,6 +12,7 @@ describe("simulator stream routing", () => {
       effectiveStreamMode: "webrtc",
       useWebRtc: true,
       useAvcc: false,
+      useSimstream: false,
       externalInput: true,
       externalMjpeg: false,
       openDirectControlSocket: false,
@@ -42,6 +43,22 @@ describe("simulator stream routing", () => {
       hasExternalInput: true,
       hasExternalFrames: true,
     }).externalMjpeg).toBe(false);
+  });
+
+  test("routes simstream like AVCC (canvas) with its own decoder, and falls back to MJPEG without WebCodecs", () => {
+    expect(resolveSimulatorStreamRouting({
+      streamMode: "simstream",
+      avccSupported: true,
+      hasExternalInput: false,
+      hasExternalFrames: false,
+    })).toMatchObject({ effectiveStreamMode: "simstream", useAvcc: true, useSimstream: true, useWebRtc: false });
+
+    expect(resolveSimulatorStreamRouting({
+      streamMode: "simstream",
+      avccSupported: false,
+      hasExternalInput: false,
+      hasExternalFrames: false,
+    })).toMatchObject({ effectiveStreamMode: "mjpeg", useSimstream: false, openDirectMjpeg: true });
   });
 
   test("falls back unsupported AVCC rendering to direct MJPEG", () => {

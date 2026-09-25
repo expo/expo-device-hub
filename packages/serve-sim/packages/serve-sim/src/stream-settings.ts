@@ -1,4 +1,4 @@
-export type HttpStreamCodec = "auto" | "mjpeg" | "h264";
+export type HttpStreamCodec = "auto" | "mjpeg" | "h264" | "simstream";
 export type WebRtcStreamCodec = "vp8" | "vp9" | "h264";
 export type WebRtcIceServer = { urls: string[]; username?: string; credential?: string };
 
@@ -139,7 +139,7 @@ export function normalizeStreamControlSettings(
     transport: input.transport === "http" || input.transport === "webrtc"
       ? input.transport
       : fallback.transport,
-    httpCodec: input.httpCodec === "auto" || input.httpCodec === "mjpeg" || input.httpCodec === "h264"
+    httpCodec: input.httpCodec === "auto" || input.httpCodec === "mjpeg" || input.httpCodec === "h264" || input.httpCodec === "simstream"
       ? input.httpCodec
       : fallback.httpCodec,
     webRtcCodec: input.webRtcCodec === "vp8" || input.webRtcCodec === "vp9" || input.webRtcCodec === "h264"

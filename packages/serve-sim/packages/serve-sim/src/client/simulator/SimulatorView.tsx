@@ -23,6 +23,7 @@ import {
 } from "./screen-config-state.js";
 import { resolveSimulatorStreamRouting } from "./simulator-stream-routing.js";
 import { useAvccStream } from "./use-avcc-stream.js";
+import { useSimstreamStream } from "./use-simstream-stream.js";
 import { roundToDevicePixel, snapContainBox } from "../utils/simulator-resize";
 import { observeVideoDimensions } from "./video-dimensions.js";
 import { isAvccSupported } from "../avcc-codec.js";
@@ -82,7 +83,7 @@ export interface SimulatorViewProps {
   /** Connection quality indicator: green (good), yellow (degraded), red (poor). */
   connectionQuality?: "good" | "degraded" | "poor" | null;
   /** Video render mode. "avcc" falls back to MJPEG when WebCodecs is unavailable. */
-  streamMode?: "mjpeg" | "avcc" | "webrtc";
+  streamMode?: "mjpeg" | "avcc" | "webrtc" | "simstream";
   /** WebRTC media stream when `streamMode="webrtc"`. */
   webRtcStream?: MediaStream | null;
   /** Called when the WebRTC <video> has decoded its first frame. */
@@ -138,6 +139,7 @@ export function SimulatorView({
   const {
     useWebRtc,
     useAvcc,
+    useSimstream,
     externalInput,
     externalMjpeg,
     openDirectControlSocket,
@@ -406,9 +408,18 @@ export function SimulatorView({
       setError(null);
     }
   }, []);
+  useSimstreamStream({
+    url,
+    enabled: useSimstream,
+    canvasRef,
+    onFirstFrame: onAvccFirstFrame,
+    onFrame: onAvccFrame,
+    onDecodedFrame: onAvccDecodedFrame,
+    onError: setError,
+  });
   useAvccStream({
     url,
-    enabled: useAvcc,
+    enabled: useAvcc && !useSimstream,
     canvasRef,
     onFirstFrame: onAvccFirstFrame,
     onFrame: onAvccFrame,
