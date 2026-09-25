@@ -44,6 +44,23 @@ _Last updated: 2026-09-25 14:22. The integration is built, smoke-tested and comm
   frames 60–75).
   - **Copying it to the M5 is slow:** the user is on spotty airplane wifi, about 30 KB/s. Use
     `rsync --partial --inplace` with retries (it resumes). The user asked to keep trying.
+- **Over-the-network video** (`~/simstream-videos/serve-sim-vs-simstream-route-network.mp4`, plus a 3.5 MB
+  `-small` version):
+  - The fork runs on the **Mac Mini** (copied to `~/simfork`: `dist` + `node_modules/ws`), bound to its
+    Tailscale IP, on iPhone 17 Pro Max `B3AFC702…` (iOS 26.5, dark mode).
+  - The viewer/recorder runs on the off-prem **Expo laptop** (`seth@sethwebster-expo.$SIMSTREAM_TAILNET`,
+    node at `~/.local/share/mise/installs/node/22.20.0/bin/node`, tools in `~/simbench`). The path to the
+    Mini is direct, ~13 ms.
+  - Script: `bench/rec-remote-mini.sh`; route: `bench/route-mini.json`; compose with
+    `ROUTE=route-mini.json python3 bench/compose-aligned.py --touches OUT /tmp/fbench/remote-mini/mini-{S,W,H}`.
+  - **The laptop sleeps on idle** (a brief DarkWake on network traffic, then sleep ~45 s later). Run
+    `caffeinate -dimsu -t 3600 &` on it first, then release it afterwards.
+  - The Pro Max sim was shut down afterwards. The user's :8775 simstream and the 17 Pro on the Mini
+    weren't touched.
+  - The M4 is too busy (load 30–40, Docker) for clean runs; that's why the Mini was used (user approved).
+- **iPad link (tailnet only):** https://seth-webster-m4.$SIMSTREAM_TAILNET:8450/ serves `~/simstream-videos`
+  (`npx http-server` on 127.0.0.1:8460, which supports byte ranges; `tailscale serve --https=8450`). Remove it
+  with `tailscale serve --https=8450 off` and kill :8460.
 - **Machine restored:** live simstream on :8765 (Tailscale and Cloudflare both answer 200). :3200 and
   :8799 are stopped.
 - **Bench tools are committed** in `~/Development/simstream` (`bench/runfork.sh`, `matrix-fork.sh`,
