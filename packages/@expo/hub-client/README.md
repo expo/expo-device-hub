@@ -78,6 +78,13 @@ const android = useAndroidDeviceClient({
 });
 ```
 
+When embedding the iOS screen on another site, pass the public serve-sim mount that serves
+`/api` and `/helper` as `baseUrl`, for example `https://sim.example.test/preview/session`.
+The stream and input URLs then use that server. An EAS Simulator Preview link at
+`expo.dev/simulator-preview/...` opens Expo's viewer page; use the serve-sim server URL
+behind that page as `baseUrl`. If the whole Device Hub is remote, pass its public mount
+to `useActiveDeviceClient`, for example `https://hub.example.test/device-hub`.
+
 ## Call device controls
 
 Every control lives on the `DeviceClient`. Controls are no-ops while nothing is connected,
