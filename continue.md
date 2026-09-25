@@ -38,6 +38,12 @@ _Last updated: 2026-09-25 14:22. The integration is built, smoke-tested and comm
   CDP input, so the drift depended on page load), not the protocols. Now inputs run on an absolute
   schedule, and the page marks each pointerdown's frame. `bench/compose-aligned.py OUT base...` aligns
   every input across panes. Measured input spacing is identical across modes to ±1 frame.
+- **Touches video** (`serve-sim-vs-simstream-route-touches.mp4`, 39 s): the synced route with a finger dot
+  drawn at each input's position and send time, on all panes. Made with `python3 bench/compose-aligned.py
+  --touches OUT.mp4 /tmp/fbench/rec/route-{S,W,H}`. Verified frame by frame (the first tap's dot is on
+  frames 60–75).
+  - **Copying it to the M5 is slow:** the user is on spotty airplane wifi, about 30 KB/s. Use
+    `rsync --partial --inplace` with retries (it resumes). The user asked to keep trying.
 - **Machine restored:** live simstream on :8765 (Tailscale and Cloudflare both answer 200). :3200 and
   :8799 are stopped.
 - **Bench tools are committed** in `~/Development/simstream` (`bench/runfork.sh`, `matrix-fork.sh`,
