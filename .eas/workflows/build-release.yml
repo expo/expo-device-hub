@@ -10,6 +10,10 @@ on:
         type: boolean
         description: Version the packages as a canary prerelease before building
         default: false
+      release_branch:
+        type: string
+        description: Branch to push tested stable version changes to
+        required: true
 
 defaults:
   tools:
@@ -45,13 +49,11 @@ jobs:
       - name: Summarize versions
         run: ./scripts/summarize-versions.ts
 
-      # Capture only versioning changes, before build/test outputs can alter the tree.
-      - name: Capture version changes
+      # Stage only versioning changes, before build/test outputs can alter the tree.
+      - name: Stage version changes
         run: |
           if [ "${{ inputs.canary }}" != "true" ]; then
-            mkdir -p release-artifacts
             git add -A
-            git diff --cached --binary > release-artifacts/version.patch
           fi
 
       - name: Build packages
@@ -61,9 +63,21 @@ jobs:
         run: bun run test
 
       - name: Pack packages
+        run: ./scripts/pack-packages.ts release-artifacts
+
+      - name: Commit & push tested version changes
+        env:
+          RELEASE_BRANCH: ${{ inputs.release_branch }}
         run: |
-          ./scripts/pack-packages.ts release-artifacts
-          tar -czf npm-packages.tgz -C release-artifacts .
+          if [ "${{ inputs.canary }}" != "true" ]; then
+            git config user.name "expo[bot]"
+            git config user.email "102182381+expo[bot]@users.noreply.github.com"
+            bun scripts/commit-release.ts
+            git rev-parse HEAD > release-artifacts/release-commit.txt
+          fi
+
+      - name: Archive npm packages
+        run: tar -czf npm-packages.tgz -C release-artifacts .
 
       - name: Upload npm packages
         uses: eas/upload_artifact

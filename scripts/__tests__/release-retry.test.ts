@@ -259,7 +259,7 @@ async function workflows() {
   };
 }
 
-test("both releases version in EAS; stable commits wait for a successful build and artifact download", async () => {
+test("EAS owns versioning and stable commits; GitHub only checks out the result to publish", async () => {
   const { github, eas } = await workflows();
   const githubSteps = github.jobs.release.steps;
   const easSteps = eas.jobs.package.steps;
@@ -267,13 +267,24 @@ test("both releases version in EAS; stable commits wait for a successful build a
   const easNames = easSteps.map((step) => step.name);
   expect(github.on.workflow_dispatch.inputs.resume).toBeUndefined();
   expect(
-    githubSteps.some((step) => step.run?.includes("changeset:version")),
+    githubSteps.some(
+      (step) =>
+        step.run?.includes("changeset:version") ||
+        step.run?.includes("commit-release.ts") ||
+        step.run?.includes("git config user"),
+    ),
   ).toBe(false);
   expect(
-    githubNames.indexOf("Commit & push tested version changes"),
-  ).toBeGreaterThan(githubNames.indexOf("Download npm packages from EAS"));
-  expect(githubNames.indexOf("Download npm packages from EAS")).toBeGreaterThan(
-    githubNames.indexOf("Build packages on EAS"),
+    githubSteps.find((step) => step.name === "Checkout")?.with?.ref,
+  ).toBeUndefined();
+  expect(
+    githubSteps.find((step) => step.name === "Checkout")?.with?.["fetch-depth"],
+  ).toBeUndefined();
+  expect(githubNames.indexOf("Checkout release commit")).toBeGreaterThan(
+    githubNames.indexOf("Download npm packages from EAS"),
+  );
+  expect(githubNames.indexOf("Publish to npm")).toBeGreaterThan(
+    githubNames.indexOf("Checkout release commit"),
   );
   expect(
     easNames.indexOf("Apply version bump & generate changelog"),
@@ -281,20 +292,26 @@ test("both releases version in EAS; stable commits wait for a successful build a
   expect(easNames.indexOf("Apply canary version")).toBeLessThan(
     easNames.indexOf("Build packages"),
   );
-  expect(easNames.indexOf("Capture version changes")).toBeLessThan(
+  expect(easNames.indexOf("Stage version changes")).toBeLessThan(
     easNames.indexOf("Build packages"),
   );
-  expect(easNames.indexOf("Upload npm packages")).toBeGreaterThan(
-    easNames.indexOf("Test"),
+  expect(
+    easNames.indexOf("Commit & push tested version changes"),
+  ).toBeGreaterThan(easNames.indexOf("Test"));
+  expect(
+    easNames.indexOf("Commit & push tested version changes"),
+  ).toBeGreaterThan(easNames.indexOf("Pack packages"));
+  expect(easNames.indexOf("Archive npm packages")).toBeGreaterThan(
+    easNames.indexOf("Commit & push tested version changes"),
   );
   expect(
-    githubSteps.find((step) => step.name === "Configure git")?.run,
+    easSteps.find(
+      (step) => step.name === "Commit & push tested version changes",
+    )?.run,
   ).toContain("102182381+expo[bot]@users.noreply.github.com");
 });
 
-test("the EAS version patch preserves changeset deletions and new changelogs before GitHub commits it", async () => {
-  const f = await fixture(false);
-  const { eas } = await workflows();
+async function stageVersions(f: Awaited<ReturnType<typeof fixture>>) {
   await f.git("checkout", "--detach", f.source);
   await f.git(
     "restore",
@@ -304,60 +321,101 @@ test("the EAS version patch preserves changeset deletions and new changelogs bef
     "packages",
     ".changeset",
   );
-  const capture = eas.jobs.package.steps
-    .find((step) => step.name === "Capture version changes")!
+  const { eas } = await workflows();
+  const stage = eas.jobs.package.steps
+    .find((step) => step.name === "Stage version changes")!
     .run!.replaceAll("${{ inputs.canary }}", "false");
-  expect((await command(f.repo, ["bash", "-e", "-c", capture])).code).toBe(0);
-  // A failed build stops here: the release branch still contains pending changesets.
+  expect((await command(f.repo, ["bash", "-e", "-c", stage])).code).toBe(0);
+}
+
+test("EAS commits only staged versions as expo[bot] and GitHub fetches the returned SHA", async () => {
+  const f = await fixture(false);
+  const { eas, github } = await workflows();
+  await stageVersions(f);
+  // A failed build stops here: the remote still contains pending changesets.
   expect(await f.git("ls-remote", "origin", "refs/heads/main")).toBe(
     `${f.source}\trefs/heads/main`,
   );
-  const github = join(f.root, "github");
-  await f.git("clone", "--branch", "main", f.remote, github);
-  for (const [key, value] of [
-    ["user.name", "expo[bot]"],
-    ["user.email", "102182381+expo[bot]@users.noreply.github.com"],
-    ["commit.gpgsign", "false"],
-  ]) {
-    expect((await command(github, ["git", "config", key!, value!])).code).toBe(
-      0,
+  const publisher = join(f.root, "github");
+  await f.git("clone", "--branch", "main", f.remote, publisher);
+  // Build outputs created after staging must not enter the version commit.
+  await Bun.write(join(f.repo, "build-output.txt"), "generated");
+  await mkdir(join(f.repo, "release-artifacts"));
+  const commit = eas.jobs.package.steps
+    .find((step) => step.name === "Commit & push tested version changes")!
+    .run!.replaceAll("${{ inputs.canary }}", "false")
+    .replace(
+      "bun scripts/commit-release.ts",
+      `"${process.execPath}" "${join(scripts, "commit-release.ts")}"`,
     );
-  }
-  const patch = join(f.repo, "release-artifacts/version.patch");
-  const result = await command(
-    github,
-    [process.execPath, join(scripts, "commit-release.ts"), patch],
-    { RELEASE_BRANCH: "main" },
-  );
-  expect(result.code).toBe(0);
-  expect(await Bun.file(join(github, ".changeset/release.md")).exists()).toBe(
-    false,
-  );
-  expect(
-    await Bun.file(join(github, "packages/changed/CHANGELOG.md")).text(),
-  ).toContain("1.1.0");
   expect(
     (
-      await command(github, ["git", "show", "-s", "--format=%an <%ae>"])
-    ).stdout.trim(),
-  ).toBe("expo[bot] <102182381+expo[bot]@users.noreply.github.com>");
+      await command(f.repo, ["bash", "-e", "-c", commit], {
+        RELEASE_BRANCH: "main",
+      })
+    ).code,
+  ).toBe(0);
+  const releaseSha = await f.git("rev-parse", "HEAD");
+  expect(await f.git("show", "-s", "--format=%an <%ae>")).toBe(
+    "expo[bot] <102182381+expo[bot]@users.noreply.github.com>",
+  );
+  expect(await f.git("rev-parse", "HEAD^{tree}")).toBe(
+    await f.git("rev-parse", `${f.sha}^{tree}`),
+  );
+  expect(await f.git("ls-tree", "HEAD", "build-output.txt")).toBe("");
+  const marker = await Bun.file(
+    join(f.repo, "release-artifacts/release-commit.txt"),
+  ).text();
+  expect(marker.trim()).toBe(releaseSha);
+  await Bun.write(
+    join(publisher, "release-artifacts/release-commit.txt"),
+    marker,
+  );
+  const checkout = github.jobs.release.steps.find(
+    (step) => step.name === "Checkout release commit",
+  )!.run!;
   expect(
-    (await command(github, ["git", "rev-parse", "HEAD^{tree}"])).stdout.trim(),
-  ).toBe(await f.git("rev-parse", `${f.sha}^{tree}`));
+    (
+      await command(publisher, ["bash", "-e", "-c", checkout], {
+        SOURCE_SHA: f.source,
+      })
+    ).code,
+  ).toBe(0);
+  expect(
+    (await command(publisher, ["git", "rev-parse", "HEAD"])).stdout.trim(),
+  ).toBe(releaseSha);
+  expect(
+    await Bun.file(join(publisher, ".changeset/release.md")).exists(),
+  ).toBe(false);
+  expect(
+    await Bun.file(join(publisher, "packages/changed/CHANGELOG.md")).text(),
+  ).toContain("1.1.0");
+  expect((await f.publish(publisher)).code).toBe(0);
 });
 
-test("rerunning the original source reuses the pushed version commit and repairs its tag", async () => {
+test("GitHub rejects an artifact commit that belongs to a different source", async () => {
   const f = await fixture();
-  const patch = join(f.root, "version.patch");
-  await Bun.write(
-    patch,
-    (await f.git("diff", "--binary", f.source, f.sha)) + "\n",
-  );
+  const { github } = await workflows();
+  await Bun.write(join(f.repo, "release-artifacts/release-commit.txt"), f.sha);
+  const checkout = github.jobs.release.steps.find(
+    (step) => step.name === "Checkout release commit",
+  )!.run!;
+  expect(
+    (
+      await command(f.repo, ["bash", "-e", "-c", checkout], {
+        SOURCE_SHA: "0".repeat(40),
+      })
+    ).code,
+  ).not.toBe(0);
+});
+
+test("rerunning EAS reuses the pushed version commit and publication repairs its tag", async () => {
+  const f = await fixture();
   await Bun.write(f.state, "published");
-  await f.git("checkout", "--detach", f.source);
+  await stageVersions(f);
   const result = await command(
     f.repo,
-    [process.execPath, join(scripts, "commit-release.ts"), patch],
+    [process.execPath, join(scripts, "commit-release.ts")],
     { RELEASE_BRANCH: "main" },
   );
   expect(result.code).toBe(0);
@@ -370,20 +428,15 @@ test("rerunning the original source reuses the pushed version commit and repairs
 
 test("a release does not overwrite an unrelated change pushed while EAS was building", async () => {
   const f = await fixture();
-  const patch = join(f.root, "version.patch");
-  await Bun.write(
-    patch,
-    (await f.git("diff", "--binary", f.source, f.sha)) + "\n",
-  );
   await Bun.write(join(f.repo, "later-change.txt"), "another change");
   await f.git("add", ".");
   await f.git("commit", "-m", "Later change");
   await f.git("push", "origin", "main");
   const latest = await f.git("rev-parse", "HEAD");
-  await f.git("checkout", "--detach", f.source);
+  await stageVersions(f);
   const result = await command(
     f.repo,
-    [process.execPath, join(scripts, "commit-release.ts"), patch],
+    [process.execPath, join(scripts, "commit-release.ts")],
     { RELEASE_BRANCH: "main" },
   );
   expect(result.code).not.toBe(0);

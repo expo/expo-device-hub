@@ -23,15 +23,13 @@ jobs:
     env:
       IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
     permissions:
-      contents: write # push the release commit + tags
+      contents: write # push package tags and create GitHub releases
       id-token: write # npm OIDC Trusted Publishing
       pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
         with:
-          ref: ${{ github.sha }}
-          fetch-depth: 2
           fetch-tags: true
 
       - name: Setup Bun
@@ -47,15 +45,17 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      # EAS applies all version changes before building and returns the tested
-      # tarballs plus the stable version patch. No release commit is pushed yet.
+      # EAS versions, builds, tests, and packs the packages. For stable releases
+      # it also pushes the tested version commit and returns its SHA with the tarballs.
       - name: Build packages on EAS
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
         run: |
           npx --yes eas-cli@24.7.0 workflow:run .eas/workflows/build-release.yml \
             --ref "$(git rev-parse HEAD)" \
             --input "canary=${IS_CANARY}" \
+            --input "release_branch=${RELEASE_BRANCH}" \
             --wait \
             --non-interactive \
             --json > /tmp/eas-workflow.json
@@ -73,17 +73,22 @@ jobs:
           tar -xzf /tmp/npm-packages.tgz -C release-artifacts
           ls -l release-artifacts
 
-      - name: Configure git
-        if: ${{ env.IS_CANARY != 'true' }}
-        run: |
-          git config user.name "expo[bot]"
-          git config user.email "102182381+expo[bot]@users.noreply.github.com"
-
-      - name: Commit & push tested version changes
+      - name: Checkout release commit
         if: ${{ env.IS_CANARY != 'true' }}
         env:
-          RELEASE_BRANCH: ${{ github.ref_name }}
-        run: bun scripts/commit-release.ts release-artifacts/version.patch
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          RELEASE_SHA=$(cat release-artifacts/release-commit.txt)
+          if ! [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::EAS did not return a valid release commit SHA."
+            exit 1
+          fi
+          git fetch --depth=2 origin "$RELEASE_SHA"
+          git checkout --detach "$RELEASE_SHA"
+          if [ "$(git rev-parse HEAD^)" != "$SOURCE_SHA" ]; then
+            echo "::error::The release commit does not belong to this workflow's source commit."
+            exit 1
+          fi
 
       - name: Publish to npm
         if: ${{ env.IS_CANARY != 'true' }}

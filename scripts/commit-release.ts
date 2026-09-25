@@ -2,16 +2,12 @@
 
 import { $ } from "bun";
 
-// Apply exactly the version changes that passed the EAS build and tests.
-const patch = process.argv[2];
+// Commit the version changes staged on EAS before its build and tests.
 const branch = process.env.RELEASE_BRANCH;
-if (!patch || !branch)
-  throw new Error(
-    "Usage: RELEASE_BRANCH=<branch> commit-release.ts <version.patch>",
-  );
+if (!branch)
+  throw new Error("RELEASE_BRANCH must name the branch being released.");
 await $`git check-ref-format ${`refs/heads/${branch}`}`;
 const source = (await $`git rev-parse HEAD`.text()).trim();
-await $`git apply --index ${patch}`;
 const tree = (await $`git write-tree`.text()).trim();
 
 await $`git fetch origin ${`refs/heads/${branch}`}`;
