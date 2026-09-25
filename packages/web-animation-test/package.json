@@ -1,0 +1,20 @@
+{
+  "name": "web-animation-test",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Animated fixture for comparing hardware and software H.264 encoding.",
+  "main": "index.jsx",
+  "scripts": {
+    "start": "expo start --web",
+    "build": "expo export --platform web",
+    "deploy": "bun run build && bunx eas-cli@24.1.2 deploy --prod"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "catalog:",
+    "expo": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-native": "catalog:",
+    "react-native-web": "catalog:"
+  }
+}
