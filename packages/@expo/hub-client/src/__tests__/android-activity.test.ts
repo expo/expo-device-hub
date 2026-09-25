@@ -4,7 +4,7 @@ import {
   EMPTY_ANDROID_ACTIVITY,
   nextAndroidActivityAfterSilence,
   parseAndroidActivityFrame,
-} from "../android-activity";
+} from "../android-activity.js";
 
 const SAMPLE = {
   t: 2004,

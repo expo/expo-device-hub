@@ -1,4 +1,4 @@
-import { type DeviceScreenRecordingStatus } from './types';
+import { type DeviceScreenRecordingStatus } from './types.js';
 
 export function parseScreenRecordingStatus(value: unknown): DeviceScreenRecordingStatus | null {
   if (!value || typeof value !== 'object' || !('status' in value)) return null;

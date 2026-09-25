@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type HostActionParams, type HostActionResult } from '../exec-ws';
-import { clearIosLocation, setIosLocation, simctlFailureMessage } from '../ios-location';
+import { type HostActionParams, type HostActionResult } from '../exec-ws.js';
+import { clearIosLocation, setIosLocation, simctlFailureMessage } from '../ios-location.js';
 
 const UDID = 'ABC-123';
 const FIX = { latitude: 37.3349, longitude: -122.009 };

@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { presentedVideoFrameDelta } from '../video-frame-metadata';
+import { presentedVideoFrameDelta } from '../video-frame-metadata.js';
 
 describe('video frame metadata', () => {
   test('counts frames skipped between video-frame callbacks', () => {

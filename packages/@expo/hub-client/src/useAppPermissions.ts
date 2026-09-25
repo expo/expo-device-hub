@@ -6,9 +6,9 @@ import {
   type PermissionsBackend,
   type PermissionWriteVersions,
   heldPermissionIds,
-} from "./app-permissions";
-import { KeyedWriteTracker } from "./keyed-write-tracker";
-import { type AppPermission, type AppPermissionAction } from "./types";
+} from "./app-permissions.js";
+import { KeyedWriteTracker } from "./keyed-write-tracker.js";
+import { type AppPermission, type AppPermissionAction } from "./types.js";
 
 interface UseAppPermissionsOptions {
   active: boolean;

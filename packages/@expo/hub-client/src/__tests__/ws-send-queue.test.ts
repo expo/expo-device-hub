@@ -7,7 +7,7 @@ import {
   sendOrQueueWsMessage,
   WS_OPEN_READY_STATE,
   type WsSendTarget,
-} from '../ws-send-queue';
+} from '../ws-send-queue.js';
 
 function sentPayload(data: Uint8Array) {
   return {

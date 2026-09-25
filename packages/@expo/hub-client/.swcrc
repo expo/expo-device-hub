@@ -11,13 +11,10 @@
         "runtime": "automatic"
       }
     },
-    "target": "es2022",
-    "baseUrl": "."
+    "target": "es2022"
   },
   "module": {
-    "type": "es6",
-    "resolveFully": true,
-    "outFileExtension": "mjs"
+    "type": "es6"
   },
   "sourceMaps": true
 }

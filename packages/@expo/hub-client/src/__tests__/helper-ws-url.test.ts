@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { toQueryStyleHelperWsUrl } from '../useIosDevice';
+import { toQueryStyleHelperWsUrl } from '../useIosDevice.js';
 
 describe('toQueryStyleHelperWsUrl', () => {
   test('rewrites the path-scoped helper ws form to the device query form', () => {

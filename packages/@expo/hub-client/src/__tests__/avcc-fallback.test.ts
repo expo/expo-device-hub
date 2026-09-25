@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { avccFallbackReducer, initialAvccFallback } from '../avcc-fallback';
+import { avccFallbackReducer, initialAvccFallback } from '../avcc-fallback.js';
 
 describe('AVCC fallback', () => {
   test('falls back when no decoded frame arrives', () => {

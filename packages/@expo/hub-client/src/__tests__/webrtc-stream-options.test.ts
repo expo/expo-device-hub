@@ -7,7 +7,7 @@ import {
   shouldFallbackCodecAfterFirstFrameTimeout,
   type WebRtcIceServer,
   type WebRtcVideoCodecCapability,
-} from '../useWebRtcStream';
+} from '../useWebRtcStream.js';
 
 describe('WebRTC stream options', () => {
   test('prefers H.264 packetization-mode=1 before other H.264 formats', () => {

@@ -1,4 +1,4 @@
-import { type KeyboardInput } from './types';
+import { type KeyboardInput } from './types.js';
 
 // Browser KeyboardEvent.code → USB HID Usage Page 0x07 keyboard usage code.
 // This mirrors serve-sim's browser client so physical keys, including modifiers,

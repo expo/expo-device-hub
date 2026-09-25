@@ -27,14 +27,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
-import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
+import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback.js';
 import {
   appendActivitySample,
   parseActivityHostCores,
   parseActivitySample,
-} from './activity';
-import { type AccessibilityLoader, loadIosAccessibility } from './accessibility';
-import { isAvccSupported } from './avcc';
+} from './activity.js';
+import { type AccessibilityLoader, loadIosAccessibility } from './accessibility.js';
+import { isAvccSupported } from './avcc.js';
 import {
   HID_EDGE_BOTTOM,
   homeIndicatorEdge,
@@ -42,18 +42,18 @@ import {
   rawEdgeForDisplayEdge,
   rawPointForDisplayPoint,
   streamGeometry,
-} from './orientation';
-import { startIosHelper } from './connections';
+} from './orientation.js';
+import { startIosHelper } from './connections.js';
 import {
   clearIosEventLogState,
   createIosEventLogState,
   mergeIosEventLogPayload,
-} from './ios-events';
-import { hostUiRequest, runHostAction } from './exec-ws';
-import { getIosAppDetails } from './ios-app-details';
-import { clearIosLocation, setIosLocation } from './ios-location';
-import { fetchIosScreenshot } from './ios-screenshot';
-import { hidUsageForCode } from './keyboard';
+} from './ios-events.js';
+import { hostUiRequest, runHostAction } from './exec-ws.js';
+import { getIosAppDetails } from './ios-app-details.js';
+import { clearIosLocation, setIosLocation } from './ios-location.js';
+import { fetchIosScreenshot } from './ios-screenshot.js';
+import { hidUsageForCode } from './keyboard.js';
 import {
   type ConnectionStatus,
   type DeviceActivity,
@@ -76,30 +76,30 @@ import {
   type ScreenSize,
   type ScrollSample,
   type TouchSample,
-} from './types';
-import { NO_PENDING_CAMERA_WRITES } from './device-camera';
-import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
-import { KeyedWriteTracker } from './keyed-write-tracker';
-import { createPacedKeySender } from './paced-key-sender';
-import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
-import { type ParsedSseBlock, drainSseChunk } from './sse';
-import { normalizeDeviceStreamSettings } from './stream-settings';
-import { useAccessibility } from './useAccessibility';
-import { useAppPermissions } from './useAppPermissions';
-import { useAvccStream } from './useAvccStream';
-import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
-import { useStreamSettingsResource } from './useStreamSettingsResource';
-import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
-import { presentedVideoFrameDelta } from './video-frame-metadata';
+} from './types.js';
+import { NO_PENDING_CAMERA_WRITES } from './device-camera.js';
+import { mergeAuthoritativeDeviceSetting } from './device-setting-writes.js';
+import { KeyedWriteTracker } from './keyed-write-tracker.js';
+import { createPacedKeySender } from './paced-key-sender.js';
+import { proxyPreviewConfigForBrowser } from './proxy-preview-config.js';
+import { type ParsedSseBlock, drainSseChunk } from './sse.js';
+import { normalizeDeviceStreamSettings } from './stream-settings.js';
+import { useAccessibility } from './useAccessibility.js';
+import { useAppPermissions } from './useAppPermissions.js';
+import { useAvccStream } from './useAvccStream.js';
+import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation.js';
+import { useStreamSettingsResource } from './useStreamSettingsResource.js';
+import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream.js';
+import { presentedVideoFrameDelta } from './video-frame-metadata.js';
 import {
   type WebRtcCodec,
   webRtcFallbackDecision,
-} from './webrtc-fallback';
+} from './webrtc-fallback.js';
 import {
   flushWsMessageQueue,
   type QueuedWsMessage,
   sendOrQueueWsMessage,
-} from './ws-send-queue';
+} from './ws-send-queue.js';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;

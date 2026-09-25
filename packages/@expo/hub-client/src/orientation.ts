@@ -10,7 +10,7 @@
  *     device, the client rotates the video for display ({@link streamGeometry}).
  */
 
-import { type DeviceOrientation, type ScreenSize, type TouchSample } from './types';
+import { type DeviceOrientation, type ScreenSize, type TouchSample } from './types.js';
 
 export const HID_EDGE_LEFT = 1;
 export const HID_EDGE_TOP = 2;

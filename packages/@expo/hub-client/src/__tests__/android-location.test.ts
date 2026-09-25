@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { parseAndroidFix, readAndroidLocation, writeAndroidLocation } from "../android-location";
+import { parseAndroidFix, readAndroidLocation, writeAndroidLocation } from "../android-location.js";
 
 const LOCATION_URL = "http://localhost:3401/api/location";
 const FIX = { latitude: 37.3349, longitude: -122.009 };

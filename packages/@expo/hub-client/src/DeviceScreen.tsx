@@ -8,15 +8,15 @@ import {
   useState,
 } from 'react';
 
-import { streamGeometry } from './orientation';
-import { wheelDeltaToPixels } from './scroll-wheel';
-import { AgentInteractionIndicator } from './AgentInteractionIndicator';
-import { TouchIndicator } from './TouchIndicator';
+import { streamGeometry } from './orientation.js';
+import { wheelDeltaToPixels } from './scroll-wheel.js';
+import { AgentInteractionIndicator } from './AgentInteractionIndicator.js';
+import { TouchIndicator } from './TouchIndicator.js';
 import {
   type DeviceScreenProps,
   type KeyboardInput,
   type MultiTouchSample,
-} from './types';
+} from './types.js';
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 

@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { type AccessibilityRead } from '../accessibility';
-import { useAccessibility } from '../useAccessibility';
+import { type AccessibilityRead } from '../accessibility.js';
+import { useAccessibility } from '../useAccessibility.js';
 
 let renderer: ReactTestRenderer | undefined;
 

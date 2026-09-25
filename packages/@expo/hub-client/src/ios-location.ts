@@ -1,5 +1,5 @@
-import { type HostActionResult, type RunHostAction } from './exec-ws';
-import { type DeviceGeoFix } from './types';
+import { type HostActionResult, type RunHostAction } from './exec-ws.js';
+import { type DeviceGeoFix } from './types.js';
 
 /**
  * Simulated location for iOS simulators over serve-sim's typed host actions

@@ -5,8 +5,8 @@ import {
   MAX_ACTIVITY_SAMPLES,
   parseActivityHostCores,
   parseActivitySample,
-} from '../activity';
-import { type DeviceActivity, type DeviceActivitySample } from '../types';
+} from '../activity.js';
+import { type DeviceActivity, type DeviceActivitySample } from '../types.js';
 
 const sample = (t: number, bundleId: string | null = 'dev.expo.app'): DeviceActivitySample => ({
   t,

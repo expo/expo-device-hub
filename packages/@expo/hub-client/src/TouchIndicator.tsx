@@ -1,6 +1,6 @@
 import { type CSSProperties } from 'react';
 
-import { type AgentInteractionPoint } from './types';
+import { type AgentInteractionPoint } from './types.js';
 
 export const TOUCH_INDICATOR_STYLE: CSSProperties = {
   position: 'absolute',

@@ -1,7 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { type DeviceLocationRead, useDeviceLocation } from "../useDeviceLocation";
+import { type DeviceLocationRead, useDeviceLocation } from "../useDeviceLocation.js";
 
 const originals = new Map<string, PropertyDescriptor | undefined>();
 function stubGlobal(name: string, value: unknown) {

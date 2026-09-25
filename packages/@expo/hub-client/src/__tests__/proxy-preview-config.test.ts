@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { proxyPreviewConfigForBrowser } from '../proxy-preview-config';
+import { proxyPreviewConfigForBrowser } from '../proxy-preview-config.js';
 
 const baseConfig = {
   pid: 101,
