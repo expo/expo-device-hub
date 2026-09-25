@@ -168,7 +168,7 @@ else if (args[1] === 'spawn' && args[3] === 'launchctl') {
             expect(JSON.parse(output.trim())).toMatchObject({ device: UDID, port });
             const launch = JSON.parse(readFileSync(join(state.dir, `launch-${UDID}.json`), "utf8"));
             expect(launch.sessionPids).toEqual([child.pid]);
-            expect(launch.capabilities.clipboard.ownerPid).toBe(child.pid);
+            expect(launch.capabilities.clipboard.ownerPids).toEqual([child.pid]);
             const trace: string[][] = readFileSync(calls, "utf8")
               .trim()
               .split("\n")
