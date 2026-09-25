@@ -164,6 +164,7 @@ final class Viewer {
     /// Resynced twice without a single ack in between: the page isn't decoding (e.g. a stale tab
     /// running an older client). Stop spending encoder time on it until it acks something.
     private var unresponsive = false
+    private var lastProbeMs = -Double.infinity
     /// Encode calls can block while the hardware encoder is busy, so each viewer submits on its own
     /// queue: one slow encoder must not stall the others or the network queue.
     private let encodeQueue: DispatchQueue
@@ -276,9 +277,18 @@ final class Viewer {
 
     /// A captured frame. Encoded for this viewer unless it's paused or draining a backlog.
     func offer(_ pixelBuffer: CVPixelBuffer, captureMs: Double, input: InputTag) {
-        guard !paused, !unresponsive else { return }
+        guard !paused else { return }
+        if unresponsive {
+            // Probe with a keyframe every 10 s: a working page decodes it and acks (which
+            // clears the flag); a stale one ignores it at the cost of one frame per probe.
+            let now = Clock.ms()
+            guard now - lastProbeMs > 10_000 else { return }
+            lastProbeMs = now
+            unacked.removeAll()
+            needsKeyframe = true
+        }
         let now = Clock.ms()
-        let backlog = unacked.first.map { now - $0.sentMs - congestion.baselineOrZero } ?? 0
+        let backlog = unresponsive ? 0 : (unacked.first.map { now - $0.sentMs - congestion.baselineOrZero } ?? 0)
 
         if draining {
             // Nothing was encoded while draining, so the encoder's reference chain is intact and the
