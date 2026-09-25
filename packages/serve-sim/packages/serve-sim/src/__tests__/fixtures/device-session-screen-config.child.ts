@@ -1,7 +1,12 @@
-import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { createServer, type Server } from "http";
 import { WebSocket, WebSocketServer } from "ws";
 import type { NativeScreenInfo, MjpegFrame } from "../../native";
+import { readSavedHingeState, writeSavedHingeState } from "../../hinge-saved-state";
+import { UDID, useTempStateDir } from "../helpers";
+
+const tempState = useTempStateDir();
+afterAll(() => tempState.restore());
 
 let screen: NativeScreenInfo;
 let screenReads = 0;
@@ -194,6 +199,7 @@ let ws: WebSocket | undefined;
 let errorLog: ReturnType<typeof spyOn<typeof console, "error">> | undefined;
 
 beforeEach(() => {
+  writeSavedHingeState(UDID, {});
   inputSetupError = undefined;
   touchError = undefined;
   inputCalls.length = 0;
@@ -257,7 +263,7 @@ async function start(
   mjpeg = undefined;
   screenChanged = undefined;
   screenReadGate = undefined;
-  session = new DeviceSession("SCREEN-TEST");
+  session = new DeviceSession(UDID);
   await session.start();
   server = createServer((req, res) => req.url === "/config"
     ? session!.handleConfig(req, res)
@@ -1207,21 +1213,41 @@ describe("physical hinge controls", () => {
 
   test("does not restore a physical orientation that a startup rotation cleared", async () => {
     let release!: () => void;
-    const { controlResults } = await start(
+    const { controlResults, configs } = await start(
       { width: 2007, height: 2853 },
       true,
       undefined,
       true,
       new Promise<void>((resolve) => { release = resolve; }),
     );
-    nativeHingeState = { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false };
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
     ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_left" }))]));
     await waitUntil(() => inputCalls.includes("orientation"));
     release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: null, tableMode: false });
+    expect(configs.at(-1)).not.toHaveProperty("physicalOrientation");
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, tableMode: false });
     send(1, { control: "table", value: true });
     await waitUntil(() => controlResults.length === 1);
     expect(controlResults[0]?.ok).toBe(false);
     expect(tableModes).toEqual([]);
+  });
+
+  test("keeps a manually entered preset angle unselected after restart", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    send(1, { control: "pose", value: "book" });
+    send(2, { control: "angle", value: 90 });
+    await waitUntil(() => controlResults.length === 2);
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, physicalOrientation: "portrait", tableMode: false });
+
+    session!.close();
+    nativeHingeState = { hingeAngle: 90 };
+    session = new DeviceSession(UDID);
+    await session.start();
+    await waitUntil(() => session!.screenConfig().supportsHingeAngle === true);
+    expect(session.screenConfig()).toMatchObject({ hingeAngle: 90, hingePose: null, physicalOrientation: "portrait", tableMode: false });
   });
 
   test("rejects physical surface selection when Table Mode is unavailable", async () => {
@@ -1248,7 +1274,7 @@ describe("physical hinge controls", () => {
   test("lets native capability validation handle commands while discovery is pending", async () => {
     let finishDiscovery!: () => void;
     const discovery = new Promise<void>((resolve) => { finishDiscovery = resolve; });
-    const { controlResults } = await start(
+    const { controlResults, configs } = await start(
       { width: 2007, height: 2853 },
       true,
       undefined,
@@ -1256,12 +1282,15 @@ describe("physical hinge controls", () => {
       discovery,
     );
 
+    nativeHingeState = { hingeAngle: 90 };
     send(1, { control: "physical", value: "faceup" });
     await waitUntil(() => controlResults.length === 1);
     expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
     expect(physicalOrientations).toEqual(["faceup"]);
 
     finishDiscovery();
+    await waitUntil(() => configs.at(-1)?.hingeAngle === 90);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: null, physicalOrientation: "faceup", tableMode: false });
   });
 
   test("acknowledges distinct poses and broadcasts them to every client", async () => {

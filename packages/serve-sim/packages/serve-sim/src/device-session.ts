@@ -254,6 +254,7 @@ export class DeviceSession {
   private hingePhysicalOrientation?: HingePhysicalOrientation;
   private hingeControlUpdate: Promise<void> = Promise.resolve();
   private hingeControlled = false;
+  private hingeRotated = false;
   private nativeScreen?: NativeScreenInfo;
   private screenRefresh?: Promise<boolean>;
   private screenRefreshRequested = false;
@@ -1016,7 +1017,7 @@ export class DeviceSession {
         const operation = this.hingeControlUpdate.then(async () => {
           const value = ORIENTATION_BY_NAME[m.orientation];
           if (this.phase !== "running" || value == null || !await this.hid.orientation(value)) return;
-          this.hingeControlled = true;
+          this.hingeRotated = true;
           this.recordHidEvent(tag, m);
           if (this.supportsHingeAngle) {
             // Rotation is panel-relative; only a named pose establishes the
@@ -1028,9 +1029,12 @@ export class DeviceSession {
             // Apps may lock their interface. Keep native readback authoritative.
             await this.refreshScreenSizeFromNative();
             this.broadcastConfig();
-          } else if (m.orientation !== this.orientation) {
-            this.orientation = m.orientation;
-            this.broadcastConfig();
+          } else {
+            writeSavedHingeState(this.udid, {});
+            if (m.orientation !== this.orientation) {
+              this.orientation = m.orientation;
+              this.broadcastConfig();
+            }
           }
         });
         this.hingeControlUpdate = operation.catch(() => {});
@@ -1163,18 +1167,24 @@ export class DeviceSession {
   /** Seed the hinge from native before advertising it, so clients never see support without state. */
   private hydrateHingeState(): void {
     const operation = this.hingeControlUpdate.then(async () => {
-      if (!this.hingeControlled) {
+      if (!this.hingeControlled || this.hingeAngle === undefined) {
         const state = await this.hid.hingeState();
         if (this.phase !== "running") return;
-        const saved = readSavedHingeState(this.udid, state.hingeAngle);
-        this.hingeAngle = state.hingeAngle;
-        this.tableMode = state.tableMode ?? saved?.tableMode;
-        this.hingePhysicalOrientation = state.physicalOrientation ?? saved?.physicalOrientation;
-        this.hingePose = hingePoseForState({
-          hingeAngle: this.hingeAngle,
-          physicalOrientation: this.hingePhysicalOrientation,
-          tableMode: this.tableMode,
-        });
+        if (this.hingeControlled) {
+          this.hingeAngle = state.hingeAngle;
+          this.saveHingeState();
+        } else {
+          const saved = this.hingeRotated ? null : readSavedHingeState(this.udid, state.hingeAngle);
+          this.hingeAngle = state.hingeAngle;
+          this.tableMode = this.hingeRotated ? false : state.tableMode ?? saved?.tableMode;
+          this.hingePhysicalOrientation = this.hingeRotated ? undefined : state.physicalOrientation ?? saved?.physicalOrientation;
+          this.hingePose = this.hingeRotated ? null : saved?.hingePose !== undefined ? saved.hingePose : hingePoseForState({
+            hingeAngle: this.hingeAngle,
+            physicalOrientation: this.hingePhysicalOrientation,
+            tableMode: this.tableMode,
+          });
+          if (this.hingeRotated) this.saveHingeState();
+        }
       }
       this.supportsHingeAngle = true;
       this.broadcastConfig();
@@ -1224,6 +1234,7 @@ export class DeviceSession {
         this.hingePhysicalOrientation = recovered.physicalOrientation ?? this.hingePhysicalOrientation;
         writeSavedHingeState(this.udid, {
           hingeAngle: recovered.hingeAngle,
+          hingePose: null,
           physicalOrientation: this.hingePhysicalOrientation,
           tableMode: this.tableMode,
         });
@@ -1241,6 +1252,7 @@ export class DeviceSession {
   private saveHingeState(): void {
     writeSavedHingeState(this.udid, {
       hingeAngle: this.hingeAngle,
+      hingePose: this.hingePose,
       physicalOrientation: this.hingePhysicalOrientation,
       tableMode: this.tableMode,
     });
