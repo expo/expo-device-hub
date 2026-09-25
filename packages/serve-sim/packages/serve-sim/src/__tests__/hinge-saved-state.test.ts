@@ -25,6 +25,13 @@ test("invalidates saved pose when the angle is unknown", () => {
   expect(readSavedHingeState(UDID, 80)).toBeNull();
 });
 
+test("preserves an explicitly cleared pose at the same angle", () => {
+  writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+  expect(readSavedHingeState(UDID, 90)?.hingePose).toBe("book");
+  writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: null, physicalOrientation: "portrait", tableMode: false });
+  expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, physicalOrientation: "portrait", tableMode: false });
+});
+
 test("ignores corrupt saved state and keeps files private", () => {
   writeSavedHingeState(UDID, { hingeAngle: 90, physicalOrientation: "landscape-left", tableMode: false });
   const file = join(tempState.dir, `hinge-${UDID}.json`);
