@@ -55,8 +55,8 @@ firewall allows automatically.
 | Constant frame rate | While someone is watching, the last frame repeats at a steady 60 fps (about 0.15 Mbps and 3.5% CPU when static), so presentation cadence stays even and still images keep sharpening. `--vfr` encodes changes only. Nothing is encoded with no viewers |
 | Recover on demand | Keyframes are sent on join, on decoder error, or after a drop instead of on a fixed GOP |
 | Controller talks to the server, not the client device | Input goes straight upstream as normalized touch points, is injected as Indigo HID events, and needs no window focus or cursor |
-| Drop frames rather than queue them | Clients ack each decoded frame. Congestion is delay-based, as in WebRTC: if the oldest unacked frame is more than 120 ms past that viewer's own baseline, the server stops sending, lets the backlog drain, and resyncs on a keyframe |
-| Adaptive bitrate | AIMD: cut ×0.75 on congestion (to no less than max/8), then ×1.25 after 2 s clean. The encoder is shared, so it only backs off when *every* active viewer is congested; one slow viewer just skips frames |
+| One encoder per session | Frames are captured once and encoded once per viewer, so each viewer gets the bitrate its own link can carry, and one viewer's keyframes never cost the others |
+| Keep frame rate; let quality give | A per-viewer delay-based controller, as in WebRTC. Clients ack each decoded frame, and queueing delay above that viewer's baseline is the congestion signal. On overuse, the bitrate drops to about 85% of the measured delivery rate. It probes back up (+8% per 200 ms) only while the link is in use, and local viewers start at the maximum. Dropping frames and resyncing on a keyframe happens only past a 400 ms backlog |
 | Constant-rate encoding converges | Constant frame rate does this automatically. With `--vfr`, 12 extra frames of the settled image are encoded after motion stops so it still sharpens ("refinement") |
 | Don't stream to nobody | Hidden tabs send `pause` and resume with a keyframe, so a throttled background tab isn't mistaken for congestion |
 | Latency telemetry | HUD shows fps in motion (idle gaps excluded), frame pacing (mean ± sd), encode, network, decode, capture→draw (NTP-style clock sync), and touch→first changed pixel. The server logs source frames captured vs missed |
@@ -79,6 +79,10 @@ firewall allows automatically.
   treat that as the probe's ceiling, not the encoder's.
 - The low-latency rate control is required: standard VideoToolbox rate control pipelines frames, which
   showed up as about 2 s of touch latency and congestion.
+- Constrained link: a dense "year view" zoom (worst case for the encoder), streamed through a 10 Mbps /
+  76 ms RTT emulated link with a healthy local viewer also connected. The old shared encoder gave
+  14–21 fps at 340–400 ms capture→draw. Per-viewer control gives 60 fps at about 50 ms (mostly link
+  delay), with the remote viewer at 6–12 Mbps and the local one at 40 Mbps.
 
 ## Layout
 
@@ -88,7 +92,8 @@ firewall allows automatically.
 - `Sources/simstream/FramePump.swift`: capture pacing, IOSurface seed check, idle refinement, scale/convert.
 - `Sources/simstream/Encoder.swift`: VideoToolbox H.264 and avcC → WebCodecs config.
 - `Sources/simstream/QualityProbe.swift`: optional decode-back PSNR, run with `--quality`.
-- `Sources/simstream/Server.swift`: HTTP and WebSocket on one port, plus backpressure.
+- `Sources/simstream/Server.swift`: HTTP and WebSocket on one port (transport only).
+- `Sources/simstream/Viewer.swift`: per-viewer encoder, ack tracking, and `CongestionController`.
 - `Sources/simstream/Web/index.html`: the client (decoder, input, HUD).
 
 ## Known gaps / next steps
@@ -98,8 +103,8 @@ firewall allows automatically.
 - **Multi-touch and gestures**: `IndigoHIDMessageForMouseNSEvent` accepts a second point, so pinch
   just needs wiring. SimulatorKit also throttles drag events to about 60 Hz.
 - **Encoder**: HEVC/AV1 for bandwidth, and reference-frame invalidation instead of a full keyframe
-  after a drop. Per-viewer encoders or simulcast would also help: today one stalled viewer's resync
-  forces a keyframe for everyone, about every 2 s.
+  after a resync. Adaptive resolution (Stadia dropped resolution before frame rate) would keep dense
+  text legible at low bitrates. Each viewer costs one hardware encode session.
 - **Chroma**: 4:2:0 softens colored text slightly. HEVC 4:4:4 would fix it where decoders support it.
 - **Audio**: not streamed.
 - **Keyboard / Lock / Siri**: wired up but only Home, tap and drag were verified. Keyboard needs a text field focused in the guest.

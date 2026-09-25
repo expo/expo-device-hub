@@ -33,7 +33,7 @@ struct Options {
       --port         HTTP port for the web client and the stream (WebSocket on /stream)
       --scale        output resolution relative to the device framebuffer
       --fps          capture/encode frame-rate cap
-      --bitrate      starting/max bitrate in Mbps (adapts down under congestion)
+      --bitrate      max bitrate per viewer in Mbps (each viewer adapts to its own link)
       --vfr          variable frame rate: only encode changes (plus --refine frames) instead of
                      repeating the last frame at a constant --fps while viewers are watching
       --refine       with --vfr, extra frames encoded after motion stops to sharpen the settled image
@@ -59,37 +59,6 @@ struct Options {
             }
         }
         return options
-    }
-}
-
-/// AIMD bitrate control driven by (delay-based) client congestion: back off on congestion, climb
-/// back while the pipe stays clear.
-final class RateController {
-    private let encoder: H264Encoder
-    private let minBitrate: Int
-    private let maxBitrate: Int
-    private var lastCongestionMs = 0.0
-
-    init(encoder: H264Encoder, maxBitrate: Int) {
-        self.encoder = encoder
-        self.maxBitrate = maxBitrate
-        self.minBitrate = min(maxBitrate, max(2_000_000, maxBitrate / 8))
-    }
-
-    func congested() {
-        let now = Clock.ms()
-        guard now - lastCongestionMs > 500 else { return }
-        lastCongestionMs = now
-        let next = max(minBitrate, Int(Double(encoder.bitrate) * 0.75))
-        if next != encoder.bitrate {
-            encoder.setBitrate(next)
-            log("congestion: bitrate → \(next / 1000) kbps")
-        }
-    }
-
-    func tick() {
-        guard Clock.ms() - lastCongestionMs > 2000, encoder.bitrate < maxBitrate else { return }
-        encoder.setBitrate(min(maxBitrate, Int(Double(encoder.bitrate) * 1.25)))
     }
 }
 
@@ -122,26 +91,64 @@ do {
     log("attached to \(sim.name) (\(sim.runtimeName)) \(sim.udid) — framebuffer \(sourceWidth)×\(sourceHeight)")
 
     let maxBitrate = Int(options.bitrateMbps * 1_000_000)
-    let encoder = try H264Encoder(width: width, height: height, fps: options.fps, bitrate: maxBitrate)
-    if options.measureQuality { encoder.quality = QualityProbe() }
-    let pump = try FramePump(sim: sim, encoder: encoder, fps: options.fps, refineFrames: options.refineFrames,
-                                constantFrameRate: options.constantFrameRate)
-    let rate = RateController(encoder: encoder, maxBitrate: maxBitrate)
+    let pump = try FramePump(sim: sim, width: width, height: height, fps: options.fps,
+                             refineFrames: options.refineFrames, constantFrameRate: options.constantFrameRate)
 
     guard let webRoot = Bundle.module.url(forResource: "Web", withExtension: nil) else {
         throw SimStreamError("missing Web resources")
     }
     let stream = try StreamServer(port: options.port, webRoot: webRoot)
 
-    encoder.onFrame = { stream.broadcast($0) }
-    stream.onKeyframeNeeded = { pump.requestKeyframe() }
-    stream.onWatchingChanged = { pump.setWatching($0) }
-    stream.onCongestion = {
-        rate.congested()
-        pump.requestKeyframe()
+    // Viewers, keyed by connection; only touched on the server queue.
+    var viewers: [UUID: Viewer] = [:]
+    var nextViewerID = 1
+    func updateWatching() {
+        pump.setWatching(viewers.values.contains { !$0.paused })
+    }
+
+    // Capture once, encode per viewer.
+    pump.onFrame = { pixelBuffer, captureMs, inputSeq in
+        stream.queue.async {
+            for viewer in viewers.values {
+                viewer.offer(pixelBuffer, captureMs: captureMs, inputSeq: inputSeq)
+            }
+        }
+    }
+
+    stream.onConnect = { client in
+        do {
+            let viewer = try Viewer(id: nextViewerID, client: client, server: stream, width: width, height: height,
+                                    fps: options.fps, maxBitrate: maxBitrate, measureQuality: options.measureQuality)
+            nextViewerID += 1
+            viewers[client.id] = viewer
+            log("viewer \(viewer.id) connected (\(viewers.count) total)")
+            updateWatching()
+            pump.requestFrame()
+        } catch {
+            log("error: could not create an encoder for a new viewer: \(error)")
+            client.connection.cancel()
+        }
+    }
+    stream.onDisconnect = { client in
+        guard let viewer = viewers.removeValue(forKey: client.id) else { return }
+        log("viewer \(viewer.id) disconnected (\(viewers.count) total)")
+        updateWatching()
     }
     stream.onMessage = { client, message in
+        let viewer = viewers[client.id]
         switch message["t"] as? String {
+        case "ack":
+            if let seq = (message["seq"] as? NSNumber)?.uint32Value { viewer?.ack(seq) }
+        case "keyframe":
+            viewer?.requestKeyframe()
+            pump.requestFrame()
+        case "pause":
+            viewer?.pause()
+            updateWatching()
+        case "resume":
+            viewer?.resume()
+            updateWatching()
+            pump.requestFrame()
         case "touch":
             guard let x = message["x"] as? Double, let y = message["y"] as? Double else { return }
             let phase: SBTouchPhase = switch message["p"] as? String {
@@ -171,35 +178,46 @@ do {
 
     pump.start()
 
-    // Once a second: adapt bitrate and push server-side stats to viewers.
+    // Bitrate control, ten times a second per viewer.
+    let controlTimer = DispatchSource.makeTimerSource(queue: stream.queue)
+    controlTimer.schedule(deadline: .now() + 0.1, repeating: 0.1)
+    controlTimer.setEventHandler {
+        for viewer in viewers.values { viewer.tick() }
+    }
+    controlTimer.resume()
+
+    // Once a second: log per-viewer stats and push them to each viewer's HUD.
     var lastCaptured = 0
     let statsTimer = DispatchSource.makeTimerSource(queue: stream.queue)
     statsTimer.schedule(deadline: .now() + 1, repeating: 1)
     statsTimer.setEventHandler {
-        rate.tick()
         let captured = pump.capturedFrames
-        stream.sendToAll(["t": "stats", "captureFps": captured - lastCaptured, "bitrate": encoder.bitrate])
-        lastCaptured = captured
-        let s = encoder.takeStats()
-        if s.frames > 0 {
-            var line = String(format: "stats: %d fps  %.2f Mbps (target %.1f)  avg %.1f KB  max %.1f KB  key %d  encode %.1f ms",
-                              s.frames, Double(s.bytes * 8) / 1e6, Double(encoder.bitrate) / 1e6,
+        let c = pump.takeCadence()
+        if c.captured > 0 {
+            log("source: \(c.captured) new frames, \(c.missed) missed, \(c.damage) damage callbacks")
+        }
+        for viewer in viewers.values.sorted(by: { $0.id < $1.id }) {
+            let s = viewer.takeStats()
+            let cc = viewer.congestion
+            stream.sendJSON(["t": "stats", "captureFps": captured - lastCaptured, "bitrate": cc.bitrate], to: viewer.client)
+            guard s.frames > 0 else { continue }
+            var line = String(format: "viewer %d: %d fps  %.2f Mbps (target %.1f)  avg %.1f KB  max %.1f KB  key %d  encode %.1f ms  queue %.0f ms over %.0f ms",
+                              viewer.id, s.frames, Double(s.bytes * 8) / 1e6, Double(cc.bitrate) / 1e6,
                               Double(s.bytes) / Double(s.frames) / 1024, Double(s.maxBytes) / 1024, s.keyframes,
-                              s.encodeMs / Double(s.frames))
-            let c = pump.takeCadence()
-            line += "  source: \(c.captured) new frames, \(c.missed) missed, \(c.damage) damage callbacks"
+                              s.encodeMs / Double(s.frames), cc.queueMs, cc.baselineOrZero)
             if s.psnrCount > 0 {
                 line += String(format: "  psnr avg %.1f min %.1f dB", s.psnrSum / Double(s.psnrCount), s.psnrMin)
             }
             log(line)
         }
+        lastCaptured = captured
     }
     statsTimer.resume()
 
-    log("encoding \(width)×\(height) H.264 @ ≤\(options.fps) fps, ≤\(options.bitrateMbps) Mbps")
+    log("encoding \(width)×\(height) H.264 @ ≤\(options.fps) fps per viewer, ≤\(options.bitrateMbps) Mbps each")
     log("open http://localhost:\(options.port)")
     log("other devices need HTTPS for WebCodecs — e.g. `tailscale serve --bg --https=8449 http://127.0.0.1:\(options.port)`")
-    withExtendedLifetime((stream, statsTimer)) { dispatchMain() }
+    withExtendedLifetime((stream, controlTimer, statsTimer)) { dispatchMain() }
 } catch {
     log("error: \(error)")
     exit(1)

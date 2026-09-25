@@ -2,19 +2,10 @@ import CryptoKit
 import Foundation
 import Network
 
-/// One connected viewer. All state is confined to the server's queue.
+/// One WebSocket connection. All state is confined to the server's queue.
 final class StreamClient {
     let id = UUID()
     let connection: NWConnection
-    /// Seqs of frames sent but not yet acknowledged as decoded by the client.
-    var unacked: [(seq: UInt32, sentMs: Double)] = []
-    var waitingForKeyframe = true
-    /// Congested: skip frames until the backlog drains, then resync with a keyframe.
-    var draining = false
-    /// Hidden tab: send nothing (it would never ack, and would read as congestion).
-    var paused = false
-    /// Lowest recent send→ack time: this viewer's uncongested path + decode latency.
-    var baselineMs = Double.infinity
 
     fileprivate var buffer = Data()
     fileprivate var isWebSocket = false
@@ -29,31 +20,17 @@ final class StreamClient {
 /// WebSocket upgrade on `/stream`. One origin keeps it working behind TLS terminators such as
 /// `tailscale serve`, which WebCodecs needs anywhere but localhost (secure contexts only).
 ///
-/// Backpressure is end-to-end and delay-based (as in WebRTC's congestion control): the client acks
-/// each frame after decoding, and when the oldest unacked frame is well past that viewer's
-/// baseline latency, frames are building up somewhere, so we stop sending (latency over
-/// smoothness), let the backlog drain, and resync on a keyframe. Each viewer is judged against
-/// its own baseline, so a slow link isn't congestion, only a growing queue is.
+/// Transport only: what to send each viewer, and at what bitrate, is decided per viewer (`Viewer`).
 final class StreamServer {
     let queue = DispatchQueue(label: "simstream.server", qos: .userInteractive)
-    var onKeyframeNeeded: (() -> Void)?
-    var onCongestion: (() -> Void)?
+    var onConnect: ((StreamClient) -> Void)?
+    var onDisconnect: ((StreamClient) -> Void)?
     var onMessage: ((StreamClient, [String: Any]) -> Void)?
-    /// Called with whether any viewer is connected and not paused.
-    var onWatchingChanged: ((Bool) -> Void)?
-
-    private func watchersChanged() {
-        onWatchingChanged?(clients.values.contains { !$0.paused })
-    }
 
     private let listener: NWListener
     private let webRoot: URL
     private var clients: [UUID: StreamClient] = [:]
     private let maxMessageSize = 1 << 20
-    /// Queueing delay (beyond baseline) that counts as congestion.
-    private let congestionMs = 120.0
-    /// A viewer this far behind is stalled, not congested: forget its backlog.
-    private let stallMs = 2000.0
 
     init(port: UInt16, webRoot: URL) throws {
         self.webRoot = webRoot
@@ -70,8 +47,7 @@ final class StreamServer {
             switch state {
             case .failed, .cancelled:
                 if self?.clients.removeValue(forKey: client.id) != nil {
-                    log("client disconnected (\(self?.clients.count ?? 0) total)")
-                    self?.watchersChanged()
+                    self?.onDisconnect?(client)
                 }
             default:
                 break
@@ -148,9 +124,7 @@ final class StreamServer {
         client.connection.send(content: Data(response.utf8), completion: .idempotent)
         client.isWebSocket = true
         clients[client.id] = client
-        log("client connected (\(clients.count) total)")
-        watchersChanged()
-        onKeyframeNeeded?()
+        onConnect?(client)
         parseFrames(client)
     }
 
@@ -196,7 +170,7 @@ final class StreamServer {
                     let message = client.fragments
                     client.fragments = Data()
                     if let json = (try? JSONSerialization.jsonObject(with: message)) as? [String: Any] {
-                        handle(client, json)
+                        onMessage?(client, json)
                     }
                 }
             case 0x8:
@@ -229,78 +203,15 @@ final class StreamServer {
         return frame
     }
 
-    private func handle(_ client: StreamClient, _ message: [String: Any]) {
-        switch message["t"] as? String {
-        case "ack":
-            guard let seq = (message["seq"] as? NSNumber)?.uint32Value else { return }
-            if let acked = client.unacked.first(where: { $0.seq == seq }) {
-                // Creep upward slowly so the baseline tracks a path that genuinely got slower.
-                client.baselineMs = min(Clock.ms() - acked.sentMs, client.baselineMs + 0.05)
-            }
-            client.unacked.removeAll { $0.seq <= seq }
-        case "keyframe":
-            client.waitingForKeyframe = true
-            onKeyframeNeeded?()
-        case "pause":
-            client.paused = true
-            client.unacked.removeAll()
-            log("client paused (hidden)")
-            watchersChanged()
-        case "resume":
-            client.paused = false
-            client.draining = false
-            client.waitingForKeyframe = true
-            onKeyframeNeeded?()
-            watchersChanged()
-            log("client resumed")
-        default:
-            onMessage?(client, message)
-        }
-    }
-
     // MARK: Sending
 
-    func broadcast(_ frame: EncodedFrame) {
-        queue.async { [self] in
-            for client in clients.values { send(frame, to: client) }
-        }
-    }
-
-    private func send(_ frame: EncodedFrame, to client: StreamClient) {
-        if client.paused { return }
-        let now = Clock.ms()
-        let baseline = client.baselineMs.isFinite ? client.baselineMs : 0
-        let queueing = client.unacked.first.map { now - $0.sentMs - baseline } ?? 0
-
-        if queueing > stallMs {
-            client.unacked.removeAll()
-        }
-        if client.draining {
-            // Hold off until the backlog has mostly cleared, then resync.
-            guard queueing < congestionMs / 2 else { return }
-            client.draining = false
-            onKeyframeNeeded?()
-        }
-        if queueing > congestionMs {
-            log(String(format: "congestion: %d frames queued, %.0f ms over %.1f ms baseline",
-                       client.unacked.count, queueing, baseline))
-            client.draining = true
-            client.waitingForKeyframe = true
-            // The encoder is shared: only back off when every active viewer is congested, so one
-            // slow viewer skips frames on its own instead of degrading everyone.
-            if clients.values.allSatisfy({ $0.paused || $0.draining }) { onCongestion?() }
-            return
-        }
-        if client.waitingForKeyframe && !frame.isKeyframe { return }
+    func sendFrame(_ frame: EncodedFrame, to client: StreamClient) {
         if frame.isKeyframe, let config = frame.config {
             sendJSON([
                 "t": "config", "codec": config.codec, "width": config.width, "height": config.height,
                 "description": config.description.base64EncodedString(),
             ], to: client)
         }
-        client.waitingForKeyframe = false
-        client.unacked.append((frame.seq, now))
-
         // Header: u8 flags | u32 seq | f64 captureMs | f64 encodedMs | u32 inputSeq  (little endian)
         let headerSize = 25
         var packet = Self.frame(0x2, Data(), reserving: headerSize + frame.data.count)
@@ -316,12 +227,6 @@ final class StreamServer {
     func sendJSON(_ object: [String: Any], to client: StreamClient) {
         guard let data = try? JSONSerialization.data(withJSONObject: object) else { return }
         client.connection.send(content: Self.frame(0x1, data), completion: .idempotent)
-    }
-
-    func sendToAll(_ object: [String: Any]) {
-        queue.async { [self] in
-            for client in clients.values { sendJSON(object, to: client) }
-        }
     }
 }
 

@@ -4,7 +4,8 @@ import IOSurface
 import SimBridge
 import VideoToolbox
 
-/// Pulls frames out of the simulator's framebuffer and feeds the encoder.
+/// Pulls frames out of the simulator's framebuffer and hands them to `onFrame` (each viewer encodes
+/// its own copy).
 ///
 /// Capture is render-locked: the guest's per-frame damage callback triggers a capture as soon as a
 /// frame lands, so the stream inherits the simulator's own cadence (no beating between a polling
@@ -20,8 +21,10 @@ final class FramePump {
     let width: Int
     let height: Int
 
+    /// Called on the capture queue with each frame to stream.
+    var onFrame: ((CVPixelBuffer, _ captureMs: Double, _ inputSeq: UInt32) -> Void)?
+
     private let sim: SBSimulator
-    private let encoder: H264Encoder
     private let queue = DispatchQueue(label: "simstream.capture", qos: .userInteractive)
     private let frameInterval: Double
     private let transfer: VTPixelTransferSession
@@ -31,7 +34,8 @@ final class FramePump {
     private var source: (surface: IOSurfaceRef, buffer: CVPixelBuffer)?
     private var lastSeed: UInt32 = 0
     private var lastCaptureMs: Double = 0
-    private var keyframeRequested = true
+    private var frameRequested = true
+    private var deferredCapture = false
     private var pendingInputSeq: UInt32 = 0
     private let refineFrames: Int
     private var refineRemaining = 0
@@ -46,13 +50,12 @@ final class FramePump {
     private var cadence = Cadence()
     func takeCadence() -> Cadence { queue.sync { defer { cadence = Cadence() }; return cadence } }
 
-    init(sim: SBSimulator, encoder: H264Encoder, fps: Int, refineFrames: Int, constantFrameRate: Bool) throws {
+    init(sim: SBSimulator, width: Int, height: Int, fps: Int, refineFrames: Int, constantFrameRate: Bool) throws {
         self.sim = sim
         self.refineFrames = refineFrames
         self.constantFrameRate = constantFrameRate
-        self.encoder = encoder
-        self.width = encoder.width
-        self.height = encoder.height
+        self.width = width
+        self.height = height
         self.frameInterval = 1000.0 / Double(fps)
 
         var transfer: VTPixelTransferSession?
@@ -66,8 +69,8 @@ final class FramePump {
 
         let attrs: [CFString: Any] = [
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-            kCVPixelBufferWidthKey: encoder.width,
-            kCVPixelBufferHeightKey: encoder.height,
+            kCVPixelBufferWidthKey: width,
+            kCVPixelBufferHeightKey: height,
             kCVPixelBufferIOSurfacePropertiesKey: [:] as CFDictionary,
         ]
         var pool: CVPixelBufferPool?
@@ -89,13 +92,14 @@ final class FramePump {
     /// Whether any viewer is currently watching; with none, nothing is captured or encoded.
     func setWatching(_ watching: Bool) {
         queue.async {
-            if watching && !self.watching { self.keyframeRequested = true }
+            if watching && !self.watching { self.frameRequested = true }
             self.watching = watching
         }
     }
 
-    func requestKeyframe() {
-        queue.async { self.keyframeRequested = true }
+    /// Capture on the next tick even if nothing changed (e.g. a viewer needs a keyframe).
+    func requestFrame() {
+        queue.async { self.frameRequested = true }
     }
 
     /// Records that an input event was injected, so the next changed frame can be tagged with it
@@ -111,9 +115,24 @@ final class FramePump {
             cadence.damage += 1
         }
         guard watching else { return }
-        // Damage frames only need guarding against sources faster than the cap (e.g. 120 Hz);
-        // the tick must not crowd them.
-        if now - lastCaptureMs < frameInterval * (fromDamage ? 0.6 : 0.9) { return }
+        if fromDamage {
+            // Stay under the frame-rate cap (e.g. with a 120 Hz source) without losing frames: a
+            // render that lands too soon after the last capture is deferred, not dropped. Heavy
+            // content makes the guest deliver frames in uneven bunches.
+            let wait = frameInterval * 0.6 - (now - lastCaptureMs)
+            if wait > 0 {
+                if !deferredCapture {
+                    deferredCapture = true
+                    queue.asyncAfter(deadline: .now() + .microseconds(Int(wait * 1000))) { [weak self] in
+                        self?.deferredCapture = false
+                        self?.capture(fromDamage: true)
+                    }
+                }
+                return
+            }
+        } else if now - lastCaptureMs < frameInterval * 0.9 {
+            return  // the tick must not crowd render-locked captures
+        }
         guard let surface = sim.framebuffer() else { return }
 
         let seed = IOSurfaceGetSeed(surface)
@@ -123,7 +142,7 @@ final class FramePump {
             return  // a render is in flight; its damage callback will capture it in step
         }
         let repeating = !fromDamage && !contentChanged && (constantFrameRate || refineRemaining > 0)
-        guard contentChanged || keyframeRequested || repeating else { return }
+        guard contentChanged || frameRequested || repeating else { return }
         refineRemaining = contentChanged ? refineFrames : max(0, refineRemaining - 1)
 
         if surfaceChanged {
@@ -146,13 +165,12 @@ final class FramePump {
         lastCaptureMs = now
         capturedFrames += 1
 
-        let force = keyframeRequested
-        keyframeRequested = false
+        frameRequested = false
         var inputSeq: UInt32 = 0
         if contentChanged {
             inputSeq = pendingInputSeq
             pendingInputSeq = 0
         }
-        encoder.encode(output, captureMs: now, forceKeyframe: force, inputSeq: inputSeq)
+        onFrame?(output, now, inputSeq)
     }
 }

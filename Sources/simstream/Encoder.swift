@@ -20,7 +20,7 @@ struct EncodedFrame {
 }
 
 /// Hardware H.264 tuned for interactive streaming: low-latency rate control, no B-frames,
-/// keyframes on demand rather than on a fixed GOP.
+/// keyframes on demand rather than on a fixed GOP. One per viewer.
 final class H264Encoder {
     let width: Int
     let height: Int
@@ -73,8 +73,9 @@ final class H264Encoder {
         }
         set(kVTCompressionPropertyKey_AverageBitRate, bitrate as CFNumber)
         set(kVTCompressionPropertyKey_ExpectedFrameRate, fps as CFNumber)
-        // Periodic refresh as a safety net; normally keyframes are requested by clients.
-        set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 10 as CFNumber)
+        // Keyframes are requested per viewer (join, resume, decoder error, resync). The transport is
+        // reliable, so a periodic refresh would only cost a burst of bits on constrained links.
+        set(kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, 60 as CFNumber)
         set(kVTCompressionPropertyKey_ColorPrimaries, kCVImageBufferColorPrimaries_ITU_R_709_2)
         set(kVTCompressionPropertyKey_TransferFunction, kCVImageBufferTransferFunction_ITU_R_709_2)
         set(kVTCompressionPropertyKey_YCbCrMatrix, kCVImageBufferYCbCrMatrix_ITU_R_709_2)
