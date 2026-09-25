@@ -34,8 +34,9 @@ launchctl setenv DYLD_INSERT_LIBRARIES  →  libServeSimCapabilityLoader.dylib  
                                            dlopen(libSimCameraInjector.dylib)   (UIKit, AVFoundation, …)
 ```
 
-The capability loader links **only libSystem**. It is the one dylib in the insert. Every
-capability is loaded by it, never inserted alongside it.
+The capability loader links **only libSystem**. Deferred capabilities are loaded through it. Startup capabilities are preloaded alongside
+it and must also link only libSystem; their constructors delegate scope and configuration
+checks to the loader before initializing.
 
 ## What the capability loader does
 
@@ -157,3 +158,35 @@ forgotten:
 - `+[AVCaptureDevice defaultDeviceWithMediaType:]` is not swizzled, only the
   `deviceType:mediaType:position:` form, so an app using the older API sees no
   camera.
+
+## Startup capabilities
+
+`loadPhase: "startup"` preloads a dependency-free capability image so its hooks can run
+before app constructors and Objective-C `+load`. Its constructor calls
+`serve_sim_startup` through `startup-capability.h`; the loader matches the callback's
+actual image against configuration, checks app scope, and applies environment values
+before invoking initialization. This path never calls `dlopen` or waits for the loader's
+constructor. An absent loader or config leaves the startup image inert.
+
+The config record is `startup\t<scope>\t<dylib>\t<env>\t0`. Older loaders reject its
+unknown leading token instead of silently loading startup work later. The deferred path
+ignores these records, including config updates in already-running apps. Capabilities
+with only a startup record require an app relaunch; removing config cannot undo
+existing session state.
+
+Network capture uses `startupAndDeferred`: the manager writes both the startup record
+and a deferred record for the same image. New apps receive the image at `exec`, so
+startup requests can be captured. An app that already carries the loader sees the
+new deferred record and `dlopen`s the image on its main queue. The image's startup
+callback then checks the startup record and installs the proxy hook. An image
+already inserted at `exec` is deduplicated by dyld. Sessions or configurations
+created before a late load remain unchanged, so those requests can be missed.
+
+The capability manager owns all insert-list updates. A separate insert ownership file
+retains startup paths until launchd cleanup succeeds, even when their capability owner
+has exited or their config has been removed. Unrelated inserted libraries are preserved.
+
+Capture's startup image resolves existing Objective-C runtime functions and enumerates
+session factory methods without sending Objective-C messages during initialization.
+Proxy dictionaries are constructed only when those factories are called. Its build checks
+that no framework or Objective-C runtime dependency has been linked into the image.
