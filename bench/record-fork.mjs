@@ -51,7 +51,8 @@ const RECORDER = `(async () => {
     let v = 0; for (let b = 0; b < 18; b++) v = (v << 1) | (lum(b % 6, 1 + Math.floor(b / 6)) > 128 ? 1 : 0);
     return v;
   }
-  const S = window.__rec = { n: 0, gaps: [], last: 0, stop: false, done: null, lat: [], changes: [], size: '' };
+  const S = window.__rec = { n: 0, gaps: [], last: 0, stop: false, done: null, lat: [], changes: [], size: '', marks: [] };
+  window.addEventListener('pointerdown', () => S.marks.push(S.n), true);
   const pending = [];
   const flush = () => { if (!pending.length) return; let total = 0; for (const p of pending) total += p.length; const all = new Uint8Array(total); let o = 0; for (const p of pending) { all.set(p, o); o += p.length; } pending.length = 0; let s = ''; for (let i = 0; i < all.length; i += 0x8000) s += String.fromCharCode.apply(null, all.subarray(i, i + 0x8000)); __out(btoa(s)); };
   S.outputs = 0;
@@ -113,22 +114,28 @@ try {
   const at = (fx, fy) => ({ x: rect.x + rect.w * fx, y: rect.y + rect.h * fy });
   const mouse = (type, fx, fy) => cdp('Input.dispatchMouseEvent', { type, ...at(fx, fy), button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
   const startFrame = await ev('__rec.n');
+  // Inputs run on an absolute schedule from the route start, so per-call delays never accumulate.
+  const plan = [];
   if (MODE === 'route') {
+    const t0 = performance.now();
+    const until = (ms) => sleep(Math.max(0, t0 + ms - performance.now()));
+    let at = 0;
     for (const s of steps) {
-      if (s.op === 'wait') await sleep(s.ms);
-      if (s.op === 'tap') { await mouse('mousePressed', s.x, s.y); await sleep(60); await mouse('mouseReleased', s.x, s.y); }
-      if (s.op === 'swipe') { await mouse('mousePressed', s.x0, s.y0); for (let k = 1; k <= 14; k++) { await sleep(16); await mouse('mouseMoved', s.x0 + (s.x1 - s.x0) * k / 14, s.y0 + (s.y1 - s.y0) * k / 14); } await sleep(16); await mouse('mouseReleased', s.x1, s.y1); }
-      if (s.wait) await sleep(s.wait);
+      if (s.op === 'wait') { at += s.ms; continue; }
+      await until(at); plan.push(at);
+      if (s.op === 'tap') { await mouse('mousePressed', s.x, s.y); await until(at + 60); await mouse('mouseReleased', s.x, s.y); at += 60; }
+      if (s.op === 'swipe') { await mouse('mousePressed', s.x0, s.y0); for (let k = 1; k <= 14; k++) { await until(at + 16 * k); await mouse('mouseMoved', s.x0 + (s.x1 - s.x0) * k / 14, s.y0 + (s.y1 - s.y0) * k / 14); } await until(at + 240); await mouse('mouseReleased', s.x1, s.y1); at += 240; }
+      at += s.wait || 0;
     }
-    await sleep(800);
+    await until(at + 800); plan.push(at + 800);
   } else {
     await sleep(20000);
   }
   await ev('__rec.stop = true');
   await sleep(1500); // let the encoder flush
-  const stats = await ev(`(() => { const g = __rec.gaps; const lat = __rec.lat.slice().sort((a,b)=>a-b); return { frames: __rec.n, outputs: __rec.outputs, queue: 0, size: __rec.size, error: __rec.error || null, gapsOver20: g.filter(x => x > 20).length, gapMax: Math.max(...g), latMean: lat.length ? lat.reduce((a,b)=>a+b,0)/lat.length : null, latP95: lat.length ? lat[Math.floor(lat.length*0.95)] : null }; })()`);
-  writeFileSync(`${OUT}.json`, JSON.stringify({ label: LABEL, url: URL, mode: MODE, startFrame, rect, ...stats }, null, 1));
-  console.log(JSON.stringify({ label: LABEL, startFrame, ...stats }));
+  const stats = await ev(`(() => { const g = __rec.gaps; const lat = __rec.lat.slice().sort((a,b)=>a-b); return { frames: __rec.n, outputs: __rec.outputs, marks: __rec.marks, size: __rec.size, error: __rec.error || null, gapsOver20: g.filter(x => x > 20).length, gapMax: Math.max(...g), latMean: lat.length ? lat.reduce((a,b)=>a+b,0)/lat.length : null, latP95: lat.length ? lat[Math.floor(lat.length*0.95)] : null }; })()`);
+  writeFileSync(`${OUT}.json`, JSON.stringify({ label: LABEL, url: URL, mode: MODE, startFrame, plan, rect, ...stats }, null, 1));
+  console.log(JSON.stringify({ label: LABEL, startFrame, frames: stats.frames, marks: stats.marks.length, planned: plan.length - 1, error: stats.error }));
 } finally {
   await sleep(300); out.end(); ws.close(); chrome.kill();
 }
