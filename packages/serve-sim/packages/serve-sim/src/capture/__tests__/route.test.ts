@@ -6,6 +6,7 @@ import type { IncomingMessage, ServerResponse } from "http";
 import { createCaptureRuntime } from "../runtime";
 import { type CaptureProxy } from "../mitm-engine";
 import { handleCaptureBodyRequest, handleNetworkCaptureRequest } from "../../middleware";
+import { type CaptureMeta } from "../store";
 import { inProcessServeSimState } from "../../state";
 
 /**
@@ -57,15 +58,18 @@ function stubRuntime() {
     trustCa: async () => {},
     dylib: () => "/fake/libSimNetProxy.dylib",
     configure: capabilityHarness(),
+    isInjected: async () => true,
   });
   return { runtime, closed };
 }
 
 const dataFrames = (writes: string[]): string[] => writes.filter((w) => w.startsWith("data:"));
-const metaFrom = (writes: string[]) => {
-  const frame = writes.find((w) => w.startsWith("event: meta"));
-  expect(frame).toBeDefined();
-  return JSON.parse(frame!.slice("event: meta\ndata:".length).trim());
+const metaFrom = (writes: string[]): CaptureMeta => {
+  for (const frame of dataFrames(writes)) {
+    const parsed = JSON.parse(frame.slice("data:".length).trim()) as { type?: string; meta?: CaptureMeta };
+    if (parsed.type === "meta" && parsed.meta) return parsed.meta;
+  }
+  throw new Error("missing meta frame");
 };
 
 describe("handleNetworkCaptureRequest", () => {
@@ -108,7 +112,7 @@ describe("handleNetworkCaptureRequest", () => {
     const meta = metaFrom(writes);
     expect(meta.attachment).toBe("not-enabled");
     expect(meta.attachError).toBeNull();
-    expect(dataFrames(writes)).toHaveLength(0);
+    expect(dataFrames(writes)).toHaveLength(1);
 
     close();
   });
@@ -127,9 +131,9 @@ describe("handleNetworkCaptureRequest", () => {
     store.update(id, { status: 200, durationMs: 5 }, /* settled */ true);
 
     const frames = dataFrames(writes).map((w) => JSON.parse(w.slice("data:".length).trim()));
-    expect(frames.map((f) => f.type)).toEqual(["started", "finished"]);
-    expect(frames[1].request.url).toBe("https://example.com/a");
-    expect(frames[1].request.status).toBe(200);
+    expect(frames.map((f) => f.type)).toEqual(["meta", "started", "finished"]);
+    expect(frames[2].request.url).toBe("https://example.com/a");
+    expect(frames[2].request.status).toBe(200);
 
     close();
   });
@@ -168,7 +172,9 @@ describe("handleNetworkCaptureRequest", () => {
     handleNetworkCaptureRequest(viewer.req, viewerRes.res, state, runtime);
 
     const frames = dataFrames(viewerRes.writes).map((w) => JSON.parse(w.slice("data:".length).trim()));
-    const byUrl = Object.fromEntries(frames.map((f) => [f.request.url, f.type]));
+    const byUrl = Object.fromEntries(
+      frames.filter((f) => f.request).map((f) => [f.request.url, f.type]),
+    );
     expect(byUrl["https://example.com/pending"]).toBe("started");
     expect(byUrl["https://example.com/done"]).toBe("finished");
 

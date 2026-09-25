@@ -12,6 +12,7 @@ import { CrashTool } from "./crash-tool";
 import { EventLogTool } from "./event-log-tool";
 import type { HingeControlsProps } from "./hinge-controls";
 import { MetricsTool } from "./metrics-tool";
+import { NetworkCaptureTool } from "./network-capture-tool";
 import { PANEL_BACKGROUND } from "./panel-colors";
 import { SimulatorSettingsTool } from "./simulator-settings-tool";
 import { StreamSettingsTool } from "./stream-settings-tool";
@@ -31,6 +32,7 @@ export function ToolsPanel({
   eventLogEventsEndpoint,
   metricsEndpoint,
   crashesEndpoint,
+  captureEndpoint,
   axOverlayEnabled,
   onToggleAxOverlay,
   streamSettings,
@@ -56,6 +58,7 @@ export function ToolsPanel({
   eventLogEventsEndpoint?: string;
   metricsEndpoint?: string;
   crashesEndpoint?: string;
+  captureEndpoint?: string;
   axOverlayEnabled: boolean;
   onToggleAxOverlay: () => void;
   streamSettings: StreamControlSettings;
@@ -88,6 +91,7 @@ export function ToolsPanel({
             currentAppBundleId={currentApp?.bundleId ?? null}
             metricsEndpoint={metricsEndpoint}
           />
+          <NetworkCaptureTool udid={udid} captureEndpoint={captureEndpoint} />
           <EventLogTool udid={udid} eventsEndpoint={eventLogEventsEndpoint} />
           <SimulatorSettingsTool udid={udid} runtime={deviceRuntime} hingeControls={hingeControls} />
           <AxTreeTool

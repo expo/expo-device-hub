@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { capabilityConfigPath, managedStartupDylibs } from "../capability-config";
-import { armCapabilityLoader, configureCapability, enableCapabilities, disableCapability, rearmCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath } from "../launch-manager";
+import { armCapabilityLoader, configureCapability, enableCapabilities, disableCapability, rearmCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath, isCapabilityArmed } from "../launch-manager";
 import { installShims, useTempStateDir } from "./helpers";
 import { readLaunchState } from "../launch-state";
 
@@ -84,6 +84,11 @@ test("hybrid capture keeps its early insert and publishes a deferred load for ru
   const line = `user\t${dylib}\tSIMNET_PROXY_PORT_FILE=/capture/port\t0`;
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(`startup\t${line}\n${line}\n`);
   expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual(["/other.dylib", capabilityLoaderPath(), dylib]);
+  expect(await isCapabilityArmed(UDID, "networkCapture")).toBe(true);
+  const armedEnv = env();
+  writeFileSync(envPath, JSON.stringify({ ...armedEnv, DYLD_INSERT_LIBRARIES: `/other.dylib:${capabilityLoaderPath()}` }));
+  expect(await isCapabilityArmed(UDID, "networkCapture")).toBe(false);
+  writeFileSync(envPath, JSON.stringify(armedEnv));
   await disableCapability(UDID, null, "networkCapture", { relaunch: false });
   expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
 });
