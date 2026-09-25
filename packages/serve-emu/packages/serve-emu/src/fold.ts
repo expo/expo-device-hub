@@ -42,13 +42,15 @@ export async function getFoldStatus(
     ["-s", serial, "shell", "cmd", "device_state", "base-state"],
     { timeout: 5_000, lane: "interactive" },
   );
+  // While an app holds an override state (rear display, dual screen), the
+  // committed override comes first and the physical posture is on "Base state:".
   const name = state.status === 0
-    ? state.stdout.match(/name='([A-Z_]+)'/)?.[1]
+    ? (state.stdout.match(/Base state:.*?name='([A-Z_]+)'/) ?? state.stdout.match(/name='([A-Z_]+)'/))?.[1]
     : undefined;
   const posture = name ? POSTURES[name] : undefined;
   return {
     supported: true,
-    posture: name ? posture ?? null : angle <= 5 ? "closed" : angle >= 175 ? "opened" : null,
+    posture: posture ?? (angle <= 5 ? "closed" : angle >= 175 ? "opened" : null),
     hingeAngle: angle,
   };
 }
