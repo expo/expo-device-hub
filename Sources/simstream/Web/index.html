@@ -427,8 +427,8 @@ transitionsSelect.value = settings.transitions;
 function sendSettings() {
   send({ t: 'settings', transitions: settings.transitions, hevc: settings.hevc });
 }
-// The button and status line show the codec actually streaming (from the stream's config), not
-// just the requested setting, so a request the server couldn't honor is visible too.
+// The button is green while HEVC is actually streaming (from the stream's config), not just
+// requested, so a switch the server couldn't make is visible too.
 let hevcAvailable = false;
 function streamingHevc() {
   return !!currentConfig && currentConfig.codec.startsWith('hvc1');
@@ -437,11 +437,8 @@ function renderHevc(supported = hevcAvailable) {
   hevcAvailable = supported;
   const on = streamingHevc();
   hevcButton.disabled = !supported;
-  hevcButton.textContent = !supported ? 'HEVC n/a' : on ? 'HEVC: on' : settings.hevc ? 'HEVC: switching…' : 'HEVC: off';
+  hevcButton.textContent = supported ? 'HEVC' : 'HEVC n/a';
   hevcButton.classList.toggle('on', on);
-  if (statusEl.classList.contains('live')) {
-    statusEl.textContent = currentConfig ? `live · ${on ? 'HEVC' : 'H.264'}` : 'live';
-  }
 }
 hevcSupported.then(renderHevc);
 transitionsSelect.addEventListener('change', () => {
