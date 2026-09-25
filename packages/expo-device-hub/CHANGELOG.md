@@ -1,5 +1,11 @@
 # expo-device-hub
 
+## 0.12.0
+
+### Minor Changes
+
+- 1b3086e: Expose Android emulator fold capability, posture, hinge angle, and confirmed fold/unfold controls through serve-emu.
+
 ## 0.11.0
 
 ### Minor Changes
