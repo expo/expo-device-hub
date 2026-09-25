@@ -11,6 +11,7 @@ import {
   SAFARI_BUNDLE,
   writeTestPasteboard,
 } from "./pasteboard-sim";
+import { requireE2E } from "./e2e-preconditions";
 import { useTempStateDir } from "./helpers";
 
 const TEST_TOKEN = "test-token";
@@ -80,7 +81,9 @@ describe("/api/pasteboard", () => {
 });
 
 const bootedUdid = firstBootedIosSim();
-const describeWithSim = bootedUdid && pasteboardTool ? describe : describe.skip;
+const endpointReady = !!(bootedUdid && pasteboardTool);
+requireE2E("pasteboard endpoint E2E", endpointReady);
+const describeWithSim = endpointReady ? describe : describe.skip;
 
 for (const app of PASTEBOARD_TEST_APPS) {
   const run = "requireFixture" in app && !pasteboardFixture ? describe.skip : describeWithSim;
