@@ -2,6 +2,24 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { StringDecoder } from "node:string_decoder";
 
 const DEFAULT_MAX_BYTES = 4 * 1024 * 1024;
+export type LogScope = "all" | "user-apps";
+
+function isUserAppLog(raw: string): boolean {
+  // Like metrics-sampler's parseUserAppRows, classify by the emitting executable's
+  // app container. Unlike metrics, do not narrow to the currently foreground PID:
+  // background/terminated processes still have useful records in the replay ring.
+  // simctl already scopes this source to one device; paths may be device-relative.
+  try {
+    const entry: unknown = JSON.parse(raw);
+    return !!entry &&
+      typeof entry === "object" &&
+      "processImagePath" in entry &&
+      typeof entry.processImagePath === "string" &&
+      /\/containers\/bundle\/application\/[^/]+\/[^/]+\.app\//i.test(entry.processImagePath);
+  } catch {
+    return false;
+  }
+}
 
 const LINE_BUFFER_LIMIT = 1024 * 1024;
 const RESTART_DELAY_MS = 1000;
@@ -60,7 +78,8 @@ export class DeviceLogBuffer {
 
   constructor(
     private readonly udid: string,
-    private readonly deps: Required<LogBufferDeps>
+    private readonly deps: Required<LogBufferDeps>,
+    private readonly scope: LogScope = "all"
   ) {}
 
   get byteLength(): number {
@@ -264,7 +283,7 @@ export class DeviceLogBuffer {
         this.dropping = false;
         continue;
       }
-      if (raw) batch.push(this.append(raw));
+      if (raw && (this.scope === "all" || isUserAppLog(raw))) batch.push(this.append(raw));
     }
     if (this.partial.length > LINE_BUFFER_LIMIT) {
       this.partial = "";
@@ -330,32 +349,42 @@ export function createLogBufferCache(deps: LogBufferDeps = {}) {
     idleAfterMs: deps.idleAfterMs ?? POLL_IDLE_MS,
     now: deps.now ?? (() => Date.now()),
   };
-  const byUdid = new Map<string, DeviceLogBuffer>();
+  // Separate streams/rings keep system volume from evicting user-app replay.
+  // Each scope retains the existing idle shutdown and restart behavior.
+  const byScope: Record<LogScope, Map<string, DeviceLogBuffer>> = {
+    all: new Map(),
+    "user-apps": new Map(),
+  };
 
   return {
-    ensure(udid: string): DeviceLogBuffer {
+    ensure(udid: string, scope: LogScope = "all"): DeviceLogBuffer {
+      const byUdid = byScope[scope];
       const existing = byUdid.get(udid);
       if (existing) {
         existing.start();
         return existing;
       }
-      const buffer = new DeviceLogBuffer(udid, resolved);
+      const buffer = new DeviceLogBuffer(udid, resolved, scope);
       byUdid.set(udid, buffer);
       buffer.start();
       return buffer;
     },
 
-    peek(udid: string): DeviceLogBuffer | null {
-      return byUdid.get(udid) ?? null;
+    peek(udid: string, scope: LogScope = "all"): DeviceLogBuffer | null {
+      return byScope[scope].get(udid) ?? null;
     },
 
     prune(liveUdids: readonly string[]): void {
-      pruneByUdid(byUdid, liveUdids, (buffer) => buffer.stop());
+      for (const byUdid of Object.values(byScope)) {
+        pruneByUdid(byUdid, liveUdids, (buffer) => buffer.stop());
+      }
     },
 
     stopAll(): void {
-      for (const buffer of byUdid.values()) buffer.stop();
-      byUdid.clear();
+      for (const byUdid of Object.values(byScope)) {
+        for (const buffer of byUdid.values()) buffer.stop();
+        byUdid.clear();
+      }
     },
   };
 }

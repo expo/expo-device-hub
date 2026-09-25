@@ -27,6 +27,22 @@ https://github.com/user-attachments/assets/fbf890f4-c8c7-4684-82be-d677b8a188f8
 - Keyboard commands and hot keys are forwarded to the simulator, including CMD+SHIFT+H to go home.
 - Apple Watch, iPad, and iOS support.
 
+## Log scopes
+
+`/logs` (or the middleware's `/.sim/logs`) keeps its all-process default.
+Pass `scope=user-apps` to receive only unified-log records whose emitting
+executable lives in an installed app container, including app extensions.
+This includes background and subsequently installed apps, not just the foreground
+app. System messages merely mentioning an app are excluded.
+
+The filter applies to SSE, snapshots, and replay. The response header
+`X-Serve-Sim-Log-Scope` acknowledges the selected scope; callers requiring app-only
+logs should check it because older servers may ignore the parameter.
+Replay cursors belong to a device, scope, and server lifetime. Do not reuse an
+all-process cursor for a user-app stream. Each scope has a separate bounded
+buffer and log-stream process, started on demand and stopped when idle.
+This does not capture logs from before collection started or replace crash reports.
+
 ## Why?
 
 Hosted simulators can be hard to test, `serve-sim` enables you to test the hosted infra locally first for faster iteration. When you're ready to host a simulator remotely, simply tunnel the served URL and users can interact with the simulator as if it were running locally on their device.

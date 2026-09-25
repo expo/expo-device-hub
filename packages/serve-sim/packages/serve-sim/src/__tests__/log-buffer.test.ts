@@ -3,6 +3,7 @@ import { EventEmitter } from "events";
 import type { ChildProcess } from "child_process";
 import { createLogBufferCache, DeviceLogBuffer } from "../log-buffer";
 import type { LogLine } from "../log-buffer";
+import { findUserAppProcesses } from "../metrics-sampler";
 
 class FakeChild extends EventEmitter {
   readonly stdout = new EventEmitter() as EventEmitter & { destroy: () => void };
@@ -55,6 +56,85 @@ beforeEach(() => {
 });
 
 describe("DeviceLogBuffer", () => {
+  test("uses the CPU metrics user-app classification without foreground narrowing", () => {
+    const child = new FakeChild();
+    const cache = createLogBufferCache({
+      idleAfterMs: 0,
+      spawnLogStream: () => child as unknown as ChildProcess,
+    });
+    const base = "/x/Devices/UDID-1/data/Containers/Bundle/Application";
+    const paths = [
+      `${base}/AAA/MyApp.app/MyApp`,
+      `${base}/AAA/MyApp.app/PlugIns/Share.appex/Share`,
+      `${base}/BBB/Two Words.app/Two Words`,
+      "/Runtime/RuntimeRoot/usr/libexec/runningboardd",
+    ];
+    const ps = paths.map((path, pid) => `${pid + 1} 0:01.00 1000 ${path}`).join("\n");
+    const buffer = cache.ensure("UDID-1", "user-apps");
+    child.emitLines(paths.map((processImagePath, pid) =>
+      JSON.stringify({ processImagePath, processID: pid + 1 })
+    ).join("\n") + "\n");
+    const retainedPids = buffer.read().map((line) => JSON.parse(line.raw).processID);
+    expect(retainedPids).toEqual([1, 2, 3]);
+    expect(retainedPids).toEqual(findUserAppProcesses(ps, "UDID-1")?.pids ?? []);
+    cache.stopAll();
+  });
+
+  test("user-app scope identifies emitting app containers, including extensions and later apps", () => {
+    const child = new FakeChild();
+    const cache = createLogBufferCache({
+      idleAfterMs: 0,
+      spawnLogStream: () => child as unknown as ChildProcess,
+    });
+    const buffer = cache.ensure("UDID-1", "user-apps");
+    const paths = [
+      "/private/var/containers/Bundle/Application/UUID/My App.app/My App",
+      "/Users/test/Library/Developer/CoreSimulator/Devices/UDID-1/data/Containers/Bundle/Application/UUID/App.app/PlugIns/Widget.appex/Widget",
+      "/private/var/containers/Bundle/Application/OTHER/Expo Go.app/Expo Go",
+    ];
+    const accepted = paths.map((processImagePath) => JSON.stringify({ processImagePath }));
+    child.emitLines(accepted.join("\n") + "\n");
+    child.emitLines([
+      "not json", "null", "{}",
+      JSON.stringify({ processImagePath: 123 }),
+      JSON.stringify({ processImagePath: "/Applications/MobileSafari.app/MobileSafari" }),
+      JSON.stringify({ processImagePath: "/usr/libexec/runningboardd", eventMessage: paths[0] }),
+    ].join("\n") + "\n");
+    expect(buffer.read().map((line) => line.raw)).toEqual(accepted);
+    cache.prune(["another-device"]);
+    expect(child.killed).toBe(true);
+    expect(cache.peek("UDID-1", "user-apps")).toBeNull();
+  });
+
+  test("user-app retention excludes system noise without changing the default buffer", () => {
+    const children: FakeChild[] = [];
+    const cache = createLogBufferCache({
+      maxBytes: 512,
+      idleAfterMs: 0,
+      spawnLogStream: () => {
+        const child = new FakeChild();
+        children.push(child);
+        return child as unknown as ChildProcess;
+      },
+    });
+    const all = cache.ensure("UDID-1");
+    const apps = cache.ensure("UDID-1", "user-apps");
+    const app = JSON.stringify({ processImagePath: "/private/var/containers/Bundle/Application/UUID/My App.app/My App", processID: 1, eventMessage: "APP_MARKER" });
+    const system = JSON.stringify({ processImagePath: "/usr/libexec/runningboardd", eventMessage: app });
+    const observed: LogLine[] = [];
+    apps.subscribeBatch((lines) => observed.push(...lines));
+    for (const child of children) child.emitLines(app + "\n" + (system + "\n").repeat(20));
+    expect(apps.read().map((line) => line.raw)).toEqual([app]);
+    expect(all.read().at(-1)?.raw).toBe(system);
+    expect(observed.map((line) => line.raw)).toEqual([app]);
+    const restartedApp = app.replace('"processID":1', '"processID":2');
+    children[1]!.emitLines(restartedApp + "\n");
+    expect(apps.read({ since: 1 }).map((line) => line.raw)).toEqual([restartedApp]);
+    expect(cache.peek("UDID-1", "user-apps")).toBe(apps);
+    cache.stopAll();
+    expect(children.every((child) => child.killed)).toBe(true);
+  });
+
   test("assembles whole lines across chunk boundaries", () => {
     const buffer = makeBuffer();
     buffer.start();

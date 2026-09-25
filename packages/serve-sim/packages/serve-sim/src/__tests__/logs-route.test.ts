@@ -49,9 +49,13 @@ function fakeRes(): FakeRes {
     endStream() {
       ended = true;
     },
+    setHeader(name: string, value: string) {
+      res.headers_[name] = value;
+      return res;
+    },
     writeHead(status: number, headers?: Record<string, string>) {
       res.statusCode_ = status;
-      if (headers) res.headers_ = headers;
+      if (headers) Object.assign(res.headers_, headers);
       return res;
     },
     write(chunk: string) {
@@ -97,6 +101,35 @@ beforeEach(() => {
 });
 
 describe("handleLogsRequest", () => {
+  test("filters live and replayed user-app logs without changing the default stream", () => {
+    const app = JSON.stringify({ processImagePath: "/private/var/containers/Bundle/Application/UUID/App.app/App", eventMessage: "hello" });
+    const system = JSON.stringify({ processImagePath: "/usr/libexec/runningboardd", eventMessage: app });
+    const req = fakeReq();
+    const filtered = fakeRes();
+    handleLogsRequest(req, filtered, state, "/logs?scope=user-apps", cache);
+    const all = fakeRes();
+    handleLogsRequest(fakeReq(), all, state, "/logs", cache);
+    for (const child of spawned) child.emitLines(`${system}\n${app}\n`);
+    expect(filtered.headers_["X-Serve-Sim-Log-Scope"]).toBe("user-apps");
+    expect(dataFrames(filtered.body_)).toEqual([app]);
+    expect(dataFrames(all.body_)).toEqual([system, app]);
+    req.emit("close");
+    const replay = fakeRes();
+    handleLogsRequest(fakeReq(), replay, state, "/logs?scope=user-apps&snapshot=true", cache);
+    expect(JSON.parse(replay.body_).lines.map((line: { raw: string }) => line.raw)).toEqual([app]);
+    const resumed = fakeRes();
+    handleLogsRequest(fakeReq(), resumed, state, "/logs?scope=user-apps&since=1", cache);
+    expect(dataFrames(resumed.body_)).toEqual([]);
+    cache.stopAll();
+  });
+
+  test("rejects unknown scopes instead of silently returning system logs", () => {
+    const res = fakeRes();
+    handleLogsRequest(fakeReq(), res, state, "/logs?scope=app", cache);
+    expect(res.statusCode_).toBe(400);
+    expect(spawned).toHaveLength(0);
+  });
+
   test("404s when there is no device", () => {
     const res = fakeRes();
     handleLogsRequest(fakeReq(), res, null, "/logs", cache);

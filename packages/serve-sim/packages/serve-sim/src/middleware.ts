@@ -1590,6 +1590,13 @@ export function handleLogsRequest(
   }
 
   const params = new URL(rawUrl, "http://127.0.0.1").searchParams;
+  const scope = params.get("scope") ?? "all";
+  if (scope !== "all" && scope !== "user-apps") {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid log scope. Use all or user-apps." }));
+    return;
+  }
+  res.setHeader("X-Serve-Sim-Log-Scope", scope);
   const intQuery = (name: string): number | undefined => {
     const raw = params.get(name)?.trim();
     const n = Number(raw);
@@ -1606,7 +1613,7 @@ export function handleLogsRequest(
   const wantsFollow = booleanParam(params, "follow");
 
   if (wantsJson) {
-    const buffer = wantsFollow ? cache.ensure(state.device) : cache.peek(state.device);
+    const buffer = wantsFollow ? cache.ensure(state.device, scope) : cache.peek(state.device, scope);
     res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
     res.end(
       JSON.stringify({
@@ -1622,7 +1629,7 @@ export function handleLogsRequest(
     return;
   }
 
-  const buffer = cache.ensure(state.device);
+  const buffer = cache.ensure(state.device, scope);
   const stream = openSseStream(req, res);
 
   const frame = (line: LogLine): string =>

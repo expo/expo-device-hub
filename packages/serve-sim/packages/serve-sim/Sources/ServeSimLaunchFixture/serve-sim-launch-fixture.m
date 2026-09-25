@@ -150,6 +150,11 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
       ? [arguments subarrayWithRange:NSMakeRange(1, arguments.count - 1)]
       : @[];
   Record(@"launch", [passed componentsJoinedByString:@"\x1f"]);
+  if ([arguments containsObject:@"--logs-test"]) {
+    [NSTimer scheduledTimerWithTimeInterval:1.0 repeats:YES block:^(__unused NSTimer *timer) {
+      NSLog(@"SERVE_SIM_USER_APP_LOG_MARKER pid=%d", getpid());
+    }];
+  }
   return YES;
 }
 
