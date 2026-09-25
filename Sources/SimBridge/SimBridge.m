@@ -58,11 +58,19 @@ static NSError *SBError(NSString *message) {
         if (error) *error = SBError(@"Could not load CoreSimulator.framework");
         return nil;
     }
-    NSString *kitPath = [[developerDir stringByDeletingLastPathComponent]
-        stringByAppendingPathComponent:@"SharedFrameworks/SimulatorKit.framework/SimulatorKit"];
-    void *kit = dlopen(kitPath.fileSystemRepresentation, RTLD_NOW);
+    // Xcode 27 moved SimulatorKit from Developer/Library/PrivateFrameworks to SharedFrameworks.
+    NSArray<NSString *> *kitPaths = @[
+        [[developerDir stringByDeletingLastPathComponent]
+            stringByAppendingPathComponent:@"SharedFrameworks/SimulatorKit.framework/SimulatorKit"],
+        [developerDir stringByAppendingPathComponent:@"Library/PrivateFrameworks/SimulatorKit.framework/SimulatorKit"],
+    ];
+    void *kit = NULL;
+    for (NSString *path in kitPaths) {
+        if ((kit = dlopen(path.fileSystemRepresentation, RTLD_NOW))) break;
+    }
     if (!kit) {
-        if (error) *error = SBError([NSString stringWithFormat:@"Could not load %@", kitPath]);
+        if (error) *error = SBError([NSString stringWithFormat:@"Could not load SimulatorKit from %@",
+                                     [kitPaths componentsJoinedByString:@" or "]]);
         return nil;
     }
 
