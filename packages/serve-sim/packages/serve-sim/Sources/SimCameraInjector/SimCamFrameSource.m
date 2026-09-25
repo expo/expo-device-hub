@@ -23,8 +23,8 @@
 
 #pragma mark - Source globals
 
-static size_t kFrameWidth = 1280;
-static size_t kFrameHeight = 720;
+static size_t kFrameWidth = SIMCAM_DEFAULT_WIDTH;
+static size_t kFrameHeight = SIMCAM_DEFAULT_HEIGHT;
 static const double kFrameRate = 30.0;
 
 static SimCamShmHeader *gShmHeader = NULL;

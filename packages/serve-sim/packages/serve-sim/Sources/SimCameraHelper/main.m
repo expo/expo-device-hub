@@ -117,6 +117,18 @@ static uint64_t gLastStreamFrameNs = 0;
 static dispatch_source_t gStreamIdleTimer;
 static NSString *gActiveArg = nil;          // selected camera name, image path
 
+// Opaque black, so letterbox bars do not show the app behind the preview.
+static void FillBlack(uint8_t *bgra, size_t size) {
+    static const uint32_t black = 0xFF000000u;
+    memset_pattern4(bgra, &black, size);
+}
+
+static CGRect AspectFitRect(size_t srcW, size_t srcH) {
+    double scale = MIN((double)gWidth / srcW, (double)gHeight / srcH);
+    double w = srcW * scale, h = srcH * scale;
+    return CGRectMake((gWidth - w) / 2.0, (gHeight - h) / 2.0, w, h);
+}
+
 @interface SimCamWebcamWriter : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 @end
 
@@ -134,14 +146,29 @@ didOutputSampleBuffer:(CMSampleBufferRef)sb
     void *src = CVPixelBufferGetBaseAddress(pb);
     static uint8_t *scratch = NULL;
     static size_t scratchSize = 0;
+    static size_t clearedW = 0, clearedH = 0;
     size_t need = (size_t)gWidth * gHeight * 4;
     if (scratchSize < need) {
         free(scratch);
         scratch = malloc(need);
-        scratchSize = need;
+        scratchSize = scratch ? need : 0;
+        clearedW = 0;
     }
+    if (!scratch) {
+        CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
+        return;
+    }
+    // Letterbox the webcam like the file sources.
+    if (clearedW != srcW || clearedH != srcH) {
+        FillBlack(scratch, need);
+        clearedW = srcW;
+        clearedH = srcH;
+    }
+    CGRect fit = AspectFitRect(srcW, srcH);
+    size_t dx = (size_t)fit.origin.x, dy = (size_t)fit.origin.y;
     vImage_Buffer s = { src, srcH, srcW, srcStride };
-    vImage_Buffer d = { scratch, gHeight, gWidth, (size_t)gWidth * 4 };
+    vImage_Buffer d = { scratch + (dy * gWidth + dx) * 4, (size_t)fit.size.height, (size_t)fit.size.width,
+                        (size_t)gWidth * 4 };
     vImage_Error verr = vImageScale_ARGB8888(&s, &d, NULL, kvImageHighQualityResampling);
     CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
     if (verr == kvImageNoError) PublishFrame(scratch);
@@ -398,8 +425,9 @@ static void StopWebcamSource(void) {
 // Aspect-fit a decoded image into a fresh shm-sized BGRA buffer and publish it.
 static BOOL PublishCGImage(CGImageRef img, NSString **err) {
     size_t bpr = (size_t)gWidth * 4;
-    uint8_t *buf = calloc(1, bpr * gHeight);
+    uint8_t *buf = malloc(bpr * gHeight);
     if (!buf) { if (err) *err = @"the host is out of memory for a camera frame"; return NO; }
+    FillBlack(buf, bpr * gHeight);
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGContextRef ctx = CGBitmapContextCreate(buf, gWidth, gHeight, 8, bpr, cs,
         kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little);
@@ -552,7 +580,8 @@ static uint8_t *RenderPixelBufferToShmSize(CVPixelBufferRef pb) {
     }
 
     size_t bpr = (size_t)gWidth * 4;
-    uint8_t *out = calloc(1, bpr * gHeight);
+    uint8_t *out = malloc(bpr * gHeight);
+    if (out) FillBlack(out, bpr * gHeight);
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGContextRef ctx = CGBitmapContextCreate(out, gWidth, gHeight, 8, bpr, cs,
         kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little);

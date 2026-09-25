@@ -28,8 +28,9 @@
 
 #define SIMCAM_SHM_MAGIC      0x53434D31u  // 'SCM1'
 #define SIMCAM_PIXEL_BGRA     0u
-#define SIMCAM_DEFAULT_WIDTH  1280u
-#define SIMCAM_DEFAULT_HEIGHT 720u
+// Portrait, so a portrait preview shows the whole frame instead of a crop of it.
+#define SIMCAM_DEFAULT_WIDTH  720u
+#define SIMCAM_DEFAULT_HEIGHT 1280u
 
 // Number of IOSurfaces in the ring. The writer keeps off whichever surface the
 // reader most recently published, so a few buffers absorb a reader that holds
