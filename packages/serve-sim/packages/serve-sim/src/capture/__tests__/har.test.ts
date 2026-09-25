@@ -246,6 +246,22 @@ describe("harFromStore", () => {
   });
 });
 
+it("labels request bodies with the recorded request MIME type when headers are absent", () => {
+  const body = {
+    requestHeaders: {},
+    responseHeaders: {},
+    requestBody: '{"ok":true}',
+    responseBody: null,
+    requestTruncated: false,
+    responseTruncated: false,
+    requestBinary: false,
+    responseBinary: false,
+  };
+  expect(toHarEntry({ ...req, requestMimeType: "application/json" }, body).request.postData?.mimeType)
+    .toBe("application/json");
+  expect(toHarEntry(req, body).request.postData?.mimeType).toBe("application/octet-stream");
+});
+
 it("keeps original timestamps when an old request is exported again", () => {
   const recorded = { ...req, startedAt: Date.parse("2026-01-01T00:00:00.000Z") };
   const entry = toHarEntry(recorded);

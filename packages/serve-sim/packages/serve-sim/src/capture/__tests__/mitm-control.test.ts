@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import { toHarEntry } from "../har";
 import { MAX_CONTROL_BODY_BYTES_ENV, startMitmControl } from "../mitm-control";
 import { CaptureStore } from "../store";
 
@@ -66,6 +67,33 @@ describe("mitm control server", () => {
       expect(store.body("r2")).toMatchObject({
         responseBody: "//4AAQ==",
         responseBinary: true,
+      });
+    } finally {
+      await new Promise<void>((resolve) => control.server.close(() => resolve()));
+    }
+  });
+
+  test("keeps the request MIME type when headers are not captured", async () => {
+    const store = new CaptureStore(() => 10);
+    const control = await startMitmControl({ store, token: "secret", fields: ["request-body"] });
+    const post = (path: string, body: unknown) =>
+      fetch(`http://127.0.0.1:${control.port}${path}?t=secret`, { method: "POST", body: JSON.stringify(body) });
+    try {
+      await post("/request", { id: "flow-1", method: "POST", url: "https://example.com/api" });
+      await post("/response", {
+        id: "flow-1",
+        status: 200,
+        req: { size: 11, mime: "application/json", headers: { "content-type": "application/json" }, body: '{"ok":true}' },
+        res: { size: 0 },
+      });
+
+      const request = store.list()[0]!;
+      const body = store.body(request.id);
+      expect(request.requestMimeType).toBe("application/json");
+      expect(body?.requestHeaders).toEqual({});
+      expect(toHarEntry(request, body).request.postData).toMatchObject({
+        mimeType: "application/json",
+        text: '{"ok":true}',
       });
     } finally {
       await new Promise<void>((resolve) => control.server.close(() => resolve()));
