@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
 import {
   chmod,
+  copyFile,
   mkdtemp,
   mkdir,
   readdir,
@@ -206,6 +207,39 @@ test("a tarball that disagrees with the release commit is rejected before publis
       ])
     ).code,
   ).toBe(0);
+  expect((await f.publish()).code).not.toBe(0);
+  expect(await Bun.file(f.log).exists()).toBe(false);
+  expect(await f.git("tag", "--list")).toBe("");
+});
+
+test("a missing tarball for a bumped package stops publication", async () => {
+  const f = await fixture();
+  await Bun.write(
+    join(f.repo, "packages/unchanged/package.json"),
+    JSON.stringify({ name: "unchanged", version: "1.1.0" }),
+  );
+  await f.git("add", "packages/unchanged/package.json");
+  await f.git("commit", "--amend", "--no-edit");
+  const result = await f.publish();
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toContain("Missing tarball for unchanged@1.1.0");
+  expect(await Bun.file(f.log).exists()).toBe(false);
+  expect(await f.git("tag", "--list")).toBe("");
+});
+
+test("duplicate tarballs stop publication", async () => {
+  const f = await fixture();
+  await copyFile(
+    join(f.artifacts, "changed.tgz"),
+    join(f.artifacts, "duplicate.tgz"),
+  );
+  expect((await f.publish()).code).not.toBe(0);
+  expect(await Bun.file(f.log).exists()).toBe(false);
+  expect(await f.git("tag", "--list")).toBe("");
+});
+
+test("an unchanged package in the release archive stops publication", async () => {
+  const f = await fixture(true, true);
   expect((await f.publish()).code).not.toBe(0);
   expect(await Bun.file(f.log).exists()).toBe(false);
   expect(await f.git("tag", "--list")).toBe("");

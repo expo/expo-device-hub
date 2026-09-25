@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun";
+import { getChangesetIgnoreList } from "./lib/changeset-ignore.ts";
 import { getPublicPackages } from "./lib/public-packages.ts";
 import { readTarballs } from "./lib/tarballs.ts";
 
@@ -21,10 +22,27 @@ if (tarballs.length === 0) {
 const releaseSha =
   canary || dryRun ? undefined : (await $`git rev-parse HEAD`.text()).trim();
 if (releaseSha) {
-  const packages = await getPublicPackages();
+  const ignored = await getChangesetIgnoreList();
+  const expected = new Map<string, string>();
+  for (const pkg of await getPublicPackages()) {
+    if (ignored.has(pkg.name)) continue;
+    const previous = JSON.parse(
+      await $`git show ${`HEAD^:${pkg.path}`}`.text(),
+    );
+    if (previous.version !== pkg.version) expected.set(pkg.name, pkg.version);
+  }
+
+  const found = new Set<string>();
   for (const { name, version } of tarballs) {
-    if (!packages.some((pkg) => pkg.name === name && pkg.version === version))
-      throw new Error(`${name}@${version} does not match the release commit.`);
+    if (expected.get(name) !== version || found.has(name))
+      throw new Error(
+        `${name}@${version} is not a unique bumped package in the release commit.`,
+      );
+    found.add(name);
+  }
+  for (const [name, version] of expected) {
+    if (!found.has(name))
+      throw new Error(`Missing tarball for ${name}@${version}.`);
   }
 }
 
