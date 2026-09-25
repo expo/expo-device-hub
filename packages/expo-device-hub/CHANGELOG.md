@@ -1,5 +1,11 @@
 # expo-device-hub
 
+## 0.13.0
+
+### Minor Changes
+
+- 980ff0a: Sync the vendored serve-sim with `@expo/serve-sim` 0.3.4 (upstream `expo` branch at `c91e75b`).
+
 ## 0.12.0
 
 ### Minor Changes
