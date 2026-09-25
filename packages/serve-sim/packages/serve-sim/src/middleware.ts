@@ -18,7 +18,7 @@ import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
-import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "./middleware-utils";
 import {
   closeDeviceSession,
   getDeviceSession,
@@ -2438,6 +2438,16 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           "Content-Type": "text/plain; charset=utf-8",
         });
         res.end("method not allowed");
+        return;
+      }
+      // The token alone would let any caller read what the user copied, so the clipboard also
+      // needs a browser origin that CORS already trusts.
+      if (!isAllowedOrigin(req.headers.origin, hostForRequest(req), corsOrigins)) {
+        res.writeHead(403, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: false, error: "This origin cannot use the simulator clipboard" }));
         return;
       }
       if (!matchesBearerToken(req.headers.authorization, execToken)) {

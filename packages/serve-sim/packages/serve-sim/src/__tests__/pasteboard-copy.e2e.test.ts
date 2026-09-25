@@ -35,7 +35,7 @@ async function postPasteboard(): Promise<{ ok?: boolean; text?: string; error?: 
       `http://localhost:3200/preview/api/pasteboard?device=${encodeURIComponent(udid!)}`,
       {
         method: "POST",
-        headers: { Authorization: `Bearer ${TEST_TOKEN}` },
+        headers: { Authorization: `Bearer ${TEST_TOKEN}`, Origin: "http://localhost:3200" },
       },
     ),
   );
