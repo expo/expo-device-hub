@@ -58,6 +58,20 @@ describe("Android emulator fold controls", () => {
     })).toEqual({ supported: false, posture: null, hingeAngle: null });
   });
 
+  test("reports a disabled hinge sensor as unsupported", async () => {
+    const commands: string[] = [];
+    const runExec = async (_cmd: string, args: string[]) => {
+      commands.push(args.slice(2).join(" "));
+      return result("KO: 'hinge-angle0' sensor is disabled.\r\n");
+    };
+    expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
+      supported: false, posture: null, hingeAngle: null,
+    });
+    await expect(setFoldPosture("emulator-5554", "closed", runExec))
+      .rejects.toThrow("does not support folding");
+    expect(commands).toEqual(["emu sensor get hinge-angle0", "emu sensor get hinge-angle0"]);
+  });
+
   test("uses the hinge angle when Android does not report a physical state", async () => {
     const runExec = async (_cmd: string, args: string[]) =>
       args.includes("sensor")
@@ -83,6 +97,42 @@ describe("Android emulator fold controls", () => {
         : result("Committed state: DeviceState{identifier=4, name='TENT'}");
     expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
       supported: true, posture: "tent", hingeAngle: 180,
+    });
+  });
+
+  test("reads the physical posture while an app holds an override state", async () => {
+    let posture = "OPENED";
+    const runExec = async (_cmd: string, args: string[]) => {
+      const command = args.slice(2).join(" ");
+      if (command === "emu sensor get hinge-angle0") {
+        return result(`hinge-angle0 = ${posture === "CLOSED" ? 0 : 180}\r\nOK`);
+      }
+      if (command === "shell cmd device_state base-state") {
+        return result([
+          "Committed state: DeviceState{identifier=3, name='REAR_DISPLAY_MODE', app_accessible=true}",
+          "----------------------",
+          `Base state: DeviceState{identifier=2, name='${posture}', app_accessible=true}`,
+          "Override state: DeviceState{identifier=3, name='REAR_DISPLAY_MODE', app_accessible=true}",
+        ].join("\n"));
+      }
+      posture = command === "emu fold" ? "CLOSED" : "OPENED";
+      return result("OK");
+    };
+    expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
+      supported: true, posture: "opened", hingeAngle: 180,
+    });
+    expect(await setFoldPosture("emulator-5554", "opened", runExec)).toEqual({
+      supported: true, posture: "opened", hingeAngle: 180,
+    });
+  });
+
+  test("uses the hinge angle when Android reports an unknown state name", async () => {
+    const runExec = async (_cmd: string, args: string[]) =>
+      args.includes("sensor")
+        ? result("hinge-angle0 = 180\r\nOK")
+        : result("Committed state: DeviceState{identifier=4, name='CONCURRENT_INNER_DEFAULT'}");
+    expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
+      supported: true, posture: "opened", hingeAngle: 180,
     });
   });
 
