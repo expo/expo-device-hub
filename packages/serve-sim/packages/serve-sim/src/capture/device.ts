@@ -8,10 +8,6 @@ import { simctl } from "../simctl";
 const __dirname = dirnameOf(import.meta.url);
 const DYLIB_NAME = "libSimNetProxy.dylib";
 
-/**
- * Unused until #53 reads it. Remove the tag there.
- * @public
- */
 export async function trustCaInSimulator(udid: string, caPem: string): Promise<void> {
   const dir = mkdtempSync(join(tmpdir(), "serve-sim-ca-"));
   const certPath = join(dir, "capture-root.crt");
@@ -31,10 +27,6 @@ export function proxyDylibCandidates(): string[] {
   ];
 }
 
-/**
- * Unused until #53 reads it. Remove the tag there.
- * @public
- */
 export function locateProxyDylib(): string | null {
   return proxyDylibCandidates().find((candidate) => existsSync(candidate)) ?? null;
 }
