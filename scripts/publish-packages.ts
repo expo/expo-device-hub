@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun";
+import { getPublicPackages } from "./lib/public-packages.ts";
 import { readTarballs } from "./lib/tarballs.ts";
-import { readReleaseCommit } from "./lib/release-commit.ts";
 
 const [dir, ...flags] = process.argv.slice(2);
 if (!dir) {
@@ -18,24 +18,18 @@ if (tarballs.length === 0) {
   process.exit(1);
 }
 
-const release = canary || dryRun ? undefined : await readReleaseCommit();
-if (release) {
-  for (const [name, version] of release.packages) {
-    const artifact = tarballs.find((pkg) => pkg.name === name);
-    if (!artifact || artifact.version !== version) {
-      throw new Error(
-        `Expected a tarball for ${name}@${version} from ${release.sha}.`,
-      );
-    }
+const releaseSha =
+  canary || dryRun ? undefined : (await $`git rev-parse HEAD`.text()).trim();
+if (releaseSha) {
+  const packages = await getPublicPackages();
+  for (const { name, version } of tarballs) {
+    if (!packages.some((pkg) => pkg.name === name && pkg.version === version))
+      throw new Error(`${name}@${version} does not match the release commit.`);
   }
 }
 
 for (const { name, version, path } of tarballs) {
   const spec = `${name}@${version}`;
-  if (release && !release.packages.has(name)) {
-    console.log(`- ${spec}: not versioned by this release — skipping`);
-    continue;
-  }
   const onNpm =
     (await $`npm view ${spec} version`.nothrow().quiet()).exitCode === 0;
   if (onNpm) {
@@ -48,7 +42,7 @@ for (const { name, version, path } of tarballs) {
     await $`npm ${args}`;
   }
 
-  if (!release) continue;
+  if (!releaseSha) continue;
   const ref = `refs/tags/${spec}`;
   const remoteTag = (await $`git ls-remote --tags origin ${ref}`.text()).trim();
   if (remoteTag) {
@@ -60,13 +54,13 @@ for (const { name, version, path } of tarballs) {
     .nothrow()
     .quiet();
   if (localTag.exitCode === 0) {
-    if (localTag.text().trim() !== release.sha) {
+    if (localTag.text().trim() !== releaseSha) {
       throw new Error(
-        `${spec} points to a different commit than ${release.sha}.`,
+        `${spec} points to a different commit than ${releaseSha}.`,
       );
     }
   } else {
-    await $`git tag ${spec} ${release.sha}`;
+    await $`git tag ${spec} ${releaseSha}`;
   }
   // Push even when the tag already existed locally after an earlier failed push.
   await $`git push origin ${ref}`;

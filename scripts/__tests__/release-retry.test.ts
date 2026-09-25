@@ -1,5 +1,12 @@
 import { afterEach, expect, test } from "bun:test";
-import { chmod, mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -21,7 +28,7 @@ async function command(cwd: string, args: string[], env = {}) {
   return { code, stdout, stderr };
 }
 
-async function fixture(pushRelease = true) {
+async function fixture(pushRelease = true, packAll = false) {
   const root = await mkdtemp(join(tmpdir(), "release-retry-"));
   roots.push(root);
   const repo = join(root, "repo");
@@ -79,7 +86,7 @@ async function fixture(pushRelease = true) {
   await git("commit", "-m", "chore(release): version packages");
   const sha = await git("rev-parse", "HEAD");
   if (pushRelease) await git("push", "origin", "main");
-  for (const name of ["changed", "unchanged", "ignored"]) {
+  for (const name of packAll ? ["changed", "unchanged"] : ["changed"]) {
     const staging = join(root, `stage-${name}`);
     await mkdir(join(staging, "package"), { recursive: true });
     await Bun.write(
@@ -230,7 +237,7 @@ test("a remote tag for a different commit is rejected without overwriting it", a
 
 for (const flag of ["--canary", "--dry-run"]) {
   test(`${flag} never creates release tags`, async () => {
-    const f = await fixture();
+    const f = await fixture(true, flag === "--canary");
     expect((await f.publish(f.repo, [flag])).code).toBe(0);
     expect(await f.git("tag", "--list")).toBe("");
     expect(await f.git("ls-remote", "--tags", "origin")).toBe("");
@@ -238,6 +245,37 @@ for (const flag of ["--canary", "--dry-run"]) {
       expect(await Bun.file(f.state).exists()).toBe(false);
   });
 }
+
+test("EAS packs versioned packages for releases and all eligible packages for canaries", async () => {
+  const f = await fixture(false);
+  await stageVersions(f);
+  const stable = join(f.root, "stable");
+  const canary = join(f.root, "canary");
+  expect(
+    (
+      await command(f.repo, [
+        process.execPath,
+        join(scripts, "pack-packages.ts"),
+        stable,
+      ])
+    ).code,
+  ).toBe(0);
+  expect(await readdir(stable)).toEqual(["changed-1.1.0.tgz"]);
+  expect(
+    (
+      await command(f.repo, [
+        process.execPath,
+        join(scripts, "pack-packages.ts"),
+        canary,
+        "--canary",
+      ])
+    ).code,
+  ).toBe(0);
+  expect((await readdir(canary)).sort()).toEqual([
+    "changed-1.1.0.tgz",
+    "unchanged-1.0.0.tgz",
+  ]);
+});
 
 type Step = {
   name?: string;

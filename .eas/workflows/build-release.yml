@@ -60,7 +60,12 @@ jobs:
         run: bun run test
 
       - name: Pack packages
-        run: ./scripts/pack-packages.ts release-artifacts
+        run: |
+          if [ "${{ inputs.canary }}" = "true" ]; then
+            ./scripts/pack-packages.ts release-artifacts --canary
+          else
+            ./scripts/pack-packages.ts release-artifacts
+          fi
 
       - name: Commit & push tested version changes
         env:

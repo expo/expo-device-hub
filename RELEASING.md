@@ -20,6 +20,10 @@ release commit returned by EAS, opens a PR, and publishes to npm using **OIDC Tr
 (no long-lived `NPM_TOKEN`). Once publication and GitHub releases succeed, it pushes that same
 commit to `main`, deletes the release branch, and closes the PR.
 
+For regular releases, EAS packs only public packages whose versions changed. GitHub publishes
+and tags every tarball in that archive. For canaries, EAS packs every public package that is not
+excluded from releases.
+
 ## Cutting a release
 
 ### 1. During development — add a changeset to your PR
