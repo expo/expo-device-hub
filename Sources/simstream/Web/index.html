@@ -1,0 +1,311 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>simstream</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center; gap: 32px;
+    background: #0d0d0f; color: #cfd2d6; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  #screen {
+    height: 92vh; display: block; background: #000; border-radius: 48px; touch-action: none; cursor: default;
+    box-shadow: 0 0 0 12px #1c1c20, 0 0 0 13px #2c2c32, 0 30px 80px #000;
+  }
+  #side { display: flex; flex-direction: column; gap: 10px; width: 250px; }
+  h1 { font-size: 13px; margin: 0 0 4px; color: #fff; letter-spacing: .04em; }
+  #status { color: #8a8f98; }
+  #status.live { color: #5fd38d; }
+  .buttons { display: flex; gap: 6px; }
+  button {
+    flex: 1; padding: 7px 0; border: 1px solid #2c2c32; border-radius: 8px;
+    background: #17171b; color: #cfd2d6; font: inherit; cursor: pointer;
+  }
+  button:active { background: #24242a; }
+  #hud { white-space: pre; background: #131316; border: 1px solid #222228; border-radius: 8px; padding: 10px 12px; }
+  .hint { color: #6b7079; }
+</style>
+</head>
+<body>
+  <canvas id="screen" width="390" height="844"></canvas>
+  <div id="side">
+    <h1>simstream</h1>
+    <div id="status">connecting…</div>
+    <div class="buttons">
+      <button data-button="home">Home</button>
+      <button data-button="lock">Lock</button>
+      <button id="keyframe">Keyframe</button>
+    </div>
+    <div id="hud"></div>
+    <div class="hint">Click/drag to touch. Keyboard is forwarded while the page is focused (⌘-shortcuts stay local).</div>
+  </div>
+
+<script>
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+const statusEl = document.getElementById('status');
+const hudEl = document.getElementById('hud');
+const wsUrl = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/stream`;
+
+let ws = null;
+let decoder = null;
+let currentConfig = null;
+let waitingForKeyframe = true;
+
+// Clock sync (NTP-style): serverMs ≈ clientMs + clockOffset.
+let clockOffset = 0, rtt = 0;
+let serverStats = {};
+
+const pending = new Map();      // frame seq -> { receivedAt, captureMs, encodedMs, inputSeq }
+const inputSentAt = new Map();  // input seq -> performance.now() when sent
+let inputSeq = 0;
+const debug = (window.simstreamDebug = { received: 0, drawn: 0, lastReceivedSeq: 0, lastDrawnSeq: 0 });
+let lastTouchLatency = null;   // most recent input → first changed frame drawn
+
+function resetWindow() {
+  return { frames: 0, bytes: 0, network: 0, decode: 0, glass: 0, encode: 0, samples: 0, intervals: [], start: performance.now() };
+}
+let stats = resetWindow();
+let lastDrawnAt = 0;
+
+// ---------- transport ----------
+
+function connect() {
+  ws = new WebSocket(wsUrl);
+  ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { setStatus('live', true); ping(); if (document.hidden) send({ t: 'pause' }); };
+  ws.onclose = () => { setStatus('disconnected — retrying…', false); teardownDecoder(); setTimeout(connect, 1000); };
+  ws.onmessage = (e) => typeof e.data === 'string' ? onControl(JSON.parse(e.data)) : onFrame(e.data);
+}
+
+function send(message) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
+}
+
+function ping() { send({ t: 'ping', ts: performance.now() }); }
+setInterval(ping, 1000);
+
+function onControl(m) {
+  switch (m.t) {
+    case 'config': configure(m); break;
+    case 'pong': {
+      const now = performance.now();
+      rtt = now - m.ts;
+      clockOffset = m.server - (m.ts + now) / 2;
+      break;
+    }
+    case 'stats': serverStats = m; break;
+  }
+}
+
+// ---------- decode ----------
+
+function configure(c) {
+  const same = currentConfig && decoder && decoder.state === 'configured' &&
+    currentConfig.codec === c.codec && currentConfig.description === c.description &&
+    currentConfig.width === c.width && currentConfig.height === c.height;
+  if (same) return;
+
+  teardownDecoder();
+  currentConfig = c;
+  canvas.width = c.width;
+  canvas.height = c.height;
+  decoder = new VideoDecoder({
+    output: onDecoded,
+    error: (e) => { console.warn('decoder error', e); teardownDecoder(); send({ t: 'keyframe' }); },
+  });
+  decoder.configure({
+    codec: c.codec,
+    codedWidth: c.width,
+    codedHeight: c.height,
+    description: Uint8Array.from(atob(c.description), (ch) => ch.charCodeAt(0)),
+    optimizeForLatency: true,
+    hardwareAcceleration: 'prefer-hardware',
+  });
+  waitingForKeyframe = true;
+}
+
+function teardownDecoder() {
+  if (decoder && decoder.state !== 'closed') decoder.close();
+  decoder = null;
+  currentConfig = null;
+  pending.clear();
+}
+
+function onFrame(buffer) {
+  const view = new DataView(buffer);
+  const isKey = (view.getUint8(0) & 1) === 1;
+  const seq = view.getUint32(1, true);
+  const captureMs = view.getFloat64(5, true);
+  const encodedMs = view.getFloat64(13, true);
+  const frameInputSeq = view.getUint32(21, true);
+  stats.bytes += buffer.byteLength;
+  debug.received++;
+  debug.lastReceivedSeq = seq;
+
+  if (!decoder || decoder.state !== 'configured') return;
+  if (waitingForKeyframe && !isKey) return;
+  waitingForKeyframe = false;
+
+  pending.set(seq, { receivedAt: performance.now(), captureMs, encodedMs, inputSeq: frameInputSeq });
+  if (pending.size > 120) pending.delete(pending.keys().next().value);
+  decoder.decode(new EncodedVideoChunk({ type: isKey ? 'key' : 'delta', timestamp: seq, data: new Uint8Array(buffer, 25) }));
+}
+
+function onDecoded(frame) {
+  // Present immediately — no jitter buffer. Latency over smoothness.
+  ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+  const seq = frame.timestamp;
+  frame.close();
+  debug.drawn++;
+  debug.lastDrawnSeq = seq;
+  debug.decodeQueueSize = decoder?.decodeQueueSize;
+  send({ t: 'ack', seq });
+
+  const now = performance.now();
+  // Gaps over 100 ms are idle time, not motion; they don't count toward frame pacing.
+  if (lastDrawnAt && now - lastDrawnAt < 100) stats.intervals.push(now - lastDrawnAt);
+  lastDrawnAt = now;
+  const p = pending.get(seq);
+  pending.delete(seq);
+  stats.frames++;
+  if (!p) return;
+
+  const captureLocal = p.captureMs - clockOffset;
+  const encodedLocal = p.encodedMs - clockOffset;
+  stats.encode += p.encodedMs - p.captureMs;
+  stats.network += Math.max(0, p.receivedAt - encodedLocal);
+  stats.decode += now - p.receivedAt;
+  stats.glass += now - captureLocal;
+  stats.samples++;
+
+  if (p.inputSeq) {
+    // Measure from the oldest input this frame answers (e.g. the touch-down, not the touch-up).
+    let first = null;
+    for (const [k, sentAt] of inputSentAt) {
+      if (k > p.inputSeq) break;
+      if (first === null) first = sentAt;
+      inputSentAt.delete(k);
+    }
+    if (first !== null) lastTouchLatency = now - first;
+  }
+}
+
+// ---------- input ----------
+
+let touching = false;
+
+function touch(phase, e) {
+  const r = canvas.getBoundingClientRect();
+  const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+  const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+  const seq = ++inputSeq;
+  inputSentAt.set(seq, performance.now());
+  if (inputSentAt.size > 500) inputSentAt.delete(inputSentAt.keys().next().value);
+  send({ t: 'touch', p: phase, x, y, seq });
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  canvas.setPointerCapture(e.pointerId);
+  touching = true;
+  touch('down', e);
+});
+canvas.addEventListener('pointermove', (e) => { if (touching) touch('move', e); });
+const release = (e) => { if (!touching) return; touching = false; touch('up', e); };
+canvas.addEventListener('pointerup', release);
+canvas.addEventListener('pointercancel', release);
+
+// KeyboardEvent.code -> USB HID usage (page 0x07)
+const HID = {
+  Enter: 0x28, Escape: 0x29, Backspace: 0x2a, Tab: 0x2b, Space: 0x2c, Minus: 0x2d, Equal: 0x2e,
+  BracketLeft: 0x2f, BracketRight: 0x30, Backslash: 0x31, Semicolon: 0x33, Quote: 0x34, Backquote: 0x35,
+  Comma: 0x36, Period: 0x37, Slash: 0x38, CapsLock: 0x39, Delete: 0x4c,
+  ArrowRight: 0x4f, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+  ControlLeft: 0xe0, ShiftLeft: 0xe1, AltLeft: 0xe2, ControlRight: 0xe4, ShiftRight: 0xe5, AltRight: 0xe6,
+};
+for (let i = 0; i < 26; i++) HID['Key' + String.fromCharCode(65 + i)] = 0x04 + i;
+for (let i = 1; i <= 9; i++) HID['Digit' + i] = 0x1d + i;
+HID.Digit0 = 0x27;
+
+function onKey(e, down) {
+  if (e.metaKey) return; // leave ⌘-shortcuts to the browser
+  const usage = HID[e.code];
+  if (usage === undefined) return;
+  e.preventDefault();
+  if (down && e.repeat) return;
+  send({ t: 'key', usage, down });
+}
+window.addEventListener('keydown', (e) => onKey(e, true));
+window.addEventListener('keyup', (e) => onKey(e, false));
+
+for (const el of document.querySelectorAll('[data-button]')) {
+  const b = el.dataset.button;
+  el.addEventListener('pointerdown', () => send({ t: 'button', b, down: true }));
+  el.addEventListener('pointerup', () => send({ t: 'button', b, down: false }));
+}
+document.getElementById('keyframe').addEventListener('click', () => send({ t: 'keyframe' }));
+
+// Hidden tabs get throttled and stop decoding; tell the server instead of looking congested.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    send({ t: 'pause' });
+  } else {
+    waitingForKeyframe = true;
+    send({ t: 'resume' });
+  }
+});
+
+// ---------- HUD ----------
+
+function motionFps(s) {
+  if (s.intervals.length < 5) return '–';
+  return (1000 * s.intervals.length / s.intervals.reduce((a, b) => a + b, 0)).toFixed(0);
+}
+
+// Mean frame interval ± standard deviation: the evenness of presentation, which is what reads as smooth.
+function pacing(s) {
+  const n = s.intervals.length;
+  if (n < 5) return '–';
+  const mean = s.intervals.reduce((a, b) => a + b, 0) / n;
+  const sd = Math.sqrt(s.intervals.reduce((a, b) => a + (b - mean) ** 2, 0) / n);
+  return `${mean.toFixed(1)} ms ±${sd.toFixed(1)}`;
+}
+
+function setStatus(text, live) {
+  statusEl.textContent = text;
+  statusEl.className = live ? 'live' : '';
+}
+
+setInterval(() => {
+  const s = stats;
+  const secs = (performance.now() - s.start) / 1000;
+  const avg = (v) => s.samples ? (v / s.samples).toFixed(1) : '–';
+  hudEl.textContent = [
+    `resolution   ${currentConfig ? `${currentConfig.width}×${currentConfig.height}` : '–'}`,
+    `codec        ${currentConfig ? currentConfig.codec : '–'}`,
+    `fps          ${motionFps(s)} in motion, ${(s.frames / secs).toFixed(0)} avg  (server ${serverStats.captureFps ?? '–'})`,
+    `pacing       ${pacing(s)}`,
+    `bitrate      ${(s.bytes * 8 / secs / 1e6).toFixed(2)} Mbps  (target ${serverStats.bitrate ? (serverStats.bitrate / 1e6).toFixed(1) : '–'})`,
+    ``,
+    `rtt          ${rtt.toFixed(1)} ms`,
+    `encode       ${avg(s.encode)} ms`,
+    `network      ${avg(s.network)} ms`,
+    `decode+draw  ${avg(s.decode)} ms`,
+    `capture→draw ${avg(s.glass)} ms`,
+    `touch→pixels ${lastTouchLatency === null ? '–' : lastTouchLatency.toFixed(1)} ms (last)`,
+  ].join('\n');
+  stats = resetWindow();
+}, 1000);
+
+if (!('VideoDecoder' in window)) {
+  setStatus(window.isSecureContext
+    ? 'WebCodecs not supported in this browser'
+    : 'WebCodecs needs a secure context: open via https:// (e.g. tailscale serve) or localhost', false);
+} else {
+  connect();
+}
+</script>
+</body>
+</html>
