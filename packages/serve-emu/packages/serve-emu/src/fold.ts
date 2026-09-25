@@ -50,10 +50,31 @@ export async function getFoldStatus(
   };
 }
 
-export async function setFoldPosture(
+export function setFoldPosture(
   serial: string,
   posture: "closed" | "opened",
   runExec: typeof execText = execText,
+): Promise<FoldStatus> {
+  const next = (postureChanges.get(serial) ?? Promise.resolve())
+    .then(() => applyFoldPosture(serial, posture, runExec));
+  const settled = next.then(() => {}, () => {});
+  postureChanges.set(serial, settled);
+  void settled.then(() => {
+    if (postureChanges.get(serial) === settled) postureChanges.delete(serial);
+  });
+  return next;
+}
+
+/**
+ * One posture change per device at a time. Otherwise a later command can flip
+ * the posture while an earlier one is still waiting to confirm its own.
+ */
+const postureChanges = new Map<string, Promise<void>>();
+
+async function applyFoldPosture(
+  serial: string,
+  posture: "closed" | "opened",
+  runExec: typeof execText,
 ): Promise<FoldStatus> {
   const current = await getFoldStatus(serial, runExec);
   if (!current.supported) throw new Error("Selected emulator does not support folding");

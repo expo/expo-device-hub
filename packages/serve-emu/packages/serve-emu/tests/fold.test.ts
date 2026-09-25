@@ -98,4 +98,53 @@ describe("Android emulator fold controls", () => {
     await expect(setFoldPosture("emulator-5554", "closed", runExec))
       .rejects.toThrow("folding unavailable");
   });
+
+  test("runs concurrent posture changes on one device in order", async () => {
+    let posture = "OPENED";
+    const commands: string[] = [];
+    const runExec = async (_cmd: string, args: string[]) => {
+      await Promise.resolve();
+      const command = args.slice(2).join(" ");
+      if (command === "emu sensor get hinge-angle0") {
+        return result(`hinge-angle0 = ${posture === "CLOSED" ? 0 : 180}\r\nOK`);
+      }
+      if (command === "shell cmd device_state base-state") {
+        return result(`Committed state: DeviceState{identifier=2, name='${posture}'}`);
+      }
+      commands.push(command);
+      posture = command === "emu fold" ? "CLOSED" : "OPENED";
+      return result("OK");
+    };
+
+    const [closed, opened] = await Promise.all([
+      setFoldPosture("emulator-5554", "closed", runExec),
+      setFoldPosture("emulator-5554", "opened", runExec),
+    ]);
+    expect(closed).toEqual({ supported: true, posture: "closed", hingeAngle: 0 });
+    expect(opened).toEqual({ supported: true, posture: "opened", hingeAngle: 180 });
+    expect(commands).toEqual(["emu fold", "emu unfold"]);
+  });
+
+  test("runs the next posture change after a failed one", async () => {
+    let refuse = true;
+    const runExec = async (_cmd: string, args: string[]) => {
+      const command = args.slice(2).join(" ");
+      if (command === "emu sensor get hinge-angle0") {
+        return result(`hinge-angle0 = ${refuse ? 180 : 0}\r\nOK`);
+      }
+      if (command === "shell cmd device_state base-state") {
+        return result(`Committed state: DeviceState{identifier=2, name='${refuse ? "OPENED" : "CLOSED"}'}`);
+      }
+      if (refuse) {
+        refuse = false;
+        return result("KO: folding unavailable");
+      }
+      return result("OK");
+    };
+
+    const first = setFoldPosture("emulator-5554", "closed", runExec);
+    const second = setFoldPosture("emulator-5554", "closed", runExec);
+    await expect(first).rejects.toThrow("folding unavailable");
+    expect(await second).toEqual({ supported: true, posture: "closed", hingeAngle: 0 });
+  });
 });
