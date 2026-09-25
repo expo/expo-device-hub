@@ -22,6 +22,10 @@ import {
   writeTestPasteboard,
 } from "./pasteboard-sim";
 import { requireE2E } from "./e2e-preconditions";
+import { useTempStateDir } from "./helpers";
+
+const stateDir = useTempStateDir();
+afterAll(() => stateDir.restore());
 
 const udid = firstBootedIosSim();
 const injectReady = !!(udid && pasteboardTool && pasteboardDylib);

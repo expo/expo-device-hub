@@ -513,7 +513,7 @@ const CopyButton = forwardRef<HTMLButtonElement, ToolbarButtonProps>(function Co
   ref,
 ) {
   return (
-    <ToolbarButton ref={ref} aria-label="Copy simulator clipboard" {...props}>
+    <ToolbarButton ref={ref} aria-label="Clipboard actions" {...props}>
       {ClipboardIcon}
     </ToolbarButton>
   );

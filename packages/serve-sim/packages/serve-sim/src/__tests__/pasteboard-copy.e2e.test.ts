@@ -16,6 +16,10 @@ import {
   withSkipPbpaste,
 } from "./pasteboard-sim";
 import { requireE2E } from "./e2e-preconditions";
+import { useTempStateDir } from "./helpers";
+
+const stateDir = useTempStateDir();
+afterAll(() => stateDir.restore());
 
 const TEST_TOKEN = "test-token";
 const middleware = simMiddleware({ basePath: "/preview", execToken: TEST_TOKEN });

@@ -121,14 +121,15 @@ describe("SimulatorToolbar.Button", () => {
     expect(html).not.toContain('title="Screenshot"');
   });
 
-  test("CopyButton exposes an accessible name", () => {
+  test("CopyButton names the clipboard actions menu", () => {
     const html = renderToStaticMarkup(
       <SimulatorToolbar deviceUdid="booted" streaming>
-        <SimulatorToolbar.CopyButton title="Copy simulator clipboard" />
+        <SimulatorToolbar.CopyButton title="Clipboard" />
       </SimulatorToolbar>,
     );
     expect(html).toContain('role="tooltip"');
-    expect(html).toContain(">Copy simulator clipboard</span>");
-    expect(html).not.toContain('title="Copy simulator clipboard"');
+    expect(html).toContain("aria-label=\"Clipboard actions\"");
+    expect(html).toContain(">Clipboard</span>");
+    expect(html).not.toContain('title="Clipboard"');
   });
 });
