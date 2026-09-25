@@ -58,6 +58,20 @@ describe("Android emulator fold controls", () => {
     })).toEqual({ supported: false, posture: null, hingeAngle: null });
   });
 
+  test("reports a disabled hinge sensor as unsupported", async () => {
+    const commands: string[] = [];
+    const runExec = async (_cmd: string, args: string[]) => {
+      commands.push(args.slice(2).join(" "));
+      return result("KO: 'hinge-angle0' sensor is disabled.\r\n");
+    };
+    expect(await getFoldStatus("emulator-5554", runExec)).toEqual({
+      supported: false, posture: null, hingeAngle: null,
+    });
+    await expect(setFoldPosture("emulator-5554", "closed", runExec))
+      .rejects.toThrow("does not support folding");
+    expect(commands).toEqual(["emu sensor get hinge-angle0", "emu sensor get hinge-angle0"]);
+  });
+
   test("uses the hinge angle when Android does not report a physical state", async () => {
     const runExec = async (_cmd: string, args: string[]) =>
       args.includes("sensor")

@@ -28,7 +28,10 @@ export async function getFoldStatus(
     const detail = sensor.stderr.trim() || sensor.error?.message || sensor.stdout.trim() || "unknown error";
     throw new Error(`Emulator hinge sensor read failed: ${detail}`);
   }
-  if (/KO:\s*unknown sensor name:\s*hinge-angle0/.test(sensor.stdout)) return UNSUPPORTED;
+  // Older emulators do not know the sensor; newer ones disable it on profiles without a hinge.
+  if (/KO:\s*(?:unknown sensor name:\s*hinge-angle0|'hinge-angle0' sensor is disabled)/.test(sensor.stdout)) {
+    return UNSUPPORTED;
+  }
   const angle = Number(sensor.stdout.match(/hinge-angle0\s*=\s*(-?\d+(?:\.\d+)?)/)?.[1]);
   if (!Number.isFinite(angle)) {
     throw new Error(`Emulator hinge sensor returned an unexpected response: ${sensor.stdout.trim()}`);
