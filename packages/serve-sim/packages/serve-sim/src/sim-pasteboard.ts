@@ -222,7 +222,8 @@ export function pasteboardTarget(
 }
 
 async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult | null> {
-  if (capabilityIsDisabled(udid, CLIPBOARD_CAPABILITY)) {
+  if (capabilityIsDisabled(udid, CLIPBOARD_CAPABILITY) ||
+      readLaunchState(udid)?.disabledCapabilities?.[CLIPBOARD_CAPABILITY]?.length) {
     throw new Error(
       "the clipboard capability is disabled for this session, so its reader cannot be loaded. " +
         "Restart serve-sim without `--disable clipboard` to read the simulator pasteboard.",
@@ -245,6 +246,7 @@ async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult
     enabled: true,
     relaunch: false,
     reuseIfEnabled: true,
+    respectDisabledOverrides: true,
   });
   const afterArming = await requestInjectedPasteboard(container);
   if (afterArming !== null) return { text: afterArming, relaunchedApp: null };
@@ -261,6 +263,7 @@ async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult
     enabled: true,
     relaunch: true,
     reuseIfEnabled: true,
+    respectDisabledOverrides: true,
   });
   const afterRelaunch = await requestInjectedPasteboard(container, RELAUNCH_TIMEOUT_MS);
   return afterRelaunch === null ? null : { text: afterRelaunch, relaunchedApp: bundleId };

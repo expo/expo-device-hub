@@ -926,6 +926,8 @@ function AppWithConfig({
 
   // Touch/button relay via direct WebSocket
   const wsRef = useRef<WebSocket | null>(null);
+  const selectedDeviceRef = useRef(config.device);
+  selectedDeviceRef.current = config.device;
   const pasteRequestIdRef = useRef(0);
   const pendingPasteRef = useRef<{
     requestId: number;
@@ -1368,9 +1370,11 @@ function AppWithConfig({
 
   const sendTextToSim = useCallback(
     (text: string): Promise<boolean> => {
+      const device = config.device;
+      const targetWs = wsRef.current;
       const run = pasteChainRef.current.catch(() => {}).then(() => new Promise<boolean>((resolve, reject) => {
         const ws = wsRef.current;
-        if (ws?.readyState !== WebSocket.OPEN) {
+        if (selectedDeviceRef.current !== device || ws !== targetWs || ws?.readyState !== WebSocket.OPEN) {
           reject(new Error("Simulator input disconnected during paste"));
           return;
         }
@@ -1393,7 +1397,7 @@ function AppWithConfig({
       );
       return run;
     },
-    [],
+    [config.device],
   );
 
   const clipboard = useClipboardToast(config.device, sendSimCopy, sendTextToSim);
