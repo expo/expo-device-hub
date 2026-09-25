@@ -10,11 +10,13 @@
 import { spawn } from 'node:child_process';
 import { writeFileSync, createWriteStream, readFileSync } from 'node:fs';
 const [URL, LABEL, OUT, MODE = 'route', PORT = '9370'] = process.argv.slice(2);
-const steps = MODE === 'route' ? JSON.parse(readFileSync(new globalThis.URL('./route-fork.json', import.meta.url))) : [];
+const steps = MODE === 'route' ? JSON.parse(readFileSync(new globalThis.URL(process.env.ROUTE || './route-fork.json', import.meta.url))) : [];
 
 const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/bench/rec-${PORT}`, '--window-size=1200,1000',
-   '--autoplay-policy=no-user-gesture-required', '--no-first-run', 'about:blank'], { stdio: 'ignore' });
+  ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${process.env.TMPDIR || '/tmp/'}rec-${PORT}`, '--window-size=1200,1000',
+   '--autoplay-policy=no-user-gesture-required', '--no-first-run',
+   // e.g. REC_CHROME_ARGS=--unsafely-treat-insecure-origin-as-secure=http://host:3200 for WebCodecs over plain http
+   ...(process.env.REC_CHROME_ARGS ? process.env.REC_CHROME_ARGS.split(' ') : []), 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let t; for (let i = 0; i < 60; i++) { try { t = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json(); break; } catch { await sleep(200); } }
 const ws = new WebSocket(t.find((x) => x.type === 'page').webSocketDebuggerUrl); await new Promise((r) => (ws.onopen = r));
@@ -90,10 +92,15 @@ const RECORDER = `(async () => {
       let info = 't ' + ((now - t0) / 1000).toFixed(1) + 's  src ' + S.size;
       if (BARCODE) info = 'shown ' + (latWin.length ? Math.round(latWin.reduce((a, b) => a + b, 0) / latWin.length) : '–') + ' ms old  ' + changeTimes.length + ' new fps  ' + S.size;
       ctx.fillText(info, 16, 56);
-      const frame = new VideoFrame(rec, { timestamp: Math.round(S.n * 1e6 / 60), duration: Math.round(1e6 / 60) });
-      enc.encode(frame, { keyFrame: S.n % 120 === 0 }); frame.close();
-      S.n++;
-      if (S.n % 10 === 0) flush();
+      // Output is fixed 60 fps whatever the display rate: encode once per elapsed 60 Hz slot (repeating
+      // the frame if a refresh ran long), so S.n is always wall-clock time in 1/60 s.
+      const due = Math.floor((now - t0) * 60 / 1000) + 1;
+      while (S.n < due) {
+        const frame = new VideoFrame(rec, { timestamp: Math.round(S.n * 1e6 / 60), duration: Math.round(1e6 / 60) });
+        enc.encode(frame, { keyFrame: S.n % 120 === 0 }); frame.close();
+        S.n++;
+        if (S.n % 10 === 0) flush();
+      }
       if (S.stop) { enc.flush().then(() => { flush(); resolve(); }); return; }
       requestAnimationFrame(tick);
     }
@@ -104,7 +111,7 @@ const RECORDER = `(async () => {
 
 try {
   await cdp('Page.navigate', { url: URL });
-  for (let i = 0; i < 60; i++) { await sleep(250); if (await ev(`!!([...document.querySelectorAll('video')].find(v=>v.videoWidth>0) || [...document.querySelectorAll('canvas')].find(c=>c.width>200&&c.height>400))`)) break; }
+  for (let i = 0; i < 120; i++) { await sleep(250); if (await ev(`!!([...document.querySelectorAll('video')].find(v=>v.videoWidth>0) || [...document.querySelectorAll('canvas')].find(c=>c.width>200&&c.height>400))`)) break; }
   await sleep(2500);
   await cdp('Runtime.enable');
   await cdp('Runtime.addBinding', { name: '__out' });

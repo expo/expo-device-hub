@@ -9,7 +9,7 @@ The output timeline follows the plan: segment k runs from input k to input k+1 a
 is trimmed or padded (holding its last frame) to the planned length. Within a segment every pane plays
 in real time, so each mode's reaction delay after the input stays visible.
 
---touches draws a finger dot where and when each input was sent (taps, and swipes as a moving dot), from
+--touches (ROUTE=route file, default route-fork.json) draws a finger dot where and when each input was sent (taps, and swipes as a moving dot), from
 route-fork.json, identically on every pane: the gap between the dot and each pane's response is that
 mode's input-to-display delay.
 """
@@ -58,7 +58,7 @@ for i, (b, r) in enumerate(zip(bases, recs)):
     stacked.append(f"[v{i}]")
 if touches:
     here = os.path.dirname(os.path.abspath(__file__))
-    ops = [s for s in json.load(open(os.path.join(here, "route-fork.json"))) if s["op"] != "wait"]
+    ops = [s for s in json.load(open(os.path.join(here, os.environ.get("ROUTE", "route-fork.json")))) if s["op"] != "wait"]
     dot = "/tmp/touch-dot.png"
     r = DOT // 2
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", f"color=black@0:s={DOT}x{DOT},format=rgba",
