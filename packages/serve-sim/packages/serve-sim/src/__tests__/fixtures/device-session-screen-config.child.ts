@@ -21,6 +21,7 @@ let physicalOrientationSupported = false;
 let physicalOrientationSupportGate: Promise<void> | undefined;
 let nativeHingeState: { hingeAngle?: number; physicalOrientation?: string; tableMode?: boolean } = {};
 let inputSetupError: Error | undefined;
+let failInputAfterPasteKeyUp = false;
 let touchError: Error | undefined;
 const inputCalls: string[] = [];
 const keyEvents: { type: string; usage: number }[] = [];
@@ -65,6 +66,11 @@ const addon = {
       inputCalls.push("key");
       keyEvents.push({ type, usage });
       if (type === "down" && usage === 0x19) pastedTexts.push(clipboardText);
+      if (type === "up" && usage === 0x19 && failInputAfterPasteKeyUp) {
+        failInputAfterPasteKeyUp = false;
+        inputSetupError = new Error("Digitizer symbols unavailable");
+        await (session as unknown as { hid: InstanceType<typeof NativeHid> }).hid.setScreen(3);
+      }
     }
     async scroll() { inputCalls.push("scroll"); }
     async digitalCrown() { inputCalls.push("digitalCrown"); }
@@ -210,6 +216,7 @@ let errorLog: ReturnType<typeof spyOn<typeof console, "error">> | undefined;
 
 beforeEach(() => {
   inputSetupError = undefined;
+  failInputAfterPasteKeyUp = false;
   touchError = undefined;
   inputCalls.length = 0;
   keyEvents.length = 0;
@@ -424,6 +431,45 @@ describe("clipboard paste input", () => {
     await waitUntil(() => replies.length === 1);
     expect(replies).toMatchObject([{ requestId: 1, ok: false }]);
     expect(pastedTexts).toEqual([]);
+  });
+
+  test("rejects paste when native input fails before the shortcut", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    await start({ width: 1170, height: 2532 });
+    const replies: Array<{ requestId: number; ok: boolean }> = [];
+    ws!.on("message", (data) => {
+      const frame = Buffer.from(data as Buffer);
+      if (frame[0] === 0x92) replies.push(JSON.parse(frame.subarray(1).toString()));
+    });
+    let release!: () => void;
+    pasteGate = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      sendTo(ws!, 1, "hello");
+      await waitUntil(() => pasteWrites.length === 1);
+      inputSetupError = new Error("Digitizer symbols unavailable");
+      await (session as unknown as { hid: InstanceType<typeof NativeHid> }).hid.setScreen(3);
+      release();
+      await waitUntil(() => replies.length === 1);
+      expect(replies).toMatchObject([{ requestId: 1, ok: false }]);
+      expect(pastedTexts).toEqual([]);
+    } finally {
+      release();
+    }
+  });
+
+  test("acknowledges paste already delivered before native input fails", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    await start({ width: 1170, height: 2532 });
+    const replies: Array<{ requestId: number; ok: boolean }> = [];
+    ws!.on("message", (data) => {
+      const frame = Buffer.from(data as Buffer);
+      if (frame[0] === 0x92) replies.push(JSON.parse(frame.subarray(1).toString()));
+    });
+    failInputAfterPasteKeyUp = true;
+    sendTo(ws!, 1, "hello");
+    await waitUntil(() => replies.length === 1);
+    expect(replies).toMatchObject([{ requestId: 1, ok: true }]);
+    expect(pastedTexts).toEqual(["hello"]);
   });
 });
 

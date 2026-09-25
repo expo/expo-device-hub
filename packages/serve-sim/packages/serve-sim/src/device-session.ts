@@ -29,6 +29,7 @@ import {
 } from "./native";
 import { isSoftwareKeyboardVisible } from "./ax";
 import { simPasteHidEvents } from "./client/utils/sim-clipboard";
+import { HID_USAGE_BY_CODE } from "./client/utils/hid";
 import { MAX_PASTEBOARD_TEXT_BYTES, pasteTextIntoSim } from "./sim-pasteboard";
 import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
@@ -1163,11 +1164,13 @@ export class DeviceSession {
             await pasteTextIntoSim(this.udid, text, async () => {
               if (!this.hidSockets.has(ws)) throw new Error("Clipboard viewer disconnected");
               const pressed = new Set(this.activeHidKeyUsages.get(ws) ?? []);
+              let pasteKeyReleased = false;
               for (const event of simPasteHidEvents(pressed)) {
                 if (event.type === "up") await new Promise((resolve) => setTimeout(resolve, 30));
+                if (!pasteKeyReleased && this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
                 await this.updateHidKey(ws, event.type, event.usage);
+                if (event.type === "up" && event.usage === HID_USAGE_BY_CODE.KeyV) pasteKeyReleased = true;
               }
-              if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
             });
           });
           if (operation) {
