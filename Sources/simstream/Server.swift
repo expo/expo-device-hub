@@ -2,10 +2,12 @@ import CryptoKit
 import Foundation
 import Network
 
-/// One WebSocket connection. All state is confined to the server's queue.
+/// One connection. Reading and parsing happen on the connection's own queue, so input is handled
+/// the moment it arrives instead of waiting behind video work on the server queue.
 final class StreamClient {
     let id = UUID()
     let connection: NWConnection
+    let queue = DispatchQueue(label: "simstream.client", qos: .userInteractive)
 
     fileprivate var buffer = Data()
     fileprivate var isWebSocket = false
@@ -26,6 +28,9 @@ final class StreamServer {
     var onConnect: ((StreamClient) -> Void)?
     var onDisconnect: ((StreamClient) -> Void)?
     var onMessage: ((StreamClient, [String: Any]) -> Void)?
+    /// Called on the client's own queue as soon as a message is parsed; return true if handled
+    /// (input, pings). Anything else goes to `onMessage` on the server queue.
+    var onInput: ((StreamClient, [String: Any]) -> Bool)?
 
     private let listener: NWListener
     private let webRoot: URL
@@ -46,14 +51,16 @@ final class StreamServer {
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
             case .failed, .cancelled:
-                if self?.clients.removeValue(forKey: client.id) != nil {
-                    self?.onDisconnect?(client)
+                self?.queue.async {
+                    if self?.clients.removeValue(forKey: client.id) != nil {
+                        self?.onDisconnect?(client)
+                    }
                 }
             default:
                 break
             }
         }
-        connection.start(queue: queue)
+        connection.start(queue: client.queue)
         read(client)
     }
 
@@ -123,8 +130,10 @@ final class StreamServer {
             "Sec-WebSocket-Accept: \(accept)\r\n\r\n"
         client.connection.send(content: Data(response.utf8), completion: .idempotent)
         client.isWebSocket = true
-        clients[client.id] = client
-        onConnect?(client)
+        queue.async { [self] in
+            clients[client.id] = client
+            onConnect?(client)
+        }
         parseFrames(client)
     }
 
@@ -170,7 +179,9 @@ final class StreamServer {
                     let message = client.fragments
                     client.fragments = Data()
                     if let json = (try? JSONSerialization.jsonObject(with: message)) as? [String: Any] {
-                        onMessage?(client, json)
+                        if onInput?(client, json) != true {
+                            queue.async { [self] in onMessage?(client, json) }
+                        }
                     }
                 }
             case 0x8:
@@ -214,14 +225,20 @@ final class StreamServer {
                 "description": config.description.base64EncodedString(),
             ], to: client)
         }
-        // Header: u8 flags | u32 seq | f64 captureMs | f64 encodedMs | u32 inputSeq  (little endian)
-        let headerSize = 25
+        // Header (little endian), server clock in ms — every stage is timed so the client can show
+        // where latency goes:
+        //   u8 flags | u32 seq | f64 capture | f64 encodeStart | f64 encoded | f64 sent
+        //   | u32 inputSeq | f64 inputReceived
+        let headerSize = 49
         var packet = Self.frame(0x2, Data(), reserving: headerSize + frame.data.count)
         packet.append(frame.isKeyframe ? 1 : 0)
         packet.appendLE(frame.seq)
         packet.appendLE(frame.captureMs.bitPattern)
+        packet.appendLE(frame.encodeStartMs.bitPattern)
         packet.appendLE(frame.encodedMs.bitPattern)
-        packet.appendLE(frame.inputSeq)
+        packet.appendLE(Clock.ms().bitPattern)
+        packet.appendLE(frame.input.seq)
+        packet.appendLE(frame.input.receivedMs.bitPattern)
         packet.append(frame.data)
         client.connection.send(content: packet, completion: .idempotent)
     }

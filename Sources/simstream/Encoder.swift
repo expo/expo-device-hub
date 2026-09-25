@@ -9,14 +9,22 @@ struct StreamConfig: Equatable {
     let description: Data   // avcC box (SPS/PPS) for VideoDecoder.configure
 }
 
+/// The most recent input injected before a frame was captured, so latency can be traced from the
+/// client's touch to the pixels it caused.
+struct InputTag {
+    var seq: UInt32 = 0          // 0 = none
+    var receivedMs: Double = 0   // server clock, when the input arrived
+}
+
 struct EncodedFrame {
     var seq: UInt32
     let data: Data          // AVCC (length-prefixed NAL units)
     let isKeyframe: Bool
     let config: StreamConfig?
     let captureMs: Double
+    let encodeStartMs: Double   // submitted to the encoder (after any queueing)
     let encodedMs: Double
-    let inputSeq: UInt32    // last input event applied before this frame was captured (0 = none)
+    let input: InputTag
     /// Size the client should present at, when frames are encoded at a reduced resolution.
     var displaySize: (width: Int, height: Int)?
 }
@@ -33,7 +41,7 @@ final class H264Encoder {
     private(set) var bitrate: Int
 
     struct Stats {
-        var frames = 0, bytes = 0, keyframes = 0, maxBytes = 0, encodeMs = 0.0
+        var frames = 0, bytes = 0, keyframes = 0, maxBytes = 0, encodeMs = 0.0, queueMs = 0.0
         /// Frames the encoder dropped itself (its rate control couldn't fit them in the budget).
         var dropped = 0
         var psnrSum = 0.0, psnrMin = Double.infinity, psnrCount = 0
@@ -101,8 +109,9 @@ final class H264Encoder {
     }
 
     /// `completion` runs once the encoder is done with the frame, whether or not it produced output.
-    func encode(_ pixelBuffer: CVPixelBuffer, captureMs: Double, forceKeyframe: Bool, inputSeq: UInt32,
+    func encode(_ pixelBuffer: CVPixelBuffer, captureMs: Double, forceKeyframe: Bool, input: InputTag,
                 completion: @escaping () -> Void = {}) {
+        let encodeStartMs = Clock.ms()
         let pts = CMTime(value: CMTimeValue(captureMs * 1000), timescale: 1_000_000)
         let props = forceKeyframe ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary : nil
         VTCompressionSessionEncodeFrame(
@@ -123,11 +132,11 @@ final class H264Encoder {
                 self.stats.psnrCount += 1
                 self.statsLock.unlock()
             }
-            self.emit(sampleBuffer, captureMs: captureMs, inputSeq: inputSeq)
+            self.emit(sampleBuffer, captureMs: captureMs, encodeStartMs: encodeStartMs, input: input)
         }
     }
 
-    private func emit(_ sample: CMSampleBuffer, captureMs: Double, inputSeq: UInt32) {
+    private func emit(_ sample: CMSampleBuffer, captureMs: Double, encodeStartMs: Double, input: InputTag) {
         guard let block = CMSampleBufferGetDataBuffer(sample) else { return }
         var data = Data(count: CMBlockBufferGetDataLength(block))
         let copied = data.withUnsafeMutableBytes {
@@ -146,11 +155,12 @@ final class H264Encoder {
         stats.bytes += data.count
         stats.keyframes += isKeyframe ? 1 : 0
         stats.maxBytes = max(stats.maxBytes, data.count)
-        stats.encodeMs += encodedMs - captureMs
+        stats.encodeMs += encodedMs - encodeStartMs
+        stats.queueMs += encodeStartMs - captureMs
         statsLock.unlock()
         onFrame?(EncodedFrame(
             seq: seq, data: data, isKeyframe: isKeyframe, config: config,
-            captureMs: captureMs, encodedMs: encodedMs, inputSeq: inputSeq))
+            captureMs: captureMs, encodeStartMs: encodeStartMs, encodedMs: encodedMs, input: input))
     }
 
     private func streamConfig(_ format: CMFormatDescription) -> StreamConfig? {

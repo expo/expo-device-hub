@@ -141,6 +141,11 @@ final class Viewer {
     private var draining = false
     private var unacked: [(seq: UInt32, sentMs: Double, bytes: Int)] = []
     private(set) var resyncs = 0
+    private var lastAckMs = -Double.infinity
+    private var lastResyncMs = -Double.infinity
+    /// Resynced twice without a single ack in between: the page isn't decoding (e.g. a stale tab
+    /// running an older client). Stop spending encoder time on it until it acks something.
+    private var unresponsive = false
     /// Encode calls can block while the hardware encoder is busy, so each viewer submits on its own
     /// queue: one slow encoder must not stall the others or the network queue.
     private let encodeQueue: DispatchQueue
@@ -242,8 +247,8 @@ final class Viewer {
     }
 
     /// A captured frame. Encoded for this viewer unless it's paused or draining a backlog.
-    func offer(_ pixelBuffer: CVPixelBuffer, captureMs: Double, inputSeq: UInt32) {
-        guard !paused else { return }
+    func offer(_ pixelBuffer: CVPixelBuffer, captureMs: Double, input: InputTag) {
+        guard !paused, !unresponsive else { return }
         let now = Clock.ms()
         let backlog = unacked.first.map { now - $0.sentMs - congestion.baselineOrZero } ?? 0
 
@@ -253,8 +258,15 @@ final class Viewer {
             draining = false
             needsKeyframe = true
         } else if backlog > severeMs {
+            if resyncs >= 2 && lastAckMs < lastResyncMs {
+                unresponsive = true
+                unacked.removeAll()
+                log("viewer \(id): no acks across 2 resyncs, not encoding for it until it responds (stale page?)")
+                return
+            }
             draining = true
             resyncs += 1
+            lastResyncMs = now
             congestion.severe(now: now)
             encoder.setBitrate(congestion.bitrate)
             log(String(format: "viewer %d: %.0f ms backlog, resyncing at %.1f Mbps", id, backlog,
@@ -271,15 +283,15 @@ final class Viewer {
         let force = needsKeyframe
         needsKeyframe = false
         encodeQueue.async { [weak self, encoder, scaler, queue = server.queue] in
-            var input = pixelBuffer
+            var scaledInput = pixelBuffer
             if let scaler {
                 var scaled: CVPixelBuffer?
                 if CVPixelBufferPoolCreatePixelBuffer(nil, scaler.pool, &scaled) == kCVReturnSuccess, let scaled,
                    VTPixelTransferSessionTransferImage(scaler.session, from: pixelBuffer, to: scaled) == noErr {
-                    input = scaled
+                    scaledInput = scaled
                 }
             }
-            encoder.encode(input, captureMs: captureMs, forceKeyframe: force, inputSeq: inputSeq) {
+            encoder.encode(scaledInput, captureMs: captureMs, forceKeyframe: force, input: input) {
                 queue.async { self?.encodesInFlight -= 1 }
             }
         }
@@ -306,6 +318,12 @@ final class Viewer {
 
     func ack(_ seq: UInt32) {
         let now = Clock.ms()
+        lastAckMs = now
+        if unresponsive {
+            unresponsive = false
+            needsKeyframe = true
+            log("viewer \(id): responding again")
+        }
         if let frame = unacked.first(where: { $0.seq == seq }) {
             congestion.onAck(latencyMs: now - frame.sentMs, bytes: frame.bytes, now: now)
         }

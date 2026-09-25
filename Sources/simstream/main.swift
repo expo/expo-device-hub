@@ -107,10 +107,10 @@ do {
     }
 
     // Capture once, encode per viewer.
-    pump.onFrame = { pixelBuffer, captureMs, inputSeq in
+    pump.onFrame = { pixelBuffer, captureMs, input in
         stream.queue.async {
             for viewer in viewers.values {
-                viewer.offer(pixelBuffer, captureMs: captureMs, inputSeq: inputSeq)
+                viewer.offer(pixelBuffer, captureMs: captureMs, input: input)
             }
         }
     }
@@ -134,6 +134,39 @@ do {
         log("viewer \(viewer.id) disconnected (\(viewers.count) total)")
         updateWatching()
     }
+    // Input and pings are handled on the connection's own queue the moment they arrive; they must
+    // not wait behind video work on the server queue.
+    stream.onInput = { client, message in
+        switch message["t"] as? String {
+        case "touch":
+            let receivedMs = Clock.ms()
+            guard let x = message["x"] as? Double, let y = message["y"] as? Double else { return true }
+            let phase: SBTouchPhase = switch message["p"] as? String {
+            case "down": .down
+            case "up": .up
+            default: .move
+            }
+            let edge = (message["edge"] as? NSNumber)?.uint32Value ?? 0
+            if sim.sendTouch(phase, x: x, y: y, edge: edge), let seq = (message["seq"] as? NSNumber)?.uint32Value {
+                pump.noteInput(InputTag(seq: seq, receivedMs: receivedMs))
+            }
+        case "key":
+            guard let usage = (message["usage"] as? NSNumber)?.uint32Value else { return true }
+            sim.sendKey(usage, down: message["down"] as? Bool ?? false)
+        case "button":
+            let button: SBButton = switch message["b"] as? String {
+            case "lock": .lock
+            case "siri": .siri
+            default: .home
+            }
+            sim.send(button, down: message["down"] as? Bool ?? false)
+        case "ping":
+            stream.sendJSON(["t": "pong", "ts": message["ts"] ?? 0, "server": Clock.ms()], to: client)
+        default:
+            return false
+        }
+        return true
+    }
     stream.onMessage = { client, message in
         let viewer = viewers[client.id]
         switch message["t"] as? String {
@@ -151,29 +184,6 @@ do {
             updateWatching()
             pump.requestFrame()
             if let viewer { log("viewer \(viewer.id) resumed") }
-        case "touch":
-            guard let x = message["x"] as? Double, let y = message["y"] as? Double else { return }
-            let phase: SBTouchPhase = switch message["p"] as? String {
-            case "down": .down
-            case "up": .up
-            default: .move
-            }
-            let edge = (message["edge"] as? NSNumber)?.uint32Value ?? 0
-            if sim.sendTouch(phase, x: x, y: y, edge: edge), let seq = (message["seq"] as? NSNumber)?.uint32Value {
-                pump.noteInput(seq)
-            }
-        case "key":
-            guard let usage = (message["usage"] as? NSNumber)?.uint32Value else { return }
-            sim.sendKey(usage, down: message["down"] as? Bool ?? false)
-        case "button":
-            let button: SBButton = switch message["b"] as? String {
-            case "lock": .lock
-            case "siri": .siri
-            default: .home
-            }
-            sim.send(button, down: message["down"] as? Bool ?? false)
-        case "ping":
-            stream.sendJSON(["t": "pong", "ts": message["ts"] ?? 0, "server": Clock.ms()], to: client)
         default:
             break
         }
@@ -204,10 +214,10 @@ do {
             let cc = viewer.congestion
             stream.sendJSON(["t": "stats", "captureFps": captured - lastCaptured, "bitrate": cc.bitrate], to: viewer.client)
             guard s.frames > 0 else { continue }
-            var line = String(format: "viewer %d: %d fps  %.2f Mbps (target %.1f)  avg %.1f KB  max %.1f KB  key %d  encode %.1f ms  queue %.0f ms over %.0f ms",
+            var line = String(format: "viewer %d: %d fps  %.2f Mbps (target %.1f)  avg %.1f KB  max %.1f KB  key %d  capture→encoder %.1f ms  encode %.1f ms  net queue %.0f ms over %.0f ms",
                               viewer.id, s.frames, Double(s.bytes * 8) / 1e6, Double(cc.bitrate) / 1e6,
                               Double(s.bytes) / Double(s.frames) / 1024, Double(s.maxBytes) / 1024, s.keyframes,
-                              s.encodeMs / Double(s.frames), cc.queueMs, cc.baselineOrZero)
+                              s.queueMs / Double(s.frames), s.encodeMs / Double(s.frames), cc.queueMs, cc.baselineOrZero)
             line += "  \(viewer.resolution.width)×\(viewer.resolution.height)"
             if s.dropped > 0 { line += "  dropped \(s.dropped) (encoder rate control)" }
             let skipped = viewer.takeSkipped()

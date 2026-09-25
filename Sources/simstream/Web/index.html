@@ -85,18 +85,26 @@ let decoder = null;
 let currentConfig = null;
 let waitingForKeyframe = true;
 
-// Clock sync (NTP-style): serverMs ≈ clientMs + clockOffset.
+// Clock sync (NTP-style): serverMs ≈ clientMs + clockOffset. The offset comes from the ping with the
+// lowest round trip in a recent window: it is the one least distorted by queueing (a pong stuck
+// behind video skews the midpoint), which matters because every one-way number depends on it.
 let clockOffset = 0, rtt = 0;
+const pongs = [];   // { rtt, offset, at }
 let serverStats = {};
 
-const pending = new Map();      // frame seq -> { receivedAt, captureMs, encodedMs, inputSeq }
+const pending = new Map();      // frame seq -> { receivedAt, server timestamps, input }
 const inputSentAt = new Map();  // input seq -> performance.now() when sent
 let inputSeq = 0;
 const debug = (window.simstreamDebug = { received: 0, drawn: 0, lastReceivedSeq: 0, lastDrawnSeq: 0 });
 let lastTouchLatency = null;   // most recent input → first changed frame drawn
 
+// Per-stage latency samples for the current one-second window (ms).
+const STAGES = ['queue', 'encode', 'send', 'network', 'decode', 'draw', 'present', 'total'];
+const INPUT_STAGES = ['up', 'ios', 'touch'];
 function resetWindow() {
-  return { frames: 0, bytes: 0, network: 0, decode: 0, glass: 0, encode: 0, samples: 0, intervals: [], start: performance.now() };
+  const w = { frames: 0, bytes: 0, intervals: [], start: performance.now() };
+  for (const k of [...STAGES, ...INPUT_STAGES]) w[k] = [];
+  return w;
 }
 let stats = resetWindow();
 let lastDrawnAt = 0;
@@ -116,15 +124,18 @@ function send(message) {
 }
 
 function ping() { send({ t: 'ping', ts: performance.now() }); }
-setInterval(ping, 1000);
+setInterval(ping, 250);
 
 function onControl(m) {
   switch (m.t) {
     case 'config': configure(m); break;
     case 'pong': {
       const now = performance.now();
-      rtt = now - m.ts;
-      clockOffset = m.server - (m.ts + now) / 2;
+      pongs.push({ rtt: now - m.ts, offset: m.server - (m.ts + now) / 2, at: now });
+      while (pongs.length && now - pongs[0].at > 10000) pongs.shift();
+      const best = pongs.reduce((a, b) => (b.rtt < a.rtt ? b : a));
+      clockOffset = best.offset;
+      rtt = best.rtt;
       break;
     }
     case 'stats': serverStats = m; break;
@@ -172,9 +183,11 @@ function onFrame(buffer) {
   const view = new DataView(buffer);
   const isKey = (view.getUint8(0) & 1) === 1;
   const seq = view.getUint32(1, true);
-  const captureMs = view.getFloat64(5, true);
-  const encodedMs = view.getFloat64(13, true);
-  const frameInputSeq = view.getUint32(21, true);
+  const t = {
+    capture: view.getFloat64(5, true), encodeStart: view.getFloat64(13, true),
+    encoded: view.getFloat64(21, true), sent: view.getFloat64(29, true),
+    inputSeq: view.getUint32(37, true), inputReceived: view.getFloat64(41, true),
+  };
   stats.bytes += buffer.byteLength;
   debug.received++;
   debug.lastReceivedSeq = seq;
@@ -183,14 +196,16 @@ function onFrame(buffer) {
   if (waitingForKeyframe && !isKey) return;
   waitingForKeyframe = false;
 
-  pending.set(seq, { receivedAt: performance.now(), captureMs, encodedMs, inputSeq: frameInputSeq });
+  pending.set(seq, { receivedAt: performance.now(), t });
   if (pending.size > 120) pending.delete(pending.keys().next().value);
-  decoder.decode(new EncodedVideoChunk({ type: isKey ? 'key' : 'delta', timestamp: seq, data: new Uint8Array(buffer, 25) }));
+  decoder.decode(new EncodedVideoChunk({ type: isKey ? 'key' : 'delta', timestamp: seq, data: new Uint8Array(buffer, 49) }));
 }
 
 function onDecoded(frame) {
+  const decodedAt = performance.now();
   // Present immediately — no jitter buffer. Latency over smoothness.
   ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+  const drawnAt = performance.now();
   const seq = frame.timestamp;
   frame.close();
   debug.drawn++;
@@ -198,32 +213,45 @@ function onDecoded(frame) {
   debug.decodeQueueSize = decoder?.decodeQueueSize;
   send({ t: 'ack', seq });
 
-  const now = performance.now();
   // Gaps over 100 ms are idle time, not motion; they don't count toward frame pacing.
-  if (lastDrawnAt && now - lastDrawnAt < 100) stats.intervals.push(now - lastDrawnAt);
-  lastDrawnAt = now;
+  if (lastDrawnAt && drawnAt - lastDrawnAt < 100) stats.intervals.push(drawnAt - lastDrawnAt);
+  lastDrawnAt = drawnAt;
   const p = pending.get(seq);
   pending.delete(seq);
   stats.frames++;
   if (!p) return;
 
-  const captureLocal = p.captureMs - clockOffset;
-  const encodedLocal = p.encodedMs - clockOffset;
-  stats.encode += p.encodedMs - p.captureMs;
-  stats.network += Math.max(0, p.receivedAt - encodedLocal);
-  stats.decode += now - p.receivedAt;
-  stats.glass += now - captureLocal;
-  stats.samples++;
+  // Server timestamps → client clock.
+  const local = (serverMs) => serverMs - clockOffset;
+  const s = stats, t = p.t;
+  s.queue.push(t.encodeStart - t.capture);
+  s.encode.push(t.encoded - t.encodeStart);
+  s.send.push(t.sent - t.encoded);
+  s.network.push(Math.max(0, p.receivedAt - local(t.sent)));
+  s.decode.push(decodedAt - p.receivedAt);
+  s.draw.push(drawnAt - decodedAt);
+  s.total.push(drawnAt - local(t.capture));
+  // The drawn canvas reaches the screen with the next composited frame; the next animation frame
+  // callback approximates when that is.
+  const window_ = s;
+  requestAnimationFrame((ts) => window_.present.push(Math.max(0, ts - drawnAt)));
 
-  if (p.inputSeq) {
+  if (t.inputSeq) {
     // Measure from the oldest input this frame answers (e.g. the touch-down, not the touch-up).
     let first = null;
     for (const [k, sentAt] of inputSentAt) {
-      if (k > p.inputSeq) break;
+      if (k > t.inputSeq) break;
       if (first === null) first = sentAt;
       inputSentAt.delete(k);
     }
-    if (first !== null) lastTouchLatency = now - first;
+    if (first !== null) {
+      lastTouchLatency = drawnAt - first;
+      s.touch.push(lastTouchLatency);
+      if (t.inputReceived) {
+        s.up.push(Math.max(0, local(t.inputReceived) - first));      // client → server
+        s.ios.push(t.capture - t.inputReceived);                       // injected → changed frame captured
+      }
+    }
   }
 }
 
@@ -369,23 +397,38 @@ function setStatus(text, live) {
   statusEl.className = live ? 'live' : '';
 }
 
+const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
+const p95 = (a) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(0.95 * (a.length - 1))] : NaN);
+const fmt = (v) => (Number.isFinite(v) ? v.toFixed(1).padStart(6) : '     –');
+
 setInterval(() => {
   const s = stats;
   const secs = (performance.now() - s.start) / 1000;
-  const avg = (v) => s.samples ? (v / s.samples).toFixed(1) : '–';
+  const row = (label, k) => `${label.padEnd(15)}${fmt(mean(s[k]))}${fmt(p95(s[k]))}`;
+  // Exposed for scripts and measurements.
+  window.simstreamLatency = Object.fromEntries([...STAGES, ...INPUT_STAGES].map((k) => [k, { mean: mean(s[k]), p95: p95(s[k]), n: s[k].length }]));
+  window.simstreamLatency.rtt = rtt;
   hudEl.textContent = [
     `resolution   ${currentConfig ? `${currentConfig.width}×${currentConfig.height}` : '–'}`,
-    `codec        ${currentConfig ? currentConfig.codec : '–'}`,
     `fps          ${motionFps(s)} in motion, ${(s.frames / secs).toFixed(0)} avg  (server ${serverStats.captureFps ?? '–'})`,
     `pacing       ${pacing(s)}`,
     `bitrate      ${(s.bytes * 8 / secs / 1e6).toFixed(2)} Mbps  (target ${serverStats.bitrate ? (serverStats.bitrate / 1e6).toFixed(1) : '–'})`,
+    `rtt          ${rtt.toFixed(1)} ms (best of 10 s)`,
     ``,
-    `rtt          ${rtt.toFixed(1)} ms`,
-    `encode       ${avg(s.encode)} ms`,
-    `network      ${avg(s.network)} ms`,
-    `decode+draw  ${avg(s.decode)} ms`,
-    `capture→draw ${avg(s.glass)} ms`,
-    `touch→pixels ${lastTouchLatency === null ? '–' : lastTouchLatency.toFixed(1)} ms (last)`,
+    `frame, ms          avg   p95`,
+    row('capture→encoder', 'queue'),
+    row('encode', 'encode'),
+    row('encoded→sent', 'send'),
+    row('network ↓', 'network'),
+    row('decode', 'decode'),
+    row('draw', 'draw'),
+    row('capture→drawn', 'total'),
+    row('→next frame', 'present'),
+    ``,
+    `touch, ms          avg   p95`,
+    row('network ↑', 'up'),
+    row('iOS→captured', 'ios'),
+    row('touch→drawn', 'touch'),
   ].join('\n');
   stats = resetWindow();
 }, 1000);

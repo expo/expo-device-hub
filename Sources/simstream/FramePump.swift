@@ -22,7 +22,7 @@ final class FramePump {
     let height: Int
 
     /// Called on the capture queue with each frame to stream.
-    var onFrame: ((CVPixelBuffer, _ captureMs: Double, _ inputSeq: UInt32) -> Void)?
+    var onFrame: ((CVPixelBuffer, _ captureMs: Double, _ input: InputTag) -> Void)?
 
     private let sim: SBSimulator
     private let queue = DispatchQueue(label: "simstream.capture", qos: .userInteractive)
@@ -36,7 +36,7 @@ final class FramePump {
     private var lastCaptureMs: Double = 0
     private var frameRequested = true
     private var deferredCapture = false
-    private var pendingInputSeq: UInt32 = 0
+    private var pendingInput = InputTag()
     private let refineFrames: Int
     private var refineRemaining = 0
     private let constantFrameRate: Bool
@@ -104,8 +104,8 @@ final class FramePump {
 
     /// Records that an input event was injected, so the next changed frame can be tagged with it
     /// and the client can measure input-to-photon latency.
-    func noteInput(_ seq: UInt32) {
-        queue.async { self.pendingInputSeq = seq }
+    func noteInput(_ input: InputTag) {
+        queue.async { self.pendingInput = input }
     }
 
     private func capture(fromDamage: Bool) {
@@ -169,11 +169,11 @@ final class FramePump {
         capturedFrames += 1
 
         frameRequested = false
-        var inputSeq: UInt32 = 0
+        var input = InputTag()
         if contentChanged {
-            inputSeq = pendingInputSeq
-            pendingInputSeq = 0
+            input = pendingInput
+            pendingInput = InputTag()
         }
-        onFrame?(output, now, inputSeq)
+        onFrame?(output, now, input)
     }
 }
