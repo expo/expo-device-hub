@@ -5,7 +5,8 @@ This monorepo publishes two public packages:
 - **`expo-device-hub`** — the DevTools plugin.
 - **`@expo/hub-client`** — the device-client hooks and the `DeviceScreen` component.
 
-Every other workspace package is marked `private` and is skipped by the release tooling.
+Every other workspace package is marked `private` or listed in `.changeset/config.json`
+`ignore` and is skipped by the release tooling.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): the version
 bump and changelog for each package are computed from the `.changeset/*.md` entries that have
@@ -41,8 +42,8 @@ Go to **Actions → Release → Run workflow**. The only input is **canary**:
   tests it on EAS, publishes to npm, pushes each tag after its package publishes, and creates
   GitHub releases.
 - **on** → canary release. EAS versions as usual, then rewrites each published package's version
-  into a prerelease before packing. The workflow publishes it under the **`canary`** npm
-  dist-tag — without committing the version bump, pushing tags, or creating GitHub releases.
+  into a prerelease before building, testing, and packing. The workflow publishes it under the
+  **`canary`** npm dist-tag — without committing the version bump, pushing tags, or creating GitHub releases.
   Install it with `npm install expo-device-hub@canary`, and `latest` stays untouched.
 
 Both paths build all packages after the final version changes so bundled version metadata and
