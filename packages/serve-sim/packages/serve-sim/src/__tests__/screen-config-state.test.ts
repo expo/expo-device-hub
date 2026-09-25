@@ -117,6 +117,20 @@ describe("screen config state", () => {
     expect(resolveScreenConfigUpdate(current, config, "external")?.config).not.toHaveProperty("physicalOrientation");
   });
 
+  test("clears prior hinge state when a new server reports only screen geometry", () => {
+    const current = {
+      width: 2007, height: 2853, supportsHingeAngle: true, supportsPhysicalOrientation: true,
+      hingeAngle: 90, hingePose: "book" as const, physicalOrientation: "portrait" as const,
+      tableMode: true, tableModeAvailable: true,
+    };
+    const config = { width: 2007, height: 2853 };
+    for (const source of ["reported", "external"] as const) {
+      expect(resolveScreenConfigUpdate(current, config, source)?.config).toEqual(config);
+    }
+    expect(resolveScreenConfigUpdate(current, { width: 900, height: 1280 }, "media")?.config)
+      .toMatchObject({ hingePose: "book", tableMode: true, physicalOrientation: "portrait" });
+  });
+
   test("reports a display switch even when both screens have the same dimensions", () => {
     expect(resolveScreenConfigUpdate(
       { width: 900, height: 1280, screenId: 1 },

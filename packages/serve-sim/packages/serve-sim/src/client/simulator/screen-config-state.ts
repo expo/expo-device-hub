@@ -27,11 +27,17 @@ export function resolveScreenConfigUpdate(
   if (config.orientation === undefined && prev?.orientation !== undefined) {
     next.orientation = prev.orientation;
   }
-  if (config.hingeAngle === undefined && prev?.hingeAngle !== undefined) {
+  if (source === "media" && config.hingeAngle === undefined && prev?.hingeAngle !== undefined) {
     next.hingeAngle = prev.hingeAngle;
   }
-  if (source !== "media" && config.physicalOrientation === undefined) {
-    delete next.physicalOrientation;
+  if (source !== "media") {
+    if (config.hingeAngle === undefined) delete next.hingeAngle;
+    if (config.hingePose === undefined) delete next.hingePose;
+    if (config.physicalOrientation === undefined) delete next.physicalOrientation;
+    if (config.tableMode === undefined) delete next.tableMode;
+    if (config.tableModeAvailable === undefined) delete next.tableModeAvailable;
+    if (config.supportsHingeAngle === undefined) delete next.supportsHingeAngle;
+    if (config.supportsPhysicalOrientation === undefined) delete next.supportsPhysicalOrientation;
   }
   if (screenConfigsEqual(prev, next)) {
     return null;
