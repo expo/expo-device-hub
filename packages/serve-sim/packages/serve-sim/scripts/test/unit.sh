@@ -20,6 +20,6 @@ unset SERVE_SIM_E2E_REQUIRED SERVE_SIM_TEST_UDID
 
 cd "$ROOT"
 if [ $# -eq 0 ]; then
-  set -- packages/serve-sim/src/__tests__/ packages/serve-sim/scripts/tart/__tests__/
+  set -- packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/
 fi
 bun test --max-concurrency=1 "$@"

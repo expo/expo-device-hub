@@ -20,7 +20,7 @@
         "src/client/client.tsx",
         "src/client/global.css",
         "scripts/build-trails.ts",
-        "src/__tests__/**/*.test.{ts,tsx}",
+        "src/**/__tests__/**/*.test.{ts,tsx}",
         "src/__tests__/fixtures/*.child.ts",
         "scripts/tart/__tests__/*.test.ts"
       ]
