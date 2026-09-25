@@ -818,6 +818,27 @@ describe("capture runtime", () => {
     await second.runtime.disableAll();
   });
 
+  test("removes capture files synchronously for process exit", async () => {
+    const { existsSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = join(mkdtempSync(join(tmpdir(), "serve-sim-runtime-exit-")), "capture-device");
+    const { runtime } = harness({ writeDiskArtifacts: true, captureDirFor: () => dir });
+    try {
+      await runtime.enableForDevice(UDID);
+      expect(existsSync(join(dir, "capture.har"))).toBe(true);
+
+      // No await: an exit handler cannot wait for the async teardown.
+      runtime.discardArtifactsSync();
+      expect(existsSync(dir)).toBe(false);
+
+      await runtime.disableAll();
+      expect(existsSync(dir)).toBe(false);
+    } finally {
+      rmSync(join(dir, ".."), { recursive: true, force: true });
+    }
+  });
+
   test("writes network-capture.json + capture.har while capturing, then removes them on disable", async () => {
     const { existsSync, mkdtempSync, readFileSync, rmSync } = await import("node:fs");
     const { tmpdir } = await import("node:os");

@@ -193,6 +193,24 @@ export class CaptureDiskAccumulator {
     await this.end({ removeDir: true });
   }
 
+  /** Remove the recording without a final flush. For `process.on("exit")`, which cannot await. */
+  discardSync(): void {
+    if (this.unsubscribe) {
+      this.unsubscribe();
+      this.unsubscribe = null;
+    }
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
+    }
+    this.started = false;
+    // Nothing is left to flush, so a later end() must not write into the removed directory.
+    this.ending = Promise.resolve(null);
+    const owner = this.owner;
+    this.owner = null;
+    if (owner) releaseCaptureDirectory(this.dir, owner, true, this.ownerFile);
+  }
+
   private enqueue(task: () => Promise<void>): void {
     this.writeChain = this.writeChain.then(task).catch((err) => {
       this.harDirty = true;

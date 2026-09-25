@@ -382,6 +382,15 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       }
     },
 
+    /** Remove every session's capture files at once. Only for process exit, where teardown cannot await. */
+    discardArtifactsSync(): void {
+      for (const session of byUdid.values()) {
+        try {
+          session.disk?.discardSync();
+        } catch {}
+      }
+    },
+
     subscribe(udid: string, listener: (event: CaptureEvent) => void): { meta: CaptureMeta; unsubscribe: () => void } {
       let set = viewers.get(udid);
       if (!set) viewers.set(udid, (set = new Set()));

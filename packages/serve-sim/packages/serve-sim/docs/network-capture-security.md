@@ -92,9 +92,10 @@ The event log grows throughout the session. The HAR entry log is periodically co
 limits; there is no age-based expiry. Clearing the panel clears the in-memory request list, not the
 session's recorded files.
 
-Normal session teardown removes the device's capture directory. A later capture start sweeps abandoned
-directories while preserving active recordings. Files can remain after a crash, a failed final write, or
-failed cleanup.
+Normal session teardown removes the device's capture directory. A process exit that skips teardown, such
+as a shutdown that runs past its time limit, also removes it. A later capture start sweeps abandoned
+directories while preserving active recordings. Files can remain after a crash or forced kill, a failed
+final write, or failed cleanup.
 `capture har --out <path>` writes a separate recording that is retained after the command stops. It
 starts with the completed requests in the session HAR, then adds new requests from the live stream. The
 files are named after the HAR, so several recordings can share a folder: for `morning.har`, the event
