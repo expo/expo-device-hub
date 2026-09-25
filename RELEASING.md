@@ -35,12 +35,16 @@ for it.
 
 Go to **Actions → Release → Run workflow**. The only input is **canary**:
 
-- **off** (default) → real release. The workflow tests, builds, versions, publishes to npm,
-  pushes the release commit and tags, and creates GitHub releases.
-- **on** → canary release. The workflow tests, builds, and versions as usual, then rewrites each
-  published package's version into a prerelease and publishes it under the **`canary`** npm
+- **off** (default) → real release. The workflow versions packages, builds and tests them,
+  pushes the release commit, publishes to npm, pushes tags, and creates GitHub releases.
+- **on** → canary release. The workflow versions packages, then rewrites each published
+  package's version into a prerelease, builds and tests, and publishes under the **`canary`** npm
   dist-tag — without committing the version bump, pushing tags, or creating GitHub releases.
   Install it with `npm install expo-device-hub@canary`, and `latest` stays untouched.
+
+Both paths build all packages after the final version changes so bundled version metadata and
+vendored artifacts match the versions being published. Build or test failures stop the workflow
+before it commits the version bump or publishes packages.
 
 Every push to `main` also runs the workflow as a canary release, so `@canary` always tracks the
 latest commit on `main`.
