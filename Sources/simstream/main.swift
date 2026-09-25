@@ -26,6 +26,7 @@ struct Options {
     var constantFrameRate = true
     var measureQuality = false
     var adaptiveResolution = false
+    var codec = "h264"
 
     static let usage = """
     usage: simstream [--udid <UDID>] [--port 8765] [--scale 1] [--fps 60] [--bitrate 40] [--refine 12] [--vfr]
@@ -38,6 +39,8 @@ struct Options {
       --vfr          variable frame rate: only encode changes (plus --refine frames) instead of
                      repeating the last frame at a constant --fps while viewers are watching
       --refine       with --vfr, extra frames encoded after motion stops to sharpen the settled image
+      --codec        h264 (default) | hevc | auto (HEVC for browsers that can decode it; at the same bitrate
+                     it measured no better than H.264 in the low-latency mode, so it is opt-in)
       --adaptive-res step a viewer's resolution down while its encoder drops frames (off: always full res)
       --quality      decode every frame server-side and log luma PSNR vs the source (diagnostic;
                      compare runs relative to each other)
@@ -55,6 +58,7 @@ struct Options {
             case "--bitrate": options.bitrateMbps = it.next().flatMap(Double.init) ?? options.bitrateMbps
             case "--quality": options.measureQuality = true
             case "--adaptive-res": options.adaptiveResolution = true
+            case "--codec": options.codec = it.next() ?? options.codec
             case "--vfr": options.constantFrameRate = false
             case "--refine": options.refineFrames = it.next().flatMap(Int.init) ?? options.refineFrames
             case "-h", "--help": print(usage); exit(0)
@@ -176,6 +180,10 @@ do {
         switch message["t"] as? String {
         case "ack":
             if let seq = (message["seq"] as? NSNumber)?.uint32Value { viewer?.ack(seq) }
+        case "hello":
+            // The client lists the codecs it can decode, best first.
+            let supported = (message["codecs"] as? [String]) ?? []
+            if options.codec != "h264", supported.contains("hevc") { viewer?.use(.hevc) }
         case "keyframe":
             viewer?.requestKeyframe()
             pump.requestFrame()
@@ -223,6 +231,7 @@ do {
                               Double(s.bytes) / Double(s.frames) / 1024, Double(s.maxBytes) / 1024, s.keyframes,
                               s.queueMs / Double(s.frames), s.encodeMs / Double(s.frames), cc.queueMs, cc.baselineOrZero)
             line += "  \(viewer.resolution.width)×\(viewer.resolution.height)"
+            line += "  \(viewer.codecName)"
             if s.dropped > 0 { line += "  dropped \(s.dropped) (encoder rate control)" }
             let skipped = viewer.takeSkipped()
             if skipped > 0 { line += "  skipped \(skipped) (encoder behind)" }

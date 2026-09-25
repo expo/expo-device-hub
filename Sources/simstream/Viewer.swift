@@ -144,7 +144,8 @@ final class Viewer {
     private var stepUpAfterMs = 3000.0
     /// Encoder totals sampled every tick over the last second, to compute the drop rate.
     private var dropWindow: [(ms: Double, encoded: Int, dropped: Int)] = []
-    private var encoder: H264Encoder
+    private var encoder: VideoEncoder
+    private var codec: VideoCodec = .h264
     /// Scales captured frames to the current tier (nil at full resolution).
     private var scaler: (session: VTPixelTransferSession, pool: CVPixelBufferPool)?
     /// Bumped on every encoder switch; late frames from a replaced encoder are discarded, since
@@ -190,7 +191,7 @@ final class Viewer {
         encodeQueue = DispatchQueue(label: "simstream.encode.\(id)", qos: .userInteractive)
         congestion = CongestionController(start: min(maxBitrate, 8_000_000),
                                           min: min(maxBitrate, 1_000_000), max: maxBitrate)
-        encoder = try H264Encoder(width: width, height: height, fps: fps, bitrate: congestion.bitrate)
+        encoder = try VideoEncoder(codec: .h264, width: width, height: height, fps: fps, bitrate: congestion.bitrate)
         attach(encoder)
     }
 
@@ -201,7 +202,7 @@ final class Viewer {
         return (max(2, Int(Double(sourceWidth) * scale) & ~1), max(2, Int(Double(sourceHeight) * scale) & ~1))
     }
 
-    private func attach(_ encoder: H264Encoder) {
+    private func attach(_ encoder: VideoEncoder) {
         if measureQuality { encoder.quality = QualityProbe() }
         let generation = self.generation
         encoder.onFrame = { [weak self, queue = server.queue] frame in
@@ -236,7 +237,7 @@ final class Viewer {
         let oldTier = tier
         let (w, h) = size(ofTier: target)
         do {
-            let replacement = try H264Encoder(width: w, height: h, fps: fps, bitrate: congestion.bitrate)
+            let replacement = try VideoEncoder(codec: codec, width: w, height: h, fps: fps, bitrate: congestion.bitrate)
             var newScaler: (VTPixelTransferSession, CVPixelBufferPool)?
             if target > 0 { newScaler = try makeScaler(width: w, height: h) }
             generation += 1
@@ -384,7 +385,27 @@ final class Viewer {
         needsKeyframe = true
     }
 
-    func takeStats() -> H264Encoder.Stats {
+    var codecName: String { encoder.codec.rawValue }
+
+    /// Switches this viewer to another codec (after the client says it can decode it).
+    func use(_ newCodec: VideoCodec) {
+        guard newCodec != codec else { return }
+        do {
+            let replacement = try VideoEncoder(codec: newCodec, width: encoder.width, height: encoder.height,
+                                               fps: fps, bitrate: congestion.bitrate)
+            generation += 1
+            attach(replacement)
+            encoder = replacement
+            codec = newCodec
+            dropWindow.removeAll()
+            needsKeyframe = true
+            log("viewer \(id): using \(newCodec.rawValue)")
+        } catch {
+            log("viewer \(id): \(newCodec.rawValue) unavailable (\(error)), staying on \(codec.rawValue)")
+        }
+    }
+
+    func takeStats() -> VideoEncoder.Stats {
         encoder.takeStats()
     }
 }

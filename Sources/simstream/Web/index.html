@@ -114,10 +114,21 @@ let lastDrawnAt = 0;
 function connect() {
   ws = new WebSocket(wsUrl);
   ws.binaryType = 'arraybuffer';
-  ws.onopen = () => { setStatus('live', true); ping(); if (document.hidden) send({ t: 'pause' }); };
+  ws.onopen = async () => {
+    setStatus('live', true);
+    ping();
+    if (document.hidden) send({ t: 'pause' });
+    send({ t: 'hello', codecs: (await hevcSupported) ? ['hevc', 'h264'] : ['h264'] });
+  };
   ws.onclose = () => { setStatus('disconnected — retrying…', false); teardownDecoder(); setTimeout(connect, 1000); };
   ws.onmessage = (e) => typeof e.data === 'string' ? onControl(JSON.parse(e.data)) : onFrame(e.data);
 }
+
+// HEVC gives better quality at the same bitrate; use it where the browser can hardware-decode it.
+const hevcSupported = ('VideoDecoder' in window)
+  ? VideoDecoder.isConfigSupported({ codec: 'hvc1.1.6.L153.B0', codedWidth: 1206, codedHeight: 2622, hardwareAcceleration: 'prefer-hardware' })
+      .then((r) => !!r.supported).catch(() => false)
+  : Promise.resolve(false);
 
 function send(message) {
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
@@ -449,7 +460,7 @@ setInterval(() => {
   window.simstreamLatency.skipped = s.skipped;
   window.simstreamLatency.fps = motionFps(s);
   hudEl.textContent = [
-    `resolution   ${currentConfig ? `${currentConfig.width}×${currentConfig.height}` : '–'}`,
+    `resolution   ${currentConfig ? `${currentConfig.width}×${currentConfig.height}  ${currentConfig.codec}` : '–'}`,
     `fps          ${motionFps(s)} in motion, ${(s.frames / secs).toFixed(0)} avg  (server ${serverStats.captureFps ?? '–'})`,
     `pacing       ${pacing(s)}${s.skipped ? `  (${s.skipped} late frames skipped)` : ''}`,
     `bitrate      ${(s.bytes * 8 / secs / 1e6).toFixed(2)} Mbps  (target ${serverStats.bitrate ? (serverStats.bitrate / 1e6).toFixed(1) : '–'})`,
