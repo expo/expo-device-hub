@@ -22,11 +22,10 @@ jobs:
     environment: npm-publish
     env:
       IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
-      RELEASE_BRANCH: release/${{ github.run_id }}
+      RELEASE_BRANCH: release/${{ github.run_number }}-${{ github.run_attempt }}
     permissions:
       contents: write # push package tags and the tested release commit
       id-token: write # npm OIDC Trusted Publishing
-      pull-requests: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -86,21 +85,6 @@ jobs:
           if [ "$(git rev-parse HEAD^)" != "$SOURCE_SHA" ]; then
             echo "::error::The release commit does not belong to this workflow's source commit."
             exit 1
-          fi
-
-      - name: Open release PR
-        if: ${{ env.IS_CANARY != 'true' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          PR_URL=$(gh pr list --base main --head "$RELEASE_BRANCH" --state open --json url --jq '.[0].url // empty')
-          if [ -n "$PR_URL" ]; then
-            echo "Release PR already exists: $PR_URL"
-          else
-            gh pr create --base main --head "$RELEASE_BRANCH" \
-              --title "chore(release): version packages" \
-              --body "Updates main with the versions and changelogs from [release run ${GITHUB_RUN_ID}](https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). This PR stays open if publication or the main branch update fails."
           fi
 
       - name: Publish to npm
