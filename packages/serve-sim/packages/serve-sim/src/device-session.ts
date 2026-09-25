@@ -28,7 +28,7 @@ import {
   type NativeUnsubscribe,
 } from "./native";
 import { isSoftwareKeyboardVisible } from "./ax";
-import { simPasteHidEvents } from "./client/utils/sim-clipboard";
+import { isLiftedModifier, simPasteHidEvents } from "./client/utils/sim-clipboard";
 import { HID_USAGE_BY_CODE } from "./client/utils/hid";
 import { MAX_PASTEBOARD_TEXT_BYTES, pasteTextIntoSim } from "./sim-pasteboard";
 import { debugKeyboard } from "./debug";
@@ -1161,17 +1161,7 @@ export class DeviceSession {
           const text = m.text;
           const operation = this.queueInputOperation(ws, async () => {
             if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
-            await pasteTextIntoSim(this.udid, text, async () => {
-              if (!this.hidSockets.has(ws)) throw new Error("Clipboard viewer disconnected");
-              const pressed = new Set(this.activeHidKeyUsages.get(ws) ?? []);
-              let pasteKeyReleased = false;
-              for (const event of simPasteHidEvents(pressed)) {
-                if (event.type === "up") await new Promise((resolve) => setTimeout(resolve, 30));
-                if (!pasteKeyReleased && this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
-                await this.updateHidKey(ws, event.type, event.usage);
-                if (event.type === "up" && event.usage === HID_USAGE_BY_CODE.KeyV) pasteKeyReleased = true;
-              }
-            });
+            await pasteTextIntoSim(this.udid, text, () => this.sendPasteShortcut(ws));
           });
           if (operation) {
             try {
@@ -1254,6 +1244,40 @@ export class DeviceSession {
   private async typeSoftwareKeyboardCharacter(character: string): Promise<boolean> {
     if (this.phase !== "running") return false;
     return axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
+  }
+
+  /**
+   * Press Command+V for one viewer's paste.
+   *
+   * The chord has to match what the simulator currently sees, not what this viewer holds.
+   * `activeHidKeyUsageCounts` is device-wide, so another viewer's Control or Shift is still
+   * down at the simulator and would turn Command+V into a different shortcut. Those modifiers
+   * are lifted at the HID layer only and put back afterwards: their owners never released them,
+   * so the per-socket ownership counts must not change. Command and V still go through
+   * `updateHidKey`, which gives this socket's cleanup a way to release them on a disconnect.
+   */
+  private async sendPasteShortcut(ws: HidSocket): Promise<void> {
+    if (!this.hidSockets.has(ws)) throw new Error("Clipboard viewer disconnected");
+    const pressedAtSimulator = new Set(this.activeHidKeyUsageCounts.keys());
+    const liftedModifiers = new Set<number>();
+    let pasteKeyReleased = false;
+    try {
+      for (const event of simPasteHidEvents(pressedAtSimulator)) {
+        if (event.type === "up") await new Promise((resolve) => setTimeout(resolve, 30));
+        if (!pasteKeyReleased && this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+        if (isLiftedModifier(event.usage)) {
+          await this.hid.key(event.type, event.usage);
+          if (event.type === "up") liftedModifiers.add(event.usage);
+          else liftedModifiers.delete(event.usage);
+        } else {
+          await this.updateHidKey(ws, event.type, event.usage);
+        }
+        if (event.type === "up" && event.usage === HID_USAGE_BY_CODE.KeyV) pasteKeyReleased = true;
+      }
+    } finally {
+      // A failed chord must not leave another viewer's modifier stuck up.
+      for (const usage of liftedModifiers) await this.hid.key("down", usage).catch(() => {});
+    }
   }
 
   private async updateHidKey(ws: HidSocket, type: "down" | "up", usage: number): Promise<void> {
