@@ -1,45 +1,47 @@
 # continue.md: handoff for the next agent
 
-_Last updated: 2026-09-25. The integration code is written and type-checks; waiting on the native addon build._
+_Last updated: 2026-09-25 14:22. The integration is built, smoke-tested and committed locally (`aa32ccd`). The benchmark matrix is running._
 
 ## Current task (from the user)
 > Fork the canonical serve-sim, integrate our video stack, and run a side-by-side comparison. Record
 > videos of the same scripts side by side. Keep this continue.md up to date.
 
-## Plan and status
-- [x] **Local fork:** `~/Development/expo-device-hub-simstream`, branch `simstream-video`, cloned from
-  `https://github.com/expo/expo-device-hub` at `ec75fe7`.
-  - **Not pushed.** The `gh` CLI is logged in as `dougbot-agent`, not the user. Ask which account should
-    own a GitHub fork before creating one.
-- [~] Build serve-sim from source in `packages/serve-sim/packages/serve-sim`.
-  - `bun install` at the repo root, then `bun run build`. That builds the TS and client into `dist/`.
-  - **The native addon (`dist/native/serve-sim-native.node`) builds separately** with
-    `Sources/SimNative/build.sh "$PWD/dist/native"`. It downloads LiveKit's WebRTC xcframework, which
-    is slow, and it was running in the background; the log is `/tmp/ssn-build.log`. Without it, the
-    helper can't capture or inject input.
-- [x] **Added `--codec simstream`** (the HTTP transport's codec list) to serve-sim:
-  - `engine/simstream/`: the vendored simstream sources.
-  - `engine/build.sh` → `dist/bin/simstream-engine` plus `simstream_simstream.bundle` (the bundle is
-    required at runtime).
-  - `src/simstream-engine.ts`: `ensureSimstreamEngine(udid)` spawns the engine on a free loopback port;
-    `pipeSimstreamUpgrade` pipes a WebSocket to the engine's `/stream`. `SERVE_SIM_SIMSTREAM_BIN`
-    overrides the binary path; `SERVE_SIM_DEBUG_SIMSTREAM=1` shows engine logs.
-  - `src/middleware.ts` (connect upgrade handler): `/helper/<udid>/simstream` → the engine.
-  - `src/stream-settings.ts`, `src/index.ts`: the `simstream` codec value.
-  - Client: `src/client/simulator/use-simstream-stream.ts` (the decoder hook);
-    `simulator-stream-routing.ts` (`useSimstream`, routed like AVCC onto the canvas);
-    `SimulatorView.tsx`; `client.tsx` (`useSimstreamVideo`, `streamMode="simstream"`, MJPEG disabled).
-  - The test `src/__tests__/simulator-stream-routing.test.ts` is updated. Typecheck is clean and the
-    tests pass.
-  - **Input** stays on serve-sim's `/ws` (their HIDInjector).
-  - **Run it:** `node dist/serve-sim.js --transport http --codec simstream -p 3200`, after `bun run build`
-    and `engine/build.sh`.
-- [ ] Barcode latency harness on all three modes: stock WebRTC, stock HTTP/AVCC, simstream. Interleave
-  the order and repeat each configuration.
-- [ ] Record the same scripted route per mode from the viewer side, captioned, then `ffmpeg hstack`
-  into side-by-side videos: a real-UI route, plus the barcode scene with its latency shown.
-- [ ] Report to the user, including the video files. The user's MacBook is `macbook-m5-pro-max-sdw-1`;
-  they like videos copied to `~/Desktop` there with `scp`.
+## Plan and status: DONE (2026-09-25 15:12)
+- **Fork:** `~/Development/expo-device-hub-simstream`, branch `simstream-video`, local only.
+  - `aa32ccd`: `--codec simstream` (our engine plus serve-sim's UI and input).
+  - `6512155`: an upstream serve-sim bug fix. The synchronous `ps` in `/grid/api/memory` stalled Node
+    ~75 ms every 5 s, freezing every proxied stream.
+  - **Not pushed.** `gh` is logged in as `dougbot-agent`; ask the user which account should own a
+    GitHub fork or PR.
+- **Build:** `bun install` at the root, then in `packages/serve-sim/packages/serve-sim` run
+  `SERVE_SIM_PREBUILT_NATIVE=/Users/sethwebster/.npm/_npx/76a4f551f1bf97d9/node_modules/@expo/serve-sim/dist bun run build`.
+  That reuses the published 0.3.4 native addon; the LiveKit download hangs otherwise. Step 9 builds
+  the engine.
+- **Run:** `node dist/serve-sim.js --transport http --codec simstream -p 3200`.
+- **Results after the fix** (the fork, 4 interleaved reps per mode, arrival age, 20 s runs):
+
+  | Scene | serve-sim + simstream | stock WebRTC | stock HTTP/AVCC |
+  |---|---|---|---|
+  | Light | 37.6 ms, 59.9 fps, 0.2% skipped, 0 freezes | 36.0 ms, 50.6 fps, 18.6% skipped, 12 freezes | 273 ms, 54 fps |
+  | Heavy | 41.6 ms, 59.8 fps, 0.2% skipped, 0 freezes | 38.8 ms, 48 fps, 26% skipped, 8 freezes | 283 ms, 53 fps |
+  | Resolution | 1206×2622 | 640×1392 (upstream caps H.264 over WebRTC; "stalls" at full) | 1206×2622 |
+
+  - The heavy reps 3–4 ran with load around 70 (Docker).
+  - The JSONL files are in `~/Development/simstream/bench/results/fork-2026-09-25-*.jsonl`.
+- **Videos** (on the M4's and the M5's `~/Desktop`):
+  - `serve-sim-vs-simstream-route.mp4`: 42 s, the same route in all 3 modes.
+  - `serve-sim-vs-simstream-latency.mp4`: 17 s, the heavy clock scene with live "shown N ms old" and
+    fps captions.
+  - Both are 2412×1844 at 60 fps. Raw recordings are in `/tmp/fbench/rec/`.
+- **Machine restored:** live simstream on :8765 (Tailscale and Cloudflare both answer 200). :3200 and
+  :8799 are stopped.
+- **Bench tools are committed** in `~/Development/simstream` (`bench/runfork.sh`, `matrix-fork.sh`,
+  `record-fork.mjs`, `route-fork.json`, `rec-fork-all.sh`, `compose-fork.sh`, `lag-preload.mjs`).
+  - To re-record: start the bench server
+    (`cd ~/Development/simstream/bench && /usr/bin/python3 -m http.server 8799 --bind 127.0.0.1 &`), stop
+    :8765, then run `./rec-fork-all.sh route` and `./compose-fork.sh route OUT.mp4
+    /tmp/fbench/rec/route-{S,W,H}`.
+  - Calendar must be in year view before the route runs.
 
 ## Key locations
 - **simstream (our stack):** `~/Development/simstream`, a Swift package. Commits go through `808f124`.
@@ -74,7 +76,9 @@ _Last updated: 2026-09-25. The integration code is written and type-checks; wait
   - Docs: `docs/webrtc-architecture.md`.
 
 ## Machine state (M4 Max, "seth-webster-m4", NYC area)
-- **Live simstream** on :8765, running build `808f124`.
+- **Live simstream** on :8765, running build `808f124` (restored after testing). The restart command is
+  `cd ~/Development/simstream && nohup ./run.sh > ~/Library/Logs/simstream.log 2>&1 &`. Also stop the
+  bench python server on :8799 and anything on :3200 when done.
   - Tailscale: `https://seth-webster-m4.$SIMSTREAM_TAILNET:8449`.
   - Public Cloudflare tunnel `simstream` → `https://simstream.sethwebster.com`. The cloudflared config is
     `~/.cloudflared/simstream.yml` on the M4.
