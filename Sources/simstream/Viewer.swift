@@ -65,13 +65,20 @@ final class CongestionController {
         }
         var next = bitrate
         let delivered = rate(delivered: true, now: now)
-        if queueMs > 30, now - lastDecreaseMs > max(150, baselineMs * 1.5) {
+        let sending = rate(delivered: false, now: now)
+        // A near-idle stream (e.g. constant-frame-rate repeats of a still screen) can't be what's
+        // filling a queue, so delay then is path jitter, not congestion; and its tiny delivery rate
+        // says nothing about capacity. Only react while actually sending near the target. Longer
+        // paths jitter more, so the threshold scales with the baseline.
+        let appLimited = sending < 0.3 * Double(bitrate)
+        let overuseMs = max(30, baselineMs * 0.4)
+        if queueMs > overuseMs, !appLimited, now - lastDecreaseMs > max(150, baselineMs * 1.5) {
             // Overuse: drop to what's getting through, with headroom to drain the queue; at least 15% down.
             let target = delivered > 0 ? delivered * 0.85 : Double(bitrate) * 0.7
             next = Int(min(target, Double(bitrate) * 0.85))
             lastDecreaseMs = now
         } else if queueMs < 8, now - lastDecreaseMs > 1500, now - lastIncreaseMs > 200,
-                  rate(delivered: false, now: now) > 0.5 * Double(bitrate) || baselineMs < 10 {
+                  sending > 0.5 * Double(bitrate) || baselineMs < 10 {
             // Underuse: probe upward, but only while the link is actually being exercised (or is
             // local), so an idle stretch doesn't leave the bitrate far above proven capacity.
             next = Int(Double(bitrate) * 1.08)
