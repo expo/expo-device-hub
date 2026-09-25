@@ -1179,7 +1179,7 @@ describe("physical hinge controls", () => {
     expect(configs.at(-1)).toMatchObject({
       supportsHingeAngle: true,
       hingeAngle: 90,
-      hingePose: "book",
+      hingePose: null,
       physicalOrientation: "portrait",
       tableMode: false,
       tableModeAvailable: true,
@@ -1204,6 +1204,22 @@ describe("physical hinge controls", () => {
     release();
     await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
     expect(configs.at(-1)).toMatchObject({ hingeAngle: 0, hingePose: null });
+  });
+
+  test("restores only an explicitly saved pose at the matching native angle", async () => {
+    let release!: () => void;
+    const { configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
   });
 
   test("keeps a hinge command's state over a slower startup read", async () => {

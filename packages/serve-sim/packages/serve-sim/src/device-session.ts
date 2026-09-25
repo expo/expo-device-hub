@@ -32,7 +32,7 @@ import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
 import { readSavedHingeState, writeSavedHingeState } from "./hinge-saved-state";
 import { validatePanelRoute } from "./panel-route";
-import { isHingeControlCommand, hingeControlState, hingePoseForState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
+import { isHingeControlCommand, hingeControlState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
 import { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } from "./ui-settings";
 import { eventLogEventForHidMessage, formatEventLogPoint, recordEventLogEvent, updateEventLogEvent } from "./event-log";
 import {
@@ -1178,11 +1178,7 @@ export class DeviceSession {
           this.hingeAngle = state.hingeAngle;
           this.tableMode = this.hingeRotated ? false : state.tableMode ?? saved?.tableMode;
           this.hingePhysicalOrientation = this.hingeRotated ? undefined : state.physicalOrientation ?? saved?.physicalOrientation;
-          this.hingePose = this.hingeRotated ? null : saved?.hingePose !== undefined ? saved.hingePose : hingePoseForState({
-            hingeAngle: this.hingeAngle,
-            physicalOrientation: this.hingePhysicalOrientation,
-            tableMode: this.tableMode,
-          });
+          this.hingePose = this.hingeRotated ? null : saved?.hingePose ?? null;
           if (this.hingeRotated) this.saveHingeState();
         }
       }
