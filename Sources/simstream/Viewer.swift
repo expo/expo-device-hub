@@ -10,6 +10,7 @@ import VideoToolbox
 final class CongestionController {
     let minBitrate: Int
     let maxBitrate: Int
+    let startBitrate: Int
     private(set) var bitrate: Int
     /// Lowest recent send→ack latency: this viewer's uncongested path plus decode time.
     private(set) var baselineMs = Double.infinity
@@ -25,6 +26,7 @@ final class CongestionController {
 
     init(start: Int, min: Int, max: Int) {
         self.bitrate = start
+        self.startBitrate = start
         self.minBitrate = min
         self.maxBitrate = max
     }
@@ -78,10 +80,12 @@ final class CongestionController {
             let target = delivered > 0 ? delivered * 0.85 : Double(bitrate) * 0.7
             next = Int(min(target, Double(bitrate) * 0.85))
             lastDecreaseMs = now
-        } else if queueMs < 8, now - lastDecreaseMs > 1500, now - lastIncreaseMs > 200,
-                  sending > 0.5 * Double(bitrate) || baselineMs < 10 {
+        } else if queueMs < max(8, baselineMs * 0.15), now - lastDecreaseMs > 1500, now - lastIncreaseMs > 200,
+                  sending > 0.5 * Double(bitrate) || baselineMs < 10 || bitrate < startBitrate {
             // Underuse: probe upward, but only while the link is actually being exercised (or is
-            // local), so an idle stretch doesn't leave the bitrate far above proven capacity.
+            // local), so an idle stretch doesn't leave the bitrate far above proven capacity. Below the
+            // starting bitrate it may climb even when idle, so a past congestion episode doesn't pin a
+            // viewer at the floor. Longer paths jitter more, so "no queue" scales with the baseline.
             next = Int(Double(bitrate) * 1.08)
             lastIncreaseMs = now
         }
@@ -104,10 +108,11 @@ final class CongestionController {
 /// session had), so a slow link gets a lower bitrate at full frame rate without degrading anyone
 /// else, and keyframes for one viewer never cost the others. All state lives on the server queue.
 ///
-/// Frame rate is held at the expense of resolution: when the bitrate is too low for the current
-/// resolution (too few bits per pixel per frame, where the low-latency encoder starts dropping
-/// frames), the viewer steps down a resolution tier, and back up once there's headroom. The client
-/// keeps its display size and scales, so a slow link looks softer but still moves at full rate.
+/// Full resolution unless it demonstrably costs frames: when the low-latency encoder drops more than
+/// 10% of frames (its bitrate can't fit them), the viewer steps down a resolution tier, and tries
+/// the next tier up after a quiet spell (3 s, doubling up to 30 s if the attempt drops frames
+/// again). The client keeps its display size and scales, so a thin link looks softer but still
+/// moves at full rate.
 final class Viewer {
     let id: Int
     let client: StreamClient
@@ -118,15 +123,19 @@ final class Viewer {
     private let sourceHeight: Int
     private let fps: Int
     private let measureQuality: Bool
+    /// Off by default: stepping resolution down didn't read as an improvement, so viewers stay at
+    /// full resolution and a thin link costs frames instead. `--adaptive-res` turns it back on.
+    private let adaptiveResolution: Bool
 
     /// Resolution tiers, as fractions of the source; the viewer encodes at `tiers[tier]`.
     private static let tiers = [1.0, 0.75, 0.5, 0.375]
-    /// Bits per pixel per frame below which the encoder can't keep up at full frame rate (step down),
-    /// and the level a higher tier must offer before stepping back up.
-    private static let minBitsPerPixel = 0.035
-    private static let upBitsPerPixel = 0.05
     private var tier = 0
     private var lastTierChangeMs = -Double.infinity
+    private var lastStepUpMs = -Double.infinity
+    private var lastDropMs = -Double.infinity
+    private var stepUpAfterMs = 3000.0
+    /// Encoder totals sampled every tick over the last second, to compute the drop rate.
+    private var dropWindow: [(ms: Double, encoded: Int, dropped: Int)] = []
     private var encoder: H264Encoder
     /// Scales captured frames to the current tier (nil at full resolution).
     private var scaler: (session: VTPixelTransferSession, pool: CVPixelBufferPool)?
@@ -161,7 +170,8 @@ final class Viewer {
     private let stallMs = 2000.0
 
     init(id: Int, client: StreamClient, server: StreamServer, width: Int, height: Int, fps: Int,
-         maxBitrate: Int, measureQuality: Bool) throws {
+         maxBitrate: Int, measureQuality: Bool, adaptiveResolution: Bool) throws {
+        self.adaptiveResolution = adaptiveResolution
         self.id = id
         self.client = client
         self.server = server
@@ -183,11 +193,6 @@ final class Viewer {
         return (max(2, Int(Double(sourceWidth) * scale) & ~1), max(2, Int(Double(sourceHeight) * scale) & ~1))
     }
 
-    private func bitsPerPixel(atTier tier: Int) -> Double {
-        let (w, h) = size(ofTier: tier)
-        return Double(congestion.bitrate) / (Double(w * h) * Double(fps))
-    }
-
     private func attach(_ encoder: H264Encoder) {
         if measureQuality { encoder.quality = QualityProbe() }
         let generation = self.generation
@@ -199,15 +204,28 @@ final class Viewer {
         }
     }
 
-    /// Picks the resolution tier for the current bitrate; switches encoders when it changes.
+    /// Steps the resolution tier on measured encoder drops; switches encoders when it changes.
     private func updateTier(now: Double) {
+        guard adaptiveResolution else { return }
+        let totals = encoder.frameTotals()
+        dropWindow.append((now, totals.encoded, totals.dropped))
+        dropWindow.removeAll { $0.ms < now - 1000 }
+        guard let first = dropWindow.first else { return }
+        let encoded = totals.encoded - first.encoded, dropped = totals.dropped - first.dropped
+        if dropped > 0 { lastDropMs = now }
+
         var target = tier
-        while target < Self.tiers.count - 1 && bitsPerPixel(atTier: target) < Self.minBitsPerPixel { target += 1 }
-        if target == tier {
-            while target > 0 && bitsPerPixel(atTier: target - 1) >= Self.upBitsPerPixel { target -= 1 }
+        if encoded + dropped >= 20, Double(dropped) > 0.1 * Double(encoded + dropped),
+           tier < Self.tiers.count - 1, now - lastTierChangeMs > 500 {
+            target = tier + 1
+            // The last step up didn't hold: wait longer before trying again.
+            if now - lastStepUpMs < 5000 { stepUpAfterMs = min(stepUpAfterMs * 2, 30000) }
+        } else if tier > 0, now - lastDropMs > stepUpAfterMs, now - lastTierChangeMs > stepUpAfterMs {
+            target = tier - 1
+            lastStepUpMs = now
         }
-        // Step down promptly (frames are being lost); step up slowly (avoid flapping).
-        guard target != tier, now - lastTierChangeMs > (target > tier ? 500 : 3000) else { return }
+        guard target != tier else { return }
+        let oldTier = tier
         let (w, h) = size(ofTier: target)
         do {
             let replacement = try H264Encoder(width: w, height: h, fps: fps, bitrate: congestion.bitrate)
@@ -219,9 +237,10 @@ final class Viewer {
             scaler = newScaler
             tier = target
             lastTierChangeMs = now
+            dropWindow.removeAll()
             needsKeyframe = true
-            log(String(format: "viewer %d: %@ to %d×%d at %.1f Mbps", id, target > 0 && w < sourceWidth ? "scaling" : "restoring",
-                       w, h, Double(congestion.bitrate) / 1e6))
+            log(String(format: "viewer %d: %@ to %d×%d at %.1f Mbps (%@)", id, w < sourceWidth ? "scaling" : "restoring",
+                       w, h, Double(congestion.bitrate) / 1e6, target > oldTier ? "encoder dropping frames" : "no drops lately"))
         } catch {
             log("viewer \(id): could not switch resolution: \(error)")
         }

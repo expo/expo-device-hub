@@ -25,6 +25,7 @@ struct Options {
     var refineFrames = 12
     var constantFrameRate = true
     var measureQuality = false
+    var adaptiveResolution = false
 
     static let usage = """
     usage: simstream [--udid <UDID>] [--port 8765] [--scale 1] [--fps 60] [--bitrate 40] [--refine 12] [--vfr]
@@ -37,6 +38,7 @@ struct Options {
       --vfr          variable frame rate: only encode changes (plus --refine frames) instead of
                      repeating the last frame at a constant --fps while viewers are watching
       --refine       with --vfr, extra frames encoded after motion stops to sharpen the settled image
+      --adaptive-res step a viewer's resolution down while its encoder drops frames (off: always full res)
       --quality      decode every frame server-side and log luma PSNR vs the source (diagnostic;
                      compare runs relative to each other)
     """
@@ -52,6 +54,7 @@ struct Options {
             case "--fps": options.fps = it.next().flatMap(Int.init) ?? options.fps
             case "--bitrate": options.bitrateMbps = it.next().flatMap(Double.init) ?? options.bitrateMbps
             case "--quality": options.measureQuality = true
+            case "--adaptive-res": options.adaptiveResolution = true
             case "--vfr": options.constantFrameRate = false
             case "--refine": options.refineFrames = it.next().flatMap(Int.init) ?? options.refineFrames
             case "-h", "--help": print(usage); exit(0)
@@ -118,7 +121,8 @@ do {
     stream.onConnect = { client in
         do {
             let viewer = try Viewer(id: nextViewerID, client: client, server: stream, width: width, height: height,
-                                    fps: options.fps, maxBitrate: maxBitrate, measureQuality: options.measureQuality)
+                                    fps: options.fps, maxBitrate: maxBitrate, measureQuality: options.measureQuality,
+                                    adaptiveResolution: options.adaptiveResolution)
             nextViewerID += 1
             viewers[client.id] = viewer
             log("viewer \(viewer.id) connected (\(viewers.count) total)")

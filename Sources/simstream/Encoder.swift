@@ -49,6 +49,14 @@ final class H264Encoder {
     /// When set, every frame is decoded back and compared with its source (luma PSNR).
     var quality: QualityProbe?
     private var stats = Stats()
+    /// Running totals since this encoder was created (not reset by `takeStats`).
+    private var encodedTotal = 0, droppedTotal = 0
+
+    func frameTotals() -> (encoded: Int, dropped: Int) {
+        statsLock.lock()
+        defer { statsLock.unlock() }
+        return (encodedTotal, droppedTotal)
+    }
     private let statsLock = NSLock()
 
     /// Returns and resets the counters accumulated since the last call.
@@ -122,6 +130,7 @@ final class H264Encoder {
             if infoFlags.contains(.frameDropped), let self {
                 self.statsLock.lock()
                 self.stats.dropped += 1
+                self.droppedTotal += 1
                 self.statsLock.unlock()
             }
             guard let self, status == noErr, let sampleBuffer, CMSampleBufferDataIsReady(sampleBuffer) else { return }
@@ -152,6 +161,7 @@ final class H264Encoder {
         let encodedMs = Clock.ms()
         statsLock.lock()
         stats.frames += 1
+        encodedTotal += 1
         stats.bytes += data.count
         stats.keyframes += isKeyframe ? 1 : 0
         stats.maxBytes = max(stats.maxBytes, data.count)
