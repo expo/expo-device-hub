@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { sendHingeAngleToWs } from "../hinge-command";
+import { readHingeStateFromWs, sendHingeAngleToWs } from "../hinge-command";
 
 let server: ReturnType<typeof Bun.serve> | undefined;
 afterEach(() => server?.stop(true));
@@ -58,4 +58,41 @@ test("rejects invalid angles before opening the input connection", async () => {
   }
   expect(received).toEqual([]);
   expect(authorization).toEqual([]);
+});
+
+function serveConfigs(configs: unknown[]) {
+  server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(req, srv) {
+      if (srv.upgrade(req, { data: undefined })) return;
+      return new Response("WebSocket required", { status: 400 });
+    },
+    websocket: {
+      open(ws) {
+        for (const config of configs) ws.send(Buffer.concat([Buffer.from([0x82]), Buffer.from(JSON.stringify(config))]));
+      },
+      message() {},
+    },
+  });
+  return `ws://127.0.0.1:${server.port}/ws`;
+}
+
+test("reads the hinge state once the server has probed the simulator", async () => {
+  const url = serveConfigs([
+    { width: 2007, height: 2853 },
+    { width: 2007, height: 2853, supportsHingeAngle: true, hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false, tableModeAvailable: true },
+  ]);
+  expect(await readHingeStateFromWs(url)).toEqual({
+    hingeAngle: 90,
+    hingePose: "book",
+    physicalOrientation: "portrait",
+    tableMode: false,
+    tableModeAvailable: true,
+  });
+});
+
+test("reports a simulator without a hinge instead of an empty state", async () => {
+  const url = serveConfigs([{ width: 1206, height: 2622, supportsHingeAngle: false }]);
+  await expect(readHingeStateFromWs(url)).rejects.toThrow("Hinge control is unavailable");
 });
