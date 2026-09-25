@@ -121,9 +121,11 @@ writing to the input socket changed the device.
 Run `serve-sim hinge` without a position to print the current hinge state as
 JSON. The server reads the hinge angle from the simulator when it starts, so the
 angle is correct even if the device was folded before `serve-sim` started.
-CoreDevice does not report the physical orientation or Table Mode, so those
-fields, and a pose that depends on them (Laptop, Book, Tent), are known only
-after this process sends them. Unknown fields are left out.
+CoreDevice reports the live angle, but not physical orientation or Table Mode.
+serve-sim saves those fields after confirmed commands and restores them when the
+saved angle matches the live angle at startup. A different angle leaves them
+unknown. A change made outside serve-sim at the same angle cannot be detected;
+choose a pose again to update the saved state. Unknown fields are left out.
 
 ## APIs inside an iOS app
 

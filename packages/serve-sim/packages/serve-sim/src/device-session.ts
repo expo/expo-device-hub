@@ -30,6 +30,7 @@ import {
 import { isSoftwareKeyboardVisible } from "./ax";
 import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
+import { readSavedHingeState, writeSavedHingeState } from "./hinge-saved-state";
 import { validatePanelRoute } from "./panel-route";
 import { isHingeControlCommand, hingeControlState, hingePoseForState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
 import { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } from "./ui-settings";
@@ -1023,6 +1024,7 @@ export class DeviceSession {
             this.hingePose = null;
             this.hingePhysicalOrientation = undefined;
             this.tableMode = false;
+            this.saveHingeState();
             // Apps may lock their interface. Keep native readback authoritative.
             await this.refreshScreenSizeFromNative();
             this.broadcastConfig();
@@ -1164,10 +1166,15 @@ export class DeviceSession {
       if (!this.hingeControlled) {
         const state = await this.hid.hingeState();
         if (this.phase !== "running") return;
+        const saved = readSavedHingeState(this.udid, state.hingeAngle);
         this.hingeAngle = state.hingeAngle;
-        this.hingePose = hingePoseForState(state);
-        this.tableMode = state.tableMode;
-        this.hingePhysicalOrientation = state.physicalOrientation;
+        this.tableMode = state.tableMode ?? saved?.tableMode;
+        this.hingePhysicalOrientation = state.physicalOrientation ?? saved?.physicalOrientation;
+        this.hingePose = hingePoseForState({
+          hingeAngle: this.hingeAngle,
+          physicalOrientation: this.hingePhysicalOrientation,
+          tableMode: this.tableMode,
+        });
       }
       this.supportsHingeAngle = true;
       this.broadcastConfig();
@@ -1204,6 +1211,7 @@ export class DeviceSession {
         if (state.tableMode !== undefined) this.tableMode = state.tableMode;
         if (command.control === "physical") this.hingePhysicalOrientation = command.value;
         if (command.control === "pose") this.hingePhysicalOrientation = hingePoseOrientation(command.value);
+        this.saveHingeState();
         this.broadcastConfig();
       } else {
         // A failed sequence can still move the hinge or change the active
@@ -1214,6 +1222,11 @@ export class DeviceSession {
         this.hingeAngle = recovered.hingeAngle ?? this.hingeAngle;
         this.tableMode = recovered.tableMode;
         this.hingePhysicalOrientation = recovered.physicalOrientation ?? this.hingePhysicalOrientation;
+        writeSavedHingeState(this.udid, {
+          hingeAngle: recovered.hingeAngle,
+          physicalOrientation: this.hingePhysicalOrientation,
+          tableMode: this.tableMode,
+        });
         try { await this.refreshScreenSizeFromNative(); }
         catch { /* Preserve the last readable screen through a transient failure. */ }
         if (this.phase !== "running") return false;
@@ -1223,6 +1236,14 @@ export class DeviceSession {
     });
     this.hingeControlUpdate = operation.then(() => {}, () => {});
     return operation;
+  }
+
+  private saveHingeState(): void {
+    writeSavedHingeState(this.udid, {
+      hingeAngle: this.hingeAngle,
+      physicalOrientation: this.hingePhysicalOrientation,
+      tableMode: this.tableMode,
+    });
   }
 
   private queueSoftwareKeyboardSync(visible: boolean): void {
