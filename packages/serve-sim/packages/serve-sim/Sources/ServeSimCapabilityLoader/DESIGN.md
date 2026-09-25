@@ -190,3 +190,19 @@ Capture's startup image resolves existing Objective-C runtime functions and enum
 session factory methods without sending Objective-C messages during initialization.
 Proxy dictionaries are constructed only when those factories are called. Its build checks
 that no framework or Objective-C runtime dependency has been linked into the image.
+
+## Host resource lifecycle
+
+Capability preparation runs under the device launch-state lock. Resource callbacks
+must not reacquire that lock or enqueue a runtime operation. A preparation may
+return `committed`, `failed`, and `rollback` callbacks: publication calls
+`committed` after configuration is installed, reports errors through `failed`,
+and calls `rollback` only when the prior configuration was restored. Rollback
+releases only resources allocated by that preparation. An uncertain rollback
+retains resources for a later explicit cleanup.
+
+Disabling removes the capability configuration before stopping its host resources.
+Exclusive capabilities, including network capture, cannot replace another live
+session's registration; local cleanup preserves a foreign registration. Capture
+keeps its public request queue for cancellation while the registry and runtime
+share the same resource callbacks and launch-state lock.

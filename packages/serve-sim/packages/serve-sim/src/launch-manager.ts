@@ -8,6 +8,12 @@ import {
   type CapabilityOverrides,
 } from "./capabilities";
 import {
+  prepareCapability,
+  notifyPreparationFailure,
+  rollbackPreparations,
+  type CapabilityPreparation,
+} from "./capability-resources";
+import {
   capabilityConfigPath,
   managedStartupDylibs,
   writeManagedStartupDylibs,
@@ -197,6 +203,8 @@ async function armInsert(
   armedHere.add(udid);
 }
 
+export class CapabilityRollbackError extends AggregateError {}
+
 interface CapabilityLaunchSnapshot {
   config: string | null;
   configPath: string;
@@ -273,7 +281,7 @@ async function publishLaunchState(udid: string, state: LaunchState): Promise<voi
     try {
       await restoreCapabilityLaunch(udid, previous, desiredStartupDylibs);
     } catch (rollbackError) {
-      throw new AggregateError(
+      throw new CapabilityRollbackError(
         [error, rollbackError],
         `Could not restore capability launch state on ${udid}. Retry cleanup before launching apps.`,
       );
@@ -399,27 +407,11 @@ export async function openUrlInApp(udid: string, bundleId: string, openUrl: stri
   await simctl(["openurl", udid, openUrl]);
 }
 
-async function prepare(
-  definition: CapabilityDefinition,
-  context: CapabilityContext,
-): Promise<Capability | null> {
-  const prepared = await definition.setEnabled(context).catch((error: unknown) => {
-    console.error(
-      `Capability ${definition.name} could not be prepared and will not load: ` +
-        `${error instanceof Error ? error.message : String(error)}`,
-    );
-    return null;
-  });
-  if (!prepared) return null;
-  return {
-    name: definition.name,
-    dylib: prepared.dylib,
-    env: prepared.env,
-    scope: definition.scope,
-    loadDelayMs: definition.loadDelayMs,
-    loadPhase: definition.loadPhase,
-  };
-}
+type ConfigureOptions = {
+  bundleId?: string | null;
+  options?: Record<string, string>;
+  enabled: boolean;
+} & EnableOptions;
 
 /**
  * Unused on `expo` today. Kept because #148, #102, and #53 import it; the
@@ -429,37 +421,99 @@ async function prepare(
 export async function setCapabilityEnabled(
   udid: string,
   name: string,
+  options: ConfigureOptions,
+): Promise<void> {
+  await configureCapability(udid, capabilityDefinition(name), options);
+}
+
+function hasForeignCapabilityOwner(
+  udid: string,
+  definition: CapabilityDefinition,
+  ownerPid: number | null,
+): boolean {
+  if (!definition.exclusive) return false;
+  const existing = readLaunchState(udid)?.capabilities[definition.name];
+  return existing !== undefined && existing.ownerPid !== ownerPid;
+}
+
+function assertCapabilityOwner(udid: string, definition: CapabilityDefinition, ownerPid: number | null): void {
+  if (hasForeignCapabilityOwner(udid, definition, ownerPid)) {
+    throw new Error(
+      `Capability ${definition.name} on ${udid} belongs to another session. ` +
+      "Stop that session before enabling it here.",
+    );
+  }
+}
+
+export async function configureCapability(
+  udid: string,
+  definition: CapabilityDefinition,
   {
     bundleId = null,
     options = {},
     enabled,
     relaunch = true,
     ownerPid = process.pid,
-  }: {
-    bundleId?: string | null;
-    options?: Record<string, string>;
-    enabled: boolean;
-  } & EnableOptions,
+  }: ConfigureOptions,
 ): Promise<void> {
-  const definition = capabilityDefinition(name);
   const context: CapabilityContext = { udid, bundleId, options, enabled };
-
   await withLaunchStateLock(udid, async () => {
     if (!enabled) {
+      if (!hasForeignCapabilityOwner(udid, definition, ownerPid)) {
+        await disableCapabilityUnlocked(udid, bundleId, definition.name, { relaunch: false });
+      }
       await definition.setEnabled(context);
-      await disableCapabilityUnlocked(udid, bundleId, name, { relaunch: false });
       return;
     }
+    assertCapabilityOwner(udid, definition, ownerPid);
+    const preparation = await prepareCapability(definition, context);
+    if (!preparation) {
+      throw new Error(`Capability ${definition.name} declined to start on ${udid}. Check its configuration and retry.`);
+    }
+    await publishPreparations(udid, bundleId, [preparation], ownerPid);
+    if (relaunch) {
+      const state = readLaunchState(udid);
+      if (state) await relaunchTarget(udid, bundleId, state);
+    }
+  });
+}
 
-    const capability = await prepare(definition, context);
-    if (!capability) {
-      throw new Error(
-        `Capability ${name} declined to start on ${udid}. It reported nothing to load, so there ` +
-          `is nothing to enable. Check the message above for why.`,
+async function publishPreparations(
+  udid: string,
+  bundleId: string | null,
+  preparations: CapabilityPreparation[],
+  ownerPid: number | null = process.pid,
+): Promise<void> {
+  const previous = readLaunchState(udid);
+  try {
+    const capabilities = preparations.map(({ capability }) => capability);
+    await enableCapabilitiesUnlocked(udid, bundleId, capabilities, { relaunch: false, ownerPid });
+  } catch (error) {
+    const observerErrors = notifyPreparationFailure(preparations, error);
+    if (error instanceof CapabilityRollbackError) {
+      if (observerErrors.length > 0) {
+        throw new CapabilityRollbackError([error, ...observerErrors], error.message);
+      }
+      throw error;
+    }
+    await rollbackPreparations(udid, preparations, error, observerErrors);
+    throw error;
+  }
+  try {
+    for (const { resources } of preparations) resources.committed?.();
+  } catch (error) {
+    const observerErrors = notifyPreparationFailure(preparations, error);
+    try {
+      await publishLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
+    } catch (withdrawError) {
+      throw new CapabilityRollbackError(
+        [error, withdrawError, ...observerErrors],
+        `Could not withdraw a failed capability on ${udid}; its resources were kept. Retry cleanup before launching apps.`,
       );
     }
-    await enableCapabilitiesUnlocked(udid, bundleId, [capability], { relaunch, ownerPid });
-  });
+    await rollbackPreparations(udid, preparations, error, observerErrors);
+    throw error;
+  }
 }
 
 export async function applyDefaultCapabilities(
@@ -468,21 +522,20 @@ export async function applyDefaultCapabilities(
   overrides: CapabilityOverrides = {},
 ): Promise<string[]> {
   return withLaunchStateLock(udid, async () => {
-    const definitions = capabilitiesToApply(overrides);
-    const resolved: Capability[] = [];
-    for (const definition of definitions) {
-      const capability = await prepare(definition, { udid, bundleId, options: {}, enabled: true });
-      if (!capability) continue;
-      resolved.push(capability);
+    const preparations: CapabilityPreparation[] = [];
+    for (const definition of capabilitiesToApply(overrides)) {
+      try {
+        assertCapabilityOwner(udid, definition, process.pid);
+        const prepared = await prepareCapability(definition, { udid, bundleId, options: {}, enabled: true });
+        if (prepared) preparations.push(prepared);
+      } catch (error) {
+        console.error(`Capability ${definition.name} could not be prepared: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
-    await enableCapabilitiesUnlocked(udid, bundleId, resolved, { relaunch: false });
-    const applied = resolved.map((capability) => capability.name);
-
+    await publishPreparations(udid, bundleId, preparations);
+    const applied = preparations.map(({ capability }) => capability.name);
     for (const name of overrides.enable ?? []) {
-      if (applied.includes(name)) continue;
-      console.error(
-        `Capability ${name} was requested but did not apply on ${udid}.`,
-      );
+      if (!applied.includes(name)) console.error(`Capability ${name} was requested but did not apply on ${udid}.`);
     }
     return applied;
   });
@@ -599,8 +652,12 @@ async function disableCapabilityUnlocked(
   { relaunch = true }: EnableOptions = {},
 ): Promise<void> {
   const previous = readLaunchState(udid);
-  if (!previous) return;
-  if (!(name in previous.capabilities)) return;
+  if (!previous || !(name in previous.capabilities)) {
+    if (managedStartupDylibs(udid).length > 0) {
+      await publishLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
+    }
+    return;
+  }
   const rest = Object.fromEntries(
     Object.entries(previous.capabilities).filter(([key]) => key !== name),
   );
