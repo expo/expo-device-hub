@@ -1,5 +1,25 @@
 # expo-device-hub
 
+## 0.11.0
+
+### Minor Changes
+
+- 8cbaa35: Add an Accessibility inspector section that lists the accessible elements of the current iOS or Android screen and taps one on click.
+- 6d11421: Show live CPU, memory, and network charts for the foreground Android app.
+- 3d13723: Show the real launcher icon of the foreground app on Android. serve-emu gains
+  `GET /api/apps/icon`, which pulls the base APK and resolves the adaptive icon's
+  foreground bitmap with `aapt2`.
+- 49275f5: Add pinch and pan on Android. Alt-drag or two fingers on the streamed screen now reach the emulator as two pointers.
+- 620512c: Add an Android on-screen keyboard control to the shared device options UI.
+- 66c48ed: Add a Permissions section that lists the foreground app's permissions and can grant, revoke, or reset them on Android emulators. iOS follows once serve-sim serves them over HTTP.
+- 6d17e43: Add a Location inspector section that points an Android emulator or an iOS simulator at one coordinate, by preset or by typed latitude and longitude. iOS can also clear the fix.
+- 12616f5: Allow clients to select the active iPhone Duo surface without changing the hinge angle.
+- ada9916: Update the vendored serve-sim to `@expo/serve-sim` 0.3.0 (upstream `expo` branch).
+
+### Patch Changes
+
+- de58f2a: Show Android screen recording status in the Hub.
+
 ## 0.10.1
 
 ### Patch Changes
