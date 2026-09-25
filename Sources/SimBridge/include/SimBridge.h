@@ -34,9 +34,11 @@ typedef NS_ENUM(NSInteger, SBButton) {
 /// Called whenever the guest reports damaged regions on the main display.
 - (void)setFrameHandler:(void (^)(void))handler queue:(dispatch_queue_t)queue;
 
-/// x/y are normalized [0, 1] over the display. Returns NO if SimulatorKit throttled the event
-/// (it rate-limits drags to ~60 Hz) or it could not be sent.
-- (BOOL)sendTouch:(SBTouchPhase)phase x:(double)x y:(double)y;
+/// x/y are normalized [0, 1] over the display. `edge` is SimulatorKit's IndigoHIDEdge (0 = none);
+/// a gesture that starts at a screen edge must carry it on every event for iOS to treat it as a
+/// system edge swipe (home, app switcher, Notification/Control Center). Returns NO if SimulatorKit
+/// throttled the event (it rate-limits drags to ~60 Hz) or it could not be sent.
+- (BOOL)sendTouch:(SBTouchPhase)phase x:(double)x y:(double)y edge:(uint32_t)edge;
 - (BOOL)sendButton:(SBButton)button down:(BOOL)down;
 /// `usage` is a USB HID keyboard usage (page 0x07).
 - (BOOL)sendKey:(uint32_t)usage down:(BOOL)down;

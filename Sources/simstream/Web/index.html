@@ -16,7 +16,10 @@
     -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
   /* The canvas keeps the device's aspect ratio and shrinks to fit whichever dimension runs out first. */
-  #stage { height: 92dvh; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  #stage {
+    height: 92dvh; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center;
+    padding: 32px; box-sizing: border-box; touch-action: none;  /* padding: room to start drags on the bezel */
+  }
   #screen {
     display: block; width: auto; height: auto; max-width: 100%; max-height: 100%;
     background: #000; border-radius: 13.5% / 6.2%; touch-action: none; cursor: default;
@@ -42,7 +45,7 @@
      stats (when on) float over the top of the stream without intercepting touches. */
   @media (max-width: 700px), (pointer: coarse) and (orientation: portrait) {
     body { flex-direction: column; justify-content: flex-start; gap: 8px; }
-    #stage { flex: 1; height: auto; width: 100%; padding: 8px 8px 0; box-sizing: border-box; }
+    #stage { flex: 1; height: auto; width: 100%; padding: 8px 8px 0; }
     #screen { box-shadow: 0 0 0 1px #2c2c32; }
     #side { width: 100%; padding: 0 10px 8px; box-sizing: border-box; gap: 6px; }
     h1, .hint { display: none; }
@@ -223,27 +226,69 @@ function onDecoded(frame) {
 
 // ---------- input ----------
 
-let touching = false;
+// Edge swipes (home / app switcher from the bottom, back from the left, Notification and Control
+// Center from the top) only work when every event of the gesture carries the edge it started at,
+// as Simulator.app sends them. Values are SimulatorKit's IndigoHIDEdge.
+const EDGE = { none: 0, top: 1, left: 2, bottom: 3, right: 4 };
+// A gesture starting within this much of an edge (fraction of the screen), or out on the bezel
+// (up to BEZEL_PX past it), is an edge gesture.
+const EDGE_ZONE = { x: 0.04, y: 0.03 };
+const BEZEL_PX = 32;
+
+const stage = document.getElementById('stage');
+let gesture = null;   // { pointerId, edge } while a finger/mouse is down
+
+function position(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, r };
+}
+
+function edgeAt({ x, y }) {
+  if (y >= 1 - EDGE_ZONE.y) return EDGE.bottom;
+  if (x <= EDGE_ZONE.x) return EDGE.left;
+  if (x >= 1 - EDGE_ZONE.x) return EDGE.right;
+  if (y <= EDGE_ZONE.y) return EDGE.top;
+  return EDGE.none;
+}
 
 function touch(phase, e) {
-  const r = canvas.getBoundingClientRect();
-  const x = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
-  const y = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+  const clamp = (v) => Math.min(1, Math.max(0, v));
+  let { x, y } = position(e);
+  if (phase === 'down') {
+    // Start edge gestures right on the edge, as a finger sliding in from the bezel would.
+    if (gesture.edge === EDGE.bottom) y = 0.999;
+    if (gesture.edge === EDGE.top) y = 0.001;
+    if (gesture.edge === EDGE.left) x = 0.001;
+    if (gesture.edge === EDGE.right) x = 0.999;
+  }
   const seq = ++inputSeq;
   inputSentAt.set(seq, performance.now());
   if (inputSentAt.size > 500) inputSentAt.delete(inputSentAt.keys().next().value);
-  send({ t: 'touch', p: phase, x, y, seq });
+  send({ t: 'touch', p: phase, x: clamp(x), y: clamp(y), seq, edge: gesture.edge });
 }
 
-canvas.addEventListener('pointerdown', (e) => {
-  canvas.setPointerCapture(e.pointerId);
-  touching = true;
+stage.addEventListener('pointerdown', (e) => {
+  if (gesture) return;
+  const p = position(e);
+  const bezelX = BEZEL_PX / p.r.width, bezelY = BEZEL_PX / p.r.height;
+  const onScreen = p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
+  const onBezel = p.x >= -bezelX && p.x <= 1 + bezelX && p.y >= -bezelY && p.y <= 1 + bezelY;
+  if (!onBezel) return;
+  e.preventDefault();
+  stage.setPointerCapture(e.pointerId);
+  gesture = { pointerId: e.pointerId, edge: onScreen ? edgeAt(p) : edgeAt({ x: Math.min(1, Math.max(0, p.x)), y: Math.min(1, Math.max(0, p.y)) }) };
   touch('down', e);
 });
-canvas.addEventListener('pointermove', (e) => { if (touching) touch('move', e); });
-const release = (e) => { if (!touching) return; touching = false; touch('up', e); };
-canvas.addEventListener('pointerup', release);
-canvas.addEventListener('pointercancel', release);
+stage.addEventListener('pointermove', (e) => {
+  if (gesture?.pointerId === e.pointerId) touch('move', e);
+});
+const release = (e) => {
+  if (gesture?.pointerId !== e.pointerId) return;
+  touch('up', e);
+  gesture = null;
+};
+stage.addEventListener('pointerup', release);
+stage.addEventListener('pointercancel', release);
 
 // KeyboardEvent.code -> USB HID usage (page 0x07)
 const HID = {

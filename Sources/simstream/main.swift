@@ -158,7 +158,8 @@ do {
             case "up": .up
             default: .move
             }
-            if sim.sendTouch(phase, x: x, y: y), let seq = (message["seq"] as? NSNumber)?.uint32Value {
+            let edge = (message["edge"] as? NSNumber)?.uint32Value ?? 0
+            if sim.sendTouch(phase, x: x, y: y, edge: edge), let seq = (message["seq"] as? NSNumber)?.uint32Value {
                 pump.noteInput(seq)
             }
         case "key":

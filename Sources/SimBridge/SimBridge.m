@@ -172,12 +172,12 @@ static NSError *SBError(NSString *message) {
     return YES;
 }
 
-- (BOOL)sendTouch:(SBTouchPhase)phase x:(double)x y:(double)y {
+- (BOOL)sendTouch:(SBTouchPhase)phase x:(double)x y:(double)y edge:(uint32_t)edge {
     if (!_mouse) return NO;
     NSInteger type = phase == SBTouchPhaseDown ? kLeftMouseDown : phase == SBTouchPhaseUp ? kLeftMouseUp : kLeftMouseDragged;
     CGPoint point = CGPointMake(x, y);
     // Coordinates are divided by `size`, so a unit size lets us pass ratios directly.
-    return [self send:_mouse(&point, NULL, kIndigoTargetTouchscreen, type, CGSizeMake(1, 1), 0)];
+    return [self send:_mouse(&point, NULL, kIndigoTargetTouchscreen, type, CGSizeMake(1, 1), edge)];
 }
 
 - (BOOL)sendButton:(SBButton)button down:(BOOL)down {

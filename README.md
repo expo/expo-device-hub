@@ -55,6 +55,7 @@ firewall allows automatically.
 | Constant frame rate | While someone is watching, the last frame repeats at a steady 60 fps (about 0.15 Mbps and 3.5% CPU when static), so presentation cadence stays even and still images keep sharpening. `--vfr` encodes changes only. Nothing is encoded with no viewers |
 | Recover on demand | Keyframes are sent on join, on decoder error, or after a drop instead of on a fixed GOP |
 | Controller talks to the server, not the client device | Input goes straight upstream as normalized touch points, is injected as Indigo HID events, and needs no window focus or cursor |
+| Edge gestures | A drag that starts within a few percent of a screen edge, or out on the bezel, carries SimulatorKit's edge value on every event (1 top, 2 left, 3 bottom, 4 right; bottom and left verified), so swiping up for home or the app switcher, going back from the left, and Notification/Control Center all work |
 | One encoder per session | Frames are captured once and encoded once per viewer, so each viewer gets the bitrate its own link can carry, and one viewer's keyframes never cost the others |
 | Keep frame rate; let quality give | A per-viewer delay-based controller, as in WebRTC. Clients ack each decoded frame, and queueing delay above that viewer's baseline is the congestion signal. On overuse, the bitrate drops to about 85% of the measured delivery rate. It probes back up (+8% per 200 ms) only while the link is in use, and local viewers start at the maximum. Dropping frames and resyncing on a keyframe happens only past a 400 ms backlog |
 | Constant-rate encoding converges | Constant frame rate does this automatically. With `--vfr`, 12 extra frames of the settled image are encoded after motion stops so it still sharpens ("refinement") |
@@ -100,8 +101,8 @@ firewall allows automatically.
 
 - **Transport**: TCP WebSocket (a minimal RFC 6455 implementation sharing the HTTP port) has head-of-line blocking. Moving to WebRTC (what Stadia used) or
   WebTransport datagrams would be the real latency win on lossy networks.
-- **Multi-touch and gestures**: `IndigoHIDMessageForMouseNSEvent` accepts a second point, so pinch
-  just needs wiring. SimulatorKit also throttles drag events to about 60 Hz.
+- **Multi-touch**: `IndigoHIDMessageForMouseNSEvent` accepts a second point, so pinch just needs
+  wiring. SimulatorKit also throttles drag events to about 60 Hz.
 - **Encoder**: HEVC/AV1 for bandwidth, and reference-frame invalidation instead of a full keyframe
   after a resync. Adaptive resolution (Stadia dropped resolution before frame rate) would keep dense
   text legible at low bitrates. Each viewer costs one hardware encode session.

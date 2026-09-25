@@ -141,7 +141,10 @@ final class FramePump {
         if !fromDamage && contentChanged && now - lastDamageMs < 100 && now - lastCaptureMs < frameInterval * 1.5 {
             return  // a render is in flight; its damage callback will capture it in step
         }
-        let repeating = !fromDamage && !contentChanged && (constantFrameRate || refineRemaining > 0)
+        // Repeats (CFR / refinement) only fill idle time: while the guest is rendering, its own
+        // frames set the cadence, and a repeat squeezed between two would be a duplicate.
+        let idle = now - lastDamageMs > frameInterval * 1.5
+        let repeating = !fromDamage && !contentChanged && idle && (constantFrameRate || refineRemaining > 0)
         guard contentChanged || frameRequested || repeating else { return }
         refineRemaining = contentChanged ? refineFrames : max(0, refineRemaining - 1)
 
