@@ -88,10 +88,10 @@ fast-forward push fails; the maintainer must reconcile the release branch with `
 If an earlier attempt already pushed package tags, a new attempt's release commit will not match
 those tags and publication will fail until a maintainer resolves the partial release.
 
-Publication skips versions already on npm and restores missing tags for packages versioned by
-the release commit. Unchanged and ignored packages do not receive new tags. An existing tag
-pointing elsewhere causes a failure rather than being replaced. Canary and dry-run publication
-never change tags.
+Publication skips versions already on npm. Once every publish succeeds, it pushes package tags
+together. If publishing a package fails, no tags are pushed by that attempt. Unchanged and
+ignored packages do not receive new tags. An existing tag pointing elsewhere causes a failure
+rather than being replaced. Canary and dry-run publication never change tags.
 
 ## One-time setup for a new public package
 
@@ -109,5 +109,5 @@ first release. For every package that is not `private`:
 4. Add a changeset for the package so the next real release versions and publishes it.
 
 All packages versioned by a real release are published in the same run. If one package fails
-to publish, the workflow stops before creating GitHub releases. Its tested version commit and
-any tags already pushed remain on the remote for manual recovery.
+to publish, the workflow stops before pushing tags or creating GitHub releases. Its tested
+version commit remains on the remote for manual recovery.

@@ -59,27 +59,32 @@ for (const { name, version, path } of tarballs) {
     console.log(`- ${spec}: npm ${args.join(" ")}`);
     await $`npm ${args}`;
   }
+}
 
-  if (!releaseSha) continue;
-  const ref = `refs/tags/${spec}`;
-  const remoteTag = (await $`git ls-remote --tags origin ${ref}`.text()).trim();
-  if (remoteTag) {
-    // Reuse an existing remote tag, including an annotated tag. A conflicting
-    // local tag makes this fetch fail rather than overwriting either tag.
-    await $`git fetch origin ${`${ref}:${ref}`}`;
-  }
-  const localTag = await $`git rev-parse -q --verify ${`${ref}^{commit}`}`
-    .nothrow()
-    .quiet();
-  if (localTag.exitCode === 0) {
-    if (localTag.text().trim() !== releaseSha) {
-      throw new Error(
-        `${spec} points to a different commit than ${releaseSha}.`,
-      );
+if (releaseSha) {
+  for (const { name, version } of tarballs) {
+    const spec = `${name}@${version}`;
+    const ref = `refs/tags/${spec}`;
+    const remoteTag = (
+      await $`git ls-remote --tags origin ${ref}`.text()
+    ).trim();
+    if (remoteTag) {
+      // Reuse an existing remote tag, including an annotated tag. A conflicting
+      // local tag makes this fetch fail rather than overwriting either tag.
+      await $`git fetch origin ${`${ref}:${ref}`}`;
     }
-  } else {
-    await $`git tag ${spec} ${releaseSha}`;
+    const localTag = await $`git rev-parse -q --verify ${`${ref}^{commit}`}`
+      .nothrow()
+      .quiet();
+    if (localTag.exitCode === 0) {
+      if (localTag.text().trim() !== releaseSha) {
+        throw new Error(
+          `${spec} points to a different commit than ${releaseSha}.`,
+        );
+      }
+    } else {
+      await $`git tag ${spec} ${releaseSha}`;
+    }
   }
-  // Push even when the tag already existed locally after an earlier failed push.
-  await $`git push origin ${ref}`;
+  await $`git push origin --tags`;
 }
