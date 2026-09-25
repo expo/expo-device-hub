@@ -53,8 +53,10 @@ _Last updated: 2026-09-25 14:22. The integration is built, smoke-tested and comm
     Mini is direct, ~13 ms.
   - Script: `bench/rec-remote-mini.sh`; route: `bench/route-mini.json`; compose with
     `ROUTE=route-mini.json python3 bench/compose-aligned.py --touches OUT /tmp/fbench/remote-mini/mini-{S,W,H}`.
-  - **The laptop sleeps on idle** (a brief DarkWake on network traffic, then sleep ~45 s later). Run
-    `caffeinate -dimsu -t 3600 &` on it first, then release it afterwards.
+  - **The laptop sleeps on idle** (a brief DarkWake on network traffic, then sleep ~45 s later). At the
+    user's request, it's now kept awake permanently by a LaunchAgent,
+    `~/Library/LaunchAgents/com.seth.caffeinate.plist` (`caffeinate -dimsu`, KeepAlive). Undo it with
+    `launchctl bootout gui/$(id -u)/com.seth.caffeinate && rm ~/Library/LaunchAgents/com.seth.caffeinate.plist`.
   - The Pro Max sim was shut down afterwards. The user's :8775 simstream and the 17 Pro on the Mini
     weren't touched.
   - The M4 is too busy (load 30–40, Docker) for clean runs; that's why the Mini was used (user approved).
