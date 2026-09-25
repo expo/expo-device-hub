@@ -2,45 +2,73 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0d0d0f">
 <title>simstream</title>
 <style>
   :root { color-scheme: dark; }
   body {
-    margin: 0; height: 100vh; display: flex; align-items: center; justify-content: center; gap: 32px;
+    margin: 0; height: 100dvh; overflow: hidden; overscroll-behavior: none; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center; gap: 32px;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
     background: #0d0d0f; color: #cfd2d6; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
   }
+  /* The canvas keeps the device's aspect ratio and shrinks to fit whichever dimension runs out first. */
+  #stage { height: 92dvh; min-width: 0; min-height: 0; display: flex; align-items: center; justify-content: center; }
   #screen {
-    height: 92vh; display: block; background: #000; border-radius: 48px; touch-action: none; cursor: default;
+    display: block; width: auto; height: auto; max-width: 100%; max-height: 100%;
+    background: #000; border-radius: 13.5% / 6.2%; touch-action: none; cursor: default;
     box-shadow: 0 0 0 12px #1c1c20, 0 0 0 13px #2c2c32, 0 30px 80px #000;
   }
-  #side { display: flex; flex-direction: column; gap: 10px; width: 250px; }
-  h1 { font-size: 13px; margin: 0 0 4px; color: #fff; letter-spacing: .04em; }
+  #side { display: flex; flex-direction: column; gap: 10px; width: 310px; }
+  header { display: flex; align-items: baseline; gap: 10px; }
+  h1 { font-size: 13px; margin: 0; color: #fff; letter-spacing: .04em; }
   #status { color: #8a8f98; }
   #status.live { color: #5fd38d; }
   .buttons { display: flex; gap: 6px; }
   button {
-    flex: 1; padding: 7px 0; border: 1px solid #2c2c32; border-radius: 8px;
+    flex: 1; padding: 7px 0; border: 1px solid #2c2c32; border-radius: 8px; touch-action: manipulation;
     background: #17171b; color: #cfd2d6; font: inherit; cursor: pointer;
   }
   button:active { background: #24242a; }
+  button.on { border-color: #4a4a55; color: #fff; }
   #hud { white-space: pre; background: #131316; border: 1px solid #222228; border-radius: 8px; padding: 10px 12px; }
+  #hud[hidden] { display: none; }
   .hint { color: #6b7079; }
+
+  /* Phones: the screen gets all the room it can; controls become a slim bar underneath and
+     stats (when on) float over the top of the stream without intercepting touches. */
+  @media (max-width: 700px), (pointer: coarse) and (orientation: portrait) {
+    body { flex-direction: column; justify-content: flex-start; gap: 8px; }
+    #stage { flex: 1; height: auto; width: 100%; padding: 8px 8px 0; box-sizing: border-box; }
+    #screen { box-shadow: 0 0 0 1px #2c2c32; }
+    #side { width: 100%; padding: 0 10px 8px; box-sizing: border-box; gap: 6px; }
+    h1, .hint { display: none; }
+    header { justify-content: center; font-size: 11px; }
+    button { padding: 10px 0; }
+    #hud {
+      position: fixed; z-index: 1; pointer-events: none; font-size: 10px; padding: 6px 8px;
+      top: calc(env(safe-area-inset-top) + 14px); left: calc(env(safe-area-inset-left) + 14px);
+      background: rgba(19, 19, 22, .82); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+  }
 </style>
 </head>
 <body>
-  <canvas id="screen" width="390" height="844"></canvas>
-  <div id="side">
-    <h1>simstream</h1>
-    <div id="status">connecting…</div>
+  <main id="stage"><canvas id="screen" width="1206" height="2622"></canvas></main>
+  <aside id="side">
+    <header><h1>simstream</h1><span id="status">connecting…</span></header>
     <div class="buttons">
       <button data-button="home">Home</button>
       <button data-button="lock">Lock</button>
       <button id="keyframe">Keyframe</button>
+      <button id="stats">Stats</button>
     </div>
-    <div id="hud"></div>
+    <div id="hud" hidden></div>
     <div class="hint">Click/drag to touch. Keyboard is forwarded while the page is focused (⌘-shortcuts stay local).</div>
-  </div>
+  </aside>
 
 <script>
 const canvas = document.getElementById('screen');
@@ -246,6 +274,21 @@ for (const el of document.querySelectorAll('[data-button]')) {
   el.addEventListener('pointerup', () => send({ t: 'button', b, down: false }));
 }
 document.getElementById('keyframe').addEventListener('click', () => send({ t: 'keyframe' }));
+
+// Stats: shown by default on desktop, hidden on phones; the choice is remembered.
+const statsButton = document.getElementById('stats');
+const onPhone = matchMedia('(max-width: 700px), (pointer: coarse) and (orientation: portrait)').matches;
+let showStats = (localStorage.getItem('simstream.stats') ?? (onPhone ? 'off' : 'on')) === 'on';
+function applyStats() {
+  hudEl.hidden = !showStats;
+  statsButton.classList.toggle('on', showStats);
+}
+statsButton.addEventListener('click', () => {
+  showStats = !showStats;
+  localStorage.setItem('simstream.stats', showStats ? 'on' : 'off');
+  applyStats();
+});
+applyStats();
 
 // Hidden tabs get throttled and stop decoding; tell the server instead of looking congested.
 document.addEventListener('visibilitychange', () => {
