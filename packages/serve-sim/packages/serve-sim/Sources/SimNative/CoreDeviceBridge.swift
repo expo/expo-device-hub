@@ -8,12 +8,14 @@ import StreamingPolicy
 actor CoreDeviceBridge {
     static let shared = CoreDeviceBridge()
 
-    enum BridgeError: Error { case unavailable, deviceUnavailable, initializationTimedOut }
+    enum BridgeError: Error { case unavailable, deviceUnavailable, initializationTimedOut, resetDuringLookup }
 
     private var manager: CoreDeviceManagerObject?
-    private let managerReadiness = SharedReadiness()
+    private var managerReadiness = SharedReadiness()
+    private var resetGeneration: UInt64 = 0
     private var capabilities: [String: CoreDeviceCapabilityObject] = [:]
     private var hingeSupport: [String: Bool] = [:]
+    private var hingeResetGenerations: [String: UInt64] = [:]
     struct HingeState {
         var angle: Double?
         var orientation: String?
@@ -21,8 +23,27 @@ actor CoreDeviceBridge {
     }
     private var hingeStates: [String: HingeState] = [:]
 
+    /// CoreDevice's remote device and capability objects belong to a simulator
+    /// boot. A new capture session must not reuse them after that device boots
+    /// again in the same serve-sim process.
+    func resetForNewCapture(udid: String) {
+        resetGeneration &+= 1
+        capabilities.removeAll()
+        // The manager is shared, but hinge observations belong to one device.
+        hingeResetGenerations[udid, default: 0] &+= 1
+        hingeSupport.removeValue(forKey: udid)
+        hingeStates.removeValue(forKey: udid)
+        manager = nil
+        managerReadiness = SharedReadiness()
+    }
+
     func hingeState(udid: String) async -> HingeState {
-        if let angle = await readHingeAngle(udid: udid) {
+        let generation = hingeResetGenerations[udid, default: 0]
+        let angle = await readHingeAngle(udid: udid)
+        guard hingeResetGenerations[udid, default: 0] == generation else {
+            return hingeStates[udid] ?? HingeState()
+        }
+        if let angle {
             hingeStates[udid, default: HingeState()].angle = angle
         }
         // If readback is unavailable, retain the last individually successful
@@ -32,6 +53,7 @@ actor CoreDeviceBridge {
 
     func remoteDevice(udid: String) async throws -> CoreDeviceRemoteDevice {
         guard SSCoreDeviceInitialize() else { throw BridgeError.unavailable }
+        let generation = resetGeneration
         if manager == nil {
             // Initializes resilient class metadata and field offsets before
             // using the class metadata's allocating initializer.
@@ -60,6 +82,7 @@ actor CoreDeviceBridge {
         } catch SharedReadiness.Failure.timedOut {
             throw BridgeError.initializationTimedOut
         }
+        guard resetGeneration == generation else { throw BridgeError.resetDuringLookup }
         guard let device = manager.allDevices().first(where: { $0.identifier().uuidString.caseInsensitiveCompare(udid) == .orderedSame })
         else { throw BridgeError.deviceUnavailable }
         return device
@@ -79,7 +102,9 @@ actor CoreDeviceBridge {
     func capability(udid: String, metadataSymbol: String, witnessSymbol: String) async throws -> CoreDeviceCapabilityObject {
         let key = "\(udid):\(metadataSymbol)"
         if let existing = capabilities[key] { return existing }
+        let generation = resetGeneration
         let device = try await remoteDevice(udid: udid)
+        guard resetGeneration == generation else { throw BridgeError.resetDuringLookup }
         guard let metadata = SSCoreDeviceSymbol(metadataSymbol),
               let witness = SSCoreDeviceSymbol(witnessSymbol)
         else { throw BridgeError.unavailable }
@@ -90,6 +115,9 @@ actor CoreDeviceBridge {
         // method takes an address, actual T metadata, and its conformance.
         try await device.implementation(capability.storage, emptyStaticMember, metadata, witness)
         capability.initialized = true
+        // An old lookup may resume after a new capture clears the cache.
+        // Discard it instead of letting the next HID session reuse its handle.
+        guard resetGeneration == generation else { throw BridgeError.resetDuringLookup }
         capabilities[key] = capability
         return capability
     }
@@ -98,7 +126,9 @@ actor CoreDeviceBridge {
         guard angle.isFinite, (0...180).contains(angle) else { return false }
         guard let rawData = SSCoreDeviceHingeData(angle) else { return false }
         let data = Unmanaged<NSData>.fromOpaque(rawData).takeRetainedValue() as Data
+        let generation = hingeResetGenerations[udid, default: 0]
         let sent = await sendControl(udid: udid, data: data)
+        guard hingeResetGenerations[udid, default: 0] == generation else { return false }
         if sent { hingeStates[udid, default: HingeState()].angle = angle }
         return sent
     }
@@ -146,18 +176,21 @@ actor CoreDeviceBridge {
             if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
             return !enabled
         }
+        let generation = hingeResetGenerations[udid, default: 0]
         do {
             let metadataSymbol = "$s10CoreDevice29UniversalHIDServiceCapabilityVN"
             let capability = try await capability(
                 udid: udid, metadataSymbol: metadataSymbol,
                 witnessSymbol: "$s10CoreDevice29UniversalHIDServiceCapabilityVAA0bE0AAWP"
             )
+            guard hingeResetGenerations[udid, default: 0] == generation else { return false }
             let sent = SSCoreDeviceSendTableMode(capability.storage, enabled)
             if sent { hingeStates[udid, default: HingeState()].tableMode = enabled }
             if !sent { capabilities.removeValue(forKey: "\(udid):\(metadataSymbol)") }
             return sent
         } catch BridgeError.unavailable {
             fputs("[hid] CoreDevice Table Mode capability unavailable\n", stderr)
+            guard hingeResetGenerations[udid, default: 0] == generation else { return false }
             if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
             return !enabled
         } catch {
@@ -170,7 +203,9 @@ actor CoreDeviceBridge {
         guard ["portrait", "pud", "landscape-left", "landscape-right", "faceup", "facedown"].contains(value) else { return false }
         guard let rawData = value.withCString({ SSCoreDeviceOrientationData($0) }) else { return false }
         let data = Unmanaged<NSData>.fromOpaque(rawData).takeRetainedValue() as Data
+        let generation = hingeResetGenerations[udid, default: 0]
         let sent = await sendControl(udid: udid, data: data)
+        guard hingeResetGenerations[udid, default: 0] == generation else { return false }
         if sent { hingeStates[udid, default: HingeState()].orientation = value }
         return sent
     }
@@ -204,8 +239,10 @@ actor CoreDeviceBridge {
     func supportsHingeAngle(udid: String) async -> Bool {
         guard #available(macOS 15.0, *) else { return false }
         if let supported = hingeSupport[udid] { return supported }
+        let generation = hingeResetGenerations[udid, default: 0]
         do {
             let supported = try await withMotionManager(udid: udid) { SSCoreDeviceMotionSupportsHinge($0) }
+            guard hingeResetGenerations[udid, default: 0] == generation else { return false }
             hingeSupport[udid] = supported
             return supported
         } catch {
