@@ -53,7 +53,7 @@ import { IconButton } from "./components/icon-button";
 import { LogsDrawer } from "./components/logs-drawer";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
-import { ServeSimToaster, showInputSocketError } from "./components/app-toasts";
+import { ServeSimToaster, showCameraAllowed, showInputSocketError } from "./components/app-toasts";
 import { ShareSessionButton } from "./components/share-session-button";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
 import { StreamStatusPill } from "./components/stream-status-pill";
@@ -83,6 +83,7 @@ import {
 } from "./avcc-fallback";
 import { fileExtension } from "./utils/drop";
 import { openHostEventStream, runHostAction } from "./utils/exec";
+import { takeFramePermissionGrant } from "./utils/frame-permission";
 import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
 import {
@@ -120,6 +121,7 @@ import {
   trySendWsMessage,
   type QueuedWsMessage,
 } from "./utils/ws-send-queue";
+import { stopBrowserCameraExcept } from "./utils/browser-camera";
 import {
   webRtcFallbackDecision,
   type WebRtcCodec,
@@ -187,6 +189,12 @@ function App() {
     const id = setTimeout(() => setChromeGone(true), SIMULATOR_RESIZE_PRESENTATION_TRANSITION_MS);
     return () => clearTimeout(id);
   }, [presentation]);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (takeFramePermissionGrant("camera")) showCameraAllowed();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
   const [logsOpen, setLogsOpen] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -492,6 +500,10 @@ function App() {
       ? injectedConfig.chrome ?? null
       : null;
   const isStreaming = !!config && config.device === effectiveUdid;
+  // A browser feed for a device that is no longer shown has no control anywhere.
+  useEffect(() => {
+    stopBrowserCameraExcept(effectiveUdid);
+  }, [effectiveUdid]);
 
   let mainView: ReactNode;
   if (isStreaming && config) {

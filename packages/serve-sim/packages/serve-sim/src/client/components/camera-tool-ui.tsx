@@ -21,7 +21,7 @@ export function CameraStatusPill({ state }: { state: CameraPillState }) {
 }
 
 export interface CameraMediaPreviewProps {
-  mode: "placeholder" | "file" | "webcam" | "uploading";
+  mode: "placeholder" | "file" | "webcam" | "browser" | "uploading";
   fileName: string | null;
   webcamName: string | null;
   sourceKind: CamSource;
@@ -48,11 +48,11 @@ export function CameraMediaPreview({
       </>
     );
   }
-  if (mode === "webcam") {
+  if (mode === "webcam" || mode === "browser") {
     return (
       <>
         <div className="shrink-0 text-[9px] tracking-[0.1em] uppercase text-white/55 bg-white/[0.06] border border-white/8 px-[7px] py-[2px] rounded-full">
-          Webcam
+          {mode === "browser" ? "Browser" : "Webcam"}
         </div>
         <span className="flex-1 min-w-0 truncate text-[12px] text-white/90 font-mono">
           {webcamName ?? ""}
