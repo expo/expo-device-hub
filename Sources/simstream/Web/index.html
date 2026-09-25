@@ -102,7 +102,7 @@ let lastTouchLatency = null;   // most recent input → first changed frame draw
 const STAGES = ['queue', 'encode', 'send', 'network', 'decode', 'draw', 'present', 'total'];
 const INPUT_STAGES = ['up', 'ios', 'touch'];
 function resetWindow() {
-  const w = { frames: 0, bytes: 0, intervals: [], start: performance.now() };
+  const w = { frames: 0, bytes: 0, skipped: 0, intervals: [], start: performance.now() };
   for (const k of [...STAGES, ...INPUT_STAGES]) w[k] = [];
   return w;
 }
@@ -177,6 +177,7 @@ function teardownDecoder() {
   decoder = null;
   currentConfig = null;
   pending.clear();
+  if (latest) { latest.frame.close(); latest = null; }
 }
 
 function onFrame(buffer) {
@@ -201,17 +202,54 @@ function onFrame(buffer) {
   decoder.decode(new EncodedVideoChunk({ type: isKey ? 'key' : 'delta', timestamp: seq, data: new Uint8Array(buffer, 49) }));
 }
 
+// Presentation: draw a decoded frame immediately (lowest latency), but at most one per display
+// refresh. If another frame decodes within the same refresh, e.g. queued frames arriving in a burst
+// after a network stall, only the newest is kept and drawn at the next refresh: stale frames are
+// skipped so the picture jumps to now instead of fast-forwarding, and it never runs faster than 60.
+let latest = null;              // newest decoded frame waiting for the next refresh
+let drawnThisRefresh = false;
+let refreshScheduled = false;
+
 function onDecoded(frame) {
   const decodedAt = performance.now();
-  // Present immediately — no jitter buffer. Latency over smoothness.
+  const seq = frame.timestamp;
+  send({ t: 'ack', seq });   // acks track decoding (the network), independent of presentation
+  debug.decodeQueueSize = decoder?.decodeQueueSize;
+  if (!drawnThisRefresh) {
+    present(frame, seq, decodedAt);
+  } else {
+    if (latest) {
+      latest.frame.close();
+      pending.delete(latest.seq);
+      stats.skipped++;
+    }
+    latest = { frame, seq, decodedAt };
+  }
+  scheduleRefresh();
+}
+
+function scheduleRefresh() {
+  if (refreshScheduled) return;
+  refreshScheduled = true;
+  requestAnimationFrame(() => {
+    refreshScheduled = false;
+    drawnThisRefresh = false;
+    if (latest) {
+      const { frame, seq, decodedAt } = latest;
+      latest = null;
+      present(frame, seq, decodedAt);
+      scheduleRefresh();
+    }
+  });
+}
+
+function present(frame, seq, decodedAt) {
+  drawnThisRefresh = true;
   ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
   const drawnAt = performance.now();
-  const seq = frame.timestamp;
   frame.close();
   debug.drawn++;
   debug.lastDrawnSeq = seq;
-  debug.decodeQueueSize = decoder?.decodeQueueSize;
-  send({ t: 'ack', seq });
 
   // Gaps over 100 ms are idle time, not motion; they don't count toward frame pacing.
   if (lastDrawnAt && drawnAt - lastDrawnAt < 100) stats.intervals.push(drawnAt - lastDrawnAt);
@@ -408,10 +446,12 @@ setInterval(() => {
   // Exposed for scripts and measurements.
   window.simstreamLatency = Object.fromEntries([...STAGES, ...INPUT_STAGES].map((k) => [k, { mean: mean(s[k]), p95: p95(s[k]), n: s[k].length }]));
   window.simstreamLatency.rtt = rtt;
+  window.simstreamLatency.skipped = s.skipped;
+  window.simstreamLatency.fps = motionFps(s);
   hudEl.textContent = [
     `resolution   ${currentConfig ? `${currentConfig.width}×${currentConfig.height}` : '–'}`,
     `fps          ${motionFps(s)} in motion, ${(s.frames / secs).toFixed(0)} avg  (server ${serverStats.captureFps ?? '–'})`,
-    `pacing       ${pacing(s)}`,
+    `pacing       ${pacing(s)}${s.skipped ? `  (${s.skipped} late frames skipped)` : ''}`,
     `bitrate      ${(s.bytes * 8 / secs / 1e6).toFixed(2)} Mbps  (target ${serverStats.bitrate ? (serverStats.bitrate / 1e6).toFixed(1) : '–'})`,
     `rtt          ${rtt.toFixed(1)} ms (best of 10 s)`,
     ``,

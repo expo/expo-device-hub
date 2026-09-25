@@ -116,10 +116,10 @@ final class FramePump {
         }
         guard watching else { return }
         if fromDamage {
-            // Stay under the frame-rate cap (e.g. with a 120 Hz source) without losing frames: a
+            // Hold the frame-rate cap (at most one capture per ~frame slot) without losing frames: a
             // render that lands too soon after the last capture is deferred, not dropped. Heavy
             // content makes the guest deliver frames in uneven bunches.
-            let wait = frameInterval * 0.6 - (now - lastCaptureMs)
+            let wait = frameInterval * 0.9 - (now - lastCaptureMs)
             if wait > 0 {
                 if !deferredCapture {
                     deferredCapture = true

@@ -20,6 +20,7 @@ final class CongestionController {
     private var acked: [(ms: Double, bytes: Int)] = []
     private var sent: [(ms: Double, bytes: Int)] = []
     private var ackCount = 0
+    private var lastAckMs = -Double.infinity
     private var lastDecreaseMs = -Double.infinity
     private var lastIncreaseMs = -Double.infinity
     private var checkedLocal = false
@@ -39,6 +40,7 @@ final class CongestionController {
 
     func onAck(latencyMs: Double, bytes: Int, now: Double) {
         ackCount += 1
+        lastAckMs = now
         // Creep upward slowly so the baseline follows a path that genuinely got slower.
         baselineMs = min(latencyMs, baselineMs + 0.02)
         queueMs = queueMs * 0.7 + max(0, latencyMs - baselineMs) * 0.3
@@ -57,6 +59,9 @@ final class CongestionController {
         acked.removeAll { $0.ms < now - 1000 }
         sent.removeAll { $0.ms < now - 1000 }
         guard ackCount >= 3 else { return nil }
+        // Acks have paused: a transport stall (e.g. a TCP retransmit on a lossy wireless hop). The
+        // delivery rate reads near zero during one and says nothing about capacity, so hold.
+        guard now - lastAckMs < 150 else { return nil }
 
         if !checkedLocal {
             // A local or same-LAN viewer has bandwidth to spare: skip the ramp.
@@ -95,8 +100,11 @@ final class CongestionController {
         return next
     }
 
-    /// A severe backlog forced a resync: halve toward what was getting through.
+    /// A severe backlog: halve toward what was getting through, but only if we were actually
+    /// pushing the link. A backlog while sending well under the target is a stall, not congestion
+    /// we caused, and cutting the bitrate would only degrade the picture once it clears.
     func severe(now: Double) {
+        guard rate(delivered: false, now: now, windowMs: 1000) >= 0.5 * Double(bitrate) else { return }
         let delivered = rate(delivered: true, now: now, windowMs: 1000)
         bitrate = max(minBitrate, Int(min(delivered > 0 ? delivered * 0.5 : .infinity, Double(bitrate) * 0.5)))
         lastDecreaseMs = now
@@ -272,10 +280,12 @@ final class Viewer {
         let backlog = unacked.first.map { now - $0.sentMs - congestion.baselineOrZero } ?? 0
 
         if draining {
+            // Nothing was encoded while draining, so the encoder's reference chain is intact and the
+            // client has (or will get, TCP being reliable) every frame it references: continue with
+            // ordinary frames rather than a keyframe that would land on a link just recovering.
             guard backlog < 100 || backlog > stallMs else { return }
             if backlog > stallMs { unacked.removeAll() }
             draining = false
-            needsKeyframe = true
         } else if backlog > severeMs {
             if resyncs >= 2 && lastAckMs < lastResyncMs {
                 unresponsive = true
@@ -288,7 +298,7 @@ final class Viewer {
             lastResyncMs = now
             congestion.severe(now: now)
             encoder.setBitrate(congestion.bitrate)
-            log(String(format: "viewer %d: %.0f ms backlog, resyncing at %.1f Mbps", id, backlog,
+            log(String(format: "viewer %d: %.0f ms backlog, pausing encode until it drains (%.1f Mbps)", id, backlog,
                        Double(congestion.bitrate) / 1e6))
             updateTier(now: now)
             return
