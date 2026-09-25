@@ -64,7 +64,6 @@ jobs:
       - name: Summarize versions
         run: ./scripts/summarize-versions.ts
 
-      # Build with final versions so bundled metadata and vendored artifacts match the release.
       - name: Build packages
         run: bun run build
 
