@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
+import { isProcessAlive } from "./process-utils";
 import { stateDir } from "./state";
 
 export function cameraStateDir(): string {
@@ -43,16 +44,7 @@ export function cameraHelperSocketFile(udid: string): string {
   return `/tmp/serve-sim-cam-${short}.sock`;
 }
 
-function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function readCameraHelperPid(udid: string): number | null {
+export function readCameraHelperPid(udid: string): number | null {
   try {
     const pid = Number(readFileSync(cameraHelperPidFile(udid), "utf-8").trim());
     return Number.isInteger(pid) && pid > 0 ? pid : null;

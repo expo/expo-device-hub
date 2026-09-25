@@ -7,17 +7,28 @@ import { findBootedDevice } from "../device";
 export function e2eDevice(): string | null {
   const pinned = process.env.SERVE_SIM_TEST_UDID?.trim();
   const udid = pinned && pinned.length > 0 ? pinned : findBootedDevice();
-  if (!udid) return null;
+  if (!udid) return unavailableE2EDevice(pinned);
+  let out: string;
   try {
-    const out = execFileSync("xcrun", ["simctl", "list", "devices", "booted", "-j"], {
+    out = execFileSync("xcrun", ["simctl", "list", "devices", "booted", "-j"], {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       timeout: 30_000,
     });
-    return out.includes(udid) ? udid : null;
   } catch {
-    return null;
+    return unavailableE2EDevice(pinned);
   }
+  return out.includes(udid) ? udid : unavailableE2EDevice(pinned);
+}
+
+function unavailableE2EDevice(pinned: string | undefined): null {
+  if (process.env.SERVE_SIM_E2E_REQUIRED) {
+    const message = pinned
+      ? `the simulator pinned by SERVE_SIM_TEST_UDID (${pinned}) is not booted`
+      : "no booted simulator is available";
+    throw new Error(`${message}; boot it before running the required simulator E2E suite`);
+  }
+  return null;
 }
 
 /** Null means the check failed; an empty string means no insert is set. */
