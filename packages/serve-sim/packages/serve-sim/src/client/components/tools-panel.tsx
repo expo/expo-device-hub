@@ -3,17 +3,19 @@ import { Smartphone } from "lucide-react";
 import { CollapsibleSection } from "./collapsible-section";
 import { SettingSwitch } from "./setting-switch";
 import { LocationEmulationTool } from "../location-emulation-tool";
-import { Panel, PanelCloseButton, PanelHeader, PanelTitle } from "../Panel";
+import { Panel, PanelCloseButton, PanelHeader, PanelTitle } from "../panel";
 import { AppDetectionTool } from "./app-detection-tool";
 import { AppPermissionsTool } from "./app-permissions-tool";
 import { AxTreeTool } from "./ax-tree-tool";
 import { CameraTool } from "./camera-tool";
+import { CrashTool } from "./crash-tool";
 import { EventLogTool } from "./event-log-tool";
 import type { HingeControlsProps } from "./hinge-controls";
 import { MetricsTool } from "./metrics-tool";
 import { PANEL_BACKGROUND } from "./panel-colors";
 import { SimulatorSettingsTool } from "./simulator-settings-tool";
 import { StreamSettingsTool } from "./stream-settings-tool";
+import type { StreamPanelPeer } from "./stream-settings-tool";
 import type {
   StreamControlSettings,
   StreamEncoderSettings,
@@ -23,20 +25,19 @@ import type {
 export function ToolsPanel({
   open,
   onClose,
-  peerConnection,
-  webrtcStatsUrl,
-  webrtcSessionId,
   udid,
   deviceRuntime,
   currentApp,
   eventLogEventsEndpoint,
   metricsEndpoint,
+  crashesEndpoint,
   axOverlayEnabled,
   onToggleAxOverlay,
   streamSettings,
   onStreamPlaybackSettingsChange,
   onStreamEncoderSettingsChange,
   activeCodec,
+  peer,
   avccSupported,
   streamSettingsPending,
   streamTransportLocked = false,
@@ -49,20 +50,19 @@ export function ToolsPanel({
 }: {
   open: boolean;
   onClose: () => void;
-  peerConnection: RTCPeerConnection | null;
-  webrtcStatsUrl?: string;
-  webrtcSessionId?: string | null;
   udid: string;
   deviceRuntime: string | null;
   currentApp: { bundleId: string; isReactNative: boolean; pid?: number } | null;
   eventLogEventsEndpoint?: string;
   metricsEndpoint?: string;
+  crashesEndpoint?: string;
   axOverlayEnabled: boolean;
   onToggleAxOverlay: () => void;
   streamSettings: StreamControlSettings;
   onStreamPlaybackSettingsChange: (patch: Partial<StreamPlaybackSettings>) => void;
   onStreamEncoderSettingsChange: (patch: Partial<StreamEncoderSettings>) => void;
   activeCodec: string;
+  peer: StreamPanelPeer;
   avccSupported: boolean;
   streamSettingsPending: boolean;
   streamTransportLocked?: boolean;
@@ -105,14 +105,13 @@ export function ToolsPanel({
             onPlaybackSettingsChange={onStreamPlaybackSettingsChange}
             onEncoderSettingsChange={onStreamEncoderSettingsChange}
             activeCodec={activeCodec}
+            peer={peer}
             avccSupported={avccSupported}
             encoderSettingsDisabled={streamSettingsPending}
             transportLocked={streamTransportLocked}
             configuredMaxDimension={streamConfiguredMaxDimension}
-            peerConnection={peerConnection}
-            webrtcStatsUrl={webrtcStatsUrl}
-            webrtcSessionId={webrtcSessionId}
           />
+          <CrashTool udid={udid} crashesEndpoint={crashesEndpoint} />
         </div>
       )}
     </Panel>

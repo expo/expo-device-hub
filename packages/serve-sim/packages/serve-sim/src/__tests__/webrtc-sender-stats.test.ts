@@ -25,6 +25,11 @@ const SESSION = {
 };
 
 describe("readSenderStats", () => {
+  /// The requested codec is a preference. Until the stats name one, the codec is unknown.
+  test("reads a session whose stats have not named a codec as unknown", () => {
+    expect(readSenderStats({ sessions: [{ sessionId: "s", connected: false }] }).sessions[0]?.codec).toBeNull();
+  });
+
   test("converts seconds to milliseconds and bits to kbps", () => {
     const [session] = readSenderStats({ sessions: [SESSION] }).sessions;
 

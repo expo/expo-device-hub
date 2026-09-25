@@ -1,25 +1,33 @@
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import { createPortal } from "react-dom";
 
-// Custom <select> replacement in the device-picker dropdown style. Native
-// option popups are drawn by the host browser and ignore the page color
+// Native option popups are drawn by the host browser and ignore the page color
 // scheme in embedded webviews (Codex, VS Code), so the popup is plain DOM.
 // Portaled to <body> with fixed positioning because the tools panel scrolls
 // and the collapsible sections clip overflow.
-export function Select({
+export function Dropdown({
   label,
-  value,
-  options,
+  trigger,
   disabled,
-  onChange,
   className,
+  multiple,
+  closeOnSelect,
+  children,
 }: {
   label: string;
-  value: string;
-  options: Array<{ value: string; label: string }>;
+  trigger: ReactNode;
   disabled?: boolean;
-  onChange: (next: string) => void;
   className?: string;
+  multiple?: boolean;
+  closeOnSelect?: boolean;
+  children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -29,7 +37,12 @@ export function Select({
   const place = () => {
     const rect = triggerRef.current?.getBoundingClientRect();
     if (!rect) return;
-    setPos({ top: rect.bottom + 4, left: rect.left, minWidth: rect.width });
+    const next = { top: rect.bottom + 4, left: rect.left, minWidth: rect.width };
+    setPos((prev) =>
+      prev && prev.top === next.top && prev.left === next.left && prev.minWidth === next.minWidth
+        ? prev
+        : next
+    );
   };
 
   useLayoutEffect(() => {
@@ -55,6 +68,10 @@ export function Select({
         : Math.max(margin, window.innerHeight - popup.offsetHeight - margin);
     if (top !== pos.top || left !== pos.left) setPos({ ...pos, top, left });
   }, [open, pos]);
+
+  useEffect(() => {
+    if (disabled) setOpen(false);
+  }, [disabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -90,12 +107,14 @@ export function Select({
       return;
     }
     if (!pos || focusedThisOpen.current) return;
-    const items = popupRef.current?.querySelectorAll<HTMLButtonElement>("[role=option]");
-    if (!items?.length) return;
+    const items = [...(popupRef.current?.querySelectorAll<HTMLButtonElement>("[role=option]") ?? [])];
+    if (!items.length) return;
     focusedThisOpen.current = true;
-    const idx = options.findIndex((o) => o.value === value);
-    items[Math.max(idx, 0)]?.focus();
-  }, [open, pos, options, value]);
+    const selected = multiple
+      ? -1
+      : items.findIndex((item) => item.getAttribute("aria-selected") === "true");
+    items[Math.max(selected, 0)]?.focus();
+  }, [open, pos, multiple]);
 
   const onPopupKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     const items = [...(popupRef.current?.querySelectorAll<HTMLButtonElement>("[role=option]") ?? [])];
@@ -106,12 +125,12 @@ export function Select({
       items[next]?.focus();
     } else if (e.key === "Escape") {
       e.preventDefault();
+      e.stopPropagation();
       setOpen(false);
       triggerRef.current?.focus();
     }
   };
 
-  const selected = options.find((o) => o.value === value);
 
   return (
     <>
@@ -125,7 +144,7 @@ export function Select({
         onClick={() => setOpen((o) => !o)}
         className={`text-left font-[inherit] cursor-pointer disabled:cursor-default ${className ?? ""}`}
       >
-        <span className="block truncate">{selected?.label ?? value}</span>
+        <span className="block truncate">{trigger}</span>
       </button>
       {open &&
         pos &&
@@ -134,29 +153,91 @@ export function Select({
             ref={popupRef}
             role="listbox"
             aria-label={label}
+            aria-multiselectable={multiple}
             onKeyDown={onPopupKeyDown}
+            onBlur={(e) => {
+              // Safari leaves relatedTarget null on a click, which is not a move out.
+              const next = e.relatedTarget;
+              if (!(next instanceof Node)) return;
+              if (popupRef.current?.contains(next) || triggerRef.current?.contains(next)) return;
+              setOpen(false);
+            }}
+            onClick={(e) => {
+              if (!closeOnSelect) return;
+              if (!(e.target as Element).closest("[role=option]")) return;
+              setOpen(false);
+              triggerRef.current?.focus();
+            }}
             style={{ top: pos.top, left: pos.left, minWidth: pos.minWidth }}
             className="fixed max-h-90 overflow-y-auto bg-panel border border-white/12 rounded-[10px] p-1 shadow-[0_8px_24px_rgba(0,0,0,0.5)] text-[12px] text-white/90 z-50"
           >
-            {options.map((o) => (
-              <button
-                key={o.value}
-                type="button"
-                role="option"
-                aria-selected={o.value === value}
-                onClick={() => {
-                  onChange(o.value);
-                  setOpen(false);
-                  triggerRef.current?.focus();
-                }}
-                className={`block w-full text-left font-[inherit] px-2.5 py-1 rounded-md cursor-pointer whitespace-nowrap transition-colors hover:bg-white/8 focus-visible:bg-white/8 outline-none ${o.value === value ? "text-accent" : ""}`}
-              >
-                {o.label}
-              </button>
-            ))}
+            {children}
           </div>,
           document.body,
         )}
     </>
+  );
+}
+
+export function DropdownOption({
+  selected,
+  onClick,
+  children,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={selected}
+      onClick={(e) => {
+        e.currentTarget.focus();
+        onClick();
+      }}
+      className={`block w-full text-left font-[inherit] px-2.5 py-1 rounded-md cursor-pointer whitespace-nowrap transition-colors hover:bg-white/8 focus-visible:bg-white/8 outline-none ${selected ? "text-accent" : ""}`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// Custom <select> replacement in the device-picker dropdown style.
+export function Select({
+  label,
+  value,
+  options,
+  disabled,
+  onChange,
+  className,
+}: {
+  label: string;
+  value: string;
+  options: Array<{ value: string; label: string }>;
+  disabled?: boolean;
+  onChange: (next: string) => void;
+  className?: string;
+}) {
+  const selected = options.find((o) => o.value === value);
+  return (
+    <Dropdown
+      label={label}
+      trigger={selected?.label ?? value}
+      disabled={disabled}
+      className={className}
+      closeOnSelect
+    >
+      {options.map((o) => (
+        <DropdownOption
+          key={o.value}
+          selected={o.value === value}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </DropdownOption>
+      ))}
+    </Dropdown>
   );
 }

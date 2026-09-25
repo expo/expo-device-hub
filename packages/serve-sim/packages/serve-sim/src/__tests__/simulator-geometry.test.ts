@@ -5,7 +5,7 @@ import {
   simulatorAspectRatio,
   simulatorMaxWidth,
   simulatorResizeCornerArc,
-} from "../client/simulator/deviceFrames";
+} from "../client/simulator/device-frames";
 import {
   displayStreamConfig,
   HID_EDGE_BOTTOM,

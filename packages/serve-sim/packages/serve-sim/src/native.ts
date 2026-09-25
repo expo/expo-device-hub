@@ -77,6 +77,7 @@ interface NativeAddon {
   ) => SimCaptureHandle;
   axDescribe(udid: string): Promise<string>;
   axFrontmost(udid: string): Promise<string>;
+  axTypeKeyboardCharacter(udid: string, character: string): Promise<boolean>;
   setHardwareKeyboard(udid: string, enabled: boolean): Promise<boolean>;
 }
 
@@ -170,10 +171,15 @@ function load(): NativeAddon {
  */
 export class NativeHid {
   private readonly handle: SimHIDHandle;
-  private inputUnavailable = false;
+  private setupFailed = false;
 
   constructor(udid: string) {
     this.handle = new (load().SimHID)(udid);
+  }
+
+  /** A failed native setup stays unavailable until this session is recreated. */
+  get inputUnavailable(): boolean {
+    return this.setupFailed;
   }
 
   // The N-API bindings throw synchronously when a JS value can't be coerced to
@@ -204,7 +210,7 @@ export class NativeHid {
     } catch (err) {
       // Native setup is cached for this handle; a failed setup cannot recover
       // until a new session. Keep capture running without calling partial HID state.
-      this.inputUnavailable = true;
+      this.setupFailed = true;
       console.error("[hid] Input setup failed; streaming will continue without input:", err instanceof Error ? err.message : err);
     }
   }
@@ -380,6 +386,10 @@ export function axDescribeAsync(udid: string): Promise<string> {
 /** Async frontmost-app probe — JSON string `{ bundleId, pid }` for the visible app. */
 export function axFrontmostAsync(udid: string): Promise<string> {
   return load().axFrontmost(udid);
+}
+
+export function axTypeKeyboardCharacterAsync(udid: string, character: string): Promise<boolean> {
+  return load().axTypeKeyboardCharacter(udid, character);
 }
 
 /**

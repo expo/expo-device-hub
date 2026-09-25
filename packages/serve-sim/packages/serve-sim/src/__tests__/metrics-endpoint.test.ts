@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
 import { join } from "path";
@@ -18,6 +18,7 @@ const CLI_PATH = join(import.meta.dir, "../../src/index.ts");
 
 const bootedUdid = e2eDevice();
 const describeOrSkip = bootedUdid ? describe : describe.skip;
+requireE2E("metrics-endpoint", Boolean(bootedUdid));
 
 describeOrSkip("/metrics endpoint (real simulator)", () => {
   let baseUrl: string;

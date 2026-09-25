@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { simMiddleware } from "../middleware";
+import { useTempStateDir } from "./helpers";
 
 async function request(path: string): Promise<Response> {
   const middleware = simMiddleware({ basePath: "/", proxyHelpers: true });
@@ -9,6 +10,12 @@ async function request(path: string): Promise<Response> {
 }
 
 describe("readiness endpoints", () => {
+  let tempState: ReturnType<typeof useTempStateDir>;
+  beforeAll(() => {
+    tempState = useTempStateDir();
+  });
+  afterAll(() => tempState.restore());
+
   test("reports process health without a simulator session", async () => {
     const response = await request("/healthz");
     expect(response.status).toBe(200);

@@ -38,6 +38,11 @@ export function clearRegisteredCapabilities(): void {
   registry.clear();
 }
 
+/**
+ * Only caller is `setCapabilityEnabled`, which is kept for open PRs #148,
+ * #102, and #53. Remove the tag when one of them lands.
+ * @public
+ */
 export function capabilityDefinition(name: string): CapabilityDefinition {
   const definition = registry.get(name);
   if (!definition) {

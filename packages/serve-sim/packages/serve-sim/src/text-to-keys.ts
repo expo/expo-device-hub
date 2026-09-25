@@ -56,7 +56,7 @@ function buildMap(): Record<string, KeySpec> {
 
 export const US_KEYBOARD_MAP: Readonly<Record<string, KeySpec>> = buildMap();
 
-export type KeyEvent = { type: "down" | "up"; usage: number };
+export type KeyEvent = { type: "down" | "up"; usage: number; key?: string; shifted?: boolean };
 
 export class UnsupportedCharacterError extends Error {
   constructor(public readonly char: string) {
@@ -78,10 +78,34 @@ export async function sendKeyEventsToWs(
       token ? { headers: { Authorization: `Bearer ${token}` } } : undefined,
     );
     ws.binaryType = "arraybuffer";
+    let acknowledged = false;
+    const timeout = setTimeout(() => {
+      reject(new Error("Simulator keyboard input did not finish. Retry with a shorter string."));
+      ws.close();
+    }, Math.max(30_000, events.length * 1_000));
+
+    ws.onclose = ({ code, reason }) => {
+      clearTimeout(timeout);
+      if (acknowledged) resolve();
+      else reject(new Error(`Keyboard input interrupted (${code}${reason ? `: ${reason}` : ""}). Some text may not have been delivered.`));
+    };
+
+    ws.onmessage = ({ data }) => {
+      const response = Buffer.from(data as ArrayBuffer);
+      if (response[0] !== 0x91) return;
+      if (response[1] === 1) {
+        acknowledged = true;
+        ws.close(1000);
+      } else {
+        reject(new Error("Simulator keyboard input failed. Check the preview logs and retry."));
+        ws.close();
+      }
+    };
 
     ws.onopen = async () => {
       try {
         for (const ev of events) {
+          if (ws.readyState !== WebSocket.OPEN) return;
           const json = new TextEncoder().encode(JSON.stringify(ev));
           const msg = new Uint8Array(1 + json.length);
           msg[0] = 0x06; // WS_MSG_KEY
@@ -91,7 +115,7 @@ export async function sendKeyEventsToWs(
             await new Promise((r) => setTimeout(r, perEventDelayMs));
           }
         }
-        setTimeout(() => { ws.close(); resolve(); }, 50);
+        if (ws.readyState === WebSocket.OPEN) ws.send(Uint8Array.of(0x11));
       } catch (err) {
         ws.close();
         reject(err);
@@ -112,7 +136,11 @@ export function textToKeyEvents(text: string): KeyEvent[] {
     const spec = US_KEYBOARD_MAP[ch];
     if (!spec) throw new UnsupportedCharacterError(ch);
     if (spec.shift) events.push({ type: "down", usage: LEFT_SHIFT });
-    events.push({ type: "down", usage: spec.usage });
+    events.push({
+      type: "down",
+      usage: spec.usage,
+      ...(spec.shift ? { key: ch, shifted: true } : {}),
+    });
     events.push({ type: "up", usage: spec.usage });
     if (spec.shift) events.push({ type: "up", usage: LEFT_SHIFT });
   }
@@ -130,7 +158,11 @@ export function textToKeyEventsLenient(text: string): { events: KeyEvent[]; skip
       continue;
     }
     if (spec.shift) events.push({ type: "down", usage: LEFT_SHIFT });
-    events.push({ type: "down", usage: spec.usage });
+    events.push({
+      type: "down",
+      usage: spec.usage,
+      ...(spec.shift ? { key: ch, shifted: true } : {}),
+    });
     events.push({ type: "up", usage: spec.usage });
     if (spec.shift) events.push({ type: "up", usage: LEFT_SHIFT });
   }

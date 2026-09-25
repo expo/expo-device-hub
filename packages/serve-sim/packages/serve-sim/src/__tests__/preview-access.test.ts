@@ -1,3 +1,5 @@
+import { crashRuntime } from "../crash/runtime";
+import { logBufferCache } from "../log-buffer";
 import { describe, expect, test } from "bun:test";
 import type { IncomingMessage } from "http";
 import type { Socket } from "net";
@@ -117,6 +119,8 @@ describe("the protected surface", () => {
     "/grid/api/shutdown",
     "/metrics",
     "/logs",
+    "/crashes",
+    "/crashes/INC-1",
     "/ax",
     "/appstate",
     "/devtools",
@@ -163,12 +167,12 @@ describe("websocket upgrades with --require-token", () => {
   }
 
   function fakeWebSocket() {
-    const calls = { closed: false, listeners: 0 };
+    const calls = { closed: false, events: [] as string[] };
     const ws: UpgradeHandlerWebSocket = {
       OPEN: 1,
       readyState: 1,
-      on: () => {
-        calls.listeners += 1;
+      on: (event: string) => {
+        calls.events.push(event);
       },
       send: () => {},
       close: () => {
@@ -197,7 +201,8 @@ describe("websocket upgrades with --require-token", () => {
 
     expect(claimed).toBe(true);
     expect(calls.closed).toBe(true);
-    expect(calls.listeners).toBe(0);
+    expect(calls.events).not.toContain("message");
+    expect(calls.events).toContain("error");
   });
 
   test("wires the exec-ws socket when it carries the cookie", () => {
@@ -212,7 +217,7 @@ describe("websocket upgrades with --require-token", () => {
     );
 
     expect(calls.closed).toBe(false);
-    expect(calls.listeners).toBeGreaterThan(0);
+    expect(calls.events).toContain("message");
   });
 
   test("leaves upgrades open when the flag is off", () => {
@@ -222,6 +227,29 @@ describe("websocket upgrades with --require-token", () => {
     handler.handleWebSocket?.(new Request(`${ORIGIN}/exec-ws`), ws);
 
     expect(calls.closed).toBe(false);
-    expect(calls.listeners).toBeGreaterThan(0);
+    expect(calls.events).toContain("message");
   });
+});
+
+
+test("rejected log and crash requests start neither the watcher nor the log child", async () => {
+  const start = crashRuntime.start;
+  const ensure = logBufferCache.ensure;
+  let watcherStarts = 0;
+  let logStarts = 0;
+  crashRuntime.start = async () => { watcherStarts += 1; };
+  logBufferCache.ensure = () => { logStarts += 1; throw new Error("Unexpected log startup"); };
+  try {
+    const request = gated(true);
+    for (const path of ["/logs?follow=1&snapshot=1", "/logs", "/crashes?tail=1", "/crashes/INC-1"]) {
+      for (const accept of ["application/json", "text/event-stream"]) {
+        expect((await request(path, { headers: { accept } })).status).toBe(401);
+      }
+    }
+    expect(watcherStarts).toBe(0);
+    expect(logStarts).toBe(0);
+  } finally {
+    crashRuntime.start = start;
+    logBufferCache.ensure = ensure;
+  }
 });

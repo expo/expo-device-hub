@@ -15,7 +15,7 @@ import {
   rawPointForDisplayPoint,
   streamDisplayGeometry,
 } from "./orientation.js";
-import { digitalCrownDeltaFromWheel } from "./digitalCrown.js";
+import { digitalCrownDeltaFromWheel } from "./digital-crown.js";
 import { wheelDeltaToPixels } from "./scroll-wheel.js";
 import {
   resolveScreenConfigUpdate,
@@ -1026,6 +1026,7 @@ export function SimulatorView({
           }}
           onMouseDown={(e) => {
             e.preventDefault();
+            window.focus();
             const rect = getInputRect();
             if (!rect) return;
             const x = (e.clientX - rect.left) / rect.width;
@@ -1307,7 +1308,7 @@ export function SimulatorView({
           </>
         )}
         {!connected && !error && (
-          <div style={{...overlayStyle, ...(imageStyle || {})}}>
+          <div style={{...overlayStyle, ...imageStyle}}>
             <span style={{ color: "#888", fontSize: 14 }}>Connecting...</span>
           </div>
         )}

@@ -1,7 +1,8 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
+import { connect } from "net";
 import { join } from "path";
 import WebSocket from "ws";
 
@@ -29,6 +30,7 @@ async function waitFor(check: () => Promise<boolean>, budgetMs: number): Promise
 
 const udid = e2eDevice();
 const describeIfSim = udid && existsSync(CLI) ? describe : describe.skip;
+requireE2E("require-token.e2e", Boolean(udid && existsSync(CLI)));
 
 describeIfSim("serve-sim --require-token (built CLI)", () => {
   let server: ChildProcess | null = null;
@@ -96,7 +98,15 @@ describeIfSim("serve-sim --require-token (built CLI)", () => {
   });
 
   test("refuses every gated surface without the token", async () => {
-    for (const path of ["/", "/api", "/metrics", `/helper/${udid}/camera/status`]) {
+    for (const path of [
+      "/",
+      "/api",
+      "/metrics",
+      "/logs",
+      "/crashes",
+      "/crashes/INC-1",
+      `/helper/${udid}/camera/status`,
+    ]) {
       const response = await fetch(`${baseUrl}${path}`, { redirect: "manual" });
       expect(response.status).toBe(401);
     }
@@ -298,4 +308,28 @@ describeIfSim("serve-sim --require-token (built CLI)", () => {
     });
     expect(response.status).toBe(404);
   });
+
+  test("survives a client that keeps sending after its control socket is refused", async () => {
+    const { port } = new URL(baseUrl);
+    await new Promise<void>((resolve) => {
+      const socket = connect(Number(port), "127.0.0.1", () => {
+        socket.write(
+          `GET /exec-ws HTTP/1.1\r\nHost: 127.0.0.1:${port}\r\nUpgrade: websocket\r\n` +
+            "Connection: Upgrade\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n" +
+            "Sec-WebSocket-Version: 13\r\n\r\n",
+        );
+      });
+      socket.on("data", (chunk) => {
+        if (chunk.toString().startsWith("HTTP/1.1 101")) socket.write(Buffer.from([0x81, 0x02, 0x68, 0x69]));
+      });
+      socket.on("error", () => {});
+      setTimeout(() => {
+        socket.destroy();
+        resolve();
+      }, 1_500);
+    });
+
+    expect(server?.exitCode).toBeNull();
+    expect((await fetch(`${baseUrl}/healthz`)).status).toBe(200);
+  }, 10_000);
 });

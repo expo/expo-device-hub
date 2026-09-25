@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, type CSSProperties } from "react";
 import type { StreamAPI, StreamConfig } from "../types.js";
-import { SimulatorView } from "./SimulatorView.js";
-import { useSimStream } from "./useSimStream.js";
+import { SimulatorView } from "./simulator-view.js";
+import { useSimStream } from "./use-sim-stream.js";
 
 export interface SimulatorStreamProps {
   /** Gateway exec function for running serve-sim CLI commands. */

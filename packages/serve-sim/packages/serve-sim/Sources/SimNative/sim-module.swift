@@ -313,9 +313,9 @@ private func u32(_ v: Int) -> UInt32 {
 
 /// Run a blocking accessibility query off the JS event loop (on a background
 /// queue) and resolve with its result, mirroring the old napi_async_work path.
-private func axQuery(
-    _ udid: String, _ body: @escaping @Sendable (String) throws -> String
-) async throws -> String {
+private func axQuery<T: Sendable>(
+    _ udid: String, _ body: @escaping @Sendable (String) throws -> T
+) async throws -> T {
     try await withCheckedThrowingContinuation { cont in
         DispatchQueue.global(qos: .userInitiated).async {
             do {
@@ -345,6 +345,12 @@ private func axQuery(
             let info = try AccessibilityBridge.shared.frontmostApp(udid: udid)
             let data = try JSONSerialization.data(withJSONObject: info)
             return String(decoding: data, as: UTF8.self)
+        }
+    },
+    "axTypeKeyboardCharacter": try NodeFunction { (udid: String, character: String) async throws -> Bool in
+        try await axQuery(udid) { udid in
+            SimFrameworks.load()
+            return try AccessibilityBridge.shared.typeKeyboardCharacter(udid: udid, character: character)
         }
     },
     // setHardwareKeyboard(udid, enabled): Promise<boolean> — connect/disconnect

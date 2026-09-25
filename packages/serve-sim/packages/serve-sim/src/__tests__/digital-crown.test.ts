@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { digitalCrownDeltaFromWheel } from "../client/simulator/digitalCrown";
+import { digitalCrownDeltaFromWheel } from "../client/simulator/digital-crown";
 
 describe("Digital Crown wheel mapping", () => {
   test("preserves browser wheel direction", () => {

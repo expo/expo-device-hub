@@ -8,7 +8,7 @@ const noop = () => {};
 
 const defaultProps: ComponentProps<typeof ToolsPanel> = {
   open: false,
-  peerConnection: null,
+  peer: { peerConnection: null, subscribeStats: () => () => {} },
   onClose: noop,
   udid: "one",
   deviceRuntime: "iOS-27-0",
@@ -32,7 +32,6 @@ const defaultProps: ComponentProps<typeof ToolsPanel> = {
   streamSettingsPending: false,
   width: 320,
 };
-
 function renderPanel(props: Partial<ComponentProps<typeof ToolsPanel>> = {}) {
   return renderToStaticMarkup(
     <AxSelectionContext value={{ highlightedKey: null, selectedKey: null, setHighlightedKey: noop, setSelectedKey: noop }}>

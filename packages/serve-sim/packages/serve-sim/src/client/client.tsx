@@ -26,7 +26,7 @@ import {
   type StreamConfig,
 } from "./simulator";
 
-import { Globe, Maximize2, PanelRight, Upload } from "lucide-react";
+import { Globe, Maximize2, PanelRight, ScrollText, Upload } from "lucide-react";
 import { ReloadIcon } from "./icons";
 import { AxDomOverlay } from "./components/ax-dom-overlay";
 import { AxStateProvider } from "./components/ax-state-provider";
@@ -35,6 +35,8 @@ import { DeviceSidebarToggle } from "./components/device-sidebar-toggle";
 import { DevicePlaceholder } from "./components/device-placeholder";
 import { DuoModelView } from "./components/duo-model-view";
 import { DuoPanelStreams, type DuoPanelPeer } from "./components/duo-panel-streams";
+import { useLadderRestart } from "./hooks/use-ladder-restart";
+import type { StreamPanelPeer } from "./components/stream-settings-tool";
 import { duoIntendedScreen, duoPhysicalPoseChanged } from "./simulator/duo-pose";
 import { DUO_FACE_DOWN_HELD, duoFaceDownFraming, duoInitialView, duoPresetView, duoRotateView, type DuoFaceDownFraming, type DuoView } from "./simulator/duo-view";
 import { rotationDegreesForOrientation } from "./simulator/orientation";
@@ -48,9 +50,10 @@ import { DeviceKitChrome, deviceKitChromeForScreen, deviceKitChromeGeometry, dev
 import { createPacedKeySender } from "./utils/paced-key-sender";
 import { GridPanel } from "./components/grid-panel";
 import { IconButton } from "./components/icon-button";
+import { LogsDrawer } from "./components/logs-drawer";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
-import { ServeSimToaster } from "./components/app-toasts";
+import { ServeSimToaster, showInputSocketError } from "./components/app-toasts";
 import { ShareSessionButton } from "./components/share-session-button";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
 import { StreamStatusPill } from "./components/stream-status-pill";
@@ -64,7 +67,7 @@ import { useMediaDrop } from "./hooks/use-media-drop";
 import { useMjpegStream } from "./hooks/use-mjpeg-stream";
 import { useAvccStream } from "./hooks/use-avcc-stream";
 import { useWebRtcStream } from "./hooks/use-webrtc-stream";
-import { useResizableWidth } from "./hooks/use-resizable-width";
+import { useResizableHeight, useResizableWidth } from "./hooks/use-resizable-width";
 import { useScreenshotToast } from "./hooks/use-screenshot-toast";
 import { useSimulatorResize } from "./hooks/use-simulator-resize";
 import { useFlipLayout } from "./hooks/use-flip-layout";
@@ -81,14 +84,16 @@ import {
 import { fileExtension } from "./utils/drop";
 import { openHostEventStream, runHostAction } from "./utils/exec";
 import { hidUsageForCode } from "./utils/hid";
-import { keydownForward } from "./utils/mobile-keyboard";
+import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
 import {
   DEVICE_SIDEBAR_WIDTH,
   DEVTOOLS_PANEL_WIDTH,
+  LOGS_DRAWER_HEIGHT,
   PANEL_WIDTH,
 } from "./utils/panel-widths";
 import { proxyPreviewConfigForBrowser } from "./utils/preview-config";
 import { mjpegStreamUrlFrom, simEndpoint, streamConfigFrom, webrtcCloseUrlFrom, webrtcOfferUrlFrom, webrtcStatsUrlFrom } from "./utils/sim-endpoint";
+import { startLogsPoll } from "./utils/logs-poll";
 import { shouldStreamSimulatorLogs } from "./utils/simulator-logs";
 import { useBlockPageZoom } from "./hooks/use-block-page-zoom";
 import { useCoarsePointer } from "./hooks/use-coarse-pointer";
@@ -127,6 +132,17 @@ import {
 const DUO_STAGE_DEFAULT_WIDTH = 580;
 
 type PreviewConfig = NonNullable<Window["__SIM_PREVIEW__"]>;
+
+function isLogsShortcut(e: KeyboardEvent): boolean {
+  return e.code === "Backquote" && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey;
+}
+
+function isTypingTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  return target.isContentEditable;
+}
 
 function previewConfigKey(config: PreviewConfig | null): string {
   return config
@@ -171,6 +187,17 @@ function App() {
     const id = setTimeout(() => setChromeGone(true), SIMULATOR_RESIZE_PRESENTATION_TRANSITION_MS);
     return () => clearTimeout(id);
   }, [presentation]);
+  const [logsOpen, setLogsOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!isLogsShortcut(e)) return;
+      if (isTypingTarget(e.target)) return;
+      e.preventDefault();
+      setLogsOpen((open) => !open);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   // Open the sidebar by default when the viewport has room for it beside the
   // simulator; narrow windows keep it collapsed so the device isn't squeezed.
   const [gridOpen, setGridOpen] = useState(() => {
@@ -384,12 +411,8 @@ function App() {
     return () => es.close();
   }, [selectedUdid, selectedHasHelper]);
 
-  // Stream simctl logs into the browser console with colors + grouping. The
-  // full simulator log is too expensive to send through remote tunnels by
-  // default; remote previews can opt in with `?logs=1`.
   useEffect(() => {
     if (!config?.logsEndpoint || !shouldStreamSimulatorLogs(window.location)) return;
-    const es = openHostEventStream(config.logsEndpoint);
 
     const procColors = new Map<string, string>();
     const palette = [
@@ -410,49 +433,50 @@ function App() {
 
     let lastProc = "";
     let groupOpen = false;
+    let since = 0;
 
-    es.onmessage = (event) => {
-      try {
-        const entry = JSON.parse(event.data);
-        const proc = entry.processImagePath?.split("/").pop() ?? entry.senderImagePath?.split("/").pop() ?? "";
-        const subsystem = entry.subsystem ?? "";
-        const category = entry.category ?? "";
-        const msg = entry.eventMessage ?? "";
-        if (!msg) return;
+    const stop = startLogsPoll(config.logsEndpoint, {
+      getSince: () => since,
+      setSince: (seq) => {
+        since = seq;
+      },
+      onBatch: (batch) => {
+        for (const { fields } of batch) {
+          const { process: proc, subsystem, category, message: msg, level } = fields;
 
-        if (proc !== lastProc) {
-          if (groupOpen) console.groupEnd();
-          const color = colorFor(proc);
-          console.groupCollapsed(
-            `%c${proc}${subsystem ? ` %c${subsystem}${category ? ":" + category : ""}` : ""}`,
-            `color:${color};font-weight:bold`,
-            ...(subsystem ? ["color:#888;font-weight:normal"] : []),
-          );
-          groupOpen = true;
-          lastProc = proc;
+          if (proc !== lastProc) {
+            if (groupOpen) console.groupEnd();
+            const color = colorFor(proc);
+            console.groupCollapsed(
+              `%c${proc}${subsystem ? ` %c${subsystem}${category ? ":" + category : ""}` : ""}`,
+              `color:${color};font-weight:bold`,
+              ...(subsystem ? ["color:#888;font-weight:normal"] : []),
+            );
+            groupOpen = true;
+            lastProc = proc;
+          }
+
+          const tag = subsystem && proc === lastProc
+            ? `%c${category || subsystem}%c `
+            : "";
+          const tagStyles = tag
+            ? ["color:#888;font-style:italic", "color:inherit"]
+            : [];
+
+          if (level === "fault" || level === "error") {
+            console.log(`${tag}%c${msg}`, ...tagStyles, "color:#ff5555");
+          } else if (level === "debug") {
+            console.log(`${tag}%c${msg}`, ...tagStyles, "color:#6272a4");
+          } else {
+            console.log(`${tag}%c${msg}`, ...tagStyles, "color:inherit");
+          }
         }
-
-        const level = (entry.messageType ?? "").toLowerCase();
-        const tag = subsystem && proc === lastProc
-          ? `%c${category || subsystem}%c `
-          : "";
-        const tagStyles = tag
-          ? ["color:#888;font-style:italic", "color:inherit"]
-          : [];
-
-        if (level === "fault" || level === "error") {
-          console.log(`${tag}%c${msg}`, ...tagStyles, "color:#ff5555");
-        } else if (level === "debug") {
-          console.log(`${tag}%c${msg}`, ...tagStyles, "color:#6272a4");
-        } else {
-          console.log(`${tag}%c${msg}`, ...tagStyles, "color:inherit");
-        }
-      } catch {}
-    };
+      },
+    });
 
     return () => {
       if (groupOpen) console.groupEnd();
-      es.close();
+      stop();
     };
   }, [config?.logsEndpoint]);
 
@@ -481,6 +505,8 @@ function App() {
         setAxOverlayEnabled={setAxOverlayEnabled}
         devtoolsOpen={devtoolsOpen}
         setDevtoolsOpen={setDevtoolsOpen}
+        logsOpen={logsOpen}
+        setLogsOpen={setLogsOpen}
         gridOpen={gridOpen}
         setGridOpen={setGridOpen}
         gridPanelWidth={gridPanelWidth}
@@ -583,6 +609,8 @@ interface AppWithConfigProps {
   setAxOverlayEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   devtoolsOpen: boolean;
   setDevtoolsOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  logsOpen: boolean;
+  setLogsOpen: React.Dispatch<React.SetStateAction<boolean>>;
   gridOpen: boolean;
   setGridOpen: React.Dispatch<React.SetStateAction<boolean>>;
   gridPanelWidth: number;
@@ -607,6 +635,8 @@ function AppWithConfig({
   setAxOverlayEnabled,
   devtoolsOpen,
   setDevtoolsOpen,
+  logsOpen,
+  setLogsOpen,
   gridOpen,
   setGridOpen,
   gridPanelWidth,
@@ -714,7 +744,34 @@ function AppWithConfig({
     enabled: useWebRtcVideo && !useDuoPanelFeeds,
     codec: effectiveWebRtcCodec,
     iceServers: streamSettings.iceServers,
+    statsUrl: webrtcStatsUrlFrom(config),
+    transportLocked: streamTransportLocked,
   });
+  const { retry: retryWebRtcStream, markFrameDecoded: markWebRtcFrameDecoded } = webrtc;
+  /// In Duo the stream above is disabled and each screen runs its own, so a restart has to go
+  /// to whichever one is actually live.
+  const restartWebRtcStream = useCallback(() => {
+    setWebRtcCodecOverride(null);
+    (useDuoPanelFeeds ? duoPanelPeer?.retry : retryWebRtcStream)?.();
+  }, [duoPanelPeer, retryWebRtcStream, useDuoPanelFeeds]);
+  const ladderRestart = useLadderRestart(restartWebRtcStream);
+  /// The panel reads whichever stream is on screen: in Duo that is a screen's own peer, not
+  /// the disabled one above.
+  const streamPanelPeer: StreamPanelPeer = useDuoPanelFeeds
+    ? {
+        peerConnection: duoPanelPeer?.peerConnection ?? null,
+        subscribeStats: duoPanelPeer?.subscribeStats,
+        statsUrl: duoPanelPeer?.statsUrl,
+        sessionId: duoPanelPeer?.sessionId ?? null,
+        onResetCodec: restartWebRtcStream,
+      }
+    : {
+        peerConnection: webrtc.peerConnection,
+        subscribeStats: webrtc.subscribeStats,
+        statsUrl: webrtcStatsUrlFrom(config),
+        sessionId: webrtc.sessionId,
+        onResetCodec: restartWebRtcStream,
+      };
   const [avccFallback, dispatchAvccFallback] = useReducer(
     avccFallbackReducer,
     initialAvccFallback,
@@ -739,7 +796,10 @@ function AppWithConfig({
     setStreaming(false);
     dispatchAvccFallback("reset");
     setWebRtcCodecOverride(null);
+    // The session a pending restart was scheduled for is being replaced.
+    ladderRestart.cancel();
   }, [
+    ladderRestart,
     config.streamUrl,
     setStreaming,
     streamSettings.transport,
@@ -749,17 +809,35 @@ function AppWithConfig({
   const handleWebRtcFailure = useCallback((failure: WebRtcStreamFailure) => {
     if (!wantsWebRtcVideo || handledWebRtcFailureRef.current === failure.sessionId) return;
     handledWebRtcFailureRef.current = failure.sessionId;
+    ladderRestart.noteFailure(performance.now());
     const decision = webRtcFallbackDecision(configuredWebRtcCodec, effectiveWebRtcCodec, failure);
     if (!decision) return;
     if (decision.type === "switch-to-http") {
-      if (!streamTransportLocked) updateStreamPlayback({ transport: "http" });
+      if (!streamTransportLocked) {
+        updateStreamPlayback({ transport: "http" });
+        return;
+      }
+      // A locked session has nowhere to fall back to, so start over rather than stay dead.
+      // Only codec exhaustion qualifies; a permanent fault never resolves.
+      if (failure.kind === "codec") ladderRestart.schedule();
       return;
     }
     setWebRtcCodecOverride(decision.codec);
-  }, [configuredWebRtcCodec, effectiveWebRtcCodec, streamTransportLocked, updateStreamPlayback, wantsWebRtcVideo]);
+  }, [
+    configuredWebRtcCodec,
+    effectiveWebRtcCodec,
+    ladderRestart,
+    streamTransportLocked,
+    updateStreamPlayback,
+    wantsWebRtcVideo,
+  ]);
   useEffect(() => {
     if (webrtc.failure) handleWebRtcFailure(webrtc.failure);
   }, [webrtc.failure, handleWebRtcFailure]);
+  // A restart armed for the old failure would tear down the stream that recovered.
+  useEffect(() => {
+    if (!wantsWebRtcVideo || streaming) ladderRestart.cancel();
+  }, [ladderRestart, streaming, wantsWebRtcVideo]);
   const onPanelAvccError = useCallback(() => dispatchAvccFallback("error"), []);
   const lockedWebRtcError =
     streamTransportLocked && webrtc.failure && !webrtc.error
@@ -925,7 +1003,8 @@ function AppWithConfig({
           );
         } catch {}
       };
-      ws.onclose = () => {
+      ws.onclose = (event) => {
+        if (!stopped && event.code === 1013) showInputSocketError(event.reason || "The server is busy. Try again shortly.");
         if (wsRef.current === ws) wsRef.current = null;
         if (!stopped) {
           setPhysicalPose(undefined);
@@ -965,7 +1044,7 @@ function AppWithConfig({
   }, []);
 
   const keySender = useMemo(
-    () => createPacedKeySender((e) => sendWs(0x06, { type: e.type, usage: e.usage })),
+    () => createPacedKeySender((e) => sendWs(0x06, e)),
     [sendWs],
   );
   useEffect(() => () => keySender.dispose(), [keySender]);
@@ -1115,7 +1194,7 @@ function AppWithConfig({
     setLiveStreamConfig((prev) =>
       screenConfigsEqual(prev, confirmedConfig) ? prev : null,
     );
-  }, [streamConfig, streamConfig?.width, streamConfig?.height, streamConfig?.orientation, streamConfig?.screenId, streamConfig?.hingeAngle, streamConfig?.supportsHingeAngle, streamConfig?.hingePose, streamConfig?.tableMode, streamConfig?.tableModeAvailable]);
+  }, [streamConfig, streamConfig?.width, streamConfig?.height, streamConfig?.orientation, streamConfig?.screenId, streamConfig?.hingeAngle, streamConfig?.supportsHingeAngle, streamConfig?.hingePose, streamConfig?.tableMode, streamConfig?.tableModeAvailable, streamConfig?.inputUnavailable]);
 
   const sendKey = useCallback((type: "down" | "up", usage: number) => {
     sendWs(0x06, { type, usage });
@@ -1160,6 +1239,12 @@ function AppWithConfig({
     420,
     1400,
   );
+  const { height: logsDrawerHeight, onPointerDown: onLogsResize } = useResizableHeight(
+    "serve-sim:logs-drawer-height",
+    LOGS_DRAWER_HEIGHT,
+    140,
+    720,
+  );
   const [viewportWidth, setViewportWidth] = useState(
     () => (typeof window !== "undefined" ? window.innerWidth : 0),
   );
@@ -1184,6 +1269,7 @@ function AppWithConfig({
     };
   }, []);
   useEffect(() => {
+    setCurrentApp(null);
     const es = openHostEventStream(config.appStateEndpoint ?? simEndpoint("appstate"));
     let timer: ReturnType<typeof setTimeout> | null = null;
     es.onmessage = (e) => {
@@ -1374,6 +1460,7 @@ function AppWithConfig({
         sendWs(0x06, { type, usage });
         return;
       }
+      if (isLogsShortcut(e)) return;
       const usage = keydownForward(e.code, {
         simFocused,
         keyboardOpen,
@@ -1382,7 +1469,11 @@ function AppWithConfig({
       if (usage == null) return;
       e.preventDefault();
       pressedKeysRef.current.add(usage);
-      sendWs(0x06, { type, usage });
+      sendWs(0x06, {
+        type,
+        usage,
+        ...(shiftedCharacter(e) !== undefined ? { key: e.key, shifted: true } : {}),
+      });
     };
     const down = (e: KeyboardEvent) => onKey(e, "down");
     const up = (e: KeyboardEvent) => onKey(e, "up");
@@ -1498,7 +1589,7 @@ function AppWithConfig({
       style={{
         height: containerHeight > 0 ? containerHeight : undefined,
         paddingTop: presentation ? presentationInset : undefined,
-        paddingBottom: presentation ? presentationInset : undefined,
+        paddingBottom: presentation ? presentationInset : logsOpen ? logsDrawerHeight : undefined,
         paddingLeft: presentation ? presentationInset : 24 + shiftForLeftPanel,
         paddingRight: presentation ? presentationInset : 24 + shiftForRightPanel,
         transition: resizing || scaling ? "none" : SIMULATOR_RESIZE_PAGE_TRANSITION,
@@ -1557,7 +1648,7 @@ function AppWithConfig({
                 }}
               />
             </span>
-            <StreamStatusPill streaming={streaming} />
+            <StreamStatusPill streaming={streaming} inputUnavailable={streamConfig?.inputUnavailable} />
           </SimulatorToolbar>
         </div>
         )}
@@ -1635,7 +1726,7 @@ function AppWithConfig({
                 onStreamScroll={onStreamScroll}
                 streamMode={useWebRtcVideo ? "webrtc" : useAvccVideo ? "avcc" : "mjpeg"}
                 webRtcStream={webrtc.stream}
-                onWebRtcFrame={webrtc.markFrameDecoded}
+                onWebRtcFrame={markWebRtcFrameDecoded}
                 streamError={useWebRtcVideo ? webrtc.error ?? lockedWebRtcError : null}
                 onAvccError={() => dispatchAvccFallback("error")}
                 onAvccDecodedFrame={() => dispatchAvccFallback("decoded-frame")}
@@ -1680,6 +1771,7 @@ function AppWithConfig({
                   onStreamingChange={setStreaming}
                   onAvccError={onPanelAvccError}
                   onWebRtcFailure={handleWebRtcFailure}
+                  transportLocked={streamTransportLocked}
                   onWebRtcPeerChange={setDuoPanelPeer}
                   onStreamError={setDuoPanelError}
                 /> : streamView}
@@ -1874,6 +1966,14 @@ function AppWithConfig({
         >
           <Globe size={18} strokeWidth={1.75} />
         </IconButton>
+        <IconButton
+          onClick={() => setLogsOpen((o) => !o)}
+          aria-label="Open device logs"
+          aria-pressed={logsOpen}
+          title="Logs"
+        >
+          <ScrollText size={18} strokeWidth={1.75} />
+        </IconButton>
       </div>
 
       <ToolsPanel
@@ -1884,15 +1984,14 @@ function AppWithConfig({
         currentApp={currentApp}
         eventLogEventsEndpoint={config.eventLogEventsEndpoint}
         metricsEndpoint={config.metricsEndpoint}
+        crashesEndpoint={config.crashesEndpoint}
         axOverlayEnabled={axOverlayEnabled}
         onToggleAxOverlay={() => setAxOverlayEnabled((enabled) => !enabled)}
         streamSettings={streamSettings}
         onStreamPlaybackSettingsChange={streamSettingsState.updatePlayback}
         onStreamEncoderSettingsChange={streamSettingsState.updateEncoder}
         activeCodec={useWebRtcVideo ? `webrtc/${effectiveWebRtcCodec}` : useAvccVideo ? "h264" : "mjpeg"}
-        peerConnection={useDuoPanelFeeds ? duoPanelPeer?.peerConnection ?? null : webrtc.peerConnection}
-        webrtcSessionId={useDuoPanelFeeds ? duoPanelPeer?.sessionId ?? null : webrtc.sessionId}
-        webrtcStatsUrl={useDuoPanelFeeds && duoPanelPeer ? duoPanelPeer.statsUrl : webrtcStatsUrlFrom(config)}
+        peer={streamPanelPeer}
         avccSupported={avcc.supported}
         streamSettingsPending={
           streamSettingsState.pending || !streamSettingsState.encoderSettingsAvailable
@@ -1948,6 +2047,18 @@ function AppWithConfig({
       />
       </>
       )}
+      <LogsDrawer
+        open={logsOpen}
+        hidden={presentation}
+        onClose={() => setLogsOpen(false)}
+        udid={config.device}
+        logsEndpoint={config.logsEndpoint}
+        currentAppPid={currentApp?.pid ?? null}
+        height={logsDrawerHeight}
+        leftInset={gridOpen ? gridPanelWidth : 0}
+        rightInset={rightPanelWidthPx > 0 ? 12 + rightPanelWidthPx : 0}
+        onResizePointerDown={onLogsResize}
+      />
     </div>
     </AxStateProvider>
   );

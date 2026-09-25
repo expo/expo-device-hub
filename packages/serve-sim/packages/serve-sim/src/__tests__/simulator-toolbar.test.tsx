@@ -12,7 +12,7 @@ beforeEach(() => {
   actions.length = 0;
 });
 import { renderToStaticMarkup } from "react-dom/server";
-import { SimulatorToolbar, pressHomeAsync } from "../client/simulator/SimulatorToolbar";
+import { SimulatorToolbar, pressHomeAsync } from "../client/simulator/simulator-toolbar";
 
 
 describe("SimulatorToolbar.Title", () => {

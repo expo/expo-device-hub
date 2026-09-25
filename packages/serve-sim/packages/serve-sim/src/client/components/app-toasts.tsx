@@ -1,4 +1,4 @@
-import { Toaster } from "sonner";
+import { Toaster, toast } from "sonner";
 import type { UploadToast } from "../hooks/use-upload-toasts";
 
 export function ServeSimToaster() {
@@ -14,6 +14,14 @@ export function ServeSimToaster() {
       containerAriaLabel="serve-sim notifications"
     />
   );
+}
+
+export function showInputSocketError(reason: string): void {
+  toast.custom(() => (
+    <div role="alert" className="max-w-[320px] rounded-md border border-white/12 bg-panel px-3 py-2 font-mono text-[12px] text-white shadow-lg">
+      Simulator input failed: {reason}
+    </div>
+  ), { id: "simulator-input-error" });
 }
 
 export function UploadToastContent({ toast }: { toast: UploadToast }) {

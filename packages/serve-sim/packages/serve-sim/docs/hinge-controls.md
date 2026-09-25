@@ -287,8 +287,10 @@ failures and never falls back to the disconnected legacy inner service.
 The new path is restricted to profiles with exactly two integrated displays;
 virtual outputs (such as CarPlay) do not count. Nonfoldable devices keep their
 original Indigo target (`0x32`), Down events for both begin and move, and legacy
-rotation, without CoreDevice capability queries. Legacy keyboard
-and button input can coexist with Universal HID touch reports on the Duo.
+rotation, without CoreDevice capability queries. Duo keyboard input uses
+CoreDevice's `KeyboardHIDCapability` (`HIDKeyboard.send(key:state:)`) on both
+displays: legacy keyboard messages are accepted but never reach focused text
+fields. Button input continues to use Indigo.
 
 For independent checks on Xcode 27.1 beta:
 

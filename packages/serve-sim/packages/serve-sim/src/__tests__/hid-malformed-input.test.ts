@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawnSync } from "child_process";
 import { existsSync } from "fs";
@@ -49,6 +49,7 @@ function sendHidFrame(wsUrl: string, tag: number, payload: unknown): Promise<voi
 const bootedUdid = e2eDevice();
 // Needs a booted iOS sim and the built CLI; CI builds serve-sim first.
 const describeIfSim = bootedUdid && existsSync(CLI) ? describe : describe.skip;
+requireE2E("hid-malformed-input", Boolean(bootedUdid && existsSync(CLI)));
 
 describeIfSim(`serve-sim malformed HID input (booted sim ${bootedUdid ?? "<skipped>"})`, () => {
   let wsUrl: string;

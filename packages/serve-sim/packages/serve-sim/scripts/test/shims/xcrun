@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Test shim, put first on PATH by scripts/test/unit.sh.
+# Refuses `simctl` so the isolated run can never list, screenshot, or drive a
+# booted simulator, even one another session left running. Every other xcrun
+# use goes to the real binary.
+if [ "${1:-}" = "simctl" ]; then
+  echo "serve-sim test shim: xcrun simctl is blocked during the isolated run" >&2
+  exit 1
+fi
+exec /usr/bin/xcrun "$@"

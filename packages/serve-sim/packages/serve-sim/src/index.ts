@@ -19,6 +19,8 @@ import {
   type WebRtcIceServer,
 } from "./state";
 import { textToKeyEvents, UnsupportedCharacterError, sendKeyEventsToWs } from "./text-to-keys";
+import { logBufferCache } from "./log-buffer";
+import { crashRuntime } from "./crash/runtime";
 import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
 import { launchAppAsync } from "./launch-app";
@@ -212,6 +214,12 @@ function openHelperSocket(state: ServerState): WebSocket {
     state.wsUrl,
     state.token ? { headers: { Authorization: `Bearer ${state.token}` } } : undefined,
   );
+}
+
+function reportInputSocketClose(ws: WebSocket, reject: (error: Error) => void): void {
+  ws.on("close", (code, reason) => {
+    if (code === 1013) reject(new Error(`Simulator input rejected: ${reason.toString() || "server busy"}. Try again shortly.`));
+  });
 }
 
 function clearState(udid?: string) {
@@ -570,6 +578,8 @@ async function follow(
     shuttingDown = true;
     sessionStopping = true;
     if (!quiet) console.log("\nShutting down...");
+    logBufferCache.stopAll();
+    crashRuntime.stop();
     for (const [udid, child] of children) {
       const pid = child.pid;
       if (pid) stopProcess(pid);
@@ -599,6 +609,8 @@ async function follow(
 
   // Last-resort synchronous cleanup if something else exits the process
   process.on("exit", () => {
+    logBufferCache.stopAll();
+    crashRuntime.stop();
     for (const [udid, child] of children) {
       try { if (child.pid) process.kill(child.pid, "SIGTERM"); } catch {}
       try { clearState(udid); } catch {}
@@ -817,6 +829,7 @@ async function gesture(jsonStr: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
@@ -851,6 +864,7 @@ async function tap(xArg: string, yArg: string, deviceArg?: string) {
   }
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
     const send = (type: "begin" | "end") => {
       const json = new TextEncoder().encode(JSON.stringify({ type, x, y }));
@@ -959,6 +973,7 @@ async function rotate(orientation: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
@@ -1002,6 +1017,7 @@ async function button(buttonName = "home", deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
     ws.onopen = () => {
@@ -1051,6 +1067,7 @@ async function caDebug(option: string, stateRaw: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(stateFile);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
     ws.onopen = () => {
       const json = new TextEncoder().encode(JSON.stringify({ option: resolved, enabled }));
@@ -1076,6 +1093,7 @@ async function memoryWarning(deviceArg?: string) {
   }
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(stateFile);
+    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
     ws.onopen = () => {
       ws.send(new Uint8Array([0x09]));
@@ -1779,7 +1797,12 @@ async function serve(
     }
     disarmDevicesArmedHere();
   };
-  process.on("exit", clearAll);
+  process.on("exit", () => {
+    // This process owns the device tails and the crash watcher; `follow` never mounts them.
+    try { logBufferCache.stopAll(); } catch {}
+    try { crashRuntime.stop(); } catch {}
+    clearAll();
+  });
 
   if (options.debugStreamPath) {
     const logger = startStreamDebugLog({
@@ -2005,14 +2028,9 @@ program
   )
   .option(
     "--cors-origin <origin>",
-    "Allow this origin to read the preview cross-origin (repeatable). Accepts a subdomain " +
-      "wildcard, e.g. https://*.expo.dev. Loopback origins are always allowed.",
-    (value: string, prev: string[]) => [...prev, value],
-    [] as string[],
-  )
-  .option(
-    "--metrics-cors-origin <origin>",
-    "Deprecated alias for --cors-origin.",
+    "Allow this origin to read the preview cross-origin and open its control socket " +
+      "(repeatable). Accepts a subdomain wildcard, e.g. https://*.expo.dev. Loopback origins " +
+      "can always read, but open the control socket only when named.",
     (value: string, prev: string[]) => [...prev, value],
     [] as string[],
   )
@@ -2246,7 +2264,7 @@ Examples:
     } else {
       await serve(startPort ?? 3200, targets, startPort !== undefined, opts.host, {
         stream,
-        corsOrigins: [...opts.corsOrigin, ...opts.metricsCorsOrigin],
+        corsOrigins: opts.corsOrigin,
         frameAncestors: opts.frameAncestor,
         shareUrl: opts.shareUrl,
         debugStreamPath,

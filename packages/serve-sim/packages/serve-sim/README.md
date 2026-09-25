@@ -18,13 +18,30 @@ https://github.com/user-attachments/assets/fbf890f4-c8c7-4684-82be-d677b8a188f8
 - Low-latency SimulatorKit capture with a 60 Hz IOSurface seed poll and configurable WebRTC cadence.
 - Swipe from the bottom to go home.
 - gestures like pinch to zoom by holding the option key.
-- Simulator logs are forwarded to the browser console on local previews. Remote
-  previews disable this high-volume stream by default; append `?logs=1` to the
-  preview URL to opt in explicitly.
+- Simulator logs live in the Logs drawer in the preview, and `serve-sim` also
+  serves them at `/.sim/logs` for tools that send the session bearer token.
+  Forwarding this high-volume stream to the browser console is opt in: append
+  `?logs=1` to the preview URL.
 - Recent simulator actions are available in the browser tools panel and `serve-sim event-log`.
 - Drag and drop videos and images to add them to the simulator device. 
 - Keyboard commands and hot keys are forwarded to the simulator, including CMD+SHIFT+H to go home.
 - Apple Watch, iPad, and iOS support.
+
+## Log scopes
+
+`/logs` (or the middleware's `/.sim/logs`) keeps its all-process default.
+Pass `scope=user-apps` to receive only unified-log records whose emitting
+executable lives in an installed app container, including app extensions.
+This includes background and subsequently installed apps, not just the foreground
+app. System messages merely mentioning an app are excluded.
+
+The filter applies to SSE, snapshots, and replay. The response header
+`X-Serve-Sim-Log-Scope` acknowledges the selected scope; callers requiring app-only
+logs should check it because older servers may ignore the parameter.
+Replay cursors belong to a device, scope, and server lifetime. Do not reuse an
+all-process cursor for a user-app stream. Each scope has a separate bounded
+buffer and log-stream process, started on demand and stopped when idle.
+This does not capture logs from before collection started or replace crash reports.
 
 ## Why?
 
@@ -160,6 +177,9 @@ continue to support multiple viewers as well.
 
 See [WebRTC architecture](docs/webrtc-architecture.md) for the current design,
 control-channel decision, known constraints, and planned direction.
+
+See [API](docs/api.md) for the HTTP routes, authentication, CORS and the
+WebSocket endpoints.
 
 ### Examples
 

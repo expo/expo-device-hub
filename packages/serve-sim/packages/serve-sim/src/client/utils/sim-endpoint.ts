@@ -13,6 +13,7 @@ declare global {
       basePath: string;
       logsEndpoint?: string;
       metricsEndpoint?: string;
+      crashesEndpoint?: string;
       axEndpoint?: string;
       cameraStatusEndpoint?: string;
       appStateEndpoint?: string;
@@ -102,6 +103,11 @@ export function webrtcSessionStatsUrl(statsUrl: string, sessionId: string): stri
   const url = new URL(statsUrl);
   url.searchParams.set("sessionId", sessionId);
   return url.toString();
+}
+
+export function simAuthHeaders(): Record<string, string> {
+  const token = window.__SIM_PREVIEW__?.execToken;
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 export function simEndpoint(path: string): string {

@@ -21,7 +21,7 @@ describe("StreamSettingsTool", () => {
         onPlaybackSettingsChange={() => {}}
         onEncoderSettingsChange={() => {}}
         activeCodec="h264"
-        peerConnection={null}
+        peer={{ peerConnection: null, subscribeStats: () => () => {} }}
         avccSupported
       />,
     );
@@ -39,7 +39,7 @@ describe("StreamSettingsTool", () => {
         onPlaybackSettingsChange={() => {}}
         onEncoderSettingsChange={() => {}}
         activeCodec="mjpeg"
-        peerConnection={null}
+        peer={{ peerConnection: null, subscribeStats: () => () => {} }}
         avccSupported={false}
       />,
     );
@@ -56,7 +56,7 @@ describe("StreamSettingsTool", () => {
         onPlaybackSettingsChange={() => {}}
         onEncoderSettingsChange={() => {}}
         activeCodec="webrtc/vp8"
-        peerConnection={null}
+        peer={{ peerConnection: null, subscribeStats: () => () => {} }}
         avccSupported={false}
       />,
     );
@@ -74,7 +74,7 @@ describe("StreamSettingsTool", () => {
         onPlaybackSettingsChange={() => {}}
         onEncoderSettingsChange={() => {}}
         activeCodec="webrtc/vp9"
-        peerConnection={null}
+        peer={{ peerConnection: null, subscribeStats: () => () => {} }}
         avccSupported
         transportLocked
       />,

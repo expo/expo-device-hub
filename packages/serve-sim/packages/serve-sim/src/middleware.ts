@@ -1,4 +1,5 @@
-import { execFile, execSync, spawn, type ChildProcess } from "child_process";
+import { openSseStream } from "./sse-stream";
+import { execFile, execSync } from "child_process";
 import { readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -23,7 +24,12 @@ import {
   peekDeviceSession,
   type HidSocket,
 } from "./device-session";
-import { assertPreviewAccess, assertUpgradeAccess } from "./session-auth";
+import {
+  acceptedTokenSubprotocol,
+  assertPreviewAccess,
+  assertUpgradeAccess,
+  upgradeAuthHeaders,
+} from "./session-auth";
 import {
   eventLogEventForAction,
   readEventLog,
@@ -42,6 +48,11 @@ import {
 import { serveDeviceKitModelAsset } from "./devicekit-model";
 import { validatePanelRoute } from "./panel-route";
 import { createExecWebSocketHandler, type UiRequestHandler } from "./exec-ws";
+import { crashRuntime } from "./crash/runtime";
+import { handleCrashesRequestAfter, handleCrashReportRequest } from "./crash/routes";
+export { handleCrashesRequest, handleCrashReportRequest } from "./crash/routes";
+import { booleanParam } from "./request-params";
+import { logBufferCache, type LogBufferCache, type LogLine } from "./log-buffer";
 import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware-utils";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
@@ -128,10 +139,6 @@ const metricsSamplerCache = createMetricsSamplerCache(
   (udid) => new MetricsSampler({ udid, deviceName: bootedDeviceName(udid) }),
 );
 
-// Hard cap on the SSE line-assembly buffer for child-process stdout.
-// A malformed log entry without a newline can't grow this beyond 1 MB;
-// the partial line is dropped rather than retained indefinitely.
-const SSE_LINE_BUFFER_LIMIT = 1024 * 1024;
 let inspectWebKitBridge: Promise<WebKitBridge> | null = null;
 
 function eventLogLimit(rawUrl: string): number | undefined {
@@ -254,7 +261,8 @@ export function matchInstalledAppByDisplayName(
 
 // Cache simctl's booted-device set briefly so per-request cost stays bounded.
 // The middleware runs inside the user's dev server (Metro etc.) and
-// readServeSimStates() is called on every /api and every page load.
+// The window has to outlast the logs drawer's poll interval.
+const BOOTED_CACHE_TTL_MS = 5_000;
 let bootedSnapshot: {
   at: number;
   booted: Set<string> | null;
@@ -268,7 +276,7 @@ let bootedSnapshot: {
 };
 async function getBootedUdids(): Promise<Set<string> | null> {
   const now = Date.now();
-  if (bootedSnapshot.booted && now - bootedSnapshot.at < 1500) {
+  if (bootedSnapshot.booted && now - bootedSnapshot.at < BOOTED_CACHE_TTL_MS) {
     return bootedSnapshot.booted;
   }
   try {
@@ -651,26 +659,35 @@ function webSocketBinary(payload: Buffer<ArrayBufferLike>): Uint8Array<ArrayBuff
  * handshake doesn't flush under Bun). Writes the 101 response and resumes the
  * socket on success; on a missing key writes 400 and returns false.
  */
-function writeWebSocketAccept(req: SimReq, socket: Socket): boolean {
+function writeWebSocketAccept(req: SimReq, socket: Socket, execToken: string): boolean {
   const key = req.headers["sec-websocket-key"];
   if (typeof key !== "string") {
     socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
     return false;
   }
   const accept = createHash("sha1").update(key + WS_ACCEPT_GUID).digest("base64");
+  // A client that offered subprotocols fails the handshake unless one is named back.
+  const subprotocol = acceptedTokenSubprotocol(req.headers, execToken);
   socket.write(
     "HTTP/1.1 101 Switching Protocols\r\n" +
     "Upgrade: websocket\r\n" +
     "Connection: Upgrade\r\n" +
     `Sec-WebSocket-Accept: ${accept}\r\n` +
+    (subprotocol ? `Sec-WebSocket-Protocol: ${subprotocol}\r\n` : "") +
     "\r\n",
   );
   socket.resume();
   return true;
 }
 
-function bridgeWebSocketFrames(req: SimReq, socket: Socket, head: Buffer, upstreamUrl: string): void {
-  if (!writeWebSocketAccept(req, socket)) return;
+function bridgeWebSocketFrames(
+  req: SimReq,
+  socket: Socket,
+  head: Buffer,
+  upstreamUrl: string,
+  execToken: string,
+): void {
+  if (!writeWebSocketAccept(req, socket, execToken)) return;
 
   const upstream = new WebSocket(upstreamUrl);
   upstream.binaryType = "arraybuffer";
@@ -924,13 +941,21 @@ function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
     closed = true;
     for (const cb of closeCbs) cb();
   };
-  const shutdown = () => {
+  const shutdown = (code?: number, reason = "") => {
     fireClose();
-    try { socket.end(websocketFrame(0x8, Buffer.alloc(0))); } catch {}
-    try { socket.destroy(); } catch {}
+    const payload = code === undefined ? Buffer.alloc(0) : Buffer.alloc(2 + Buffer.byteLength(reason));
+    if (code !== undefined) {
+      payload.writeUInt16BE(code);
+      payload.write(reason, 2);
+    }
+    try {
+      socket.end(websocketFrame(0x8, payload));
+      socket.destroySoon();
+    } catch { socket.destroy(); }
   };
 
   const drain = () => {
+    if (closed) return;
     for (;;) {
       let frame: ParsedWebSocketFrame | null;
       try {
@@ -968,6 +993,7 @@ function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
 function attachHidInProcess(
   req: SimReq,
   socket: Socket,
+  execToken: string,
   head: Buffer,
   device: string | null,
   initialStreamSettings?: StreamSettings,
@@ -979,7 +1005,7 @@ function attachHidInProcess(
   } catch {
     return false;
   }
-  if (!writeWebSocketAccept(req, socket)) return true; // bad request handled
+  if (!writeWebSocketAccept(req, socket, execToken)) return true; // bad request handled
   session.attachHidSocket(rawHidSocket(socket, head));
   return true;
 }
@@ -995,6 +1021,7 @@ export function previewConfigForState(
 ): ServeSimState & {
   basePath: string;
   logsEndpoint: string;
+  crashesEndpoint: string;
   appStateEndpoint: string;
   eventLogEndpoint: string;
   eventLogEventsEndpoint: string;
@@ -1033,6 +1060,7 @@ export function previewConfigForState(
     ...publicState,
     basePath: base,
     logsEndpoint: endpoint(base, "/logs", state.device),
+    crashesEndpoint: endpoint(base, "/crashes", state.device),
     appStateEndpoint: endpoint(base, "/appstate", state.device),
     eventLogEndpoint: endpoint(base, "/api/event-log", state.device),
     eventLogEventsEndpoint: endpoint(base, "/api/event-log/events", state.device),
@@ -1520,8 +1548,6 @@ export interface SimMiddlewareOptions {
    * decides access. Loopback is always allowed.
    */
   corsOrigins?: string[];
-  /** @deprecated Use `corsOrigins`. */
-  metricsCorsOrigins?: string[];
   frameAncestors?: string[];
   /** Public page the Share button copies instead of this preview's address. */
   shareUrl?: string;
@@ -1549,13 +1575,110 @@ function httpStreamSettingsFromLegacyCodec(codec: string | undefined): StreamSet
   return undefined;
 }
 
+
+export function handleLogsRequest(
+  req: SimReq,
+  res: SimRes,
+  state: ServeSimState | null,
+  rawUrl: string,
+  cache: LogBufferCache = logBufferCache
+): void {
+  if (!state) {
+    res.writeHead(404, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(JSON.stringify({ error: "No serve-sim device" }));
+    return;
+  }
+
+  const params = new URL(rawUrl, "http://127.0.0.1").searchParams;
+  const scope = params.get("scope") ?? "all";
+  if (scope !== "all" && scope !== "user-apps") {
+    res.writeHead(400, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Invalid log scope. Use all or user-apps." }));
+    return;
+  }
+  res.setHeader("X-Serve-Sim-Log-Scope", scope);
+  const intQuery = (name: string): number | undefined => {
+    const raw = params.get(name)?.trim();
+    const n = Number(raw);
+    return raw && Number.isSafeInteger(n) && n >= 0 ? n : undefined;
+  };
+  const since = intQuery("since");
+  const limit = intQuery("limit");
+  const snapshot = params.get("snapshot");
+  const wantsJson =
+    snapshot === null
+      ? (req.headers.accept ?? "").includes("application/json")
+      : booleanParam(params, "snapshot");
+  const wantsEnvelope = booleanParam(params, "envelope");
+  const wantsFollow = booleanParam(params, "follow");
+
+  if (wantsJson) {
+    const buffer = wantsFollow ? cache.ensure(state.device, scope) : cache.peek(state.device, scope);
+    res.writeHead(200, { "Content-Type": "application/json", "Cache-Control": "no-store" });
+    res.end(
+      JSON.stringify({
+        device: state.device,
+        latestSeq: buffer?.latestSeq ?? 0,
+        oldestSeq: buffer?.oldestSeq ?? 0,
+        bufferedBytes: buffer?.byteLength ?? 0,
+        status: buffer?.status ?? "stopped",
+        streamError: buffer?.error ?? null,
+        lines: buffer?.read({ since, limit }) ?? [],
+      })
+    );
+    return;
+  }
+
+  const buffer = cache.ensure(state.device, scope);
+  const stream = openSseStream(req, res);
+
+  const frame = (line: LogLine): string =>
+    "data: " +
+    (wantsEnvelope ? JSON.stringify({ seq: line.seq, at: line.at, raw: line.raw }) : line.raw) +
+    "\n\n";
+
+  let lastSent = since ?? 0;
+  for (const line of buffer.read({ since, limit })) {
+    if (!stream.isOpen()) break;
+    stream.write(frame(line));
+    lastSent = line.seq;
+  }
+
+  stream.onClose(
+    buffer.subscribeBatch(
+      (lines) => {
+        let chunk = "";
+        for (const line of lines) {
+          if (line.seq <= lastSent) continue;
+          lastSent = line.seq;
+          chunk += frame(line);
+        }
+        if (chunk) stream.write(chunk);
+      },
+      () => {
+        if (stream.isOpen()) res.end();
+      }
+    )
+  );
+}
+
+async function selectDeviceAndReap(selectedDevice: string | null): Promise<ServeSimState | null> {
+  const states = await readServeSimStates();
+  const state = selectServeSimState(states, selectedDevice);
+  const live = states.map((s) => s.device);
+  crashRuntime.prune(live);
+  logBufferCache.prune(live);
+  return state;
+}
+
 /**
  * Connect-style middleware that serves the simulator preview UI.
  *
  * Routes handled under `basePath` (default `/.sim`):
  *   GET  {basePath}         — the preview HTML page
  *   GET  {basePath}/api     — serve-sim state JSON
- *   GET  {basePath}/logs    — SSE stream of simctl logs
+ *   GET  {basePath}/logs    — simctl logs, JSON snapshot or SSE (bearer token)
+ *   GET  {basePath}/crashes — crash reports (bearer token)
  *   GET  {basePath}/ax      — SSE stream of normalized accessibility snapshots
  */
 export function handleMetricsRequest(
@@ -1607,13 +1730,15 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // can't read this value (it's only injected into the preview page's config).
   const execToken = options?.execToken ?? randomBytes(32).toString("base64url");
   const requirePreviewToken = options?.requirePreviewToken ?? false;
-  const corsOrigins = [...(options?.corsOrigins ?? []), ...(options?.metricsCorsOrigins ?? [])];
+  const corsOrigins = [...(options?.corsOrigins ?? [])];
   const frameAncestors = options?.frameAncestors ?? [];
   const shareUrl = options?.shareUrl;
   // The proxied DevTools frontend sits behind the same cookie, so its document needs the policy too.
   const framePolicyHeaders: Record<string, string> = requirePreviewToken
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
     : {};
+
+  crashRuntime.arm();
 
   // Simulator-settings requests run in-process (just the underlying simctl /
   // ax-tool spawn) instead of round-tripping a full `node <cli>` exec per
@@ -2434,50 +2559,51 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
-    // SSE: simctl log stream
-    if (url === base + "/logs") {
-      const states = await readServeSimStates();
-      const state = selectServeSimState(states, selectedDevice);
-      if (!state) {
-        res.writeHead(404);
-        res.end("No serve-sim device");
+    if (url === base + "/crashes" || url === base + "/crashes/") {
+      const state = await selectDeviceAndReap(selectedDevice);
+      await handleCrashesRequestAfter(
+        () => crashRuntime.start({ deferToRetry: true }).catch(() => {}),
+        req,
+        res,
+        state,
+        rawUrl
+      );
+      return;
+    }
+
+    if (url.startsWith(base + "/crashes/")) {
+      const rawId = url.slice((base + "/crashes/").length);
+      let id: string;
+      try {
+        id = decodeURIComponent(rawId);
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            error:
+              `Malformed percent-escape in the crash id (${rawId}). Copy the id verbatim from ` +
+              "GET {base}/crashes.",
+          })
+        );
         return;
       }
-      const udid = state.device;
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-        "X-Accel-Buffering": "no",
-      });
-      res.write(":\n\n");
+      const state = await selectDeviceAndReap(selectedDevice);
+      const params = new URL(rawUrl, "http://127.0.0.1").searchParams;
+      await handleCrashReportRequest(
+        req,
+        res,
+        state,
+        id,
+        params.get("occurrence"),
+        undefined,
+        undefined,
+        params.get("key")
+      );
+      return;
+    }
 
-      const child: ChildProcess = spawn("xcrun", [
-        "simctl", "spawn", udid, "log", "stream",
-        "--style", "ndjson",
-        "--level", "info",
-      ], { stdio: ["ignore", "pipe", "ignore"] });
-
-      let buf = "";
-      child.stdout!.on("data", (chunk: Buffer) => {
-        buf += chunk.toString();
-        let nl: number;
-        while ((nl = buf.indexOf("\n")) !== -1) {
-          const line = buf.slice(0, nl).trim();
-          buf = buf.slice(nl + 1);
-          if (line) res.write("data: " + line + "\n\n");
-        }
-        // Drop a runaway partial line so a malformed/never-terminated
-        // log entry can't grow `buf` without bound.
-        if (buf.length > SSE_LINE_BUFFER_LIMIT) buf = "";
-      });
-
-      child.on("error", () => { try { res.end(); } catch {} });
-      child.on("close", () => res.end());
-      req.on("close", () => {
-        child.stdout?.destroy();
-        child.kill();
-      });
+    if (url === base + "/logs") {
+      handleLogsRequest(req, res, await selectDeviceAndReap(selectedDevice), rawUrl);
       return;
     }
 
@@ -2567,13 +2693,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // their own, so gate them here too.
     if (
       !assertUpgradeAccess(
-        {
-          authorization: req.headers.authorization,
-          cookie: req.headers.cookie,
-          origin: req.headers.origin,
-          host: req.headers.host,
-          "sec-fetch-site": req.headers["sec-fetch-site"],
-        },
+        upgradeAuthHeaders(req.headers),
         execToken,
         { required: requirePreviewToken },
       )
@@ -2589,7 +2709,13 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       (async () => {
         try {
           const bridge = await getInspectWebKitBridge();
-          bridgeWebSocketFrames(req, socket, head, `ws://127.0.0.1:${bridge.port}${devtoolsTarget.upstreamPath}`);
+          bridgeWebSocketFrames(
+            req,
+            socket,
+            head,
+            `ws://127.0.0.1:${bridge.port}${devtoolsTarget.upstreamPath}`,
+            execToken,
+          );
         } catch (err) {
           const message = err instanceof Error ? err.message : "Failed to start inspect-webkit";
           socket.end(`HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n${message}`);
@@ -2604,7 +2730,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     const device = helperTarget.device ?? selectedDevice;
     if (helperTarget.upstreamPath === "/ws") {
       // HID input is delivered to the in-process DeviceSession.
-      if (attachHidInProcess(req, socket, head, device, streamSettings)) return;
+      if (attachHidInProcess(req, socket, execToken, head, device, streamSettings)) return;
       socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
       return;
     }
@@ -2619,12 +2745,14 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const execWebSocketHandler = createExecWebSocketHandler({
     path: `${base}/exec-ws`,
     execToken,
+    corsOrigins,
     ssePrefixes: [
       `${base}/api/events`,
       `${base}/api/event-log/events`,
       `${base}/grid/api/status/events`,
       `${base}/appstate`,
       `${base}/logs`,
+      `${base}/crashes`,
       `${base}/metrics`,
       `${base}/ax`,
     ],
@@ -2641,17 +2769,14 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   });
 
   fetchMiddleware.handleWebSocket = (request: Request, websocket: UpgradeHandlerWebSocket): boolean => {
+    // Before any refusal below can close it: an unhandled error from a peer that keeps sending
+    // would exit the process.
+    websocket.on("error", () => websocket.close());
     // Embedded hosts forward accepted sockets and bypass the request gate. The exec channel
-    // re-checks the token in its first frame; the helper HID socket does not.
+    // re-checks the token itself; the helper HID socket does not.
     if (
       !assertUpgradeAccess(
-        {
-          authorization: request.headers.get("authorization") ?? undefined,
-          cookie: request.headers.get("cookie") ?? undefined,
-          origin: request.headers.get("origin") ?? undefined,
-          host: request.headers.get("host") ?? undefined,
-          "sec-fetch-site": request.headers.get("sec-fetch-site") ?? undefined,
-        },
+        upgradeAuthHeaders(request),
         execToken,
         { required: requirePreviewToken },
       )

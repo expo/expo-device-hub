@@ -1,9 +1,12 @@
 import { execFile } from "child_process";
-import { existsSync } from "fs";
+import { randomUUID } from "crypto";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join, resolve } from "path";
 import { findBootedDevice, resolveDevice } from "./device";
 import { setHardwareKeyboard } from "./native";
 import { dirnameOf } from "./runtime";
+import { stateDir } from "./state";
+import { withStateLock } from "./state-lock";
 
 // Bun's bundler inlines a bare `__dirname` as the build machine's source
 // directory; shadow it with the runtime location so the published bundle
@@ -85,20 +88,82 @@ export const UI_OPTIONS: Record<string, UiOptionSpec> = {
   "hardware-keyboard": { via: "device", values: TOGGLE_VALUES, toggle: true, default: "on" },
 };
 
-// CoreSimulator has no getter for device-backed settings and the setter is
-// runtime-only, so the last value we set is the source of truth for the panel.
-// Keyed by `${udid}:${option}`; falls back to the option's `default`.
-const deviceOptionState = new Map<string, string>();
+function deviceOptionStateFile(udid: string): string {
+  return join(stateDir(), `ui-${encodeURIComponent(udid)}.json`);
+}
 
-// A device-backed setter is runtime-only, so a session recreate resets the
-// device to the option defaults (see HIDInjector.setup). Drop the stale panel
-// state for that udid so the panel reflects the reset rather than the last
-// value a previous session set.
-export function clearDeviceOptionState(udid: string): void {
-  const prefix = `${udid}:`;
-  for (const key of deviceOptionState.keys()) {
-    if (key.startsWith(prefix)) deviceOptionState.delete(key);
+interface DeviceOptionState {
+  bootSession: string;
+  revision: string;
+  values: Record<string, string>;
+}
+
+const deviceBootSessions = new Map<string, string>();
+
+function readDeviceOptionState(udid: string): DeviceOptionState | null {
+  try {
+    const state = JSON.parse(readFileSync(deviceOptionStateFile(udid), "utf8")) as Partial<DeviceOptionState>;
+    if (typeof state.bootSession !== "string" || typeof state.revision !== "string" ||
+      !state.values || typeof state.values !== "object") return null;
+    return { bootSession: state.bootSession, revision: state.revision, values: state.values };
+  } catch {
+    return null;
   }
+}
+
+function writeDeviceOptionState(udid: string, bootSession: string, option: string, value: string): string {
+  mkdirSync(stateDir(), { recursive: true });
+  const file = deviceOptionStateFile(udid);
+  const temporary = `${file}.${process.pid}.tmp`;
+  const current = readDeviceOptionState(udid);
+  const values = current?.bootSession === bootSession ? current.values : {};
+  const revision = randomUUID();
+  writeFileSync(temporary, JSON.stringify({ bootSession, revision, values: { ...values, [option]: value } }), { mode: 0o600 });
+  renameSync(temporary, file);
+  return revision;
+}
+
+function deviceOptionStateLockFile(udid: string): string {
+  return join(stateDir(), `ui-${encodeURIComponent(udid)}.lock`);
+}
+
+function withDeviceOptionStateLock<T>(udid: string, fn: () => Promise<T>): Promise<T> {
+  const path = deviceOptionStateLockFile(udid);
+  return withStateLock(
+    path,
+    10_000,
+    () => new Error(
+      `Timed out waiting to update simulator UI settings for ${udid}. Another serve-sim command is holding ${path}. ` +
+        "Wait for it to finish, or remove that file if nothing is running.",
+    ),
+    fn,
+  );
+}
+
+async function deviceBootSession(udid: string, refresh = false): Promise<string> {
+  if (!refresh) {
+    const cached = deviceBootSessions.get(udid);
+    if (cached) return cached;
+  }
+  const bootSession = await run("xcrun", ["simctl", "spawn", udid, "launchctl", "managerpid"]);
+  if (!/^\d+$/.test(bootSession)) {
+    throw new Error(`Could not identify the boot session for simulator ${udid}. Make sure it is booted and try again.`);
+  }
+  deviceBootSessions.set(udid, bootSession);
+  return bootSession;
+}
+
+async function currentDeviceOptionState(udid: string, refresh = false): Promise<DeviceOptionState | null> {
+  const state = readDeviceOptionState(udid);
+  if (!state) return null;
+  const bootSession = await deviceBootSession(udid, refresh).catch(() => null);
+  if (!bootSession) return null;
+  if (state.bootSession === bootSession) return state;
+  return null;
+}
+
+export async function refreshDeviceOptionState(udid: string): Promise<void> {
+  await currentDeviceOptionState(udid, true);
 }
 
 /**
@@ -244,7 +309,7 @@ export async function getUiOption(udid: string, option: string): Promise<string>
   const spec = Object.hasOwn(UI_OPTIONS, option) ? UI_OPTIONS[option] : undefined;
   if (!spec) throw new Error(`unknown option: ${option}`);
   if (spec.via === "device") {
-    return deviceOptionState.get(`${udid}:${option}`) ?? spec.default ?? "off";
+    return (await currentDeviceOptionState(udid))?.values[option] ?? spec.default ?? "off";
   }
   if (spec.via === "ax") return axRun(udid, "get", option);
   // simctl's casing is inconsistent (`content_size` prints "Small" but
@@ -253,19 +318,70 @@ export async function getUiOption(udid: string, option: string): Promise<string>
   return spec.toggle ? toToggle(raw) : raw;
 }
 
-export async function setUiOption(udid: string, option: string, value: string): Promise<void> {
+async function applyDeviceUiOption(udid: string, option: string, value: string): Promise<void> {
+  if (option === "hardware-keyboard" && !await setHardwareKeyboard(udid, value === "on")) {
+    throw new Error(
+      `Could not turn the hardware keyboard ${value} because CoreSimulator rejected the change. ` +
+        "Make sure the simulator is booted, then try again.",
+    );
+  }
+}
+
+export async function setUiOption(udid: string, option: string, value: string): Promise<string | undefined> {
   const spec = Object.hasOwn(UI_OPTIONS, option) ? UI_OPTIONS[option] : undefined;
   if (!spec) throw new Error(`unknown option: ${option}`);
   if (spec.via === "device") {
-    if (option === "hardware-keyboard") await setHardwareKeyboard(udid, value === "on");
-    deviceOptionState.set(`${udid}:${option}`, value);
-    return;
+    return withDeviceOptionStateLock(udid, async () => {
+      const bootSession = await deviceBootSession(udid, true);
+      return applyAndSaveDeviceUiOption(udid, bootSession, option, value);
+    });
   }
   if (spec.via === "ax") {
     await axRun(udid, "set", option, value);
     return;
   }
   await simctlUi(udid, spec.via, spec.toggle ? fromToggle(value) : value);
+}
+
+async function applyAndSaveDeviceUiOption(
+  udid: string, bootSession: string, option: string, value: string,
+): Promise<string> {
+  const current = readDeviceOptionState(udid);
+  const previous = current?.bootSession === bootSession ? current.values[option] : undefined;
+  await applyDeviceUiOption(udid, option, value);
+  try {
+    return writeDeviceOptionState(udid, bootSession, option, value);
+  } catch (error) {
+    if (previous === undefined) {
+      throw new Error(`Could not save ${option} for simulator ${udid}; its previous value is unknown and cannot be restored. ` +
+        "Check that the state directory is writable, then explicitly set the option again.", { cause: error });
+    }
+    try {
+      await applyDeviceUiOption(udid, option, previous);
+    } catch (rollbackError) {
+      throw new AggregateError([error, rollbackError],
+        `Could not save or restore ${option} for simulator ${udid}. ` +
+        "Check that the state directory is writable, then explicitly set the option again.");
+    }
+    throw error;
+  }
+}
+
+export async function setUiOptionIfRevision(
+  udid: string,
+  option: string,
+  value: string,
+  expectedRevision: string,
+): Promise<string | null> {
+  const spec = Object.hasOwn(UI_OPTIONS, option) ? UI_OPTIONS[option] : undefined;
+  if (!spec) throw new Error(`unknown option: ${option}`);
+  if (spec.via !== "device") throw new Error(`${option} does not support conditional updates`);
+  return withDeviceOptionStateLock(udid, async () => {
+    const bootSession = await deviceBootSession(udid, true);
+    const current = readDeviceOptionState(udid);
+    if (current?.bootSession !== bootSession || current.revision !== expectedRevision) return null;
+    return applyAndSaveDeviceUiOption(udid, bootSession, option, value);
+  });
 }
 
 export async function getUiStatus(udid: string): Promise<Record<string, string>> {

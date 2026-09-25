@@ -1,4 +1,4 @@
-import { e2eDevice } from "./e2e-preconditions";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { describe, expect, test } from "bun:test";
 import { simMiddleware } from "../middleware";
 
@@ -52,6 +52,7 @@ describe("POST /api/screenshot", () => {
 
 const bootedUdid = e2eDevice();
 const describeWithSim = bootedUdid ? describe : describe.skip;
+requireE2E("screenshot-endpoint", Boolean(bootedUdid));
 
 describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`, () => {
   const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
@@ -68,7 +69,7 @@ describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`
     expect(res?.headers.get("cache-control")).toBe("no-store");
     expect(res?.headers.get("access-control-allow-origin")).toBe(DASHBOARD);
     const bytes = new Uint8Array(await res!.arrayBuffer());
-    expect([...bytes.slice(0, 8)]).toEqual(PNG_MAGIC);
+    expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
   }, 45_000);
 
   test("falls back to a booted simulator when no device is given", async () => {
@@ -78,6 +79,6 @@ describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`
     expect(res?.status).toBe(200);
     expect(res?.headers.get("content-type")).toBe("image/png");
     const bytes = new Uint8Array(await res!.arrayBuffer());
-    expect([...bytes.slice(0, 8)]).toEqual(PNG_MAGIC);
+    expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
   }, 45_000);
 });

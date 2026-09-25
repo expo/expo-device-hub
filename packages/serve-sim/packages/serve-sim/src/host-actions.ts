@@ -165,8 +165,8 @@ function parseParams<A extends HostActionName>(action: A, raw: unknown): ParamsF
 }
 
 function serveSimInvocation(binPath: string, args: string[]): Invocation {
-  if (/\.ts$/.test(binPath)) return { file: "bun", args: [binPath, ...args] };
-  if (/\.js$/.test(binPath)) return { file: "node", args: [binPath, ...args] };
+  if (binPath.endsWith(".ts")) return { file: "bun", args: [binPath, ...args] };
+  if (binPath.endsWith(".js")) return { file: "node", args: [binPath, ...args] };
   return { file: binPath, args };
 }
 

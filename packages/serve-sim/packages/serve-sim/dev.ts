@@ -45,13 +45,23 @@ const EXEC_TOKEN = randomBytes(32).toString("base64url");
 // endpoints we inject into the dev HTML shell below.
 // The dev server owns its HTTP server and forwards upgrades (below), so it
 // proxies helper/DevTools sockets through the single port like production.
-const middleware = simMiddleware({ basePath: "/", execToken: EXEC_TOKEN, proxyHelpers: true });
+// Local dev knob: STREAM_TRANSPORT=webrtc starts the session locked to WebRTC, the way
+// `serve-sim --transport webrtc` does, so the locked code paths are reachable here.
+const devStreamSettings = process.env.STREAM_TRANSPORT === "webrtc"
+  ? { transport: "webrtc" as const, codec: (process.env.WEBRTC_CODEC ?? "h264") as "h264" | "vp8" | "vp9" }
+  : undefined;
+const middleware = simMiddleware({
+  basePath: "/",
+  execToken: EXEC_TOKEN,
+  proxyHelpers: true,
+  ...(devStreamSettings ? { streamSettings: devStreamSettings } : {}),
+});
 
 // The dev server serves at the root (empty base), so endpoints look like
 // `/logs`, `/grid/api`, etc. We point the advertised CLI binary at our local
 // source so the sidebar's `serve-sim …` calls run from this checkout.
 function devPreviewConfig(state: ServeSimState) {
-  return previewConfigForState(state, "", EXEC_TOKEN, undefined, true);
+  return previewConfigForState(state, "", EXEC_TOKEN, devStreamSettings, true);
 }
 
 // ─── Client bundler with watch ───
@@ -136,7 +146,7 @@ watch(CLIENT_DIR, { recursive: true }, (_event, filename) => {
   const name = String(filename);
   if (!/\.(tsx?|css)$/.test(name)) return;
   if (/\.tsx?$/.test(name)) pendingClientBuild = true;
-  if (/\.css$/.test(name)) pendingTailwindBuild = true;
+  if (name.endsWith(".css")) pendingTailwindBuild = true;
   scheduleWatchedBuild();
 });
 
@@ -157,7 +167,7 @@ function readTailwindContentSignature(): string {
   const parts: string[] = [];
   for (const path of listClientFiles(CLIENT_DIR)) {
     const text = readFileSync(path, "utf-8");
-    if (/\.css$/.test(path)) {
+    if (path.endsWith(".css")) {
       parts.push(path, text);
       continue;
     }

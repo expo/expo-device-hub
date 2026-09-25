@@ -58,6 +58,9 @@ jobs:
           name: serve-sim-npm-package
           path: packages/serve-sim/packages/serve-sim/release/serve-sim.tgz
 
+      - name: Install Chrome for Testing
+        run: bunx @puppeteer/browsers@3.2.3 install chrome@154.0.8037.57 --path "$HOME/.cache/chrome-for-testing" --format '{{path}}' > /tmp/chrome-path
+
       - name: Start iOS Simulator
         uses: eas/start_ios_simulator
 
@@ -68,8 +71,9 @@ jobs:
           SERVE_SIM_E2E_REQUIRED: "1"
         working_directory: packages/serve-sim
         run: |
+          export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
           run_tests() {
-            bun test --max-concurrency=1 packages/serve-sim/src/__tests__/ &
+            bun test --max-concurrency=1 packages/serve-sim/src/__tests__/ packages/serve-sim/scripts/tart/__tests__/ &
             local pid=$!
             local waited=0
             while kill -0 "$pid" 2>/dev/null; do

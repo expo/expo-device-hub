@@ -241,11 +241,12 @@ export class TartGuest {
 
     const stampDir = join(this.config.pkgDir, "dist");
     mkdirSync(stampDir, { recursive: true });
-    const stamp = join(stampDir, ".tart-share");
+    const stampName = `.tart-share.${process.pid}.${Date.now()}`;
+    const stamp = join(stampDir, stampName);
     const token = `${this.config.repoDir}:${process.pid}:${Date.now()}`;
     writeFileSync(stamp, token);
     try {
-      const remote = `${share}/dist/.tart-share`;
+      const remote = `${share}/dist/${stampName}`;
       let present = false;
       for (let i = 0; i < 15; i++) {
         present = (await this.ssh(`if test -d ${srcQuoted}; then echo ok; fi`)).trim() === "ok";

@@ -21,7 +21,10 @@ describe("sendKeyEventsToWs authorization", () => {
         return new Response("not a ws", { status: 400 });
       },
       websocket: {
-        message(_ws: ServerWebSocket<unknown>) {},
+        message(ws: ServerWebSocket<unknown>, data: string | Buffer) {
+          const frame = typeof data === "string" ? Buffer.from(data) : data;
+          if (frame[0] === 0x11) ws.send(Buffer.from([0x91, 1]));
+        },
       },
     });
     wsUrl = `ws://127.0.0.1:${server.port}/ws`;

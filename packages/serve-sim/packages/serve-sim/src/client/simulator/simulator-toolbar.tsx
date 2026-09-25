@@ -14,7 +14,7 @@ import {
 import { useCoarsePointer } from "../hooks/use-coarse-pointer.js";
 import { runHostAction, type ExecResult } from "../utils/exec";
 import type { SimulatorOrientation } from "../types.js";
-import { getDeviceType, type DeviceType } from "./deviceFrames.js";
+import { getDeviceType, type DeviceType } from "./device-frames.js";
 import { createRotationCursor } from "./rotation-cursor.js";
 
 type RotateFn = (orientation: SimulatorOrientation, direction?: "left" | "right") => void | Promise<void>;

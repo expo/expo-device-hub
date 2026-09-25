@@ -14,6 +14,8 @@ export interface StreamConfig extends HingeControlState {
   orientation?: SimulatorOrientation;
   /** Active simulator display, used to select its frame and corner geometry. */
   screenId?: number;
+  /** Native input setup failed; video can continue without touch or keyboard. */
+  inputUnavailable?: boolean;
   /** Whether this simulator exposes hinge angle control. */
   supportsHingeAngle?: boolean;
   /** Whether the active Duo surface can be selected without changing its hinge angle. */

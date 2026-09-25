@@ -1,4 +1,4 @@
-import { Panel, PanelCloseButton, PanelHeader } from "../Panel";
+import { Panel, PanelCloseButton, PanelHeader } from "../panel";
 import {
   collapseScreencastPane,
   type WebKitDevtoolsTarget,

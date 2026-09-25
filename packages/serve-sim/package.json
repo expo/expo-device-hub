@@ -4,10 +4,14 @@
   "license": "Apache-2.0",
   "scripts": {
     "build": "bun run --filter '*' build",
+    "build:fixtures": "bash packages/serve-sim/Sources/build-test-fixtures.sh",
     "dev": "bun run --filter '@expo/serve-sim' dev",
-    "knip": "knip",
+    "check": "bun run lint && bun run typecheck && bun run knip",
+    "lint": "oxlint",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint"
+    "knip": "knip",
+    "test": "bash packages/serve-sim/scripts/test/unit.sh",
+    "test:e2e": "bash packages/serve-sim/scripts/test/e2e.sh"
   },
   "workspaces": [
     "packages/*"

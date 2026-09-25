@@ -305,6 +305,11 @@ async function prepare(
   };
 }
 
+/**
+ * Unused on `expo` today. Kept because #148, #102, and #53 import it; the
+ * first of them to land makes it live. Remove the tag then.
+ * @public
+ */
 export async function setCapabilityEnabled(
   udid: string,
   name: string,
@@ -419,7 +424,7 @@ async function enableCapabilitiesUnlocked(
   );
   const state: LaunchState = {
     ...(previous ?? { launchArgs: [], capabilities: {} }),
-    capabilities: { ...(previous?.capabilities ?? {}), ...added },
+    capabilities: { ...previous?.capabilities, ...added },
   };
   const config = renderCapabilityConfig(state);
   await armInsert(udid, dylib);

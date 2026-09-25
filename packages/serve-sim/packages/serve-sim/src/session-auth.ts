@@ -174,7 +174,7 @@ export function assertPreviewAccess(
     res.writeHead(401, {
       "Content-Type": "text/html; charset=utf-8",
       "Cache-Control": "no-store, private",
-      ...(opts.htmlHeaders ?? {}),
+      ...opts.htmlHeaders,
     });
     res.end(unauthorizedPreviewPage({ rejectedToken: !!fromQuery }));
     return false;
@@ -188,6 +188,54 @@ export function assertPreviewAccess(
   return false;
 }
 
+export const TOKEN_SUBPROTOCOL_PREFIX = "serve-sim.token.";
+
+// A CR or LF here would forge a header line in the handshake.
+const SUBPROTOCOL_TOKEN = /^[!#$%&'*+\-.0-9A-Za-z^_`|~]+$/;
+
+function offeredTokenSubprotocols(headers: SessionAuthReq["headers"]): string[] {
+  const raw = headers["sec-websocket-protocol"];
+  const offered = Array.isArray(raw) ? raw.join(",") : raw;
+  if (!offered) return [];
+  return offered
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((value) =>
+      value.startsWith(TOKEN_SUBPROTOCOL_PREFIX)
+      && value.length > TOKEN_SUBPROTOCOL_PREFIX.length
+      && SUBPROTOCOL_TOKEN.test(value)
+    );
+}
+
+export function acceptedTokenSubprotocol(
+  headers: SessionAuthReq["headers"],
+  sessionToken: string,
+): string | null {
+  return offeredTokenSubprotocols(headers).find((value) =>
+    safeEqualString(value.slice(TOKEN_SUBPROTOCOL_PREFIX.length), sessionToken)
+  ) ?? null;
+}
+
+const UPGRADE_AUTH_HEADERS = [
+  "authorization",
+  "cookie",
+  "origin",
+  "host",
+  "sec-fetch-site",
+  "sec-websocket-protocol",
+] as const;
+
+export function upgradeAuthHeaders(
+  source: SessionAuthReq["headers"] | Request,
+): SessionAuthReq["headers"] {
+  const read = source instanceof Request
+    ? (name: string) => source.headers.get(name) ?? undefined
+    : (name: string) => source[name];
+  const headers: SessionAuthReq["headers"] = {};
+  for (const name of UPGRADE_AUTH_HEADERS) headers[name] = read(name);
+  return headers;
+}
+
 // No `?token=` fallback, so this credential never reaches a request URL or a proxy log.
 export function assertUpgradeAccess(
   req: SessionAuthReq["headers"],
@@ -197,6 +245,7 @@ export function assertUpgradeAccess(
   if (!opts.required) return true;
   const fromBearer = bearerToken(headerValue(req.authorization));
   if (fromBearer && safeEqualString(fromBearer, sessionToken)) return true;
+  if (acceptedTokenSubprotocol(req, sessionToken)) return true;
   const fromCookie = cookieValue(headerValue(req.cookie), accessCookieName(sessionToken));
   return !!fromCookie && safeEqualString(fromCookie, sessionToken) && isSameOriginRequest(req);
 }

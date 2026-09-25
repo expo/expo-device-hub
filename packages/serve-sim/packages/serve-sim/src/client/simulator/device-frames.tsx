@@ -28,12 +28,6 @@ export const DEVICE_FRAMES = {
   vision: { width: 640, height: 400, bezelX: 12, bezelY: 12, innerRadius: 32 },
 } as const;
 
-// Legacy named exports for backwards compat
-export const DEVICE_WIDTH = DEVICE_FRAMES.iphone.width;
-export const DEVICE_HEIGHT = DEVICE_FRAMES.iphone.height;
-export const DEVICE_BEZEL_X = DEVICE_FRAMES.iphone.bezelX;
-export const DEVICE_BEZEL_Y = DEVICE_FRAMES.iphone.bezelY;
-export const DEVICE_INNER_RADIUS = DEVICE_FRAMES.iphone.innerRadius;
 
 /**
  * Known simulator screen dimensions (pixels from `xcrun simctl io <udid> enumerate`).
@@ -135,15 +129,6 @@ export function simulatorMaxWidth(
 }
 
 /** Returns the screen area inset as percentages of the frame, suitable for CSS positioning. */
-export function screenInsets(type: DeviceType = "iphone") {
-  const f = DEVICE_FRAMES[type];
-  return {
-    top: `${(f.bezelY / f.height) * 100}%`,
-    left: `${(f.bezelX / f.width) * 100}%`,
-    right: `${(f.bezelX / f.width) * 100}%`,
-    bottom: `${(f.bezelY / f.height) * 100}%`,
-  };
-}
 
 /** Border-radius for the screen clip area, scaled proportionally. */
 export function screenBorderRadius(

@@ -7,9 +7,9 @@ import {
   screenBorderRadius,
   simulatorAspectRatio,
   simulatorMaxWidth,
-} from "./deviceFrames.js";
+} from "./device-frames.js";
 import { isLandscapeConfig } from "./orientation.js";
-import { SimulatorStream, type SimulatorStreamProps } from "./SimulatorStream.js";
+import { SimulatorStream, type SimulatorStreamProps } from "./simulator-stream.js";
 
 export interface SimulatorFrameProps
   extends Omit<SimulatorStreamProps, "style" | "imageStyle" | "headerless"> {

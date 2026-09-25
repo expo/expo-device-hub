@@ -40,3 +40,34 @@ export function webRtcFallbackDecision(
     ? { type: "retry-codec", codec: nextCodec }
     : { type: "switch-to-http" };
 }
+
+const LADDER_RESTART_BASE_MS = 2_000;
+const LADDER_RESTART_MAX_MS = 30_000;
+
+/// Every codec failing at once is usually one cause, and causes outlive a single attempt.
+function ladderRestartDelayMs(attempt: number): number {
+  const exponent = Math.min(Math.max(attempt, 0), 4);
+  return Math.min(LADDER_RESTART_BASE_MS * 2 ** exponent, LADDER_RESTART_MAX_MS);
+}
+
+/// Must outlast a restart delay plus a whole walk, or the longest delay looks unrelated and
+/// the backoff drops back to the floor forever.
+export const LADDER_SETTLED_MS = 90_000;
+
+export interface LadderBackoff {
+  noteFailure(now: number): void;
+  takeRestartDelayMs(): number;
+}
+
+export function createLadderBackoff(): LadderBackoff {
+  let attempt = 0;
+  let lastFailureAt: number | null = null;
+  return {
+    noteFailure(now) {
+      if (lastFailureAt !== null && now - lastFailureAt >= LADDER_SETTLED_MS) attempt = 0;
+      lastFailureAt = now;
+    },
+    takeRestartDelayMs() { return ladderRestartDelayMs(attempt++); },
+  };
+}
+
