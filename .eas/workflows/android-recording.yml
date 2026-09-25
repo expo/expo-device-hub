@@ -1,0 +1,203 @@
+name: Android recording
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  pull_request_labeled:
+    labels: [eas-approved]
+
+concurrency:
+  cancel_in_progress: true
+  group: ${{ workflow.filename }}-${{ github.ref }}
+
+defaults:
+  tools:
+    node: 24
+    bun: 1.3.14
+
+# One job per former GitHub Actions matrix entry (source, stop, limit).
+jobs:
+  grpc-screenshot-normal:
+    name: Android recording (grpc-screenshot, normal)
+    runs_on: linux-medium-nested-virtualization
+    steps:
+      - uses: eas/checkout
+
+      - name: Install dependencies
+        run: |
+          bun install --frozen-lockfile
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Build recording test runtime
+        run: |
+          bun run --filter '@expo/hub-android-utils' --filter '@expo/hub-apple-utils' build
+          bun run --filter serve-emu build
+          bun packages/serve-emu/packages/serve-emu/scripts/fetch-scrcpy.ts
+          # Hub imports the iOS middleware on Android too. Only its JS is needed here.
+          bun build packages/serve-sim/packages/serve-sim/src/middleware.ts --target node --format esm --external ws --outdir packages/serve-sim/packages/serve-sim/dist
+          bun run --filter expo-device-hub build:vendor
+          bun run --filter expo-device-hub build:server
+
+      - name: Start Android emulator
+        uses: eas/start_android_emulator
+        with:
+          system_image_package: system-images;android-35;google_apis;x86_64
+
+      # Records the exit code so the diagnostics upload below always runs.
+      - name: Verify recording on an emulator
+        id: verify
+        run: |
+          set +e
+          bun packages/expo-device-hub/scripts/verify-android-recording.ts grpc-screenshot endpoint normal
+          set-output exit_code "$?"
+
+      - name: Upload recordings and diagnostics
+        uses: eas/upload_artifact
+        with:
+          type: other
+          name: android-recording-grpc-screenshot-normal
+          path: /tmp/android-recording-smoke-*
+          ignore_error: true
+
+      - name: Report result
+        run: exit ${{ steps.verify.outputs.exit_code }}
+
+  scrcpy-normal:
+    name: Android recording (scrcpy, normal)
+    runs_on: linux-medium-nested-virtualization
+    steps:
+      - uses: eas/checkout
+
+      - name: Install dependencies
+        run: |
+          bun install --frozen-lockfile
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Build recording test runtime
+        run: |
+          bun run --filter '@expo/hub-android-utils' --filter '@expo/hub-apple-utils' build
+          bun run --filter serve-emu build
+          bun packages/serve-emu/packages/serve-emu/scripts/fetch-scrcpy.ts
+          # Hub imports the iOS middleware on Android too. Only its JS is needed here.
+          bun build packages/serve-sim/packages/serve-sim/src/middleware.ts --target node --format esm --external ws --outdir packages/serve-sim/packages/serve-sim/dist
+          bun run --filter expo-device-hub build:vendor
+          bun run --filter expo-device-hub build:server
+
+      - name: Start Android emulator
+        uses: eas/start_android_emulator
+        with:
+          system_image_package: system-images;android-35;google_apis;x86_64
+
+      # Records the exit code so the diagnostics upload below always runs.
+      - name: Verify recording on an emulator
+        id: verify
+        run: |
+          set +e
+          bun packages/expo-device-hub/scripts/verify-android-recording.ts scrcpy signal normal
+          set-output exit_code "$?"
+
+      - name: Upload recordings and diagnostics
+        uses: eas/upload_artifact
+        with:
+          type: other
+          name: android-recording-scrcpy-normal
+          path: /tmp/android-recording-smoke-*
+          ignore_error: true
+
+      - name: Report result
+        run: exit ${{ steps.verify.outputs.exit_code }}
+
+  grpc-screenshot-duration:
+    name: Android recording (grpc-screenshot, duration)
+    runs_on: linux-medium-nested-virtualization
+    steps:
+      - uses: eas/checkout
+
+      - name: Install dependencies
+        run: |
+          bun install --frozen-lockfile
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Build recording test runtime
+        run: |
+          bun run --filter '@expo/hub-android-utils' --filter '@expo/hub-apple-utils' build
+          bun run --filter serve-emu build
+          bun packages/serve-emu/packages/serve-emu/scripts/fetch-scrcpy.ts
+          # Hub imports the iOS middleware on Android too. Only its JS is needed here.
+          bun build packages/serve-sim/packages/serve-sim/src/middleware.ts --target node --format esm --external ws --outdir packages/serve-sim/packages/serve-sim/dist
+          bun run --filter expo-device-hub build:vendor
+          bun run --filter expo-device-hub build:server
+
+      - name: Start Android emulator
+        uses: eas/start_android_emulator
+        with:
+          system_image_package: system-images;android-35;google_apis;x86_64
+
+      # Records the exit code so the diagnostics upload below always runs.
+      - name: Verify recording on an emulator
+        id: verify
+        run: |
+          set +e
+          bun packages/expo-device-hub/scripts/verify-android-recording.ts grpc-screenshot endpoint duration
+          set-output exit_code "$?"
+
+      - name: Upload recordings and diagnostics
+        uses: eas/upload_artifact
+        with:
+          type: other
+          name: android-recording-grpc-screenshot-duration
+          path: /tmp/android-recording-smoke-*
+          ignore_error: true
+
+      - name: Report result
+        run: exit ${{ steps.verify.outputs.exit_code }}
+
+  scrcpy-bytes:
+    name: Android recording (scrcpy, bytes)
+    runs_on: linux-medium-nested-virtualization
+    steps:
+      - uses: eas/checkout
+
+      - name: Install dependencies
+        run: |
+          bun install --frozen-lockfile
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Build recording test runtime
+        run: |
+          bun run --filter '@expo/hub-android-utils' --filter '@expo/hub-apple-utils' build
+          bun run --filter serve-emu build
+          bun packages/serve-emu/packages/serve-emu/scripts/fetch-scrcpy.ts
+          # Hub imports the iOS middleware on Android too. Only its JS is needed here.
+          bun build packages/serve-sim/packages/serve-sim/src/middleware.ts --target node --format esm --external ws --outdir packages/serve-sim/packages/serve-sim/dist
+          bun run --filter expo-device-hub build:vendor
+          bun run --filter expo-device-hub build:server
+
+      - name: Start Android emulator
+        uses: eas/start_android_emulator
+        with:
+          system_image_package: system-images;android-35;google_apis;x86_64
+
+      # Records the exit code so the diagnostics upload below always runs.
+      - name: Verify recording on an emulator
+        id: verify
+        run: |
+          set +e
+          bun packages/expo-device-hub/scripts/verify-android-recording.ts scrcpy signal bytes
+          set-output exit_code "$?"
+
+      - name: Upload recordings and diagnostics
+        uses: eas/upload_artifact
+        with:
+          type: other
+          name: android-recording-scrcpy-bytes
+          path: /tmp/android-recording-smoke-*
+          ignore_error: true
+
+      - name: Report result
+        run: exit ${{ steps.verify.outputs.exit_code }}

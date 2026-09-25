@@ -18,14 +18,14 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     environment: npm-publish
     env:
       IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
+      RELEASE_BRANCH: release/${{ github.run_number }}-${{ github.run_attempt }}
     permissions:
-      contents: write # push the release commit + tags
+      contents: write # push package tags and the tested release commit
       id-token: write # npm OIDC Trusted Publishing
-      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -45,59 +45,77 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Configure git
+      - name: Build packages on EAS
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN }}
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          npx --yes eas-cli@24.7.0 workflow:run .eas/workflows/build-release.yml \
+            --ref "$(git rev-parse HEAD)" \
+            --input "canary=${IS_CANARY}" \
+            --input "release_branch=${RELEASE_BRANCH}" \
+            --wait \
+            --non-interactive \
+            --json > /tmp/eas-workflow.json
 
-      - name: Verify pending changesets
-        if: ${{ env.IS_CANARY != 'true' }}
-        run: ./scripts/verify-pending-changesets.ts
-
-      - name: Apply version bump & generate changelog
-        run: bun run changeset:version
-
-      - name: Apply canary version
-        if: ${{ env.IS_CANARY == 'true' }}
-        run: ./scripts/apply-canary-version.ts
-
-      - name: Summarize versions
-        run: ./scripts/summarize-versions.ts
-
-      - name: Build packages
-        run: bun run build
-
-      - name: Test
-        run: bun run test
-
-      - name: Commit & push version bump
-        if: ${{ env.IS_CANARY != 'true' }}
+      - name: Download npm packages from EAS
         run: |
-          git add -A
-          git commit -m "chore(release): version packages"
-          git push origin "HEAD:${{ github.ref_name }}"
+          ARTIFACT_URL=$(jq -er '
+            .jobs[]
+            | .turtleJobRun.artifacts[]?
+            | select(.name == "npm-packages")
+            | .downloadUrl
+          ' /tmp/eas-workflow.json)
+          curl --fail --location "$ARTIFACT_URL" --output /tmp/npm-packages.tgz
+          mkdir -p release-artifacts
+          tar -xzf /tmp/npm-packages.tgz -C release-artifacts
+          ls -l release-artifacts
 
-      - name: Ignore packages excluded from release
-        run: ./scripts/ignore-packages.ts
+      - name: Checkout release commit
+        if: ${{ env.IS_CANARY != 'true' }}
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          RELEASE_SHA=$(cat release-artifacts/release-commit.txt)
+          if ! [[ "$RELEASE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::EAS did not return a valid release commit SHA."
+            exit 1
+          fi
+          git fetch --depth=2 origin "$RELEASE_SHA"
+          git checkout --detach "$RELEASE_SHA"
+          if [ "$(git rev-parse HEAD^)" != "$SOURCE_SHA" ]; then
+            echo "::error::The release commit does not belong to this workflow's source commit."
+            exit 1
+          fi
 
       - name: Publish to npm
         if: ${{ env.IS_CANARY != 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: bun run changeset:publish
+        run: ./scripts/publish-packages.ts release-artifacts
 
       - name: Publish canary to npm
         if: ${{ env.IS_CANARY == 'true' }}
         env:
           NPM_CONFIG_PROVENANCE: "true"
-        run: bun run changeset:publish -- --tag canary
+        run: ./scripts/publish-packages.ts release-artifacts --canary
+
+      - name: Update main
+        if: ${{ env.IS_CANARY != 'true' }}
+        run: git push origin HEAD:refs/heads/main
 
       - name: Push git tags
         if: ${{ env.IS_CANARY != 'true' }}
-        run: git push origin --tags
+        run: |
+          mapfile -t TAG_REFS < release-artifacts/release-tag-refs.txt
+          test "${#TAG_REFS[@]}" -gt 0
+          git push --atomic origin "${TAG_REFS[@]}"
 
       - name: Create GitHub releases
         if: ${{ env.IS_CANARY != 'true' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./scripts/create-github-releases.ts
+        run: ./scripts/create-github-releases.ts release-artifacts
+
+      - name: Delete release branch
+        if: ${{ env.IS_CANARY != 'true' }}
+        run: git push origin --delete "$RELEASE_BRANCH"
