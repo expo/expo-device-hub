@@ -363,7 +363,7 @@ The npm package ships the native capture addon and LiveKit WebRTC framework alon
 ## Development
 
 The monorepo [Release workflow](../../../../.github/workflows/release.yml) builds and tests
-`@expo/serve-sim` on GitHub's `macos-15` Apple silicon runner before publishing. It checks
+`@expo/serve-sim` on GitHub's `macos-latest` runner before publishing. It checks
 that the runner is `arm64` before starting the build.
 
 ```sh
