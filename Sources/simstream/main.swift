@@ -145,10 +145,12 @@ do {
         case "pause":
             viewer?.pause()
             updateWatching()
+            if let viewer { log("viewer \(viewer.id) paused (page hidden)") }
         case "resume":
             viewer?.resume()
             updateWatching()
             pump.requestFrame()
+            if let viewer { log("viewer \(viewer.id) resumed") }
         case "touch":
             guard let x = message["x"] as? Double, let y = message["y"] as? Double else { return }
             let phase: SBTouchPhase = switch message["p"] as? String {
