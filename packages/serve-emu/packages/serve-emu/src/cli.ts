@@ -224,9 +224,9 @@ Options:
                          delivery for either source.
       --key-frame-interval <sec>
                          Ask the encoder for regular keyframes; 0 disables this
-                         codec option (default: ${SCRCPY_DEFAULTS.keyFrameInterval}). Late joiners get keyframes
-                         on demand via reset-video, so a long interval avoids
-                         periodic keyframe bursts.
+                         codec option (default: ${SCRCPY_DEFAULTS.keyFrameInterval}). Frequent keyframes help
+                         decoders recover after lost frames. Late joiners also
+                         get keyframes on demand via reset-video.
       --repeat-frame-ms <ms>
                          Re-encode the previous frame after this many ms with no
                          screen change, so static screens keep producing frames
