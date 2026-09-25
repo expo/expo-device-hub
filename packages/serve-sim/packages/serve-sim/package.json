@@ -10,12 +10,12 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/expo/serve-sim.git",
-    "directory": "packages/serve-sim"
+    "url": "https://github.com/expo/expo-device-hub.git",
+    "directory": "packages/serve-sim/packages/serve-sim"
   },
-  "homepage": "https://github.com/expo/serve-sim#readme",
+  "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/serve-sim/packages/serve-sim",
   "bugs": {
-    "url": "https://github.com/expo/serve-sim/issues"
+    "url": "https://github.com/expo/expo-device-hub/issues"
   },
   "publishConfig": {
     "access": "public",

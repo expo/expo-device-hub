@@ -362,6 +362,10 @@ The npm package ships the native capture addon and LiveKit WebRTC framework alon
 
 ## Development
 
+The monorepo [Release workflow](../../../../.github/workflows/release.yml) builds and tests
+`@expo/serve-sim` on GitHub's `macos-latest` runner before publishing. It checks
+that the runner is `arm64` before starting the build.
+
 ```sh
 bun install
 bun run packages/serve-sim/build.ts                   # full production build
@@ -409,7 +413,11 @@ Env (all optional): `TART_VM=tahoe-xcode`, `TART_USER=expo`, `TART_SHARE_NAME=se
 
 `--package-version` pins serve-sim only on `--type web-preview-only`. The other session types use the flag for their own package (`agent-device`, `appium`, `argent`) and always run serve-sim at `latest`, so a serve-sim tarball URL breaks them.
 
-The `serve-sim tests` workflow packs `serve-sim.tgz` on every pull request and uploads it as `serve-sim-npm-package`. It packs before the tests run, so the tarball exists even when they fail. `Build @expo/serve-sim release` uploads the same artifact on demand. Copy the download URL from the run, then pass it as `--package-version`. Run these commands from an Expo project directory.
+The EAS [serve-sim tests workflow](../../../../.eas/workflows/sim-test.yml) packs
+`serve-sim.tgz` for pull requests that change `packages/serve-sim` and uploads it as
+`serve-sim-npm-package`. It packs before the tests run, so the tarball exists even when
+they fail. Copy the download URL from the run, then pass it as `--package-version`.
+Run these commands from an Expo project directory.
 
 ```sh
 npx --yes eas-cli@latest workflow:runs --workflow sim-test.yml --limit 5
