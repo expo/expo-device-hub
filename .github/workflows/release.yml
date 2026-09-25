@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on: macos-15
     environment: npm-publish
     env:
       IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
@@ -27,6 +27,9 @@ jobs:
       id-token: write # npm OIDC Trusted Publishing
       pull-requests: read
     steps:
+      - name: Verify Apple silicon runner
+        run: test "$(uname -m)" = arm64
+
       - name: Checkout
         uses: actions/checkout@v7
         with:
