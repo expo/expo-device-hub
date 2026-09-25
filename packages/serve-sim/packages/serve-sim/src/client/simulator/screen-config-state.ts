@@ -30,6 +30,9 @@ export function resolveScreenConfigUpdate(
   if (config.hingeAngle === undefined && prev?.hingeAngle !== undefined) {
     next.hingeAngle = prev.hingeAngle;
   }
+  if (source !== "media" && config.physicalOrientation === undefined) {
+    delete next.physicalOrientation;
+  }
   if (screenConfigsEqual(prev, next)) {
     return null;
   }
