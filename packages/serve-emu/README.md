@@ -251,6 +251,19 @@ hardware probe. Unexpected hardware encoder failures invalidate the cached probe
 so the next hardware request probes again.
 `/health` and `/api` also report the active `encoderName`.
 
+`/health.captureBackend` identifies the actual video source: `scrcpy`,
+`grpc-screenshot`, or `gfxstream-cuda-nvenc`. For the opt-in GPU experiment,
+`experimentalGpuCapture` contains the encoder name, encoded packet/byte counts,
+keyframe request count, queued bytes, configured FPS, native/stream sizes, and
+the longest-edge limit (`maxSize`); otherwise it is `null`. `streamMode` stays
+`scrcpy` for that experiment because scrcpy still provides input.
+
+The GPU override (`SERVE_EMU_EXPERIMENTAL_GPU_SOCKET` and
+`SERVE_EMU_EXPERIMENTAL_GPU_SERIAL`) is supported only through Hub or the middleware
+API. Standalone `serve-emu start` rejects it: its session replacement needs
+overlapping captures, while the native socket supports one consumer. See the
+[capture package](https://github.com/expo/expo-device-hub/tree/main/packages/@expo/emulator-capture) for setup.
+
 `PUT /api/stream-mode` accepts optional `grpcImageMode` (`png`, `mmap`, or `rgb888`),
 `inputSource` (`scrcpy` or `grpc`), and `encoder` (`software` or `hardware`) when
 `mode` is `grpc-screenshot`. Omitted settings keep their configured values.

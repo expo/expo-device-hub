@@ -1675,3 +1675,15 @@ test.each(['unknown', 'waiting', 'recording', 'finalizing', 'complete', 'failed'
     }
   },
 );
+
+test('keeps Android 120 FPS available after selecting a lower stream frame rate', () => {
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection client={inspectorClient('android')} defaultOpen />,
+  );
+  expect(selectOptionLabels(html, 'Video FPS')).toContain('120 FPS');
+  expect(selectOptionLabels(html, 'Video FPS')).toContain('30 FPS');
+  const iosHtml = renderToStaticMarkup(
+    <StreamOptionsSection client={inspectorClient('ios')} defaultOpen />,
+  );
+  expect(selectOptionLabels(iosHtml, 'Video FPS')).not.toContain('120 FPS');
+});

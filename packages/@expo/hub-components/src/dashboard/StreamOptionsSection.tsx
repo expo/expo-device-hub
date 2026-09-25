@@ -399,7 +399,13 @@ export function StreamOptionsSection({
               <Select
                 ariaLabel="Video FPS"
                 value={String(settings.h264Fps)}
-                options={withCurrentValue(settings.h264Fps, FPS_OPTIONS, (value) => `${value} FPS`)}
+                options={withCurrentValue(
+                  settings.h264Fps,
+                  client.platform === 'android'
+                    ? [{ value: '120', label: '120 FPS' }, ...FPS_OPTIONS]
+                    : FPS_OPTIONS,
+                  (value) => `${value} FPS`,
+                )}
                 disabled={settingsDisabled || !h264Active}
                 disabledReason={recordingDisabledReason}
                 onChange={(value) => patchSetting('h264Fps', Number(value))}

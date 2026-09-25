@@ -388,6 +388,13 @@ export async function startServer(
   opts: ServerOpts,
   dependencies: ServerDependencies = {},
 ) {
+  if (process.env.SERVE_EMU_EXPERIMENTAL_GPU_SOCKET) {
+    throw new Error(
+      "GPU capture is supported only by the Hub / serve-emu middleware integration; " +
+      "standalone serve-emu requires overlapping sessions when changing stream settings. " +
+      "Unset SERVE_EMU_EXPERIMENTAL_GPU_SOCKET to use standalone serve-emu.",
+    );
+  }
   const requestedDefaultStreamMode: unknown = opts.streamMode ?? "scrcpy";
   if (!isStreamMode(requestedDefaultStreamMode)) {
     throw new Error(
@@ -701,6 +708,7 @@ export async function startServer(
   );
 
   const health = (context = sessions.current) => {
+    const diagnostics = context.stream.diagnostics?.();
     const now = recoveryClock.now();
     const recovery = recoveries.get(context);
     const recoverySnapshot = recovery?.snapshot(now) ?? {
@@ -722,9 +730,11 @@ export async function startServer(
     streamMode: context.stream.mode,
     grpcImageMode: grpcImageModeForContext(context),
     encoder: encoderForContext(context),
-    encoderName: context.stream.diagnostics?.().grpcCapture?.encoderName ?? null,
+    captureBackend: diagnostics?.experimentalGpuCapture?.backend ?? context.stream.mode,
+    experimentalGpuCapture: diagnostics?.experimentalGpuCapture ?? null,
+    encoderName: diagnostics?.grpcCapture?.encoderName ?? null,
     inputSource: context.stream.inputSource,
-    grpcCapture: context.stream.diagnostics?.().grpcCapture ?? null,
+    grpcCapture: diagnostics?.grpcCapture ?? null,
     size: { width: context.screen.width, height: context.screen.height },
     clients: context.clients.size,
     videoClients: Array.from(context.clients).filter((client) => client.video)

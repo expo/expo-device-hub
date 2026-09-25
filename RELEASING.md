@@ -1,11 +1,17 @@
 # Releasing
 
-This monorepo publishes two public packages:
+This monorepo publishes these public packages:
 
 - **`expo-device-hub`** — the DevTools plugin.
 - **`@expo/hub-client`** — the device-client hooks and the `DeviceScreen` component.
 
-Every other workspace package is marked `private` and is skipped by the release tooling.
+Other workspace packages are private or excluded from publishing. In particular,
+**`@expo/emulator-capture`** remains private while the distribution prerequisites in
+its [third-party notices](packages/@expo/emulator-capture/THIRD_PARTY_LICENSES.md#distribution-status)
+are unresolved. It is not a Hub dependency. Before enabling publication, resolve
+those prerequisites, restore the Linux release-artifact build and transfer, and
+bootstrap the npm package and trusted publisher. CI still builds the native code
+and checks its package contents.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): the version
 bump and changelog for each package are computed from the `.changeset/*.md` entries that have
@@ -53,8 +59,8 @@ bumps a package, the canary uses that version directly (e.g. `0.3.0` with a mino
 a pending changeset, so you can publish one from any commit.
 
 Real releases only version and publish the packages that have a changeset; the others stay put.
-Canary releases assign every public package a canary version so they can also run without
-pending changesets.
+Canary releases assign every public package a canary version and pin their internal runtime
+dependencies to the matching canary versions, so they can also run without pending changesets.
 
 ## One-time setup for a new public package
 
