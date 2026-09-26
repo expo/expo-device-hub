@@ -1415,8 +1415,11 @@ function AppWithConfig({
   // sent, such as a text selection. Keys the paced sender still holds go out first, then the
   // barrier follows them on the socket. A closed socket fails here; nothing is queued to replay.
   const waitForPriorInput = useCallback(async () => {
+    // Taken before the wait: a socket that reconnects meanwhile may have missed some keys, and
+    // the barrier's identity check then refuses the copy.
+    const ws = wsRef.current;
     await keySender.idle();
-    await waitForInputBarrier(wsRef.current);
+    await waitForInputBarrier(ws);
   }, [keySender, waitForInputBarrier]);
 
   const sendTextToSim = useCallback(
