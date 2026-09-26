@@ -126,6 +126,27 @@ function isRunnable(path: string): boolean {
 /** A confdir exists before its mitmdump appears in `ps`, so a new one is never swept. */
 const CONFDIR_MIN_AGE_MS = 60_000;
 
+/**
+ * The addon reports problems, such as records it could not deliver at shutdown, on stderr lines
+ * that start with "[servesim-capture]". Pass those on; they hold counts, never traffic or tokens.
+ */
+export function forwardAddonDiagnostics(
+  stream: NodeJS.ReadableStream,
+  warn: (message: string) => void = (message) => console.warn(message),
+): void {
+  let pending = "";
+  stream.on("data", (chunk: Buffer | string) => {
+    pending += chunk.toString();
+    const lines = pending.split("\n");
+    pending = lines.pop() ?? "";
+    // A line longer than any diagnostic is not one; drop it rather than buffer without bound.
+    if (pending.length > 4096) pending = "";
+    for (const line of lines) {
+      if (line.startsWith("[servesim-capture]")) warn(line.trimEnd());
+    }
+  });
+}
+
 export function sweepStaleConfdirs(
   deps: {
     list?: () => string[];
@@ -324,6 +345,7 @@ async function startMitmProxyAttempt(
   };
   child.stdout?.on("data", collect);
   child.stderr?.on("data", collect);
+  if (child.stderr) forwardAddonDiagnostics(child.stderr);
 
   let exited = false;
   let closing = false;
