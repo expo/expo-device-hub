@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { captureRuntime } from "./capture/runtime";
 import { Command, InvalidArgumentError } from "commander";
 import { execFileSync, execSync, spawn as nodeSpawn, type ChildProcess } from "child_process";
 import { existsSync, mkdirSync, openSync, closeSync, readSync, readFileSync, unlinkSync, writeFileSync } from "fs";
@@ -27,6 +28,7 @@ import { launchAppAsync } from "./launch-app";
 import {
   assertKnownCapabilities,
   hasDefaultCapabilities,
+  registerCapability,
 } from "./capabilities";
 import {
   applyDefaultCapabilities,
@@ -2383,5 +2385,6 @@ program
   .argument("[args...]")
   .action((args: string[]) => uiSettings(args));
 
+registerCapability(captureRuntime.capability);
 
 await program.parseAsync(process.argv);

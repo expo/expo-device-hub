@@ -1,7 +1,3 @@
-/**
- * Unused until #53 reads it. Remove the tag there.
- * @public
- */
 export const CAPTURE_SCHEMA_VERSION = 1;
 
 const MAX_REQUESTS = 500;

@@ -1,5 +1,10 @@
 import { execSync } from "child_process";
 
+import { simctl } from "./simctl";
+
+const SHUTDOWN_TIMEOUT_MS = 60_000;
+const BOOT_TIMEOUT_MS = 120_000;
+
 /**
  * UDID of a booted simulator, or null if none is booted. Prefers an iOS device
  * — a machine may also have a booted watchOS/tvOS sim, which `serve-sim`'s
@@ -46,4 +51,23 @@ export function resolveDevice(nameOrUDID: string): string {
   } catch {}
   console.error(`Could not resolve device: ${nameOrUDID}`);
   process.exit(1);
+}
+
+// Match simctl output, not the command echoed in every execution error.
+export function isAlreadyShutDown(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  return /Unable to shutdown device in current state: Shutdown/i.test(text);
+}
+
+export async function shutdownDevice(udid: string): Promise<void> {
+  await simctl(["shutdown", udid], SHUTDOWN_TIMEOUT_MS).catch(
+    (error: unknown) => {
+      if (!isAlreadyShutDown(error)) throw error;
+    },
+  );
+}
+
+export async function bootDevice(udid: string): Promise<void> {
+  await simctl(["boot", udid], BOOT_TIMEOUT_MS);
+  await simctl(["bootstatus", udid, "-b"], BOOT_TIMEOUT_MS);
 }
