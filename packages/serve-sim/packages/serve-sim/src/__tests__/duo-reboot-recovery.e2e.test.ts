@@ -52,28 +52,42 @@ async function gridPost(serverUrl: string, action: "shutdown" | "start", device:
   if (!response.ok) throw new Error(`grid ${action} failed: ${response.status} ${await response.text()}`);
 }
 
-async function readTwoJpegFrames(url: string): Promise<void> {
+const SOI = Buffer.from([0xff, 0xd8]);
+const EOI = Buffer.from([0xff, 0xd9]);
+
+function completeJpegs(data: Buffer): Buffer[] {
+  const frames: Buffer[] = [];
+  let from = 0;
+  for (;;) {
+    const start = data.indexOf(SOI, from);
+    if (start < 0) break;
+    const end = data.indexOf(EOI, start + 2);
+    if (end < 0) break;
+    frames.push(data.subarray(start, end + 2));
+    from = end + 2;
+  }
+  return frames;
+}
+
+/** The second complete JPEG, so a live stream is proven to move past its first part. */
+async function readJpegFrame(url: string): Promise<Buffer> {
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), 15_000);
   try {
     const response = await fetch(url, { signal: abort.signal });
     if (!response.ok || !response.body) throw new Error(`MJPEG unavailable: ${response.status}`);
     const reader = response.body.getReader();
-    let previous = -1;
-    let starts = 0;
-    let ends = 0;
+    const chunks: Buffer[] = [];
     let bytes = 0;
-    while (ends < 2 && bytes < 8_000_000) {
+    while (bytes < 8_000_000) {
       const { done, value } = await reader.read();
       if (done) break;
+      chunks.push(Buffer.from(value));
       bytes += value.length;
-      for (const byte of value) {
-        if (previous === 0xff && byte === 0xd8) starts++;
-        if (previous === 0xff && byte === 0xd9 && starts > ends) ends++;
-        previous = byte;
-      }
+      const frames = completeJpegs(Buffer.concat(chunks));
+      if (frames.length >= 2) return Buffer.from(frames[1]!);
     }
-    if (ends < 2) throw new Error(`MJPEG stopped after ${ends} JPEG frames`);
+    throw new Error("MJPEG stopped before two JPEG frames");
   } finally {
     clearTimeout(timeout);
     abort.abort();
@@ -123,9 +137,8 @@ test.skipIf(!enabled)("Duo main capture and HID recover after a preview reboot i
     if (detach.status !== 0) throw new Error(`serve-sim --detach failed: ${detach.stderr}`);
     const state = parseDetachState<ServeSimDeviceState>(detach.stdout);
     const pid = (JSON.parse(readFileSync(join(stateDir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState).pid;
-    const frames = async () => readTwoJpegFrames(state.streamUrl);
     const liveFrames = async (message: string) => waitFor(async () => {
-      try { await frames(); return true; } catch { return false; }
+      try { await readJpegFrame(state.streamUrl); return true; } catch { return false; }
     }, 90_000, message);
 
     await liveFrames("no live main MJPEG frames before reboot");
@@ -138,7 +151,13 @@ test.skipIf(!enabled)("Duo main capture and HID recover after a preview reboot i
     await gridPost(state.url, "start", udid);
 
     await liveFrames("main MJPEG did not recover after Duo reboot");
+    const beforeLaunch = await readJpegFrame(state.streamUrl);
     await launchFixture();
+    // A repeated cached frame, or a feed of the inactive panel, would keep
+    // showing the image from before the fixture launched.
+    await waitFor(async () => {
+      try { return !(await readJpegFrame(state.streamUrl)).equals(beforeLaunch); } catch { return false; }
+    }, 15_000, "main MJPEG did not show the fixture after Duo reboot");
     await tapFixture();
     expect((JSON.parse(readFileSync(join(stateDir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState).pid).toBe(pid);
     process.kill(pid, 0);
