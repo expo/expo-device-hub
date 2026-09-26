@@ -64,7 +64,7 @@ describe("forwardAddonDiagnostics", () => {
     await shutDownWithStalledControl(1);
   }, 20_000);
 
-  async function runWithControl(reply: (res: import("node:http").ServerResponse) => void, records: number) {
+  async function runWithControl(reply: (res: import("node:http").ServerResponse) => void, records: number, ready = false) {
     const server: Server = createServer((_req, res) => reply(res));
     await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
     const port = (server.address() as { port: number }).port;
@@ -73,6 +73,7 @@ describe("forwardAddonDiagnostics", () => {
         "import importlib.util, time",
         `spec = importlib.util.spec_from_file_location("addon", ${JSON.stringify(ADDON)})`,
         "addon = importlib.util.module_from_spec(spec); spec.loader.exec_module(addon)",
+        ...(ready ? ["addon.running()"] : []),
         `for i in range(${records}): addon._post('/response', {'id': str(i)})`,
         "time.sleep(1)",
         "addon.done()",
@@ -99,6 +100,14 @@ describe("forwardAddonDiagnostics", () => {
   test("counts a record the control server refuses with ok: false", async () => {
     const stderr = await runWithControl((res) => res.writeHead(200, { "content-type": "application/json" }).end('{"ok":false}'), 1);
     expect(stderr).toContain("[servesim-capture] stopped with 1 capture record(s) not delivered");
+  }, 20_000);
+
+  test("does not count a failed ready signal as lost traffic", async () => {
+    const stderr = await runWithControl((res) => {
+      if (res.req.url?.startsWith("/ready")) return res.writeHead(500).end();
+      res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}');
+    }, 2, true);
+    expect(stderr).not.toContain("[servesim-capture]");
   }, 20_000);
 
   test("stays quiet when every record is delivered", async () => {

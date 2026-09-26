@@ -98,11 +98,11 @@ def _drain():
         delivered = _send(path, body)
         with _delivery_lock:
             _in_flight = False
-            if not delivered:
+            # /ready is a startup signal, not a capture record; its reply failing loses no traffic.
+            first = False
+            if not delivered and path != "/ready":
                 _failed_sends += 1
                 first = _failed_sends == 1
-            else:
-                first = False
         if first and _shutdown_deadline is None:
             print(
                 "[servesim-capture] could not deliver a capture record to serve-sim; its request stays "
