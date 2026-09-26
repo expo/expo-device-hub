@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -109,6 +109,20 @@ describe("CaptureDiskAccumulator", () => {
       expect(await disk.end({ removeDir: true })).toBeInstanceOf(Error);
       expect(existsSync(disk.networkCapturePath)).toBe(true);
       await stop();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses to write through a symlink planted at a recording path", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-disk-symlink-"));
+    const victim = join(dir, "victim.txt");
+    writeFileSync(victim, "keep me");
+    symlinkSync(victim, join(dir, "session.har"));
+    const disk = new CaptureDiskAccumulator({ dir, harPath: join(dir, "session.har"), flushIntervalMs: 60_000 });
+    try {
+      expect(() => disk.begin()).toThrow();
+      expect(readFileSync(victim, "utf8")).toBe("keep me");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

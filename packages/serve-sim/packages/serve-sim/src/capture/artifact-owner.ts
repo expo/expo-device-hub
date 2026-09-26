@@ -1,9 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { withLaunchStateLockSync } from "../launch-state-lock";
 import { stateDir } from "../state";
+import { writeFileNoFollow } from "./no-follow";
 
 const CAPTURE_DIR_PREFIX = "capture-";
 export const CAPTURE_OWNER_FILENAME = "owner.pid";
@@ -39,7 +40,7 @@ export function claimCaptureDirectory(dir: string, ownerFile = CAPTURE_OWNER_FIL
     }
     mkdirSync(dir, { recursive: true });
     const owner = `${process.pid}\n${randomUUID()}`;
-    writeFileSync(ownerPath, owner);
+    writeFileNoFollow(ownerPath, owner);
     return owner;
   });
 }

@@ -6,6 +6,7 @@ import { once } from "node:events";
 import { finished } from "node:stream/promises";
 
 import { emptyHar } from "./har";
+import { clearTempPath } from "./no-follow";
 
 export function emptyHarText(creatorVersion: string): string {
   return `${JSON.stringify(emptyHar(creatorVersion))}\n`;
@@ -48,7 +49,8 @@ async function streamHarBody(
 ): Promise<void> {
   const { open, close } = harEnvelope(creatorVersion);
   const tmp = `${outPath}.${process.pid}.tmp`;
-  const out = createWriteStream(tmp);
+  clearTempPath(tmp);
+  const out = createWriteStream(tmp, { flags: "wx" });
   const done = observeCompletion(out);
   try {
     await writeChunk(out, open);
@@ -119,8 +121,10 @@ export async function compactNdjsonAndStreamHar(
   const { open, close } = harEnvelope(creatorVersion);
   const entriesTmp = `${entriesPath}.${process.pid}.compact.tmp`;
   const harTmp = `${harPath}.${process.pid}.tmp`;
-  const entriesOut = createWriteStream(entriesTmp);
-  const harOut = createWriteStream(harTmp);
+  clearTempPath(entriesTmp);
+  clearTempPath(harTmp);
+  const entriesOut = createWriteStream(entriesTmp, { flags: "wx" });
+  const harOut = createWriteStream(harTmp, { flags: "wx" });
   const entriesDone = observeCompletion(entriesOut);
   const harDone = observeCompletion(harOut);
   let skipped = 0;

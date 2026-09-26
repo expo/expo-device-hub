@@ -1,11 +1,7 @@
-import { appendFile } from "node:fs/promises";
-import {
-  appendFileSync,
-  writeFileSync,
-} from "node:fs";
 import { join } from "node:path";
 
 import { claimCaptureDirectory, releaseCaptureDirectory } from "./artifact-owner";
+import { appendFileNoFollow, appendFileNoFollowSync, writeFileNoFollow } from "./no-follow";
 import { MAX_HAR_ENTRIES, toHarEntry, type HarEntry } from "./har";
 import { compactNdjsonAndStreamHar, emptyHarText } from "./har-stream";
 import type { CapturedBody, CapturedRequest, CaptureEvent, CaptureStore } from "./store";
@@ -92,9 +88,9 @@ export class CaptureDiskAccumulator {
     if (this.started) return;
     const owner = claimCaptureDirectory(this.dir, this.ownerFile);
     try {
-      writeFileSync(this.networkCapturePath, "");
-      writeFileSync(this.entriesPath, "");
-      writeFileSync(this.harPath, emptyHarText(this.creatorVersion));
+      writeFileNoFollow(this.networkCapturePath, "");
+      writeFileNoFollow(this.entriesPath, "");
+      writeFileNoFollow(this.harPath, emptyHarText(this.creatorVersion));
       this.owner = owner;
     } catch (error) {
       releaseCaptureDirectory(this.dir, owner, false, this.ownerFile);
@@ -246,7 +242,7 @@ export class CaptureDiskAccumulator {
     if (this.pendingEventLines.length === 0) return;
     const batch = this.pendingEventLines.splice(0, this.pendingEventLines.length);
     try {
-      await appendFile(this.networkCapturePath, `${batch.join("\n")}\n`);
+      await appendFileNoFollow(this.networkCapturePath, `${batch.join("\n")}\n`);
     } catch (err) {
       this.pendingEventLines.unshift(...batch);
       throw err;
@@ -257,7 +253,7 @@ export class CaptureDiskAccumulator {
     if (this.pendingEntryLines.length === 0) return;
     const batch = this.pendingEntryLines.splice(0, this.pendingEntryLines.length);
     try {
-      await appendFile(this.entriesPath, `${batch.join("\n")}\n`);
+      await appendFileNoFollow(this.entriesPath, `${batch.join("\n")}\n`);
       this.diskEntryCount += batch.length;
     } catch (err) {
       this.pendingEntryLines.unshift(...batch);
@@ -270,7 +266,7 @@ export class CaptureDiskAccumulator {
     if (this.pendingEventLines.length > 0) {
       const batch = this.pendingEventLines.splice(0, this.pendingEventLines.length);
       try {
-        appendFileSync(this.networkCapturePath, `${batch.join("\n")}\n`);
+        appendFileNoFollowSync(this.networkCapturePath, `${batch.join("\n")}\n`);
       } catch (err) {
         this.pendingEventLines.unshift(...batch);
         throw err;
@@ -279,7 +275,7 @@ export class CaptureDiskAccumulator {
     if (this.pendingEntryLines.length > 0) {
       const batch = this.pendingEntryLines.splice(0, this.pendingEntryLines.length);
       try {
-        appendFileSync(this.entriesPath, `${batch.join("\n")}\n`);
+        appendFileNoFollowSync(this.entriesPath, `${batch.join("\n")}\n`);
         this.diskEntryCount += batch.length;
         this.harDirty = true;
       } catch (err) {
