@@ -98,6 +98,33 @@ describe("sendPasteShortcut", () => {
     ]);
   });
 
+  test("taps V again when another viewer holds it, without typing another v", async () => {
+    const { calls, internals, viewer } = session();
+    const a = viewer();
+    const b = viewer();
+    await internals.updateHidKey(a, "down", KeyV);
+    calls.length = 0;
+
+    await internals.sendPasteShortcut(b);
+
+    expect(calls).toEqual([
+      ["up", KeyV],
+      ["down", MetaLeft],
+      ["down", KeyV],
+      ["up", KeyV],
+      ["up", MetaLeft],
+    ]);
+    expect(internals.activeHidKeyUsageCounts.get(KeyV)).toBe(1);
+    expect(internals.activeHidKeyUsages.get(a)?.has(KeyV)).toBe(true);
+    expect(internals.activeHidKeyUsages.get(b)?.has(KeyV)).toBe(false);
+
+    // A's next press reaches the simulator, and so does its release.
+    calls.length = 0;
+    await internals.updateHidKey(a, "down", KeyV);
+    await internals.updateHidKey(a, "up", KeyV);
+    expect(calls).toEqual([["down", KeyV], ["up", KeyV]]);
+  });
+
   test("puts a lifted modifier back when the chord fails", async () => {
     const { calls, internals, viewer } = session(([type, usage]) => type === "down" && usage === KeyV);
     const a = viewer();
