@@ -120,6 +120,19 @@ describe("exec-ws control channel", () => {
     channel.close();
   });
 
+  test("ui requests refuse a relaunch bundle id simctl would read as a flag", async () => {
+    const channel = await connect(TOKEN);
+    await channel.next(); // ready
+    channel.send({
+      id: 3,
+      ui: { device: "DEVICE-A", option: "time-zone", value: "UTC", relaunch: "--help" },
+    });
+    const reply = await channel.next();
+    expect(reply.id).toBe(3);
+    expect(reply.error).toMatch(/invalid relaunch bundle id/i);
+    channel.close();
+  });
+
   test("sse subscriptions reject paths outside the allowlist", async () => {
     const channel = await connect(TOKEN);
     await channel.next(); // ready

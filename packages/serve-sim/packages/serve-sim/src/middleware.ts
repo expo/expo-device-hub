@@ -54,7 +54,15 @@ export { handleCrashesRequest, handleCrashReportRequest } from "./crash/routes";
 import { booleanParam } from "./request-params";
 import { logBufferCache, type LogBufferCache, type LogLine } from "./log-buffer";
 import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware-utils";
-import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
+import {
+  UI_OPTIONS,
+  getUiStatus,
+  isAppRunning,
+  normalizeUiValue,
+  relaunchApp,
+  setUiOption,
+  writeTimeZone,
+} from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
 
@@ -1754,7 +1762,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   };
 
   const handleUiRequest: UiRequestHandler = async (payload) => {
-    const p = (payload ?? {}) as { device?: string; option?: string; value?: string };
+    const p = (payload ?? {}) as { device?: string; option?: string; value?: string; relaunch?: string };
     // Must start alphanumeric and stay bounded: a leading "-" is parsed as a flag by simctl.
     if (typeof p.device !== "string" || !/^[0-9A-Za-z][0-9A-Za-z-]{0,255}$/.test(p.device)) {
       throw new Error("missing or invalid device udid");
@@ -1765,7 +1773,32 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (!Object.hasOwn(UI_OPTIONS, p.option)) throw new Error(`unknown option: ${p.option}`);
     const value = typeof p.value === "string" ? normalizeUiValue(p.option, p.value) : null;
     if (value === null) throw new Error(`invalid value for ${p.option}: ${p.value}`);
-    await sanitizeUiFailure(setUiOption(p.device, p.option, value));
+    // Same rule as the udid above: simctl reads a leading "-" as a flag.
+    if (p.relaunch !== undefined && !/^[0-9A-Za-z][\w.-]{0,255}$/.test(p.relaunch)) {
+      throw new Error("invalid relaunch bundle id");
+    }
+    // Asked before the set, because the set is what stops the app: afterwards a survivor
+    // the user had closed looks the same as one the restart just killed.
+    const wasRunning = p.relaunch ? await isAppRunning(p.device, p.relaunch) : false;
+    // Only a time zone change needs running apps relaunched; setUiOption's result is the
+    // device option revision, so the time zone goes through writeTimeZone for its answer.
+    let needsRelaunch = false;
+    if (UI_OPTIONS[p.option]!.via === "tz") {
+      needsRelaunch = await sanitizeUiFailure(writeTimeZone(p.device, value));
+    } else {
+      await sanitizeUiFailure(setUiOption(p.device, p.option, value));
+    }
+    let relaunched: boolean | undefined;
+    if (p.relaunch && needsRelaunch && wasRunning) {
+      // The setting has applied either way, so a failed relaunch is reported, not thrown.
+      relaunched = await relaunchApp(p.device, p.relaunch).then(
+        () => true,
+        (e: unknown) => {
+          console.error(`serve-sim: relaunching ${p.relaunch} failed:`, e);
+          return false;
+        },
+      );
+    }
     try {
       recordEventLogEvent({
         device: p.device,
@@ -1774,12 +1807,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         action: p.option,
         status: "ok",
         summary: `UI ${p.option} ${value}`,
-        details: { option: p.option, value },
+        details: { option: p.option, value, ...(relaunched === undefined ? {} : { relaunched }) },
       });
     } catch {
       // Event-log recording is diagnostic; it must not fail the UI request.
     }
-    return { ok: true };
+    return relaunched === undefined ? { ok: true } : { ok: true, relaunched };
   };
 /** Reachable without the session token: liveness probes cannot carry one. */
   const UNGATED_PATHS = ["/healthz", "/readyz"];

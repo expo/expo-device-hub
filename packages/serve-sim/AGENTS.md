@@ -91,7 +91,8 @@ through `serve-sim` subcommands against a running server:
 - `serve-sim ui time-zone <IANA zone | host>` sets `TZ` on the simulator's
   launchd and restarts SpringBoard. An app reads `TZ` once at launch and can
   outlive the restart, so terminate and relaunch the app under test yourself
-  afterwards. Verify with `simctl getenv <udid> TZ`. The override lasts until
+  afterwards. The sidebar does this for the foreground app; the CLI does not.
+  Verify with `simctl getenv <udid> TZ`. The override lasts until
   the simulator reboots.
 - `xcrun simctl openurl booted <url>` — deep-link into apps (faster than
   tapping through Expo Go's recent-projects list).

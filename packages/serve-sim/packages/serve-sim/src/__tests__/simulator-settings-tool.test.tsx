@@ -94,7 +94,7 @@ describe("time zone picker", () => {
 
   test("renders a Time Zone row naming the current zone, disabled until state arrives", () => {
     const html = renderToStaticMarkup(
-      <SimulatorSettingsTool udid="ABC" runtime="iOS-26-4" />,
+      <SimulatorSettingsTool udid="ABC" runtime="iOS-26-4" bundleId="host.exp.Exponent" />,
     );
     expect(html).toContain('data-setting-row="Time Zone"');
     expect(html).toContain("Host default");

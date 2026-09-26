@@ -24,7 +24,7 @@ type SocketReply = {
   end?: boolean;
   ready?: boolean;
   error?: string;
-} & Partial<ExecResult> & { status?: Record<string, string>; ok?: boolean };
+} & Partial<ExecResult> & { status?: Record<string, string>; ok?: boolean; relaunched?: boolean };
 
 interface PendingRequest {
   resolve: (reply: SocketReply) => void;
@@ -197,21 +197,22 @@ export interface UiRequestPayload {
   device: string;
   option?: string;
   value?: string;
+  /** Bundle id to bring back when the set stops it. */
+  relaunch?: string;
 }
 
 /**
  * Simulator-settings request, handled in-process by the preview server (just
  * the underlying simctl/ax-tool spawn — no `node <cli>` shell round-trip).
- * Resolves to the settings map for status requests; rejects with the server's
- * error message for invalid requests or failed sets.
+ * Rejects with the server's error message for invalid requests or failed sets.
  */
 export async function hostUiRequest(
   payload: UiRequestPayload,
   opts?: { signal?: AbortSignal },
-): Promise<Record<string, string> | null> {
+): Promise<{ status?: Record<string, string>; relaunched?: boolean }> {
   const reply = await socketRequest({ ui: payload }, opts?.signal);
   if (reply.error) throw new Error(reply.error);
-  return reply.status ?? null;
+  return reply;
 }
 
 export interface HostEventStream {

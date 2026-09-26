@@ -346,6 +346,44 @@ export async function writeTimeZone(udid: string, zone: string, exec: SimExec = 
   return true;
 }
 
+/** Whether launchd_sim is holding a job for the app, i.e. it is running right now. */
+export async function isAppRunning(udid: string, bundleId: string, exec: SimExec = run): Promise<boolean> {
+  const jobs = await launchctl(udid, ["list"], exec).catch(() => "");
+  const label = `UIKitApplication:${bundleId}`;
+  return jobs.split("\n").some((line) => {
+    const job = line.split("\t")[2] ?? "";
+    return job === label || job.startsWith(`${label}[`);
+  });
+}
+
+const RELAUNCH_BACKOFF_MS = [500, 1000, 2000];
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Terminates first, because an app can outlive the SpringBoard restart and reads TZ once at
+ * launch, so a survivor would keep showing the old zone. `simctl launch` is refused while
+ * SpringBoard is still returning, so retry with backoff until `timeoutMs` passes.
+ */
+export async function relaunchApp(
+  udid: string,
+  bundleId: string,
+  options: { exec?: SimExec; timeoutMs?: number; sleep?: (ms: number) => Promise<void> } = {},
+): Promise<void> {
+  const { exec = run, timeoutMs = 10_000, sleep: wait = sleep } = options;
+  await exec("xcrun", ["simctl", "terminate", udid, bundleId]).catch(() => "");
+  const deadline = Date.now() + timeoutMs;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await exec("xcrun", ["simctl", "launch", udid, bundleId]);
+      return;
+    } catch (e) {
+      const backoff = RELAUNCH_BACKOFF_MS[Math.min(attempt, RELAUNCH_BACKOFF_MS.length - 1)]!;
+      if (Date.now() + backoff >= deadline) throw e;
+      await wait(backoff);
+    }
+  }
+}
+
 function toToggle(simctlValue: string): string {
   return simctlValue === "enabled" ? "on" : "off";
 }

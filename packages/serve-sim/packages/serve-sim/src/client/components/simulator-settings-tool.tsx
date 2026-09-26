@@ -37,7 +37,7 @@ export const TEXT_SIZE_CATEGORIES = [
 
 const TEXT_SIZE_DEBOUNCE_MS = 250;
 const REQUEST_TIMEOUT_MS = 15_000;
-// A time-zone change waits out a SpringBoard restart.
+// A time-zone change waits out a SpringBoard restart and the app relaunch.
 const RESTART_TIMEOUT_MS = 45_000;
 /** `getUiStatus` reports an option it could not read as this. */
 const UNREADABLE = "unsupported";
@@ -518,10 +518,13 @@ export function isIosRuntime(runtime: string | null): boolean {
 export function SimulatorSettingsTool({
   udid,
   runtime,
+  bundleId = null,
   hingeControls,
 }: {
   udid: string;
   runtime: string | null;
+  /** Foreground app, brought back after a setting that restarts SpringBoard. */
+  bundleId?: string | null;
   hingeControls?: HingeControlsProps;
 }) {
   const [open, setOpen] = useState(true);
@@ -540,7 +543,7 @@ export function SimulatorSettingsTool({
   const refresh = useCallback(async () => {
     setError(null);
     try {
-      const status = await hostUiRequest(
+      const { status } = await hostUiRequest(
         { device: udid },
         { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
       );
@@ -571,11 +574,16 @@ export function SimulatorSettingsTool({
       setError(null);
       setState((s) => (s ? { ...s, [option]: value } : s));
       const restarts = option === "time-zone";
+      const relaunch = restarts ? bundleId : null;
       try {
-        await hostUiRequest(
-          { device: udid, option, value },
+        const { relaunched } = await hostUiRequest(
+          { device: udid, option, value, ...(relaunch ? { relaunch } : {}) },
           { signal: AbortSignal.timeout(restarts ? RESTART_TIMEOUT_MS : REQUEST_TIMEOUT_MS) },
         );
+        // Absent means nothing had to come back, which is not a failure.
+        if (relaunch && relaunched === false) {
+          setError(`Time zone applied. ${relaunch} did not come back.`);
+        }
       } catch (e) {
         setError(e instanceof Error ? e.message : `Failed to set ${option}`);
         // Re-sync from the simulator rather than restoring a snapshot — with
@@ -587,7 +595,7 @@ export function SimulatorSettingsTool({
         setPending((p) => (p === option ? null : p));
       }
     },
-    [udid, refresh],
+    [udid, bundleId, refresh],
   );
 
   // Rapid slider movements queue latest-wins: one exec in flight at a time,
@@ -718,7 +726,7 @@ export function SimulatorSettingsTool({
             />
           </SettingRow>
           <div role="status" className="text-[11px] text-white/45 pl-[26px] -mt-1 empty:hidden">
-            {restarting ? "Restarting SpringBoard…" : ""}
+            {restarting ? `Restarting SpringBoard${bundleId ? " and relaunching the app" : ""}…` : ""}
           </div>
 
           {TOGGLE_OPTIONS.map(({ key, label }) => (

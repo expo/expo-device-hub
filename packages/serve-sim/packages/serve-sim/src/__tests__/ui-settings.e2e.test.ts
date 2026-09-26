@@ -3,6 +3,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import { existsSync } from "fs";
 import { join } from "path";
+import { relaunchApp } from "../ui-settings";
 
 // Drives the built CLI's `ui` verb against whatever simulator is already
 // booted (the CI `sim-test.yml` job boots one before running this directory).
@@ -111,7 +112,7 @@ function simJobPid(label: string): number | null {
   });
   for (const line of out.split("\n")) {
     const [pid, , jobLabel = ""] = line.split("\t");
-    if (jobLabel === label) {
+    if (jobLabel === label || jobLabel.startsWith(`${label}[`)) {
       const n = Number(pid);
       return Number.isInteger(n) && n > 0 ? n : null;
     }
@@ -138,6 +139,8 @@ const waitForJobReplaced = (label: string, old: number) =>
   waitForJob(label, (pid) => pid !== null && pid !== old);
 
 const SPRINGBOARD = "com.apple.SpringBoard";
+const SETTINGS_APP = "com.apple.Preferences";
+const SETTINGS_JOB = `UIKitApplication:${SETTINGS_APP}`;
 
 describeIfSim("serve-sim ui (simulator-wide options)", () => {
   // Leave the simulator in stock state, and back up, for whatever runs next: the
@@ -282,5 +285,30 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
     cli("time-zone", "Asia/Tokyo");
     expect(simJobPid(SPRINGBOARD)).toBe(afterChange);
     cli("time-zone", "host");
+  }, 90_000);
+
+  // An app can outlive the restart and reads TZ once at launch, so the relaunch has to
+  // replace the process rather than just foreground it.
+  test("relaunchApp replaces the app process after a zone change", async () => {
+    cli("time-zone", "host");
+    await waitForJobPid(SPRINGBOARD);
+    execFileSync("xcrun", ["simctl", "launch", udid!, SETTINGS_APP], { timeout: EXEC_TIMEOUT_MS });
+    const before = await waitForJobPid(SETTINGS_JOB);
+    expect(before).not.toBeNull();
+    try {
+      cli("time-zone", "UTC");
+      await relaunchApp(udid!, SETTINGS_APP);
+      const after = await waitForJobReplaced(SETTINGS_JOB, before!);
+      expect(after).not.toBeNull();
+      expect(after).not.toBe(before);
+    } finally {
+      try {
+        execFileSync("xcrun", ["simctl", "terminate", udid!, SETTINGS_APP], {
+          stdio: "ignore",
+          timeout: EXEC_TIMEOUT_MS,
+        });
+      } catch {}
+      cli("time-zone", "host");
+    }
   }, 90_000);
 });

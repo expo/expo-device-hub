@@ -3,9 +3,11 @@ import { HOST_TIME_ZONE } from "../time-zone";
 import {
   CONTENT_SIZE_CATEGORIES,
   UI_OPTIONS,
+  isAppRunning,
   normalizeUiValue,
   parseUiArgs,
   readTimeZone,
+  relaunchApp,
   writeTimeZone,
   type SimExec,
 } from "../ui-settings";
@@ -225,5 +227,71 @@ describe("writeTimeZone", () => {
     ]);
     await expect(writeTimeZone(UDID, "Asia/Tokyo", exec)).rejects.toThrow(/Could not find service/);
     expect(calls).toEqual([GETENV, setenv("Asia/Tokyo"), KICKSTART, setenv("Europe/Berlin")]);
+  });
+});
+
+describe("isAppRunning", () => {
+  const LIST = launchctl("list");
+  // `launchctl list` prints `PID\tStatus\tLabel`, and app labels carry a per-launch suffix.
+  const JOBS = [
+    "PID\tStatus\tLabel",
+    "-\t0\tcom.apple.progressd",
+    "421\t0\tUIKitApplication:host.exp.Exponent[2a70][rb-legacy]",
+  ].join("\n");
+
+  test("finds an app by bundle id despite the per-launch suffix", async () => {
+    const { exec } = scriptedExec([[LIST, JOBS]]);
+    expect(await isAppRunning(UDID, "host.exp.Exponent", exec)).toBe(true);
+  });
+
+  test("is false for an app with no job, and when the list cannot be read", async () => {
+    const { exec } = scriptedExec([[LIST, JOBS]]);
+    expect(await isAppRunning(UDID, "com.example.other", exec)).toBe(false);
+    const broken = scriptedExec([[LIST, new Error("Invalid device")]]);
+    expect(await isAppRunning(UDID, "host.exp.Exponent", broken.exec)).toBe(false);
+  });
+});
+
+describe("relaunchApp", () => {
+  const APP = "com.example.app";
+  const TERMINATE = ["simctl", "terminate", UDID, APP];
+  const LAUNCH = ["simctl", "launch", UDID, APP];
+
+  /** Fails the first `failures` launches; terminate fails when `alreadyGone`. */
+  function flakyExec(failures: number, alreadyGone = false) {
+    const calls: string[][] = [];
+    const exec: SimExec = async (_file, args) => {
+      calls.push(args);
+      if (args[1] === "terminate") {
+        if (alreadyGone) throw new Error("found nothing to terminate");
+        return "";
+      }
+      const launches = calls.filter((c) => c[1] === "launch").length;
+      if (launches <= failures) throw new Error("SpringBoard is not ready");
+      return `${APP}: 4242`;
+    };
+    return { exec, calls };
+  }
+
+  test("terminates a survivor, then retries the launch with backoff", async () => {
+    const { exec, calls } = flakyExec(4);
+    const waits: number[] = [];
+    await relaunchApp(UDID, APP, { exec, sleep: async (ms) => void waits.push(ms) });
+    expect(calls).toEqual([TERMINATE, LAUNCH, LAUNCH, LAUNCH, LAUNCH, LAUNCH]);
+    expect(waits).toHaveLength(4);
+  });
+
+  test("launches anyway when the restart had already killed the app", async () => {
+    const { exec, calls } = flakyExec(0, true);
+    await relaunchApp(UDID, APP, { exec, sleep: async () => {} });
+    expect(calls).toEqual([TERMINATE, LAUNCH]);
+  });
+
+  test("gives up with the last simctl error once the deadline passes", async () => {
+    const { exec, calls } = flakyExec(Infinity);
+    await expect(relaunchApp(UDID, APP, { exec, timeoutMs: 0, sleep: async () => {} })).rejects.toThrow(
+      /not ready/,
+    );
+    expect(calls).toEqual([TERMINATE, LAUNCH]);
   });
 });

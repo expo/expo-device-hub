@@ -89,7 +89,12 @@ export function ToolsPanel({
             metricsEndpoint={metricsEndpoint}
           />
           <EventLogTool udid={udid} eventsEndpoint={eventLogEventsEndpoint} />
-          <SimulatorSettingsTool udid={udid} runtime={deviceRuntime} hingeControls={hingeControls} />
+          <SimulatorSettingsTool
+            udid={udid}
+            runtime={deviceRuntime}
+            bundleId={currentApp?.bundleId ?? null}
+            hingeControls={hingeControls}
+          />
           <AxTreeTool
             overlayEnabled={axOverlayEnabled}
             onToggleOverlay={onToggleAxOverlay}
