@@ -29,6 +29,11 @@ function bearerToken(header: string | undefined): string | null {
   return match ? match[1]!.trim() : null;
 }
 
+export function matchesBearerToken(header: string | undefined, token: string): boolean {
+  const value = bearerToken(header);
+  return value !== null && safeEqualString(value, token);
+}
+
 function headerValue(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
   return value;
@@ -159,8 +164,7 @@ export function assertPreviewAccess(
     return false;
   }
 
-  const fromBearer = bearerToken(headerValue(req.headers.authorization));
-  if (fromBearer && safeEqualString(fromBearer, sessionToken)) return true;
+  if (matchesBearerToken(headerValue(req.headers.authorization), sessionToken)) return true;
   const fromCookie = cookieValue(headerValue(req.headers.cookie), accessCookieName(sessionToken));
   if (
     fromCookie &&
@@ -243,8 +247,7 @@ export function assertUpgradeAccess(
   opts: { required: boolean },
 ): boolean {
   if (!opts.required) return true;
-  const fromBearer = bearerToken(headerValue(req.authorization));
-  if (fromBearer && safeEqualString(fromBearer, sessionToken)) return true;
+  if (matchesBearerToken(headerValue(req.authorization), sessionToken)) return true;
   if (acceptedTokenSubprotocol(req, sessionToken)) return true;
   const fromCookie = cookieValue(headerValue(req.cookie), accessCookieName(sessionToken));
   return !!fromCookie && safeEqualString(fromCookie, sessionToken) && isSameOriginRequest(req);

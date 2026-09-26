@@ -9,7 +9,7 @@ import { execFile } from "node:child_process";
 import { cpus } from "node:os";
 import { promisify } from "node:util";
 
-import { foregroundTracker, frontmostAppViaAx, type ForegroundApp } from "./foreground-tracker";
+import { frontmostAppOf, type ForegroundApp } from "./foreground-tracker";
 
 const execFileAsync = promisify(execFile);
 
@@ -126,12 +126,6 @@ export interface SampleDeps {
 /** Run a host command with a bounded timeout and output buffer, resolving its stdout. */
 const runCommand = (file: string, args: string[], signal?: AbortSignal): Promise<string> =>
   execFileAsync(file, args, { timeout: 3000, maxBuffer: 8 * 1024 * 1024, signal }).then((r) => r.stdout);
-
-/** The current foreground app: the tracker when it's warm, else the AX bridge; null when unknown. */
-function frontmostAppOf(udid: string): Promise<ForegroundApp | null> {
-  const tracked = foregroundTracker.peek(udid);
-  return tracked ? Promise.resolve(tracked) : frontmostAppViaAx(udid);
-}
 
 /**
  * CPU side: the app's processes + their %CPU, and which app they belong to. `ps` and the

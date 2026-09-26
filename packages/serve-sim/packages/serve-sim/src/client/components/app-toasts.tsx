@@ -1,4 +1,6 @@
+import { useState } from "react";
 import { Toaster, toast } from "sonner";
+import type { ClipboardToast } from "../hooks/use-clipboard-toast";
 import type { UploadToast } from "../hooks/use-upload-toasts";
 
 export function ServeSimToaster() {
@@ -106,6 +108,93 @@ export function ShareLinkToastContent({ toast }: { toast: ShareLinkToast }) {
           ? "The link includes the access token. Anyone who has it can control this simulator."
           : "Anyone who can reach this address can open it."}
       </span>
+    </div>
+  );
+}
+
+function PasteField({ onSubmit }: { onSubmit: (text: string) => void }) {
+  const [text, setText] = useState("");
+  return (
+    <form
+      className="flex items-end gap-2 flex-1 min-w-0"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (text) onSubmit(text);
+      }}
+    >
+      {/* A textarea keeps pasted line breaks; an input would strip them. */}
+      <textarea
+        autoFocus
+        rows={2}
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }
+        }}
+        placeholder="Long-press and paste"
+        autoCapitalize="off"
+        autoCorrect="off"
+        spellCheck={false}
+        aria-label="Text to paste into the simulator"
+        className="flex-1 min-w-0 max-h-24 resize-none px-2 py-1 rounded bg-black/40 border border-white/15 text-white/90 text-[12px] outline-none focus:border-white/35"
+      />
+      <button
+        type="submit"
+        disabled={!text}
+        className="shrink-0 px-2 py-0.5 rounded border border-white/20 text-white/90 hover:bg-white/10 disabled:opacity-40"
+      >
+        Send
+      </button>
+    </form>
+  );
+}
+
+export function ClipboardToastContent({
+  toast,
+  onCopy,
+  onPaste,
+}: {
+  toast: ClipboardToast;
+  onCopy?: () => void;
+  onPaste?: (text: string) => void;
+}) {
+  const pending = toast.status === "pending";
+  const dotColor = pending || toast.status === "paste"
+    ? "#a5b4fc"
+    : toast.status === "copied"
+      ? "#4ade80"
+      : toast.status === "manual"
+        ? "#fcd34d"
+        : "#f87171";
+
+  return (
+    <div
+      data-testid="clipboard-toast"
+      className={`flex w-[min(320px,calc(100vw-32px))] items-center gap-2 px-3 py-2 bg-panel border border-white/12 rounded-lg text-white/90 text-[12px] font-mono shadow-[0_8px_24px_rgba(0,0,0,0.45)] ${toast.status === "error" ? "select-text cursor-text" : "select-none cursor-default"}`}
+    >
+      <span
+        className={`size-1.5 rounded-full shrink-0 ${pending ? "animate-pulse" : ""}`}
+        style={{ background: dotColor }}
+      />
+      {toast.status === "paste" && onPaste ? (
+        <PasteField onSubmit={onPaste} />
+      ) : (
+        <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+          {toast.message}
+        </span>
+      )}
+      {toast.status === "manual" && (
+        <button
+          type="button"
+          onClick={onCopy}
+          className="shrink-0 px-2 py-0.5 rounded border border-white/20 text-white/90 hover:bg-white/10"
+        >
+          Copy
+        </button>
+      )}
     </div>
   );
 }

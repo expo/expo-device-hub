@@ -3,6 +3,8 @@ import { basename, join } from "path";
 import {
   capabilitiesToApply,
   capabilityDefinition,
+  forgetDisabledCapabilities,
+  rememberDisabledCapabilities,
   type CapabilityContext,
   type CapabilityDefinition,
   type CapabilityOverrides,
@@ -58,14 +60,23 @@ function releaseLaunchStateUnlocked(
     Object.entries(previous.capabilities).filter(([, record]) => record.ownerPid !== ownerPid),
   );
   const sessionPids = previous.sessionPids?.filter((pid) => pid !== ownerPid);
+  const disabledCapabilities = Object.fromEntries(
+    Object.entries(previous.disabledCapabilities ?? {})
+      .map(([name, owners]) => [name, owners.filter((pid) => pid !== ownerPid)] as const)
+      .filter(([, owners]) => owners.length > 0),
+  );
   for (const record of Object.values(previous.capabilities)) {
     if (record.ownerPid === ownerPid) onRelease?.(record);
   }
-  if (Object.keys(kept).length === 0 && !sessionPids?.length) {
+  if (Object.keys(kept).length === 0 && !sessionPids?.length && Object.keys(disabledCapabilities).length === 0) {
     clearLaunchState(udid);
     return false;
   }
-  const state: LaunchState = { ...previous, capabilities: kept, ...(sessionPids ? { sessionPids } : {}) };
+  const state: LaunchState = {
+    ...previous, capabilities: kept,
+    ...(sessionPids ? { sessionPids } : {}),
+    disabledCapabilities,
+  };
   writeLaunchState(udid, state);
   commitCapabilityConfig(udid, renderCapabilityConfig(state));
   return true;
@@ -84,6 +95,7 @@ export function releaseSessionSync(
     const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
     if (!othersRemain) removeCapabilityLoaderSync(udid);
     armedHere.delete(udid);
+    forgetDisabledCapabilities(udid);
   });
 }
 
@@ -97,6 +109,7 @@ export async function releaseSession(
     const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
     if (!othersRemain) removeCapabilityLoaderSync(udid);
     armedHere.delete(udid);
+    forgetDisabledCapabilities(udid);
   });
 }
 
@@ -312,35 +325,50 @@ async function prepare(
  */
 export async function setCapabilityEnabled(
   udid: string,
-  name: string,
+  capability: string | CapabilityDefinition,
   {
     bundleId = null,
     options = {},
     enabled,
     relaunch = true,
     ownerPid = process.pid,
+    reuseIfEnabled = false,
+    respectDisabledOverrides = false,
   }: {
     bundleId?: string | null;
     options?: Record<string, string>;
     enabled: boolean;
+    reuseIfEnabled?: boolean;
+    respectDisabledOverrides?: boolean;
   } & EnableOptions,
 ): Promise<void> {
-  const definition = capabilityDefinition(name);
+  const definition =
+    typeof capability === "string" ? capabilityDefinition(capability) : capability;
   const context: CapabilityContext = { udid, bundleId, options, enabled };
 
   await withLaunchStateLock(udid, async () => {
+    if (enabled && respectDisabledOverrides && readLaunchState(udid)?.disabledCapabilities?.[definition.name]?.length) {
+      throw new Error(`Capability ${definition.name} is disabled for this simulator session.`);
+    }
     if (!enabled) {
       await definition.setEnabled(context);
-      await disableCapabilityUnlocked(udid, bundleId, name, { relaunch: false });
+      await disableCapabilityUnlocked(udid, bundleId, definition.name, { relaunch: false });
       return;
     }
 
     const capability = await prepare(definition, context);
     if (!capability) {
       throw new Error(
-        `Capability ${name} declined to start on ${udid}. It reported nothing to load, so there ` +
+        `Capability ${definition.name} declined to start on ${udid}. It reported nothing to load, so there ` +
           `is nothing to enable. Check the message above for why.`,
       );
+    }
+    const previous = readLaunchState(udid);
+    if (reuseIfEnabled && previous?.capabilities[definition.name]) {
+      await armInsert(udid, capabilityLoaderPath());
+      commitCapabilityConfig(udid, renderCapabilityConfig(previous));
+      if (relaunch) await relaunchTarget(udid, bundleId, previous);
+      return;
     }
     await enableCapabilitiesUnlocked(udid, bundleId, [capability], { relaunch, ownerPid });
   });
@@ -353,6 +381,22 @@ export async function applyDefaultCapabilities(
 ): Promise<string[]> {
   return withLaunchStateLock(udid, async () => {
     const definitions = capabilitiesToApply(overrides);
+    rememberDisabledCapabilities(udid, overrides.disable ?? []);
+    const previous = readLaunchState(udid);
+    const disabledCapabilities = Object.fromEntries(
+      Object.entries(previous?.disabledCapabilities ?? {})
+        .map(([name, owners]) => [name, owners.filter((pid) => pid !== process.pid)] as const)
+        .filter(([, owners]) => owners.length > 0),
+    );
+    for (const name of overrides.disable ?? []) {
+      disabledCapabilities[name] = [...(disabledCapabilities[name] ?? []), process.pid];
+    }
+    if (previous || Object.keys(disabledCapabilities).length > 0) {
+      writeLaunchState(udid, {
+        ...(previous ?? { launchArgs: [], capabilities: {} }),
+        disabledCapabilities,
+      });
+    }
     const resolved: Capability[] = [];
     for (const definition of definitions) {
       const capability = await prepare(definition, { udid, bundleId, options: {}, enabled: true });

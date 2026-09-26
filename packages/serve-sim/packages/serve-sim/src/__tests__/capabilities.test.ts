@@ -2,9 +2,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   capabilitiesToApply,
+  capabilityIsDisabled,
   clearRegisteredCapabilities,
+  forgetDisabledCapabilities,
   registerCapability,
   registeredCapabilities,
+  rememberDisabledCapabilities,
   UnknownCapabilityError,
 } from "../capabilities";
 import type { CapabilityDefinition } from "../capabilities";
@@ -112,5 +115,31 @@ describe("applyDefaultCapabilities", () => {
 
     expect(await applyDefaultCapabilities("NOT-A-DEVICE", "com.example.app")).toEqual([]);
     expect(asked).toEqual(["a-throws", "also-on"]);
+  });
+});
+
+describe("disabled capabilities", () => {
+  afterEach(() => {
+    forgetDisabledCapabilities("DEVICE-A");
+    forgetDisabledCapabilities("DEVICE-B");
+  });
+
+  test("stay per device", () => {
+    rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
+    rememberDisabledCapabilities("DEVICE-B", []);
+    expect(capabilityIsDisabled("DEVICE-A", "clipboard")).toBe(true);
+    expect(capabilityIsDisabled("DEVICE-B", "clipboard")).toBe(false);
+  });
+
+  test("apply to a device the session did not launch", () => {
+    rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
+    expect(capabilityIsDisabled("DEVICE-PICKED-IN-GRID", "clipboard")).toBe(true);
+  });
+
+  test("end with the session that set them", () => {
+    rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
+    forgetDisabledCapabilities("DEVICE-A");
+    expect(capabilityIsDisabled("DEVICE-A", "clipboard")).toBe(false);
+    expect(capabilityIsDisabled("DEVICE-PICKED-IN-GRID", "clipboard")).toBe(false);
   });
 });

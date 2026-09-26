@@ -24,6 +24,8 @@ const ARM64_MACH_O_ARTIFACTS = [
   "dist/simcam/libSimCameraInjector.dylib",
   "dist/simcam/serve-sim-camera-helper",
   "dist/simax/serve-sim-ax-settings",
+  "dist/simpb/libSimPasteboardReader.dylib",
+  "dist/simpb/serve-sim-pasteboard",
   "dist/capability-loader/libServeSimCapabilityLoader.dylib",
 ] as const;
 

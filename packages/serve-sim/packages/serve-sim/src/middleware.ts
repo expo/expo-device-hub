@@ -13,11 +13,12 @@ import type { Socket } from "net";
 // lines, and `serve-sim/middleware` is embedded in third-party dev servers, so
 // importing the dependency keeps the proxy working regardless of runtime.
 import { WebSocket } from "ws";
+import { z } from "zod";
 import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
-import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "./middleware-utils";
 import {
   closeDeviceSession,
   getDeviceSession,
@@ -28,8 +29,10 @@ import {
   acceptedTokenSubprotocol,
   assertPreviewAccess,
   assertUpgradeAccess,
+  matchesBearerToken,
   upgradeAuthHeaders,
 } from "./session-auth";
+import { readRequestBodyAsync, RequestBodyTooLargeError } from "./runtime-utils";
 import {
   eventLogEventForAction,
   readEventLog,
@@ -57,6 +60,7 @@ import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
+import { readSimPasteboardResult, writeSimPasteboard } from "./sim-pasteboard";
 
 type SimReq = IncomingMessage;
 type SimRes = ServerResponse;
@@ -186,6 +190,12 @@ const RN_MARKERS = [
 function isSimulatorUdid(value: string): boolean {
   return /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(value);
 }
+
+const MAX_PASTEBOARD_BODY_BYTES = 4 * 1024 * 1024;
+const PasteboardWriteBody = z.object({ text: z.string() });
+const PASTEBOARD_RESPONSE_HEADERS = {
+  "Cache-Control": "no-store",
+};
 
 /** What to do with a persisted device state when reaping during a grid poll. */
 type StaleStateAction = "keep" | "recycle-self" | "recycle-helper";
@@ -1800,7 +1810,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // A preflight carries no cookie and no token, so it has to be answered before the gate.
     if (ownPath && req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, OPTIONS",
         "Access-Control-Allow-Headers": "Authorization, Content-Type",
         "Access-Control-Max-Age": "600",
       });
@@ -2417,6 +2427,133 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       } finally {
         // Best-effort cleanup; the PNG is already in memory by now.
         await unlink(file).catch(() => {});
+      }
+      return;
+    }
+
+    if (url === base + "/api/pasteboard") {
+      if (req.method !== "POST" && req.method !== "PUT") {
+        res.writeHead(405, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "text/plain; charset=utf-8",
+        });
+        res.end("method not allowed");
+        return;
+      }
+      // The token alone would let any caller read what the user copied, so the clipboard also
+      // needs a browser origin that CORS already trusts.
+      if (!isAllowedOrigin(req.headers.origin, hostForRequest(req), corsOrigins)) {
+        res.writeHead(403, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: false, error: "This origin cannot use the simulator clipboard" }));
+        return;
+      }
+      if (!matchesBearerToken(req.headers.authorization, execToken)) {
+        res.writeHead(401, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: false, error: "Unauthorized" }));
+        return;
+      }
+      // connectToFetch replays the body once the handler yields, so read it before any await.
+      const bodyRead =
+        req.method === "PUT" ? readRequestBodyAsync(req, MAX_PASTEBOARD_BODY_BYTES) : null;
+      bodyRead?.catch(() => {}); // the awaited copy below reports the failure
+      let udid = selectedDevice;
+      if (udid && !isSimulatorUdid(udid)) {
+        res.writeHead(400, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: false, error: "Invalid simulator device ID" }));
+        return;
+      }
+      if (!udid) {
+        const booted = await getBootedUdids();
+        udid = (booted && [...booted][0]) ?? null;
+      }
+      if (!udid) {
+        res.writeHead(400, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: false, error: "No booted simulator available" }));
+        return;
+      }
+      try {
+        if (req.method === "PUT") {
+          let body: Buffer | undefined;
+          try {
+            body = await (bodyRead ?? readRequestBodyAsync(req, MAX_PASTEBOARD_BODY_BYTES));
+          } catch (error) {
+            if (!(error instanceof RequestBodyTooLargeError)) throw error;
+            res.writeHead(413, {
+              ...PASTEBOARD_RESPONSE_HEADERS,
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify({ ok: false, error: "Clipboard text is too large" }));
+            return;
+          }
+          let json: unknown;
+          try {
+            json = JSON.parse(body?.toString("utf-8") ?? "");
+          } catch {
+            res.writeHead(400, {
+              ...PASTEBOARD_RESPONSE_HEADERS,
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify({ ok: false, error: "Invalid JSON" }));
+            return;
+          }
+          const parsed = PasteboardWriteBody.safeParse(json);
+          if (!parsed.success) {
+            res.writeHead(400, {
+              ...PASTEBOARD_RESPONSE_HEADERS,
+              "Content-Type": "application/json",
+            });
+            res.end(JSON.stringify({ ok: false, error: "Clipboard text must be a string" }));
+            return;
+          }
+          await writeSimPasteboard(udid, parsed.data.text);
+          res.writeHead(200, {
+            ...PASTEBOARD_RESPONSE_HEADERS,
+            "Content-Type": "application/json",
+          });
+          res.end(JSON.stringify({ ok: true }));
+          return;
+        }
+
+        // Copy presses Command+C in an input turn and reads under the pasteboard lock, so another
+        // viewer can't change the text in between. It needs the device's input session, which a
+        // viewer's socket keeps running.
+        const copy = new URLSearchParams(qIndex === -1 ? "" : rawUrl.slice(qIndex + 1)).get("copy") === "1";
+        const session = copy ? peekDeviceSession(udid) : undefined;
+        if (copy && !session) {
+          res.writeHead(409, {
+            ...PASTEBOARD_RESPONSE_HEADERS,
+            "Content-Type": "application/json",
+          });
+          res.end(JSON.stringify({ ok: false, error: "No simulator input session for this device" }));
+          return;
+        }
+        const result = session
+          ? await session.copyPasteboard()
+          : await readSimPasteboardResult(udid);
+        res.writeHead(200, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: true, ...result }));
+      } catch (error) {
+        console.error(`[serve-sim] Could not access the simulator pasteboard on ${udid}:`, error);
+        res.writeHead(500, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "application/json",
+        });
+        res.end(JSON.stringify({ ok: false, error: "Could not access the simulator pasteboard" }));
       }
       return;
     }

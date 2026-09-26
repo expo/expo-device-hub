@@ -17,13 +17,14 @@ import {
   releaseSession,
   stopLaunchSession,
   enableCapabilities,
+  setCapabilityEnabled,
   applyDefaultCapabilities,
   armCapabilityLoader,
   capabilityConfigPath,
   capabilityLoaderPath,
   renderCapabilityConfig,
 } from "../launch-manager";
-import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
+import { registerCapability, clearRegisteredCapabilities, forgetDisabledCapabilities } from "../capabilities";
 import { launchAppAsync } from "../launch-app";
 import { stateDir } from "../state";
 import { useTempStateDir, withShimsAsync } from "./helpers";
@@ -482,6 +483,78 @@ describe("graceful launch shutdown", () => {
 
 
 describe("startup capability loading", () => {
+  test("can enable a definition without registering it globally", async () => {
+    clearRegisteredCapabilities();
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, async () => {
+      await setCapabilityEnabled(UDID, {
+        name: "clipboard",
+        defaultEnabled: true,
+        scope: "allApps",
+        async setEnabled() {
+          return { dylib: "/clipboard.dylib" };
+        },
+      }, { enabled: true, relaunch: false });
+    });
+    expect(listCapabilities(UDID)).toEqual(["clipboard"]);
+  });
+
+  test("reuses another live owner's clipboard capability", async () => {
+    const owner = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    const log = join(stateDir(), "simctl-rearm-calls");
+    const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
+    try {
+      writeRawState(JSON.stringify({
+        launchArgs: [],
+        capabilities: {
+          clipboard: {
+            name: "clipboard", scope: "allApps", dylib: "/other-reader.dylib",
+            bundleId: null, ownerPid: owner.pid,
+          },
+        },
+      }));
+      await withShimsAsync({ xcrun: `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quotedLog}\nexit 0\n` }, async () => {
+        await setCapabilityEnabled(UDID, {
+          name: "clipboard", defaultEnabled: true, scope: "allApps",
+          async setEnabled() { return { dylib: "/this-reader.dylib" }; },
+        }, { enabled: true, relaunch: false, reuseIfEnabled: true });
+      });
+      expect(readLaunchState(UDID)?.capabilities.clipboard).toMatchObject({
+        ownerPid: owner.pid,
+        dylib: "/other-reader.dylib",
+      });
+      expect(readFileSync(log, "utf-8")).toContain(
+        `simctl spawn ${UDID} launchctl setenv DYLD_INSERT_LIBRARIES ${capabilityLoaderPath()}`,
+      );
+      expect(readFileSync(capabilityConfigPath(UDID), "utf-8")).toContain("/other-reader.dylib");
+      releaseSessionSync(UDID, process.pid, () => {});
+      expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(owner.pid);
+    } finally {
+      owner.kill("SIGKILL");
+    }
+  });
+
+  test("shares disabled clipboard overrides and removes them with their owner", async () => {
+    clearRegisteredCapabilities();
+    registerCapability({
+      name: "clipboard", defaultEnabled: false, scope: "allApps",
+      async setEnabled() { return { dylib: "/clipboard.dylib" }; },
+    });
+    try {
+      await applyDefaultCapabilities(UDID, null, { disable: ["clipboard"] });
+      forgetDisabledCapabilities(UDID);
+      expect(readLaunchState(UDID)?.disabledCapabilities?.clipboard).toEqual([process.pid]);
+      await expect(setCapabilityEnabled(UDID, "clipboard", {
+        enabled: true, relaunch: false, respectDisabledOverrides: true,
+      })).rejects.toThrow("disabled for this simulator session");
+      expect(listCapabilities(UDID)).toEqual([]);
+      expect(releaseLaunchState(UDID, process.pid)).toBe(false);
+      expect(readLaunchState(UDID)).toBeNull();
+    } finally {
+      forgetDisabledCapabilities(UDID);
+      clearRegisteredCapabilities();
+    }
+  });
+
   test("defaults do not restart a remembered app and explicit launch starts once", async () => {
     const log = join(stateDir(), "simctl-startup-calls");
     const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";

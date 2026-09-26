@@ -133,6 +133,9 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
     );
 
     expect(result.status).toBe(1);
-    expect(readInsert(udid!)).toBe("");
+    expect(
+      readInsert(udid!),
+      `stdout:\n${result.stdout}\nstderr:\n${result.stderr}`,
+    ).toBe("");
   }, 240_000);
 });

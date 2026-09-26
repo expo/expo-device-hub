@@ -31,9 +31,6 @@ declare global {
       streamSettingsEndpoint?: string;
       /** Bezel geometry for `device`; the grid catalog carries it too, a fetch later. */
       chrome?: DeviceKitChromeDescriptor | null;
-      // Absolute path of the running serve-sim entry script. The camera tool
-      // shells out via `node <bin> camera ...` so it doesn't depend on the
-      // `serve-sim` binary being on the user's PATH.
       /** Bearer token required by the /exec shell-exec route. */
       execToken?: string;
       /**

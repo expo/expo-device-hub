@@ -24,6 +24,7 @@ export interface RecordedCapability extends Capability {
 
 export interface LaunchState {
   sessionPids?: number[];
+  disabledCapabilities?: Record<string, number[]>;
   bundleId?: string;
   launchArgs: string[];
   capabilities: Record<string, RecordedCapability>;
@@ -51,17 +52,31 @@ export function readLaunchState(udid: string, retainOwnerPid?: number): LaunchSt
     return null;
   }
   if (typeof parsed !== "object" || parsed === null) return null;
-  const { bundleId, launchArgs, capabilities, sessionPids } = parsed as Partial<LaunchState>;
+  const { bundleId, launchArgs, capabilities, sessionPids, disabledCapabilities } = parsed as Partial<LaunchState>;
+  const liveDisabled = recordedDisabledCapabilities(disabledCapabilities, retainOwnerPid);
   return {
     ...(typeof bundleId === "string" && bundleId ? { bundleId } : {}),
     launchArgs: Array.isArray(launchArgs)
       ? launchArgs.filter((arg): arg is string => typeof arg === "string")
       : [],
     capabilities: recordedCapabilities(capabilities, retainOwnerPid),
+    ...(Object.keys(liveDisabled).length > 0 ? { disabledCapabilities: liveDisabled } : {}),
     ...(Array.isArray(sessionPids) ? { sessionPids: sessionPids.filter(
       (pid) => Number.isInteger(pid) && pid > 0 && !ownerIsGone(pid),
     ) } : {}),
   };
+}
+
+function recordedDisabledCapabilities(value: unknown, retainOwnerPid?: number): Record<string, number[]> {
+  if (typeof value !== "object" || value === null) return {};
+  const kept: Record<string, number[]> = {};
+  for (const [name, owners] of Object.entries(value)) {
+    if (!Array.isArray(owners)) continue;
+    const live = owners.filter((pid): pid is number =>
+      Number.isInteger(pid) && pid > 0 && (pid === retainOwnerPid || !ownerIsGone(pid)));
+    if (live.length > 0) kept[name] = [...new Set(live)];
+  }
+  return kept;
 }
 
 // Discard malformed records and capabilities whose owner has exited.
@@ -96,4 +111,3 @@ export function writeLaunchState(udid: string, state: LaunchState): void {
   writeFileSync(temp, JSON.stringify(state));
   renameSync(temp, target);
 }
-

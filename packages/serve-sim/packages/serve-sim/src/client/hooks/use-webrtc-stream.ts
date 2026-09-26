@@ -19,6 +19,7 @@ import {
   WebRtcSignalingBusyError,
   WebRtcSignalingTimeoutError,
 } from "../webrtc-negotiation";
+import { randomId } from "../utils/random-id";
 
 const DEFAULT_ICE_SERVERS: IceServer[] = [
   { urls: ["stun:stun.l.google.com:19302"] },
@@ -57,15 +58,6 @@ const BUSY_RETRY_INTERVAL_MS = 500;
 const BUSY_RETRY_COUNT = 30;
 const TRANSPORT_RETRY_BASE_MS = 500;
 const TRANSPORT_RETRY_MAX_MS = 5_000;
-
-function createSessionId(): string {
-  if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
-  const bytes = crypto.getRandomValues(new Uint8Array(16));
-  bytes[6] = (bytes[6]! & 0x0f) | 0x40;
-  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
-  const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
 
 export function useWebRtcStream({
   offerUrl,
@@ -142,7 +134,7 @@ export function useWebRtcStream({
       setStream(null);
       setSessionId(null);
       setError("WebRTC is not supported by this browser.");
-      setFailure({ sessionId: createSessionId(), kind: "permanent" });
+      setFailure({ sessionId: randomId(), kind: "permanent" });
       return;
     }
 
@@ -152,7 +144,7 @@ export function useWebRtcStream({
     let closePromise: Promise<void> | null = null;
     let failing = false;
     const lifecycleController = new AbortController();
-    const sessionId = createSessionId();
+    const sessionId = randomId();
     const servers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS;
     setSessionId(sessionId);
     setStream(null);

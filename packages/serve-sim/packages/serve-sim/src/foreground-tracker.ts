@@ -18,7 +18,7 @@ export interface ForegroundApp {
 // names match as whole bundle components (delimited by `.`), so a real app like
 // com.example.CustomerService isn't caught by the "Service" substring.
 const NON_UI_BUNDLE_RE =
-  /(^|\.)(WidgetRenderer|ExtensionHost|Service|PlaceholderApp|InCallService|CallUI|InCallUI)(\.|$)|\.extension(\.|$)|com\.apple\.(Preferences\.Cellular|purplebuddy|chrono|shuttle|usernotificationsui)/i;
+  /(^|\.)(WidgetRenderer|ExtensionHost|Service|PlaceholderApp|InCallService|CallUI|InCallUI)(\.|$)|\.extension(\.|$)|com\.apple\.(?:[^.]*ViewService$|Preferences\.Cellular|purplebuddy|chrono|shuttle|usernotificationsui)/i;
 
 /** True unless the bundle id is a non-UI helper (widget, extension, or background service). */
 export function isUserFacingBundle(bundleId: string): boolean {
@@ -251,3 +251,9 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
 }
 
 export const foregroundTracker = createForegroundTrackerCache();
+
+/** The current foreground app: the tracker when it's warm, else the AX bridge; null when unknown. */
+export function frontmostAppOf(udid: string): Promise<ForegroundApp | null> {
+  const tracked = foregroundTracker.peek(udid);
+  return tracked ? Promise.resolve(tracked) : frontmostAppViaAx(udid);
+}

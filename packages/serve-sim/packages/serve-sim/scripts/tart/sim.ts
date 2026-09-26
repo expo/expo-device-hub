@@ -32,13 +32,3 @@ xcrun simctl bootstatus ${quoted} -b
   if (code !== 0) throw new Error(`failed to boot ${DEVICE_NAME} on the guest`);
   return udid;
 }
-
-export async function warmSafari(guest: TartGuest, udid: string): Promise<void> {
-  const quoted = shellEscape(udid);
-  const code = await guest.sshInherit(`${GUEST_PATH}
-set -euo pipefail
-env SIMCTL_CHILD_DYLD_INSERT_LIBRARIES= xcrun simctl spawn ${quoted} launchctl unsetenv DYLD_INSERT_LIBRARIES >/dev/null 2>&1 || true
-xcrun simctl launch ${quoted} com.apple.mobilesafari >/dev/null
-`);
-  if (code !== 0) throw new Error("failed to warm Safari on the guest");
-}

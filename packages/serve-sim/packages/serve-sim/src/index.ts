@@ -27,6 +27,7 @@ import { launchAppAsync } from "./launch-app";
 import {
   assertKnownCapabilities,
   hasDefaultCapabilities,
+  registerCapability,
 } from "./capabilities";
 import {
   applyDefaultCapabilities,
@@ -42,6 +43,7 @@ import { killOwnListeners } from "./ports";
 import { findBootedDevice, resolveDevice } from "./device";
 import { openSimulatorHost } from "./simulator-host";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
+import { clipboardCapability } from "./sim-pasteboard";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";
@@ -2252,6 +2254,8 @@ Examples:
         }
       } catch (error) {
         console.error(error instanceof Error ? error.message : error);
+        sessionStopping = true;
+        await disarmDevicesArmedHereAsync();
         process.exit(1);
       }
     }
@@ -2383,5 +2387,6 @@ program
   .argument("[args...]")
   .action((args: string[]) => uiSettings(args));
 
+registerCapability(clipboardCapability);
 
 await program.parseAsync(process.argv);
