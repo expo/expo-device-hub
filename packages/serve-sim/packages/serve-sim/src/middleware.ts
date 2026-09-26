@@ -976,6 +976,8 @@ export async function enableNetworkCaptureForStartedDevice(
 // Stopped devices whose capture cleanup failed. Their state record is gone, so the state poll
 // retries from here until cleanup succeeds.
 const pendingCaptureCleanup = new Set<string>();
+// Polls come often; one retry per device at a time keeps a failing cleanup from piling up.
+const retryingCaptureCleanup = new Set<string>();
 
 export async function disableNetworkCaptureForStoppedDevice(
   udid: string,
@@ -1008,12 +1010,18 @@ export async function retryPendingCaptureCleanup(
   // Without a booted list, a retry could disable capture a restarted device now uses; wait.
   if (!booted) return;
   await Promise.all(
-    [...pendingCaptureCleanup].map((udid) => {
+    [...pendingCaptureCleanup].map(async (udid) => {
       if (booted.has(udid)) {
         pendingCaptureCleanup.delete(udid);
-        return undefined;
+        return;
       }
-      return disableNetworkCaptureForStoppedDevice(udid, deps);
+      if (retryingCaptureCleanup.has(udid)) return;
+      retryingCaptureCleanup.add(udid);
+      try {
+        await disableNetworkCaptureForStoppedDevice(udid, deps);
+      } finally {
+        retryingCaptureCleanup.delete(udid);
+      }
     }),
   );
 }

@@ -92,6 +92,27 @@ describe("stopped-device capture cleanup retries", () => {
   });
 });
 
+describe("overlapping cleanup retries", () => {
+  test("runs one retry per device while an earlier one is still going", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((done) => (release = done));
+    let attempts = 0;
+    const slow = async () => {
+      attempts++;
+      await gate;
+      throw new Error("still locked");
+    };
+    expect(await disableNetworkCaptureForStoppedDevice("OVERLAP-1", { disable: async () => { throw new Error("locked"); } })).toBe(false);
+    const first = retryPendingCaptureCleanup(new Set(), { disable: slow });
+    const second = retryPendingCaptureCleanup(new Set(), { disable: slow });
+    await second;
+    expect(attempts).toBe(1);
+    release();
+    await first;
+    await retryPendingCaptureCleanup(new Set(), { disable: async () => {} });
+  });
+});
+
 describe("disableNetworkCaptureForStoppedDevice", () => {
   test("cleans up UI-enabled capture without a startup flag", async () => {
     let called = false;
