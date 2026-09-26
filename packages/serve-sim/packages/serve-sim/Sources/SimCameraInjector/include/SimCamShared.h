@@ -56,7 +56,10 @@ typedef struct {
     _Atomic uint64_t frameSeq; // written LAST with release; readers acquire-load
     uint64_t timestampNs;  // mach_absolute_time-based, host monotonic
     uint8_t  mirrorMode;   // SIMCAM_MIRROR_*; UNSET = ignore (use env)
-    uint8_t  reserved[15];
+    _Atomic uint8_t active;
+    uint8_t reserved[2];
+    uint32_t ownerPid;
+    uint8_t reservedTail[8];
 } SimCamShmHeader;
 
 _Static_assert(sizeof(SimCamShmHeader) == 64, "SimCamShmHeader must be 64 bytes");

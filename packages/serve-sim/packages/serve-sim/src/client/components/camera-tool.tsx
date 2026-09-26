@@ -1,235 +1,34 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { FlipHorizontal2, Images, X } from "lucide-react";
 import { PlayGlyph, StopGlyph, ReloadIcon } from "../icons";
 import { runHostAction } from "../utils/exec";
 import { fileExtension, uploadFileToTmp } from "../utils/drop";
 import { CollapsibleSection } from "./collapsible-section";
 
-export type CamSource = "placeholder" | "image" | "video" | "webcam";
+import {
+  isVideoFile,
+  type CamSource,
+  type CamWebcam,
+  type CameraPillState,
+  CAMERA_POLL_INTERVAL_MS,
+  cameraStatusConnected,
+  requestCameraStatus,
+  CAMERA_LARGE_VIDEO_WARNING,
+  CAMERA_HEIC_ERROR,
+  nextCameraPillState,
+  parseWebcamListOutput,
+  isOversizedCameraVideo,
+  isHeicLikeFile,
+  cameraSourceErrorMessage,
+} from "../utils/camera";
+import { type CameraMediaPreviewProps, CameraStatusPill, CameraMediaPreview, CameraInlineBanner } from "./camera-tool-ui";
+
 type CamMirror = "on" | "off";
-export interface CamWebcam { id: string; name: string }
-
-export type CameraPillState = "ready" | "active" | "disconnected";
-
-export const CAMERA_POLL_INTERVAL_MS = 3000;
-
-interface CameraStatusResponse {
-  alive?: boolean;
-  source?: string;
-  arg?: string;
-  mirror?: string;
-  helperPid?: number;
-  bundleIds?: string[];
-}
-
-type CameraStatusRequest = (
-  endpoint: string,
-  init: RequestInit,
-) => Promise<Pick<Response, "ok" | "json">>;
-
-export async function requestCameraStatus(
-  endpoint: string,
-  request: CameraStatusRequest = fetch,
-): Promise<CameraStatusResponse | null> {
-  try {
-    const response = await request(endpoint, { cache: "no-store" });
-    if (!response.ok) return null;
-    const value = await response.json() as unknown;
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? value as CameraStatusResponse
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-export const CAMERA_LARGE_VIDEO_BYTES = 200 * 1024 * 1024;
-export const CAMERA_LARGE_VIDEO_WARNING =
-  "Large video (>200 MB) — may stutter on shared memory";
-export const CAMERA_HEIC_ERROR =
-  "HEIC decode failed — export as JPEG or PNG and retry";
-
-export function nextCameraPillState(
-  current: CameraPillState,
-  pollAlive: boolean,
-): CameraPillState {
-  if (pollAlive) return "active";
-  if (current === "active") return "disconnected";
-  if (current === "disconnected") return "ready";
-  return current;
-}
-
-export type CameraPrimaryKind = "play" | "stop" | "attach";
-
-export function selectCameraPrimaryKind(input: {
-  bundleId: string | null;
-  injected: boolean;
-  source: CamSource;
-  foregroundIsInjected: boolean;
-}): CameraPrimaryKind {
-  if (!input.injected) return "play";
-  if (input.source === "placeholder") return "play";
-  if (input.bundleId && !input.foregroundIsInjected) return "attach";
-  return "stop";
-}
-
-export function parseWebcamListOutput(stdout: string): CamWebcam[] {
-  return stdout
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .flatMap((line) => {
-      const tab = line.indexOf("\t");
-      if (tab <= 0) return [];
-      const id = line.slice(0, tab).trim();
-      const name = line.slice(tab + 1).trim();
-      if (!id || !name) return [];
-      return [{ id, name }];
-    });
-}
-
-const VIDEO_EXTENSIONS = new Set([
-  "mp4", "m4v", "mov", "qt", "avi", "mkv", "webm", "mpg", "mpeg", "3gp", "3g2", "ts", "wmv",
-]);
-
-function isVideoFile(file: { type?: string; name?: string }): boolean {
-  if (file.type && file.type.startsWith("video/")) return true;
-  const name = (file.name ?? "").toLowerCase();
-  const dot = name.lastIndexOf(".");
-  if (dot < 0) return false;
-  return VIDEO_EXTENSIONS.has(name.slice(dot + 1));
-}
-
-export function isOversizedCameraVideo(file: {
-  type?: string;
-  name?: string;
-  size: number;
-}): boolean {
-  return isVideoFile(file) && file.size > CAMERA_LARGE_VIDEO_BYTES;
-}
-
-export function isHeicLikeFile(input: { type?: string; name?: string }): boolean {
-  const type = (input.type ?? "").toLowerCase();
-  if (type === "image/heic" || type === "image/heif") return true;
-  const name = (input.name ?? "").toLowerCase();
-  return name.endsWith(".heic") || name.endsWith(".heif");
-}
-
-export function cameraSourceErrorMessage({
-  rawMessage,
-  lastFileIsHeic,
-  source,
-}: {
-  rawMessage: string;
-  lastFileIsHeic: boolean;
-  source: CamSource;
-}): string {
-  if (lastFileIsHeic && (source === "image" || source === "video")) {
-    return CAMERA_HEIC_ERROR;
-  }
-  return rawMessage;
-}
-
-export function CameraStatusPill({ state }: { state: CameraPillState }) {
-  const label =
-    state === "active" ? "Active" : state === "disconnected" ? "Disconnected" : "Ready";
-  const dotClass =
-    state === "active"
-      ? "size-1.5 rounded-full bg-success-emerald [box-shadow:0_0_6px_rgba(74,222,128,0.7)]"
-      : state === "disconnected"
-        ? "size-1.5 rounded-full bg-danger-soft [box-shadow:0_0_6px_rgba(248,113,113,0.55)]"
-        : null;
-  return (
-    <span
-      className="text-[11px] text-white/55 font-mono inline-flex items-center gap-1.5 justify-self-end leading-none"
-      data-camera-pill-state={state}
-    >
-      {dotClass && <span className={dotClass} />}
-      {label}
-    </span>
-  );
-}
-
-export function CameraTestPatternHint() {
-  return (
-    <p
-      className="m-0 text-center text-[10px] leading-[1.5] text-white/45"
-      data-camera-test-pattern-hint
-    >
-      Test-pattern feed
-    </p>
-  );
-}
-
-interface CameraMediaPreviewProps {
-  mode: "placeholder" | "file" | "webcam" | "uploading";
-  fileName: string | null;
-  webcamName: string | null;
-  sourceKind: CamSource;
-}
-
-export function CameraMediaPreview({
-  mode,
-  fileName,
-  webcamName,
-  sourceKind,
-}: CameraMediaPreviewProps) {
-  if (mode === "uploading") {
-    return <span className="text-[11px] text-white/55">Uploading…</span>;
-  }
-  if (mode === "file") {
-    return (
-      <>
-        <div className="shrink-0 text-[9px] tracking-[0.1em] uppercase text-white/55 bg-white/[0.06] border border-white/8 px-[7px] py-[2px] rounded-full">
-          {sourceKind === "video" ? "Video" : "Image"}
-        </div>
-        <span className="flex-1 min-w-0 truncate text-[12px] text-white/90 font-mono">
-          {fileName ?? ""}
-        </span>
-      </>
-    );
-  }
-  if (mode === "webcam") {
-    return (
-      <>
-        <div className="shrink-0 text-[9px] tracking-[0.1em] uppercase text-white/55 bg-white/[0.06] border border-white/8 px-[7px] py-[2px] rounded-full">
-          Webcam
-        </div>
-        <span className="flex-1 min-w-0 truncate text-[12px] text-white/90 font-mono">
-          {webcamName ?? ""}
-        </span>
-      </>
-    );
-  }
-  return <span className="text-[12px] text-white/85 font-medium">Select or drop media</span>;
-}
-
-export function CameraInlineBanner({
-  kind,
-  message,
-}: {
-  kind: "error" | "warning";
-  message: string;
-}) {
-  const classes =
-    kind === "warning"
-      ? "bg-warning/10 border border-warning/25 text-warning-soft text-[11px] px-2 py-1.5 rounded-md break-words"
-      : "bg-danger/10 border border-danger/20 text-danger-soft text-[11px] px-2 py-1.5 rounded-md break-words";
-  return (
-    <div className={classes} data-camera-banner-kind={kind} role={kind === "error" ? "alert" : "status"}>
-      {message}
-    </div>
-  );
-}
-
-// ─── Main component ────────────────────────────────────────────────────────
 
 export function CameraTool({
   udid,
-  bundleId,
 }: {
   udid: string;
-  bundleId: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [source, setSource] = useState<CamSource>("placeholder");
@@ -244,21 +43,18 @@ export function CameraTool({
   const [webcamLoading, setWebcamLoading] = useState(false);
   const [webcamId, setWebcamId] = useState<string>("");
   const [mirror, setMirror] = useState<CamMirror>("off");
-  const [pendingPrimary, setPendingPrimary] = useState<"inject" | "stop" | null>(null);
+  const [pendingPrimary, setPendingPrimary] = useState<"enable" | "disable" | null>(null);
   const [pendingAux, setPendingAux] = useState<"mirror" | "switch" | null>(null);
   const isBusy = pendingPrimary !== null || pendingAux !== null;
   const [error, setError] = useState<string | null>(null);
   const [warning, setWarning] = useState<string | null>(null);
-  const [, setStatus] = useState<string | null>(null);
-  const [injected, setInjected] = useState(false);
+  const [enabled, setEnabled] = useState(false);
   const [pillState, setPillState] = useState<CameraPillState>("ready");
-  const [injectedBundleIds, setInjectedBundleIds] = useState<Set<string>>(() => new Set());
-  const [attachedHelperPid, setAttachedHelperPid] = useState<number | null>(null);
-  const [webcamAutoInjectRequest, setWebcamAutoInjectRequest] = useState<string | null>(null);
+  const [webcamAutoEnableRequest, setWebcamAutoEnableRequest] = useState<string | null>(null);
   const lastFileIsHeicRef = useRef(false);
   const skipNextAutoSwapRef = useRef(false);
   const appliedMirrorRef = useRef<CamMirror>("off");
-  const autoOpenedForInjectionRef = useRef(false);
+  const autoOpenedForStreamingRef = useRef(false);
 
   const fetchCameraStatus = useCallback(async () => {
     const endpoint = window.__SIM_PREVIEW__?.cameraStatusEndpoint;
@@ -266,8 +62,6 @@ export function CameraTool({
   }, []);
 
   const refreshWebcamsRef = useRef<() => Promise<void>>(async () => {});
-  const bundleIdRef = useRef<string | null>(bundleId);
-  useEffect(() => { bundleIdRef.current = bundleId; }, [bundleId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -290,14 +84,8 @@ export function CameraTool({
       const replyMirror: CamMirror = reply.mirror === "on" ? "on" : "off";
       setMirror(replyMirror);
       appliedMirrorRef.current = replyMirror;
-      setAttachedHelperPid(reply.helperPid ?? null);
-      setInjected(true);
-      const replyBundles = Array.isArray(reply.bundleIds) ? reply.bundleIds : [];
-      if (replyBundles.length > 0) setInjectedBundleIds(new Set(replyBundles));
-      const fg = bundleIdRef.current;
-      const replyHasRealSource = replySource && replySource !== "placeholder";
-      setPillState(fg && replyBundles.includes(fg) && replyHasRealSource ? "active" : "ready");
-      setStatus(`Reattached → ${replySource ?? "running helper"}${reply.arg ? ` (${reply.arg})` : ""}`);
+      setEnabled(true);
+      setPillState("active");
     })();
     return () => { cancelled = true; };
   }, [udid, fetchCameraStatus]);
@@ -315,35 +103,10 @@ export function CameraTool({
         const reply = await fetchCameraStatus();
         if (cancelled) return;
         const alive = !!reply?.alive;
-        const replyBundles = Array.isArray(reply?.bundleIds) ? reply.bundleIds : null;
-        const foregroundIsInjected =
-          !!bundleId && (replyBundles ? replyBundles.includes(bundleId) : injectedBundleIds.has(bundleId));
-        const replySource = reply?.source ?? null;
-        const replyHasRealSource = replySource && replySource !== "placeholder";
-        const attachedToCurrentHelper =
-          injected && alive && foregroundIsInjected && !!replyHasRealSource
-          && (attachedHelperPid == null || reply?.helperPid === attachedHelperPid);
-        setPillState((prev) => nextCameraPillState(prev, attachedToCurrentHelper));
-        if (!alive) {
-          setInjected((prevInjected) => {
-            if (!prevInjected) return prevInjected;
-            setInjectedBundleIds(new Set());
-            setAttachedHelperPid(null);
-            appliedMirrorRef.current = "off";
-            return false;
-          });
-        } else if (injected && attachedHelperPid != null && reply?.helperPid !== attachedHelperPid) {
-          setInjected(false);
-          setInjectedBundleIds(new Set());
-          setAttachedHelperPid(null);
-          appliedMirrorRef.current = "off";
-        } else if (alive && Array.isArray(reply?.bundleIds)) {
-          const next = reply.bundleIds;
-          setInjectedBundleIds((prev) => {
-            if (prev.size === next.length && next.every((b) => prev.has(b))) return prev;
-            return new Set(next);
-          });
-        }
+        const connected = cameraStatusConnected(reply);
+        setPillState((prev) => nextCameraPillState(prev, connected));
+        setEnabled(alive);
+        if (!alive) appliedMirrorRef.current = "off";
       } finally {
         inFlight = false;
       }
@@ -365,7 +128,7 @@ export function CameraTool({
         document.removeEventListener("visibilitychange", onVisibility);
       }
     };
-  }, [fetchCameraStatus, injected, attachedHelperPid, bundleId, injectedBundleIds]);
+  }, [fetchCameraStatus]);
 
   const refreshWebcams = useCallback(async () => {
     setWebcamLoading(true);
@@ -427,20 +190,12 @@ export function CameraTool({
       return false;
     }
     lastFileIsHeicRef.current = false;
-    try {
-      const json = JSON.parse(res.stdout.trim()) as { source?: string; arg?: string };
-      setStatus(`Switched → ${json.source ?? nextSource}${json.arg ? ` (${json.arg})` : ""}`);
-    } catch {
-      setStatus(`Switched → ${nextSource}`);
-    }
     return true;
   }, [udid, reportSourceError]);
 
-  const inject = useCallback(async () => {
-    if (!bundleId) return;
-    setPendingPrimary("inject");
+  const enableCamera = useCallback(async () => {
+    setPendingPrimary("enable");
     setError(null);
-    setStatus(null);
     try {
       const isFile = source === "image" || source === "video";
       if (isFile && !filePath.trim()) {
@@ -448,68 +203,51 @@ export function CameraTool({
         return;
       }
       const res = await runHostAction("camera.inject", {
-        bundleId,
         udid,
         mirror,
         source: isFile ? "file" : source,
         target: isFile ? filePath.trim() : webcamId || undefined,
       });
       if (res.exitCode !== 0) {
-        reportSourceError(res.stderr.trim() || res.stdout.trim() || `inject failed (${res.exitCode})`);
+        reportSourceError(res.stderr.trim() || res.stdout.trim() || `Could not enable camera (${res.exitCode})`);
         return;
       }
       lastFileIsHeicRef.current = false;
-      let helperPid: number | null = null;
-      try {
-        const json = JSON.parse(res.stdout.trim()) as {
-          source?: string; pid?: number; helperPid?: number;
-          hotSwapped?: boolean; helperRelaunched?: boolean;
-        };
-        helperPid = json.helperPid ?? null;
-        const verb = json.helperRelaunched === false ? "Attached" : "Injected";
-        const pidStr = json.pid ? ` pid ${json.pid}` : "";
-        const helper = json.helperPid ? `, helper pid ${json.helperPid}` : "";
-        setStatus(`${verb} ${json.source ?? source} into ${bundleId}${pidStr}${helper}`);
-      } catch {
-        setStatus(res.stdout.trim() || "Injected.");
-      }
-      setInjected(true);
-      setPillState(source === "placeholder" ? "ready" : "active");
-      setAttachedHelperPid(helperPid);
-      setInjectedBundleIds((prev) => prev.has(bundleId) ? prev : new Set(prev).add(bundleId));
+      setEnabled(true);
+      setPillState("active");
+
       appliedMirrorRef.current = mirror;
     } finally {
       setPendingPrimary(null);
     }
-  }, [bundleId, udid, source, filePath, webcamId, mirror, reportSourceError]);
+  }, [udid, source, filePath, webcamId, mirror, reportSourceError]);
 
-  const autoSwapKey = injected
+  const autoSwapKey = enabled
     ? `${source}::${source === "webcam" ? webcamId : ""}::${source === "image" || source === "video" ? filePath : ""}`
     : null;
 
-  const foregroundIsInjected = !!bundleId && injectedBundleIds.has(bundleId);
-  const foregroundIsStreaming = foregroundIsInjected && source !== "placeholder";
+  const isStreaming = enabled && source !== "placeholder";
   useEffect(() => {
-    if (!foregroundIsStreaming) {
-      autoOpenedForInjectionRef.current = false;
+    if (!isStreaming) {
+      autoOpenedForStreamingRef.current = false;
       return;
     }
-    if (autoOpenedForInjectionRef.current) return;
-    autoOpenedForInjectionRef.current = true;
+    if (autoOpenedForStreamingRef.current) return;
+    autoOpenedForStreamingRef.current = true;
     setOpen(true);
-  }, [foregroundIsStreaming]);
+  }, [isStreaming]);
 
   useEffect(() => {
-    if (!webcamAutoInjectRequest) return;
-    if (!bundleId || isBusy || uploading) return;
-    if (source !== "webcam" || webcamId !== webcamAutoInjectRequest) return;
-    setWebcamAutoInjectRequest(null);
-    if (injected) return;
-    void inject();
-  }, [webcamAutoInjectRequest, bundleId, isBusy, uploading, source, webcamId, injected, inject]);
+    if (!webcamAutoEnableRequest) return;
+    if (isBusy || uploading) return;
+    if (source !== "webcam" || webcamId !== webcamAutoEnableRequest) return;
+    setWebcamAutoEnableRequest(null);
+    if (enabled) return;
+    void enableCamera();
+  }, [webcamAutoEnableRequest, isBusy, uploading, source, webcamId, enabled, enableCamera]);
 
   useEffect(() => {
-    if (!injected) return;
+    if (!enabled) return;
     if ((source === "image" || source === "video") && !filePath.trim()) return;
     if (source === "webcam" && !webcamId) return;
     if (skipNextAutoSwapRef.current) {
@@ -532,7 +270,7 @@ export function CameraTool({
   }, [autoSwapKey]);
 
   useEffect(() => {
-    if (!injected) return;
+    if (!enabled) return;
     if (appliedMirrorRef.current === mirror) return;
     const target = mirror;
     let cancelled = false;
@@ -547,28 +285,25 @@ export function CameraTool({
           return;
         }
         appliedMirrorRef.current = target;
-        setStatus(`Mirror → ${target}`);
       } finally {
         if (!cancelled) setPendingAux(null);
       }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mirror, injected]);
+  }, [mirror, enabled]);
 
-  const stopHelper = useCallback(async () => {
-    setPendingPrimary("stop");
+  const disableCamera = useCallback(async () => {
+    setPendingPrimary("disable");
     setError(null);
     try {
       const res = await runHostAction("camera.stopWebcam", { udid });
       if (res.exitCode !== 0) {
-        setError(res.stderr.trim() || `stop-webcam failed (${res.exitCode})`);
+        setError(res.stderr.trim() || `Could not disable camera (${res.exitCode})`);
         return;
       }
-      setStatus("Camera helper stopped.");
-      setInjected(false);
+      setEnabled(false);
       setPillState("ready");
-      setInjectedBundleIds(new Set());
       appliedMirrorRef.current = "off";
     } finally {
       setPendingPrimary(null);
@@ -597,10 +332,9 @@ export function CameraTool({
       setDroppedFileName(file.name);
       setSource(isVideo ? "video" : "image");
       setFilePath(tmpPath);
-      setStatus(`Loaded ${file.name}`);
-    } catch (e: any) {
+    } catch (error) {
       if (lastFileIsHeicRef.current) setError(CAMERA_HEIC_ERROR);
-      else setError(e?.message ?? "Upload failed");
+      else setError(error instanceof Error ? error.message : "Upload failed");
     } finally {
       setUploading(false);
     }
@@ -628,8 +362,8 @@ export function CameraTool({
     fileInputRef.current?.click();
   }, []);
 
-  const onFilePicked = useCallback(async (e: Event) => {
-    const input = e.target as HTMLInputElement;
+  const onFilePicked = useCallback(async (e: ChangeEvent<HTMLInputElement>) => {
+    const input = e.currentTarget;
     const file = input.files?.[0];
     input.value = "";
     if (file) await handleSourceFile(file);
@@ -653,13 +387,13 @@ export function CameraTool({
     setError(null);
     lastFileIsHeicRef.current = false;
     setSourceMenuOpen(false);
-    if (bundleId) setWebcamAutoInjectRequest(webcam.id);
-  }, [bundleId]);
+    setWebcamAutoEnableRequest(webcam.id);
+  }, []);
 
   const toggleMirror = useCallback(() => {
     setMirror((m) => (m === "on" ? "off" : "on"));
   }, []);
-  const mirrorDisabled = !injected || source === "placeholder";
+  const mirrorDisabled = !enabled || source === "placeholder";
 
   const onDragEnter = useCallback((e: DragEvent) => {
     e.preventDefault();
@@ -679,16 +413,7 @@ export function CameraTool({
     }
   }, []);
 
-  const primaryKind = selectCameraPrimaryKind({ bundleId, injected, source, foregroundIsInjected });
-  const primary: { label: string; onClick: () => void; kind: CameraPrimaryKind } =
-    primaryKind === "stop"
-      ? { label: pendingPrimary === "stop" ? "Stopping…" : "Stop", onClick: stopHelper, kind: "stop" }
-    : primaryKind === "attach"
-      ? { label: pendingPrimary === "inject" ? "Injecting…" : `Inject ${bundleId}`, onClick: inject, kind: "attach" }
-    : { label: pendingPrimary === "inject" ? "Starting…" : "Play", onClick: inject, kind: "play" };
-  const primaryDisabled = primaryKind === "stop"
-    ? uploading || pendingPrimary !== null
-    : !bundleId || uploading || pendingPrimary !== null;
+  const primaryDisabled = uploading || pendingPrimary !== null;
 
   const isPlaceholder = source === "placeholder";
   const showWebcam = source === "webcam";
@@ -725,9 +450,7 @@ export function CameraTool({
         className="flex flex-col gap-2.5"
       >
           <p className="m-0 text-[10px] leading-[1.5] text-white/45">
-            Replaces the simulator's camera feed by injecting a dylib at app launch
-            and streaming frames into shared memory. Pick media or a webcam,
-            then Play to inject into the foreground app.
+            Choose an image, video, or camera, then enable it for all apps.
           </p>
 
           <input
@@ -735,7 +458,7 @@ export function CameraTool({
             type="file"
             accept="image/*,video/*"
             className="hidden"
-            onChange={onFilePicked as any}
+            onChange={onFilePicked}
           />
 
           <div
@@ -746,7 +469,7 @@ export function CameraTool({
             }}
             title={
               isPlaceholder
-                ? "No source selected — Play uses a test-pattern feed. Click to pick an image/video, or drop one here."
+                ? "No source selected — Enable uses a test-pattern feed. Click to pick an image/video, or drop one here."
                 : showWebcam
                   ? `Source: ${activeWebcamName}`
                   : `Source: ${droppedFileName ?? source}`
@@ -780,7 +503,6 @@ export function CameraTool({
             )}
           </div>
 
-          {isPlaceholder && !uploading && <CameraTestPatternHint />}
 
           <div className="flex items-stretch gap-1.5">
             <div className="relative" data-camera-source-menu>
@@ -849,25 +571,23 @@ export function CameraTool({
             </div>
 
             <button
-              onClick={primary.onClick}
+              onClick={enabled ? disableCamera : enableCamera}
               disabled={primaryDisabled}
               className={[
                 "flex-1 flex items-center justify-center gap-1.5 py-2 px-2.5 border-none rounded-[7px] text-[12px] font-semibold cursor-pointer disabled:opacity-50 min-h-[36px]",
-                primary.kind === "stop"
+                enabled
                   ? "bg-white/[0.16] text-white enabled:hover:bg-white/[0.22]"
                   : "bg-success-emerald text-[#062018] enabled:hover:brightness-[1.08]",
               ].join(" ")}
               title={
-                primary.kind === "stop" ? "Stop the camera helper and terminate injected apps" :
-                primary.kind === "attach" ? `Inject ${bundleId} so it joins the camera feed` :
-                !bundleId ? "Bring an app to the foreground first" :
-                "Start: inject the dylib and launch the foreground app with the chosen source"
+                enabled ? "Disconnect the camera from all apps" :
+                "Enable the selected camera feed for all apps"
               }
-              aria-pressed={primary.kind === "stop"}
-              aria-label={primary.kind === "stop" ? "Stop" : "Play"}
+              aria-pressed={enabled}
+              aria-label={enabled ? "Disable" : "Enable"}
             >
-              {primary.kind === "stop" ? <StopGlyph /> : <PlayGlyph />}
-              <span>{primary.kind === "stop" ? "Stop" : primary.kind === "attach" ? "Inject" : "Play"}</span>
+              {enabled ? <StopGlyph /> : <PlayGlyph />}
+              <span>{enabled ? "Disable" : "Enable"}</span>
             </button>
 
             <button
