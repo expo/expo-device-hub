@@ -1725,7 +1725,12 @@ async function serve(
   // it can route helper/DevTools sockets through the single preview port.
   // Minted here, not in the middleware, because the operator has to be told what it is.
   const requirePreviewToken = !!options.requireToken;
-  const previewToken = randomBytes(32).toString("base64url");
+  // SERVE_SIM_TOKEN pins the token so a published link survives restarts (e.g. under launchd).
+  const pinnedToken = process.env.SERVE_SIM_TOKEN?.trim();
+  if (pinnedToken !== undefined && pinnedToken.length < 32) {
+    throw new Error("SERVE_SIM_TOKEN must be at least 32 characters");
+  }
+  const previewToken = pinnedToken || randomBytes(32).toString("base64url");
   const middleware = simMiddleware({
     basePath: "/",
     device: targetDevice,
