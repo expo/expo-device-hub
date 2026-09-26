@@ -72,10 +72,20 @@ _Last updated: 2026-09-25 14:22. The integration is built, smoke-tested and comm
   - **Caddy:** `com.sethwebster.simstream-caddy` serves HTTPS on 8443, because Tailscale serve holds *:443
     and macOS won't let a non-root process bind a low port on a specific IP. :80 handles redirects and
     HTTP-01. The certificate is Let's Encrypt.
-  - **simstream:** `com.sethwebster.simstream-live` runs the current build (`~/simstream-live`, unsigned;
-    the Mini's firewall is off) on :8766, for iPhone 17 Pro Max `B3AFC702…`. The user's pre-RTT instance
-    on :8775 is untouched.
-  - Logs are in `~/Library/Logs/simstream-{live,caddy,ddns}.log`. Deploy files are in
+  - **What's served (since 2026-09-26 00:15): the serve-sim fork** in simstream mode.
+    `com.sethwebster.serve-sim-fork` runs `~/simfork/dist/serve-sim.js --transport http --codec simstream
+    --require-token` on 127.0.0.1:3200 for iPhone 17 Pro Max `B3AFC702…`. Caddy proxies to it.
+    - **Token-gated,** because serve-sim's typed host actions can stop the server, install apps, read
+      simulator data containers, and use the webcam. The token is pinned via `SERVE_SIM_TOKEN` (fork
+      commit `82c35e2`) from `~/.config/simstream/serve-sim-token` on the Mini. The user's link is in
+      `~/Desktop/simstream-link.txt` on the M5 (mode 600).
+    - **Never print the token.** It was rotated once after it leaked into tool output.
+    - To update the fork: rebuild on the M4, then
+      `rsync -a --delete dist/ seths-mac-mini:simfork/dist/` and
+      `launchctl kickstart -k gui/$(id -u)/com.sethwebster.serve-sim-fork`.
+    - The standalone simstream agent (`com.sethwebster.simstream-live`, :8766) is retired; its plist is in
+      `~/simstream-live/deploy/` for rollback. The user's pre-RTT instance on :8775 is untouched.
+  - Logs are in `~/Library/Logs/{serve-sim-fork,simstream-caddy,simstream-ddns}.log`. Deploy files are in
     `~/Development/simstream/deploy/`.
 - **iPad link (tailnet only):** https://seth-webster-m4.$SIMSTREAM_TAILNET:8450/ serves `~/simstream-videos`
   (`npx http-server` on 127.0.0.1:8460, which supports byte ranges; `tailscale serve --https=8450`). Remove it
