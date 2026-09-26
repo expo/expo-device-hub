@@ -305,18 +305,24 @@ export function capabilityLoaderPath(): string {
   return join(capabilityLoaderDir(), CAPABILITY_LOADER_NAME);
 }
 
-export async function armCapabilityLoader(udid: string): Promise<void> {
+/** Arm the loader and republish the recorded capabilities; rejects if publication fails. */
+export async function rearmCapabilityLoader(udid: string): Promise<void> {
   const dylib = capabilityLoaderPath();
   if (!existsSync(dylib)) return;
   armedHere.add(udid);
-  try {
-    await withLaunchStateLock(udid, async () => {
-      const previous = readLaunchState(udid) ?? { launchArgs: [], capabilities: {} };
-      await publishLaunchState(udid, {
-        ...previous,
-        sessionPids: [...new Set([...(previous.sessionPids ?? []), process.pid])],
-      });
+  await withLaunchStateLock(udid, async () => {
+    const previous = readLaunchState(udid) ?? { launchArgs: [], capabilities: {} };
+    await publishLaunchState(udid, {
+      ...previous,
+      sessionPids: [...new Set([...(previous.sessionPids ?? []), process.pid])],
     });
+  });
+}
+
+/** Best-effort rearmCapabilityLoader for startup: a failure is logged, not thrown. */
+export async function armCapabilityLoader(udid: string): Promise<void> {
+  try {
+    await rearmCapabilityLoader(udid);
   } catch (error) {
     console.error(
       `Could not arm the capability loader on ${udid}: ` +

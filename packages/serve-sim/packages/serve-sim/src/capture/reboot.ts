@@ -1,5 +1,5 @@
 import { bootDevice, shutdownDevice } from "../device";
-import { armCapabilityLoader, devicesArmedHere } from "../launch-manager";
+import { devicesArmedHere, rearmCapabilityLoader } from "../launch-manager";
 import { CaptureEnableError, captureRuntime, type CaptureRuntime } from "./runtime";
 import { type CaptureMeta } from "./store";
 
@@ -15,8 +15,9 @@ const inFlight = new Map<string, InFlight>();
 const latestIntent = new Map<string, boolean>();
 
 // launchctl values do not survive a reboot, so a device this process armed needs arming again.
+// A failure rejects the reboot: reporting success would hide that apps lost their capabilities.
 async function rearmCapabilities(udid: string): Promise<void> {
-  if (devicesArmedHere().includes(udid)) await armCapabilityLoader(udid);
+  if (devicesArmedHere().includes(udid)) await rearmCapabilityLoader(udid);
 }
 
 /** Tear down the old session first so injection cannot point the new boot at a dead port. */
