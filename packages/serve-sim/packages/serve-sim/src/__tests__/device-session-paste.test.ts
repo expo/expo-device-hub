@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import { DeviceSession } from "../device-session";
 import { HID_USAGE_BY_CODE } from "../client/utils/hid";
+import { withShimsAsync } from "./helpers";
 
 const ControlLeft = HID_USAGE_BY_CODE.ControlLeft!;
 const MetaLeft = HID_USAGE_BY_CODE.MetaLeft!;
@@ -10,7 +14,7 @@ const KeyC = HID_USAGE_BY_CODE.KeyC!;
 type KeyCall = [type: "down" | "up", usage: number];
 
 // Only the fields the paste chord touches; the rest of the session needs a real simulator.
-function session(failOn?: (call: KeyCall) => boolean) {
+function session(failOn?: (call: KeyCall) => boolean, udid = "SESSION-TEST") {
   const calls: KeyCall[] = [];
   const s = Object.create(DeviceSession.prototype) as DeviceSession;
   const hid = {
@@ -21,8 +25,19 @@ function session(failOn?: (call: KeyCall) => boolean) {
     },
   };
   Object.assign(s, {
+    udid,
     phase: "running",
     hidSockets: new Set<object>(),
+    admittedHidSockets: new Set<object>(),
+    detachedHidSockets: new WeakSet<object>(),
+    overloadedHidSockets: new WeakSet<object>(),
+    inputOperationQueues: new Map(),
+    scheduledInputSockets: new Set<object>(),
+    inputSocketOrder: [],
+    inputStateWaiters: new Set(),
+    inputQueueDraining: false,
+    restoreHardwareKeyboardWhenIdle: false,
+    serverInput: { send() {}, on() {}, close() {} },
     activeHidKeyUsages: new WeakMap<object, Set<number>>(),
     activeHidKeyUsageCounts: new Map<number, number>(),
     hid,
@@ -33,7 +48,9 @@ function session(failOn?: (call: KeyCall) => boolean) {
     activeHidKeyUsageCounts: Map<number, number>;
     updateHidKey(ws: object, type: "down" | "up", usage: number): Promise<void>;
     sendPasteShortcut(ws: object): Promise<void>;
-    sendCopyShortcut(): Promise<void>;
+    sendCommandShortcut(code: "KeyV" | "KeyC", ws: object | null): Promise<void>;
+    queueInputOperation(ws: object, run: () => Promise<void>): Promise<void> | null;
+    copyPasteboard(): Promise<{ text: string }>;
   };
   const viewer = () => {
     const ws = {};
@@ -143,14 +160,14 @@ describe("sendPasteShortcut", () => {
   });
 });
 
-describe("sendCopyShortcut", () => {
+describe("copy shortcut", () => {
   test("lifts another viewer's modifier and leaves no key owned", async () => {
     const { calls, internals, viewer } = session();
     const a = viewer();
     await internals.updateHidKey(a, "down", ControlLeft);
     calls.length = 0;
 
-    await internals.sendCopyShortcut();
+    await internals.sendCommandShortcut("KeyC", null);
 
     expect(calls).toEqual([
       ["up", ControlLeft],
@@ -169,7 +186,7 @@ describe("sendCopyShortcut", () => {
     await internals.updateHidKey(a, "down", ControlLeft);
     calls.length = 0;
 
-    await expect(internals.sendCopyShortcut()).rejects.toThrow("HID failed");
+    await expect(internals.sendCommandShortcut("KeyC", null)).rejects.toThrow("HID failed");
 
     expect(calls).toEqual([
       ["up", ControlLeft],
@@ -179,10 +196,80 @@ describe("sendCopyShortcut", () => {
     ]);
   });
 
+});
+
+describe("copyPasteboard", () => {
+  // A one-slot simulator pasteboard behind a fake xcrun; pbpaste can be slowed down.
+  async function withPasteboard(text: string, pbpasteDelay: string, run: (udid: string) => Promise<void>) {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-copy-turn-test-"));
+    const board = join(dir, "pasteboard");
+    writeFileSync(board, text);
+    const xcrun = `#!/bin/sh\nif [ "$2" = pbpaste ]; then sleep ${pbpasteDelay}; cat '${board}'; fi\n`;
+    try {
+      await withShimsAsync({ xcrun }, () => run(`COPY-TURN-TEST-${process.pid}-${Math.random()}`));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  test("waits for input a viewer already queued", async () => {
+    await withPasteboard("copied", "0", async (udid) => {
+      const { calls, internals, viewer } = session(undefined, udid);
+      const order: string[] = [];
+      const a = viewer();
+      let release!: () => void;
+      const gate = new Promise<void>((resolve) => { release = resolve; });
+      const earlier = internals.queueInputOperation(a, async () => {
+        order.push("viewer input");
+        await gate;
+      });
+      const copy = internals.copyPasteboard();
+      await Bun.sleep(50);
+      expect(calls).toEqual([]);
+      release();
+      await earlier;
+      expect((await copy).text).toBe("copied");
+      expect(order).toEqual(["viewer input"]);
+      expect(calls[0]).toEqual(["down", MetaLeft]);
+    });
+  });
+
+  test("lets other input run while it reads", async () => {
+    await withPasteboard("copied", "0.8", async (udid) => {
+      const { internals, viewer } = session(undefined, udid);
+      const b = viewer();
+      let copyDone = false;
+      const copy = internals.copyPasteboard().then((result) => {
+        copyDone = true;
+        return result;
+      });
+      await Bun.sleep(300); // shortcut and settle are done; pbpaste runs for 0.8 s more
+      const queuedAt = performance.now();
+      await internals.queueInputOperation(b, async () => {});
+      expect(performance.now() - queuedAt).toBeLessThan(200);
+      expect(copyDone).toBe(false);
+      expect((await copy).text).toBe("copied");
+    });
+  });
+
   test("refuses when simulator input is unavailable", async () => {
     const { calls, hid, internals } = session();
     hid.inputUnavailable = true;
-    await expect(internals.sendCopyShortcut()).rejects.toThrow("Simulator input is unavailable");
+    await expect(internals.copyPasteboard()).rejects.toThrow("Simulator input is unavailable");
+    expect(calls).toEqual([]);
+  });
+
+  test("sends nothing if the session stops while the copy waits", async () => {
+    const { calls, internals, viewer } = session();
+    const a = viewer();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const earlier = internals.queueInputOperation(a, () => gate);
+    const copy = internals.copyPasteboard();
+    (internals as unknown as { phase: string }).phase = "stopped";
+    release();
+    await earlier;
+    await expect(copy).rejects.toThrow("Simulator input is unavailable");
     expect(calls).toEqual([]);
   });
 });

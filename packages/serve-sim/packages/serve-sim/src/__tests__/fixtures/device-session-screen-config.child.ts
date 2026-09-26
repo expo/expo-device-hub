@@ -205,6 +205,10 @@ mock.module("../../sim-pasteboard", () => ({
     await pasteGate;
     await sendPasteShortcut();
   },
+  copyFromSim: async (_udid: string, sendCopyShortcut: () => Promise<void>) => {
+    await sendCopyShortcut();
+    return { text: clipboardText, relaunchedApp: null };
+  },
 }));
 
 const { DeviceSession } = await import("../../device-session");

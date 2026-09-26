@@ -30,7 +30,7 @@ import {
 import { isSoftwareKeyboardVisible } from "./ax";
 import { isLiftedModifier, simCopyHidEvents, simPasteHidEvents } from "./client/utils/sim-clipboard";
 import { HID_USAGE_BY_CODE } from "./client/utils/hid";
-import { MAX_PASTEBOARD_TEXT_BYTES, pasteTextIntoSim } from "./sim-pasteboard";
+import { copyFromSim, MAX_PASTEBOARD_TEXT_BYTES, pasteTextIntoSim, type PasteboardReadResult } from "./sim-pasteboard";
 import { EXEC_WS_MAX_MESSAGE_BYTES } from "./exec-ws-utils";
 import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
@@ -290,6 +290,8 @@ export class DeviceSession {
   private readonly axHandledKeyUsages = new WeakMap<HidSocket, Set<number>>();
   private readonly failedInputSockets = new WeakSet<HidSocket>();
   private readonly overloadedHidSockets = new WeakSet<HidSocket>();
+  /** Queue key for input the server sends itself, so it takes turns with viewers' input. */
+  private readonly serverInput: HidSocket = { send() {}, on() {}, close() {} };
   private restoreHardwareKeyboardWhenIdle = false;
   private hardwareKeyboardRevision?: string;
 
@@ -1253,10 +1255,37 @@ export class DeviceSession {
     return this.sendCommandShortcut("KeyV", ws);
   }
 
-  /** Press Command+C for a copy that the pasteboard route runs; no viewer socket owns its keys. */
-  async sendCopyShortcut(): Promise<void> {
-    if (this.phase !== "running" || this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
-    await this.sendCommandShortcut("KeyC", null);
+  /**
+   * Press Command+C and read the pasteboard, for the pasteboard route.
+   *
+   * The shortcut takes an input turn like a viewer's keys, so no other input lands inside the
+   * chord. The pasteboard lock is taken inside that turn, in the same order as paste, so the two
+   * cannot deadlock, and it is held through the read. The turn ends once the chord is out, so the
+   * settle and the read do not hold up other viewers' input.
+   */
+  async copyPasteboard(): Promise<PasteboardReadResult> {
+    let shortcutSent!: () => void;
+    let shortcutFailed!: (error: unknown) => void;
+    const sent = new Promise<void>((resolve, reject) => {
+      shortcutSent = resolve;
+      shortcutFailed = reject;
+    });
+    let copied: Promise<PasteboardReadResult> | undefined;
+    const turn = this.queueInputOperation(this.serverInput, async () => {
+      // The session can stop while the copy waits for its turn.
+      if (this.phase !== "running" || this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+      copied = copyFromSim(this.udid, async () => {
+        await this.sendCommandShortcut("KeyC", null);
+        shortcutSent();
+      });
+      copied.catch(shortcutFailed);
+      await sent;
+    });
+    if (!turn) throw new Error("Simulator input is unavailable");
+    await turn;
+    // A discarded turn resolves without running.
+    if (!copied) throw new Error("Simulator input is unavailable");
+    return copied;
   }
 
   /**
