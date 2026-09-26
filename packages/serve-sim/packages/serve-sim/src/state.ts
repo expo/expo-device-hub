@@ -27,7 +27,7 @@ export interface ServeSimDeviceState {
   streamUrl: string;
   wsUrl: string;
   streamSettings?: StreamSettings;
-  /** Present only under `--require-token`, so local subcommands can reach the gated socket. */
+  /** Present under `--require-token` or on a loopback host, so local subcommands can reach gated routes. */
   token?: string;
 }
 

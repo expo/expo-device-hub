@@ -1851,8 +1851,10 @@ async function serve(
   // CLI input subcommands can reach the same-origin /helper ws.
   for (const udid of targetDevices) {
     const state = inProcessServeSimState(udid, boundPort, "/", host, options.stream);
-    // Capture CLI commands need this token even when the preview is public.
-    writeState({ ...state, token: previewToken });
+    // Capture CLI commands read this token. A public host without --require-token refuses capture,
+    // so the token is written only where something can use it.
+    const tokenNeeded = requirePreviewToken || isLoopbackHost(host);
+    writeState(tokenNeeded ? { ...state, token: previewToken } : state);
   }
   const clearAll = () => {
     for (const udid of targetDevices) {
