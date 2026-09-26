@@ -1,6 +1,6 @@
 import { createReadStream, createWriteStream } from "node:fs";
 import type { WriteStream } from "node:fs";
-import { rename, unlink } from "node:fs/promises";
+import { open as openFile, rename, unlink } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
 import { finished } from "node:stream/promises";
@@ -67,26 +67,69 @@ async function streamHarBody(
   }
 }
 
-/** Stream-rebuild a HAR from an NDJSON file of HarEntry lines. */
+interface IndexedLine {
+  start: number;
+  offset: number;
+  length: number;
+}
+
+/** Each non-empty line's start time and byte range, read a chunk at a time. */
+async function indexEntryLines(entriesPath: string): Promise<IndexedLine[]> {
+  const index: IndexedLine[] = [];
+  let offset = 0;
+  let pending: Buffer[] = [];
+  let pendingStart = 0;
+  const finishLine = (end: number) => {
+    const line = Buffer.concat(pending);
+    pending = [];
+    if (line.length > 0) {
+      let start = Number.POSITIVE_INFINITY;
+      try {
+        const parsed = Date.parse((JSON.parse(line.toString("utf8")) as { startedDateTime?: string }).startedDateTime ?? "");
+        if (!Number.isNaN(parsed)) start = parsed;
+      } catch {
+        // An unreadable line keeps its place after the dated ones.
+      }
+      index.push({ start, offset: pendingStart, length: end - pendingStart });
+    }
+  };
+  for await (const chunk of createReadStream(entriesPath) as AsyncIterable<Buffer>) {
+    let from = 0;
+    for (let at = chunk.indexOf(10); at !== -1; at = chunk.indexOf(10, from)) {
+      pending.push(chunk.subarray(from, at));
+      finishLine(offset + at);
+      from = at + 1;
+      pendingStart = offset + from;
+    }
+    if (from < chunk.length) pending.push(chunk.subarray(from));
+    offset += chunk.length;
+  }
+  finishLine(offset);
+  return index;
+}
+
+/**
+ * Stream-rebuild a HAR from an NDJSON file of HarEntry lines, in start order as HAR readers
+ * expect. The log holds entries by completion time; only a small index is kept in memory.
+ */
 export async function streamHarFromNdjsonFile(
   entriesPath: string,
   outPath: string,
   creatorVersion: string,
 ): Promise<void> {
+  const index = (await indexEntryLines(entriesPath)).sort((a, b) => a.start - b.start);
   await streamHarBody(outPath, creatorVersion, async (out) => {
-    let first = true;
-    const input = createReadStream(entriesPath, { encoding: "utf8" });
-    const lines = createInterface({ input, crlfDelay: Infinity });
+    const file = await openFile(entriesPath, "r");
     try {
-      for await (const line of lines) {
-        if (!line) continue;
-        if (!first) await writeChunk(out, ",");
-        first = false;
-        await writeChunk(out, Buffer.from(line));
+      for (let i = 0; i < index.length; i++) {
+        const { offset, length } = index[i]!;
+        const line = Buffer.alloc(length);
+        await file.read(line, 0, length, offset);
+        if (i > 0) await writeChunk(out, ",");
+        await writeChunk(out, line);
       }
     } finally {
-      lines.close();
-      input.destroy();
+      await file.close();
     }
   });
 }
@@ -118,21 +161,15 @@ export async function compactNdjsonAndStreamHar(
   }
 
   const skip = currentCount - maxEntries;
-  const { open, close } = harEnvelope(creatorVersion);
   const entriesTmp = `${entriesPath}.${process.pid}.compact.tmp`;
-  const harTmp = `${harPath}.${process.pid}.tmp`;
   clearTempPath(entriesTmp);
-  clearTempPath(harTmp);
   const entriesOut = createWriteStream(entriesTmp, { flags: "wx" });
-  const harOut = createWriteStream(harTmp, { flags: "wx" });
   const entriesDone = observeCompletion(entriesOut);
-  const harDone = observeCompletion(harOut);
   let skipped = 0;
   let kept = 0;
   const input = createReadStream(entriesPath, { encoding: "utf8" });
   const lines = createInterface({ input, crlfDelay: Infinity });
   try {
-    await writeChunk(harOut, open);
     for await (const line of lines) {
       if (!line) continue;
       if (skipped < skip) {
@@ -140,26 +177,21 @@ export async function compactNdjsonAndStreamHar(
         continue;
       }
       await writeChunk(entriesOut, `${line}\n`);
-      if (kept > 0) await writeChunk(harOut, ",");
-      await writeChunk(harOut, Buffer.from(line));
       kept += 1;
     }
-    await writeChunk(harOut, close);
     entriesOut.end();
-    harOut.end();
-    await Promise.all([entriesDone, harDone]);
+    await entriesDone;
     await rename(entriesTmp, entriesPath);
-    await rename(harTmp, harPath);
-    return kept;
   } catch (err) {
     entriesOut.destroy();
-    harOut.destroy();
-    await Promise.allSettled([entriesDone, harDone]);
+    await Promise.allSettled([entriesDone]);
     await unlink(entriesTmp).catch(() => {});
-    await unlink(harTmp).catch(() => {});
     throw err;
   } finally {
     lines.close();
     input.destroy();
   }
+  // The HAR is rebuilt from the compacted log, in start order.
+  await streamHarFromNdjsonFile(entriesPath, harPath, creatorVersion);
+  return kept;
 }
