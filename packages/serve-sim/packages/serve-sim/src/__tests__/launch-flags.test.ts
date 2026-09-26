@@ -69,6 +69,12 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
     expect(stderr).toContain("Invalid URL 'not-a-url'");
   });
 
+  test("rejects network capture on a public host without the token gate", async () => {
+    const { code, stderr } = await runCli(["--network-capture", "--host", "0.0.0.0"]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("--network-capture on --host 0.0.0.0 needs --require-token");
+  });
+
   test("rejects network capture in the run modes that would record nothing", async () => {
     // Both exit once the helpers are up, and the proxy lives in this process, so capture would stop with it.
     for (const mode of ["--detach", "--no-preview"]) {

@@ -1980,7 +1980,7 @@ program
   )
   .option(
     "--network-capture",
-    "Default network capture on for devices this process boots; the UI reboot toggle overrides it per device. " +
+    "Default network capture on for the devices this process serves, including ones already booted; the UI reboot toggle overrides it per device. " +
       "Covers third-party apps launched after capture starts, including their startup requests; capture starts " +
       "once the device has booted, so apps that launch during boot are missed until relaunched. " +
       "Apple system apps (e.g. Safari) are left unproxied. " +
@@ -2257,6 +2257,14 @@ Examples:
       console.error(
         "--network-capture needs the preview server, so drop --detach/--no-preview. The proxy and its " +
           "recordings live in that process; these modes exit and would leave nothing capturing.",
+      );
+      process.exit(1);
+    }
+    if (opts.networkCapture && !opts.requireToken && !isLoopbackHost(opts.host)) {
+      console.error(
+        `--network-capture on --host ${opts.host} needs --require-token. Without it the preview page, ` +
+          "open to anyone who can reach it, carries the session token, and that token also reads the " +
+          "captured traffic.",
       );
       process.exit(1);
     }
