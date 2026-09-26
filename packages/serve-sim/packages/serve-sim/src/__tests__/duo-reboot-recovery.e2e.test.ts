@@ -120,14 +120,14 @@ test.skipIf(!enabled)("Duo main capture and HID recover after a preview reboot i
       await waitFor(() => lines().slice(start).some((line) => line.startsWith("input-ready\t")),
         30_000, "input fixture never reached the foreground");
     };
-    const tapFixture = async () => {
+    const tapFixture = async (timeoutMs = 15_000) => {
       const start = lines().length;
       cli("tap", "0.5", "0.5", "-d", udid);
       await waitFor(() => {
         const fresh = lines().slice(start);
         return fresh.some((line) => line.startsWith("touch-began\t")) &&
           fresh.some((line) => line.startsWith("touch-ended\t"));
-      }, 15_000, "serve-sim tap did not reach UIKit");
+      }, timeoutMs, "serve-sim tap did not reach UIKit");
     };
 
     const port = await freePortAsync();
@@ -158,7 +158,20 @@ test.skipIf(!enabled)("Duo main capture and HID recover after a preview reboot i
     await waitFor(async () => {
       try { return !(await readJpegFrame(state.streamUrl)).equals(beforeLaunch); } catch { return false; }
     }, 15_000, "main MJPEG did not show the fixture after Duo reboot");
-    await tapFixture();
+    // CoreDevice can switch the active Duo display a few times after boot, and
+    // iOS may drop a tap sent during that switch. Allow the first tap to
+    // retry. With stale HID state, every tap is lost.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await tapFixture(5_000);
+        break;
+      } catch (err) {
+        if (attempt === 4) throw err;
+        await Bun.sleep(2_000);
+      }
+    }
+    // Input must then stay live: each further tap must land on its first try.
+    for (let i = 0; i < 3; i++) await tapFixture(5_000);
     expect((JSON.parse(readFileSync(join(stateDir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState).pid).toBe(pid);
     process.kill(pid, 0);
   } catch (err) {
