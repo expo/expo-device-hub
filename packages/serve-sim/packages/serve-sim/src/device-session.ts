@@ -24,6 +24,7 @@ import {
   axFrontmostAsync,
   axTypeKeyboardCharacterAsync,
   type MjpegFrame,
+  type NativeHingeState,
   type NativeScreenInfo,
   type NativeUnsubscribe,
 } from "./native";
@@ -1174,12 +1175,7 @@ export class DeviceSession {
           this.hingeAngle = state.hingeAngle;
           this.saveHingeState();
         } else {
-          const saved = this.hingeRotated ? null : readSavedHingeState(this.udid, state.hingeAngle);
-          this.hingeAngle = state.hingeAngle;
-          this.tableMode = this.hingeRotated ? false : state.tableMode ?? saved?.tableMode;
-          this.hingePhysicalOrientation = this.hingeRotated ? undefined : state.physicalOrientation ?? saved?.physicalOrientation;
-          this.hingePose = this.hingeRotated ? null : saved?.hingePose ?? null;
-          if (this.hingeRotated) this.saveHingeState();
+          this.applyNativeHingeState(state);
         }
       }
       this.supportsHingeAngle = true;
@@ -1188,10 +1184,25 @@ export class DeviceSession {
     this.hingeControlUpdate = operation.catch(() => {});
   }
 
+  private applyNativeHingeState(state: NativeHingeState): void {
+    const saved = this.hingeRotated ? null : readSavedHingeState(this.udid, state.hingeAngle);
+    this.hingeAngle = state.hingeAngle;
+    this.tableMode = this.hingeRotated ? false : state.tableMode ?? saved?.tableMode;
+    this.hingePhysicalOrientation = this.hingeRotated ? undefined : state.physicalOrientation ?? saved?.physicalOrientation;
+    this.hingePose = this.hingeRotated ? null : saved?.hingePose ?? null;
+    if (this.hingeRotated) this.saveHingeState();
+  }
+
   /** Keep pose sequences ordered across sliders, presets, and legacy CLI clients. */
   private queueHingeControl(command: HingeControlCommand): Promise<boolean> {
     const operation = this.hingeControlUpdate.then(async () => {
       if (this.phase !== "running") return false;
+      if ((command.control === "table" || command.control === "physical") && !this.hingeControlled && this.hingeAngle === undefined) {
+        // Seed before the first save so an early command keeps the saved pose.
+        const state = await this.hid.hingeState();
+        if (this.phase !== "running") return false;
+        this.applyNativeHingeState(state);
+      }
       if (command.control === "table" && command.value && !isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation)) return false;
       if (command.control === "physical" && this.supportsPhysicalOrientation === false) return false;
       if (command.control === "physical" && command.value === "facedown") {

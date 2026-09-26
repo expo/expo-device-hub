@@ -1242,6 +1242,29 @@ describe("physical hinge controls", () => {
     expect(configs.at(-1)).toMatchObject({ hingeAngle: 90 });
   });
 
+  test("keeps the saved orientation through a Table Mode command sent before discovery", async () => {
+    let release!: () => void;
+    const { controlResults, configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
+    send(1, { control: "table", value: false });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, physicalOrientation: "portrait", tableMode: false });
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, physicalOrientation: "portrait", tableModeAvailable: true });
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+  });
+
   test("does not restore a physical orientation that a startup rotation cleared", async () => {
     let release!: () => void;
     const { controlResults, configs } = await start(
