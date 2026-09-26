@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { CapabilityScope } from "./capabilities";
+import type { CapabilityLoadPhase, CapabilityScope } from "./capabilities";
 import { stateDir } from "./state";
 
 function isCapabilityScope(value: unknown): value is CapabilityScope {
@@ -13,6 +13,7 @@ export interface Capability {
   env?: Record<string, string>;
   scope: CapabilityScope;
   loadDelayMs?: number;
+  loadPhase?: CapabilityLoadPhase;
 }
 
 export interface RecordedCapability extends Capability {
