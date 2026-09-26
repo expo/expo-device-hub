@@ -99,8 +99,10 @@ export class CaptureStore {
       durationMs: null,
       failure: null,
     };
+    // Evict before inserting, so a subscriber that reacts to "evicted" (even by clearing) never
+    // sees a "started" for a request the list does not hold.
+    this.evictOverflow(MAX_REQUESTS - 1);
     this.requests.set(id, request);
-    this.evictOverflow();
     this.emit({ type: "started", request });
     return id;
   }
@@ -168,8 +170,8 @@ export class CaptureStore {
     }
   }
 
-  private evictOverflow(): void {
-    while (this.requests.size > MAX_REQUESTS) {
+  private evictOverflow(keep: number): void {
+    while (this.requests.size > keep) {
       const oldest = this.requests.keys().next();
       if (oldest.done) return;
       const body = this.bodies.get(oldest.value);

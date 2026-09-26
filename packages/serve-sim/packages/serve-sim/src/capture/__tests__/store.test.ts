@@ -138,6 +138,18 @@ describe("CaptureStore", () => {
     expect(list.at(-1)!.url).toBe("https://example.com/519");
   });
 
+  test("a subscriber that clears on eviction still sees events that match the list", () => {
+    const store = new CaptureStore(() => 0);
+    for (let i = 0; i < 500; i++) store.start("GET", `https://example.com/${i}`);
+    const seen = collect(store);
+    store.subscribe((event) => {
+      if (event.type === "evicted") store.clear();
+    });
+    const id = store.start("GET", "https://example.com/500");
+    expect(seen.map((event) => event.type)).toEqual(["evicted", "cleared", "started"]);
+    expect(store.list().map((request) => request.id)).toEqual([id]);
+  });
+
   test("announces each eviction before the request that caused it", () => {
     const store = new CaptureStore(() => 0);
     for (let i = 0; i < 500; i++) store.start("GET", `https://example.com/${i}`);
