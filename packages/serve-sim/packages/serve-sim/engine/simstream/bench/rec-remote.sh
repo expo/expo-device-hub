@@ -3,6 +3,9 @@
 # bound to this machine's Tailscale IP; the recorder (headless Chrome + CDP input) runs on REMOTE.
 modes=(${@:-S W H})
 cd ${0:A:h}
+# Machine-specific values (SIMSTREAM_*) come from ../simstream.env or the environment.
+[ -f "${0:A:h}/../simstream.env" ] && set -a && . "${0:A:h}/../simstream.env" && set +a
+: "${SIMSTREAM_TAILNET:?set SIMSTREAM_TAILNET (see simstream.env.example)}"
 SS=/Users/sethwebster/Development/expo-device-hub-simstream/packages/serve-sim/packages/serve-sim
 REMOTE=${REMOTE:-seth@sethwebster-expo.$SIMSTREAM_TAILNET}
 RNODE=${RNODE:-/Users/seth/.local/share/mise/installs/node/22.20.0/bin/node}

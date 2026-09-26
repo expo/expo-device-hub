@@ -8,6 +8,10 @@ _Last updated: 2026-09-26. All work is committed on `simstream-video`; the simst
 
 ## Picking this up on another machine
 
+Machine-specific values below appear as `$SIMSTREAM_*` variables. Their real values live in
+`engine/simstream/simstream.env` (gitignored; template: `simstream.env.example`). Copy that file to the
+new machine out of band.
+
 Everything is on branch `simstream-video` of this repo. The simstream engine repo, with its 26-commit
 history, is merged in as a subtree at `packages/serve-sim/packages/serve-sim/engine/simstream/`: engine
 sources, `bench/` (measurement, recording and report tools), and `deploy/` (Caddy, DDNS, launchd).

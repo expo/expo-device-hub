@@ -3,6 +3,10 @@
 # UDID); the recorder runs on REMOTE (off-prem) and reaches it over the network.
 modes=(${@:-S W H})
 cd ${0:A:h}
+# Machine-specific values (SIMSTREAM_*) come from ../simstream.env or the environment.
+[ -f "${0:A:h}/../simstream.env" ] && set -a && . "${0:A:h}/../simstream.env" && set +a
+: "${SIMSTREAM_TAILNET:?set SIMSTREAM_TAILNET (see simstream.env.example)}"
+: "${SIMSTREAM_MINI_TS_IP:?set SIMSTREAM_MINI_TS_IP (see simstream.env.example)}"
 SERVER=seths-mac-mini; SERVER_NAME=seths-mac-mini.$SIMSTREAM_TAILNET; SERVER_IP=$SIMSTREAM_MINI_TS_IP
 UDID=B3AFC702-8CB5-45BF-A221-99740EC51B4B; SNODE=/Users/sethwebster/.asdf/shims/node
 REMOTE=seth@sethwebster-expo.$SIMSTREAM_TAILNET; RNODE=/Users/seth/.local/share/mise/installs/node/22.20.0/bin/node

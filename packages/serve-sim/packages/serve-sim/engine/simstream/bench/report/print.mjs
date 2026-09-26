@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 const [HTML, OUT, PORT = '9395'] = process.argv.slice(2);
 const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/fbench/mkpdf/chrome`, 'about:blank'], { stdio: 'ignore' });
+  ['--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=/tmp/simreport/chrome`, 'about:blank'], { stdio: 'ignore' });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let t; for (let i = 0; i < 60; i++) { try { t = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json(); break; } catch { await sleep(200); } }
 const ws = new WebSocket(t.find((x) => x.type === 'page').webSocketDebuggerUrl); await new Promise((r) => (ws.onopen = r));
