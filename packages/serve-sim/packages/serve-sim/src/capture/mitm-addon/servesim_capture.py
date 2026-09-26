@@ -36,11 +36,11 @@ TIMEOUT_SECONDS = 2
 # serve-sim sends SIGKILL 3 s after SIGTERM, so the final flush must finish sooner.
 SHUTDOWN_SECONDS = 2.5
 _shutdown_deadline = None
-# Shutdown loses a record when its send fails, when it is still being sent, or when it is still
-# queued. The lock keeps the in-flight flag and the failure count consistent for done().
+# A record is lost when its send fails or the control server refuses it, and at shutdown also when
+# it is still being sent or still queued. The lock keeps the flag and the count consistent.
 _delivery_lock = threading.Lock()
 _in_flight = False
-_shutdown_failures = 0
+_failed_sends = 0
 QUEUE_BYTE_LIMIT = 32 * 1024 * 1024
 # Bound metadata independently of the body cap.
 MAX_URL_CHARS = 4096
@@ -72,14 +72,20 @@ def _send(path, body):
         # One slow send must not use up the time the rest of the queue needs.
         timeout = max(0.05, min(timeout, _shutdown_deadline - time.monotonic()))
     try:
-        _opener.open(request, timeout=timeout).close()
-        return True
+        with _opener.open(request, timeout=timeout) as response:
+            reply = response.read(4096)
     except Exception:
         return False
+    # The control server answers {"ok": false} for a record it cannot place, such as a response whose
+    # request it no longer tracks; that record is lost too.
+    try:
+        return json.loads(reply or b"{}").get("ok", True) is not False
+    except ValueError:
+        return True
 
 
 def _drain():
-    global _queued_bytes, _in_flight, _shutdown_failures
+    global _queued_bytes, _in_flight, _failed_sends
     while True:
         item = _outbox.get()
         if item is None:
@@ -92,8 +98,17 @@ def _drain():
         delivered = _send(path, body)
         with _delivery_lock:
             _in_flight = False
-            if not delivered and _shutdown_deadline is not None:
-                _shutdown_failures += 1
+            if not delivered:
+                _failed_sends += 1
+                first = _failed_sends == 1
+            else:
+                first = False
+        if first and _shutdown_deadline is None:
+            print(
+                "[servesim-capture] could not deliver a capture record to serve-sim; its request stays "
+                "unfinished. Further losses are counted and reported when capture stops.",
+                file=sys.stderr,
+            )
 
 
 _reporter = threading.Thread(target=_drain, name="servesim-capture-reporter", daemon=True)
@@ -143,7 +158,7 @@ def done():
         alive = _reporter.is_alive()
         # While the reporter runs, the end-of-queue marker is still queued behind the records.
         queued = max(0, _outbox.qsize() - 1) if alive else 0
-        lost = _shutdown_failures + queued + (1 if alive and _in_flight else 0)
+        lost = _failed_sends + queued + (1 if alive and _in_flight else 0)
     if lost:
         print(f"[servesim-capture] stopped with {lost} capture record(s) not delivered", file=sys.stderr)
 
