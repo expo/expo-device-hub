@@ -99,6 +99,20 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   const deviceCapture = new Map<string, boolean>();
   const operations = new DeviceOperationQueue();
   const enables = new Map<string, EnableRequest>();
+  // Viewers belong to the device, not to one session, so a stream opened before capture starts, or
+  // kept open across a restart, follows each new session.
+  const viewers = new Map<string, Set<(event: CaptureEvent) => void>>();
+  // A start that failed before it had a session still has to read as failed.
+  const failedStarts = new Map<string, CaptureMeta>();
+  const notify = (udid: string, event: CaptureEvent): void => {
+    for (const viewer of viewers.get(udid) ?? []) {
+      try {
+        viewer(event);
+      } catch {}
+    }
+  };
+  const metaOf = (udid: string): CaptureMeta =>
+    byUdid.get(udid)?.meta ?? failedStarts.get(udid) ?? notEnabledMeta(udid);
 
   const closeSession = async (udid: string, session: CaptureSession): Promise<void> => {
     session.cleanup ??= (async () => {
@@ -129,7 +143,14 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       attachment: "starting", attachError: null, droppedOversizedBodies: 0,
     };
     const session: CaptureSession = { store, meta, proxy: null };
+    store.subscribe((event) => {
+      if (byUdid.get(udid) === session) notify(udid, event);
+    });
+    failedStarts.delete(udid);
     byUdid.set(udid, session);
+    // Viewers drop the previous session's rows and follow this one.
+    notify(udid, { type: "cleared" });
+    notify(udid, { type: "meta", meta });
     try {
       const proxy = await startProxy(store, {
         fields: policy,
@@ -193,6 +214,8 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       if (enabled) return prepareSession(udid);
       const session = byUdid.get(udid);
       if (session) await closeSession(udid, session);
+      failedStarts.delete(udid);
+      if (!byUdid.has(udid)) notify(udid, { type: "meta", meta: notEnabledMeta(udid) });
       return null;
     },
   };
@@ -257,7 +280,12 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
           const meta = session?.meta ?? cancelledMeta(udid);
           meta.attachment = "failed";
           meta.attachError = error instanceof Error ? error.message : String(error);
-          if (session) session.store.publishMeta(meta);
+          if (session) {
+            session.store.publishMeta(meta);
+          } else {
+            failedStarts.set(udid, meta);
+            notify(udid, { type: "meta", meta });
+          }
           throw new CaptureEnableError(meta);
         }
       });
@@ -278,13 +306,20 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     },
 
     subscribe(udid: string, listener: (event: CaptureEvent) => void): { meta: CaptureMeta; unsubscribe: () => void } {
-      const session = byUdid.get(udid);
-      if (!session) return { meta: notEnabledMeta(udid), unsubscribe: () => {} };
-      return { meta: session.meta, unsubscribe: session.store.subscribe(listener) };
+      let set = viewers.get(udid);
+      if (!set) viewers.set(udid, (set = new Set()));
+      set.add(listener);
+      return {
+        meta: metaOf(udid),
+        unsubscribe: () => {
+          set.delete(listener);
+          if (set.size === 0 && viewers.get(udid) === set) viewers.delete(udid);
+        },
+      };
     },
 
     metaFor(udid: string): CaptureMeta {
-      return byUdid.get(udid)?.meta ?? notEnabledMeta(udid);
+      return metaOf(udid);
     },
 
     storeFor(udid: string): CaptureStore | null {

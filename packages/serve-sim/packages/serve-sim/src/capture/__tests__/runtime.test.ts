@@ -44,6 +44,18 @@ function harness(
   return { runtime, calls };
 }
 
+/** A runtime whose capture library is missing, so enable fails before any session exists. */
+function harnessWithoutDylib() {
+  return createCaptureRuntime({
+    startProxy: async () => {
+      throw new Error("the proxy must not start without the library");
+    },
+    trustCa: async () => {},
+    dylib: () => null,
+    configure: capabilityHarness(),
+  });
+}
+
 function gate() {
   let release = () => {};
   const promise = new Promise<void>((resolve) => { release = resolve; });
@@ -242,6 +254,42 @@ describe("capture runtime", () => {
     expect(err).toBeInstanceOf(CaptureEnableError);
     expect(err.meta.attachment).toBe("failed");
     expect(err.meta.attachError).toContain("device already shut down");
+  });
+
+  test("a viewer that subscribed before capture started follows each new session", async () => {
+    const { runtime } = harness();
+    const seen: string[] = [];
+    const { meta, unsubscribe } = runtime.subscribe(UDID, (event) => {
+      seen.push(event.type === "meta" ? `meta:${event.meta.attachment}` : event.type);
+    });
+    expect(meta.attachment).toBe("not-enabled");
+
+    await runtime.enableForDevice(UDID);
+    runtime.storeFor(UDID)!.start("GET", "https://a.test/first");
+    await runtime.disableForDevice(UDID);
+    await runtime.enableForDevice(UDID);
+    runtime.storeFor(UDID)!.start("GET", "https://a.test/second");
+    unsubscribe();
+
+    expect(seen).toEqual([
+      "cleared", "meta:starting", "meta:capturing", "started",
+      "meta:not-enabled",
+      "cleared", "meta:starting", "meta:capturing", "started",
+    ]);
+  });
+
+  test("keeps a failure that happened before any session as the device's meta", async () => {
+    const noDylib = harnessWithoutDylib();
+    const seen: string[] = [];
+    noDylib.subscribe(UDID, (event) => {
+      if (event.type === "meta") seen.push(event.meta.attachment);
+    });
+    await expect(noDylib.enableForDevice(UDID)).rejects.toBeInstanceOf(CaptureEnableError);
+    expect(noDylib.metaFor(UDID).attachment).toBe("failed");
+    expect(noDylib.metaFor(UDID).attachError).toContain("library is missing");
+    expect(seen).toEqual(["failed"]);
+    await noDylib.disableForDevice(UDID);
+    expect(noDylib.metaFor(UDID).attachment).toBe("not-enabled");
   });
 
   test("rejects when the proxy never starts, after publishing failed meta", async () => {
