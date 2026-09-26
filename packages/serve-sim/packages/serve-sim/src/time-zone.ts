@@ -6,12 +6,13 @@ const HOST_ALIASES = new Set(["host", "system", "default", "auto", "none", "rese
 // ICU resolves each of these to itself, not to UTC, so they are folded here instead.
 const UTC_ALIASES = new Set(["utc", "gmt", "z", "zulu", "etc/utc", "etc/gmt"]);
 
+/** Always starts with UTC, which V8 leaves out of its list. */
 export function supportedTimeZones(): readonly string[] {
+  let zones: readonly string[] = [];
   try {
-    return Intl.supportedValuesOf("timeZone");
-  } catch {
-    return ["UTC"];
-  }
+    zones = Intl.supportedValuesOf("timeZone");
+  } catch {}
+  return ["UTC", ...zones.filter((zone) => zone !== "UTC")];
 }
 
 /** `GMT+9` / `GMT-3:30` at `at`, or "" for a zone ICU does not know. */

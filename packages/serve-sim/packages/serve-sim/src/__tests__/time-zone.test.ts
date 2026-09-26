@@ -45,6 +45,18 @@ describe("supportedTimeZones", () => {
     expect(zones).toContain("UTC");
     expect(zones).toContain("Asia/Tokyo");
   });
+
+  test("lists UTC first, even where the engine leaves it out as V8 does", () => {
+    const original = Intl.supportedValuesOf;
+    try {
+      Intl.supportedValuesOf = () => ["Asia/Tokyo", "Europe/Berlin"];
+      expect(supportedTimeZones()).toEqual(["UTC", "Asia/Tokyo", "Europe/Berlin"]);
+      Intl.supportedValuesOf = () => ["Asia/Tokyo", "UTC"];
+      expect(supportedTimeZones()).toEqual(["UTC", "Asia/Tokyo"]);
+    } finally {
+      Intl.supportedValuesOf = original;
+    }
+  });
 });
 
 describe("timeZoneOffsetLabel", () => {
