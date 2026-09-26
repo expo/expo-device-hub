@@ -1,4 +1,5 @@
-# Public HTTPS for simstream.sethwebster.com, reverse-proxied to the local server (WebSockets included).
+# Public HTTPS for simstream.sethwebster.com: the serve-sim fork (simstream video engine) on :3200,
+# WebSockets included.
 #
 # Tailscale serve already holds *:443 on this Mac, and macOS only lets unprivileged processes bind
 # ports below 1024 on the wildcard address. So the router forwards WAN 443 → this Mac's 8443 (and
@@ -11,7 +12,7 @@
 }
 
 simstream.sethwebster.com {
-	reverse_proxy 127.0.0.1:8766 {
+	reverse_proxy 127.0.0.1:3200 {
 		# Frames are latency-critical: pass bytes through as they arrive.
 		flush_interval -1
 	}
