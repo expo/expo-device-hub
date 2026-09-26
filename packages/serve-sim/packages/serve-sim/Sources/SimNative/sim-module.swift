@@ -24,39 +24,25 @@ private func u32(_ v: Int) -> UInt32 {
 /// released (freeing the injector) when its JS handle is garbage-collected.
 @NodeClass @NodeActor final class SimHID {
     private let injector: HIDInjector
-    private var setup: HIDInputSetup?
+    private let setup: HIDInputSetup
     private let udid: String
 
     @NodeConstructor init(_ udid: String) throws {
         self.udid = udid
-        self.injector = HIDInjector()
-    }
-
-    // Capture refreshes CoreDevice's boot-bound manager before HID asks for
-    // capabilities. Starting setup in the constructor races that refresh and
-    // can leave this injector holding a capability from the previous boot.
-    private func withSetup<Result>(_ input: () async -> Result) async throws -> Result {
-        let ready: HIDInputSetup
-        if let setup {
-            ready = setup
-        } else {
-            let injector = self.injector
-            let udid = self.udid
-            ready = HIDInputSetup { try await injector.setup(deviceUDID: udid) }
-            setup = ready
-        }
-        return try await ready.run(input)
+        let injector = HIDInjector()
+        self.injector = injector
+        setup = HIDInputSetup { try await injector.setup(deviceUDID: udid) }
     }
 
     /// Zero means capture has no modern screen metadata; retain legacy routing.
     @NodeMethod func setScreen(_ screenID: Int) async throws {
         let id = UInt32(exactly: screenID).flatMap { $0 > 0 ? $0 : nil }
-        try await withSetup { await injector.setScreen(screenID: id) }
+        try await setup.run { await injector.setScreen(screenID: id) }
     }
 
     @NodeMethod func touch(_ type: String, _ x: Double, _ y: Double,
                            _ w: Int, _ h: Int, _ edge: Int) async throws {
-        try await withSetup {
+        try await setup.run {
             await injector.sendTouch(type: type, x: x, y: y,
                                      screenWidth: w, screenHeight: h, edge: u32(edge))
         }
@@ -64,28 +50,28 @@ private func u32(_ v: Int) -> UInt32 {
 
     @NodeMethod func multiTouch(_ type: String, _ x1: Double, _ y1: Double,
                                 _ x2: Double, _ y2: Double, _ w: Int, _ h: Int) async throws {
-        try await withSetup {
+        try await setup.run {
             await injector.sendMultiTouch(type: type, x1: x1, y1: y1, x2: x2, y2: y2,
                                           screenWidth: w, screenHeight: h)
         }
     }
 
     @NodeMethod func button(_ button: String) async throws {
-        try await withSetup { await injector.sendButton(button: button, deviceUDID: udid) }
+        try await setup.run { await injector.sendButton(button: button, deviceUDID: udid) }
     }
 
     @NodeMethod func buttonHid(_ page: Int, _ usage: Int, _ phase: String) async throws {
-        try await withSetup { await injector.sendButtonHID(page: u32(page), usage: u32(usage), phase: phase) }
+        try await setup.run { await injector.sendButtonHID(page: u32(page), usage: u32(usage), phase: phase) }
     }
 
     @NodeMethod func key(_ type: String, _ usage: Int) async throws {
-        try await withSetup { await injector.sendKey(type: type, usage: u32(usage)) }
+        try await setup.run { await injector.sendKey(type: type, usage: u32(usage)) }
     }
 
     /// NaN anchorX/anchorY mean "center" (the Swift API's nil).
     @NodeMethod func scroll(_ dx: Double, _ dy: Double,
                             _ anchorX: Double, _ anchorY: Double, _ w: Int, _ h: Int) async throws {
-        try await withSetup {
+        try await setup.run {
             await injector.sendScroll(dx: dx, dy: dy,
                                       anchorX: anchorX.isNaN ? nil : anchorX,
                                       anchorY: anchorY.isNaN ? nil : anchorY,
@@ -94,23 +80,23 @@ private func u32(_ v: Int) -> UInt32 {
     }
 
     @NodeMethod func digitalCrown(_ delta: Double) async throws {
-        try await withSetup { await injector.sendDigitalCrown(delta: delta) }
+        try await setup.run { await injector.sendDigitalCrown(delta: delta) }
     }
 
     @NodeMethod func orientation(_ orientation: Int) async throws -> Bool {
-        try await withSetup { await injector.sendOrientation(orientation: u32(orientation)) }
+        try await setup.run { await injector.sendOrientation(orientation: u32(orientation)) }
     }
 
     @NodeMethod func setHingeAngle(_ angle: Double) async throws -> Bool {
-        try await withSetup { await injector.setHingeAngle(angle) }
+        try await setup.run { await injector.setHingeAngle(angle) }
     }
 
     @NodeMethod func supportsHingeAngle() async throws -> Bool {
-        try await withSetup { await injector.supportsHingeAngle() }
+        try await setup.run { await injector.supportsHingeAngle() }
     }
 
     @NodeMethod func supportsPhysicalOrientation() async throws -> Bool {
-        try await withSetup { await injector.supportsPhysicalOrientation() }
+        try await setup.run { await injector.supportsPhysicalOrientation() }
     }
 
     @NodeMethod func hingeState() async -> [String: any NodePropertyConvertible] {
@@ -123,27 +109,27 @@ private func u32(_ v: Int) -> UInt32 {
     }
 
     @NodeMethod func setHingePose(_ pose: String) async throws -> Bool {
-        try await withSetup { await injector.setHingePose(pose) }
+        try await setup.run { await injector.setHingePose(pose) }
     }
 
     @NodeMethod func setPhysicalOrientation(_ value: String) async throws -> Bool {
-        try await withSetup { await injector.setPhysicalOrientation(value) }
+        try await setup.run { await injector.setPhysicalOrientation(value) }
     }
 
     @NodeMethod func setTableMode(_ enabled: Bool) async throws -> Bool {
-        try await withSetup { await injector.setTableMode(enabled) }
+        try await setup.run { await injector.setTableMode(enabled) }
     }
 
     @NodeMethod func memoryWarning() async throws {
-        try await withSetup { await injector.simulateMemoryWarning() }
+        try await setup.run { await injector.simulateMemoryWarning() }
     }
 
     @NodeMethod func softwareKeyboard() async throws {
-        try await withSetup { await injector.toggleSoftwareKeyboard() }
+        try await setup.run { await injector.toggleSoftwareKeyboard() }
     }
 
     @NodeMethod func caDebug(_ name: String, _ enabled: Bool) async throws -> Bool {
-        try await withSetup { await injector.setCADebugOption(name: name, enabled: enabled) }
+        try await setup.run { await injector.setCADebugOption(name: name, enabled: enabled) }
     }
 }
 
