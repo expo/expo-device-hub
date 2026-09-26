@@ -504,7 +504,14 @@ async function publishPreparations(
   } catch (error) {
     const observerErrors = notifyPreparationFailure(preparations, error);
     try {
-      await publishLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
+      if (previous) {
+        await publishLaunchState(udid, previous);
+      } else {
+        // Nothing was armed before this publication. Publishing an empty state would still insert
+        // the loader, with no session recorded as its owner, so take the loader out instead.
+        await removeCapabilityLoader(udid);
+        clearLaunchState(udid);
+      }
     } catch (withdrawError) {
       throw new CapabilityRollbackError(
         [error, withdrawError, ...observerErrors],

@@ -197,6 +197,19 @@ test("a capability that fails after publication is withdrawn before its resource
   expect(stopped).toBe(true);
 });
 
+test("a failed first publication leaves no loader or launch state behind", async () => {
+  expect(readLaunchState(UDID)).toBeNull();
+  await expect(configureCapability(UDID, {
+    name: "networkCapture", scope: "userApps", loadPhase: "startup", defaultEnabled: false,
+    async setEnabled({ enabled }) {
+      return enabled ? { dylib, committed() { throw new Error("proxy exited during publication"); } } : null;
+    },
+  }, { enabled: true, relaunch: false })).rejects.toThrow("proxy exited during publication");
+  expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
+  expect(readLaunchState(UDID)).toBeNull();
+  expect(existsSync(capabilityConfigPath(UDID))).toBe(false);
+});
+
 test("a failed capability restores the owner it replaced", async () => {
   const definition = (committed: () => void) => ({
     name: "shared", scope: "userApps" as const, loadPhase: "startup" as const, defaultEnabled: false,
