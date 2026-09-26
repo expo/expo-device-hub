@@ -31,6 +31,7 @@ import { isSoftwareKeyboardVisible } from "./ax";
 import { isLiftedModifier, simCopyHidEvents, simPasteHidEvents } from "./client/utils/sim-clipboard";
 import { HID_USAGE_BY_CODE } from "./client/utils/hid";
 import { MAX_PASTEBOARD_TEXT_BYTES, pasteTextIntoSim } from "./sim-pasteboard";
+import { EXEC_WS_MAX_MESSAGE_BYTES } from "./exec-ws-utils";
 import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
 import { validatePanelRoute } from "./panel-route";
@@ -1153,7 +1154,8 @@ export class DeviceSession {
         break;
       }
       case 0x12: {
-        const m = json<{ requestId: unknown; text: unknown }>();
+        // The browser refuses larger requests itself; don't parse one from a direct client.
+        const m = data.length - 1 > EXEC_WS_MAX_MESSAGE_BYTES ? null : json<{ requestId: unknown; text: unknown }>();
         const requestId = m?.requestId;
         let ok = false;
         if (m && typeof requestId === "number" && Number.isSafeInteger(requestId) && requestId > 0 &&
