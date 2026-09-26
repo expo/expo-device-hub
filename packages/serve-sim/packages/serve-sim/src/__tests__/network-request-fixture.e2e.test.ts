@@ -370,6 +370,16 @@ describeOrSkip("network request fixture", () => {
     await startServer(true);
     await capturedEntries();
     expect(readInsert(udid!)).toContain("libSimNetProxy");
+    // The running fixture still points at the previous server's stopped proxy, and the docs say such
+    // apps need relaunching. Relaunch it; its startup request must reach this server's session HAR.
+    try {
+      simctlSync(["terminate", udid!, APP]);
+    } catch {}
+    simctlSync(["launch", udid!, APP]);
+    await waitForAsync(async () => {
+      const entries = await capturedEntries();
+      return entries.some((entry) => entry.request.url.endsWith("/api/startup/pre-main") && entry.response.status === 200);
+    }, 30_000);
     expect(await rebootCapture(false)).toBe("not-enabled");
     await expectCaptureOffAfterReconnect();
   }, 360_000);
