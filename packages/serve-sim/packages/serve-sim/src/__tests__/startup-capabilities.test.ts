@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { capabilityConfigPath, managedStartupDylibs, writeManagedStartupDylibs } from "../capability-config";
-import { configureCapability, enableCapabilities, disableCapability, disarmStaleCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath } from "../launch-manager";
+import { configureCapability, enableCapabilities, disableCapability, disarmStaleCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath, armCapabilityLoader, rearmCapabilityLoader } from "../launch-manager";
 import { installShims, useTempStateDir } from "./helpers";
 import { withLaunchStateLock } from "../launch-state-lock";
 import { readLaunchState } from "../launch-state";
@@ -178,6 +178,14 @@ test("a failed publication never shows running apps its deferred load", async ()
   }], { relaunch: false })).rejects.toThrow();
   expect(readFileSync(`${failurePath}.seen`, "utf8")).not.toContain(dylib);
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(previous);
+});
+
+test("rearming reports a failed publication; startup arming only logs it", async () => {
+  expect(existsSync(capabilityLoaderPath())).toBe(true);
+  writeFileSync(failurePath, "");
+  await expect(rearmCapabilityLoader(UDID)).rejects.toThrow();
+  writeFileSync(failurePath, "");
+  await expect(armCapabilityLoader(UDID)).resolves.toBeUndefined();
 });
 
 test("failed final disarm retains ownership until a successful retry", async () => {
