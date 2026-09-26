@@ -2017,6 +2017,16 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
+    // Capture routes only read; a write-shaped request gets 405 rather than a read response.
+    if (url.startsWith(base + ALWAYS_GATED_PREFIX)) {
+      const method = (req.method ?? "GET").toUpperCase();
+      if (method !== "GET" && method !== "HEAD") {
+        res.writeHead(405, { "Content-Type": "application/json", Allow: "GET, HEAD", ...NO_STORE });
+        res.end(JSON.stringify({ error: "Network capture routes accept GET and HEAD only." }));
+        return;
+      }
+    }
+
     const helperTarget = helperProxyTarget(rawUrl, helperPrefix);
     if (helperTarget) {
       const device = helperTarget.device ?? selectedDevice;

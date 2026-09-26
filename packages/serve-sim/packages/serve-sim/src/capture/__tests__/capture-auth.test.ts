@@ -72,6 +72,18 @@ describe("network-capture auth", () => {
     });
   });
 
+  test("answers a JSON POST to a read-only capture route with 405", async () => {
+    await withMiddleware(async (origin, request) => {
+      const r = await request("/network-capture", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}`, Origin: origin },
+        body: "{}",
+      });
+      expect(r.status).toBe(405);
+      expect(r.headers.get("allow")).toBe("GET, HEAD");
+    });
+  });
+
   test("answers a malformed capture id with 400 instead of failing the route", async () => {
     await withMiddleware(async (origin, request) => {
       const r = await request("/network-capture/%ZZ", {
