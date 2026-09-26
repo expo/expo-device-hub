@@ -88,7 +88,7 @@ that override is set:
 | --- | --- |
 | `network-capture.json` | Newline-delimited session and capture events, including started, finished, metadata, and clear events |
 | `capture.entries.ndjson` | One HAR entry per completed exchange |
-| `capture.har` | A HAR document rebuilt periodically and before download |
+| `capture.har` | A HAR document rebuilt periodically and before download, with entries in request start order |
 
 The event log grows throughout the session. The HAR entry log is periodically compacted to the newest
 10,000 entries, and the rebuilt HAR contains those entries. These are entry-count limits, not disk-byte
@@ -113,8 +113,9 @@ protection.
 ## Remote and hosted use
 
 Capture HTTP routes require the server's session token and a same-origin check. The preview supplies
-the token automatically. Other clients can use `Authorization: Bearer <token>`; query tokens are also
-accepted but can appear in URL logs. Capture responses use `Cache-Control: no-store, private`.
+the token automatically. Other clients must send `Authorization: Bearer <token>`; capture routes reject
+a token in the query string, which could end up in URL logs. Capture responses use
+`Cache-Control: no-store, private`.
 The HAR, entry-log (`network-capture.ndjson`), and body routes answer only for devices this server
 process runs, although the device state directory is shared with other serve-sim servers.
 
