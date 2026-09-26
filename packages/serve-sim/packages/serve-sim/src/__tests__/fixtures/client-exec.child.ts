@@ -49,6 +49,7 @@ class FakeSocket {
 }
 
 let runHostAction: typeof import("../../client/utils/exec").runHostAction;
+let fetchCapturedBody: typeof import("../../client/hooks/use-capture-stream").fetchCapturedBody;
 let offeredProtocols: string[] = [];
 
 beforeAll(async () => {
@@ -64,6 +65,7 @@ beforeAll(async () => {
     location: { href: "http://127.0.0.1:3100/", protocol: "http:", host: "127.0.0.1:3100", pathname: "/" },
   };
   ({ runHostAction } = await import("../../client/utils/exec"));
+  ({ fetchCapturedBody } = await import("../../client/hooks/use-capture-stream"));
 });
 
 afterAll(() => {
@@ -126,6 +128,28 @@ describe("client runHostAction", () => {
       action: "button",
       params: { value: "home", udid: "U" },
     });
+  });
+
+  it("reads a device-scoped capture body through the control socket", async () => {
+    const body = {
+      requestHeaders: { accept: "application/json" },
+      responseHeaders: {},
+      requestBody: null,
+      responseBody: "ok",
+      requestTruncated: false,
+      responseTruncated: false,
+      requestBinary: false,
+      responseBinary: false,
+    };
+    const baseline = sentFrames.length;
+    const call = fetchCapturedBody("r1", "ABCD1234-0000-0000-0000-0000000000EF");
+    while (sentFrames.length <= baseline) await new Promise((r) => setTimeout(r, 2));
+    expect(sentFrames.at(-1)).toMatchObject({
+      action: "capture.body",
+      params: { id: "r1", udid: "ABCD1234-0000-0000-0000-0000000000EF" },
+    });
+    socket.reply({ id: sentFrames.at(-1)!.id, stdout: JSON.stringify(body), exitCode: 0 });
+    expect(await call).toEqual(body);
   });
 
   // Left last: closing the socket tears down the module's cached connection.

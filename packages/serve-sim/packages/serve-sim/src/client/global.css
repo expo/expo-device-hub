@@ -39,6 +39,31 @@
   --serve-sim-panel-bg-transparent: rgba(24, 24, 24, 0);
 }
 
+/* Tool panels are narrow and user-resizable, so a default scrollbar spends width
+   the content needs. Thin and dim: findable when you look for it, and not a
+   column of chrome down the side of every list. */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  /* Overlay scrollbars are drawn over the content rather than beside it, so the gutter is reserved
+     here instead of being left to the platform. */
+  scrollbar-gutter: stable;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+}
+.thin-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.28);
+}
+
 /* Collapsible tool sections (<details>) animate open/close height with a
    CSS-only ::details-content transition. interpolate-size lets `height: auto`
    participate in the transition; allow-discrete swaps content-visibility at the

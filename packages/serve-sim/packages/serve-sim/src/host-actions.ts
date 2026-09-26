@@ -45,6 +45,7 @@ const Device = z
 const DeviceUdid = z
   .string()
   .regex(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i, "must be a simulator udid");
+const CaptureRequestId = z.string().max(64).regex(/^r[1-9]\d*$/, "must be a capture request id");
 
 const BundleId = z.string().max(256).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must look like com.example.app");
 
@@ -130,6 +131,7 @@ const ACTION_SCHEMAS = {
   "capture.reboot": z.object({ udid: DeviceUdid, enabled: z.boolean() }),
   "capture.enable": z.object({ udid: DeviceUdid }),
   "capture.clear": z.object({ udid: DeviceUdid }),
+  "capture.body": z.object({ udid: DeviceUdid, id: CaptureRequestId }),
 } as const;
 
 type HostActionName = keyof typeof ACTION_SCHEMAS;
@@ -148,6 +150,7 @@ const PROCEDURE_ACTIONS = [
   "capture.reboot",
   "capture.enable",
   "capture.clear",
+  "capture.body",
 ] as const satisfies readonly HostActionName[];
 
 type ProcedureAction = (typeof PROCEDURE_ACTIONS)[number];
@@ -363,6 +366,12 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
         return { stdout: "", stderr: "No capture session for this device.", exitCode: 1 };
       }
       return ok();
+    }
+    case "capture.body": {
+      const p = parseParams(action, raw);
+      const { captureRuntime } = await import("./capture");
+      const body = captureRuntime.storeFor(p.udid)?.body(p.id);
+      return ok(body ? JSON.stringify(body) : "");
     }
     case "app.iconPath": {
       const p = parseParams(action, raw);
