@@ -111,6 +111,22 @@ function assertRequested(udid: string, request: EnableRequest): void {
   if (request.cancelled) throw new CaptureEnableError(cancelledMeta(udid, request.fields));
 }
 
+// One exit listener for every runtime, installed when the first one writes files. Exits that skip
+// async teardown (a failed start, a timed-out shutdown, an embedding host) then still remove them.
+const exitDiscards = new Set<() => void>();
+let exitListenerInstalled = false;
+function discardOnExit(discard: () => void): void {
+  exitDiscards.add(discard);
+  if (exitListenerInstalled) return;
+  exitListenerInstalled = true;
+  process.on("exit", discardCaptureArtifactsForExit);
+}
+
+/** What the process exit listener runs: remove every runtime's session capture files. */
+export function discardCaptureArtifactsForExit(): void {
+  for (const run of exitDiscards) run();
+}
+
 export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   let policy: readonly CaptureField[] = options.fields ?? DEFAULT_CAPTURE_FIELDS;
   const startProxy =
@@ -125,6 +141,14 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   const creatorVersion = options.creatorVersion ?? "0.0.0";
 
   const byUdid = new Map<string, CaptureSession>();
+  /** Remove every session's capture files at once. Only for process exit, where teardown cannot await. */
+  const discardArtifacts = (): void => {
+    for (const session of byUdid.values()) {
+      try {
+        session.disk?.discardSync();
+      } catch {}
+    }
+  };
   const deviceCapture = new Map<string, boolean>();
   const operations = new DeviceOperationQueue();
   const enables = new Map<string, EnableRequest>();
@@ -163,6 +187,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       creatorVersion,
       flushIntervalMs: options.flushIntervalMs,
     });
+    discardOnExit(discardArtifacts);
     return { disk, stopDisk: disk.attach(store) };
   };
 
@@ -383,13 +408,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     },
 
     /** Remove every session's capture files at once. Only for process exit, where teardown cannot await. */
-    discardArtifactsSync(): void {
-      for (const session of byUdid.values()) {
-        try {
-          session.disk?.discardSync();
-        } catch {}
-      }
-    },
+    discardArtifactsSync: discardArtifacts,
 
     subscribe(udid: string, listener: (event: CaptureEvent) => void): { meta: CaptureMeta; unsubscribe: () => void } {
       let set = viewers.get(udid);
@@ -475,6 +494,14 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     },
 
     /** Flush NDJSON → capture.har and return its path, or null if not capturing to disk. */
+    /** The session's entry log, flushed: one HAR entry per line, for readers that stream. */
+    async flushEntriesPathFor(udid: string): Promise<string | null> {
+      const disk = byUdid.get(udid)?.disk;
+      if (!disk) return null;
+      await disk.flushEntries();
+      return disk.entriesPath;
+    },
+
     async flushHarPathFor(udid: string): Promise<string | null> {
       const disk = byUdid.get(udid)?.disk;
       if (!disk) return null;

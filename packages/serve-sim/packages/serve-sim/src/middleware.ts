@@ -1996,6 +1996,46 @@ export async function handleCaptureHarRequest(
   }
 }
 
+/**
+ * The session's completed entries as NDJSON, one HAR entry per line. `capture har` seeds from it
+ * so it can stream a large recording instead of parsing one HAR document.
+ */
+export async function handleCaptureEntriesRequest(
+  req: SimReq,
+  res: SimRes,
+  state: ServeSimState | null,
+  runtime: CaptureRuntime = captureRuntime,
+): Promise<void> {
+  state = capturedHere(state);
+  let entriesPath: string | null = null;
+  try {
+    if (state) entriesPath = await runtime.flushEntriesPathFor(state.device);
+  } catch (error) {
+    res.writeHead(500, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+    return;
+  }
+  if (!entriesPath || !existsSync(entriesPath)) {
+    res.writeHead(404, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: "No capture session" }));
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "application/x-ndjson", ...NO_STORE });
+  if (req.method === "HEAD") {
+    res.end();
+    return;
+  }
+  try {
+    for await (const chunk of createReadStream(entriesPath)) {
+      if (res.destroyed) return;
+      if (!res.write(chunk)) await waitForResponseDrain(res);
+    }
+    res.end();
+  } catch (error) {
+    if (!res.destroyed) res.destroy(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
 export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const streamSettings = options?.streamSettings ?? httpStreamSettingsFromLegacyCodec(options?.codec);
   const base = (options?.basePath ?? "/.sim").replace(/\/+$/, "");
@@ -2944,7 +2984,14 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
-    // Not under "/network-capture/", so it can never be read as a request id.
+    // Not under "/network-capture/", so these can never be read as a request id.
+    if (url === base + "/network-capture.ndjson") {
+      const states = await readServeSimStates();
+      const state = selectServeSimState(states, selectedDevice);
+      await handleCaptureEntriesRequest(req, res, state, captureRuntime);
+      return;
+    }
+
     if (url === base + "/network-capture.har") {
       const states = await readServeSimStates();
       const state = selectServeSimState(states, selectedDevice);

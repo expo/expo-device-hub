@@ -6,7 +6,8 @@ headers, query values, and bodies require explicit opt-in because they can conta
 ## How it works
 
 The UI reboot action turns capture on or off per device. `--network-capture` only defaults capture on
-for devices serve-sim boots; reconnecting never overrides an explicit choice.
+for devices serve-sim boots; reconnecting never overrides an explicit choice. Capture starts after the
+device finishes booting, so apps that launch during boot are not captured until they are relaunched.
 
 Enabling capture starts a local mitmproxy, trusts its certificate authority in the simulator, and sets
 `DYLD_INSERT_LIBRARIES` in the simulator's launchd. Supported `NSURLSession` configurations in
@@ -93,11 +94,13 @@ limits; there is no age-based expiry. Clearing the panel clears the in-memory re
 session's recorded files.
 
 Normal session teardown removes the device's capture directory. A process exit that skips teardown, such
-as a shutdown that runs past its time limit, also removes it. A later capture start sweeps abandoned
+as a failed start or a shutdown that runs past its time limit, also removes it; this includes hosts that
+embed the middleware. A later capture start sweeps abandoned
 directories while preserving active recordings. Files can remain after a crash or forced kill, a failed
 final write, or failed cleanup.
 `capture har --out <path>` writes a separate recording that is retained after the command stops. It
-starts with the completed requests in the session HAR, then adds new requests from the live stream. The
+starts with the completed requests the session already recorded, read as a stream from
+`{base}/network-capture.ndjson`, then adds new requests from the live stream. The
 files are named after the HAR, so several recordings can share a folder: for `morning.har`, the event
 log is `morning.network-capture.json` and the entry log is `morning.entries.ndjson`.
 
@@ -110,8 +113,11 @@ protection.
 Capture HTTP routes require the server's session token and a same-origin check. The preview supplies
 the token automatically. Other clients can use `Authorization: Bearer <token>`; query tokens are also
 accepted but can appear in URL logs. Capture responses use `Cache-Control: no-store, private`.
-The HAR and body routes answer only for devices this server process runs, although the device state
-directory is shared with other serve-sim servers.
+The HAR, entry-log (`network-capture.ndjson`), and body routes answer only for devices this server
+process runs, although the device state directory is shared with other serve-sim servers.
+
+While capture is on, the Activity panel's Network rate comes from the proxy, which cannot tell apps
+apart. It then counts every captured app on the device and is labeled "all apps".
 
 Use `--require-token` when exposing the standalone server beyond loopback. Without it, the preview is
 public and includes the token used by capture and control routes. Embedded hosts can enable the broader

@@ -45,6 +45,8 @@ export interface CaptureDiskAccumulatorOptions {
   creatorVersion?: string;
   flushIntervalMs?: number;
   maxEntries?: number;
+  /** Rebuilds the HAR from the entry log; replaceable in tests. */
+  compact?: typeof compactNdjsonAndStreamHar;
 }
 
 export class CaptureDiskAccumulator {
@@ -56,6 +58,7 @@ export class CaptureDiskAccumulator {
   private readonly creatorVersion: string;
   private readonly maxEntries: number;
   private readonly flushMs: number;
+  private readonly compact: typeof compactNdjsonAndStreamHar;
   private diskEntryCount = 0;
   private harDirty = false;
   private lastWriteError: unknown = null;
@@ -78,6 +81,7 @@ export class CaptureDiskAccumulator {
     this.creatorVersion = opts.creatorVersion ?? "0.0.0";
     this.maxEntries = opts.maxEntries ?? MAX_HAR_ENTRIES;
     this.flushMs = opts.flushIntervalMs ?? 5_000;
+    this.compact = opts.compact ?? compactNdjsonAndStreamHar;
   }
 
   get size(): number {
@@ -144,6 +148,16 @@ export class CaptureDiskAccumulator {
     this.pendingEntryLines.push(JSON.stringify(entry));
     this.harDirty = true;
     this.enqueue(() => this.flushPendingEntries());
+  }
+
+  /** Write every recorded entry to the entry log, without rebuilding the HAR. */
+  async flushEntries(): Promise<void> {
+    await this.drainPending();
+  }
+
+  /** Resolves once queued writes finish, so a fast producer can wait instead of buffering. */
+  async settled(): Promise<void> {
+    await this.writeChain;
   }
 
   async flush(): Promise<void> {
@@ -278,9 +292,11 @@ export class CaptureDiskAccumulator {
   private async rebuildHarIfDirty(): Promise<void> {
     if (!this.harDirty) return;
     this.enqueue(async () => {
+      // Several flushes can queue while one rebuild runs; later ones find nothing new and skip.
+      if (!this.harDirty) return;
       this.harDirty = false;
       await this.flushPendingEntries();
-      this.diskEntryCount = await compactNdjsonAndStreamHar(
+      this.diskEntryCount = await this.compact(
         this.entriesPath,
         this.harPath,
         this.creatorVersion,

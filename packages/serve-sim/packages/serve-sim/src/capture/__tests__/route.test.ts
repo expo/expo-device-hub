@@ -9,6 +9,7 @@ import { type CaptureProxy } from "../mitm-engine";
 import { type CaptureMeta } from "../store";
 import {
   handleCaptureBodyRequest,
+  handleCaptureEntriesRequest,
   handleCaptureHarRequest,
   handleNetworkCaptureRequest,
 } from "../../middleware";
@@ -306,6 +307,52 @@ describe("capture exports for another server's device", () => {
       await handleCaptureHarRequest(createFakeReq().req, har.res, foreign, runtime);
       expect(har.status()).toBe(404);
       expect(har.writes.join("")).not.toContain("example.com/private");
+    } finally {
+      await runtime.disableForDevice("UDID-1");
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("handleCaptureEntriesRequest", () => {
+  test("streams the session's entries as NDJSON, only for this server's device", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-entries-route-"));
+    const runtime = createCaptureRuntime({
+      writeDiskArtifacts: true,
+      captureDirFor: () => dir,
+      flushIntervalMs: 60_000,
+      startProxy: async () =>
+        ({
+          address: "127.0.0.1:9999",
+          portFile: "/tmp/fake-confdir/proxy-port",
+          caPem: async () => "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n",
+          close: async () => {},
+        }) as CaptureProxy,
+      trustCa: async () => {},
+      dylib: () => "/fake/libSimNetProxy.dylib",
+      configure: capabilityHarness(),
+    });
+    try {
+      await runtime.enableForDevice("UDID-1");
+      const store = runtime.storeFor("UDID-1")!;
+      for (const path of ["/a", "/b"]) {
+        const id = store.start("GET", `https://example.com${path}`);
+        store.update(id, { status: 200, durationMs: 1 }, true);
+      }
+      const state = inProcessServeSimState("UDID-1", 4000);
+
+      const owned = createFakeRes();
+      await handleCaptureEntriesRequest(createFakeReq().req, owned.res, state, runtime);
+      expect(owned.status()).toBe(200);
+      const lines = owned.writes.join("").trim().split("\n").map((line) => JSON.parse(line));
+      expect(lines.map((entry) => entry.request.url)).toEqual(["https://example.com/a", "https://example.com/b"]);
+
+      const foreign = createFakeRes();
+      await handleCaptureEntriesRequest(createFakeReq().req, foreign.res, { ...state, pid: process.pid + 1 }, runtime);
+      expect(foreign.status()).toBe(404);
     } finally {
       await runtime.disableForDevice("UDID-1");
       rmSync(dir, { recursive: true, force: true });

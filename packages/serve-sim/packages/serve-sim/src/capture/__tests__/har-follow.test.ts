@@ -8,10 +8,10 @@ import { captureHarPaths, followCaptureHar } from "../har-follow";
 
 type FetchStub = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
-/** A server with no session HAR yet: the follower's seed request finds nothing. */
+/** A server with no session recording yet: the follower's seed request finds nothing. */
 function withoutSession(fetchImpl: FetchStub): FetchStub {
   return async (input, init) =>
-    String(input).includes("/network-capture.har") ? new Response("", { status: 404 }) : fetchImpl(input, init);
+    String(input).includes("/network-capture.ndjson") ? new Response("", { status: 404 }) : fetchImpl(input, init);
 }
 
 describe("followCaptureHar", () => {
@@ -199,14 +199,10 @@ describe("followCaptureHar started late", () => {
   it("keeps requests the session recorded before it started, once each", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-har-late-"));
     const outPath = join(dir, "session.har");
-    // The session HAR holds r1-r3; the live store has already evicted r1 and replays r2-r3.
-    const sessionHar = {
-      log: {
-        version: "1.2",
-        creator: { name: "@expo/serve-sim", version: "test" },
-        entries: [1, 2, 3].map((n) => toHarEntry(request(`r${n}`, n))),
-      },
-    };
+    // The session holds r1-r3; the live store has already evicted r1 and replays r2-r3.
+    const sessionEntries = [1, 2, 3].map((n) => JSON.stringify(toHarEntry(request(`r${n}`, n)))).join("\n") + "\n";
+    // Chunks that end mid-line, the way a large body arrives.
+    const seedChunks = [sessionEntries.slice(0, 50), sessionEntries.slice(50, 400), sessionEntries.slice(400)];
     const frames = [2, 3, 4].map((n) => `data: ${JSON.stringify({ type: "finished", request: request(`r${n}`, n) })}\n\n`);
     const bodyFetches: string[] = [];
     try {
@@ -214,7 +210,14 @@ describe("followCaptureHar started late", () => {
         baseUrl: "http://127.0.0.1:3999", device: "D", outPath, token: "test", flushIntervalMs: 50,
         fetchImpl: async (input) => {
           const url = String(input);
-          if (url.includes("/network-capture.har")) return new Response(JSON.stringify(sessionHar));
+          if (url.includes("/network-capture.ndjson")) {
+            return new Response(new ReadableStream<Uint8Array>({
+              start(controller) {
+                for (const chunk of seedChunks) controller.enqueue(new TextEncoder().encode(chunk));
+                controller.close();
+              },
+            }));
+          }
           if (url.includes("/network-capture/")) {
             bodyFetches.push(new URL(url).pathname.split("/").pop()!);
             return new Response("null");
@@ -252,13 +255,13 @@ describe("followCaptureHar under an embedded mount", () => {
         baseUrl: "http://127.0.0.1:3200/.sim", device: "D", outPath: join(dir, "session.har"), token: "test",
         fetchImpl: async (input) => {
           requested.push(String(input));
-          if (String(input).includes("/network-capture.har")) return new Response("", { status: 404 });
+          if (String(input).includes("/network-capture.ndjson")) return new Response("", { status: 404 });
           return String(input).includes("/network-capture/") ? new Response("null") : new Response(stream);
         },
       });
       expect(requested).toEqual([
-        "http://127.0.0.1:3200/.sim/network-capture.har?device=D",
         "http://127.0.0.1:3200/.sim/network-capture?device=D",
+        "http://127.0.0.1:3200/.sim/network-capture.ndjson?device=D",
         "http://127.0.0.1:3200/.sim/network-capture/r1?device=D",
       ]);
     } finally {

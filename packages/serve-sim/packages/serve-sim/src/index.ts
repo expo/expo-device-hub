@@ -1864,8 +1864,6 @@ async function serve(
     // This process owns the device tails and the crash watcher; `follow` never mounts them.
     try { logBufferCache.stopAll(); } catch {}
     try { crashRuntime.stop(); } catch {}
-    // Signal shutdown already removed these; other exits (or a timed-out teardown) would leave them.
-    try { capture.captureRuntime.discardArtifactsSync(); } catch {}
     clearAll();
   });
 

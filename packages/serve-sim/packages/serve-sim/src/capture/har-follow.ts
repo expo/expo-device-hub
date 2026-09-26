@@ -1,7 +1,7 @@
 import { basename, dirname } from "node:path";
 
 import { CaptureDiskAccumulator } from "./disk";
-import { parseFinishedCaptureRequest, type HarEntry, type HarFile } from "./har";
+import { parseFinishedCaptureRequest, type HarEntry } from "./har";
 import type { CapturedBody } from "./store";
 
 type FetchLike = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -94,36 +94,72 @@ function isAbort(error: unknown): boolean {
   return typeof error === "object" && error !== null && (error as { name?: unknown }).name === "AbortError";
 }
 
+/** Bytes of seed entries recorded before waiting for the disk to catch up, so memory stays bounded. */
+const SEED_WRITE_BATCH_BYTES = 4 * 1024 * 1024;
+
 /**
- * Completed entries the session already recorded. The live stream replays only the in-memory store
- * (the newest 500 requests), so a follower started late seeds itself from the session HAR first.
+ * Copy the completed entries the session already recorded. The live stream replays only the
+ * in-memory store (the newest 500 requests), so a follower started late seeds itself first. The
+ * entry log is read line by line, so a large recording never has to fit in memory.
  */
-async function fetchSessionEntries(
-  baseUrl: string,
-  device: string,
+async function seedFromSession(
+  opts: FollowCaptureHarOptions,
   fetchImpl: FetchLike,
-  token: string,
-  signal?: AbortSignal,
-): Promise<HarEntry[]> {
-  const url = captureRoute(baseUrl, "/network-capture.har", device);
+  disk: CaptureDiskAccumulator,
+  seeded: Set<string>,
+): Promise<void> {
+  const url = captureRoute(opts.baseUrl, "/network-capture.ndjson", opts.device);
+  let skipped = 0;
   try {
-    const res = await fetchImpl(url, { signal, headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetchImpl(url, { signal: opts.signal, headers: { Authorization: `Bearer ${opts.token}` } });
     // 404: no session recording yet, or a server without the route. The live stream still applies.
-    if (res.status === 404) return [];
-    if (!res.ok) {
-      console.warn(`Network capture: session HAR fetch HTTP ${res.status}; earlier requests are omitted.`);
-      return [];
+    if (res.status === 404) return;
+    if (!res.ok || !res.body) {
+      console.warn(`Network capture: session entries fetch HTTP ${res.status}; earlier requests are omitted.`);
+      return;
     }
-    const har = (await res.json()) as Partial<HarFile>;
-    return Array.isArray(har.log?.entries) ? har.log.entries : [];
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let unsettled = 0;
+    const record = async (line: string) => {
+      if (!line.trim()) return;
+      let entry: HarEntry;
+      try {
+        entry = JSON.parse(line) as HarEntry;
+      } catch {
+        skipped++;
+        return;
+      }
+      disk.recordHarEntry(entry);
+      if (entry._captureId) seeded.add(entry._captureId);
+      unsettled += line.length;
+      if (unsettled >= SEED_WRITE_BATCH_BYTES) {
+        await disk.settled();
+        unsettled = 0;
+      }
+    };
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) await record(line);
+      }
+      await record(buffer + decoder.decode());
+    } finally {
+      reader.releaseLock();
+    }
   } catch (error) {
     if (isAbort(error)) throw error;
     console.warn(
-      "Network capture: session HAR fetch failed; earlier requests are omitted:",
+      "Network capture: session entries fetch failed; earlier requests are omitted:",
       error instanceof Error ? error.message : error,
     );
-    return [];
   }
+  if (skipped > 0) console.warn(`Network capture: skipped ${skipped} unreadable session entries.`);
 }
 
 /** Follow /network-capture SSE into the same NDJSON → streamed HAR layout as the live session. */
@@ -151,13 +187,8 @@ export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<F
   let streamFailure: { error: unknown } | undefined;
   let flushFailure: Error | null = null;
   try {
-    // Seed from the session first, then skip live replays of the same requests.
-    const seeded = new Set<string>();
-    for (const entry of await fetchSessionEntries(opts.baseUrl, opts.device, fetchImpl, opts.token, opts.signal)) {
-      disk.recordHarEntry(entry);
-      if (entry._captureId) seeded.add(entry._captureId);
-    }
-
+    // Subscribe before seeding: the server holds live events for this subscriber while the seed is
+    // read, so a request that finishes meanwhile is not lost. Replays of seeded requests are skipped.
     const res = await fetchImpl(streamUrl, {
       headers: {
         accept: "text/event-stream",
@@ -168,8 +199,10 @@ export async function followCaptureHar(opts: FollowCaptureHarOptions): Promise<F
     if (!res.ok || !res.body) {
       throw new Error(`capture stream HTTP ${res.status}`);
     }
-
     reader = res.body.getReader();
+
+    const seeded = new Set<string>();
+    await seedFromSession(opts, fetchImpl, disk, seeded);
     const decoder = new TextDecoder();
     let buffer = "";
 

@@ -114,6 +114,31 @@ describe("CaptureDiskAccumulator", () => {
     }
   });
 
+  it("rebuilds the HAR once for flushes that pile up behind one rebuild", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-disk-coalesce-"));
+    let rebuilds = 0;
+    const disk = new CaptureDiskAccumulator({
+      dir,
+      flushIntervalMs: 60_000,
+      compact: async () => {
+        rebuilds++;
+        return 1;
+      },
+    });
+    try {
+      disk.begin();
+      disk.recordFinished({
+        id: "r1", method: "GET", url: "https://a.test/", status: 200, mimeType: null,
+        requestBytes: 0, responseBytes: 0, startedAt: 0, ttfbMs: null, durationMs: 1, failure: null,
+      });
+      await Promise.all([disk.flush(), disk.flush(), disk.flush(), disk.flush()]);
+      expect(rebuilds).toBe(1);
+    } finally {
+      await disk.end({ removeDir: true });
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it("appends NDJSON events and rewrites a HAR while the session is live", async () => {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-disk-"));
     const store = new CaptureStore();

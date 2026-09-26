@@ -1,7 +1,7 @@
 import { capabilityHarness } from "./capability-harness";
 import { describe, expect, test } from "bun:test";
 
-import { createCaptureRuntime, CaptureEnableError } from "../runtime";
+import { createCaptureRuntime, CaptureEnableError, discardCaptureArtifactsForExit } from "../runtime";
 import { CaptureStore } from "../store";
 import { type CaptureProxy, type MitmProxyDeps } from "../mitm-engine";
 
@@ -816,6 +816,24 @@ describe("capture runtime", () => {
     await first.runtime.disableAll();
     expect(await second.runtime.flushHarPathFor(UDID)).not.toBeNull();
     await second.runtime.disableAll();
+  });
+
+  test("removes capture files on process exit without any caller wiring it up", async () => {
+    const { existsSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = join(mkdtempSync(join(tmpdir(), "serve-sim-runtime-exit-hook-")), "capture-device");
+    const { runtime } = harness({ writeDiskArtifacts: true, captureDirFor: () => dir });
+    try {
+      await runtime.enableForDevice(UDID);
+      expect(existsSync(dir)).toBe(true);
+      expect(process.listeners("exit")).toContain(discardCaptureArtifactsForExit);
+      discardCaptureArtifactsForExit();
+      expect(existsSync(dir)).toBe(false);
+      await runtime.disableAll();
+    } finally {
+      rmSync(join(dir, ".."), { recursive: true, force: true });
+    }
   });
 
   test("removes capture files synchronously for process exit", async () => {
