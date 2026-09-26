@@ -14,12 +14,14 @@ let state: ReturnType<typeof useTempStateDir>;
 let shims: ReturnType<typeof installShims>;
 let envPath: string;
 let failurePath: string;
+let shutdownPath: string;
 let dylib: string;
 
 beforeEach(() => {
   state = useTempStateDir();
   envPath = join(state.dir, "env.json");
   failurePath = join(state.dir, "fail-insert");
+  shutdownPath = join(state.dir, "shut-down");
   dylib = join(state.dir, "startup.dylib");
   writeFileSync(dylib, "");
   writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/other.dylib" }));
@@ -27,6 +29,10 @@ beforeEach(() => {
 const fs = require('node:fs');
 const path = ${JSON.stringify(envPath)};
 const failure = ${JSON.stringify(failurePath)};
+if (fs.existsSync(${JSON.stringify(shutdownPath)})) {
+  process.stderr.write('Process spawn via launchd failed because device is not booted.');
+  process.exit(1);
+}
 const env = JSON.parse(fs.readFileSync(path, 'utf8'));
 const [,,,, command, name, value] = process.argv.slice(2);
 if (name === 'DYLD_INSERT_LIBRARIES' && command !== 'getenv' && fs.existsSync(failure)) {
@@ -297,6 +303,19 @@ function captureHarness(close: () => Promise<void> = async () => {}) {
     }),
   });
 }
+
+test("capture on a device that was shut down still stops its proxy", async () => {
+  let closed = false;
+  const runtime = captureHarness(async () => {
+    closed = true;
+  });
+  await runtime.enableForDevice(UDID);
+  writeFileSync(shutdownPath, "");
+  await runtime.disableForDevice(UDID);
+  expect(closed).toBe(true);
+  expect(readLaunchState(UDID)?.capabilities.networkCapture).toBeUndefined();
+  expect(runtime.metaFor(UDID).attachment).toBe("not-enabled");
+});
 
 test("uncertain initial publication can be disabled without leaving a startup insert", async () => {
   let closed = false;

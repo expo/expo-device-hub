@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, spyOn } from "bun:test";
 
 import { mkdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { randomUUID } from "crypto";
@@ -6,6 +6,7 @@ import { homedir, tmpdir } from "os";
 import { join } from "path";
 
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
+import { UDID } from "./helpers";
 import { SCREENSHOT_DIR, UPLOAD_DIR } from "../host-paths";
 
 // `true` ignores its arguments and exits 0, so these assert validation without running simctl.
@@ -259,5 +260,57 @@ describe("runHostActionAsync validation", () => {
     expect(viaBun.stderr).toContain("Module not found");
     expect(viaBun.stderr).not.toContain(homedir());
     expect(direct.stderr).toContain("ENOENT");
+  });
+});
+
+describe("capture actions", () => {
+  it("enables capture on a running device without rebooting", async () => {
+    const capture = await import("../capture");
+    const meta = capture.captureRuntime.metaFor(UDID);
+    const enable = spyOn(capture.captureRuntime, "enableForDevice").mockResolvedValue(meta);
+    const setEnabled = spyOn(capture.captureRuntime, "setDeviceCaptureEnabled");
+    const reboot = spyOn(capture, "rebootWithCapture");
+    try {
+      const result = await runHostActionAsync({ action: "capture.enable", params: { udid: UDID } }, BIN);
+      expect(result.exitCode).toBe(0);
+      expect(enable).toHaveBeenCalledWith(UDID);
+      expect(setEnabled).toHaveBeenCalledWith(UDID, true);
+      expect(reboot).not.toHaveBeenCalled();
+    } finally {
+      enable.mockRestore();
+      setEnabled.mockRestore();
+      reboot.mockRestore();
+    }
+  });
+
+  it("allows an explicit capture reboot without a startup flag", async () => {
+    const capture = await import("../capture");
+    const meta = capture.captureRuntime.metaFor(UDID);
+    const reboot = spyOn(capture, "rebootWithCapture").mockResolvedValue(meta);
+    try {
+      const result = await runHostActionAsync(
+        { action: "capture.reboot", params: { udid: UDID, enabled: true } },
+        BIN,
+      );
+      expect(result.exitCode).toBe(0);
+      expect(reboot).toHaveBeenCalledWith(UDID, true);
+    } finally {
+      reboot.mockRestore();
+    }
+  });
+
+  it("reports no capture session for an unknown device", async () => {
+    const result = await runHostActionAsync({ action: "capture.clear", params: { udid: UDID } }, BIN);
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("No capture session");
+  });
+
+  it("refuses a device name where simctl would read it as every device", async () => {
+    for (const udid of ["all", "booted", "iPhone 17 Pro"]) {
+      await expect(
+        runHostActionAsync({ action: "capture.reboot", params: { udid, enabled: true } }, BIN),
+      ).rejects.toBeInstanceOf(InvalidHostActionError);
+    }
   });
 });

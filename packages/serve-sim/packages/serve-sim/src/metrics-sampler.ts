@@ -23,6 +23,8 @@ export interface AppUsage {
   memBytes: number;
   netInBytesPerSec: number; // download throughput (bytes/s) for the app's processes, from the nettop poller
   netOutBytesPerSec: number; // upload throughput (bytes/s)
+  /** "device" when the rates are every app's proxied traffic, not only this app's. */
+  netScope?: "device";
 }
 
 export interface MetricSample {
@@ -32,6 +34,8 @@ export interface MetricSample {
   memBytes: number;
   netInBytesPerSec: number; // latest download throughput (bytes/s) from the nettop poller
   netOutBytesPerSec: number; // latest upload throughput (bytes/s) from the nettop poller
+  /** "device" while network capture supplies the rates: they then include background apps. */
+  netScope?: "device";
 }
 
 export interface MetricsMeta {
@@ -302,9 +306,32 @@ export async function sampleUserApp(udid: string, deps: SampleDeps = {}): Promis
   };
 }
 
+/**
+ * Sample the foreground app, preferring `override` (network capture's proxy rate) when it has one.
+ * The proxy cannot tell apps apart, so a reading that used it is marked as device-wide.
+ */
+export async function sampleWithRateOverride(
+  udid: string,
+  override: (() => NetInOut | null) | undefined,
+  perApp: (pids: number[]) => NetInOut,
+  sample: typeof sampleUserApp = sampleUserApp,
+): Promise<AppUsage | null> {
+  let deviceWide = false;
+  const usage = await sample(udid, {
+    networkRate: (pids) => {
+      const proxied = override?.() ?? null;
+      deviceWide = proxied !== null;
+      return proxied ?? perApp(pids);
+    },
+  });
+  return usage && deviceWide ? { ...usage, netScope: "device" } : usage;
+}
+
 export interface MetricsSamplerOptions {
   udid: string;
   deviceName?: string;
+  /** Proxy throughput when host counters cannot see captured traffic. */
+  networkRateOverride?: () => NetInOut | null;
   intervalMs?: number;
   sample?: (udid: string) => Promise<AppUsage | null>;
   now?: () => number;
@@ -337,7 +364,8 @@ export class MetricsSampler {
     } else {
       const network = new NetworkThroughputMonitor();
       this.network = network;
-      this.sample = (udid) => sampleUserApp(udid, { networkRate: (pids) => network.rateForPids(pids) });
+      const override = opts.networkRateOverride;
+      this.sample = (udid) => sampleWithRateOverride(udid, override, (pids) => network.rateForPids(pids));
     }
     this.meta = {
       schemaVersion: METRICS_SCHEMA_VERSION,
@@ -380,6 +408,7 @@ export class MetricsSampler {
       memBytes: reading.memBytes,
       netInBytesPerSec: reading.netInBytesPerSec, // already rates from the nettop poller
       netOutBytesPerSec: reading.netOutBytesPerSec,
+      ...(reading.netScope ? { netScope: reading.netScope } : {}),
     };
     for (const listener of this.listeners) {
       try {

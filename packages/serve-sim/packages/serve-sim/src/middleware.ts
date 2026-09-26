@@ -15,6 +15,7 @@ import type { Socket } from "net";
 import { WebSocket } from "ws";
 import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
+import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type CaptureRuntime } from "./capture";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
 import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
@@ -26,6 +27,7 @@ import {
 } from "./device-session";
 import {
   acceptedTokenSubprotocol,
+  assertCaptureAccess,
   assertPreviewAccess,
   assertUpgradeAccess,
   upgradeAuthHeaders,
@@ -57,6 +59,9 @@ import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
+
+/** Captured traffic is decrypted credentials; `no-cache` would still let a cache keep a copy. */
+const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;
 
 type SimReq = IncomingMessage;
 type SimRes = ServerResponse;
@@ -135,8 +140,14 @@ export type ServeSimState = ServeSimDeviceState;
 const axStreamerCache = createAxStreamerCache();
 // One shared cpu/mem sampler per udid; every /metrics viewer subscribes. Stamp the device name
 // (from the last booted-device snapshot) into the sampler's meta frame when we know it.
+// Host network counters look idle under capture (loopback); proxy totals win via networkRateOverride.
 const metricsSamplerCache = createMetricsSamplerCache(
-  (udid) => new MetricsSampler({ udid, deviceName: bootedDeviceName(udid) }),
+  (udid) =>
+    new MetricsSampler({
+      udid,
+      deviceName: bootedDeviceName(udid),
+      networkRateOverride: () => captureRuntime.throughputFor(udid),
+    }),
 );
 
 let inspectWebKitBridge: Promise<WebKitBridge> | null = null;
@@ -372,6 +383,8 @@ export async function readServeSimStates(): Promise<ServeSimState[]> {
     return [];
   }
   const booted = await getBootedUdids();
+  const bootedAt = bootedSnapshot.at;
+  void retryPendingCaptureCleanup();
   const states: ServeSimState[] = [];
   for (const f of files) {
     const path = join(stateDir(), f);
@@ -389,6 +402,10 @@ export async function readServeSimStates(): Promise<ServeSimState[]> {
       // preview stuck on "Connecting...". Recycle the stale state so the
       // caller can spawn a fresh helper bound to whatever is booted.
       const action = classifyStaleState(state, booted, process.pid);
+      if (action !== "keep" && rebootedWithCaptureSince(state.device, bootedAt)) {
+        states.push(state);
+        continue;
+      }
       if (action !== "keep") {
         if (action === "recycle-self") {
           // This device is streamed in-process by *us* (the close button just
@@ -400,6 +417,7 @@ export async function readServeSimStates(): Promise<ServeSimState[]> {
             state.pid,
           );
           closeDeviceSession(state.device);
+          void disableNetworkCaptureForStoppedDevice(state.device);
         } else {
           debugMw(
             "recycling stale helper pid=%d (device %s no longer booted)",
@@ -898,9 +916,12 @@ export async function startDeviceInProcess(
   streamSettings?: StreamSettings,
   /** Session token, when the server runs gated. */
   sessionToken?: string,
+  onBoot?: () => Promise<void>,
 ): Promise<string | null> {
   // `simctl boot` errors when already booted — ignore and let bootstatus confirm.
-  await new Promise<void>((resolve) => execFile("xcrun", ["simctl", "boot", udid], () => resolve()));
+  await new Promise<void>((resolve) =>
+    execFile("xcrun", ["simctl", "boot", udid], () => resolve()),
+  );
   const ready = await new Promise<boolean>((resolve) => {
     execFile("xcrun", ["simctl", "bootstatus", udid, "-b"], { timeout: 180_000 }, (err) => resolve(!err));
   });
@@ -920,8 +941,94 @@ export async function startDeviceInProcess(
     });
     if (!booted) return `Device ${udid} failed to reach booted state`;
   }
+  await onBoot?.();
   writeServeSimState(gridDeviceState(udid, port, base, streamSettings, sessionToken));
   return null;
+}
+
+export async function enableNetworkCaptureForStartedDevice(
+  udid: string,
+  enabled: boolean,
+  deps: {
+    enable?: (udid: string) => Promise<{ proxyAddress: string | null }>;
+    log?: (message: string) => void;
+    error?: (message: string) => void;
+  } = {},
+): Promise<void> {
+  if (!captureRuntime.shouldCaptureDevice(udid, enabled)) return;
+  const enable =
+    deps.enable ??
+    (async (id) => captureRuntime.enableForDevice(id));
+  const log = deps.log ?? ((message) => console.log(message));
+  const error = deps.error ?? ((message) => console.error(message));
+  await startCaptureForDevice(udid, {
+    enable,
+    onStarted: (meta) =>
+      log(
+        `Network capture on for ${udid} via ${meta.proxyAddress}. HTTP(S) from this device is ` +
+          "recorded from now on. Apps already running may keep existing sessions; HTTPS is decrypted, " +
+          "so certificate-pinned apps will refuse to connect.",
+      ),
+    onFailed: (reason) => error(`Network capture could not start for ${udid}. ${reason}`),
+  });
+}
+
+// Capture sessions whose cleanup failed after their device stopped, keyed by device. The value is
+// the session's store, which names that session: a retry only touches it while it is still there,
+// so a newer session on the same device (after a reboot with capture on) is never disabled.
+const pendingCaptureCleanup = new Map<string, unknown>();
+// Polls come often; one retry per device at a time keeps a failing cleanup from piling up.
+const retryingCaptureCleanup = new Set<string>();
+
+interface CaptureCleanupDeps {
+  disable?: (udid: string) => Promise<void>;
+  /** The device's current capture session, or null. */
+  session?: (udid: string) => unknown;
+}
+
+export async function disableNetworkCaptureForStoppedDevice(
+  udid: string,
+  deps: CaptureCleanupDeps = {},
+): Promise<boolean> {
+  const disable =
+    deps.disable ??
+    (async (id) => {
+      await captureRuntime.disableForDevice(id);
+    });
+  const sessionOf = deps.session ?? ((id: string) => captureRuntime.storeFor(id));
+  const session = sessionOf(udid);
+  try {
+    await disable(udid);
+    pendingCaptureCleanup.delete(udid);
+    return true;
+  } catch (err) {
+    if (session) pendingCaptureCleanup.set(udid, session);
+    console.warn(
+      `Network capture: disable for ${udid} failed; it is retried on the next device poll:`,
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+
+/** Retry failed cleanups until the session that failed is gone; a newer session is left alone. */
+export async function retryPendingCaptureCleanup(deps: CaptureCleanupDeps = {}): Promise<void> {
+  const sessionOf = deps.session ?? ((id: string) => captureRuntime.storeFor(id));
+  await Promise.all(
+    [...pendingCaptureCleanup].map(async ([udid, session]) => {
+      if (sessionOf(udid) !== session) {
+        pendingCaptureCleanup.delete(udid);
+        return;
+      }
+      if (retryingCaptureCleanup.has(udid)) return;
+      retryingCaptureCleanup.add(udid);
+      try {
+        await disableNetworkCaptureForStoppedDevice(udid, deps);
+      } finally {
+        retryingCaptureCleanup.delete(udid);
+      }
+    }),
+  );
 }
 
 /**
@@ -1010,6 +1117,21 @@ function attachHidInProcess(
   return true;
 }
 
+// Keep the exec bridge allowlist aligned with preview SSE endpoints.
+export function sseStreamPaths(base: string): string[] {
+  return [
+    `${base}/api/events`,
+    `${base}/api/event-log/events`,
+    `${base}/grid/api/status/events`,
+    `${base}/appstate`,
+    `${base}/logs`,
+    `${base}/crashes`,
+    `${base}/metrics`,
+    `${base}/network-capture`,
+    `${base}/ax`,
+  ];
+}
+
 export function previewConfigForState(
   state: ServeSimState,
   base: string,
@@ -1026,6 +1148,7 @@ export function previewConfigForState(
   eventLogEndpoint: string;
   eventLogEventsEndpoint: string;
   metricsEndpoint: string;
+  captureEndpoint: string;
   axEndpoint: string;
   cameraStatusEndpoint: string;
   devtoolsEndpoint: string;
@@ -1065,6 +1188,7 @@ export function previewConfigForState(
     eventLogEndpoint: endpoint(base, "/api/event-log", state.device),
     eventLogEventsEndpoint: endpoint(base, "/api/event-log/events", state.device),
     metricsEndpoint: endpoint(base, "/metrics", state.device),
+    captureEndpoint: endpoint(base, "/network-capture", state.device),
     axEndpoint: endpoint(base, "/ax", state.device),
     cameraStatusEndpoint: `${base === "/" ? "" : base}/helper/${encodeURIComponent(state.device)}/camera/status`,
     devtoolsEndpoint: endpoint(base, "/devtools", state.device),
@@ -1551,6 +1675,8 @@ export interface SimMiddlewareOptions {
   frameAncestors?: string[];
   /** Public page the Share button copies instead of this preview's address. */
   shareUrl?: string;
+  /** Enable capture for devices started through this middleware. */
+  networkCapture?: boolean;
   /** @deprecated Use `streamSettings: { transport: "http", codec }`. */
   codec?: string;
   /**
@@ -1695,7 +1821,7 @@ export function handleMetricsRequest(
   }
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
+    ...NO_STORE,
     Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   });
@@ -1718,6 +1844,66 @@ export function handleMetricsRequest(
   });
 }
 
+/** SSE of captured HTTPS traffic (read-only; does not start/stop capture). */
+export function handleNetworkCaptureRequest(
+  req: SimReq,
+  res: SimRes,
+  state: ServeSimState | null,
+  runtime: CaptureRuntime = captureRuntime,
+): void {
+  if (!state) {
+    res.writeHead(404, NO_STORE);
+    res.end("No serve-sim device");
+    return;
+  }
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    ...NO_STORE,
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write(":\n\n");
+
+  const { meta, unsubscribe } = runtime.subscribe(state.device, (event) => {
+    if (!res.writableEnded) res.write("data: " + JSON.stringify(event) + "\n\n");
+  });
+
+  res.write("event: meta\ndata: " + JSON.stringify(meta) + "\n\n");
+  for (const request of runtime.storeFor(state.device)?.list() ?? []) {
+    if (res.writableEnded) break;
+    // In-flight rows (null status) replay as started.
+    const type = request.status == null && request.failure == null ? "started" : "finished";
+    res.write("data: " + JSON.stringify({ type, request }) + "\n\n");
+  }
+
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(":\n\n");
+  }, 15000);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+}
+
+/** Headers/bodies for one captured request (on demand; kept off the live stream). */
+export function handleCaptureBodyRequest(
+  req: SimReq,
+  res: SimRes,
+  state: ServeSimState | null,
+  id: string,
+  runtime: CaptureRuntime = captureRuntime,
+): void {
+  const store = state ? runtime.storeFor(state.device) : null;
+  const body = store?.body(id) ?? null;
+  if (!body) {
+    res.writeHead(404, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: "No captured body for that request" }));
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "application/json", ...NO_STORE });
+  res.end(JSON.stringify(body));
+}
+
 export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const streamSettings = options?.streamSettings ?? httpStreamSettingsFromLegacyCodec(options?.codec);
   const base = (options?.basePath ?? "/.sim").replace(/\/+$/, "");
@@ -1737,6 +1923,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const framePolicyHeaders: Record<string, string> = requirePreviewToken
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
     : {};
+  const networkCapture = options?.networkCapture ?? false;
 
   crashRuntime.arm();
 
@@ -1783,6 +1970,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   };
 /** Reachable without the session token: liveness probes cannot carry one. */
   const UNGATED_PATHS = ["/healthz", "/readyz"];
+  // Capture routes always require authentication, including future subroutes.
+  const ALWAYS_GATED_PREFIX = "/network-capture";
 
   const connectMiddleware = (async (req: SimReq, res: SimRes, next?: SimNext) => {
     const rawUrl: string = req.url ?? "";
@@ -1815,12 +2004,27 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (
       !UNGATED_PATHS.some((path) => url === base + path)
       && !assertPreviewAccess(req, res, execToken, {
-        required: requirePreviewToken,
+        required: requirePreviewToken || url.startsWith(base + ALWAYS_GATED_PREFIX),
         basePath: base,
         htmlHeaders: framePolicyHeaders,
+        allowQueryToken: !url.startsWith(base + ALWAYS_GATED_PREFIX),
       })
     ) {
       return;
+    }
+
+    if (url.startsWith(base + ALWAYS_GATED_PREFIX) && !assertCaptureAccess(req, res)) {
+      return;
+    }
+
+    // Capture routes only read; a write-shaped request gets 405 rather than a read response.
+    if (url.startsWith(base + ALWAYS_GATED_PREFIX)) {
+      const method = (req.method ?? "GET").toUpperCase();
+      if (method !== "GET" && method !== "HEAD") {
+        res.writeHead(405, { "Content-Type": "application/json", Allow: "GET, HEAD", ...NO_STORE });
+        res.end(JSON.stringify({ error: "Network capture routes accept GET and HEAD only." }));
+        return;
+      }
     }
 
     const helperTarget = helperProxyTarget(rawUrl, helperPrefix);
@@ -2107,7 +2311,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       req.on("data", (chunk: Buffer | string) => {
         body += typeof chunk === "string" ? chunk : chunk.toString();
       });
-      req.on("end", () => {
+      req.on("end", async () => {
         let udid = "";
         try { udid = (JSON.parse(body) as ShutdownRequestBody).udid ?? ""; } catch {}
         if (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(udid)) {
@@ -2122,7 +2326,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         // Drop the snapshot so the next status sample re-queries simctl
         // and prunes any helper bound to this now-shutdown device.
         bootedSnapshot = { at: 0, booted: null, names: new Map(), deviceTypes: new Map() };
-        execFile("xcrun", ["simctl", "shutdown", udid], { timeout: 30_000 }, (err, _stdout, stderr) => {
+        execFile("xcrun", ["simctl", "shutdown", udid], { timeout: 30_000 }, async (err, _stdout, stderr) => {
           if (err) {
             res.writeHead(500, { "Content-Type": "application/json" });
             res.end(JSON.stringify({
@@ -2131,6 +2335,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
             }));
             return;
           }
+          await disableNetworkCaptureForStoppedDevice(udid);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
         });
@@ -2160,6 +2365,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           base,
           streamSettings,
           requirePreviewToken ? execToken : undefined,
+          () => enableNetworkCaptureForStartedDevice(udid, networkCapture),
         ).then((error) => {
           if (res.writableEnded) return;
           if (error) {
@@ -2639,6 +2845,35 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
+    if (url === base + "/network-capture") {
+      const states = await readServeSimStates();
+      const state = selectServeSimState(states, selectedDevice);
+      handleNetworkCaptureRequest(req, res, state, captureRuntime);
+      return;
+    }
+
+    if (url.startsWith(base + "/network-capture/")) {
+      const rawId = url.slice((base + "/network-capture/").length);
+      let id: string;
+      try {
+        id = decodeURIComponent(rawId);
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json", ...NO_STORE });
+        res.end(
+          JSON.stringify({
+            error:
+              `Malformed percent-escape in the capture id (${rawId}). Copy the id verbatim from ` +
+              "the {base}/network-capture stream.",
+          }),
+        );
+        return;
+      }
+      const states = await readServeSimStates();
+      const state = selectServeSimState(states, selectedDevice);
+      handleCaptureBodyRequest(req, res, state, id, captureRuntime);
+      return;
+    }
+
     // SSE: foreground-app change stream. Emits `{bundleId, pid}` events
     // parsed from SpringBoard's "Setting process visibility to: Foreground"
     // log line. Filtering is done here (not in the browser) so the SSE stream
@@ -2746,24 +2981,23 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     path: `${base}/exec-ws`,
     execToken,
     corsOrigins,
-    ssePrefixes: [
-      `${base}/api/events`,
-      `${base}/api/event-log/events`,
-      `${base}/grid/api/status/events`,
-      `${base}/appstate`,
-      `${base}/logs`,
-      `${base}/crashes`,
-      `${base}/metrics`,
-      `${base}/ax`,
-    ],
+    ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,
     serveSimBinPath: serveSimBinPath(),
     onActionResult: (action, params, result) => recordActionEvent(action, params, result),
     onSseRequest(path, websocketRequest) {
       const url = new URL(path, websocketRequest.url);
-      // The exec channel already authenticated, so its fan-out carries the token past the gate.
+      const origin = websocketRequest.headers.get("origin");
+      const site = websocketRequest.headers.get("sec-fetch-site");
+      // The exec channel already authenticated, so its fan-out carries the token past the gate. It
+      // keeps the socket's origin, so a same-origin-only route still sees who is asking.
       return fetchMiddleware(new Request(url, {
-        headers: { accept: "text/event-stream", authorization: `Bearer ${execToken}` },
+        headers: {
+          accept: "text/event-stream",
+          authorization: `Bearer ${execToken}`,
+          ...(origin ? { origin } : {}),
+          ...(site ? { "sec-fetch-site": site } : {}),
+        },
       }));
     },
   });

@@ -41,6 +41,11 @@ const Device = z
   .max(256)
   .regex(/^[A-Za-z0-9][A-Za-z0-9 ._()-]*$/, "must be a simulator udid or device name");
 
+// simctl reads "all" and "booted" as every device, and capture reboots what it is given.
+const DeviceUdid = z
+  .string()
+  .regex(/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i, "must be a simulator udid");
+
 const BundleId = z.string().max(256).regex(/^[A-Za-z0-9][A-Za-z0-9._-]*$/, "must look like com.example.app");
 
 /** An orientation or button name. Bounded rather than allowlisted, so a new button still works. */
@@ -122,6 +127,9 @@ const ACTION_SCHEMAS = {
     first: z.boolean().optional(),
   }),
   "upload.remove": z.object({ uploadId: UploadId }),
+  "capture.reboot": z.object({ udid: DeviceUdid, enabled: z.boolean() }),
+  "capture.enable": z.object({ udid: DeviceUdid }),
+  "capture.clear": z.object({ udid: DeviceUdid }),
 } as const;
 
 type HostActionName = keyof typeof ACTION_SCHEMAS;
@@ -137,6 +145,9 @@ const PROCEDURE_ACTIONS = [
   "app.iconPath",
   "screenshot.capture",
   "screenshot.thumbnail",
+  "capture.reboot",
+  "capture.enable",
+  "capture.clear",
 ] as const satisfies readonly HostActionName[];
 
 type ProcedureAction = (typeof PROCEDURE_ACTIONS)[number];
@@ -312,6 +323,46 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
     case "upload.remove": {
       const p = parseParams(action, raw);
       return await removeUploadAsync(p.uploadId);
+    }
+    case "capture.reboot": {
+      const p = parseParams(action, raw);
+      const { rebootWithCapture } = await import("./capture");
+      const { closeDeviceSession } = await import("./device-session");
+      closeDeviceSession(p.udid);
+      try {
+        return ok(JSON.stringify(await rebootWithCapture(p.udid, p.enabled)));
+      } catch (error) {
+        return {
+          stdout: "",
+          stderr:
+            `Could not reboot the device: ${error instanceof Error ? error.message : String(error)}. ` +
+            "The device may now be shut down, so boot it from the sidebar and try again.",
+          exitCode: 1,
+        };
+      }
+    }
+    case "capture.enable": {
+      const p = parseParams(action, raw);
+      const { captureRuntime } = await import("./capture");
+      try {
+        const meta = await captureRuntime.enableForDevice(p.udid);
+        captureRuntime.setDeviceCaptureEnabled(p.udid, true);
+        return ok(JSON.stringify(meta));
+      } catch (error) {
+        return {
+          stdout: "",
+          stderr: `Could not enable network capture: ${error instanceof Error ? error.message : String(error)}`,
+          exitCode: 1,
+        };
+      }
+    }
+    case "capture.clear": {
+      const p = parseParams(action, raw);
+      const { captureRuntime } = await import("./capture");
+      if (!captureRuntime.clearForDevice(p.udid)) {
+        return { stdout: "", stderr: "No capture session for this device.", exitCode: 1 };
+      }
+      return ok();
     }
     case "app.iconPath": {
       const p = parseParams(action, raw);

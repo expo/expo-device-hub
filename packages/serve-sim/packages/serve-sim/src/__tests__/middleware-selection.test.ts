@@ -5,6 +5,7 @@ import {
   previewConfigForState,
   rewriteStateForRequestHost,
   selectServeSimState,
+  sseStreamPaths,
   type ServeSimState,
 } from "../middleware";
 import { parseForegroundAppLogMessage } from "../foreground-tracker";
@@ -54,6 +55,7 @@ describe("previewConfigForState", () => {
       eventLogEndpoint: "/preview/api/event-log?device=DEVICE-B",
       eventLogEventsEndpoint: "/preview/api/event-log/events?device=DEVICE-B",
       metricsEndpoint: "/preview/metrics?device=DEVICE-B",
+      captureEndpoint: "/preview/network-capture?device=DEVICE-B",
       axEndpoint: "/preview/ax?device=DEVICE-B",
       cameraStatusEndpoint: "/preview/helper/DEVICE-B/camera/status",
       devtoolsEndpoint: "/preview/devtools?device=DEVICE-B",
@@ -330,5 +332,39 @@ describe("previewConfigForState session token", () => {
     const config = previewConfigForState(state, "", "MY_OWN_TOKEN");
 
     expect(JSON.stringify(config)).not.toContain("TURN_SECRET");
+
+  });
+});
+
+describe("sseStreamPaths", () => {
+  /**
+   * The exec WebSocket refuses to proxy any SSE route not on its allowlist, and refuses it by ending the
+   * subscription — which the client can only report as a dropped stream. `/network-capture` was missing
+   * for exactly that reason: the route worked over plain HTTP and failed only in the browser, showing
+   * "the capture stream disconnected" with no way to tell why. This holds the allowlist against the
+   * endpoints the preview config actually advertises, so the next route can't be forgotten the same way.
+   */
+  const streamEndpointKeys = [
+    "logsEndpoint",
+    "appStateEndpoint",
+    "eventLogEventsEndpoint",
+    "metricsEndpoint",
+    "captureEndpoint",
+    "axEndpoint",
+  ] as const;
+
+  test("covers every streaming endpoint the preview config hands the client", () => {
+    const config = previewConfigForState(states[0]!, "", "/bin/serve-sim", "token");
+    const allowed = new Set(sseStreamPaths(""));
+    for (const key of streamEndpointKeys) {
+      const advertised = String(config[key]).split("?")[0]!;
+      expect(allowed.has(advertised)).toBe(true);
+    }
+  });
+
+  test("includes the capture stream specifically", () => {
+    expect(sseStreamPaths("")).toContain("/network-capture");
+    // And honours a mount prefix, since the Hub serves it under one.
+    expect(sseStreamPaths("/vendor/serve-sim")).toContain("/vendor/serve-sim/network-capture");
   });
 });

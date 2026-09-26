@@ -35,6 +35,7 @@ import {
   waitForLaunchUpdates,
   LOCK_POLL_MS,
 } from "./launch-state-lock";
+import { isDeviceNotBooted } from "./device";
 import { dirnameOf } from "./runtime";
 import { simctl, simctlSync } from "./simctl";
 
@@ -664,6 +665,18 @@ export async function disableCapability(
   await withLaunchStateLock(udid, () => disableCapabilityUnlocked(udid, bundleId, name, options));
 }
 
+// launchctl values end with the boot, so a device that is off only needs its saved state.
+async function withdrawLaunchState(udid: string, state: LaunchState): Promise<boolean> {
+  try {
+    await publishLaunchState(udid, state);
+    return true;
+  } catch (error) {
+    if (!isDeviceNotBooted(error)) throw error;
+    writeLaunchState(udid, state);
+    return false;
+  }
+}
+
 async function disableCapabilityUnlocked(
   udid: string,
   bundleId: string | null,
@@ -673,7 +686,7 @@ async function disableCapabilityUnlocked(
   const previous = readLaunchState(udid);
   if (!previous || !(name in previous.capabilities)) {
     if (managedStartupDylibs(udid).length > 0) {
-      await publishLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
+      await withdrawLaunchState(udid, previous ?? { launchArgs: [], capabilities: {} });
     }
     return;
   }
@@ -681,8 +694,8 @@ async function disableCapabilityUnlocked(
     Object.entries(previous.capabilities).filter(([key]) => key !== name),
   );
   const state: LaunchState = { ...previous, capabilities: rest };
-  await publishLaunchState(udid, state);
-  if (relaunch) await relaunchTarget(udid, bundleId, state);
+  const booted = await withdrawLaunchState(udid, state);
+  if (relaunch && booted) await relaunchTarget(udid, bundleId, state);
 }
 
 const URL_SCHEME_APPROVAL_DOMAIN = "com.apple.launchservices.schemeapproval";
