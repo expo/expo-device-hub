@@ -124,7 +124,9 @@ export class CaptureDiskAccumulator {
     this.unsubscribe = store.subscribe((event) => this.onStoreEvent(store, event));
     this.recordEvent({ type: "session", startedAt: new Date().toISOString() });
     return async () => {
-      await this.end({ removeDir: true });
+      // A failed final flush is reported, not swallowed; the caller can stop again to retry it.
+      const failure = await this.end({ removeDir: true });
+      if (failure) throw failure;
     };
   }
 
@@ -168,7 +170,11 @@ export class CaptureDiskAccumulator {
   }
 
   end(opts: { removeDir?: boolean } = {}): Promise<Error | null> {
-    if (!this.ending) this.ending = this.finish(opts);
+    // A failed finish is not cached, so ending again retries the flush.
+    this.ending ??= this.finish(opts).then((failure) => {
+      if (failure) this.ending = null;
+      return failure;
+    });
     return this.ending;
   }
 
@@ -189,14 +195,15 @@ export class CaptureDiskAccumulator {
       failure = error instanceof Error ? error : new Error(String(error));
       console.warn(`Network capture: flush before end (${this.dir}) failed, so its files were kept:`, failure.message);
     }
+    // After a failed flush the recording stays claimed, so a retry can finish and remove it.
+    if (failure) return failure;
     try {
-      const removeDir = failure === null && (opts.removeDir ?? false);
-      if (this.owner) releaseCaptureDirectory(this.dir, this.owner, removeDir, this.ownerFile);
+      if (this.owner) releaseCaptureDirectory(this.dir, this.owner, opts.removeDir ?? false, this.ownerFile);
     } catch (error) {
       console.warn(`Network capture: releasing ${this.dir} failed:`, error);
     }
     this.owner = null;
-    return failure;
+    return null;
   }
 
   async stop(): Promise<void> {

@@ -108,7 +108,13 @@ describe("CaptureDiskAccumulator", () => {
       recordFinished(store, "https://a.test/");
       expect(await disk.end({ removeDir: true })).toBeInstanceOf(Error);
       expect(existsSync(disk.networkCapturePath)).toBe(true);
+      // Stopping reports the failure instead of passing as a clean shutdown.
+      await expect(stop()).rejects.toThrow();
+
+      // Once the fault is gone, stopping again finishes the recording and removes it.
+      rmSync(disk.entriesPath, { recursive: true, force: true });
       await stop();
+      expect(existsSync(dir)).toBe(false);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
