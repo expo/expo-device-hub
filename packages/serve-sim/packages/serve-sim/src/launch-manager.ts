@@ -253,10 +253,21 @@ async function publishLaunchState(udid: string, state: LaunchState): Promise<voi
   const desiredStartupDylibs = startupDylibs(state.capabilities);
   validateStartupDylibs(desiredStartupDylibs);
   const previous = await snapshotCapabilityLaunch(udid);
+  // Running apps' loaders watch the config. Removals go out before arming, so an app launched
+  // next cannot load a withdrawn capability. Additions wait until launchd accepts the insert, so
+  // a failed update never lets a running app load something rollback cannot take back.
+  const published = readLaunchState(udid)?.capabilities ?? {};
+  const kept = Object.fromEntries(
+    Object.entries(state.capabilities).filter(
+      ([name, capability]) => JSON.stringify(published[name]) === JSON.stringify(capability),
+    ),
+  );
+  const withdrawnOnly = renderCapabilityConfig({ ...state, capabilities: kept });
 
-  commitCapabilityConfig(udid, config);
   try {
+    commitCapabilityConfig(udid, withdrawnOnly);
     await armInsert(udid, capabilityLoaderPath(), state.capabilities, previous.startupDylibs);
+    if (config !== withdrawnOnly) commitCapabilityConfig(udid, config);
     writeLaunchState(udid, state);
   } catch (error) {
     try {

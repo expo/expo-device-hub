@@ -26,6 +26,11 @@ const failure = ${JSON.stringify(failurePath)};
 const env = JSON.parse(fs.readFileSync(path, 'utf8'));
 const [,,,, command, name, value] = process.argv.slice(2);
 if (name === 'DYLD_INSERT_LIBRARIES' && command !== 'getenv' && fs.existsSync(failure)) {
+  // failure + '.watch' names a file to copy, recording what a running app's loader could read then.
+  if (fs.existsSync(failure + '.watch')) {
+    const watched = fs.readFileSync(failure + '.watch', 'utf8');
+    fs.writeFileSync(failure + '.seen', fs.existsSync(watched) ? fs.readFileSync(watched, 'utf8') : '');
+  }
   fs.unlinkSync(failure); process.exit(1);
 }
 if (command === 'getenv') process.stdout.write(env[name] || '');
@@ -84,6 +89,19 @@ test("failed publication restores actual config and launchd values", async () =>
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(previous);
   expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
   expect(managedStartupDylibs(UDID)).toEqual([]);
+});
+
+test("a failed publication never shows running apps its deferred load", async () => {
+  const previous = "# previous config retained for cleanup\n";
+  writeFileSync(capabilityConfigPath(UDID), previous);
+  writeFileSync(failurePath, "");
+  writeFileSync(`${failurePath}.watch`, capabilityConfigPath(UDID));
+  await expect(enableCapabilities(UDID, null, [{
+    name: "networkCapture", scope: "userApps", loadPhase: "startupAndDeferred", dylib,
+    env: { SIMNET_PROXY_PORT_FILE: "/capture/port" },
+  }], { relaunch: false })).rejects.toThrow();
+  expect(readFileSync(`${failurePath}.seen`, "utf8")).not.toContain(dylib);
+  expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(previous);
 });
 
 test("failed final disarm retains ownership until a successful retry", async () => {
