@@ -132,6 +132,7 @@ describe("handleNetworkCaptureRequest", () => {
 
     const frames = dataFrames(writes).map((w) => JSON.parse(w.slice("data:".length).trim()));
     expect(frames.map((f) => f.type)).toEqual(["meta", "started", "finished"]);
+    expect(frames[0].initial).toBe(true);
     expect(frames[2].request.url).toBe("https://example.com/a");
     expect(frames[2].request.status).toBe(200);
 

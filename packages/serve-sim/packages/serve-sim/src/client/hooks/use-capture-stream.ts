@@ -12,6 +12,34 @@ import { openHostEventStream, runHostAction } from "../utils/exec";
 
 export type { CaptureMeta, CaptureAttachment, CapturedBody, CapturedRequest };
 
+/** A stream frame: store events, plus the first meta frame of each (re)subscription. */
+export type CaptureStreamFrame = CaptureEvent | { type: "meta"; meta: CaptureMeta; initial: true };
+
+/**
+ * The request list after one frame. The server replays its whole list after each initial meta, so
+ * that frame empties the list: requests cleared or evicted while disconnected do not linger.
+ */
+export function applyCaptureEvent(requests: CapturedRequest[], event: CaptureStreamFrame): CapturedRequest[] {
+  switch (event.type) {
+    case "meta":
+      return "initial" in event && event.initial ? [] : requests;
+    case "cleared":
+      return [];
+    case "evicted":
+      return requests.filter((request) => request.id !== event.id);
+    case "started":
+    case "finished": {
+      const next = [...requests];
+      const at = next.findIndex((request) => request.id === event.request.id);
+      if (at === -1) next.push(event.request);
+      else next[at] = event.request;
+      return next.length > MAX_REQUESTS ? next.slice(next.length - MAX_REQUESTS) : next;
+    }
+    default:
+      return requests;
+  }
+}
+
 /** Subscribe to capture SSE; `streamKey` bumps after reboot to resubscribe. */
 export function useCaptureStream(
   path: string,
@@ -42,24 +70,10 @@ export function useCaptureStream(
     const stream = openHostEventStream(path);
     stream.onmessage = ({ data }) => {
       try {
-        const event = JSON.parse(data) as CaptureEvent;
+        const event = JSON.parse(data) as CaptureStreamFrame;
         setErrored(false);
-        if (event.type === "meta") {
-          setMeta(event.meta);
-          return;
-        }
-        if (event.type === "cleared") {
-          setRequests([]);
-          return;
-        }
-        if (event.type !== "started" && event.type !== "finished") return;
-        setRequests((prev) => {
-          const next = [...prev];
-          const at = next.findIndex((r) => r.id === event.request.id);
-          if (at === -1) next.push(event.request);
-          else next[at] = event.request;
-          return next.length > MAX_REQUESTS ? next.slice(next.length - MAX_REQUESTS) : next;
-        });
+        if (event.type === "meta") setMeta(event.meta);
+        setRequests((prev) => applyCaptureEvent(prev, event));
       } catch {
         // Ignore malformed frames.
       }

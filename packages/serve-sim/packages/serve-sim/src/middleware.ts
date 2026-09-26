@@ -1868,7 +1868,8 @@ export function handleNetworkCaptureRequest(
     if (!res.writableEnded) res.write("data: " + JSON.stringify(event) + "\n\n");
   });
 
-  res.write("data: " + JSON.stringify({ type: "meta", meta }) + "\n\n");
+  // "initial" tells a reconnecting viewer that the full list follows, so it can drop its old one.
+  res.write("data: " + JSON.stringify({ type: "meta", meta, initial: true }) + "\n\n");
   for (const request of runtime.storeFor(state.device)?.list() ?? []) {
     if (res.writableEnded) break;
     // In-flight rows (null status) replay as started.
