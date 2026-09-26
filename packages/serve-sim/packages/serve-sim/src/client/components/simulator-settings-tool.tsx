@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentProps,
@@ -8,10 +9,11 @@ import {
   type ReactNode,
 } from "react";
 import { Box, FoldHorizontal, Image, Laptop, Maximize, SlidersHorizontal } from "lucide-react";
+import { HOST_TIME_ZONE, supportedTimeZones, timeZoneOffsetLabel } from "../../time-zone";
 import { hostUiRequest } from "../utils/exec";
 import { parseRuntime } from "../utils/grid";
 import { CollapsibleSection } from "./collapsible-section";
-import { Select } from "./select";
+import { Select, type SelectOption } from "./select";
 import { SettingSwitch } from "./setting-switch";
 import { FOLD_POSE_OPTIONS, type HingeControlsProps } from "./hinge-controls";
 
@@ -34,6 +36,11 @@ export const TEXT_SIZE_CATEGORIES = [
 ] as const;
 
 const TEXT_SIZE_DEBOUNCE_MS = 250;
+const REQUEST_TIMEOUT_MS = 15_000;
+// A time-zone change waits out a SpringBoard restart.
+const RESTART_TIMEOUT_MS = 45_000;
+/** `getUiStatus` reports an option it could not read as this. */
+const UNREADABLE = "unsupported";
 
 type SettingsState = Record<string, string>;
 
@@ -51,7 +58,40 @@ const DEFAULT_STATE: SettingsState = {
   "reduce-transparency": "off",
   voiceover: "off",
   "hardware-keyboard": "on",
+  "time-zone": HOST_TIME_ZONE,
 };
+
+const HOST_TIME_ZONE_OPTION: SelectOption = { value: HOST_TIME_ZONE, label: "Host default" };
+
+let timeZoneOptionsCache: SelectOption[] | null = null;
+
+/** Memoized: formatting an offset for each of ~450 zones is not free. */
+export function timeZoneOptions(): SelectOption[] {
+  if (!timeZoneOptionsCache) {
+    const now = new Date();
+    timeZoneOptionsCache = [
+      HOST_TIME_ZONE_OPTION,
+      ...supportedTimeZones().map((zone) => {
+        const offset = timeZoneOffsetLabel(zone, now);
+        return { value: zone, label: offset ? `${zone.replace(/_/g, " ")} (${offset})` : zone };
+      }),
+    ];
+  }
+  return timeZoneOptionsCache;
+}
+
+/** Keeps a zone the CLI set that this browser does not list selectable. */
+export function timeZoneChoices(options: SelectOption[], current: string): SelectOption[] {
+  if (current === UNREADABLE) return [{ value: current, label: "Unavailable" }];
+  return options.some((o) => o.value === current) ? options : [...options, { value: current, label: current }];
+}
+
+/** Deferred past first paint so the offset formatting never lands on a page load. */
+function useTimeZoneOptions(): SelectOption[] {
+  const [built, setBuilt] = useState(timeZoneOptionsCache !== null);
+  useEffect(() => setBuilt(true), []);
+  return built ? timeZoneOptions() : [HOST_TIME_ZONE_OPTION];
+}
 
 const SELECT_OPTIONS: Record<string, Array<{ value: string; label: string }>> = {
   appearance: [
@@ -220,12 +260,16 @@ export function SettingSelect({
   options,
   disabled,
   onChange,
+  searchable,
+  searchPlaceholder,
 }: {
   label: string;
   value: string;
-  options: Array<{ value: string; label: string }>;
+  options: SelectOption[];
   disabled: boolean;
   onChange: (next: string) => void;
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }) {
   return (
     <Select
@@ -234,6 +278,8 @@ export function SettingSelect({
       options={options}
       disabled={disabled}
       onChange={onChange}
+      searchable={searchable}
+      searchPlaceholder={searchPlaceholder}
       className="bg-white/[0.06] border border-white/10 rounded-md text-white/90 text-[12px] py-0.5 px-2 min-w-0 max-w-[150px] disabled:text-white/40"
     />
   );
@@ -409,6 +455,13 @@ const I = {
       <path d="m11 8 2.3-2.3a2.4 2.4 0 0 1 3.404.004L18.6 7.6a2.4 2.4 0 0 1 .026 3.434L9.9 19.8" />
     </svg>
   ),
+  timeZone: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="M2 12h20" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+    </svg>
+  ),
   textSize: (
     <svg width="14" height="14" viewBox="0 0 52 34" fill="currentColor" stroke="none">
       <path d="M39.7266 33.0234C38.1484 33.0234 36.75 32.7266 35.5312 32.1328C34.3125 31.5391 33.3594 30.7109 32.6719 29.6484C32 28.5703 31.6641 27.3125 31.6641 25.875C31.6641 23.7812 32.4297 22.1094 33.9609 20.8594C35.5078 19.6094 37.7109 18.9062 40.5703 18.75L47.6016 18.3516V16.5C47.6016 15.0156 47.1328 13.8359 46.1953 12.9609C45.2578 12.0859 43.9531 11.6484 42.2812 11.6484C40.9062 11.6484 39.75 11.9453 38.8125 12.5391C37.875 13.1328 37.0938 14.0469 36.4688 15.2812C36.2656 15.6094 36.0156 15.8516 35.7188 16.0078C35.4219 16.1641 35.0781 16.2422 34.6875 16.2422C34.1562 16.2422 33.7109 16.0781 33.3516 15.75C33.0078 15.4219 32.8359 14.9922 32.8359 14.4609C32.8359 14.2266 32.8672 13.9766 32.9297 13.7109C33.0078 13.4453 33.1094 13.1797 33.2344 12.9141C33.875 11.4609 35.0156 10.3047 36.6562 9.44531C38.3125 8.58594 40.2266 8.15625 42.3984 8.15625C44.3203 8.15625 45.9844 8.49219 47.3906 9.16406C48.8125 9.82031 49.8984 10.75 50.6484 11.9531C51.4141 13.1562 51.7969 14.5703 51.7969 16.1953V30.9141C51.7969 31.5859 51.6094 32.1094 51.2344 32.4844C50.8594 32.8594 50.3672 33.0469 49.7578 33.0469C49.1641 33.0469 48.6797 32.8672 48.3047 32.5078C47.9297 32.1484 47.7344 31.6641 47.7188 31.0547V28.3594H47.6719C46.9844 29.7812 45.9062 30.9141 44.4375 31.7578C42.9844 32.6016 41.4141 33.0234 39.7266 33.0234ZM40.8047 29.6719C42.0703 29.6719 43.2109 29.4062 44.2266 28.875C45.2578 28.3438 46.0781 27.6172 46.6875 26.6953C47.2969 25.7734 47.6016 24.75 47.6016 23.625V21.3281L41.1328 21.75C39.4453 21.8594 38.1641 22.2734 37.2891 22.9922C36.4141 23.6953 35.9766 24.6094 35.9766 25.7344C35.9766 26.9219 36.4219 27.875 37.3125 28.5938C38.2031 29.3125 39.3672 29.6719 40.8047 29.6719ZM2.17969 33.0234C1.50781 33.0234 0.976562 32.8359 0.585938 32.4609C0.195312 32.0859 0 31.5781 0 30.9375C0 30.5312 0.0859375 30.0703 0.257812 29.5547L10.4062 2.41406C10.9844 0.804688 12.1016 0 13.7578 0C14.6172 0 15.3281 0.203125 15.8906 0.609375C16.4531 1.01562 16.875 1.625 17.1562 2.4375L27.2578 29.4844C27.4453 30 27.5391 30.4688 27.5391 30.8906C27.5391 31.5469 27.3359 32.0703 26.9297 32.4609C26.5234 32.8359 25.9766 33.0234 25.2891 33.0234C24.6328 33.0234 24.1094 32.875 23.7188 32.5781C23.3438 32.2812 23.0391 31.7891 22.8047 31.1016L13.8281 5.34375H13.6641L4.66406 31.1016C4.42969 31.7891 4.125 32.2812 3.75 32.5781C3.375 32.875 2.85156 33.0234 2.17969 33.0234ZM6.67969 23.7422C6.14844 23.7422 5.70312 23.5625 5.34375 23.2031C4.98438 22.8438 4.80469 22.3984 4.80469 21.8672C4.80469 21.3516 4.98438 20.9141 5.34375 20.5547C5.70312 20.1953 6.14844 20.0156 6.67969 20.0156H20.8594C21.375 20.0156 21.8125 20.1953 22.1719 20.5547C22.5312 20.9141 22.7109 21.3516 22.7109 21.8672C22.7109 22.3984 22.5312 22.8438 22.1719 23.2031C21.8125 23.5625 21.375 23.7422 20.8594 23.7422H6.67969Z" />
@@ -489,7 +542,7 @@ export function SimulatorSettingsTool({
     try {
       const status = await hostUiRequest(
         { device: udid },
-        { signal: AbortSignal.timeout(15_000) },
+        { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) },
       );
       if (status) setState(status);
       else setError("Unexpected simulator-settings reply");
@@ -517,10 +570,11 @@ export function SimulatorSettingsTool({
       setPending(option);
       setError(null);
       setState((s) => (s ? { ...s, [option]: value } : s));
+      const restarts = option === "time-zone";
       try {
         await hostUiRequest(
           { device: udid, option, value },
-          { signal: AbortSignal.timeout(15_000) },
+          { signal: AbortSignal.timeout(restarts ? RESTART_TIMEOUT_MS : REQUEST_TIMEOUT_MS) },
         );
       } catch (e) {
         setError(e instanceof Error ? e.message : `Failed to set ${option}`);
@@ -529,7 +583,8 @@ export function SimulatorSettingsTool({
         // successful sets and would yank the control backwards.
         void refresh();
       } finally {
-        setPending(null);
+        // A slower change still owns `pending`; a faster one must not clear it.
+        setPending((p) => (p === option ? null : p));
       }
     },
     [udid, refresh],
@@ -569,6 +624,13 @@ export function SimulatorSettingsTool({
       : shown["text-size"]?.startsWith("accessibility")
         ? TEXT_SIZE_CATEGORIES.length - 1
         : 3;
+
+  const timeZone = shown["time-zone"] ?? HOST_TIME_ZONE;
+  const zoneOptions = useTimeZoneOptions();
+  const zoneChoices = useMemo(() => timeZoneChoices(zoneOptions, timeZone), [zoneOptions, timeZone]);
+  // A restart leaves the simulator unusable for seconds, so nothing else may change meanwhile.
+  const restarting = pending === "time-zone";
+  const busy = (option: string) => !ready || restarting || pending === option;
 
   return (
     <CollapsibleSection
@@ -611,7 +673,7 @@ export function SimulatorSettingsTool({
               label="Appearance"
               value={shown.appearance ?? "light"}
               options={SELECT_OPTIONS.appearance!}
-              disabled={!ready || pending === "appearance"}
+              disabled={busy("appearance")}
               onChange={(v) => apply("appearance", v)}
             />
           </SettingRow>
@@ -621,7 +683,7 @@ export function SimulatorSettingsTool({
               label="Liquid Glass"
               value={shown["liquid-glass"] ?? "clear"}
               options={SELECT_OPTIONS["liquid-glass"]!}
-              disabled={!ready || pending === "liquid-glass"}
+              disabled={busy("liquid-glass")}
               onChange={(v) => apply("liquid-glass", v)}
             />
           </SettingRow>
@@ -631,7 +693,7 @@ export function SimulatorSettingsTool({
               label="Color Filter"
               value={shown["color-filter"] ?? "none"}
               options={SELECT_OPTIONS["color-filter"]!}
-              disabled={!ready || pending === "color-filter"}
+              disabled={busy("color-filter")}
               onChange={(v) => apply("color-filter", v)}
             />
           </SettingRow>
@@ -639,10 +701,25 @@ export function SimulatorSettingsTool({
           <SettingRow icon={I.textSize} label="Text Size">
             <TextSizeSlider
               value={textSizeIndex}
-              disabled={!ready}
+              disabled={!ready || restarting}
               onChange={applyTextSize}
             />
           </SettingRow>
+
+          <SettingRow icon={I.timeZone} label="Time Zone">
+            <SettingSelect
+              label="Time Zone"
+              value={timeZone}
+              options={zoneChoices}
+              disabled={busy("time-zone") || timeZone === UNREADABLE}
+              onChange={(v) => apply("time-zone", v)}
+              searchable
+              searchPlaceholder="Search zones…"
+            />
+          </SettingRow>
+          <div role="status" className="text-[11px] text-white/45 pl-[26px] -mt-1 empty:hidden">
+            {restarting ? "Restarting SpringBoard…" : ""}
+          </div>
 
           {TOGGLE_OPTIONS.map(({ key, label }) => (
             <SettingRow
@@ -665,7 +742,7 @@ export function SimulatorSettingsTool({
               <SettingSwitch
                 label={label}
                 checked={shown[key] === "on"}
-                disabled={!ready || pending === key}
+                disabled={busy(key)}
                 onChange={(next) => apply(key, next ? "on" : "off")}
               />
             </SettingRow>

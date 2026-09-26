@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { HOST_TIME_ZONE, normalizeTimeZone } from "../time-zone";
+import {
+  HOST_TIME_ZONE,
+  normalizeTimeZone,
+  supportedTimeZones,
+  timeZoneOffsetLabel,
+} from "../time-zone";
 
 describe("normalizeTimeZone", () => {
   test.each(["host", "HOST", "system", "default", "auto", "none", "reset", " host "])(
@@ -32,4 +37,24 @@ describe("normalizeTimeZone", () => {
       expect(normalizeTimeZone(value)).toBeNull();
     },
   );
+});
+
+describe("supportedTimeZones", () => {
+  test("covers the IANA database", () => {
+    const zones = supportedTimeZones();
+    expect(zones).toContain("UTC");
+    expect(zones).toContain("Asia/Tokyo");
+  });
+});
+
+describe("timeZoneOffsetLabel", () => {
+  test("reports the offset in effect at the given instant", () => {
+    expect(timeZoneOffsetLabel("America/New_York", new Date("2026-01-15T12:00:00Z"))).toBe("GMT-5");
+    expect(timeZoneOffsetLabel("America/New_York", new Date("2026-07-15T12:00:00Z"))).toBe("GMT-4");
+    expect(timeZoneOffsetLabel("Asia/Kolkata", new Date("2026-01-15T12:00:00Z"))).toBe("GMT+5:30");
+  });
+
+  test("is empty for a zone ICU does not know", () => {
+    expect(timeZoneOffsetLabel("Mars/Olympus_Mons")).toBe("");
+  });
 });

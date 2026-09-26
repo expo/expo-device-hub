@@ -1,6 +1,7 @@
 import {
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type KeyboardEvent,
@@ -66,7 +67,11 @@ export function Dropdown({
       : above >= margin
         ? above
         : Math.max(margin, window.innerHeight - popup.offsetHeight - margin);
-    if (top !== pos.top || left !== pos.left) setPos({ ...pos, top, left });
+    // Holding the first width keeps a filtered list from shrinking under the cursor.
+    const minWidth = Math.max(pos.minWidth, popup.offsetWidth);
+    if (top !== pos.top || left !== pos.left || minWidth !== pos.minWidth) {
+      setPos({ ...pos, top, left, minWidth });
+    }
   }, [open, pos]);
 
   useEffect(() => {
@@ -107,6 +112,12 @@ export function Dropdown({
       return;
     }
     if (!pos || focusedThisOpen.current) return;
+    const search = popupRef.current?.querySelector<HTMLInputElement>("input[type=search]");
+    if (search) {
+      focusedThisOpen.current = true;
+      search.focus();
+      return;
+    }
     const items = [...(popupRef.current?.querySelectorAll<HTMLButtonElement>("[role=option]") ?? [])];
     if (!items.length) return;
     focusedThisOpen.current = true;
@@ -204,6 +215,54 @@ export function DropdownOption({
   );
 }
 
+export type SelectOption = { value: string; label: string };
+
+const fold = (text: string) => text.toLowerCase().replace(/[_\s]+/g, " ");
+
+/** `_` and a space are interchangeable, so "los angeles" finds `America/Los_Angeles`. */
+export function filterSelectOptions(options: SelectOption[], query: string): SelectOption[] {
+  const needle = fold(query.trim());
+  if (!needle) return options;
+  return options.filter((o) => fold(`${o.label} ${o.value}`).includes(needle));
+}
+
+// Mounted with the popup, so the query resets itself every time the list opens.
+function FilteredOptions({
+  options,
+  value,
+  onChange,
+  placeholder,
+}: {
+  options: SelectOption[];
+  value: string;
+  onChange: (next: string) => void;
+  placeholder: string;
+}) {
+  const [query, setQuery] = useState("");
+  const visible = useMemo(() => filterSelectOptions(options, query), [options, query]);
+  return (
+    <>
+      {/* Negative offsets cancel the popup padding so the box covers rows passing under it. */}
+      <div className="sticky -top-1 -mt-1 -mx-1 px-1 pt-1 pb-1 bg-panel">
+        <input
+          type="search"
+          aria-label={placeholder}
+          placeholder={placeholder}
+          value={query}
+          onChange={(e) => setQuery((e.target as HTMLInputElement).value)}
+          className="w-full box-border bg-white/[0.06] border border-white/10 rounded-md text-white/90 text-[12px] font-[inherit] py-1 px-2 outline-none placeholder:text-white/40 focus:border-[#0a84ff] [&::-webkit-search-cancel-button]:appearance-none"
+        />
+      </div>
+      {visible.map((o) => (
+        <DropdownOption key={o.value} selected={o.value === value} onClick={() => onChange(o.value)}>
+          {o.label}
+        </DropdownOption>
+      ))}
+      {visible.length === 0 && <div className="px-2.5 py-1 text-white/45">No matches</div>}
+    </>
+  );
+}
+
 // Custom <select> replacement in the device-picker dropdown style.
 export function Select({
   label,
@@ -212,13 +271,18 @@ export function Select({
   disabled,
   onChange,
   className,
+  searchable,
+  searchPlaceholder = "Search…",
 }: {
   label: string;
   value: string;
-  options: Array<{ value: string; label: string }>;
+  options: SelectOption[];
   disabled?: boolean;
   onChange: (next: string) => void;
   className?: string;
+  /** For lists too long to scan. Adds a filter box that takes focus on open. */
+  searchable?: boolean;
+  searchPlaceholder?: string;
 }) {
   const selected = options.find((o) => o.value === value);
   return (
@@ -229,15 +293,24 @@ export function Select({
       className={className}
       closeOnSelect
     >
-      {options.map((o) => (
-        <DropdownOption
-          key={o.value}
-          selected={o.value === value}
-          onClick={() => onChange(o.value)}
-        >
-          {o.label}
-        </DropdownOption>
-      ))}
+      {searchable ? (
+        <FilteredOptions
+          options={options}
+          value={value}
+          onChange={onChange}
+          placeholder={searchPlaceholder}
+        />
+      ) : (
+        options.map((o) => (
+          <DropdownOption
+            key={o.value}
+            selected={o.value === value}
+            onClick={() => onChange(o.value)}
+          >
+            {o.label}
+          </DropdownOption>
+        ))
+      )}
     </Dropdown>
   );
 }
