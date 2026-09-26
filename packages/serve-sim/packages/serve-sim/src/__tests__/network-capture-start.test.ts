@@ -70,25 +70,42 @@ describe("enableNetworkCaptureForStartedDevice", () => {
 });
 
 describe("stopped-device capture cleanup retries", () => {
-  test("retries a failed cleanup until it succeeds, and drops it once the device boots again", async () => {
+  test("retries the failed session until it is gone, even after the device boots with capture off", async () => {
+    const sessions = new Map<string, object | null>([["RETRY-1", { id: "old-1" }]]);
     const attempts: string[] = [];
     let fail = true;
-    const disable = async (udid: string) => {
-      attempts.push(udid);
-      if (fail) throw new Error("capability state is locked");
+    const deps = {
+      session: (udid: string) => sessions.get(udid) ?? null,
+      disable: async (udid: string) => {
+        attempts.push(udid);
+        if (fail) throw new Error("capability state is locked");
+        sessions.set(udid, null);
+      },
     };
-    expect(await disableNetworkCaptureForStoppedDevice("RETRY-1", { disable })).toBe(false);
-    expect(await disableNetworkCaptureForStoppedDevice("RETRY-2", { disable })).toBe(false);
-
-    await retryPendingCaptureCleanup(null, { disable });
-    expect(attempts).toEqual(["RETRY-1", "RETRY-2"]);
+    expect(await disableNetworkCaptureForStoppedDevice("RETRY-1", deps)).toBe(false);
+    await retryPendingCaptureCleanup(deps);
+    expect(attempts).toEqual(["RETRY-1", "RETRY-1"]);
 
     fail = false;
-    await retryPendingCaptureCleanup(new Set(["RETRY-2"]), { disable });
-    expect(attempts).toEqual(["RETRY-1", "RETRY-2", "RETRY-1"]);
+    await retryPendingCaptureCleanup(deps);
+    await retryPendingCaptureCleanup(deps);
+    expect(attempts).toEqual(["RETRY-1", "RETRY-1", "RETRY-1"]);
+  });
 
-    await retryPendingCaptureCleanup(new Set(), { disable });
-    expect(attempts).toEqual(["RETRY-1", "RETRY-2", "RETRY-1"]);
+  test("leaves a newer session alone when the device restarted with capture on", async () => {
+    const sessions = new Map<string, object | null>([["RETRY-2", { id: "old-2" }]]);
+    const attempts: string[] = [];
+    const deps = {
+      session: (udid: string) => sessions.get(udid) ?? null,
+      disable: async (udid: string) => {
+        attempts.push(udid);
+        throw new Error("capability state is locked");
+      },
+    };
+    expect(await disableNetworkCaptureForStoppedDevice("RETRY-2", deps)).toBe(false);
+    sessions.set("RETRY-2", { id: "new-2" });
+    await retryPendingCaptureCleanup(deps);
+    expect(attempts).toEqual(["RETRY-2"]);
   });
 });
 
@@ -97,19 +114,19 @@ describe("overlapping cleanup retries", () => {
     let release!: () => void;
     const gate = new Promise<void>((done) => (release = done));
     let attempts = 0;
-    const slow = async () => {
-      attempts++;
-      await gate;
-      throw new Error("still locked");
-    };
-    expect(await disableNetworkCaptureForStoppedDevice("OVERLAP-1", { disable: async () => { throw new Error("locked"); } })).toBe(false);
-    const first = retryPendingCaptureCleanup(new Set(), { disable: slow });
-    const second = retryPendingCaptureCleanup(new Set(), { disable: slow });
+    const session = { id: "overlap" };
+    const base = { session: () => session };
+    expect(
+      await disableNetworkCaptureForStoppedDevice("OVERLAP-1", { ...base, disable: async () => { throw new Error("locked"); } }),
+    ).toBe(false);
+    const slow = { ...base, disable: async () => { attempts++; await gate; throw new Error("still locked"); } };
+    const first = retryPendingCaptureCleanup(slow);
+    const second = retryPendingCaptureCleanup(slow);
     await second;
     expect(attempts).toBe(1);
     release();
     await first;
-    await retryPendingCaptureCleanup(new Set(), { disable: async () => {} });
+    await retryPendingCaptureCleanup({ session: () => null });
   });
 });
 
