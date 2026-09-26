@@ -56,13 +56,16 @@ export function useClipboardToast(
         ? `Copied after relaunching ${relaunchedApp} to enable clipboard access`
         : "Copied from simulator";
       if (!text) {
-        renderToast(
-          "copied",
-          relaunchedApp
-            ? `Clipboard is empty after relaunching ${relaunchedApp}`
-            : "Simulator clipboard is empty",
-          COPY_TOAST_ID,
-        );
+        const emptyMessage = relaunchedApp
+          ? `Clipboard is empty after relaunching ${relaunchedApp}`
+          : "Simulator clipboard is empty";
+        // Clear the browser clipboard too, or the next paste would insert older text.
+        try {
+          await writeTextToBrowserClipboard("");
+          renderToast("copied", emptyMessage, COPY_TOAST_ID);
+        } catch {
+          renderToast("error", `${emptyMessage}. The browser clipboard still has older text`, COPY_TOAST_ID);
+        }
         return;
       }
 
