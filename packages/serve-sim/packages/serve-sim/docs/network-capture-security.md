@@ -44,7 +44,8 @@ serve-sim <udid> --network-capture --network-capture-field header,request-body
 
 Each body preview is capped at 512 KiB. The in-memory store retains at most 500 requests and allows
 16 MiB for stored headers and bodies. Full transfer sizes are recorded even when previews are truncated
-or omitted.
+or omitted. The session HAR records a request when its response arrives, so a request that is still in
+flight when 500 newer requests have started leaves the store first and is not recorded.
 
 Request and response bodies sent with `gzip`, `deflate`, or `br` content-encoding are decoded, and
 decoding stops at the 512 KiB cap, so a small compressed body cannot expand without limit. `br` uses
