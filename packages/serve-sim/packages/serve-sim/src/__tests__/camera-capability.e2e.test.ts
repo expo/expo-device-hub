@@ -59,16 +59,25 @@ function springboardPid(): string {
   expect(pid).toMatch(/^\d+$/);
   return pid;
 }
-function image(name: string, red: number, blue: number): string {
-  const bmp = Buffer.alloc(54 + 48);
+function image(name: string, red: number, blue: number, width = 4, height = 4): string {
+  const rowBytes = Math.ceil(width * 3 / 4) * 4;
+  const pixelBytes = rowBytes * height;
+  const bmp = Buffer.alloc(54 + pixelBytes);
   bmp.write("BM"); bmp.writeUInt32LE(bmp.length, 2); bmp.writeUInt32LE(54, 10);
-  bmp.writeUInt32LE(40, 14); bmp.writeInt32LE(4, 18); bmp.writeInt32LE(4, 22);
-  bmp.writeUInt16LE(1, 26); bmp.writeUInt16LE(24, 28); bmp.writeUInt32LE(48, 34);
-  for (let i = 54; i < bmp.length; i += 3) { bmp[i] = blue; bmp[i + 2] = red; }
+  bmp.writeUInt32LE(40, 14); bmp.writeInt32LE(width, 18); bmp.writeInt32LE(height, 22);
+  bmp.writeUInt16LE(1, 26); bmp.writeUInt16LE(24, 28); bmp.writeUInt32LE(pixelBytes, 34);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = 54 + y * rowBytes + x * 3;
+      bmp[i] = blue;
+      bmp[i + 2] = red;
+    }
+  }
   const path = join(scratch, name); writeFileSync(path, bmp); return path;
 }
 const red = image("red.bmp", 255, 0);
 const blue = image("blue.bmp", 0, 255);
+const landscapeRed = image("landscape-red.bmp", 255, 0, 16, 9);
 
 beforeAll(async () => {
   if (!ready) return;
@@ -295,6 +304,21 @@ describe.skipIf(!ready)("device-wide camera lifecycle", () => {
       simctl(["launch", udid!, APP, "-ServeSimFixtureGravityChange"]);
       await waitFor(() => lines(APP, "gravity").length > before + 1);
       expect(lines(APP, "gravity").at(-1)).toEndWith("\tresize");
+    } finally {
+      cli(["disable"]);
+    }
+  }, 60_000);
+  test("landscape image arrives in a portrait frame with opaque black padding", async () => {
+    try { simctl(["terminate", udid!, APP]); } catch {}
+    cli(["enable", "--file", landscapeRed]);
+    try {
+      const before = lines(APP, "fit").length;
+      simctl(["launch", udid!, APP, "-ServeSimFixtureLandscapeFit"]);
+      await waitFor(() => lines(APP, "fit").length > before);
+      expect(lines(APP, "size").at(-1)).toEndWith("\t720x1280");
+      expect(lines(APP, "frame").at(-1)).toEndWith("\t255,0,0");
+      expect(lines(APP, "edge").at(-1)).toEndWith("\t0,0,0,255");
+      expect(lines(APP, "fit").at(-1)).toEndWith("\t0,0,0,255|255,0,0,255");
     } finally {
       cli(["disable"]);
     }

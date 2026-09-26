@@ -410,6 +410,21 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
   if (![value isEqualToString:self.lastPixel]) {
     Record(@"frame", value);
     Record(@"gravity", self.preview.contentsGravity ?: @"");
+    Record(@"size", [NSString stringWithFormat:@"%zux%zu",
+        CVPixelBufferGetWidth(pixelBuffer), CVPixelBufferGetHeight(pixelBuffer)]);
+    const unsigned char *edge = (const unsigned char *)CVPixelBufferGetBaseAddress(pixelBuffer)
+        + 4 * CVPixelBufferGetBytesPerRow(pixelBuffer) + (CVPixelBufferGetWidth(pixelBuffer) / 2) * 4;
+    Record(@"edge", [NSString stringWithFormat:@"%u,%u,%u,%u", edge[2], edge[1], edge[0], edge[3]]);
+    if ([arguments containsObject:@"-ServeSimFixtureLandscapeFit"]) {
+      size_t height = CVPixelBufferGetHeight(pixelBuffer);
+      size_t stride = CVPixelBufferGetBytesPerRow(pixelBuffer);
+      size_t x = CVPixelBufferGetWidth(pixelBuffer) / 2;
+      const unsigned char *base = CVPixelBufferGetBaseAddress(pixelBuffer);
+      const unsigned char *bar = base + (height / 3) * stride + x * 4;
+      const unsigned char *inside = base + (height * 3 / 8) * stride + x * 4;
+      Record(@"fit", [NSString stringWithFormat:@"%u,%u,%u,%u|%u,%u,%u,%u",
+          bar[2], bar[1], bar[0], bar[3], inside[2], inside[1], inside[0], inside[3]]);
+    }
     if (!self.changedGravity && [NSProcessInfo.processInfo.arguments containsObject:@"-ServeSimFixtureGravityChange"]) {
       self.changedGravity = YES;
       self.preview.videoGravity = AVLayerVideoGravityResize;
