@@ -60,6 +60,23 @@ _Last updated: 2026-09-25 14:22. The integration is built, smoke-tested and comm
   - The Pro Max sim was shut down afterwards. The user's :8775 simstream and the 17 Pro on the Mini
     weren't touched.
   - The M4 is too busy (load 30–40, Docker) for clean runs; that's why the Mini was used (user approved).
+- **`simstream.sethwebster.com` is a direct public route to the Mac Mini** (set up 2026-09-26; the
+  Cloudflare tunnel is no longer used):
+  - **DNS:** an unproxied A record pointing at the home IP (`$SIMSTREAM_HOME_IP` at setup). The Mini's
+    `com.sethwebster.simstream-ddns` agent runs `~/simstream-live/deploy/cloudflare-ddns.sh` every 5 min,
+    using the zone token in `~/.config/simstream/cloudflare-token`, which came from the cloudflared
+    `cert.pem`.
+  - **Router (Verizon Fios, $SIMSTREAM_ROUTER_ADMIN):** port forwards `simstream-https` WAN 443 → $SIMSTREAM_MINI_LAN_IP:8443
+    and `simstream-http` WAN 80 → $SIMSTREAM_MINI_LAN_IP:80. The Mini's DHCP lease (MAC $SIMSTREAM_MINI_MAC, host
+    "seth-agent") is Static.
+  - **Caddy:** `com.sethwebster.simstream-caddy` serves HTTPS on 8443, because Tailscale serve holds *:443
+    and macOS won't let a non-root process bind a low port on a specific IP. :80 handles redirects and
+    HTTP-01. The certificate is Let's Encrypt.
+  - **simstream:** `com.sethwebster.simstream-live` runs the current build (`~/simstream-live`, unsigned;
+    the Mini's firewall is off) on :8766, for iPhone 17 Pro Max `B3AFC702…`. The user's pre-RTT instance
+    on :8775 is untouched.
+  - Logs are in `~/Library/Logs/simstream-{live,caddy,ddns}.log`. Deploy files are in
+    `~/Development/simstream/deploy/`.
 - **iPad link (tailnet only):** https://seth-webster-m4.$SIMSTREAM_TAILNET:8450/ serves `~/simstream-videos`
   (`npx http-server` on 127.0.0.1:8460, which supports byte ranges; `tailscale serve --https=8450`). Remove it
   with `tailscale serve --https=8450 off` and kill :8460.
