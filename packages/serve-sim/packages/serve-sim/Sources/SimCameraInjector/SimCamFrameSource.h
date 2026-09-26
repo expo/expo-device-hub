@@ -11,6 +11,7 @@
 - (void)removeOutput:(AVCaptureVideoDataOutput *)out;
 - (void)addPreviewLayer:(AVCaptureVideoPreviewLayer *)layer;
 - (void)removePreviewLayer:(AVCaptureVideoPreviewLayer *)layer;
+- (void)reapplyGravityToLayer:(AVCaptureVideoPreviewLayer *)layer;
 - (void)reapplyMirrorToLayers;
 
 - (CVPixelBufferRef)currentPixelBuffer CF_RETURNS_RETAINED;

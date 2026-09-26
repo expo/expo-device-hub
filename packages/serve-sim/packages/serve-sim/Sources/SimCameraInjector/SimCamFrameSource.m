@@ -180,6 +180,15 @@ static CGImageRef SimCamAcquireCachedCGImage(void) CF_RETURNS_RETAINED {
     [_lock unlock];
 }
 
+// UIImagePickerController's content layer is a plain CALayer with no videoGravity.
+static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
+    if (![layer isKindOfClass:[AVCaptureVideoPreviewLayer class]]) return kCAGravityResizeAspectFill;
+    AVLayerVideoGravity gravity = ((AVCaptureVideoPreviewLayer *)layer).videoGravity;
+    if ([gravity isEqualToString:AVLayerVideoGravityResizeAspectFill]) return kCAGravityResizeAspectFill;
+    if ([gravity isEqualToString:AVLayerVideoGravityResize]) return kCAGravityResize;
+    return kCAGravityResizeAspect;
+}
+
 - (void)addPreviewLayer:(AVCaptureVideoPreviewLayer *)layer {
     if (!layer) return;
     [_lock lock];
@@ -189,7 +198,7 @@ static CGImageRef SimCamAcquireCachedCGImage(void) CF_RETURNS_RETAINED {
     uint64_t generation = atomic_load(&gConnectionGeneration);
     CGImageRef primed = SimCamAcquireCachedCGImage();
     dispatch_async(dispatch_get_main_queue(), ^{
-        layer.contentsGravity = kCAGravityResizeAspectFill;
+        layer.contentsGravity = SimCamContentsGravity(layer);
         if (mirror) layer.transform = CATransform3DMakeScale(-1.f, 1.f, 1.f);
         if (primed) {
             if (SimCamDeviceIsConnected() && generation == atomic_load(&gConnectionGeneration))
@@ -209,6 +218,16 @@ static CGImageRef SimCamAcquireCachedCGImage(void) CF_RETURNS_RETAINED {
     [_lock unlock];
     if (!tracked) return;
     dispatch_async(dispatch_get_main_queue(), ^{ layer.contents = nil; });
+}
+
+- (void)reapplyGravityToLayer:(AVCaptureVideoPreviewLayer *)layer {
+    [_lock lock];
+    BOOL tracked = [_layers containsObject:layer];
+    [_lock unlock];
+    if (!tracked) return;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        layer.contentsGravity = SimCamContentsGravity(layer);
+    });
 }
 
 - (void)reapplyMirrorToLayers {
