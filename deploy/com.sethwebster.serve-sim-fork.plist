@@ -3,7 +3,8 @@
 <!-- The serve-sim fork with the simstream video engine, behind Caddy at simstream.sethwebster.com.
      --require-token: serve-sim's tools can act on the host (install apps, read simulator data, stop
      the server), so the page and every API/socket need the access token; SERVE_SIM_TOKEN pins it
-     (~/.config/simstream/serve-sim-token) so the shared link survives restarts. -->
+     (~/.config/simstream/serve-sim-token) so the shared link survives restarts. serve-sim prints the tokenized link at startup, so the
+     log is written by the shell under umask 077 (owner-only) rather than by launchd. -->
 <plist version="1.0">
 <dict>
 	<key>Label</key>
@@ -14,15 +15,11 @@
 	<array>
 		<string>/bin/sh</string>
 		<string>-c</string>
-		<string>U=B3AFC702-8CB5-45BF-A221-99740EC51B4B; xcrun simctl boot $U 2>/dev/null; xcrun simctl bootstatus $U -b >/dev/null; T=$(cat /Users/sethwebster/.config/simstream/serve-sim-token); SERVE_SIM_TOKEN=$T exec /Users/sethwebster/.asdf/installs/nodejs/24.14.0/bin/node dist/serve-sim.js --transport http --codec simstream --require-token --share-url "https://simstream.sethwebster.com/?token=$T" -p 3200 $U</string>
+		<string>umask 077; exec >>/Users/sethwebster/Library/Logs/serve-sim-fork.log 2>&amp;1; U=B3AFC702-8CB5-45BF-A221-99740EC51B4B; xcrun simctl boot $U 2>/dev/null; xcrun simctl bootstatus $U -b >/dev/null; T=$(cat /Users/sethwebster/.config/simstream/serve-sim-token); SERVE_SIM_TOKEN=$T exec /Users/sethwebster/.asdf/installs/nodejs/24.14.0/bin/node dist/serve-sim.js --transport http --codec simstream --require-token --share-url "https://simstream.sethwebster.com/?token=$T" -p 3200 $U</string>
 	</array>
 	<key>RunAtLoad</key>
 	<true/>
 	<key>KeepAlive</key>
 	<true/>
-	<key>StandardOutPath</key>
-	<string>/Users/sethwebster/Library/Logs/serve-sim-fork.log</string>
-	<key>StandardErrorPath</key>
-	<string>/Users/sethwebster/Library/Logs/serve-sim-fork.log</string>
 </dict>
 </plist>
