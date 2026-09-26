@@ -25,6 +25,7 @@ import { logBufferCache } from "./log-buffer";
 import { crashRuntime } from "./crash/runtime";
 import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
+import { runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
 import {
   assertKnownCapabilities,
@@ -68,6 +69,7 @@ import { sendHingeAngleToWs } from "./hinge-command";
 
 // Budget for capture teardown and capability disarming together.
 const SHUTDOWN_TIMEOUT_MS = 20_000;
+const CAPTURE_SHUTDOWN_SHARE_MS = 12_000;
 const __dirname = dirnameOf(import.meta.url);
 
 // Stamped in at build time (see build.ts), mirroring __PREVIEW_HTML_B64__. In
@@ -1898,14 +1900,16 @@ async function serve(
     console.log("");
   }
 
-  // Capture and capability teardown share one shutdown budget.
+  // Capture and capability teardown share one shutdown budget, but capture gets only part of it:
+  // a stalled capture step must not use up the time disarming the devices needs.
   const shutdown = async () => {
     sessionStopping = true;
-    const teardown = (async () => {
-      await capture.captureRuntime.disableAll().catch(() => {});
-      await disarmDevicesArmedHereAsync();
-    })();
-    await Promise.race([teardown, new Promise((done) => setTimeout(done, SHUTDOWN_TIMEOUT_MS))]);
+    await runShutdownSteps({
+      stopCapture: () => capture.captureRuntime.disableAll(),
+      disarm: () => disarmDevicesArmedHereAsync(),
+      totalMs: SHUTDOWN_TIMEOUT_MS,
+      captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
+    });
     clearAll();
     process.exit(0);
   };
