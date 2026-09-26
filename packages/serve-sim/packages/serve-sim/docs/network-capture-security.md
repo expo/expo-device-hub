@@ -5,9 +5,10 @@ headers, query values, and bodies require explicit opt-in because they can conta
 
 ## How it works
 
-The UI reboot action turns capture on or off per device. `--network-capture` only defaults capture on
-for devices serve-sim boots; reconnecting never overrides an explicit choice. Capture starts after the
-device finishes booting, so apps that launch during boot are not captured until they are relaunched.
+The UI reboot action turns capture on or off per device. `--network-capture` defaults capture on for the
+devices serve-sim serves, including ones already booted; reconnecting never overrides an explicit
+choice. Capture starts after the device finishes booting, so apps that launch during boot are not
+captured until they are relaunched.
 
 Enabling capture starts a local mitmproxy, trusts its certificate authority in the simulator, and sets
 `DYLD_INSERT_LIBRARIES` in the simulator's launchd. Supported `NSURLSession` configurations in
@@ -121,8 +122,10 @@ While capture is on, the Activity panel's Network rate comes from the proxy, whi
 apart. It then counts every captured app on the device and is labeled "all apps".
 
 Use `--require-token` when exposing the standalone server beyond loopback. Without it, the preview is
-public and includes the token used by capture and control routes. Embedded hosts can enable the broader
-gate with `requirePreviewToken` and must protect access to their preview page.
+public and includes the token used by capture and control routes. So on a non-loopback `--host` without
+`--require-token`, serve-sim refuses network capture: it exits for `--network-capture`, and the
+preview's capture controls report that capture needs `--require-token`. Embedded hosts can enable the
+broader gate with `requirePreviewToken` and must protect access to their preview page.
 
 Capture does not upload artifacts automatically. A hosted deployment's collection of temporary files,
 downloads, or process logs has its own access and retention rules.
