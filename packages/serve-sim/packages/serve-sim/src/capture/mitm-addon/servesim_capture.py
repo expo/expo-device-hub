@@ -36,6 +36,11 @@ TIMEOUT_SECONDS = 2
 # serve-sim sends SIGKILL 3 s after SIGTERM, so the final flush must finish sooner.
 SHUTDOWN_SECONDS = 2.5
 _shutdown_deadline = None
+# Shutdown loses a record when its send fails, when it is still being sent, or when it is still
+# queued. The lock keeps the in-flight flag and the failure count consistent for done().
+_delivery_lock = threading.Lock()
+_in_flight = False
+_shutdown_failures = 0
 QUEUE_BYTE_LIMIT = 32 * 1024 * 1024
 # Bound metadata independently of the body cap.
 MAX_URL_CHARS = 4096
@@ -68,12 +73,13 @@ def _send(path, body):
         timeout = max(0.05, min(timeout, _shutdown_deadline - time.monotonic()))
     try:
         _opener.open(request, timeout=timeout).close()
+        return True
     except Exception:
-        pass
+        return False
 
 
 def _drain():
-    global _queued_bytes
+    global _queued_bytes, _in_flight, _shutdown_failures
     while True:
         item = _outbox.get()
         if item is None:
@@ -81,7 +87,13 @@ def _drain():
         path, body, size = item
         with _queued_lock:
             _queued_bytes -= size
-        _send(path, body)
+        with _delivery_lock:
+            _in_flight = True
+        delivered = _send(path, body)
+        with _delivery_lock:
+            _in_flight = False
+            if not delivered and _shutdown_deadline is not None:
+                _shutdown_failures += 1
 
 
 _reporter = threading.Thread(target=_drain, name="servesim-capture-reporter", daemon=True)
@@ -127,9 +139,13 @@ def done():
     _shutdown_deadline = time.monotonic() + SHUTDOWN_SECONDS
     _outbox.put_nowait(None)
     _reporter.join(timeout=SHUTDOWN_SECONDS)
-    if _reporter.is_alive():
-        left = max(0, _outbox.qsize() - 1)
-        print(f"[servesim-capture] stopped with {left} capture record(s) not delivered", file=sys.stderr)
+    with _delivery_lock:
+        alive = _reporter.is_alive()
+        # While the reporter runs, the end-of-queue marker is still queued behind the records.
+        queued = max(0, _outbox.qsize() - 1) if alive else 0
+        lost = _shutdown_failures + queued + (1 if alive and _in_flight else 0)
+    if lost:
+        print(f"[servesim-capture] stopped with {lost} capture record(s) not delivered", file=sys.stderr)
 
 
 def _headers_of(message):

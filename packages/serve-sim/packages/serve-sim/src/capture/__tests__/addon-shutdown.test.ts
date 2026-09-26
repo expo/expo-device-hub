@@ -22,7 +22,7 @@ describe("forwardAddonDiagnostics", () => {
 });
 
 (hasPython ? describe : describe.skip)("addon shutdown", () => {
-  test("stops inside the kill window and reports records a stalled control server never took", async () => {
+  async function shutDownWithStalledControl(records: number): Promise<void> {
     // Accepts connections and never answers, so every send runs until its timeout.
     const stalled: Server = createServer(() => {});
     await new Promise<void>((done) => stalled.listen(0, "127.0.0.1", done));
@@ -32,7 +32,7 @@ describe("forwardAddonDiagnostics", () => {
         "import importlib.util, sys, time",
         `spec = importlib.util.spec_from_file_location("addon", ${JSON.stringify(ADDON)})`,
         "addon = importlib.util.module_from_spec(spec); spec.loader.exec_module(addon)",
-        "for i in range(5): addon._post('/response', {'id': str(i)})",
+        `for i in range(${records}): addon._post('/response', {'id': str(i)})`,
         "started = time.monotonic(); addon.done()",
         "print(f'elapsed={time.monotonic() - started:.2f}')",
       ].join("\n");
@@ -47,10 +47,20 @@ describe("forwardAddonDiagnostics", () => {
       expect(code).toBe(0);
       const elapsed = Number(/elapsed=([\d.]+)/.exec(stdout)?.[1]);
       expect(elapsed).toBeLessThan(3);
-      expect(stderr).toMatch(/\[servesim-capture\] stopped with [1-9]\d* capture record\(s\) not delivered/);
+      // Every record was lost, whether its send timed out, was still running, or never started.
+      expect(stderr).toContain(`[servesim-capture] stopped with ${records} capture record(s) not delivered`);
     } finally {
       stalled.closeAllConnections();
       await new Promise<void>((done) => stalled.close(() => done()));
     }
+  }
+
+  test("stops inside the kill window and reports queued records a stalled control server never took", async () => {
+    await shutDownWithStalledControl(5);
+  }, 20_000);
+
+  test("reports a record whose send timed out even when the reporter finished in time", async () => {
+    // One send times out after 2 s, inside the 2.5 s window, so the reporter exits before done() returns.
+    await shutDownWithStalledControl(1);
   }, 20_000);
 });
