@@ -1,5 +1,6 @@
 import Foundation
 import IOSurface
+import CoreVideo
 import SimBridge
 
 struct SimStreamError: Error, CustomStringConvertible {
@@ -96,6 +97,21 @@ do {
     let sourceWidth = IOSurfaceGetWidth(framebuffer), sourceHeight = IOSurfaceGetHeight(framebuffer)
     let width = even(Double(sourceWidth) * options.scale), height = even(Double(sourceHeight) * options.scale)
     log("attached to \(sim.name) (\(sim.runtimeName)) \(sim.udid) — framebuffer \(sourceWidth)×\(sourceHeight)")
+    if ProcessInfo.processInfo.environment["SIMSTREAM_PROBE_FORMAT"] != nil {
+        let format = IOSurfaceGetPixelFormat(framebuffer)
+        let fourcc = String((0..<4).map { Character(UnicodeScalar(UInt8((format >> (24 - 8 * $0)) & 0xff))) })
+        let colorSpace = IOSurfaceCopyValue(framebuffer, kIOSurfaceColorSpace)
+        log("framebuffer format '\(fourcc)' (0x\(String(format, radix: 16))), \(IOSurfaceGetBytesPerElement(framebuffer)) bytes/pixel, "
+            + "planes \(IOSurfaceGetPlaneCount(framebuffer)), color space: \(colorSpace.map { "\($0)" } ?? "none")")
+        var pb: Unmanaged<CVPixelBuffer>?
+        if CVPixelBufferCreateWithIOSurface(nil, framebuffer, nil, &pb) == kCVReturnSuccess, let buffer = pb?.takeRetainedValue() {
+            let cs = CVImageBufferGetColorSpace(buffer)?.takeUnretainedValue()
+            log("pixel buffer color space: \(cs.flatMap { $0.name as String? } ?? cs.map { "\($0)" } ?? "none")")
+            log("attachments: \(CVBufferCopyAttachments(buffer, .shouldPropagate).map { $0 as NSDictionary } ?? [:])")
+        }
+        if let all = IOSurfaceCopyAllValues(framebuffer) { log("surface values: \(all)") }
+        exit(0)
+    }
 
     let maxBitrate = Int(options.bitrateMbps * 1_000_000)
     let pump = try FramePump(sim: sim, width: width, height: height, fps: options.fps,

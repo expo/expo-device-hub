@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The public simstream: boots its simulator if needed, then serves it on 127.0.0.1-reachable :8766. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.sethwebster.simstream-live</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/bin/sh</string>
+		<string>-c</string>
+		<string>xcrun simctl boot B3AFC702-8CB5-45BF-A221-99740EC51B4B 2>/dev/null; xcrun simctl bootstatus B3AFC702-8CB5-45BF-A221-99740EC51B4B -b >/dev/null; exec /Users/sethwebster/simstream-live/.build/release/simstream --udid B3AFC702-8CB5-45BF-A221-99740EC51B4B --port 8766</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/Users/sethwebster/Library/Logs/simstream-live.log</string>
+	<key>StandardErrorPath</key>
+	<string>/Users/sethwebster/Library/Logs/simstream-live.log</string>
+</dict>
+</plist>
