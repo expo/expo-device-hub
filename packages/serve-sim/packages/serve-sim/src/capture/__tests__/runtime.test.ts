@@ -292,6 +292,22 @@ describe("capture runtime", () => {
     expect(noDylib.metaFor(UDID).attachment).toBe("not-enabled");
   });
 
+  test("disableAll finishes every device before it reports a failure", async () => {
+    const OTHER = "ABCD1234-0000-0000-0000-00000000FFFF";
+    const { runtime } = harness({
+      clearInjection: async (udid) => {
+        if (udid === UDID) throw new Error("device already shut down");
+      },
+    });
+    await runtime.enableForDevice(UDID);
+    await runtime.enableForDevice(OTHER);
+
+    const error = await runtime.disableAll().catch((e) => e);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors.map((e) => (e as Error).message)).toEqual(["device already shut down"]);
+    expect(runtime.storeFor(OTHER)).toBeNull();
+  });
+
   test("rejects when the proxy never starts, after publishing failed meta", async () => {
     const { runtime } = harness({
       startProxy: async () => {

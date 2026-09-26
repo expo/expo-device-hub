@@ -2308,7 +2308,14 @@ Examples:
           for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
             process.on(signal, async () => {
               sessionStopping = true;
-              await stopNetworkCapture();
+              // A failed capture teardown must not keep the devices armed.
+              try {
+                await stopNetworkCapture();
+              } catch (error) {
+                console.error(
+                  `Network capture teardown failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+              }
               await disarmDevicesArmedHereAsync();
               if (process.listenerCount(signal) > 1) return;
               process.exit(0);

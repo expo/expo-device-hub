@@ -300,9 +300,14 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
 
     disableForDevice: disableDevice,
 
+    /** Disable every device, waiting for all of them; rejects with every failure once all settle. */
     async disableAll(): Promise<void> {
       const devices = new Set([...byUdid.keys(), ...operations.devices()]);
-      await Promise.all([...devices].map(disableDevice));
+      const results = await Promise.allSettled([...devices].map(disableDevice));
+      const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+      if (failures.length > 0) {
+        throw new AggregateError(failures, `Could not disable network capture on ${failures.length} device(s).`);
+      }
     },
 
     subscribe(udid: string, listener: (event: CaptureEvent) => void): { meta: CaptureMeta; unsubscribe: () => void } {
