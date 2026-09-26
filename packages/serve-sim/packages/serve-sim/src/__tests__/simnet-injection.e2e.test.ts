@@ -82,9 +82,12 @@ function terminateProbeApp(): void {
 
 let appDir = "";
 let tempState: ReturnType<typeof useTempStateDir>;
+// Another tool on this simulator may rely on its insert; the suite restores it when it finishes.
+let insertBefore = "";
 
 describeOrSkip("SimNetProxy injection (real simulator)", () => {
   beforeAll(() => {
+    insertBefore = readInsert(udid!) ?? "";
     spawnSync("xcrun", ["simctl", "spawn", udid!, "launchctl", "unsetenv", "DYLD_INSERT_LIBRARIES"], { stdio: "ignore" });
     tempState = useTempStateDir();
     appDir = mkdtempSync(join(tmpdir(), "simnet-probe-"));
@@ -108,7 +111,12 @@ describeOrSkip("SimNetProxy injection (real simulator)", () => {
     try {
       expect(readInsert(udid!)).toBe("");
       expect(execFileSync("xcrun", ["simctl", "spawn", udid!, "launchctl", "getenv", "SIMNET_PROXY_PORT_FILE"], { encoding: "utf8" }).trim()).toBe("");
-    } finally { tempState.restore(); }
+    } finally {
+      if (insertBefore) {
+        spawnSync("xcrun", ["simctl", "spawn", udid!, "launchctl", "setenv", "DYLD_INSERT_LIBRARIES", insertBefore], { stdio: "ignore" });
+      }
+      tempState.restore();
+    }
   }, 60_000);
 
   it(
