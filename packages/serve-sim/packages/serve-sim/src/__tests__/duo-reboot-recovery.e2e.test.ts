@@ -1,0 +1,163 @@
+import { expect, test } from "bun:test";
+import { execFileSync, spawnSync } from "child_process";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { parseDetachState } from "./detach-state";
+import { freePortAsync } from "./helpers";
+import type { ServeSimDeviceState } from "../state";
+
+// Covers a reboot through the preview's shutdown and start controls, which
+// keep the server PID but open a new capture session. A plain `simctl` reboot
+// behind a live session is a separate path and is not covered here.
+// Explicit opt-in: this shuts down and reboots the pinned simulator. Run only
+// on a dedicated iPhone Duo after building serve-sim and its launch fixture.
+// SERVE_SIM_TEST_UDID=<Duo UDID> SERVE_SIM_DUO_REBOOT_E2E=1 bun run test:e2e -- \
+//   packages/serve-sim/src/__tests__/duo-reboot-recovery.e2e.test.ts
+const enabled = process.env.SERVE_SIM_DUO_REBOOT_E2E === "1";
+const udid = process.env.SERVE_SIM_TEST_UDID?.trim();
+const CLI = join(import.meta.dir, "../../dist/serve-sim.js");
+const FIXTURE = join(import.meta.dir, "../../dist/capability-loader/ServeSimLaunchFixture.app");
+const APP = "dev.expo.serve-sim.launch-fixture";
+
+function simctl(...args: string[]): string {
+  return execFileSync("xcrun", ["simctl", ...args], {
+    encoding: "utf8", stdio: "pipe", timeout: args[0] === "bootstatus" ? 180_000 : 60_000,
+  });
+}
+
+function bootedDuo(device: string): boolean {
+  const listing = JSON.parse(simctl("list", "devices", "booted", "-j")) as {
+    devices: Record<string, { name: string; udid: string }[]>;
+  };
+  return Object.values(listing.devices).flat().some((sim) => sim.udid === device && sim.name.includes("iPhone Duo"));
+}
+
+async function waitFor(check: () => boolean | Promise<boolean>, timeoutMs: number, message: string): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await Bun.sleep(250);
+  }
+  throw new Error(message);
+}
+
+async function gridPost(serverUrl: string, action: "shutdown" | "start", device: string): Promise<void> {
+  const response = await fetch(`${serverUrl}/grid/api/${action}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ udid: device }),
+    signal: AbortSignal.timeout(action === "start" ? 190_000 : 35_000),
+  });
+  if (!response.ok) throw new Error(`grid ${action} failed: ${response.status} ${await response.text()}`);
+}
+
+async function readTwoJpegFrames(url: string): Promise<void> {
+  const abort = new AbortController();
+  const timeout = setTimeout(() => abort.abort(), 15_000);
+  try {
+    const response = await fetch(url, { signal: abort.signal });
+    if (!response.ok || !response.body) throw new Error(`MJPEG unavailable: ${response.status}`);
+    const reader = response.body.getReader();
+    let previous = -1;
+    let starts = 0;
+    let ends = 0;
+    let bytes = 0;
+    while (ends < 2 && bytes < 8_000_000) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.length;
+      for (const byte of value) {
+        if (previous === 0xff && byte === 0xd8) starts++;
+        if (previous === 0xff && byte === 0xd9 && starts > ends) ends++;
+        previous = byte;
+      }
+    }
+    if (ends < 2) throw new Error(`MJPEG stopped after ${ends} JPEG frames`);
+  } finally {
+    clearTimeout(timeout);
+    abort.abort();
+  }
+}
+
+test.skipIf(!enabled)("Duo main capture and HID recover after a preview reboot in the same server PID", async () => {
+  if (!udid) throw new Error("set SERVE_SIM_TEST_UDID to the dedicated iPhone Duo UDID");
+  if (!bootedDuo(udid)) throw new Error(`${udid} must be a booted iPhone Duo`);
+  expect(existsSync(CLI), "build serve-sim first").toBe(true);
+  expect(existsSync(FIXTURE), "build the launch fixture first").toBe(true);
+
+  const stateDir = mkdtempSync(join(tmpdir(), "serve-sim-duo-reboot-"));
+  const env = { ...process.env, SERVE_SIM_STATE_DIR: stateDir, SERVE_SIM_DEBUG_HID: "1" };
+  const cli = (...args: string[]) => execFileSync("node", [CLI, ...args], {
+    env, encoding: "utf8", stdio: "pipe", timeout: 120_000,
+  });
+  let fixtureLog = "";
+  const lines = () => {
+    try { return readFileSync(fixtureLog, "utf8").split("\n").filter(Boolean); }
+    catch { return []; }
+  };
+  try {
+    simctl("install", udid, FIXTURE);
+    fixtureLog = join(simctl("get_app_container", udid, APP, "data").trim(), "Documents/launches.tsv");
+    const launchFixture = async () => {
+      const start = lines().length;
+      try { simctl("terminate", udid, APP); } catch {}
+      simctl("launch", udid, APP, "--input-test");
+      await waitFor(() => lines().slice(start).some((line) => line.startsWith("input-ready\t")),
+        30_000, "input fixture never reached the foreground");
+    };
+    const tapFixture = async () => {
+      const start = lines().length;
+      cli("tap", "0.5", "0.5", "-d", udid);
+      await waitFor(() => {
+        const fresh = lines().slice(start);
+        return fresh.some((line) => line.startsWith("touch-began\t")) &&
+          fresh.some((line) => line.startsWith("touch-ended\t"));
+      }, 15_000, "serve-sim tap did not reach UIKit");
+    };
+
+    const port = await freePortAsync();
+    const detach = spawnSync("node", [CLI, "--detach", "-p", String(port), udid], {
+      env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], timeout: 120_000,
+    });
+    if (detach.status !== 0) throw new Error(`serve-sim --detach failed: ${detach.stderr}`);
+    const state = parseDetachState<ServeSimDeviceState>(detach.stdout);
+    const pid = (JSON.parse(readFileSync(join(stateDir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState).pid;
+    const frames = async () => readTwoJpegFrames(state.streamUrl);
+    const liveFrames = async (message: string) => waitFor(async () => {
+      try { await frames(); return true; } catch { return false; }
+    }, 90_000, message);
+
+    await liveFrames("no live main MJPEG frames before reboot");
+    await launchFixture();
+    await tapFixture(); // Prime the old boot's HID capability before rebooting.
+
+    // Reboot through the preview's own controls: shutdown closes the session,
+    // and start boots the device so the next stream opens a fresh capture.
+    await gridPost(state.url, "shutdown", udid);
+    await gridPost(state.url, "start", udid);
+
+    await liveFrames("main MJPEG did not recover after Duo reboot");
+    await launchFixture();
+    await tapFixture();
+    expect((JSON.parse(readFileSync(join(stateDir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState).pid).toBe(pid);
+    process.kill(pid, 0);
+  } catch (err) {
+    // Keep the evidence that the finally block is about to delete.
+    let serverLog = "";
+    try { serverLog = readFileSync(join(stateDir, `server-${udid}.log`), "utf8"); } catch {}
+    console.error(`--- server log (tail) ---\n${serverLog.split("\n").slice(-80).join("\n")}`);
+    console.error(`--- fixture log (tail) ---\n${lines().slice(-20).join("\n")}`);
+    throw err;
+  } finally {
+    try { cli("--kill", udid); } catch {}
+    let booted = false;
+    try { booted = bootedDuo(udid); } catch {}
+    if (!booted) {
+      try { simctl("boot", udid); simctl("bootstatus", udid, "-b"); } catch {}
+    }
+    try { simctl("terminate", udid, APP); } catch {}
+    try { simctl("uninstall", udid, APP); } catch {}
+    rmSync(stateDir, { recursive: true, force: true });
+  }
+}, 360_000);
