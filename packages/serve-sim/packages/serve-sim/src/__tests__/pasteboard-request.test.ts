@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, promises as fs, readFileSync, readdirSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { clipboardCapability, pasteboardTarget, pasteTextIntoSim, requestInjectedPasteboard, writeSimPasteboard } from "../sim-pasteboard";
+import { clipboardCapability, copyFromSim, pasteboardTarget, pasteTextIntoSim, requestInjectedPasteboard, writeSimPasteboard } from "../sim-pasteboard";
 import { withShimsAsync } from "./helpers";
 
 function container(): string {
@@ -160,6 +160,42 @@ describe("writeSimPasteboard", () => {
         }
         await Promise.all([first, second]);
         expect(readFileSync(log, "utf8")).toBe("alpha\nbeta\n");
+      });
+    } finally {
+      release();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("copy holds the device lock from the shortcut through the read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-copy-lock-test-"));
+    const board = join(dir, "pasteboard");
+    const quoted = "'" + board.replaceAll("'", "'\\''") + "'";
+    // A one-slot simulator pasteboard: pbpaste prints it, pbcopy replaces it.
+    const xcrun = `#!/bin/sh\nif [ "$2" = pbpaste ]; then cat ${quoted}; else cat > ${quoted}; fi\n`;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let shortcutStarted!: () => void;
+    const shortcut = new Promise<void>((resolve) => { shortcutStarted = resolve; });
+    try {
+      await withShimsAsync({ xcrun }, async () => {
+        const udid = `COPY-LOCK-TEST-${process.pid}`;
+        await writeSimPasteboard(udid, "alpha");
+        const copied = copyFromSim(udid, async () => {
+          shortcutStarted();
+          await gate;
+        });
+        await shortcut;
+        const other = writeSimPasteboard(udid, "beta");
+        try {
+          await Bun.sleep(100);
+          expect(readFileSync(board, "utf8")).toBe("alpha");
+        } finally {
+          release();
+        }
+        expect((await copied).text).toBe("alpha");
+        await other;
+        expect(readFileSync(board, "utf8")).toBe("beta");
       });
     } finally {
       release();

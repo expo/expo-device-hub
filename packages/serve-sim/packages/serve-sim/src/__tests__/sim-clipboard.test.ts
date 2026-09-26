@@ -8,7 +8,6 @@ import {
   pasteRequestFits,
   simPasteHidEvents,
   simSelectAllHidEvents,
-  trackHeldModifiers,
 } from "../client/utils/sim-clipboard";
 
 const usage = (code: string): number => {
@@ -102,33 +101,6 @@ describe("sim paste HID", () => {
       { type: "up", usage: KeyV },
       { type: "down", usage: AltRight },
     ]);
-  });
-});
-
-describe("trackHeldModifiers", () => {
-  const ControlLeft = usage("ControlLeft");
-  const ControlRight = usage("ControlRight");
-  const ShiftLeft = usage("ShiftLeft");
-  const key = (code: string, flags: { ctrlKey?: boolean; shiftKey?: boolean; altKey?: boolean } = {}) => ({
-    code,
-    ctrlKey: false,
-    shiftKey: false,
-    altKey: false,
-    ...flags,
-  });
-
-  test("follows each modifier key on its own", () => {
-    const held = new Set<number>();
-    trackHeldModifiers(held, key("ControlLeft", { ctrlKey: true }), "down");
-    trackHeldModifiers(held, key("ControlRight", { ctrlKey: true }), "down");
-    trackHeldModifiers(held, key("ControlLeft", { ctrlKey: true }), "up");
-    expect([...held]).toEqual([ControlRight]);
-  });
-
-  test("drops a modifier whose flag is off, as after a keyup the page missed", () => {
-    const held = new Set<number>([ControlLeft, ShiftLeft]);
-    trackHeldModifiers(held, key("KeyA", { shiftKey: true }), "down");
-    expect([...held]).toEqual([ShiftLeft]);
   });
 });
 
@@ -240,6 +212,13 @@ describe("readSimClipboard", () => {
       ]);
       },
     );
+  });
+
+  test("asks the server to copy first with copy", async () => {
+    await withStubs(Response.json({ ok: true, text: "alpha" }), async (requests) => {
+      expect(await readSimClipboard("UDID-1", { copy: true })).toEqual({ text: "alpha", relaunchedApp: null });
+      expect(requests.map((request) => request.input)).toEqual(["/api/pasteboard?device=UDID-1&copy=1"]);
+    });
   });
 
   test("surfaces the endpoint's own error message", async () => {

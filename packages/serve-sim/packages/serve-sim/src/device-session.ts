@@ -28,7 +28,7 @@ import {
   type NativeUnsubscribe,
 } from "./native";
 import { isSoftwareKeyboardVisible } from "./ax";
-import { isLiftedModifier, simPasteHidEvents } from "./client/utils/sim-clipboard";
+import { isLiftedModifier, simCopyHidEvents, simPasteHidEvents } from "./client/utils/sim-clipboard";
 import { HID_USAGE_BY_CODE } from "./client/utils/hid";
 import { MAX_PASTEBOARD_TEXT_BYTES, pasteTextIntoSim } from "./sim-pasteboard";
 import { debugKeyboard } from "./debug";
@@ -1246,44 +1246,61 @@ export class DeviceSession {
     return axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
   }
 
+  /** Press Command+V for one viewer's paste; see `sendCommandShortcut`. */
+  private sendPasteShortcut(ws: HidSocket): Promise<void> {
+    return this.sendCommandShortcut("KeyV", ws);
+  }
+
+  /** Press Command+C for a copy that the pasteboard route runs; no viewer socket owns its keys. */
+  async sendCopyShortcut(): Promise<void> {
+    if (this.phase !== "running" || this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+    await this.sendCommandShortcut("KeyC", null);
+  }
+
   /**
-   * Press Command+V for one viewer's paste.
+   * Press Command with `code`.
    *
-   * The chord has to match what the simulator currently sees, not what this viewer holds.
+   * The chord has to match what the simulator currently sees, not what one viewer holds.
    * `activeHidKeyUsageCounts` is device-wide, so another viewer's Control or Shift is still
    * down at the simulator and would turn Command+V into a different shortcut. Those modifiers
    * are lifted at the HID layer only and put back afterwards: their owners never released them,
-   * so the ownership counts must not change. A V someone already holds would absorb the tap, so
-   * it is lifted too, but not put back: pressing it again would type a "v" after the paste. Its
-   * owner's next V press or release still reaches the simulator. Otherwise Command and V go
-   * through `updateHidKey`, which gives this socket's cleanup a way to release them on a
-   * disconnect.
+   * so the ownership counts must not change. A shortcut key someone already holds would absorb
+   * the tap, so it is lifted too, but not put back: pressing it again would type the letter
+   * after the paste. Its owner's next press or release still reaches the simulator.
+   *
+   * With a socket, Command and the key go through `updateHidKey`, which gives that socket's
+   * cleanup a way to release them on a disconnect. Without one, the chord releases them itself.
    */
-  private async sendPasteShortcut(ws: HidSocket): Promise<void> {
-    if (!this.hidSockets.has(ws)) throw new Error("Clipboard viewer disconnected");
-    const pasteKey = HID_USAGE_BY_CODE.KeyV!;
+  private async sendCommandShortcut(code: "KeyV" | "KeyC", ws: HidSocket | null): Promise<void> {
+    if (ws && !this.hidSockets.has(ws)) throw new Error("Clipboard viewer disconnected");
+    const shortcutKey = HID_USAGE_BY_CODE[code]!;
+    const events = code === "KeyV" ? simPasteHidEvents : simCopyHidEvents;
     const pressedAtSimulator = new Set(this.activeHidKeyUsageCounts.keys());
-    const pasteKeyHeld = pressedAtSimulator.has(pasteKey);
+    const shortcutKeyHeld = pressedAtSimulator.has(shortcutKey);
     const liftedModifiers = new Set<number>();
-    let pasteKeyReleased = false;
+    const unownedKeysDown = new Set<number>();
+    let shortcutKeyReleased = false;
     try {
-      if (pasteKeyHeld) await this.hid.key("up", pasteKey);
-      for (const event of simPasteHidEvents(pressedAtSimulator)) {
+      if (shortcutKeyHeld) await this.hid.key("up", shortcutKey);
+      for (const event of events(pressedAtSimulator)) {
         if (event.type === "up") await new Promise((resolve) => setTimeout(resolve, 30));
-        if (!pasteKeyReleased && this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+        if (!shortcutKeyReleased && this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
         if (isLiftedModifier(event.usage)) {
           await this.hid.key(event.type, event.usage);
           if (event.type === "up") liftedModifiers.add(event.usage);
           else liftedModifiers.delete(event.usage);
-        } else if (pasteKeyHeld && event.usage === pasteKey) {
-          await this.hid.key(event.type, pasteKey);
+        } else if (!ws || (shortcutKeyHeld && event.usage === shortcutKey)) {
+          await this.hid.key(event.type, event.usage);
+          if (!ws && event.type === "down") unownedKeysDown.add(event.usage);
+          else unownedKeysDown.delete(event.usage);
         } else {
           await this.updateHidKey(ws, event.type, event.usage);
         }
-        if (event.type === "up" && event.usage === pasteKey) pasteKeyReleased = true;
+        if (event.type === "up" && event.usage === shortcutKey) shortcutKeyReleased = true;
       }
     } finally {
-      // A failed chord must not leave another viewer's modifier stuck up.
+      // A failed chord must not leave its own keys down or another viewer's modifier up.
+      for (const usage of unownedKeysDown) await this.hid.key("up", usage).catch(() => {});
       for (const usage of liftedModifiers) await this.hid.key("down", usage).catch(() => {});
     }
   }

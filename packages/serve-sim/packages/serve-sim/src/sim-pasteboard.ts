@@ -99,6 +99,24 @@ export function pasteTextIntoSim(
   });
 }
 
+/** How long the app gets to write its pasteboard after it receives Command+C. */
+const COPY_SETTLE_MS = 150;
+
+/**
+ * Press Command+C and read the pasteboard as one step. Paste and writes take the same lock, so
+ * another viewer's copy or paste cannot replace the text between the shortcut and the read.
+ */
+export function copyFromSim(
+  udid: string,
+  sendCopyShortcut: () => Promise<void>,
+): Promise<PasteboardReadResult> {
+  return withSimPasteboardLock(udid, async () => {
+    await sendCopyShortcut();
+    await new Promise((resolve) => setTimeout(resolve, COPY_SETTLE_MS));
+    return readSimPasteboardResult(udid);
+  });
+}
+
 function writeSimPasteboardUnlocked(udid: string, text: string): Promise<void> {
   const tool = locatePasteboardTool() ?? buildPasteboardTool();
   return new Promise((resolveWrite, rejectWrite) => {

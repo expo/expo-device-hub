@@ -5,6 +5,7 @@ import { HID_USAGE_BY_CODE } from "../client/utils/hid";
 const ControlLeft = HID_USAGE_BY_CODE.ControlLeft!;
 const MetaLeft = HID_USAGE_BY_CODE.MetaLeft!;
 const KeyV = HID_USAGE_BY_CODE.KeyV!;
+const KeyC = HID_USAGE_BY_CODE.KeyC!;
 
 type KeyCall = [type: "down" | "up", usage: number];
 
@@ -12,17 +13,19 @@ type KeyCall = [type: "down" | "up", usage: number];
 function session(failOn?: (call: KeyCall) => boolean) {
   const calls: KeyCall[] = [];
   const s = Object.create(DeviceSession.prototype) as DeviceSession;
+  const hid = {
+    inputUnavailable: false,
+    async key(type: "down" | "up", usage: number) {
+      if (failOn?.([type, usage])) throw new Error("HID failed");
+      calls.push([type, usage]);
+    },
+  };
   Object.assign(s, {
+    phase: "running",
     hidSockets: new Set<object>(),
     activeHidKeyUsages: new WeakMap<object, Set<number>>(),
     activeHidKeyUsageCounts: new Map<number, number>(),
-    hid: {
-      inputUnavailable: false,
-      async key(type: "down" | "up", usage: number) {
-        if (failOn?.([type, usage])) throw new Error("HID failed");
-        calls.push([type, usage]);
-      },
-    },
+    hid,
   });
   const internals = s as unknown as {
     hidSockets: Set<object>;
@@ -30,6 +33,7 @@ function session(failOn?: (call: KeyCall) => boolean) {
     activeHidKeyUsageCounts: Map<number, number>;
     updateHidKey(ws: object, type: "down" | "up", usage: number): Promise<void>;
     sendPasteShortcut(ws: object): Promise<void>;
+    sendCopyShortcut(): Promise<void>;
   };
   const viewer = () => {
     const ws = {};
@@ -37,7 +41,7 @@ function session(failOn?: (call: KeyCall) => boolean) {
     internals.activeHidKeyUsages.set(ws, new Set());
     return ws;
   };
-  return { calls, internals, viewer };
+  return { calls, hid, internals, viewer };
 }
 
 describe("sendPasteShortcut", () => {
@@ -136,5 +140,49 @@ describe("sendPasteShortcut", () => {
 
     expect(calls.at(-1)).toEqual(["down", ControlLeft]);
     expect(internals.activeHidKeyUsageCounts.get(ControlLeft)).toBe(1);
+  });
+});
+
+describe("sendCopyShortcut", () => {
+  test("lifts another viewer's modifier and leaves no key owned", async () => {
+    const { calls, internals, viewer } = session();
+    const a = viewer();
+    await internals.updateHidKey(a, "down", ControlLeft);
+    calls.length = 0;
+
+    await internals.sendCopyShortcut();
+
+    expect(calls).toEqual([
+      ["up", ControlLeft],
+      ["down", MetaLeft],
+      ["down", KeyC],
+      ["up", KeyC],
+      ["up", MetaLeft],
+      ["down", ControlLeft],
+    ]);
+    expect([...internals.activeHidKeyUsageCounts]).toEqual([[ControlLeft, 1]]);
+  });
+
+  test("releases its own Command when the chord fails", async () => {
+    const { calls, internals, viewer } = session(([type, usage]) => type === "down" && usage === KeyC);
+    const a = viewer();
+    await internals.updateHidKey(a, "down", ControlLeft);
+    calls.length = 0;
+
+    await expect(internals.sendCopyShortcut()).rejects.toThrow("HID failed");
+
+    expect(calls).toEqual([
+      ["up", ControlLeft],
+      ["down", MetaLeft],
+      ["up", MetaLeft],
+      ["down", ControlLeft],
+    ]);
+  });
+
+  test("refuses when simulator input is unavailable", async () => {
+    const { calls, hid, internals } = session();
+    hid.inputUnavailable = true;
+    await expect(internals.sendCopyShortcut()).rejects.toThrow("Simulator input is unavailable");
+    expect(calls).toEqual([]);
   });
 });

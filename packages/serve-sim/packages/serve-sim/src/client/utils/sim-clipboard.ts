@@ -15,28 +15,16 @@ function hidUsage(code: keyof typeof HID_USAGE_BY_CODE): number {
 // Held with Command, these make the sim read another shortcut: Ctrl+V forwards Control, and
 // Shift+Command+V is not paste. The shortcut lifts them and puts them back.
 const LIFTED_MODIFIERS = [
-  ["ControlLeft", "ctrlKey"],
-  ["ControlRight", "ctrlKey"],
-  ["ShiftLeft", "shiftKey"],
-  ["ShiftRight", "shiftKey"],
-  ["AltLeft", "altKey"],
-  ["AltRight", "altKey"],
+  "ControlLeft",
+  "ControlRight",
+  "ShiftLeft",
+  "ShiftRight",
+  "AltLeft",
+  "AltRight",
 ] as const;
 
 export function isLiftedModifier(usage: number): boolean {
-  return LIFTED_MODIFIERS.some(([code]) => hidUsage(code) === usage);
-}
-
-export function trackHeldModifiers(
-  held: Set<number>,
-  event: Pick<KeyboardEvent, "code" | "ctrlKey" | "shiftKey" | "altKey">,
-  type: "down" | "up",
-): void {
-  for (const [code, flag] of LIFTED_MODIFIERS) {
-    const usage = hidUsage(code);
-    if (event.code === code && type === "down") held.add(usage);
-    else if (event.code === code || !event[flag]) held.delete(usage);
-  }
+  return LIFTED_MODIFIERS.some((code) => hidUsage(code) === usage);
 }
 
 function simCommandShortcutHidEvents(
@@ -46,7 +34,7 @@ function simCommandShortcutHidEvents(
   const metaLeft = hidUsage("MetaLeft");
   const metaRight = hidUsage("MetaRight");
   const shortcutKey = hidUsage(code);
-  const lifted = LIFTED_MODIFIERS.map(([code]) => hidUsage(code)).filter((usage) => pressed.has(usage));
+  const lifted = LIFTED_MODIFIERS.map(hidUsage).filter((usage) => pressed.has(usage));
   const events: KeyEvent[] = lifted.map((usage) => ({ type: "up", usage }));
   const commandAlreadyDown = pressed.has(metaLeft) || pressed.has(metaRight);
   if (!commandAlreadyDown) events.push({ type: "down", usage: metaLeft });
@@ -111,8 +99,15 @@ export interface SimulatorClipboardRead {
   relaunchedApp: string | null;
 }
 
-export async function readSimClipboard(udid: string): Promise<SimulatorClipboardRead> {
-  const response = await fetch(pasteboardEndpoint(udid), {
+/**
+ * Read the simulator pasteboard. With `copy`, the server first presses Command+C and reads under
+ * the same lock, so another viewer's copy or paste cannot change the text in between.
+ */
+export async function readSimClipboard(
+  udid: string,
+  { copy = false }: { copy?: boolean } = {},
+): Promise<SimulatorClipboardRead> {
+  const response = await fetch(`${pasteboardEndpoint(udid)}${copy ? "&copy=1" : ""}`, {
     method: "POST",
     headers: pasteboardHeaders(),
   });

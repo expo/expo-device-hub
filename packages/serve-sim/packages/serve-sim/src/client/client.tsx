@@ -86,12 +86,8 @@ import { openHostEventStream, runHostAction } from "./utils/exec";
 import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
 import {
-  isLiftedModifier,
   pasteRequestFits,
   SIM_PASTE_MESSAGE_TAG,
-  simCopyHidEvents,
-  trackHeldModifiers,
-  type HidKeyEvent,
 } from "./utils/sim-clipboard";
 import { useClipboardToast } from "./hooks/use-clipboard-toast";
 import { ActionMenu } from "./components/action-menu";
@@ -140,8 +136,6 @@ import {
 
 // Default CSS-pixel width of the fixed 1:1 Duo stage, independent of either screen.
 const DUO_STAGE_DEFAULT_WIDTH = 580;
-const SHORTCUT_KEY_GAP_MS = 30;
-const SIM_COPY_SETTLE_MS = 150;
 // A barrier waits behind every earlier input on the socket, which can include a long paste.
 const INPUT_BARRIER_TIMEOUT_MS = 150_000;
 
@@ -1386,26 +1380,6 @@ function AppWithConfig({
     sendKey("up", R);
   }, [sendKey]);
 
-  const shortcutChainRef = useRef<Promise<void>>(Promise.resolve());
-  const sendShortcut = useCallback(
-    (build: (pressed: Set<number>) => HidKeyEvent[]) => {
-      const run = shortcutChainRef.current.catch(() => {}).then(async () => {
-        const pressed = pressedKeysRef.current;
-        const gap = () => new Promise<void>((r) => setTimeout(r, SHORTCUT_KEY_GAP_MS));
-        for (const ev of build(pressed)) {
-          if (ev.type === "down" && isLiftedModifier(ev.usage) && !heldModifiersRef.current.has(ev.usage)) continue;
-          if (ev.type === "up") await gap();
-          sendKey(ev.type, ev.usage);
-          if (ev.type === "up") pressed.delete(ev.usage);
-          else pressed.add(ev.usage);
-        }
-      });
-      shortcutChainRef.current = run;
-      return run;
-    },
-    [sendKey],
-  );
-
   const pasteChainRef = useRef<Promise<void>>(Promise.resolve());
 
   /** Resolves once the server has run every input sent earlier on `ws`. */
@@ -1437,14 +1411,12 @@ function AppWithConfig({
     [],
   );
 
-  const sendSimCopy = useCallback(async () => {
-    const ws = wsRef.current;
-    await sendShortcut(simCopyHidEvents);
-    // Command+C can wait behind other input on the server, so a timer alone would read the old text.
-    await waitForInputBarrier(ws);
-    // The app still has to write its pasteboard after the shortcut arrives.
-    await new Promise<void>((r) => setTimeout(r, SIM_COPY_SETTLE_MS));
-  }, [sendShortcut, waitForInputBarrier]);
+  // The server presses Command+C for a copy, so it must first run what this viewer already
+  // sent, such as a text selection. A closed socket fails here; nothing is queued to replay.
+  const waitForPriorInput = useCallback(
+    () => waitForInputBarrier(wsRef.current),
+    [waitForInputBarrier],
+  );
 
   const sendTextToSim = useCallback(
     (text: string): Promise<boolean> => {
@@ -1482,7 +1454,7 @@ function AppWithConfig({
     [config.device],
   );
 
-  const clipboard = useClipboardToast(config.device, sendSimCopy, sendTextToSim);
+  const clipboard = useClipboardToast(config.device, waitForPriorInput, sendTextToSim);
 
   const simContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1504,7 +1476,6 @@ function AppWithConfig({
   const simFocusedRef = useRef(true);
   simFocusedRef.current = simFocused;
   const pressedKeysRef = useRef<Set<number>>(new Set());
-  const heldModifiersRef = useRef<Set<number>>(new Set());
   const coarsePointer = useCoarsePointer();
   coarsePointerRef.current = coarsePointer;
   useBlockPageZoom(coarsePointer);
@@ -1600,7 +1571,6 @@ function AppWithConfig({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent, type: "down" | "up") => {
-      trackHeldModifiers(heldModifiersRef.current, e, type);
       const simFocused = simFocusedRef.current;
       const keyboardOpen = keyboardOpenRef.current;
       // Only new presses: a key held while the simulator had focus still has to be released there.

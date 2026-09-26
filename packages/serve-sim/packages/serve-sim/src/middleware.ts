@@ -60,7 +60,7 @@ import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
-import { readSimPasteboardResult, writeSimPasteboard } from "./sim-pasteboard";
+import { copyFromSim, readSimPasteboardResult, writeSimPasteboard } from "./sim-pasteboard";
 
 type SimReq = IncomingMessage;
 type SimRes = ServerResponse;
@@ -2526,7 +2526,21 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           return;
         }
 
-        const result = await readSimPasteboardResult(udid);
+        // Copy presses Command+C and reads under one lock, so another viewer can't change the text
+        // in between. It needs the device's input session, which a viewer's socket keeps running.
+        const copy = new URLSearchParams(qIndex === -1 ? "" : rawUrl.slice(qIndex + 1)).get("copy") === "1";
+        const session = copy ? peekDeviceSession(udid) : undefined;
+        if (copy && !session) {
+          res.writeHead(409, {
+            ...PASTEBOARD_RESPONSE_HEADERS,
+            "Content-Type": "application/json",
+          });
+          res.end(JSON.stringify({ ok: false, error: "No simulator input session for this device" }));
+          return;
+        }
+        const result = session
+          ? await copyFromSim(udid, () => session.sendCopyShortcut())
+          : await readSimPasteboardResult(udid);
         res.writeHead(200, {
           ...PASTEBOARD_RESPONSE_HEADERS,
           "Content-Type": "application/json",

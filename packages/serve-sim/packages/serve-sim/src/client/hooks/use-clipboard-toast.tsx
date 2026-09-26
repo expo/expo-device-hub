@@ -44,14 +44,14 @@ function renderToast(
 
 export function useClipboardToast(
   deviceUdid: string,
-  sendCopyShortcut: () => Promise<void>,
+  waitForPriorInput: () => Promise<void>,
   sendTextToSim: (text: string) => Promise<boolean>,
 ) {
   const copyFromSim = useCallback(async () => {
     renderToast("pending", "Reading simulator clipboard…", COPY_TOAST_ID);
     try {
-      await sendCopyShortcut();
-      const { text, relaunchedApp } = await readSimClipboard(deviceUdid);
+      await waitForPriorInput();
+      const { text, relaunchedApp } = await readSimClipboard(deviceUdid, { copy: true });
       const copiedMessage = relaunchedApp
         ? `Copied after relaunching ${relaunchedApp} to enable clipboard access`
         : "Copied from simulator";
@@ -96,7 +96,7 @@ export function useClipboardToast(
         COPY_TOAST_ID,
       );
     }
-  }, [deviceUdid, sendCopyShortcut]);
+  }, [deviceUdid, waitForPriorInput]);
 
   const pasteText = useCallback(
     async (text: string) => {

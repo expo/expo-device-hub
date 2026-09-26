@@ -130,6 +130,12 @@ describe("/api/pasteboard", () => {
     }
   });
 
+  test("refuses a copy when the device has no input session", async () => {
+    const res = await middleware(pasteboardRequest("?device=00000000-0000-0000-0000-000000000000&copy=1"));
+    expect(res?.status).toBe(409);
+    expect(await res!.json()).toEqual({ ok: false, error: "No simulator input session for this device" });
+  });
+
   test("rejects invalid JSON before writing", async () => {
     const unavailableUdid = "00000000-0000-0000-0000-000000000000";
     const res = await middleware(
