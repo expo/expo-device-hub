@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 
-import { BodySection } from "../client/components/network-capture-requests";
+import { BodySection, requestKey } from "../client/components/network-capture-requests";
 
 import {
   CaptureState,
@@ -79,6 +79,13 @@ describe("RequestRow", () => {
     expect(html).toContain("···");
     expect(html).not.toContain("NaN");
     expect(html).not.toContain("undefined");
+  });
+});
+
+describe("requestKey", () => {
+  test("gives a new session's reused id a new row", () => {
+    expect(requestKey(request({ id: "r1", startedAt: 1 }))).not.toBe(requestKey(request({ id: "r1", startedAt: 2 })));
+    expect(requestKey(request({ id: "r1", startedAt: 1 }))).toBe(requestKey(request({ id: "r1", startedAt: 1 })));
   });
 });
 

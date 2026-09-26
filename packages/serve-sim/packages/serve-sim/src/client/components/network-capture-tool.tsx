@@ -15,6 +15,7 @@ import {
   formatBytes,
   groupByDomain,
   isFailedRequest,
+  requestKey,
 } from "./network-capture-requests";
 
 export {
@@ -205,7 +206,7 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
               ) : (
                 rows.map((request) => (
                   <RequestRow
-                    key={request.id}
+                    key={requestKey(request)}
                     request={request}
                     udid={udid}
                     slowestMs={slowestMs}

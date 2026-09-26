@@ -97,7 +97,7 @@ export function DomainSection({
         <div className="pl-3">
           {group.requests.map((request) => (
             <RequestRow
-              key={request.id}
+              key={requestKey(request)}
               request={request}
               udid={udid}
               slowestMs={slowestMs}
@@ -183,6 +183,14 @@ function DetailSection({
   );
 }
 
+/**
+ * A row's React key. Ids restart at r1 in every capture session, so the start time is part of it:
+ * a new session's r1 must not inherit the old r1's expanded state or fetched body.
+ */
+export function requestKey(request: CapturedRequest): string {
+  return `${request.id}@${request.startedAt}`;
+}
+
 export function RequestRow({
   request,
   udid,
@@ -211,7 +219,7 @@ export function RequestRow({
       setLoading(false);
     });
     return () => { active = false; };
-  }, [expanded, settled, request.id, udid]);
+  }, [expanded, settled, request.id, request.startedAt, udid]);
 
   return (
     <div className="py-1.5 border-b border-white/5 last:border-b-0">
