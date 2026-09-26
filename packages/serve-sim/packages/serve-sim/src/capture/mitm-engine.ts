@@ -248,10 +248,12 @@ function reapAll(): void {
 }
 
 function onSignal(signal: NodeJS.Signals): void {
+  // Another handler, such as the CLI's, shuts capture down gracefully so the addon can flush its
+  // queue; killing mitmdump here would lose those records. The exit reaper stays as the fallback.
+  if (process.listenerCount(signal) > 1) return;
   reapAll();
   process.removeListener("exit", reapAll);
   for (const other of SIGNALS) process.removeListener(other, onSignal);
-  if (process.listenerCount(signal) > 0) return;
   process.kill(process.pid, signal);
 }
 
@@ -266,6 +268,9 @@ function addReaper(reap: () => void): void {
 function removeReaper(reap: () => void): void {
   reapers.delete(reap);
 }
+
+/** Reaper registration, exposed so a test can check what a signal does. */
+export const captureReapersForTest = { add: addReaper, remove: removeReaper };
 
 async function closeControlServer(
   control: Awaited<ReturnType<typeof startMitmControl>>,
