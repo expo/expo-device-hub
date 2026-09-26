@@ -15,6 +15,14 @@ import type { Socket } from "net";
 import { WebSocket } from "ws";
 import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
+import {
+  applyCameraActionResult,
+  cameraFrameStreamLost,
+  closeCameraFrameStream,
+  closeCameraFrameStreams,
+  ownsCameraFrameStream,
+  writeCameraFrame,
+} from "./camera-frames";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
 import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
@@ -2757,8 +2765,19 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       `${base}/ax`,
     ],
     onUiRequest: handleUiRequest,
+    onCameraFrame: (udid, frame, owner) => {
+      if (!isSimulatorUdid(udid) || !ownsCameraFrameStream(udid, owner)) return false;
+      writeCameraFrame(udid, frame, owner);
+      // false ends the claim, so a CLI disable or switch stops a feed whose panel is closed.
+      return !cameraFrameStreamLost(udid);
+    },
+    onCameraClose: closeCameraFrameStreams,
+    onCameraStop: closeCameraFrameStream,
     serveSimBinPath: serveSimBinPath(),
-    onActionResult: (action, params, result) => recordActionEvent(action, params, result),
+    onActionResult: (action, params, result, owner) => {
+      applyCameraActionResult(action, params, result, owner);
+      recordActionEvent(action, params, result);
+    },
     onSseRequest(path, websocketRequest) {
       const url = new URL(path, websocketRequest.url);
       // The exec channel already authenticated, so its fan-out carries the token past the gate.

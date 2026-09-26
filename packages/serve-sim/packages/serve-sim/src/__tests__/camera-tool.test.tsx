@@ -54,22 +54,27 @@ test("a live helper with no source is disconnected", () => {
 
 describe("nextCameraPillState", () => {
   test("ready stays ready on dead poll", () => {
-    expect(nextCameraPillState("ready", false)).toBe("ready");
+    expect(nextCameraPillState("ready", false, false)).toBe("ready");
   });
   test("ready becomes active when poll says alive", () => {
-    expect(nextCameraPillState("ready", true)).toBe("active");
+    expect(nextCameraPillState("ready", true, true)).toBe("active");
   });
   test("active degrades to disconnected on first dead poll", () => {
-    expect(nextCameraPillState("active", false)).toBe("disconnected");
+    expect(nextCameraPillState("active", false, false)).toBe("disconnected");
   });
   test("active stays active when poll says alive", () => {
-    expect(nextCameraPillState("active", true)).toBe("active");
+    expect(nextCameraPillState("active", true, true)).toBe("active");
   });
   test("disconnected drops to ready on second consecutive dead poll", () => {
-    expect(nextCameraPillState("disconnected", false)).toBe("ready");
+    expect(nextCameraPillState("disconnected", false, false)).toBe("ready");
   });
   test("disconnected recovers to active if poll says alive again", () => {
-    expect(nextCameraPillState("disconnected", true)).toBe("active");
+    expect(nextCameraPillState("disconnected", true, true)).toBe("active");
+  });
+  test("a live stream stays disconnected across repeated polls without frames", () => {
+    const first = nextCameraPillState("active", true, false);
+    expect(first).toBe("disconnected");
+    expect(nextCameraPillState(first, true, false)).toBe("disconnected");
   });
 });
 
@@ -243,6 +248,14 @@ describe("CameraMediaPreview — source states", () => {
     );
     expect(html).toContain("reel.mp4");
     expect(html).toContain("Video");
+  });
+
+  test("browser source identifies the viewer camera", () => {
+    const html = renderToStaticMarkup(
+      <CameraMediaPreview mode="browser" fileName={null} webcamName="Laptop camera" sourceKind="browser" />,
+    );
+    expect(html).toContain("Browser");
+    expect(html).toContain("Laptop camera");
   });
 
   test("webcam source shows the webcam name and Webcam badge", () => {

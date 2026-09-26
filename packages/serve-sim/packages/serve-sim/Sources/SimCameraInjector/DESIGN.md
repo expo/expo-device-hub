@@ -37,3 +37,23 @@ The device tests exercise two running apps through repeated red/blue/red image
 cycles, unchanged launch records and SpringBoard PID, real permission values,
 disconnected discovery, and cessation of sample delivery. Tests pin their
 simulator explicitly and remove the device-wide insert in teardown.
+
+## Browser frames
+
+The preview captures video with getUserMedia and sends bounded JPEG frames over
+the authenticated control WebSocket. The host forwards them to the camera helper
+through a length-prefixed socket stream. Congested frames are dropped.
+
+Enable or a source switch claims the feed for that browser connection. Frames
+from older viewers cannot reclaim it, and those viewers stop their local capture.
+Cleanup releases only its own claim; an explicit Disable disconnects the feed
+for everyone.
+
+The stream source is disconnected until its first valid frame. Closing or timing
+out the frame channel disconnects the device; the next valid stream reconnects
+it. Source generations prevent an old browser channel from publishing into a
+new source or disconnecting its replacement. Browser capture cancellation stops
+tracks, including a permission request that completes after cancellation.
+
+The browser needs HTTPS or localhost and the user's normal camera permission.
+Simulator camera permission APIs remain unchanged.

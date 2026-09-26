@@ -1,4 +1,4 @@
-export type CamSource = "placeholder" | "image" | "video" | "webcam";
+export type CamSource = "placeholder" | "image" | "video" | "webcam" | "browser";
 export interface CamWebcam { id: string; name: string }
 
 export type CameraPillState = "ready" | "active" | "disconnected";
@@ -45,11 +45,30 @@ export const CAMERA_LARGE_VIDEO_WARNING =
 export const CAMERA_HEIC_ERROR =
   "HEIC decode failed — export as JPEG or PNG and retry";
 
+export function cameraSourceKey(source: CamSource, webcamId: string, filePath: string): string {
+  const webcam = source === "webcam" ? webcamId : "";
+  const path = source === "image" || source === "video" ? filePath : "";
+  return `${source}::${webcam}::${path}`;
+}
+
+export function cameraStatusSourceKey(reply: { source?: string; arg?: string }): string | null {
+  const source = reply.source === "stream" ? "browser" : reply.source;
+  if (source !== "placeholder" && source !== "webcam" && source !== "image" && source !== "video" && source !== "browser") {
+    return null;
+  }
+  return cameraSourceKey(
+    source,
+    source === "webcam" ? reply.arg ?? "" : "",
+    source === "image" || source === "video" ? reply.arg ?? "" : "",
+  );
+}
+
 export function nextCameraPillState(
   current: CameraPillState,
   pollAlive: boolean,
+  pollConnected: boolean,
 ): CameraPillState {
-  if (pollAlive) return "active";
+  if (pollAlive) return pollConnected ? "active" : "disconnected";
   if (current === "active") return "disconnected";
   if (current === "disconnected") return "ready";
   return current;

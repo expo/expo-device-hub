@@ -61,6 +61,7 @@ describe("camera status", () => {
       helperPid: 0,
       bundleIds: ["wrong.bundle"],
       frameCount: 12,
+      connected: false,
     }) + "\n");
     const split = reply.indexOf(Buffer.from("ż")) + 1;
     const server = createNetServer((socket) => {
@@ -89,6 +90,7 @@ describe("camera status", () => {
         source: "video",
         arg: "/tmp/zażółć.mov",
         frameCount: 12,
+        connected: false,
       });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));

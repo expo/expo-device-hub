@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { spawn, type ChildProcessByStdio } from "child_process";
-import { existsSync, statSync } from "fs";
-import { join } from "path";
+import { existsSync, rmSync, statSync, writeFileSync } from "fs";
+import { dirname, join } from "path";
 import net from "net";
 
 const HELPER_PATH = join(
@@ -18,6 +18,8 @@ const TABLE_BYTES = 4 + 4 + SURFACE_RING * 4;
 const CONTROL_BYTES = HEADER_BYTES + TABLE_BYTES;
 const DEFAULT_WIDTH = 1280;
 const DEFAULT_HEIGHT = 720;
+const ONE_PIXEL_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 function helperReady(): boolean {
   try {
@@ -159,6 +161,8 @@ let iosurface:
       width: (surface: unknown) => number;
       height: (surface: unknown) => number;
       release: (surface: unknown) => void;
+      incrementUse: (surface: unknown) => void;
+      decrementUse: (surface: unknown) => void;
     };
 
 async function loadIOSurface(): Promise<NonNullable<typeof iosurface>> {
@@ -168,6 +172,8 @@ async function loadIOSurface(): Promise<NonNullable<typeof iosurface>> {
     IOSurfaceLookup: { args: [FFIType.u32], returns: FFIType.ptr },
     IOSurfaceGetWidth: { args: [FFIType.ptr], returns: FFIType.u64 },
     IOSurfaceGetHeight: { args: [FFIType.ptr], returns: FFIType.u64 },
+    IOSurfaceIncrementUseCount: { args: [FFIType.ptr], returns: FFIType.void },
+    IOSurfaceDecrementUseCount: { args: [FFIType.ptr], returns: FFIType.void },
   });
   const cf = dlopen(
     "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation",
@@ -179,6 +185,12 @@ async function loadIOSurface(): Promise<NonNullable<typeof iosurface>> {
     height: (s) => Number(io.symbols.IOSurfaceGetHeight(s as never) as bigint),
     release: (s) => {
       cf.symbols.CFRelease(s as never);
+    },
+    incrementUse: (s) => {
+      io.symbols.IOSurfaceIncrementUseCount(s as never);
+    },
+    decrementUse: (s) => {
+      io.symbols.IOSurfaceDecrementUseCount(s as never);
     },
   };
   return iosurface;
@@ -386,6 +398,69 @@ describeIf("SimCameraHelper shm probe", () => {
     } finally {
       await closeShm(handle);
     }
+  });
+
+  test("a failed switch keeps the previous source connected", async () => {
+    const restored = await sendHelperCommand(SOCKET_PATH, { action: "switch", source: "placeholder" });
+    expect(restored.ok).toBe(true);
+    expect(restored.connected).toBe(true);
+
+    const failed = await sendHelperCommand(SOCKET_PATH, {
+      action: "switch",
+      source: "image",
+      arg: join(SOCKET_PATH, "..", "serve-sim-no-such-image.png"),
+    });
+    expect(failed.ok).toBe(false);
+    expect(String(failed.error)).toContain("image");
+
+    const after = await sendHelperCommand(SOCKET_PATH, { action: "status" });
+    expect(after.source).toBe("placeholder");
+    expect(after.connected).toBe(true);
+  });
+
+  test("an image that cannot be published fails the switch and keeps the previous source", async () => {
+    await sendHelperCommand(SOCKET_PATH, { action: "switch", source: "placeholder" });
+    const handle = await openExistingShm(SHM_NAME);
+    expect(handle).not.toBeNull();
+    if (!handle) return;
+    const io = await loadIOSurface();
+    const png = join(dirname(SOCKET_PATH), `sscam-tst-${TAG}.png`);
+    const holds: unknown[] = [];
+    let inUse = false;
+    try {
+      writeFileSync(png, Buffer.from(ONE_PIXEL_PNG_BASE64, "base64"));
+      for (const id of readSurfaceTable(handle.buffer).ids) {
+        const surface = id === 0 ? null : io.lookup(id);
+        if (surface) holds.push(surface);
+      }
+      expect(holds.length).toBeGreaterThan(0);
+      // Holding every surface in use leaves PublishFrame no ring slot to write into.
+      for (const surface of holds) io.incrementUse(surface);
+      inUse = true;
+
+      const failed = await sendHelperCommand(SOCKET_PATH, { action: "switch", source: "image", arg: png });
+      expect(failed.ok).toBe(false);
+      expect(String(failed.error)).toContain("no writable camera frame buffer");
+      expect(failed.source).toBe("placeholder");
+    } finally {
+      for (const surface of holds) {
+        if (inUse) io.decrementUse(surface);
+        io.release(surface);
+      }
+      rmSync(png, { force: true });
+      await closeShm(handle);
+    }
+    const after = await sendHelperCommand(SOCKET_PATH, { action: "status" });
+    expect(after.source).toBe("placeholder");
+  });
+
+  test("switching to no source reports the camera as disconnected", async () => {
+    await sendHelperCommand(SOCKET_PATH, { action: "switch", source: "placeholder" });
+    const none = await sendHelperCommand(SOCKET_PATH, { action: "switch", source: "none" });
+    expect(none.ok).toBe(true);
+    expect(none.source).toBe("none");
+    expect(none.connected).toBe(false);
+    await sendHelperCommand(SOCKET_PATH, { action: "switch", source: "placeholder" });
   });
 
   test("shutdown unmaps shm so a fresh shm_open returns -1 (ENOENT)", async () => {
