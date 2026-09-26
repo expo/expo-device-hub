@@ -113,6 +113,20 @@ describe("capture startup cancellation", () => {
     expect(enabled).toEqual(["FIRST"]);
   });
 
+  test("does not announce a start that finished after shutdown began", async () => {
+    let stopping = false;
+    const started: string[] = [];
+    await startCaptureForDevice("DEVICE", {
+      shouldStop: () => stopping,
+      enable: async () => {
+        stopping = true;
+        return { proxyAddress: "127.0.0.1:1" };
+      },
+      onStarted: (meta) => void started.push(meta.proxyAddress ?? ""),
+    });
+    expect(started).toEqual([]);
+  });
+
   test("does not enable capture when shutdown has already begun", async () => {
     let enabled = false;
     await startCaptureForDevice("DEVICE", {

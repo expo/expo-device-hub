@@ -17,6 +17,8 @@ export async function startCaptureForDevice(
   if (deps.shouldStop?.()) return;
   try {
     const meta = await (deps.enable ?? captureRuntime.enableForDevice)(udid);
+    // Shutdown that began meanwhile tears this session down; do not announce it as running.
+    if (deps.shouldStop?.()) return;
     deps.onStarted?.(meta);
   } catch (error) {
     const reason =

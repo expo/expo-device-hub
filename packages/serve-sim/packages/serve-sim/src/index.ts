@@ -1981,7 +1981,9 @@ program
   .option(
     "--network-capture",
     "Default network capture on for devices this process boots; the UI reboot toggle overrides it per device. " +
-      "Covers third-party apps and their startup requests; Apple system apps (e.g. Safari) are left unproxied. " +
+      "Covers third-party apps launched after capture starts, including their startup requests; capture starts " +
+      "once the device has booted, so apps that launch during boot are missed until relaunched. " +
+      "Apple system apps (e.g. Safari) are left unproxied. " +
       "HTTPS is decrypted for the whole boot session and certificate-pinned apps will refuse to connect. " +
       "Requires mitmproxy. Relaunch apps after enabling so they pick up the proxy.",
   )
