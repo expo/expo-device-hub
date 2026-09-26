@@ -6,6 +6,7 @@ import { startCaptureForDevice } from "../capture/start";
 import {
   disableNetworkCaptureForStoppedDevice,
   enableNetworkCaptureForStartedDevice,
+  retryPendingCaptureCleanup,
 } from "../middleware";
 
 describe("enableNetworkCaptureForStartedDevice", () => {
@@ -65,6 +66,29 @@ describe("enableNetworkCaptureForStartedDevice", () => {
     });
     expect(errors[0]).toContain("UDID-2");
     expect(errors[0]).toContain("mitmproxy is not installed");
+  });
+});
+
+describe("stopped-device capture cleanup retries", () => {
+  test("retries a failed cleanup until it succeeds, and drops it once the device boots again", async () => {
+    const attempts: string[] = [];
+    let fail = true;
+    const disable = async (udid: string) => {
+      attempts.push(udid);
+      if (fail) throw new Error("capability state is locked");
+    };
+    expect(await disableNetworkCaptureForStoppedDevice("RETRY-1", { disable })).toBe(false);
+    expect(await disableNetworkCaptureForStoppedDevice("RETRY-2", { disable })).toBe(false);
+
+    await retryPendingCaptureCleanup(null, { disable });
+    expect(attempts).toEqual(["RETRY-1", "RETRY-2"]);
+
+    fail = false;
+    await retryPendingCaptureCleanup(new Set(["RETRY-2"]), { disable });
+    expect(attempts).toEqual(["RETRY-1", "RETRY-2", "RETRY-1"]);
+
+    await retryPendingCaptureCleanup(new Set(), { disable });
+    expect(attempts).toEqual(["RETRY-1", "RETRY-2", "RETRY-1"]);
   });
 });
 

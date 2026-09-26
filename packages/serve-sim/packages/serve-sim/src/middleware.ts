@@ -384,6 +384,7 @@ export async function readServeSimStates(): Promise<ServeSimState[]> {
   }
   const booted = await getBootedUdids();
   const bootedAt = bootedSnapshot.at;
+  void retryPendingCaptureCleanup(booted);
   const states: ServeSimState[] = [];
   for (const f of files) {
     const path = join(stateDir(), f);
@@ -972,10 +973,14 @@ export async function enableNetworkCaptureForStartedDevice(
   });
 }
 
+// Stopped devices whose capture cleanup failed. Their state record is gone, so the state poll
+// retries from here until cleanup succeeds.
+const pendingCaptureCleanup = new Set<string>();
+
 export async function disableNetworkCaptureForStoppedDevice(
   udid: string,
   deps: { disable?: (udid: string) => Promise<void> } = {},
-): Promise<void> {
+): Promise<boolean> {
   const disable =
     deps.disable ??
     (async (id) => {
@@ -983,12 +988,34 @@ export async function disableNetworkCaptureForStoppedDevice(
     });
   try {
     await disable(udid);
+    pendingCaptureCleanup.delete(udid);
+    return true;
   } catch (err) {
+    pendingCaptureCleanup.add(udid);
     console.warn(
-      `Network capture: disable for ${udid} failed:`,
+      `Network capture: disable for ${udid} failed; it is retried on the next device poll:`,
       err instanceof Error ? err.message : err,
     );
+    return false;
   }
+}
+
+/** Retry failed cleanups of stopped devices. A device that booted again belongs to its new session. */
+export async function retryPendingCaptureCleanup(
+  booted: ReadonlySet<string> | null,
+  deps: { disable?: (udid: string) => Promise<void> } = {},
+): Promise<void> {
+  // Without a booted list, a retry could disable capture a restarted device now uses; wait.
+  if (!booted) return;
+  await Promise.all(
+    [...pendingCaptureCleanup].map((udid) => {
+      if (booted.has(udid)) {
+        pendingCaptureCleanup.delete(udid);
+        return undefined;
+      }
+      return disableNetworkCaptureForStoppedDevice(udid, deps);
+    }),
+  );
 }
 
 /**
