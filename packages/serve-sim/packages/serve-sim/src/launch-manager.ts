@@ -309,7 +309,12 @@ export function capabilityLoaderPath(): string {
 /** Arm the loader and republish the recorded capabilities; rejects if publication fails. */
 export async function rearmCapabilityLoader(udid: string): Promise<void> {
   const dylib = capabilityLoaderPath();
-  if (!existsSync(dylib)) return;
+  if (!existsSync(dylib)) {
+    throw new Error(
+      `Capability loader not found at ${dylib}, so capabilities on ${udid} cannot be restored. ` +
+        "Rebuild serve-sim's native artifacts and try again.",
+    );
+  }
   armedHere.add(udid);
   await withLaunchStateLock(udid, async () => {
     const previous = readLaunchState(udid) ?? { launchArgs: [], capabilities: {} };
@@ -320,8 +325,9 @@ export async function rearmCapabilityLoader(udid: string): Promise<void> {
   });
 }
 
-/** Best-effort rearmCapabilityLoader for startup: a failure is logged, not thrown. */
+/** Best-effort rearmCapabilityLoader for startup: a missing loader is skipped, a failure logged. */
 export async function armCapabilityLoader(udid: string): Promise<void> {
+  if (!existsSync(capabilityLoaderPath())) return;
   try {
     await rearmCapabilityLoader(udid);
   } catch (error) {
