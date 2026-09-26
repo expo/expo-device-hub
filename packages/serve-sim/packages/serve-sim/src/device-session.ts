@@ -1310,6 +1310,7 @@ export class DeviceSession {
     const shortcutKeyHeld = pressedAtSimulator.has(shortcutKey);
     const liftedModifiers = new Set<number>();
     const unownedKeysDown = new Set<number>();
+    const ownedKeysDown = new Set<number>();
     let shortcutKeyReleased = false;
     try {
       if (shortcutKeyHeld) await this.hid.key("up", shortcutKey);
@@ -1326,12 +1327,15 @@ export class DeviceSession {
           else unownedKeysDown.delete(event.usage);
         } else {
           await this.updateHidKey(ws, event.type, event.usage);
+          if (event.type === "down") ownedKeysDown.add(event.usage);
+          else ownedKeysDown.delete(event.usage);
         }
         if (event.type === "up" && event.usage === shortcutKey) shortcutKeyReleased = true;
       }
     } finally {
       // A failed chord must not leave its own keys down or another viewer's modifier up.
       for (const usage of unownedKeysDown) await this.hid.key("up", usage).catch(() => {});
+      if (ws) for (const usage of ownedKeysDown) await this.updateHidKey(ws, "up", usage).catch(() => {});
       for (const usage of liftedModifiers) await this.hid.key("down", usage).catch(() => {});
     }
   }

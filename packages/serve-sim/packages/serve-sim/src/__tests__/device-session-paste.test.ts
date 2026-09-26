@@ -146,6 +146,26 @@ describe("sendPasteShortcut", () => {
     expect(calls).toEqual([["down", KeyV], ["up", KeyV]]);
   });
 
+  test("releases the viewer's Command when the chord fails", async () => {
+    const { calls, internals, viewer } = session(([type, usage]) => type === "down" && usage === KeyV);
+    const b = viewer();
+
+    await expect(internals.sendPasteShortcut(b)).rejects.toThrow("HID failed");
+
+    expect(calls).toEqual([
+      ["down", MetaLeft],
+      ["up", MetaLeft],
+    ]);
+    expect(internals.activeHidKeyUsages.get(b)?.size).toBe(0);
+    expect(internals.activeHidKeyUsageCounts.has(MetaLeft)).toBe(false);
+
+    // The viewer's next key is a plain key, not a Command shortcut.
+    calls.length = 0;
+    await internals.updateHidKey(b, "down", KeyC);
+    expect(calls).toEqual([["down", KeyC]]);
+    expect(internals.activeHidKeyUsageCounts.has(MetaLeft)).toBe(false);
+  });
+
   test("puts a lifted modifier back when the chord fails", async () => {
     const { calls, internals, viewer } = session(([type, usage]) => type === "down" && usage === KeyV);
     const a = viewer();
