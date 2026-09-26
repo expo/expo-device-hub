@@ -29,6 +29,22 @@ struct SimulatorDisplayProfileTests {
         #expect(profile.integratedDisplayCount == 1)
     }
 
+    // Regression guard for Duo reboot recovery: the reset must not depend on
+    // how many framebuffer panels are visible when capture starts.
+    @Test("a foldable's main capture resets boot-bound state; panel feeds and single panels do not")
+    func bootBoundReset() {
+        let duo = SimulatorDisplayProfile(displays: [
+            ["displayType": "integrated", "screenID": 1],
+            ["displayType": "integrated", "screenID": 3],
+        ])
+        let iPhone = SimulatorDisplayProfile(displays: [
+            ["displayType": "integrated", "screenID": 1],
+        ])
+        #expect(duo.resetsBootBoundStateOnCapture(fixedScreenID: nil))
+        #expect(!duo.resetsBootBoundStateOnCapture(fixedScreenID: 3))
+        #expect(!iPhone.resetsBootBoundStateOnCapture(fixedScreenID: nil))
+    }
+
     @Test("missing optional rotation does not disable the foldable guard")
     func missingRotation() {
         let profile = SimulatorDisplayProfile(displays: [

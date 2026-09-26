@@ -204,7 +204,7 @@ actor HIDInjector {
 
     /// Device Hub's physical orientation is relative to each panel's mounting.
     /// Read the static device profile once; capture supplies the active screen ID.
-    private static func readDisplayProfile(device: NSObject) -> SimulatorDisplayProfile {
+    static func readDisplayProfile(device: NSObject) -> SimulatorDisplayProfile {
         let typeSelector = NSSelectorFromString("deviceType")
         let capabilitiesSelector = NSSelectorFromString("capabilities")
         guard device.responds(to: typeSelector),
