@@ -1412,11 +1412,12 @@ function AppWithConfig({
   );
 
   // The server presses Command+C for a copy, so it must first run what this viewer already
-  // sent, such as a text selection. A closed socket fails here; nothing is queued to replay.
-  const waitForPriorInput = useCallback(
-    () => waitForInputBarrier(wsRef.current),
-    [waitForInputBarrier],
-  );
+  // sent, such as a text selection. Keys the paced sender still holds go out first, then the
+  // barrier follows them on the socket. A closed socket fails here; nothing is queued to replay.
+  const waitForPriorInput = useCallback(async () => {
+    await keySender.idle();
+    await waitForInputBarrier(wsRef.current);
+  }, [keySender, waitForInputBarrier]);
 
   const sendTextToSim = useCallback(
     (text: string): Promise<boolean> => {
