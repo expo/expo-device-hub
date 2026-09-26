@@ -1779,6 +1779,14 @@ async function serve(
   const targetDevice = targetDevices[0];
 
   const capture = await import("./capture");
+  // The panel can turn capture on too, so a public preview without the token gate refuses it there
+  // as well as for --network-capture.
+  capture.captureRuntime.refuseCapture(
+    !isLoopbackHost(host) && !options.requireToken
+      ? `Network capture needs --require-token when the preview is reachable beyond loopback (--host ${host}). ` +
+          "Without it, anyone who can load the preview could read captured traffic. Restart serve-sim with --require-token."
+      : null,
+  );
   await startNetworkCapture(options.networkCapture ? targetDevices : [], options.networkCaptureFields, quiet);
 
   const { simMiddleware } = await import("./middleware");

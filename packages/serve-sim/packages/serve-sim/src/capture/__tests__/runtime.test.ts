@@ -308,6 +308,19 @@ describe("capture runtime", () => {
     expect(runtime.storeFor(OTHER)).toBeNull();
   });
 
+  test("refuses every start while capture is refused, and starts again once allowed", async () => {
+    const { runtime, calls } = harness();
+    runtime.refuseCapture("Network capture needs --require-token.");
+    const error = await runtime.enableForDevice(UDID).catch((e) => e);
+    expect(error).toBeInstanceOf(CaptureEnableError);
+    expect(error.meta.attachError).toBe("Network capture needs --require-token.");
+    expect(runtime.metaFor(UDID).attachment).toBe("failed");
+    expect(calls).not.toContain("proxy-started");
+
+    runtime.refuseCapture(null);
+    expect((await runtime.enableForDevice(UDID)).attachment).toBe("capturing");
+  });
+
   test("rejects when the proxy never starts, after publishing failed meta", async () => {
     const { runtime } = harness({
       startProxy: async () => {
