@@ -1,10 +1,33 @@
 # continue.md: handoff for the next agent
 
-_Last updated: 2026-09-25 14:22. The integration is built, smoke-tested and committed locally (`aa32ccd`). The benchmark matrix is running._
+_Last updated: 2026-09-26. The simstream repo is merged into this branch; see "Picking this up" below._ The integration is built, smoke-tested and committed locally (`aa32ccd`). The benchmark matrix is running._
 
 ## Current task (from the user)
 > Fork the canonical serve-sim, integrate our video stack, and run a side-by-side comparison. Record
 > videos of the same scripts side by side. Keep this continue.md up to date.
+
+## Picking this up on another machine
+
+Everything is on branch `simstream-video` of this repo. The simstream engine repo, with its 26-commit
+history, is merged in as a subtree at `packages/serve-sim/packages/serve-sim/engine/simstream/`: engine
+sources, `bench/` (measurement, recording and report tools), and `deploy/` (Caddy, DDNS, launchd).
+
+```sh
+git fetch <remote> simstream-video && git checkout simstream-video
+bun install                                   # at the repo root
+cd packages/serve-sim/packages/serve-sim
+# The native addon's source build hangs downloading LiveKit's xcframework, so reuse a published one:
+npx -y @expo/serve-sim@0.3.4 --help >/dev/null  # populates the npx cache
+SERVE_SIM_PREBUILT_NATIVE=$(dirname $(dirname $(find ~/.npm/_npx -path '*@expo/serve-sim/dist/native' -type d | head -1)))/dist bun run build
+node dist/serve-sim.js --transport http --codec simstream -p 3200   # needs a booted simulator
+```
+
+- Engine alone: `cd engine/simstream && ./run.sh` (standalone viewer on :8765). The engine needs Xcode
+  (SimulatorKit/CoreSimulator private frameworks).
+- The bench scripts still carry absolute paths from the original machine (`~/Development/simstream`,
+  `/tmp/fbench`, host names). Adjust them before rerunning.
+- Pulling future engine changes from a standalone simstream clone:
+  `git merge -s subtree -Xsubtree=packages/serve-sim/packages/serve-sim/engine/simstream <simstream>/main`.
 
 ## Plan and status: DONE (2026-09-25 15:12)
 - **Fork:** `~/Development/expo-device-hub-simstream`, branch `simstream-video`, local only.
