@@ -9,6 +9,14 @@ public struct SimulatorDisplayProfile: Sendable {
     // keep it limited to foldables (two integrated displays) for now.
     public var isFoldable: Bool { integratedDisplayCount == 2 }
 
+    /// CoreDevice capabilities belong to one boot, so a new main capture of a
+    /// foldable drops them. This reads the static profile, not the framebuffer
+    /// panels, because a panel can appear after capture starts. Fixed-panel
+    /// feeds share the main session's input and never reset it.
+    public func resetsBootBoundStateOnCapture(fixedScreenID: UInt32?) -> Bool {
+        fixedScreenID == nil && isFoldable
+    }
+
     public init(displays: [[String: Any]] = []) {
         var integratedIDs = Set<UInt32>()
         var rotations: [UInt32: Int] = [:]
