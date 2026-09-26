@@ -7,6 +7,7 @@ import { setHardwareKeyboard } from "./native";
 import { dirnameOf } from "./runtime";
 import { stateDir } from "./state";
 import { withStateLock } from "./state-lock";
+import { HOST_TIME_ZONE, normalizeTimeZone } from "./time-zone";
 
 // Bun's bundler inlines a bare `__dirname` as the build machine's source
 // directory; shadow it with the runtime location so the published bundle
@@ -58,17 +59,21 @@ const OFF_SYNONYMS = new Set(["off", "false", "disabled", "0", "no"]);
 
 interface UiOptionSpec {
   /**
-   * `simctl ui` subcommand, "ax" for the in-sim helper, or "device" for a
-   * host-side CoreSimulator device setting driven through the native addon.
+   * `simctl ui` subcommand, "ax" for the in-sim helper, "device" for a
+   * host-side CoreSimulator device setting driven through the native addon,
+   * or "tz" for launchd's TZ.
    */
-  via: "appearance" | "increase_contrast" | "content_size" | "ax" | "device";
-  values: readonly string[];
+  via: "appearance" | "increase_contrast" | "content_size" | "ax" | "device" | "tz";
+  /** Closed value set; open-ended options carry `normalize` and `accepted` instead. */
+  values?: readonly string[];
   /** Extra accepted set-values that aren't reported by `get` (text-size). */
   extraValues?: readonly string[];
   aliases?: Record<string, string>;
   toggle?: boolean;
   /** Reported value before anything is set (device-backed options only). */
   default?: string;
+  normalize?: (value: string) => string | null;
+  accepted?: string;
 }
 
 export const UI_OPTIONS: Record<string, UiOptionSpec> = {
@@ -86,6 +91,11 @@ export const UI_OPTIONS: Record<string, UiOptionSpec> = {
   "reduce-transparency": { via: "ax", values: TOGGLE_VALUES, toggle: true },
   voiceover: { via: "ax", values: TOGGLE_VALUES, toggle: true },
   "hardware-keyboard": { via: "device", values: TOGGLE_VALUES, toggle: true, default: "on" },
+  "time-zone": {
+    via: "tz",
+    normalize: normalizeTimeZone,
+    accepted: "host | UTC | any IANA zone, e.g. Europe/Berlin",
+  },
 };
 
 function deviceOptionStateFile(udid: string): string {
@@ -173,6 +183,7 @@ export async function refreshDeviceOptionState(udid: string): Promise<void> {
 export function normalizeUiValue(option: string, value: string): string | null {
   const spec = Object.hasOwn(UI_OPTIONS, option) ? UI_OPTIONS[option] : undefined;
   if (!spec) return null;
+  if (spec.normalize) return spec.normalize(value);
   const v = value.toLowerCase();
   if (spec.toggle) {
     if (ON_SYNONYMS.has(v)) return "on";
@@ -180,7 +191,7 @@ export function normalizeUiValue(option: string, value: string): string | null {
     return null;
   }
   const aliased = spec.aliases?.[v] ?? v;
-  if (spec.values.includes(aliased)) return aliased;
+  if (spec.values?.includes(aliased)) return aliased;
   if (spec.extraValues?.includes(aliased)) return aliased;
   return null;
 }
@@ -223,7 +234,7 @@ export function parseUiArgs(args: string[]): UiArgs {
   const value = normalizeUiValue(option, rest[1]!);
   if (value === null) {
     const spec = UI_OPTIONS[option]!;
-    const accepted = [...spec.values, ...(spec.extraValues ?? [])].join("|");
+    const accepted = spec.accepted ?? [...(spec.values ?? []), ...(spec.extraValues ?? [])].join("|");
     return {
       command: "set",
       option,
@@ -297,6 +308,44 @@ async function axRun(udid: string, ...args: string[]): Promise<string> {
   return run("xcrun", ["simctl", "spawn", udid, tool, ...args]);
 }
 
+// ─── Time zone (launchd TZ) ───
+//
+// The simulator runtime ships neither tzlinkd nor Settings' Date & Time pane,
+// so simulated processes use the host Mac's zone unless TZ is in their
+// environment. `launchctl setenv TZ` on launchd_sim covers every process
+// spawned afterwards; SpringBoard and already-running apps keep their zone
+// until restarted, hence the restart. A reboot clears the override.
+
+/** `(file, args) => stdout`; injectable so the launchd flow is unit-testable. */
+export type SimExec = (file: string, args: string[]) => Promise<string>;
+
+function launchctl(udid: string, args: string[], exec: SimExec): Promise<string> {
+  return exec("xcrun", ["simctl", "spawn", udid, "launchctl", ...args]);
+}
+
+/** `launchctl getenv` prints an empty line for an unset variable. */
+export async function readTimeZone(udid: string, exec: SimExec = run): Promise<string> {
+  return (await launchctl(udid, ["getenv", "TZ"], exec)) || HOST_TIME_ZONE;
+}
+
+function setLaunchdTimeZone(udid: string, zone: string, exec: SimExec): Promise<string> {
+  return launchctl(udid, zone === HOST_TIME_ZONE ? ["unsetenv", "TZ"] : ["setenv", "TZ", zone], exec);
+}
+
+/** A failed restart rolls TZ back, so launchd never reports a zone the simulator is not showing. */
+export async function writeTimeZone(udid: string, zone: string, exec: SimExec = run): Promise<boolean> {
+  const previous = await readTimeZone(udid, exec);
+  if (previous === zone) return false;
+  await setLaunchdTimeZone(udid, zone, exec);
+  try {
+    await launchctl(udid, ["kickstart", "-k", "user/foreground/com.apple.SpringBoard"], exec);
+  } catch (e) {
+    await setLaunchdTimeZone(udid, previous, exec).catch(() => {});
+    throw e;
+  }
+  return true;
+}
+
 function toToggle(simctlValue: string): string {
   return simctlValue === "enabled" ? "on" : "off";
 }
@@ -312,6 +361,7 @@ export async function getUiOption(udid: string, option: string): Promise<string>
     return (await currentDeviceOptionState(udid))?.values[option] ?? spec.default ?? "off";
   }
   if (spec.via === "ax") return axRun(udid, "get", option);
+  if (spec.via === "tz") return readTimeZone(udid);
   // simctl's casing is inconsistent (`content_size` prints "Small" but
   // "large") — values are canonically lowercase everywhere here.
   const raw = (await simctlUi(udid, spec.via)).toLowerCase();
@@ -338,6 +388,10 @@ export async function setUiOption(udid: string, option: string, value: string): 
   }
   if (spec.via === "ax") {
     await axRun(udid, "set", option, value);
+    return;
+  }
+  if (spec.via === "tz") {
+    await writeTimeZone(udid, value);
     return;
   }
   await simctlUi(udid, spec.via, spec.toggle ? fromToggle(value) : value);
@@ -426,7 +480,9 @@ Simulator-wide UI options:
   show-borders         on | off
   reduce-transparency  on | off
   voiceover            on | off
-  hardware-keyboard    on | off`;
+  hardware-keyboard    on | off
+  time-zone            host | UTC | <IANA zone, e.g. Europe/Berlin>
+                       (restarts the simulator's UI; a reboot returns to the host zone)`;
 
 export async function uiSettings(args: string[]): Promise<void> {
   if (args.includes("-h") || args.includes("--help")) {

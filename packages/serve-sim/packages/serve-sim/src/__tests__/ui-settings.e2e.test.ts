@@ -80,9 +80,69 @@ function simctlUi(subcommand: string): string {
   }).trim();
 }
 
+/**
+ * launchd environment variable inside the simulator, or null when unset.
+ * `launchctl unsetenv` leaves `getenv` reporting either an error or an empty
+ * string depending on the runtime; both mean "no override".
+ */
+function simEnv(name: string): string | null {
+  try {
+    return (
+      execFileSync("xcrun", ["simctl", "getenv", udid!, name], {
+        encoding: "utf-8",
+        stdio: ["ignore", "pipe", "pipe"],
+        timeout: EXEC_TIMEOUT_MS,
+      }).trim() || null
+    );
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * PID of a launchd_sim job, or null when it is not running. `launchctl list`
+ * prints `PID\tStatus\tLabel`.
+ */
+function simJobPid(label: string): number | null {
+  const out = execFileSync("xcrun", ["simctl", "spawn", udid!, "launchctl", "list"], {
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "pipe"],
+    timeout: EXEC_TIMEOUT_MS,
+  });
+  for (const line of out.split("\n")) {
+    const [pid, , jobLabel = ""] = line.split("\t");
+    if (jobLabel === label) {
+      const n = Number(pid);
+      return Number.isInteger(n) && n > 0 ? n : null;
+    }
+  }
+  return null;
+}
+
+/** `kickstart -k` returns before SpringBoard has respawned, so pid reads poll. */
+async function waitForJob(
+  label: string,
+  ready: (pid: number | null) => boolean,
+  timeoutMs = 15_000,
+): Promise<number | null> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const pid = simJobPid(label);
+    if (ready(pid) || Date.now() >= deadline) return pid;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+}
+
+const waitForJobPid = (label: string) => waitForJob(label, (pid) => pid !== null);
+const waitForJobReplaced = (label: string, old: number) =>
+  waitForJob(label, (pid) => pid !== null && pid !== old);
+
+const SPRINGBOARD = "com.apple.SpringBoard";
+
 describeIfSim("serve-sim ui (simulator-wide options)", () => {
-  afterAll(() => {
-    // Leave the simulator in stock state for whatever runs next.
+  // Leave the simulator in stock state, and back up, for whatever runs next: the
+  // time-zone reset restarts SpringBoard, and simctl rejects input until it returns.
+  afterAll(async () => {
     for (const [option, value] of [
       ["appearance", "light"],
       ["liquid-glass", "clear"],
@@ -93,12 +153,23 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
       ["show-borders", "off"],
       ["reduce-transparency", "off"],
       ["voiceover", "off"],
+      ["time-zone", "host"],
     ] as const) {
       try {
         cli(option, value);
       } catch {}
     }
-  });
+    // A pid appears before SpringBoard will accept input, and the suites that
+    // follow drive it. Wait for it to stop moving, then give it a moment.
+    let pid = await waitForJobPid(SPRINGBOARD);
+    for (let i = 0; i < 20; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      const next = simJobPid(SPRINGBOARD);
+      if (next !== null && next === pid) break;
+      pid = next;
+    }
+    await new Promise((r) => setTimeout(r, 2_000));
+  }, 60_000);
 
   test("appearance switches dark and back", () => {
     cli("appearance", "dark");
@@ -113,7 +184,8 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
     expect(cli("liquid-glass")).toBe("tinted");
     cli("liquid-glass", "clear");
     expect(simDefault("com.apple.UIKit", "UIViewGlassLegibilitySetting")).toBe("0");
-  });
+    // Five simctl children at ~1s each sits on bun's 5s default.
+  }, 15_000);
 
   test("color filters set the media-accessibility display filter", () => {
     const cases = [
@@ -182,7 +254,33 @@ describeIfSim("serve-sim ui (simulator-wide options)", () => {
       "reduce-transparency",
       "show-borders",
       "text-size",
+      "time-zone",
       "voiceover",
     ]);
   });
+
+  // `simctl getenv` reads the launchd_sim store new processes inherit from.
+  test("time zone sets and clears TZ on the simulator's launchd", () => {
+    cli("time-zone", "Asia/Tokyo");
+    expect(simEnv("TZ")).toBe("Asia/Tokyo");
+    expect(cli("time-zone")).toBe("Asia/Tokyo");
+    cli("time-zone", "europe/berlin");
+    expect(simEnv("TZ")).toBe("Europe/Berlin");
+    cli("time-zone", "host");
+    expect(simEnv("TZ")).toBeNull();
+    expect(cli("time-zone")).toBe("host");
+  }, 90_000);
+
+  test("changing the zone restarts SpringBoard; repeating the same value does not", async () => {
+    cli("time-zone", "host");
+    const before = await waitForJobPid(SPRINGBOARD);
+    expect(before).not.toBeNull();
+    cli("time-zone", "Asia/Tokyo");
+    const afterChange = await waitForJobReplaced(SPRINGBOARD, before!);
+    expect(afterChange).not.toBeNull();
+    expect(afterChange).not.toBe(before);
+    cli("time-zone", "Asia/Tokyo");
+    expect(simJobPid(SPRINGBOARD)).toBe(afterChange);
+    cli("time-zone", "host");
+  }, 90_000);
 });

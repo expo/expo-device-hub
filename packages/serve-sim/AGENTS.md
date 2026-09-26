@@ -84,10 +84,15 @@ through `serve-sim` subcommands against a running server:
 - `serve-sim ui <option> [value] [-d udid]` — simulator-wide UI options
   (appearance, liquid-glass, color-filter, text-size, reduce-motion,
   increase-contrast, show-borders, reduce-transparency, voiceover,
-  hardware-keyboard); `ui status
+  hardware-keyboard, time-zone); `ui status
 --json` dumps all. Verify sets via `simctl ui <udid> <option>` readback or
   `simctl spawn <udid> defaults read` on com.apple.Accessibility /
   com.apple.mediaaccessibility / com.apple.UIKit.
+- `serve-sim ui time-zone <IANA zone | host>` sets `TZ` on the simulator's
+  launchd and restarts SpringBoard. An app reads `TZ` once at launch and can
+  outlive the restart, so terminate and relaunch the app under test yourself
+  afterwards. Verify with `simctl getenv <udid> TZ`. The override lasts until
+  the simulator reboots.
 - `xcrun simctl openurl booted <url>` — deep-link into apps (faster than
   tapping through Expo Go's recent-projects list).
 
