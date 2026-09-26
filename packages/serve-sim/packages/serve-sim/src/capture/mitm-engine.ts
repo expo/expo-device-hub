@@ -123,7 +123,18 @@ function isRunnable(path: string): boolean {
   }
 }
 
-export function sweepStaleConfdirs(deps: { list?: () => string[]; remove?: (dir: string) => void; psOutput?: () => string } = {}): number {
+/** A confdir exists before its mitmdump appears in `ps`, so a new one is never swept. */
+const CONFDIR_MIN_AGE_MS = 60_000;
+
+export function sweepStaleConfdirs(
+  deps: {
+    list?: () => string[];
+    remove?: (dir: string) => void;
+    /** `null` when processes cannot be listed; nothing is swept then. */
+    psOutput?: () => string | null;
+    ageMs?: (dir: string) => number;
+  } = {},
+): number {
   const list =
     deps.list ??
     (() => {
@@ -139,14 +150,25 @@ export function sweepStaleConfdirs(deps: { list?: () => string[]; remove?: (dir:
     deps.psOutput ??
     (() => {
       const listed = spawnSync("ps", ["-eo", "pid=,command="], { encoding: "utf8" });
-      return listed.status === 0 && typeof listed.stdout === "string" ? listed.stdout : "";
+      return listed.status === 0 && typeof listed.stdout === "string" ? listed.stdout : null;
     });
   const remove = deps.remove ?? ((dir: string) => rmSync(dir, { recursive: true, force: true }));
+  const ageMs =
+    deps.ageMs ??
+    ((dir: string) => {
+      try {
+        return Date.now() - statSync(dir).mtimeMs;
+      } catch {
+        return 0;
+      }
+    });
 
+  // Without a process list every confdir would look abandoned, including live sessions'.
   const processes = psOutput();
+  if (processes === null) return 0;
   let swept = 0;
   for (const dir of list()) {
-    if (processes.includes(basename(dir))) continue;
+    if (processes.includes(basename(dir)) || ageMs(dir) < CONFDIR_MIN_AGE_MS) continue;
     try {
       remove(dir);
       swept++;

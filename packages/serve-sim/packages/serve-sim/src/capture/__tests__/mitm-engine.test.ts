@@ -10,6 +10,7 @@ import {
   formatOversizedControlBodyWarning,
   locateMitmdump,
   maxControlBodyBytes,
+  sweepStaleConfdirs,
   mitmdumpMissingMessage,
   parseMitmPids,
   startMitmProxy,
@@ -235,4 +236,34 @@ setInterval(() => {}, 1000);
     else process.env.SERVE_SIM_TEST_PATHS = previous.paths;
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+describe("sweepStaleConfdirs", () => {
+  const dirs = ["/tmp/serve-sim-capture-live", "/tmp/serve-sim-capture-dead", "/tmp/serve-sim-capture-new"];
+  const ages: Record<string, number> = {
+    "/tmp/serve-sim-capture-live": 600_000,
+    "/tmp/serve-sim-capture-dead": 600_000,
+    "/tmp/serve-sim-capture-new": 1_000,
+  };
+
+  function sweep(psOutput: () => string | null) {
+    const removed: string[] = [];
+    const swept = sweepStaleConfdirs({
+      list: () => dirs,
+      remove: (dir) => void removed.push(dir),
+      psOutput,
+      ageMs: (dir) => ages[dir]!,
+    });
+    return { swept, removed };
+  }
+
+  test("removes only old confdirs that no running mitmdump names", () => {
+    const { swept, removed } = sweep(() => "123 mitmdump --set confdir=/tmp/serve-sim-capture-live\n");
+    expect(removed).toEqual(["/tmp/serve-sim-capture-dead"]);
+    expect(swept).toBe(1);
+  });
+
+  test("keeps every confdir when processes cannot be listed", () => {
+    expect(sweep(() => null)).toEqual({ swept: 0, removed: [] });
+  });
 });
