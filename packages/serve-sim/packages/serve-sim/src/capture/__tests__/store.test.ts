@@ -138,6 +138,16 @@ describe("CaptureStore", () => {
     expect(list.at(-1)!.url).toBe("https://example.com/519");
   });
 
+  test("announces each eviction before the request that caused it", () => {
+    const store = new CaptureStore(() => 0);
+    for (let i = 0; i < 500; i++) store.start("GET", `https://example.com/${i}`);
+    const seen = collect(store);
+    const id = store.start("GET", "https://example.com/500");
+    expect(seen.map((event) => event.type)).toEqual(["evicted", "started"]);
+    expect(seen[0]).toEqual({ type: "evicted", id: "r1" });
+    expect(seen[1]).toMatchObject({ type: "started", request: { id } });
+  });
+
   test("emits a cleared frame and keeps notifying after a throwing subscriber", () => {
     const store = new CaptureStore(() => 0);
     store.subscribe(() => {
@@ -186,6 +196,13 @@ describe("CaptureStore throughput", () => {
     const store = new CaptureStore(() => ms);
     return { store, advance: (by: number) => (ms += by) };
   }
+
+  test("forgets earlier traffic when the list is cleared", () => {
+    const { store } = clocked();
+    store.noteTraffic(1000, 200);
+    store.clear();
+    expect(store.throughput()).toEqual({ netInBytesPerSec: 0, netOutBytesPerSec: 0 });
+  });
 
   test("reports nothing before any traffic", () => {
     const { store } = clocked();

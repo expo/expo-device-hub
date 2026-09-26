@@ -53,6 +53,7 @@ type Listener = (event: CaptureEvent) => void;
 export type CaptureEvent =
   | { type: "started"; request: CapturedRequest }
   | { type: "finished"; request: CapturedRequest }
+  | { type: "evicted"; id: string }
   | { type: "cleared" }
   | { type: "meta"; meta: CaptureMeta };
 
@@ -129,6 +130,7 @@ export class CaptureStore {
     this.requests.clear();
     this.bodies.clear();
     this.totalBodyBytes = 0;
+    this.traffic.clear();
     this.emit({ type: "cleared" });
   }
 
@@ -176,6 +178,8 @@ export class CaptureStore {
         this.bodies.delete(oldest.value);
       }
       this.requests.delete(oldest.value);
+      // Live views mirror the list from events, so they must hear about removals too.
+      this.emit({ type: "evicted", id: oldest.value });
     }
   }
 
