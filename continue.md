@@ -1,6 +1,6 @@
 # continue.md: handoff for the next agent
 
-_Last updated: 2026-09-26. The simstream repo is merged into this branch; see "Picking this up" below._ The integration is built, smoke-tested and committed locally (`aa32ccd`). The benchmark matrix is running._
+_Last updated: 2026-09-26. All work is committed on `simstream-video`; the simstream repo is merged in (see "Picking this up on another machine")._
 
 ## Current task (from the user)
 > Fork the canonical serve-sim, integrate our video stack, and run a side-by-side comparison. Record
