@@ -4,7 +4,9 @@ import base64 as b64
 import json
 import os
 import queue
+import sys
 import threading
+import time
 import urllib.error
 import urllib.request
 import zlib
@@ -31,6 +33,9 @@ REDACTED = "[REDACTED]"
 
 MAX_BODY_BYTES = 512 * 1024
 TIMEOUT_SECONDS = 2
+# serve-sim sends SIGKILL 3 s after SIGTERM, so the final flush must finish sooner.
+SHUTDOWN_SECONDS = 2.5
+_shutdown_deadline = None
 QUEUE_BYTE_LIMIT = 32 * 1024 * 1024
 # Bound metadata independently of the body cap.
 MAX_URL_CHARS = 4096
@@ -57,8 +62,12 @@ def _send(path, body):
         headers={"content-type": "application/json"},
         method="POST",
     )
+    timeout = TIMEOUT_SECONDS
+    if _shutdown_deadline is not None:
+        # One slow send must not use up the time the rest of the queue needs.
+        timeout = max(0.05, min(timeout, _shutdown_deadline - time.monotonic()))
     try:
-        _opener.open(request, timeout=TIMEOUT_SECONDS).close()
+        _opener.open(request, timeout=timeout).close()
     except Exception:
         pass
 
@@ -112,10 +121,15 @@ def running():
 
 
 def done():
+    global _shutdown_deadline
     if not CONTROL:
         return
+    _shutdown_deadline = time.monotonic() + SHUTDOWN_SECONDS
     _outbox.put_nowait(None)
-    _reporter.join(timeout=2)
+    _reporter.join(timeout=SHUTDOWN_SECONDS)
+    if _reporter.is_alive():
+        left = max(0, _outbox.qsize() - 1)
+        print(f"[servesim-capture] stopped with {left} capture record(s) not delivered", file=sys.stderr)
 
 
 def _headers_of(message):
