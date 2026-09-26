@@ -224,6 +224,26 @@ describe("capture runtime", () => {
     expect(calls).toContain(`injected:${PORT_FILE}`);
   });
 
+  test("reports a failed cleanup during a retry as a capture failure", async () => {
+    let failClear = false;
+    const { runtime } = harness({
+      trustCa: async () => {
+        throw new Error("simctl refused");
+      },
+      clearInjection: async () => {
+        if (failClear) throw new Error("device already shut down");
+      },
+    });
+    await expect(runtime.enableForDevice(UDID)).rejects.toBeInstanceOf(CaptureEnableError);
+    expect(runtime.metaFor(UDID).attachment).toBe("failed");
+
+    failClear = true;
+    const err = await runtime.enableForDevice(UDID).catch((e) => e);
+    expect(err).toBeInstanceOf(CaptureEnableError);
+    expect(err.meta.attachment).toBe("failed");
+    expect(err.meta.attachError).toContain("device already shut down");
+  });
+
   test("rejects when the proxy never starts, after publishing failed meta", async () => {
     const { runtime } = harness({
       startProxy: async () => {

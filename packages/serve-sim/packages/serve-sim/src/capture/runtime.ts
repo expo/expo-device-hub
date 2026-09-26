@@ -231,12 +231,13 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       };
       const promise = operations.enqueue(udid, async () => {
         assertRequested(udid, request);
-        const existing = byUdid.get(udid);
-        if (existing?.meta.attachment === "failed") {
-          await disable(udid);
-          assertRequested(udid, request);
-        }
         try {
+          // Inside the try, so a failed cleanup reports as a CaptureEnableError like any other.
+          const existing = byUdid.get(udid);
+          if (existing?.meta.attachment === "failed") {
+            await disable(udid);
+            assertRequested(udid, request);
+          }
           await configure(udid, {
             ...capability,
             setEnabled: ({ enabled }) => enabled
