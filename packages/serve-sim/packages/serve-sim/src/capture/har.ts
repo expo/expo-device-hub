@@ -215,6 +215,12 @@ function statusTextFor(status: number, failure: string | null): string {
   return STATUS_TEXT[status] ?? "";
 }
 
+/** An ISO start time; a malformed report falls back to now rather than failing the entry. */
+function harStartedDateTime(startedAt: number): string {
+  const started = new Date(startedAt);
+  return Number.isNaN(started.getTime()) ? new Date().toISOString() : started.toISOString();
+}
+
 export function toHarEntry(
   request: CapturedRequest,
   body: CapturedBody | null = null,
@@ -229,7 +235,7 @@ export function toHarEntry(
   const status = request.status ?? 0;
 
   const entry: HarEntry = {
-    startedDateTime: new Date(request.startedAt).toISOString(),
+    startedDateTime: harStartedDateTime(request.startedAt),
     time,
     request: {
       method: request.method,

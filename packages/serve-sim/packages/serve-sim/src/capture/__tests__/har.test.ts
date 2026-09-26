@@ -262,6 +262,13 @@ it("labels request bodies with the recorded request MIME type when headers are a
   expect(toHarEntry(req, body).request.postData?.mimeType).toBe("application/octet-stream");
 });
 
+it("still converts a request whose start time is malformed", () => {
+  for (const startedAt of [Number.NaN, 1e20]) {
+    const entry = toHarEntry({ ...req, startedAt });
+    expect(Number.isNaN(Date.parse(entry.startedDateTime))).toBe(false);
+  }
+});
+
 it("keeps original timestamps when an old request is exported again", () => {
   const recorded = { ...req, startedAt: Date.parse("2026-01-01T00:00:00.000Z") };
   const entry = toHarEntry(recorded);
