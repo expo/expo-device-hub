@@ -307,6 +307,11 @@ describeOrSkip("network request fixture", () => {
     const profile = entries.find((entry) => entry.request.url.endsWith(PROFILE_PATH));
     const upload = entries.find((entry) => entry.request.url.endsWith(UPLOAD_PATH));
     expect(profile).toMatchObject({ request: { method: "GET" }, response: { status: 200 } });
+    // Each opted-in field arrives with its value: query, headers both ways, and the response body.
+    expect(profile?.request.queryString).toContainEqual({ name: "source", value: "button" });
+    expect(profile?.request.headers).toContainEqual({ name: "x-serve-sim-fixture", value: "profile" });
+    expect(profile?.response.headers).toContainEqual({ name: "x-serve-sim-fixture", value: "response" });
+    expect(JSON.parse(profile?.response.content.text ?? "null")).toEqual({ ok: true, path: PROFILE_PATH });
     expect(upload).toMatchObject({
       request: {
         method: "POST",
