@@ -116,22 +116,30 @@ function PasteField({ onSubmit }: { onSubmit: (text: string) => void }) {
   const [text, setText] = useState("");
   return (
     <form
-      className="flex items-center gap-2 flex-1 min-w-0"
+      className="flex items-end gap-2 flex-1 min-w-0"
       onSubmit={(event) => {
         event.preventDefault();
         if (text) onSubmit(text);
       }}
     >
-      <input
+      {/* A textarea keeps pasted line breaks; an input would strip them. */}
+      <textarea
         autoFocus
+        rows={2}
         value={text}
         onChange={(event) => setText(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }
+        }}
         placeholder="Long-press and paste"
         autoCapitalize="off"
         autoCorrect="off"
         spellCheck={false}
         aria-label="Text to paste into the simulator"
-        className="flex-1 min-w-0 px-2 py-1 rounded bg-black/40 border border-white/15 text-white/90 text-[12px] outline-none focus:border-white/35"
+        className="flex-1 min-w-0 max-h-24 resize-none px-2 py-1 rounded bg-black/40 border border-white/15 text-white/90 text-[12px] outline-none focus:border-white/35"
       />
       <button
         type="submit"
