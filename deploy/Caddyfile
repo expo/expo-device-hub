@@ -1,0 +1,22 @@
+# Public HTTPS for simstream.sethwebster.com, reverse-proxied to the local server (WebSockets included).
+#
+# Tailscale serve already holds *:443 on this Mac, and macOS only lets unprivileged processes bind
+# ports below 1024 on the wildcard address. So the router forwards WAN 443 → this Mac's 8443 (and
+# WAN 80 → 80): Caddy serves HTTPS on 8443, and Let's Encrypt's TLS-ALPN challenge still arrives via
+# WAN 443. Port 80 handles HTTP-01 and redirects to plain https:// (no port).
+{
+	http_port 80
+	https_port 8443
+	auto_https disable_redirects
+}
+
+simstream.sethwebster.com {
+	reverse_proxy 127.0.0.1:8766 {
+		# Frames are latency-critical: pass bytes through as they arrive.
+		flush_interval -1
+	}
+}
+
+http://simstream.sethwebster.com {
+	redir https://simstream.sethwebster.com{uri} permanent
+}
