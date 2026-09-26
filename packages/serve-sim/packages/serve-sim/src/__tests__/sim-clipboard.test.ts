@@ -5,6 +5,7 @@ import {
   readSimClipboard,
   readTextFromBrowserClipboard,
   simCopyHidEvents,
+  pasteRequestFits,
   simPasteHidEvents,
   simSelectAllHidEvents,
   trackHeldModifiers,
@@ -256,4 +257,20 @@ describe("readSimClipboard", () => {
     });
   });
 
+});
+
+describe("pasteRequestFits", () => {
+  test("accepts ordinary text", () => {
+    expect(pasteRequestFits(1, "hello\nworld")).toBe(true);
+  });
+
+  test("rejects text at the byte limit, since the request adds a tag and JSON", () => {
+    expect(pasteRequestFits(1, "a".repeat(4 * 1024 * 1024))).toBe(false);
+  });
+
+  test("measures the escaped request, not the text", () => {
+    // 2.5 MB of quotes escapes to about 5 MB of JSON.
+    expect(pasteRequestFits(1, "\"".repeat(2_500_000))).toBe(false);
+    expect(pasteRequestFits(1, "a".repeat(2_500_000))).toBe(true);
+  });
 });

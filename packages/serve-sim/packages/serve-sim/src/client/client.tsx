@@ -87,6 +87,8 @@ import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
 import {
   isLiftedModifier,
+  pasteRequestFits,
+  SIM_PASTE_MESSAGE_TAG,
   simCopyHidEvents,
   trackHeldModifiers,
   type HidKeyEvent,
@@ -140,6 +142,28 @@ import {
 const DUO_STAGE_DEFAULT_WIDTH = 580;
 const SHORTCUT_KEY_GAP_MS = 30;
 const SIM_COPY_SETTLE_MS = 150;
+// A barrier waits behind every earlier input on the socket, which can include a long paste.
+const INPUT_BARRIER_TIMEOUT_MS = 150_000;
+
+type PendingInputBarrier = {
+  ws: WebSocket;
+  timeout: ReturnType<typeof setTimeout>;
+  resolve: () => void;
+  reject: (error: Error) => void;
+};
+
+function rejectInputBarriers(
+  barriers: PendingInputBarrier[],
+  ws: WebSocket | null,
+  message: string,
+): PendingInputBarrier[] {
+  return barriers.filter((barrier) => {
+    if (barrier.ws !== ws) return true;
+    clearTimeout(barrier.timeout);
+    barrier.reject(new Error(message));
+    return false;
+  });
+}
 
 type PreviewConfig = NonNullable<Window["__SIM_PREVIEW__"]>;
 
@@ -936,6 +960,7 @@ function AppWithConfig({
     resolve: (ok: boolean) => void;
     reject: (error: Error) => void;
   } | null>(null);
+  const pendingInputBarriersRef = useRef<PendingInputBarrier[]>([]);
   if (!hingeQueueRef.current) {
     hingeQueueRef.current = createAcknowledgedControlQueue<HingeControlCommand>({
       send: (request) => {
@@ -1026,6 +1051,16 @@ function AppWithConfig({
           } catch {}
           return;
         }
+        if (bytes[0] === 0x91) {
+          const barriers = pendingInputBarriersRef.current;
+          const index = barriers.findIndex((barrier) => barrier.ws === ws);
+          if (index === -1) return;
+          const [barrier] = barriers.splice(index, 1);
+          clearTimeout(barrier!.timeout);
+          if (bytes[1] === 1) barrier!.resolve();
+          else barrier!.reject(new Error("Simulator input failed. Reload the preview and retry."));
+          return;
+        }
         if (bytes[0] !== 0x82) return;
         try {
           const cfg = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as StreamConfig;
@@ -1045,6 +1080,11 @@ function AppWithConfig({
           pendingPasteRef.current = null;
           pending.reject(new Error("Simulator input disconnected during paste"));
         }
+        pendingInputBarriersRef.current = rejectInputBarriers(
+          pendingInputBarriersRef.current,
+          ws,
+          "Simulator input disconnected during copy",
+        );
         if (!stopped && event.code === 1013) showInputSocketError(event.reason || "The server is busy. Try again shortly.");
         if (wsRef.current === ws) wsRef.current = null;
         if (!stopped) {
@@ -1075,6 +1115,11 @@ function AppWithConfig({
         pendingPasteRef.current = null;
         pending.reject(new Error("Simulator input disconnected during paste"));
       }
+      pendingInputBarriersRef.current = rejectInputBarriers(
+        pendingInputBarriersRef.current,
+        currentWs,
+        "Simulator input disconnected during copy",
+      );
       if (wsRef.current === currentWs) wsRef.current = null;
       hingeQueueRef.current?.clear();
       currentWs?.close();
@@ -1363,10 +1408,43 @@ function AppWithConfig({
 
   const pasteChainRef = useRef<Promise<void>>(Promise.resolve());
 
+  /** Resolves once the server has run every input sent earlier on `ws`. */
+  const waitForInputBarrier = useCallback(
+    (ws: WebSocket | null): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        if (!ws || ws !== wsRef.current || ws.readyState !== WebSocket.OPEN) {
+          reject(new Error("Simulator input disconnected during copy"));
+          return;
+        }
+        const barrier: PendingInputBarrier = {
+          ws,
+          resolve,
+          reject,
+          timeout: setTimeout(() => {
+            pendingInputBarriersRef.current = pendingInputBarriersRef.current.filter((b) => b !== barrier);
+            reject(new Error("Simulator input did not finish in time"));
+          }, INPUT_BARRIER_TIMEOUT_MS),
+        };
+        pendingInputBarriersRef.current.push(barrier);
+        try {
+          ws.send(Uint8Array.of(0x11));
+        } catch {
+          clearTimeout(barrier.timeout);
+          pendingInputBarriersRef.current = pendingInputBarriersRef.current.filter((b) => b !== barrier);
+          reject(new Error("Simulator input disconnected during copy"));
+        }
+      }),
+    [],
+  );
+
   const sendSimCopy = useCallback(async () => {
+    const ws = wsRef.current;
     await sendShortcut(simCopyHidEvents);
+    // Command+C can wait behind other input on the server, so a timer alone would read the old text.
+    await waitForInputBarrier(ws);
+    // The app still has to write its pasteboard after the shortcut arrives.
     await new Promise<void>((r) => setTimeout(r, SIM_COPY_SETTLE_MS));
-  }, [sendShortcut]);
+  }, [sendShortcut, waitForInputBarrier]);
 
   const sendTextToSim = useCallback(
     (text: string): Promise<boolean> => {
@@ -1379,13 +1457,17 @@ function AppWithConfig({
           return;
         }
         const requestId = ++pasteRequestIdRef.current;
+        if (!pasteRequestFits(requestId, text)) {
+          reject(new Error("This text is too large to paste into the simulator"));
+          return;
+        }
         const timeout = setTimeout(() => {
           if (pendingPasteRef.current?.requestId !== requestId) return;
           pendingPasteRef.current = null;
           reject(new Error("Simulator paste timed out"));
         }, 150_000);
         pendingPasteRef.current = { requestId, ws, timeout, resolve, reject };
-        if (!trySendWsMessage(ws, 0x12, { requestId, text })) {
+        if (!trySendWsMessage(ws, SIM_PASTE_MESSAGE_TAG, { requestId, text })) {
           clearTimeout(timeout);
           pendingPasteRef.current = null;
           reject(new Error("Simulator input disconnected during paste"));

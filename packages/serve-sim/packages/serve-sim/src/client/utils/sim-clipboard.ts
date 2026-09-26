@@ -1,5 +1,7 @@
 import { HID_USAGE_BY_CODE } from "./hid";
 import { simEndpoint } from "./sim-endpoint";
+import { encodeWsMessage } from "./ws-send-queue";
+import { EXEC_WS_MAX_MESSAGE_BYTES } from "../../exec-ws-utils";
 import type { KeyEvent } from "../../text-to-keys";
 
 export type { KeyEvent as HidKeyEvent } from "../../text-to-keys";
@@ -53,6 +55,18 @@ function simCommandShortcutHidEvents(
   if (!commandAlreadyDown) events.push({ type: "up", usage: metaLeft });
   for (const usage of lifted) events.push({ type: "down", usage });
   return events;
+}
+
+/** Tag of the input-socket paste request: `[0x12][{"requestId","text"}]`. */
+export const SIM_PASTE_MESSAGE_TAG = 0x12;
+
+/**
+ * True when a paste request fits in one input-socket frame. The server closes the socket on a
+ * larger frame instead of answering, and JSON escaping can make the frame several times the
+ * size of the text, so measure the encoded request rather than the text.
+ */
+export function pasteRequestFits(requestId: number, text: string): boolean {
+  return encodeWsMessage(SIM_PASTE_MESSAGE_TAG, { requestId, text }).byteLength <= EXEC_WS_MAX_MESSAGE_BYTES;
 }
 
 export function simPasteHidEvents(pressed: ReadonlySet<number>): KeyEvent[] {
