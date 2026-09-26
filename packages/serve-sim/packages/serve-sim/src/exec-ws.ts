@@ -8,7 +8,9 @@ import { InvalidHostActionError, runHostActionAsync } from "./host-actions";
 import {
   TOKEN_SUBPROTOCOL_PREFIX,
   acceptedTokenSubprotocol,
+  isSameOriginRequest,
   safeEqualString,
+  upgradeAuthHeaders,
 } from "./session-auth";
 
 // WebSocket control channel for the preview page. Browsers cap HTTP/1.1 at
@@ -244,6 +246,10 @@ function wireExecSocket(
       return;
     }
     const { id, action } = msg;
+    if (action.startsWith("capture.") && !isSameOriginRequest(upgradeAuthHeaders(request))) {
+      send({ id, error: "Network capture is same-origin only." });
+      return;
+    }
     if (!reserveAction(id)) return;
     const params = msg.params as Record<string, unknown> | undefined;
     runHostActionAsync(msg, opts.serveSimBinPath ?? "serve-sim")
