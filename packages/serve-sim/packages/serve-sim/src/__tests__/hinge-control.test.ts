@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { HINGE_POSES, isHingeControlCommand, hingeControlState, isTableModeAvailable } from "../hinge-control";
+import { HINGE_POSES, isHingeControlCommand, hingeControlState, hingePoseForState, hingePoseOrientation, isTableModeAvailable } from "../hinge-control";
 
 describe("Device Hub hinge controls", () => {
   test("keeps the five physical poses distinct, including the two 90 degree poses", () => {
@@ -52,4 +52,19 @@ test("physical display handoff preserves the hinge angle and elects the requeste
   for (const value of ["portrait", "other", 5, null]) {
     expect(isHingeControlCommand({ control: "physical", value })).toBe(false);
   }
+});
+
+test("names the preset that native hinge state matches", () => {
+  for (const pose of HINGE_POSES) {
+    const { hingeAngle, tableMode } = hingeControlState({ control: "pose", value: pose.id });
+    expect(hingePoseForState({ hingeAngle, tableMode, physicalOrientation: hingePoseOrientation(pose.id) })).toBe(pose.id);
+  }
+  expect(hingePoseForState({ hingeAngle: 0 })).toBeNull();
+  expect(hingePoseForState({ hingeAngle: 180 })).toBeNull();
+  expect(hingePoseForState({ hingeAngle: 0, physicalOrientation: "portrait" })).toBeNull();
+  expect(hingePoseForState({ hingeAngle: 0, physicalOrientation: "landscape-left", tableMode: false })).toBeNull();
+  expect(hingePoseForState({ hingeAngle: 90, physicalOrientation: "portrait", tableMode: true })).toBeNull();
+  expect(hingePoseForState({ hingeAngle: 90, physicalOrientation: "facedown", tableMode: true })).toBeNull();
+  expect(hingePoseForState({ hingeAngle: 120, physicalOrientation: "portrait", tableMode: false })).toBeNull();
+  expect(hingePoseForState({})).toBeNull();
 });

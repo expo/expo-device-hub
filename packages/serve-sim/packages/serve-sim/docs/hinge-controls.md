@@ -118,6 +118,17 @@ The CLI also accepts an angle, such as `serve-sim hinge 120 -d <udid>`. A comman
 waits for an acknowledgement and reports failures instead of assuming that
 writing to the input socket changed the device.
 
+Run `serve-sim hinge` without a position to print the current hinge state as
+JSON. The server reads the hinge angle from the simulator when it starts, so the
+angle is correct even if the device was folded before `serve-sim` started.
+CoreDevice reports the live angle, but not physical orientation or Table Mode.
+serve-sim saves those fields and the selected pose after confirmed commands. It
+restores them when the saved angle matches the live angle at startup. Manual
+angle changes and rotation clear the selected pose, including after a restart.
+A different native angle leaves saved fields unknown. A change made outside
+serve-sim at the same angle cannot be detected; choose a pose again to update
+the saved state. Unknown fields are left out.
+
 ## APIs inside an iOS app
 
 The iOS 27.1 SDK provides `UIHinge`, `UIHinge.Status`, and `UIHingeInteraction`.
