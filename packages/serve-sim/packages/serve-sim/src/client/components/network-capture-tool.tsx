@@ -1,4 +1,4 @@
-import { Ban, Folder, Radio, TriangleAlert } from "lucide-react";
+import { Ban, Download, Folder, Radio, TriangleAlert } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import {
@@ -7,7 +7,7 @@ import {
   type CaptureMeta,
 } from "../hooks/use-capture-stream";
 import { runHostAction } from "../utils/exec";
-import { simEndpoint } from "../utils/sim-endpoint";
+import { simAuthHeaders, simEndpoint } from "../utils/sim-endpoint";
 import { CollapsibleSection } from "./collapsible-section";
 import {
   DomainSection,
@@ -31,6 +31,11 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
   const path = useMemo(
     () => captureEndpoint ?? `${simEndpoint("network-capture")}?device=${encodeURIComponent(udid)}`,
     [captureEndpoint, udid],
+  );
+  const bodyBase = useMemo(() => path.split("?")[0] ?? path, [path]);
+  const harUrl = useMemo(
+    () => `${bodyBase}.har?device=${encodeURIComponent(udid)}`,
+    [bodyBase, udid],
   );
   const [open, setOpen] = useState(true);
   const [grouped, setGrouped] = useState(false);
@@ -123,7 +128,7 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
         <div className="flex items-center gap-2">
           <span
             role="status"
-            aria-label={capturing ? "Capture enabled" : starting ? "Capture starting" : "Capture disabled"}
+            aria-label={captureStatusLabel(capturing, starting, meta?.fields)}
             className={`group relative inline-flex items-center rounded p-1 ${
               capturing
                 ? "bg-emerald-500/15 text-emerald-300"
@@ -133,8 +138,8 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
             }`}
           >
             <Radio aria-hidden="true" className="w-3.5 h-3.5" />
-            <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-max rounded-md bg-black/90 px-2 py-1 text-[11px] leading-snug text-white/90 shadow-lg group-hover:block">
-              {capturing ? "Capture enabled" : starting ? "Capture starting" : "Capture disabled"}
+            <span className="pointer-events-none absolute left-0 top-full z-10 mt-1 hidden w-max max-w-[240px] rounded-md bg-black/90 px-2 py-1 text-[11px] leading-snug text-white/90 shadow-lg group-hover:block">
+              <CaptureStatusTooltip capturing={capturing} starting={starting} fields={meta?.fields} />
             </span>
           </span>
           <button
@@ -180,8 +185,31 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
               </button>
               <button
                 type="button"
+                aria-label="Download session as HAR"
+                title="Download session as HAR"
+                className="rounded p-1 text-white/70 hover:bg-white/10"
+                onClick={() => {
+                  void (async () => {
+                    try {
+                      const response = await fetch(harUrl, { headers: simAuthHeaders() });
+                      if (!response.ok) return;
+                      const blob = await response.blob();
+                      const objectUrl = URL.createObjectURL(blob);
+                      const anchor = document.createElement("a");
+                      anchor.href = objectUrl;
+                      anchor.download = `serve-sim-${udid.slice(0, 8)}.har`;
+                      anchor.click();
+                      URL.revokeObjectURL(objectUrl);
+                    } catch {}
+                  })();
+                }}
+              >
+                <Download aria-hidden="true" className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
                 aria-label="Clear the live request list"
-                title="Clear the live request list"
+                title="Clear the live request list (session HAR on disk is kept)"
                 onClick={() => void clearRequests()}
                 className="rounded p-1 text-white/70 hover:bg-white/10"
               >
@@ -274,6 +302,41 @@ export function CaptureState({
   return attachError ? (
     <span className="whitespace-pre-line text-[11px] leading-snug text-white/40">{attachError}</span>
   ) : null;
+}
+
+function responseBodiesEnabled(fields: string[] | undefined): boolean {
+  return !!fields?.includes("response-body");
+}
+
+export function captureStatusLabel(
+  capturing: boolean,
+  starting: boolean,
+  fields: string[] | undefined,
+): string {
+  if (starting) return "Capture starting";
+  if (!capturing) return "Capture disabled";
+  if (responseBodiesEnabled(fields)) return "Capture enabled";
+  return "Capture enabled. Response bodies not captured.";
+}
+
+export function CaptureStatusTooltip({
+  capturing,
+  starting,
+  fields,
+}: {
+  capturing: boolean;
+  starting: boolean;
+  fields: string[] | undefined;
+}) {
+  if (starting) return <>Capture starting</>;
+  if (!capturing) return <>Capture disabled</>;
+  if (responseBodiesEnabled(fields)) return <>Capture enabled</>;
+  return (
+    <>
+      Capture enabled
+      <span className="mt-0.5 block text-white/55">Response bodies not captured</span>
+    </>
+  );
 }
 
 export function OversizedBodiesNotice({ count }: { count: number }) {

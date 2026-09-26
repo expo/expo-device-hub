@@ -29,6 +29,7 @@ function harness() {
       publish: async () => void calls.push("injected"),
       remove: async () => void calls.push("injection-cleared"),
     }),
+    writeDiskArtifacts: false,
   });
   const deps = {
     runtime,
@@ -202,6 +203,7 @@ describe("rebootWithCapture", () => {
       trustCa: async () => {},
       dylib: () => "/fake/libSimNetProxy.dylib",
       configure: capabilityHarness(),
+    writeDiskArtifacts: false,
     });
 
     const meta = await rebootWithCapture(UDID, /* enabled */ true, {

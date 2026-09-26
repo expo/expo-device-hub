@@ -145,6 +145,7 @@ function finishRecord(
   store.update(storeId, {
     status: record.status ?? null,
     mimeType: record.res?.mime ?? record.res?.headers?.["content-type"] ?? null,
+    requestMimeType: record.req?.mime ?? record.req?.headers?.["content-type"] ?? null,
     requestBytes,
     responseBytes,
     ttfbMs: record.ttfbMs ?? null,

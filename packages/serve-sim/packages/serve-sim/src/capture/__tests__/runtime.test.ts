@@ -1,7 +1,7 @@
 import { capabilityHarness } from "./capability-harness";
 import { describe, expect, test } from "bun:test";
 
-import { createCaptureRuntime, CaptureEnableError } from "../runtime";
+import { createCaptureRuntime, CaptureEnableError, discardCaptureArtifactsForExit } from "../runtime";
 import { CaptureStore } from "../store";
 import { type CaptureProxy, type MitmProxyDeps } from "../mitm-engine";
 
@@ -19,6 +19,10 @@ function harness(
     clearInjection?: (udid: string) => Promise<void>;
     isInjected?: (udid: string, portFile: string) => Promise<boolean>;
     checkIntervalMs?: number;
+    writeDiskArtifacts?: boolean;
+    captureDirFor?: (udid: string) => string;
+    creatorVersion?: string;
+    flushIntervalMs?: number;
   } = {},
 ) {
   const calls: string[] = [];
@@ -44,6 +48,11 @@ function harness(
     }),
     isInjected: overrides.isInjected ?? (async () => true),
     checkIntervalMs: overrides.checkIntervalMs ?? 0,
+    // Default off in unit tests — dedicated disk tests opt in with a temp dir.
+    writeDiskArtifacts: overrides.writeDiskArtifacts ?? false,
+    captureDirFor: overrides.captureDirFor,
+    creatorVersion: overrides.creatorVersion,
+    flushIntervalMs: overrides.flushIntervalMs,
   });
   return { runtime, calls };
 }
@@ -182,8 +191,16 @@ describe("capture runtime", () => {
     expect(meta.attachment).toBe("capturing");
     expect(meta.proxyAddress).toBe("127.0.0.1:9123");
     expect(meta.attachError).toBeNull();
+    expect(meta.fields).toEqual([]);
     // Order matters: an app launched before the CA is trusted fails every HTTPS handshake.
     expect(calls).toEqual(["proxy-started", "trusted:ok", `injected:${PORT_FILE}`]);
+  });
+
+  test("honors an explicit capture field allowlist on new sessions", async () => {
+    const { runtime } = harness();
+    runtime.setFields(["header", "request-body", "response-body"]);
+    const meta = await runtime.enableForDevice(UDID);
+    expect(meta.fields).toEqual(["header", "request-body", "response-body"]);
   });
 
   test("reports a device that was never enabled, rather than inventing a session", () => {
@@ -191,6 +208,7 @@ describe("capture runtime", () => {
     const meta = runtime.metaFor(UDID);
 
     expect(meta.attachment).toBe("not-enabled");
+    expect(meta.fields).toEqual([]);
     expect(meta.attachError).toBeNull();
     expect(runtime.storeFor(UDID)).toBeNull();
     expect(runtime.throughputFor(UDID)).toBeNull();
@@ -576,7 +594,9 @@ describe("capture runtime", () => {
 
     const capturing = harness();
     await capturing.runtime.enableForDevice(UDID);
-    capturing.runtime.storeFor(UDID)!.noteTraffic(1500, 200);
+    const capturingStore = capturing.runtime.storeFor(UDID);
+    if (!capturingStore) throw new Error("expected capture store");
+    capturingStore.noteTraffic(1500, 200);
     expect(capturing.runtime.throughputFor(UDID)).toEqual({ netInBytesPerSec: 1500, netOutBytesPerSec: 200 });
   });
 
@@ -744,7 +764,9 @@ describe("capture runtime", () => {
     const events: string[] = [];
     const first = runtime.subscribe(UDID, (event) => events.push(event.type));
     const second = runtime.subscribe(UDID, () => {});
-    runtime.storeFor(UDID)!.start("GET", "https://example.test/a");
+    const store = runtime.storeFor(UDID);
+    if (!store) throw new Error("expected capture store");
+    store.start("GET", "https://example.test/a");
     first.unsubscribe();
     second.unsubscribe();
 
@@ -754,9 +776,186 @@ describe("capture runtime", () => {
     expect(runtime.metaFor(UDID).attachment).toBe("capturing");
   });
 
+  test("reports failed capability removal and retains the proxy for cleanup", async () => {
+    let failRemoval = true;
+    const { runtime, calls } = harness({
+      clearInjection: async () => {
+        if (failRemoval) throw new Error("Capability is still armed");
+      },
+    });
+    await runtime.enableForDevice(UDID);
+    await expect(runtime.disableForDevice(UDID)).rejects.toThrow("still armed");
+    expect(calls).not.toContain("proxy-closed");
+    failRemoval = false;
+    await runtime.disableForDevice(UDID);
+    expect(calls).toContain("proxy-closed");
+  });
+
+  test("holds recording ownership until device cleanup finishes", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-runtime-owner-"));
+    const clear = gate();
+    const clearing = gate();
+    const first = harness({ writeDiskArtifacts: true, captureDirFor: () => dir,
+      clearInjection: async () => { clearing.release(); await clear.promise; },
+    });
+    const second = harness({ writeDiskArtifacts: true, captureDirFor: () => dir });
+    await first.runtime.enableForDevice(UDID);
+    const stopping = first.runtime.disableForDevice(UDID);
+    await clearing.promise;
+    try {
+      await expect(second.runtime.enableForDevice(UDID)).rejects.toThrow("Another recording holds");
+      expect(second.calls).toEqual([]);
+    } finally {
+      clear.release();
+      await stopping;
+    }
+    await second.runtime.enableForDevice(UDID);
+    await first.runtime.disableAll();
+    expect(await second.runtime.flushHarPathFor(UDID)).not.toBeNull();
+    await second.runtime.disableAll();
+  });
+
+  test("removes capture files on process exit without any caller wiring it up", async () => {
+    const { existsSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = join(mkdtempSync(join(tmpdir(), "serve-sim-runtime-exit-hook-")), "capture-device");
+    const { runtime } = harness({ writeDiskArtifacts: true, captureDirFor: () => dir });
+    try {
+      await runtime.enableForDevice(UDID);
+      expect(existsSync(dir)).toBe(true);
+      expect(process.listeners("exit")).toContain(discardCaptureArtifactsForExit);
+      discardCaptureArtifactsForExit();
+      expect(existsSync(dir)).toBe(false);
+      await runtime.disableAll();
+    } finally {
+      rmSync(join(dir, ".."), { recursive: true, force: true });
+    }
+  });
+
+  test("removes capture files synchronously for process exit", async () => {
+    const { existsSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = join(mkdtempSync(join(tmpdir(), "serve-sim-runtime-exit-")), "capture-device");
+    const { runtime } = harness({ writeDiskArtifacts: true, captureDirFor: () => dir });
+    try {
+      await runtime.enableForDevice(UDID);
+      expect(existsSync(join(dir, "capture.har"))).toBe(true);
+
+      // No await: an exit handler cannot wait for the async teardown.
+      runtime.discardArtifactsSync();
+      expect(existsSync(dir)).toBe(false);
+
+      await runtime.disableAll();
+      expect(existsSync(dir)).toBe(false);
+    } finally {
+      rmSync(join(dir, ".."), { recursive: true, force: true });
+    }
+  });
+
+  test("writes network-capture.json + capture.har while capturing, then removes them on disable", async () => {
+    const { existsSync, mkdtempSync, readFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-runtime-disk-"));
+    const { runtime } = harness({
+      writeDiskArtifacts: true,
+      captureDirFor: () => dir,
+      creatorVersion: "disk-test",
+      // HAR is stream-rebuilt on an interval from NDJSON, not on every finish.
+      flushIntervalMs: 50,
+    });
+
+    try {
+      await runtime.enableForDevice(UDID);
+      const paths = runtime.artifactPathsFor(UDID);
+      expect(paths?.networkCapturePath).toContain("network-capture.json");
+      expect(paths?.harPath).toContain("capture.har");
+
+      const store = runtime.storeFor(UDID);
+      if (!store) throw new Error("expected capture store");
+      const id = store.start("GET", "https://example.test/");
+      store.setBody(id, {
+        requestHeaders: {},
+        responseHeaders: {},
+        requestBody: null,
+        responseBody: "hi",
+        requestTruncated: false,
+        responseTruncated: false,
+        requestBinary: false,
+        responseBinary: false,
+      });
+      store.update(id, { status: 200, durationMs: 3, responseBytes: 2 }, true);
+
+      // NDJSON append is async; HAR rebuild is interval/flush. Wait for both.
+      const eventsPath = join(dir, "network-capture.json");
+      const harPath = join(dir, "capture.har");
+      const deadline = Date.now() + 2000;
+      let har: { log: { entries: Array<{ response: { content: { text?: string } } }> } } | null =
+        null;
+      while (Date.now() < deadline) {
+        const eventsReady =
+          existsSync(eventsPath) && readFileSync(eventsPath, "utf8").includes('"type":"finished"');
+        if (eventsReady && existsSync(harPath)) {
+          try {
+            const parsed = JSON.parse(readFileSync(harPath, "utf8"));
+            if (parsed.log?.entries?.length === 1) {
+              har = parsed;
+              break;
+            }
+          } catch {
+            // HAR not flushed yet (interval rebuild).
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      const events = readFileSync(eventsPath, "utf8");
+      expect(events).toContain('"type":"finished"');
+      if (har === null) throw new Error("expected capture.har with one entry");
+      expect(har.log.entries).toHaveLength(1);
+      const [entry] = har.log.entries;
+      if (entry === undefined) throw new Error("expected first HAR entry");
+      expect(entry.response.content.text).toBe("hi");
+
+      await runtime.disableForDevice(UDID);
+      expect(runtime.artifactPathsFor(UDID)).toBeNull();
+      expect(existsSync(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("removes capture artifacts when enable fails after disk attach", async () => {
+    const { existsSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-runtime-disk-fail-"));
+    const { runtime } = harness({
+      writeDiskArtifacts: true,
+      captureDirFor: () => dir,
+      trustCa: async () => {
+        throw new Error("ca failed");
+      },
+    });
+
+    try {
+      await expect(runtime.enableForDevice(UDID)).rejects.toMatchObject({
+        name: "CaptureEnableError",
+        meta: { attachment: "failed" },
+      });
+      expect(runtime.artifactPathsFor(UDID)).toBeNull();
+      expect(existsSync(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("uses one policy for every device, however capture was started", async () => {
-    // The policy used to be a per-call argument and two of three enable paths forgot it, so a panel
-    // reboot silently narrowed capture to metadata with nothing said.
     const seen: (readonly string[])[] = [];
     const runtime = createCaptureRuntime({
       startProxy: async (_store, deps) => {

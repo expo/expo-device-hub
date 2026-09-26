@@ -13,6 +13,8 @@ export interface CapturedRequest {
   url: string;
   status: number | null;
   mimeType: string | null;
+  /** Request Content-Type, kept as metadata even when headers are not captured. */
+  requestMimeType?: string | null;
   requestBytes: number;
   responseBytes: number;
   /** Unix time in milliseconds, preserved across exports. */
@@ -42,6 +44,7 @@ export interface CaptureMeta {
   attachment: CaptureAttachment;
   attachError: string | null;
   droppedOversizedBodies: number;
+  fields: string[];
 }
 
 type Listener = (event: CaptureEvent) => void;
