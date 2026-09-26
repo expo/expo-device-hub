@@ -63,4 +63,46 @@ describe("forwardAddonDiagnostics", () => {
     // One send times out after 2 s, inside the 2.5 s window, so the reporter exits before done() returns.
     await shutDownWithStalledControl(1);
   }, 20_000);
+
+  async function runWithControl(reply: (res: import("node:http").ServerResponse) => void, records: number) {
+    const server: Server = createServer((_req, res) => reply(res));
+    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const script = [
+        "import importlib.util, time",
+        `spec = importlib.util.spec_from_file_location("addon", ${JSON.stringify(ADDON)})`,
+        "addon = importlib.util.module_from_spec(spec); spec.loader.exec_module(addon)",
+        `for i in range(${records}): addon._post('/response', {'id': str(i)})`,
+        "time.sleep(1)",
+        "addon.done()",
+      ].join("\n");
+      const child = spawn("python3", ["-c", script], {
+        env: { ...process.env, SERVE_SIM_CAPTURE_CONTROL_URL: `http://127.0.0.1:${port}`, SERVE_SIM_CAPTURE_CONTROL_TOKEN: "t" },
+      });
+      let stderr = "";
+      child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+      expect(await new Promise<number | null>((done) => child.on("exit", done))).toBe(0);
+      return stderr;
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((done) => server.close(() => done()));
+    }
+  }
+
+  test("warns once when posts fail during capture and counts them at shutdown", async () => {
+    const stderr = await runWithControl((res) => res.writeHead(500).end(), 2);
+    expect(stderr.match(/could not deliver a capture record/g)).toHaveLength(1);
+    expect(stderr).toContain("[servesim-capture] stopped with 2 capture record(s) not delivered");
+  }, 20_000);
+
+  test("counts a record the control server refuses with ok: false", async () => {
+    const stderr = await runWithControl((res) => res.writeHead(200, { "content-type": "application/json" }).end('{"ok":false}'), 1);
+    expect(stderr).toContain("[servesim-capture] stopped with 1 capture record(s) not delivered");
+  }, 20_000);
+
+  test("stays quiet when every record is delivered", async () => {
+    const stderr = await runWithControl((res) => res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}'), 2);
+    expect(stderr).not.toContain("[servesim-capture]");
+  }, 20_000);
 });
