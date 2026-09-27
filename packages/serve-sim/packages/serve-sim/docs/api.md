@@ -32,7 +32,7 @@ are server-sent event streams; the rest return JSON.
 Use `serve-sim record-video --udid <udid> --output <empty-dir>` against a
 running session. The CLI owns and renews the recording lease;
 SIGINT stops it and waits for `recording.mp4` and `session.json`. The server
-also finalizes active recordings during shutdown. One recording may run per
+also attempts to finalize active recordings during shutdown. One recording may run per
 device. The manifest retains the record-sim upload schema. See
 [Video pipeline and recording](video-pipeline.md) for frame handling and limits.
 

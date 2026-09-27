@@ -134,13 +134,14 @@ serve-sim record-video --udid <udid> --output <empty-dir>
 The CLI owns a recording lease and renews it while running. A client with a
 different recording ID cannot stop that recording. When the session uses
 `--require-token`, the CLI sends its bearer token for recording control. An
-ungated local session needs no token. Serve-sim finalizes an active recording
+ungated session needs no token. Serve-sim attempts to finalize an active recording
 on SIGTERM, SIGINT, or SIGHUP before the process exits. The CLI also waits for
 the manifest when the server stops during recording. If a
 start request times out, the CLI cancels that recording ID so a late server
 start cannot leave an active recording. A finalization failure makes shutdown
 exit unsuccessfully after teardown.
-Allow sufficient shutdown time for the VideoToolbox flush and MP4 writer.
+The foreground CLI force-kills an unresponsive helper after 500 ms, which may
+interrupt finalization. Stop recording before stopping the helper when possible.
 
 The proposed build-tools integration lives in a separate eas-cli PR. Once
 deployed, it will use this command in place of record-sim: one recorder per
