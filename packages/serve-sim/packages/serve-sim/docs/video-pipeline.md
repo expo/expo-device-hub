@@ -123,7 +123,7 @@ record-sim upload contract: `firstFrameWallClock` with `unixMs` and `iso8601`,
 
 ## Control and shutdown
 
-Start a token-gated serve-sim session for the device, then run:
+Start serve-sim for the device, then run:
 
 ```sh
 serve-sim record-video --udid <udid> --output <empty-dir>
@@ -131,9 +131,11 @@ serve-sim record-video --udid <udid> --output <empty-dir>
 ```
 
 The CLI owns a recording lease and renews it while running. A client with a
-different recording ID cannot stop that recording. Serve-sim finalizes an
-active recording on SIGTERM, SIGINT, or SIGHUP before the process exits. The
-CLI also waits for the manifest when the server stops during recording. If a
+different recording ID cannot stop that recording. When the session uses
+`--require-token`, the CLI sends its bearer token for recording control. An
+ungated local session needs no token. Serve-sim finalizes an active recording
+on SIGTERM, SIGINT, or SIGHUP before the process exits. The CLI also waits for
+the manifest when the server stops during recording. If a
 start request times out, the CLI cancels that recording ID so a late server
 start cannot leave an active recording. A finalization failure makes shutdown
 exit unsuccessfully after teardown.

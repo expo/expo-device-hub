@@ -14,7 +14,7 @@ server's selected device.
 | `/` | The preview page. |
 | `/api` | Current device and stream state, including `execToken`. |
 | `/api/screenshot` | `POST`. A still PNG. |
-| `/helper/<udid>/recording/video` | `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Requires the session token and a recording ID. |
+| `/helper/<udid>/recording/video` | `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Requires a recording ID; when `--require-token` is set, also requires its bearer token. |
 | `/api/events`, `/api/event-log`, `/api/event-log/events` | Device events and the recorded log. |
 | `/metrics` | CPU, memory and network samples, one per second. |
 | `/logs`, `/ax`, `/appstate` | Device log, accessibility tree, foreground app. |
@@ -30,7 +30,7 @@ are server-sent event streams; the rest return JSON.
 ## Recording video
 
 Use `serve-sim record-video --udid <udid> --output <empty-dir>` against a
-running `--require-token` session. The CLI owns and renews the recording lease;
+running session. The CLI owns and renews the recording lease;
 SIGINT stops it and waits for `recording.mp4` and `session.json`. The server
 also finalizes active recordings during shutdown. One recording may run per
 device. The manifest retains the record-sim upload schema. See
@@ -38,16 +38,17 @@ device. The manifest retains the record-sim upload schema. See
 
 ## Authentication
 
-Without `--require-token` the preview routes are not gated, but
-`/helper/<udid>/recording/video` still requires a session token. Start the
-server with `--require-token` to use recording. CORS still applies, and a
-loopback origin is still allowed, so a page served from any `localhost` port
-can read an ungated preview.
+Without `--require-token`, neither the preview nor recording control requires
+a session token. CORS still applies, and a loopback origin is still allowed,
+so a page served from any `localhost` port can read an ungated preview.
 
 With it, the server mints one session token at startup, prints it, and writes it
 to the device's state file. Every route is gated as a whole rather than per
 route, so a new route is protected by default. `/healthz` and `/readyz` are the
 exceptions, because a liveness probe cannot carry a credential.
+
+Recording control requires the bearer token when the preview is gated; its
+cookie and query-token forms do not authorize `POST`, `PUT`, or `DELETE`.
 
 There are three ways to present the token, and which one you use depends on what
 the client is.
