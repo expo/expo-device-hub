@@ -180,12 +180,8 @@ See [WebRTC architecture](docs/webrtc-architecture.md) for signaling and
 control, and [Video pipeline and recording](docs/video-pipeline.md) for capture,
 scaling, hardware encoding, the recording contract, and measured limits.
 
-An active serve-sim session can record native-size H.264 with
-`serve-sim record-video --udid <udid> --output <empty-dir>`. Send SIGINT to
-finalize `recording.mp4` and `session.json`; serve-sim also attempts to finalize
-on shutdown. A session started with `--require-token` uses its bearer token for
-recording control. See [API](docs/api.md) for the HTTP routes, authentication,
-CORS, and WebSocket endpoints.
+See [API](docs/api.md) for the HTTP routes, authentication, CORS and the
+WebSocket endpoints.
 
 ### Recording video
 
