@@ -1,6 +1,6 @@
 import type { ChildProcess } from "node:child_process";
 
-const RECORDING_SHUTDOWN_GRACE_MS = 75_000;
+const SHUTDOWN_GRACE_MS = 500;
 type StopResult = { exitCode: number | null; signalCode: NodeJS.Signals | null; forced: boolean };
 
 function result(child: ChildProcess | undefined, forced: boolean): StopResult {
@@ -21,11 +21,11 @@ async function waitForExit(pid: number, child: ChildProcess | undefined, timeout
   return hasExited(pid, child);
 }
 
-/** Give the server time to finalize MP4 files before forcing it to exit. */
+/** Give the server a short chance to exit before forcing an unresponsive helper down. */
 export async function stopProcess(
   pid: number,
   child?: ChildProcess,
-  graceMs = RECORDING_SHUTDOWN_GRACE_MS,
+  graceMs = SHUTDOWN_GRACE_MS,
 ): Promise<StopResult> {
   if (hasExited(pid, child)) return result(child, false);
   try { process.kill(pid, "SIGTERM"); } catch { return result(child, false); }

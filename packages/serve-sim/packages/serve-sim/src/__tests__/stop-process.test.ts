@@ -38,7 +38,7 @@ test("server shutdown reports an external SIGKILL during finalization", async ()
   }
 });
 
-test("server shutdown force-kills a child after the finalization deadline", async () => {
+test("server shutdown force-kills an unresponsive child after the default grace", async () => {
   const child = spawn(process.execPath, ["-e", `
     process.on("SIGTERM", () => {});
     console.log("ready");
@@ -46,7 +46,9 @@ test("server shutdown force-kills a child after the finalization deadline", asyn
   `], { stdio: ["ignore", "pipe", "ignore"] });
   try {
     await once(child.stdout!, "data");
-    expect((await stopProcess(child.pid!, child, 100)).forced).toBe(true);
+    const started = Date.now();
+    expect((await stopProcess(child.pid!, child)).forced).toBe(true);
+    expect(Date.now() - started).toBeLessThan(2_000);
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
   }
