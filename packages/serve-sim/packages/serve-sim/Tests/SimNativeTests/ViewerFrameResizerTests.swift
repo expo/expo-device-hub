@@ -245,6 +245,44 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(chroma(boxed, x: 40, y: 30), 64, accuracy: 2)
     }
 
+    /// The even-size copy of an odd-size panel is BGRA. Metal converts it to video-range
+    /// 4:2:0 while scaling, with bars, so it never needs the VideoToolbox fallback.
+    func testMetalBackendConvertsBGRAWhileScalingAndLetterboxing() throws {
+        guard let backend = MetalResizeBackend(maxBuffers: 4) else {
+            throw XCTSkip("Metal is not available on this host")
+        }
+        let source = makeBuffer(width: 120, height: 240, format: kCVPixelFormatType_32BGRA)
+        XCTAssertTrue(backend.supports(source))
+        // Left half white, right half pure red: luma and chroma are both checked.
+        CVPixelBufferLockBaseAddress(source, [])
+        let base = CVPixelBufferGetBaseAddress(source)!.assumingMemoryBound(to: UInt8.self)
+        let stride = CVPixelBufferGetBytesPerRow(source)
+        for y in 0..<240 {
+            for x in 0..<120 {
+                let p = base + y * stride + x * 4
+                let red = x >= 60
+                p[0] = red ? 0 : 255; p[1] = red ? 0 : 255; p[2] = 255; p[3] = 255  // B, G, R, A
+            }
+        }
+        CVPixelBufferUnlockBaseAddress(source, [])
+
+        let fit = try XCTUnwrap(resize(source, to: Dimensions(width: 60, height: 120), with: backend))
+        XCTAssertEqual(CVPixelBufferGetPixelFormatType(fit), kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
+        XCTAssertEqual(fit.dimensions, Dimensions(width: 60, height: 120))
+        XCTAssertEqual(luma(fit, x: 15, y: 60), 235, accuracy: 2, "white is video-range white")
+        XCTAssertEqual(chroma(fit, x: 7, y: 30), 128, accuracy: 2, "white has neutral chroma")
+        XCTAssertEqual(luma(fit, x: 45, y: 60), 63, accuracy: 3, "BT.709 red luma")
+        XCTAssertEqual(chroma(fit, x: 22, y: 30), 102, accuracy: 3, "BT.709 red Cb")
+        XCTAssertEqual(chroma(fit, x: 22, y: 30, plane: 1), 240, accuracy: 3, "BT.709 red Cr")
+
+        let boxed = try XCTUnwrap(resize(source, to: Dimensions(width: 160, height: 120), with: backend))
+        XCTAssertEqual(luma(boxed, x: 65, y: 60), 235, accuracy: 2, "picture in the middle")
+        XCTAssertEqual(luma(boxed, x: 10, y: 60), 16, accuracy: 1, "left bar")
+        XCTAssertEqual(luma(boxed, x: 150, y: 60), 16, accuracy: 1, "right bar")
+        XCTAssertEqual(chroma(boxed, x: 5, y: 30), 128, accuracy: 1, "bars are neutral")
+        XCTAssertEqual(backend.poolDrops, 0)
+    }
+
     func testMetalBackendPoolIsBounded() throws {
         guard let backend = MetalResizeBackend(maxBuffers: 3) else {
             throw XCTSkip("Metal is not available on this host")
@@ -307,10 +345,11 @@ final class ViewerFrameResizerTests: XCTestCase {
         return Double(base[y * CVPixelBufferGetBytesPerRowOfPlane(buffer, 0) + x])
     }
 
-    private func chroma(_ buffer: CVPixelBuffer, x: Int, y: Int) -> Double {
+    /// `plane` 0 reads Cb, 1 reads Cr of the interleaved chroma sample.
+    private func chroma(_ buffer: CVPixelBuffer, x: Int, y: Int, plane: Int = 0) -> Double {
         CVPixelBufferLockBaseAddress(buffer, .readOnly)
         defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
         let base = CVPixelBufferGetBaseAddressOfPlane(buffer, 1)!.assumingMemoryBound(to: UInt8.self)
-        return Double(base[y * CVPixelBufferGetBytesPerRowOfPlane(buffer, 1) + x * 2])
+        return Double(base[y * CVPixelBufferGetBytesPerRowOfPlane(buffer, 1) + x * 2 + plane])
     }
 }

@@ -52,8 +52,10 @@ need separate measurements.
 on its own queue, so the frame pump never waits on a resize. The default
 backend scales the Y and CbCr planes on the GPU with Metal Performance Shaders
 (bilinear) into a bounded pool; a frame that already matches the canvas passes
-through. The VideoToolbox transfer is the fallback, with its own vImage CPU
-path. A frame that arrives while one is in flight replaces the waiting frame.
+through. A BGRA frame, the even-size copy of an odd-size panel while recording,
+is scaled and converted to video-range 4:2:0 by a Metal compute kernel in the
+same pass, bars included. The VideoToolbox transfer is the fallback, with its
+own vImage CPU path. A frame that arrives while one is in flight replaces the waiting frame.
 `SERVE_SIM_VIEWER_RESIZE=metal|videotoolbox|cpu` pins one backend for
 measurements.
 
