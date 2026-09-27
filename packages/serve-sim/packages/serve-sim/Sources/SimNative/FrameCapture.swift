@@ -43,7 +43,6 @@ actor FrameCapture {
     /// Each frame carries the viewer canvas computed on this actor, so the engine
     /// never has to hop back here on the frame path.
     private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?) -> Void)?
-    private var webRTCCanvasCacheValid = false
     private var webRTCCanvasCache: Dimensions?
     private var screenObservers: [UUID: @Sendable () -> Void] = [:]
     private var frameCount: UInt64 = 0
@@ -327,7 +326,7 @@ actor FrameCapture {
         bestSurfaceKey = nil
         lastPickAttempt = nil
         // Every surface, descriptor, or display change comes through here.
-        webRTCCanvasCacheValid = false
+        webRTCCanvasCache = nil
     }
 
     // MARK: - Frame callbacks
@@ -576,10 +575,11 @@ actor FrameCapture {
 
     /// Cached until the next surface, descriptor, or display change.
     func webRTCEncodeCanvasSize() -> Dimensions? {
-        if webRTCCanvasCacheValid { return webRTCCanvasCache }
+        if let webRTCCanvasCache { return webRTCCanvasCache }
         let canvas = computeWebRTCEncodeCanvasSize()
         webRTCCanvasCache = canvas
-        webRTCCanvasCacheValid = true
+        // A Duo panel may gain its IOSurface after the first frame without a
+        // surfaces-changed callback. Retry incomplete geometry on later frames.
         return canvas
     }
 
