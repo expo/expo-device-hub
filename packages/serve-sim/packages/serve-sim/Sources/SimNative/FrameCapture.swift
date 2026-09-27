@@ -40,7 +40,11 @@ actor FrameCapture {
     private var pollTicks: UInt64 = 0
     private var pollLateSumNs: UInt64 = 0
     private var pollGrid: PollDeadlineGrid?
-    private var onFrame: ((CVPixelBuffer, CMTime) -> Void)?
+    /// Each frame carries the viewer canvas computed on this actor, so the engine
+    /// never has to hop back here on the frame path.
+    private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?) -> Void)?
+    private var webRTCCanvasCacheValid = false
+    private var webRTCCanvasCache: Dimensions?
     private var screenObservers: [UUID: @Sendable () -> Void] = [:]
     private var frameCount: UInt64 = 0
     /// Counted by which path produced the frame, callback or idle deadline.
@@ -97,7 +101,8 @@ actor FrameCapture {
     private var lastPickAttempt: ContinuousClock.Instant?
     private var ioClient: NSObject?
 
-    func start(deviceUDID: String, screenID: UInt32? = nil, onFrame: @escaping @Sendable (CVPixelBuffer, CMTime) -> Void) async throws {
+    func start(deviceUDID: String, screenID: UInt32? = nil,
+               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void) async throws {
         self.onFrame = onFrame
         self.deviceUDID = deviceUDID
         fixedScreenID = screenID
@@ -321,6 +326,8 @@ actor FrameCapture {
     private func invalidatePick() {
         bestSurfaceKey = nil
         lastPickAttempt = nil
+        // Every surface, descriptor, or display change comes through here.
+        webRTCCanvasCacheValid = false
     }
 
     // MARK: - Frame callbacks
@@ -519,7 +526,7 @@ actor FrameCapture {
         // actual capture cadence.
         let timestamp = CMClockGetTime(CMClockGetHostTimeClock())
         guard let copy = photocopier.copy(pb, maxDimension: snapshotMaxDimension) else { return }
-        onFrame?(copy, timestamp)
+        onFrame?(copy, timestamp, webRTCEncodeCanvasSize())
     }
 
     /// Snapshotting straight to the delivery size avoids moving the whole framebuffer through
@@ -547,6 +554,39 @@ actor FrameCapture {
     func getScreenSize() -> CapturedScreenInfo? {
         guard capturedWidth > 0, capturedHeight > 0 else { return nil }
         return CapturedScreenInfo(width: capturedWidth, height: capturedHeight, display: capturedDisplay)
+    }
+
+    /// Surfaces that this capture can publish. A fixed-panel session must not
+    /// size its canvas for the other panel of a foldable simulator.
+    private func integratedCanvasSizes() -> [Dimensions]? {
+        let integrated = descriptors.filter { descriptor in
+            let metadata = screenMetadata[ObjectIdentifier(descriptor)]
+            return metadata?.screenType == 0 &&
+                (fixedScreenID == nil || metadata?.screenID == fixedScreenID)
+        }
+        let sizes = integrated.compactMap { descriptor -> Dimensions? in
+            guard let surface = surface(for: descriptor) else { return nil }
+            return Dimensions(width: IOSurfaceGetWidth(surface), height: IOSurfaceGetHeight(surface))
+        }
+        if fixedScreenID == nil, integrated.count >= 2, sizes.count != integrated.count {
+            return nil
+        }
+        return sizes
+    }
+
+    /// Cached until the next surface, descriptor, or display change.
+    func webRTCEncodeCanvasSize() -> Dimensions? {
+        if webRTCCanvasCacheValid { return webRTCCanvasCache }
+        let canvas = computeWebRTCEncodeCanvasSize()
+        webRTCCanvasCache = canvas
+        webRTCCanvasCacheValid = true
+        return canvas
+    }
+
+    private func computeWebRTCEncodeCanvasSize() -> Dimensions? {
+        guard let sizes = integratedCanvasSizes() else { return nil }
+        return sizes.max { $0.width * $0.height < $1.width * $1.height }
+            ?? getScreenSize().map { Dimensions(width: $0.width, height: $0.height) }
     }
 
     deinit {

@@ -7,6 +7,22 @@ private let nativeHeight = 2622
 private let level31Budget = 3600
 
 final class H264LevelPolicyTests: XCTestCase {
+    func testPrefersVP8WhenOfferCannotDecodeSharedCanvas() {
+        let mixed = "a=rtpmap:96 VP8/90000\na=rtpmap:102 H264/90000\na=fmtp:102 profile-level-id=42e01e"
+        XCTAssertTrue(H264LevelPolicy.shouldPreferVP8(
+            offer: mixed, canvasWidth: 1_200, canvasHeight: 800
+        ))
+        XCTAssertFalse(H264LevelPolicy.shouldPreferVP8(
+            offer: mixed, canvasWidth: 640, canvasHeight: 360
+        ))
+        XCTAssertTrue(H264LevelPolicy.shouldPreferVP8(
+            offer: mixed, canvasWidth: 0, canvasHeight: 0
+        ))
+        XCTAssertFalse(H264LevelPolicy.shouldPreferVP8(
+            offer: mixed.replacingOccurrences(of: "a=rtpmap:96 VP8/90000\n", with: ""),
+            canvasWidth: 1_200, canvasHeight: 800
+        ))
+    }
     /// The H.264 block Chrome offers, captured from a live session.
     private let chromeOffer = """
     m=video 9 UDP/TLS/RTP/SAVPF 102 108 116 118

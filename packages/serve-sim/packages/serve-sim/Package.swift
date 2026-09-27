@@ -71,6 +71,10 @@ let package = Package(
             name: "StreamingPolicyTests",
             dependencies: ["StreamingPolicy"]
         ),
+        .testTarget(
+            name: "SimNativeTests",
+            dependencies: ["SimNative", .product(name: "LiveKitWebRTC", package: "webrtc-xcframework")]
+        ),
     ],
     // The reused SimStreamHelper logic was written against the standalone helper
     // (plain swiftc, which defaults to Swift 5 mode). Build in Swift 5 mode so its

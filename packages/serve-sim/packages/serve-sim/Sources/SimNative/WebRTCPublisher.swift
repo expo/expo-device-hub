@@ -86,6 +86,7 @@ struct WebRTCCaptureCounts: Codable {
     /// are paced source submissions and may be higher when the retained latest frame is repeated.
     let offeredFrames: UInt64?
     let forwardedFrames: UInt64?
+    let sharedEncodedFrames: UInt64?
     /// Times the arrival-side watchdog replaced a frame pump that stopped
     /// ticking. Nonzero means the host starved or dropped pump timers.
     let pumpRestarts: UInt64?
@@ -111,10 +112,23 @@ struct WebRTCEncoderIdentity: Codable {
     let probe: Bool
 }
 
+struct WebRTCSharedCanvas: Codable {
+    let width: Int
+    let height: Int
+    /// The shared resolution step: 1.0 is the full canvas.
+    let scale: Double
+    let step: Int
+    let steps: UInt64
+    /// Peers that lagged the shared encoder's cache and were restarted with a keyframe.
+    let starvedRecoveries: UInt64
+}
+
 struct WebRTCSenderStatsReport: Codable {
     let sessions: [WebRTCSenderStatsPayload]
     let capture: WebRTCCaptureCounts?
     let encoder: WebRTCEncoderIdentity?
+    let sharedCanvas: WebRTCSharedCanvas?
+    let sharedEncoderPeers: [SharedEncoderPeerStats]?
 }
 
 private final class WebRTCSignalingCompletion: @unchecked Sendable {
@@ -176,6 +190,7 @@ final class WebRTCPublisher: @unchecked Sendable {
 
     private let queue = DispatchQueue(label: "webrtc-publisher", qos: .userInteractive)
     private let factory: LKRTCPeerConnectionFactory
+    private let sharedEncoderFactory: SharedWebRTCEncoderFactory
     private let videoSource: LKRTCVideoSource
     private let videoTrack: LKRTCVideoTrack
     private let capturer: LKRTCVideoCapturer
@@ -208,38 +223,58 @@ final class WebRTCPublisher: @unchecked Sendable {
     private var lastInputPixelFormat: OSType?
     private var useNativePixelBufferFrames: Bool?
     private let pixelBufferScaler = PixelBufferScaler()
+    private let pixelBufferLetterboxer = PixelBufferLetterboxer()
+    private var encodeCanvas: Dimensions
+    private var rawEncodeCanvas: Dimensions
+    /// Queue-confined. The shared resolution step from the encoder's bitrate policy.
+    private var canvasScale = 1.0
     private let h264PixelBufferConverter = H264WebRTCPixelBufferConverter()
-    private lazy var h264WebRTCSupport = Self.detectH264WebRTCSupport()
+    private static let detectedH264Support = detectH264WebRTCSupport()
+    private var h264WebRTCSupport: WebRTCH264Support { Self.detectedH264Support }
     private let h264FrameModeOverride: H264WebRTCFrameMode?
     private var frameRatePolicy: WebRTCFrameRatePolicy
     private var targetBitrate: Int
     private var maxDimension: Int
 
-    init(maxFps: Int, targetBitrate: Int, maxDimension: Int) {
+    init(maxFps: Int, targetBitrate: Int, maxDimension: Int, encodeCanvas: Dimensions) {
         let frameRatePolicy = WebRTCFrameRatePolicy(configuredFramesPerSecond: maxFps)
         let normalizedMaxFps = frameRatePolicy.outputFramesPerSecond
         self.frameRatePolicy = frameRatePolicy
         self.targetBitrate = max(100_000, targetBitrate)
         self.maxDimension = max(0, maxDimension)
         self.framePacer = ContinuousFramePacer(framesPerSecond: normalizedMaxFps)
+        self.rawEncodeCanvas = encodeCanvas
+        self.encodeCanvas = Self.canvasSize(for: encodeCanvas, maxDimension: maxDimension)
         h264FrameModeOverride = Self.h264FrameModeOverride()
         Self.configureLowLatencyPlayout()
         activityToken = ProcessInfo.processInfo.beginActivity(
             options: [.userInitiated, .latencyCritical],
             reason: "serve-sim WebRTC streaming"
         )
-        let defaultEncoderFactory = LKRTCDefaultVideoEncoderFactory()
+        let encoderFactory = SharedWebRTCEncoderFactory(
+            bitrate: targetBitrate, fps: normalizedMaxFps,
+            h264Allowed: { Self.detectedH264Support.allowed }
+        )
+        sharedEncoderFactory = encoderFactory
         let decoderFactory = LKRTCDefaultVideoDecoderFactory()
         factory = LKRTCPeerConnectionFactory(
-            encoderFactory: defaultEncoderFactory,
+            encoderFactory: encoderFactory,
             decoderFactory: decoderFactory
         )
         videoSource = factory.videoSource(forScreenCast: false)
         videoTrack = factory.videoTrack(with: videoSource, trackId: "simulator-video")
         videoTrack.isEnabled = true
         capturer = LKRTCVideoCapturer(delegate: videoSource)
+        encoderFactory.setScaleObserver { [weak self] scale in
+            self?.queue.async {
+                guard let self else { return }
+                self.canvasScale = scale
+                self.refreshEncodeCanvas()
+                streamLog("[webrtc] Shared canvas scale \(scale): \(self.encodeCanvas.width)x\(self.encodeCanvas.height)")
+            }
+        }
         streamLog(
-            "[webrtc] Publisher ready (default codec factory + screen-cast video source) " +
+            "[webrtc] Publisher ready (shared H.264 encoder + screen-cast video source) " +
             "h264=\(h264SupportDescription()) h264FrameMode=\(h264FrameModeDescription()) " +
             "senderCodecs=\(senderCodecSummary())"
         )
@@ -266,6 +301,7 @@ final class WebRTCPublisher: @unchecked Sendable {
                     }
                 }
                 self.frameRatePolicy = frameRatePolicy
+                self.sharedEncoderFactory.updateFps(normalizedMaxFps)
                 self.frameLock.unlock()
                 if let replacementPump {
                     self.scheduleFramePump(
@@ -274,7 +310,9 @@ final class WebRTCPublisher: @unchecked Sendable {
                     )
                 }
                 self.targetBitrate = max(100_000, targetBitrate)
+                self.sharedEncoderFactory.updateTargetBitrate(self.targetBitrate)
                 self.maxDimension = max(0, maxDimension)
+                self.refreshEncodeCanvas()
                 if self.lastOutputWidth > 0, self.lastOutputHeight > 0 {
                     self.videoSource.adaptOutputFormat(
                         toWidth: Int32(self.lastOutputWidth),
@@ -334,10 +372,12 @@ final class WebRTCPublisher: @unchecked Sendable {
                     self.pendingOffer = nil
                     pending.session.close()
                     pending.completion(.failure(self.makeError("WebRTC session was cancelled")))
+                    self.refreshEncodeCanvas()
                 }
                 if let session = self.sessions.removeValue(forKey: sessionId) {
                     session.close()
                     self.refreshFrameAcceptance()
+                    self.refreshEncodeCanvas()
                     streamLog("[webrtc] Session closed; activePeers=\(self.sessions.values.filter(\.isConnected).count)")
                 }
                 continuation.resume()
@@ -502,14 +542,27 @@ final class WebRTCPublisher: @unchecked Sendable {
         )
     }
 
-    func frameFlowCounts() -> (offered: UInt64, forwarded: UInt64, pumpRestarts: UInt64) {
+    func frameFlowCounts() -> (offered: UInt64, forwarded: UInt64, pumpRestarts: UInt64, sharedEncoded: UInt64) {
         frameLock.lock()
-        defer { frameLock.unlock() }
-        return (
-            offered: offeredFrameCount,
-            forwarded: forwardedFrameCount,
-            pumpRestarts: framePumpRestartCount
-        )
+        let counts = (offeredFrameCount, forwardedFrameCount, framePumpRestartCount)
+        frameLock.unlock()
+        return (counts.0, counts.1, counts.2, sharedEncoderFactory.encodedFrameCount())
+    }
+
+    func sharedEncoderPeerStats() -> [SharedEncoderPeerStats] {
+        sharedEncoderFactory.peerStats()
+    }
+
+    func sharedCanvasStatus() -> WebRTCSharedCanvas {
+        let canvas = queue.sync { encodeCanvas }
+        let resolution = sharedEncoderFactory.resolutionStatus()
+        return WebRTCSharedCanvas(width: canvas.width, height: canvas.height,
+                                  scale: resolution.scale, step: resolution.step, steps: resolution.changes,
+                                  starvedRecoveries: sharedEncoderFactory.starvedRecoveries())
+    }
+
+    func requestIDR() {
+        sharedEncoderFactory.requestIDR()
     }
 
     func sendFrame(_ pixelBuffer: CVPixelBuffer, timestamp _: CMTime) {
@@ -559,12 +612,21 @@ final class WebRTCPublisher: @unchecked Sendable {
     private func sendFrameOnQueue(_ pixelBuffer: CVPixelBuffer, timestampNanoseconds: UInt64) {
         let sourceWidth = CVPixelBufferGetWidth(pixelBuffer)
         let sourceHeight = CVPixelBufferGetHeight(pixelBuffer)
-        guard let scaledPixelBuffer = pixelBufferScaler.scale(pixelBuffer, maxDimension: maxDimension) else {
+        guard var scaledPixelBuffer = pixelBufferScaler.scale(pixelBuffer, maxDimension: maxDimension) else {
             streamLog(
                 "[webrtc] Failed to scale input frame \(sourceWidth)x\(sourceHeight) " +
                 "maxDimension=\(maxDimension)"
             )
             return
+        }
+        let sharedH264Active = sessions.values.contains {
+            $0.isConnected && StreamCodecPolicy.isH264($0.codecName)
+        } && h264WebRTCSupport.allowed
+        if encodeCanvas.width > 0, encodeCanvas.height > 0 {
+            guard let letterboxed = pixelBufferLetterboxer.place(
+                scaledPixelBuffer, width: encodeCanvas.width, height: encodeCanvas.height
+            ) else { return }
+            scaledPixelBuffer = letterboxed
         }
         // Counted after the scale succeeds: a frame we failed to scale is never handed on, and
         // counting it would hide the drop behind a healthy forwarded total.
@@ -615,7 +677,10 @@ final class WebRTCPublisher: @unchecked Sendable {
             sessions.values.lazy.filter(\.isConnected).map(\.codecName)
         )
         let codecSummary = activeCodecNames.sorted().joined(separator: ",")
-        if activeCodecNames.contains(where: StreamCodecPolicy.isH264) {
+        if sharedH264Active {
+            usedNativeFrame = true
+            frameMode = "shared-h264"
+        } else if activeCodecNames.contains(where: StreamCodecPolicy.isH264) {
             switch h264FrameMode() {
             case .bgra:
                 usedNativeFrame = useNativePixelBufferFrames ?? false
@@ -678,6 +743,7 @@ final class WebRTCPublisher: @unchecked Sendable {
 
     func stop() {
         queue.sync {
+            sharedEncoderFactory.stop()
             if let pending = pendingOffer {
                 pendingOffer = nil
                 pending.session.close()
@@ -694,6 +760,60 @@ final class WebRTCPublisher: @unchecked Sendable {
                 ProcessInfo.processInfo.endActivity(activityToken)
                 self.activityToken = nil
             }
+        }
+    }
+
+    private static func canvasSize(for dimensions: Dimensions, maxDimension: Int,
+                                   levelIdc: Int = H264LevelPolicy.defaultLevelIdc,
+                                   scale: Double = 1.0) -> Dimensions {
+        guard dimensions.width > 0, dimensions.height > 0 else {
+            return Dimensions(width: 0, height: 0)
+        }
+        let levelLimit = H264LevelPolicy.maxLongEdge(
+            sourceWidth: dimensions.width, sourceHeight: dimensions.height,
+            levelIdc: levelIdc
+        )
+        let canvasLimit = [maxDimension, levelLimit].filter { $0 > 0 }.min() ?? 0
+        let scaledLimit = SharedResolutionPolicy.canvasLongEdge(
+            baseLimit: canvasLimit, sourceLongEdge: max(dimensions.width, dimensions.height),
+            scale: scale
+        )
+        let size = SnapshotSizePolicy(
+            width: dimensions.width, height: dimensions.height, maxDimension: scaledLimit
+        )
+        return Dimensions(width: size.width, height: size.height)
+    }
+
+    /// Candidate canvas for both admission and the live shared encoder. The default level
+    /// remains a ceiling when every connected viewer advertises a higher one.
+    static func canvasSize(for dimensions: Dimensions, maxDimension: Int,
+                           levels: [Int], scale: Double) -> Dimensions {
+        let level = min(levels.min() ?? H264LevelPolicy.defaultLevelIdc,
+                        H264LevelPolicy.defaultLevelIdc)
+        return canvasSize(for: dimensions, maxDimension: maxDimension,
+                          levelIdc: level, scale: scale)
+    }
+
+    private func refreshEncodeCanvas() {
+        let levels = sessions.values
+            .filter { StreamCodecPolicy.isH264($0.codecName) }
+            .compactMap(\.h264LevelIdc)
+        let pendingLevel = pendingOffer.flatMap { offer in
+            StreamCodecPolicy.isH264(offer.session.codecName) ? offer.session.h264LevelIdc : nil
+        }
+        let canvas = Self.canvasSize(for: rawEncodeCanvas, maxDimension: maxDimension,
+                                     levels: levels + [pendingLevel].compactMap { $0 },
+                                     scale: canvasScale)
+        if canvas != encodeCanvas {
+            encodeCanvas = canvas
+            sharedEncoderFactory.requestIDR()
+        }
+    }
+
+    func setEncodeCanvas(_ dimensions: Dimensions) {
+        queue.async {
+            self.rawEncodeCanvas = dimensions
+            self.refreshEncodeCanvas()
         }
     }
 
@@ -829,7 +949,17 @@ final class WebRTCPublisher: @unchecked Sendable {
                     self.failOffer(session, self.makeError("WebRTC offer was superseded"), completion)
                     return
                 }
-                self.attachVideoTrack(to: peerConnection, session: session, codec: request.codec)
+                let lowLevelOffer = Self.preferredVideoCodecName(request.codec) == "H264"
+                    && H264LevelPolicy.shouldPreferVP8(
+                        offer: request.sdp,
+                        canvasWidth: self.encodeCanvas.width,
+                        canvasHeight: self.encodeCanvas.height
+                    )
+                if lowLevelOffer {
+                    streamLog("[webrtc] Fixed H.264 canvas unavailable or incompatible with offered level; preferring VP8")
+                }
+                self.attachVideoTrack(to: peerConnection, session: session,
+                                      codec: lowLevelOffer ? "VP8" : request.codec)
                 peerConnection.answer(for: constraints) { answer, error in
                     self.queue.async {
                         if let error {
@@ -843,6 +973,34 @@ final class WebRTCPublisher: @unchecked Sendable {
                         guard let answer else {
                             self.failOffer(session, self.makeError("answer creation returned nil"), completion)
                             return
+                        }
+                        if H264LevelPolicy.negotiatedLevel(offer: request.sdp, answer: answer.sdp) != nil,
+                           (self.encodeCanvas.width == 0 || self.encodeCanvas.height == 0) {
+                            self.failOffer(
+                                session,
+                                self.makeError("H.264 canvas is unavailable because the simulator has not produced a frame; retry after the display is ready"),
+                                completion
+                            )
+                            return
+                        }
+                        if let level = H264LevelPolicy.negotiatedLevel(offer: request.sdp, answer: answer.sdp) {
+                            let existingLevels = self.sessions.values
+                                .filter { StreamCodecPolicy.isH264($0.codecName) }
+                                .compactMap(\.h264LevelIdc)
+                            let proposedCanvas = Self.canvasSize(
+                                for: self.rawEncodeCanvas, maxDimension: self.maxDimension,
+                                levels: existingLevels + [level], scale: self.canvasScale
+                            )
+                            if H264LevelPolicy.macroblocks(
+                                width: proposedCanvas.width, height: proposedCanvas.height
+                            ) > H264LevelPolicy.maxFrameSize(levelIdc: level) {
+                                self.failOffer(
+                                    session,
+                                    self.makeError("H.264 level \(level) cannot decode the proposed \(proposedCanvas.width)x\(proposedCanvas.height) stream"),
+                                    completion
+                                )
+                                return
+                            }
                         }
                         peerConnection.setLocalDescription(answer) { error in
                             self.queue.async {
@@ -860,6 +1018,7 @@ final class WebRTCPublisher: @unchecked Sendable {
                                     offer: request.sdp,
                                     answer: answer.sdp
                                 )
+                                self.refreshEncodeCanvas()
                                 self.applySenderParameters(to: session)
                                 session.waitForIceGathering { completed in
                                     self.queue.async {
@@ -911,6 +1070,7 @@ final class WebRTCPublisher: @unchecked Sendable {
             offerSession.close()
             if isPending(offerSession) {
                 pendingOffer = nil
+                refreshEncodeCanvas()
             }
         }
         completion(.failure(error))
@@ -927,6 +1087,7 @@ final class WebRTCPublisher: @unchecked Sendable {
         }
         pendingOffer = nil
         sessions[offerSession.id] = offerSession
+        refreshEncodeCanvas()
         queue.asyncAfter(deadline: .now().advanced(by: .milliseconds(Self.connectionTimeoutMs))) {
             guard self.sessions[offerSession.id] === offerSession else { return }
             guard !offerSession.isConnected else { return }
@@ -934,6 +1095,7 @@ final class WebRTCPublisher: @unchecked Sendable {
             offerSession.close()
             self.sessions.removeValue(forKey: offerSession.id)
             self.refreshFrameAcceptance()
+            self.refreshEncodeCanvas()
         }
         completion(.success(answer))
     }
@@ -959,6 +1121,7 @@ final class WebRTCPublisher: @unchecked Sendable {
         guard let pending = pendingOffer, pending.session.id == sessionId else { return }
         pendingOffer = nil
         pending.session.close()
+        refreshEncodeCanvas()
     }
 
     private func rememberCancelledSession(_ sessionId: String) {
@@ -1227,6 +1390,7 @@ final class WebRTCPublisher: @unchecked Sendable {
         // name and the re-apply after connection settles on the negotiated one.
         let negotiatedName = StreamCodecPolicy.mediaCodecName(from: parameters.codecs.map(\.name))
         let codecName = negotiatedName ?? session.codecName
+        if let negotiatedName { session.codecName = negotiatedName }
         let encodeMaxLongEdge = StreamEncodePolicy.encodeMaxLongEdge(
             configuredMaxDimension: maxDimension,
             codecName: codecName,
@@ -1248,7 +1412,8 @@ final class WebRTCPublisher: @unchecked Sendable {
                     + "\(levelIdc) allows; encoding at \(encodeMaxLongEdge)"
             )
         }
-        let scaleResolutionDownBy = encodeMaxLongEdge > 0 && sourceLongEdge > encodeMaxLongEdge
+        let sharedH264 = h264WebRTCSupport.allowed && StreamCodecPolicy.isH264(codecName)
+        let scaleResolutionDownBy = !sharedH264 && encodeMaxLongEdge > 0 && sourceLongEdge > encodeMaxLongEdge
             ? Double(sourceLongEdge) / Double(encodeMaxLongEdge)
             : 1.0
         for encoding in encodings {
@@ -1261,8 +1426,9 @@ final class WebRTCPublisher: @unchecked Sendable {
         parameters.encodings = encodings
         // Balanced spends some of a shortfall on frame rate. Holding frame rate outright takes
         // a 1206-wide surface to 300x654, where UI text is unreadable.
-        parameters.degradationPreference =
-            NSNumber(value: LKRTCDegradationPreference.balanced.rawValue)
+        parameters.degradationPreference = NSNumber(value: (
+            sharedH264 ? LKRTCDegradationPreference.maintainResolution : .balanced
+        ).rawValue)
         sender.parameters = parameters
         // Read back: assigning `scaleResolutionDownBy` is not proof libwebrtc kept it.
         let appliedScale = sender.parameters.encodings.first?.scaleResolutionDownBy?.doubleValue
@@ -1290,6 +1456,7 @@ final class WebRTCPublisher: @unchecked Sendable {
                 self.pendingOffer = nil
                 pending.session.close()
                 pending.completion(.failure(self.makeError("WebRTC peer connection closed during signaling")))
+                self.refreshEncodeCanvas()
                 return
             }
             guard let entry = self.sessions.first(where: { $0.value.peerConnection === peerConnection }) else {
@@ -1299,6 +1466,7 @@ final class WebRTCPublisher: @unchecked Sendable {
             session.close()
             self.sessions.removeValue(forKey: entry.key)
             self.refreshFrameAcceptance()
+            self.refreshEncodeCanvas()
             streamLog("[webrtc] Peer connection closed; activePeers=\(self.sessions.values.filter(\.isConnected).count)")
         }
     }

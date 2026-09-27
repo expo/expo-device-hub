@@ -15,13 +15,14 @@ actor H264Encoder {
     let queue = DispatchSerialQueue(label: "h264-encoder", qos: .userInteractive)
     nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
-    struct Encoded {
+    struct Encoded: Sendable {
         /// avcC parameter-set blob — emitted once on the first IDR per session.
         let description: Data?
         let kind: Kind
         /// Length-prefixed AVCC NAL bytes (not Annex-B start codes).
         let avcc: Data
-        enum Kind { case keyframe, delta }
+        let parameterSets: [Data]
+        enum Kind: Sendable { case keyframe, delta }
     }
 
     private var session: VTCompressionSession?
@@ -35,10 +36,15 @@ actor H264Encoder {
     private var forceKeyframeAfterReset = false
     private var encodeInFlight = false
     private var pendingSettings: (fps: Int32, bitrate: Int)?
+    private let constrainedBaseline: Bool
+    private let dynamicBitrate: Bool
 
-    init(fps: Int = 60, bitrate: Int = 6_000_000) {
+    init(fps: Int = 60, bitrate: Int = 6_000_000,
+         constrainedBaseline: Bool = false, dynamicBitrate: Bool = false) {
         self.fps = Int32(max(1, fps))
         self.bitrate = max(1, bitrate)
+        self.constrainedBaseline = constrainedBaseline
+        self.dynamicBitrate = dynamicBitrate
     }
 
     deinit {
@@ -159,6 +165,12 @@ actor H264Encoder {
     private func applySettings(fps nextFps: Int32, bitrate nextBitrate: Int) {
         pendingSettings = nil
         guard fps != nextFps || bitrate != nextBitrate else { return }
+        if dynamicBitrate, fps == nextFps, let session,
+           VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate,
+                                value: NSNumber(value: nextBitrate)) == noErr {
+            bitrate = nextBitrate
+            return
+        }
         fps = nextFps
         bitrate = nextBitrate
         forceKeyframeAfterReset = true
@@ -225,7 +237,9 @@ actor H264Encoder {
 
         let props: [(CFString, Any)] = [
             (kVTCompressionPropertyKey_RealTime, kCFBooleanTrue!),
-            (kVTCompressionPropertyKey_ProfileLevel, kVTProfileLevel_H264_High_AutoLevel),
+            (kVTCompressionPropertyKey_ProfileLevel, constrainedBaseline
+                ? kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel
+                : kVTProfileLevel_H264_High_AutoLevel),
             (kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse!),
             (kVTCompressionPropertyKey_PrioritizeEncodingSpeedOverQuality, kCFBooleanTrue!),
             (kVTCompressionPropertyKey_AverageBitRate, NSNumber(value: bitrate)),
@@ -266,14 +280,36 @@ actor H264Encoder {
         let avcc = Data(bytes: dataPointer, count: totalLength)
 
         var description: Data?
+        var parameterSets: [Data] = []
         if isKeyframe, let format = CMSampleBufferGetFormatDescription(sample) {
+            parameterSets = h264ParameterSets(from: format)
             let nextDescription = avcCBlob(from: format)
             if !emittedDescription && nextDescription != nil {
                 emittedDescription = true
                 description = nextDescription
             }
         }
-        return Encoded(description: description, kind: isKeyframe ? .keyframe : .delta, avcc: avcc)
+        return Encoded(description: description, kind: isKeyframe ? .keyframe : .delta,
+                       avcc: avcc, parameterSets: parameterSets)
+    }
+
+    private func h264ParameterSets(from format: CMFormatDescription) -> [Data] {
+        var count = 0
+        guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+            format, parameterSetIndex: 0, parameterSetPointerOut: nil,
+            parameterSetSizeOut: nil, parameterSetCountOut: &count,
+            nalUnitHeaderLengthOut: nil
+        ) == noErr else { return [] }
+        return (0..<count).compactMap { index in
+            var pointer: UnsafePointer<UInt8>?
+            var size = 0
+            guard CMVideoFormatDescriptionGetH264ParameterSetAtIndex(
+                format, parameterSetIndex: index, parameterSetPointerOut: &pointer,
+                parameterSetSizeOut: &size, parameterSetCountOut: nil,
+                nalUnitHeaderLengthOut: nil
+            ) == noErr, let pointer else { return nil }
+            return Data(bytes: pointer, count: size)
+        }
     }
 
     private func notSync(_ sample: CMSampleBuffer) -> Bool {
