@@ -3,6 +3,36 @@ import { createServer } from "http";
 import { DeviceSession, finishDeviceRecordingsForShutdown } from "../../device-session";
 import { useTempStateDir } from "../helpers";
 
+test("recording start rejects control characters in its ID before capture", async () => {
+  const session = new DeviceSession("recording-invalid-id-test");
+  const target = session as any;
+  target.phase = "running";
+  target.captureStart = Promise.resolve();
+  let starts = 0;
+  target.capture = {
+    startRecording: async () => { starts++; },
+    stop: async () => {},
+  };
+  const server = createServer((req, res) => { void session.handleVideoRecording(req, res); });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("server has no TCP port");
+  try {
+    for (const recordingId of ["bad\nidentifier", "bad-id\n"]) {
+      const response = await fetch(`http://127.0.0.1:${address.port}/recording/video`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ start: true, output: "/tmp/invalid-id", recordingId }),
+      });
+      expect(response.status).toBe(400);
+    }
+    expect(starts).toBe(0);
+  } finally {
+    server.close();
+    session.close();
+  }
+});
+
 test("a DELETE during startup cancels the eventual recording", async () => {
   const state = useTempStateDir();
   const session = new DeviceSession("recording-lifecycle-test");

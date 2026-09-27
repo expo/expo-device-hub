@@ -1,6 +1,11 @@
 import type { ChildProcess } from "node:child_process";
 
 const RECORDING_SHUTDOWN_GRACE_MS = 75_000;
+type StopResult = { exitCode: number | null; signalCode: NodeJS.Signals | null; forced: boolean };
+
+function result(child: ChildProcess | undefined, forced: boolean): StopResult {
+  return { exitCode: child?.exitCode ?? null, signalCode: child?.signalCode ?? null, forced };
+}
 
 function hasExited(pid: number, child?: ChildProcess): boolean {
   if (child) return child.exitCode !== null || child.signalCode !== null;
@@ -21,13 +26,13 @@ export async function stopProcess(
   pid: number,
   child?: ChildProcess,
   graceMs = RECORDING_SHUTDOWN_GRACE_MS,
-): Promise<{ exitCode: number | null; forced: boolean }> {
-  if (hasExited(pid, child)) return { exitCode: child?.exitCode ?? null, forced: false };
-  try { process.kill(pid, "SIGTERM"); } catch { return { exitCode: child?.exitCode ?? null, forced: false }; }
+): Promise<StopResult> {
+  if (hasExited(pid, child)) return result(child, false);
+  try { process.kill(pid, "SIGTERM"); } catch { return result(child, false); }
   if (await waitForExit(pid, child, graceMs)) {
-    return { exitCode: child?.exitCode ?? null, forced: false };
+    return result(child, false);
   }
   try { process.kill(pid, "SIGKILL"); } catch {}
   await waitForExit(pid, child, 1_000);
-  return { exitCode: child?.exitCode ?? null, forced: true };
+  return result(child, true);
 }

@@ -83,7 +83,7 @@ const TOUCH_TAP_MAX_DISTANCE = 0.004;
 const MAX_HID_SOCKETS = 8;
 const MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET = 1024;
 const RECORDING_LEASE_MS = 20_000;
-const RECORDING_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const INVALID_RECORDING_ID_CHAR = /[^A-Za-z0-9_-]/;
 
 class RecordingStartCancelled extends Error {}
 
@@ -423,7 +423,8 @@ export class DeviceSession {
         if (typeof body !== "object" || body === null || !("start" in body) || body.start !== true
           || !("output" in body) || typeof body.output !== "string" || body.output.length === 0
           || !("recordingId" in body) || typeof body.recordingId !== "string"
-          || !RECORDING_ID_PATTERN.test(body.recordingId)) {
+          || body.recordingId.length === 0 || body.recordingId.length > 128
+          || INVALID_RECORDING_ID_CHAR.test(body.recordingId)) {
           this.sendJson(res, 400, { error: "invalid_recording_request", message: "Pass start: true, output, and an alphanumeric recordingId (hyphens and underscores allowed)" });
           return;
         }

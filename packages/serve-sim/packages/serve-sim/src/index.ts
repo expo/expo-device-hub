@@ -565,14 +565,14 @@ async function follow(
     crashRuntime.stop();
     const stopped = await Promise.all([...children].map(async ([udid, child]) => {
       const pid = child.pid;
-      const result = pid ? await stopProcess(pid, child) : { exitCode: null, forced: false };
+      const result = pid ? await stopProcess(pid, child) : { exitCode: null, signalCode: null, forced: false };
       clearState(udid);
       return result;
     }));
     await disarmDevicesArmedHereAsync();
     children.clear();
-    const childFailed = stopped.some(({ exitCode: childCode, forced }) =>
-      forced || (childCode !== null && childCode !== 0));
+    const childFailed = stopped.some(({ exitCode: childCode, signalCode, forced }) =>
+      forced || signalCode !== null || (childCode !== null && childCode !== 0));
     process.exit(childFailed ? 1 : exitCode);
   };
 
