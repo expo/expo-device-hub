@@ -5,6 +5,8 @@ import StreamingPolicy
 import VideoToolbox
 
 final class PixelBufferLetterboxer {
+    private let allowCPUFallback: Bool
+    private let maxBuffers: Int?
     private var pool: CVPixelBufferPool?
     private var poolWidth = 0
     private var poolHeight = 0
@@ -15,12 +17,22 @@ final class PixelBufferLetterboxer {
     private(set) var cpuFrames: UInt64 = 0
     private(set) var poolDrops: UInt64 = 0
 
+    /// `preferCPU` skips the VideoToolbox transfer and scales with vImage from the start.
+    init(allowCPUFallback: Bool = true, maxBuffers: Int? = nil, preferCPU: Bool = false) {
+        self.allowCPUFallback = allowCPUFallback
+        self.maxBuffers = maxBuffers
+        transferUnavailable = preferCPU && allowCPUFallback
+    }
+
+    static func supports(_ format: OSType) -> Bool {
+        [kCVPixelFormatType_32BGRA,
+         kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+         kCVPixelFormatType_420YpCbCr8BiPlanarFullRange].contains(format)
+    }
+
     func place(_ source: CVPixelBuffer, width: Int, height: Int) -> CVPixelBuffer? {
         let format = CVPixelBufferGetPixelFormatType(source)
-        guard width > 0, height > 0,
-              [kCVPixelFormatType_32BGRA,
-               kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
-               kCVPixelFormatType_420YpCbCr8BiPlanarFullRange].contains(format) else { return nil }
+        guard width > 0, height > 0, Self.supports(format) else { return nil }
         let sourceWidth = CVPixelBufferGetWidth(source)
         let sourceHeight = CVPixelBufferGetHeight(source)
         if sourceWidth == width, sourceHeight == height { return source }
@@ -30,8 +42,15 @@ final class PixelBufferLetterboxer {
         )
         guard let pool = pixelBufferPool(width: width, height: height, format: format) else { return nil }
         var output: CVPixelBuffer?
-        guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &output) == kCVReturnSuccess,
-              let output else {
+        let status: CVReturn
+        if let maxBuffers {
+            let limit = [kCVPixelBufferPoolAllocationThresholdKey as String: maxBuffers] as CFDictionary
+            status = CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool,
+                                                                         limit, &output)
+        } else {
+            status = CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &output)
+        }
+        guard status == kCVReturnSuccess, let output else {
             poolDrops &+= 1
             return nil
         }
@@ -45,8 +64,9 @@ final class PixelBufferLetterboxer {
             VTPixelTransferSessionInvalidate(transfer)
             self.transfer = nil
             transferUnavailable = true
-            print("[stream] VideoToolbox letterbox transfer failed; using CPU scaling")
+            print("[stream] VideoToolbox letterbox transfer failed; \(allowCPUFallback ? "using CPU scaling" : "dropping frame")")
         }
+        guard allowCPUFallback else { return nil }
         cpuFrames &+= 1
 
         CVPixelBufferLockBaseAddress(source, .readOnly)
@@ -85,14 +105,14 @@ final class PixelBufferLetterboxer {
                                            pixelTransferSessionOut: &next) == noErr,
               let next else {
             transferUnavailable = true
-            print("[stream] VideoToolbox letterbox unavailable; using CPU scaling")
+            print("[stream] VideoToolbox letterbox unavailable; \(allowCPUFallback ? "using CPU scaling" : "dropping frame")")
             return nil
         }
         guard VTSessionSetProperty(next, key: kVTPixelTransferPropertyKey_ScalingMode,
                                    value: kVTScalingMode_Letterbox) == noErr else {
             VTPixelTransferSessionInvalidate(next)
             transferUnavailable = true
-            print("[stream] VideoToolbox letterbox mode unavailable; using CPU scaling")
+            print("[stream] VideoToolbox letterbox mode unavailable; \(allowCPUFallback ? "using CPU scaling" : "dropping frame")")
             return nil
         }
         transfer = next
@@ -145,6 +165,7 @@ final class PixelBufferLetterboxer {
             kCVPixelBufferWidthKey as String: width,
             kCVPixelBufferHeightKey as String: height,
             kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+            kCVPixelBufferMetalCompatibilityKey as String: true,
         ]
         var next: CVPixelBufferPool?
         guard CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attributes as CFDictionary,

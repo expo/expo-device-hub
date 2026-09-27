@@ -2,6 +2,7 @@ import Foundation
 import CoreVideo
 import CoreMedia
 import os
+import StreamingPolicy
 
 // JPEG and AVCC encode only while their HTTP transports have subscribers.
 // Encoded bytes are handed to the node-swift binding, which marshals them onto
@@ -95,7 +96,10 @@ actor CaptureEngine {
     private(set) var screenSize = Dimensions(width: 0, height: 0)
     private var consumers = [UUID: CaptureConsuming]()
     private var webRTCPublisher: WebRTCPublisher?
+    private var webRTCConsumerId: UUID?
     private var webRTCEncodeCanvas = Dimensions(width: 0, height: 0)
+    /// The shared H.264 canvas the publisher encodes at, as last reported.
+    private var viewerCanvas = Dimensions(width: 0, height: 0)
     private var frameContinuation: AsyncStream<Frame>.Continuation?
     private var cancelledWebRTCSessionIds = Set<String>()
     private var cancelledWebRTCSessionIdOrder: [String] = []
@@ -123,7 +127,7 @@ actor CaptureEngine {
         )
         self.frameContinuation = frameContinuation
         do {
-            await frameCapture.setSnapshotMaxDimension(options.maxDimension)
+            await refreshSnapshotSize()
             let nativeFrameMailbox = self.nativeFrameMailbox
             try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas in
                 nativeFrameMailbox.publish(pixelBuffer, timestamp: timestamp, wallClock: Date())
@@ -161,6 +165,7 @@ actor CaptureEngine {
             await onFrame(encoded)
         }
         consumers[id] = consumer
+        Task { [weak self] in await self?.refreshSnapshotSize() }
         return { await self.removeConsumer(id) }
     }
 
@@ -168,6 +173,24 @@ actor CaptureEngine {
         _ id: UUID
     ) {
         consumers.removeValue(forKey: id)
+        Task { [weak self] in await self?.refreshSnapshotSize() }
+    }
+
+    /// The capture copy size follows the consumers: native while recording, the configured
+    /// size for MJPEG and AVCC subscribers, otherwise the viewer canvas.
+    private func refreshSnapshotSize() async {
+        let size = CaptureSnapshotPolicy.maxDimension(
+            recording: nativeFrameDeliveryActive,
+            otherConsumers: consumers.keys.contains { $0 != webRTCConsumerId },
+            configuredMaxDimension: options.maxDimension,
+            viewerCanvasLongEdge: max(viewerCanvas.width, viewerCanvas.height)
+        )
+        await frameCapture.setSnapshotMaxDimension(size)
+    }
+
+    private func viewerCanvasChanged(_ canvas: Dimensions) async {
+        viewerCanvas = canvas
+        await refreshSnapshotSize()
     }
 
     private func handleFrame(_ frame: Frame) async {
@@ -196,7 +219,7 @@ actor CaptureEngine {
         nativeFrameDeliveryPending = false
         guard let canvas else { return nil }
         nativeFrameDeliveryActive = true
-        await frameCapture.setSnapshotMaxDimension(0)
+        await refreshSnapshotSize()
         guard phase == .running, generation == nativeFrameDeliveryGeneration else { return nil }
         nativeFrameMailbox.setActive(true)
         return (nativeFrameMailbox, canvas)
@@ -207,7 +230,7 @@ actor CaptureEngine {
         nativeFrameDeliveryPending = false
         nativeFrameMailbox.setActive(false)
         nativeFrameDeliveryActive = false
-        await frameCapture.setSnapshotMaxDimension(options.maxDimension)
+        await refreshSnapshotSize()
     }
 
     func addMJPEGConsumer(
@@ -263,6 +286,7 @@ actor CaptureEngine {
     private func removeAVCCConsumer(_ id: UUID) {
         consumers.removeValue(forKey: id)
         avccEncoders.removeValue(forKey: id)
+        Task { [weak self] in await self?.refreshSnapshotSize() }
         streamDiagnosticLog("[stream:avcc] subscriber removed count=\(avccEncoders.count)")
     }
 
@@ -290,9 +314,7 @@ actor CaptureEngine {
                     maxDimension: options.maxDimension
                 )
             }
-            if !nativeFrameDeliveryActive {
-                await frameCapture.setSnapshotMaxDimension(options.maxDimension)
-            }
+            await refreshSnapshotSize()
             await webRTCPublisher?.updateSettings(
                 maxFps: options.h264Fps,
                 targetBitrate: options.h264Bitrate,
@@ -348,6 +370,9 @@ actor CaptureEngine {
                 forwardedFrames: flow?.forwarded,
                 sharedEncodedFrames: flow?.sharedEncoded,
                 pumpRestarts: flow?.pumpRestarts,
+                canvasMismatchDrops: flow?.canvasMismatchDrops,
+                pumpDeferrals: flow?.pumpDeferrals,
+                pumpRepeats: flow?.pumpRepeats,
                 cpuFallbacks: timings.cpuFallbacks,
                 poolDrops: timings.poolDrops,
                 attempts: timings.attempts,
@@ -360,6 +385,7 @@ actor CaptureEngine {
             encoder: webRTCPublisher?.encoderIdentity(
                 liveCodecs: sessions.filter(\.connected).compactMap(\.codec)
             ),
+            viewerResize: webRTCPublisher?.viewerResizeCounters(),
             sharedCanvas: webRTCPublisher?.sharedCanvasStatus(),
             sharedEncoderPeers: webRTCPublisher?.sharedEncoderPeerStats()
         ))
@@ -402,8 +428,13 @@ actor CaptureEngine {
             maxDimension: options.maxDimension,
             encodeCanvas: webRTCEncodeCanvas
         )
-        consumers[UUID()] = WebRTCConsumer(publisher: publisher)
+        let consumerId = UUID()
+        consumers[consumerId] = WebRTCConsumer(publisher: publisher)
+        webRTCConsumerId = consumerId
         webRTCPublisher = publisher
+        publisher.setCanvasObserver { [weak self] canvas in
+            Task { await self?.viewerCanvasChanged(canvas) }
+        }
         return publisher
     }
 

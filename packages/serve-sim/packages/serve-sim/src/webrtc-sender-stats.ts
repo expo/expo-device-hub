@@ -43,6 +43,11 @@ export interface CaptureCounts {
   sharedEncodedFrames?: number | null;
   /** Frame-pump watchdog restarts; nonzero means the host starved or dropped pump timers. */
   pumpRestarts: number | null;
+  /** Paced frames dropped because their size did not match the shared canvas. */
+  canvasMismatchDrops?: number | null;
+  /** Pump slots that waited one tolerance for a late frame, and sends that repeated a frame. */
+  pumpDeferrals?: number | null;
+  pumpRepeats?: number | null;
   cpuFallbacks: number | null;
   poolDrops?: number | null;
   attempts: number | null;
@@ -80,6 +85,8 @@ export interface SenderStats {
   capture?: CaptureCounts | null;
   sessions: SenderStreamStats[];
   encoder?: EncoderIdentity | null;
+  /** Cumulative viewer resize counters, passed through as reported. */
+  viewerResize?: Record<string, unknown> | null;
   sharedCanvas?: SharedCanvas | null;
   /** Per-proxy shared encoder counters, passed through as reported. */
   sharedEncoderPeers?: Record<string, unknown>[] | null;
@@ -180,6 +187,7 @@ export function readSenderStats(raw: unknown): SenderStats {
     sessions: raw.sessions.filter(isRecord).map(readSenderSession),
     capture: readCaptureCounts(raw.capture),
     encoder: readEncoderIdentity(raw.encoder),
+    viewerResize: isRecord(raw.viewerResize) ? raw.viewerResize : null,
     sharedCanvas: readSharedCanvas(raw.sharedCanvas),
     sharedEncoderPeers: Array.isArray(raw.sharedEncoderPeers) ? raw.sharedEncoderPeers.filter(isRecord) : null,
   };
@@ -216,6 +224,9 @@ function readCaptureCounts(raw: unknown): CaptureCounts | null {
     forwardedFrames: maybeNumber(raw.forwardedFrames),
     sharedEncodedFrames: maybeNumber(raw.sharedEncodedFrames),
     pumpRestarts: maybeNumber(raw.pumpRestarts),
+    canvasMismatchDrops: maybeNumber(raw.canvasMismatchDrops),
+    pumpDeferrals: maybeNumber(raw.pumpDeferrals),
+    pumpRepeats: maybeNumber(raw.pumpRepeats),
     cpuFallbacks: maybeNumber(raw.cpuFallbacks),
     poolDrops: maybeNumber(raw.poolDrops),
     attempts: maybeNumber(raw.attempts),

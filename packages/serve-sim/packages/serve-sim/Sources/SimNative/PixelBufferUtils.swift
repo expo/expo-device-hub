@@ -68,6 +68,7 @@ struct Photocopier {
             kCVPixelBufferWidthKey as String: Int(dimensions.width),
             kCVPixelBufferHeightKey as String: Int(dimensions.height),
             kCVPixelBufferIOSurfacePropertiesKey as String: [:],
+            kCVPixelBufferMetalCompatibilityKey as String: true,
         ]
         var newPool: CVPixelBufferPool?
         CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attrs as CFDictionary, &newPool)

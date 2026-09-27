@@ -20,6 +20,15 @@ public struct ContinuousFramePacer: Sendable {
     /// liveness — a dead chain with arrivals still flowing is exactly the
     /// degraded state this guards against.
     private static let lostPumpGraceIntervals: UInt64 = 4
+    /// A source has a cadence when its last two frames arrived less than this many
+    /// intervals apart and the last one is younger than that. Only such a source
+    /// earns a deferral; an idle screen repeats at the cadence as before.
+    private static let activeSourceIntervals: UInt64 = 2
+
+    /// Chained ticks that waited one tolerance for a frame that had not arrived yet.
+    public private(set) var deferredTicks: UInt64 = 0
+    /// Sends that repeated the frame sent before.
+    public private(set) var repeatedSends: UInt64 = 0
 
     private var frameIntervalNanoseconds: UInt64
     private var active = false
@@ -30,6 +39,10 @@ public struct ContinuousFramePacer: Sendable {
     /// Last proof the scheduled chain exists: arming an initial or replacement
     /// pump, or any chained tick (send or wait).
     private var chainSeenAtNanoseconds: UInt64?
+    private var lastArrivalNanoseconds: UInt64?
+    private var previousArrivalNanoseconds: UInt64?
+    private var frameArrivedSinceSend = false
+    private var deferredThisSlot = false
 
     private var schedulingToleranceNanoseconds: UInt64 {
         min(frameIntervalNanoseconds / 4, 5_000_000)
@@ -69,12 +82,19 @@ public struct ContinuousFramePacer: Sendable {
             lastSentAtNanoseconds = nil
             nextSendAtNanoseconds = nil
             chainSeenAtNanoseconds = nil
+            lastArrivalNanoseconds = nil
+            previousArrivalNanoseconds = nil
+            frameArrivedSinceSend = false
+            deferredThisSlot = false
         }
     }
 
     public mutating func latestFrameArrived(atNanoseconds now: UInt64) -> ArrivalDecision {
         guard active else { return .ignore }
         hasFrame = true
+        previousArrivalNanoseconds = lastArrivalNanoseconds
+        lastArrivalNanoseconds = now
+        frameArrivedSinceSend = true
         if lostPump(atNanoseconds: now) {
             chainSeenAtNanoseconds = now
             return .restart(nanoseconds: 0)
@@ -109,6 +129,19 @@ public struct ContinuousFramePacer: Sendable {
             return .wait(nanoseconds: earliest - now)
         }
 
+        // A 60 Hz source often lands a fraction of a millisecond after the slot.
+        // Sending the old frame then repeats it, and the fresh frame is skipped
+        // by the one the next slot picks. Wait one tolerance for it instead, once
+        // per slot, and only while the source is active.
+        if chained, !frameArrivedSinceSend, !deferredThisSlot, sourceHasCadence(atNanoseconds: now) {
+            deferredThisSlot = true
+            deferredTicks &+= 1
+            return .wait(nanoseconds: schedulingToleranceNanoseconds)
+        }
+        if !frameArrivedSinceSend { repeatedSends &+= 1 }
+        frameArrivedSinceSend = false
+        deferredThisSlot = false
+
         // Advance to the next grid slot, but never into the past: a late
         // wake-up must not skip cadence slots (consistently late timers on a
         // virtualized host would halve the rate), and a stall longer than an
@@ -132,6 +165,14 @@ public struct ContinuousFramePacer: Sendable {
         tickScheduled = true
         chainSeenAtNanoseconds = now
         return .schedule(nanoseconds: delay)
+    }
+
+    private func sourceHasCadence(atNanoseconds now: UInt64) -> Bool {
+        guard let last = lastArrivalNanoseconds, let previous = previousArrivalNanoseconds else {
+            return false
+        }
+        let window = frameIntervalNanoseconds &* Self.activeSourceIntervals
+        return last &- previous < window && now &- last < window
     }
 
     /// True when a chain is supposedly scheduled but no chained tick has fired
