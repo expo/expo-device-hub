@@ -130,6 +130,12 @@ afterAll(() => {
   state?.restore();
 });
 
+test.skipIf(!device)("rejects recording IDs with control characters", async () => {
+  const response = await recording({ start: true, output, recordingId: "bad\nidentifier" });
+  expect(response.status).toBe(400);
+  expect((await response.json() as { error: string }).error).toBe("invalid_recording_request");
+});
+
 test.skipIf(!device)("records the simulator to a native-size H.264 file with a manifest", async () => {
   const { socket, config, frames } = await openInputSocket();
   const viewer = await openViewer();
