@@ -10,7 +10,7 @@ server's selected device.
 
 | Path | What it is |
 | --- | --- |
-| `/healthz`, `/readyz` | Liveness and readiness. The only routes reachable without a token. `/readyz` answers 503 while a device is still starting. |
+| `/healthz`, `/readyz` | Liveness and readiness. These remain reachable without a token when `--require-token` is set. `/readyz` answers 503 while a device is still starting. |
 | `/` | The preview page. |
 | `/api` | Current device and stream state, including `execToken`. |
 | `/api/screenshot` | `POST`. A still PNG. |
@@ -32,8 +32,8 @@ are server-sent event streams; the rest return JSON.
 Use `serve-sim record-video --udid <udid> --output <empty-dir>` against a
 running session. The CLI owns and renews the recording lease;
 SIGINT stops it and waits for `recording.mp4` and `session.json`. The server
-also attempts to finalize active recordings during shutdown. One recording may run per
-device. The manifest retains the record-sim upload schema. See
+also attempts to finalize active recordings during shutdown. One recording may
+run per device. The manifest retains the record-sim upload schema. See
 [Video pipeline and recording](video-pipeline.md) for frame handling and limits.
 
 ## Authentication
