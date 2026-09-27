@@ -62,6 +62,7 @@ import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
 import { parseHingeAngle } from "./hinge-angle";
 import { sendHingeAngleToWs } from "./hinge-command";
 import { finishDeviceRecordingsForShutdown } from "./device-session";
+import { stopProcess } from "./stop-process";
 
 // `import.meta.dir` is Bun-only; resolve once via fileURLToPath so the bundled
 // CLI works under plain `node` too.
@@ -304,25 +305,6 @@ function isProcessAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-/** Kill a process and wait for it to actually exit. */
-function stopProcess(pid: number): void {
-  try { process.kill(pid, "SIGTERM"); } catch { return; }
-  const deadline = Date.now() + 500;
-  while (Date.now() < deadline) {
-    try {
-      process.kill(pid, 0);
-      sleepSync(25);
-    } catch {
-      return;
-    }
-  }
-  try { process.kill(pid, "SIGKILL"); } catch {}
-  const deadline2 = Date.now() + 500;
-  while (Date.now() < deadline2) {
-    try { process.kill(pid, 0); sleepSync(25); } catch { return; }
-  }
-}
-
 function bootDevice(udid: string): void {
   if (!isDeviceBooted(udid)) {
     try {
@@ -472,7 +454,7 @@ async function startHelper(
   // The child boots the sim then writes its state once it's bound + serving.
   const state = await waitForStateFile(udid);
   if (!state) {
-    if (child.pid) stopProcess(child.pid);
+    if (child.pid) await stopProcess(child.pid, child);
     let log = "";
     try { log = readFileSync(logFile, "utf-8").trim(); } catch {}
     console.error(log ? `Preview server failed:\n${log}` : "Preview server failed to start");
@@ -517,7 +499,7 @@ async function follow(
     const existing = readState(udid);
     if (existing) {
       if (replaceMismatchedStream && !streamSettingsEqual(existing.streamSettings, stream)) {
-        stopProcess(existing.pid);
+        await stopProcess(existing.pid);
         clearState(udid);
       } else {
         if (!quiet) {
@@ -581,14 +563,17 @@ async function follow(
     if (!quiet) console.log("\nShutting down...");
     logBufferCache.stopAll();
     crashRuntime.stop();
-    for (const [udid, child] of children) {
+    const stopped = await Promise.all([...children].map(async ([udid, child]) => {
       const pid = child.pid;
-      if (pid) stopProcess(pid);
+      const result = pid ? await stopProcess(pid, child) : { exitCode: null, forced: false };
       clearState(udid);
-    }
+      return result;
+    }));
     await disarmDevicesArmedHereAsync();
     children.clear();
-    process.exit(exitCode);
+    const childFailed = stopped.some(({ exitCode: childCode, forced }) =>
+      forced || (childCode !== null && childCode !== 0));
+    process.exit(childFailed ? 1 : exitCode);
   };
 
   // Monitor children — exit when all die (helper crashed / exited on its own)
@@ -650,7 +635,7 @@ async function detach(
     const existing = readState(udid);
     if (existing) {
       if (replaceMismatchedStream && !streamSettingsEqual(existing.streamSettings, stream)) {
-        stopProcess(existing.pid);
+        await stopProcess(existing.pid);
         clearState(udid);
       } else {
         states.push(existing);
