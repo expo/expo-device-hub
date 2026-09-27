@@ -181,6 +181,19 @@ control-channel decision, known constraints, and planned direction.
 See [API](docs/api.md) for the HTTP routes, authentication, CORS and the
 WebSocket endpoints.
 
+### Recording video
+
+Start serve-sim for the simulator, then run:
+
+```sh
+serve-sim record-video --udid <udid> --output <empty-dir>
+```
+
+Send SIGINT to finish the recording. The command prints the path to
+`session.json`, and the output directory contains `recording.mp4`. Sessions
+started with `--require-token` use their bearer token for recording control;
+sessions without it need no token.
+
 ### Examples
 
 ```sh
