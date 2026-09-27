@@ -54,8 +54,9 @@ backend scales the Y and CbCr planes on the GPU with Metal Performance Shaders
 (bilinear) into a bounded pool; a frame that already matches the canvas passes
 through. The VideoToolbox transfer is the fallback, with its own vImage CPU
 path. A frame that arrives while one is in flight replaces the waiting frame.
-`SERVE_SIM_VIEWER_RESIZE=metal|videotoolbox|cpu` pins one backend for
-measurements.
+`SERVE_SIM_VIEWER_RESIZE=metal|videotoolbox|cpu` selects a measurement
+backend. Metal retains the VideoToolbox fallback; the other two modes use
+only the selected backend.
 
 `WebRTCPublisher` paces the latest resized frame at the configured viewer rate.
 When a 60 Hz source lands a fraction of a millisecond after a slot, the pump

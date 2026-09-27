@@ -78,7 +78,7 @@ final class ViewerFrameResizer: @unchecked Sendable {
 
     /// The default backend order for this host: Metal, then the VideoToolbox
     /// transfer with its own CPU fallback. `SERVE_SIM_VIEWER_RESIZE=metal|videotoolbox|cpu`
-    /// pins one backend for measurements.
+    /// selects a measurement backend. Metal retains the VideoToolbox fallback.
     static func makeDefault(output: @escaping (CVPixelBuffer, UInt64, UInt64) -> Void) -> ViewerFrameResizer {
         let letterbox = LetterboxResizeBackend(letterboxer: PixelBufferLetterboxer(maxBuffers: 4))
         switch ProcessInfo.processInfo.environment["SERVE_SIM_VIEWER_RESIZE"] {
