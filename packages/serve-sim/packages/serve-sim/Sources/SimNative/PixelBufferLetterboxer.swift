@@ -2,12 +2,18 @@ import Accelerate
 import CoreVideo
 import Foundation
 import StreamingPolicy
+import VideoToolbox
 
 final class PixelBufferLetterboxer {
     private var pool: CVPixelBufferPool?
     private var poolWidth = 0
     private var poolHeight = 0
     private var poolFormat: OSType = 0
+    private var transfer: VTPixelTransferSession?
+    private var transferUnavailable = false
+    private(set) var transferFrames: UInt64 = 0
+    private(set) var cpuFrames: UInt64 = 0
+    private(set) var poolDrops: UInt64 = 0
 
     func place(_ source: CVPixelBuffer, width: Int, height: Int) -> CVPixelBuffer? {
         let format = CVPixelBufferGetPixelFormatType(source)
@@ -25,7 +31,23 @@ final class PixelBufferLetterboxer {
         guard let pool = pixelBufferPool(width: width, height: height, format: format) else { return nil }
         var output: CVPixelBuffer?
         guard CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &output) == kCVReturnSuccess,
-              let output else { return nil }
+              let output else {
+            poolDrops &+= 1
+            return nil
+        }
+
+        if let transfer = transferSession(),
+           VTPixelTransferSessionTransferImage(transfer, from: source, to: output) == noErr {
+            transferFrames &+= 1
+            return output
+        }
+        if let transfer {
+            VTPixelTransferSessionInvalidate(transfer)
+            self.transfer = nil
+            transferUnavailable = true
+            print("[stream] VideoToolbox letterbox transfer failed; using CPU scaling")
+        }
+        cpuFrames &+= 1
 
         CVPixelBufferLockBaseAddress(source, .readOnly)
         CVPixelBufferLockBaseAddress(output, [])
@@ -53,6 +75,28 @@ final class PixelBufferLetterboxer {
         guard vImageScale_ARGB8888(&sourceImage, &destination, nil,
                                    vImage_Flags(kvImageNoFlags)) == kvImageNoError else { return nil }
         return output
+    }
+
+    private func transferSession() -> VTPixelTransferSession? {
+        if let transfer { return transfer }
+        if transferUnavailable { return nil }
+        var next: VTPixelTransferSession?
+        guard VTPixelTransferSessionCreate(allocator: kCFAllocatorDefault,
+                                           pixelTransferSessionOut: &next) == noErr,
+              let next else {
+            transferUnavailable = true
+            print("[stream] VideoToolbox letterbox unavailable; using CPU scaling")
+            return nil
+        }
+        guard VTSessionSetProperty(next, key: kVTPixelTransferPropertyKey_ScalingMode,
+                                   value: kVTScalingMode_Letterbox) == noErr else {
+            VTPixelTransferSessionInvalidate(next)
+            transferUnavailable = true
+            print("[stream] VideoToolbox letterbox mode unavailable; using CPU scaling")
+            return nil
+        }
+        transfer = next
+        return next
     }
 
     private func placeBiPlanar(

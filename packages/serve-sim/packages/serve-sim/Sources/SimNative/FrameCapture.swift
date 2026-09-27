@@ -487,25 +487,12 @@ actor FrameCapture {
         let seed = IOSurfaceGetSeed(surface)
         let seedChanged = lastSeeds[key] != seed
         if frameCount > 0, !seedChanged, !displayChanged, !force { return }
-        lastSeeds[key] = seed
 
         let w = IOSurfaceGetWidth(surface)
         let h = IOSurfaceGetHeight(surface)
         guard w > 0, h > 0 else { return }
 
-        // Keep the orientation and input destination tied to the framebuffer
-        // actually being streamed, including non-default integrated displays.
-        capturedDisplay = display
-
         let dimensionsChanged = capturedWidth != w || capturedHeight != h
-        if dimensionsChanged {
-            capturedWidth = w
-            capturedHeight = h
-            print("[capture] Surface size changed: \(w)x\(h)")
-        }
-        if displayChanged || dimensionsChanged {
-            for notify in screenObservers.values { notify() }
-        }
 
         var pixelBuffer: Unmanaged<CVPixelBuffer>?
         let status = CVPixelBufferCreateWithIOSurface(
@@ -515,9 +502,6 @@ actor FrameCapture {
         )
         guard status == kCVReturnSuccess, let pb = pixelBuffer?.takeRetainedValue() else { return }
 
-        lastCaptureTime = .now
-        frameCount += 1
-        if force { idleFrameCount += 1 } else { screenFrameCount += 1 }
         // WebRTC consumes this timestamp as the capture presentation time. A
         // frame counter makes sparse/idle frames look 1/60s apart even when
         // they were captured hundreds of milliseconds apart, which confuses
@@ -525,6 +509,19 @@ actor FrameCapture {
         // actual capture cadence.
         let timestamp = CMClockGetTime(CMClockGetHostTimeClock())
         guard let copy = photocopier.copy(pb, maxDimension: snapshotMaxDimension) else { return }
+        lastSeeds[key] = seed
+        lastCaptureTime = .now
+        capturedDisplay = display
+        if dimensionsChanged {
+            capturedWidth = w
+            capturedHeight = h
+            print("[capture] Surface size changed: \(w)x\(h)")
+        }
+        if displayChanged || dimensionsChanged {
+            for notify in screenObservers.values { notify() }
+        }
+        frameCount += 1
+        if force { idleFrameCount += 1 } else { screenFrameCount += 1 }
         onFrame?(copy, timestamp, webRTCEncodeCanvasSize())
     }
 
@@ -535,14 +532,16 @@ actor FrameCapture {
     }
 
     func captureTimings() -> (
-        attempts: UInt64, gapSumNs: UInt64, stalls: UInt64, stallSumNs: UInt64, cpuFallbacks: UInt64
+        attempts: UInt64, gapSumNs: UInt64, stalls: UInt64, stallSumNs: UInt64,
+        cpuFallbacks: UInt64, poolDrops: UInt64
     ) {
         (
             attempts: captureAttempts,
             gapSumNs: captureGapSumNs,
             stalls: captureStalls,
             stallSumNs: captureStallSumNs,
-            cpuFallbacks: photocopier.cpuFallbacks
+            cpuFallbacks: photocopier.cpuFallbacks,
+            poolDrops: photocopier.poolDrops
         )
     }
 
@@ -587,6 +586,29 @@ actor FrameCapture {
         guard let sizes = integratedCanvasSizes() else { return nil }
         return sizes.max { $0.width * $0.height < $1.width * $1.height }
             ?? getScreenSize().map { Dimensions(width: $0.width, height: $0.height) }
+    }
+
+    func recordingCanvasSize() -> Dimensions? {
+        let integrated = descriptors.filter { descriptor in
+            let metadata = screenMetadata[ObjectIdentifier(descriptor)]
+            return metadata?.screenType == 0 &&
+                (fixedScreenID == nil || metadata?.screenID == fixedScreenID)
+        }
+        let sizes = integrated.compactMap { descriptor -> NativeCanvasSize? in
+            guard let surface = surface(for: descriptor) else { return nil }
+            return NativeCanvasSize(width: IOSurfaceGetWidth(surface),
+                                    height: IOSurfaceGetHeight(surface))
+        }
+        if fixedScreenID == nil, integrated.count >= 2, sizes.count != integrated.count {
+            return nil
+        }
+        guard let canvas = NativeCanvasPolicy.canvas(for: sizes) else {
+            return getScreenSize().map { screen in
+                Dimensions(width: screen.width + screen.width % 2,
+                           height: screen.height + screen.height % 2)
+            }
+        }
+        return Dimensions(width: canvas.width, height: canvas.height)
     }
 
     deinit {

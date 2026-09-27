@@ -151,6 +151,7 @@ function Diagnostics({
           <Cell label="Capture interval" value={ms(capture.intervalMs, 1)} />
           <Cell label="Surface pick" value={ms(capture.pickMs, 2)} />
           <Cell label="CPU fallbacks" value={compact(capture.cpuFallbacks)} />
+          <Cell label="Capture pool drops" value={compact(capture.poolDrops)} />
           <Cell label="Pump restarts" value={compact(capture.pumpRestarts)} />
         </Group>
       )}
@@ -212,6 +213,7 @@ const HELP: Record<string, { meaning: string; scope: Scope }> = {
     scope: WINDOW,
   },
   "CPU fallbacks": { meaning: "Frames copied on the CPU because the GPU transfer failed.", scope: SESSION },
+  "Capture pool drops": { meaning: "Frames dropped because the capture copy pool had no free buffer.", scope: SESSION },
   "Pump restarts": {
     meaning: "Times the WebRTC frame pump was restarted after its timer stopped ticking.",
     scope: SESSION,

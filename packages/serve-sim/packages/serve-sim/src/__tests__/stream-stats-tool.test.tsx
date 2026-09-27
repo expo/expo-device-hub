@@ -357,7 +357,7 @@ const captureCounts: CaptureCounts = {
 
 const capture: CaptureWindow = {
   screenFps: 60, idleFps: 0, deliveredFps: 60, submittedFps: 60, intervalMs: 8.3, pickMs: 0.01,
-  stalls: 0, stallSumMs: 0, cpuFallbacks: 0, pumpRestarts: 0,
+  stalls: 0, stallSumMs: 0, cpuFallbacks: 0, poolDrops: 0, pumpRestarts: 0,
 };
 
 describe("stale samples", () => {

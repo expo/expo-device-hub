@@ -91,6 +91,7 @@ struct WebRTCCaptureCounts: Codable {
     /// ticking. Nonzero means the host starved or dropped pump timers.
     let pumpRestarts: UInt64?
     let cpuFallbacks: UInt64
+    let poolDrops: UInt64
     let attempts: UInt64
     let stalls: UInt64
     let gapSumMs: Double
@@ -612,21 +613,23 @@ final class WebRTCPublisher: @unchecked Sendable {
     private func sendFrameOnQueue(_ pixelBuffer: CVPixelBuffer, timestampNanoseconds: UInt64) {
         let sourceWidth = CVPixelBufferGetWidth(pixelBuffer)
         let sourceHeight = CVPixelBufferGetHeight(pixelBuffer)
-        guard var scaledPixelBuffer = pixelBufferScaler.scale(pixelBuffer, maxDimension: maxDimension) else {
+        let sharedH264Active = h264WebRTCSupport.allowed && sessions.values.contains {
+            $0.isConnected && StreamCodecPolicy.isH264($0.codecName)
+        }
+        let scaledPixelBuffer: CVPixelBuffer?
+        if encodeCanvas.width > 0, encodeCanvas.height > 0 {
+            scaledPixelBuffer = pixelBufferLetterboxer.place(
+                pixelBuffer, width: encodeCanvas.width, height: encodeCanvas.height
+            )
+        } else {
+            scaledPixelBuffer = pixelBufferScaler.scale(pixelBuffer, maxDimension: maxDimension)
+        }
+        guard let scaledPixelBuffer else {
             streamLog(
                 "[webrtc] Failed to scale input frame \(sourceWidth)x\(sourceHeight) " +
                 "maxDimension=\(maxDimension)"
             )
             return
-        }
-        let sharedH264Active = sessions.values.contains {
-            $0.isConnected && StreamCodecPolicy.isH264($0.codecName)
-        } && h264WebRTCSupport.allowed
-        if encodeCanvas.width > 0, encodeCanvas.height > 0 {
-            guard let letterboxed = pixelBufferLetterboxer.place(
-                scaledPixelBuffer, width: encodeCanvas.width, height: encodeCanvas.height
-            ) else { return }
-            scaledPixelBuffer = letterboxed
         }
         // Counted after the scale succeeds: a frame we failed to scale is never handed on, and
         // counting it would hide the drop behind a healthy forwarded total.

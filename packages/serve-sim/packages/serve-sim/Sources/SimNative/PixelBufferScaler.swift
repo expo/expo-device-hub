@@ -7,6 +7,7 @@ final class PixelBufferScaler: @unchecked Sendable {
     private var pool: CVPixelBufferPool?
     private var poolWidth = 0
     private var poolHeight = 0
+    private let letterboxer = PixelBufferLetterboxer()
 
     func scale(_ source: CVPixelBuffer, maxDimension: Int) -> CVPixelBuffer? {
         let width = CVPixelBufferGetWidth(source)
@@ -16,6 +17,9 @@ final class PixelBufferScaler: @unchecked Sendable {
         let scale = Double(maxDimension) / Double(max(width, height))
         let targetWidth = evenDimension(width, scale: scale)
         let targetHeight = evenDimension(height, scale: scale)
+        if CVPixelBufferGetPixelFormatType(source) != kCVPixelFormatType_32BGRA {
+            return letterboxer.place(source, width: targetWidth, height: targetHeight)
+        }
         var output: CVPixelBuffer?
         guard let pool = pixelBufferPool(width: targetWidth, height: targetHeight),
               CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &output) == kCVReturnSuccess,

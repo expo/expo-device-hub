@@ -81,7 +81,11 @@ actor CaptureEngine {
     private let deviceUDID: String
     private let screenID: UInt32?
     private let frameCapture = FrameCapture()
+    private let nativeFrameMailbox = NativeFrameMailbox()
     private var phase = Phase.unstarted
+    private var nativeFrameDeliveryActive = false
+    private var nativeFrameDeliveryPending = false
+    private var nativeFrameDeliveryGeneration: UInt64 = 0
 
     // MJPEG is stateless, so all subscribers share one encoder instance.
     private let mjpegEncoder: MJPEGEncoder
@@ -120,7 +124,9 @@ actor CaptureEngine {
         self.frameContinuation = frameContinuation
         do {
             await frameCapture.setSnapshotMaxDimension(options.maxDimension)
+            let nativeFrameMailbox = self.nativeFrameMailbox
             try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas in
+                nativeFrameMailbox.publish(pixelBuffer, timestamp: timestamp, wallClock: Date())
                 frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas))
             }
         } catch {
@@ -177,6 +183,31 @@ actor CaptureEngine {
         for consumer in consumers.values {
             consumer.handleFrame(frame)
         }
+    }
+
+    func startNativeFrameDelivery() async -> (mailbox: NativeFrameMailbox, canvas: Dimensions)? {
+        guard phase == .running, !nativeFrameDeliveryActive,
+              !nativeFrameDeliveryPending else { return nil }
+        nativeFrameDeliveryPending = true
+        nativeFrameDeliveryGeneration &+= 1
+        let generation = nativeFrameDeliveryGeneration
+        let canvas = await frameCapture.recordingCanvasSize()
+        guard phase == .running, generation == nativeFrameDeliveryGeneration else { return nil }
+        nativeFrameDeliveryPending = false
+        guard let canvas else { return nil }
+        nativeFrameDeliveryActive = true
+        await frameCapture.setSnapshotMaxDimension(0)
+        guard phase == .running, generation == nativeFrameDeliveryGeneration else { return nil }
+        nativeFrameMailbox.setActive(true)
+        return (nativeFrameMailbox, canvas)
+    }
+
+    func stopNativeFrameDelivery() async {
+        nativeFrameDeliveryGeneration &+= 1
+        nativeFrameDeliveryPending = false
+        nativeFrameMailbox.setActive(false)
+        nativeFrameDeliveryActive = false
+        await frameCapture.setSnapshotMaxDimension(options.maxDimension)
     }
 
     func addMJPEGConsumer(
@@ -259,7 +290,9 @@ actor CaptureEngine {
                     maxDimension: options.maxDimension
                 )
             }
-            await frameCapture.setSnapshotMaxDimension(options.maxDimension)
+            if !nativeFrameDeliveryActive {
+                await frameCapture.setSnapshotMaxDimension(options.maxDimension)
+            }
             await webRTCPublisher?.updateSettings(
                 maxFps: options.h264Fps,
                 targetBitrate: options.h264Bitrate,
@@ -316,6 +349,7 @@ actor CaptureEngine {
                 sharedEncodedFrames: flow?.sharedEncoded,
                 pumpRestarts: flow?.pumpRestarts,
                 cpuFallbacks: timings.cpuFallbacks,
+                poolDrops: timings.poolDrops,
                 attempts: timings.attempts,
                 stalls: timings.stalls,
                 gapSumMs: Double(timings.gapSumNs) / 1_000_000,
@@ -344,6 +378,10 @@ actor CaptureEngine {
     func stop() async {
         if phase == .stopped { return }
         phase = .stopped
+        nativeFrameDeliveryGeneration &+= 1
+        nativeFrameDeliveryPending = false
+        nativeFrameDeliveryActive = false
+        nativeFrameMailbox.setActive(false)
         frameContinuation?.finish()
         frameContinuation = nil
         webRTCPublisher?.stop()

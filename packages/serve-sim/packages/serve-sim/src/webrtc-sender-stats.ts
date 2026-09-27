@@ -44,6 +44,7 @@ export interface CaptureCounts {
   /** Frame-pump watchdog restarts; nonzero means the host starved or dropped pump timers. */
   pumpRestarts: number | null;
   cpuFallbacks: number | null;
+  poolDrops?: number | null;
   attempts: number | null;
   stalls: number | null;
   gapSumMs: number | null;
@@ -216,6 +217,7 @@ function readCaptureCounts(raw: unknown): CaptureCounts | null {
     sharedEncodedFrames: maybeNumber(raw.sharedEncodedFrames),
     pumpRestarts: maybeNumber(raw.pumpRestarts),
     cpuFallbacks: maybeNumber(raw.cpuFallbacks),
+    poolDrops: maybeNumber(raw.poolDrops),
     attempts: maybeNumber(raw.attempts),
     stalls: maybeNumber(raw.stalls),
     gapSumMs: maybeNumber(raw.gapSumMs),

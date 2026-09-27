@@ -164,6 +164,7 @@ describe("capture counts", () => {
       sharedEncodedFrames: null,
       pumpRestarts: null,
       cpuFallbacks: null,
+      poolDrops: null,
       attempts: null,
       stalls: null,
       gapSumMs: null,
