@@ -296,6 +296,22 @@ describe("capture runtime", () => {
     expect(noDylib.metaFor(UDID).attachment).toBe("not-enabled");
   });
 
+  test("shutdown clears a failure that happened before any session", async () => {
+    const noDylib = harnessWithoutDylib();
+    const seen: string[] = [];
+    noDylib.subscribe(UDID, (event) => {
+      if (event.type === "meta") seen.push(event.meta.attachment);
+    });
+    await expect(noDylib.enableForDevice(UDID)).rejects.toBeInstanceOf(CaptureEnableError);
+    expect(noDylib.metaFor(UDID).attachment).toBe("failed");
+
+    // The device never had a session, so shutdown has to find it by its failed start.
+    await noDylib.disableAll();
+
+    expect(noDylib.metaFor(UDID).attachment).toBe("not-enabled");
+    expect(seen).toEqual(["failed", "not-enabled"]);
+  });
+
   test("rejects when the proxy never starts, after publishing failed meta", async () => {
     const { runtime } = harness({
       startProxy: async () => {

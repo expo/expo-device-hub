@@ -301,7 +301,9 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     disableForDevice: disableDevice,
 
     async disableAll(): Promise<void> {
-      const devices = new Set([...byUdid.keys(), ...operations.devices()]);
+      // A start that failed before it had a session is not in byUdid; disabling it clears its
+      // failed meta, so viewers do not keep reading a failure after capture is turned off.
+      const devices = new Set([...byUdid.keys(), ...failedStarts.keys(), ...operations.devices()]);
       await Promise.all([...devices].map(disableDevice));
     },
 
