@@ -2,4 +2,4 @@
 "@expo/serve-sim": minor
 ---
 
-Capture one owned native-size frame for recording and scale viewers separately.
+Reuse one native-resolution simulator capture for recording and WebRTC viewers, avoiding a second framebuffer read while keeping viewer scaling separate.
