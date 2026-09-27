@@ -8,7 +8,7 @@ import { join } from "path";
 const cli = join(import.meta.dir, "../../dist/serve-sim.js");
 const udid = "record-video-interruption-test";
 
-async function interruptedStart(saveVideo: boolean): Promise<{ code: number | null; stdout: string; deletes: number; manifest: string }> {
+async function interruptedStart(saveVideo: boolean, gated: boolean): Promise<{ code: number | null; stdout: string; deletes: number; manifest: string }> {
   const root = mkdtempSync(join(tmpdir(), "record-video-cli-test-"));
   const state = join(root, "state");
   const bin = join(root, "bin");
@@ -31,9 +31,11 @@ printf '%s\\n' '{"devices":{"test":[{"udid":"${udid}","state":"Booted"}]}}'
   const posted = new Promise<void>(resolve => { postArrived = resolve; });
   let recordingId = "";
   let stoppedId = "";
+  let authorization: string | undefined;
   let deletes = 0;
   const server = createServer(async (req, res) => {
     if (req.method === "POST") {
+      authorization = req.headers.authorization;
       let body = "";
       for await (const chunk of req) body += chunk.toString();
       recordingId = (JSON.parse(body) as { recordingId: string }).recordingId;
@@ -60,7 +62,7 @@ printf '%s\\n' '{"devices":{"test":[{"udid":"${udid}","state":"Booted"}]}}'
   if (!address || typeof address === "string") throw new Error("test server has no port");
   const port = address.port;
   writeFileSync(join(state, `server-${udid}.json`), JSON.stringify({
-    pid: process.pid, port, device: udid, token: "test-token",
+    pid: process.pid, port, device: udid, ...(gated ? { token: "test-token" } : {}),
     url: `http://127.0.0.1:${port}`,
     streamUrl: `http://127.0.0.1:${port}/stream.mjpeg`,
     wsUrl: `ws://127.0.0.1:${port}/ws`,
@@ -87,6 +89,7 @@ printf '%s\\n' '{"devices":{"test":[{"udid":"${udid}","state":"Booted"}]}}'
       Bun.sleep(10_000).then(() => { throw new Error(`record-video did not exit: ${stderr}`); }),
     ]);
     expect(stoppedId).toBe(recordingId);
+    expect(authorization).toBe(gated ? "Bearer test-token" : undefined);
     expect(existsSync(manifest)).toBe(saveVideo);
     return { code, stdout, deletes, manifest };
   } finally {
@@ -97,15 +100,15 @@ printf '%s\\n' '{"devices":{"test":[{"udid":"${udid}","state":"Booted"}]}}'
   }
 }
 
-test("record-video reports a saved recording when SIGINT interrupts its start response", async () => {
-  const result = await interruptedStart(true);
+test("record-video works without a token and reports a saved recording when SIGINT interrupts its start response", async () => {
+  const result = await interruptedStart(true, false);
   expect(result.code).toBe(0);
   expect(result.stdout.trim()).toBe(result.manifest);
   expect(result.deletes).toBe(1);
 }, 20_000);
 
-test("record-video reports cancellation when SIGINT arrives before a recording exists", async () => {
-  const result = await interruptedStart(false);
+test("record-video uses the token and reports cancellation when SIGINT arrives before a recording exists", async () => {
+  const result = await interruptedStart(false, true);
   expect(result.code).not.toBe(0);
   expect(result.stdout).not.toContain(result.manifest);
   expect(result.deletes).toBe(1);

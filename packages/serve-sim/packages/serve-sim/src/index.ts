@@ -2302,7 +2302,6 @@ async function waitForServerExit(pid: number, timeoutMs: number): Promise<boolea
 async function recordVideo(udid: string, output: string): Promise<void> {
   const state = readState(udid);
   if (!state) throw new Error(`No running serve-sim session found for ${udid}; start serve-sim for this device and retry.`);
-  if (!state.token) throw new Error("The serve-sim session has no token; start it with --require-token before recording.");
   const url = state.streamUrl.replace(/\/stream\.mjpeg$/, "/recording/video");
   const outputDirectory = resolve(output);
   const manifestPath = join(outputDirectory, "session.json");
@@ -2310,7 +2309,8 @@ async function recordVideo(udid: string, output: string): Promise<void> {
     throw new Error(`Recording manifest already exists at ${manifestPath}; choose an empty output directory.`);
   }
   const recordingId = randomBytes(16).toString("hex");
-  const headers = { Authorization: `Bearer ${state.token}`, "x-recording-id": recordingId };
+  const headers: Record<string, string> = { "x-recording-id": recordingId };
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
   let resolveStop: () => void = () => {};
   const stopping = new Promise<void>((resolve) => { resolveStop = resolve; });
   let stopRequested = false;
