@@ -41,6 +41,9 @@ device. The manifest retains the record-sim upload schema. See
 Without `--require-token`, neither the preview nor recording control requires
 a session token. CORS still applies, and a loopback origin is still allowed,
 so a page served from any `localhost` port can read an ungated preview.
+If the server is reachable over a network in this mode, any reachable client
+can choose a recording output directory that the server process can write.
+Use `--require-token` when that access should be restricted.
 
 With it, the server mints one session token at startup, prints it, and writes it
 to the device's state file. Every route is gated as a whole rather than per
