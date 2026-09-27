@@ -1,9 +1,13 @@
-import { capabilityHarness } from "./capability-harness";
-import { describe, expect, test } from "bun:test";
+import { capabilityHarness } from "../../capture/__tests__/capability-harness";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
-import { createCaptureRuntime, CaptureEnableError } from "../runtime";
-import { CaptureStore } from "../store";
-import { type CaptureProxy, type MitmProxyDeps } from "../mitm-engine";
+import { managedStartupDylibs } from "../../capability-config";
+import { createCaptureRuntime, CaptureEnableError } from "../../capture/runtime";
+import { CaptureStore } from "../../capture/store";
+import { type CaptureProxy, type MitmProxyDeps } from "../../capture/mitm-engine";
+import { installShims, useTempStateDir } from "../helpers";
 
 const UDID = "ABCD1234-0000-0000-0000-0000000000EF";
 const PORT_FILE = "/tmp/fake-confdir/proxy-port";
@@ -587,4 +591,122 @@ describe("capture runtime", () => {
     expect(runtime.metaFor(UDID).attachment).toBe("capturing");
   });
 
+});
+
+// The suites above replace the launch-manager transaction with `capabilityHarness`. This one keeps
+// the real `configureCapability`, against an `xcrun` shim, so a publication that fails inside
+// launchd rolls back the proxy on the runtime side and the device state on the launch-manager side.
+describe("capture runtime with the real capability transaction", () => {
+  const REAL_UDID = "capture-runtime-real-transaction";
+  let state: ReturnType<typeof useTempStateDir>;
+  let shims: ReturnType<typeof installShims>;
+  let envPath: string;
+  let failurePath: string;
+  let dylib: string;
+
+  beforeEach(() => {
+    state = useTempStateDir();
+    envPath = join(state.dir, "env.json");
+    failurePath = join(state.dir, "fail-insert");
+    dylib = join(state.dir, "capture.dylib");
+    writeFileSync(dylib, "");
+    writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/other.dylib" }));
+    // While the failure file exists, the first write to DYLD_INSERT_LIBRARIES fails and consumes it.
+    shims = installShims({ xcrun: `#!/usr/bin/env node
+const fs = require('node:fs');
+const path = ${JSON.stringify(envPath)};
+const failure = ${JSON.stringify(failurePath)};
+const env = JSON.parse(fs.readFileSync(path, 'utf8'));
+const [,,,, command, name, value] = process.argv.slice(2);
+if (name === 'DYLD_INSERT_LIBRARIES' && command !== 'getenv' && fs.existsSync(failure)) {
+  fs.unlinkSync(failure);
+  process.exit(1);
+}
+if (command === 'getenv') process.stdout.write(env[name] || '');
+if (command === 'setenv') env[name] = value;
+if (command === 'unsetenv') delete env[name];
+fs.writeFileSync(path, JSON.stringify(env));
+` });
+  });
+
+  afterEach(() => {
+    shims.restore();
+    state.restore();
+  });
+
+  function env(): Record<string, string> {
+    return JSON.parse(readFileSync(envPath, "utf8"));
+  }
+
+  function realRuntime(trustCa?: () => Promise<void>) {
+    const calls: string[] = [];
+    const runtime = createCaptureRuntime({
+      dylib: () => dylib,
+      trustCa: async () => {
+        calls.push("trusted");
+        await trustCa?.();
+      },
+      startProxy: async () => {
+        calls.push("proxy-started");
+        return {
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          close: async () => void calls.push("proxy-closed"),
+        };
+      },
+    });
+    return { runtime, calls };
+  }
+
+  test("a failed publication rolls back the proxy and the device, and a retry publishes", async () => {
+    const { runtime, calls } = realRuntime();
+    writeFileSync(failurePath, "");
+
+    const err = await runtime.enableForDevice(REAL_UDID).catch((e) => e);
+
+    expect(err).toBeInstanceOf(CaptureEnableError);
+    // The failed session stays, with its reason, until the retry below cleans it up first.
+    expect(runtime.metaFor(REAL_UDID).attachment).toBe("failed");
+    // The runtime side: the proxy nobody can reach is closed.
+    expect(calls).toEqual(["proxy-started", "trusted", "proxy-closed"]);
+    // The launch-manager side: launchd and the startup insert are as they were.
+    expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
+    expect(managedStartupDylibs(REAL_UDID)).toEqual([]);
+
+    calls.length = 0;
+    const meta = await runtime.enableForDevice(REAL_UDID);
+
+    expect(meta.attachment).toBe("capturing");
+    expect(calls).toEqual(["proxy-started", "trusted"]);
+    expect(env().DYLD_INSERT_LIBRARIES).toContain(dylib);
+    expect(managedStartupDylibs(REAL_UDID)).toEqual([dylib]);
+
+    await runtime.disableAll();
+
+    expect(runtime.metaFor(REAL_UDID).attachment).toBe("not-enabled");
+    expect(calls).toContain("proxy-closed");
+    expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
+    expect(managedStartupDylibs(REAL_UDID)).toEqual([]);
+  });
+
+  test("shutdown during a real publication cancels the enable and leaves the device clean", async () => {
+    let releaseTrust = () => {};
+    const trusting = new Promise<void>((resolve) => {
+      releaseTrust = resolve;
+    });
+    const { runtime, calls } = realRuntime(() => trusting);
+
+    const enabling = runtime.enableForDevice(REAL_UDID).catch((e: unknown) => e);
+    await Bun.sleep(10);
+    const shutdown = runtime.disableAll();
+    releaseTrust();
+    await shutdown;
+
+    expect(await enabling).toBeInstanceOf(CaptureEnableError);
+    expect(runtime.metaFor(REAL_UDID).attachment).toBe("not-enabled");
+    expect(calls).toContain("proxy-closed");
+    expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
+    expect(managedStartupDylibs(REAL_UDID)).toEqual([]);
+  });
 });

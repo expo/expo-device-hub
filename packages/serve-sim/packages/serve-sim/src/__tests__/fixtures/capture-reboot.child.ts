@@ -1,12 +1,12 @@
-import { capabilityHarness } from "./capability-harness";
+import { capabilityHarness } from "../../capture/__tests__/capability-harness";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 
-import { useTempStateDir } from "../../__tests__/helpers";
-import { rebootWithCapture } from "../reboot";
-import { createCaptureRuntime } from "../runtime";
-import { type CaptureProxy } from "../mitm-engine";
+import { useTempStateDir } from "../helpers";
+import { rebootWithCapture } from "../../capture/reboot";
+import { createCaptureRuntime } from "../../capture/runtime";
+import { type CaptureProxy } from "../../capture/mitm-engine";
 
 const UDID = "ABCD1234-0000-0000-0000-0000000000EF";
 const CA_PEM = "-----BEGIN CERTIFICATE-----\nfake\n-----END CERTIFICATE-----\n";
