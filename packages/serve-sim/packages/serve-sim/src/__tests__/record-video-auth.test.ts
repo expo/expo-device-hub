@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 
 import { simMiddleware } from "../middleware";
 import { accessCookieName } from "../session-auth";
@@ -6,8 +7,11 @@ import { servePreview, type PreviewServer } from "../runtime";
 import { freePortAsync, useTempStateDir } from "./helpers";
 
 let server: PreviewServer;
+let gatedServer: PreviewServer;
 let url: string;
+let gatedUrl: string;
 let state: ReturnType<typeof useTempStateDir>;
+const device = randomUUID();
 
 beforeAll(async () => {
   state = useTempStateDir();
@@ -17,39 +21,62 @@ beforeAll(async () => {
     host: "127.0.0.1",
     middleware: simMiddleware({
       basePath: "/",
-      device: "404F2659-7202-4450-8465-912BD2AB744B",
+      device,
       execToken: "recording-session-token",
       requirePreviewToken: false,
     }),
   });
-  url = `http://127.0.0.1:${port}/helper/404F2659-7202-4450-8465-912BD2AB744B/recording/video`;
+  url = `http://127.0.0.1:${port}/helper/${device}/recording/video`;
+  const gatedPort = await freePortAsync();
+  gatedServer = await servePreview({
+    port: gatedPort,
+    host: "127.0.0.1",
+    middleware: simMiddleware({
+      basePath: "/",
+      device,
+      execToken: "recording-session-token",
+      requirePreviewToken: true,
+    }),
+  });
+  gatedUrl = `http://127.0.0.1:${gatedPort}/helper/${device}/recording/video`;
 });
 
 afterAll(() => {
   server?.stop(true);
+  gatedServer?.stop(true);
   state?.restore();
 });
 
-test("recording start and stop require the session token even when the preview is open", async () => {
+test("recording control passes the auth gate without a token when the preview is open", async () => {
   const start = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ start: true, output: "/tmp/recording" }),
+    body: JSON.stringify({ start: true }),
   });
-  expect(start.status).toBe(401);
+  expect([400, 404]).toContain(start.status);
 
   const stop = await fetch(url, { method: "DELETE" });
+  expect([404, 409]).toContain(stop.status);
+});
+
+test("recording control requires a bearer token when the preview is gated", async () => {
+  const start = await fetch(gatedUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ start: true }),
+  });
+  expect(start.status).toBe(401);
+  const stop = await fetch(gatedUrl, { method: "DELETE" });
   expect(stop.status).toBe(401);
 });
 
-
-test("recording control rejects a preview cookie without the bearer token", async () => {
+test("gated recording control rejects a preview cookie without the bearer token", async () => {
   const token = "recording-session-token";
-  const response = await fetch(url, {
+  const response = await fetch(gatedUrl, {
     method: "POST",
     headers: {
       Cookie: `${accessCookieName(token)}=${token}`,
-      Origin: new URL(url).origin,
+      Origin: new URL(gatedUrl).origin,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ start: true, output: "/tmp/recording", recordingId: "test" }),

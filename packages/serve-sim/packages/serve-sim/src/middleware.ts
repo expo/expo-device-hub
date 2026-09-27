@@ -1827,7 +1827,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
 
     const helperTarget = helperProxyTarget(rawUrl, helperPrefix);
     if (helperTarget) {
-      if (helperTarget.upstreamPath.split("?")[0] === "/recording/video"
+      if (requirePreviewToken && helperTarget.upstreamPath.split("?")[0] === "/recording/video"
         && !assertBearerAccess(req, res, execToken)) return;
       const device = helperTarget.device ?? selectedDevice;
       // The device's helper endpoints are served from an in-process
