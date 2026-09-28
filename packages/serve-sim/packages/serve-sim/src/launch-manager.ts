@@ -54,13 +54,19 @@ function releaseLaunchStateUnlocked(
 ): boolean {
   const previous = readLaunchState(udid, ownerPid);
   if (!previous) return false;
-  const kept = Object.fromEntries(
-    Object.entries(previous.capabilities).filter(([, record]) => record.ownerPid !== ownerPid),
-  );
-  const sessionPids = previous.sessionPids?.filter((pid) => pid !== ownerPid);
-  for (const record of Object.values(previous.capabilities)) {
-    if (record.ownerPid === ownerPid) onRelease?.(record);
+  const kept: Record<string, RecordedCapability> = {};
+  const released: RecordedCapability[] = [];
+  for (const [name, record] of Object.entries(previous.capabilities)) {
+    if (!record.ownerPids.includes(ownerPid)) {
+      kept[name] = record;
+      continue;
+    }
+    const owners = record.ownerPids.filter((pid) => pid !== ownerPid);
+    if (owners.length > 0) kept[name] = { ...record, ownerPids: owners };
+    else released.push(record);
   }
+  const sessionPids = previous.sessionPids?.filter((pid) => pid !== ownerPid);
+  for (const record of released) onRelease?.(record);
   if (Object.keys(kept).length === 0 && !sessionPids?.length) {
     clearLaunchState(udid);
     return false;
@@ -123,25 +129,6 @@ export async function stopLaunchSession(
 
 export function capabilityLoaderDir(): string {
   return join(dirnameOf(import.meta.url), "..", "dist", "capability-loader");
-}
-
-/**
- * `SIMCTL_CHILD_*` variables reach the app simctl launches. The insert has to
- * carry the capability dylib itself, so a swizzle is in place before the app's
- * own code runs, and the capability loader, because simctl's value replaces the
- * device-wide one for this process and would otherwise drop every other
- * capability.
- */
-export function childLaunchEnv(
-  dylib: string,
-  capabilityEnv: Record<string, string>,
-): Record<string, string> {
-  return {
-    SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: [dylib, capabilityLoaderPath()].join(":"),
-    ...Object.fromEntries(
-      Object.entries(capabilityEnv).map(([key, value]) => [`SIMCTL_CHILD_${key}`, value]),
-    ),
-  };
 }
 
 const armedHere = new Set<string>();
@@ -305,11 +292,6 @@ async function prepare(
   };
 }
 
-/**
- * Unused on `expo` today. Kept because #148, #102, and #53 import it; the
- * first of them to land makes it live. Remove the tag then.
- * @public
- */
 export async function setCapabilityEnabled(
   udid: string,
   name: string,
@@ -400,6 +382,14 @@ export async function enableCapabilities(
   await withLaunchStateLock(udid, () => enableCapabilitiesUnlocked(udid, bundleId, capabilities, options));
 }
 
+// A second session joins the owners. An empty list, from a one-shot enable, stays empty.
+function ownersFor(previous: RecordedCapability | undefined, ownerPid: number | null): number[] {
+  if (ownerPid === null) return [];
+  if (!previous) return [ownerPid];
+  if (previous.ownerPids.length === 0) return [];
+  return previous.ownerPids.includes(ownerPid) ? previous.ownerPids : [...previous.ownerPids, ownerPid];
+}
+
 async function enableCapabilitiesUnlocked(
   udid: string,
   bundleId: string | null,
@@ -419,7 +409,7 @@ async function enableCapabilitiesUnlocked(
   const added = Object.fromEntries(
     capabilities.map((capability) => [
       capability.name,
-      { ...capability, bundleId, ownerPid },
+      { ...capability, bundleId, ownerPids: ownersFor(previous?.capabilities[capability.name], ownerPid) },
     ]),
   );
   const state: LaunchState = {
@@ -487,15 +477,20 @@ async function disableCapabilityUnlocked(
 ): Promise<void> {
   const previous = readLaunchState(udid);
   if (!previous) return;
-  if (!(name in previous.capabilities)) return;
+  const removed = name in previous.capabilities;
   const rest = Object.fromEntries(
     Object.entries(previous.capabilities).filter(([key]) => key !== name),
   );
   const state: LaunchState = { ...previous, capabilities: rest };
-  const config = renderCapabilityConfig(state);
-  writeLaunchState(udid, state);
-  commitCapabilityConfig(udid, config);
-  if (relaunch) await relaunchTarget(udid, bundleId, state);
+  // A one-shot enable armed the loader with no session to take it out again.
+  if (Object.keys(rest).length === 0 && !state.sessionPids?.length) {
+    clearLaunchState(udid);
+    await removeCapabilityLoader(udid);
+  } else if (removed) {
+    writeLaunchState(udid, state);
+    commitCapabilityConfig(udid, renderCapabilityConfig(state));
+  }
+  if (relaunch && removed) await relaunchTarget(udid, bundleId, state);
 }
 
 const URL_SCHEME_APPROVAL_DOMAIN = "com.apple.launchservices.schemeapproval";

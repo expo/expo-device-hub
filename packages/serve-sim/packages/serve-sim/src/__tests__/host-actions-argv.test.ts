@@ -361,7 +361,7 @@ describe("serve-sim-backed actions", () => {
         udid: UDID, bundleId: BUNDLE, mirror: "off", source: "file", target: CONFINED,
       }),
     ).toEqual([
-      "serve-sim", "camera", BUNDLE, "-d", UDID, "--quiet", "--file", CONFINED, "--mirror", "off",
+      "serve-sim", "camera", "enable", "-d", UDID, "--quiet", "--file", CONFINED, "--mirror", "off",
     ]);
     // A webcam with no name leaves --webcam bare, and the CLI reads the next "-" token as "no name".
     expect(
@@ -369,13 +369,13 @@ describe("serve-sim-backed actions", () => {
         udid: UDID, bundleId: BUNDLE, mirror: "on", source: "webcam",
       }),
     ).toEqual([
-      "serve-sim", "camera", BUNDLE, "-d", UDID, "--quiet", "--webcam", "--mirror", "on",
+      "serve-sim", "camera", "enable", "-d", UDID, "--quiet", "--webcam", "--mirror", "on",
     ]);
     expect(
       await argv("camera.inject", {
         udid: UDID, bundleId: BUNDLE, mirror: "on", source: "placeholder",
       }),
-    ).toEqual(["serve-sim", "camera", BUNDLE, "-d", UDID, "--quiet", "--mirror", "on"]);
+    ).toEqual(["serve-sim", "camera", "enable", "-d", UDID, "--quiet", "--mirror", "on"]);
   });
 
   it("builds the permission actions", async () => {

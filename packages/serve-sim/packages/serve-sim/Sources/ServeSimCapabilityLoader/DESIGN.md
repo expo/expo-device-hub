@@ -145,15 +145,11 @@ something that reliably removes it:
   released when that session exits, including its host helper. The insert is
   removed only when no live session or capability needs it.
 
-## Not there yet
+## Camera lifecycle
 
-Recorded so the gap between this document and the code is visible rather than
-forgotten:
+The capability loader loads capability code; it does not unload swizzles or control
+camera device availability. The camera owns runtime enable/disable, frame
+liveness, and connection notifications. See [the camera design](../SimCameraInjector/DESIGN.md).
 
-- **The per-launch path inserts the capability dylib alongside the capability loader.**
-  `childLaunchEnv` puts both in `SIMCTL_CHILD_DYLD_INSERT_LIBRARIES`. It should
-  insert the capability loader alone and let it load the capability, so there is one
-  loading path rather than two.
-- `+[AVCaptureDevice defaultDeviceWithMediaType:]` is not swizzled, only the
-  `deviceType:mediaType:position:` form, so an app using the older API sees no
-  camera.
+Camera commands use only the capability loader loading path. They do not insert a
+camera dylib alongside it, change permissions, or restart a process.

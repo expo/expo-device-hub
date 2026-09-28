@@ -95,16 +95,16 @@ serve-sim ca-debug <option> <on|off> [-d udid]
 serve-sim memory-warning [-d udid]    Simulate a memory warning
 serve-sim event-log [-d udid]         Show recent simulator events
 
-serve-sim camera <bundle-id> [-d udid] [source-options]
-                                      Inject a synthetic camera feed and (re)launch the app
+serve-sim camera enable [-d udid] [source-options]
+                                      Enable the camera for all apps without restarting them
 serve-sim camera switch <placeholder|webcam|file> [arg] [-d udid]
                                       Hot-swap the running helper's source (no relaunch)
 serve-sim camera mirror <auto|on|off> [-d udid]
                                       Hot-swap preview-layer mirror mode
 serve-sim camera status [-d udid]     Print helper state as JSON ({alive, source, ...})
 serve-sim camera --list-webcams       List host camera devices
-serve-sim camera --stop-webcam [-d udid]
-                                      Stop the camera helper for a device
+serve-sim camera disable [-d udid]
+                                      Disconnect the camera from all apps on the device
 
 Options:
   -p, --port <port>   Starting port (preview default: 3200; helper default: 3100)
@@ -144,7 +144,7 @@ Options:
       --list [device] List running streams
       --kill [device] Kill running stream(s)
 
-Camera options (used with `serve-sim camera <bundle-id>`):
+Camera options (used with `serve-sim camera enable`):
   -f, --file <path>          Image or video file (kind auto-detected from
                              extension/magic bytes; videos loop at native FPS)
       --webcam [name]        Live host webcam (defaults to the built-in
@@ -196,11 +196,11 @@ echo "from stdin" | serve-sim type --stdin
 serve-sim type --file ./snippet.txt
 
 # Camera injection
-serve-sim camera com.acme.MyApp                            # animated placeholder
-serve-sim camera com.acme.MyApp --webcam                   # default webcam
-serve-sim camera com.acme.MyApp --webcam "MacBook Pro Camera"
-serve-sim camera com.acme.MyApp --file ~/Pictures/face.png # static image
-serve-sim camera com.acme.MyApp --file ~/Movies/loop.mp4   # looping video
+serve-sim camera enable                            # animated placeholder
+serve-sim camera enable --webcam                   # default webcam
+serve-sim camera enable --webcam "MacBook Pro Camera"
+serve-sim camera enable --file ~/Pictures/face.png # static image
+serve-sim camera enable --file ~/Movies/loop.mp4   # looping video
 
 # Hot-swap source on a running helper (no app relaunch)
 serve-sim camera switch placeholder
@@ -211,7 +211,7 @@ serve-sim camera switch ~/Movies/loop.mp4                  # auto-detects file k
 serve-sim camera mirror on
 serve-sim camera status                                    # JSON: alive, source, mirror
 serve-sim camera --list-webcams
-serve-sim camera --stop-webcam
+serve-sim camera disable
 ```
 
 Multiple booted simulators are supported by passing several device names. With no device argument, serve-sim selects an existing stream, a booted simulator, or a default simulator to boot.
@@ -242,9 +242,13 @@ the launch is what lets `serve-sim` attach to the process from the start.
 
 ### Camera
 
-`serve-sim camera <bundle-id>` replaces the simulator's camera feed for a single app. A small host-side helper writes BGRA frames into a POSIX shared-memory region; an injected dylib (`DYLD_INSERT_LIBRARIES`) swizzles AVFoundation inside the simulator process so the app reads from that region instead of the simulator's stub camera.
+`serve-sim camera enable` provides a single camera feed to all eligible apps on the simulator. Start a serve-sim session before opening the apps: its lightweight capability loader loads the camera implementation safely inside each app. Enable and Disable never launch or terminate apps and never modify camera permissions.
 
-The helper is one-per-device and outlives any single app launch, so multiple apps on the same simulator can share the feed — just run `serve-sim camera <other-bundle-id>` again to relaunch the next app with the dylib attached. Source changes (`camera switch`) and mirror changes (`camera mirror`) flow through the helper's control socket and don't relaunch the app.
+`serve-sim camera disable` disconnects the fake camera from running apps and stops frame delivery. Enabling again reconnects those apps to the selected source. Apps receive AVFoundation device connection/disconnection notifications; an app that does not handle device changes may need to reopen its camera UI. The capability loader stays armed until the serve-sim session ends.
+
+Source changes (`camera switch`) and mirror changes (`camera mirror`) update the same device-wide feed. A legacy bundle-id argument is accepted for compatibility but does not target or restart that app. `--restart` is rejected. Camera permission APIs retain their real values.
+
+The native lifecycle and its validation are described in [the camera design](Sources/SimCameraInjector/DESIGN.md).
 
 Sources:
 

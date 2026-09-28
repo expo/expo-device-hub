@@ -107,10 +107,15 @@ static BOOL SwizzleInstanceMethod(Class cls, SEL orig, SEL swiz) {
 @interface AVCaptureDevice (SimCam)
 @end
 @implementation AVCaptureDevice (SimCam)
++ (AVCaptureDevice *)simcam_defaultDeviceWithMediaType:(AVMediaType)mediaType {
+    if ([mediaType isEqualToString:AVMediaTypeVideo] && SimCamDeviceIsConnected())
+        return SimCamFakeDeviceForPosition(AVCaptureDevicePositionBack);
+    return [self simcam_defaultDeviceWithMediaType:mediaType];
+}
 + (AVCaptureDevice *)simcam_defaultDeviceWithDeviceType:(AVCaptureDeviceType)t
                                               mediaType:(AVMediaType)m
                                                position:(AVCaptureDevicePosition)p {
-    if ([m isEqualToString:AVMediaTypeVideo] || m == nil) {
+    if (SimCamDeviceIsConnected() && ([m isEqualToString:AVMediaTypeVideo] || m == nil)) {
         AVCaptureDevicePosition resolved =
             (p == AVCaptureDevicePositionBack) ? AVCaptureDevicePositionBack
                                                : AVCaptureDevicePositionFront;
@@ -121,7 +126,7 @@ static BOOL SwizzleInstanceMethod(Class cls, SEL orig, SEL swiz) {
     return [self simcam_defaultDeviceWithDeviceType:t mediaType:m position:p];
 }
 + (NSArray<AVCaptureDevice *> *)simcam_devicesWithMediaType:(AVMediaType)m {
-    if ([m isEqualToString:AVMediaTypeVideo]) {
+    if (SimCamDeviceIsConnected() && [m isEqualToString:AVMediaTypeVideo]) {
         return @[
             SimCamFakeDeviceForPosition(AVCaptureDevicePositionFront),
             SimCamFakeDeviceForPosition(AVCaptureDevicePositionBack),
@@ -131,6 +136,7 @@ static BOOL SwizzleInstanceMethod(Class cls, SEL orig, SEL swiz) {
 }
 + (NSArray<AVCaptureDevice *> *)simcam_devices {
     NSArray *real = [self simcam_devices];
+    if (!SimCamDeviceIsConnected()) return real;
     NSArray *fakes = @[
         SimCamFakeDeviceForPosition(AVCaptureDevicePositionFront),
         SimCamFakeDeviceForPosition(AVCaptureDevicePositionBack),
@@ -141,29 +147,36 @@ static BOOL SwizzleInstanceMethod(Class cls, SEL orig, SEL swiz) {
 
 #pragma mark - AVCaptureDeviceDiscoverySession swizzles
 
+static char kSimCamDiscoveryPositionKey;
+
 @interface AVCaptureDeviceDiscoverySession (SimCam)
 @end
 @implementation AVCaptureDeviceDiscoverySession (SimCam)
 + (AVCaptureDeviceDiscoverySession *)simcam_discoverySessionWithDeviceTypes:(NSArray<AVCaptureDeviceType> *)types
-                                                                  mediaType:(AVMediaType)m
-                                                                   position:(AVCaptureDevicePosition)p {
-    AVCaptureDeviceDiscoverySession *real =
-        [self simcam_discoverySessionWithDeviceTypes:types mediaType:m position:p];
-    if ([m isEqualToString:AVMediaTypeVideo] || m == nil) {
-        NSMutableArray *list = [NSMutableArray new];
-        if (p == AVCaptureDevicePositionUnspecified || p == AVCaptureDevicePositionFront)
-            [list addObject:SimCamFakeDeviceForPosition(AVCaptureDevicePositionFront)];
-        if (p == AVCaptureDevicePositionUnspecified || p == AVCaptureDevicePositionBack)
-            [list addObject:SimCamFakeDeviceForPosition(AVCaptureDevicePositionBack)];
-        @try {
-            [real setValue:list forKey:@"devices"];
-        } @catch (__unused id e) {
-            simcam_log(@"could not override discovery session devices");
-        }
-    }
-    return real;
+                                                                  mediaType:(AVMediaType)mediaType
+                                                                   position:(AVCaptureDevicePosition)position {
+    AVCaptureDeviceDiscoverySession *session =
+        [self simcam_discoverySessionWithDeviceTypes:types mediaType:mediaType position:position];
+    if ([mediaType isEqualToString:AVMediaTypeVideo] || mediaType == nil)
+        objc_setAssociatedObject(session, &kSimCamDiscoveryPositionKey, @(position), OBJC_ASSOCIATION_RETAIN);
+    return session;
+}
+- (NSArray<AVCaptureDevice *> *)simcam_devices {
+    NSNumber *position = objc_getAssociatedObject(self, &kSimCamDiscoveryPositionKey);
+    if (!position || !SimCamDeviceIsConnected()) return [self simcam_devices];
+    NSMutableArray *devices = [NSMutableArray new];
+    if (position.intValue == AVCaptureDevicePositionUnspecified || position.intValue == AVCaptureDevicePositionFront)
+        [devices addObject:SimCamFakeDeviceForPosition(AVCaptureDevicePositionFront)];
+    if (position.intValue == AVCaptureDevicePositionUnspecified || position.intValue == AVCaptureDevicePositionBack)
+        [devices addObject:SimCamFakeDeviceForPosition(AVCaptureDevicePositionBack)];
+    return devices;
 }
 @end
+
+static NSError *SimCamDisconnectedError(void) {
+    return [NSError errorWithDomain:AVFoundationErrorDomain code:AVErrorDeviceWasDisconnected
+                           userInfo:@{NSLocalizedDescriptionKey: @"The simulated camera is disconnected. Enable the camera feed and try again."}];
+}
 
 #pragma mark - AVCaptureDeviceInput swizzle
 
@@ -172,6 +185,10 @@ static BOOL SwizzleInstanceMethod(Class cls, SEL orig, SEL swiz) {
 @implementation AVCaptureDeviceInput (SimCam)
 - (instancetype)simcam_initWithDevice:(AVCaptureDevice *)device error:(NSError **)err {
     if ([device isKindOfClass:[SimCamFakeDevice class]]) {
+        if (!SimCamDeviceIsConnected()) {
+            if (err) *err = SimCamDisconnectedError();
+            return nil;
+        }
         if (err) *err = nil;
         struct objc_super sup = { self, [NSObject class] };
         id obj = ((id (*)(struct objc_super *, SEL))objc_msgSendSuper)(&sup, @selector(init));
@@ -179,6 +196,7 @@ static BOOL SwizzleInstanceMethod(Class cls, SEL orig, SEL swiz) {
             SimCamMarkFakeInput(obj, device);
             SimCamSetPosition(obj, device.position);
             SimCamMarkCameraInUse();
+            SimCamInstallMotionSwizzlesOnce();
         }
         return obj;
     }
@@ -229,15 +247,33 @@ static AVCaptureInput *SimCamFirstFakeInputForSession(AVCaptureSession *s) {
 // Real AVFoundation only exposes output connections after an output has been
 // attached to a session. Keep this per-output so newly created outputs still
 // look disconnected during client-side session configuration checks.
+static char kSimCamOutputSessionKey;
+
 static void SimCamMarkOutputAttachedToFakeSession(AVCaptureSession *s, AVCaptureOutput *output) {
     if (!output) return;
     objc_setAssociatedObject(output, &kSimCamOutputAttachedToFakeSessionKey, @YES, OBJC_ASSOCIATION_RETAIN);
+    SimCamWeakRef *owner = [SimCamWeakRef new];
+    owner.target = s;
+    objc_setAssociatedObject(output, &kSimCamOutputSessionKey, owner, OBJC_ASSOCIATION_RETAIN);
     SimCamSetOutputInput(output, SimCamFirstFakeInputForSession(s));
 }
 static void SimCamUnmarkOutputAttachedToFakeSession(AVCaptureOutput *output) {
     if (!output) return;
     objc_setAssociatedObject(output, &kSimCamOutputAttachedToFakeSessionKey, nil, OBJC_ASSOCIATION_RETAIN);
+    objc_setAssociatedObject(output, &kSimCamOutputSessionKey, nil, OBJC_ASSOCIATION_RETAIN);
     SimCamSetOutputInput(output, nil);
+    if ([output isKindOfClass:[AVCaptureVideoDataOutput class]]) {
+        [[SimCamRegistry shared] removeOutput:(AVCaptureVideoDataOutput *)output];
+    }
+}
+
+// The delegate can be set before the output is attached.
+static void SimCamRegisterFakeVideoOutput(AVCaptureOutput *output) {
+    if (![output isKindOfClass:[AVCaptureVideoDataOutput class]]) return;
+    AVCaptureVideoDataOutput *video = (AVCaptureVideoDataOutput *)output;
+    id<AVCaptureVideoDataOutputSampleBufferDelegate> delegate = video.sampleBufferDelegate;
+    if (!delegate) return;
+    [[SimCamRegistry shared] addOutput:video delegate:delegate queue:video.sampleBufferCallbackQueue];
 }
 static BOOL SimCamOutputAttachedToFakeSession(AVCaptureOutput *output) {
     if (!output) return NO;
@@ -252,6 +288,102 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
     }
 }
 
+static char kSimCamSessionConfigSidesKey;
+static char kSimCamSessionPendingLayersKey;
+static char kSimCamOutputAddedWithoutConnectionsKey;
+static char kSimCamSessionFakeRunKey;
+
+@interface AVCaptureSession (SimCamOriginals)
+- (NSArray<AVCaptureInput *> *)simcam_inputs;
+- (BOOL)simcam_isRunning;
+- (void)simcam_beginConfiguration;
+- (void)simcam_handOverHeldOutputs;
+- (void)simcam_takeBackHandedOverOutputs;
+@end
+
+BOOL SimCamOutputSessionIsRunning(AVCaptureOutput *output) {
+    AVCaptureSession *session = [objc_getAssociatedObject(output, &kSimCamOutputSessionKey) target];
+    if (!session) return NO;
+    // A session started before its fake input arrived ran natively, so ask AVFoundation too.
+    return [objc_getAssociatedObject(session, &kSimCamSessionRunningKey) boolValue] ||
+        [session simcam_isRunning];
+}
+
+// Blocks nest and a fake input can land inside one, so each commit pops its own begin's side.
+static NSMutableArray<NSNumber *> *SimCamConfigSides(id session) {
+    NSMutableArray<NSNumber *> *sides =
+        objc_getAssociatedObject(session, &kSimCamSessionConfigSidesKey);
+    if (!sides) {
+        sides = [NSMutableArray array];
+        objc_setAssociatedObject(session, &kSimCamSessionConfigSidesKey, sides,
+            OBJC_ASSOCIATION_RETAIN);
+    }
+    return sides;
+}
+
+static void SimCamPushConfigSide(id session, BOOL native) {
+    [SimCamConfigSides(session) addObject:@(native)];
+}
+
+// AVCam sets previewLayer.session before the fake input is added.
+static void SimCamParkPreviewLayer(AVCaptureSession *session, AVCaptureVideoPreviewLayer *layer) {
+    if (!session || !layer) return;
+    NSHashTable *pending = objc_getAssociatedObject(session, &kSimCamSessionPendingLayersKey);
+    if (!pending) {
+        pending = [NSHashTable weakObjectsHashTable];
+        objc_setAssociatedObject(session, &kSimCamSessionPendingLayersKey, pending,
+            OBJC_ASSOCIATION_RETAIN);
+    }
+    [pending addObject:layer];
+}
+
+static void SimCamRegisterParkedPreviewLayers(AVCaptureSession *session) {
+    NSArray<AVCaptureVideoPreviewLayer *> *parked;
+    // Pairs with setSession:'s check-and-park, so a layer parked during addInput is not lost.
+    @synchronized (session) {
+        NSHashTable *pending = objc_getAssociatedObject(session, &kSimCamSessionPendingLayersKey);
+        parked = pending.allObjects;
+        [pending removeAllObjects];
+    }
+    if (parked.count == 0) return;
+    AVCaptureDevicePosition p = SimCamPositionOf(session);
+    for (AVCaptureVideoPreviewLayer *layer in parked) {
+        // The app may have moved the layer to another session since.
+        if (layer.session != session) continue;
+        SimCamSetPosition(layer, p);
+        [[SimCamRegistry shared] addPreviewLayer:layer];
+    }
+}
+
+// Begins taken before any input was added move to AVFoundation once a real one settles it.
+static void SimCamPromoteOpenConfigToNative(AVCaptureSession *session) {
+    NSMutableArray<NSNumber *> *sides = SimCamConfigSides(session);
+    for (NSUInteger i = 0; i < sides.count; i++) {
+        if (sides[i].boolValue) continue;
+        [session simcam_beginConfiguration];
+        sides[i] = @YES;
+    }
+}
+
+static BOOL SimCamPopConfigSideWasNative(id session) {
+    NSMutableArray *sides = SimCamConfigSides(session);
+    if (sides.count == 0) return YES; // a commit with no begin of ours is AVFoundation's
+    BOOL native = [(NSNumber *)sides.lastObject boolValue];
+    [sides removeLastObject];
+    return native;
+}
+
+static BOOL SimCamWeStartedSession(id session) {
+    return [objc_getAssociatedObject(session, &kSimCamSessionFakeRunKey) boolValue];
+}
+
+// The injector loads into every app. A fake input makes a session ours, a real input with
+// no fake one makes it AVFoundation's, and with neither it is still undecided.
+static BOOL SimCamSessionIsNative(AVCaptureSession *session) {
+    if (SimCamSessionHasFakeCamera(session)) return NO;
+    return [session simcam_inputs].count > 0;
+}
+
 @interface AVCaptureSession (SimCam)
 @end
 @implementation AVCaptureSession (SimCam)
@@ -261,15 +393,21 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
         SimCamSetPosition(self, p);
         SimCamMarkCameraInUse();
         SimCamMarkSessionUsingFakeCamera(self, YES);
+        [self simcam_takeBackHandedOverOutputs];
         NSMutableArray *tracked = SimCamSessionTrackedInputs(self);
         if (![tracked containsObject:input]) [tracked addObject:input];
         SimCamRefreshAttachedOutputInputsForSession(self);
+        SimCamRegisterParkedPreviewLayers(self);
         simcam_log(@"addInput: fake input (%@) — tracked (count=%lu), skipping native add",
             p == AVCaptureDevicePositionBack ? @"back" : @"front",
             (unsigned long)tracked.count);
         return;
     }
+    // A real mic joining a fake session must not take its fake outputs.
+    BOOL undecided = !SimCamSessionHasFakeCamera(self);
+    if (undecided) SimCamPromoteOpenConfigToNative(self);
     [self simcam_addInput:input];
+    if (undecided) [self simcam_handOverHeldOutputs];
 }
 - (BOOL)simcam_canAddInput:(AVCaptureInput *)input {
     if (SimCamIsFakeInput(input)) return YES;
@@ -281,15 +419,20 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
         SimCamSetPosition(self, p);
         SimCamMarkCameraInUse();
         SimCamMarkSessionUsingFakeCamera(self, YES);
+        [self simcam_takeBackHandedOverOutputs];
         NSMutableArray *tracked = SimCamSessionTrackedInputs(self);
         if (![tracked containsObject:input]) [tracked addObject:input];
         SimCamRefreshAttachedOutputInputsForSession(self);
+        SimCamRegisterParkedPreviewLayers(self);
         simcam_log(@"addInputWithNoConnections: fake input (%@) — tracked (count=%lu), skipping native add",
             p == AVCaptureDevicePositionBack ? @"back" : @"front",
             (unsigned long)tracked.count);
         return;
     }
+    BOOL undecided = !SimCamSessionHasFakeCamera(self);
+    if (undecided) SimCamPromoteOpenConfigToNative(self);
     [self simcam_addInputWithNoConnections:input];
+    if (undecided) [self simcam_handOverHeldOutputs];
 }
 - (void)simcam_removeInput:(AVCaptureInput *)input {
     if (SimCamIsFakeInput(input)) {
@@ -303,9 +446,44 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
     }
     [self simcam_removeInput:input];
 }
+- (void)simcam_handOverHeldOutputs {
+    NSMutableArray *held = objc_getAssociatedObject(self, &kSimCamSessionOutputsKey);
+    if (held.count == 0) return;
+    NSArray<AVCaptureOutput *> *replay = [held copy];
+    [held removeAllObjects];
+    for (AVCaptureOutput *output in replay) {
+        SimCamUnmarkOutputAttachedToFakeSession(output);
+        // The app routes these itself with addConnection:.
+        BOOL manual = [objc_getAssociatedObject(output, &kSimCamOutputAddedWithoutConnectionsKey) boolValue];
+        if ([self simcam_canAddOutput:output]) {
+            if (manual) [self simcam_addOutputWithNoConnections:output];
+            else [self simcam_addOutput:output];
+            continue;
+        }
+        simcam_log(@"handOverHeldOutputs: %@ refused by the session, dropping it",
+            NSStringFromClass([output class]));
+    }
+}
+
+// startRunning hands held outputs to AVFoundation, so a camera that joins later takes them back.
+- (void)simcam_takeBackHandedOverOutputs {
+    for (AVCaptureOutput *output in [[self simcam_outputs] copy]) {
+        if (![output isKindOfClass:[AVCaptureVideoDataOutput class]] &&
+            ![output isKindOfClass:[AVCapturePhotoOutput class]]) continue;
+        [self simcam_removeOutput:output];
+        if ([objc_getAssociatedObject(output, &kSimCamOutputAddedWithoutConnectionsKey) boolValue])
+            [self addOutputWithNoConnections:output];
+        else [self addOutput:output];
+    }
+}
+
 - (void)simcam_addOutput:(AVCaptureOutput *)output {
+    objc_setAssociatedObject(output, &kSimCamOutputAddedWithoutConnectionsKey, nil,
+        OBJC_ASSOCIATION_RETAIN);
+    if (SimCamSessionIsNative(self)) { [self simcam_addOutput:output]; return; }
     SimCamSetPosition(output, SimCamPositionOf(self));
     SimCamMarkOutputAttachedToFakeSession(self, output);
+    SimCamRegisterFakeVideoOutput(output);
     SimCamMarkCameraInUse();
     NSMutableArray *tracked = SimCamSessionTrackedOutputs(self);
     if (![tracked containsObject:output]) [tracked addObject:output];
@@ -314,10 +492,17 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
         (unsigned long)tracked.count,
         (int)SimCamPositionOf(self));
 }
-- (BOOL)simcam_canAddOutput:(AVCaptureOutput *)output { return YES; }
+- (BOOL)simcam_canAddOutput:(AVCaptureOutput *)output {
+    if (SimCamSessionIsNative(self)) return [self simcam_canAddOutput:output];
+    return YES;
+}
 - (void)simcam_addOutputWithNoConnections:(AVCaptureOutput *)output {
+    objc_setAssociatedObject(output, &kSimCamOutputAddedWithoutConnectionsKey, @YES,
+        OBJC_ASSOCIATION_RETAIN);
+    if (SimCamSessionIsNative(self)) { [self simcam_addOutputWithNoConnections:output]; return; }
     SimCamSetPosition(output, SimCamPositionOf(self));
     SimCamMarkOutputAttachedToFakeSession(self, output);
+    SimCamRegisterFakeVideoOutput(output);
     SimCamMarkCameraInUse();
     NSMutableArray *tracked = SimCamSessionTrackedOutputs(self);
     if (![tracked containsObject:output]) [tracked addObject:output];
@@ -327,16 +512,24 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
         (int)SimCamPositionOf(self));
 }
 - (void)simcam_removeOutput:(AVCaptureOutput *)output {
-    SimCamUnmarkOutputAttachedToFakeSession(output);
     NSMutableArray *tracked = SimCamSessionTrackedOutputs(self);
+    if (![tracked containsObject:output]) { [self simcam_removeOutput:output]; return; }
+    SimCamUnmarkOutputAttachedToFakeSession(output);
     [tracked removeObject:output];
     simcam_log(@"removeOutput: %@ — untracked (count=%lu)",
         NSStringFromClass([output class]), (unsigned long)tracked.count);
 }
 - (void)simcam_beginConfiguration {
+    BOOL native = SimCamSessionIsNative(self);
+    SimCamPushConfigSide(self, native);
+    if (native) { [self simcam_beginConfiguration]; return; }
     simcam_log(@"beginConfiguration intercepted (session=%p)", self);
 }
 - (void)simcam_commitConfiguration {
+    if (SimCamPopConfigSideWasNative(self)) {
+        [self simcam_commitConfiguration];
+        return;
+    }
     NSUInteger inCount =
         ((NSArray *)objc_getAssociatedObject(self, &kSimCamSessionInputsKey)).count;
     NSUInteger outCount =
@@ -344,8 +537,12 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
     simcam_log(@"commitConfiguration intercepted (session=%p, fakeInputs=%lu, fakeOutputs=%lu)",
         self, (unsigned long)inCount, (unsigned long)outCount);
 }
-- (BOOL)simcam_canAddConnection:(AVCaptureConnection *)c { (void)c; return YES; }
+- (BOOL)simcam_canAddConnection:(AVCaptureConnection *)c {
+    if (SimCamSessionIsNative(self)) return [self simcam_canAddConnection:c];
+    return YES;
+}
 - (void)simcam_addConnection:(AVCaptureConnection *)c {
+    if (SimCamSessionIsNative(self)) { [self simcam_addConnection:c]; return; }
     simcam_log(@"addConnection intercepted (session=%p, conn=%p)", self, c);
 }
 - (NSArray<AVCaptureInput *> *)simcam_inputs {
@@ -360,6 +557,7 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
     return [merged copy];
 }
 - (NSArray<AVCaptureOutput *> *)simcam_outputs {
+    if (SimCamSessionIsNative(self)) return [self simcam_outputs] ?: @[];
     NSMutableArray *tracked = objc_getAssociatedObject(self, &kSimCamSessionOutputsKey);
     NSArray *native = [self simcam_outputs];
     if (tracked.count == 0) return native ?: @[];
@@ -371,6 +569,7 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
     return [merged copy];
 }
 - (NSArray<AVCaptureConnection *> *)simcam_connections {
+    if (SimCamSessionIsNative(self)) return [self simcam_connections] ?: @[];
     NSMutableArray *trackedOut = objc_getAssociatedObject(self, &kSimCamSessionOutputsKey);
     NSArray *native = [self simcam_connections];
     if (trackedOut.count == 0) return native ?: @[];
@@ -385,6 +584,13 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
     return [merged copy];
 }
 - (void)simcam_startRunning {
+    if (!SimCamSessionHasFakeCamera(self)) {
+        [self simcam_handOverHeldOutputs];
+        objc_setAssociatedObject(self, &kSimCamSessionFakeRunKey, @NO, OBJC_ASSOCIATION_RETAIN);
+        [self simcam_startRunning];
+        return;
+    }
+    objc_setAssociatedObject(self, &kSimCamSessionFakeRunKey, @YES, OBJC_ASSOCIATION_RETAIN);
     objc_setAssociatedObject(self, &kSimCamSessionRunningKey, @YES, OBJC_ASSOCIATION_RETAIN);
     SimCamMarkCameraInUse();
     NSUInteger inCount =
@@ -394,6 +600,8 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
     simcam_log(@"startRunning intercepted (fake inputs=%lu outputs=%lu)",
         (unsigned long)inCount, (unsigned long)outCount);
     [[SimCamRegistry shared] startPumpingIfNeeded];
+    // A session started before its fake input arrived already announced that it runs.
+    if ([self simcam_isRunning]) return;
     [self willChangeValueForKey:@"running"];
     [self didChangeValueForKey:@"running"];
     AVCaptureSession *strong = self;
@@ -404,8 +612,12 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
     });
 }
 - (void)simcam_stopRunning {
+    if (!SimCamWeStartedSession(self)) { [self simcam_stopRunning]; return; }
     objc_setAssociatedObject(self, &kSimCamSessionRunningKey, @NO, OBJC_ASSOCIATION_RETAIN);
     simcam_log(@"stopRunning intercepted");
+    // It may also have been started natively before the fake input arrived. Then
+    // AVFoundation announces the stop itself.
+    if ([self simcam_isRunning]) { [self simcam_stopRunning]; return; }
     [self willChangeValueForKey:@"running"];
     [self didChangeValueForKey:@"running"];
     AVCaptureSession *strong = self;
@@ -416,6 +628,7 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
     });
 }
 - (BOOL)simcam_isRunning {
+    if (!SimCamWeStartedSession(self)) return [self simcam_isRunning];
     NSNumber *v = objc_getAssociatedObject(self, &kSimCamSessionRunningKey);
     return v.boolValue;
 }
@@ -429,6 +642,10 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
 - (void)simcam_setSampleBufferDelegate:(id<AVCaptureVideoDataOutputSampleBufferDelegate>)delegate
                                  queue:(dispatch_queue_t)queue {
     [self simcam_setSampleBufferDelegate:delegate queue:queue];
+    if (!SimCamOutputAttachedToFakeSession(self)) {
+        [[SimCamRegistry shared] removeOutput:self];
+        return;
+    }
     SimCamMarkCameraInUse();
     if (delegate) {
         [[SimCamRegistry shared] addOutput:self delegate:delegate queue:queue];
@@ -446,6 +663,14 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
 @implementation AVCaptureVideoPreviewLayer (SimCam)
 - (void)simcam_setSession:(AVCaptureSession *)session {
     [self simcam_setSession:session];
+    [[SimCamRegistry shared] removePreviewLayer:self];
+    if (!session) return;
+    @synchronized (session) {
+        if (!SimCamSessionHasFakeCamera(session)) {
+            SimCamParkPreviewLayer(session, self);
+            return;
+        }
+    }
     AVCaptureDevicePosition p = SimCamPositionOf(session);
     SimCamSetPosition(self, p);
     SimCamMarkCameraInUse();
@@ -539,9 +764,16 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
 @implementation AVCapturePhotoOutput (SimCam)
 - (void)simcam_capturePhotoWithSettings:(AVCapturePhotoSettings *)settings
                                delegate:(id<AVCapturePhotoCaptureDelegate>)delegate {
+    // AVFoundation answers when it has a real video connection, or when this process never
+    // used the fake camera. An output attached natively before the fake input still gets one.
+    if (!SimCamOutputAttachedToFakeSession(self) &&
+        ([self connectionWithMediaType:AVMediaTypeVideo] || !SimCamCameraIsInUse())) {
+        [self simcam_capturePhotoWithSettings:settings delegate:delegate];
+        return;
+    }
     if (!delegate) return;
-    SimCamRegistry *reg = [SimCamRegistry shared];
-    CVPixelBufferRef pb = [reg currentPixelBuffer];
+    CVPixelBufferRef pb = [[SimCamRegistry shared] currentPixelBuffer];
+    NSError *error = pb || SimCamDeviceIsConnected() ? nil : SimCamDisconnectedError();
     AVCaptureDevicePosition p = SimCamPositionOf(self);
     if (p == 0) p = AVCaptureDevicePositionFront;
     BOOL mirror = SimCamShouldMirror(p);
@@ -581,11 +813,11 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
         (int)p, (int)mirror, (unsigned long)photo.fileDataRepresentation.length,
         resolved.photoDimensions.width, resolved.photoDimensions.height);
     AVCapturePhotoOutput *output = self;
-    SEL selWillBegin     = @selector(photoOutput:willBeginCaptureForResolvedSettings:);
-    SEL selWillCapture   = @selector(photoOutput:willCapturePhotoForResolvedSettings:);
-    SEL selDidProcess    = @selector(photoOutput:didFinishProcessingPhoto:error:);
-    SEL selDidCapture    = @selector(photoOutput:didCapturePhotoForResolvedSettings:);
-    SEL selDidFinish     = @selector(photoOutput:didFinishCaptureForResolvedSettings:error:);
+    SEL selWillBegin     = @selector(captureOutput:willBeginCaptureForResolvedSettings:);
+    SEL selWillCapture   = @selector(captureOutput:willCapturePhotoForResolvedSettings:);
+    SEL selDidProcess    = @selector(captureOutput:didFinishProcessingPhoto:error:);
+    SEL selDidCapture    = @selector(captureOutput:didCapturePhotoForResolvedSettings:);
+    SEL selDidFinish     = @selector(captureOutput:didFinishCaptureForResolvedSettings:error:);
     dispatch_async(dispatch_get_main_queue(), ^{
         if ([delegate respondsToSelector:selWillBegin]) {
             ((void (*)(id, SEL, AVCapturePhotoOutput *, AVCaptureResolvedPhotoSettings *))
@@ -595,21 +827,21 @@ static void SimCamRefreshAttachedOutputInputsForSession(AVCaptureSession *s) {
             ((void (*)(id, SEL, AVCapturePhotoOutput *, AVCaptureResolvedPhotoSettings *))
                 objc_msgSend)(delegate, selWillCapture, output, resolved);
         }
-        BOOL delivered = NO;
-        if ([delegate respondsToSelector:selDidProcess]) {
-            ((void (*)(id, SEL, AVCapturePhotoOutput *, AVCapturePhoto *, NSError *))
-                objc_msgSend)(delegate, selDidProcess, output, photo, (NSError *)nil);
-            delivered = YES;
-        }
         if ([delegate respondsToSelector:selDidCapture]) {
             ((void (*)(id, SEL, AVCapturePhotoOutput *, AVCaptureResolvedPhotoSettings *))
                 objc_msgSend)(delegate, selDidCapture, output, resolved);
         }
+        BOOL delivered = NO;
+        if ([delegate respondsToSelector:selDidProcess]) {
+            ((void (*)(id, SEL, AVCapturePhotoOutput *, AVCapturePhoto *, NSError *))
+                objc_msgSend)(delegate, selDidProcess, output, photo, error);
+            delivered = YES;
+        }
         if ([delegate respondsToSelector:selDidFinish]) {
             ((void (*)(id, SEL, AVCapturePhotoOutput *, AVCaptureResolvedPhotoSettings *, NSError *))
-                objc_msgSend)(delegate, selDidFinish, output, resolved, (NSError *)nil);
+                objc_msgSend)(delegate, selDidFinish, output, resolved, error);
         }
-        simcam_log(@"capturePhoto lifecycle complete (delivered photo=%d)", (int)delivered);
+        simcam_log(@"capturePhoto lifecycle complete (delivered photo=%d, error=%d)", (int)delivered, (int)error.code);
     });
 }
 @end
@@ -871,6 +1103,15 @@ static void SimCamStopTimer(id manager, char *key) {
 
 @end
 
+static void InstallCoreMotionSwizzles(void);
+
+// Camera apps read device motion to orient a capture and a simulator has none. Only apps
+// that use the fake camera get it, and it stays so a live subscription is never cut off.
+void SimCamInstallMotionSwizzlesOnce(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ InstallCoreMotionSwizzles(); });
+}
+
 static void InstallCoreMotionSwizzles(void) {
     Class mm = [CMMotionManager class];
     if (!mm) return;
@@ -936,6 +1177,7 @@ static void SimCamInstallPickerSwizzles(void); // defined below
 
 void SimCamInstallSwizzles(void) {
     Class dev = [AVCaptureDevice class];
+    SwizzleClassMethod(dev, @selector(defaultDeviceWithMediaType:), @selector(simcam_defaultDeviceWithMediaType:));
     SwizzleClassMethod(dev,
         @selector(defaultDeviceWithDeviceType:mediaType:position:),
         @selector(simcam_defaultDeviceWithDeviceType:mediaType:position:));
@@ -945,6 +1187,7 @@ void SimCamInstallSwizzles(void) {
     SwizzleClassMethod(dev, @selector(devices), @selector(simcam_devices));
 
     Class disc = [AVCaptureDeviceDiscoverySession class];
+    SwizzleInstanceMethod(disc, @selector(devices), @selector(simcam_devices));
     SwizzleClassMethod(disc,
         @selector(discoverySessionWithDeviceTypes:mediaType:position:),
         @selector(simcam_discoverySessionWithDeviceTypes:mediaType:position:));
@@ -1067,7 +1310,6 @@ void SimCamInstallSwizzles(void) {
         @selector(imageWithActions:),
         @selector(simcam_imageWithActions:));
 
-    InstallCoreMotionSwizzles();
     SimCamInstallPickerSwizzles();
 }
 
@@ -1286,17 +1528,17 @@ static void SimCamWalkPickerTree(UIView *view) {
 @implementation UIImagePickerController (SimCam)
 
 + (BOOL)simcam_isSourceTypeAvailable:(UIImagePickerControllerSourceType)t {
-    if (t == UIImagePickerControllerSourceTypeCamera) return YES;
+    if (t == UIImagePickerControllerSourceTypeCamera) return SimCamDeviceIsConnected();
     return [self simcam_isSourceTypeAvailable:t];
 }
 + (NSArray<NSString *> *)simcam_availableMediaTypesForSourceType:(UIImagePickerControllerSourceType)t {
-    if (t == UIImagePickerControllerSourceTypeCamera) return @[SimCamPickerUTImage];
+    if (t == UIImagePickerControllerSourceTypeCamera) return SimCamDeviceIsConnected() ? @[SimCamPickerUTImage] : nil;
     return [self simcam_availableMediaTypesForSourceType:t];
 }
 + (NSArray<NSNumber *> *)simcam_availableCaptureModesForCameraDevice:(UIImagePickerControllerCameraDevice)d {
     (void)d; return @[ @(UIImagePickerControllerCameraCaptureModePhoto) ];
 }
-+ (BOOL)simcam_isCameraDeviceAvailable:(UIImagePickerControllerCameraDevice)d { (void)d; return YES; }
++ (BOOL)simcam_isCameraDeviceAvailable:(UIImagePickerControllerCameraDevice)d { (void)d; return SimCamDeviceIsConnected(); }
 + (BOOL)simcam_isFlashAvailableForCameraDevice:(UIImagePickerControllerCameraDevice)d { (void)d; return NO; }
 
 - (void)simcam_viewDidAppear:(BOOL)animated {

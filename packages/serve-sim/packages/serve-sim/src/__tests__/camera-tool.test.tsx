@@ -2,45 +2,54 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   CameraStatusPill,
-  CameraTestPatternHint,
   CameraMediaPreview,
   CameraInlineBanner,
+} from "../client/components/camera-tool-ui";
+import {
   CAMERA_HEIC_ERROR,
   CAMERA_LARGE_VIDEO_BYTES,
   CAMERA_LARGE_VIDEO_WARNING,
   CAMERA_POLL_INTERVAL_MS,
+  cameraStatusConnected,
   cameraSourceErrorMessage,
   isHeicLikeFile,
   isOversizedCameraVideo,
   nextCameraPillState,
   parseWebcamListOutput,
   requestCameraStatus,
-  selectCameraPrimaryKind,
-} from "../client/components/camera-tool";
+} from "../client/utils/camera";
 
 describe("requestCameraStatus", () => {
   test("reads structured status directly from the configured endpoint", async () => {
     const request = async (input: string, init: RequestInit) => {
       expect(input).toBe("/helper/DEVICE-A/camera/status");
       expect(init.cache).toBe("no-store");
-      return new Response(JSON.stringify({ alive: true, helperPid: 42 }), {
+      return new Response(JSON.stringify({ alive: true, source: "placeholder" }), {
         headers: { "Content-Type": "application/json" },
       });
     };
 
     expect(await requestCameraStatus("/helper/DEVICE-A/camera/status", request)).toEqual({
       alive: true,
-      helperPid: 42,
+      source: "placeholder",
     });
   });
 
   test("returns null for failed or malformed responses", async () => {
     const failedRequest = async () => new Response("no", { status: 503 });
     const malformedRequest = async () => Response.json(["not", "an", "object"]);
+    const errorBodyRequest = async () => Response.json({ error: "temporarily unavailable" });
 
     expect(await requestCameraStatus("/status", failedRequest)).toBeNull();
     expect(await requestCameraStatus("/status", malformedRequest)).toBeNull();
+    expect(await requestCameraStatus("/status", errorBodyRequest)).toBeNull();
+    expect(await requestCameraStatus("/status", async () => Response.json({ alive: false }))).toEqual({ alive: false });
   });
+});
+
+test("a live helper with no source is disconnected", () => {
+  expect(cameraStatusConnected({ alive: true, source: "none" })).toBe(false);
+  expect(cameraStatusConnected({ alive: true, source: "image" })).toBe(true);
 });
 
 describe("nextCameraPillState", () => {
@@ -61,80 +70,6 @@ describe("nextCameraPillState", () => {
   });
   test("disconnected recovers to active if poll says alive again", () => {
     expect(nextCameraPillState("disconnected", true)).toBe("active");
-  });
-});
-
-describe("selectCameraPrimaryKind", () => {
-  test("no foreground bundle, helper not alive: Play", () => {
-    expect(selectCameraPrimaryKind({
-      bundleId: null,
-      injected: false,
-      source: "placeholder",
-      foregroundIsInjected: false,
-    })).toBe("play");
-  });
-
-  test("foreground bundle, helper not alive: Play", () => {
-    expect(selectCameraPrimaryKind({
-      bundleId: "com.example.app",
-      injected: false,
-      source: "webcam",
-      foregroundIsInjected: false,
-    })).toBe("play");
-  });
-
-  test("helper alive but no real source picked: Play (not Stop)", () => {
-    expect(selectCameraPrimaryKind({
-      bundleId: "com.example.app",
-      injected: true,
-      source: "placeholder",
-      foregroundIsInjected: true,
-    })).toBe("play");
-  });
-
-  test("helper alive with real source, foreground app not yet injected: Inject", () => {
-    expect(selectCameraPrimaryKind({
-      bundleId: "com.example.app",
-      injected: true,
-      source: "webcam",
-      foregroundIsInjected: false,
-    })).toBe("attach");
-  });
-
-  test("helper alive with real source, foreground app injected: Stop", () => {
-    expect(selectCameraPrimaryKind({
-      bundleId: "com.example.app",
-      injected: true,
-      source: "webcam",
-      foregroundIsInjected: true,
-    })).toBe("stop");
-  });
-
-  test("page reload mid-injection (helper alive, real source, bundle not yet detected): Stop", () => {
-    expect(selectCameraPrimaryKind({
-      bundleId: null,
-      injected: true,
-      source: "webcam",
-      foregroundIsInjected: false,
-    })).toBe("stop");
-  });
-
-  test("image source counts as a real source", () => {
-    expect(selectCameraPrimaryKind({
-      bundleId: "com.example.app",
-      injected: true,
-      source: "image",
-      foregroundIsInjected: true,
-    })).toBe("stop");
-  });
-
-  test("video source counts as a real source", () => {
-    expect(selectCameraPrimaryKind({
-      bundleId: "com.example.app",
-      injected: true,
-      source: "video",
-      foregroundIsInjected: true,
-    })).toBe("stop");
   });
 });
 
@@ -283,18 +218,6 @@ describe("CameraStatusPill — UI state matrix", () => {
     const html = renderToStaticMarkup(<CameraStatusPill state="disconnected" />);
     expect(html).toContain("Disconnected");
     expect(html).not.toContain("Active");
-  });
-});
-
-describe("CameraTestPatternHint (placeholder state, no source)", () => {
-  test("renders a visible 'Test-pattern feed' label", () => {
-    const html = renderToStaticMarkup(<CameraTestPatternHint />);
-    expect(html).toContain("Test-pattern feed");
-  });
-
-  test("uses subdued typography without low-opacity icons (text-only label)", () => {
-    const html = renderToStaticMarkup(<CameraTestPatternHint />);
-    expect(html).not.toContain("<svg");
   });
 });
 

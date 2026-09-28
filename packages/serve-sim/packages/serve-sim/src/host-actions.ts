@@ -78,21 +78,18 @@ const ACTION_SCHEMAS = {
   "camera.inject": z.discriminatedUnion("source", [
     z.object({
       udid: Device,
-      bundleId: BundleId,
       mirror: z.enum(MIRROR_VALUES),
       source: z.literal("file"),
       target: ConfinedPath,
     }),
     z.object({
       udid: Device,
-      bundleId: BundleId,
       mirror: z.enum(MIRROR_VALUES),
       source: z.literal("webcam"),
       target: Argument.optional(),
     }),
     z.object({
       udid: Device,
-      bundleId: BundleId,
       mirror: z.enum(MIRROR_VALUES),
       source: z.literal("placeholder"),
     }),
@@ -245,7 +242,7 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     }
     case "camera.inject": {
       const p = parseParams(action, raw);
-      const args = ["camera", p.bundleId, "-d", p.udid, "--quiet"];
+      const args = ["camera", "enable", "-d", p.udid, "--quiet"];
       if (p.source === "file") args.push("--file", p.target);
       else if (p.source === "webcam") args.push("--webcam", ...(p.target ? [p.target] : []));
       args.push("--mirror", p.mirror);
