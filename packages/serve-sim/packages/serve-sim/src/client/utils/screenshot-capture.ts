@@ -27,10 +27,31 @@ async function screenshotErrorMessage(response: Response): Promise<string> {
   return `Screenshot failed (${response.status})`;
 }
 
+// `unknown` means the server sent no artifact header, as older serve-sim builds do.
+export type ScreenshotArtifact = {
+  status: "saved" | "failed" | "disabled" | "unknown";
+  error?: string;
+};
+
+interface ScreenshotCapture {
+  png: Blob;
+  artifact: ScreenshotArtifact;
+}
+
+// Literal names: screenshot-artifacts.ts imports node:fs and must stay out of the client bundle.
+function screenshotArtifact(headers: Headers): ScreenshotArtifact {
+  const status = headers.get("X-Expo-Screenshot-Artifact");
+  if (status === "failed") {
+    const error = headers.get("X-Expo-Screenshot-Artifact-Error")?.trim();
+    return error ? { status, error } : { status };
+  }
+  return status === "saved" || status === "disabled" ? { status } : { status: "unknown" };
+}
+
 export async function fetchScreenshotPng(
   deviceUdid: string,
   options: FetchScreenshotOptions = {},
-): Promise<Blob> {
+): Promise<ScreenshotCapture> {
   const endpoint = options.endpoint ?? simEndpoint("api/screenshot");
   const separator = endpoint.includes("?") ? "&" : "?";
   const fetchImpl = options.fetchImpl ?? fetch;
@@ -45,7 +66,7 @@ export async function fetchScreenshotPng(
   if (contentType?.toLowerCase() !== "image/png") {
     throw new Error("Screenshot endpoint did not return a PNG");
   }
-  return response.blob();
+  return { png: await response.blob(), artifact: screenshotArtifact(response.headers) };
 }
 
 export function triggerBrowserDownload(url: string, fileName: string): void {

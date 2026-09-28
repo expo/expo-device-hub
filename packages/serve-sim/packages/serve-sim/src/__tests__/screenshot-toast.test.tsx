@@ -5,6 +5,7 @@ import {
   shouldDismissScreenshotToastAfterDrag,
 } from "../client/components/screenshot-toast";
 import {
+  browserDownloadNotice,
   revealParams,
   type ScreenshotToast as ScreenshotToastState,
 } from "../client/hooks/use-screenshot-toast";
@@ -159,5 +160,43 @@ describe("revealParams", () => {
         downloadName: "shot.png",
       }),
     ).toBeNull();
+  });
+});
+
+describe("browser download session artifact notice", () => {
+  test("confirms a capture that reached the session artifacts", () => {
+    expect(browserDownloadNotice({ status: "saved" })).toEqual({
+      message: "Saved to session artifacts",
+      dismissMs: 3500,
+    });
+  });
+
+  test("warns for longer when the session artifact save failed", () => {
+    expect(browserDownloadNotice({ status: "failed", error: "EACCES: permission denied" })).toEqual({
+      message: "Downloaded. Not saved to session artifacts: EACCES: permission denied",
+      dismissMs: 12_000,
+    });
+    expect(browserDownloadNotice({ status: "failed" })).toEqual({
+      message: "Downloaded. Not saved to session artifacts",
+      dismissMs: 12_000,
+    });
+  });
+
+  test("adds nothing outside a session or for an older server", () => {
+    expect(browserDownloadNotice({ status: "disabled" })).toEqual({ dismissMs: 3500 });
+    expect(browserDownloadNotice({ status: "unknown" })).toEqual({ dismissMs: 3500 });
+  });
+
+  test("renders the notice under the download action", () => {
+    const html = render({
+      id: "1",
+      status: "saved",
+      phase: "in",
+      downloadUrl: "blob:https://preview.example/shot",
+      downloadName: "shot.png",
+      message: "Downloaded. Not saved to session artifacts: EACCES: permission denied",
+    });
+    expect(html).toContain("Download again");
+    expect(html).toContain("Downloaded. Not saved to session artifacts: EACCES: permission denied");
   });
 });

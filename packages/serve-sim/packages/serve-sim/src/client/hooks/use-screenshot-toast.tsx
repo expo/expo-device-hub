@@ -6,6 +6,7 @@ import {
   fetchScreenshotPng,
   isLoopbackPreviewHostname,
   triggerBrowserDownload,
+  type ScreenshotArtifact,
 } from "../utils/screenshot-capture";
 
 export type ScreenshotToast = {
@@ -36,14 +37,29 @@ export type ScreenshotToast = {
 // the timer, so this only needs to be long enough to notice the pill — not to
 // read and act on it.
 const SAVED_DISMISS_MS = 3500;
-// A staged-only pill is the only place the host's sentence about the missing Desktop copy appears:
-// about forty words plus a path, so the reader has to be able to finish it.
-const STAGED_ONLY_DISMISS_MS = 12_000;
+// A pill that carries a warning (the host's forty-word sentence about the missing Desktop copy, or
+// why the session artifact save failed) is the only place it appears, so the reader has to be able to finish it.
+const WARNING_DISMISS_MS = 12_000;
 const ERROR_DISMISS_MS = 4000;
 const CAPTURE_TIMEOUT_MS = 10_000;
 
 function savedDismissMs(toast: ScreenshotToast): number {
-  return toast.stagedOnly ? STAGED_ONLY_DISMISS_MS : SAVED_DISMISS_MS;
+  return toast.stagedOnly ? WARNING_DISMISS_MS : SAVED_DISMISS_MS;
+}
+
+export function browserDownloadNotice(artifact: ScreenshotArtifact): { message?: string; dismissMs: number } {
+  switch (artifact.status) {
+    case "saved":
+      return { message: "Saved to session artifacts", dismissMs: SAVED_DISMISS_MS };
+    case "failed":
+      return {
+        message: `Downloaded. Not saved to session artifacts${artifact.error ? `: ${artifact.error}` : ""}`,
+        dismissMs: WARNING_DISMISS_MS,
+      };
+    case "disabled":
+    case "unknown":
+      return { dismissMs: SAVED_DISMISS_MS };
+  }
 }
 
 export function revealParams(
@@ -154,11 +170,12 @@ export function useScreenshotToast(deviceUdid?: string | null) {
 
     try {
       if (!isLoopbackPreviewHostname(window.location.hostname)) {
-        const png = await fetchScreenshotPng(deviceUdid, {
+        const { png, artifact } = await fetchScreenshotPng(deviceUdid, {
           signal: captureController.signal,
         });
         const downloadUrl = URL.createObjectURL(png);
         triggerBrowserDownload(downloadUrl, fileName);
+        const { message, dismissMs } = browserDownloadNotice(artifact);
         render({
           id,
           status: "saved",
@@ -166,7 +183,8 @@ export function useScreenshotToast(deviceUdid?: string | null) {
           downloadUrl,
           downloadName: fileName,
           thumb: downloadUrl,
-        }, SAVED_DISMISS_MS);
+          message,
+        }, dismissMs);
         return;
       }
 
