@@ -680,7 +680,6 @@ export type ApiContractMap = {
   "/api/logcat": { GET: EndpointContract<undefined, never> };
   "/api/metrics": { GET: EndpointContract<undefined, never> };
   "/api/screenshot": {
-    GET: EndpointContract<undefined, ScreenshotBase64Response | BinaryPngResponse>;
     POST: EndpointContract<undefined, ScreenshotBase64Response | BinaryPngResponse>;
   };
   "/api/foreground": { GET: EndpointContract<undefined, ForegroundResponse> };
@@ -2060,7 +2059,7 @@ export const API_SUCCESS_PARSERS = {
   },
   "/api/logcat": { GET: unsupportedStreamingResponse },
   "/api/metrics": { GET: unsupportedStreamingResponse },
-  "/api/screenshot": { GET: parseScreenshotResponse, POST: parseScreenshotResponse },
+  "/api/screenshot": { POST: parseScreenshotResponse },
   "/api/foreground": { GET: parseForegroundResponse },
   "/api/accessibility": { GET: parseAccessibilitySnapshot },
   "/api/accessibility/tap": { POST: parseAccessibilityTapResponse },

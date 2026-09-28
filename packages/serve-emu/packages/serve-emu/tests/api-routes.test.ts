@@ -55,7 +55,6 @@ const EXPECTED_ROUTES = [
   ["POST", "/api/display-density"],
   ["GET", "/api/logcat"],
   ["GET", "/api/metrics"],
-  ["GET", "/api/screenshot"],
   ["POST", "/api/screenshot"],
   ["GET", "/api/foreground"],
   ["GET", "/api/accessibility"],
@@ -462,7 +461,7 @@ function validRequest(method: ApiMethod, path: string): Request {
   }
 
   const body = VALID_JSON_BODIES[key];
-  const requestPath = key === "GET /api/screenshot"
+  const requestPath = key === "POST /api/screenshot"
     ? `${path}?format=base64`
     : key === "GET /api/apps/permissions" || key === "GET /api/apps/icon"
       ? `${path}?packageName=com.example.app`
@@ -510,13 +509,13 @@ const silentLogger: ApiLogger = {
 };
 
 describe("domain API route table", () => {
-  test("registers the exact 65 method/path pairs across 46 paths", () => {
+  test("registers the exact 64 method/path pairs across 46 paths", () => {
     const routes = createApiRoutes();
 
     expect(routes.map(({ method, path }) => [method, path])).toEqual(
       EXPECTED_ROUTES.map(([method, path]) => [method, path]),
     );
-    expect(routes).toHaveLength(65);
+    expect(routes).toHaveLength(64);
     expect(new Set(routes.map((route) => route.path)).size).toBe(46);
     const contractPairs = Object.entries(API_SUCCESS_PARSERS).flatMap(
       ([path, methods]) => Object.keys(methods).map((method) => `${method} ${path}`),

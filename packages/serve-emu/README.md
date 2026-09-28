@@ -382,8 +382,6 @@ curl -N "$BASE/api/logcat?package=com.example.app&search=error"
 curl -N "$BASE/api/metrics"
 ```
 
-`GET /api/screenshot` is still accepted for compatibility.
-
 Logcat subscriptions share one `adb logcat` child for the active device.
 New children start at the live tail instead of replaying the device's buffered
 history. Matching lines are delivered in short `logs` SSE batches; each

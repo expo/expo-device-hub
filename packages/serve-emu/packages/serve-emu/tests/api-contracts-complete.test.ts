@@ -590,7 +590,7 @@ describe("generic and detailed API contracts", () => {
 
   test("supports binary screenshots and rejects streaming JSON through the registry", () => {
     const png = Uint8Array.of(0x89, 0x50, 0x4e, 0x47);
-    expect(parseApiSuccess("/api/screenshot", "GET", png)).toBe(png);
+    expect(parseApiSuccess("/api/screenshot", "POST", png)).toBe(png);
     expect(() => parseApiSuccess("/api/logcat", "GET", {})).toThrow(
       "streaming responses are not JSON API payloads",
     );

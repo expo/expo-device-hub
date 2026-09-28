@@ -2890,7 +2890,7 @@ export async function startServer(
       }
 
       if (url.pathname === "/api/screenshot") {
-        if (req.method !== "GET" && req.method !== "POST") {
+        if (req.method !== "POST") {
           return new Response("method not allowed", { status: 405 });
         }
         try {
