@@ -4,4 +4,5 @@
 
 Persist preview screenshots for EAS artifact upload when
 `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` is set. The change ships through the
-vendored serve-emu and serve-sim builds.
+vendored serve-emu and serve-sim builds, and on iOS each manual screenshot and
+any failed save appear as session events.

@@ -155,6 +155,41 @@ describe('serve-sim event mapping', () => {
   });
 });
 
+describe('serve-sim screenshot events', () => {
+  const screenshot = (overrides: Partial<IosEventLogEntry>) =>
+    mapIosEventLogEntry(entry(3, { source: 'ui', kind: 'screenshot', action: 'capture', ...overrides }), 'UDID');
+
+  test('labels a saved screenshot as ok', () => {
+    expect(
+      screenshot({ status: 'ok', summary: 'Screenshot', details: { file: 'screenshot-1.png' } }),
+    ).toMatchObject({ kind: 'screenshot', action: 'capture', status: 'ok', message: 'Screenshot' });
+  });
+
+  test('reports a failed artifact save as an error with its reason', () => {
+    expect(
+      screenshot({
+        status: 'error',
+        summary: 'Screenshot not saved to session artifacts',
+        details: { file: 'screenshot-1.png', error: 'ENOSPC: no space left on device' },
+      }),
+    ).toMatchObject({
+      status: 'error',
+      message: 'Screenshot not saved to session artifacts: ENOSPC: no space left on device',
+      details: { file: 'screenshot-1.png', error: 'ENOSPC: no space left on device' },
+    });
+  });
+
+  test('reports a failed capture as an error', () => {
+    expect(
+      screenshot({ status: 'error', summary: 'Screenshot failed', details: { error: 'simctl timed out' } }),
+    ).toMatchObject({ status: 'error', message: 'Screenshot failed: simctl timed out' });
+    expect(screenshot({ source: 'exec', status: 'error', details: { exitCode: 1 } })).toMatchObject({
+      status: 'error',
+      message: 'Screenshot failed',
+    });
+  });
+});
+
 describe('serve-sim event history', () => {
   test('merges snapshots and updates by ID in oldest-to-newest order', () => {
     let state = createIosEventLogState();

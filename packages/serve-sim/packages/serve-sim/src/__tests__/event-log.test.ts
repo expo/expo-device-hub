@@ -4,6 +4,7 @@ import {
   EVENT_LOG_MAX_ENTRIES,
   eventLogEventForAction,
   eventLogEventForHidMessage,
+  eventLogEventForScreenshot,
   readEventLog,
   recordEventLogEvent,
   subscribeEventLog,
@@ -56,6 +57,42 @@ describe("eventLogEventForAction", () => {
     );
 
     expect(JSON.stringify(event)).not.toContain("secret.png");
+  });
+});
+
+describe("eventLogEventForScreenshot", () => {
+  const base = { device: "DEVICE-A", source: "ui", kind: "screenshot", action: "capture" } as const;
+
+  test("reports a screenshot as ok whether or not session artifacts are enabled", () => {
+    expect(eventLogEventForScreenshot("DEVICE-A", { status: "disabled" })).toEqual({
+      ...base,
+      status: "ok",
+      summary: "Screenshot",
+    });
+    expect(
+      eventLogEventForScreenshot("DEVICE-A", { status: "saved", file: "/artifacts/screenshot-1.png" }),
+    ).toEqual({ ...base, status: "ok", summary: "Screenshot", details: { file: "screenshot-1.png" } });
+  });
+
+  test("reports a failed artifact save as an error with its reason", () => {
+    expect(
+      eventLogEventForScreenshot("DEVICE-A", {
+        status: "failed",
+        file: "/artifacts/screenshot-1.png",
+        error: "ENOSPC: no space left on device",
+      }),
+    ).toEqual({
+      ...base,
+      status: "error",
+      summary: "Screenshot not saved to session artifacts",
+      details: { file: "screenshot-1.png", error: "ENOSPC: no space left on device" },
+    });
+  });
+
+  test("reports a failed capture as an error", () => {
+    expect(
+      eventLogEventForScreenshot("DEVICE-A", { status: "capture-failed", error: "simctl timed out" }),
+    ).toEqual({ ...base, status: "error", summary: "Screenshot failed", details: { error: "simctl timed out" } });
   });
 });
 

@@ -10,9 +10,15 @@ describe("screenshot artifacts", () => {
     setSystemTime(new Date("2026-09-24T08:45:59.123Z"));
     try {
       const png = Uint8Array.from([137, 80, 78, 71, 13, 10, 26, 10]);
-      await Promise.all([saveScreenshotArtifact(png, directory), saveScreenshotArtifact(png, directory)]);
+      const results = await Promise.all([
+        saveScreenshotArtifact(png, directory),
+        saveScreenshotArtifact(png, directory),
+      ]);
       const files = await readdir(directory);
       expect(files).toHaveLength(2);
+      expect(results.map((result) => (result.status === "saved" ? result.file : null)).sort()).toEqual(
+        files.map((file) => join(directory, file)).sort(),
+      );
       for (const file of files) {
         expect(file).toMatch(/^screenshot-2026-09-24T08-45-59-123Z-[a-f0-9]{12}\.png$/);
         expect(new Uint8Array(await readFile(join(directory, file)))).toEqual(png);
@@ -29,7 +35,9 @@ describe("screenshot artifacts", () => {
     try {
       const file = join(directory, "file");
       await writeFile(file, "occupied");
-      await saveScreenshotArtifact(new Uint8Array(), file);
+      const result = await saveScreenshotArtifact(new Uint8Array(), file);
+      expect(result).toMatchObject({ status: "failed", error: expect.stringMatching(/EEXIST|ENOTDIR/) });
+      expect(result.status === "failed" && result.file.startsWith(join(file, "screenshot-"))).toBe(true);
       expect(consoleError).toHaveBeenCalledTimes(1);
       expect(String(consoleError.mock.calls[0]?.[0])).toContain(join(file, "screenshot-"));
     } finally {
@@ -39,6 +47,6 @@ describe("screenshot artifacts", () => {
   });
 
   test("does not require artifact storage for standalone previews", async () => {
-    await saveScreenshotArtifact(new Uint8Array(), "");
+    expect(await saveScreenshotArtifact(new Uint8Array(), "")).toEqual({ status: "disabled" });
   });
 });
