@@ -31,8 +31,9 @@ public struct SharedH264Policy {
     /// is forced to a keyframe for it. Returns true the first time a peer is marked.
     @discardableResult
     public mutating func frameWasStale(peer: Int) -> Bool {
-        forceNextIDR = true
-        return starvedPeers.insert(peer).inserted
+        let newlyStarved = starvedPeers.insert(peer).inserted
+        if newlyStarved { forceNextIDR = true }
+        return newlyStarved
     }
 
     /// The peer received a frame through the normal path; it is no longer starved.
