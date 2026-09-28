@@ -433,7 +433,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
     }`;
     try {
-      const res = await fetch(url, { cache: 'no-store' });
+      const res = await fetch(url, { method: 'POST', cache: 'no-store' });
       if (!res.ok) return null;
       return await res.blob();
     } catch {

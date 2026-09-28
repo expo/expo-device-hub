@@ -151,3 +151,28 @@ test('recording stays unknown until metadata loads and resets on device changes 
   await respond(Response.json({ screenRecording: { status: 'recording' } }));
   expect(client?.screenRecording).toBe('recording');
 });
+
+test('Android screenshot posts to serve-emu for the selected device', async () => {
+  stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
+  stubGlobal('WebSocket', Socket);
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+  const requests: { url: string; init?: RequestInit }[] = [];
+  stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (new URL(url).pathname !== '/api/screenshot') return Response.json({}, { status: 404 });
+    requests.push({ url, init });
+    return new Response(png, { headers: { 'Content-Type': 'image/png' } });
+  });
+  let client!: DeviceClient;
+  function Harness() {
+    client = useAndroidDeviceClient({ baseUrl: 'https://hub.test/', device: 'emulator 5554', enabled: true, streamMode: 'h264' });
+    return null;
+  }
+  await act(async () => { renderer = create(<Harness />); });
+  const blob = await client.screenshot();
+  expect(requests).toEqual([
+    { url: 'https://hub.test/api/screenshot?device=emulator%205554', init: { method: 'POST', cache: 'no-store' } },
+  ]);
+  expect(new Uint8Array(await blob!.arrayBuffer())).toEqual(png);
+});

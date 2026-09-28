@@ -46,6 +46,8 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
   audio disabled) because its input protocol supports the established control
   semantics; emulator gRPC input remains available when avoiding that extra
   process is preferable.
+- The standalone UI and README request screenshots with `POST /api/screenshot`.
+  `GET` remains accepted for compatibility.
 
 ## 0.0.5 - 2026-07-12
 

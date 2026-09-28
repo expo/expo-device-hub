@@ -368,8 +368,8 @@ curl -X POST "$BASE/api/key" -H 'Content-Type: application/json' -d '{"keycode":
 ### Inspection
 
 ```sh
-curl "$BASE/api/screenshot" --output screen.png
-curl "$BASE/api/screenshot?format=base64"
+curl -X POST "$BASE/api/screenshot" --output screen.png
+curl -X POST "$BASE/api/screenshot?format=base64"
 curl "$BASE/api/foreground"
 curl "$BASE/api/accessibility"
 curl -X POST "$BASE/api/accessibility/tap" \
@@ -381,6 +381,8 @@ curl -X POST "$BASE/api/accessibility/tap" \
 curl -N "$BASE/api/logcat?package=com.example.app&search=error"
 curl -N "$BASE/api/metrics"
 ```
+
+`GET /api/screenshot` is still accepted for compatibility.
 
 Logcat subscriptions share one `adb logcat` child for the active device.
 New children start at the live tail instead of replaying the device's buffered
