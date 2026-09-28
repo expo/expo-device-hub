@@ -118,6 +118,16 @@ describe("redactHeaders", () => {
     }
   });
 
+  test("redacts joined credential names that have no separator around the word", () => {
+    for (const name of ["X-CSRFToken", "X-AuthToken", "x-accesstoken", "x-sessiontoken", "x-apitoken", "X-ClientSecret", "x-userpassword"]) {
+      expect(isSensitiveHeaderName(name)).toBe(true);
+    }
+    // `key` and `auth` stay bounded, so these remain readable.
+    for (const name of ["keep-alive", ":authority", "x-keyboard-layout"]) {
+      expect(isSensitiveHeaderName(name)).toBe(false);
+    }
+  });
+
   test("redacts a credential a proxy re-presents under its own name", () => {
     for (const name of [
       "authorization",
