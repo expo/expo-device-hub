@@ -28,10 +28,9 @@ async function screenshotErrorMessage(response: Response): Promise<string> {
 }
 
 // `unknown` means the server sent no artifact header, as older serve-sim builds do.
-export type ScreenshotArtifact = {
-  status: "saved" | "failed" | "disabled" | "unknown";
-  error?: string;
-};
+export type ScreenshotArtifact =
+  | { status: "saved" | "disabled" | "unknown" }
+  | { status: "failed"; error?: string };
 
 interface ScreenshotCapture {
   png: Blob;

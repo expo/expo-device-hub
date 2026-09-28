@@ -541,11 +541,13 @@ export type DeviceScreenRecordingStatus = 'unknown' | 'waiting' | 'recording' | 
  * backend runs outside an EAS session; `unknown` means it sent no header, as
  * older serve-sim and serve-emu builds do.
  */
-export type ScreenshotArtifact = {
-  status: 'saved' | 'failed' | 'disabled' | 'unknown';
-  /** Why the save failed, when the backend says. */
-  error?: string;
-};
+export type ScreenshotArtifact =
+  | { status: 'saved' | 'disabled' | 'unknown' }
+  | {
+      status: 'failed';
+      /** Why the save failed, when the backend says. */
+      error?: string;
+    };
 
 /** A still PNG of the device and its session artifact outcome. */
 export type ScreenshotCapture = {
