@@ -213,7 +213,7 @@ const HELP: Record<string, { meaning: string; scope: Scope }> = {
     scope: WINDOW,
   },
   "CPU fallbacks": { meaning: "Frames copied on the CPU because the GPU transfer failed.", scope: SESSION },
-  "Capture pool drops": { meaning: "Frames dropped because the capture copy pool had no free buffer.", scope: SESSION },
+  "Capture pool drops": { meaning: "Frames dropped because a capture buffer could not be allocated.", scope: SESSION },
   "Pump restarts": {
     meaning: "Times the WebRTC frame pump was restarted after its timer stopped ticking.",
     scope: SESSION,
