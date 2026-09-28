@@ -1,6 +1,7 @@
 // Exercise the configuration factory used by the capture swizzle.
 
 #import <UIKit/UIKit.h>
+#include <stdlib.h>
 #include <string.h>
 
 static NSURLSession *earlySession;
@@ -38,6 +39,17 @@ __attribute__((constructor)) static void prepareSession(void) {
   self.window.rootViewController = [UIViewController new];
   [self.window makeKeyAndVisible];
 
+  // SIMNET_PROBE_DELAY_MS creates the configuration that long after launch, so a test can change
+  // the proxy's state between the capture library's startup and the app's first configuration.
+  const char *delay = getenv("SIMNET_PROBE_DELAY_MS");
+  long delayMs = delay ? strtol(delay, NULL, 10) : 0;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)delayMs * (int64_t)NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+    [self sendRequest];
+  });
+  return YES;
+}
+
+- (void)sendRequest {
   const char *target = getenv("SIMNET_PROBE_URL");
   NSString *urlString = target != NULL ? @(target) : @"https://simnet-probe.test/ping";
 
@@ -51,7 +63,6 @@ __attribute__((constructor)) static void prepareSession(void) {
                                              error.localizedDescription ?: @"none");
                                      }];
   [task resume];
-  return YES;
 }
 
 @end

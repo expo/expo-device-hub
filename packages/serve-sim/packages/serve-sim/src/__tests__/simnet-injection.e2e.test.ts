@@ -25,6 +25,8 @@ interface Probe {
   port: number;
   /** The first line the app sent, or null if it never connected. */
   firstLine: (timeoutMs: number) => Promise<string | null>;
+  /** Resolves on the first connection, which the library's startup check makes; false on timeout. */
+  connected: (timeoutMs: number) => Promise<boolean>;
   close: () => void;
 }
 
@@ -34,8 +36,13 @@ async function proxyStandIn(): Promise<Probe> {
   const first = new Promise<string | null>((r) => {
     resolveFirst = r;
   });
+  let resolveConnected: () => void = () => {};
+  const firstConnection = new Promise<void>((r) => {
+    resolveConnected = r;
+  });
 
   const server: Server = createServer((socket) => {
+    resolveConnected();
     socket.once("data", (chunk) => {
       resolveFirst(chunk.toString("latin1").split("\r\n")[0]!);
       socket.destroy();
@@ -53,13 +60,18 @@ async function proxyStandIn(): Promise<Probe> {
         first,
         new Promise<null>((r) => setTimeout(() => r(null), timeoutMs)),
       ]),
+    connected: (timeoutMs) =>
+      Promise.race([
+        firstConnection.then(() => true),
+        new Promise<boolean>((r) => setTimeout(() => r(false), timeoutMs)),
+      ]),
     close: () => server.close(),
   };
 }
 
 async function launchProbeApp(
   port: number,
-  { inject, portFile, phase = "delegate" }: { inject: boolean; portFile?: string; phase?: string },
+  { inject, portFile, phase = "delegate", delayMs = 0 }: { inject: boolean; portFile?: string; phase?: string; delayMs?: number },
 ): Promise<void> {
   if (inject) {
     const file = portFile ?? join(appDir, "proxy-port");
@@ -72,7 +84,7 @@ async function launchProbeApp(
   execFileSync("xcrun", ["simctl", "launch", udid!, BUNDLE_ID], {
     stdio: "pipe", timeout: 30_000,
     env: { ...process.env, SIMCTL_CHILD_SIMNET_PROBE_URL: `https://${PROBE_HOST}/ping`,
-      SIMCTL_CHILD_SIMNET_PROBE_PHASE: phase },
+      SIMCTL_CHILD_SIMNET_PROBE_PHASE: phase, SIMCTL_CHILD_SIMNET_PROBE_DELAY_MS: String(delayMs) },
   });
 }
 
@@ -188,6 +200,49 @@ describeOrSkip("SimNetProxy injection (real simulator)", () => {
 
         expect(await probe.firstLine(8_000)).toBeNull();
       } finally {
+        probe.close();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "proxies a configuration the app makes after launch while capture is on",
+    async () => {
+      const probe = await proxyStandIn();
+      const portFile = join(appDir, "proxy-port-kept");
+      writeFileSync(portFile, String(probe.port));
+      try {
+        terminateProbeApp();
+        await launchProbeApp(probe.port, { inject: true, portFile, delayMs: 6_000 });
+
+        expect(await probe.firstLine(20_000)).toStartWith(`CONNECT ${PROBE_HOST}:443`);
+      } finally {
+        rmSync(portFile, { force: true });
+        probe.close();
+      }
+    },
+    60_000,
+  );
+
+  it(
+    "sends a running app's new sessions direct once capture stops",
+    async () => {
+      const probe = await proxyStandIn();
+      const portFile = join(appDir, "proxy-port-stopped-later");
+      writeFileSync(portFile, String(probe.port));
+      try {
+        terminateProbeApp();
+        // The library arms at startup with a live proxy; the app makes its configuration 6 s later.
+        await launchProbeApp(probe.port, { inject: true, portFile, delayMs: 6_000 });
+        // The library's startup check connects once; only then has it read the port and armed.
+        expect(await probe.connected(5_000)).toBe(true);
+        // Capture stops meanwhile: its confdir, with the port file, is removed.
+        rmSync(portFile, { force: true });
+
+        expect(await probe.firstLine(12_000)).toBeNull();
+      } finally {
+        rmSync(portFile, { force: true });
         probe.close();
       }
     },

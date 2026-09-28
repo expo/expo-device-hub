@@ -29,7 +29,6 @@ static struct {
 static _Atomic(ConfigurationFactory) originalDefault;
 static _Atomic(ConfigurationFactory) originalEphemeral;
 static _Atomic(BackgroundFactory) originalBackground;
-static long proxyPort;
 static atomic_flag initialized = ATOMIC_FLAG_INIT;
 
 static Method findFactory(Class cls, const char *name) {
@@ -60,8 +59,15 @@ static id number(long value) {
         (id)runtime.getClass("NSNumber"), runtime.selector("numberWithLong:"), value);
 }
 
+static long readPort(void);
+
 static id applyProxy(id configuration) {
     if (!configuration) return configuration;
+    // Checked for every configuration, not once at startup: after capture stops, the port file is
+    // gone and nothing listens, so new sessions go direct instead of to a dead port. Sessions that
+    // already exist keep the proxy until the app is relaunched.
+    long proxyPort = readPort();
+    if (!proxyPort) return configuration;
     id host = string("127.0.0.1");
     id port = number(proxyPort);
     id enabled = number(1);
@@ -117,8 +123,7 @@ static long readPort(void) {
 
 static void initializeProxy(void) {
     if (atomic_flag_test_and_set(&initialized)) return;
-    proxyPort = readPort();
-    if (!proxyPort) return;
+    if (!readPort()) return;
     runtime.getClass = dlsym(RTLD_DEFAULT, "objc_getClass");
     runtime.getMetaclass = dlsym(RTLD_DEFAULT, "object_getClass");
     runtime.getSuperclass = dlsym(RTLD_DEFAULT, "class_getSuperclass");
