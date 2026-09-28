@@ -135,13 +135,14 @@ export class CaptureStore {
     if (!this.requests.has(id)) return;
     const size = chargedBytes(body);
     const previous = this.bodies.get(id);
+    if (size > MAX_TOTAL_BODY_BYTES) {
+      // A body that can never fit is dropped, but a body this request already has is kept.
+      if (!previous) this.noteDroppedBody(id);
+      return;
+    }
     if (previous) {
       this.totalBodyBytes -= chargedBytes(previous);
       this.bodies.delete(id);
-    }
-    if (size > MAX_TOTAL_BODY_BYTES) {
-      this.noteDroppedBody(id);
-      return;
     }
     for (const [oldId, old] of this.bodies) {
       if (this.totalBodyBytes + size <= MAX_TOTAL_BODY_BYTES) break;
@@ -219,6 +220,8 @@ export class CaptureStore {
   }
 
   private noteDroppedBody(id: string): void {
+    // One count per request, however often its body is refused.
+    if (this.droppedBodyIds.has(id)) return;
     this.droppedBodyIds.add(id);
     this.droppedBodyCount += 1;
   }

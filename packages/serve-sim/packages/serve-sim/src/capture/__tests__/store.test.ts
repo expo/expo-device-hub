@@ -350,6 +350,33 @@ describe("CaptureStore throughput", () => {
     expect(store.droppedBodies).toBe(0);
   });
 
+  test("keeps a body when an oversized replacement is refused, and counts a request once", () => {
+    const store = new CaptureStore(() => 0);
+    const small = {
+      requestHeaders: { "x-note": "kept" },
+      responseHeaders: {},
+      requestBody: null,
+      responseBody: "ok",
+      requestTruncated: false,
+      responseTruncated: false,
+      requestBinary: false,
+      responseBinary: false,
+    };
+    const huge = { ...small, responseBody: "y".repeat(17 * 1024 * 1024) };
+    const kept = store.start("GET", "https://example.com/kept");
+    store.setBody(kept, small);
+    store.setBody(kept, huge);
+    expect(store.body(kept)).toEqual(small);
+    expect(store.bodyDropped(kept)).toBe(false);
+    expect(store.droppedBodies).toBe(0);
+
+    const refused = store.start("GET", "https://example.com/refused");
+    store.setBody(refused, huge);
+    store.setBody(refused, huge);
+    expect(store.bodyDropped(refused)).toBe(true);
+    expect(store.droppedBodies).toBe(1);
+  });
+
   test("charges bodies by byte, not by character", () => {
     const store = new CaptureStore(() => 0);
     // Each emoji uses four UTF-8 bytes but two UTF-16 units.
