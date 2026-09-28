@@ -60,17 +60,18 @@ npx expo-device-hub
 
 ### Screenshots in EAS sessions
 
-The live preview's Screenshot action keeps its browser download and also saves an
-artifact when the EAS session host configures `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY`.
+Set `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` to save each preview screenshot as a file.
+The browser download still works as before.
 Both serve-sim and serve-emu write each captured PNG to a temporary file in that
-directory, then rename it to `screenshot-<uuid>.png` when complete. A storage error
-fails the screenshot request instead of silently returning an unsaved capture.
+directory, then rename it.
+A saved file has a name such as `screenshot-2026-09-24T08-45-59-123Z-a1b2c3d4e5f6.png`.
+The name contains the UTC capture time and a random suffix.
+If the save fails, serve-sim or serve-emu logs the error to stderr.
+The screenshot response still returns the PNG.
+Standalone previews without the environment variable keep their existing behavior.
 
-The EAS worker uploads completed PNGs every five seconds and flushes remaining
-captures at session shutdown. Failed uploads retain their files for retry. This
-requires the updated preview packages and EAS build-tools worker together; the
-worker setting alone has no effect on older preview packages. Standalone previews
-without the environment variable keep their existing download behavior.
+The EAS worker in eas-cli build-tools sets the variable and uploads completed files.
+Its documentation describes upload naming and retry behavior.
 
 ## Repository structure
 

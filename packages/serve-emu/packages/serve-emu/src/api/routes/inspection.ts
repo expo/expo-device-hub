@@ -13,7 +13,7 @@ import {
 export function inspectionRoutes(): ContractApiRoute<ApiDependencies>[] {
   const screenshot: ContractApiRoute<ApiDependencies>["handler"] = async ({ url, deps }) => {
     const png = await downstream("capture screenshot", deps.takeScreenshot);
-    await downstream("save screenshot", () => saveScreenshotArtifact(png));
+    await saveScreenshotArtifact(png);
     if (url.searchParams.get("format") === "base64") {
       return Response.json({
         ok: true,
