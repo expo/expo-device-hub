@@ -68,6 +68,8 @@ A saved file has a name such as `screenshot-2026-09-24T08-45-59-123Z-a1b2c3d4e5f
 The name contains the UTC capture time and a random suffix.
 If the save fails, serve-sim or serve-emu logs the error to stderr and writes a `screenshot-<time>-<suffix>.failed.json` record with the file name, error, and time into the same directory. The EAS worker reports that record.
 The screenshot response still returns the PNG.
+Each screenshot response carries the save outcome in the `X-Expo-Screenshot-Artifact` header.
+When the save fails, the serve-sim preview and the Device Hub dashboard show a notice after the download.
 On iOS, serve-sim records each manual screenshot as a session event in the Events panel.
 A failed save appears there as an error event with the reason.
 The reason sent to the browser is only the error code, such as `ENOSPC`, or `unknown error`. The full error, with the path, goes only to the stderr line and the `.failed.json` record. The EAS worker reports that record in the job log.
