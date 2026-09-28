@@ -833,15 +833,17 @@ final class WebRTCPublisher: @unchecked Sendable {
     }
 
     private static func canvasSize(for dimensions: Dimensions, maxDimension: Int,
-                                   levelIdc: Int = H264LevelPolicy.defaultLevelIdc,
+                                   levelIdc: Int? = nil,
                                    scale: Double = 1.0) -> Dimensions {
         guard dimensions.width > 0, dimensions.height > 0 else {
             return Dimensions(width: 0, height: 0)
         }
-        let levelLimit = H264LevelPolicy.maxLongEdge(
-            sourceWidth: dimensions.width, sourceHeight: dimensions.height,
-            levelIdc: levelIdc
-        )
+        let levelLimit = levelIdc.map {
+            H264LevelPolicy.maxLongEdge(
+                sourceWidth: dimensions.width, sourceHeight: dimensions.height,
+                levelIdc: $0
+            )
+        } ?? 0
         let canvasLimit = [maxDimension, levelLimit].filter { $0 > 0 }.min() ?? 0
         let scaledLimit = SharedResolutionPolicy.canvasLongEdge(
             baseLimit: canvasLimit, sourceLongEdge: max(dimensions.width, dimensions.height),
@@ -853,22 +855,21 @@ final class WebRTCPublisher: @unchecked Sendable {
         return Dimensions(width: size.width, height: size.height)
     }
 
-    /// Candidate canvas for both admission and the live shared encoder. The default level
-    /// remains a ceiling when every connected viewer advertises a higher one.
+    /// Candidate canvas for both admission and the live shared encoder. Without H.264 viewers,
+    /// the shared VP8 canvas is bounded only by the configured maximum dimension.
     static func canvasSize(for dimensions: Dimensions, maxDimension: Int,
                            levels: [Int], scale: Double) -> Dimensions {
-        let level = min(levels.min() ?? H264LevelPolicy.defaultLevelIdc,
-                        H264LevelPolicy.defaultLevelIdc)
         return canvasSize(for: dimensions, maxDimension: maxDimension,
-                          levelIdc: level, scale: scale)
+                          levelIdc: levels.min(), scale: levels.isEmpty ? 1 : scale)
     }
 
     private func refreshEncodeCanvas() {
         let levels = sessions.values
             .filter { StreamCodecPolicy.isH264($0.codecName) }
-            .compactMap(\.h264LevelIdc)
+            .map { $0.h264LevelIdc ?? H264LevelPolicy.defaultLevelIdc }
         let pendingLevel = pendingOffer.flatMap { offer in
-            StreamCodecPolicy.isH264(offer.session.codecName) ? offer.session.h264LevelIdc : nil
+            StreamCodecPolicy.isH264(offer.session.codecName)
+                ? (offer.session.h264LevelIdc ?? H264LevelPolicy.defaultLevelIdc) : nil
         }
         let canvas = Self.canvasSize(for: rawEncodeCanvas, maxDimension: maxDimension,
                                      levels: levels + [pendingLevel].compactMap { $0 },

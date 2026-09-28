@@ -3,6 +3,24 @@ import XCTest
 import StreamingPolicy
 
 final class SharedCanvasAdmissionTests: XCTestCase {
+    func testHighLevelViewerKeepsNativeCanvas() {
+        let source = Dimensions(width: 1206, height: 2622)
+        let canvas = WebRTCPublisher.canvasSize(
+            for: source, maxDimension: 0, levels: [52], scale: 1
+        )
+
+        XCTAssertEqual(canvas, source)
+    }
+
+    func testVp8OnlyViewerKeepsNativeCanvas() {
+        let source = Dimensions(width: 1206, height: 2622)
+        let canvas = WebRTCPublisher.canvasSize(
+            for: source, maxDimension: 0, levels: [], scale: 0.5
+        )
+
+        XCTAssertEqual(canvas, source)
+    }
+
     func testLowerLevelViewerUsesProposedCanvasBeforeAdmission() {
         let source = Dimensions(width: 1920, height: 1080)
         let current = WebRTCPublisher.canvasSize(
