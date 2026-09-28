@@ -35,4 +35,21 @@ final class StreamCodecPolicyTests: XCTestCase {
         XCTAssertNil(StreamCodecPolicy.mediaCodecName(from: ["rtx", "red"]))
         XCTAssertNil(StreamCodecPolicy.mediaCodecName(from: []))
     }
+
+    func testReadsFirstMediaCodecFromActiveVideoAnswer() {
+        let answer = """
+        m=audio 9 UDP/TLS/RTP/SAVPF 111
+        a=rtpmap:111 opus/48000/2
+        m=video 0 UDP/TLS/RTP/SAVPF 102
+        a=rtpmap:102 H264/90000
+        m=video 9 UDP/TLS/RTP/SAVPF 97 96 102
+        a=rtpmap:97 rtx/90000
+        a=rtpmap:96 VP8/90000
+        a=rtpmap:102 H264/90000
+        """
+        XCTAssertEqual(StreamCodecPolicy.firstVideoCodecName(in: answer), "VP8")
+        XCTAssertEqual(StreamCodecPolicy.firstVideoCodecName(
+            in: answer.replacingOccurrences(of: "97 96 102", with: "102 97 96")
+        ), "H264")
+    }
 }
