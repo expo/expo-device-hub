@@ -169,6 +169,8 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
 @property(nonatomic, strong) AVCaptureVideoDataOutput *queuedOutput;
 @property(nonatomic, strong) QueuedFrameRecorder *queuedRecorder;
 @property(nonatomic, strong) dispatch_queue_t queuedFrames;
+@property(nonatomic) BOOL changedGravity;
+@property(nonatomic) BOOL sampledPreview;
 @property(nonatomic, strong) RunningChangeCounter *runningChanges;
 @property(nonatomic, strong) AVCaptureVideoDataOutput *stopQueueOutput;
 @property(nonatomic, strong) AVCapturePhotoOutput *photoOutput;
@@ -342,7 +344,8 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
   // hooks the preview. layerWithSession: sets it without that.
   AVCaptureVideoPreviewLayer *preview = [[AVCaptureVideoPreviewLayer alloc] init];
   preview.session = session;
-  preview.videoGravity = AVLayerVideoGravityResizeAspectFill;
+  preview.videoGravity = [NSProcessInfo.processInfo.arguments containsObject:@"-ServeSimFixtureGravityAspect"]
+      ? AVLayerVideoGravityResizeAspect : AVLayerVideoGravityResizeAspectFill;
   preview.frame = view.bounds;
   [view.layer addSublayer:preview];
   self.session = session;
@@ -406,9 +409,44 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
   NSString *value = [NSString stringWithFormat:@"%u,%u,%u", pixel[2], pixel[1], pixel[0]];
   if (![value isEqualToString:self.lastPixel]) {
     Record(@"frame", value);
+    Record(@"gravity", self.preview.contentsGravity ?: @"");
+    if (!self.changedGravity && [NSProcessInfo.processInfo.arguments containsObject:@"-ServeSimFixtureGravityChange"]) {
+      self.changedGravity = YES;
+      self.preview.videoGravity = AVLayerVideoGravityResize;
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC / 2)), dispatch_get_main_queue(), ^{
+        Record(@"gravity", self.preview.contentsGravity ?: @"");
+      });
+    } else if (!self.sampledPreview && [NSProcessInfo.processInfo.arguments containsObject:@"-ServeSimFixtureGravityAspect"]) {
+      self.sampledPreview = YES;
+      dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC / 2)), dispatch_get_main_queue(), ^{
+        [self recordPreviewPixels];
+      });
+    }
     self.lastPixel = value;
   }
   CVPixelBufferUnlockBaseAddress(pixelBuffer, kCVPixelBufferLock_ReadOnly);
+}
+
+// Renders the preview layer as drawn, so a test can check the fit and not only the gravity property.
+- (void)recordPreviewPixels {
+  CGSize size = self.preview.bounds.size;
+  size_t width = (size_t)size.width, height = (size_t)size.height;
+  if (width == 0 || height == 0) return;
+  unsigned char *bytes = calloc(width * height, 4);
+  CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+  CGContextRef context = CGBitmapContextCreate(bytes, width, height, 8, width * 4, space,
+      (CGBitmapInfo)kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+  CGContextTranslateCTM(context, 0, size.height);
+  CGContextScaleCTM(context, 1, -1);
+  [self.preview renderInContext:context];
+  NSString *(^pixel)(size_t) = ^NSString *(size_t row) {
+    const unsigned char *p = bytes + (row * width + width / 2) * 4;
+    return [NSString stringWithFormat:@"%u,%u,%u,%u", p[0], p[1], p[2], p[3]];
+  };
+  Record(@"preview-pixels", [NSString stringWithFormat:@"center=%@ top=%@", pixel(height / 2), pixel(height / 20)]);
+  CGContextRelease(context);
+  CGColorSpaceRelease(space);
+  free(bytes);
 }
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {

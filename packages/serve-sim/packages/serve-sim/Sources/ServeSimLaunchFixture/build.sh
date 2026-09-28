@@ -18,7 +18,7 @@ xcrun --sdk iphonesimulator clang \
     -fobjc-arc \
     -O2 \
     -Wall -Wextra -Werror -Wconversion -Wshadow \
-    -framework UIKit -framework Foundation -framework AVFoundation -framework CoreMedia -framework CoreMotion -framework CoreVideo \
+    -framework UIKit -framework Foundation -framework AVFoundation -framework CoreMedia -framework CoreGraphics -framework CoreMotion -framework CoreVideo \
     -o "$APP/ServeSimLaunchFixture" \
     "$HERE/serve-sim-launch-fixture.m"
 
