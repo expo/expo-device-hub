@@ -106,6 +106,10 @@ final class NativeVideoRecorder: @unchecked Sendable {
         guard !FileManager.default.fileExists(atPath: mp4.path) else {
             throw Self.error(2, "Recording output already exists at \(mp4.path)")
         }
+        let manifest = self.outputDirectory.appendingPathComponent("session.json")
+        guard !FileManager.default.fileExists(atPath: manifest.path) else {
+            throw Self.error(2, "Recording manifest already exists at \(manifest.path)")
+        }
 
         let specification: NSDictionary = [
             kVTVideoEncoderSpecification_RequireHardwareAcceleratedVideoEncoder: kCFBooleanTrue!,

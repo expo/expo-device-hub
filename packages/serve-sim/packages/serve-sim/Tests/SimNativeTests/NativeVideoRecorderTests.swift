@@ -7,6 +7,24 @@ import XCTest
 import StreamingPolicy
 
 final class NativeVideoRecorderTests: XCTestCase {
+    func testExistingManifestCannotBeReplacedAtStart() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("serve-sim-existing-manifest-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let manifest = directory.appendingPathComponent("session.json")
+        let original = Data("existing session".utf8)
+        try original.write(to: manifest)
+
+        XCTAssertThrowsError(try NativeVideoRecorder(
+            mailbox: NativeFrameMailbox(), canvas: Dimensions(width: 120, height: 240),
+            outputDirectory: directory.path
+        )) { error in
+            XCTAssertEqual((error as NSError).code, 2)
+        }
+        XCTAssertEqual(try Data(contentsOf: manifest), original)
+    }
+
     func testMissingSyncAttachmentsAreKeyframes() throws {
         var pixelBuffer: CVPixelBuffer?
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 16, 16,
