@@ -2,9 +2,10 @@ import { randomBytes } from "node:crypto";
 import { mkdir, rename, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-// The filename format must change together with the consumer regex in the eas-cli repository at
-// packages/build-tools/src/steps/utils/deviceRunSessionScreenshots.ts. The serve-sim and serve-emu
-// copies are intentionally identical because @expo/serve-sim ships standalone with no workspace dependencies.
+// The filename format and the "could not save screenshot artifact" log text are a contract with
+// the EAS worker in the eas-cli repository, packages/build-tools/src/steps/utils/deviceRunSessionScreenshots.ts:
+// it matches filenames with a regex and surfaces that log line from the host output. The serve-sim and
+// serve-emu copies are intentionally identical because @expo/serve-sim ships standalone with no workspace dependencies.
 export async function saveScreenshotArtifact(
   png: Uint8Array,
   directory = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY,

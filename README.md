@@ -71,7 +71,8 @@ The screenshot response still returns the PNG.
 Standalone previews without the environment variable keep their existing behavior.
 
 The EAS worker in eas-cli build-tools sets the variable and uploads completed files.
-Its documentation describes upload naming and retry behavior.
+Upload naming and retry behavior are documented in
+[`deviceRunSessionScreenshots.ts`](https://github.com/expo/eas-cli/blob/main/packages/build-tools/src/steps/utils/deviceRunSessionScreenshots.ts).
 
 ## Repository structure
 
