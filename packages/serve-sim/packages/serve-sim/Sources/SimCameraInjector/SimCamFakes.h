@@ -74,6 +74,7 @@ AVCaptureDevice *SimCamFakeDeviceForPosition(AVCaptureDevicePosition p);
 AVCaptureDeviceInput *SimCamFakeInputForPosition(AVCaptureDevicePosition p);
 
 AVCaptureConnection *SimCamFakeConnectionForOutput(AVCaptureOutput *out);
+AVCaptureConnection *SimCamFakeConnectionForPreviewLayer(CALayer *layer);
 void SimCamSetOutputInput(AVCaptureOutput *out, AVCaptureInput *input);
 AVCaptureInput *SimCamOutputInput(AVCaptureOutput *out);
 

@@ -4,6 +4,8 @@ import { existsSync, rmSync, statSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import net from "net";
 
+import { writeBmp } from "./helpers";
+
 const HELPER_PATH = join(
   import.meta.dir,
   "../../dist/simcam/serve-sim-camera-helper",
@@ -16,8 +18,9 @@ const SURFACE_RING = 4;
 // SimCamSurfaceTable: surfaceCount + latestIndex + ids[SURFACE_RING].
 const TABLE_BYTES = 4 + 4 + SURFACE_RING * 4;
 const CONTROL_BYTES = HEADER_BYTES + TABLE_BYTES;
-const DEFAULT_WIDTH = 1280;
-const DEFAULT_HEIGHT = 720;
+// SimCamContentRect per ring slot: x, y, width, height as uint16.
+const CONTENT_BYTES = SURFACE_RING * 8;
+const CANVAS_SIZE = 1280;
 const ONE_PIXEL_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
@@ -96,7 +99,7 @@ async function openExistingShm(name: string): Promise<ShmHandle | null> {
   const sys = await loadFfi();
   const fd = sys.shm_open(Buffer.from(`${name}\0`), 0, 0);
   if (fd < 0) return null;
-  const size = CONTROL_BYTES;
+  const size = CONTROL_BYTES + CONTENT_BYTES;
   const ptr = sys.mmap(null, BigInt(size), 1, 1, fd, 0n);
   if (!ptr) {
     sys.close(fd);
@@ -152,6 +155,18 @@ function readSurfaceTable(buffer: ArrayBuffer): {
     ids.push(view.getUint32(HEADER_BYTES + 8 + i * 4, true));
   }
   return { surfaceCount, latestIndex, ids };
+}
+
+/** Where the upright source sits in the newest surface. */
+function readContent(buffer: ArrayBuffer): { x: number; y: number; width: number; height: number } {
+  const view = new DataView(buffer);
+  const offset = CONTROL_BYTES + readSurfaceTable(buffer).latestIndex * 8;
+  return {
+    x: view.getUint16(offset, true),
+    y: view.getUint16(offset + 2, true),
+    width: view.getUint16(offset + 4, true),
+    height: view.getUint16(offset + 6, true),
+  };
 }
 
 let iosurface:
@@ -291,11 +306,11 @@ describeIf("SimCameraHelper shm probe", () => {
       const header = readHeader(handle.buffer);
       expect(header.magic).toBe(SIMCAM_MAGIC);
       expect(header.version).toBeGreaterThanOrEqual(1);
-      expect(header.width).toBe(DEFAULT_WIDTH);
-      expect(header.height).toBe(DEFAULT_HEIGHT);
+      expect(header.width).toBe(CANVAS_SIZE);
+      expect(header.height).toBe(CANVAS_SIZE);
       expect(header.pixelFormat).toBe(SIMCAM_PIXEL_BGRA);
-      expect(header.bytesPerRow).toBeGreaterThanOrEqual(DEFAULT_WIDTH * 4);
-      expect(header.pixelByteSize).toBe(BigInt(DEFAULT_WIDTH * DEFAULT_HEIGHT * 4));
+      expect(header.bytesPerRow).toBeGreaterThanOrEqual(CANVAS_SIZE * 4);
+      expect(header.pixelByteSize).toBe(BigInt(CANVAS_SIZE * CANVAS_SIZE * 4));
     } finally {
       await closeShm(handle);
     }
@@ -339,8 +354,8 @@ describeIf("SimCameraHelper shm probe", () => {
       const surface = io.lookup(latestSurfaceId);
       expect(surface).toBeTruthy();
       if (surface) {
-        expect(io.width(surface)).toBe(DEFAULT_WIDTH);
-        expect(io.height(surface)).toBe(DEFAULT_HEIGHT);
+        expect(io.width(surface)).toBe(CANVAS_SIZE);
+        expect(io.height(surface)).toBe(CANVAS_SIZE);
         io.release(surface);
       }
     } finally {
@@ -392,9 +407,10 @@ describeIf("SimCameraHelper shm probe", () => {
     if (!handle) return;
     try {
       const header = readHeader(handle.buffer);
-      expect(header.width).toBe(DEFAULT_WIDTH);
-      expect(header.height).toBe(DEFAULT_HEIGHT);
+      expect(header.width).toBe(CANVAS_SIZE);
+      expect(header.height).toBe(CANVAS_SIZE);
       expect(header.bytesPerRow).toBeGreaterThanOrEqual(header.width * 4);
+      expect(readContent(handle.buffer)).toEqual({ x: 0, y: 0, width: CANVAS_SIZE, height: CANVAS_SIZE });
     } finally {
       await closeShm(handle);
     }
@@ -407,6 +423,23 @@ describeIf("SimCameraHelper shm probe", () => {
     const mirror = await sendHelperCommand(SOCKET_PATH, { action: "setMirror", mode: ["on"] });
     expect(mirror.ok).toBe(false);
     expect((await sendHelperCommand(SOCKET_PATH, { action: "status" })).ok).toBe(true);
+  });
+
+  test("an image records where its fitted source sits in the canvas", async () => {
+    const bmp = join(dirname(SOCKET_PATH), `sscam-wide-${TAG}.bmp`);
+    const handle = await openExistingShm(SHM_NAME);
+    expect(handle).not.toBeNull();
+    if (!handle) return;
+    try {
+      writeBmp(bmp, 16, 9, () => [0, 0, 0]);
+      const switched = await sendHelperCommand(SOCKET_PATH, { action: "switch", source: "image", arg: bmp });
+      expect(switched.ok).toBe(true);
+      expect(readContent(handle.buffer)).toEqual({ x: 0, y: 280, width: 1280, height: 720 });
+    } finally {
+      await sendHelperCommand(SOCKET_PATH, { action: "switch", source: "placeholder" });
+      await closeShm(handle);
+      rmSync(bmp, { force: true });
+    }
   });
 
   test("a failed switch keeps the previous source connected", async () => {

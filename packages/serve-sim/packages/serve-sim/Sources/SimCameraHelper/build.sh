@@ -21,7 +21,8 @@ xcrun --sdk macosx clang \
     -framework CoreText \
     -framework ImageIO \
     -framework IOSurface \
-    -framework Accelerate \
+    -framework Metal \
+    -framework MetalPerformanceShaders \
     -O2 \
     -o "$BIN" \
     "$HERE/main.m"

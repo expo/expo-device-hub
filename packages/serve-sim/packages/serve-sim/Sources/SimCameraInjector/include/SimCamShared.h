@@ -28,8 +28,12 @@
 
 #define SIMCAM_SHM_MAGIC      0x53434D31u  // 'SCM1'
 #define SIMCAM_PIXEL_BGRA     0u
-#define SIMCAM_DEFAULT_WIDTH  1280u
-#define SIMCAM_DEFAULT_HEIGHT 720u
+// The helper publishes the upright source into a canvas, square unless --width/--height say
+// otherwise. The injector fits it into the pose's upright frame (short x long) and rotates that
+// by each connection's angle.
+#define SIMCAM_CANVAS_SIZE    1280u
+#define SIMCAM_FRAME_LONG     1280u
+#define SIMCAM_FRAME_SHORT    720u
 
 // Number of IOSurfaces in the ring. The writer keeps off whichever surface the
 // reader most recently published, so a few buffers absorb a reader that holds
@@ -77,6 +81,20 @@ typedef struct __attribute__((packed)) {
 // Total control-region size: header + surface table.
 static inline uint64_t SimCamControlSize(void) {
     return (uint64_t)sizeof(SimCamShmHeader) + (uint64_t)sizeof(SimCamSurfaceTable);
+}
+
+// Where the upright source sits in each ring surface, top-left origin. The writer fills a slot's
+// rect before it publishes that slot, so the rect is as consistent as the pixels. Helpers from
+// before this table leave the region shorter; readers then use the whole surface.
+typedef struct __attribute__((packed)) {
+    uint16_t x;
+    uint16_t y;
+    uint16_t width;
+    uint16_t height;
+} SimCamContentRect;
+
+static inline uint64_t SimCamControlSizeWithContent(void) {
+    return SimCamControlSize() + (uint64_t)sizeof(SimCamContentRect) * SIMCAM_SURFACE_RING;
 }
 
 #endif

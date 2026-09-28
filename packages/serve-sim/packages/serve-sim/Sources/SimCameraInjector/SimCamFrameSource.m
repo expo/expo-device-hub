@@ -23,12 +23,12 @@
 
 #pragma mark - Source globals
 
-static size_t kFrameWidth = 1280;
-static size_t kFrameHeight = 720;
 static const double kFrameRate = 30.0;
 
 static SimCamShmHeader *gShmHeader = NULL;
 static SimCamSurfaceTable *gSurfaceTable = NULL;
+static SimCamContentRect *gContentRects = NULL;       // NULL with a helper from before the table
+static size_t gShmMapSize = 0;
 static IOSurfaceRef gSurfaces[SIMCAM_SURFACE_RING];  // resolved from global IDs
 static uint64_t gLastSeenSeq = 0;
 static _Atomic bool gConnected = false;
@@ -40,8 +40,9 @@ BOOL SimCamDeviceIsConnected(void) {
 
 #pragma mark - Last-frame cache
 
+// The newest canvas and where the upright source sits in it (top-left origin).
 static CVPixelBufferRef gLastFramePB = NULL;
-static CGImageRef gLastFrameCGImage = NULL;
+static CGRect gLastFrameContent;
 static NSLock *gFrameCacheLock = nil;
 static dispatch_once_t gFrameCacheOnce;
 
@@ -50,38 +51,231 @@ static inline NSLock *SimCamFrameCacheLock(void) {
     return gFrameCacheLock;
 }
 
-static void SimCamCacheFrame(CVPixelBufferRef pb) {
+static void SimCamCacheFrame(CVPixelBufferRef pb, CGRect content) {
     if (!pb) return;
-    CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
-    static CIContext *ctx = nil; static dispatch_once_t ctxOnce;
-    dispatch_once(&ctxOnce, ^{ ctx = [CIContext contextWithOptions:nil]; });
-    CGImageRef cg = [ctx createCGImage:ci fromRect:ci.extent];
     NSLock *lock = SimCamFrameCacheLock();
     [lock lock];
     CVPixelBufferRef oldPB = gLastFramePB;
-    CGImageRef oldCG = gLastFrameCGImage;
     gLastFramePB = (CVPixelBufferRef)CFRetain(pb);
-    gLastFrameCGImage = cg;
+    gLastFrameContent = content;
     [lock unlock];
     if (oldPB) CVPixelBufferRelease(oldPB);
-    if (oldCG) CGImageRelease(oldCG);
 }
 
-static CVPixelBufferRef SimCamAcquireCachedPB(void) CF_RETURNS_RETAINED {
+static CVPixelBufferRef SimCamAcquireCachedPB(CGRect *content) CF_RETURNS_RETAINED {
     NSLock *lock = SimCamFrameCacheLock();
     [lock lock];
     CVPixelBufferRef pb = gLastFramePB;
     if (pb) CFRetain(pb);
+    *content = gLastFrameContent;
     [lock unlock];
     return pb;
 }
-static CGImageRef SimCamAcquireCachedCGImage(void) CF_RETURNS_RETAINED {
-    NSLock *lock = SimCamFrameCacheLock();
-    [lock lock];
-    CGImageRef cg = gLastFrameCGImage;
-    if (cg) CGImageRetain(cg);
-    [lock unlock];
+
+#pragma mark - Device pose
+
+// The connection angle at which the scene is upright for the device's current pose. A sensor is
+// fixed to the device, so rotating the simulator turns the scene in every connection's frames.
+static const NSInteger kPortraitAngle = 90;
+static _Atomic NSInteger gPoseAngle = kPortraitAngle;
+
+static NSInteger SimCamPoseAngleForOrientation(UIDeviceOrientation orientation) {
+    switch (orientation) {
+        case UIDeviceOrientationPortrait:           return kPortraitAngle;
+        case UIDeviceOrientationPortraitUpsideDown: return 270;
+        case UIDeviceOrientationLandscapeLeft:      return 0;
+        case UIDeviceOrientationLandscapeRight:     return 180;
+        default:                                    return -1;
+    }
+}
+
+NSInteger SimCamPoseAngle(void) {
+    return atomic_load(&gPoseAngle);
+}
+
+// Face up, face down and unknown keep the last pose.
+void SimCamStartPoseTracking(void) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        void (^start)(void) = ^{
+            UIDevice *device = UIDevice.currentDevice;
+            [device beginGeneratingDeviceOrientationNotifications];
+            void (^update)(void) = ^{
+                NSInteger angle = SimCamPoseAngleForOrientation(device.orientation);
+                if (angle >= 0) atomic_store(&gPoseAngle, angle);
+            };
+            update();
+            [NSNotificationCenter.defaultCenter addObserverForName:UIDeviceOrientationDidChangeNotification
+                                                            object:nil
+                                                             queue:NSOperationQueue.mainQueue
+                                                        usingBlock:^(__unused NSNotification *note) { update(); }];
+        };
+        if (NSThread.isMainThread) start();
+        else dispatch_async(dispatch_get_main_queue(), start);
+    });
+}
+
+#pragma mark - Oriented frames
+
+static NSInteger SimCamRightAngle(CGFloat degrees) {
+    NSInteger quarter = (NSInteger)lround(degrees / 90.0);
+    return ((quarter % 4) + 4) % 4 * 90;
+}
+
+NSInteger SimCamConnectionAngle(AVCaptureConnection *connection) {
+    if (!connection) return kPortraitAngle;
+    if (@available(iOS 17.0, *)) return SimCamRightAngle(connection.videoRotationAngle);
+    switch (connection.videoOrientation) {
+        case AVCaptureVideoOrientationPortraitUpsideDown: return 270;
+        case AVCaptureVideoOrientationLandscapeRight:     return 0;
+        case AVCaptureVideoOrientationLandscapeLeft:      return 180;
+        default:                                          return kPortraitAngle;
+    }
+}
+
+// What a connection at `angle` receives: the source fitted into the pose's upright frame with black
+// bars, then turned clockwise by angle minus the pose, like a sensor fixed to the device. Without a
+// canvas it is a gray no-signal frame of the same shape.
+static CIImage *SimCamOrientedImage(CVPixelBufferRef canvas, CGRect content, NSInteger angle) {
+    NSInteger pose = SimCamPoseAngle();
+    BOOL portrait = pose == kPortraitAngle || pose == kPortraitAngle + 180;
+    CGRect upright = CGRectMake(0, 0, portrait ? SIMCAM_FRAME_SHORT : SIMCAM_FRAME_LONG,
+                                portrait ? SIMCAM_FRAME_LONG : SIMCAM_FRAME_SHORT);
+    CIImage *image;
+    if (canvas) {
+        CIImage *whole = [CIImage imageWithCVPixelBuffer:canvas];
+        CGFloat height = whole.extent.size.height;
+        // Core Image is y-up, the helper's rect is top-left.
+        CGRect source = content.size.width > 0
+            ? CGRectMake(content.origin.x, height - CGRectGetMaxY(content), content.size.width, content.size.height)
+            : whole.extent;
+        CGFloat scale = MIN(upright.size.width / source.size.width, upright.size.height / source.size.height);
+        CGAffineTransform place = CGAffineTransformMakeTranslation(-source.origin.x, -source.origin.y);
+        place = CGAffineTransformConcat(place, CGAffineTransformMakeScale(scale, scale));
+        place = CGAffineTransformConcat(place, CGAffineTransformMakeTranslation(
+            (upright.size.width - source.size.width * scale) / 2, (upright.size.height - source.size.height * scale) / 2));
+        CIImage *fitted = [[whole imageByCroppingToRect:source] imageByApplyingTransform:place];
+        image = [fitted imageByCompositingOverImage:[CIImage imageWithColor:CIColor.blackColor]];
+    } else {
+        image = [CIImage imageWithColor:[CIColor colorWithRed:0x18 / 255.0 green:0x18 / 255.0 blue:0x18 / 255.0]];
+    }
+    image = [image imageByCroppingToRect:upright];
+    NSInteger turn = ((angle - pose) % 360 + 360) % 360;
+    if (turn == 0) return image;
+    // Clockwise in the frame is a negative rotation in Core Image's y-up space.
+    image = [image imageByApplyingTransform:CGAffineTransformMakeRotation(-turn * M_PI / 180.0)];
+    CGPoint origin = image.extent.origin;
+    return [image imageByApplyingTransform:CGAffineTransformMakeTranslation(-round(origin.x), -round(origin.y))];
+}
+
+static CIContext *SimCamOrientContext(void) {
+    static CIContext *ctx;
+    static dispatch_once_t once;
+    // No color management, so frames keep the helper's exact pixel values.
+    dispatch_once(&once, ^{
+        ctx = [CIContext contextWithOptions:@{
+            kCIContextWorkingColorSpace: NSNull.null,
+            kCIContextOutputColorSpace: NSNull.null,
+        }];
+    });
+    return ctx;
+}
+
+static CVPixelBufferRef SimCamRenderOriented(CVPixelBufferRef canvas, CGRect content, NSInteger angle) CF_RETURNS_RETAINED {
+    CIImage *image = SimCamOrientedImage(canvas, content, angle);
+    size_t width = (size_t)lround(image.extent.size.width), height = (size_t)lround(image.extent.size.height);
+    static CVPixelBufferPoolRef pools[2];
+    static NSLock *poolLock;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{ poolLock = [NSLock new]; });
+    // Frames come in two shapes, one pool each.
+    NSUInteger slot = width > height ? 1 : 0;
+    [poolLock lock];
+    if (!pools[slot]) {
+        NSDictionary *attrs = @{
+            (id)kCVPixelBufferPixelFormatTypeKey: @(kCVPixelFormatType_32BGRA),
+            (id)kCVPixelBufferWidthKey: @(width),
+            (id)kCVPixelBufferHeightKey: @(height),
+            (id)kCVPixelBufferIOSurfacePropertiesKey: @{},
+        };
+        CVPixelBufferPoolCreate(kCFAllocatorDefault, NULL, (__bridge CFDictionaryRef)attrs, &pools[slot]);
+    }
+    CVPixelBufferPoolRef pool = pools[slot];
+    [poolLock unlock];
+    CVPixelBufferRef out = NULL;
+    // Readers that hold frames too long lose the next ones instead of growing the pool.
+    NSDictionary *limit = @{ (id)kCVPixelBufferPoolAllocationThresholdKey: @8 };
+    if (!pool || CVPixelBufferPoolCreatePixelBufferWithAuxAttributes(kCFAllocatorDefault, pool,
+            (__bridge CFDictionaryRef)limit, &out) != kCVReturnSuccess) return NULL;
+    [SimCamOrientContext() render:image toCVPixelBuffer:out bounds:CGRectMake(0, 0, width, height) colorSpace:nil];
+    return out;
+}
+
+static CGImageRef SimCamCreateOrientedCGImage(CVPixelBufferRef canvas, CGRect content, NSInteger angle) CF_RETURNS_RETAINED {
+    CIImage *image = SimCamOrientedImage(canvas, content, angle);
+    CGRect bounds = CGRectMake(0, 0, lround(image.extent.size.width), lround(image.extent.size.height));
+    CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+    CGImageRef cg = [SimCamOrientContext() createCGImage:image fromRect:bounds format:kCIFormatBGRA8 colorSpace:space];
+    CGColorSpaceRelease(space);
     return cg;
+}
+
+// Frames rendered from the current canvas and pose, one per angle, so ticks without a new frame
+// reuse them. A cached buffer stays out of the pool, so no reader sees it rewritten.
+static NSLock *gOrientedLock;
+static id gOrientedCanvas;
+static CGRect gOrientedContent;
+static NSInteger gOrientedPose;
+static NSMutableDictionary<NSNumber *, id> *gOrientedBuffers;
+static NSMutableDictionary<NSNumber *, id> *gOrientedImages;
+
+static id SimCamCachedOriented(CVPixelBufferRef canvas, CGRect content, NSInteger angle, BOOL image) {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        gOrientedLock = [NSLock new];
+        gOrientedBuffers = [NSMutableDictionary new];
+        gOrientedImages = [NSMutableDictionary new];
+    });
+    NSInteger pose = SimCamPoseAngle();
+    NSMutableDictionary<NSNumber *, id> *cache = image ? gOrientedImages : gOrientedBuffers;
+    [gOrientedLock lock];
+    // A tick that outlived a disconnect must not keep a released ring surface alive.
+    BOOL connected = SimCamDeviceIsConnected();
+    if (connected && ((__bridge CVPixelBufferRef)gOrientedCanvas != canvas || gOrientedPose != pose ||
+                      !CGRectEqualToRect(gOrientedContent, content))) {
+        gOrientedCanvas = (__bridge id)canvas;
+        gOrientedContent = content;
+        gOrientedPose = pose;
+        [gOrientedBuffers removeAllObjects];
+        [gOrientedImages removeAllObjects];
+    }
+    id cached = connected ? cache[@(angle)] : nil;
+    [gOrientedLock unlock];
+    if (cached) return cached;
+    id made = image ? CFBridgingRelease(SimCamCreateOrientedCGImage(canvas, content, angle))
+                    : CFBridgingRelease(SimCamRenderOriented(canvas, content, angle));
+    if (!made) return nil;
+    [gOrientedLock lock];
+    if (SimCamDeviceIsConnected() && (__bridge CVPixelBufferRef)gOrientedCanvas == canvas && gOrientedPose == pose) {
+        cache[@(angle)] = made;
+    }
+    [gOrientedLock unlock];
+    return made;
+}
+
+static CMSampleBufferRef SimCamCreateSampleBuffer(CVPixelBufferRef pb, CMTime pts) CF_RETURNS_RETAINED {
+    CMVideoFormatDescriptionRef fd = NULL;
+    CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pb, &fd);
+    if (!fd) return NULL;
+    CMSampleTimingInfo timing = {
+        .duration = CMTimeMake(1, (int32_t)kFrameRate),
+        .presentationTimeStamp = pts,
+        .decodeTimeStamp = kCMTimeInvalid,
+    };
+    CMSampleBufferRef sb = NULL;
+    CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pb, true, NULL, NULL, fd, &timing, &sb);
+    CFRelease(fd);
+    return sb;
 }
 
 #pragma mark - Output delegate registry
@@ -134,21 +328,12 @@ static CGImageRef SimCamAcquireCachedCGImage(void) CF_RETURNS_RETAINED {
         (unsigned long)entryCount, (unsigned long)toRemove.count);
 
     uint64_t generation = atomic_load(&gConnectionGeneration);
-    CVPixelBufferRef cached = SimCamOutputSessionIsRunning(out) ? SimCamAcquireCachedPB() : NULL;
+    CGRect content;
+    CVPixelBufferRef cached = SimCamOutputSessionIsRunning(out) ? SimCamAcquireCachedPB(&content) : NULL;
     if (cached) {
-        CMVideoFormatDescriptionRef fd = NULL;
-        CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, cached, &fd);
-        CMSampleBufferRef sb = NULL;
-        CMSampleTimingInfo timing = {
-            .duration = CMTimeMake(1, (int32_t)kFrameRate),
-            .presentationTimeStamp = CMTimeMake(0, (int32_t)kFrameRate),
-            .decodeTimeStamp = kCMTimeInvalid,
-        };
-        if (fd) {
-            CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, cached, true,
-                NULL, NULL, fd, &timing, &sb);
-            CFRelease(fd);
-        }
+        id oriented = SimCamCachedOriented(cached, content, SimCamConnectionAngle(SimCamFakeConnectionForOutput(out)), NO);
+        CMSampleBufferRef sb = oriented
+            ? SimCamCreateSampleBuffer((__bridge CVPixelBufferRef)oriented, CMTimeMake(0, (int32_t)kFrameRate)) : NULL;
         if (sb) {
             AVCaptureVideoDataOutput *outRef = out;
             dispatch_queue_t q = queue ?: dispatch_get_main_queue();
@@ -196,7 +381,12 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
     [_lock unlock];
     BOOL mirror = SimCamShouldMirror(SimCamPositionOf(layer));
     uint64_t generation = atomic_load(&gConnectionGeneration);
-    CGImageRef primed = SimCamAcquireCachedCGImage();
+    CGRect content;
+    CVPixelBufferRef cached = SimCamAcquireCachedPB(&content);
+    id primedImage = cached ? SimCamCachedOriented(cached, content,
+        SimCamConnectionAngle(SimCamFakeConnectionForPreviewLayer(layer)), YES) : nil;
+    CGImageRef primed = primedImage ? CGImageRetain((__bridge CGImageRef)primedImage) : NULL;
+    if (cached) CVPixelBufferRelease(cached);
     dispatch_async(dispatch_get_main_queue(), ^{
         layer.contentsGravity = SimCamContentsGravity(layer);
         if (mirror) layer.transform = CATransform3DMakeScale(-1.f, 1.f, 1.f);
@@ -220,11 +410,15 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
     dispatch_async(dispatch_get_main_queue(), ^{ layer.contents = nil; });
 }
 
-- (void)reapplyGravityToLayer:(AVCaptureVideoPreviewLayer *)layer {
+- (BOOL)tracksPreviewLayer:(AVCaptureVideoPreviewLayer *)layer {
     [_lock lock];
     BOOL tracked = [_layers containsObject:layer];
     [_lock unlock];
-    if (!tracked) return;
+    return tracked;
+}
+
+- (void)reapplyGravityToLayer:(AVCaptureVideoPreviewLayer *)layer {
+    if (![self tracksPreviewLayer:layer]) return;
     dispatch_async(dispatch_get_main_queue(), ^{
         layer.contentsGravity = SimCamContentsGravity(layer);
     });
@@ -253,45 +447,32 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
     for (AVCaptureVideoPreviewLayer *layer in layers) layer.contents = nil;
 }
 
-- (void)pushFrameToLayers:(CVPixelBufferRef)pb generation:(uint64_t)generation {
-    if (!pb) return;
-    [_lock lock]; NSUInteger layerCount = _layers.count; [_lock unlock];
-    if (layerCount == 0) return;
-
-    CGImageRef cg = NULL;
-    NSLock *lock = SimCamFrameCacheLock();
-    [lock lock];
-    if (pb == gLastFramePB && gLastFrameCGImage) {
-        cg = CGImageRetain(gLastFrameCGImage);
-    }
-    [lock unlock];
-    if (!cg) {
-        CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
-        static CIContext *ciCtx = nil; static dispatch_once_t once;
-        dispatch_once(&once, ^{ ciCtx = [CIContext contextWithOptions:nil]; });
-        cg = [ciCtx createCGImage:ci fromRect:ci.extent];
-        if (!cg) return;
+- (void)pushFrameToLayers:(CVPixelBufferRef)canvas content:(CGRect)content generation:(uint64_t)generation {
+    NSArray *layerSnapshot;
+    [_lock lock]; layerSnapshot = _layers.allObjects; [_lock unlock];
+    if (layerSnapshot.count == 0) return;
+    NSMapTable<AVCaptureVideoPreviewLayer *, id> *images = [NSMapTable weakToStrongObjectsMapTable];
+    for (AVCaptureVideoPreviewLayer *l in layerSnapshot) {
+        id image = SimCamCachedOriented(canvas, content, SimCamConnectionAngle(SimCamFakeConnectionForPreviewLayer(l)), YES);
+        if (image) [images setObject:image forKey:l];
     }
     dispatch_async(dispatch_get_main_queue(), ^{
-        // Read the layers here, so one removed while the image was built stays cleared.
-        NSArray *layerSnapshot;
-        [self->_lock lock]; layerSnapshot = self->_layers.allObjects; [self->_lock unlock];
-        for (AVCaptureVideoPreviewLayer *l in layerSnapshot) {
+        // Only layers still tracked get the image, so one removed meanwhile stays cleared.
+        for (AVCaptureVideoPreviewLayer *l in images) {
             if (!SimCamDeviceIsConnected() || generation != atomic_load(&gConnectionGeneration)) continue;
-            l.contents = (__bridge id)cg;
+            if ([self tracksPreviewLayer:l]) l.contents = [images objectForKey:l];
         }
-        CGImageRelease(cg);
     });
 }
 
-- (CVPixelBufferRef)newPixelBufferFromSurface CF_RETURNS_RETAINED {
-    return [self newPixelBufferFromSurfaceForceFresh:NO];
+- (CVPixelBufferRef)newPixelBufferFromSurfaceWithContent:(CGRect *)content CF_RETURNS_RETAINED {
+    return [self newPixelBufferFromSurfaceForceFresh:NO content:content];
 }
 
 // Wrap the latest shared IOSurface as a CVPixelBuffer — zero copy. Holding the
 // pixel buffer keeps the surface in use, so the host writer renders into a
 // different ring slot until we release it.
-- (CVPixelBufferRef)newPixelBufferFromSurfaceForceFresh:(BOOL)force CF_RETURNS_RETAINED {
+- (CVPixelBufferRef)newPixelBufferFromSurfaceForceFresh:(BOOL)force content:(CGRect *)content CF_RETURNS_RETAINED {
     @synchronized([SimCamRegistry class]) {
         if (!SimCamDeviceIsConnected()) return NULL;
         if (!gShmHeader || !gSurfaceTable) return NULL;
@@ -315,6 +496,8 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
         CVReturn r = CVPixelBufferCreateWithIOSurface(kCFAllocatorDefault, surface,
             (__bridge CFDictionaryRef)attrs, &pb);
         if (r != kCVReturnSuccess || !pb) return NULL;
+        SimCamContentRect rect = gContentRects ? gContentRects[idx] : (SimCamContentRect){ 0, 0, 0, 0 };
+        *content = CGRectMake(rect.x, rect.y, rect.width, rect.height);
 
         uint64_t seqB = atomic_load_explicit(&gShmHeader->frameSeq, memory_order_acquire);
         if (!force && seqA != seqB) {
@@ -326,14 +509,18 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
     }
 }
 
-- (CVPixelBufferRef)currentPixelBuffer CF_RETURNS_RETAINED {
+- (CVPixelBufferRef)newPixelBufferAtAngle:(NSInteger)angle CF_RETURNS_RETAINED {
     if (!SimCamDeviceIsConnected()) return NULL;
-    CVPixelBufferRef pb = [self newPixelBufferFromSurfaceForceFresh:YES];
-    return pb;
+    CGRect content;
+    CVPixelBufferRef canvas = [self newPixelBufferFromSurfaceForceFresh:YES content:&content];
+    if (!canvas) return NULL;
+    CVPixelBufferRef oriented = SimCamRenderOriented(canvas, content, angle);
+    CVPixelBufferRelease(canvas);
+    return oriented;
 }
 
 - (NSData *)currentSnapshotJPEGAtQuality:(CGFloat)q {
-    CVPixelBufferRef pb = [self currentPixelBuffer];
+    CVPixelBufferRef pb = [self newPixelBufferAtAngle:SimCamPoseAngle()];
     if (!pb) return nil;
     CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
     if (SimCamShouldMirror(AVCaptureDevicePositionFront)) {
@@ -350,37 +537,16 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
     return data;
 }
 
-- (CVPixelBufferRef)newPixelBufferNoSignal CF_RETURNS_RETAINED {
-    CVPixelBufferRef pb = NULL;
-    NSDictionary *attrs = @{ (id)kCVPixelBufferIOSurfacePropertiesKey: @{} };
-    CVReturn r = CVPixelBufferCreate(kCFAllocatorDefault, kFrameWidth, kFrameHeight,
-        kCVPixelFormatType_32BGRA, (__bridge CFDictionaryRef)attrs, &pb);
-    if (r != kCVReturnSuccess || !pb) return NULL;
-    CVPixelBufferLockBaseAddress(pb, 0);
-    uint8_t *base = (uint8_t *)CVPixelBufferGetBaseAddress(pb);
-    size_t bpr = CVPixelBufferGetBytesPerRow(pb);
-    for (size_t y = 0; y < kFrameHeight; y++) {
-        uint8_t *row = base + y * bpr;
-        for (size_t x = 0; x < kFrameWidth; x++) {
-            row[x * 4 + 0] = 0x18;
-            row[x * 4 + 1] = 0x18;
-            row[x * 4 + 2] = 0x18;
-            row[x * 4 + 3] = 0xFF;
-        }
-    }
-    CVPixelBufferUnlockBaseAddress(pb, 0);
-    return pb;
-}
-
-- (CMSampleBufferRef)newSampleBufferAtTime:(CMTime)pts CF_RETURNS_RETAINED {
+// The newest canvas, or the last one when the helper has nothing new. NULL means no signal yet.
+- (CVPixelBufferRef)newCanvasWithContent:(CGRect *)content CF_RETURNS_RETAINED {
     @synchronized([SimCamRegistry class]) {
         if (!SimCamDeviceIsConnected()) return NULL;
-        CVPixelBufferRef pb = [self newPixelBufferFromSurface];
+        CVPixelBufferRef pb = [self newPixelBufferFromSurfaceWithContent:content];
         if (pb) {
-            SimCamCacheFrame(pb);
-        } else {
-            pb = SimCamAcquireCachedPB();
+            SimCamCacheFrame(pb, *content);
+            return pb;
         }
+        pb = SimCamAcquireCachedPB(content);
         if (!pb) {
             static dispatch_once_t logOnce;
             dispatch_once(&logOnce, ^{
@@ -388,22 +554,8 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
                     gShmHeader ? @"attached" : @"unattached",
                     (unsigned long long)(gShmHeader ? atomic_load_explicit(&gShmHeader->frameSeq, memory_order_acquire) : 0));
             });
-            pb = [self newPixelBufferNoSignal];
         }
-        if (!pb) return NULL;
-
-        CMVideoFormatDescriptionRef fd = NULL;
-        CMVideoFormatDescriptionCreateForImageBuffer(kCFAllocatorDefault, pb, &fd);
-        CMSampleTimingInfo timing = {
-            .duration = CMTimeMake(1, (int32_t)kFrameRate),
-            .presentationTimeStamp = pts,
-            .decodeTimeStamp = kCMTimeInvalid,
-        };
-        CMSampleBufferRef sb = NULL;
-        CMSampleBufferCreateForImageBuffer(kCFAllocatorDefault, pb, true, NULL, NULL, fd, &timing, &sb);
-        if (fd) CFRelease(fd);
-        CVPixelBufferRelease(pb);
-        return sb;
+        return pb;
     }
 }
 
@@ -440,14 +592,16 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
         }
         }
         uint64_t generation = atomic_load(&gConnectionGeneration);
+        if (!SimCamDeviceIsConnected()) return;
         CMTime pts = CMTimeMake(frameIdx++, (int32_t)kFrameRate);
-        CMSampleBufferRef sb = [self newSampleBufferAtTime:pts];
-        if (!sb) return;
-        CVImageBufferRef pb = CMSampleBufferGetImageBuffer(sb);
-        [self pushFrameToLayers:pb generation:generation];
+        CGRect content = CGRectZero;
+        CVPixelBufferRef canvas = [self newCanvasWithContent:&content];
+        [self pushFrameToLayers:canvas content:content generation:generation];
         NSArray *snapshot;
         [self->_lock lock]; snapshot = [self->_entries copy]; [self->_lock unlock];
         BOOL anyDead = NO;
+        // Render once per angle.
+        NSMutableDictionary<NSNumber *, id> *samples = [NSMutableDictionary new];
         for (NSDictionary *e in snapshot) {
             AVCaptureVideoDataOutput *out = e[@"out"];
             SimCamWeakRef *ref = e[@"del"];
@@ -455,6 +609,14 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
             dispatch_queue_t q = e[@"queue"];
             if (!del) { anyDead = YES; continue; }
             if (!out || !SimCamOutputSessionIsRunning(out)) continue;
+            NSNumber *angle = @(SimCamConnectionAngle(SimCamFakeConnectionForOutput(out)));
+            if (!samples[angle]) {
+                id oriented = SimCamCachedOriented(canvas, content, angle.integerValue, NO);
+                CMSampleBufferRef made = oriented ? SimCamCreateSampleBuffer((__bridge CVPixelBufferRef)oriented, pts) : NULL;
+                if (!made) continue;
+                samples[angle] = CFBridgingRelease(made);
+            }
+            CMSampleBufferRef sb = (__bridge CMSampleBufferRef)samples[angle];
             CFRetain(sb);
             __weak SimCamWeakRef *weakRef = ref;
             dispatch_async(q, ^{
@@ -484,7 +646,7 @@ static CALayerContentsGravity SimCamContentsGravity(CALayer *layer) {
             }
             [self->_lock unlock];
         }
-        CFRelease(sb);
+        if (canvas) CVPixelBufferRelease(canvas);
     });
     dispatch_resume(_timer);
     [_lock unlock];
@@ -526,6 +688,8 @@ void SimCamFrameSourceOpenShmIfRequested(void) {
         close(fd);
         return;
     }
+    BOOL hasContentRects = (size_t)st.st_size >= (size_t)SimCamControlSizeWithContent();
+    if (hasContentRects) size = (size_t)SimCamControlSizeWithContent();
     void *map = mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
     close(fd);
     if (map == MAP_FAILED) {
@@ -572,16 +736,17 @@ void SimCamFrameSourceOpenShmIfRequested(void) {
 
     gShmHeader = hdr;
     gSurfaceTable = table;
-    kFrameWidth = hdr->width;
-    kFrameHeight = hdr->height;
+    gContentRects = hasContentRects ? (SimCamContentRect *)((uint8_t *)map + SimCamControlSize()) : NULL;
+    gShmMapSize = size;
     simcam_log(@"shm \"%s\" attached (%ux%u, %u/%u IOSurfaces resolved)",
                shmName, hdr->width, hdr->height, resolved, count);
 }
 
 static void SimCamCloseSource(void) {
-    if (gShmHeader) munmap(gShmHeader, (size_t)SimCamControlSize());
+    if (gShmHeader) munmap(gShmHeader, gShmMapSize);
     gShmHeader = NULL;
     gSurfaceTable = NULL;
+    gContentRects = NULL;
     gLastSeenSeq = 0;
     for (uint32_t i = 0; i < SIMCAM_SURFACE_RING; i++) {
         if (gSurfaces[i]) CFRelease(gSurfaces[i]);
@@ -590,10 +755,13 @@ static void SimCamCloseSource(void) {
     NSLock *lock = SimCamFrameCacheLock();
     [lock lock];
     if (gLastFramePB) CVPixelBufferRelease(gLastFramePB);
-    if (gLastFrameCGImage) CGImageRelease(gLastFrameCGImage);
     gLastFramePB = NULL;
-    gLastFrameCGImage = NULL;
     [lock unlock];
+    [gOrientedLock lock];
+    gOrientedCanvas = nil;
+    [gOrientedBuffers removeAllObjects];
+    [gOrientedImages removeAllObjects];
+    [gOrientedLock unlock];
 }
 
 static void SimCamRefreshDevice(void) {

@@ -150,3 +150,26 @@ export function killHelpersForDevice(udid: string): void {
   }
 }
 
+/** Writes a 24-bit BMP whose pixel at (x, y), top-left origin, is `color(x, y)` as [red, green, blue]. */
+export function writeBmp(
+  path: string,
+  width: number,
+  height: number,
+  color: (x: number, y: number) => readonly [number, number, number],
+): string {
+  const rowBytes = Math.ceil(width * 3 / 4) * 4;
+  const bmp = Buffer.alloc(54 + rowBytes * height);
+  bmp.write("BM"); bmp.writeUInt32LE(bmp.length, 2); bmp.writeUInt32LE(54, 10);
+  bmp.writeUInt32LE(40, 14); bmp.writeInt32LE(width, 18); bmp.writeInt32LE(height, 22);
+  bmp.writeUInt16LE(1, 26); bmp.writeUInt16LE(24, 28); bmp.writeUInt32LE(rowBytes * height, 34);
+  // BMP rows run bottom-up.
+  for (let row = 0; row < height; row++) {
+    for (let x = 0; x < width; x++) {
+      const [red, green, blue] = color(x, height - 1 - row);
+      const i = 54 + row * rowBytes + x * 3;
+      bmp[i] = blue; bmp[i + 1] = green; bmp[i + 2] = red;
+    }
+  }
+  writeFileSync(path, bmp);
+  return path;
+}

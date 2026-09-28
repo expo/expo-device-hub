@@ -6,9 +6,10 @@
 #import <CoreMedia/CoreMedia.h>
 #import <CoreVideo/CoreVideo.h>
 #import <CoreImage/CoreImage.h>
-#import <Accelerate/Accelerate.h>
 #import <ImageIO/ImageIO.h>
 #import <IOSurface/IOSurface.h>
+#import <Metal/Metal.h>
+#import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 
 #include <fcntl.h>
 #include <errno.h>
@@ -26,10 +27,11 @@
 
 static SimCamShmHeader *gHeader = NULL;
 static SimCamSurfaceTable *gSurfaceTable = NULL;
+static SimCamContentRect *gContentRects = NULL;
 static IOSurfaceRef gSurfaces[SIMCAM_SURFACE_RING];
 static uint32_t gWriteIndex = 0;            // last ring slot rendered into
-static uint32_t gWidth = SIMCAM_DEFAULT_WIDTH;
-static uint32_t gHeight = SIMCAM_DEFAULT_HEIGHT;
+static uint32_t gWidth = SIMCAM_CANVAS_SIZE;
+static uint32_t gHeight = SIMCAM_CANVAS_SIZE;
 static const char *gShmName = NULL;
 static volatile sig_atomic_t gShouldExit = 0;
 static atomic_uint_fast64_t gFrameSeq = 0;
@@ -47,30 +49,44 @@ static void HandleSig(int sig) { (void)sig; gShouldExit = 1; }
 static uint8_t ParseMirrorCode(NSString *mode);
 static NSString *MirrorName(uint8_t code);
 
-// Publish a fully-prepared BGRA frame (gWidth x gHeight, packed at gWidth*4
-// bytes per row) into the next free ring surface. Writers MUST go through this
-// so latestIndex/frameSeq stay coherent for the dylib's tear-detection check.
-static BOOL PublishFrame(const uint8_t *bgra) {
-    if (!gHeader || !gSurfaceTable || !bgra) return NO;
+// Pick a ring surface the reader isn't holding and isn't the one it last published, so an
+// in-flight frame is never overwritten mid-read. Writers MUST finish with CommitSurface so
+// latestIndex/frameSeq stay coherent for the dylib's tear-detection check.
+static BOOL AcquireSurface(uint32_t *outIdx) {
+    if (!gHeader || !gSurfaceTable) return NO;
     uint32_t count = gSurfaceTable->surfaceCount;
     if (count == 0) return NO;
-
-    // Render into a surface the reader isn't holding and isn't the one it last
-    // published, so an in-flight frame is never overwritten mid-read.
     uint32_t latest = gSurfaceTable->latestIndex;
     uint32_t idx = gWriteIndex;
-    BOOL found = NO;
     for (uint32_t tries = 0; tries < count; tries++) {
         idx = (idx + 1) % count;
         if (idx == latest) continue;
         if (!IOSurfaceIsInUse(gSurfaces[idx])) {
-            found = YES;
-            break;
+            gWriteIndex = idx;
+            *outIdx = idx;
+            return YES;
         }
     }
-    if (!found) return NO;
-    gWriteIndex = idx;
+    return NO;
+}
 
+// `content` is where the upright source sits in the canvas; the injector crops to it.
+static void CommitSurface(uint32_t idx, CGRect content) {
+    gContentRects[idx] = (SimCamContentRect){
+        (uint16_t)content.origin.x, (uint16_t)content.origin.y,
+        (uint16_t)content.size.width, (uint16_t)content.size.height,
+    };
+    gSurfaceTable->latestIndex = idx;
+    gHeader->timestampNs = MachAbsToNs(mach_absolute_time());
+    atomic_thread_fence(memory_order_release);
+    uint64_t next = atomic_fetch_add(&gFrameSeq, 1) + 1;
+    atomic_store_explicit(&gHeader->frameSeq, next, memory_order_release);
+}
+
+// Publish a fully-prepared BGRA canvas (gWidth x gHeight, packed at gWidth*4 bytes per row).
+static BOOL PublishFrame(const uint8_t *bgra, CGRect content) {
+    uint32_t idx;
+    if (!bgra || !AcquireSurface(&idx)) return NO;
     IOSurfaceRef surface = gSurfaces[idx];
     IOSurfaceLock(surface, 0, NULL);
     uint8_t *dst = (uint8_t *)IOSurfaceGetBaseAddress(surface);
@@ -84,12 +100,7 @@ static BOOL PublishFrame(const uint8_t *bgra) {
         }
     }
     IOSurfaceUnlock(surface, 0, NULL);
-
-    gSurfaceTable->latestIndex = idx;
-    gHeader->timestampNs = MachAbsToNs(mach_absolute_time());
-    atomic_thread_fence(memory_order_release);
-    uint64_t next = atomic_fetch_add(&gFrameSeq, 1) + 1;
-    atomic_store_explicit(&gHeader->frameSeq, next, memory_order_release);
+    CommitSurface(idx, content);
     return YES;
 }
 
@@ -102,6 +113,7 @@ typedef NS_ENUM(NSInteger, SimCamSourceKind) {
     SimCamSourceImage,
     SimCamSourceVideo,
     SimCamSourceStream,
+    SimCamSourceSynthetic,
 };
 static NSString *SourceName(SimCamSourceKind k);
 
@@ -117,6 +129,100 @@ static uint64_t gLastStreamFrameNs = 0;
 static dispatch_source_t gStreamIdleTimer;
 static NSString *gActiveArg = nil;          // selected camera name, image path
 
+// Opaque black, so an injector that shows the whole canvas (older builds) does not show the app
+// behind the preview through the bars.
+static void FillBlack(uint8_t *bgra, size_t size) {
+    static const uint32_t black = 0xFF000000u;
+    memset_pattern4(bgra, &black, size);
+}
+
+// Whole pixels only, so the injector's crop never picks up a half-covered edge.
+static CGRect AspectFitRect(size_t srcW, size_t srcH) {
+    double scale = MIN((double)gWidth / srcW, (double)gHeight / srcH);
+    double w = MAX(1.0, floor(srcW * scale)), h = MAX(1.0, floor(srcH * scale));
+    return CGRectMake(floor((gWidth - w) / 2.0), floor((gHeight - h) / 2.0), w, h);
+}
+
+static CGRect WholeCanvas(void) { return CGRectMake(0, 0, gWidth, gHeight); }
+
+// Core Graphics is y-up.
+static CGRect FlipY(CGRect rect) {
+    return CGRectMake(rect.origin.x, gHeight - CGRectGetMaxY(rect), rect.size.width, rect.size.height);
+}
+
+#pragma mark GPU scaler (webcam)
+
+static id<MTLDevice> gMetalDevice;
+static id<MTLCommandQueue> gMetalQueue;
+static CVMetalTextureCacheRef gMetalTextureCache;
+static MPSImageLanczosScale *gScaler;
+static id<MTLTexture> gSurfaceTextures[SIMCAM_SURFACE_RING];
+
+static BOOL MetalScalerReady(void) {
+    static BOOL ready;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        gMetalDevice = MTLCreateSystemDefaultDevice();
+        if (!gMetalDevice || !MPSSupportsMTLDevice(gMetalDevice)) return;
+        gMetalQueue = [gMetalDevice newCommandQueue];
+        if (CVMetalTextureCacheCreate(kCFAllocatorDefault, NULL, gMetalDevice, NULL, &gMetalTextureCache) != kCVReturnSuccess) return;
+        gScaler = [[MPSImageLanczosScale alloc] initWithDevice:gMetalDevice];
+        ready = gMetalQueue && gScaler;
+    });
+    return ready;
+}
+
+static id<MTLTexture> SurfaceTexture(uint32_t idx) {
+    if (!gSurfaceTextures[idx]) {
+        MTLTextureDescriptor *desc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                                                        width:gWidth
+                                                                                       height:gHeight
+                                                                                    mipmapped:NO];
+        desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite | MTLTextureUsageRenderTarget;
+        gSurfaceTextures[idx] = [gMetalDevice newTextureWithDescriptor:desc iosurface:gSurfaces[idx] plane:0];
+    }
+    return gSurfaceTextures[idx];
+}
+
+// Letterbox a BGRA pixel buffer into the next ring surface on the GPU.
+static BOOL ScalePixelBufferIntoSurface(CVPixelBufferRef pb) {
+    if (!gHeader || !pb || CVPixelBufferGetPixelFormatType(pb) != kCVPixelFormatType_32BGRA) return NO;
+    size_t srcW = CVPixelBufferGetWidth(pb), srcH = CVPixelBufferGetHeight(pb);
+    if (srcW == 0 || srcH == 0 || !MetalScalerReady()) return NO;
+    uint32_t idx;
+    if (!AcquireSurface(&idx)) return NO;
+    id<MTLTexture> dst = SurfaceTexture(idx);
+    CVMetalTextureRef srcRef = NULL;
+    if (!dst || CVMetalTextureCacheCreateTextureFromImage(kCFAllocatorDefault, gMetalTextureCache, pb, NULL,
+            MTLPixelFormatBGRA8Unorm, srcW, srcH, 0, &srcRef) != kCVReturnSuccess) return NO;
+    CGRect fit = AspectFitRect(srcW, srcH);
+    id<MTLCommandBuffer> commands = [gMetalQueue commandBuffer];
+    MTLRenderPassDescriptor *clear = [MTLRenderPassDescriptor renderPassDescriptor];
+    clear.colorAttachments[0].texture = dst;
+    clear.colorAttachments[0].loadAction = MTLLoadActionClear;
+    clear.colorAttachments[0].clearColor = MTLClearColorMake(0, 0, 0, 1);
+    clear.colorAttachments[0].storeAction = MTLStoreActionStore;
+    [[commands renderCommandEncoderWithDescriptor:clear] endEncoding];
+    MPSScaleTransform scale = { fit.size.width / srcW, fit.size.height / srcH, 0, 0 };
+    gScaler.scaleTransform = &scale;
+    gScaler.clipRect = MTLRegionMake2D((NSUInteger)fit.origin.x, (NSUInteger)fit.origin.y,
+                                       (NSUInteger)fit.size.width, (NSUInteger)fit.size.height);
+    [gScaler encodeToCommandBuffer:commands sourceTexture:CVMetalTextureGetTexture(srcRef) destinationTexture:dst];
+    [commands commit];
+    [commands waitUntilCompleted];
+    CFRelease(srcRef);
+    if (commands.status != MTLCommandBufferStatusCompleted) return NO;
+    CommitSurface(idx, fit);
+    return YES;
+}
+
+static BOOL PublishPixelBufferScaled(CVPixelBufferRef pb) {
+    if (ScalePixelBufferIntoSurface(pb)) return YES;
+    static dispatch_once_t logged;
+    dispatch_once(&logged, ^{ fprintf(stderr, "[serve-sim-camera] a webcam frame could not be published\n"); });
+    return NO;
+}
+
 @interface SimCamWebcamWriter : NSObject <AVCaptureVideoDataOutputSampleBufferDelegate>
 @end
 
@@ -124,27 +230,7 @@ static NSString *gActiveArg = nil;          // selected camera name, image path
 - (void)captureOutput:(AVCaptureOutput *)out
 didOutputSampleBuffer:(CMSampleBufferRef)sb
        fromConnection:(AVCaptureConnection *)conn {
-    CVImageBufferRef pb = CMSampleBufferGetImageBuffer(sb);
-    if (!pb || !gHeader) return;
-    if (CVPixelBufferGetPixelFormatType(pb) != kCVPixelFormatType_32BGRA) return;
-    CVPixelBufferLockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-    size_t srcW = CVPixelBufferGetWidth(pb);
-    size_t srcH = CVPixelBufferGetHeight(pb);
-    size_t srcStride = CVPixelBufferGetBytesPerRow(pb);
-    void *src = CVPixelBufferGetBaseAddress(pb);
-    static uint8_t *scratch = NULL;
-    static size_t scratchSize = 0;
-    size_t need = (size_t)gWidth * gHeight * 4;
-    if (scratchSize < need) {
-        free(scratch);
-        scratch = malloc(need);
-        scratchSize = need;
-    }
-    vImage_Buffer s = { src, srcH, srcW, srcStride };
-    vImage_Buffer d = { scratch, gHeight, gWidth, (size_t)gWidth * 4 };
-    vImage_Error verr = vImageScale_ARGB8888(&s, &d, NULL, kvImageHighQualityResampling);
-    CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
-    if (verr == kvImageNoError) PublishFrame(scratch);
+    PublishPixelBufferScaled(CMSampleBufferGetImageBuffer(sb));
 }
 @end
 
@@ -301,7 +387,7 @@ static void StartPlaceholderSource(void) {
 
     __block uint64_t frameIdx = 0;
     RenderPlaceholderFrame(buf, frameIdx++);
-    PublishFrame(buf);
+    PublishFrame(buf, WholeCanvas());
 
     gPlaceholderTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
         dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0));
@@ -315,7 +401,7 @@ static void StartPlaceholderSource(void) {
         dispatch_time(DISPATCH_TIME_NOW, (int64_t)intervalNs), intervalNs, intervalNs / 10);
     dispatch_source_set_event_handler(gPlaceholderTimer, ^{
         RenderPlaceholderFrame(buf, frameIdx++);
-        PublishFrame(buf);
+        PublishFrame(buf, WholeCanvas());
     });
     dispatch_resume(gPlaceholderTimer);
     fprintf(stderr, "[serve-sim-camera] placeholder source running @ 30fps (%ux%u, first frame seq=%llu)\n",
@@ -360,6 +446,7 @@ static AVCaptureDevice *PickWebcamDevice(NSString *idOrName) {
 }
 
 static BOOL StartWebcamSource(NSString *deviceArg, NSString **err) {
+    if (!MetalScalerReady()) { if (err) *err = @"the GPU scaler is unavailable"; return NO; }
     AVCaptureDevice *device = PickWebcamDevice(deviceArg);
     if (!device) { if (err) *err = @"no matching camera"; return NO; }
     NSError *e = nil;
@@ -393,13 +480,82 @@ static void StopWebcamSource(void) {
     }
 }
 
+#pragma mark Synthetic webcam source (tests)
+
+// Generated frames through the webcam's GPU path, so tests cover it without a host camera.
+// The arg lists frame sizes, for example "1280x720,480x640"; each shows for half a second.
+static dispatch_source_t gSyntheticTimer;
+static dispatch_semaphore_t gSyntheticStopped;
+
+// Quadrants red, green / blue, white, so a test can tell the letterbox and the rotation apart.
+static CVPixelBufferRef CreateSyntheticFrame(size_t w, size_t h) CF_RETURNS_RETAINED {
+    NSDictionary *attrs = @{
+        (id)kCVPixelBufferIOSurfacePropertiesKey: @{},
+        (id)kCVPixelBufferMetalCompatibilityKey: @YES,
+    };
+    CVPixelBufferRef pb = NULL;
+    if (CVPixelBufferCreate(kCFAllocatorDefault, w, h, kCVPixelFormatType_32BGRA,
+            (__bridge CFDictionaryRef)attrs, &pb) != kCVReturnSuccess) return NULL;
+    static const uint32_t colors[4] = { 0xFFFF0000u, 0xFF00FF00u, 0xFF0000FFu, 0xFFFFFFFFu };
+    CVPixelBufferLockBaseAddress(pb, 0);
+    uint8_t *base = CVPixelBufferGetBaseAddress(pb);
+    size_t bpr = CVPixelBufferGetBytesPerRow(pb);
+    for (size_t y = 0; y < h; y++) {
+        uint32_t *row = (uint32_t *)(base + y * bpr);
+        for (size_t x = 0; x < w; x++) row[x] = colors[(y >= h / 2) * 2 + (x >= w / 2)];
+    }
+    CVPixelBufferUnlockBaseAddress(pb, 0);
+    return pb;
+}
+
+static BOOL StartSyntheticSource(NSString *arg, NSString **err) {
+    NSMutableArray *frames = [NSMutableArray new];
+    for (NSString *size in [arg componentsSeparatedByString:@","]) {
+        NSArray<NSString *> *wh = [size componentsSeparatedByString:@"x"];
+        NSInteger w = wh.count == 2 ? wh[0].integerValue : 0, h = wh.count == 2 ? wh[1].integerValue : 0;
+        CVPixelBufferRef pb = w > 0 && h > 0 && w <= 4096 && h <= 4096 ? CreateSyntheticFrame(w, h) : NULL;
+        if (!pb) { if (err) *err = @"synthetic source needs sizes like 1280x720,480x640"; return NO; }
+        [frames addObject:(__bridge_transfer id)pb];
+    }
+    if (!PublishPixelBufferScaled((__bridge CVPixelBufferRef)frames[0])) {
+        if (err) *err = @"the GPU scaler is unavailable";
+        return NO;
+    }
+    gSyntheticTimer = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
+        dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0));
+    gSyntheticStopped = dispatch_semaphore_create(0);
+    dispatch_semaphore_t stopped = gSyntheticStopped;
+    dispatch_source_set_cancel_handler(gSyntheticTimer, ^{ dispatch_semaphore_signal(stopped); });
+    uint64_t intervalNs = NSEC_PER_SEC / 30;
+    dispatch_source_set_timer(gSyntheticTimer, dispatch_time(DISPATCH_TIME_NOW, (int64_t)intervalNs),
+        intervalNs, intervalNs / 10);
+    __block uint64_t frameIdx = 0;
+    dispatch_source_set_event_handler(gSyntheticTimer, ^{
+        CVPixelBufferRef pb = (__bridge CVPixelBufferRef)frames[(frameIdx++ / 15) % frames.count];
+        PublishPixelBufferScaled(pb);
+    });
+    dispatch_resume(gSyntheticTimer);
+    return YES;
+}
+
+static void StopSyntheticSource(void) {
+    if (!gSyntheticTimer) return;
+    dispatch_source_t timer = gSyntheticTimer;
+    dispatch_semaphore_t stopped = gSyntheticStopped;
+    gSyntheticTimer = NULL;
+    gSyntheticStopped = nil;
+    dispatch_source_cancel(timer);
+    dispatch_semaphore_wait(stopped, DISPATCH_TIME_FOREVER);
+}
+
 #pragma mark Image source
 
 // Aspect-fit a decoded image into a fresh shm-sized BGRA buffer and publish it.
 static BOOL PublishCGImage(CGImageRef img, NSString **err) {
     size_t bpr = (size_t)gWidth * 4;
-    uint8_t *buf = calloc(1, bpr * gHeight);
+    uint8_t *buf = malloc(bpr * gHeight);
     if (!buf) { if (err) *err = @"the host is out of memory for a camera frame"; return NO; }
+    FillBlack(buf, bpr * gHeight);
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGContextRef ctx = CGBitmapContextCreate(buf, gWidth, gHeight, 8, bpr, cs,
         kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little);
@@ -409,14 +565,10 @@ static BOOL PublishCGImage(CGImageRef img, NSString **err) {
         if (err) *err = @"the camera frame could not be prepared";
         return NO;
     }
-    size_t iw = CGImageGetWidth(img), ih = CGImageGetHeight(img);
-    double sx = (double)gWidth / iw, sy = (double)gHeight / ih;
-    // Aspect-fit file sources so the full source frame remains visible.
-    double s = MIN(sx, sy);
-    double dw = iw * s, dh = ih * s;
-    CGContextDrawImage(ctx, CGRectMake((gWidth - dw)/2.0, (gHeight - dh)/2.0, dw, dh), img);
+    CGRect fit = AspectFitRect(CGImageGetWidth(img), CGImageGetHeight(img));
+    CGContextDrawImage(ctx, FlipY(fit), img);
     CGContextRelease(ctx);
-    BOOL published = PublishFrame(buf);
+    BOOL published = PublishFrame(buf, fit);
     free(buf);
     if (!published && err) *err = @"no writable camera frame buffer was available";
     return published;
@@ -497,7 +649,7 @@ static BOOL PublishEncodedFrame(NSData *encoded) {
 #pragma mark Video source (looping playback via AVAssetReader)
 
 // Looping AVAsset playback at native FPS. Frames are decoded as BGRA on a
-// background queue, scaled with vImage into the shm buffer, then paced with
+// background queue, fitted into the shm canvas, then paced with
 // `clock_nanosleep` against the track's presentation timestamps so playback
 // runs at real time. When the reader hits AVAssetReaderStatusCompleted we
 // recreate it and reset the wall-clock anchor so the loop boundary is
@@ -539,7 +691,7 @@ static AVAssetReaderTrackOutput *MakeVideoOutput(AVAssetReader **outReader,
 // Aspect-fit a source pixel buffer into a transient BGRA buffer sized to
 // the shm region. We allocate once per call so the caller is free to free
 // the result without worrying about lifetime sharing.
-static uint8_t *RenderPixelBufferToShmSize(CVPixelBufferRef pb) {
+static uint8_t *RenderPixelBufferToShmSize(CVPixelBufferRef pb, CGRect *content) {
     size_t srcW = CVPixelBufferGetWidth(pb);
     size_t srcH = CVPixelBufferGetHeight(pb);
     if (srcW == 0 || srcH == 0) return NULL;
@@ -552,7 +704,8 @@ static uint8_t *RenderPixelBufferToShmSize(CVPixelBufferRef pb) {
     }
 
     size_t bpr = (size_t)gWidth * 4;
-    uint8_t *out = calloc(1, bpr * gHeight);
+    uint8_t *out = malloc(bpr * gHeight);
+    if (out) FillBlack(out, bpr * gHeight);
     CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();
     CGContextRef ctx = CGBitmapContextCreate(out, gWidth, gHeight, 8, bpr, cs,
         kCGImageAlphaNoneSkipFirst | kCGBitmapByteOrder32Little);
@@ -567,11 +720,9 @@ static uint8_t *RenderPixelBufferToShmSize(CVPixelBufferRef pb) {
     CGColorSpaceRelease(imgCs);
     CGDataProviderRelease(dp);
 
-    double sx = (double)gWidth / srcW, sy = (double)gHeight / srcH;
-    // Keep video file playback letterboxed instead of cropping the source.
-    double s = MIN(sx, sy);
-    double dw = srcW * s, dh = srcH * s;
-    CGContextDrawImage(ctx, CGRectMake((gWidth - dw)/2.0, (gHeight - dh)/2.0, dw, dh), img);
+    CGRect fit = AspectFitRect(srcW, srcH);
+    CGContextDrawImage(ctx, FlipY(fit), img);
+    *content = fit;
     CGImageRelease(img);
     CGContextRelease(ctx);
     CVPixelBufferUnlockBaseAddress(pb, kCVPixelBufferLock_ReadOnly);
@@ -605,7 +756,8 @@ static void RunVideoLoop(NSString *path) {
             CMTime pts = CMSampleBufferGetPresentationTimeStamp(sb);
             CVPixelBufferRef pb = CMSampleBufferGetImageBuffer(sb);
             if (pb) {
-                uint8_t *frame = RenderPixelBufferToShmSize(pb);
+                CGRect content;
+                uint8_t *frame = RenderPixelBufferToShmSize(pb, &content);
                 if (frame) {
                     // Pace against wall clock: don't publish until the
                     // frame's PTS has caught up. Skips backwards (e.g.
@@ -629,7 +781,7 @@ static void RunVideoLoop(NSString *path) {
                             }
                         }
                     }
-                    PublishFrame(frame);
+                    PublishFrame(frame, content);
                     free(frame);
                 }
             }
@@ -682,6 +834,7 @@ static void StopSource(SimCamSourceKind kind) {
         case SimCamSourceImage:       StopImageSource(); break;
         case SimCamSourceVideo:       StopVideoSource(); break;
         case SimCamSourceStream:      StopStreamSource(); break;
+        case SimCamSourceSynthetic:   StopSyntheticSource(); break;
         default: break;
     }
 }
@@ -693,6 +846,7 @@ static BOOL StartSource(SimCamSourceKind kind, NSString *arg, NSString **err) {
         case SimCamSourceImage:       return StartImageSource(arg, err);
         case SimCamSourceVideo:       return StartVideoSource(arg, err);
         case SimCamSourceStream:      return StartStreamSource(err);
+        case SimCamSourceSynthetic:   return StartSyntheticSource(arg, err);
         default: return YES;
     }
 }
@@ -747,6 +901,7 @@ static SimCamSourceKind ParseSourceName(NSString *name) {
     if ([name isEqualToString:@"image"])       return SimCamSourceImage;
     if ([name isEqualToString:@"video"])       return SimCamSourceVideo;
     if ([name isEqualToString:@"stream"])      return SimCamSourceStream;
+    if ([name isEqualToString:@"synthetic"])   return SimCamSourceSynthetic;
     if ([name isEqualToString:@"none"])        return SimCamSourceNone;
     return -1;
 }
@@ -757,6 +912,7 @@ static NSString *SourceName(SimCamSourceKind k) {
         case SimCamSourceImage:       return @"image";
         case SimCamSourceVideo:       return @"video";
         case SimCamSourceStream:      return @"stream";
+        case SimCamSourceSynthetic:   return @"synthetic";
         default:                      return @"none";
     }
 }
@@ -998,12 +1154,13 @@ static BOOL CreateSurfaces(void) {
 
 static void ReleaseSurfaces(void) {
     for (uint32_t i = 0; i < SIMCAM_SURFACE_RING; i++) {
+        gSurfaceTextures[i] = nil;
         if (gSurfaces[i]) { CFRelease(gSurfaces[i]); gSurfaces[i] = NULL; }
     }
 }
 
 static int OpenShm(const char *name) {
-    size_t size = (size_t)SimCamControlSize();
+    size_t size = (size_t)SimCamControlSizeWithContent();
     shm_unlink(name);
     int fd = shm_open(name, O_CREAT | O_RDWR, 0644);
     if (fd < 0) { perror("shm_open"); return -1; }
@@ -1012,6 +1169,7 @@ static int OpenShm(const char *name) {
     if (map == MAP_FAILED) { perror("mmap"); close(fd); return -1; }
     gHeader = (SimCamShmHeader *)map;
     gSurfaceTable = (SimCamSurfaceTable *)((uint8_t *)map + sizeof(SimCamShmHeader));
+    gContentRects = (SimCamContentRect *)((uint8_t *)map + SimCamControlSize());
     memset(map, 0, size);
     if (!CreateSurfaces()) { close(fd); return -1; }
     gHeader->magic = SIMCAM_SHM_MAGIC;

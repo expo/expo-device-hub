@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawn } from "child_process";
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -9,7 +9,7 @@ import { cameraCapability, shmNameForUdid } from "../camera-runtime";
 import { clearLaunchState, armCapabilityLoader, isCapabilityEnabled, removeCapabilityLoaderSync } from "../launch-manager";
 import { writeCameraFrame, closeCameraFrameStreams, claimCameraFrameStream } from "../camera-frames";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
-import { useTempStateDir } from "./helpers";
+import { useTempStateDir, writeBmp } from "./helpers";
 
 const PKG_DIR = join(import.meta.dir, "../..");
 const CLI = join(PKG_DIR, "dist/serve-sim.js");
@@ -59,16 +59,17 @@ function springboardPid(): string {
   expect(pid).toMatch(/^\d+$/);
   return pid;
 }
-function image(name: string, red: number, blue: number): string {
-  const bmp = Buffer.alloc(54 + 48);
-  bmp.write("BM"); bmp.writeUInt32LE(bmp.length, 2); bmp.writeUInt32LE(54, 10);
-  bmp.writeUInt32LE(40, 14); bmp.writeInt32LE(4, 18); bmp.writeInt32LE(4, 22);
-  bmp.writeUInt16LE(1, 26); bmp.writeUInt16LE(24, 28); bmp.writeUInt32LE(48, 34);
-  for (let i = 54; i < bmp.length; i += 3) { bmp[i] = blue; bmp[i + 2] = red; }
-  const path = join(scratch, name); writeFileSync(path, bmp); return path;
+function image(name: string, red: number, blue: number, width = 4, height = 4): string {
+  return writeBmp(join(scratch, name), width, height, () => [red, 0, blue]);
 }
 const red = image("red.bmp", 255, 0);
 const blue = image("blue.bmp", 0, 255);
+const landscapeRed = image("landscape-red.bmp", 255, 0, 16, 9);
+// Red, green / blue, white quadrants, so a frame shows which way it is turned.
+const quad = writeBmp(join(scratch, "quadrants.bmp"), 64, 64, (x, y) =>
+  y < 32 ? (x < 32 ? [255, 0, 0] : [0, 255, 0]) : (x < 32 ? [0, 0, 255] : [255, 255, 255]));
+// Quadrant colors (top-left, top-right, bottom-left, bottom-right) after a clockwise turn.
+const TURNED: Record<number, string> = { 0: "R,G,B,W", 90: "B,R,W,G", 180: "W,B,G,R", 270: "G,W,R,B" };
 
 beforeAll(async () => {
   if (!ready) return;
@@ -299,6 +300,121 @@ describe.skipIf(!ready)("device-wide camera lifecycle", () => {
       cli(["disable"]);
     }
   }, 60_000);
+  test("landscape image arrives in a portrait frame with opaque black padding", async () => {
+    try { simctl(["terminate", udid!, APP]); } catch {}
+    cli(["enable", "--file", landscapeRed]);
+    try {
+      const before = lines(APP, "fit").length;
+      simctl(["launch", udid!, APP, "-ServeSimFixtureLandscapeFit"]);
+      await waitFor(() => lines(APP, "fit").length > before);
+      expect(lines(APP, "size").at(-1)).toEndWith("\t720x1280");
+      expect(lines(APP, "frame").at(-1)).toEndWith("\t255,0,0");
+      expect(lines(APP, "edge").at(-1)).toEndWith("\t0,0,0,255");
+      expect(lines(APP, "fit").at(-1)).toEndWith("\t0,0,0,255|255,0,0,255");
+    } finally {
+      cli(["disable"]);
+    }
+  }, 60_000);
+  test("each connection gets the frame turned from the upright pose by its angle", async () => {
+    cli(["enable", "--file", quad]);
+    try {
+      for (const [angle, expected] of [
+        [undefined, "720x1280 R,G,B,W"],
+        [0, `1280x720 ${TURNED[270]}`],
+        [180, `1280x720 ${TURNED[90]}`],
+        [270, `720x1280 ${TURNED[180]}`],
+      ] as const) {
+        try { simctl(["terminate", udid!, APP]); } catch {}
+        const before = lines(APP, "quad").length;
+        const args = angle === undefined ? [] : ["-ServeSimFixtureAngle", String(angle)];
+        simctl(["launch", udid!, APP, "-ServeSimFixtureQuad", ...args]);
+        await waitFor(() => lines(APP, "quad").length > before);
+        expect(lines(APP, "quad").at(-1)).toEndWith(`\t${expected}`);
+      }
+    } finally {
+      cli(["disable"]);
+    }
+  }, 90_000);
+  test("rotating the simulator turns the scene in a running app's frames", async () => {
+    const { NativeHid, Orientation } = await import("../native");
+    const hid = new NativeHid(udid!);
+    try { simctl(["terminate", udid!, APP]); } catch {}
+    cli(["enable", "--file", quad]);
+    try {
+      const quads = () => lines(APP, "quad").map((line) => line.split("\t")[2]);
+      const before = quads().length;
+      simctl(["launch", udid!, APP, "-ServeSimFixtureQuad"]);
+      await waitFor(() => quads().slice(before).includes("720x1280 R,G,B,W"));
+      // serve-sim's landscapeRight is UIDeviceOrientationLandscapeLeft, home on the right: the 0 degree
+      // pose, so the portrait connection is a quarter turn clockwise past it.
+      for (const [pose, turn] of [
+        [Orientation.landscapeRight, 90],
+        [Orientation.portraitUpsideDown, 180],
+        [Orientation.landscapeLeft, 270],
+      ] as const) {
+        expect(await hid.orientation(pose)).toBe(true);
+        await waitFor(() => quads().at(-1) === `720x1280 ${TURNED[turn]}`);
+      }
+      expect(await hid.orientation(Orientation.portrait)).toBe(true);
+      await waitFor(() => quads().at(-1) === "720x1280 R,G,B,W");
+    } finally {
+      await hid.orientation(Orientation.portrait);
+      cli(["disable"]);
+    }
+  }, 90_000);
+  test("the preview follows its own connection angle", async () => {
+    try { simctl(["terminate", udid!, APP]); } catch {}
+    cli(["enable", "--file", quad]);
+    try {
+      const before = lines(APP, "preview-quad").length;
+      simctl(["launch", udid!, APP, "-ServeSimFixtureGravityAspect", "-ServeSimFixturePreviewAngle", "0"]);
+      await waitFor(() => lines(APP, "preview-quad").length > before);
+      expect(lines(APP, "preview-quad").at(-1)).toEndWith(`\t1280x720 ${TURNED[270]}`);
+      expect(lines(APP, "preview-connection").at(-1)).toEndWith("\tlayer");
+    } finally {
+      cli(["disable"]);
+    }
+  }, 60_000);
+  test("a photo follows its connection angle", async () => {
+    try { simctl(["terminate", udid!, APP]); } catch {}
+    cli(["enable", "--file", quad]);
+    try {
+      const before = lines(APP, "photo").length;
+      const quads = lines(APP, "photo-quad").length;
+      simctl(["launch", udid!, APP, "-ServeSimFixturePhoto", "-ServeSimFixtureAngle", "0"]);
+      await waitFor(() => lines(APP, "photo-quad").length > quads);
+      expect(lines(APP, "photo").slice(before).find((line) => line.includes("\tprocessed "))).toEndWith("\tprocessed 1280x720");
+      expect(lines(APP, "photo-quad").at(-1)).toEndWith(`\t${TURNED[270]}`);
+    } finally {
+      cli(["disable"]);
+    }
+  }, 60_000);
+  test("webcam frames of changing sizes are letterboxed on the GPU", async () => {
+    try { simctl(["terminate", udid!, APP]); } catch {}
+    const enabled = cli(["enable", "--file", red]).match(/helper pid: (\d+)|"helperPid":(\d+)/);
+    expect(enabled).not.toBeNull();
+    const first = Number(enabled![1] ?? enabled![2]);
+    process.kill(first, "SIGTERM");
+    await waitFor(() => { try { process.kill(first, 0); return false; } catch { return true; } });
+    // The synthetic source feeds generated frames through the webcam's scaler.
+    const synthetic = spawn(HELPER, [
+      "--shm", shmNameForUdid(udid!), "--socket", join(scratch, "synthetic.sock"),
+      "--source", "synthetic", "--arg", "1280x720,480x640",
+    ], { stdio: "ignore" });
+    try {
+      const before = lines(APP, "box").length;
+      simctl(["launch", udid!, APP, "-ServeSimFixtureQuad"]);
+      const spans = () => lines(APP, "box").slice(before).map((line) => line.split("\t")[2]!.split(" ")[1]!.split(",").map(Number));
+      const near = (span: number[], expected: number[]) => span.every((value, i) => Math.abs(value - expected[i]!) <= 2);
+      // 16:9 fills 720x405 of the portrait frame, 3:4 fills 720x960.
+      await waitFor(() => spans().some((span) => near(span, [437, 842, 0, 719])));
+      await waitFor(() => spans().some((span) => near(span, [160, 1119, 0, 719])));
+      expect(lines(APP, "quad").at(-1)).toEndWith("\t720x1280 R,G,B,W");
+    } finally {
+      synthetic.kill("SIGKILL");
+      cli(["disable"]);
+    }
+  }, 90_000);
   test("queued cached frames do not arrive after disconnect", async () => {
     try { simctl(["terminate", udid!, APP]); } catch {}
     cli(["enable", "--file", red]);

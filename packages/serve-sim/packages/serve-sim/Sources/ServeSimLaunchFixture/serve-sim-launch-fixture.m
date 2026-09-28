@@ -23,6 +23,51 @@ static void Record(NSString *kind, NSString *detail) {
   [handle closeFile];
 }
 
+// The launch argument after `flag`, for options that carry a value.
+static NSString *FixtureArgument(NSString *flag) {
+  NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
+  NSUInteger i = [arguments indexOfObject:flag];
+  return i != NSNotFound && i + 1 < arguments.count ? arguments[i + 1] : nil;
+}
+
+static NSString *ColorName(unsigned r, unsigned g, unsigned b) {
+  if (r > 200 && g > 200 && b > 200) return @"W";
+  if (r > 200 && g < 60 && b < 60) return @"R";
+  if (g > 200 && r < 60 && b < 60) return @"G";
+  if (b > 200 && r < 60 && g < 60) return @"B";
+  if (r < 60 && g < 60 && b < 60) return @"K";
+  return @"?";
+}
+
+// Colors at the quadrant centers of the centered square of side `side`, top-left, top-right,
+// bottom-left, bottom-right. A quadrant test source shows which way the frame is turned.
+static NSString *QuadrantNames(const unsigned char *base, size_t stride, size_t width, size_t height,
+                               double side, BOOL bgra) {
+  NSMutableArray<NSString *> *names = [NSMutableArray new];
+  for (int row = -1; row <= 1; row += 2) {
+    for (int column = -1; column <= 1; column += 2) {
+      size_t x = (size_t)((double)width / 2 + column * side / 4), y = (size_t)((double)height / 2 + row * side / 4);
+      const unsigned char *p = base + y * stride + x * 4;
+      [names addObject:bgra ? ColorName(p[2], p[1], p[0]) : ColorName(p[0], p[1], p[2])];
+    }
+  }
+  return [names componentsJoinedByString:@","];
+}
+
+static NSString *ImageQuadrants(CGImageRef image) {
+  size_t width = CGImageGetWidth(image), height = CGImageGetHeight(image);
+  unsigned char *bytes = calloc(width * height, 4);
+  CGColorSpaceRef space = CGColorSpaceCreateDeviceRGB();
+  CGContextRef context = CGBitmapContextCreate(bytes, width, height, 8, width * 4, space,
+      (CGBitmapInfo)kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+  CGContextDrawImage(context, CGRectMake(0, 0, (CGFloat)width, (CGFloat)height), image);
+  NSString *names = QuadrantNames(bytes, width * 4, width, height, (double)MIN(width, height), NO);
+  CGContextRelease(context);
+  CGColorSpaceRelease(space);
+  free(bytes);
+  return names;
+}
+
 static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
   for (UIOpenURLContext *context in contexts) {
     Record(@"openurl", context.URL.absoluteString);
@@ -139,6 +184,7 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
   UIImage *image = [UIImage imageWithData:photo.fileDataRepresentation];
   Record(@"photo", error ? [NSString stringWithFormat:@"processed error=%ld", (long)error.code]
                          : [NSString stringWithFormat:@"processed %.0fx%.0f", image.size.width, image.size.height]);
+  if (!error) Record(@"photo-quad", ImageQuadrants(image.CGImage));
 }
 
 - (void)captureOutput:(AVCapturePhotoOutput *)output
@@ -171,6 +217,8 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
 @property(nonatomic, strong) dispatch_queue_t queuedFrames;
 @property(nonatomic) BOOL changedGravity;
 @property(nonatomic) BOOL sampledPreview;
+@property(nonatomic, copy) NSString *lastQuad;
+@property(nonatomic, copy) NSString *lastBox;
 @property(nonatomic, strong) RunningChangeCounter *runningChanges;
 @property(nonatomic, strong) AVCaptureVideoDataOutput *stopQueueOutput;
 @property(nonatomic, strong) AVCapturePhotoOutput *photoOutput;
@@ -195,6 +243,7 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
   [self.window makeKeyAndVisible];
   UIView *root = self.window.rootViewController.view;
   Record(@"permission", [NSString stringWithFormat:@"%ld", (long)[AVCaptureDevice authorizationStatusForMediaType:AVMediaTypeVideo]]);
+
   if ([NSProcessInfo.processInfo.arguments containsObject:@"-ServeSimFixtureNativeFirst"]) {
     [self runNativeFirstSession];
     return;
@@ -339,11 +388,23 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
     self.photoRecorder = [PhotoRecorder new];
     [session addOutput:self.photoOutput];
   }
+  NSString *angle = FixtureArgument(@"-ServeSimFixtureAngle");
+  if (angle) {
+    if (@available(iOS 17.0, *)) {
+      [output connectionWithMediaType:AVMediaTypeVideo].videoRotationAngle = angle.doubleValue;
+      [self.photoOutput connectionWithMediaType:AVMediaTypeVideo].videoRotationAngle = angle.doubleValue;
+    }
+  }
 
   // Assigning the session goes through setSession:, which is where serve-sim
   // hooks the preview. layerWithSession: sets it without that.
   AVCaptureVideoPreviewLayer *preview = [[AVCaptureVideoPreviewLayer alloc] init];
   preview.session = session;
+  NSString *previewAngle = FixtureArgument(@"-ServeSimFixturePreviewAngle");
+  if (previewAngle) {
+    if (@available(iOS 17.0, *)) preview.connection.videoRotationAngle = previewAngle.doubleValue;
+    Record(@"preview-connection", preview.connection.videoPreviewLayer == preview ? @"layer" : @"other");
+  }
   preview.videoGravity = [NSProcessInfo.processInfo.arguments containsObject:@"-ServeSimFixtureGravityAspect"]
       ? AVLayerVideoGravityResizeAspect : AVLayerVideoGravityResizeAspectFill;
   preview.frame = view.bounds;
@@ -406,10 +467,26 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
       });
     });
   }
+  if ([arguments containsObject:@"-ServeSimFixtureQuad"]) [self recordShapeOf:pixelBuffer];
   NSString *value = [NSString stringWithFormat:@"%u,%u,%u", pixel[2], pixel[1], pixel[0]];
   if (![value isEqualToString:self.lastPixel]) {
     Record(@"frame", value);
     Record(@"gravity", self.preview.contentsGravity ?: @"");
+    Record(@"size", [NSString stringWithFormat:@"%zux%zu",
+        CVPixelBufferGetWidth(pixelBuffer), CVPixelBufferGetHeight(pixelBuffer)]);
+    const unsigned char *edge = (const unsigned char *)CVPixelBufferGetBaseAddress(pixelBuffer)
+        + 4 * CVPixelBufferGetBytesPerRow(pixelBuffer) + (CVPixelBufferGetWidth(pixelBuffer) / 2) * 4;
+    Record(@"edge", [NSString stringWithFormat:@"%u,%u,%u,%u", edge[2], edge[1], edge[0], edge[3]]);
+    if ([arguments containsObject:@"-ServeSimFixtureLandscapeFit"]) {
+      size_t height = CVPixelBufferGetHeight(pixelBuffer);
+      size_t stride = CVPixelBufferGetBytesPerRow(pixelBuffer);
+      size_t x = CVPixelBufferGetWidth(pixelBuffer) / 2;
+      const unsigned char *base = CVPixelBufferGetBaseAddress(pixelBuffer);
+      const unsigned char *bar = base + (height / 3) * stride + x * 4;
+      const unsigned char *inside = base + (height * 3 / 8) * stride + x * 4;
+      Record(@"fit", [NSString stringWithFormat:@"%u,%u,%u,%u|%u,%u,%u,%u",
+          bar[2], bar[1], bar[0], bar[3], inside[2], inside[1], inside[0], inside[3]]);
+    }
     if (!self.changedGravity && [NSProcessInfo.processInfo.arguments containsObject:@"-ServeSimFixtureGravityChange"]) {
       self.changedGravity = YES;
       self.preview.videoGravity = AVLayerVideoGravityResize;
@@ -420,6 +497,7 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
       self.sampledPreview = YES;
       dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(NSEC_PER_SEC / 2)), dispatch_get_main_queue(), ^{
         [self recordPreviewPixels];
+        [self recordPreviewQuad];
       });
     }
     self.lastPixel = value;
@@ -428,7 +506,7 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
 }
 
 // Renders the preview layer as drawn, so a test can check the fit and not only the gravity property.
-- (void)recordPreviewPixels {
+- (void)renderPreview:(void (^)(const unsigned char *rgba, size_t width, size_t height))use {
   CGSize size = self.preview.bounds.size;
   size_t width = (size_t)size.width, height = (size_t)size.height;
   if (width == 0 || height == 0) return;
@@ -439,14 +517,57 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
   CGContextTranslateCTM(context, 0, size.height);
   CGContextScaleCTM(context, 1, -1);
   [self.preview renderInContext:context];
-  NSString *(^pixel)(size_t) = ^NSString *(size_t row) {
-    const unsigned char *p = bytes + (row * width + width / 2) * 4;
-    return [NSString stringWithFormat:@"%u,%u,%u,%u", p[0], p[1], p[2], p[3]];
-  };
-  Record(@"preview-pixels", [NSString stringWithFormat:@"center=%@ top=%@", pixel(height / 2), pixel(height / 20)]);
+  use(bytes, width, height);
   CGContextRelease(context);
   CGColorSpaceRelease(space);
   free(bytes);
+}
+
+- (void)recordPreviewPixels {
+  [self renderPreview:^(const unsigned char *bytes, size_t width, size_t height) {
+    NSString *(^pixel)(size_t) = ^NSString *(size_t row) {
+      const unsigned char *p = bytes + (row * width + width / 2) * 4;
+      return [NSString stringWithFormat:@"%u,%u,%u,%u", p[0], p[1], p[2], p[3]];
+    };
+    Record(@"preview-pixels", [NSString stringWithFormat:@"center=%@ top=%@", pixel(height / 2), pixel(height / 20)]);
+  }];
+}
+
+// With an aspect-fit preview, where the square source's quadrants land in the drawn layer.
+- (void)recordPreviewQuad {
+  CGImageRef contents = (__bridge CGImageRef)self.preview.contents;
+  if (!contents || ![NSProcessInfo.processInfo.arguments containsObject:@"-ServeSimFixtureGravityAspect"]) return;
+  double imageWidth = (double)CGImageGetWidth(contents), imageHeight = (double)CGImageGetHeight(contents);
+  [self renderPreview:^(const unsigned char *bytes, size_t width, size_t height) {
+    double scale = MIN((double)width / imageWidth, (double)height / imageHeight);
+    Record(@"preview-quad", [NSString stringWithFormat:@"%.0fx%.0f %@", imageWidth, imageHeight,
+        QuadrantNames(bytes, width * 4, width, height, MIN(imageWidth, imageHeight) * scale, NO)]);
+  }];
+}
+
+// The frame size and quadrant colors, and the non-black span through the center.
+- (void)recordShapeOf:(CVPixelBufferRef)pixelBuffer {
+  size_t width = CVPixelBufferGetWidth(pixelBuffer), height = CVPixelBufferGetHeight(pixelBuffer);
+  size_t stride = CVPixelBufferGetBytesPerRow(pixelBuffer);
+  const unsigned char *base = CVPixelBufferGetBaseAddress(pixelBuffer);
+  NSString *quad = [NSString stringWithFormat:@"%zux%zu %@", width, height,
+      QuadrantNames(base, stride, width, height, (double)MIN(width, height), YES)];
+  if (![quad isEqualToString:self.lastQuad]) {
+    Record(@"quad", quad);
+    self.lastQuad = quad;
+  }
+  BOOL (^lit)(size_t, size_t) = ^BOOL(size_t x, size_t y) {
+    const unsigned char *p = base + y * stride + x * 4;
+    return p[0] > 40 || p[1] > 40 || p[2] > 40;
+  };
+  long top = -1, bottom = -1, left = -1, right = -1;
+  for (size_t y = 0; y < height; y++) if (lit(width / 2, y)) { if (top < 0) top = (long)y; bottom = (long)y; }
+  for (size_t x = 0; x < width; x++) if (lit(x, height / 2)) { if (left < 0) left = (long)x; right = (long)x; }
+  NSString *box = [NSString stringWithFormat:@"%zux%zu %ld,%ld,%ld,%ld", width, height, top, bottom, left, right];
+  if (![box isEqualToString:self.lastBox]) {
+    Record(@"box", box);
+    self.lastBox = box;
+  }
 }
 
 - (void)scene:(UIScene *)scene openURLContexts:(NSSet<UIOpenURLContext *> *)URLContexts {

@@ -61,6 +61,7 @@ BOOL SimCamCameraIsInUse(void) {
 }
 void SimCamMarkCameraInUse(void) {
     atomic_store_explicit(&gSimCamCameraInUse, 1, memory_order_relaxed);
+    SimCamStartPoseTracking();
 }
 void SimCamMarkSessionUsingFakeCamera(id session, BOOL usingFakeCamera) {
     if (!session) return;
@@ -293,6 +294,7 @@ static AVCaptureInputPort *SimCamFakeInputPortForInput(AVCaptureInput *input, AV
 
 @implementation SimCamFakeConnection {
     __weak AVCaptureOutput *_outputRef;
+    __weak CALayer *_previewLayerRef;
     AVCaptureDevicePosition _position;
     AVCaptureVideoOrientation _orientation;
     BOOL _videoMirrored;
@@ -332,7 +334,11 @@ static void SimCamFakeConnectionDealloc(__unsafe_unretained id self, SEL cmd) {
     return port ? @[port] : @[];
 }
 - (AVCaptureInput *)input { return SimCamOutputInput(_outputRef) ?: SimCamFakeInputForPosition(_position); }
-- (AVCaptureVideoPreviewLayer *)videoPreviewLayer { return nil; }
+- (AVCaptureVideoPreviewLayer *)videoPreviewLayer {
+    CALayer *layer = _previewLayerRef;
+    return [layer isKindOfClass:[AVCaptureVideoPreviewLayer class]] ? (AVCaptureVideoPreviewLayer *)layer : nil;
+}
+- (void)simcam_setPreviewLayer:(CALayer *)layer { _previewLayerRef = layer; }
 - (BOOL)isEnabled { return _enabled; }
 - (void)setEnabled:(BOOL)e { _enabled = e; }
 - (BOOL)isActive { return YES; }
@@ -417,17 +423,20 @@ static char kSimCamOutputConnectionKey;
 
 AVCaptureConnection *SimCamFakeConnectionForOutput(AVCaptureOutput *out) {
     if (!out) return nil;
-    AVCaptureConnection *conn = objc_getAssociatedObject(out, &kSimCamOutputConnectionKey);
-    if (!conn) {
-        conn = (AVCaptureConnection *)[SimCamFakeConnection
-            connectionForOutput:out
-                       position:SimCamPositionOf(out)];
-        if (conn) {
-            objc_setAssociatedObject(out, &kSimCamOutputConnectionKey, conn,
-                OBJC_ASSOCIATION_RETAIN);
+    // The pump reads the angle while the app sets it; both must get the same connection.
+    @synchronized (out) {
+        AVCaptureConnection *conn = objc_getAssociatedObject(out, &kSimCamOutputConnectionKey);
+        if (!conn) {
+            conn = (AVCaptureConnection *)[SimCamFakeConnection
+                connectionForOutput:out
+                           position:SimCamPositionOf(out)];
+            if (conn) {
+                objc_setAssociatedObject(out, &kSimCamOutputConnectionKey, conn,
+                    OBJC_ASSOCIATION_RETAIN);
+            }
         }
+        return conn;
     }
-    return conn;
 }
 
 #pragma mark - SimCamFakeInputPort
@@ -461,6 +470,24 @@ AVCaptureConnection *SimCamFakeConnectionForOutput(AVCaptureOutput *out) {
 
 static char kSimCamOutputInputRefKey;
 static char kSimCamFakeInputPortKey;
+
+static const void *kSimCamPreviewConnectionKey = &kSimCamPreviewConnectionKey;
+
+// The preview layer's own angle, so an app that rotates its preview gets that rotation.
+AVCaptureConnection *SimCamFakeConnectionForPreviewLayer(CALayer *layer) {
+    if (!layer) return nil;
+    // The pump and the app can both ask first; one connection must win, or the app's angle is lost.
+    @synchronized (layer) {
+        AVCaptureConnection *conn = objc_getAssociatedObject(layer, &kSimCamPreviewConnectionKey);
+        if (!conn) {
+            SimCamFakeConnection *fake = [SimCamFakeConnection connectionForOutput:nil position:SimCamPositionOf(layer)];
+            [fake simcam_setPreviewLayer:layer];
+            conn = (AVCaptureConnection *)fake;
+            if (conn) objc_setAssociatedObject(layer, &kSimCamPreviewConnectionKey, conn, OBJC_ASSOCIATION_RETAIN);
+        }
+        return conn;
+    }
+}
 
 void SimCamSetOutputInput(AVCaptureOutput *out, AVCaptureInput *input) {
     if (!out) return;

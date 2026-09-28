@@ -680,6 +680,11 @@ static BOOL SimCamSessionIsNative(AVCaptureSession *session) {
     [self simcam_setVideoGravity:gravity];
     [[SimCamRegistry shared] reapplyGravityToLayer:self];
 }
+- (AVCaptureConnection *)simcam_connection {
+    AVCaptureConnection *real = [self simcam_connection];
+    if (real || ![[SimCamRegistry shared] tracksPreviewLayer:self]) return real;
+    return SimCamFakeConnectionForPreviewLayer(self);
+}
 @end
 
 #pragma mark - AVCaptureDeviceFormat private-accessor swizzle
@@ -776,7 +781,8 @@ static BOOL SimCamSessionIsNative(AVCaptureSession *session) {
         return;
     }
     if (!delegate) return;
-    CVPixelBufferRef pb = [[SimCamRegistry shared] currentPixelBuffer];
+    CVPixelBufferRef pb = [[SimCamRegistry shared]
+        newPixelBufferAtAngle:SimCamConnectionAngle([self connectionWithMediaType:AVMediaTypeVideo])];
     NSError *error = pb || SimCamDeviceIsConnected() ? nil : SimCamDisconnectedError();
     AVCaptureDevicePosition p = SimCamPositionOf(self);
     if (p == 0) p = AVCaptureDevicePositionFront;
@@ -1275,6 +1281,7 @@ void SimCamInstallSwizzles(void) {
     Class pl = [AVCaptureVideoPreviewLayer class];
     SwizzleInstanceMethod(pl, @selector(setSession:), @selector(simcam_setSession:));
     SwizzleInstanceMethod(pl, @selector(setVideoGravity:), @selector(simcam_setVideoGravity:));
+    SwizzleInstanceMethod(pl, @selector(connection), @selector(simcam_connection));
 
     Class fmtClass = [AVCaptureDeviceFormat class];
     SEL figFmtSel = NSSelectorFromString(@"figCaptureSourceVideoFormat");
@@ -1349,7 +1356,7 @@ static __weak UIImagePickerController *gSimCamCurrentPicker = nil;
 static const void *kSimCamShutterWrappedDelegateKey = &kSimCamShutterWrappedDelegateKey;
 
 static UIImage *SimCamPickerSnapshotImageMirrored(BOOL mirror) {
-    CVPixelBufferRef pb = [[SimCamRegistry shared] currentPixelBuffer];
+    CVPixelBufferRef pb = [[SimCamRegistry shared] newPixelBufferAtAngle:SimCamPoseAngle()];
     if (!pb) return nil;
     CIImage *ci = [CIImage imageWithCVPixelBuffer:pb];
     if (mirror) ci = [ci imageByApplyingOrientation:kCGImagePropertyOrientationUpMirrored];
