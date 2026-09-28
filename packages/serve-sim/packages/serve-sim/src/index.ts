@@ -405,10 +405,16 @@ let releasingDevices: Promise<void> | undefined;
 function disarmDevicesArmedHereAsync(): Promise<void> {
   return releasingDevices ??= (async () => {
     await waitForLaunchUpdates();
+    // Per device, like disarmDevicesArmedHere: one device that fails to release (shut down while
+    // another session holds it) must not leave the devices after it armed.
     for (const udid of devicesArmedHere()) {
-      await releaseSession(udid, process.pid, (capability) => {
-        if (capability.name === "camera") stopExistingHelper(udid);
-      });
+      try {
+        await releaseSession(udid, process.pid, (capability) => {
+          if (capability.name === "camera") stopExistingHelper(udid);
+        });
+      } catch (error) {
+        console.error(`Could not clean up capabilities on ${udid}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   })();
 }
