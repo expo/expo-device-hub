@@ -15,6 +15,33 @@ export interface UseSimstreamStreamOptions {
 const HEADER_BYTES = 49;
 const RETRY_DELAY_MS = 1000;
 
+const TRANSITION_MODES = ["soft", "burst", "fps30"] as const;
+type TransitionMode = (typeof TRANSITION_MODES)[number];
+const TRANSITIONS_KEY = "simstream.transitions";
+
+/**
+ * How the engine handles full-screen motion (app launch, swiping home). Defaults to "burst": big
+ * frames may briefly exceed the link rate with a capped quantizer, so transitions stay sharp
+ * instead of going blocky ("soft" keeps strictly within the rate; "fps30" halves the frame rate
+ * during heavy motion). `?transitions=` in the page URL overrides it and is remembered.
+ */
+export function transitionMode(search = typeof location === "undefined" ? "" : location.search): TransitionMode {
+  const isMode = (value: string | null): value is TransitionMode =>
+    value !== null && (TRANSITION_MODES as readonly string[]).includes(value);
+  const fromUrl = new URLSearchParams(search).get("transitions");
+  try {
+    if (isMode(fromUrl)) {
+      localStorage.setItem(TRANSITIONS_KEY, fromUrl);
+      return fromUrl;
+    }
+    const stored = localStorage.getItem(TRANSITIONS_KEY);
+    if (isMode(stored)) return stored;
+  } catch {
+    if (isMode(fromUrl)) return fromUrl;
+  }
+  return "burst";
+}
+
 /**
  * Decode the simstream engine's H.264 WebSocket feed into `canvasRef`.
  *
@@ -139,6 +166,7 @@ export function useSimstreamStream({
       ws.binaryType = "arraybuffer";
       ws.onopen = () => {
         send({ t: "hello", codecs: ["h264"] });
+        send({ t: "settings", transitions: transitionMode(), hevc: false });
         if (document.hidden) send({ t: "pause" });
       };
       ws.onmessage = (event) => {

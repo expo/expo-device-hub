@@ -1,0 +1,7 @@
+[
+{"op":"wait","ms":1500},
+{"op":"tap","x":0.81,"y":0.49,"wait":2200,"note":"Settings"},
+{"op":"swipe","x0":0.5,"y0":0.995,"x1":0.5,"y1":0.45,"wait":2200,"note":"home"},
+{"op":"tap","x":0.35,"y":0.376,"wait":2200,"note":"Photos"},
+{"op":"swipe","x0":0.5,"y0":0.995,"x1":0.5,"y1":0.45,"wait":2000,"note":"home"}
+]
