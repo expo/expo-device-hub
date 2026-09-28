@@ -142,9 +142,14 @@ on SIGTERM, SIGINT, or SIGHUP before the process exits. The CLI also waits for
 the manifest when the server stops during recording. If a
 start request times out, the CLI cancels that recording ID so a late server
 start cannot leave an active recording. A finalization failure makes shutdown
-exit unsuccessfully after teardown.
-The foreground CLI force-kills an unresponsive helper after 500 ms, which may
-interrupt finalization. Stop recording before stopping the helper when possible.
+exit unsuccessfully after teardown. After an encoder or frame-transfer failure,
+the recorder tries to finalize any frames already written. If the writer completes,
+the error includes the path to a playable partial `recording.mp4`. No success
+manifest is written, and that session cannot start another recording until
+serve-sim restarts.
+The foreground CLI gives a helper with a known active recording up to 65 seconds
+to finalize after SIGTERM. Without a known active recording, it force-kills an
+unresponsive helper after 500 ms.
 
 The proposed build-tools integration lives in a separate eas-cli PR. Once
 deployed, it will use this command in place of record-sim: one recorder per
@@ -163,5 +168,4 @@ encoder count remains two; for two or more viewers, sharing removes the extra
 per-viewer H.264 encodes. The second recording encode preserves native size
 and cadence when viewer bitrate, resolution, or transport changes.
 
-`viewerResize` reports scale latency. Direct capture-copy latency and a
-before-and-after CPU baseline against record-sim remain to be measured.
+`viewerResize` reports scale latency.

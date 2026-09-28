@@ -14,7 +14,7 @@ server's selected device.
 | `/` | The preview page. |
 | `/api` | Current device and stream state, including `execToken`. |
 | `/api/screenshot` | `POST`. A still PNG. |
-| `/helper/<udid>/recording/video` | `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Requires a recording ID; when `--require-token` is set, also requires its bearer token. |
+| `/helper/<udid>/recording/video` | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token. |
 | `/api/events`, `/api/event-log`, `/api/event-log/events` | Device events and the recorded log. |
 | `/metrics` | CPU, memory and network samples, one per second. |
 | `/logs`, `/ax`, `/appstate` | Device log, accessibility tree, foreground app. |
@@ -36,13 +36,23 @@ also attempts to finalize active recordings during shutdown. One recording may
 run per device. The manifest retains the record-sim upload schema. See
 [Video pipeline and recording](video-pipeline.md) for frame handling and limits.
 
+To control recording directly, `POST` a JSON body such as
+`{"start":true,"output":"/path/to/empty-dir","recordingId":"client-id"}`.
+The server accepts the JSON body even with `Content-Type: text/plain`.
+Send `x-recording-id: client-id` on `PUT` to renew the lease and on `DELETE`
+to finalize; `DELETE` returns the manifest path. `GET` returns
+`{"active":true}` while recording is starting, active, or finishing, and
+`{"active":false}` otherwise. Use a new empty output directory for each
+recording; an existing `recording.mp4` or `session.json` is preserved.
+
 ## Authentication
 
 Without `--require-token`, neither the preview nor recording control requires
 a session token. CORS still applies, and a loopback origin is still allowed,
 so a page served from any `localhost` port can read an ungated preview.
-If the server is reachable over a network in this mode, any reachable client
-can choose a recording output directory that the server process can write.
+If the server is reachable over a network in this mode, any reachable client,
+including a cross-origin web page using a simple POST, can choose a recording
+output directory that the server process can write.
 Use `--require-token` when that access should be restricted.
 
 With it, the server mints one session token at startup, prints it, and writes it
