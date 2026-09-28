@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { capabilityConfigPath, managedStartupDylibs } from "../capability-config";
 import { enableCapabilities, disableCapability, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath } from "../launch-manager";
@@ -78,6 +78,20 @@ test("invalid startup paths are refused before publication", async () => {
     await expect(enable(path)).rejects.toThrow();
     expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
     expect(existsSync(capabilityConfigPath(UDID))).toBe(false);
+  }
+});
+
+test("a first commit that fails reports its own error, not a failed rollback", async () => {
+  // No config before, and the commit cannot write its temp file, so the config was never created.
+  mkdirSync(`${capabilityConfigPath(UDID)}.${process.pid}.tmp`, { recursive: true });
+  try {
+    const error = await enable().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(Error);
+    expect(String((error as Error).message)).not.toContain("Could not restore capability launch state");
+    expect(existsSync(capabilityConfigPath(UDID))).toBe(false);
+    expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
+  } finally {
+    rmSync(`${capabilityConfigPath(UDID)}.${process.pid}.tmp`, { recursive: true, force: true });
   }
 });
 

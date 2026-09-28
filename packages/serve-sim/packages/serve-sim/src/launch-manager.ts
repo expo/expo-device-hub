@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, unlinkSync } from "fs";
+import { existsSync, readFileSync, rmSync, unlinkSync } from "fs";
 import { basename, join } from "path";
 import {
   capabilitiesToApply,
@@ -229,7 +229,8 @@ async function restoreCapabilityLaunch(
 ): Promise<void> {
   writeManagedStartupDylibs(udid, [...previous.startupDylibs, ...attemptedStartupDylibs]);
   if (previous.config === null) {
-    unlinkSync(capabilityConfigPath(udid));
+    // A first commit that failed may never have written the file; restoring "no config" is done then.
+    rmSync(capabilityConfigPath(udid), { force: true });
   } else {
     commitCapabilityConfig(udid, previous.config);
   }
