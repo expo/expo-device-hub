@@ -1,0 +1,14 @@
+# In the VM: HTTPS for vm.simstream.sethwebster.com (router WAN 9443 -> this VM:443).
+# Certificate via Cloudflare DNS-01, since WAN 80 and 443 go to the Mac Mini site.
+{
+	auto_https disable_redirects
+	http_port 8081
+}
+vm.simstream.sethwebster.com {
+	tls {
+		dns cloudflare {env.CF_API_TOKEN}
+	}
+	reverse_proxy 127.0.0.1:3200 {
+		flush_interval -1
+	}
+}
