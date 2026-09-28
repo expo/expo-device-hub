@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { capabilityConfigPath, managedStartupDylibs } from "../capability-config";
-import { enableCapabilities, disableCapability, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath } from "../launch-manager";
+import { capabilityConfigPath, managedStartupDylibs, writeManagedStartupDylibs } from "../capability-config";
+import { enableCapabilities, disableCapability, disarmStaleCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath } from "../launch-manager";
 import { installShims, useTempStateDir } from "./helpers";
 
 const UDID = "startup-capabilities-test";
@@ -93,6 +93,22 @@ test("a first commit that fails reports its own error, not a failed rollback", a
   } finally {
     rmSync(`${capabilityConfigPath(UDID)}.${process.pid}.tmp`, { recursive: true, force: true });
   }
+});
+
+test("stale cleanup drops a missing startup image while the loader stays", async () => {
+  const loader = join(state.dir, "libServeSimCapabilityLoader.dylib");
+  writeFileSync(loader, "");
+  const live = join(state.dir, "live-startup.dylib");
+  writeFileSync(live, "");
+  const gone = join(state.dir, "removed-startup.dylib");
+  writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: ["/other.dylib", loader, live, gone].join(":") }));
+  writeManagedStartupDylibs(UDID, [live, gone]);
+
+  await disarmStaleCapabilityLoader(UDID);
+
+  // Only the missing image goes; the loader, the live image, and the other tool's insert stay.
+  expect(env().DYLD_INSERT_LIBRARIES).toBe(["/other.dylib", loader, live].join(":"));
+  expect(managedStartupDylibs(UDID)).toEqual([live]);
 });
 
 test("failed publication restores actual config and launchd values", async () => {

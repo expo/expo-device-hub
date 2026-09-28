@@ -350,12 +350,25 @@ export async function disarmStaleCapabilityLoader(udid: string): Promise<void> {
     );
     return;
   }
-  const ours = current
-    .split(":")
-    .map((entry) => entry.trim())
-    .find(isCapabilityLoaderPath);
-  if (!ours || existsSync(ours)) return;
-  await removeCapabilityLoader(udid);
+  const entries = current.split(":").map((entry) => entry.trim());
+  const ours = entries.find(isCapabilityLoaderPath);
+  if (ours && !existsSync(ours)) {
+    await removeCapabilityLoader(udid);
+    return;
+  }
+  // A startup image this server inserted can go missing while the loader stays, for example after its
+  // build output was removed. dyld would keep trying to load it in every new process, so drop the
+  // missing ones and keep live images, the loader, and anything another tool inserted.
+  const missing = managedStartupDylibs(udid).filter((path) => entries.includes(path) && !existsSync(path));
+  if (missing.length === 0) return;
+  await withLaunchStateLock(udid, async () => {
+    const rest = (await readInsert(udid)).split(":").map((entry) => entry.trim())
+      .filter((entry) => entry !== "" && !missing.includes(entry)).join(":");
+    await simctl(rest === ""
+      ? ["spawn", udid, "launchctl", "unsetenv", INSERT]
+      : ["spawn", udid, "launchctl", "setenv", INSERT, rest], 15_000);
+    writeManagedStartupDylibs(udid, managedStartupDylibs(udid).filter((path) => !missing.includes(path)));
+  });
 }
 
 export async function removeCapabilityLoader(udid: string): Promise<void> {
