@@ -413,6 +413,12 @@ export class DeviceSession {
   }
 
   async handleVideoRecording(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method === "GET") {
+      this.sendJson(res, 200, {
+        active: !!(this.recordingLease || this.recordingStarting || this.recordingFinishing),
+      });
+      return;
+    }
     if (req.method === "POST") {
       try {
         const body = parseJsonBody(await readRequestBody(req, 16_384), "invalid_recording_request");
@@ -507,7 +513,7 @@ export class DeviceSession {
       }
       return;
     }
-    res.writeHead(405, { Allow: "POST, PUT, DELETE" });
+    res.writeHead(405, { Allow: "GET, POST, PUT, DELETE" });
     res.end();
   }
 

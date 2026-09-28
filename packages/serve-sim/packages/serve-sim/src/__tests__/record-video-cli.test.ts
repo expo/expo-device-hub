@@ -8,7 +8,7 @@ import { join } from "path";
 const cli = join(import.meta.dir, "../../dist/serve-sim.js");
 const udid = "record-video-interruption-test";
 
-async function interruptedStart(saveVideo: boolean, gated: boolean): Promise<{ code: number | null; stdout: string; deletes: number; manifest: string }> {
+async function interruptedStart(saveVideo: boolean, gated: boolean, stopStatus = 200): Promise<{ code: number | null; stdout: string; stderr: string; deletes: number; manifest: string }> {
   const root = mkdtempSync(join(tmpdir(), "record-video-cli-test-"));
   const state = join(root, "state");
   const bin = join(root, "bin");
@@ -40,11 +40,20 @@ printf '%s\\n' '{"devices":{"test":[{"udid":"${udid}","state":"Booted"}]}}'
       for await (const chunk of req) body += chunk.toString();
       recordingId = (JSON.parse(body) as { recordingId: string }).recordingId;
       postArrived();
+      if (stopStatus !== 200) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ recording: true }));
+      }
       return;
     }
     if (req.method === "DELETE") {
       deletes++;
       stoppedId = String(req.headers["x-recording-id"]);
+      if (stopStatus !== 200) {
+        res.writeHead(stopStatus, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "recording_stop_failed" }));
+        return;
+      }
       if (saveVideo) {
         mkdirSync(output);
         writeFileSync(join(output, "recording.mp4"), "saved recording");
@@ -80,6 +89,12 @@ printf '%s\\n' '{"devices":{"test":[{"udid":"${udid}","state":"Booted"}]}}'
       posted,
       Bun.sleep(10_000).then(() => { throw new Error(`start POST did not arrive: ${stderr}`); }),
     ]);
+    if (stopStatus !== 200) {
+      await Promise.race([
+        (async () => { while (!stderr.includes("serve-sim:recording-started")) await Bun.sleep(10); })(),
+        Bun.sleep(10_000).then(() => { throw new Error(`recording did not start: ${stderr}`); }),
+      ]);
+    }
     child.kill("SIGINT");
     const code = await Promise.race([
       new Promise<number | null>((resolve, reject) => {
@@ -91,7 +106,7 @@ printf '%s\\n' '{"devices":{"test":[{"udid":"${udid}","state":"Booted"}]}}'
     expect(stoppedId).toBe(recordingId);
     expect(authorization).toBe(gated ? "Bearer test-token" : undefined);
     expect(existsSync(manifest)).toBe(saveVideo);
-    return { code, stdout, deletes, manifest };
+    return { code, stdout, stderr, deletes, manifest };
   } finally {
     if (child.exitCode === null) child.kill("SIGKILL");
     server.closeAllConnections();
@@ -112,4 +127,11 @@ test("record-video uses the token and reports cancellation when SIGINT arrives b
   expect(result.code).not.toBe(0);
   expect(result.stdout).not.toContain(result.manifest);
   expect(result.deletes).toBe(1);
+}, 20_000);
+
+test("record-video reports a definite stop failure without waiting for a manifest", async () => {
+  const result = await interruptedStart(false, false, 500);
+  expect(result.code).not.toBe(0);
+  expect(result.stderr).toContain("Recording stop failed (500)");
+  expect(result.deletes).toBeGreaterThan(0);
 }, 20_000);

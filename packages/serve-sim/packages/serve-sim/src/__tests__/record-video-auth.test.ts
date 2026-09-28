@@ -59,6 +59,18 @@ test("recording control passes the auth gate without a token when the preview is
   expect([404, 409]).toContain(stop.status);
 });
 
+test("recording status is readable by the parent and uses the same bearer gate", async () => {
+  const open = await fetch(url);
+  expect(open.status).toBe(200);
+  expect(await open.json()).toEqual({ active: false });
+  expect((await fetch(gatedUrl)).status).toBe(401);
+  const authorized = await fetch(gatedUrl, {
+    headers: { Authorization: "Bearer recording-session-token" },
+  });
+  expect(authorized.status).toBe(200);
+  expect(await authorized.json()).toEqual({ active: false });
+});
+
 test("recording control requires a bearer token when the preview is gated", async () => {
   const start = await fetch(gatedUrl, {
     method: "POST",

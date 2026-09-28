@@ -105,6 +105,7 @@ actor CaptureEngine {
     private var recordingFinalizing = false
     private var recordingFinishTask: Task<NativeRecordingResult, Error>?
     private var recordingUnavailable = false
+    private var lastViewerCanvasSequence: UInt64?
     private var frameContinuation: AsyncStream<Frame>.Continuation?
     private var cancelledWebRTCSessionIds = Set<String>()
     private var cancelledWebRTCSessionIdOrder: [String] = []
@@ -193,7 +194,11 @@ actor CaptureEngine {
         await frameCapture.setSnapshotMaxDimension(size)
     }
 
-    private func viewerCanvasChanged(_ canvas: Dimensions) async {
+    private func viewerCanvasChanged(_ canvas: Dimensions, sequence: UInt64,
+                                     publisher: WebRTCPublisher) async {
+        guard webRTCPublisher === publisher,
+              lastViewerCanvasSequence.map({ sequence > $0 }) ?? true else { return }
+        lastViewerCanvasSequence = sequence
         viewerCanvas = canvas
         await refreshSnapshotSize()
     }
@@ -512,8 +517,11 @@ actor CaptureEngine {
         consumers[consumerId] = WebRTCConsumer(publisher: publisher)
         webRTCConsumerId = consumerId
         webRTCPublisher = publisher
-        publisher.setCanvasObserver { [weak self] canvas in
-            Task { await self?.viewerCanvasChanged(canvas) }
+        lastViewerCanvasSequence = nil
+        publisher.setCanvasObserver { [weak self, weak publisher] canvas, sequence in
+            guard let publisher else { return }
+            Task { await self?.viewerCanvasChanged(canvas, sequence: sequence,
+                                                   publisher: publisher) }
         }
         return publisher
     }

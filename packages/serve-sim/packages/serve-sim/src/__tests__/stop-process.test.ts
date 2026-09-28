@@ -1,8 +1,29 @@
 import { expect, test } from "bun:test";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { createServer } from "node:http";
 
-import { stopProcess } from "../stop-process";
+import { recordingShutdownGraceMs, stopProcess } from "../stop-process";
+
+test("shutdown extends its grace only when the helper reports an active recording", async () => {
+  let active = true;
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ active }));
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === "string") throw new Error("missing test port");
+    const url = `http://127.0.0.1:${address.port}/recording/video`;
+    expect(await recordingShutdownGraceMs(url)).toBe(65_000);
+    active = false;
+    expect(await recordingShutdownGraceMs(url)).toBe(500);
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
 
 test("server shutdown waits for finalization and reports the child failure", async () => {
   const child = spawn(process.execPath, ["-e", `
