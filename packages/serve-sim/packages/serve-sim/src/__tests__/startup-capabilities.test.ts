@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { capabilityConfigPath, managedStartupDylibs, writeManagedStartupDylibs } from "../capability-config";
 import { enableCapabilities, disableCapability, disarmStaleCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath } from "../launch-manager";
 import { installShims, useTempStateDir } from "./helpers";
+import { withLaunchStateLock } from "../launch-state-lock";
 
 const UDID = "startup-capabilities-test";
 let state: ReturnType<typeof useTempStateDir>;
@@ -95,24 +96,6 @@ test("a first commit that fails reports its own error, not a failed rollback", a
   }
 });
 
-test("stale cleanup drops a missing startup image while the loader stays", async () => {
-  const loader = join(state.dir, "libServeSimCapabilityLoader.dylib");
-  writeFileSync(loader, "");
-  const live = join(state.dir, "live-startup.dylib");
-  writeFileSync(live, "");
-  const gone = join(state.dir, "removed-startup.dylib");
-  writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: ["/other.dylib", loader, live, gone].join(":") }));
-  writeManagedStartupDylibs(UDID, [live, gone]);
-  // A live session owns the device, so only the missing image may go.
-  writeFileSync(join(state.dir, `launch-${UDID}.json`), JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.pid] }));
-
-  await disarmStaleCapabilityLoader(UDID);
-
-  // Only the missing image goes; the loader, the live image, and the other tool's insert stay.
-  expect(env().DYLD_INSERT_LIBRARIES).toBe(["/other.dylib", loader, live].join(":"));
-  expect(managedStartupDylibs(UDID)).toEqual([live]);
-});
-
 test("stale cleanup clears the inserts of a session that died without tearing down", async () => {
   const loader = join(state.dir, "libServeSimCapabilityLoader.dylib");
   writeFileSync(loader, "");
@@ -127,6 +110,42 @@ test("stale cleanup clears the inserts of a session that died without tearing do
 
   expect(env().DYLD_INSERT_LIBRARIES).toBe("/other.dylib");
   expect(managedStartupDylibs(UDID)).toEqual([]);
+});
+
+test("stale cleanup leaves the inserts of a live session alone", async () => {
+  const loader = join(state.dir, "libServeSimCapabilityLoader.dylib");
+  writeFileSync(loader, "");
+  const image = join(state.dir, "capture-startup.dylib");
+  writeFileSync(image, "");
+  const insert = ["/other.dylib", loader, image].join(":");
+  writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: insert }));
+  writeManagedStartupDylibs(UDID, [image]);
+  writeFileSync(join(state.dir, `launch-${UDID}.json`), JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.pid] }));
+
+  await disarmStaleCapabilityLoader(UDID);
+
+  expect(env().DYLD_INSERT_LIBRARIES).toBe(insert);
+  expect(managedStartupDylibs(UDID)).toEqual([image]);
+});
+
+test("stale cleanup waits for a session that is arming instead of clearing it", async () => {
+  const loader = join(state.dir, "libServeSimCapabilityLoader.dylib");
+  writeFileSync(loader, "");
+  writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/other.dylib" }));
+  // An arm in progress: it holds the device lock, inserts the loader, and records its session last.
+  let inserted!: () => void;
+  const loaderInserted = new Promise<void>((resolve) => { inserted = resolve; });
+  const arming = withLaunchStateLock(UDID, async () => {
+    writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: ["/other.dylib", loader].join(":") }));
+    inserted();
+    await Bun.sleep(300);
+    writeFileSync(join(state.dir, `launch-${UDID}.json`), JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.pid] }));
+  });
+  await loaderInserted;
+
+  await Promise.all([arming, disarmStaleCapabilityLoader(UDID)]);
+
+  expect(env().DYLD_INSERT_LIBRARIES).toBe(["/other.dylib", loader].join(":"));
 });
 
 test("failed publication restores actual config and launchd values", async () => {

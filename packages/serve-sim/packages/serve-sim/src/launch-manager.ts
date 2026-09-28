@@ -356,29 +356,19 @@ export async function disarmStaleCapabilityLoader(udid: string): Promise<void> {
     await removeCapabilityLoader(udid);
     return;
   }
-  // A startup image this server inserted can go missing while the loader stays, for example after its
-  // build output was removed. dyld would keep trying to load it in every new process, so drop the
-  // missing ones and keep live images, the loader, and anything another tool inserted.
-  const managed = managedStartupDylibs(udid);
+  if (!ours && !managedStartupDylibs(udid).some((path) => entries.includes(path))) return;
   // A session that died without a clean teardown (launchctl refused while it exited) leaves its
-  // loader and startup images inserted. With no live owner recorded for the device, clear them all.
-  if (ours || managed.some((path) => entries.includes(path))) {
+  // loader and startup images inserted. With no live owner recorded for the device, clear them.
+  // Decided under the device lock: a session that is arming holds it from its insert until its
+  // state is written, so it is never mistaken for an abandoned one.
+  await withLaunchStateLock(udid, async () => {
+    const inserted = (await readInsert(udid)).split(":").map((entry) => entry.trim());
+    const ourInserts = inserted.some(isCapabilityLoaderPath)
+      || managedStartupDylibs(udid).some((path) => inserted.includes(path));
+    if (!ourInserts) return;
     const state = readLaunchState(udid);
     const liveOwner = !!state && (Object.keys(state.capabilities).length > 0 || (state.sessionPids?.length ?? 0) > 0);
-    if (!liveOwner) {
-      await removeCapabilityLoader(udid);
-      return;
-    }
-  }
-  const missing = managed.filter((path) => entries.includes(path) && !existsSync(path));
-  if (missing.length === 0) return;
-  await withLaunchStateLock(udid, async () => {
-    const rest = (await readInsert(udid)).split(":").map((entry) => entry.trim())
-      .filter((entry) => entry !== "" && !missing.includes(entry)).join(":");
-    await simctl(rest === ""
-      ? ["spawn", udid, "launchctl", "unsetenv", INSERT]
-      : ["spawn", udid, "launchctl", "setenv", INSERT, rest], 15_000);
-    writeManagedStartupDylibs(udid, managedStartupDylibs(udid).filter((path) => !missing.includes(path)));
+    if (!liveOwner) await removeCapabilityLoader(udid);
   });
 }
 
