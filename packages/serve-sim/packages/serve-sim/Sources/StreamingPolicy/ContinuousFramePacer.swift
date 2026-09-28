@@ -142,14 +142,21 @@ public struct ContinuousFramePacer: Sendable {
         frameArrivedSinceSend = false
         deferredThisSlot = false
 
-        // Advance to the next grid slot, but never into the past: a late
-        // wake-up must not skip cadence slots (consistently late timers on a
-        // virtualized host would halve the rate), and a stall longer than an
-        // interval re-anchors to `now` instead of draining a catch-up burst —
-        // the one-interval spacing floor in `earliestSendNanoseconds` keeps
-        // consecutive sends apart either way.
+        // Advance to the next grid slot. If this send landed just beyond that
+        // slot, advance one more interval instead of anchoring at `now`:
+        // anchoring there schedules an immediate timer which must then wait a
+        // full interval, leaving an idle source with two wakes per frame.
+        // A longer stall still re-anchors without draining a catch-up burst.
         let cadenceAnchor = nextSendAtNanoseconds ?? now
-        let nextSendAt = max(cadenceAnchor &+ frameIntervalNanoseconds, now)
+        let nextGridSlot = cadenceAnchor &+ frameIntervalNanoseconds
+        let nextSendAt: UInt64
+        if nextGridSlot > now {
+            nextSendAt = nextGridSlot
+        } else if now - nextGridSlot < frameIntervalNanoseconds {
+            nextSendAt = nextGridSlot &+ frameIntervalNanoseconds
+        } else {
+            nextSendAt = now
+        }
         lastSentAtNanoseconds = now
         nextSendAtNanoseconds = nextSendAt
         return .send(
