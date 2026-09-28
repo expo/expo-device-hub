@@ -863,6 +863,16 @@ final class WebRTCPublisher: @unchecked Sendable {
                           levelIdc: levels.min(), scale: levels.isEmpty ? 1 : scale)
     }
 
+    static func shouldPreferVP8(offer: String, rawCanvas: Dimensions, maxDimension: Int,
+                                levels: [Int], scale: Double) -> Bool {
+        let offeredLevel = H264LevelPolicy.minAdvertisedLevel(sdp: offer)
+        let proposed = canvasSize(for: rawCanvas, maxDimension: maxDimension,
+                                  levels: levels + [offeredLevel].compactMap { $0 }, scale: scale)
+        return H264LevelPolicy.shouldPreferVP8(
+            offer: offer, canvasWidth: proposed.width, canvasHeight: proposed.height
+        )
+    }
+
     private func refreshEncodeCanvas() {
         let levels = sessions.values
             .filter { StreamCodecPolicy.isH264($0.codecName) }
@@ -1023,11 +1033,14 @@ final class WebRTCPublisher: @unchecked Sendable {
                     self.failOffer(session, self.makeError("WebRTC offer was superseded"), completion)
                     return
                 }
+                let existingLevels = self.sessions.values
+                    .filter { StreamCodecPolicy.isH264($0.codecName) }
+                    .map { $0.h264LevelIdc ?? H264LevelPolicy.defaultLevelIdc }
                 let lowLevelOffer = Self.preferredVideoCodecName(request.codec) == "H264"
-                    && H264LevelPolicy.shouldPreferVP8(
-                        offer: request.sdp,
-                        canvasWidth: self.encodeCanvas.width,
-                        canvasHeight: self.encodeCanvas.height
+                    && Self.shouldPreferVP8(
+                        offer: request.sdp, rawCanvas: self.rawEncodeCanvas,
+                        maxDimension: self.maxDimension, levels: existingLevels,
+                        scale: self.canvasScale
                     )
                 if lowLevelOffer {
                     streamLog("[webrtc] Fixed H.264 canvas unavailable or incompatible with offered level; preferring VP8")
@@ -1088,10 +1101,11 @@ final class WebRTCPublisher: @unchecked Sendable {
                                 }
                                 // Held onto so the encode size stays inside what the answer settled,
                                 // from the first frame rather than from the first re-apply.
-                                session.h264LevelIdc = H264LevelPolicy.negotiatedLevel(
-                                    offer: request.sdp,
-                                    answer: answer.sdp
-                                )
+                                session.codecName = StreamCodecPolicy.firstVideoCodecName(in: answer.sdp)
+                                    ?? session.codecName
+                                session.h264LevelIdc = StreamCodecPolicy.isH264(session.codecName)
+                                    ? H264LevelPolicy.negotiatedLevel(offer: request.sdp, answer: answer.sdp)
+                                    : nil
                                 self.refreshEncodeCanvas()
                                 self.applySenderParameters(to: session)
                                 session.waitForIceGathering { completed in
