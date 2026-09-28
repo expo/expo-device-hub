@@ -170,9 +170,10 @@ test('Android screenshot posts to serve-emu for the selected device', async () =
     return null;
   }
   await act(async () => { renderer = create(<Harness />); });
-  const blob = await client.screenshot();
+  const capture = await client.screenshot();
   expect(requests).toEqual([
     { url: 'https://hub.test/api/screenshot?device=emulator%205554', init: { method: 'POST', cache: 'no-store' } },
   ]);
-  expect(new Uint8Array(await blob!.arrayBuffer())).toEqual(png);
+  expect(new Uint8Array(await capture!.blob.arrayBuffer())).toEqual(png);
+  expect(capture!.artifact).toEqual({ status: 'unknown' });
 });

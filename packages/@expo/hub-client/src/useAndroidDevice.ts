@@ -80,12 +80,14 @@ import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocati
 import { useAppPermissions } from './useAppPermissions';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { parseScreenRecordingStatus } from './screen-recording';
+import { fetchScreenshot } from './screenshot';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
   type ConnectionStatus,
   type DeviceAppearance,
   type DeviceClient,
+  type ScreenshotCapture,
   type DeviceScreenRecordingStatus,
   type DeviceConnectionOptions,
   type DeviceEvent,
@@ -427,18 +429,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // serve-emu captures the frame buffer server-side (`adb exec-out screencap
   // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
   // first available, matching the stream).
-  const screenshot = useCallback(async (): Promise<Blob | null> => {
+  const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
-    const url = `${apiUrl(baseUrl, '/api/screenshot')}${
-      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
-    }`;
-    try {
-      const res = await fetch(url, { method: 'POST', cache: 'no-store' });
-      if (!res.ok) return null;
-      return await res.blob();
-    } catch {
-      return null;
-    }
+    return fetchScreenshot(
+      `${apiUrl(baseUrl, '/api/screenshot')}${
+        targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
+      }`,
+    );
   }, [baseUrl, targetDevice]);
 
   // Device-wide options use the same GET/POST contracts as serve-emu's own UI.

@@ -52,7 +52,7 @@ import {
 import { hostUiRequest, runHostAction } from './exec-ws';
 import { getIosAppDetails } from './ios-app-details';
 import { clearIosLocation, setIosLocation } from './ios-location';
-import { fetchIosScreenshot } from './ios-screenshot';
+import { fetchIosScreenshot } from './screenshot';
 import { hidUsageForCode } from './keyboard';
 import {
   type ConnectionStatus,
@@ -74,6 +74,7 @@ import {
   type MultiTouchSample,
   type RunningDevice,
   type ScreenSize,
+  type ScreenshotCapture,
   type ScrollSample,
   type TouchSample,
 } from './types';
@@ -468,7 +469,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
   // and returns the PNG bytes. Use the resolved udid from `/api` (falling back
   // to the requested device); the middleware defaults to the booted sim if none.
-  const screenshot = useCallback(async (): Promise<Blob | null> => {
+  const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
     const udid = config?.device ?? targetDevice;
     return fetchIosScreenshot(baseUrl, udid);

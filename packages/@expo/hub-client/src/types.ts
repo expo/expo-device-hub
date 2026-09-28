@@ -536,6 +536,24 @@ export type VideoSurfaceKind = 'canvas' | 'img' | 'video';
 export type DeviceScreenRecordingStatus = 'unknown' | 'waiting' | 'recording' | 'finalizing' | 'complete' | 'failed';
 
 /**
+ * Whether a screenshot also reached the session artifacts, read from the
+ * backend's `X-Expo-Screenshot-Artifact` response headers. `disabled` means the
+ * backend runs outside an EAS session; `unknown` means it sent no header, as
+ * older serve-sim and serve-emu builds do.
+ */
+export type ScreenshotArtifact = {
+  status: 'saved' | 'failed' | 'disabled' | 'unknown';
+  /** Why the save failed, when the backend says. */
+  error?: string;
+};
+
+/** A still PNG of the device and its session artifact outcome. */
+export type ScreenshotCapture = {
+  blob: Blob;
+  artifact: ScreenshotArtifact;
+};
+
+/**
  * The live state + controls for one device connection. Returned by the hook and
  * consumed by {@link DeviceScreen} (for video + input) and by the surrounding
  * Hub UI (logs panel, Home control, device lists).
@@ -729,12 +747,13 @@ export interface DeviceClient {
    */
   rotate: () => void;
   /**
-   * Capture a still PNG of the device via the backend's screenshot API
-   * (serve-emu `adb screencap` / serve-sim `POST /api/screenshot`), resolving
-   * to a `Blob`, or `null` if capture fails or nothing is connected. The caller
-   * decides what to do with it (e.g. trigger a file download).
+   * Capture a still PNG of the device via the backend's `POST /api/screenshot`
+   * (serve-emu `adb screencap` / serve-sim `simctl io screenshot`), resolving
+   * to the PNG and its session artifact outcome, or `null` if capture fails or
+   * nothing is connected. The caller decides what to do with it (e.g. trigger
+   * a file download).
    */
-  screenshot: () => Promise<Blob | null>;
+  screenshot: () => Promise<ScreenshotCapture | null>;
 
   /**
    * Current device system appearance (dark/light), or `null` while unknown or on
