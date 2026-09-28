@@ -91,6 +91,8 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
     }
 
     private struct Completed {
+        let timestamp: Int64
+        let previousTimestamp: Int64?
         let encoded: H264Encoder.Encoded
         let annexB: Data
         let metadata: Pending
@@ -112,6 +114,8 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
     private var pending: [Int64: Pending] = [:]
     private var completed: [Int64: Completed] = [:]
     private var completedOrder: [Int64] = []
+    private var lastEncodedTimestamp: Int64?
+    private var lastDeliveredTimestamp: [Int: Int64] = [:]
     private var nextPeer = 0
     private var backlog = SharedFrameBacklog()
     private var queuedFrame: QueuedFrame?
@@ -193,6 +197,7 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
 
     func start(peer: Int, settings: LKRTCVideoEncoderSettings) {
         onQueue {
+            lastDeliveredTimestamp.removeValue(forKey: peer)
             policy.join(peer: peer, bitrate: Int(settings.startBitrate) * 1_000)
             stat(peer) { $0.starts &+= 1; $0.live = true }
             // libwebrtc also restarts a proxy when the frame size changes, so the
@@ -208,6 +213,7 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
         onQueue {
             stat(peer) { $0.releases &+= 1; $0.live = false }
             callbacks.removeValue(forKey: peer)
+            lastDeliveredTimestamp.removeValue(forKey: peer)
             policy.leave(peer: peer)
             for timestamp in pending.keys {
                 pending[timestamp]?.peers.remove(peer)
@@ -220,6 +226,7 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
     func remove(peer: Int) {
         onQueue {
             callbacks.removeValue(forKey: peer)
+            lastDeliveredTimestamp.removeValue(forKey: peer)
             packetizationModes.removeValue(forKey: peer)
             peers.removeValue(forKey: peer)
             policy.leave(peer: peer)
@@ -239,6 +246,8 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
             pending.removeAll()
             completed.removeAll()
             completedOrder.removeAll()
+            lastEncodedTimestamp = nil
+            lastDeliveredTimestamp.removeAll()
             stopped = true
         }
     }
@@ -252,6 +261,7 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
 
     func setCallback(_ callback: EncoderCallback?, peer: Int) {
         onQueue {
+            lastDeliveredTimestamp.removeValue(forKey: peer)
             callbacks[peer] = callback.flatMap { value in
                 packetizationModes[peer].map { (value, $0) }
             }
@@ -276,13 +286,11 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
             let requestedIDR = frameTypes.contains { $0.intValue == LKRTCFrameType.videoFrameKey.rawValue }
             if let cached = completed[timestamp] {
                 if requestedIDR, cached.encoded.kind != .keyframe { policy.requestIDR() }
-                policy.caughtUp(peer: peer)
                 deliver(cached, to: peer)
                 return 0
             }
             if pending[timestamp] != nil {
                 if requestedIDR { policy.requestIDR() }
-                policy.caughtUp(peer: peer)
                 pending[timestamp]?.peers.insert(peer)
                 return 0
             }
@@ -356,26 +364,40 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
             }
             return
         }
-        let packet = Completed(encoded: output, annexB: annexB, metadata: metadata)
+        let packet = Completed(
+            timestamp: timestamp,
+            previousTimestamp: output.kind == .keyframe ? nil : lastEncodedTimestamp,
+            encoded: output, annexB: annexB, metadata: metadata
+        )
+        lastEncodedTimestamp = timestamp
         encodedFrames &+= 1
         completed[timestamp] = packet
         completedOrder.append(timestamp)
         if completedOrder.count > 8 {
             completed.removeValue(forKey: completedOrder.removeFirst())
         }
+        let recoveringPeers = output.kind == .keyframe
+            ? policy.takeStarvedPeers(excluding: metadata.peers) : []
         for peer in metadata.peers {
             deliver(packet, to: peer)
         }
-        if output.kind == .keyframe, policy.isAnyPeerStarved {
-            for peer in policy.takeStarvedPeers(excluding: metadata.peers) {
-                deliver(packet, to: peer)
-            }
+        for peer in recoveringPeers {
+            deliver(packet, to: peer)
         }
     }
 
     private func deliver(_ packet: Completed, to peer: Int) {
         guard let (callback, packetizationMode) = callbacks[peer] else {
             stat(peer) { $0.missingCallback &+= 1 }
+            return
+        }
+        if let lastDelivered = lastDeliveredTimestamp[peer], packet.timestamp <= lastDelivered {
+            return
+        }
+        // A peer that missed a reference frame resumes on the next shared IDR, without replay.
+        if packet.encoded.kind == .delta,
+           lastDeliveredTimestamp[peer] != packet.previousTimestamp {
+            policy.frameWasStale(peer: peer)
             return
         }
         let image = LKRTCEncodedImage()
@@ -390,6 +412,12 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
         info.packetizationMode = packetizationMode
         let accepted = callback(image, info)
         stat(peer) { if accepted { $0.deliveries &+= 1 } else { $0.rejectedByCallback &+= 1 } }
+        if accepted {
+            lastDeliveredTimestamp[peer] = packet.timestamp
+            policy.caughtUp(peer: peer)
+        } else {
+            policy.frameWasStale(peer: peer)
+        }
     }
 
 }

@@ -68,4 +68,49 @@ final class SharedWebRTCEncoderTests: XCTestCase {
         proxy = nil
         XCTAssertTrue(factory.peerStats().isEmpty)
     }
+
+    func testPeerThatMissesDeltaReceivesNextSharedKeyframe() throws {
+        let factory = SharedWebRTCEncoderFactory(bitrate: 1_000_000, fps: 60, h264Allowed: { true })
+        let info = LKRTCVideoCodecInfo(name: "H264", parameters: ["packetization-mode": "1"])
+        let first = try XCTUnwrap(factory.createEncoder(info))
+        let second = try XCTUnwrap(factory.createEncoder(info))
+        defer { factory.stop() }
+
+        XCTAssertEqual(first.startEncode(with: settings(), numberOfCores: 2), 0)
+        XCTAssertEqual(second.startEncode(with: settings(), numberOfCores: 2), 0)
+
+        let firstReceived = (1...4).map { expectation(description: "first peer frame \($0)") }
+        let secondFirstFrame = expectation(description: "second peer first frame")
+        let secondRecovery = expectation(description: "second peer recovered with keyframe")
+        var firstFrames: [LKRTCFrameType] = []
+        var secondFrames: [LKRTCFrameType] = []
+        first.setCallback { image, _ in
+            firstFrames.append(image.frameType)
+            firstReceived[firstFrames.count - 1].fulfill()
+            return true
+        }
+        second.setCallback { image, _ in
+            secondFrames.append(image.frameType)
+            if secondFrames.count == 1 { secondFirstFrame.fulfill() }
+            if secondFrames.count > 1, image.frameType == .videoFrameKey { secondRecovery.fulfill() }
+            return true
+        }
+
+        XCTAssertEqual(first.encode(makeFrame(1_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(second.encode(makeFrame(1_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        wait(for: [firstReceived[0], secondFirstFrame], timeout: 5)
+
+        XCTAssertEqual(first.encode(makeFrame(2_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        wait(for: [firstReceived[1]], timeout: 5)
+
+        XCTAssertEqual(second.encode(makeFrame(3_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(first.encode(makeFrame(3_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        wait(for: [firstReceived[2]], timeout: 5)
+        XCTAssertEqual(factory.peerStats().first { $0.peer == 2 }?.deliveries, 1)
+
+        XCTAssertEqual(first.encode(makeFrame(4_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        wait(for: [firstReceived[3], secondRecovery], timeout: 5)
+        XCTAssertEqual(firstFrames[2], .videoFrameDelta)
+        XCTAssertEqual(secondFrames, [.videoFrameKey, .videoFrameKey])
+    }
 }
