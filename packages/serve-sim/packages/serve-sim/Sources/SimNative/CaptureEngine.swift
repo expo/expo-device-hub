@@ -100,6 +100,7 @@ actor CaptureEngine {
     private var webRTCEncodeCanvas = Dimensions(width: 0, height: 0)
     /// The shared H.264 canvas the publisher encodes at, as last reported.
     private var viewerCanvas = Dimensions(width: 0, height: 0)
+    private var lastViewerCanvasSequence: UInt64?
     private var frameContinuation: AsyncStream<Frame>.Continuation?
     private var cancelledWebRTCSessionIds = Set<String>()
     private var cancelledWebRTCSessionIdOrder: [String] = []
@@ -188,7 +189,11 @@ actor CaptureEngine {
         await frameCapture.setSnapshotMaxDimension(size)
     }
 
-    private func viewerCanvasChanged(_ canvas: Dimensions) async {
+    private func viewerCanvasChanged(_ canvas: Dimensions, sequence: UInt64,
+                                     publisher: WebRTCPublisher) async {
+        guard webRTCPublisher === publisher,
+              lastViewerCanvasSequence.map({ sequence > $0 }) ?? true else { return }
+        lastViewerCanvasSequence = sequence
         viewerCanvas = canvas
         await refreshSnapshotSize()
     }
@@ -432,8 +437,11 @@ actor CaptureEngine {
         consumers[consumerId] = WebRTCConsumer(publisher: publisher)
         webRTCConsumerId = consumerId
         webRTCPublisher = publisher
-        publisher.setCanvasObserver { [weak self] canvas in
-            Task { await self?.viewerCanvasChanged(canvas) }
+        lastViewerCanvasSequence = nil
+        publisher.setCanvasObserver { [weak self, weak publisher] canvas, sequence in
+            guard let publisher else { return }
+            Task { await self?.viewerCanvasChanged(canvas, sequence: sequence,
+                                                   publisher: publisher) }
         }
         return publisher
     }
