@@ -43,7 +43,10 @@ Send `x-recording-id: client-id` on `PUT` to renew the lease and on `DELETE`
 to finalize; `DELETE` returns the manifest path. `GET` returns
 `{"active":true}` while recording is starting, active, or finishing, and
 `{"active":false}` otherwise. Use a new empty output directory for each
-recording; an existing `recording.mp4` or `session.json` is preserved.
+recording; an existing `recording.mp4` or `session.json` is preserved. A
+`DELETE` that arrives before its `POST` cancels that recording ID for two
+minutes. Repeating `DELETE` during or after finalization returns the same
+result until another recording starts.
 
 ## Authentication
 

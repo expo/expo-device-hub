@@ -149,7 +149,9 @@ manifest is written, and that session cannot start another recording until
 serve-sim restarts.
 The foreground CLI gives a helper with a known active recording up to 65 seconds
 to finalize after SIGTERM. Without a known active recording, it force-kills an
-unresponsive helper after 500 ms.
+unresponsive helper after 500 ms. A stream-settings change uses the same
+recording-aware wait before replacing the helper and reports a finalization
+error while still starting the replacement.
 
 The proposed build-tools integration lives in a separate eas-cli PR. Once
 deployed, it will use this command in place of record-sim: one recorder per
