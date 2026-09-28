@@ -11,8 +11,9 @@ export type ScreenshotOutcome = ScreenshotArtifactResult | { status: "capture-fa
 
 // The filename format and the "could not save screenshot artifact" log text are a contract with
 // the EAS worker in the eas-cli repository, packages/build-tools/src/steps/utils/deviceRunSessionScreenshots.ts:
-// it matches filenames with a regex and surfaces that log line from the host output. The serve-sim and
-// serve-emu copies are intentionally identical because @expo/serve-sim ships standalone with no workspace dependencies.
+// it matches filenames with a regex and surfaces that log line from the host output. serve-sim and
+// serve-emu each carry a byte-identical copy of this file because @expo/serve-sim ships standalone with
+// no workspace dependencies; serve-emu's screenshot-artifacts-sync test fails when the copies diverge.
 export async function saveScreenshotArtifact(
   png: Uint8Array,
   directory = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY,
@@ -30,7 +31,7 @@ export async function saveScreenshotArtifact(
     await rename(temporary, destination);
     return { status: "saved", file: destination };
   } catch (error) {
-    console.error(`serve-emu: could not save screenshot artifact ${destination}:`, error);
+    console.error(`could not save screenshot artifact ${destination}:`, error);
     await rm(temporary, { force: true }).catch(() => {});
     return {
       status: "failed",
