@@ -7,6 +7,7 @@ import { join } from "path";
 import { readCameraStatus } from "../camera-helper";
 import { cameraCapability, shmNameForUdid } from "../camera-runtime";
 import { clearLaunchState, armCapabilityLoader, isCapabilityEnabled, removeCapabilityLoaderSync } from "../launch-manager";
+import { writeCameraFrame, closeCameraFrameStreams, claimCameraFrameStream } from "../camera-frames";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 import { useTempStateDir } from "./helpers";
 
@@ -245,13 +246,13 @@ describe.skipIf(!ready)("device-wide camera lifecycle", () => {
       cli(["disable"]);
     }
   }, 60_000);
-  test("a session enabling the camera without a source restores a feed a failed switch emptied", async () => {
+  test("a session enabling the camera without a source after a failed switch keeps the restored feed", async () => {
     try {
       cli(["enable", "--file", red]);
       expect(() => cli(["switch", "webcam", "serve-sim-missing-camera"])).toThrow();
-      expect((await readCameraStatus(udid!)).source).toBe("none");
+      expect((await readCameraStatus(udid!)).source).toBe("image");
       await cameraCapability.setEnabled({ udid: udid!, bundleId: null, options: {}, enabled: true });
-      expect((await readCameraStatus(udid!)).source).toBe("placeholder");
+      expect((await readCameraStatus(udid!)).source).toBe("image");
     } finally {
       cli(["disable"]);
     }
@@ -299,6 +300,33 @@ describe.skipIf(!ready)("device-wide camera lifecycle", () => {
     }
     await waitFor(() => steps().length >= 6);
     expect(steps().slice(3)).toEqual(["captured", "processed error=-11808", "finished error=-11808"]);
+  }, 60_000);
+
+  test("browser frame transport disconnects and reconnects the running app", async () => {
+    cli(["disable"]);
+    simctl(["launch", udid!, APP]);
+    const starts = lines(APP, "start");
+    for (const [source, expected] of [[red, "255,0,0"], [blue, "0,0,255"]]) {
+      cli(["enable", "--stream"]);
+      expect((await readCameraStatus(udid!)).connected).toBe(false);
+      const owner = Symbol("browser-frame-test");
+      claimCameraFrameStream(udid!, owner);
+      const before = lines(APP, "frame").length;
+      const frame = readFileSync(source!);
+      const timer = setInterval(() => writeCameraFrame(udid!, frame, owner), 50);
+      let disconnected = lines(APP, "disconnected").length;
+      try {
+        await waitFor(() => lines(APP, "frame").length > before && lines(APP, "frame").at(-1)!.endsWith(expected!));
+        disconnected = lines(APP, "disconnected").length;
+      } finally {
+        clearInterval(timer);
+        closeCameraFrameStreams(owner);
+      }
+      await waitFor(() => lines(APP, "disconnected").length > disconnected);
+      expect((await readCameraStatus(udid!)).connected).toBe(false);
+      expect(lines(APP, "start")).toEqual(starts);
+    }
+    cli(["disable"]);
   }, 60_000);
 
 });

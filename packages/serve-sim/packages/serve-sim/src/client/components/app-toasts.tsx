@@ -24,6 +24,14 @@ export function showInputSocketError(reason: string): void {
   ), { id: "simulator-input-error" });
 }
 
+export function showCameraAllowed(): void {
+  toast.custom(() => (
+    <div role="status" className="max-w-[320px] rounded-md border border-white/12 bg-panel px-3 py-2 font-mono text-[12px] text-white shadow-lg">
+      Camera allowed. Pick Browser camera again
+    </div>
+  ), { id: "camera-allowed" });
+}
+
 export function UploadToastContent({ toast }: { toast: UploadToast }) {
   const isError = toast.status === "error";
   const isUploading = toast.status === "uploading";

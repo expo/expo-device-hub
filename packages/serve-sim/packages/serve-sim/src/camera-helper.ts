@@ -17,6 +17,7 @@ interface InjectedBundlesState {
 export interface CameraHelperReply {
   [key: string]: unknown;
   ok?: boolean;
+  connected?: boolean;
   source?: string;
   arg?: string;
   mirror?: string;

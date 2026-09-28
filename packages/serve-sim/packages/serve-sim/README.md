@@ -248,13 +248,16 @@ the launch is what lets `serve-sim` attach to the process from the start.
 
 Source changes (`camera switch`) and mirror changes (`camera mirror`) update the same device-wide feed. A legacy bundle-id argument is accepted for compatibility but does not target or restart that app. `--restart` is rejected. Camera permission APIs retain their real values.
 
+Select **Browser camera** in the preview to use the camera attached to the viewing device, including when serve-sim runs on a remote Mac. Click Enable and allow the browser camera prompt. Disable releases the browser camera and disconnects the simulator feed. Closing the tab or losing its connection also disconnects the feed. Browser capture requires HTTPS or localhost. The host webcam source continues to use a camera attached to the Mac running serve-sim.
+
 The native lifecycle and its validation are described in [the camera design](Sources/SimCameraInjector/DESIGN.md).
 
 Sources:
 
 - **placeholder** — animated programmatic frames (default).
 - **file** — image (PNG/JPEG/HEIC/…) or video (mp4/mov/m4v/webm/…). The CLI sniffs the kind from the extension and falls back to magic bytes for files without an extension.
-- **webcam** — live `AVCaptureDevice` (built-in, Continuity, external).
+- **webcam** — live `AVCaptureDevice` on the host Mac (built-in, Continuity, external).
+- **stream** — JPEG frames from the viewing browser over the authenticated control connection.
 
 ## Connectors
 

@@ -1,3 +1,4 @@
+import { MAX_CAMERA_FRAME_BYTES } from "./camera-frames";
 import {
   messageToString,
   requestHost,
@@ -35,12 +36,40 @@ import {
 //   server → {sub, data}              raw SSE bytes for that subscription
 //   server → {sub, end:true}          upstream closed
 //   client → {unsub: sub}             cancel a subscription
+//
+// Binary camera frames: opcode 1, one-byte UDID length, UTF-8 UDID, encoded JPEG.
+// Opcode 2 uses the same header without a payload to stop this socket’s feed.
+// Frames are dropped when the helper cannot keep up; they have no replies.
 
 const AUTH_TIMEOUT_MS = 10_000;
 // A shareable link must not spawn unbounded work: a subscription holds a stream or watcher and an
 // action spawns a process, so both are capped per socket.
 const MAX_SUBSCRIPTIONS_PER_SOCKET = 16;
 const MAX_ACTIONS_IN_FLIGHT_PER_SOCKET = 8;
+
+const MAX_STOPPED_CAMERAS_PER_SOCKET = 64;
+const BINARY_CAMERA_FRAME = 1;
+const BINARY_CAMERA_STOP = 2;
+const BINARY_DEVICE_BYTES = 36;
+
+export interface BinaryCameraFrame {
+  udid: string;
+  frame: Buffer;
+}
+
+function binaryCameraDevice(data: Buffer): string | null {
+  if (data.length < 2 + BINARY_DEVICE_BYTES || data[1] !== BINARY_DEVICE_BYTES) return null;
+  const udid = data.toString("utf8", 2, 2 + BINARY_DEVICE_BYTES);
+  return /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(udid) ? udid : null;
+}
+
+export function parseBinaryCameraFrame(data: Buffer): BinaryCameraFrame | null {
+  if (data[0] !== BINARY_CAMERA_FRAME) return null;
+  const frameStart = 2 + BINARY_DEVICE_BYTES;
+  if (data.length <= frameStart || data.length - frameStart > MAX_CAMERA_FRAME_BYTES) return null;
+  const udid = binaryCameraDevice(data);
+  return udid ? { udid, frame: data.subarray(frameStart) } : null;
+}
 
 interface ExecMessage {
   token?: string;
@@ -59,6 +88,8 @@ export type ActionResultHandler = (
   action: string,
   params: Record<string, unknown> | undefined,
   result: { stdout: string; stderr: string; exitCode: number },
+  // Null once the socket closed: it can no longer send frames, so it must not claim the feed.
+  owner: symbol | null,
 ) => void;
 
 interface ExecChannelOptions {
@@ -71,6 +102,11 @@ interface ExecChannelOptions {
   /** In-process handler for `{id, ui}` simulator-settings requests. */
   onUiRequest?: UiRequestHandler;
   onActionResult?: ActionResultHandler;
+  /** False means ownership was lost; temporary delivery drops still return true. */
+  onCameraFrame?: (udid: string, frame: Buffer, owner: symbol) => boolean;
+  /** May run again after an in-flight action finishes; releasing ownership must be idempotent. */
+  onCameraClose?: (owner: symbol) => void;
+  onCameraStop?: (udid: string, owner: symbol) => void;
   /** Routes an authenticated subscription back through the owning middleware. */
   onSseRequest?: SseRequestHandler;
   serveSimBinPath?: string;
@@ -80,7 +116,11 @@ function wireExecSocket(
   ws: UpgradeHandlerWebSocket,
   request: Request,
   opts: ExecChannelOptions,
+  runAction: typeof runHostActionAsync,
 ): void {
+  let closed = false;
+  const cameraOwner = Symbol("camera socket");
+  const stoppedCameras = new Set<string>();
   const subscriptions = new Map<number, { destroy: () => void }>();
   let actionsInFlight = 0;
   // A ui request spawns simctl or ax just as an action does, so both draw on the same ceiling.
@@ -193,7 +233,28 @@ function wireExecSocket(
     })();
   };
 
-  ws.on("message", (data) => {
+  ws.on("message", (data, isBinary) => {
+    if (closed) return;
+    if (isBinary) {
+      if (!authed) return;
+      const packet = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      if (packet[0] === BINARY_CAMERA_STOP && packet.length === 2 + BINARY_DEVICE_BYTES) {
+        const udid = binaryCameraDevice(packet);
+        if (udid) opts.onCameraStop?.(udid, cameraOwner);
+        return;
+      }
+      const parsed = parseBinaryCameraFrame(packet);
+      if (parsed && opts.onCameraFrame?.(parsed.udid, parsed.frame, cameraOwner) === false &&
+          !stoppedCameras.has(parsed.udid)) {
+        if (stoppedCameras.size === MAX_STOPPED_CAMERAS_PER_SOCKET) {
+          ws.close();
+          return;
+        }
+        stoppedCameras.add(parsed.udid);
+        send({ cameraStopped: parsed.udid });
+      }
+      return;
+    }
     let msg: ExecMessage;
     try {
       msg = JSON.parse(messageToString(data)) as ExecMessage;
@@ -246,12 +307,16 @@ function wireExecSocket(
     const { id, action } = msg;
     if (!reserveAction(id)) return;
     const params = msg.params as Record<string, unknown> | undefined;
-    runHostActionAsync(msg, opts.serveSimBinPath ?? "serve-sim")
+    runAction(msg, opts.serveSimBinPath ?? "serve-sim")
       .then((result) => {
         try {
-          opts.onActionResult?.(action, params, result);
-        } catch {
-          // Diagnostic side-channel; a failure here must not break the reply.
+          opts.onActionResult?.(action, params, result, closed ? null : cameraOwner);
+          if (result.exitCode === 0 && params?.source === "stream" && typeof params.udid === "string" &&
+              (action === "camera.inject" || action === "camera.switch")) {
+            stoppedCameras.delete(params.udid);
+          }
+        } catch (e) {
+          console.error("serve-sim action result hook failed:", e);
         }
         send({ id, ...result });
       })
@@ -266,12 +331,19 @@ function wireExecSocket(
       });
   });
 
-  ws.on("error", () => ws.close());
-  ws.on("close", () => {
+  const cleanup = () => {
+    if (closed) return;
+    closed = true;
+    opts.onCameraClose?.(cameraOwner);
     clearTimeout(authTimer);
     for (const sub of subscriptions.values()) sub.destroy();
     subscriptions.clear();
+  };
+  ws.on("error", () => {
+    cleanup();
+    ws.close();
   });
+  ws.on("close", cleanup);
 }
 
 function isAllowedExecOrigin(
@@ -295,6 +367,23 @@ function isAllowedExecOrigin(
  * for the exec channel, false when the caller should close or route it.
  */
 export function createExecWebSocketHandler(opts: ExecChannelOptions) {
+  const cameraActions = new Map<string, Promise<void>>();
+  const runAction: typeof runHostActionAsync = (msg, binPath) => {
+    const { action, params } = msg;
+    const udid = params && typeof params === "object" && "udid" in params ? params.udid : null;
+    if ((action !== "camera.inject" && action !== "camera.switch" && action !== "camera.stopWebcam") ||
+        typeof udid !== "string") {
+      return runHostActionAsync(msg, binPath);
+    }
+    const result = (cameraActions.get(udid) ?? Promise.resolve())
+      .then(() => runHostActionAsync(msg, binPath));
+    const settled = result.then(() => {}, () => {});
+    cameraActions.set(udid, settled);
+    void settled.then(() => {
+      if (cameraActions.get(udid) === settled) cameraActions.delete(udid);
+    });
+    return result;
+  };
   return function handleWebSocket(request: Request, websocket: UpgradeHandlerWebSocket): boolean {
     const url = new URL(request.url);
     if (url.pathname !== opts.path && url.pathname !== `${opts.path}/`) return false;
@@ -306,7 +395,7 @@ export function createExecWebSocketHandler(opts: ExecChannelOptions) {
       return true;
     }
 
-    wireExecSocket(websocket, request, opts);
+    wireExecSocket(websocket, request, opts, runAction);
     return true;
   };
 }

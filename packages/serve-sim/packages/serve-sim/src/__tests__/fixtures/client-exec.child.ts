@@ -11,6 +11,7 @@ interface Frame {
 }
 
 const sentFrames: Frame[] = [];
+const binaryFrames: Uint8Array[] = [];
 let socket: FakeSocket;
 
 // Run by client-exec.test.ts in a child process: exec.ts caches its socket at module scope, so any
@@ -22,6 +23,7 @@ class FakeSocket {
   static readonly OPEN = 1;
   readonly OPEN = 1;
   readyState = 1;
+  bufferedAmount = 0;
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
@@ -34,7 +36,8 @@ class FakeSocket {
     });
   }
 
-  send(raw: string): void {
+  send(raw: string | Uint8Array): void {
+    if (raw instanceof Uint8Array) { binaryFrames.push(raw); return; }
     sentFrames.push(JSON.parse(raw) as Frame);
   }
 
@@ -48,6 +51,10 @@ class FakeSocket {
   }
 }
 
+let sendCameraFrame: typeof import("../../client/utils/exec").sendCameraFrame;
+let stopCameraFrames: typeof import("../../client/utils/exec").stopCameraFrames;
+let onCameraStopped: typeof import("../../client/utils/exec").onCameraStopped;
+let onExecDisconnect: typeof import("../../client/utils/exec").onExecDisconnect;
 let runHostAction: typeof import("../../client/utils/exec").runHostAction;
 let offeredProtocols: string[] = [];
 
@@ -63,7 +70,7 @@ beforeAll(async () => {
     __SIM_PREVIEW__: { execToken: TOKEN, basePath: "/" },
     location: { href: "http://127.0.0.1:3100/", protocol: "http:", host: "127.0.0.1:3100", pathname: "/" },
   };
-  ({ runHostAction } = await import("../../client/utils/exec"));
+  ({ runHostAction, sendCameraFrame, stopCameraFrames, onExecDisconnect, onCameraStopped } = await import("../../client/utils/exec"));
 });
 
 afterAll(() => {
@@ -128,12 +135,63 @@ describe("client runHostAction", () => {
     });
   });
 
+  it("sends a binary camera frame with the selected device", () => {
+    expect(sendCameraFrame("11111111-2222-3333-4444-555555555555", new Uint8Array([7, 8]))).toBe("sent");
+    const frame = binaryFrames.at(-1)!;
+    expect(frame[0]).toBe(1);
+    expect(new TextDecoder().decode(frame.subarray(2, 2 + frame[1]!))).toBe("11111111-2222-3333-4444-555555555555");
+    expect([...frame.subarray(2 + frame[1]!)]).toEqual([7, 8]);
+  });
+
+  it("disconnects only the selected browser frame channel", () => {
+    stopCameraFrames("11111111-2222-3333-4444-555555555555");
+    const frame = binaryFrames.at(-1)!;
+    expect(frame[0]).toBe(2);
+    expect(frame.length).toBe(2 + frame[1]!);
+    expect(new TextDecoder().decode(frame.subarray(2))).toBe("11111111-2222-3333-4444-555555555555");
+  });
+
+  it("drops congested camera frames without growing the queue", () => {
+    socket.bufferedAmount = 600 * 1024;
+    const baseline = binaryFrames.length;
+    expect(sendCameraFrame("11111111-2222-3333-4444-555555555555", new Uint8Array([7]))).toBe("dropped");
+    expect(binaryFrames).toHaveLength(baseline);
+    socket.bufferedAmount = 0;
+  });
+
+  it("drops invalid device IDs for both camera frames and stop messages", () => {
+    const baseline = binaryFrames.length;
+    for (const udid of ["", "DEVICE-A", "x".repeat(36), "a".repeat(64)]) {
+      expect(sendCameraFrame(udid, new Uint8Array([7]))).toBe("dropped");
+      stopCameraFrames(udid);
+    }
+    expect(binaryFrames).toHaveLength(baseline);
+  });
+
+  it("routes ownership loss only to the matching camera listener", () => {
+    let stopped = 0;
+    const unsubscribe = onCameraStopped("DEVICE-A", () => { stopped++; });
+    socket.reply({ cameraStopped: "DEVICE-B" });
+    expect(stopped).toBe(0);
+    socket.reply({ cameraStopped: "DEVICE-A" });
+    expect(stopped).toBe(1);
+    unsubscribe();
+    socket.reply({ cameraStopped: "DEVICE-A" });
+    expect(stopped).toBe(1);
+  });
+
   // Left last: closing the socket tears down the module's cached connection.
   it("rejects an in-flight request when the socket drops", async () => {
     const baseline = sentFrames.length;
     const call = runHostAction("appearance.get", { udid: "U" });
     while (sentFrames.length <= baseline) await new Promise((r) => setTimeout(r, 2));
+    let disconnected = 0;
+    const unsubscribe = onExecDisconnect(() => { disconnected++; });
+    socket.onerror?.();
     socket.close();
+    unsubscribe();
+    expect(disconnected).toBe(1);
+    expect(sendCameraFrame("DEVICE-A", new Uint8Array([7]))).toBe("disconnected");
 
     // Raced rather than awaited: if the drop stops rejecting, the promise never settles, and an
     // await would hang the whole run instead of failing this test.

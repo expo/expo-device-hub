@@ -74,6 +74,7 @@ const ACTION_SCHEMAS = {
     z.object({ udid: Device, source: z.literal("file"), target: ConfinedPath }),
     z.object({ udid: Device, source: z.literal("webcam"), target: Argument.optional() }),
     z.object({ udid: Device, source: z.literal("placeholder") }),
+    z.object({ udid: Device, source: z.literal("stream") }),
   ]),
   "camera.inject": z.discriminatedUnion("source", [
     z.object({
@@ -93,6 +94,7 @@ const ACTION_SCHEMAS = {
       mirror: z.enum(MIRROR_VALUES),
       source: z.literal("placeholder"),
     }),
+    z.object({ udid: Device, mirror: z.enum(MIRROR_VALUES), source: z.literal("stream") }),
   ]),
   "camera.mirror": z.object({ udid: Device, value: z.enum(MIRROR_VALUES) }),
   "camera.stopWebcam": z.object({ udid: Device }),
@@ -245,6 +247,7 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
       const args = ["camera", "enable", "-d", p.udid, "--quiet"];
       if (p.source === "file") args.push("--file", p.target);
       else if (p.source === "webcam") args.push("--webcam", ...(p.target ? [p.target] : []));
+      else if (p.source === "stream") args.push("--stream");
       args.push("--mirror", p.mirror);
       return serveSim(args);
     }

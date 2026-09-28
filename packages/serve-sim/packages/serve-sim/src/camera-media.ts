@@ -1,7 +1,7 @@
 import { openSync, readSync, closeSync } from "fs";
 import { resolve } from "path";
 
-export type CamSourceKind = "placeholder" | "webcam" | "image" | "video";
+export type CamSourceKind = "placeholder" | "webcam" | "image" | "video" | "stream";
 
 export interface ResolvedSource { kind: CamSourceKind; arg?: string }
 
@@ -65,7 +65,9 @@ export function detectMediaKind(filePath: string): "image" | "video" | null {
 export function resolveSourceArg(opts: {
   file?: string;
   webcam?: string | true;
+  stream?: boolean;
 }): ResolvedSource {
+  if (opts.stream) return { kind: "stream" };
   if (opts.file) {
     const abs = resolve(opts.file);
     const kind = detectMediaKind(abs);

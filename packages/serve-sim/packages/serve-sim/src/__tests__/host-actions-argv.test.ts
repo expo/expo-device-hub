@@ -342,6 +342,9 @@ describe("serve-sim-backed actions", () => {
   });
 
   it("builds camera switch for each source", async () => {
+    expect(await argv("camera.switch", { udid: UDID, source: "stream" })).toEqual([
+      "serve-sim", "camera", "switch", "stream", "-d", UDID, "--quiet",
+    ]);
     expect(await argv("camera.switch", { udid: UDID, source: "placeholder" })).toEqual([
       "serve-sim", "camera", "switch", "placeholder", "-d", UDID, "--quiet",
     ]);
@@ -356,6 +359,9 @@ describe("serve-sim-backed actions", () => {
   });
 
   it("builds camera inject for each source", async () => {
+    expect(await argv("camera.inject", { udid: UDID, mirror: "off", source: "stream" })).toEqual([
+      "serve-sim", "camera", "enable", "-d", UDID, "--quiet", "--stream", "--mirror", "off",
+    ]);
     expect(
       await argv("camera.inject", {
         udid: UDID, bundleId: BUNDLE, mirror: "off", source: "file", target: CONFINED,

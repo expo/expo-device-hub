@@ -23,6 +23,7 @@ type SocketReply = {
   data?: string;
   end?: boolean;
   ready?: boolean;
+  cameraStopped?: string;
   error?: string;
 } & Partial<ExecResult> & { status?: Record<string, string>; ok?: boolean };
 
@@ -42,6 +43,23 @@ let nextRequestId = 1;
 let nextSubId = 1;
 const pendingRequests = new Map<number, PendingRequest>();
 const activeSubscriptions = new Map<number, ActiveSubscription>();
+const disconnectListeners = new Set<() => void>();
+const cameraStoppedListeners = new Map<string, Set<() => void>>();
+
+export function onCameraStopped(udid: string, listener: () => void): () => void {
+  const listeners = cameraStoppedListeners.get(udid) ?? new Set<() => void>();
+  listeners.add(listener);
+  cameraStoppedListeners.set(udid, listeners);
+  return () => {
+    listeners.delete(listener);
+    if (!listeners.size) cameraStoppedListeners.delete(udid);
+  };
+}
+
+export function onExecDisconnect(listener: () => void): () => void {
+  disconnectListeners.add(listener);
+  return () => { disconnectListeners.delete(listener); };
+}
 
 function execSocketUrl(): string {
   const url = new URL(simEndpoint("exec-ws"), window.location.href);
@@ -103,6 +121,10 @@ function openExecSocket(): Promise<WebSocket> {
         }
         return;
       }
+      if (typeof msg.cameraStopped === "string") {
+        for (const listener of Array.from(cameraStoppedListeners.get(msg.cameraStopped) ?? [])) listener();
+        return;
+      }
       if (typeof msg.sub === "number") {
         const subscription = activeSubscriptions.get(msg.sub);
         if (!subscription) return;
@@ -120,11 +142,15 @@ function openExecSocket(): Promise<WebSocket> {
       pendingRequests.delete(msg.id);
       pending.resolve(msg);
     };
+    let failed = false;
     const fail = () => {
+      if (failed) return;
+      failed = true;
       socketPromise = null;
       openSocket = null;
       const err = new Error("control socket closed — reload the page if this persists");
       rejectAllPending(err);
+      for (const listener of Array.from(disconnectListeners)) listener();
       const subscriptions = [...activeSubscriptions.values()];
       activeSubscriptions.clear();
       for (const subscription of subscriptions) subscription.onEnd();
@@ -171,6 +197,41 @@ async function socketRequest(
     });
     ws.send(JSON.stringify({ id, ...body }));
   });
+}
+
+const CAMERA_DEVICE_ID = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
+export function stopCameraFrames(udid: string): void {
+  const ws = openSocket;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  if (!CAMERA_DEVICE_ID.test(udid)) return;
+  const device = new TextEncoder().encode(udid);
+  const message = new Uint8Array(2 + device.length);
+  message[0] = 2;
+  message[1] = device.length;
+  message.set(device, 2);
+  try { ws.send(message); } catch {}
+}
+
+export type CameraFrameSendResult = "sent" | "dropped" | "disconnected";
+
+export function sendCameraFrame(udid: string, frame: Uint8Array): CameraFrameSendResult {
+  const ws = openSocket;
+  if (!ws || ws.readyState !== WebSocket.OPEN) return "disconnected";
+  if (ws.bufferedAmount > 512 * 1024) return "dropped";
+  if (!CAMERA_DEVICE_ID.test(udid) || !frame.length || frame.length > 8 * 1024 * 1024) return "dropped";
+  const device = new TextEncoder().encode(udid);
+  const message = new Uint8Array(2 + device.length + frame.length);
+  message[0] = 1;
+  message[1] = device.length;
+  message.set(device, 2);
+  message.set(frame, 2 + device.length);
+  try {
+    ws.send(message);
+    return "sent";
+  } catch {
+    return "disconnected";
+  }
 }
 
 /**
