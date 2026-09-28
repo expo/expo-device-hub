@@ -290,6 +290,10 @@ export class DeviceSession {
   private cancelledRecordingStart?: { id: string; manifest?: string };
   private recordingStart?: Promise<void>;
   private recordingFinishing?: Promise<string>;
+  private recordingFinishingId?: string;
+  private lastFinishedRecording?: { id: string; manifest: string };
+  private lastFailedRecording?: { id: string; error: Error };
+  private readonly cancelledBeforeStart = new Map<string, number>();
   private recordingFailure?: Error;
   private inputQueueDraining = false;
   private readonly activeTouches = new WeakMap<HidSocket, () => Promise<void>>();
@@ -434,11 +438,18 @@ export class DeviceSession {
           this.sendJson(res, 400, { error: "invalid_recording_request", message: "Pass start: true, output, and an alphanumeric recordingId (hyphens and underscores allowed)" });
           return;
         }
+        const cancelledUntil = this.cancelledBeforeStart.get(body.recordingId);
+        if (cancelledUntil && cancelledUntil > Date.now()) {
+          this.sendJson(res, 409, { error: "recording_start_cancelled" });
+          return;
+        }
         if (this.recordingLease || this.recordingStarting || this.recordingFinishing) {
           this.sendJson(res, 409, { error: "recording_active", message: "A recording is already active; stop it or wait for its lease to expire" });
           return;
         }
         this.recordingStarting = true;
+        this.lastFinishedRecording = undefined;
+        this.lastFailedRecording = undefined;
         const output = body.output;
         const recordingId = body.recordingId;
         this.recordingStartingId = recordingId;
@@ -502,6 +513,34 @@ export class DeviceSession {
           this.sendJson(res, manifest ? 200 : 202, manifest ? { manifest } : { cancelled: true });
           return;
         }
+        if (typeof recordingId === "string" && this.recordingFinishingId === recordingId) {
+          const manifest = await this.recordingFinishing;
+          this.sendJson(res, 200, { manifest });
+          return;
+        }
+        if (typeof recordingId === "string" && this.lastFinishedRecording?.id === recordingId) {
+          this.sendJson(res, 200, { manifest: this.lastFinishedRecording.manifest });
+          return;
+        }
+        if (typeof recordingId === "string" && this.lastFailedRecording?.id === recordingId) {
+          this.sendJson(res, 500, { error: "recording_stop_failed", message: String(this.lastFailedRecording.error) });
+          return;
+        }
+        if (typeof recordingId === "string" && recordingId.length > 0 && recordingId.length <= 128
+          && !INVALID_RECORDING_ID_CHAR.test(recordingId)
+          && recordingId !== this.recordingLease?.id) {
+          const now = Date.now();
+          for (const [id, until] of this.cancelledBeforeStart) {
+            if (until <= now) this.cancelledBeforeStart.delete(id);
+          }
+          if (!this.cancelledBeforeStart.has(recordingId) && this.cancelledBeforeStart.size >= 512) {
+            this.sendJson(res, 503, { error: "recording_cancellation_limit" });
+            return;
+          }
+          this.cancelledBeforeStart.set(recordingId, now + 120_000);
+          this.sendJson(res, 202, { cancelled: true });
+          return;
+        }
         if (typeof recordingId !== "string" || recordingId !== this.recordingLease?.id) {
           this.sendJson(res, 409, { error: "recording_not_owned" });
           return;
@@ -533,13 +572,18 @@ export class DeviceSession {
     this.recordingLease = undefined;
     const finishing = this.capture.stopRecording();
     this.recordingFinishing = finishing;
+    this.recordingFinishingId = id;
     try {
-      return await finishing;
+      const manifest = await finishing;
+      this.lastFinishedRecording = { id, manifest };
+      return manifest;
     } catch (error) {
       this.recordingFailure = error instanceof Error ? error : new Error(String(error));
+      this.lastFailedRecording = { id, error: this.recordingFailure };
       throw error;
     } finally {
       this.recordingFinishing = undefined;
+      this.recordingFinishingId = undefined;
     }
   }
 
@@ -1904,7 +1948,9 @@ export function closeDeviceSession(udid: string): void {
   }
 }
 
-export async function finishDeviceRecordingsForShutdown(): Promise<boolean> {
+export async function finishDeviceRecordingsForShutdown(
+  onFailure?: (error: unknown) => void,
+): Promise<boolean> {
   recordingsShuttingDown = true;
   const results = await Promise.allSettled(
     [...sessions.values()].map(session => session.finishRecordingForShutdown())
@@ -1912,10 +1958,13 @@ export async function finishDeviceRecordingsForShutdown(): Promise<boolean> {
   while (closedSessionStops.size > 0) {
     await Promise.all(closedSessionStops);
   }
-  let succeeded = closedSessionStopErrors.splice(0).length === 0;
+  const closedErrors = closedSessionStopErrors.splice(0);
+  let succeeded = closedErrors.length === 0;
+  for (const error of closedErrors) onFailure?.(error);
   for (const result of results) {
     if (result.status === "rejected") {
       succeeded = false;
+      onFailure?.(result.reason);
       console.error(`Recording finalization failed during serve-sim shutdown: ${String(result.reason)}`);
     }
   }

@@ -9,6 +9,7 @@ import WebSocket from "ws";
 import {
   stateDir,
   stateFileForDevice,
+  recordingShutdownFailureFile,
   listStateFiles,
   inProcessServeSimState,
   previewStartupPayload,
@@ -62,7 +63,7 @@ import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
 import { parseHingeAngle } from "./hinge-angle";
 import { sendHingeAngleToWs } from "./hinge-command";
 import { finishDeviceRecordingsForShutdown } from "./device-session";
-import { recordingShutdownGraceMs, stopProcess } from "./stop-process";
+import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
 
 // `import.meta.dir` is Bun-only; resolve once via fileURLToPath so the bundled
 // CLI works under plain `node` too.
@@ -88,6 +89,19 @@ function resolveVersion(): string {
 // and we extract the bytes to a cached location on first use.
 
 type ServerState = ServeSimDeviceState;
+let replacementRecordingFailed = false;
+
+async function replaceHelper(state: ServerState): Promise<void> {
+  const result = await stopForStreamReplacement(state);
+  if (result.forced) {
+    console.error(`Previous serve-sim helper ${state.pid} required SIGKILL during stream-settings replacement.`);
+  }
+  if (result.recordingError) {
+    replacementRecordingFailed = true;
+    process.exitCode = 1;
+    console.error(`Recording finalization failed while replacing helper ${state.pid}: ${result.recordingError}. Starting the replacement helper.`);
+  }
+}
 
 type StreamRuntimeOptions = StreamSettings;
 function ensureStateDir() {
@@ -499,7 +513,7 @@ async function follow(
     const existing = readState(udid);
     if (existing) {
       if (replaceMismatchedStream && !streamSettingsEqual(existing.streamSettings, stream)) {
-        await stopProcess(existing.pid);
+        await replaceHelper(existing);
         clearState(udid);
       } else {
         if (!quiet) {
@@ -579,7 +593,7 @@ async function follow(
     children.clear();
     const childFailed = stopped.some(({ exitCode: childCode, signalCode, forced }) =>
       forced || signalCode !== null || (childCode !== null && childCode !== 0));
-    process.exit(childFailed ? 1 : exitCode);
+    process.exit(childFailed || replacementRecordingFailed ? 1 : exitCode);
   };
 
   // Monitor children — exit when all die (helper crashed / exited on its own)
@@ -641,7 +655,7 @@ async function detach(
     const existing = readState(udid);
     if (existing) {
       if (replaceMismatchedStream && !streamSettingsEqual(existing.streamSettings, stream)) {
-        await stopProcess(existing.pid);
+        await replaceHelper(existing);
         clearState(udid);
       } else {
         states.push(existing);
@@ -1843,7 +1857,19 @@ async function serve(
     if (shuttingDown) return;
     shuttingDown = true;
     sessionStopping = true;
-    const recordingsFinished = await finishDeviceRecordingsForShutdown();
+    const recordingErrors: string[] = [];
+    const recordingsFinished = await finishDeviceRecordingsForShutdown(
+      error => recordingErrors.push(String(error))
+    );
+    if (!recordingsFinished) {
+      try {
+        writeFileSync(recordingShutdownFailureFile(process.pid), JSON.stringify({
+          pid: process.pid, errors: recordingErrors,
+        }), { mode: 0o600 });
+      } catch (error) {
+        console.error(`Could not report recording shutdown failure: ${String(error)}`);
+      }
+    }
     await disarmDevicesArmedHereAsync();
     clearAll();
     process.exit(recordingsFinished ? 0 : 1);

@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:http";
 
-import { recordingShutdownGraceMs, stopProcess } from "../stop-process";
+import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "../stop-process";
+import { useTempStateDir } from "./helpers";
 
 test("shutdown extends its grace only when the helper reports an active recording", async () => {
   let active = true;
@@ -22,6 +23,46 @@ test("shutdown extends its grace only when the helper reports an active recordin
   } finally {
     server.closeAllConnections();
     server.close();
+  }
+});
+
+test("stream replacement waits for recording and returns its shutdown error", async () => {
+  const stateDir = useTempStateDir();
+  const server = createServer((_req, res) => {
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end('{"active":true}');
+  });
+  await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("missing test port");
+  const child = spawn(process.execPath, ["-e", `
+    const fs = require("node:fs");
+    process.on("SIGTERM", () => {
+      setTimeout(() => {
+        fs.writeFileSync(require("node:path").join(process.env.SERVE_SIM_STATE_DIR,
+          "recording-shutdown-failed-" + process.pid + ".json"),
+          JSON.stringify({ errors: ["MP4 finalization failed"] }));
+        process.exit(1);
+      }, 100);
+    });
+    console.log("ready");
+    setInterval(() => {}, 1000);
+  `], { stdio: ["ignore", "pipe", "ignore"] });
+  try {
+    await once(child.stdout!, "data");
+    const replacement = await stopForStreamReplacement({
+      pid: child.pid!, device: "replacement-test", port: address.port,
+      url: `http://127.0.0.1:${address.port}`,
+      streamUrl: `http://127.0.0.1:${address.port}/stream.mjpeg`,
+      wsUrl: `ws://127.0.0.1:${address.port}/ws`,
+    });
+    expect(replacement.forced).toBe(false);
+    expect(replacement.recordingError).toContain("MP4 finalization failed");
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+    server.closeAllConnections();
+    server.close();
+    stateDir.restore();
   }
 });
 

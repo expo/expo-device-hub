@@ -2,6 +2,7 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 
 import { simMiddleware } from "../middleware";
+import { peekDeviceSession } from "../device-session";
 import { accessCookieName } from "../session-auth";
 import { servePreview, type PreviewServer } from "../runtime";
 import { freePortAsync, useTempStateDir } from "./helpers";
@@ -60,9 +61,11 @@ test("recording control passes the auth gate without a token when the preview is
 });
 
 test("recording status is readable by the parent and uses the same bearer gate", async () => {
-  const open = await fetch(url);
+  const idleDevice = randomUUID();
+  const open = await fetch(url.replace(device, idleDevice));
   expect(open.status).toBe(200);
   expect(await open.json()).toEqual({ active: false });
+  expect(peekDeviceSession(idleDevice)).toBeUndefined();
   expect((await fetch(gatedUrl)).status).toBe(401);
   const authorized = await fetch(gatedUrl, {
     headers: { Authorization: "Bearer recording-session-token" },
