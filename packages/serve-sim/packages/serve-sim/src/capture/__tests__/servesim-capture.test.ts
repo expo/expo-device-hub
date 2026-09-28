@@ -142,6 +142,8 @@ describeOrSkip("servesim_capture addon", () => {
     expect(probe.oversizedRecordDropped).toBe(true);
     // A dropped record must not leave its size behind, or the limit creeps shut.
     expect(probe.queuedBytesAfterDrop).toBe(0);
+    // And it is counted as lost, like a failed send, so shutdown reports it.
+    expect(probe.droppedRecordCounted).toBe(1);
   });
 
   test("shuts down cleanly when it was loaded without a control url", () => {

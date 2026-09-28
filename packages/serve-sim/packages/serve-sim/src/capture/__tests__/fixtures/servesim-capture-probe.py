@@ -218,10 +218,12 @@ results["queuedBytesAfterDrain"] = addon._queued_bytes
 # Over the limit, a record is dropped rather than queued without bound.
 _saved_limit = addon.QUEUE_BYTE_LIMIT
 addon.QUEUE_BYTE_LIMIT = 16
+_failed_before_drop = addon._failed_sends
 addon._post("/response", {"id": "big", "res": {"body": "x" * 64}})
 time.sleep(0.3)
 results["oversizedRecordDropped"] = len(received) == 0
 results["queuedBytesAfterDrop"] = addon._queued_bytes
+results["droppedRecordCounted"] = addon._failed_sends - _failed_before_drop
 
 received.clear()
 addon.QUEUE_BYTE_LIMIT = 500

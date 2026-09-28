@@ -84,8 +84,28 @@ def _send(path, body):
         return True
 
 
+def _count_lost_locked(path):
+    """Count a record that will never reach serve-sim. The caller holds _delivery_lock, so done()
+    never reads the total between a send ending and its loss being counted. True on the first loss."""
+    global _failed_sends
+    # /ready is a startup signal, not a capture record; losing it loses no traffic.
+    if path == "/ready":
+        return False
+    _failed_sends += 1
+    return _failed_sends == 1
+
+
+def _warn_first_loss(first):
+    if first and _shutdown_deadline is None:
+        print(
+            "[servesim-capture] could not deliver a capture record to serve-sim; its request stays "
+            "unfinished. Further losses are counted and reported when capture stops.",
+            file=sys.stderr,
+        )
+
+
 def _drain():
-    global _queued_bytes, _in_flight, _failed_sends
+    global _queued_bytes, _in_flight
     while True:
         item = _outbox.get()
         if item is None:
@@ -98,17 +118,8 @@ def _drain():
         delivered = _send(path, body)
         with _delivery_lock:
             _in_flight = False
-            # /ready is a startup signal, not a capture record; its reply failing loses no traffic.
-            first = False
-            if not delivered and path != "/ready":
-                _failed_sends += 1
-                first = _failed_sends == 1
-        if first and _shutdown_deadline is None:
-            print(
-                "[servesim-capture] could not deliver a capture record to serve-sim; its request stays "
-                "unfinished. Further losses are counted and reported when capture stops.",
-                file=sys.stderr,
-            )
+            first = not delivered and _count_lost_locked(path)
+        _warn_first_loss(first)
 
 
 _reporter = threading.Thread(target=_drain, name="servesim-capture-reporter", daemon=True)
@@ -137,9 +148,15 @@ def _post(path, payload):
     body = json.dumps(payload).encode("utf-8")
     size = len(body)
     with _queued_lock:
-        if _queued_bytes + size > QUEUE_BYTE_LIMIT or _outbox.qsize() >= QUEUE_ITEM_LIMIT:
-            return
-        _queued_bytes += size
+        full = _queued_bytes + size > QUEUE_BYTE_LIMIT or _outbox.qsize() >= QUEUE_ITEM_LIMIT
+        if not full:
+            _queued_bytes += size
+    if full:
+        # A record the queue has no room for is lost like a failed send, and counted the same way.
+        with _delivery_lock:
+            first = _count_lost_locked(path)
+        _warn_first_loss(first)
+        return
     _outbox.put_nowait((path, body, size))
 
 
