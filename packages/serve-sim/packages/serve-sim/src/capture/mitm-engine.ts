@@ -3,11 +3,14 @@ import { createServer } from "node:net";
 import {
   accessSync,
   constants,
+  copyFileSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
+  renameSync,
   statSync,
   writeFileSync,
 } from "node:fs";
@@ -17,6 +20,8 @@ import { basename, join } from "node:path";
 
 import type { CaptureStore } from "./store";
 import { dirnameOf } from "../runtime";
+import { withLaunchStateLockSync } from "../launch-state-lock";
+import { stateDir } from "../state";
 import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
 import {
   DEFAULT_MAX_CONTROL_BODY_BYTES,
@@ -43,6 +48,51 @@ const STARTUP_TIMEOUT_MS = 30_000;
 const STARTUP_POLL_MS = 200;
 const STARTUP_ATTEMPTS = 3;
 const CONFDIR_PREFIX = "serve-sim-capture-";
+
+// mitmdump makes a new CA in every new confdir, and each one is trusted on the simulator, so trusted
+// roots would pile up with every capture start. One CA is kept per user instead and copied into each
+// confdir; mitmdump reuses a CA it finds there. Trusting the same certificate again adds nothing.
+const CA_FILES = ["mitmproxy-ca.pem", "mitmproxy-ca-cert.pem"] as const;
+
+/** The private folder that holds this user's capture CA. Remove it to make a new CA. */
+export function captureCaDir(): string {
+  return join(stateDir(), "capture-ca");
+}
+
+// Seeding and keeping run under one cross-process lock, so two first starts cannot leave one
+// process's key beside the other's certificate.
+function withCaLock<T>(operation: () => T): T {
+  return withLaunchStateLockSync("capture-ca", operation);
+}
+
+function seedCaInto(confdir: string): void {
+  withCaLock(() => {
+    const dir = captureCaDir();
+    if (!CA_FILES.every((name) => existsSync(join(dir, name)))) return;
+    for (const name of CA_FILES) copyFileSync(join(dir, name), join(confdir, name));
+  });
+}
+
+/** Keep the CA mitmdump made on the first start, for every later one. The first writer wins. */
+function keepCaFrom(confdir: string): void {
+  try {
+    withCaLock(() => {
+      const dir = captureCaDir();
+      if (CA_FILES.every((name) => existsSync(join(dir, name)))) return;
+      if (!CA_FILES.every((name) => existsSync(join(confdir, name)))) return;
+      mkdirSync(dir, { recursive: true, mode: 0o700 });
+      for (const name of CA_FILES) {
+        const temp = join(dir, `${name}.${process.pid}.tmp`);
+        rmSync(temp, { force: true });
+        writeFileSync(temp, readFileSync(join(confdir, name)), { mode: 0o600, flag: "wx" });
+        renameSync(temp, join(dir, name));
+      }
+    });
+  } catch (error) {
+    // This session keeps its own CA; the next start tries again.
+    console.warn("Network capture: could not keep the capture CA for later sessions:", error instanceof Error ? error.message : error);
+  }
+}
 export interface CaptureProxy {
   address: string;
   /** Port file for the injected library; lives in the session confdir. */
@@ -311,6 +361,7 @@ async function startMitmProxyAttempt(
 
   let child: ChildProcess;
   try {
+    seedCaInto(confdir);
     writeFileSync(portFile, String(proxyPort));
     child = spawn(
       mitmdump,
@@ -431,6 +482,7 @@ async function startMitmProxyAttempt(
     }
     if (existsSync(caFile) && announced) {
       running = true;
+      keepCaFrom(confdir);
       return {
         address: `127.0.0.1:${proxyPort}`,
         portFile,

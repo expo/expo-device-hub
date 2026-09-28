@@ -1,10 +1,11 @@
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { describe, expect, test } from "bun:test";
 
 import {
+  captureCaDir,
   DEFAULT_MAX_CONTROL_BODY_BYTES,
   describeFailure,
   formatOversizedControlBodyWarning,
@@ -16,6 +17,7 @@ import {
   startMitmProxy,
 } from "../mitm-engine";
 import { CaptureStore } from "../store";
+import { useTempStateDir } from "../../__tests__/helpers";
 
 const MARKER = "serve-sim-capture-Qz7pLm";
 const SELF = 400;
@@ -234,6 +236,53 @@ setInterval(() => {}, 1000);
     else process.env.SERVE_SIM_TEST_ATTEMPTS = previous.attempts;
     if (previous.paths === undefined) delete process.env.SERVE_SIM_TEST_PATHS;
     else process.env.SERVE_SIM_TEST_PATHS = previous.paths;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("keeps one CA per user, so every capture start trusts the same certificate", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "serve-sim-mitm-ca-"));
+  const executable = join(dir, "mitmdump");
+  // Like mitmdump: make a CA only when the confdir has none, and reuse one it finds.
+  writeFileSync(
+    executable,
+    `#!/usr/bin/env bun
+import { existsSync, writeFileSync } from "node:fs";
+const confdir = process.argv.find((arg) => arg.startsWith("confdir="))?.slice("confdir=".length);
+if (!existsSync(confdir + "/mitmproxy-ca.pem")) {
+  const id = String(Math.random());
+  writeFileSync(confdir + "/mitmproxy-ca.pem", "key-" + id);
+  writeFileSync(confdir + "/mitmproxy-ca-cert.pem", "cert-" + id);
+}
+await fetch(process.env.SERVE_SIM_CAPTURE_CONTROL_URL + "/ready?t=" + process.env.SERVE_SIM_CAPTURE_CONTROL_TOKEN, {
+  method: "POST",
+  body: "{}",
+});
+setInterval(() => {}, 1000);
+`,
+  );
+  chmodSync(executable, 0o755);
+  const state = useTempStateDir();
+  const previous = process.env.SERVE_SIM_MITMDUMP;
+  process.env.SERVE_SIM_MITMDUMP = executable;
+  try {
+    const first = await startMitmProxy(new CaptureStore(), {});
+    const firstCa = await first.caPem();
+    await first.close();
+    const second = await startMitmProxy(new CaptureStore(), {});
+    const secondCa = await second.caPem();
+    await second.close();
+
+    expect(secondCa).toBe(firstCa);
+    expect(statSync(captureCaDir()).mode & 0o777).toBe(0o700);
+    for (const name of ["mitmproxy-ca.pem", "mitmproxy-ca-cert.pem"]) {
+      expect(statSync(join(captureCaDir(), name)).mode & 0o777).toBe(0o600);
+    }
+    expect(readFileSync(join(captureCaDir(), "mitmproxy-ca-cert.pem"), "utf8")).toBe(firstCa);
+  } finally {
+    if (previous === undefined) delete process.env.SERVE_SIM_MITMDUMP;
+    else process.env.SERVE_SIM_MITMDUMP = previous;
+    state.restore();
     rmSync(dir, { recursive: true, force: true });
   }
 });
