@@ -2782,8 +2782,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     }
 
     // Still-PNG capture via `simctl io <udid> screenshot`. Consumed by the
-    // Expo Device Hub dashboard's save-screenshot action (the serve-sim web UI
-    // shells out over exec-ws instead, so it never hits this route). Uses the
+    // Expo Device Hub dashboard's save-screenshot action and by the serve-sim web
+    // UI when it is served through a tunnel (on loopback it uses the
+    // screenshot.capture host action instead). Uses the
     // ?device= selection with a booted-simulator fallback.
     if (url === base + "/api/screenshot") {
       if (req.method !== "POST") {

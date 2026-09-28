@@ -463,6 +463,11 @@ describe("complete API success contracts", () => {
         artifact: { status: "saved" },
       }),
     ).toEqual({ ok: true, mimeType: "image/png", data: "iVBORw==", artifact: { status: "saved" } });
+    expect(parseScreenshotBase64Response({ ok: true, mimeType: "image/png", data: "iVBORw==" })).toEqual({
+      ok: true,
+      mimeType: "image/png",
+      data: "iVBORw==",
+    });
     expect(
       parseScreenshotBase64Response({
         ok: true,
