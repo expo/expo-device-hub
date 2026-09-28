@@ -71,10 +71,13 @@ Proxies deduplicate submissions by frame timestamp and distribute the one
 compressed result to the peers. The shared target bitrate is the minimum of
 active peers' requests; a join or PLI requests an IDR. Each peer still owns
 its connection, congestion controller, and RTP packet stream.
+If a peer misses a shared delta frame, it waits for the next shared IDR;
+recovery does not replay frames or start another encoder.
 
 All viewers use the shared input canvas. H.264 viewers share one encode;
-VP8 viewers encode separately from that same canvas, including its letterboxing
-and resolution limits.
+VP8 viewers encode separately from that same canvas. With no H.264 viewer, the
+canvas has no H.264 level limit. In a mixed session, VP8 shares the H.264
+canvas, including its letterboxing and resolution limit.
 `SharedResolutionPolicy` steps the canvas long edge to 0.75 and then 0.5 when
 the lowest H.264 peer bitrate stays under 40% of the target for 2 s, and steps back
 up after 10 s above 90%. It holds still for 5 s after a peer joins and for

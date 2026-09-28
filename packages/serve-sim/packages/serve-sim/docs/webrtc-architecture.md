@@ -239,6 +239,8 @@ the simulator's single synthetic touch surface.
 - Raising the posted offer's level moves the bound rather than removing it: a peer is still
   clamped to the level the answer settles for the chosen payload. With level asymmetry, as
   browsers offer, that is the offer's level.
+- VP8-only sessions use the shared canvas without an H.264 level bound. When an H.264 peer
+  joins, its negotiated level bounds the canvas for all viewers.
 - The level itself is not reported; the stats carry the source size and the ceiling applied
   to it, which is what the panel names the downscale from.
 - The encode settings are session-wide, so a second viewer's picker can read higher than the
