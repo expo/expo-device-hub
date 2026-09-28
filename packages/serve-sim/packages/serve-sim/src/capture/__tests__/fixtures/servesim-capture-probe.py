@@ -19,7 +19,11 @@ class ControlHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("content-length") or 0)
         received.append(
-            {"path": self.path, "body": json.loads(self.rfile.read(length) or b"{}")}
+            {
+                "path": self.path,
+                "token": self.headers.get("x-serve-sim-capture-token"),
+                "body": json.loads(self.rfile.read(length) or b"{}"),
+            }
         )
         self.send_response(200)
         self.end_headers()
@@ -144,6 +148,7 @@ results["headerKeys"] = list(headers["headers"].keys())
 addon.running()
 results["readyDelivered"] = wait_for(1) == 1
 results["readyPath"] = received[0]["path"] if received else None
+results["readyToken"] = received[0]["token"] if received else None
 results["proxyBypassed"] = bool(received)
 
 received.clear()

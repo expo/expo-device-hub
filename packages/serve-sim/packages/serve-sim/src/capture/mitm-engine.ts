@@ -52,6 +52,7 @@ const CONFDIR_PREFIX = "serve-sim-capture-";
 // roots would pile up with every capture start. One CA is kept per user instead and copied into each
 // confdir; mitmdump reuses a CA it finds there. Trusting the same certificate again adds nothing.
 const CA_FILES = ["mitmproxy-ca.pem", "mitmproxy-ca-cert.pem"] as const;
+const CA_CERT_FILE = "mitmproxy-ca-cert.pem";
 
 /** Overrides where the capture CA is kept; the test scripts point it at a private temp folder. */
 export const CAPTURE_CA_DIR_ENV = "SERVE_SIM_CAPTURE_CA_DIR";
@@ -87,13 +88,19 @@ function seedCaInto(confdir: string): void {
   });
 }
 
-/** Keep the CA mitmdump made on the first start, for every later one. The first writer wins. */
-function keepCaFrom(confdir: string): void {
+/**
+ * Keep the CA mitmdump made on the first start, for every later one. The first writer wins. Returns
+ * false when this proxy lost that race: another first start saved a different CA meanwhile, and this
+ * proxy should start again with the saved one so every session uses the same root.
+ */
+function keepCaFrom(confdir: string): boolean {
   try {
-    withCaLock(() => {
+    return withCaLock(() => {
       const dir = captureCaDir();
-      if (CA_FILES.every((name) => existsSync(join(dir, name)))) return;
-      if (!CA_FILES.every((name) => existsSync(join(confdir, name)))) return;
+      if (!CA_FILES.every((name) => existsSync(join(confdir, name)))) return true;
+      if (CA_FILES.every((name) => existsSync(join(dir, name)))) {
+        return readFileSync(join(dir, CA_CERT_FILE), "utf8") === readFileSync(join(confdir, CA_CERT_FILE), "utf8");
+      }
       mkdirSync(dir, { recursive: true, mode: 0o700 });
       for (const name of CA_FILES) {
         const temp = join(dir, `${name}.${process.pid}.tmp`);
@@ -101,12 +108,17 @@ function keepCaFrom(confdir: string): void {
         writeFileSync(temp, readFileSync(join(confdir, name)), { mode: 0o600, flag: "wx" });
         renameSync(temp, join(dir, name));
       }
+      return true;
     });
   } catch (error) {
     // This session keeps its own CA; the next start tries again.
     console.warn("Network capture: could not keep the capture CA for later sessions:", error instanceof Error ? error.message : error);
+    return true;
   }
 }
+
+/** A first start that lost the race to save the CA; it starts again with the saved one. */
+class CaRaceLostError extends Error {}
 export interface CaptureProxy {
   address: string;
   /** Port file for the injected library; lives in the session confdir. */
@@ -495,8 +507,11 @@ async function startMitmProxyAttempt(
       );
     }
     if (existsSync(caFile) && announced) {
+      if (!keepCaFrom(confdir)) {
+        await close();
+        throw new CaRaceLostError("Another capture saved the shared CA first; starting again with it.");
+      }
       running = true;
-      keepCaFrom(confdir);
       return {
         address: `127.0.0.1:${proxyPort}`,
         portFile,
@@ -537,7 +552,7 @@ export async function startMitmProxy(
       return await startMitmProxyAttempt(store, deps, mitmdump, addon, fields);
     } catch (error) {
       lastError = error;
-      if (!addressAlreadyInUse(error)) throw error;
+      if (!addressAlreadyInUse(error) && !(error instanceof CaRaceLostError)) throw error;
     }
   }
   throw lastError;

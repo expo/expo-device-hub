@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { MAX_CONTROL_BODY_BYTES_ENV, startMitmControl } from "../mitm-control";
+import { CONTROL_TOKEN_HEADER, MAX_CONTROL_BODY_BYTES_ENV, startMitmControl } from "../mitm-control";
 import { CaptureStore } from "../store";
 
 async function withControl(
@@ -10,7 +10,11 @@ async function withControl(
   const store = new CaptureStore(() => 10);
   const control = await startMitmControl({ store, token: "secret", fields: [], onOversizedBody });
   const post = (path: string, body: unknown) =>
-    fetch(`http://127.0.0.1:${control.port}${path}?t=secret`, { method: "POST", body: JSON.stringify(body) });
+    fetch(`http://127.0.0.1:${control.port}${path}`, {
+      method: "POST",
+      headers: { [CONTROL_TOKEN_HEADER]: "secret" },
+      body: JSON.stringify(body),
+    });
   try {
     await run(post, store);
   } finally {
@@ -27,8 +31,9 @@ describe("mitm control server", () => {
       fields: ["header", "response-body"],
     });
     const post = (path: string, body: unknown, token = "secret") =>
-      fetch(`http://127.0.0.1:${control.port}${path}?t=${token}`, {
+      fetch(`http://127.0.0.1:${control.port}${path}`, {
         method: "POST",
+        headers: { [CONTROL_TOKEN_HEADER]: token },
         body: JSON.stringify(body),
       });
 
@@ -94,7 +99,11 @@ describe("mitm control server", () => {
     const store = new CaptureStore(() => 10);
     const control = await startMitmControl({ store, token: "secret", fields: [] });
     const post = (path: string, body: unknown) =>
-      fetch(`http://127.0.0.1:${control.port}${path}?t=secret`, { method: "POST", body: JSON.stringify(body) });
+      fetch(`http://127.0.0.1:${control.port}${path}`, {
+      method: "POST",
+      headers: { [CONTROL_TOKEN_HEADER]: "secret" },
+      body: JSON.stringify(body),
+    });
     try {
       // 501 requests in flight: the store keeps the newest 500, so the first row is evicted.
       for (let i = 0; i <= 500; i++) {
@@ -110,6 +119,29 @@ describe("mitm control server", () => {
     }
   });
 
+  test("takes the token from its header only, never from the URL", async () => {
+    await withControl(async (post) => {
+      expect((await post("/ready", {})).status).toBe(200);
+    });
+    const store = new CaptureStore(() => 10);
+    const control = await startMitmControl({ store, token: "secret", fields: [] });
+    try {
+      const inUrl = await fetch(`http://127.0.0.1:${control.port}/ready?t=secret`, { method: "POST", body: "{}" });
+      expect(inUrl.status).toBe(403);
+    } finally {
+      await new Promise<void>((resolve) => control.server.close(() => resolve()));
+    }
+  });
+
+  test("lets a response go when its request was cleared in flight, without reporting a loss", async () => {
+    await withControl(async (post, store) => {
+      await post("/request", { id: "flow-1", method: "GET", url: "https://example.com/1" });
+      store.clear();
+      expect(await (await post("/response", { id: "flow-1", status: 200 })).json()).toEqual({ ok: true, cleared: true });
+      expect(store.list()).toHaveLength(0);
+    });
+  });
+
   test("drops a post that stalls before its body finishes", async () => {
     const { connect } = await import("node:net");
     const store = new CaptureStore(() => 10);
@@ -118,7 +150,7 @@ describe("mitm control server", () => {
       const closed = await new Promise<boolean>((resolve) => {
         const socket = connect(control.port, "127.0.0.1", () => {
           // Promise 1000 bytes, send 10, then go quiet.
-          socket.write("POST /request?t=secret HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\n\r\n0123456789");
+          socket.write(`POST /request HTTP/1.1\r\nHost: x\r\n${CONTROL_TOKEN_HEADER}: secret\r\nContent-Length: 1000\r\n\r\n0123456789`);
         });
         socket.on("close", () => resolve(true));
         socket.on("error", () => {});

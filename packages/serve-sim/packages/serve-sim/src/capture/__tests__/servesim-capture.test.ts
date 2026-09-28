@@ -111,7 +111,8 @@ describeOrSkip("servesim_capture addon", () => {
 
   test("announces itself so readiness proves the hooks are installed", () => {
     expect(probe.readyDelivered).toBe(true);
-    expect(probe.readyPath).toBe("/ready?t=probe-token");
+    expect(probe.readyPath).toBe("/ready");
+    expect(probe.readyToken).toBe("probe-token");
   });
 
   test("ignores a configured http_proxy when reporting", () => {

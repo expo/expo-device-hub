@@ -199,8 +199,9 @@ if (count < 3) {
   process.exit(1);
 }
 writeFileSync(confdir + "/mitmproxy-ca-cert.pem", "test-ca");
-await fetch(process.env.SERVE_SIM_CAPTURE_CONTROL_URL + "/ready?t=" + process.env.SERVE_SIM_CAPTURE_CONTROL_TOKEN, {
+await fetch(process.env.SERVE_SIM_CAPTURE_CONTROL_URL + "/ready", {
   method: "POST",
+  headers: { "x-serve-sim-capture-token": process.env.SERVE_SIM_CAPTURE_CONTROL_TOKEN },
   body: "{}",
 });
 setInterval(() => {}, 1000);
@@ -214,10 +215,13 @@ setInterval(() => {}, 1000);
     executable: process.env.SERVE_SIM_MITMDUMP,
     attempts: process.env.SERVE_SIM_TEST_ATTEMPTS,
     paths: process.env.SERVE_SIM_TEST_PATHS,
+    caDir: process.env.SERVE_SIM_CAPTURE_CA_DIR,
   };
   process.env.SERVE_SIM_MITMDUMP = executable;
   process.env.SERVE_SIM_TEST_ATTEMPTS = attempts;
   process.env.SERVE_SIM_TEST_PATHS = paths;
+  // Its own CA folder: a CA another test saved would be seeded here, and this fake then replaces it.
+  process.env.SERVE_SIM_CAPTURE_CA_DIR = join(dir, "ca");
   let unexpectedExits = 0;
   try {
     const proxy = await startMitmProxy(new CaptureStore(), {
@@ -236,6 +240,8 @@ setInterval(() => {}, 1000);
     else process.env.SERVE_SIM_TEST_ATTEMPTS = previous.attempts;
     if (previous.paths === undefined) delete process.env.SERVE_SIM_TEST_PATHS;
     else process.env.SERVE_SIM_TEST_PATHS = previous.paths;
+    if (previous.caDir === undefined) delete process.env.SERVE_SIM_CAPTURE_CA_DIR;
+    else process.env.SERVE_SIM_CAPTURE_CA_DIR = previous.caDir;
     rmSync(dir, { recursive: true, force: true });
   }
 });
@@ -254,8 +260,9 @@ if (!existsSync(confdir + "/mitmproxy-ca.pem")) {
   writeFileSync(confdir + "/mitmproxy-ca.pem", "key-" + id);
   writeFileSync(confdir + "/mitmproxy-ca-cert.pem", "cert-" + id);
 }
-await fetch(process.env.SERVE_SIM_CAPTURE_CONTROL_URL + "/ready?t=" + process.env.SERVE_SIM_CAPTURE_CONTROL_TOKEN, {
+await fetch(process.env.SERVE_SIM_CAPTURE_CONTROL_URL + "/ready", {
   method: "POST",
+  headers: { "x-serve-sim-capture-token": process.env.SERVE_SIM_CAPTURE_CONTROL_TOKEN },
   body: "{}",
 });
 setInterval(() => {}, 1000);
@@ -297,6 +304,61 @@ setInterval(() => {}, 1000);
     if (previousCaDir === undefined) delete process.env.SERVE_SIM_CAPTURE_CA_DIR;
     else process.env.SERVE_SIM_CAPTURE_CA_DIR = previousCaDir;
     state.restore();
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a first start that loses the race to save the CA starts again with the saved one", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "serve-sim-mitm-ca-race-"));
+  const executable = join(dir, "mitmdump");
+  const runs = join(dir, "runs");
+  // Makes its own CA when the confdir has none; on its first run, another process saves a different
+  // CA to the shared folder right after, as a concurrent first start would.
+  writeFileSync(
+    executable,
+    `#!/usr/bin/env bun
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+const confdir = process.argv.find((arg) => arg.startsWith("confdir="))?.slice("confdir=".length);
+const count = Number(readFileSync(process.env.SERVE_SIM_TEST_RUNS, "utf8") || "0") + 1;
+writeFileSync(process.env.SERVE_SIM_TEST_RUNS, String(count));
+if (!existsSync(confdir + "/mitmproxy-ca.pem")) {
+  writeFileSync(confdir + "/mitmproxy-ca.pem", "key-own-" + count);
+  writeFileSync(confdir + "/mitmproxy-ca-cert.pem", "cert-own-" + count);
+}
+if (count === 1) {
+  const shared = process.env.SERVE_SIM_CAPTURE_CA_DIR;
+  mkdirSync(shared, { recursive: true });
+  writeFileSync(shared + "/mitmproxy-ca.pem", "key-other");
+  writeFileSync(shared + "/mitmproxy-ca-cert.pem", "cert-other");
+}
+await fetch(process.env.SERVE_SIM_CAPTURE_CONTROL_URL + "/ready", {
+  method: "POST",
+  headers: { "x-serve-sim-capture-token": process.env.SERVE_SIM_CAPTURE_CONTROL_TOKEN },
+  body: "{}",
+});
+setInterval(() => {}, 1000);
+`,
+  );
+  chmodSync(executable, 0o755);
+  writeFileSync(runs, "0");
+  const previous = {
+    mitmdump: process.env.SERVE_SIM_MITMDUMP,
+    ca: process.env.SERVE_SIM_CAPTURE_CA_DIR,
+    runs: process.env.SERVE_SIM_TEST_RUNS,
+  };
+  process.env.SERVE_SIM_MITMDUMP = executable;
+  process.env.SERVE_SIM_CAPTURE_CA_DIR = join(dir, "shared-ca");
+  process.env.SERVE_SIM_TEST_RUNS = runs;
+  try {
+    const proxy = await startMitmProxy(new CaptureStore(), {});
+    expect(await proxy.caPem()).toBe("cert-other");
+    await proxy.close();
+    expect(readFileSync(runs, "utf8")).toBe("2");
+  } finally {
+    for (const [key, value] of [["SERVE_SIM_MITMDUMP", previous.mitmdump], ["SERVE_SIM_CAPTURE_CA_DIR", previous.ca], ["SERVE_SIM_TEST_RUNS", previous.runs]] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 });

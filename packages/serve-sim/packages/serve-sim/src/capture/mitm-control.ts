@@ -2,9 +2,12 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 
 import { applyCaptureFields, captureFieldSet, type CaptureField } from "./fields";
 import { redactHeaders } from "./redact";
+import { safeEqualString } from "../session-auth";
 import { clampBody, type CaptureStore } from "./store";
 
 const PENDING_LIMIT = 1000;
+/** The header the addon sends its control token in. */
+export const CONTROL_TOKEN_HEADER = "x-serve-sim-capture-token";
 
 export const DEFAULT_MAX_CONTROL_BODY_BYTES = 10 * 1024 * 1024;
 export const MAX_CONTROL_BODY_BYTES_ENV = "SERVE_SIM_CAPTURE_MAX_CONTROL_BODY_BYTES";
@@ -196,9 +199,17 @@ export async function startMitmControl(options: {
   // silently.
   const flowOfRow = new Map<string, string>();
   const evictedFlows = new Set<string>();
+  // Requests the user cleared while they were in flight; their responses are acknowledged and let go.
+  const clearedFlows = new Set<string>();
   let lateResponses = 0;
+  const forget = (set: Set<string>, flow: string) => {
+    set.add(flow);
+    while (set.size > PENDING_LIMIT) set.delete(set.values().next().value!);
+  };
   const unsubscribe = options.store.subscribe((event) => {
     if (event.type === "cleared") {
+      for (const flow of flowIds.keys()) forget(clearedFlows, flow);
+      flowIds.clear();
       flowOfRow.clear();
       return;
     }
@@ -207,8 +218,7 @@ export async function startMitmControl(options: {
     if (flow === undefined) return;
     flowOfRow.delete(event.id);
     flowIds.delete(flow);
-    evictedFlows.add(flow);
-    while (evictedFlows.size > PENDING_LIMIT) evictedFlows.delete(evictedFlows.values().next().value!);
+    forget(evictedFlows, flow);
   });
   const fields = captureFieldSet(options.fields);
   let announceReady = () => {};
@@ -218,7 +228,9 @@ export async function startMitmControl(options: {
 
   const server = createServer((req, res) => {
     const route = new URL(req.url ?? "/", "http://127.0.0.1");
-    if (route.searchParams.get("t") !== options.token) return reply(res, 403);
+    // The token is a header; a URL could end up in logs and diagnostics.
+    const token = req.headers[CONTROL_TOKEN_HEADER];
+    if (typeof token !== "string" || !safeEqualString(token, options.token)) return reply(res, 403);
     if (route.pathname === "/ready") {
       announceReady();
       return reply(res, 200, { ok: true });
@@ -241,6 +253,8 @@ export async function startMitmControl(options: {
       if (route.pathname === "/response") {
         const storeId = flowIds.get(record.id);
         if (storeId == null) {
+          // Cleared on purpose, so not a loss: nothing to record and nothing to report.
+          if (clearedFlows.delete(record.id)) return reply(res, 200, { ok: true, cleared: true });
           if (evictedFlows.delete(record.id)) {
             // Delivered, so the addon does not count it lost; its row had already left the list.
             lateResponses += 1;

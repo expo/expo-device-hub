@@ -61,10 +61,11 @@ _opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def _send(path, body):
+    # The token rides in a header, never in the URL, where logs and diagnostics could record it.
     request = urllib.request.Request(
-        f"{CONTROL}{path}?t={TOKEN}",
+        f"{CONTROL}{path}",
         data=body,
-        headers={"content-type": "application/json"},
+        headers={"content-type": "application/json", "x-serve-sim-capture-token": TOKEN},
         method="POST",
     )
     timeout = TIMEOUT_SECONDS
