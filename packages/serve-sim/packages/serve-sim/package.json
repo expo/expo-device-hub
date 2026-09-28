@@ -36,6 +36,7 @@
     "dist/serve-sim.js",
     "dist/middleware.js",
     "dist/middleware.cjs",
+    "dist/simstream-relay.js",
     "dist/state.js",
     "dist/capability-loader/libServeSimCapabilityLoader.dylib",
     "Sources/ServeSimCapabilityLoader/serve-sim-capability-loader.c",

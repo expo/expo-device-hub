@@ -156,6 +156,24 @@ if (!stateResult.success) {
 }
 console.log(`dist/state.js      ${kb((await stateResult.outputs[0]!.text()).length)}`);
 
+// The simstream video relay runs as its own process (forked by middleware.js / serve-sim.js from
+// the same directory), so it's a standalone bundle.
+const relayResult = await Bun.build({
+  entrypoints: [resolve(root, "src/simstream-relay.ts")],
+  target: "node",
+  format: "esm",
+  minify: true,
+  outdir: distDir,
+  naming: "simstream-relay.js",
+  external: ["net"],
+});
+if (!relayResult.success) {
+  console.error("Simstream relay build failed:");
+  for (const log of relayResult.logs) console.error(log);
+  process.exit(1);
+}
+console.log(`dist/simstream-relay.js ${kb((await relayResult.outputs[0]!.text()).length)}`);
+
 writeFileSync(
   resolve(distDir, "middleware.cjs"),
   `"use strict";\nmodule.exports = require("./middleware.js");\n`,

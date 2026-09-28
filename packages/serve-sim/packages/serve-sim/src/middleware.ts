@@ -1,4 +1,4 @@
-import { execFile, execSync, spawn, type ChildProcess } from "child_process";
+import { execFile, spawn, type ChildProcess } from "child_process";
 import { pipeSimstreamUpgrade } from "./simstream-engine.js";
 import { readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
 import { readFile, unlink } from "fs/promises";
@@ -336,23 +336,24 @@ function bootedDeviceChrome(udid: string): DeviceKitChromeDescriptor | null {
 // which tool launched it. Simulator.app persists this as CurrentDeviceUDID, so
 // it's the best signal for "the device this user actually cares about" — we
 // surface it near the top of the grid the way Xcode's Devices window does.
+// Served from cache and refreshed in the background: a synchronous `defaults read` took up to
+// ~750ms on busy hosts and stalled everything this process serves (input, UI, streams).
 let preferredSnapshot: { at: number; udid: string | null } = { at: 0, udid: null };
+let preferredRefreshing = false;
 function getPreferredDeviceUdid(): string | null {
-  const now = Date.now();
-  if (now - preferredSnapshot.at < 1500) return preferredSnapshot.udid;
-  let udid: string | null = null;
-  try {
-    udid =
-      execSync("defaults read com.apple.iphonesimulator CurrentDeviceUDID", {
-        encoding: "utf-8",
-        stdio: ["ignore", "pipe", "ignore"],
-        timeout: 1500,
-      }).trim() || null;
-  } catch {
-    udid = null;
+  if (Date.now() - preferredSnapshot.at >= 1500 && !preferredRefreshing) {
+    preferredRefreshing = true;
+    execFile(
+      "defaults",
+      ["read", "com.apple.iphonesimulator", "CurrentDeviceUDID"],
+      { encoding: "utf-8", timeout: 1500 },
+      (error, stdout) => {
+        preferredSnapshot = { at: Date.now(), udid: error ? null : stdout.trim() || null };
+        preferredRefreshing = false;
+      },
+    );
   }
-  preferredSnapshot = { at: now, udid };
-  return udid;
+  return preferredSnapshot.udid;
 }
 
 export async function readServeSimStates(): Promise<ServeSimState[]> {

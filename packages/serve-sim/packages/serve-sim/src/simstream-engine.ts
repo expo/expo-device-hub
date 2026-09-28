@@ -1,8 +1,9 @@
-import { spawn, type ChildProcess } from "child_process";
+import { fork, spawn, type ChildProcess } from "child_process";
 import { existsSync } from "fs";
 import { createServer, connect, type Socket } from "net";
 import { join } from "path";
 import { dirnameOf } from "./runtime.js";
+import { relaySocket } from "./simstream-pipe.js";
 
 /**
  * The simstream video engine (`--codec simstream`): a separate native process per device that
@@ -88,23 +89,46 @@ export async function pipeSimstreamUpgrade(
     socket.end(`HTTP/1.1 503 Service Unavailable\r\n\r\n${String(error)}`);
     return;
   }
-  const upstream = connect(port, "127.0.0.1");
-  upstream.setNoDelay(true);
-  socket.setNoDelay(true);
-  upstream.once("connect", () => {
-    const lines = [`GET /stream HTTP/1.1`];
-    const raw = req.rawHeaders ?? [];
-    for (let i = 0; i + 1 < raw.length; i += 2) lines.push(`${raw[i]}: ${raw[i + 1]}`);
-    upstream.write(lines.join("\r\n") + "\r\n\r\n");
-    if (head.length) upstream.write(head);
-    upstream.pipe(socket);
-    socket.pipe(upstream);
+  const lines = [`GET /stream HTTP/1.1`];
+  const raw = req.rawHeaders ?? [];
+  for (let i = 0; i + 1 < raw.length; i += 2) lines.push(`${raw[i]}: ${raw[i + 1]}`);
+  const request = lines.join("\r\n") + "\r\n\r\n";
+
+  // Hand the socket to the relay process so this process's event-loop stalls can't touch the
+  // video. If the relay is unavailable (e.g. under Bun, or its script is missing), pipe here.
+  const relay = await getRelay();
+  if (relay) {
+    const message = { type: "pipe", port, request, head: head.toString("base64") };
+    const sent = await new Promise<boolean>((resolve) => {
+      try {
+        relay.send(message, socket, { keepOpen: false }, (error) => resolve(!error));
+      } catch {
+        resolve(false);
+      }
+    });
+    if (sent) return;
+  }
+  relaySocket(socket, port, request, head);
+}
+
+let relayProcess: Promise<ChildProcess | null> | null = null;
+
+/** Forks the relay once; resolves null if it can't run (callers then pipe in-process). */
+function getRelay(): Promise<ChildProcess | null> {
+  if (process.env.SERVE_SIM_SIMSTREAM_INPROCESS) return Promise.resolve(null);
+  if (relayProcess) return relayProcess;
+  const script = join(dirnameOf(import.meta.url), "simstream-relay.js");
+  if (typeof (globalThis as { Bun?: unknown }).Bun !== "undefined" || !existsSync(script)) {
+    return (relayProcess = Promise.resolve(null));
+  }
+  relayProcess = new Promise((resolve) => {
+    const child = fork(script, [], { stdio: ["ignore", "inherit", "inherit", "ipc"], execArgv: [] });
+    const timer = setTimeout(() => resolve(null), 5_000);
+    child.once("message", () => { clearTimeout(timer); resolve(child); });
+    child.once("error", () => { clearTimeout(timer); resolve(null); });
+    child.once("exit", () => { clearTimeout(timer); relayProcess = null; resolve(null); });
   });
-  const close = () => { upstream.destroy(); socket.destroy(); };
-  upstream.once("error", close);
-  socket.once("error", close);
-  upstream.once("close", close);
-  socket.once("close", close);
+  return relayProcess;
 }
 
 export function stopSimstreamEngines(): void {
