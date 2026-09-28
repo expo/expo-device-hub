@@ -62,7 +62,7 @@ import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
 import { parseHingeAngle } from "./hinge-angle";
 import { sendHingeAngleToWs } from "./hinge-command";
 import { finishDeviceRecordingsForShutdown } from "./device-session";
-import { stopProcess } from "./stop-process";
+import { recordingShutdownGraceMs, stopProcess } from "./stop-process";
 
 // `import.meta.dir` is Bun-only; resolve once via fileURLToPath so the bundled
 // CLI works under plain `node` too.
@@ -565,7 +565,13 @@ async function follow(
     crashRuntime.stop();
     const stopped = await Promise.all([...children].map(async ([udid, child]) => {
       const pid = child.pid;
-      const result = pid ? await stopProcess(pid, child) : { exitCode: null, signalCode: null, forced: false };
+      const state = states.find(current => current.device === udid);
+      const graceMs = state
+        ? await recordingShutdownGraceMs(
+            state.streamUrl.replace(/\/stream\.mjpeg$/, "/recording/video"), state.token,
+          )
+        : undefined;
+      const result = pid ? await stopProcess(pid, child, graceMs) : { exitCode: null, signalCode: null, forced: false };
       clearState(udid);
       return result;
     }));
@@ -2356,16 +2362,24 @@ async function recordVideo(udid: string, output: string): Promise<void> {
         });
     }, 5_000);
     let stopError: unknown;
+    let stopRequestAmbiguous = false;
     try {
       await Promise.race([stopping, lostLease]);
       recordingStopStarted = true;
       clearInterval(heartbeat);
       heartbeat = undefined;
-      const stop = await fetch(url, {
-        method: "DELETE",
-        headers,
-        signal: AbortSignal.timeout(120_000),
-      });
+      let stop: Response;
+      try {
+        stop = await fetch(url, {
+          method: "DELETE",
+          headers,
+          signal: AbortSignal.timeout(120_000),
+        });
+      } catch (error) {
+        // The server may finish after a transport error or timeout.
+        stopRequestAmbiguous = true;
+        throw error;
+      }
       if (!stop.ok) throw new Error(`Recording stop failed (${stop.status}): ${await stop.text()}`);
       const result = await stop.json() as { manifest?: string };
       if (result.manifest !== manifestPath) {
@@ -2374,6 +2388,7 @@ async function recordVideo(udid: string, output: string): Promise<void> {
     } catch (error) {
       stopError = error;
     }
+    if (stopError && !stopRequestAmbiguous) throw stopError;
     if (!await waitForRecordingManifest(manifestPath, 120_000)) {
       throw stopError ?? new Error("Recording stopped without a session.json manifest; inspect the serve-sim session log and retry.");
     }
