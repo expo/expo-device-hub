@@ -1,4 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
+import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ApiError } from "../src/api/api-error.ts";
 import type { ApiDependencies } from "../src/api/dependencies.ts";
 import {
@@ -890,5 +893,80 @@ describe("domain API failures", () => {
     );
 
     await expectFailure(response, 404, "not_found", "API route not found");
+  });
+});
+
+describe("screenshot artifact outcome", () => {
+  const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  async function withScreenshotDirectory(
+    prepare: (root: string) => Promise<string>,
+    run: (directory: string) => Promise<void>,
+  ): Promise<void> {
+    const root = await mkdtemp(join(tmpdir(), "screenshot-route-"));
+    const previous = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+    try {
+      const directory = await prepare(root);
+      process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = directory;
+      await run(directory);
+    } finally {
+      if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
+      else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+
+  function screenshotRequest(query = ""): Promise<Response | null> {
+    return createApiRouter(createApiRoutes()).handle(
+      new Request(`${BASE_URL}/api/screenshot${query}`, { method: "POST" }),
+      fakeDependencies({ takeScreenshot: async () => PNG }),
+    );
+  }
+
+  test("a saved capture carries only the status header", async () => {
+    await withScreenshotDirectory(
+      async (root) => root,
+      async (directory) => {
+        const response = await screenshotRequest();
+        expect(response!.status).toBe(200);
+        expect(response!.headers.get("content-type")).toBe("image/png");
+        expect(response!.headers.get("x-expo-screenshot-artifact")).toBe("saved");
+        expect(response!.headers.has("x-expo-screenshot-artifact-error")).toBe(false);
+        expect(new Uint8Array(await response!.arrayBuffer())).toEqual(PNG);
+        expect(await readdir(directory)).toHaveLength(1);
+      },
+    );
+  });
+
+  test("a failed save still returns the PNG and reports the reason", async () => {
+    const consoleError = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await withScreenshotDirectory(
+        async (root) => {
+          const occupied = join(root, "occupied");
+          await writeFile(occupied, "not a directory");
+          return occupied;
+        },
+        async () => {
+          const response = await screenshotRequest();
+          expect(response!.status).toBe(200);
+          expect(response!.headers.get("content-type")).toBe("image/png");
+          expect(response!.headers.get("x-expo-screenshot-artifact")).toBe("failed");
+          expect(response!.headers.get("x-expo-screenshot-artifact-error")).toMatch(/EEXIST|ENOTDIR/);
+          expect(new Uint8Array(await response!.arrayBuffer())).toEqual(PNG);
+
+          const json = await screenshotRequest("?format=base64");
+          expect(json!.headers.get("x-expo-screenshot-artifact")).toBe("failed");
+          const body = API_SUCCESS_PARSERS["/api/screenshot"].POST(await json!.json());
+          expect(body).toMatchObject({
+            ok: true,
+            data: Buffer.from(PNG).toString("base64"),
+            artifact: { status: "failed", error: expect.stringMatching(/EEXIST|ENOTDIR/) },
+          });
+        },
+      );
+    } finally {
+      consoleError.mockRestore();
+    }
   });
 });

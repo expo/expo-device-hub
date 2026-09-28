@@ -23,7 +23,7 @@ import {
   setUserRotation,
   type OrientationMode,
 } from "./adb.ts";
-import { saveScreenshotArtifact } from "./screenshot-artifacts.ts";
+import { screenshotResponse } from "./screenshot-response.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import { getFoldStatus, setFoldPosture } from "./fold.ts";
 import {
@@ -1608,16 +1608,7 @@ async function createAppInternal(
         return new Response("method not allowed", { status: 405 });
       }
       try {
-        const png = await screencapPng(opts.serial);
-        await saveScreenshotArtifact(png);
-        if (url.searchParams.get("format") === "base64") {
-          return Response.json({
-            ok: true,
-            mimeType: "image/png",
-            data: png.toString("base64"),
-          });
-        }
-        return new Response(new Uint8Array(png), { headers: { "Content-Type": "image/png" } });
+        return await screenshotResponse(await screencapPng(opts.serial), url);
       } catch (err) {
         return Response.json(
           { ok: false, error: err instanceof Error ? err.message : String(err) },

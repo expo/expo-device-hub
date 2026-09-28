@@ -483,9 +483,16 @@ export type FileImportResponse = ApiSuccess<{
   kind: "image" | "video" | "file";
 }>;
 
+const SCREENSHOT_ARTIFACT_STATUSES = ["saved", "failed", "disabled"] as const;
+/** Whether the capture also reached `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY`. */
+export type ScreenshotArtifactReport =
+  | { status: "saved" | "disabled" }
+  | { status: "failed"; error: string };
+
 export type ScreenshotBase64Response = ApiSuccess<{
   mimeType: "image/png";
   data: string;
+  artifact: ScreenshotArtifactReport;
 }>;
 
 export type LogcatEventMap = {
@@ -1722,10 +1729,16 @@ export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64R
   const root = record(value, "screenshot response");
   if (root.ok !== true) fail("screenshot response.ok must be true");
   if (root.mimeType !== "image/png") fail("screenshot response.mimeType must be image/png");
+  const artifact = record(root.artifact, "screenshot response.artifact");
+  const status = oneOf(artifact.status, SCREENSHOT_ARTIFACT_STATUSES, "screenshot response.artifact.status");
   return {
     ok: true,
     mimeType: "image/png",
     data: string(root.data, "screenshot response.data"),
+    artifact:
+      status === "failed"
+        ? { status, error: string(artifact.error, "screenshot response.artifact.error") }
+        : { status },
   };
 }
 

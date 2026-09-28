@@ -13,7 +13,13 @@ import type { Socket } from "net";
 // lines, and `serve-sim/middleware` is embedded in third-party dev servers, so
 // importing the dependency keeps the proxy working regardless of runtime.
 import { WebSocket } from "ws";
-import { saveScreenshotArtifact, type ScreenshotOutcome } from "./screenshot-artifacts";
+import {
+  SCREENSHOT_ARTIFACT_ERROR_HEADER,
+  SCREENSHOT_ARTIFACT_HEADER,
+  saveScreenshotArtifact,
+  screenshotArtifactHeaders,
+  type ScreenshotOutcome,
+} from "./screenshot-artifacts";
 import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
 import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type CaptureRuntime } from "./capture";
@@ -2825,10 +2831,14 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           );
         });
         const png = await readFile(file);
-        recordScreenshotEvent(udid, await saveScreenshotArtifact(png));
+        const artifact = await saveScreenshotArtifact(png);
+        recordScreenshotEvent(udid, artifact);
         res.writeHead(200, {
           "Cache-Control": "no-store",
           "Content-Type": "image/png",
+          // The route allows configured cross-origin callers, and they can only read custom headers listed here.
+          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}`,
+          ...screenshotArtifactHeaders(artifact),
         });
         res.end(png);
       } catch (err) {

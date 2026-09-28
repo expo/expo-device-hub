@@ -456,8 +456,21 @@ describe("complete API success contracts", () => {
       }),
     ).toMatchObject({ kind: "image", output: "pushed" });
     expect(
-      parseScreenshotBase64Response({ ok: true, mimeType: "image/png", data: "iVBORw==" }),
-    ).toEqual({ ok: true, mimeType: "image/png", data: "iVBORw==" });
+      parseScreenshotBase64Response({
+        ok: true,
+        mimeType: "image/png",
+        data: "iVBORw==",
+        artifact: { status: "saved" },
+      }),
+    ).toEqual({ ok: true, mimeType: "image/png", data: "iVBORw==", artifact: { status: "saved" } });
+    expect(
+      parseScreenshotBase64Response({
+        ok: true,
+        mimeType: "image/png",
+        data: "iVBORw==",
+        artifact: { status: "failed", error: "EACCES" },
+      }).artifact,
+    ).toEqual({ status: "failed", error: "EACCES" });
     for (const mimeType of ["image/png", "image/webp", "image/jpeg", "image/gif"] as const) {
       expect(
         parseAppIconResponse({
@@ -650,6 +663,9 @@ describe("API parser rejection boundaries", () => {
     expect(() =>
       parseScreenshotBase64Response({ ok: true, mimeType: "image/jpeg", data: "x" }),
     ).toThrow("must be image/png");
+    expect(() =>
+      parseScreenshotBase64Response({ ok: true, mimeType: "image/png", data: "x", artifact: { status: "failed" } }),
+    ).toThrow("artifact.error must be a string");
     expect(() => parseAppIconResponse({ ok: false, error: "no such package" })).toThrow(
       "app icon response.ok must be true",
     );

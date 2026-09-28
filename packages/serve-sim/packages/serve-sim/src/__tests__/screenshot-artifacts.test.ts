@@ -2,7 +2,7 @@ import { describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { clientSafeErrorMessage, saveScreenshotArtifact } from "../screenshot-artifacts";
+import { clientSafeErrorMessage, saveScreenshotArtifact, screenshotArtifactHeaders } from "../screenshot-artifacts";
 
 describe("screenshot artifacts", () => {
   test("uses readable UTC timestamps and keeps simultaneous captures distinct", async () => {
@@ -109,5 +109,34 @@ describe("screenshot artifacts", () => {
 
   test("returns disabled when no artifact directory is configured", async () => {
     expect(await saveScreenshotArtifact(new Uint8Array(), "")).toEqual({ status: "disabled" });
+  });
+});
+
+describe("screenshot artifact headers", () => {
+  test("report a saved or disabled capture with the status header only", () => {
+    expect(screenshotArtifactHeaders({ status: "saved", file: "/tmp/shot.png" })).toEqual({
+      "X-Expo-Screenshot-Artifact": "saved",
+    });
+    expect(screenshotArtifactHeaders({ status: "disabled" })).toEqual({
+      "X-Expo-Screenshot-Artifact": "disabled",
+    });
+  });
+
+  test("make the failure reason safe to send as a header value", () => {
+    const headers = screenshotArtifactHeaders({
+      status: "failed",
+      file: "/tmp/shot.png",
+      error: "EACCES:\tpermission denied,\r\n  open '/Users/zoë/\u0007shot.png'  ",
+    });
+    expect(headers).toEqual({
+      "X-Expo-Screenshot-Artifact": "failed",
+      "X-Expo-Screenshot-Artifact-Error": "EACCES: permission denied, open '/Users/zo/shot.png'",
+    });
+    expect(() => new Headers(headers)).not.toThrow();
+  });
+
+  test("cap the failure reason at 512 characters", () => {
+    const headers = screenshotArtifactHeaders({ status: "failed", file: "/tmp/shot.png", error: "x".repeat(2000) });
+    expect(headers["X-Expo-Screenshot-Artifact-Error"]).toHaveLength(512);
   });
 });
