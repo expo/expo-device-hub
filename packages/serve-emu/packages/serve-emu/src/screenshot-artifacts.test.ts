@@ -46,7 +46,7 @@ describe("screenshot artifacts", () => {
     }
   });
 
-  test("does not require artifact storage for standalone previews", async () => {
+  test("returns disabled when no artifact directory is configured", async () => {
     expect(await saveScreenshotArtifact(new Uint8Array(), "")).toEqual({ status: "disabled" });
   });
 });
