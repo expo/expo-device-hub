@@ -186,4 +186,42 @@ final class NativeVideoRecorderTests: XCTestCase {
             ))
         }
     }
+
+    func testTransferFailureKeepsPlayableFramesAlreadyWritten() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("serve-sim-recorder-partial-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = NativeFrameMailbox()
+        mailbox.setActive(true)
+        var good: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 120, 240,
+                                           kCVPixelFormatType_32BGRA, nil, &good), kCVReturnSuccess)
+        mailbox.publish(try XCTUnwrap(good), timestamp: .zero, wallClock: Date())
+        let recorder = try NativeVideoRecorder(
+            mailbox: mailbox, canvas: Dimensions(width: 320, height: 240),
+            outputDirectory: directory.path, bitrate: 2_000_000
+        )
+        recorder.start()
+        try await Task.sleep(for: .milliseconds(350))
+        var bad: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 120, 240,
+                                           kCVPixelFormatType_OneComponent8, nil, &bad), kCVReturnSuccess)
+        mailbox.publish(try XCTUnwrap(bad), timestamp: CMTime(value: 1, timescale: 1), wallClock: Date())
+        try await Task.sleep(for: .milliseconds(100))
+        do {
+            _ = try await recorder.finish()
+            XCTFail("A transfer failure must still be reported")
+        } catch {
+            let failure = error as NSError
+            XCTAssertEqual(failure.domain, "serve-sim-recording")
+            XCTAssertEqual(failure.code, 7)
+            let mp4 = directory.appendingPathComponent("recording.mp4")
+            XCTAssertTrue(failure.localizedDescription.contains(mp4.path))
+            let tracks = try await AVURLAsset(url: mp4).loadTracks(withMediaType: .video)
+            XCTAssertFalse(tracks.isEmpty)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: directory.appendingPathComponent("session.json").path
+        ))
+    }
 }

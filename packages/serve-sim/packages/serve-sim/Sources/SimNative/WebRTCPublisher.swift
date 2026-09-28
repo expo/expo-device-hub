@@ -241,7 +241,8 @@ final class WebRTCPublisher: @unchecked Sendable {
     private var encodeCanvas: Dimensions
     private var rawEncodeCanvas: Dimensions
     /// Queue-confined. Told the canvas size now and on every change.
-    private var canvasObserver: ((Dimensions) -> Void)?
+    private var canvasObserver: ((Dimensions, UInt64) -> Void)?
+    private var canvasSequence: UInt64 = 0
     /// Queue-confined. The shared resolution step from the encoder's bitrate policy.
     private var canvasScale = 1.0
     private let h264PixelBufferConverter = H264WebRTCPixelBufferConverter()
@@ -601,10 +602,10 @@ final class WebRTCPublisher: @unchecked Sendable {
     }
 
     /// The observer runs on the publisher queue with the current canvas, then on each change.
-    func setCanvasObserver(_ observer: @escaping (Dimensions) -> Void) {
+    func setCanvasObserver(_ observer: @escaping (Dimensions, UInt64) -> Void) {
         queue.async {
             self.canvasObserver = observer
-            observer(self.encodeCanvas)
+            observer(self.encodeCanvas, self.canvasSequence)
         }
     }
 
@@ -896,8 +897,9 @@ final class WebRTCPublisher: @unchecked Sendable {
                                      scale: canvasScale)
         if canvas != encodeCanvas {
             encodeCanvas = canvas
+            canvasSequence &+= 1
             sharedEncoderFactory.requestIDR()
-            canvasObserver?(canvas)
+            canvasObserver?(canvas, canvasSequence)
         }
         // VP8 and H.264 peers receive the same input canvas; only encoding is per codec.
         viewerResizer.setTarget(encodeCanvas)

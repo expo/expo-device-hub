@@ -223,8 +223,7 @@ final class NativeVideoRecorder: @unchecked Sendable {
                 buffer = letterboxer.place(frame.pixelBuffer,
                                             width: canvas.width, height: canvas.height)
                 if buffer == nil, letterboxer.poolDrops == priorDrops {
-                    failure = Self.error(7, "Hardware pixel transfer for recording failed")
-                    timer?.cancel()
+                    recordFailure(Self.error(7, "Hardware pixel transfer for recording failed"))
                     return
                 }
             }
@@ -296,8 +295,7 @@ final class NativeVideoRecorder: @unchecked Sendable {
             do {
                 try openWriter(sample: sample)
             } catch {
-                failure = error
-                timer?.cancel()
+                recordFailure(error)
                 return
             }
         }
@@ -318,22 +316,27 @@ final class NativeVideoRecorder: @unchecked Sendable {
             sampleBufferOut: &retimed
         )
         guard result == noErr, let retimed else {
-            failure = Self.error(8, "Could not retime the recorded H.264 frame")
-            timer?.cancel()
+            recordFailure(Self.error(8, "Could not retime the recorded H.264 frame"))
             return
         }
         if firstFrameWallClock == nil {
             writer?.startSession(atSourceTime: pts)
         }
         guard input.append(retimed) else {
-            failure = writer?.error ?? Self.error(8, "Could not append the recorded H.264 frame")
-            timer?.cancel()
+            recordFailure(writer?.error ?? Self.error(8, "Could not append the recorded H.264 frame"))
             return
         }
         lastWrittenPTS = pts
         writtenFrames &+= 1
         awaitingKeyframe = false
         if firstFrameWallClock == nil { firstFrameWallClock = wallClock }
+    }
+
+    private func recordFailure(_ error: Error) {
+        guard failure == nil else { return }
+        failure = error
+        timer?.cancel()
+        NSLog("[recording] stopped: %@", error.localizedDescription)
     }
 
     private func openWriter(sample: CMSampleBuffer) throws {
@@ -383,9 +386,9 @@ final class NativeVideoRecorder: @unchecked Sendable {
                         )
                         self.queue.async {
                             if status != noErr {
-                                self.failure = Self.error(
+                                self.recordFailure(Self.error(
                                     16, "Recording encoder flush failed (status \(status))"
-                                )
+                                ))
                             }
                             self.finishOnQueue(latch)
                         }
@@ -403,7 +406,7 @@ final class NativeVideoRecorder: @unchecked Sendable {
             self.session = nil
         }
         guard latch.pending else { return }
-        if let failure {
+        if let failure, (writer?.status != .writing || firstFrameWallClock == nil) {
             writer?.cancelWriting()
             latch.resolve(.failure(failure))
             return
@@ -417,7 +420,19 @@ final class NativeVideoRecorder: @unchecked Sendable {
         input.markAsFinished()
         writer.finishWriting {
             self.queue.async {
-                self.finishWriter(writer, firstFrameWallClock: firstFrameWallClock, latch: latch)
+                if let failure = self.failure {
+                    guard writer.status == .completed else {
+                        latch.resolve(.failure(failure))
+                        return
+                    }
+                    let original = failure as NSError
+                    var details = original.userInfo
+                    details[NSLocalizedDescriptionKey] = "\(original.localizedDescription). Partial MP4 saved at \(writer.outputURL.path)."
+                    latch.resolve(.failure(NSError(domain: original.domain, code: original.code,
+                                                   userInfo: details)))
+                } else {
+                    self.finishWriter(writer, firstFrameWallClock: firstFrameWallClock, latch: latch)
+                }
             }
         }
     }
