@@ -589,20 +589,10 @@ actor FrameCapture {
     }
 
     func recordingCanvasSize() -> Dimensions? {
-        let integrated = descriptors.filter { descriptor in
-            let metadata = screenMetadata[ObjectIdentifier(descriptor)]
-            return metadata?.screenType == 0 &&
-                (fixedScreenID == nil || metadata?.screenID == fixedScreenID)
-        }
-        let sizes = integrated.compactMap { descriptor -> NativeCanvasSize? in
-            guard let surface = surface(for: descriptor) else { return nil }
-            return NativeCanvasSize(width: IOSurfaceGetWidth(surface),
-                                    height: IOSurfaceGetHeight(surface))
-        }
-        if fixedScreenID == nil, integrated.count >= 2, sizes.count != integrated.count {
-            return nil
-        }
-        guard let canvas = NativeCanvasPolicy.canvas(for: sizes) else {
+        guard let sizes = integratedCanvasSizes() else { return nil }
+        guard let canvas = NativeCanvasPolicy.canvas(for: sizes.map {
+            NativeCanvasSize(width: $0.width, height: $0.height)
+        }) else {
             return getScreenSize().map { screen in
                 Dimensions(width: screen.width + screen.width % 2,
                            height: screen.height + screen.height % 2)
