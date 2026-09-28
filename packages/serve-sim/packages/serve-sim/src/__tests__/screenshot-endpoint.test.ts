@@ -11,6 +11,7 @@ import { simMiddleware } from "../middleware";
 // fetch-style middleware rewrite (bff5212) dropped the route.
 
 const DASHBOARD = "https://expo.dev";
+const SIMULATOR_TEST_TIMEOUT_MS = 45_000;
 
 const middleware = simMiddleware({ basePath: "/preview", corsOrigins: [DASHBOARD] });
 
@@ -80,7 +81,7 @@ describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`
       else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
       await rm(directory, { recursive: true, force: true });
     }
-  }, 45_000);
+  }, SIMULATOR_TEST_TIMEOUT_MS);
 
   test("returns a PNG for an explicit device", async () => {
     const res = await middleware(
@@ -95,7 +96,7 @@ describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`
     expect(res?.headers.get("access-control-allow-origin")).toBe(DASHBOARD);
     const bytes = new Uint8Array(await res!.arrayBuffer());
     expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
-  }, 45_000);
+  }, SIMULATOR_TEST_TIMEOUT_MS);
 
   test("falls back to a booted simulator when no device is given", async () => {
     const res = await middleware(
@@ -105,5 +106,5 @@ describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`
     expect(res?.headers.get("content-type")).toBe("image/png");
     const bytes = new Uint8Array(await res!.arrayBuffer());
     expect(Array.from(bytes.subarray(0, 8))).toEqual(PNG_MAGIC);
-  }, 45_000);
+  }, SIMULATOR_TEST_TIMEOUT_MS);
 });
