@@ -840,6 +840,16 @@ function serveHelperInProcess(
     void live.handleWebRTCStats(req, res);
     return true;
   }
+  if (endpoint === "/recording/video" && req.method === "GET") {
+    const live = peekDeviceSession(device);
+    if (live) {
+      void live.handleVideoRecording(req, res);
+    } else {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end('{"active":false}');
+    }
+    return true;
+  }
   let session;
   if (panelRoute && (panelRoute[2] === "webrtc/stats" || panelRoute[2] === "webrtc/close")) {
     const live = peekDeviceSession(device);

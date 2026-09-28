@@ -18,6 +18,11 @@ export function stateFileForDevice(udid: string): string {
   return join(stateDir(), `server-${udid}.json`);
 }
 
+/** Written only when a helper's recording fails during shutdown. */
+export function recordingShutdownFailureFile(pid: number): string {
+  return join(stateDir(), `recording-shutdown-failed-${pid}.json`);
+}
+
 /** Runtime record for a device streamed in-process by a preview server. */
 export interface ServeSimDeviceState {
   pid: number;
