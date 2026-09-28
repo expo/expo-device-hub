@@ -103,12 +103,30 @@ test("stale cleanup drops a missing startup image while the loader stays", async
   const gone = join(state.dir, "removed-startup.dylib");
   writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: ["/other.dylib", loader, live, gone].join(":") }));
   writeManagedStartupDylibs(UDID, [live, gone]);
+  // A live session owns the device, so only the missing image may go.
+  writeFileSync(join(state.dir, `launch-${UDID}.json`), JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.pid] }));
 
   await disarmStaleCapabilityLoader(UDID);
 
   // Only the missing image goes; the loader, the live image, and the other tool's insert stay.
   expect(env().DYLD_INSERT_LIBRARIES).toBe(["/other.dylib", loader, live].join(":"));
   expect(managedStartupDylibs(UDID)).toEqual([live]);
+});
+
+test("stale cleanup clears the inserts of a session that died without tearing down", async () => {
+  const loader = join(state.dir, "libServeSimCapabilityLoader.dylib");
+  writeFileSync(loader, "");
+  const image = join(state.dir, "capture-startup.dylib");
+  writeFileSync(image, "");
+  writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: ["/other.dylib", loader, image].join(":") }));
+  writeManagedStartupDylibs(UDID, [image]);
+  // The session that armed it is gone: its pid no longer runs.
+  writeFileSync(join(state.dir, `launch-${UDID}.json`), JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [2 ** 22 + 17] }));
+
+  await disarmStaleCapabilityLoader(UDID);
+
+  expect(env().DYLD_INSERT_LIBRARIES).toBe("/other.dylib");
+  expect(managedStartupDylibs(UDID)).toEqual([]);
 });
 
 test("failed publication restores actual config and launchd values", async () => {

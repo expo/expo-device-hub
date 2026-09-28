@@ -359,7 +359,18 @@ export async function disarmStaleCapabilityLoader(udid: string): Promise<void> {
   // A startup image this server inserted can go missing while the loader stays, for example after its
   // build output was removed. dyld would keep trying to load it in every new process, so drop the
   // missing ones and keep live images, the loader, and anything another tool inserted.
-  const missing = managedStartupDylibs(udid).filter((path) => entries.includes(path) && !existsSync(path));
+  const managed = managedStartupDylibs(udid);
+  // A session that died without a clean teardown (launchctl refused while it exited) leaves its
+  // loader and startup images inserted. With no live owner recorded for the device, clear them all.
+  if (ours || managed.some((path) => entries.includes(path))) {
+    const state = readLaunchState(udid);
+    const liveOwner = !!state && (Object.keys(state.capabilities).length > 0 || (state.sessionPids?.length ?? 0) > 0);
+    if (!liveOwner) {
+      await removeCapabilityLoader(udid);
+      return;
+    }
+  }
+  const missing = managed.filter((path) => entries.includes(path) && !existsSync(path));
   if (missing.length === 0) return;
   await withLaunchStateLock(udid, async () => {
     const rest = (await readInsert(udid)).split(":").map((entry) => entry.trim())
