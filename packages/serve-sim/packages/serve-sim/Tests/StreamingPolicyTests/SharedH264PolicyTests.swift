@@ -47,6 +47,7 @@ final class SharedH264PolicyTests: XCTestCase {
         XCTAssertTrue(policy.isAnyPeerStarved)
         // The next frame is a keyframe, and it also goes to the starved peer.
         XCTAssertEqual(policy.beginFrame(timestamp: 12, requestedIDR: false), true)
+        XCTAssertFalse(policy.frameWasStale(peer: 2), "repeated lag does not request another IDR")
         XCTAssertEqual(policy.takeStarvedPeers(excluding: [1]), [2])
         XCTAssertFalse(policy.isAnyPeerStarved)
         XCTAssertEqual(policy.starvedRecoveries, 1)
