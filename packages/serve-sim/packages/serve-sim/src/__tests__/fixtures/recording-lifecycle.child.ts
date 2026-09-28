@@ -156,6 +156,7 @@ test("duplicate DELETE waits for the same finalization and replays its manifest"
   let stops = 0;
   target.capture = {
     stopRecording: async () => { stops++; await stopGate; return "/tmp/retry/session.json"; },
+    startRecording: async () => { throw new Error("next recording cannot start"); },
     stop: async () => {},
   };
   target.refreshRecordingLease("retry-id");
@@ -174,6 +175,12 @@ test("duplicate DELETE waits for the same finalization and replays its manifest"
     expect(await (await first).json()).toEqual({ manifest: "/tmp/retry/session.json" });
     expect(await (await second).json()).toEqual({ manifest: "/tmp/retry/session.json" });
     expect(await (await stop()).json()).toEqual({ manifest: "/tmp/retry/session.json" });
+    const next = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: true, output: "/tmp/blocked", recordingId: "next-id" }),
+    });
+    expect(next.status).toBe(500);
+    expect(await (await stop()).json()).toEqual({ manifest: "/tmp/retry/session.json" });
     expect(stops).toBe(1);
   } finally {
     finishStop();
@@ -188,6 +195,7 @@ test("a DELETE retry keeps a finalization failure visible", async () => {
   target.phase = "running";
   target.capture = {
     stopRecording: async () => { throw new Error("MP4 finalization failed"); },
+    startRecording: async () => { throw new Error("next recording cannot start"); },
     stop: async () => {},
   };
   target.refreshRecordingLease("failed-id");
@@ -202,6 +210,14 @@ test("a DELETE retry keeps a finalization failure visible", async () => {
       expect(response.status).toBe(500);
       expect((await response.json()).message).toContain("MP4 finalization failed");
     }
+    const next = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start: true, output: "/tmp/blocked", recordingId: "next-id" }),
+    });
+    expect(next.status).toBe(500);
+    const retry = await fetch(url, { method: "DELETE", headers: { "x-recording-id": "failed-id" } });
+    expect(retry.status).toBe(500);
+    expect((await retry.json()).message).toContain("MP4 finalization failed");
   } finally {
     server.close();
     session.close();

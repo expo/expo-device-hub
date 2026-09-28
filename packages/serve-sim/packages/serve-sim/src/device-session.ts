@@ -448,8 +448,6 @@ export class DeviceSession {
           return;
         }
         this.recordingStarting = true;
-        this.lastFinishedRecording = undefined;
-        this.lastFailedRecording = undefined;
         const output = body.output;
         const recordingId = body.recordingId;
         this.recordingStartingId = recordingId;
@@ -471,6 +469,8 @@ export class DeviceSession {
         });
         this.recordingStart = starting;
         await starting;
+        this.lastFinishedRecording = undefined;
+        this.lastFailedRecording = undefined;
         this.sendJson(res, 200, { recording: true });
       } catch (error) {
         const status = error instanceof WebRtcSignalingError ? error.status : 500;
