@@ -215,6 +215,38 @@ final class ContinuousFramePacerTests: XCTestCase {
         XCTAssertLessThanOrEqual(lastTimestamp, 1_050_000_000)
     }
 
+    func testOneLateTickDoesNotLeaveIdlePumpWaitingTwicePerFrame() {
+        var pacer = ContinuousFramePacer(framesPerSecond: 60)
+        pacer.setActive(true)
+        XCTAssertEqual(pacer.latestFrameArrived(atNanoseconds: 0), .schedule(nanoseconds: 0))
+
+        var deadline: UInt64 = 0
+        var sends = 0
+        var waits = 0
+        var lastSend: UInt64 = 0
+        for tickIndex in 0 ..< 240 {
+            // One moderately late wake followed by ordinary 1.5 ms timer lag.
+            // The old grid could become stuck scheduling an immediate tick,
+            // then a full-interval wait, for every idle repeat.
+            let lateness: UInt64 = tickIndex == 6 ? 8_000_000 : 1_500_000
+            let now = deadline + lateness
+            switch pacer.tick(atNanoseconds: now) {
+            case let .send(timestampNanoseconds, nextDelayNanoseconds):
+                sends += 1
+                lastSend = timestampNanoseconds
+                deadline = now + nextDelayNanoseconds
+            case let .wait(delayNanoseconds):
+                waits += 1
+                deadline = now + delayNanoseconds
+            case .stop:
+                return XCTFail("The idle pump must remain active")
+            }
+        }
+        XCTAssertGreaterThanOrEqual(sends, 230)
+        XCTAssertLessThanOrEqual(waits, 10)
+        XCTAssertLessThanOrEqual(lastSend, 4_100_000_000)
+    }
+
     func testAStallLongerThanAnIntervalReanchorsWithoutASendBurst() {
         var pacer = ContinuousFramePacer(framesPerSecond: 60)
         pacer.setActive(true)
