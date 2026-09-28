@@ -264,7 +264,9 @@ setInterval(() => {}, 1000);
   chmodSync(executable, 0o755);
   const state = useTempStateDir();
   const previous = process.env.SERVE_SIM_MITMDUMP;
+  const previousCaDir = process.env.SERVE_SIM_CAPTURE_CA_DIR;
   process.env.SERVE_SIM_MITMDUMP = executable;
+  process.env.SERVE_SIM_CAPTURE_CA_DIR = join(dir, "durable-ca");
   try {
     const first = await startMitmProxy(new CaptureStore(), {});
     const firstCa = await first.caPem();
@@ -279,9 +281,21 @@ setInterval(() => {}, 1000);
       expect(statSync(join(captureCaDir(), name)).mode & 0o777).toBe(0o600);
     }
     expect(readFileSync(join(captureCaDir(), "mitmproxy-ca-cert.pem"), "utf8")).toBe(firstCa);
+
+    // The CA is durable: a new state directory, as after a temp cleanup, still gets the same one.
+    const otherState = useTempStateDir();
+    try {
+      const third = await startMitmProxy(new CaptureStore(), {});
+      expect(await third.caPem()).toBe(firstCa);
+      await third.close();
+    } finally {
+      otherState.restore();
+    }
   } finally {
     if (previous === undefined) delete process.env.SERVE_SIM_MITMDUMP;
     else process.env.SERVE_SIM_MITMDUMP = previous;
+    if (previousCaDir === undefined) delete process.env.SERVE_SIM_CAPTURE_CA_DIR;
+    else process.env.SERVE_SIM_CAPTURE_CA_DIR = previousCaDir;
     state.restore();
     rmSync(dir, { recursive: true, force: true });
   }

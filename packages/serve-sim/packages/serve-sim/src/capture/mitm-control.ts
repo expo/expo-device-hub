@@ -62,12 +62,32 @@ export function formatOversizedControlBodyWarning(info: OversizedControlBodyInfo
   );
 }
 
-function readJsonBody(req: IncomingMessage): Promise<unknown> {
+/** How long a control post may take to arrive; the addon sends each record in one quick post. */
+const CONTROL_BODY_TIMEOUT_MS = 30_000;
+
+class ControlBodyTimeoutError extends Error {}
+
+function readJsonBody(req: IncomingMessage, timeoutMs = CONTROL_BODY_TIMEOUT_MS): Promise<unknown> {
   const limit = maxControlBodyBytes();
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     let rejected = false;
+    // A client that stalls mid-post would otherwise hold the connection and its buffered chunks.
+    // A plain timer, since Bun's IncomingMessage does not fire setTimeout.
+    const timer = setTimeout(() => {
+      if (rejected) return;
+      rejected = true;
+      chunks.length = 0;
+      reject(new ControlBodyTimeoutError(`The control post did not finish within ${timeoutMs}ms.`));
+      req.destroy();
+      req.socket?.destroy();
+    }, timeoutMs);
+    timer.unref?.();
+    const settle = () => clearTimeout(timer);
+    req.once("end", settle);
+    req.once("error", settle);
+    req.once("close", settle);
     req.on("data", (chunk: Buffer) => {
       if (rejected) return;
       size += chunk.length;
@@ -167,8 +187,29 @@ export async function startMitmControl(options: {
   token: string;
   fields: readonly CaptureField[];
   onOversizedBody?: (info: OversizedControlBodyInfo) => void;
+  /** How long a post may take to arrive; replaceable in tests. */
+  bodyTimeoutMs?: number;
 }) {
   const flowIds = new Map<string, string>();
+  // The store keeps only the newest rows. A request evicted while still in flight has no row for its
+  // response; its mapping goes with it, and the response is counted and reported once, not dropped
+  // silently.
+  const flowOfRow = new Map<string, string>();
+  const evictedFlows = new Set<string>();
+  let lateResponses = 0;
+  const unsubscribe = options.store.subscribe((event) => {
+    if (event.type === "cleared") {
+      flowOfRow.clear();
+      return;
+    }
+    if (event.type !== "evicted") return;
+    const flow = flowOfRow.get(event.id);
+    if (flow === undefined) return;
+    flowOfRow.delete(event.id);
+    flowIds.delete(flow);
+    evictedFlows.add(flow);
+    while (evictedFlows.size > PENDING_LIMIT) evictedFlows.delete(evictedFlows.values().next().value!);
+  });
   const fields = captureFieldSet(options.fields);
   let announceReady = () => {};
   const ready = new Promise<void>((resolve) => {
@@ -183,23 +224,45 @@ export async function startMitmControl(options: {
       return reply(res, 200, { ok: true });
     }
 
-    void readJsonBody(req).then((payload) => {
+    void readJsonBody(req, options.bodyTimeoutMs).then((payload) => {
       const record = (payload ?? {}) as FinishedRecord;
       if (record.id == null) return reply(res, 200, { ok: false });
       if (route.pathname === "/request") {
-        while (flowIds.size >= PENDING_LIMIT) flowIds.delete(flowIds.keys().next().value!);
-        flowIds.set(record.id, options.store.start(record.method ?? "GET", record.url ?? "", record.startedAt));
+        while (flowIds.size >= PENDING_LIMIT) {
+          const [oldFlow, oldRow] = flowIds.entries().next().value!;
+          flowIds.delete(oldFlow);
+          flowOfRow.delete(oldRow);
+        }
+        const row = options.store.start(record.method ?? "GET", record.url ?? "", record.startedAt);
+        flowIds.set(record.id, row);
+        flowOfRow.set(row, record.id);
         return reply(res, 200, { ok: true });
       }
       if (route.pathname === "/response") {
         const storeId = flowIds.get(record.id);
-        if (storeId == null) return reply(res, 200, { ok: false });
+        if (storeId == null) {
+          if (evictedFlows.delete(record.id)) {
+            // Delivered, so the addon does not count it lost; its row had already left the list.
+            lateResponses += 1;
+            if (lateResponses === 1) {
+              console.warn(
+                "Network capture: a request left the 500-row list before its response arrived, so the " +
+                  "response was not recorded. Clear the list or reduce traffic to keep slow requests.",
+              );
+            }
+            return reply(res, 200, { ok: true, evicted: true });
+          }
+          return reply(res, 200, { ok: false });
+        }
         flowIds.delete(record.id);
+        flowOfRow.delete(storeId);
         finishRecord(options.store, storeId, record, fields);
         return reply(res, 200, { ok: true });
       }
       return reply(res, 404);
     }).catch((error) => {
+      // A stalled post's socket is already destroyed; there is nobody to answer.
+      if (error instanceof ControlBodyTimeoutError) return;
       if (!(error instanceof ControlBodyTooLargeError)) return reply(res, 400);
       const info = { bytesSeen: error.bytesSeen, limit: error.limit, path: route.pathname };
       console.warn(formatOversizedControlBodyWarning(info));
@@ -219,5 +282,12 @@ export async function startMitmControl(options: {
     throw new Error("Could not start the capture control server on a local port.");
   }
 
-  return { server, port: address.port, ready };
+  server.on("close", unsubscribe);
+  return {
+    server,
+    port: address.port,
+    ready,
+    /** Responses whose request had already left the store's list. */
+    lateResponses: () => lateResponses,
+  };
 }

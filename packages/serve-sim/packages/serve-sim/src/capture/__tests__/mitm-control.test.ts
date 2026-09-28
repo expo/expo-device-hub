@@ -90,17 +90,44 @@ describe("mitm control server", () => {
     }
   });
 
-  test("forgets the oldest unanswered request past the pending limit", async () => {
-    await withControl(async (post) => {
-      for (let i = 0; i <= 1000; i++) {
+  test("counts a response whose request already left the store's list, instead of dropping it silently", async () => {
+    const store = new CaptureStore(() => 10);
+    const control = await startMitmControl({ store, token: "secret", fields: [] });
+    const post = (path: string, body: unknown) =>
+      fetch(`http://127.0.0.1:${control.port}${path}?t=secret`, { method: "POST", body: JSON.stringify(body) });
+    try {
+      // 501 requests in flight: the store keeps the newest 500, so the first row is evicted.
+      for (let i = 0; i <= 500; i++) {
         await post("/request", { id: `flow-${i}`, method: "GET", url: `https://example.com/${i}` });
       }
-      const oldest = await post("/response", { id: "flow-0", status: 200 });
-      const nextOldest = await post("/response", { id: "flow-1", status: 200 });
-      const newest = await post("/response", { id: "flow-1000", status: 200 });
-      expect(await oldest.json()).toEqual({ ok: false });
-      expect(await nextOldest.json()).toEqual({ ok: true });
-      expect(await newest.json()).toEqual({ ok: true });
-    });
+      expect(await (await post("/response", { id: "flow-0", status: 200 })).json()).toEqual({ ok: true, evicted: true });
+      expect(control.lateResponses()).toBe(1);
+      expect(await (await post("/response", { id: "flow-500", status: 200 })).json()).toEqual({ ok: true });
+      // A flow the server never saw is still refused, and the addon counts it lost.
+      expect(await (await post("/response", { id: "never-started", status: 200 })).json()).toEqual({ ok: false });
+    } finally {
+      await new Promise<void>((resolve) => control.server.close(() => resolve()));
+    }
+  });
+
+  test("drops a post that stalls before its body finishes", async () => {
+    const { connect } = await import("node:net");
+    const store = new CaptureStore(() => 10);
+    const control = await startMitmControl({ store, token: "secret", fields: [], bodyTimeoutMs: 200 });
+    try {
+      const closed = await new Promise<boolean>((resolve) => {
+        const socket = connect(control.port, "127.0.0.1", () => {
+          // Promise 1000 bytes, send 10, then go quiet.
+          socket.write("POST /request?t=secret HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\n\r\n0123456789");
+        });
+        socket.on("close", () => resolve(true));
+        socket.on("error", () => {});
+        setTimeout(() => resolve(false), 3_000);
+      });
+      expect(closed).toBe(true);
+      expect(store.list()).toHaveLength(0);
+    } finally {
+      await new Promise<void>((resolve) => control.server.close(() => resolve()));
+    }
   });
 });

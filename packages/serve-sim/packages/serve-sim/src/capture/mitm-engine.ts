@@ -15,13 +15,12 @@ import {
   writeFileSync,
 } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import type { CaptureStore } from "./store";
 import { dirnameOf } from "../runtime";
-import { withLaunchStateLockSync } from "../launch-state-lock";
-import { stateDir } from "../state";
+import { withStateLockSync } from "../state-lock";
 import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
 import {
   DEFAULT_MAX_CONTROL_BODY_BYTES,
@@ -54,15 +53,30 @@ const CONFDIR_PREFIX = "serve-sim-capture-";
 // confdir; mitmdump reuses a CA it finds there. Trusting the same certificate again adds nothing.
 const CA_FILES = ["mitmproxy-ca.pem", "mitmproxy-ca-cert.pem"] as const;
 
-/** The private folder that holds this user's capture CA. Remove it to make a new CA. */
+/** Overrides where the capture CA is kept; the test scripts point it at a private temp folder. */
+export const CAPTURE_CA_DIR_ENV = "SERVE_SIM_CAPTURE_CA_DIR";
+
+/**
+ * The private folder that holds this user's capture CA. It is durable, not under the state
+ * directory: that lives in the system temp folder and moves with SERVE_SIM_STATE_DIR, and a lost CA
+ * would mean one more trusted root on every simulator. Remove it to make a new CA.
+ */
 export function captureCaDir(): string {
-  return join(stateDir(), "capture-ca");
+  return process.env[CAPTURE_CA_DIR_ENV] || join(homedir(), "Library", "Application Support", "serve-sim", "capture-ca");
 }
 
 // Seeding and keeping run under one cross-process lock, so two first starts cannot leave one
 // process's key beside the other's certificate.
 function withCaLock<T>(operation: () => T): T {
-  return withLaunchStateLockSync("capture-ca", operation);
+  const dir = captureCaDir();
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return withStateLockSync(
+    join(dir, ".lock"),
+    10_000,
+    () => new Error(`${dir}/.lock is still held by another serve-sim; retry once its capture has started.`),
+    () => new Error("The capture CA lock is already held by this process."),
+    operation,
+  );
 }
 
 function seedCaInto(confdir: string): void {
