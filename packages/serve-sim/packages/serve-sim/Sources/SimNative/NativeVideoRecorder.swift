@@ -371,8 +371,13 @@ final class NativeVideoRecorder: @unchecked Sendable {
                 let error = Self.error(15, "Recording finalization timed out after 60 seconds")
                 self?.failure = error
                 self?.timer?.cancel()
+                self?.timer = nil
                 self?.writer?.cancelWriting()
                 latch.resolve(.failure(error))
+                if let session = self?.session {
+                    self?.session = nil
+                    VTCompressionSessionInvalidate(session)
+                }
             }
             queue.async {
                 guard latch.pending else { return }
@@ -389,6 +394,7 @@ final class NativeVideoRecorder: @unchecked Sendable {
                             session, untilPresentationTimeStamp: .invalid
                         )
                         self.queue.async {
+                            guard latch.pending else { return }
                             if status != noErr {
                                 self.recordFailure(Self.error(
                                     16, "Recording encoder flush failed (status \(status))"
