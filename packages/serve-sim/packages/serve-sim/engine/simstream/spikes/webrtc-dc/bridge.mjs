@@ -23,6 +23,11 @@ const SCTP = {};
 if (process.env.SCTP_SACK_MS) SCTP.delayedSackTime = Number(process.env.SCTP_SACK_MS);
 if (process.env.SCTP_CC) SCTP.congestionControlModule = Number(process.env.SCTP_CC);
 if (process.env.SCTP_CWND) SCTP.initialCongestionWindow = Number(process.env.SCTP_CWND);
+// Retransmission timers: needs node-datachannel rebuilt with these fields exposed (see README note).
+if (process.env.SCTP_RTO_MIN) SCTP.minRetransmitTimeout = Number(process.env.SCTP_RTO_MIN);
+if (process.env.SCTP_RTO_MAX) SCTP.maxRetransmitTimeout = Number(process.env.SCTP_RTO_MAX);
+if (process.env.SCTP_RTO_INIT) SCTP.initialRetransmitTimeout = Number(process.env.SCTP_RTO_INIT);
+if (process.env.SCTP_MAX_BURST) SCTP.maxBurst = Number(process.env.SCTP_MAX_BURST);
 if (Object.keys(SCTP).length) ndc.setSctpSettings(SCTP);
 const CHUNK = 60_000;
 const CHANNEL = {
@@ -30,6 +35,7 @@ const CHANNEL = {
   unordered: { ordered: false },
   unreliable: { ordered: false, maxRetransmits: 0 },
   nack: { ordered: false, maxRetransmits: 0 },   // unreliable; the page NACKs gaps and we resend (see below)
+  ws: {},                                        // control: the page talks to the engine's WebSocket directly
 }[MODE];
 const NACK = MODE === 'nack';
 // Test aid: drop this share of first-time chunk sends (retransmits always go out).
@@ -42,7 +48,7 @@ if (!ENGINE_PORT || !CHANNEL) {
 const page = readFileSync(new URL('./page.html', import.meta.url), 'utf8');
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-  res.end(page.replaceAll('__MODE__', MODE));
+  res.end(page.replaceAll('__MODE__', MODE).replaceAll('__ENGINE_PORT__', ENGINE_PORT));
 });
 
 new WebSocketServer({ server, path: '/signal' }).on('connection', (signal) => {

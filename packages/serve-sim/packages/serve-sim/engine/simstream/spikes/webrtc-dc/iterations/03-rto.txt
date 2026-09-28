@@ -1,0 +1,4 @@
+# Iteration 3: SCTP retransmission timers lowered (node-datachannel rebuilt with them exposed).
+# Hypothesis: the ~0.85 s blackouts are SCTP's retransmission timeout after a loss.
+dc-nack-rto       8812 nack DC_ACKS=unreliable SCTP_SACK_MS=5 SCTP_RTO_MIN=40 SCTP_RTO_MAX=200 SCTP_RTO_INIT=200
+dc-ordered-rto    8813 ordered DC_ACKS=unreliable SCTP_SACK_MS=5 SCTP_RTO_MIN=40 SCTP_RTO_MAX=200 SCTP_RTO_INIT=200

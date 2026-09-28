@@ -64,8 +64,51 @@ function requestKey() {
   lastKeyRequest = now; stats.keyRequests++; send({ t: 'keyframe' });
 }
 
+// Diagnostics: every gap between decoded frames > 120 ms, with the reassembly state at that moment.
+stats.stalls = [];
+let lastFrameAt = 0;
+function noteStall(now) {
+  if (lastFrameAt && now - lastFrameAt > 120 && stats.stalls.length < 60) {
+    stats.stalls.push({ at: Math.round(now), gapMs: Math.round(now - lastFrameAt), missing: typeof missing !== 'undefined' ? missing.size : -1,
+      complete: complete.size, partial: partial.size, waitingForKey, nextId, lost: stats.lostFrames, keyReq: stats.keyRequests,
+      maxChunkGapMs: stats.maxChunkGapMs });
+    stats.maxChunkGapMs = 0;
+  }
+  lastFrameAt = now;
+}
+// In-page metrics (no pixel readback): frame age from the header's capture time (server clock),
+// corrected by an NTP-style clock offset against the server's time endpoint.
+const metrics = window.__metrics = { offsetMs: 0, ages: [], decodeTimes: [], recording: false };
+async function measureOffset() {
+  const samples = [];
+  for (let i = 0; i < 25; i++) {
+    const t0 = Date.now(); const server = Number(await (await fetch(`http://${location.hostname}:8815/mono`, { cache: 'no-store' })).text()); const t1 = Date.now();
+    samples.push({ rtt: t1 - t0, off: (t0 + t1) / 2 - server });
+    await new Promise((r) => setTimeout(r, 40));
+  }
+  samples.sort((a, b) => a.rtt - b.rtt);
+  metrics.offsetMs = samples.slice(0, 6).reduce((a, x) => a + x.off, 0) / 6;
+}
+measureOffset().catch(() => {});
+window.__startRecording = () => { metrics.ages = []; metrics.decodeTimes = []; metrics.recording = true; };
+window.__summary = () => {
+  const a = metrics.ages.slice().sort((x, y) => x - y), d = metrics.decodeTimes;
+  const q = (p) => a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : null;
+  const gaps = d.slice(1).map((t, i) => t - d[i]);
+  const secs = d.length > 1 ? (d[d.length - 1] - d[0]) / 1000 : 1;
+  return { mode: MODE, frames: d.length, fps: +(d.length / secs).toFixed(1),
+    ageMean: +(a.reduce((x, y) => x + y, 0) / (a.length || 1)).toFixed(1), ageP50: q(0.5), ageP95: q(0.95), ageP99: q(0.99),
+    freezes50: gaps.filter((g) => g > 50).length, worstGapMs: Math.round(Math.max(0, ...gaps)), offsetMs: +metrics.offsetMs.toFixed(1),
+    stalls: stats.stalls.length, nacks: stats.nacksSent, lost: stats.lostFrames, keyReq: stats.keyRequests };
+};
 function decodeFrame(buf) {
   stats.frames++;
+  noteStall(performance.now());
+  if (metrics.recording) {
+    const dv0 = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+    metrics.ages.push(Date.now() - metrics.offsetMs - dv0.getFloat64(5, true));
+    metrics.decodeTimes.push(performance.now());
+  }
   const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
   const isKey = (view.getUint8(0) & 1) === 1, seq = view.getUint32(1, true);
   if (!decoder || decoder.state !== 'configured') return;
@@ -146,8 +189,20 @@ function drain() {
   gapSince = 0; drain();
 }
 
+// Control mode: talk to the engine's WebSocket directly, same decode path.
+if (MODE === 'ws') {
+  const ws = new WebSocket(`ws://${location.hostname}:__ENGINE_PORT__/stream`);
+  ws.binaryType = 'arraybuffer';
+  ctl = { get readyState() { return ws.readyState === 1 ? 'open' : 'closed'; }, send: (m) => ws.send(m) };
+  ws.onopen = () => { send({ t: 'hello', codecs: ['h264'] }); send({ t: 'settings', transitions: new URLSearchParams(location.search).get('transitions') || 'soft', hevc: false }); };
+  let nextSeqWs = 0;
+  ws.onmessage = (e) => {
+    if (typeof e.data === 'string') { const m = JSON.parse(e.data); if (m.t === 'config') configure(m); return; }
+    decodeFrame(new Uint8Array(e.data));
+  };
+}
 // Signaling: the bridge offers, the page answers.
-const signal = new WebSocket(location.origin.replace(/^http/, 'ws') + '/signal');
+const signal = MODE === 'ws' ? { send() {}, set onmessage(_) {} } : new WebSocket(location.origin.replace(/^http/, 'ws') + '/signal');
 const pc = new RTCPeerConnection({ iceServers: [] });
 pc.onicecandidate = (e) => e.candidate && signal.send(JSON.stringify({ t: 'cand', candidate: e.candidate.candidate, mid: e.candidate.sdpMid }));
 pc.ondatachannel = ({ channel }) => {
