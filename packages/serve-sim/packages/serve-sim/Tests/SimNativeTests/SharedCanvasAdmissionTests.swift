@@ -36,4 +36,12 @@ final class SharedCanvasAdmissionTests: XCTestCase {
                                  H264LevelPolicy.maxFrameSize(levelIdc: 22))
         XCTAssertLessThan(proposed.width, current.width)
     }
+
+    func testLowerLevelH264OfferDoesNotFallBackBeforeCanvasCanShrink() {
+        let offer = "a=rtpmap:96 VP8/90000\na=rtpmap:102 H264/90000\na=fmtp:102 profile-level-id=42e01f"
+        XCTAssertFalse(WebRTCPublisher.shouldPreferVP8(
+            offer: offer, rawCanvas: Dimensions(width: 1206, height: 2622),
+            maxDimension: 0, levels: [], scale: 1
+        ))
+    }
 }
