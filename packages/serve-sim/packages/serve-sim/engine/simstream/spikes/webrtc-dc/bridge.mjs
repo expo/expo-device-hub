@@ -16,12 +16,24 @@ import { WebSocket, WebSocketServer } from 'ws';
 import ndc from 'node-datachannel';
 
 const [ENGINE_PORT, LISTEN_PORT = '8799', MODE = 'unordered'] = process.argv.slice(2);
+// Tuning (iteration 1): acks on an unreliable channel (cumulative, so a lost one is superseded by
+// the next), SCTP delayed-SACK and congestion-control module from the environment.
+const ACKS_UNRELIABLE = process.env.DC_ACKS === 'unreliable';
+const SCTP = {};
+if (process.env.SCTP_SACK_MS) SCTP.delayedSackTime = Number(process.env.SCTP_SACK_MS);
+if (process.env.SCTP_CC) SCTP.congestionControlModule = Number(process.env.SCTP_CC);
+if (process.env.SCTP_CWND) SCTP.initialCongestionWindow = Number(process.env.SCTP_CWND);
+if (Object.keys(SCTP).length) ndc.setSctpSettings(SCTP);
 const CHUNK = 60_000;
 const CHANNEL = {
   ordered: { ordered: true },
   unordered: { ordered: false },
   unreliable: { ordered: false, maxRetransmits: 0 },
+  nack: { ordered: false, maxRetransmits: 0 },   // unreliable; the page NACKs gaps and we resend (see below)
 }[MODE];
+const NACK = MODE === 'nack';
+// Test aid: drop this share of first-time chunk sends (retransmits always go out).
+const DROP = Number(process.env.DROP_PCT || 0) / 100;
 if (!ENGINE_PORT || !CHANNEL) {
   console.error('usage: node bridge.mjs <engine-port> <listen-port> <ordered|unordered|unreliable>');
   process.exit(2);
@@ -30,7 +42,7 @@ if (!ENGINE_PORT || !CHANNEL) {
 const page = readFileSync(new URL('./page.html', import.meta.url), 'utf8');
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
-  res.end(page.replace('__MODE__', MODE));
+  res.end(page.replaceAll('__MODE__', MODE));
 });
 
 new WebSocketServer({ server, path: '/signal' }).on('connection', (signal) => {
@@ -40,9 +52,14 @@ new WebSocketServer({ server, path: '/signal' }).on('connection', (signal) => {
   pc.onLocalCandidate((candidate, mid) => signal.send(JSON.stringify({ t: 'cand', candidate, mid })));
   const video = pc.createDataChannel('video', CHANNEL);
   const ctl = pc.createDataChannel('ctl', { ordered: true });
+  const ackChannel = ACKS_UNRELIABLE ? pc.createDataChannel('ack', { ordered: false, maxRetransmits: 0 }) : null;
   let engine = null;
   let frameId = 0;
-  let sent = 0, dropped = 0;
+  // Chunk cache for NACK retransmits: chunkSeq -> message, last ~2 s.
+  let chunkSeq = 0;
+  const cache = new Map();
+  let nacks = 0, resent = 0;
+  let sent = 0, dropped = 0, peakBuffered = 0;
   signal.on('message', (raw) => {
     const m = JSON.parse(raw.toString());
     if (m.t === 'sdp') pc.setRemoteDescription(m.sdp, m.type);
@@ -57,31 +74,47 @@ new WebSocketServer({ server, path: '/signal' }).on('connection', (signal) => {
     engine.binaryType = 'nodebuffer';
     engine.on('message', (data, isBinary) => {
       if (!isBinary) { if (ctl.isOpen()) ctl.sendMessage(data.toString()); return; }
-      // Chunk: u32 frameId | u16 index | u16 count | payload.
+      // Chunk: u32 frameId | u16 index | u16 count | u32 chunkSeq | payload.
       const id = frameId++ >>> 0;
       const count = Math.ceil(data.length / CHUNK);
       for (let i = 0; i < count; i++) {
         const body = data.subarray(i * CHUNK, (i + 1) * CHUNK);
-        const msg = Buffer.allocUnsafe(8 + body.length);
-        msg.writeUInt32LE(id, 0); msg.writeUInt16LE(i, 4); msg.writeUInt16LE(count, 6);
-        body.copy(msg, 8);
+        const msg = Buffer.allocUnsafe(12 + body.length);
+        const seq = chunkSeq++ >>> 0;
+        msg.writeUInt32LE(id, 0); msg.writeUInt16LE(i, 4); msg.writeUInt16LE(count, 6); msg.writeUInt32LE(seq, 8);
+        body.copy(msg, 12);
+        if (NACK) { cache.set(seq, msg); if (cache.size > 2000) cache.delete(cache.keys().next().value); }
+        if (DROP && Math.random() < DROP) { dropped++; continue; }
         if (video.isOpen() && video.sendMessageBinary(msg)) sent++; else dropped++;
+        peakBuffered = Math.max(peakBuffered, video.bufferedAmount());
       }
     });
     engine.on('close', () => pc.close());
   };
   video.onOpen(onOpen);
   ctl.onOpen(onOpen);
-  ctl.onMessage((msg) => {
-    if (engine?.readyState === WebSocket.OPEN) engine.send(typeof msg === 'string' ? msg : msg.toString());
-  });
+  const toEngine = (msg) => {
+    const text = typeof msg === 'string' ? msg : msg.toString();
+    if (NACK && text.startsWith('{"t":"nack"')) {
+      // Retransmit requested chunks from the cache; the engine never sees NACKs.
+      nacks++;
+      for (const seq of JSON.parse(text).seqs) {
+        const m = cache.get(seq);
+        if (m && video.isOpen()) { video.sendMessageBinary(m); resent++; }
+      }
+      return;
+    }
+    if (engine?.readyState === WebSocket.OPEN) engine.send(text);
+  };
+  ctl.onMessage(toEngine);
+  ackChannel?.onMessage(toEngine);
 
   const stats = setInterval(() => {
     const pair = pc.getSelectedCandidatePair?.();
     const rtt = pc.rtt?.();
-    console.log(`[bridge ${MODE}] chunks sent ${sent}, send failures ${dropped}, buffered ${video.bufferedAmount?.() ?? 0} B, ` +
+    console.log(`[bridge ${MODE}] chunks sent ${sent}, send failures ${dropped}, peak buffered ${peakBuffered} B, nacks ${nacks}, resent ${resent}, ` +
       `rtt ${rtt ?? '?'} ms, path ${pair ? `${pair.local?.type}/${pair.local?.transportType}->${pair.remote?.type}` : '?'}`);
-    sent = 0; dropped = 0;
+    sent = 0; dropped = 0; peakBuffered = 0; nacks = 0; resent = 0;
   }, 5000);
   const close = () => { clearInterval(stats); engine?.close(); try { pc.close(); } catch {} };
   signal.on('close', close);
@@ -89,4 +122,5 @@ new WebSocketServer({ server, path: '/signal' }).on('connection', (signal) => {
 });
 
 server.listen(Number(LISTEN_PORT), '0.0.0.0', () =>
-  console.log(`[bridge ${MODE}] http://localhost:${LISTEN_PORT}/ -> engine :${ENGINE_PORT} over WebRTC data channel`));
+  console.log(`[bridge ${MODE}] http://localhost:${LISTEN_PORT}/ -> engine :${ENGINE_PORT} over WebRTC data channel` +
+    ` (acks ${ACKS_UNRELIABLE ? 'unreliable' : 'on ctl'}, sctp ${JSON.stringify(SCTP)})`));

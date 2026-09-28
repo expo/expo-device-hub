@@ -1,0 +1,5 @@
+# Iteration 2: unreliable video + application-level NACK retransmits (like RTP NACK); acks unreliable.
+# (Also: page mode substitution fixed with replaceAll, so lossy-mode logic actually runs.)
+dc-ordered        8812 ordered
+dc-nack           8813 nack DC_ACKS=unreliable SCTP_SACK_MS=5
+dc-unreliable     8814 unreliable DC_ACKS=unreliable SCTP_SACK_MS=5

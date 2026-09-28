@@ -1,0 +1,4 @@
+# Iteration 1: acks on an unreliable channel + fast SACK; congestion-control module variant.
+dc-ordered        8812 ordered
+dc-uo-acks        8813 unordered DC_ACKS=unreliable SCTP_SACK_MS=5
+dc-uo-acks-rtcc   8814 unordered DC_ACKS=unreliable SCTP_SACK_MS=5 SCTP_CC=3

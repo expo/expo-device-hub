@@ -7,13 +7,22 @@
 // Decode and presentation match serve-sim's use-simstream-stream.ts, so the transport is the only
 // difference from the WebSocket path.
 const MODE = '__MODE__';
-const HEADER = 49, LOSS_WAIT_MS = 60;
+const HEADER = 49, CHUNK_HEADER = 12;
+// How long a missing frame may hold up decoding before it's declared lost and we resync.
+const LOSS_WAIT_MS = MODE === 'nack' ? 300 : 60;
+const LOSSY = MODE === 'unreliable' || MODE === 'nack';
 const canvas = document.getElementById('screen');
 const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
-const stats = window.__stats = { frames: 0, decoded: 0, lostFrames: 0, keyRequests: 0, heldForOrder: 0 };
+const stats = window.__stats = { frames: 0, decoded: 0, lostFrames: 0, keyRequests: 0, heldForOrder: 0, maxChunkGapMs: 0 };
+let lastChunkAt = 0;
 
-let ctl = null, decoder = null, waitingForKey = true;
+let ctl = null, ackChannel = null, decoder = null, waitingForKey = true;
 const send = (m) => ctl && ctl.readyState === 'open' && ctl.send(JSON.stringify(m));
+// Acks go on the unreliable 'ack' channel when the bridge offers one (cumulative, so loss is harmless).
+const sendAck = (seq) => {
+  const m = JSON.stringify({ t: 'ack', seq });
+  if (ackChannel && ackChannel.readyState === 'open') ackChannel.send(m); else send({ t: 'ack', seq });
+};
 
 // Presentation: draw as soon as decoded, at most once per display refresh (latest wins).
 let latest = null, drawnThisRefresh = false, rafScheduled = false;
@@ -37,7 +46,7 @@ function configure(c) {
   decoder = new VideoDecoder({
     output: (frame) => {
       stats.decoded++;
-      send({ t: 'ack', seq: frame.timestamp });
+      sendAck(frame.timestamp);
       if (!drawnThisRefresh) present(frame); else { latest?.close(); latest = frame; }
       schedule();
     },
@@ -65,18 +74,45 @@ function decodeFrame(buf) {
   decoder.decode(new EncodedVideoChunk({ type: isKey ? 'key' : 'delta', timestamp: seq, data: buf.subarray(HEADER) }));
 }
 
+// NACK: spot gaps in the chunk sequence, ask the bridge to resend, repeat until they arrive.
+let expectedSeq = null;
+const missing = new Map();   // chunkSeq -> first-missed time
+stats.nacksSent = 0; stats.recovered = 0;
+function trackChunk(seq) {
+  if (missing.delete(seq)) { stats.recovered++; return; }
+  if (expectedSeq === null) { expectedSeq = seq + 1; return; }
+  if (seq < expectedSeq) return;
+  const now = performance.now();
+  for (let s = expectedSeq; s < seq && missing.size < 500; s++) missing.set(s, now);
+  if (seq > expectedSeq) sendNacks();
+  expectedSeq = seq + 1;
+}
+function sendNacks() {
+  const now = performance.now();
+  for (const [s, t] of missing) if (now - t > 1000) missing.delete(s);   // gave up: frame-level loss handles it
+  if (!missing.size) return;
+  const m = JSON.stringify({ t: 'nack', seqs: [...missing.keys()].slice(0, 100) });
+  stats.nacksSent++;
+  if (ackChannel && ackChannel.readyState === 'open') ackChannel.send(m); else ctl?.readyState === 'open' && ctl.send(m);
+}
+if (MODE === 'nack') setInterval(() => missing.size && sendNacks(), 30);
+
 // Reassembly, in frame order.
 const partial = new Map();   // id -> { count, got, parts }
 const complete = new Map();  // id -> Uint8Array (whole frame)
 let nextId = null, gapSince = 0;
 function onChunk(data) {
+  const now = performance.now();
+  if (lastChunkAt) stats.maxChunkGapMs = Math.max(stats.maxChunkGapMs, Math.round(now - lastChunkAt));
+  lastChunkAt = now;
   const u8 = new Uint8Array(data), dv = new DataView(data);
-  const id = dv.getUint32(0, true), idx = dv.getUint16(4, true), count = dv.getUint16(6, true);
+  const id = dv.getUint32(0, true), idx = dv.getUint16(4, true), count = dv.getUint16(6, true), cseq = dv.getUint32(8, true);
+  if (MODE === 'nack') trackChunk(cseq);
   if (nextId === null) nextId = id;
   if (id < nextId) return;
   let p = partial.get(id);
   if (!p) partial.set(id, p = { count, got: 0, parts: new Array(count) });
-  if (!p.parts[idx]) { p.parts[idx] = u8.subarray(8); p.got++; }
+  if (!p.parts[idx]) { p.parts[idx] = u8.subarray(CHUNK_HEADER); p.got++; }
   if (p.got === p.count) {
     partial.delete(id);
     const len = p.parts.reduce((n, x) => n + x.length, 0), whole = new Uint8Array(len);
@@ -91,7 +127,7 @@ function drain() {
   stats.heldForOrder++;
   // A newer frame is complete but nextId isn't: reliable modes wait for the retransmit;
   // unreliable gives up after LOSS_WAIT_MS, skips to the newest complete keyframe if any.
-  if (MODE !== 'unreliable') return;
+  if (!LOSSY) return;
   const now = performance.now();
   if (!gapSince) { gapSince = now; setTimeout(drain, LOSS_WAIT_MS + 5); return; }
   if (now - gapSince < LOSS_WAIT_MS) return;
@@ -117,6 +153,7 @@ pc.onicecandidate = (e) => e.candidate && signal.send(JSON.stringify({ t: 'cand'
 pc.ondatachannel = ({ channel }) => {
   channel.binaryType = 'arraybuffer';
   if (channel.label === 'video') channel.onmessage = (e) => onChunk(e.data);
+  if (channel.label === 'ack') ackChannel = channel;
   if (channel.label === 'ctl') {
     ctl = channel;
     channel.onopen = () => { send({ t: 'hello', codecs: ['h264'] }); send({ t: 'settings', transitions: new URLSearchParams(location.search).get('transitions') || 'soft', hevc: false }); };
