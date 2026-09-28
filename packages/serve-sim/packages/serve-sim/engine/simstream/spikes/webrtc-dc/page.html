@@ -1,0 +1,137 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>simstream over WebRTC data channel (__MODE__)</title>
+<style>html,body{margin:0;background:#000;height:100%}canvas{display:block;height:100vh;margin:0 auto}</style>
+</head><body><canvas id="screen"></canvas>
+<script>
+// Spike page: the simstream engine's stream over a WebRTC data channel (see bridge.mjs).
+// Decode and presentation match serve-sim's use-simstream-stream.ts, so the transport is the only
+// difference from the WebSocket path.
+const MODE = '__MODE__';
+const HEADER = 49, LOSS_WAIT_MS = 60;
+const canvas = document.getElementById('screen');
+const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+const stats = window.__stats = { frames: 0, decoded: 0, lostFrames: 0, keyRequests: 0, heldForOrder: 0 };
+
+let ctl = null, decoder = null, waitingForKey = true;
+const send = (m) => ctl && ctl.readyState === 'open' && ctl.send(JSON.stringify(m));
+
+// Presentation: draw as soon as decoded, at most once per display refresh (latest wins).
+let latest = null, drawnThisRefresh = false, rafScheduled = false;
+function present(frame) {
+  drawnThisRefresh = true;
+  ctx.drawImage(frame, 0, 0, canvas.width, canvas.height);
+  frame.close();
+}
+function schedule() {
+  if (rafScheduled) return;
+  rafScheduled = true;
+  requestAnimationFrame(() => {
+    rafScheduled = false; drawnThisRefresh = false;
+    if (latest) { const f = latest; latest = null; present(f); schedule(); }
+  });
+}
+
+function configure(c) {
+  if (decoder && decoder.state !== 'closed') decoder.close();
+  canvas.width = c.displayWidth ?? c.width; canvas.height = c.displayHeight ?? c.height;
+  decoder = new VideoDecoder({
+    output: (frame) => {
+      stats.decoded++;
+      send({ t: 'ack', seq: frame.timestamp });
+      if (!drawnThisRefresh) present(frame); else { latest?.close(); latest = frame; }
+      schedule();
+    },
+    error: () => { waitingForKey = true; requestKey(); },
+  });
+  decoder.configure({ codec: c.codec, codedWidth: c.width, codedHeight: c.height,
+    description: Uint8Array.from(atob(c.description), (ch) => ch.charCodeAt(0)),
+    optimizeForLatency: true, hardwareAcceleration: 'prefer-hardware' });
+  waitingForKey = true;
+}
+let lastKeyRequest = 0;
+function requestKey() {
+  const now = performance.now();
+  if (now - lastKeyRequest < 200) return;
+  lastKeyRequest = now; stats.keyRequests++; send({ t: 'keyframe' });
+}
+
+function decodeFrame(buf) {
+  stats.frames++;
+  const view = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  const isKey = (view.getUint8(0) & 1) === 1, seq = view.getUint32(1, true);
+  if (!decoder || decoder.state !== 'configured') return;
+  if (waitingForKey && !isKey) return;
+  waitingForKey = false;
+  decoder.decode(new EncodedVideoChunk({ type: isKey ? 'key' : 'delta', timestamp: seq, data: buf.subarray(HEADER) }));
+}
+
+// Reassembly, in frame order.
+const partial = new Map();   // id -> { count, got, parts }
+const complete = new Map();  // id -> Uint8Array (whole frame)
+let nextId = null, gapSince = 0;
+function onChunk(data) {
+  const u8 = new Uint8Array(data), dv = new DataView(data);
+  const id = dv.getUint32(0, true), idx = dv.getUint16(4, true), count = dv.getUint16(6, true);
+  if (nextId === null) nextId = id;
+  if (id < nextId) return;
+  let p = partial.get(id);
+  if (!p) partial.set(id, p = { count, got: 0, parts: new Array(count) });
+  if (!p.parts[idx]) { p.parts[idx] = u8.subarray(8); p.got++; }
+  if (p.got === p.count) {
+    partial.delete(id);
+    const len = p.parts.reduce((n, x) => n + x.length, 0), whole = new Uint8Array(len);
+    let o = 0; for (const x of p.parts) { whole.set(x, o); o += x.length; }
+    complete.set(id, whole);
+  }
+  drain();
+}
+function drain() {
+  while (complete.has(nextId)) { decodeFrame(complete.get(nextId)); complete.delete(nextId); nextId++; gapSince = 0; }
+  if (!complete.size) return;
+  stats.heldForOrder++;
+  // A newer frame is complete but nextId isn't: reliable modes wait for the retransmit;
+  // unreliable gives up after LOSS_WAIT_MS, skips to the newest complete keyframe if any.
+  if (MODE !== 'unreliable') return;
+  const now = performance.now();
+  if (!gapSince) { gapSince = now; setTimeout(drain, LOSS_WAIT_MS + 5); return; }
+  if (now - gapSince < LOSS_WAIT_MS) return;
+  const ids = [...complete.keys()].sort((a, b) => a - b);
+  const keyId = ids.filter((i) => (complete.get(i)[0] & 1) === 1).pop();
+  stats.lostFrames += (keyId ?? ids[0]) - nextId;
+  for (const i of [...partial.keys()]) if (i < (keyId ?? ids[0])) partial.delete(i);
+  if (keyId !== undefined) {
+    for (const i of ids) if (i < keyId) complete.delete(i);
+    nextId = keyId;
+  } else {
+    for (const i of ids) complete.delete(i);
+    nextId = ids[ids.length - 1] + 1;
+    waitingForKey = true; requestKey();
+  }
+  gapSince = 0; drain();
+}
+
+// Signaling: the bridge offers, the page answers.
+const signal = new WebSocket(location.origin.replace(/^http/, 'ws') + '/signal');
+const pc = new RTCPeerConnection({ iceServers: [] });
+pc.onicecandidate = (e) => e.candidate && signal.send(JSON.stringify({ t: 'cand', candidate: e.candidate.candidate, mid: e.candidate.sdpMid }));
+pc.ondatachannel = ({ channel }) => {
+  channel.binaryType = 'arraybuffer';
+  if (channel.label === 'video') channel.onmessage = (e) => onChunk(e.data);
+  if (channel.label === 'ctl') {
+    ctl = channel;
+    channel.onopen = () => { send({ t: 'hello', codecs: ['h264'] }); send({ t: 'settings', transitions: new URLSearchParams(location.search).get('transitions') || 'soft', hevc: false }); };
+    channel.onmessage = (e) => { const m = JSON.parse(e.data); if (m.t === 'config') configure(m); };
+  }
+};
+signal.onmessage = async (e) => {
+  const m = JSON.parse(e.data);
+  if (m.t === 'sdp') {
+    await pc.setRemoteDescription({ type: m.type, sdp: m.sdp });
+    if (m.type === 'offer') {
+      await pc.setLocalDescription(await pc.createAnswer());
+      signal.send(JSON.stringify({ t: 'sdp', sdp: pc.localDescription.sdp, type: pc.localDescription.type }));
+    }
+  }
+  if (m.t === 'cand') { try { await pc.addIceCandidate({ candidate: m.candidate, sdpMid: m.mid }); } catch {} }
+};
+</script></body></html>

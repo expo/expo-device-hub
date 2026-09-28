@@ -1,0 +1,7 @@
+{
+  "name": "simstream-webrtc-dc-spike",
+  "private": true,
+  "type": "module",
+  "description": "Spike: the simstream engine's stream over a WebRTC data channel (see bridge.mjs)",
+  "dependencies": { "node-datachannel": "^0.33.4", "ws": "^8.21.1" }
+}
