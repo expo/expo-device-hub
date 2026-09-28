@@ -29,4 +29,22 @@ public enum StreamCodecPolicy {
         guard parts.count == 2, !parts[1].isEmpty else { return nil }
         return String(parts[1])
     }
+
+    /// The first media payload in the active video answer is the selected codec preference.
+    public static func firstVideoCodecName(in sdp: String) -> String? {
+        let sections = sdp.components(separatedBy: "\nm=")
+        for section in sections {
+            let lines = section.split(whereSeparator: \.isNewline)
+            guard let header = lines.first else { continue }
+            let fields = header.replacingOccurrences(of: "m=", with: "").split(separator: " ")
+            guard fields.count > 3, fields[0] == "video", fields[1] != "0" else { continue }
+            for payload in fields.dropFirst(3) {
+                let prefix = "a=rtpmap:\(payload) "
+                guard let mapping = lines.first(where: { $0.hasPrefix(prefix) }) else { continue }
+                let name = mapping.dropFirst(prefix.count).split(separator: "/", maxSplits: 1).first.map(String.init)
+                if let name, let media = mediaCodecName(from: [name]) { return media }
+            }
+        }
+        return nil
+    }
 }
