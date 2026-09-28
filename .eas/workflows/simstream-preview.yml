@@ -1,0 +1,74 @@
+name: serve-sim simstream preview
+
+# Manual only: `eas workflow:run .eas/workflows/simstream-preview.yml`.
+#
+# Builds the serve-sim fork with the simstream video engine on an EAS macOS
+# worker, boots a simulator, and serves it through a Cloudflare quick tunnel
+# for PREVIEW_MINUTES, so the stream can be tried on Expo's own infrastructure.
+# The preview is started with --require-token; the tokenized link is printed in
+# the "Serve" step's log.
+
+defaults:
+  tools:
+    node: 24
+    bun: 1.3.14
+
+jobs:
+  preview:
+    name: Serve the simstream preview
+    runs_on: macos-medium
+    image: latest
+    env:
+      PREVIEW_MINUTES: "30"
+    steps:
+      - uses: eas/checkout
+
+      - uses: eas/install_node_modules
+
+      # Builds the CLI, client, native addon, and the simstream engine
+      # (engine/build.sh → dist/bin/simstream-engine).
+      - name: Build serve-sim
+        run: bun run build.ts
+        working_directory: packages/serve-sim/packages/serve-sim
+
+      - name: Start iOS Simulator
+        uses: eas/start_ios_simulator
+
+      - name: Machine info
+        run: |
+          sw_vers
+          sysctl -n machdep.cpu.brand_string hw.ncpu hw.memsize
+          xcrun simctl list devices booted
+
+      - name: Serve through a tunnel
+        working_directory: packages/serve-sim/packages/serve-sim
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/cloudflared.tgz \
+            https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-darwin-arm64.tgz
+          tar -xzf /tmp/cloudflared.tgz -C /tmp
+
+          export SERVE_SIM_DEBUG_SIMSTREAM=1  # engine logs per-second fps/encode stats
+          export SERVE_SIM_TOKEN=$(openssl rand -base64 48 | tr -d '\n/+=' | cut -c1-48)
+          node dist/serve-sim.js --transport http --codec simstream --require-token -p 3200 \
+            > /tmp/serve-sim.log 2>&1 &
+          for i in $(seq 1 120); do
+            curl -fs -o /dev/null "http://127.0.0.1:3200/?token=$SERVE_SIM_TOKEN" && break
+            sleep 1
+          done
+
+          /tmp/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:3200 > /tmp/cloudflared.log 2>&1 &
+          URL=""
+          for i in $(seq 1 60); do
+            URL=$(grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' /tmp/cloudflared.log | head -1 || true)
+            [ -n "$URL" ] && break
+            sleep 1
+          done
+          [ -n "$URL" ] || { echo "tunnel did not come up"; cat /tmp/cloudflared.log; exit 1; }
+
+          echo "================================================================"
+          echo "PREVIEW (open within ${PREVIEW_MINUTES} min): ${URL}/?token=${SERVE_SIM_TOKEN}"
+          echo "================================================================"
+          sleep $((PREVIEW_MINUTES * 60))
+          # Engine stats (fps, encode time, queueing) for the record.
+          grep -E "viewer [0-9]+:|source:" /tmp/serve-sim.log | tail -40 || true
