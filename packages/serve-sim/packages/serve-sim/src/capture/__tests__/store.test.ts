@@ -310,6 +310,46 @@ describe("CaptureStore throughput", () => {
     expect(ids.slice(-100).some((id) => store.body(id) !== null)).toBe(true);
   });
 
+  test("keeps the newest bodies when the budget is full, and counts the ones it drops", () => {
+    const store = new CaptureStore(() => 0);
+    const half = "x".repeat(512 * 1024);
+    const body = {
+      requestHeaders: { "x-note": "kept" },
+      responseHeaders: {},
+      requestBody: null,
+      responseBody: half,
+      requestTruncated: false,
+      responseTruncated: false,
+      requestBinary: false,
+      responseBinary: false,
+    };
+    const ids: string[] = [];
+    for (let i = 0; i < 100; i++) {
+      const id = store.start("GET", `https://example.com/${i}`);
+      ids.push(id);
+      store.setBody(id, body);
+    }
+
+    // Every new request keeps its body; room comes from the oldest ones, whose rows stay listed.
+    expect(ids.slice(-20).every((id) => store.body(id) !== null)).toBe(true);
+    expect(store.body(ids[0]!)).toBeNull();
+    expect(store.list()).toHaveLength(100);
+    expect(store.bodyDropped(ids[0]!)).toBe(true);
+    expect(store.bodyDropped(ids.at(-1)!)).toBe(false);
+    const kept = ids.filter((id) => store.body(id) !== null).length;
+    expect(store.droppedBodies).toBe(100 - kept);
+
+    // A body larger than the whole budget is dropped and counted, without clearing the others.
+    const huge = store.start("POST", "https://example.com/huge");
+    store.setBody(huge, { ...body, responseBody: "y".repeat(17 * 1024 * 1024) });
+    expect(store.body(huge)).toBeNull();
+    expect(store.bodyDropped(huge)).toBe(true);
+    expect(store.body(ids.at(-1)!)).not.toBeNull();
+
+    store.clear();
+    expect(store.droppedBodies).toBe(0);
+  });
+
   test("charges bodies by byte, not by character", () => {
     const store = new CaptureStore(() => 0);
     // Each emoji uses four UTF-8 bytes but two UTF-16 units.

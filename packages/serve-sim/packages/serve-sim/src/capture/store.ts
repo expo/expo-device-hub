@@ -62,6 +62,9 @@ export class CaptureStore {
   private readonly bodies = new Map<string, CapturedBody>();
   private readonly listeners = new Set<Listener>();
   private totalBodyBytes = 0;
+  // Requests whose body was dropped to stay within the memory budget; their rows stay listed.
+  private readonly droppedBodyIds = new Set<string>();
+  private droppedBodyCount = 0;
   private seq = 0;
   private readonly traffic = new Map<number, { in: number; out: number }>();
 
@@ -82,6 +85,16 @@ export class CaptureStore {
 
   body(id: string): CapturedBody | null {
     return this.bodies.get(id) ?? null;
+  }
+
+  /** Whether this request's body was dropped for the memory budget, not absent from the start. */
+  bodyDropped(id: string): boolean {
+    return this.droppedBodyIds.has(id);
+  }
+
+  /** How many bodies this store has dropped for the memory budget since it started or was cleared. */
+  get droppedBodies(): number {
+    return this.droppedBodyCount;
   }
 
   start(method: string, url: string, startedAt = Date.now()): string {
@@ -114,14 +127,31 @@ export class CaptureStore {
     if (settled) this.emit({ type: "finished", request });
   }
 
+  /**
+   * Keep a request's body within the memory budget. The newest bodies are the ones people open, so
+   * when the budget is full the oldest bodies are dropped first; their rows stay in the list.
+   */
   setBody(id: string, body: CapturedBody): void {
     if (!this.requests.has(id)) return;
-    const previous = this.bodies.get(id);
     const size = chargedBytes(body);
-    const nextTotal = this.totalBodyBytes - (previous ? chargedBytes(previous) : 0) + size;
-    if (nextTotal > MAX_TOTAL_BODY_BYTES) return;
+    const previous = this.bodies.get(id);
+    if (previous) {
+      this.totalBodyBytes -= chargedBytes(previous);
+      this.bodies.delete(id);
+    }
+    if (size > MAX_TOTAL_BODY_BYTES) {
+      this.noteDroppedBody(id);
+      return;
+    }
+    for (const [oldId, old] of this.bodies) {
+      if (this.totalBodyBytes + size <= MAX_TOTAL_BODY_BYTES) break;
+      this.totalBodyBytes -= chargedBytes(old);
+      this.bodies.delete(oldId);
+      this.noteDroppedBody(oldId);
+    }
     this.bodies.set(id, body);
-    this.totalBodyBytes = nextTotal;
+    this.droppedBodyIds.delete(id);
+    this.totalBodyBytes += size;
   }
 
   publishMeta(meta: CaptureMeta): void {
@@ -132,6 +162,8 @@ export class CaptureStore {
     this.requests.clear();
     this.bodies.clear();
     this.totalBodyBytes = 0;
+    this.droppedBodyIds.clear();
+    this.droppedBodyCount = 0;
     this.traffic.clear();
     this.emit({ type: "cleared" });
   }
@@ -180,9 +212,15 @@ export class CaptureStore {
         this.bodies.delete(oldest.value);
       }
       this.requests.delete(oldest.value);
+      this.droppedBodyIds.delete(oldest.value);
       // Live views mirror the list from events, so they must hear about removals too.
       this.emit({ type: "evicted", id: oldest.value });
     }
+  }
+
+  private noteDroppedBody(id: string): void {
+    this.droppedBodyIds.add(id);
+    this.droppedBodyCount += 1;
   }
 
   private emit(event: CaptureEvent): void {
