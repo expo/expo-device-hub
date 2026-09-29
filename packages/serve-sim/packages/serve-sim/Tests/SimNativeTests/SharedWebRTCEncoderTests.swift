@@ -113,4 +113,83 @@ final class SharedWebRTCEncoderTests: XCTestCase {
         XCTAssertEqual(firstFrames[2], .videoFrameDelta)
         XCTAssertEqual(secondFrames, [.videoFrameKey, .videoFrameKey])
     }
+
+    /// A peer whose callback rejects frames (its sender is not active yet, or paused) waits for a
+    /// keyframe. It must not force one after every keyframe it rejects: every other viewer would
+    /// then receive a keyframe-only stream until it starts accepting.
+    func testRejectingPeerDoesNotForceKeyframesOnTheOthers() throws {
+        let factory = SharedWebRTCEncoderFactory(bitrate: 1_000_000, fps: 60, h264Allowed: { true })
+        let info = LKRTCVideoCodecInfo(name: "H264", parameters: ["packetization-mode": "1"])
+        let first = try XCTUnwrap(factory.createEncoder(info))
+        let second = try XCTUnwrap(factory.createEncoder(info))
+        defer { factory.stop() }
+        XCTAssertEqual(first.startEncode(with: settings(), numberOfCores: 2), 0)
+        XCTAssertEqual(second.startEncode(with: settings(), numberOfCores: 2), 0)
+
+        let frames = 8
+        let firstReceived = (0...frames).map { expectation(description: "first peer frame \($0 + 1)") }
+        let secondRecovered = expectation(description: "second peer recovered with a keyframe")
+        var firstFrames: [LKRTCFrameType] = []
+        var rejecting = true
+        var rejected = 0
+        first.setCallback { image, _ in
+            firstFrames.append(image.frameType)
+            firstReceived[firstFrames.count - 1].fulfill()
+            return true
+        }
+        second.setCallback { image, _ in
+            if rejecting { rejected += 1; return false }
+            if image.frameType == .videoFrameKey { secondRecovered.fulfill() }
+            return true
+        }
+
+        for n in 1...frames {
+            let timestamp = Int64(n) * 1_000_000
+            XCTAssertEqual(first.encode(makeFrame(timestamp), codecSpecificInfo: nil, frameTypes: []), 0)
+            XCTAssertEqual(second.encode(makeFrame(timestamp), codecSpecificInfo: nil, frameTypes: []), 0)
+            wait(for: [firstReceived[n - 1]], timeout: 5)
+        }
+        XCTAssertGreaterThan(rejected, 0)
+        // The join forces a keyframe, and the first refusal one more; the frames are 1 ms apart,
+        // so later refusals force none and the first peer gets deltas.
+        XCTAssertEqual(firstFrames.first, .videoFrameKey)
+        XCTAssertLessThanOrEqual(firstFrames.dropFirst().filter { $0 == .videoFrameKey }.count, 1,
+                                 "keyframes after the join: \(firstFrames.map(\.rawValue))")
+        XCTAssertGreaterThanOrEqual(firstFrames.suffix(frames - 2).filter { $0 == .videoFrameDelta }.count, frames - 3)
+
+        // Once the second peer accepts, its keyframe request recovers it.
+        rejecting = false
+        let timestamp = Int64(frames + 1) * 1_000_000
+        let keyframe = [NSNumber(value: LKRTCFrameType.videoFrameKey.rawValue)]
+        XCTAssertEqual(second.encode(makeFrame(timestamp), codecSpecificInfo: nil, frameTypes: keyframe), 0)
+        XCTAssertEqual(first.encode(makeFrame(timestamp), codecSpecificInfo: nil, frameTypes: []), 0)
+        wait(for: [firstReceived[frames], secondRecovered], timeout: 5)
+    }
+
+
+    /// A new viewer's sender can refuse the join keyframe before it is active. It must still start
+    /// on the next frame, not wait for the periodic keyframe.
+    func testPeerThatRefusesItsFirstKeyframeStartsOnTheNextFrame() throws {
+        let factory = SharedWebRTCEncoderFactory(bitrate: 1_000_000, fps: 60, h264Allowed: { true })
+        let info = LKRTCVideoCodecInfo(name: "H264", parameters: ["packetization-mode": "1"])
+        let proxy = try XCTUnwrap(factory.createEncoder(info))
+        defer { factory.stop() }
+        XCTAssertEqual(proxy.startEncode(with: settings(), numberOfCores: 2), 0)
+
+        let refused = expectation(description: "join keyframe refused")
+        let started = expectation(description: "next frame accepted")
+        var calls: [LKRTCFrameType] = []
+        proxy.setCallback { image, _ in
+            calls.append(image.frameType)
+            if calls.count == 1 { refused.fulfill(); return false }
+            if calls.count == 2 { started.fulfill() }
+            return true
+        }
+        XCTAssertEqual(proxy.encode(makeFrame(1_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        wait(for: [refused], timeout: 5)
+        XCTAssertEqual(proxy.encode(makeFrame(2_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        wait(for: [started], timeout: 5)
+        XCTAssertEqual(calls, [.videoFrameKey, .videoFrameKey])
+    }
+
 }
