@@ -59,7 +59,11 @@ a pending changeset, so you can publish one from any commit.
 
 Real releases only version and publish the packages that have a changeset; the others stay put.
 Canary releases assign every public package a canary version so they can also run without
-pending changesets.
+pending changesets. Every dependency on another public package, in `dependencies`,
+`devDependencies`, `optionalDependencies` and `peerDependencies`, is pinned to that package's
+canary version. A caret range such as `^1.1.0` does not match a prerelease, so without the pin a
+canary would install the stable release of its sibling, or fail when the sibling has no release
+yet.
 
 ## One-time setup for a new public package
 
