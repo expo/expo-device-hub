@@ -54,6 +54,30 @@ final class SharedH264PolicyTests: XCTestCase {
         XCTAssertEqual(policy.beginFrame(timestamp: 13, requestedIDR: false), false)
     }
 
+    func testRefusedDeliveriesForceAtMostOneKeyframeASecond() {
+        var policy = SharedH264Policy(defaultBitrate: 6_000_000)
+        policy.join(peer: 1, bitrate: 6_000_000)
+        policy.join(peer: 2, bitrate: 6_000_000)
+        let ms: Int64 = 1_000_000
+        XCTAssertEqual(policy.beginFrame(timestamp: 10 * ms, requestedIDR: false), true)
+        // Peer 2's sender refuses the join keyframe: the first refusal forces one at once.
+        policy.deliveryRejected(peer: 2, frameTimestamp: 10 * ms)
+        XCTAssertTrue(policy.isAnyPeerStarved)
+        XCTAssertEqual(policy.beginFrame(timestamp: 27 * ms, requestedIDR: false), true)
+        XCTAssertEqual(policy.takeStarvedPeers(excluding: [1]), [2])
+        // It refuses that keyframe too, and misses the deltas after it: nothing more is forced.
+        policy.deliveryRejected(peer: 2, frameTimestamp: 27 * ms)
+        XCTAssertEqual(policy.beginFrame(timestamp: 44 * ms, requestedIDR: false), false)
+        XCTAssertFalse(policy.frameWasStale(peer: 2), "a missed delta does not force one either")
+        XCTAssertEqual(policy.beginFrame(timestamp: 61 * ms, requestedIDR: false), false)
+        // A keyframe request still forces one at once, and it goes to the waiting peer.
+        XCTAssertEqual(policy.beginFrame(timestamp: 78 * ms, requestedIDR: true), true)
+        XCTAssertEqual(policy.takeStarvedPeers(excluding: [1]), [2])
+        // A second after the last forced one, a refusal may force the next again.
+        policy.deliveryRejected(peer: 2, frameTimestamp: 1_010 * ms)
+        XCTAssertEqual(policy.beginFrame(timestamp: 1_027 * ms, requestedIDR: false), true)
+    }
+
     func testCaughtUpAndLeftPeersAreNotStarved() {
         var policy = SharedH264Policy(defaultBitrate: 6_000_000)
         policy.join(peer: 1, bitrate: 6_000_000)

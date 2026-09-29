@@ -874,10 +874,20 @@ final class WebRTCPublisher: @unchecked Sendable {
         )
     }
 
+    /// The H.264 levels the shared canvas must fit: each H.264 viewer's negotiated level, or 3.1
+    /// when its answer carried none. The canvas refresh and both admission checks use this, so a
+    /// viewer without a parsed level counts the same way in all three.
+    static func h264Levels(_ viewers: [(codecName: String, levelIdc: Int?)]) -> [Int] {
+        viewers.filter { StreamCodecPolicy.isH264($0.codecName) }
+            .map { $0.levelIdc ?? H264LevelPolicy.defaultLevelIdc }
+    }
+
+    private func h264Levels() -> [Int] {
+        Self.h264Levels(sessions.values.map { ($0.codecName, $0.h264LevelIdc) })
+    }
+
     private func refreshEncodeCanvas() {
-        let levels = sessions.values
-            .filter { StreamCodecPolicy.isH264($0.codecName) }
-            .map { $0.h264LevelIdc ?? H264LevelPolicy.defaultLevelIdc }
+        let levels = h264Levels()
         let pendingLevel = pendingOffer.flatMap { offer in
             StreamCodecPolicy.isH264(offer.session.codecName)
                 ? (offer.session.h264LevelIdc ?? H264LevelPolicy.defaultLevelIdc) : nil
@@ -1035,9 +1045,7 @@ final class WebRTCPublisher: @unchecked Sendable {
                     self.failOffer(session, self.makeError("WebRTC offer was superseded"), completion)
                     return
                 }
-                let existingLevels = self.sessions.values
-                    .filter { StreamCodecPolicy.isH264($0.codecName) }
-                    .map { $0.h264LevelIdc ?? H264LevelPolicy.defaultLevelIdc }
+                let existingLevels = self.h264Levels()
                 let lowLevelOffer = Self.preferredVideoCodecName(request.codec) == "H264"
                     && Self.shouldPreferVP8(
                         offer: request.sdp, rawCanvas: self.rawEncodeCanvas,
@@ -1073,9 +1081,7 @@ final class WebRTCPublisher: @unchecked Sendable {
                             return
                         }
                         if let level = H264LevelPolicy.negotiatedLevel(offer: request.sdp, answer: answer.sdp) {
-                            let existingLevels = self.sessions.values
-                                .filter { StreamCodecPolicy.isH264($0.codecName) }
-                                .compactMap(\.h264LevelIdc)
+                            let existingLevels = self.h264Levels()
                             let proposedCanvas = Self.canvasSize(
                                 for: self.rawEncodeCanvas, maxDimension: self.maxDimension,
                                 levels: existingLevels + [level], scale: self.canvasScale
