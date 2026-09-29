@@ -91,7 +91,11 @@ client.rotate();
 client.reload(); // reload the running React Native bundle
 client.setAppearance('dark'); // 'light' | 'dark'; read it back from client.appearance
 
-const png = await client.screenshot(); // Blob, or null when capture fails
+// { blob, artifact }, or null when capture fails. `artifact` is the session artifact outcome:
+// { status: 'saved' } | { status: 'disabled' } | { status: 'failed', error?: string } | null
+// (null for a backend that does not report one).
+const capture = await client.screenshot();
+if (capture?.artifact?.status === 'failed') console.warn('not saved to session artifacts', capture.artifact.error);
 
 // Input is normalized to 0..1 of the screen, so it works for every device size.
 client.sendTouch({ phase: 'begin', x: 0.5, y: 0.5 });
