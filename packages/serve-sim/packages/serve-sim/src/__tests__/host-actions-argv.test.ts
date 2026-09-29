@@ -329,6 +329,17 @@ describe("serve-sim-backed actions", () => {
     expect(await argv("server.kill", {})).toEqual(["serve-sim", "--kill"]);
   });
 
+  it("keeps a windowless server's device switches windowless", async () => {
+    // The preview page starts another device through server.detach; that helper boots it, so a
+    // server started with --no-simulator-window must pass the flag on.
+    const run = (simulatorWindow: boolean) =>
+      runHostActionAsync({ action: "server.detach", params: { udid: UDID } }, serveSimBin, { simulatorWindow });
+    expect((await run(false)).stdout.trimEnd().split("\n")).toEqual([
+      "serve-sim", "--detach", UDID, "--no-simulator-window",
+    ]);
+    expect((await run(true)).stdout.trimEnd().split("\n")).toEqual(["serve-sim", "--detach", UDID]);
+  });
+
   it("builds the camera listing, mirror and stop", async () => {
     expect(await argv("camera.listWebcams", {})).toEqual([
       "serve-sim", "camera", "--list-webcams",
