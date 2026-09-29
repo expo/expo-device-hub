@@ -680,17 +680,18 @@ final class WebRTCPublisher: @unchecked Sendable {
         lastReadySequence = sequence
         latestFrame = PendingWebRTCFrame(pixelBuffer: pixelBuffer)
         // An unchanged frame still replaces the retained one, so a change the sparse sample missed
-        // goes out with the next send, but it does not count as fresh for the pacer.
+        // goes out with the next send, but it does not count as fresh for the pacer. It still lets
+        // the pacer's watchdog restart a lost chain.
+        var unchanged = false
         if let fingerprint {
-            if fingerprint == lastFrameFingerprint {
-                unchangedFrameCount &+= 1
-                frameLock.unlock()
-                return
-            }
-            lastFrameFingerprint = fingerprint
+            unchanged = fingerprint == lastFrameFingerprint
+            if unchanged { unchangedFrameCount &+= 1 } else { lastFrameFingerprint = fingerprint }
         }
         let generation = framePumpGeneration
-        switch framePacer.latestFrameArrived(atNanoseconds: nowNs) {
+        let decision = unchanged
+            ? framePacer.unchangedFrameArrived(atNanoseconds: nowNs)
+            : framePacer.latestFrameArrived(atNanoseconds: nowNs)
+        switch decision {
         case .ignore:
             break
         case .pumpNow:

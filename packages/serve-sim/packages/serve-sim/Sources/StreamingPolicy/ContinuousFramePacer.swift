@@ -140,9 +140,12 @@ public struct ContinuousFramePacer: Sendable {
     }
 
     /// A frame whose content matches the retained one. It is not fresh, so it does not count
-    /// toward the source's cadence or a send.
+    /// toward the source's cadence or a send, but it still shows that capture runs: a chain that
+    /// stopped ticking is restarted, so a static screen keeps its repeats.
     public mutating func unchangedFrameArrived(atNanoseconds now: UInt64) -> ArrivalDecision {
-        .ignore
+        guard active, hasFrame, lostPump(atNanoseconds: now) else { return .ignore }
+        chainSeenAtNanoseconds = now
+        return .restart(nanoseconds: 0)
     }
 
     public mutating func tick(atNanoseconds now: UInt64, chained: Bool = true) -> TickDecision {
