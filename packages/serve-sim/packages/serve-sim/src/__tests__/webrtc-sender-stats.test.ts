@@ -167,6 +167,12 @@ describe("capture counts", () => {
       pumpDeferrals: null,
       pumpRepeats: null,
       unchangedFrames: null,
+      pumpTimerTicks: null,
+      pumpTimerLateSumMs: null,
+      pumpTimerLateMaxMs: null,
+      sourceSubmitCount: null,
+      sourceSubmitSumMs: null,
+      sourceSubmitMaxMs: null,
       cpuFallbacks: null,
       poolDrops: null,
       attempts: null,
@@ -214,6 +220,21 @@ describe("frame flow counts", () => {
     expect(stats.capture?.pumpDeferrals).toBe(12);
     expect(stats.capture?.pumpRepeats).toBe(3);
     expect(stats.capture?.canvasMismatchDrops).toBe(1);
+  });
+
+  test("reads cumulative pump and source timing for windowed comparisons", () => {
+    const stats = readSenderStats({
+      sessions: [],
+      capture: {
+        screenFrames: 1, idleFrames: 1,
+        pumpTimerTicks: 120, pumpTimerLateSumMs: 42.5, pumpTimerLateMaxMs: 4.2,
+        sourceSubmitCount: 119, sourceSubmitSumMs: 91.25, sourceSubmitMaxMs: 6.1,
+      },
+    });
+    expect(stats.capture).toMatchObject({
+      pumpTimerTicks: 120, pumpTimerLateSumMs: 42.5, pumpTimerLateMaxMs: 4.2,
+      sourceSubmitCount: 119, sourceSubmitSumMs: 91.25, sourceSubmitMaxMs: 6.1,
+    });
   });
 });
 

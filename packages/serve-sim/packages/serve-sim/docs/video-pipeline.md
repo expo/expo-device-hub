@@ -100,7 +100,10 @@ frame rate only. VP8 peers use `balanced` and may downscale their own output.
 One constrained H.264 viewer lowers the shared canvas for every viewer.
 `/webrtc/stats` reports the canvas, scale, and step count under `sharedCanvas`,
 the resize counters under `viewerResize`, and the pump deferrals, repeats,
-unchanged frames, and canvas-mismatch drops under `capture`.
+unchanged frames, and canvas-mismatch drops under `capture`. `capture` also
+has cumulative pump timer ticks with their total and largest lateness, and the
+count, total, and largest time of the synchronous submit to libwebrtc, so two
+samples give the averages over the window between them.
 
 Viewer size, rate, bitrate, and negotiated H.264 level affect the live stream,
 not the recording. If the H.264 canvas is not ready or an offered H.264 level cannot decode

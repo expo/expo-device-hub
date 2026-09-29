@@ -97,6 +97,13 @@ struct WebRTCCaptureCounts: Codable {
     let pumpRepeats: UInt64?
     /// Frames with the same pixels as the retained one, so they did not count as fresh.
     let unchangedFrames: UInt64?
+    /// Timer wake delay and synchronous source submission time, cumulative for windowed sampling.
+    let pumpTimerTicks: UInt64?
+    let pumpTimerLateSumMs: Double?
+    let pumpTimerLateMaxMs: Double?
+    let sourceSubmitCount: UInt64?
+    let sourceSubmitSumMs: Double?
+    let sourceSubmitMaxMs: Double?
     let cpuFallbacks: UInt64
     let poolDrops: UInt64
     let attempts: UInt64
@@ -248,6 +255,13 @@ final class WebRTCPublisher: @unchecked Sendable {
     private var unchangedFrameCount: UInt64 = 0
     /// Guarded by `frameLock`: frames the pump refused because their size did not match the canvas.
     private var canvasMismatchDrops: UInt64 = 0
+    /// Guarded by frameLock; sampled through `/webrtc/stats` to locate pacing delays.
+    private var pumpTimerTicks: UInt64 = 0
+    private var pumpTimerLateSumNs: UInt64 = 0
+    private var pumpTimerLateMaxNs: UInt64 = 0
+    private var sourceSubmitCount: UInt64 = 0
+    private var sourceSubmitSumNs: UInt64 = 0
+    private var sourceSubmitMaxNs: UInt64 = 0
     private var encodeCanvas: Dimensions
     private var rawEncodeCanvas: Dimensions
     /// Queue-confined. Told the canvas size now and on every change.
@@ -584,6 +598,12 @@ final class WebRTCPublisher: @unchecked Sendable {
         let pumpDeferrals: UInt64
         let pumpRepeats: UInt64
         let unchangedFrames: UInt64
+        let pumpTimerTicks: UInt64
+        let pumpTimerLateSumNs: UInt64
+        let pumpTimerLateMaxNs: UInt64
+        let sourceSubmitCount: UInt64
+        let sourceSubmitSumNs: UInt64
+        let sourceSubmitMaxNs: UInt64
     }
 
     func frameFlowCounts() -> FrameFlowCounts {
@@ -592,12 +612,18 @@ final class WebRTCPublisher: @unchecked Sendable {
             (offeredFrameCount, forwardedFrameCount, framePumpRestartCount, canvasMismatchDrops)
         let (deferrals, repeats) = (framePacer.deferredTicks, framePacer.repeatedSends)
         let unchanged = unchangedFrameCount
+        let timing = (
+            pumpTimerTicks, pumpTimerLateSumNs, pumpTimerLateMaxNs,
+            sourceSubmitCount, sourceSubmitSumNs, sourceSubmitMaxNs
+        )
         frameLock.unlock()
         return FrameFlowCounts(
             offered: offered, forwarded: forwarded, pumpRestarts: restarts,
             sharedEncoded: sharedEncoderFactory.encodedFrameCount(),
             canvasMismatchDrops: mismatches, pumpDeferrals: deferrals, pumpRepeats: repeats,
-            unchangedFrames: unchanged
+            unchangedFrames: unchanged,
+            pumpTimerTicks: timing.0, pumpTimerLateSumNs: timing.1, pumpTimerLateMaxNs: timing.2,
+            sourceSubmitCount: timing.3, sourceSubmitSumNs: timing.4, sourceSubmitMaxNs: timing.5
         )
     }
 
@@ -862,7 +888,14 @@ final class WebRTCPublisher: @unchecked Sendable {
             frameMode = "i420-fallback"
         }
 
+        let submitStart = DispatchTime.now().uptimeNanoseconds
         videoSource.capturer(capturer, didCapture: usedFrame)
+        let submitNs = DispatchTime.now().uptimeNanoseconds - submitStart
+        frameLock.lock()
+        sourceSubmitCount &+= 1
+        sourceSubmitSumNs &+= submitNs
+        sourceSubmitMaxNs = max(sourceSubmitMaxNs, submitNs)
+        frameLock.unlock()
         sentFrameCount += 1
         if shouldLogFrame(sentFrameCount) {
             streamLog(
@@ -1035,6 +1068,13 @@ final class WebRTCPublisher: @unchecked Sendable {
         timer.schedule(deadline: deadline, repeating: .never, leeway: .nanoseconds(0))
         timer.setEventHandler { [weak self] in
             guard let self else { return }
+            let now = DispatchTime.now().uptimeNanoseconds
+            let lateNs = now > deadline.uptimeNanoseconds ? now - deadline.uptimeNanoseconds : 0
+            self.frameLock.lock()
+            self.pumpTimerTicks &+= 1
+            self.pumpTimerLateSumNs &+= lateNs
+            self.pumpTimerLateMaxNs = max(self.pumpTimerLateMaxNs, lateNs)
+            self.frameLock.unlock()
             self.pumpTimer = nil
             self.drainFramePump(generation: generation)
         }
