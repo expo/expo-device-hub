@@ -1,3 +1,4 @@
+import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -292,6 +293,7 @@ type WsData = {
 };
 
 type Client = {
+  touches: ClientTouchState;
   id: number;
   ws: ServerWebSocket<WsData>;
   context: DeviceContext;
@@ -1078,6 +1080,12 @@ export async function startServer(
     return accepted;
   };
 
+  const inputTarget = (context: DeviceContext) => ({
+    identity: context.inputQueue,
+    enqueue: (gesture: Gesture, source: string, record: boolean) =>
+      enqueueGesture(context, gesture, source, record),
+  });
+
   const dispatchGesture = (
     context: DeviceContext,
     gesture: Gesture,
@@ -1629,6 +1637,7 @@ export async function startServer(
   };
 
   const activateContext = (context: DeviceContext) => {
+    const enqueueReplayGesture = replayTouchInput(() => inputTarget(context));
     context.deviceState.activate(context, {
       dispatchGesture: (gesture, signal) => {
         if (signal.aborted) {
@@ -1636,12 +1645,7 @@ export async function startServer(
             ? signal.reason
             : new DOMException("session replay cancelled", "AbortError");
         }
-        return enqueueGesture(
-          context,
-          gesture,
-          "session:replay",
-          false,
-        ).completion.then(() => {});
+        return enqueueReplayGesture(gesture, signal).completion.then(() => {});
       },
     });
     const recovery = createRecovery(context);
@@ -3311,6 +3315,7 @@ export async function startServer(
           return;
         }
         const handle: Client = {
+          touches: new ClientTouchState(() => inputTarget(context)),
           id: ws.data.id,
           ws,
           context,
@@ -3368,12 +3373,8 @@ export async function startServer(
             return;
           }
           const msg = parseGesture(payload);
-          const accepted = enqueueGesture(
-            context,
-            msg,
-            "ws",
-            shouldRecord(payload),
-          );
+          if (!ws.data.handle) throw new Error("WebSocket client is not open");
+          const accepted = ws.data.handle.touches.enqueue(msg, shouldRecord(payload));
           void accepted.completion
             .then((result) => {
               if (acknowledge) {
@@ -3392,7 +3393,10 @@ export async function startServer(
         }
       },
       close(ws) {
-        if (ws.data.handle) ws.data.context.clients.delete(ws.data.handle);
+        if (ws.data.handle) {
+          ws.data.handle.touches.close();
+          ws.data.context.clients.delete(ws.data.handle);
+        }
       },
     },
   };

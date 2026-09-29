@@ -385,6 +385,10 @@ describe("server control input integration", () => {
       );
       await waitFor(() => ws.sent.length === 1, "completed ACK missing");
       expect(ws.sent[0]).toMatchObject({ ok: true, status: "completed" });
+      harness.handlers.websocket.message(ws, JSON.stringify({
+        type: "touch", action: "down", x: 0.2, y: 0.2, pointerId: 1, ack: false,
+      }));
+      await waitFor(() => queue.snapshot().depth === 0);
 
       writer.blockNextWrite();
       harness.handlers.websocket.message(
