@@ -7,6 +7,15 @@ export type ScreenshotArtifactResult =
   | { status: "saved"; file: string }
   | { status: "failed"; file: string; error: string };
 
+// The failed `error` reaches the browser through the response and the preview UIs, so it must not
+// carry a host path. Bun and Node format fs errors as `CODE: description, syscall '<path>'`, with
+// `-> '<path>'` after a rename; the tail after the description is dropped. The full message stays in
+// the stderr line and the failure record, which never leave the worker.
+export function clientSafeErrorMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.replace(/, \w+ '.*$/s, "");
+}
+
 export type ScreenshotOutcome = ScreenshotArtifactResult | { status: "capture-failed"; error: string };
 
 // The PNG filename pattern and the failure record (screenshot-<time>-<suffix>.failed.json holding
@@ -36,7 +45,7 @@ export async function saveScreenshotArtifact(
     await rm(temporary, { force: true }).catch(() => {});
     const message = error instanceof Error ? error.message : String(error);
     await writeFailureRecord(join(directory, `${name}.failed.json`), `${name}.png`, message);
-    return { status: "failed", file: destination, error: message };
+    return { status: "failed", file: destination, error: clientSafeErrorMessage(error) };
   }
 }
 

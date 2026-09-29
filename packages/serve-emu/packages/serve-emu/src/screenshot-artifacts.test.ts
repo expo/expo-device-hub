@@ -2,7 +2,7 @@ import { describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import { saveScreenshotArtifact } from "./screenshot-artifacts.ts";
+import { clientSafeErrorMessage, saveScreenshotArtifact } from "./screenshot-artifacts.ts";
 
 describe("screenshot artifacts", () => {
   test("uses readable UTC timestamps and keeps simultaneous captures distinct", async () => {
@@ -62,8 +62,9 @@ describe("screenshot artifacts", () => {
       const file = join(directory, "file");
       await writeFile(file, "occupied");
       const result = await saveScreenshotArtifact(new Uint8Array(), file);
-      expect(result).toMatchObject({ status: "failed", error: expect.stringMatching(/EEXIST|ENOTDIR/) });
-      expect(result.status === "failed" && result.file.startsWith(join(file, "screenshot-"))).toBe(true);
+      if (result.status !== "failed") throw new Error(`expected a failed save, got ${result.status}`);
+      expect(result.error).toMatch(/^E(EXIST|NOTDIR): [^,']+$/);
+      expect(result.file.startsWith(join(file, "screenshot-"))).toBe(true);
       expect(consoleError).toHaveBeenCalledTimes(2);
       expect(String(consoleError.mock.calls[0]?.[0])).toContain(join(file, "screenshot-"));
       expect(String(consoleError.mock.calls[1]?.[0])).toStartWith(
@@ -74,6 +75,37 @@ describe("screenshot artifacts", () => {
       consoleError.mockRestore();
       await rm(directory, { recursive: true, force: true });
     }
+  });
+
+  test("keeps the host path out of the returned error but in the failure record", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "screenshot-test-"));
+    const consoleError = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const nested = join(directory, "missing", "artifacts");
+      await writeFile(join(directory, "missing"), "occupied");
+      const result = await saveScreenshotArtifact(new Uint8Array(), nested);
+      if (result.status !== "failed") throw new Error(`expected a failed save, got ${result.status}`);
+      expect(result.error).toMatch(/^E(EXIST|NOTDIR): /);
+      expect(result.error).not.toContain(directory);
+      expect(result.error).not.toContain("/");
+      expect(String(consoleError.mock.calls[0]?.[1])).toContain(directory);
+    } finally {
+      consoleError.mockRestore();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("clientSafeErrorMessage drops the syscall and path tail of fs errors", () => {
+    expect(clientSafeErrorMessage(new Error("ENOSPC: no space left on device, open '/srv/artifacts/a.png.tmp'"))).toBe(
+      "ENOSPC: no space left on device",
+    );
+    expect(
+      clientSafeErrorMessage(new Error("ENOENT: no such file or directory, rename '/srv/a.tmp' -> '/srv/a.png'")),
+    ).toBe("ENOENT: no such file or directory");
+    expect(clientSafeErrorMessage(new TypeError('The "data" argument must be of type string'))).toBe(
+      'The "data" argument must be of type string',
+    );
+    expect(clientSafeErrorMessage("boom")).toBe("boom");
   });
 
   test("returns disabled when no artifact directory is configured", async () => {
