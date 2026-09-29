@@ -87,6 +87,11 @@ device-free: fake clocks, timers, sockets, processes, and sessions exercise
 lifecycle and protocol behavior without an Android SDK, ADB, an emulator, or a
 connected device.
 
+The package smoke check verifies the CLI and the `serve-emu`,
+`serve-emu/middleware`, `serve-emu/stream-socket`, and
+`serve-emu/stream-settings` programmatic entry points. Add new public entry
+points to `exports`, document them, and exercise them from the packed tarball.
+
 For runtime changes, optionally supplement CI with a real device or emulator:
 
 ```sh
@@ -161,21 +166,8 @@ git commit -m "<scoped message>" -- path/to/file1 path/to/file2
 
 ## Release Guidelines
 
-`serve-emu` is bundled into `expo-device-hub` and is excluded from independent
-publishing by the monorepo's Changesets configuration. For changes that should
-ship in a Hub release, add a changeset for `expo-device-hub` from the monorepo
-root:
-
-```sh
-bun run changeset
-```
-
-The monorepo Release workflow handles versioning and publication.
-
-The package smoke check still verifies the CLI and the `serve-emu`,
-`serve-emu/middleware`, `serve-emu/stream-socket`, and
-`serve-emu/stream-settings` programmatic entry points. Add new public entry
-points to `exports`, document them, and exercise them from the packed tarball.
+`serve-emu` is a private workspace package that ships inside `expo-device-hub`.
+See the monorepo [`RELEASING.md`](../../RELEASING.md) for how to release it.
 
 ## Reporting Issues
 
