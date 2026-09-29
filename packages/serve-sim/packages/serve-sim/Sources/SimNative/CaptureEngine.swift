@@ -400,6 +400,7 @@ actor CaptureEngine {
                 canvasMismatchDrops: flow?.canvasMismatchDrops,
                 pumpDeferrals: flow?.pumpDeferrals,
                 pumpRepeats: flow?.pumpRepeats,
+                unchangedFrames: flow?.unchangedFrames,
                 cpuFallbacks: timings.cpuFallbacks,
                 poolDrops: timings.poolDrops,
                 attempts: timings.attempts,

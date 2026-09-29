@@ -95,6 +95,8 @@ struct WebRTCCaptureCounts: Codable {
     /// Pump slots that waited one tolerance for a late frame, and sends that repeated a frame.
     let pumpDeferrals: UInt64?
     let pumpRepeats: UInt64?
+    /// Frames whose sparse fingerprint matched the previous one, so the pacer was not woken.
+    let unchangedFrames: UInt64?
     let cpuFallbacks: UInt64
     let poolDrops: UInt64
     let attempts: UInt64
@@ -236,6 +238,11 @@ final class WebRTCPublisher: @unchecked Sendable {
     private var viewerResizer: ViewerFrameResizer!
     /// Guarded by `frameLock`: the newest resizer sequence retained for the pump.
     private var lastReadySequence: UInt64 = 0
+    /// Guarded by `frameLock`. The simulator rewrites its surface without new content, 70 to 120
+    /// times a second against 60 app frames on EAS; a rewrite whose sparse fingerprint matches the
+    /// previous frame does not count as fresh for the pacer.
+    private var lastFrameFingerprint: UInt64?
+    private var unchangedFrameCount: UInt64 = 0
     /// Guarded by `frameLock`: frames the pump refused because their size did not match the canvas.
     private var canvasMismatchDrops: UInt64 = 0
     private var encodeCanvas: Dimensions
@@ -570,6 +577,7 @@ final class WebRTCPublisher: @unchecked Sendable {
         let canvasMismatchDrops: UInt64
         let pumpDeferrals: UInt64
         let pumpRepeats: UInt64
+        let unchangedFrames: UInt64
     }
 
     func frameFlowCounts() -> FrameFlowCounts {
@@ -577,11 +585,13 @@ final class WebRTCPublisher: @unchecked Sendable {
         let (offered, forwarded, restarts, mismatches) =
             (offeredFrameCount, forwardedFrameCount, framePumpRestartCount, canvasMismatchDrops)
         let (deferrals, repeats) = (framePacer.deferredTicks, framePacer.repeatedSends)
+        let unchanged = unchangedFrameCount
         frameLock.unlock()
         return FrameFlowCounts(
             offered: offered, forwarded: forwarded, pumpRestarts: restarts,
             sharedEncoded: sharedEncoderFactory.encodedFrameCount(),
-            canvasMismatchDrops: mismatches, pumpDeferrals: deferrals, pumpRepeats: repeats
+            canvasMismatchDrops: mismatches, pumpDeferrals: deferrals, pumpRepeats: repeats,
+            unchangedFrames: unchanged
         )
     }
 
@@ -624,9 +634,36 @@ final class WebRTCPublisher: @unchecked Sendable {
         viewerResizer.submit(pixelBuffer, acceptanceGeneration: generation)
     }
 
+    /// `SparseFrameFingerprint` over both planes of a 4:2:0 frame, so a color-only change counts
+    /// too, or over a BGRA frame. Nil for a format it does not read, which then counts as changed.
+    private static func sparseFingerprint(_ pixelBuffer: CVPixelBuffer) -> UInt64? {
+        let format = CVPixelBufferGetPixelFormatType(pixelBuffer)
+        let planar = format == kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
+            || format == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
+        guard planar || format == kCVPixelFormatType_32BGRA,
+              CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly) == kCVReturnSuccess else { return nil }
+        defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, .readOnly) }
+        var fingerprint = SparseFrameFingerprint()
+        if planar {
+            for plane in 0..<2 {
+                guard let base = CVPixelBufferGetBaseAddressOfPlane(pixelBuffer, plane) else { return nil }
+                // The chroma plane interleaves Cb and Cr, two bytes per sample.
+                let rowBytes = CVPixelBufferGetWidthOfPlane(pixelBuffer, plane) * (plane == 0 ? 1 : 2)
+                fingerprint.mix(plane: base, rowBytes: rowBytes, rows: CVPixelBufferGetHeightOfPlane(pixelBuffer, plane),
+                                bytesPerRow: CVPixelBufferGetBytesPerRowOfPlane(pixelBuffer, plane))
+            }
+        } else {
+            guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return nil }
+            fingerprint.mix(plane: base, rowBytes: CVPixelBufferGetWidth(pixelBuffer) * 4,
+                            rows: CVPixelBufferGetHeight(pixelBuffer), bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer))
+        }
+        return fingerprint.value
+    }
+
     /// Resizer output, on the resizer queue: retain the frame for the pump and wake it.
     private func frameReady(_ pixelBuffer: CVPixelBuffer, sequence: UInt64, generation: UInt64) {
         let nowNs = DispatchTime.now().uptimeNanoseconds
+        let fingerprint = Self.sparseFingerprint(pixelBuffer)
         frameLock.lock()
         guard acceptsFrames, generation == frameAcceptanceGeneration,
               sequence > lastReadySequence else {
@@ -635,6 +672,16 @@ final class WebRTCPublisher: @unchecked Sendable {
         }
         lastReadySequence = sequence
         latestFrame = PendingWebRTCFrame(pixelBuffer: pixelBuffer)
+        // An unchanged frame still replaces the retained one, so a change the sparse sample missed
+        // goes out with the next send, but it does not count as fresh for the pacer.
+        if let fingerprint {
+            if fingerprint == lastFrameFingerprint {
+                unchangedFrameCount &+= 1
+                frameLock.unlock()
+                return
+            }
+            lastFrameFingerprint = fingerprint
+        }
         let generation = framePumpGeneration
         switch framePacer.latestFrameArrived(atNanoseconds: nowNs) {
         case .ignore:
@@ -983,6 +1030,7 @@ final class WebRTCPublisher: @unchecked Sendable {
             acceptsFrames = active
             frameAcceptanceGeneration &+= 1
             latestFrame = nil
+            lastFrameFingerprint = nil
             arrivalPumpPending = false
             framePumpGeneration &+= 1
             framePacer.setActive(active)

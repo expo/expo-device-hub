@@ -166,6 +166,7 @@ describe("capture counts", () => {
       canvasMismatchDrops: null,
       pumpDeferrals: null,
       pumpRepeats: null,
+      unchangedFrames: null,
       cpuFallbacks: null,
       poolDrops: null,
       attempts: null,
