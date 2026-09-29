@@ -1,0 +1,156 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>simstream over a WebRTC video track</title>
+<style>html,body{margin:0;background:#000;height:100%;touch-action:none;user-select:none;-webkit-user-select:none}
+video{display:block;height:100vh;margin:0 auto;pointer-events:none}
+.buttons{position:fixed;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px}
+.buttons button{padding:8px 14px;border:1px solid #2c2c32;border-radius:8px;background:#17171b;color:#cfd2d6;font:13px system-ui;cursor:pointer}</style>
+</head><body><video id="screen" autoplay muted playsinline></video>
+<div class="buttons"><button data-button="home">Home</button><button data-button="lock">Lock</button></div>
+<script>
+// Spike #6 page: the simstream engine's H.264 as a WebRTC video track (see bridge-rtp.mjs). The
+// browser's WebRTC stack receives, recovers loss, decodes and renders; this page only asks for the
+// smallest jitter buffer, acks presented frames (by RTP timestamp) so the engine's rate control
+// works, and sends input on the "ctl" data channel.
+const video = document.getElementById('screen');
+const canvas = video;   // the input code below measures the stream's on-screen box
+let ctl = null;
+const send = (m) => ctl && ctl.readyState === 'open' && ctl.send(JSON.stringify(m));
+
+// Metrics for lite-viewer.mjs: presented frames per second and gaps between them.
+const metrics = window.__metrics = { presented: [], recording: false };
+window.__startRecording = () => { metrics.presented = []; metrics.recording = true; };
+window.__summary = () => {
+  const d = metrics.presented;
+  const gaps = d.slice(1).map((t, i) => t - d[i]);
+  const secs = d.length > 1 ? (d[d.length - 1] - d[0]) / 1000 : 1;
+  const buckets = [];
+  d.forEach((t) => { const b = Math.floor((t - d[0]) / 1000); buckets[b] = (buckets[b] || 0) + 1; });
+  return { mode: 'rtp', frames: d.length, fps: +(d.length / secs).toFixed(1),
+    freezes50: gaps.filter((g) => g > 50).length, worstGapMs: Math.round(Math.max(0, ...gaps)),
+    timeline: [...buckets].map((n) => `${n || 0}f`), size: `${video.videoWidth}x${video.videoHeight}` };
+};
+
+// Acks: as each encoded frame arrives (Chrome's encoded-frame streams), like the WebSocket page's
+// ack-on-decode. Acking on presentation instead adds decode time and up to a display refresh of
+// jitter, which the engine's delay-based rate control reads as queueing and won't ramp past.
+// Without encoded streams, fall back to acking presented frames.
+let acksOnArrival = false;
+function onPresented(now, meta) {
+  if (!acksOnArrival && meta.rtpTimestamp !== undefined) send({ t: 'ack', rtp: meta.rtpTimestamp });
+  if (metrics.recording) metrics.presented.push(now);
+  video.requestVideoFrameCallback(onPresented);
+}
+video.requestVideoFrameCallback(onPresented);
+
+const signal = new WebSocket(location.origin.replace(/^http/, 'ws') + '/signal');
+const pc = new RTCPeerConnection({ iceServers: [], encodedInsertableStreams: true });
+pc.onicecandidate = (e) => e.candidate && signal.send(JSON.stringify({ t: 'cand', candidate: e.candidate.candidate, mid: e.candidate.sdpMid }));
+pc.ontrack = ({ track, receiver, streams }) => {
+  // Render as soon as frames are decodable: no smoothing buffer.
+  if ('jitterBufferTarget' in receiver) receiver.jitterBufferTarget = 0;
+  if ('playoutDelayHint' in receiver) receiver.playoutDelayHint = 0;
+  if (receiver.createEncodedStreams) {
+    const { readable, writable } = receiver.createEncodedStreams();
+    acksOnArrival = true;
+    readable.pipeThrough(new TransformStream({
+      transform(frame, controller) {
+        send({ t: 'ack', rtp: frame.getMetadata().rtpTimestamp ?? frame.timestamp });
+        controller.enqueue(frame);
+      },
+    })).pipeTo(writable);
+  }
+  video.srcObject = streams[0] || new MediaStream([track]);
+  video.play().catch(() => {});
+};
+pc.ondatachannel = ({ channel }) => {
+  if (channel.label !== 'ctl') return;
+  ctl = channel;
+  channel.onopen = () => {
+    send({ t: 'hello', codecs: ['h264'] });
+    send({ t: 'settings', transitions: new URLSearchParams(location.search).get('transitions') || 'burst', hevc: false });
+  };
+};
+signal.onmessage = async (e) => {
+  const m = JSON.parse(e.data);
+  if (m.t === 'sdp') {
+    await pc.setRemoteDescription({ type: m.type, sdp: m.sdp });
+    if (m.type === 'offer') {
+      await pc.setLocalDescription(await pc.createAnswer());
+      signal.send(JSON.stringify({ t: 'sdp', sdp: pc.localDescription.sdp, type: pc.localDescription.type }));
+    }
+  }
+  if (m.t === 'cand') { try { await pc.addIceCandidate({ candidate: m.candidate, sdpMid: m.mid }); } catch {} }
+};
+
+// Input, as in the engine's own page (Sources/simstream/Web/index.html): touches, edge swipes, keys
+// and hardware buttons go on the reliable ctl channel; the bridge passes them to the engine.
+const EDGE = { none: 0, top: 1, left: 2, bottom: 3, right: 4 };
+const EDGE_ZONE = { x: 0.04, y: 0.03 };
+const BEZEL_PX = 32;
+let gesture = null, inputSeq = 0;
+function position(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, r };
+}
+function edgeAt({ x, y }) {
+  if (y >= 1 - EDGE_ZONE.y) return EDGE.bottom;
+  if (x <= EDGE_ZONE.x) return EDGE.left;
+  if (x >= 1 - EDGE_ZONE.x) return EDGE.right;
+  if (y <= EDGE_ZONE.y) return EDGE.top;
+  return EDGE.none;
+}
+const clamp = (v) => Math.min(1, Math.max(0, v));
+function touch(phase, e) {
+  let { x, y } = position(e);
+  if (phase === 'down') {
+    if (gesture.edge === EDGE.bottom) y = 0.999;
+    if (gesture.edge === EDGE.top) y = 0.001;
+    if (gesture.edge === EDGE.left) x = 0.001;
+    if (gesture.edge === EDGE.right) x = 0.999;
+  }
+  send({ t: 'touch', p: phase, x: clamp(x), y: clamp(y), seq: ++inputSeq, edge: gesture.edge });
+}
+document.addEventListener('pointerdown', (e) => {
+  if (gesture || e.target.closest('button')) return;
+  const p = position(e);
+  const bezelX = BEZEL_PX / p.r.width, bezelY = BEZEL_PX / p.r.height;
+  const onScreen = p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
+  if (!(p.x >= -bezelX && p.x <= 1 + bezelX && p.y >= -bezelY && p.y <= 1 + bezelY)) return;
+  e.preventDefault();
+  document.body.setPointerCapture(e.pointerId);
+  gesture = { pointerId: e.pointerId, edge: onScreen ? edgeAt(p) : edgeAt({ x: clamp(p.x), y: clamp(p.y) }) };
+  touch('down', e);
+});
+document.addEventListener('pointermove', (e) => { if (gesture?.pointerId === e.pointerId) touch('move', e); });
+const release = (e) => { if (gesture?.pointerId !== e.pointerId) return; touch('up', e); gesture = null; };
+document.addEventListener('pointerup', release);
+document.addEventListener('pointercancel', release);
+
+// KeyboardEvent.code -> USB HID usage (page 0x07)
+const HID = {
+  Enter: 0x28, Escape: 0x29, Backspace: 0x2a, Tab: 0x2b, Space: 0x2c, Minus: 0x2d, Equal: 0x2e,
+  BracketLeft: 0x2f, BracketRight: 0x30, Backslash: 0x31, Semicolon: 0x33, Quote: 0x34, Backquote: 0x35,
+  Comma: 0x36, Period: 0x37, Slash: 0x38, CapsLock: 0x39, Delete: 0x4c,
+  ArrowRight: 0x4f, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+  ControlLeft: 0xe0, ShiftLeft: 0xe1, AltLeft: 0xe2, ControlRight: 0xe4, ShiftRight: 0xe5, AltRight: 0xe6,
+};
+for (let i = 0; i < 26; i++) HID['Key' + String.fromCharCode(65 + i)] = 0x04 + i;
+for (let i = 1; i <= 9; i++) HID['Digit' + i] = 0x1d + i;
+HID.Digit0 = 0x27;
+function onKey(e, down) {
+  if (e.metaKey) return;
+  const usage = HID[e.code];
+  if (usage === undefined) return;
+  e.preventDefault();
+  if (down && e.repeat) return;
+  send({ t: 'key', usage, down });
+}
+window.addEventListener('keydown', (e) => onKey(e, true));
+window.addEventListener('keyup', (e) => onKey(e, false));
+for (const el of document.querySelectorAll('[data-button]')) {
+  const b = el.dataset.button;
+  el.addEventListener('pointerdown', () => send({ t: 'button', b, down: true }));
+  el.addEventListener('pointerup', () => send({ t: 'button', b, down: false }));
+}
+</script>
+</body></html>
