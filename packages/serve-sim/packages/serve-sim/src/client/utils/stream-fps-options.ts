@@ -1,5 +1,5 @@
-const MAX_UI_STREAM_FPS = 60;
-const FPS_PRESETS = [60, 30, 20, 15, 10, 5] as const;
+const MAX_UI_STREAM_FPS = 120;
+const FPS_PRESETS = [120, 60, 30, 20, 15, 10, 5] as const;
 
 type StreamFpsOption = { value: string; label: string };
 
