@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test";
 
 const actions: Array<{ action: string; params: Record<string, unknown> }> = [];
-void mock.module("../client/utils/exec", () => ({
+void mock.module("../socket/client-control", () => ({
   runHostAction: async (action: string, params: Record<string, unknown> = {}) => {
     actions.push({ action, params });
     return { stdout: "", stderr: "", exitCode: 0 };

@@ -1,7 +1,7 @@
 import { useCallback, useRef } from "react";
 import { toast as sonnerToast } from "sonner";
 import { ScreenshotToast } from "../components/screenshot-toast";
-import { runHostAction } from "../utils/exec";
+import { runHostAction } from "../../socket/client-control";
 import {
   fetchScreenshotPng,
   isLoopbackPreviewHostname,

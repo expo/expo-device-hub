@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import type { EventLogEntry } from "../../event-log";
-import { openHostEventStream } from "../utils/exec";
+import { openHostEventStream } from "../../socket/client-control";
 import { simEndpoint } from "../utils/sim-endpoint";
 import { CollapsibleSection } from "./collapsible-section";
 

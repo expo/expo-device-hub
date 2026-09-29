@@ -1,4 +1,4 @@
-import { simEndpoint } from "./sim-endpoint";
+import { simEndpoint } from "../client/utils/sim-endpoint";
 
 export interface ExecResult {
   stdout: string;
@@ -286,4 +286,3 @@ export function openHostEventStream(path: string): HostEventStream {
   };
   return stream;
 }
-

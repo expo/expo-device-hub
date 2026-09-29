@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
 import { FlipHorizontal2, Images, X } from "lucide-react";
 import { PlayGlyph, StopGlyph, ReloadIcon } from "../icons";
-import { runHostAction } from "../utils/exec";
+import { runHostAction } from "../../socket/client-control";
 import { fileExtension, uploadFileToTmp } from "../utils/drop";
 import { CollapsibleSection } from "./collapsible-section";
 

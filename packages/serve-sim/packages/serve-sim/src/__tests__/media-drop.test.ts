@@ -1,6 +1,6 @@
 import { describe, expect, mock, test } from "bun:test";
 
-void mock.module("../client/utils/exec", () => ({
+void mock.module("../socket/client-control", () => ({
   runHostAction: async () => ({ stdout: "", stderr: "", exitCode: 0 }),
 }));
 

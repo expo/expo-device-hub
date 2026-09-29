@@ -1,4 +1,4 @@
-import { runHostAction } from "./exec";
+import { runHostAction } from "../../socket/client-control";
 
 export interface AppDetails {
   bundleId: string;

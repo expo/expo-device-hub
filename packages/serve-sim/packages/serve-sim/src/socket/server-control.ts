@@ -2,17 +2,17 @@ import {
   messageToString,
   requestHost,
   type SseRequestHandler,
-} from "./exec-ws-utils";
-import { isWebOrigin, originMatches } from "./middleware-utils";
-import type { UpgradeHandlerWebSocket } from "./socket/types";
-import { InvalidHostActionError, runHostActionAsync } from "./host-actions";
+} from "./control-utils";
+import { isWebOrigin, originMatches } from "../middleware-utils";
+import type { UpgradeHandlerWebSocket } from "./types";
+import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
 import {
   TOKEN_SUBPROTOCOL_PREFIX,
   acceptedTokenSubprotocol,
   isSameOriginRequest,
   safeEqualString,
   upgradeAuthHeaders,
-} from "./session-auth";
+} from "../session-auth";
 
 // WebSocket control channel for the preview page. Browsers cap HTTP/1.1 at
 // six connections per origin, and every preview tab used to hold several

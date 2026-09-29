@@ -48,7 +48,7 @@ class FakeSocket {
   }
 }
 
-let runHostAction: typeof import("../../client/utils/exec").runHostAction;
+let runHostAction: typeof import("../../socket/client-control").runHostAction;
 let fetchCapturedBody: typeof import("../../client/hooks/use-capture-stream").fetchCapturedBody;
 let offeredProtocols: string[] = [];
 
@@ -64,7 +64,7 @@ beforeAll(async () => {
     __SIM_PREVIEW__: { execToken: TOKEN, basePath: "/" },
     location: { href: "http://127.0.0.1:3100/", protocol: "http:", host: "127.0.0.1:3100", pathname: "/" },
   };
-  ({ runHostAction } = await import("../../client/utils/exec"));
+  ({ runHostAction } = await import("../../socket/client-control"));
   ({ fetchCapturedBody } = await import("../../client/hooks/use-capture-stream"));
 });
 
@@ -76,9 +76,9 @@ afterAll(() => {
 
 /** Starts a call, waits for its frame to actually go out, then answers that frame by id. */
 async function request(
-  start: () => Promise<import("../../client/utils/exec").ExecResult>,
+  start: () => Promise<import("../../socket/client-control").ExecResult>,
   reply: Record<string, unknown>,
-): Promise<import("../../client/utils/exec").ExecResult> {
+): Promise<import("../../socket/client-control").ExecResult> {
   const baseline = sentFrames.length;
   const call = start();
   while (sentFrames.length <= baseline) await new Promise((r) => setTimeout(r, 2));

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { AxSnapshot } from "../../ax-shared";
 import { isAxeUnavailable } from "../utils/ax";
-import { openHostEventStream } from "../utils/exec";
+import { openHostEventStream } from "../../socket/client-control";
 
 export function useAxSnapshot(endpoint?: string) {
   const [snapshot, setSnapshot] = useState<AxSnapshot | null>(null);

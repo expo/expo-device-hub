@@ -1,6 +1,6 @@
 import type { CrashStreamFrame } from "../../crash/protocol";
 import { parseCrashFrame } from "./crash-stream";
-import { openHostEventStream } from "./exec";
+import { openHostEventStream } from "../../socket/client-control";
 
 export function watchCrashes(
   path: string,

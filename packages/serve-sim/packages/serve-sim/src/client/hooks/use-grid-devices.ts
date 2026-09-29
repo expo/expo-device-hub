@@ -7,7 +7,7 @@ import {
   type GridDeviceStatus,
   type GridStatusResponse,
 } from "../utils/grid";
-import { openHostEventStream } from "../utils/exec";
+import { openHostEventStream } from "../../socket/client-control";
 
 /** Devices fetched up front; the long tail loads as the sidebar scrolls. */
 const DEFAULT_PAGE_SIZE = 60;

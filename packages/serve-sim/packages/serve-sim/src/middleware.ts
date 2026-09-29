@@ -8,11 +8,6 @@ import { createServer as createNetServer } from "net";
 import { createHash, randomBytes } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { Socket } from "net";
-// `ws` (kept external in the build) supplies a WebSocket *client* for the
-// helper/devtools proxy. Node only exposes a global `WebSocket` on newer LTS
-// lines, and `serve-sim/middleware` is embedded in third-party dev servers, so
-// importing the dependency keeps the proxy working regardless of runtime.
-import { WebSocket } from "ws";
 import {
   SCREENSHOT_ARTIFACT_ERROR_HEADER,
   SCREENSHOT_ARTIFACT_HEADER,
@@ -32,7 +27,6 @@ import {
   peekDeviceSession,
 } from "./device-session";
 import {
-  acceptedTokenSubprotocol,
   assertBearerAccess,
   assertCaptureAccess,
   assertPreviewAccess,
@@ -58,13 +52,14 @@ import {
 import { serveDeviceKitModelAsset } from "./devicekit-model";
 import { validatePanelRoute } from "./panel-route";
 import { isAllowedHost, refusedHostMessage } from "./host-allowlist";
-import { createExecWebSocketHandler, type UiRequestHandler } from "./exec-ws";
+import { createExecWebSocketHandler, type UiRequestHandler } from "./socket/server-control";
 import { crashRuntime } from "./crash/runtime";
 import { handleCrashesRequestAfter, handleCrashReportRequest } from "./crash/routes";
 export { handleCrashesRequest, handleCrashReportRequest } from "./crash/routes";
 import { booleanParam } from "./request-params";
 import { logBufferCache, type LogBufferCache, type LogLine } from "./log-buffer";
-import { parseWebSocketFrame, sendBrowserFrame, websocketFrame } from "./socket/frames";
+import { bridgeWebSocketFrames } from "./socket/server-devtools";
+import { writeWebSocketAccept } from "./socket/server-upgrade";
 import { claimHelperHidSocket, isHidWebSocketPath, rawHidSocket } from "./socket/server-input";
 import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
@@ -614,128 +609,6 @@ function helperProxyTarget(rawUrl: string, prefix: string): { device: string | n
   const suffix = upstreamSegments.length > 0 ? `/${upstreamSegments.join("/")}` : "/";
   parsed.searchParams.delete("device");
   return { device, upstreamPath: `${suffix}${parsed.search}` };
-}
-
-const WS_ACCEPT_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-
-type PendingWebSocketFrame = {
-  opcode: number;
-  payload: Buffer<ArrayBufferLike>;
-};
-
-function webSocketBinary(payload: Buffer<ArrayBufferLike>): Uint8Array<ArrayBuffer> {
-  const bytes = new Uint8Array(payload.length);
-  bytes.set(payload);
-  return bytes;
-}
-
-/**
- * Complete the server side of a WebSocket upgrade by hand (the `ws` server's
- * handshake doesn't flush under Bun). Writes the 101 response and resumes the
- * socket on success; on a missing key writes 400 and returns false.
- */
-function writeWebSocketAccept(req: SimReq, socket: Socket, execToken: string): boolean {
-  const key = req.headers["sec-websocket-key"];
-  if (typeof key !== "string") {
-    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
-    return false;
-  }
-  const accept = createHash("sha1").update(key + WS_ACCEPT_GUID).digest("base64");
-  // A client that offered subprotocols fails the handshake unless one is named back.
-  const subprotocol = acceptedTokenSubprotocol(req.headers, execToken);
-  socket.write(
-    "HTTP/1.1 101 Switching Protocols\r\n" +
-    "Upgrade: websocket\r\n" +
-    "Connection: Upgrade\r\n" +
-    `Sec-WebSocket-Accept: ${accept}\r\n` +
-    (subprotocol ? `Sec-WebSocket-Protocol: ${subprotocol}\r\n` : "") +
-    "\r\n",
-  );
-  socket.resume();
-  return true;
-}
-
-function bridgeWebSocketFrames(
-  req: SimReq,
-  socket: Socket,
-  head: Buffer,
-  upstreamUrl: string,
-  execToken: string,
-): void {
-  if (!writeWebSocketAccept(req, socket, execToken)) return;
-
-  const upstream = new WebSocket(upstreamUrl);
-  upstream.binaryType = "arraybuffer";
-  let upstreamOpen = false;
-  let closed = false;
-  let pendingToUpstream: PendingWebSocketFrame[] = [];
-  let buffered = Buffer.from(head);
-
-  const closeBoth = () => {
-    if (closed) return;
-    closed = true;
-    try { upstream.close(); } catch {}
-    try { socket.end(websocketFrame(0x8, Buffer.alloc(0))); } catch {}
-    try { socket.destroy(); } catch {}
-  };
-
-  const sendToUpstream = (frame: PendingWebSocketFrame) => {
-    if (upstreamOpen && upstream.readyState === WebSocket.OPEN) {
-      upstream.send(frame.opcode === 0x1 ? frame.payload.toString("utf8") : webSocketBinary(frame.payload));
-      return;
-    }
-    pendingToUpstream.push({ opcode: frame.opcode, payload: Buffer.from(frame.payload) });
-  };
-
-  const drainFrames = () => {
-    try {
-      while (buffered.length > 0) {
-        const frame = parseWebSocketFrame(buffered);
-        if (!frame) break;
-        buffered = buffered.subarray(frame.consumed);
-        if (frame.opcode === 0x8) {
-          sendBrowserFrame(socket, 0x8, frame.payload);
-          closeBoth();
-          return;
-        }
-        if (frame.opcode === 0x9) {
-          sendBrowserFrame(socket, 0xA, frame.payload);
-          continue;
-        }
-        if (frame.opcode === 0x1 || frame.opcode === 0x2) {
-          sendToUpstream({ opcode: frame.opcode, payload: frame.payload });
-        }
-      }
-    } catch {
-      closeBoth();
-    }
-  };
-
-  upstream.onopen = () => {
-    upstreamOpen = true;
-    for (const frame of pendingToUpstream) {
-      upstream.send(frame.opcode === 0x1 ? frame.payload.toString("utf8") : webSocketBinary(frame.payload));
-    }
-    pendingToUpstream = [];
-  };
-  upstream.onmessage = (event) => {
-    const data = event.data;
-    const payload = typeof data === "string"
-      ? Buffer.from(data)
-      : Buffer.from(data as ArrayBuffer);
-    sendBrowserFrame(socket, typeof data === "string" ? 0x1 : 0x2, payload);
-  };
-  upstream.onerror = closeBoth;
-  upstream.onclose = closeBoth;
-
-  socket.on("data", (chunk) => {
-    if (typeof chunk === "string") chunk = Buffer.from(chunk);
-    buffered = Buffer.concat([buffered, chunk]);
-    drainFrames();
-  });
-  socket.on("error", closeBoth);
-  socket.on("close", closeBoth);
-  drainFrames();
 }
 
 /** Read camera-helper state without opening the simulator capture session. */

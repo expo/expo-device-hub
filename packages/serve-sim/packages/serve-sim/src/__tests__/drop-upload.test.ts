@@ -8,7 +8,7 @@ interface RecordedAction {
 const actions: RecordedAction[] = [];
 let chunkResult = { stdout: "", stderr: "", exitCode: 0 };
 
-void mock.module("../client/utils/exec", () => ({
+void mock.module("../socket/client-control", () => ({
   runHostAction: async (action: string, params: Record<string, unknown> = {}) => {
     actions.push({ action, params });
     if (action === "upload.append") {

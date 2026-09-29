@@ -83,7 +83,7 @@ import {
   AVCC_FRAME_TIMEOUT_MS,
 } from "./avcc-fallback";
 import { fileExtension } from "./utils/drop";
-import { openHostEventStream, runHostAction } from "./utils/exec";
+import { openHostEventStream, runHostAction } from "../socket/client-control";
 import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
 import {
