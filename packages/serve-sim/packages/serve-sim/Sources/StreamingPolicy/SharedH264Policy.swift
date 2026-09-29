@@ -12,6 +12,10 @@ public struct SharedH264Policy {
     private var lastRefusalIDRTimestamp: Int64?
     /// Refused deliveries force at most one keyframe per this much frame time.
     public static let refusalIDRIntervalNanoseconds: Int64 = 1_000_000_000
+    /// A refusal inside the interval could not force a keyframe; the first frame after it does,
+    /// if a peer still waits. Otherwise a sender that paused briefly would wait for the encoder's
+    /// natural keyframe, because the deltas it then accepts cannot restart its stream.
+    private var deferredRefusalIDR = false
 
     public init(defaultBitrate: Int) {
         self.defaultBitrate = max(1, defaultBitrate)
@@ -45,13 +49,17 @@ public struct SharedH264Policy {
     /// first refusal forces one, so a viewer whose sender activates late still starts at once, but
     /// later ones force at most one per `refusalIDRIntervalNanoseconds`: a sender that keeps
     /// refusing would otherwise make every keyframe force the next, and every viewer would get a
-    /// keyframe-only stream.
+    /// keyframe-only stream. A refusal inside the interval defers its keyframe to the interval's end.
     public mutating func deliveryRejected(peer: Int, frameTimestamp: Int64) {
         starvedPeers.insert(peer)
         if let last = lastRefusalIDRTimestamp,
-           frameTimestamp &- last < Self.refusalIDRIntervalNanoseconds { return }
+           frameTimestamp &- last < Self.refusalIDRIntervalNanoseconds {
+            deferredRefusalIDR = true
+            return
+        }
         lastRefusalIDRTimestamp = frameTimestamp
         forceNextIDR = true
+        deferredRefusalIDR = false
     }
 
     /// The peer received a frame through the normal path; it is no longer starved.
@@ -65,6 +73,7 @@ public struct SharedH264Policy {
         let extra = starvedPeers.subtracting(served)
         starvedRecoveries &+= UInt64(extra.count)
         starvedPeers.removeAll()
+        deferredRefusalIDR = false
         return extra
     }
 
@@ -82,6 +91,12 @@ public struct SharedH264Policy {
     public mutating func beginFrame(timestamp: Int64, requestedIDR: Bool) -> Bool? {
         guard timestamp > newestTimestamp else { return nil }
         newestTimestamp = timestamp
+        if deferredRefusalIDR, !starvedPeers.isEmpty, let last = lastRefusalIDRTimestamp,
+           timestamp &- last >= Self.refusalIDRIntervalNanoseconds {
+            lastRefusalIDRTimestamp = timestamp
+            deferredRefusalIDR = false
+            forceNextIDR = true
+        }
         let force = forceNextIDR || requestedIDR
         forceNextIDR = false
         return force
