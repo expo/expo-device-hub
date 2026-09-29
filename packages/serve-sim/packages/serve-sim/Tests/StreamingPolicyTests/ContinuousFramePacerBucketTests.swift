@@ -141,4 +141,20 @@ final class ContinuousFramePacerBucketTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(sends, 10, "the idle screen still streams at the cadence")
         XCTAssertEqual(pacer.repeatedSends, UInt64(sends))
     }
+
+    func testUnchangedFramesRestartALostChainInBucketMode() {
+        var pacer = ContinuousFramePacer(framesPerSecond: 60, mode: .bucket)
+        pacer.setActive(true)
+        XCTAssertEqual(pacer.latestFrameArrived(atNanoseconds: 0), .schedule(nanoseconds: 0))
+        guard case .send = pacer.tick(atNanoseconds: 0) else { return XCTFail("expected the first send") }
+        // The next chained tick is lost. On a static screen only unchanged frames arrive, at the
+        // capture's 5 fps idle floor; they must still let the watchdog restart the chain.
+        XCTAssertEqual(pacer.unchangedFrameArrived(atNanoseconds: 40_000_000), .ignore)
+        XCTAssertEqual(pacer.unchangedFrameArrived(atNanoseconds: 240_000_000), .restart(nanoseconds: 0))
+        // The restarted chain repeats the retained frame; the unchanged frame did not count as fresh.
+        XCTAssertEqual(pacer.repeatedSends, 0)
+        guard case .send = pacer.tick(atNanoseconds: 240_000_000) else { return XCTFail("expected a repeat") }
+        XCTAssertEqual(pacer.repeatedSends, 1)
+    }
+
 }

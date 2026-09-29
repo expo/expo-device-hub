@@ -139,6 +139,12 @@ public struct ContinuousFramePacer: Sendable {
         return startChain(atNanoseconds: now, afterNanoseconds: earliest - now)
     }
 
+    /// A frame whose content matches the retained one. It is not fresh, so it does not count
+    /// toward the source's cadence or a send.
+    public mutating func unchangedFrameArrived(atNanoseconds now: UInt64) -> ArrivalDecision {
+        .ignore
+    }
+
     public mutating func tick(atNanoseconds now: UInt64, chained: Bool = true) -> TickDecision {
         guard active, hasFrame else {
             tickScheduled = false
