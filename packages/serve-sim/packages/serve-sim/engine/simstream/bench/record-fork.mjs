@@ -57,6 +57,10 @@ const RECORDER = `(async () => {
   }
   const S = window.__rec = { n: 0, gaps: [], last: 0, stop: false, done: null, lat: [], changes: [], size: '', marks: [] };
   window.addEventListener('pointerdown', () => S.marks.push(S.n), true);
+  // Every pointermove the page receives, as [recorder frame, coalesced moves in it]: proves how
+  // often input reaches the page (Chrome delivers moves at most once per refresh).
+  S.moves = [];
+  window.addEventListener('pointermove', (e) => { if (e.buttons) S.moves.push([S.n, e.getCoalescedEvents ? e.getCoalescedEvents().length : 1]); }, true);
   const pending = [];
   const flush = () => { if (!pending.length) return; let total = 0; for (const p of pending) total += p.length; const all = new Uint8Array(total); let o = 0; for (const p of pending) { all.set(p, o); o += p.length; } pending.length = 0; let s = ''; for (let i = 0; i < all.length; i += 0x8000) s += String.fromCharCode.apply(null, all.subarray(i, i + 0x8000)); __out(btoa(s)); };
   S.outputs = 0;
@@ -131,6 +135,9 @@ try {
   const rect = await ev(`(() => { const v = [...document.querySelectorAll('video')].find(v=>v.videoWidth>0); const c = v || [...document.querySelectorAll('canvas')].filter(c=>c.width>200&&c.height>400).sort((a,b)=>b.width*b.height-a.width*a.height)[0] || [...document.querySelectorAll('img')].find(i=>i.naturalWidth>200&&i.naturalHeight>400); const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; })()`);
   const at = (fx, fy) => ({ x: rect.x + rect.w * fx, y: rect.y + rect.h * fy });
   const mouse = (type, fx, fy) => cdp('Input.dispatchMouseEvent', { type, ...at(fx, fy), button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
+  // Moves: how late each dispatch started against its schedule, and how long the CDP call took.
+  const late = [], call = [];
+  const move = async (due, fx, fy) => { const t = performance.now(); late.push(t - due); await mouse('mouseMoved', fx, fy); call.push(performance.now() - t); };
   const startFrame = await ev('__rec.n');
   // Inputs run on an absolute schedule from the route start, so per-call delays never accumulate.
   const plan = [];
@@ -146,7 +153,7 @@ try {
         // Press at the first point, move through the rest on their own schedule, release at the last.
         const [[, x0, y0], ...rest] = s.pts;
         await mouse('mousePressed', x0, y0);
-        for (const [ms, x, y] of rest) { await until(at + ms); await mouse('mouseMoved', x, y); }
+        for (const [ms, x, y] of rest) { await until(at + ms); await move(t0 + at + ms, x, y); }
         const [ms, x, y] = s.pts[s.pts.length - 1];
         await until(at + ms); await mouse('mouseReleased', x, y); at += ms;
       }
@@ -159,9 +166,12 @@ try {
   }
   await ev('__rec.stop = true');
   await sleep(1500); // let the encoder flush
-  const stats = await ev(`(() => { const g = __rec.gaps; const lat = __rec.lat.slice().sort((a,b)=>a-b); return { frames: __rec.n, outputs: __rec.outputs, marks: __rec.marks, size: __rec.size, error: __rec.error || null, gapsOver20: g.filter(x => x > 20).length, gapMax: Math.max(...g), latMean: lat.length ? lat.reduce((a,b)=>a+b,0)/lat.length : null, latP95: lat.length ? lat[Math.floor(lat.length*0.95)] : null }; })()`);
-  writeFileSync(`${OUT}.json`, JSON.stringify({ label: LABEL, url: URL, mode: MODE, startFrame, plan, rect, ...stats }, null, 1));
-  console.log(JSON.stringify({ label: LABEL, startFrame, frames: stats.frames, marks: stats.marks.length, planned: plan.length - 1, error: stats.error }));
+  const q = (xs, p) => { const v = xs.slice().sort((a, b) => a - b); return v.length ? +v[Math.min(v.length - 1, Math.floor(p * v.length))].toFixed(1) : null; };
+  const dispatch = { moves: late.length, lateP50: q(late, 0.5), lateP95: q(late, 0.95), lateMax: q(late, 1), callP50: q(call, 0.5), callP95: q(call, 0.95), callMax: q(call, 1) };
+  const stats = await ev(`(() => { const g = __rec.gaps; const lat = __rec.lat.slice().sort((a,b)=>a-b); return { frames: __rec.n, outputs: __rec.outputs, marks: __rec.marks, moves: __rec.moves, size: __rec.size, error: __rec.error || null, gapsOver20: g.filter(x => x > 20).length, gapMax: Math.max(...g), latMean: lat.length ? lat.reduce((a,b)=>a+b,0)/lat.length : null, latP95: lat.length ? lat[Math.floor(lat.length*0.95)] : null }; })()`);
+  writeFileSync(`${OUT}.json`, JSON.stringify({ label: LABEL, url: URL, mode: MODE, startFrame, plan, rect, dispatch, ...stats }));
+  console.log(JSON.stringify({ label: LABEL, startFrame, frames: stats.frames, marks: stats.marks.length, planned: plan.length - 1,
+    pointermoves: stats.moves.length, dispatched: dispatch.moves, lateP95: dispatch.lateP95, callP95: dispatch.callP95, error: stats.error }));
 } finally {
   await sleep(300); out.end(); ws.close(); chrome.kill();
 }

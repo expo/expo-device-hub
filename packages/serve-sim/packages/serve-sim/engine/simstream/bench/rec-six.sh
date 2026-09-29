@@ -5,7 +5,7 @@
 # reset identically (prep-maps.sh), and only the approach under test is running.
 #   1 simstream + Agent Hub (our fork)       2 WebRTC + Agent Hub (upstream)   3 HTTP + Agent Hub (upstream)
 #   4 simstream engine page (WebSocket)      5 simstream + WebRTC data channel 6 simstream + WebRTC video track
-approaches=(${@:-1 2 3 4 5 6})
+approaches=($@); (( $# )) || approaches=(1 2 3 4 5 6)
 HERE=${0:A:h}
 [ -f "$HERE/../simstream.env" ] && set -a && . "$HERE/../simstream.env" && set +a
 : "${SIMSTREAM_TAILNET:?set SIMSTREAM_TAILNET (see simstream.env.example)}"
@@ -13,12 +13,12 @@ SERVER=seth@sethwebster-expo.$SIMSTREAM_TAILNET; HOST=https://sethwebster-expo.$
 VIEWER=seths-mac-mini; VNODE=/Users/sethwebster/.asdf/installs/nodejs/24.14.0/bin/node
 SNODE_DIR=/Users/seth/.local/share/mise/installs/node/22.20.0/bin
 FORK=@sethwebster/expo-agent-hub-simstream@0.3.4-simstream.2; UPSTREAM=@expo/serve-sim@0.4.0
-OUT=/tmp/six; mkdir -p $OUT
+OUT=${SIX_OUT:-/tmp/six}; mkdir -p $OUT
 
 python3 $HERE/route-maps.py > $HERE/route-maps.json
 ssh $VIEWER 'mkdir -p ~/simrec/rec'
 scp -q $HERE/record-fork.mjs $HERE/route-maps.json ${VIEWER}:simrec/
-scp -q $HERE/gest.mjs $HERE/route-maps.json ${SERVER}:simp2p/
+scp -q $HERE/gest.mjs $HERE/prep-maps.sh $HERE/route-maps.json ${SERVER}:simp2p/
 
 # Everything off on the laptop: serve-sim, bridges, engines. Then the standalone engine back up for
 # the reset (a paused input-only client, so it captures nothing).
@@ -32,7 +32,7 @@ start_engine() {
 }
 bridge() { # port script mode env...
   local port=$1 script=$2 mode=$3; shift 3
-  ssh $SERVER "cd ~/simp2p; (env $* nohup $SNODE_DIR/node $script 8811 $port $mode > bridge-rec-$port.log 2>&1 &); sleep 2"
+  ssh $SERVER "cd ~/simp2p; echo run \$(date) >> bridge-rec-$port.log; (env $* nohup $SNODE_DIR/node $script 8811 $port $mode >> bridge-rec-$port.log 2>&1 &); sleep 2"
 }
 serve_sim() { # package args...
   local pkg=$1; shift
