@@ -3,10 +3,25 @@ import { EventEmitter } from "events";
 import type { ChildProcess } from "child_process";
 import {
   createForegroundTrackerCache,
+  frontmostAppFromRecentLogs,
   isUserFacingBundle,
+  parseRecentVisibilityLogs,
   parseForegroundAppLogMessage,
   type ForegroundApp,
 } from "../foreground-tracker";
+import { withShimsAsync } from "./helpers";
+
+test("history lookup keeps the latest app after more than 16 MiB of logs", async () => {
+  await withShimsAsync({
+    xcrun: `#!/usr/bin/env bun
+const old = JSON.stringify({ eventMessage: "[app<com.example.old>:10] Setting process visibility to: Foreground" }) + "\\n";
+process.stdout.write(old.repeat(200000));
+process.stdout.write(JSON.stringify({ eventMessage: "[app<com.example.current>:42] Setting process visibility to: Foreground" }) + "\\n");
+`,
+  }, async () => {
+    expect(await frontmostAppFromRecentLogs("FAKE-DEVICE")).toEqual({ bundleId: "com.example.current", pid: 42 });
+  });
+});
 
 // A fake `log stream` child: an EventEmitter with a writable-looking stdout, driven by emitting
 // `data` chunks. Lets the tracker run without a booted simulator.
@@ -57,12 +72,49 @@ describe("parseForegroundAppLogMessage", () => {
   });
 });
 
+describe("parseRecentVisibilityLogs", () => {
+  const line = (bundle: string, pid: number, state: string) =>
+    JSON.stringify({ eventMessage: `[app<${bundle}>:${pid}] Setting process visibility to: ${state}` });
+
+  test("keeps the new app when the old app backgrounds after it", () => {
+    expect(parseRecentVisibilityLogs([
+      line("dev.expo.A", 11, "Foreground"),
+      line("dev.expo.B", 22, "Foreground"),
+      line("dev.expo.A", 11, "Background"),
+      line("com.apple.iMessageAppsViewService", 33, "Foreground"),
+    ].join("\n"))).toEqual({ bundleId: "dev.expo.B", pid: 22 });
+  });
+
+  test("keeps a replacement process when the old process of the same app backgrounds", () => {
+    expect(parseRecentVisibilityLogs([
+      line("dev.expo.A", 11, "Foreground"),
+      line("dev.expo.A", 22, "Foreground"),
+      line("dev.expo.A", 11, "Background"),
+    ].join("\n"))).toEqual({ bundleId: "dev.expo.A", pid: 22 });
+  });
+
+  test("reports no app when the latest visible app backgrounds", () => {
+    expect(parseRecentVisibilityLogs([
+      line("dev.expo.A", 11, "Foreground"),
+      line("dev.expo.A", 11, "Background"),
+    ].join("\n"))).toBeNull();
+  });
+
+  test("forgets a terminated app after its visibility becomes unknown", () => {
+    expect(parseRecentVisibilityLogs([
+      line("dev.expo.A", 11, "Foreground"),
+      line("dev.expo.A", 11, "Unknown"),
+    ].join("\n"))).toBeNull();
+  });
+});
+
 describe("isUserFacingBundle", () => {
   test("keeps regular apps, drops widgets/extensions/services", () => {
     expect(isUserFacingBundle("com.apple.mobilesafari")).toBe(true);
     expect(isUserFacingBundle("dev.expo.MyApp")).toBe(true);
     expect(isUserFacingBundle("com.apple.WidgetRenderer")).toBe(false);
     expect(isUserFacingBundle("dev.expo.MyApp.extension")).toBe(false);
+    expect(isUserFacingBundle("com.apple.iMessageAppsViewService")).toBe(false);
     // Generic names only match as whole components, so real apps that merely contain them stay in.
     expect(isUserFacingBundle("com.example.CustomerService")).toBe(true);
     expect(isUserFacingBundle("com.acme.InCallUITest")).toBe(true);

@@ -68,7 +68,8 @@ import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
-import { PasteboardTooLargeError, readSimPasteboardResult, writeSimPasteboard } from "./sim-pasteboard";
+import { PasteboardTooLargeError, writeSimPasteboard } from "./sim-pasteboard";
+import { readSimPasteboardResult } from "./sim-pasteboard-reader";
 
 /** Captured traffic is decrypted credentials; `no-cache` would still let a cache keep a copy. */
 const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;
