@@ -9,7 +9,8 @@ export type ScreenshotArtifactResult =
 
 // The failed `error` reaches the browser through the response and the preview UIs, so nothing from
 // the error message is sent: only an errno code such as ENOSPC or EACCES, else a fixed text. The full
-// message stays in the stderr line and the failure record, which never leave the worker.
+// message goes only to the stderr line and the failure record; the EAS worker reads that record and
+// reports it in the job log and to Sentry, never to the browser.
 export function clientSafeErrorMessage(error: unknown): string {
   const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
   return typeof code === "string" && /^E[A-Z]{2,}$/.test(code) ? code : "unknown error";
