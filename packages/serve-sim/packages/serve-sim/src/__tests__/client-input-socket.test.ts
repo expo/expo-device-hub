@@ -26,10 +26,10 @@ function setup() {
   const sockets: FakeSocket[] = [];
   const errors: string[] = [];
   let recoveries = 0;
-  let opens = 0;
+  let admissions = 0;
   let disconnects = 0;
   const input = createInputSocket("ws://localhost/ws", {
-    onOpen: () => { opens++; },
+    onAdmitted: () => { admissions++; },
     onMessage: (data) => data === "admitted",
     onDisconnect: () => { disconnects++; },
     onRefused: (reason) => { errors.push(reason); },
@@ -47,7 +47,7 @@ function setup() {
     input,
     sockets,
     errors,
-    get opens() { return opens; },
+    get admissions() { return admissions; },
     get disconnects() { return disconnects; },
     get recoveries() { return recoveries; },
   };
@@ -65,9 +65,30 @@ test("a retry admitted by a config frame clears a temporary refusal", async () =
     state.sockets[1]!.message("admitted");
     await Bun.sleep(45);
     expect(state.errors).toEqual([]);
-    expect(state.opens).toBe(2);
+    expect(state.admissions).toBe(1);
     expect(state.disconnects).toBe(1);
     expect(state.sockets[1]!.binaryType).toBe("arraybuffer");
+  } finally {
+    state.input.dispose();
+  }
+});
+
+test("admission callback waits for a valid config frame and runs once per socket", async () => {
+  const state = setup();
+  try {
+    state.input.start();
+    state.sockets[0]!.open();
+    state.sockets[0]!.message("other frame");
+    expect(state.admissions).toBe(0);
+    state.sockets[0]!.message("admitted");
+    state.sockets[0]!.message("admitted");
+    expect(state.admissions).toBe(1);
+    state.sockets[0]!.close();
+    await Bun.sleep(20);
+    state.sockets[1]!.open();
+    expect(state.admissions).toBe(1);
+    state.sockets[1]!.message("admitted");
+    expect(state.admissions).toBe(2);
   } finally {
     state.input.dispose();
   }

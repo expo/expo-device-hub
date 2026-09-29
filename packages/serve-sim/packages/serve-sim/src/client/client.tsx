@@ -939,7 +939,7 @@ function AppWithConfig({
   useEffect(() => {
     setInputSocketOpen(false);
     const inputSocket = createInputSocket(config.wsUrl, {
-      onOpen() {
+      onAdmitted() {
         setInputSocketOpen(true);
         // A touch client disconnects the sim's hardware keyboard so its
         // on-screen keyboard shows; desktop leaves it connected.
@@ -998,6 +998,7 @@ function AppWithConfig({
       if (inputSocketRef.current === inputSocket) inputSocketRef.current = null;
       hingeQueueRef.current?.clear();
       inputSocket.dispose();
+      dismissInputSocketError();
     };
   }, [config.wsUrl]);
 

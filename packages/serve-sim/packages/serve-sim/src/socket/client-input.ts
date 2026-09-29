@@ -1,7 +1,7 @@
 import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage } from "./send-queue";
 
 type InputSocketHandlers = {
-  onOpen(): void;
+  onAdmitted(): void;
   /** Return true when the server's config frame confirms input was admitted. */
   onMessage(data: unknown): boolean;
   onDisconnect(): void;
@@ -34,15 +34,13 @@ export function createInputSocket(
     const ws = openSocket(url);
     ws.binaryType = "arraybuffer";
     socket = ws;
-    ws.onopen = () => {
-      if (stopped || socket !== ws) return;
-      handlers.onOpen();
-    };
     ws.onmessage = (event) => {
       if (stopped || socket !== ws) return;
       if (handlers.onMessage(event.data)) {
+        const firstAdmission = !admitted;
         admitted = true;
         pendingMessages = flushWsMessageQueue(ws, pendingMessages);
+        if (firstAdmission) handlers.onAdmitted();
         if (refusalTimer) clearTimeout(refusalTimer);
         refusalTimer = null;
         const wasReported = reported;
