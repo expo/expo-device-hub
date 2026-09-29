@@ -55,6 +55,7 @@ import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
 import { ServeSimToaster, dismissInputSocketError, showInputSocketError } from "./components/app-toasts";
 import { createInputSocket } from "../socket/client-input";
+import { WS_MSG_CONFIG } from "../socket/input-protocol";
 import { ShareSessionButton } from "./components/share-session-button";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
 import { StreamStatusPill } from "./components/stream-status-pill";
@@ -961,12 +962,11 @@ function AppWithConfig({
           } catch {}
           return false;
         }
-        if (bytes[0] !== 0x82) return false;
+        if (bytes[0] !== WS_MSG_CONFIG) return false;
         try {
           const cfg = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as StreamConfig;
           if (cfg.width <= 0 || cfg.height <= 0) return false;
-          // An upgrade can succeed before the server rejects input with 1013.
-          // A valid config frame confirms that this socket was admitted.
+          // A config frame also confirms admission when connected to an older server.
           // A rotation clears the native named pose. Observe the received
           // config even when its values equal the previous React state.
           if (cfg.hingePose === null && !hingePendingRef.current) setOrientationOverride(false);

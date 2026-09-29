@@ -94,6 +94,24 @@ test("admission callback waits for a valid config frame and runs once per socket
   }
 });
 
+test("server admission flushes input before screen dimensions are available", () => {
+  const state = setup();
+  try {
+    state.input.start();
+    state.input.send(0x04, { button: "home" });
+    state.sockets[0]!.open();
+    expect(state.sockets[0]!.sent).toHaveLength(0);
+    state.sockets[0]!.message(Uint8Array.of(0x83).buffer);
+    expect(state.admissions).toBe(1);
+    expect(state.sockets[0]!.sent).toHaveLength(1);
+    expect(new Uint8Array(state.sockets[0]!.sent[0]!)[0]).toBe(0x04);
+    state.sockets[0]!.message("admitted");
+    expect(state.admissions).toBe(1);
+  } finally {
+    state.input.dispose();
+  }
+});
+
 test("queued input waits for admission and acknowledged commands never queue", async () => {
   const state = setup();
   try {

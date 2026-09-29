@@ -268,17 +268,19 @@ async function start(
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Missing TCP address");
   const configs: Record<string, unknown>[] = [];
+  const admissions: Buffer[] = [];
   const hingeResults: Record<string, unknown>[] = [];
   const controlResults: Record<string, unknown>[] = [];
   ws = new WebSocket(`ws://127.0.0.1:${address.port}`);
   ws.on("message", (data) => {
     const buffer = Buffer.from(data as Buffer);
     if (buffer[0] === 0x82) configs.push(JSON.parse(buffer.subarray(1).toString()));
+    if (buffer[0] === 0x83) admissions.push(buffer);
     if (buffer[0] === 0x90) controlResults.push(JSON.parse(buffer.subarray(1).toString()));
     if (buffer[0] === 0x8f) hingeResults.push(JSON.parse(buffer.subarray(1).toString()));
   });
   await new Promise<void>((resolve, reject) => { ws!.once("open", resolve); ws!.once("error", reject); });
-  return { configs, hingeResults, controlResults, url: `http://127.0.0.1:${address.port}` };
+  return { configs, admissions, hingeResults, controlResults, url: `http://127.0.0.1:${address.port}` };
 }
 
 afterEach(async () => {
@@ -911,6 +913,15 @@ describe("shifted keyboard routing", () => {
 });
 
 describe("native active screen config", () => {
+  test("acknowledges input before capture publishes screen dimensions", async () => {
+    const { admissions, configs } = await start({ width: 0, height: 0 });
+    await waitUntil(() => admissions.length === 1);
+    expect([...admissions[0]!]).toEqual([0x83]);
+    expect(configs).toHaveLength(0);
+    ws!.send(Buffer.concat([Buffer.from([0x04]), Buffer.from(JSON.stringify({ button: "home" }))]));
+    await waitUntil(() => inputCalls.includes("button"));
+  });
+
   test.each([1, undefined])("streams after input setup fails with screen ID %s", async (screenId) => {
     errorLog = spyOn(console, "error").mockImplementation(() => {});
     const { configs, hingeResults, url } = await start(

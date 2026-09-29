@@ -1,8 +1,9 @@
 import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage } from "./send-queue";
+import { WS_MSG_INPUT_ADMITTED } from "./input-protocol";
 
 type InputSocketHandlers = {
   onAdmitted(): void;
-  /** Return true when the server's config frame confirms input was admitted. */
+  /** Return true for a config frame from an older server that lacks an admission frame. */
   onMessage(data: unknown): boolean;
   onDisconnect(): void;
   onRefused(reason: string): void;
@@ -36,7 +37,9 @@ export function createInputSocket(
     socket = ws;
     ws.onmessage = (event) => {
       if (stopped || socket !== ws) return;
-      if (handlers.onMessage(event.data)) {
+      const admissionFrame = event.data instanceof ArrayBuffer &&
+        event.data.byteLength === 1 && new Uint8Array(event.data)[0] === WS_MSG_INPUT_ADMITTED;
+      if (admissionFrame || handlers.onMessage(event.data)) {
         const firstAdmission = !admitted;
         admitted = true;
         pendingMessages = flushWsMessageQueue(ws, pendingMessages);

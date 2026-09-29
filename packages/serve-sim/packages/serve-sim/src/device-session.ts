@@ -34,6 +34,7 @@ import { validatePanelRoute } from "./panel-route";
 import { isHingeControlCommand, hingeControlState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
 import { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } from "./ui-settings";
 import { eventLogEventForHidMessage, formatEventLogPoint, recordEventLogEvent, updateEventLogEvent } from "./event-log";
+import { WS_MSG_CONFIG, WS_MSG_INPUT_ADMITTED } from "./socket/input-protocol";
 import {
   MAX_WEBRTC_SIGNALING_BODY_BYTES,
   WebRtcSignalingError,
@@ -74,9 +75,6 @@ type InputOperation = {
 // AVCC seed tag (StreamFormat.AVCCEnvelope.seedTag). description/keyframe/delta
 // envelopes are framed natively; only the on-connect JPEG seed is built here.
 const AVCC_SEED_TAG = 0x04;
-
-// WS server→client screen-config push (ClientManager.wsMsgConfig).
-const WS_MSG_CONFIG = 0x82;
 
 const MJPEG_TRAILER = Buffer.from("\r\n", "ascii");
 const TOUCH_TAP_MAX_DISTANCE = 0.004;
@@ -1086,8 +1084,6 @@ export class DeviceSession {
     this.inFlightOrderedMessages.set(ws, 0);
     this.activeHidKeyUsages.set(ws, new Set());
     this.axHandledKeyUsages.set(ws, new Set());
-    const cfg = this.configFrame();
-    if (cfg) ws.send(cfg); // seed dimensions/orientation, replacing the old poll
     ws.on("message", (data: Buffer) => {
       if (this.phase !== "running" || this.detachedHidSockets.has(ws)) return;
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
@@ -1120,6 +1116,9 @@ export class DeviceSession {
     });
     ws.on("close", () => this.detachHidSocket(ws));
     ws.on("error", () => this.detachHidSocket(ws));
+    ws.send(Buffer.from([WS_MSG_INPUT_ADMITTED]));
+    const cfg = this.configFrame();
+    if (cfg) ws.send(cfg); // seed dimensions/orientation, replacing the old poll
   }
 
   private detachHidSocket(ws: HidSocket): void {
