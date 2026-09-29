@@ -28,6 +28,20 @@ describe("isAllowedHost", () => {
     expect(isAllowedHost("attacker.example, app.localhost")).toBe(false);
   });
 
+  test("refuses a WebSocket upgrade without a Host header", () => {
+    const middleware = simMiddleware({ basePath: "/" });
+    const socket = {
+      closed: false,
+      close() { this.closed = true; },
+      on() {},
+    };
+    expect(middleware.handleWebSocket?.(
+      new Request("http://attacker.example/other/ws"),
+      socket as unknown as Parameters<NonNullable<typeof middleware.handleWebSocket>>[1],
+    )).toBe(true);
+    expect(socket.closed).toBe(true);
+  });
+
   test("refuses other names, including ones that only start like loopback", () => {
     for (const host of ["attacker.example:3200", "127.0.0.1.attacker.example", "localhost.attacker.example", "mymac.local"]) {
       expect(isAllowedHost(host)).toBe(false);

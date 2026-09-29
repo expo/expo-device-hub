@@ -224,7 +224,7 @@ describe("websocket upgrades with --require-token", () => {
     const handler = simMiddleware({ basePath: "/", execToken: TOKEN, requirePreviewToken: false });
     const { calls, ws } = fakeWebSocket();
 
-    handler.handleWebSocket?.(new Request(`${ORIGIN}/exec-ws`), ws);
+    handler.handleWebSocket?.(new Request(`${ORIGIN}/exec-ws`, { headers: { host: new URL(ORIGIN).host } }), ws);
 
     expect(calls.closed).toBe(false);
     expect(calls.events).toContain("message");

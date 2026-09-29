@@ -1758,6 +1758,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // ungated preview needs its Host checked.
   const hostAllowed = (host: string | readonly string[] | undefined | null): boolean =>
     requirePreviewToken || allowAnyHostWhenInsecure || isAllowedHost(host);
+  // An embedded WebSocket adapter must preserve Host; accepting an omitted one bypasses this guard.
+  const upgradeHostAllowed = (host: string | readonly string[] | undefined | null): boolean =>
+    requirePreviewToken || allowAnyHostWhenInsecure || (host != null && host !== "" && isAllowedHost(host));
   // The proxied DevTools frontend sits behind the same cookie, so its document needs the policy too.
   const framePolicyHeaders: Record<string, string> = requirePreviewToken
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
@@ -2726,7 +2729,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // Upgrades skip the HTTP request path, and the HID and devtools sockets carry no token of
     // their own, so gate them here too.
     if (
-      !hostAllowed(req.headers.host)
+      !upgradeHostAllowed(req.headers.host)
       || !assertUpgradeAccess(
         upgradeAuthHeaders(req.headers),
         execToken,
@@ -2810,7 +2813,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // Embedded hosts forward accepted sockets and bypass the request gate. The exec channel
     // re-checks the token itself; the helper HID socket does not.
     if (
-      !hostAllowed(request.headers.get("host"))
+      !upgradeHostAllowed(request.headers.get("host"))
       || !assertUpgradeAccess(
         upgradeAuthHeaders(request),
         execToken,

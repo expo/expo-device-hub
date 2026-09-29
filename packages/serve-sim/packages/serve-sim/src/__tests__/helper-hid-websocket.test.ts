@@ -22,6 +22,10 @@ function fakeSocket(): UpgradeHandlerWebSocket & { closed: boolean } {
   };
 }
 
+function upgradeRequest(url: string): Request {
+  return new Request(url, { headers: { host: "localhost:3200" } });
+}
+
 describe("handleWebSocket helper HID dispatch", () => {
   const middleware = simMiddleware({ basePath: "/preview" });
   const handleWebSocket = middleware.handleWebSocket!;
@@ -29,7 +33,7 @@ describe("handleWebSocket helper HID dispatch", () => {
   test("does not claim unrelated paths", () => {
     const ws = fakeSocket();
     const handled = handleWebSocket(
-      new Request("http://localhost:3200/other/ws"),
+      upgradeRequest("http://localhost:3200/other/ws"),
       ws,
     );
     expect(handled).toBe(false);
@@ -39,7 +43,7 @@ describe("handleWebSocket helper HID dispatch", () => {
   test("still claims the exec-ws channel", () => {
     const ws = fakeSocket();
     const handled = handleWebSocket(
-      new Request("http://localhost:3200/preview/exec-ws"),
+      upgradeRequest("http://localhost:3200/preview/exec-ws"),
       ws,
     );
     expect(handled).toBe(true);
@@ -48,7 +52,7 @@ describe("handleWebSocket helper HID dispatch", () => {
   test("claims the query-form helper HID socket", () => {
     const ws = fakeSocket();
     const handled = handleWebSocket(
-      new Request("http://localhost:3200/preview/helper/ws?device=NOT-A-REAL-UDID"),
+      upgradeRequest("http://localhost:3200/preview/helper/ws?device=NOT-A-REAL-UDID"),
       ws,
     );
     // Claimed either way; with no booted device the socket is closed instead
@@ -59,7 +63,7 @@ describe("handleWebSocket helper HID dispatch", () => {
   test("claims the path-form helper HID socket", () => {
     const ws = fakeSocket();
     const handled = handleWebSocket(
-      new Request("http://localhost:3200/preview/helper/NOT-A-REAL-UDID/ws"),
+      upgradeRequest("http://localhost:3200/preview/helper/NOT-A-REAL-UDID/ws"),
       ws,
     );
     expect(handled).toBe(true);
@@ -68,7 +72,7 @@ describe("handleWebSocket helper HID dispatch", () => {
   test("closes a helper HID socket with no resolvable device", () => {
     const ws = fakeSocket();
     const handled = handleWebSocket(
-      new Request("http://localhost:3200/preview/helper/ws"),
+      upgradeRequest("http://localhost:3200/preview/helper/ws"),
       ws,
     );
     expect(handled).toBe(true);
@@ -78,7 +82,7 @@ describe("handleWebSocket helper HID dispatch", () => {
   test("does not claim non-ws helper endpoints", () => {
     const ws = fakeSocket();
     const handled = handleWebSocket(
-      new Request("http://localhost:3200/preview/helper/NOT-A-REAL-UDID/stream.mjpeg"),
+      upgradeRequest("http://localhost:3200/preview/helper/NOT-A-REAL-UDID/stream.mjpeg"),
       ws,
     );
     expect(handled).toBe(false);
