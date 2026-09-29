@@ -1578,6 +1578,11 @@ export interface SimMiddlewareOptions {
   proxyHelpers?: boolean;
   /** Test hook for supplying a fake inspect-webkit bridge. */
   inspectWebKitBridge?: () => Promise<WebKitBridge>;
+  /**
+   * False when serve-sim runs with --no-simulator-window, so the helpers the page starts through
+   * the `server.detach` action boot their devices without the window too.
+   */
+  simulatorWindow?: boolean;
 }
 
 function httpStreamSettingsFromLegacyCodec(codec: string | undefined): StreamSettings | undefined {
@@ -2772,6 +2777,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     ],
     onUiRequest: handleUiRequest,
     serveSimBinPath: serveSimBinPath(),
+    hostActions: { simulatorWindow: options?.simulatorWindow },
     onActionResult: (action, params, result) => recordActionEvent(action, params, result),
     onSseRequest(path, websocketRequest) {
       const url = new URL(path, websocketRequest.url);

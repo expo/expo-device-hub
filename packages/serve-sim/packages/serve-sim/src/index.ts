@@ -1775,6 +1775,7 @@ async function serve(
     shareUrl: options.shareUrl,
     execToken: previewToken,
     requirePreviewToken,
+    simulatorWindow: options.simulatorWindow !== false,
   });
 
   // Try requested port; if busy and the user didn't pin it, scan forward.

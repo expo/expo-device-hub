@@ -170,7 +170,18 @@ function serveSimInvocation(binPath: string, args: string[]): Invocation {
   return { file: binPath, args };
 }
 
-function buildInvocation(action: InvocationAction, raw: unknown, binPath: string): Invocation {
+/** How the server that runs these actions was started. */
+export interface HostActionOptions {
+  /** False when the server runs with --no-simulator-window; helpers it starts skip the window too. */
+  simulatorWindow?: boolean;
+}
+
+function buildInvocation(
+  action: InvocationAction,
+  raw: unknown,
+  binPath: string,
+  options: HostActionOptions,
+): Invocation {
   const serveSim = (args: string[]): Invocation => serveSimInvocation(binPath, args);
   const simctl = (args: string[]): Invocation => ({ file: "xcrun", args: ["simctl", ...args] });
 
@@ -222,6 +233,7 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
         "--detach",
         ...(p.udid ? [p.udid] : []),
         ...(p.port ? ["--port", p.port] : []),
+        ...(options.simulatorWindow === false ? ["--no-simulator-window"] : []),
       ]);
     }
     case "server.kill":
@@ -351,6 +363,7 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
 export async function runHostActionAsync(
   msg: HostActionRequest,
   binPath: string,
+  options: HostActionOptions = {},
 ): Promise<HostActionResult> {
   const { action, params } = msg;
   if (typeof action !== "string" || !isHostActionName(action)) {
@@ -358,7 +371,7 @@ export async function runHostActionAsync(
   }
   const result = isProcedureAction(action)
     ? await runProcedureAsync(action, params)
-    : await runInvocation(buildInvocation(action, params, binPath));
+    : await runInvocation(buildInvocation(action, params, binPath, options));
   // exec-ws spreads this straight into the reply, so only the three fields the page reads leave
   // the process. `timedOut` steers the message a handler composes; the page has no use for it.
   const { stdout, stderr, exitCode } = result;
