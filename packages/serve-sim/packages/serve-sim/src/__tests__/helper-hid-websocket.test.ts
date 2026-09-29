@@ -123,3 +123,28 @@ test("host-accepted HID socket closes after its peer stops answering pings", asy
   expect(pings).toBeGreaterThan(0);
   expect(closes).toBe(1);
 });
+
+test("host-accepted HID rejection preserves the retry code and reason", () => {
+  let closedWith: [number | undefined, string | undefined] | undefined;
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send() {},
+    close(code?: number, reason?: string) { closedWith = [code, reason]; },
+    ping() {},
+    on() {},
+  } as UpgradeHandlerWebSocket;
+  const handled = claimHelperHidSocket(
+    new Request("http://localhost/preview/helper/DEVICE/ws"),
+    socket,
+    {
+      helperProxyTarget: () => ({ device: "DEVICE", upstreamPath: "/ws" }),
+      fallbackDevice: null,
+      resolveSession: () => ({
+        attachHidSocket(ws) { ws.close(1013, "Simulator input unavailable; retry after other clients disconnect"); },
+      }),
+    },
+  );
+  expect(handled).toBe(true);
+  expect(closedWith).toEqual([1013, "Simulator input unavailable; retry after other clients disconnect"]);
+});

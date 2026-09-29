@@ -54,6 +54,7 @@ import { LogsDrawer } from "./components/logs-drawer";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
 import { ServeSimToaster, showInputSocketError } from "./components/app-toasts";
+import { createInputSocketRetryNotice } from "./utils/input-socket-retry-notice";
 import { ShareSessionButton } from "./components/share-session-button";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
 import { StreamStatusPill } from "./components/stream-status-pill";
@@ -945,9 +946,7 @@ function AppWithConfig({
   useEffect(() => {
     let stopped = false;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    let inputUnavailableTimer: ReturnType<typeof setTimeout> | null = null;
-    let inputUnavailableNotified = false;
-    let inputSocketAdmitted = false;
+    const inputRetryNotice = createInputSocketRetryNotice(showInputSocketError);
     let currentWs: WebSocket | null = null;
     pendingWsMessagesRef.current = [];
 
@@ -961,7 +960,7 @@ function AppWithConfig({
 
     const connect = () => {
       setInputSocketOpen(false);
-      inputSocketAdmitted = false;
+      inputRetryNotice.connecting();
       const ws = new WebSocket(config.wsUrl);
       ws.binaryType = "arraybuffer";
       currentWs = ws;
@@ -1004,10 +1003,7 @@ function AppWithConfig({
           if (cfg.width <= 0 || cfg.height <= 0) return;
           // An upgrade can succeed before the server rejects input with 1013.
           // A valid config frame confirms that this socket was admitted.
-          if (inputUnavailableTimer) clearTimeout(inputUnavailableTimer);
-          inputUnavailableTimer = null;
-          inputUnavailableNotified = false;
-          inputSocketAdmitted = true;
+          if (wsRef.current === ws) inputRetryNotice.admitted();
           // A rotation clears the native named pose. Observe the received
           // config even when its values equal the previous React state.
           if (cfg.hingePose === null && !hingePendingRef.current) setOrientationOverride(false);
@@ -1017,16 +1013,7 @@ function AppWithConfig({
         } catch {}
       };
       ws.onclose = (event) => {
-        if (!stopped && event.code === 1013 && !inputUnavailableTimer && !inputUnavailableNotified) {
-          const reason = event.reason || "The server is busy. Try again shortly.";
-          inputUnavailableTimer = setTimeout(() => {
-            inputUnavailableTimer = null;
-            if (!stopped && !inputSocketAdmitted) {
-              inputUnavailableNotified = true;
-              showInputSocketError(reason);
-            }
-          }, 13_000);
-        }
+        if (!stopped && event.code === 1013) inputRetryNotice.rejected(event.reason || "The server is busy. Try again shortly.");
         if (wsRef.current === ws) {
           wsRef.current = null;
           setInputSocketOpen(false);
@@ -1053,7 +1040,7 @@ function AppWithConfig({
     return () => {
       stopped = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
-      if (inputUnavailableTimer) clearTimeout(inputUnavailableTimer);
+      inputRetryNotice.dispose();
       if (wsRef.current === currentWs) wsRef.current = null;
       hingeQueueRef.current?.clear();
       currentWs?.close();

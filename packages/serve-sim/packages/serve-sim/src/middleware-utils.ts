@@ -3,7 +3,7 @@ export interface UpgradeHandlerWebSocket {
   readonly OPEN: number;
   readonly readyState: number;
   send(data: string | Buffer): void;
-  close(): void;
+  close(code?: number, reason?: string): void;
   ping?(): void;
   terminate?(): void;
   on(event: "message", listener: (data: Buffer<ArrayBufferLike>) => void): void;
@@ -54,7 +54,7 @@ export function heartbeatHidSocket(
     OPEN: websocket.OPEN,
     get readyState() { return websocket.readyState; },
     send: (data) => websocket.send(data),
-    close: () => { fireClose(); websocket.close(); },
+    close: (code?: number, reason?: string) => { fireClose(); websocket.close(code, reason); },
     on(event: "message" | "close" | "error" | "pong", listener: ((data: Buffer<ArrayBufferLike>) => void) | (() => void)) {
       if (event === "close" || event === "error") {
         if (closed) (listener as () => void)();
