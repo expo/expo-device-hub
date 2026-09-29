@@ -1,0 +1,4 @@
+# Iteration 5: busy viewer (VIEWER_LOAD=ui / readback), same configs as iteration 4.
+ws-direct         8816 ws
+dc-nack-rto       8812 nack DC_ACKS=unreliable SCTP_SACK_MS=5 SCTP_RTO_MIN=40 SCTP_RTO_MAX=200 SCTP_RTO_INIT=200
+dc-ordered        8813 ordered DC_ACKS=unreliable SCTP_SACK_MS=5

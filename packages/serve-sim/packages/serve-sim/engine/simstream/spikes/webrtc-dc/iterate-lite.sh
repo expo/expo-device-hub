@@ -43,7 +43,7 @@ for scene in light heavy; do
     for c in $order; do
       off=$(ssh -o ConnectTimeout=20 $L "cd ~/simbench/dc && $LN offset.mjs http://$H:8815/ 25" 2>/dev/null | python3 -c "import json,sys; print(json.load(sys.stdin)['offsetMs'])" 2>/dev/null || echo 0)
       before=$(pauses)
-      line=$(ssh -o ConnectTimeout=20 $L "cd ~/simbench/dc && EXTRA_CHROME_ARGS='--unsafely-treat-insecure-origin-as-secure=$ORIGINS' timeout 90 $LN lite-viewer.mjs http://$H:${PORT[$c]}/ '$c | $scene | run $rep' 5 20 9440" 2>/dev/null)
+      line=$(ssh -o ConnectTimeout=20 $L "cd ~/simbench/dc && VIEWER_LOAD=${VIEWER_LOAD:-none} EXTRA_CHROME_ARGS='--unsafely-treat-insecure-origin-as-secure=$ORIGINS' timeout 90 $LN lite-viewer.mjs http://$H:${PORT[$c]}/ '$c | $scene | run $rep' 5 20 9440" 2>/dev/null)
       after=$(pauses)
       echo "${line%\}},\"enginePauses\":$(( after - before )),\"clockOffsetMs\":$off}" >> $OUT
       sleep 2
