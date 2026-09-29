@@ -178,6 +178,12 @@ export function ScreenshotToast({
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  // The pointer and keyboard focus hold the toast independently; it resumes only when both have left.
+  const pointerIn = useRef(false);
+  const focusIn = useRef(false);
+  const release = () => {
+    if (!pointerIn.current && !focusIn.current) onResume();
+  };
   if (!toast) return null;
 
   const title =
@@ -219,8 +225,14 @@ export function ScreenshotToast({
       role="status"
       aria-live="polite"
       data-testid="screenshot-toast"
-      onMouseEnter={onPause}
-      onMouseLeave={onResume}>
+      onMouseEnter={() => {
+        pointerIn.current = true;
+        onPause();
+      }}
+      onMouseLeave={() => {
+        pointerIn.current = false;
+        release();
+      }}>
       {toast.phase === 'saved' ? (
         <button
           type="button"
@@ -230,11 +242,13 @@ export function ScreenshotToast({
           onMouseLeave={() => setHovered(false)}
           onFocus={(event) => {
             setFocused(isFocusVisible(event));
+            focusIn.current = true;
             onPause();
           }}
           onBlur={() => {
             setFocused(false);
-            onResume();
+            focusIn.current = false;
+            release();
           }}
           style={{
             ...PILL_STYLE,
