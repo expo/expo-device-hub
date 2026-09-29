@@ -64,15 +64,15 @@ times the configured viewer rate, so a burst of frames after a late capture copy
 goes out whole instead of the newest replacing the middle one. The previous
 frame repeats at the configured rate: one interval after the last send on an
 idle screen, and 1.5 intervals after it while the source is active, so a late
-fresh frame keeps its token. The simulator
-rewrites its surface without new content, 70 to 120 times a second against 60
-app frames on EAS. A resized frame with the same pixels as the retained frame
-(every pixel byte of both planes) replaces it but does not count as fresh for the
-pump, so a rewrite does not take the slot of the next real frame. It still lets
-the pump restart a chain that stopped ticking. A frame from before a canvas change is dropped at the
-pump rather than encoded at the wrong size. Resized frames from an earlier viewer session are discarded after the
-viewer acceptance generation changes. A custom H.264 encoder factory gives
-each H.264 peer a proxy over one
+fresh frame keeps its token. The simulator rewrites its surface without new
+content, 70 to 120 times a second against 60 app frames on EAS. A resized frame
+with the same pixels as the retained frame (every pixel byte of both planes)
+replaces it but does not count as fresh for the pump, so a rewrite does not take
+the slot of the next real frame. It still lets the pump restart a chain that
+stopped ticking. A frame from before a canvas change is dropped at the pump
+rather than encoded at the wrong size. Resized frames from an earlier viewer
+session are discarded after the viewer acceptance generation changes. A custom
+H.264 encoder factory gives each H.264 peer a proxy over one
 `VTCompressionSession`.
 Proxies deduplicate submissions by frame timestamp and distribute the one
 compressed result to the peers. The shared target bitrate is the minimum of

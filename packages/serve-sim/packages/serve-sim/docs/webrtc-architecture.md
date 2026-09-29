@@ -125,8 +125,8 @@ The recording uses a separate hardware H.264 session at native resolution. See
 independent of viewer settings.
 
 The pump is hardened against hostile host timing, because a production trace
-showed it silently degrading to send-on-arrival on a virtualized macOS VM
-(forwarded ≈ offered instead of ~60/s):
+showed it silently degrading to sends on capture arrivals only, with no
+repeats, on a virtualized macOS VM (forwarded ≈ offered instead of ~60/s):
 
 - Each chain tick is armed as a strict, zero-leeway `DispatchSourceTimer`, which
   opts out of the timer coalescing that stretched `asyncAfter` wake-ups. At most
