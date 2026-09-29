@@ -48,3 +48,19 @@ struct SimDisplayMetadata: Equatable {
     @objc(chromeIdentifier) func simChromeIdentifier() -> String?
     @objc(screenType) func simScreenType() -> UInt64
 }
+
+extension SimulatorDisplayProfile {
+    /// Reads the static display profile from a SimDevice's device type.
+    static func read(from device: NSObject) -> SimulatorDisplayProfile {
+        let typeSelector = NSSelectorFromString("deviceType")
+        let capabilitiesSelector = NSSelectorFromString("capabilities")
+        guard device.responds(to: typeSelector),
+              let type = device.perform(typeSelector)?.takeUnretainedValue() as? NSObject,
+              type.responds(to: capabilitiesSelector),
+              let profile = type.perform(capabilitiesSelector)?.takeUnretainedValue() as? [String: Any],
+              let capabilities = profile["capabilities"] as? [String: Any],
+              let displays = capabilities["displays"] as? [[String: Any]]
+        else { return SimulatorDisplayProfile() }
+        return SimulatorDisplayProfile(displays: displays)
+    }
+}

@@ -121,7 +121,7 @@ actor FrameCapture {
 
         // Recreate CoreDevice's boot-bound manager before HID or display
         // election asks for capabilities from this boot.
-        if HIDInjector.readDisplayProfile(device: device).resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
+        if SimulatorDisplayProfile.read(from: device).resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
         }

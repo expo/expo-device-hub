@@ -12,7 +12,7 @@ actor CoreDeviceBridge {
 
     private var manager: CoreDeviceManagerObject?
     private var managerReadiness = SharedReadiness()
-    private var capabilities = BootBoundCache<String, CoreDeviceCapabilityObject>()
+    private var capabilities = BootBoundCache<String, String, CoreDeviceCapabilityObject>()
     private var hingeSupport: [String: Bool] = [:]
     private var hingeResetGenerations: [String: UInt64] = [:]
     struct HingeState {
@@ -26,8 +26,8 @@ actor CoreDeviceBridge {
     /// boot. A new capture session must not reuse them after that device boots
     /// again in the same serve-sim process.
     func resetForNewCapture(udid: String) {
-        capabilities.reset()
-        // The manager is shared, but hinge observations belong to one device.
+        // Only this device's capabilities and lookups. Other devices keep theirs.
+        capabilities.reset(scope: udid)
         hingeResetGenerations[udid, default: 0] &+= 1
         hingeSupport.removeValue(forKey: udid)
         hingeStates.removeValue(forKey: udid)
@@ -51,7 +51,7 @@ actor CoreDeviceBridge {
 
     func remoteDevice(udid: String) async throws -> CoreDeviceRemoteDevice {
         guard SSCoreDeviceInitialize() else { throw BridgeError.unavailable }
-        let lookup = capabilities.beginLookup()
+        let lookup = capabilities.beginLookup(scope: udid)
         if manager == nil {
             // Initializes resilient class metadata and field offsets before
             // using the class metadata's allocating initializer.
@@ -100,7 +100,7 @@ actor CoreDeviceBridge {
     func capability(udid: String, metadataSymbol: String, witnessSymbol: String) async throws -> CoreDeviceCapabilityObject {
         let key = "\(udid):\(metadataSymbol)"
         if let existing = capabilities[key] { return existing }
-        let lookup = capabilities.beginLookup()
+        let lookup = capabilities.beginLookup(scope: udid)
         let device = try await remoteDevice(udid: udid)
         guard capabilities.isCurrent(lookup) else { throw BridgeError.resetDuringLookup }
         guard let metadata = SSCoreDeviceSymbol(metadataSymbol),
