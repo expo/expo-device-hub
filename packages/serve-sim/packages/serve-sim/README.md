@@ -93,6 +93,7 @@ serve-sim ca-debug <option> <on|off> [-d udid]
                                       Toggle a CoreAnimation debug flag
                                       (blended|copies|misaligned|offscreen|slow-animations)
 serve-sim memory-warning [-d udid]    Simulate a memory warning
+serve-sim slim-simulator [-d udid]    Switch off simulator services a stream does not need
 serve-sim event-log [-d udid]         Show recent simulator events
 
 serve-sim camera <bundle-id> [-d udid] [source-options]
@@ -141,6 +142,10 @@ Options:
                       Argument passed to the app when it launches (repeatable)
       --open-url <url>
                       URL to open in the app after it launches
+      --slim-simulator <profile>
+                      Switch off simulator services the stream does not need
+                      before streaming (default, all, or categories); see
+                      docs/simulator-slimming.md
       --list [device] List running streams
       --kill [device] Kill running stream(s)
 

@@ -48,6 +48,15 @@ export interface CaptureCounts {
   /** Pump slots that waited one tolerance for a late frame, and sends that repeated a frame. */
   pumpDeferrals?: number | null;
   pumpRepeats?: number | null;
+  /** Frames whose sparse fingerprint matched the previous one, so the pacer was not woken. */
+  unchangedFrames?: number | null;
+  /** Cumulative timing counters for comparing equal-length windows. */
+  pumpTimerTicks?: number | null;
+  pumpTimerLateSumMs?: number | null;
+  pumpTimerLateMaxMs?: number | null;
+  sourceSubmitCount?: number | null;
+  sourceSubmitSumMs?: number | null;
+  sourceSubmitMaxMs?: number | null;
   cpuFallbacks: number | null;
   poolDrops?: number | null;
   attempts: number | null;
@@ -227,6 +236,13 @@ function readCaptureCounts(raw: unknown): CaptureCounts | null {
     canvasMismatchDrops: maybeNumber(raw.canvasMismatchDrops),
     pumpDeferrals: maybeNumber(raw.pumpDeferrals),
     pumpRepeats: maybeNumber(raw.pumpRepeats),
+    unchangedFrames: maybeNumber(raw.unchangedFrames),
+    pumpTimerTicks: maybeNumber(raw.pumpTimerTicks),
+    pumpTimerLateSumMs: maybeNumber(raw.pumpTimerLateSumMs),
+    pumpTimerLateMaxMs: maybeNumber(raw.pumpTimerLateMaxMs),
+    sourceSubmitCount: maybeNumber(raw.sourceSubmitCount),
+    sourceSubmitSumMs: maybeNumber(raw.sourceSubmitSumMs),
+    sourceSubmitMaxMs: maybeNumber(raw.sourceSubmitMaxMs),
     cpuFallbacks: maybeNumber(raw.cpuFallbacks),
     poolDrops: maybeNumber(raw.poolDrops),
     attempts: maybeNumber(raw.attempts),

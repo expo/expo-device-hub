@@ -343,14 +343,14 @@ actor FrameCapture {
 
         let frameCallback: ScreenFrameCallback = { [weak self] in
             guard let self else { return }
-            self.assumeIsolated { $0.captureFrame() }
+            self.assumeIsolated { $0.captureFrame(trigger: "f") }
         }
         let surfacesChangedCallback: ScreenSurfacesChangedCallback = {
             [weak self, weak descriptor] unmasked, masked in
             guard let self, let descriptor else { return }
             self.assumeIsolated {
                 $0.updateSurface(for: descriptor, unmasked: unmasked, masked: masked)
-                $0.captureFrame()
+                $0.captureFrame(trigger: "s")
             }
         }
         let propertiesChangedCallback: ScreenPropertiesChangedCallback = { [weak self, weak descriptor] properties in
@@ -421,7 +421,7 @@ actor FrameCapture {
     private func onSurfacePollTick() {
         let now = ContinuousClock.now
         let idleRefreshDue = (now - self.lastCaptureTime) >= Self.idleInterval
-        self.captureFrame(force: idleRefreshDue)
+        self.captureFrame(force: idleRefreshDue, trigger: "p")
         // Self-heal: if we've never captured a frame, the cached descriptor
         // is likely stale. Re-wire the pipeline periodically
         // until frames start flowing.
@@ -456,7 +456,7 @@ actor FrameCapture {
         (screen: screenFrameCount, idle: idleFrameCount)
     }
 
-    private func captureFrame(force: Bool = false) {
+    private func captureFrame(force: Bool = false, trigger: Character = "o") {
         guard displayConfigurationReady else { return }
         let entryNs = DispatchTime.now().uptimeNanoseconds
         if captureLastEntryNs > 0 {
@@ -509,6 +509,7 @@ actor FrameCapture {
         // actual capture cadence.
         let timestamp = CMClockGetTime(CMClockGetHostTimeClock())
         guard let copy = photocopier.copy(pb, maxDimension: snapshotMaxDimension) else { return }
+        FrameTrace.shared?.log("c \(entryNs) \(DispatchTime.now().uptimeNanoseconds) \(trigger)")
         lastSeeds[key] = seed
         lastCaptureTime = .now
         capturedDisplay = display

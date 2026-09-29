@@ -29,6 +29,15 @@ export function findBootedDevice(): string | null {
  * matched case-insensitively against `simctl list devices`. Exits the process
  * with a clear error when the name cannot be resolved.
  */
+/** Every booted simulator, any runtime. */
+export function bootedDevices(): Array<{ udid: string; name: string }> {
+  const output = execSync("xcrun simctl list devices booted -j", { encoding: "utf-8" });
+  const data = JSON.parse(output) as { devices: Record<string, Array<{ udid: string; name: string; state: string }>> };
+  return Object.values(data.devices).flat()
+    .filter((device) => device.state === "Booted")
+    .map(({ udid, name }) => ({ udid, name }));
+}
+
 export function resolveDevice(nameOrUDID: string): string {
   if (/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(nameOrUDID)) {
     return nameOrUDID;

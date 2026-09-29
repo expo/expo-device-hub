@@ -3,7 +3,7 @@ import { Command, InvalidArgumentError } from "commander";
 import { execFileSync, execSync, spawn as nodeSpawn, type ChildProcess } from "child_process";
 import { existsSync, mkdirSync, openSync, closeSync, readSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { createHash, randomBytes } from "crypto";
-import { networkInterfaces } from "os";
+import { networkInterfaces, tmpdir } from "os";
 import { join, resolve } from "path";
 import WebSocket from "ws";
 import {
@@ -40,7 +40,10 @@ import {
   waitForLaunchUpdates,
 } from "./launch-manager";
 import { killOwnListeners } from "./ports";
-import { findBootedDevice, resolveDevice } from "./device";
+import { bootedDevices, findBootedDevice, resolveDevice } from "./device";
+import {
+  type SlimProfile, describeSlim, resolveSlimProfile, restoreSimulator, slimSimulator, slimStatus,
+} from "./sim-slim";
 import { openSimulatorHost } from "./simulator-host";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
 import { permissions } from "./permissions";
@@ -1090,6 +1093,78 @@ async function caDebug(option: string, stateRaw: string, deviceArg?: string) {
   });
 }
 
+/**
+ * EAS benchmark branch only: one `record-video` client per device, in its own process like
+ * the build-tools consumer. Its output goes to stderr, because callers parse stdout as JSON.
+ */
+function startAutoRecording(udid: string): void {
+  const output = join(tmpdir(), "serve-sim-auto-recording", `${udid}-${Date.now()}`);
+  const { command, args } = reExecArgs(["record-video", "--udid", udid, "--output", output]);
+  const child = nodeSpawn(command, args, { stdio: ["ignore", "pipe", "pipe"] });
+  const forward = (chunk: Buffer) => {
+    for (const line of chunk.toString().split("\n")) if (line.trim()) console.error(`[auto-record] ${udid}: ${line}`);
+  };
+  child.stdout?.on("data", forward);
+  child.stderr?.on("data", forward);
+  child.on("exit", (code, signal) => console.error(`[auto-record] ${udid}: recorder exited (${signal ?? code})`));
+  console.error(`[auto-record] ${udid}: recording to ${output}`);
+}
+
+/** `--slim-simulator`: a failure is reported, never allowed to stop the stream. */
+async function slimBeforeStreaming(udid: string, profile: SlimProfile): Promise<void> {
+  try {
+    const result = await slimSimulator(udid, profile);
+    console.error(describeSlim(udid, profile, result));
+    for (const failure of result.failed) console.error(`[slim] ${failure.label}: ${failure.error}`);
+  } catch (error) {
+    console.error(`[slim] ${udid}: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+/** `serve-sim slim-simulator`: apply, undo, or show the profile on one simulator. */
+async function slimSimulatorCommand(opts: { device?: string; profile: string; undo?: boolean; status?: boolean }) {
+  let profile: SlimProfile;
+  try {
+    profile = resolveSlimProfile(opts.profile);
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
+    process.exit(1);
+  }
+  let udid: string;
+  if (opts.device) {
+    udid = resolveDevice(opts.device);
+  } else {
+    // Never guess between simulators: this changes the device until it is undone.
+    const booted = bootedDevices();
+    if (booted.length !== 1) {
+      console.error(booted.length === 0
+        ? "No booted simulator. Boot one or pass -d <udid|name>."
+        : `${booted.length} simulators are booted (${booted.map((d) => d.name).join(", ")}). Pass -d <udid|name>.`);
+      process.exit(1);
+    }
+    udid = booted[0]!.udid;
+  }
+  if (opts.status) {
+    for (const { category, inDefault, off } of await slimStatus(udid)) {
+      const state = off === 0 ? "on" : off === category.labels.length ? "off" : "partly off";
+      console.log(`${category.id.padEnd(13)} ${state.padEnd(10)} ${`${off}/${category.labels.length}`.padEnd(6)} ${inDefault ? "default" : "       "}  ${category.loses}`);
+    }
+    return;
+  }
+  if (opts.undo) {
+    const { enabled, failed } = await restoreSimulator(udid, profile);
+    console.log(`[slim] ${udid}: ${profile.categories.join(",")}: ${enabled.length} enabled. ` +
+      `Reboot the simulator to start them: xcrun simctl shutdown ${udid} && xcrun simctl boot ${udid}`);
+    for (const failure of failed) console.error(`[slim] ${failure.label}: ${failure.error}`);
+    process.exitCode = failed.length ? 1 : 0;
+    return;
+  }
+  const result = await slimSimulator(udid, profile);
+  console.log(describeSlim(udid, profile, result));
+  for (const failure of result.failed) console.error(`[slim] ${failure.label}: ${failure.error}`);
+  process.exitCode = result.failed.length ? 1 : 0;
+}
+
 // Ask the helper to invoke -[SimDevice simulateMemoryWarning].
 async function memoryWarning(deviceArg?: string) {
   const stateFile = readState(deviceArg);
@@ -1821,6 +1896,13 @@ async function serve(
     if (!quiet) console.log(`  - Stream debug: recording to ${options.debugStreamPath}`);
   }
 
+  // EAS benchmark branch only: record every served device natively, as the build-tools
+  // consumer does with `serve-sim record-video`. Off unless SERVE_SIM_AUTO_RECORD=on: EAS
+  // sessions still record with record-sim, and a second native recorder doubles that load.
+  if (process.env.SERVE_SIM_AUTO_RECORD === "on") {
+    for (const udid of targetDevices) startAutoRecording(udid);
+  }
+
   const exposedToLan = !isLoopbackHost(host);
   const networkIP = getLocalNetworkIP();
   const tokenQuery = requirePreviewToken ? `/?token=${previewToken}` : "";
@@ -2056,6 +2138,11 @@ program
     (value: string, prev: string[]) => [...prev, value],
     [] as string[],
   )
+  .option(
+    "--slim-simulator <profile>",
+    "Switch off simulator services the stream does not need before streaming: " +
+      "default, all, or a comma-separated list of categories (see `serve-sim slim-simulator --status`)",
+  )
   .option("-l, --list [device]", "List running streams")
   .option("-k, --kill [device]", "Kill running stream(s)")
   .addHelpText(
@@ -2128,12 +2215,29 @@ Examples:
       "videoBitrate",
       "videoFps",
     ];
+    // EAS benchmark branch only: SERVE_SIM_VIDEO_FPS_OVERRIDE=<fps> streams at that rate whatever
+    // --video-fps says, since EAS sessions pass --video-fps 60. Off by default: at 120 the EAS
+    // VM's hardware encoder (about 10 ms a frame) saturated and dropped frames at random.
+    let videoFpsOverride: number | undefined;
+    const videoFpsOverrideSpec = process.env.SERVE_SIM_VIDEO_FPS_OVERRIDE ?? "off";
+    if (videoFpsOverrideSpec !== "off") {
+      try {
+        videoFpsOverride = parseNumberInRange(
+          videoFpsOverrideSpec, "SERVE_SIM_VIDEO_FPS_OVERRIDE", 1, MAX_VIDEO_STREAM_FPS, true,
+        );
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : error);
+        process.exit(1);
+      }
+    }
     const encoderOptions = {
       ...(wasProvided("mjpegFps") ? { mjpegFps: opts.mjpegFps } : {}),
       ...(wasProvided("mjpegQuality") ? { mjpegQuality: opts.mjpegQuality } : {}),
       ...(wasProvided("maxDimension") ? { maxDimension: opts.maxDimension } : {}),
       ...(wasProvided("videoBitrate") ? { h264Bitrate: opts.videoBitrate } : {}),
-      ...(wasProvided("videoFps") ? { h264Fps: opts.videoFps } : {}),
+      ...(videoFpsOverride !== undefined
+        ? { h264Fps: videoFpsOverride }
+        : wasProvided("videoFps") ? { h264Fps: opts.videoFps } : {}),
     };
     const stream: StreamRuntimeOptions = opts.transport === "webrtc"
       ? {
@@ -2171,6 +2275,17 @@ Examples:
       console.error(error instanceof Error ? error.message : error);
       process.exit(1);
     }
+    let slim: SlimProfile | undefined;
+    try {
+      // EAS benchmark branch only: the default profile applies unless the flag names another
+      // one or SERVE_SIM_SLIM_SIMULATOR=off turns it off.
+      const slimSpec: string | undefined = opts.slimSimulator
+        ?? (process.env.SERVE_SIM_SLIM_SIMULATOR === "off" ? undefined : "default");
+      slim = slimSpec === undefined ? undefined : resolveSlimProfile(slimSpec);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : error);
+      process.exit(1);
+    }
     // Only take over device selection when something has to happen before the
     // run mode starts. Otherwise follow and detach pick their own target, as
     // they did before this flag existed.
@@ -2184,7 +2299,8 @@ Examples:
     const streamOptionsProvided = wasProvided("transport")
       || wasProvided("codec")
       || webRtcOptionProvided
-      || encoderOptionNames.some(wasProvided);
+      || encoderOptionNames.some(wasProvided)
+      || videoFpsOverride !== undefined;
     const debugStreamPath = opts.debugStream?.trim();
     if (opts.debugStream !== undefined) {
       // Every run mode that would record nothing useful, rather than accepting the flag and
@@ -2215,6 +2331,7 @@ Examples:
         ...(openUrl ? ["--open-url"] : []),
         ...(capabilities.enable.length > 0 ? ["--enable"] : []),
         ...(capabilities.disable.length > 0 ? ["--disable"] : []),
+        ...(opts.slimSimulator !== undefined ? ["--slim-simulator"] : []),
       ];
       if (unsupported.length > 0) {
         console.error(
@@ -2247,6 +2364,7 @@ Examples:
         }
         for (const udid of targets) {
           await ensureBooted(udid);
+          if (slim) await slimBeforeStreaming(udid, slim);
           if (sessionStopping) return;
         }
         const isStreamHelper = process.env[STREAM_HELPER_ENV] === "1";
@@ -2551,5 +2669,13 @@ program
   .argument("[args...]")
   .action((args: string[]) => uiSettings(args));
 
+program
+  .command("slim-simulator")
+  .description("Switch off simulator services a stream does not need, or back on with --undo")
+  .option(...deviceOpt)
+  .option("--profile <profile>", "default, all, or a comma-separated list of categories", "default")
+  .option("--undo", "Switch the profile's services back on")
+  .option("--status", "Show each category's state on the device and what an app loses without it")
+  .action(slimSimulatorCommand);
 
 await program.parseAsync(process.argv);

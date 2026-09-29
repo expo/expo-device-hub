@@ -44,12 +44,28 @@ public struct ContinuousFramePacer: Sendable {
     private var frameArrivedSinceSend = false
     private var deferredThisSlot = false
 
+    /// How the chain picks send times. `.grid` holds a fixed cadence grid, on its own clock: a
+    /// 60 Hz source that jitters around a slot then repeats one frame and skips the next.
+    /// `.bucket` caps the long-run rate with a token bucket refilled at the cadence; a fresh frame
+    /// goes out on arrival while a token is left, so the send phase follows the source, and the
+    /// previous frame repeats at the cadence once the source is idle.
+    public enum Mode: Sendable { case grid, bucket }
+    public let mode: Mode
+    /// Two tokens absorb one interval of arrival jitter without letting the rate run ahead.
+    private static let bucketCapacity: Double = 2
+    /// While the source is active, a late fresh frame gets this long before the previous frame
+    /// repeats: a repeat spends the token the late frame then has to wait for.
+    private static let bucketActiveGraceIntervals: Double = 1.5
+    private var tokens: Double = ContinuousFramePacer.bucketCapacity
+    private var tokensRefilledAtNanoseconds: UInt64?
+
     private var schedulingToleranceNanoseconds: UInt64 {
         min(frameIntervalNanoseconds / 4, 5_000_000)
     }
 
-    public init(framesPerSecond: Int) {
+    public init(framesPerSecond: Int, mode: Mode = .grid) {
         frameIntervalNanoseconds = Self.interval(framesPerSecond: framesPerSecond)
+        self.mode = mode
     }
 
     /// Updates the sole configured output cadence. When `now` is supplied,
@@ -86,6 +102,8 @@ public struct ContinuousFramePacer: Sendable {
             previousArrivalNanoseconds = nil
             frameArrivedSinceSend = false
             deferredThisSlot = false
+            tokens = Self.bucketCapacity
+            tokensRefilledAtNanoseconds = nil
         }
     }
 
@@ -99,6 +117,7 @@ public struct ContinuousFramePacer: Sendable {
             chainSeenAtNanoseconds = now
             return .restart(nanoseconds: 0)
         }
+        if mode == .bucket { return bucketArrival(atNanoseconds: now) }
         guard nextSendAtNanoseconds != nil || lastSentAtNanoseconds != nil else {
             guard !tickScheduled else { return .ignore }
             tickScheduled = true
@@ -124,6 +143,7 @@ public struct ContinuousFramePacer: Sendable {
         if chained {
             chainSeenAtNanoseconds = now
         }
+        if mode == .bucket { return bucketTick(atNanoseconds: now) }
         let toleratedNow = now &+ schedulingToleranceNanoseconds
         if let earliest = earliestSendNanoseconds(), toleratedNow < earliest {
             return .wait(nanoseconds: earliest - now)
@@ -172,6 +192,52 @@ public struct ContinuousFramePacer: Sendable {
         tickScheduled = true
         chainSeenAtNanoseconds = now
         return .schedule(nanoseconds: delay)
+    }
+
+    private mutating func bucketArrival(atNanoseconds now: UInt64) -> ArrivalDecision {
+        refillTokens(atNanoseconds: now)
+        if tokens >= 1 {
+            return tickScheduled ? .pumpNow : startChain(atNanoseconds: now, afterNanoseconds: 0)
+        }
+        // Replaces the pending wake, which may be a later repeat deadline, with the next token.
+        return startChain(atNanoseconds: now, afterNanoseconds: nanosecondsUntilToken())
+    }
+
+    private mutating func bucketTick(atNanoseconds now: UInt64) -> TickDecision {
+        refillTokens(atNanoseconds: now)
+        if !frameArrivedSinceSend {
+            let due = bucketRepeatDue(atNanoseconds: now)
+            if now < due { return .wait(nanoseconds: due - now) }
+        }
+        guard tokens >= 1 else { return .wait(nanoseconds: nanosecondsUntilToken()) }
+        tokens -= 1
+        if !frameArrivedSinceSend { repeatedSends &+= 1 }
+        frameArrivedSinceSend = false
+        lastSentAtNanoseconds = now
+        let next = bucketRepeatDue(atNanoseconds: now)
+        nextSendAtNanoseconds = next
+        return .send(timestampNanoseconds: now, nextDelayNanoseconds: next > now ? next - now : 0)
+    }
+
+    private func bucketRepeatDue(atNanoseconds now: UInt64) -> UInt64 {
+        guard let lastSentAtNanoseconds else { return now }
+        let intervals = sourceHasCadence(atNanoseconds: now) ? Self.bucketActiveGraceIntervals : 1
+        return lastSentAtNanoseconds &+ UInt64(Double(frameIntervalNanoseconds) * intervals)
+    }
+
+    private mutating func refillTokens(atNanoseconds now: UInt64) {
+        guard let refilledAt = tokensRefilledAtNanoseconds else {
+            tokensRefilledAtNanoseconds = now
+            return
+        }
+        // Arrival and pump clocks are read on different queues; a slightly older reading adds nothing.
+        guard now > refilledAt else { return }
+        tokens = min(Self.bucketCapacity, tokens + Double(now - refilledAt) / Double(frameIntervalNanoseconds))
+        tokensRefilledAtNanoseconds = now
+    }
+
+    private func nanosecondsUntilToken() -> UInt64 {
+        tokens >= 1 ? 0 : UInt64((1 - tokens) * Double(frameIntervalNanoseconds)) + 1
     }
 
     private func sourceHasCadence(atNanoseconds now: UInt64) -> Bool {
