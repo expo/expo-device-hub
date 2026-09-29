@@ -64,7 +64,7 @@ async function writeFailureRecord(record: string, file: string, error: string): 
 export const SCREENSHOT_ARTIFACT_HEADER = "X-Expo-Screenshot-Artifact";
 export const SCREENSHOT_ARTIFACT_ERROR_HEADER = "X-Expo-Screenshot-Artifact-Error";
 const MAX_ERROR_HEADER_LENGTH = 512;
-// Anything outside printable ASCII (space through tilde) except whitespace; fs errors can hold any path.
+// Anything outside printable ASCII (space through tilde) except whitespace.
 const NOT_PRINTABLE_ASCII = /[^\x20-\x7e\s]/g;
 // Newlines and tabs are not allowed in a header value; collapse every whitespace run to one space.
 const WHITESPACE_RUN = /\s+/g;

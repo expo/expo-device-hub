@@ -126,11 +126,11 @@ describe("screenshot artifact headers", () => {
     const headers = screenshotArtifactHeaders({
       status: "failed",
       file: "/tmp/shot.png",
-      error: "EACCES:\tpermission denied,\r\n  open '/Users/zoë/\u0007shot.png'  ",
+      error: "EACCES:\tpermission denied\r\n  (zoë\u0007)  ",
     });
     expect(headers).toEqual({
       "X-Expo-Screenshot-Artifact": "failed",
-      "X-Expo-Screenshot-Artifact-Error": "EACCES: permission denied, open '/Users/zo/shot.png'",
+      "X-Expo-Screenshot-Artifact-Error": "EACCES: permission denied (zo)",
     });
     expect(() => new Headers(headers)).not.toThrow();
   });
