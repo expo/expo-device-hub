@@ -11,7 +11,7 @@ actor CoreDeviceBridge {
     enum BridgeError: Error { case unavailable, deviceUnavailable, initializationTimedOut, resetDuringLookup }
 
     private var manager: CoreDeviceManagerObject?
-    private var managerReadiness = SharedReadiness()
+    private let managerReadiness = SharedReadiness()
     private var capabilities = BootBoundCache<String, String, CoreDeviceCapabilityObject>()
     private var hingeSupport: [String: Bool] = [:]
     private var hingeResetGenerations: [String: UInt64] = [:]
@@ -22,17 +22,18 @@ actor CoreDeviceBridge {
     }
     private var hingeStates: [String: HingeState] = [:]
 
-    /// CoreDevice's remote device and capability objects belong to a simulator
-    /// boot. A new capture session must not reuse them after that device boots
-    /// again in the same serve-sim process.
+    /// CoreDevice's capability objects belong to a simulator boot. A new capture
+    /// session must not reuse them after that device boots again in the same
+    /// serve-sim process.
+    ///
+    /// Only this device's capabilities and lookups reset. The shared manager
+    /// stays: after a reboot it lists the device again, and other devices keep
+    /// using it.
     func resetForNewCapture(udid: String) {
-        // Only this device's capabilities and lookups. Other devices keep theirs.
         capabilities.reset(scope: udid)
         hingeResetGenerations[udid, default: 0] &+= 1
         hingeSupport.removeValue(forKey: udid)
         hingeStates.removeValue(forKey: udid)
-        manager = nil
-        managerReadiness = SharedReadiness()
     }
 
     func hingeState(udid: String) async -> HingeState {

@@ -119,8 +119,8 @@ actor FrameCapture {
             throw makeError(2, "Device not booted (state: \(state))")
         }
 
-        // Recreate CoreDevice's boot-bound manager before HID or display
-        // election asks for capabilities from this boot.
+        // Drop this device's CoreDevice capabilities from the previous boot
+        // before HID or display election asks for capabilities from this boot.
         if SimulatorDisplayProfile.read(from: device).resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
