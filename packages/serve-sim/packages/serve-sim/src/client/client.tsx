@@ -944,9 +944,10 @@ function AppWithConfig({
   const coarsePointerRef = useRef(false);
   useEffect(() => {
     let stopped = false;
-    const inputClientId = Array.from(crypto.getRandomValues(new Uint8Array(16)),
-      (byte) => byte.toString(16).padStart(2, "0")).join("");
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let inputUnavailableTimer: ReturnType<typeof setTimeout> | null = null;
+    let inputUnavailableNotified = false;
+    let inputSocketAdmitted = false;
     let currentWs: WebSocket | null = null;
     pendingWsMessagesRef.current = [];
 
@@ -960,9 +961,8 @@ function AppWithConfig({
 
     const connect = () => {
       setInputSocketOpen(false);
-      const wsUrl = new URL(config.wsUrl, window.location.href);
-      wsUrl.searchParams.set("inputClientId", inputClientId);
-      const ws = new WebSocket(wsUrl);
+      inputSocketAdmitted = false;
+      const ws = new WebSocket(config.wsUrl);
       ws.binaryType = "arraybuffer";
       currentWs = ws;
       wsRef.current = ws;
@@ -1002,6 +1002,12 @@ function AppWithConfig({
         try {
           const cfg = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as StreamConfig;
           if (cfg.width <= 0 || cfg.height <= 0) return;
+          // An upgrade can succeed before the server rejects input with 1013.
+          // A valid config frame confirms that this socket was admitted.
+          if (inputUnavailableTimer) clearTimeout(inputUnavailableTimer);
+          inputUnavailableTimer = null;
+          inputUnavailableNotified = false;
+          inputSocketAdmitted = true;
           // A rotation clears the native named pose. Observe the received
           // config even when its values equal the previous React state.
           if (cfg.hingePose === null && !hingePendingRef.current) setOrientationOverride(false);
@@ -1011,7 +1017,16 @@ function AppWithConfig({
         } catch {}
       };
       ws.onclose = (event) => {
-        if (!stopped && event.code === 1013) showInputSocketError(event.reason || "The server is busy. Try again shortly.");
+        if (!stopped && event.code === 1013 && !inputUnavailableTimer && !inputUnavailableNotified) {
+          const reason = event.reason || "The server is busy. Try again shortly.";
+          inputUnavailableTimer = setTimeout(() => {
+            inputUnavailableTimer = null;
+            if (!stopped && !inputSocketAdmitted) {
+              inputUnavailableNotified = true;
+              showInputSocketError(reason);
+            }
+          }, 13_000);
+        }
         if (wsRef.current === ws) {
           wsRef.current = null;
           setInputSocketOpen(false);
@@ -1038,6 +1053,7 @@ function AppWithConfig({
     return () => {
       stopped = true;
       if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (inputUnavailableTimer) clearTimeout(inputUnavailableTimer);
       if (wsRef.current === currentWs) wsRef.current = null;
       hingeQueueRef.current?.clear();
       currentWs?.close();

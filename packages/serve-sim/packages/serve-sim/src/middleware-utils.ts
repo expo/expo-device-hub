@@ -4,18 +4,68 @@ export interface UpgradeHandlerWebSocket {
   readonly readyState: number;
   send(data: string | Buffer): void;
   close(): void;
+  ping?(): void;
+  terminate?(): void;
   on(event: "message", listener: (data: Buffer<ArrayBufferLike>) => void): void;
   on(event: "error", listener: (error?: unknown) => void): void;
   on(event: "close", listener: () => void): void;
+  on(event: "pong", listener: () => void): void;
+}
+
+/** Detect a stranded host-accepted HID socket even when its proxy never forwards a close. */
+export function heartbeatHidSocket(
+  websocket: UpgradeHandlerWebSocket,
+  heartbeat = { pingIntervalMs: 1000, pongTimeoutMs: 10_000 },
+): UpgradeHandlerWebSocket {
+  let closed = false;
+  let pingSentAt: number | null = null;
+  const closeListeners: Array<() => void> = [];
+  const fireClose = () => {
+    if (closed) return;
+    closed = true;
+    clearInterval(timer);
+    for (const listener of closeListeners) listener();
+  };
+  const shutdown = () => {
+    fireClose();
+    try {
+      if (websocket.terminate) websocket.terminate();
+      else websocket.close();
+    } catch { /* The socket is already detached from the session. */ }
+  };
+  const checkHeartbeat = () => {
+    if (closed) return;
+    if (pingSentAt !== null) {
+      if (Date.now() - pingSentAt >= heartbeat.pongTimeoutMs) {
+        shutdown();
+      }
+      return;
+    }
+    pingSentAt = Date.now();
+    try { websocket.ping!(); } catch { shutdown(); }
+  };
+  const timer = setInterval(checkHeartbeat, heartbeat.pingIntervalMs);
+  timer.unref?.();
+  websocket.on("pong", () => { pingSentAt = null; });
+  websocket.on("close", fireClose);
+  websocket.on("error", fireClose);
+  checkHeartbeat();
+  return {
+    OPEN: websocket.OPEN,
+    get readyState() { return websocket.readyState; },
+    send: (data) => websocket.send(data),
+    close: () => { fireClose(); websocket.close(); },
+    on(event: "message" | "close" | "error" | "pong", listener: ((data: Buffer<ArrayBufferLike>) => void) | (() => void)) {
+      if (event === "close" || event === "error") {
+        if (closed) (listener as () => void)();
+        else closeListeners.push(listener as () => void);
+      } else websocket.on(event as "message", listener as (data: Buffer<ArrayBufferLike>) => void);
+    },
+  };
 }
 
 export function isHidWebSocketPath(upstreamPath: string): boolean {
   return new URL(upstreamPath, "http://serve-sim.local").pathname === "/ws";
-}
-
-export function inputClientIdFromUrl(url: URL): string | undefined {
-  const clientId = url.searchParams.get("inputClientId");
-  return clientId && /^[0-9a-f]{32}$/i.test(clientId) ? clientId : undefined;
 }
 
 export function claimHelperHidSocket(
@@ -25,9 +75,10 @@ export function claimHelperHidSocket(
     helperProxyTarget(rawUrl: string): { device: string | null; upstreamPath: string } | null;
     fallbackDevice: string | null;
     resolveSession: {
-      (device: string): { attachHidSocket(ws: UpgradeHandlerWebSocket, clientId?: string): void };
+      (device: string): { attachHidSocket(ws: UpgradeHandlerWebSocket): void };
     };
   },
+  heartbeat = { pingIntervalMs: 1000, pongTimeoutMs: 10_000 },
 ): boolean {
   const url = new URL(request.url, "http://serve-sim.local");
   const target = helperProxyTarget(`${url.pathname}${url.search}`);
@@ -37,14 +88,18 @@ export function claimHelperHidSocket(
     websocket.close();
     return true;
   }
-  let session: { attachHidSocket(ws: UpgradeHandlerWebSocket, clientId?: string): void };
+  let session: { attachHidSocket(ws: UpgradeHandlerWebSocket): void };
   try {
     session = resolveSession(device);
   } catch {
     websocket.close(); // not booted / capture unavailable
     return true;
   }
-  session.attachHidSocket(websocket, inputClientIdFromUrl(url));
+  // Known host integrations use `ws` sockets. Preserve input on a host without
+  // protocol ping support, though it cannot detect a stranded connection here.
+  session.attachHidSocket(
+    typeof websocket.ping === "function" ? heartbeatHidSocket(websocket, heartbeat) : websocket,
+  );
   return true;
 }
 

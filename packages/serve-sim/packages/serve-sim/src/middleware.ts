@@ -25,7 +25,7 @@ import { readCameraStatus } from "./camera-helper";
 import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type CaptureRuntime } from "./capture";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
-import { corsAllowOriginHeaders, frameAncestorsPolicy, inputClientIdFromUrl, isHidWebSocketPath } from "./middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy, isHidWebSocketPath } from "./middleware-utils";
 import {
   closeDeviceSession,
   getDeviceSession,
@@ -1079,7 +1079,7 @@ export async function retryPendingCaptureCleanup(deps: CaptureCleanupDeps = {}):
  * bridge) rather than via `ws`'s server, whose handshake doesn't flush under
  * Bun — and the production CLI is a bun-compiled binary.
  */
-// Reconnects replace the prior socket; this deadline clears clients that never reconnect.
+// A stalled proxy can keep an upstream socket open after its browser disconnects.
 const HID_PING_INTERVAL_MS = 1000;
 const HID_PONG_TIMEOUT_MS = 10_000;
 
@@ -1184,11 +1184,7 @@ function attachHidInProcess(
     return false;
   }
   if (!writeWebSocketAccept(req, socket, execToken)) return true; // bad request handled
-  const clientId = inputClientIdFromUrl(new URL(req.url ?? "/", "http://serve-sim.local"));
-  session.attachHidSocket(
-    rawHidSocket(socket, head),
-    clientId,
-  );
+  session.attachHidSocket(rawHidSocket(socket, head));
   return true;
 }
 

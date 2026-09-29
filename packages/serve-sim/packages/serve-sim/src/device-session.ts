@@ -265,8 +265,6 @@ export class DeviceSession {
   private latestJpegBuffer: Buffer | null = null;
   private latestJpegLength = 0;
   private readonly hidSockets = new Set<HidSocket>();
-  private readonly hidSocketsByClientId = new Map<string, HidSocket>();
-  private readonly hidClientIds = new WeakMap<HidSocket, string>();
   private readonly admittedHidSockets = new Set<HidSocket>();
   private readonly detachedHidSockets = new WeakSet<HidSocket>();
   private readonly cleanedUpHidSockets = new WeakSet<HidSocket>();
@@ -1077,22 +1075,12 @@ export class DeviceSession {
 
   // ── HID WebSocket ────────────────────────────────────────────────────────
 
-  attachHidSocket(ws: HidSocket, clientId?: string): void {
-    const previous = clientId ? this.hidSocketsByClientId.get(clientId) : undefined;
-    const replacing = previous && this.hidSockets.has(previous) ? previous : undefined;
-    if (this.phase !== "running" || (this.hidSockets.size >= MAX_HID_SOCKETS && !replacing)) {
+  attachHidSocket(ws: HidSocket): void {
+    if (this.phase !== "running" || this.hidSockets.size >= MAX_HID_SOCKETS) {
       ws.close(1013, "Simulator input unavailable; retry after other clients disconnect");
       return;
     }
     this.hidSockets.add(ws);
-    if (clientId) {
-      this.hidSocketsByClientId.set(clientId, ws);
-      this.hidClientIds.set(ws, clientId);
-    }
-    if (replacing) {
-      this.detachHidSocket(replacing);
-      replacing.close();
-    }
     this.admittedHidSockets.add(ws);
     this.inFlightHidMessages.set(ws, 0);
     this.inFlightOrderedMessages.set(ws, 0);
@@ -1138,8 +1126,6 @@ export class DeviceSession {
     if (this.detachedHidSockets.has(ws)) return;
     this.detachedHidSockets.add(ws);
     this.hidSockets.delete(ws);
-    const clientId = this.hidClientIds.get(ws);
-    if (clientId && this.hidSocketsByClientId.get(clientId) === ws) this.hidSocketsByClientId.delete(clientId);
     this.discardQueuedInput(ws);
     if ((this.inFlightOrderedMessages.get(ws) ?? 0) === 0) this.finishDetachedHidSocket(ws);
     this.notifyInputStateChanged();

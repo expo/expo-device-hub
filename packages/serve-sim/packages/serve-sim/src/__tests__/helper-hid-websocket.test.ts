@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { simMiddleware } from "../middleware";
+import { claimHelperHidSocket } from "../middleware-utils";
 import type { UpgradeHandlerWebSocket } from "../middleware-utils";
 
 // handleWebSocket receives host-accepted sockets (Expo CLI plugin WS routes,
@@ -69,15 +70,6 @@ describe("handleWebSocket helper HID dispatch", () => {
     expect(handled).toBe(true);
   });
 
-  test("claims a helper HID socket with a reconnect client ID", () => {
-    const ws = fakeSocket();
-    const handled = handleWebSocket(
-      new Request(`http://localhost:3200/preview/helper/NOT-A-REAL-UDID/ws?inputClientId=${"a".repeat(32)}`),
-      ws,
-    );
-    expect(handled).toBe(true);
-  });
-
   test("closes a helper HID socket with no resolvable device", () => {
     const ws = fakeSocket();
     const handled = handleWebSocket(
@@ -96,4 +88,38 @@ describe("handleWebSocket helper HID dispatch", () => {
     );
     expect(handled).toBe(false);
   });
+});
+
+test("host-accepted HID socket closes after its peer stops answering pings", async () => {
+  const listeners: Record<string, Array<(...args: never[]) => void>> = {};
+  let pings = 0;
+  let terminated = false;
+  const socket = {
+    OPEN: 1,
+    readyState: 1,
+    send() {},
+    close() {},
+    ping() { pings++; },
+    terminate() { terminated = true; },
+    on(event: string, listener: (...args: never[]) => void) { (listeners[event] ??= []).push(listener); },
+  } as UpgradeHandlerWebSocket;
+  // Claim through the same host-accepted route used by embedded previews.
+  let closes = 0;
+  const handled = claimHelperHidSocket(
+    new Request("http://localhost/preview/helper/DEVICE/ws"),
+    socket,
+    {
+      helperProxyTarget: () => ({ device: "DEVICE", upstreamPath: "/ws" }),
+      fallbackDevice: null,
+      resolveSession: () => ({ attachHidSocket(ws) { ws.on("close", () => { closes++; }); } }),
+    },
+    { pingIntervalMs: 10, pongTimeoutMs: 40 },
+  );
+  expect(handled).toBe(true);
+  await Promise.race([
+    (async () => { while (!terminated) await Bun.sleep(10); })(),
+    Bun.sleep(500).then(() => { throw new Error("Host HID socket did not time out"); }),
+  ]);
+  expect(pings).toBeGreaterThan(0);
+  expect(closes).toBe(1);
 });
