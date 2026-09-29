@@ -15,6 +15,7 @@ import {
 type DeviceStateOwner = object;
 
 type ReplayInputTarget = {
+  finish?(signal: AbortSignal): void;
   dispatchGesture(
     gesture: Gesture,
     signal: AbortSignal,
@@ -83,6 +84,9 @@ export class DeviceSessionState {
       clock: options.routeClock,
     });
     this.replayHandlers = {
+      finish: (signal) => {
+        for (const target of this.#inputTargets.values()) target.finish?.(signal);
+      },
       dispatchGesture: async (gesture, signal) => {
         if (signal.aborted) {
           throw abortReason(signal, "session replay cancelled");

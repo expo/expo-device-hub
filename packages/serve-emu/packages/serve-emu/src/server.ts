@@ -1082,6 +1082,7 @@ export async function startServer(
 
   const inputTarget = (context: DeviceContext) => ({
     identity: context.inputQueue,
+    pointerNamespace: context.deviceState,
     enqueue: (gesture: Gesture, source: string, record: boolean) =>
       enqueueGesture(context, gesture, source, record),
   });
@@ -1637,15 +1638,16 @@ export async function startServer(
   };
 
   const activateContext = (context: DeviceContext) => {
-    const enqueueReplayGesture = replayTouchInput(() => inputTarget(context));
+    const replayInput = replayTouchInput(() => inputTarget(context));
     context.deviceState.activate(context, {
+      finish: replayInput.finish,
       dispatchGesture: (gesture, signal) => {
         if (signal.aborted) {
           throw signal.reason instanceof Error
             ? signal.reason
             : new DOMException("session replay cancelled", "AbortError");
         }
-        return enqueueReplayGesture(gesture, signal).completion.then(() => {});
+        return replayInput.enqueue(gesture, signal).completion.then(() => {});
       },
     });
     const recovery = createRecovery(context);

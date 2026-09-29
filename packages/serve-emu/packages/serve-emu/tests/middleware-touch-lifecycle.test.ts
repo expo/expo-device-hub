@@ -342,6 +342,86 @@ for (const semantic of [false, true]) {
         }
       });
 
+      test("recorded pointer IDs remain distinct across capture generations", async () => {
+        const h = await harness(semantic, video);
+        try {
+          const viewer = h.viewer();
+          viewer.touch("down");
+          await h.settle();
+          expect((await h.replace()).status).toBe(200);
+          viewer.touch("down");
+          viewer.touch("up");
+          await h.settle();
+          const recorded = await h.recorded();
+          const ids = recorded.events.flatMap((event) =>
+            event.kind === "gesture" &&
+            event.gesture.type === "touch" &&
+            event.gesture.action === "down"
+              ? [event.gesture.pointerId]
+              : [],
+          );
+          expect(ids).toHaveLength(2);
+          expect(ids[0]).not.toBe(ids[1]);
+          expect((await h.post("/api/session/replay", { multiplier: 100 })).status).toBe(200);
+          for (let i = 0; i < 100 && (await h.recorded()).replaying; i++) {
+            await new Promise((resolve) => setTimeout(resolve, 1));
+          }
+          await h.settle();
+          expect((await h.recorded()).replayStatus).toBe("completed");
+          expect(h.queue.snapshot().reservedReleases).toBe(0);
+        } finally {
+          await h.stop();
+        }
+      });
+
+      test("replay tolerates a trimmed touch prefix without releasing a viewer", async () => {
+        const h = await harness(semantic, video);
+        try {
+          const viewer = h.viewer();
+          viewer.touch("down", 0, false);
+          await h.settle();
+          h.app.deviceState.recorder.recordGesture(
+            { type: "touch", action: "move", pointerId: 0, x: 0.4, y: 0.6 },
+            "ws",
+          );
+          h.app.deviceState.recorder.recordGesture(
+            { type: "touch", action: "up", pointerId: 0, x: 0.4, y: 0.6 },
+            "ws",
+          );
+          expect((await h.post("/api/session/replay", { multiplier: 100 })).status).toBe(200);
+          for (let i = 0; i < 100 && (await h.recorded()).replaying; i++)
+            await new Promise((resolve) => setTimeout(resolve, 1));
+          await h.settle();
+          expect((await h.recorded()).replayStatus).toBe("completed");
+          expect(h.touches.map((touch) => touch.action)).toEqual(["down"]);
+          viewer.close();
+          await h.settle();
+          expect(h.queue.snapshot().reservedReleases).toBe(0);
+        } finally {
+          await h.stop();
+        }
+      });
+
+      test("finishing a replay of a held touch does not leave a second pointer down", async () => {
+        const h = await harness(semantic, video);
+        try {
+          const viewer = h.viewer();
+          viewer.touch("down");
+          await h.settle();
+          expect((await h.post("/api/session/replay")).status).toBe(200);
+          for (let i = 0; i < 100 && (await h.recorded()).replaying; i++)
+            await new Promise((resolve) => setTimeout(resolve, 1));
+          await h.settle();
+          expect((await h.recorded()).replayStatus).toBe("completed");
+          expect(h.queue.snapshot().reservedReleases).toBe(1);
+          viewer.close();
+          await h.settle();
+          expect(h.queue.snapshot().reservedReleases).toBe(0);
+        } finally {
+          await h.stop();
+        }
+      });
+
       test("cancelling replay releases only the replay pointer", async () => {
         const h = await harness(semantic, video);
         try {
