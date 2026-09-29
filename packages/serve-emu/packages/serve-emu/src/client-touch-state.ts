@@ -6,6 +6,8 @@ type Touch = Extract<Gesture, { type: "touch" }>;
 export type TouchInputTarget = {
   /** The input queue, not the longer-lived device or viewer. */
   identity: object;
+  /** The recording lifetime; IDs must not repeat when its capture is replaced. */
+  pointerNamespace: object;
   enqueue(gesture: Gesture, source: string, record: boolean): ControlInputHandle;
 };
 
@@ -32,7 +34,7 @@ export class ClientTouchState {
     this.#source = source;
   }
 
-  enqueue(gesture: Gesture, record = true): ControlInputHandle {
+  enqueue(gesture: Gesture, record = true, skipOrphanTouches = false): ControlInputHandle {
     if (this.#closed) throw new Error("input client is closed");
     const target = this.#target();
     if (target.identity !== this.#current?.identity) {
@@ -45,6 +47,11 @@ export class ClientTouchState {
 
     const localId = gesture.pointerId ?? 0;
     const previous = this.#touches.get(localId);
+    if (!previous && gesture.action !== "down" && skipOrphanTouches) {
+      // The bounded replay buffer can begin in the middle of a gesture. Do not
+      // attach that retained MOVE/UP to a pointer owned by a live viewer.
+      return { gesture, completion: Promise.resolve({ status: "coalesced" }) };
+    }
     if (gesture.action === "down" ? previous : !previous) {
       throw new Error(
         gesture.action === "down" ? "pointer is already down" : "pointer is not down",
@@ -52,7 +59,7 @@ export class ClientTouchState {
     }
     const mapped: Touch = {
       ...gesture,
-      pointerId: previous?.gesture.pointerId ?? allocatePointerId(target.identity),
+      pointerId: previous?.gesture.pointerId ?? allocatePointerId(target.pointerNamespace),
     };
     const accepted = target.enqueue(mapped, this.#source, record);
     // Track admission, not completion: close can race an in-flight DOWN. A
@@ -92,14 +99,20 @@ export class ClientTouchState {
 /** Replay IDs describe recorded gestures, not pointers owned by a live viewer. */
 export function replayTouchInput(target: () => TouchInputTarget) {
   const inputs = new WeakMap<AbortSignal, ClientTouchState>();
-  return (gesture: Gesture, signal: AbortSignal): ControlInputHandle => {
-    let input = inputs.get(signal);
-    if (!input) {
-      input = new ClientTouchState(target, "session:replay");
-      inputs.set(signal, input);
-      const captured = input;
-      signal.addEventListener("abort", () => captured.close(), { once: true });
-    }
-    return input.enqueue(gesture, false);
+  return {
+    enqueue(gesture: Gesture, signal: AbortSignal): ControlInputHandle {
+      let input = inputs.get(signal);
+      if (!input) {
+        input = new ClientTouchState(target, "session:replay");
+        inputs.set(signal, input);
+        const captured = input;
+        signal.addEventListener("abort", () => captured.close(), { once: true });
+      }
+      return input.enqueue(gesture, false, true);
+    },
+    finish(signal: AbortSignal): void {
+      inputs.get(signal)?.close();
+      inputs.delete(signal);
+    },
   };
 }

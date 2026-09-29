@@ -707,13 +707,14 @@ async function createAppInternal(
     const controls = session.controls;
     return {
       identity: controls,
+      pointerNamespace: deviceState,
       enqueue(gesture: Gesture, source: string, record: boolean) {
         if (session.controls !== controls) throw new Error("input session changed");
         return enqueueGesture(gesture, source, record);
       },
     };
   };
-  const enqueueReplayGesture = replayTouchInput(inputTarget);
+  const replayInput = replayTouchInput(inputTarget);
 
   const applyLocation = async (fix: GeoFix, source: string, record = true) => {
     routePlayback.stop();
@@ -724,13 +725,14 @@ async function createAppInternal(
 
   const activateDeviceState = (): void => {
     deviceState.activate(deviceStateOwner, {
+      finish: replayInput.finish,
       dispatchGesture: async (gesture, signal) => {
         if (signal.aborted) {
           throw signal.reason instanceof Error
             ? signal.reason
             : new DOMException("session replay cancelled", "AbortError");
         }
-        await enqueueReplayGesture(gesture, signal).completion;
+        await replayInput.enqueue(gesture, signal).completion;
       },
     });
   };
