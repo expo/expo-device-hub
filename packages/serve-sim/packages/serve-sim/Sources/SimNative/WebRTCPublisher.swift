@@ -1411,7 +1411,12 @@ final class WebRTCPublisher: @unchecked Sendable {
         // name and the re-apply after connection settles on the negotiated one.
         let negotiatedName = StreamCodecPolicy.mediaCodecName(from: parameters.codecs.map(\.name))
         let codecName = negotiatedName ?? session.codecName
-        if let negotiatedName { session.codecName = negotiatedName }
+        if let negotiatedName, negotiatedName != session.codecName {
+            session.codecName = negotiatedName
+            // Every H.264 viewer's level bounds the shared canvas, so a viewer whose sender turned
+            // out to send another codec than the answer's first payload changes it.
+            refreshEncodeCanvas()
+        }
         let encodeMaxLongEdge = StreamEncodePolicy.encodeMaxLongEdge(
             configuredMaxDimension: maxDimension,
             codecName: codecName,
