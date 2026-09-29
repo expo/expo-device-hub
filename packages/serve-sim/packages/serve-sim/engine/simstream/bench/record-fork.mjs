@@ -43,7 +43,9 @@ const RECORDER = `(async () => {
     if (v) return [v, v.videoWidth, v.videoHeight];
     const cs = [...document.querySelectorAll('canvas')].filter((c) => c !== rec && c.width > 200 && c.height > 400);
     cs.sort((a, b) => b.width * b.height - a.width * a.height);
-    return cs[0] ? [cs[0], cs[0].width, cs[0].height] : null;
+    if (cs[0]) return [cs[0], cs[0].width, cs[0].height];
+    const img = [...document.querySelectorAll('img')].find((i) => i.naturalWidth > 200 && i.naturalHeight > 400);
+    return img ? [img, img.naturalWidth, img.naturalHeight] : null;
   }
   function readCode(el, w, h) {
     octx.drawImage(el, 0, h * TOP, w, h * (BOTTOM - TOP), 0, 0, 60, 40);
@@ -110,14 +112,23 @@ const RECORDER = `(async () => {
 })()`;
 
 try {
+  // REC_PRELOAD: script run before the page's own (e.g. to pick a setting the page keeps in localStorage).
+  if (process.env.REC_PRELOAD) { await cdp('Page.enable'); await cdp('Page.addScriptToEvaluateOnNewDocument', { source: process.env.REC_PRELOAD }); }
   await cdp('Page.navigate', { url: URL });
-  for (let i = 0; i < 120; i++) { await sleep(250); if (await ev(`!!([...document.querySelectorAll('video')].find(v=>v.videoWidth>0) || [...document.querySelectorAll('canvas')].find(c=>c.width>200&&c.height>400))`)) break; }
-  await sleep(2500);
+  for (let i = 0; i < 120; i++) { await sleep(250); if (await ev(`!!([...document.querySelectorAll('video')].find(v=>v.videoWidth>0) || [...document.querySelectorAll('canvas')].find(c=>c.width>200&&c.height>400) || [...document.querySelectorAll('img')].find(i=>i.naturalWidth>200&&i.naturalHeight>400))`)) break; }
+  // Streams that start small (WebRTC ramps its resolution) aren't ready for input yet: wait for the
+  // full-size picture, then give every approach the same settle time.
+  for (let i = 0; i < 80; i++) {
+    const w = await ev(`(() => { const v = [...document.querySelectorAll('video')].find(v=>v.videoWidth>0); if (v) return v.videoWidth; const c = [...document.querySelectorAll('canvas')].filter(c=>c.width>200&&c.height>400).sort((a,b)=>b.width*b.height-a.width*a.height)[0]; if (c) return c.width; const i = [...document.querySelectorAll('img')].find(i=>i.naturalWidth>200&&i.naturalHeight>400); return i ? i.naturalWidth : 0; })()`);
+    if (w >= 1000) break;
+    await sleep(250);
+  }
+  await sleep(3000);
   await cdp('Runtime.enable');
   await cdp('Runtime.addBinding', { name: '__out' });
   cdp('Runtime.evaluate', { expression: RECORDER, awaitPromise: true }); // runs until __rec.stop
   await sleep(1500);
-  const rect = await ev(`(() => { const v = [...document.querySelectorAll('video')].find(v=>v.videoWidth>0); const c = v || [...document.querySelectorAll('canvas')].filter(c=>c.width>200&&c.height>400).sort((a,b)=>b.width*b.height-a.width*a.height)[0]; const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; })()`);
+  const rect = await ev(`(() => { const v = [...document.querySelectorAll('video')].find(v=>v.videoWidth>0); const c = v || [...document.querySelectorAll('canvas')].filter(c=>c.width>200&&c.height>400).sort((a,b)=>b.width*b.height-a.width*a.height)[0] || [...document.querySelectorAll('img')].find(i=>i.naturalWidth>200&&i.naturalHeight>400); const b = c.getBoundingClientRect(); return { x: b.x, y: b.y, w: b.width, h: b.height }; })()`);
   const at = (fx, fy) => ({ x: rect.x + rect.w * fx, y: rect.y + rect.h * fy });
   const mouse = (type, fx, fy) => cdp('Input.dispatchMouseEvent', { type, ...at(fx, fy), button: 'left', buttons: type === 'mouseReleased' ? 0 : 1, clickCount: 1 });
   const startFrame = await ev('__rec.n');
@@ -131,6 +142,14 @@ try {
       if (s.op === 'wait') { at += s.ms; continue; }
       await until(at); plan.push(at);
       if (s.op === 'tap') { await mouse('mousePressed', s.x, s.y); await until(at + 60); await mouse('mouseReleased', s.x, s.y); at += 60; }
+      if (s.op === 'path') {
+        // Press at the first point, move through the rest on their own schedule, release at the last.
+        const [[, x0, y0], ...rest] = s.pts;
+        await mouse('mousePressed', x0, y0);
+        for (const [ms, x, y] of rest) { await until(at + ms); await mouse('mouseMoved', x, y); }
+        const [ms, x, y] = s.pts[s.pts.length - 1];
+        await until(at + ms); await mouse('mouseReleased', x, y); at += ms;
+      }
       if (s.op === 'swipe') { await mouse('mousePressed', s.x0, s.y0); for (let k = 1; k <= 14; k++) { await until(at + 16 * k); await mouse('mouseMoved', s.x0 + (s.x1 - s.x0) * k / 14, s.y0 + (s.y1 - s.y0) * k / 14); } await until(at + 240); await mouse('mouseReleased', s.x1, s.y1); at += 240; }
       at += s.wait || 0;
     }
