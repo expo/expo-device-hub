@@ -46,7 +46,9 @@ export class ClientTouchState {
     const localId = gesture.pointerId ?? 0;
     const previous = this.#touches.get(localId);
     if (gesture.action === "down" ? previous : !previous) {
-      throw new Error(gesture.action === "down" ? "pointer is already down" : "pointer is not down");
+      throw new Error(
+        gesture.action === "down" ? "pointer is already down" : "pointer is not down",
+      );
     }
     const mapped: Touch = {
       ...gesture,
@@ -56,7 +58,8 @@ export class ClientTouchState {
     // Track admission, not completion: close can race an in-flight DOWN. A
     // rejected enqueue must not create a pointer or consume release capacity.
     if (gesture.action === "up") this.#touches.delete(localId);
-    else this.#touches.set(localId, { gesture: mapped, record: record || previous?.record === true });
+    else
+      this.#touches.set(localId, { gesture: mapped, record: record || previous?.record === true });
     return accepted;
   }
 
@@ -69,7 +72,11 @@ export class ClientTouchState {
       for (const { gesture, record } of this.#touches.values()) {
         try {
           // The queue reserves an UP for every admitted DOWN, even when full.
-          const release = current.enqueue({ ...gesture, action: "up" }, `${this.#source}:disconnect`, record);
+          const release = current.enqueue(
+            { ...gesture, action: "up" },
+            `${this.#source}:disconnect`,
+            record,
+          );
           void release.completion.catch(() => {});
         } catch {
           // A stopped/replaced input session owns its own transport teardown.

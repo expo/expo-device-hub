@@ -1,4 +1,3 @@
-import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { timingSafeEqual } from "node:crypto";
@@ -93,6 +92,7 @@ import {
   parseGesture,
   type Gesture,
 } from "./input.ts";
+import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import {
   ControlInputError,
   ControlInputQueue,
