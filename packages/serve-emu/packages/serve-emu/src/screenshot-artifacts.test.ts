@@ -1,7 +1,7 @@
 import { describe, expect, setSystemTime, spyOn, test } from "bun:test";
 import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { saveScreenshotArtifact } from "./screenshot-artifacts.ts";
 
 describe("screenshot artifacts", () => {
@@ -29,7 +29,33 @@ describe("screenshot artifacts", () => {
     }
   });
 
-  test("logs persistence failures and still resolves", async () => {
+  test("logs persistence failures, writes a failure record, and still resolves", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "screenshot-test-"));
+    const consoleError = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const result = await saveScreenshotArtifact(null as unknown as Uint8Array, directory);
+      if (result.status !== "failed") throw new Error(`expected a failed save, got ${result.status}`);
+      expect(result.error).toContain('"data" argument');
+      expect(result.file.startsWith(join(directory, "screenshot-"))).toBe(true);
+      expect(consoleError).toHaveBeenCalledTimes(1);
+      expect(String(consoleError.mock.calls[0]?.[0])).toContain(result.file);
+
+      const png = basename(result.file);
+      const recordName = png.replace(/\.png$/, ".failed.json");
+      expect(recordName).toMatch(/^screenshot-.+-[a-f0-9]{12}\.failed\.json$/);
+      expect(await readdir(directory)).toEqual([recordName]);
+      const record = JSON.parse(await readFile(join(directory, recordName), "utf8"));
+      expect(Object.keys(record).sort()).toEqual(["at", "error", "file"]);
+      expect(record.file).toBe(png);
+      expect(record.error).toContain(result.error);
+      expect(Number.isNaN(Date.parse(record.at))).toBe(false);
+    } finally {
+      consoleError.mockRestore();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  test("logs the failure record error when the directory cannot be written", async () => {
     const directory = await mkdtemp(join(tmpdir(), "screenshot-test-"));
     const consoleError = spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -38,8 +64,12 @@ describe("screenshot artifacts", () => {
       const result = await saveScreenshotArtifact(new Uint8Array(), file);
       expect(result).toMatchObject({ status: "failed", error: expect.stringMatching(/EEXIST|ENOTDIR/) });
       expect(result.status === "failed" && result.file.startsWith(join(file, "screenshot-"))).toBe(true);
-      expect(consoleError).toHaveBeenCalledTimes(1);
+      expect(consoleError).toHaveBeenCalledTimes(2);
       expect(String(consoleError.mock.calls[0]?.[0])).toContain(join(file, "screenshot-"));
+      expect(String(consoleError.mock.calls[1]?.[0])).toStartWith(
+        `could not write screenshot failure record ${join(file, "screenshot-")}`,
+      );
+      expect(String(consoleError.mock.calls[1]?.[0])).toEndWith(".failed.json:");
     } finally {
       consoleError.mockRestore();
       await rm(directory, { recursive: true, force: true });

@@ -66,7 +66,7 @@ Both serve-sim and serve-emu write each captured PNG to a temporary file in that
 directory, then rename it.
 A saved file has a name such as `screenshot-2026-09-24T08-45-59-123Z-a1b2c3d4e5f6.png`.
 The name contains the UTC capture time and a random suffix.
-If the save fails, serve-sim or serve-emu logs the error to stderr.
+If the save fails, serve-sim or serve-emu logs the error to stderr and writes a `screenshot-<time>-<suffix>.failed.json` record with the file name, error, and time into the same directory. The EAS worker reports that record.
 The screenshot response still returns the PNG.
 On iOS, serve-sim records each manual screenshot as a session event in the Events panel.
 A failed save appears there as an error event with the reason.
