@@ -94,6 +94,27 @@ final class ContinuousFramePacerBucketTests: XCTestCase {
         XCTAssertTrue(burst(1.5))
     }
 
+    func testTokenWaitsDoNotHideALostChain() {
+        var pacer = ContinuousFramePacer(framesPerSecond: 60, mode: .bucket, freshRateMultiplier: 1.5)
+        pacer.setActive(true)
+        XCTAssertEqual(pacer.latestFrameArrived(atNanoseconds: 0), .schedule(nanoseconds: 0))
+        // The chained tick never fires. A 240 Hz source keeps arriving, and its arrival-driven
+        // sends spend the tokens, so later arrivals wait for a token.
+        var restartedAt: UInt64?
+        var now: UInt64 = 4_166_666
+        while now < 250_000_000, restartedAt == nil {
+            switch pacer.latestFrameArrived(atNanoseconds: now) {
+            case .pumpNow: _ = pacer.tick(atNanoseconds: now, chained: false)
+            case .restart: restartedAt = now
+            case .schedule, .ignore: break
+            }
+            now += 4_166_666
+        }
+        // Four intervals without a chained tick mark the chain lost.
+        XCTAssertNotNil(restartedAt, "waiting for a token must not count as a chained tick")
+        XCTAssertLessThanOrEqual(restartedAt ?? .max, 75_000_000)
+    }
+
     func testIdleScreenRepeatsAtTheCadence() {
         var pacer = ContinuousFramePacer(framesPerSecond: 60, mode: .bucket)
         pacer.setActive(true)
