@@ -44,4 +44,20 @@ final class SharedCanvasAdmissionTests: XCTestCase {
             maxDimension: 0, levels: [], scale: 1
         ))
     }
+
+    func testViewerWithoutAParsedLevelCountsAsLevel31InEveryCheck() {
+        let levels = WebRTCPublisher.h264Levels([
+            (codecName: "H264", levelIdc: nil),
+            (codecName: "H264", levelIdc: 52),
+            (codecName: "VP8", levelIdc: nil),
+        ])
+        XCTAssertEqual(levels, [H264LevelPolicy.defaultLevelIdc, 52])
+        // Skipping the unparsed viewer, as the post-answer check did, proposed a larger canvas than
+        // the one the refresh then produced for a new level 5.2 viewer.
+        let raw = Dimensions(width: 1206, height: 2622)
+        let refreshed = WebRTCPublisher.canvasSize(for: raw, maxDimension: 0, levels: levels + [52], scale: 1)
+        let skipped = WebRTCPublisher.canvasSize(for: raw, maxDimension: 0, levels: [52, 52], scale: 1)
+        XCTAssertLessThan(refreshed.width * refreshed.height, skipped.width * skipped.height)
+    }
+
 }
