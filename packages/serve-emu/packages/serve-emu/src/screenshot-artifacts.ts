@@ -7,13 +7,12 @@ export type ScreenshotArtifactResult =
   | { status: "saved"; file: string }
   | { status: "failed"; file: string; error: string };
 
-// The failed `error` reaches the browser through the response and the preview UIs, so it must not
-// carry a host path. Bun and Node format fs errors as `CODE: description, syscall '<path>'`, with
-// `-> '<path>'` after a rename; the tail after the description is dropped. The full message stays in
-// the stderr line and the failure record, which never leave the worker.
+// The failed `error` reaches the browser through the response and the preview UIs, so nothing from
+// the error message is sent: only an errno code such as ENOSPC or EACCES, else a fixed text. The full
+// message stays in the stderr line and the failure record, which never leave the worker.
 export function clientSafeErrorMessage(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.replace(/, \w+ '.*$/s, "");
+  const code = typeof error === "object" && error !== null ? (error as { code?: unknown }).code : undefined;
+  return typeof code === "string" && /^E[A-Z]{2,}$/.test(code) ? code : "unknown error";
 }
 
 export type ScreenshotOutcome = ScreenshotArtifactResult | { status: "capture-failed"; error: string };

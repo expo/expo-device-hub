@@ -70,7 +70,7 @@ If the save fails, serve-sim or serve-emu logs the error to stderr and writes a 
 The screenshot response still returns the PNG.
 On iOS, serve-sim records each manual screenshot as a session event in the Events panel.
 A failed save appears there as an error event with the reason.
-The reason omits the host path. The full error, with the path, is only in the stderr line and the `.failed.json` record.
+The reason sent to the browser is only the error code, such as `ENOSPC`, or `unknown error`. The full error, with the path, is only in the stderr line and the `.failed.json` record.
 A serve-sim preview opened on a loopback hostname keeps its Desktop save and does not use the directory.
 Standalone previews without the environment variable keep their existing behavior.
 

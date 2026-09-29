@@ -35,7 +35,7 @@ describe("screenshot artifacts", () => {
     try {
       const result = await saveScreenshotArtifact(null as unknown as Uint8Array, directory);
       if (result.status !== "failed") throw new Error(`expected a failed save, got ${result.status}`);
-      expect(result.error).toContain('"data" argument');
+      expect(result.error).toBe("unknown error");
       expect(result.file.startsWith(join(directory, "screenshot-"))).toBe(true);
       expect(consoleError).toHaveBeenCalledTimes(1);
       expect(String(consoleError.mock.calls[0]?.[0])).toContain(result.file);
@@ -47,7 +47,7 @@ describe("screenshot artifacts", () => {
       const record = JSON.parse(await readFile(join(directory, recordName), "utf8"));
       expect(Object.keys(record).sort()).toEqual(["at", "error", "file"]);
       expect(record.file).toBe(png);
-      expect(record.error).toContain(result.error);
+      expect(record.error).toContain('"data" argument');
       expect(Number.isNaN(Date.parse(record.at))).toBe(false);
     } finally {
       consoleError.mockRestore();
@@ -63,7 +63,7 @@ describe("screenshot artifacts", () => {
       await writeFile(file, "occupied");
       const result = await saveScreenshotArtifact(new Uint8Array(), file);
       if (result.status !== "failed") throw new Error(`expected a failed save, got ${result.status}`);
-      expect(result.error).toMatch(/^E(EXIST|NOTDIR): [^,']+$/);
+      expect(result.error).toMatch(/^E(EXIST|NOTDIR)$/);
       expect(result.file.startsWith(join(file, "screenshot-"))).toBe(true);
       expect(consoleError).toHaveBeenCalledTimes(2);
       expect(String(consoleError.mock.calls[0]?.[0])).toContain(join(file, "screenshot-"));
@@ -85,9 +85,8 @@ describe("screenshot artifacts", () => {
       await writeFile(join(directory, "missing"), "occupied");
       const result = await saveScreenshotArtifact(new Uint8Array(), nested);
       if (result.status !== "failed") throw new Error(`expected a failed save, got ${result.status}`);
-      expect(result.error).toMatch(/^E(EXIST|NOTDIR): /);
+      expect(result.error).toMatch(/^E(EXIST|NOTDIR)$/);
       expect(result.error).not.toContain(directory);
-      expect(result.error).not.toContain("/");
       expect(String(consoleError.mock.calls[0]?.[1])).toContain(directory);
     } finally {
       consoleError.mockRestore();
@@ -95,17 +94,17 @@ describe("screenshot artifacts", () => {
     }
   });
 
-  test("clientSafeErrorMessage drops the syscall and path tail of fs errors", () => {
-    expect(clientSafeErrorMessage(new Error("ENOSPC: no space left on device, open '/srv/artifacts/a.png.tmp'"))).toBe(
-      "ENOSPC: no space left on device",
-    );
-    expect(
-      clientSafeErrorMessage(new Error("ENOENT: no such file or directory, rename '/srv/a.tmp' -> '/srv/a.png'")),
-    ).toBe("ENOENT: no such file or directory");
-    expect(clientSafeErrorMessage(new TypeError('The "data" argument must be of type string'))).toBe(
-      'The "data" argument must be of type string',
-    );
-    expect(clientSafeErrorMessage("boom")).toBe("boom");
+  test("clientSafeErrorMessage sends only an errno code, never the message", () => {
+    const enospc = Object.assign(new Error("ENOSPC: no space left on device, open '/srv/artifacts/a.png.tmp'"), {
+      code: "ENOSPC",
+    });
+    expect(clientSafeErrorMessage(enospc)).toBe("ENOSPC");
+    const invalidArg = Object.assign(new TypeError('The "data" argument must be of type string'), {
+      code: "ERR_INVALID_ARG_TYPE",
+    });
+    expect(clientSafeErrorMessage(invalidArg)).toBe("unknown error");
+    expect(clientSafeErrorMessage(new Error("open '/srv/artifacts/a.png.tmp' failed"))).toBe("unknown error");
+    expect(clientSafeErrorMessage("boom")).toBe("unknown error");
   });
 
   test("returns disabled when no artifact directory is configured", async () => {
