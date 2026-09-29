@@ -46,4 +46,12 @@ final class SparseFrameFingerprintTests: XCTestCase {
         chroma[0] &+= 1
         XCTAssertNotEqual(fingerprint(plane(seed: 7), chroma), fingerprint(plane(seed: 7), plane(seed: 9)))
     }
+
+    func testAOneRowChangeOnAnOddRowCounts() {
+        // A one-row highlight, as a text cursor draws, must count as a new frame.
+        var changed = plane(seed: 7)
+        for x in 0..<width { changed[3 * bytesPerRow + x] &+= 1 }
+        XCTAssertNotEqual(fingerprint(changed), fingerprint(plane(seed: 7)))
+    }
+
 }
