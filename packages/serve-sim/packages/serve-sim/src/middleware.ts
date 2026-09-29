@@ -66,6 +66,7 @@ export { handleCrashesRequest, handleCrashReportRequest } from "./crash/routes";
 import { booleanParam } from "./request-params";
 import { logBufferCache, type LogBufferCache, type LogLine } from "./log-buffer";
 import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware-utils";
+import { HID_HEARTBEAT, createSocketHeartbeat } from "./socket-heartbeat";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
@@ -1079,26 +1080,22 @@ export async function retryPendingCaptureCleanup(deps: CaptureCleanupDeps = {}):
  * bridge) rather than via `ws`'s server, whose handshake doesn't flush under
  * Bun — and the production CLI is a bun-compiled binary.
  */
-// A stalled proxy can keep an upstream socket open after its browser disconnects.
-const HID_PING_INTERVAL_MS = 1000;
-const HID_PONG_TIMEOUT_MS = 10_000;
-
 export function rawHidSocket(
   socket: Socket,
   head: Buffer,
-  heartbeat = { pingIntervalMs: HID_PING_INTERVAL_MS, pongTimeoutMs: HID_PONG_TIMEOUT_MS },
+  heartbeat = HID_HEARTBEAT,
 ): HidSocket {
   const messageCbs: Array<(d: Buffer) => void> = [];
   const closeCbs: Array<() => void> = [];
   let buffered = Buffer.from(head);
   let closed = false;
-  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
-  let pingSentAt: number | null = null;
+  let stopHeartbeat = () => {};
+  let receivedPong = () => {};
 
   const fireClose = () => {
     if (closed) return;
     closed = true;
-    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    stopHeartbeat();
     for (const cb of closeCbs) cb();
   };
   const shutdown = (code?: number, reason = "") => {
@@ -1128,7 +1125,7 @@ export function rawHidSocket(
       buffered = buffered.subarray(frame.consumed);
       if (frame.opcode === 0x8) return shutdown();       // close
       if (frame.opcode === 0x9) { sendBrowserFrame(socket, 0xa, frame.payload); continue; } // ping → pong
-      if (frame.opcode === 0xa) { pingSentAt = null; continue; } // pong
+      if (frame.opcode === 0xa) { receivedPong(); continue; } // pong
       if (frame.opcode === 0x1 || frame.opcode === 0x2) {
         for (const cb of messageCbs) cb(frame.payload);
       }
@@ -1140,20 +1137,10 @@ export function rawHidSocket(
   socket.on("error", fireClose);
   if (head.length) drain();
   if (!closed) {
-    const checkHeartbeat = () => {
-      if (closed) return;
-      if (pingSentAt !== null) {
-        if (Date.now() - pingSentAt >= heartbeat.pongTimeoutMs) shutdown();
-        return;
-      }
-      pingSentAt = Date.now();
-      try { sendBrowserFrame(socket, 0x9); } catch { shutdown(); }
-    };
-    checkHeartbeat();
-    if (!closed) {
-      heartbeatTimer = setInterval(checkHeartbeat, heartbeat.pingIntervalMs);
-      heartbeatTimer.unref?.();
-    }
+    const monitor = createSocketHeartbeat(() => sendBrowserFrame(socket, 0x9), shutdown, heartbeat);
+    stopHeartbeat = monitor.stop;
+    receivedPong = monitor.pong;
+    monitor.start();
   }
 
   return {

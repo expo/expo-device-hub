@@ -1,4 +1,4 @@
-
+import { HID_HEARTBEAT, createSocketHeartbeat } from "./socket-heartbeat";
 export interface UpgradeHandlerWebSocket {
   readonly OPEN: number;
   readonly readyState: number;
@@ -15,15 +15,15 @@ export interface UpgradeHandlerWebSocket {
 /** Detect a stranded host-accepted HID socket even when its proxy never forwards a close. */
 export function heartbeatHidSocket(
   websocket: UpgradeHandlerWebSocket,
-  heartbeat = { pingIntervalMs: 1000, pongTimeoutMs: 10_000 },
+  heartbeat = HID_HEARTBEAT,
 ): UpgradeHandlerWebSocket {
   let closed = false;
-  let pingSentAt: number | null = null;
+  let stopHeartbeat = () => {};
   const closeListeners: Array<() => void> = [];
   const fireClose = () => {
     if (closed) return;
     closed = true;
-    clearInterval(timer);
+    stopHeartbeat();
     for (const listener of closeListeners) listener();
   };
   const shutdown = () => {
@@ -33,23 +33,12 @@ export function heartbeatHidSocket(
       else websocket.close();
     } catch { /* The socket is already detached from the session. */ }
   };
-  const checkHeartbeat = () => {
-    if (closed) return;
-    if (pingSentAt !== null) {
-      if (Date.now() - pingSentAt >= heartbeat.pongTimeoutMs) {
-        shutdown();
-      }
-      return;
-    }
-    pingSentAt = Date.now();
-    try { websocket.ping!(); } catch { shutdown(); }
-  };
-  const timer = setInterval(checkHeartbeat, heartbeat.pingIntervalMs);
-  timer.unref?.();
-  websocket.on("pong", () => { pingSentAt = null; });
+  const monitor = createSocketHeartbeat(() => websocket.ping!(), shutdown, heartbeat);
+  stopHeartbeat = monitor.stop;
+  websocket.on("pong", monitor.pong);
   websocket.on("close", fireClose);
   websocket.on("error", fireClose);
-  checkHeartbeat();
+  monitor.start();
   return {
     OPEN: websocket.OPEN,
     get readyState() { return websocket.readyState; },
@@ -78,7 +67,7 @@ export function claimHelperHidSocket(
       (device: string): { attachHidSocket(ws: UpgradeHandlerWebSocket): void };
     };
   },
-  heartbeat = { pingIntervalMs: 1000, pongTimeoutMs: 10_000 },
+  heartbeat = HID_HEARTBEAT,
 ): boolean {
   const url = new URL(request.url, "http://serve-sim.local");
   const target = helperProxyTarget(`${url.pathname}${url.search}`);

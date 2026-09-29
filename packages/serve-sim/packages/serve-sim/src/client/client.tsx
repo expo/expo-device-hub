@@ -54,7 +54,7 @@ import { LogsDrawer } from "./components/logs-drawer";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
 import { ServeSimToaster, showInputSocketError } from "./components/app-toasts";
-import { createInputSocketRetryNotice } from "./utils/input-socket-retry-notice";
+import { createRetryingInputSocket } from "./utils/retrying-input-socket";
 import { ShareSessionButton } from "./components/share-session-button";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
 import { StreamStatusPill } from "./components/stream-status-pill";
@@ -916,12 +916,12 @@ function AppWithConfig({
     : frameAspectRatio;
 
   // Touch/button relay via direct WebSocket
-  const wsRef = useRef<WebSocket | null>(null);
   const [inputSocketOpen, setInputSocketOpen] = useState(false);
+  const inputSocketRef = useRef<ReturnType<typeof createRetryingInputSocket> | null>(null);
   if (!hingeQueueRef.current) {
     hingeQueueRef.current = createAcknowledgedControlQueue<HingeControlCommand>({
       send: (request) => {
-        if (!trySendWsMessage(wsRef.current, 0x10, request)) return false;
+        if (!trySendWsMessage(inputSocketRef.current?.socket ?? null, 0x10, request)) return false;
         if (request.command.control === "pose") sentHingePoseRef.current = request.command.value;
         const pose = sentHingePoseRef.current;
         setHingeCommands((previous) => recordDuoHingeCommand(previous, request.command, pose));
@@ -944,28 +944,10 @@ function AppWithConfig({
   const pendingWsMessagesRef = useRef<QueuedWsMessage[]>([]);
   const coarsePointerRef = useRef(false);
   useEffect(() => {
-    let stopped = false;
-    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-    const inputRetryNotice = createInputSocketRetryNotice(showInputSocketError);
-    let currentWs: WebSocket | null = null;
     pendingWsMessagesRef.current = [];
-
-    const scheduleReconnect = () => {
-      if (stopped || reconnectTimer) return;
-      reconnectTimer = setTimeout(() => {
-        reconnectTimer = null;
-        connect();
-      }, 1000);
-    };
-
-    const connect = () => {
-      setInputSocketOpen(false);
-      inputRetryNotice.connecting();
-      const ws = new WebSocket(config.wsUrl);
-      ws.binaryType = "arraybuffer";
-      currentWs = ws;
-      wsRef.current = ws;
-      ws.onopen = () => {
+    setInputSocketOpen(false);
+    const inputSocket = createRetryingInputSocket(config.wsUrl, {
+      onOpen(ws) {
         setInputSocketOpen(true);
         pendingWsMessagesRef.current = flushWsMessageQueue(
           ws,
@@ -981,13 +963,12 @@ function AppWithConfig({
             { enabled: false },
           );
         }
-      };
-      ws.onmessage = (ev) => {
-        if (stopped) return;
+      },
+      onMessage(data) {
         // Server -> client screen-config push (tag 0x82): [tag][JSON].
-        if (!(ev.data instanceof ArrayBuffer)) return;
-        const bytes = new Uint8Array(ev.data);
-        if (bytes.length < 1) return;
+        if (!(data instanceof ArrayBuffer)) return false;
+        const bytes = new Uint8Array(data);
+        if (bytes.length < 1) return false;
         if (bytes[0] === 0x90) {
           try {
             const result = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as AcknowledgedControlReply;
@@ -995,61 +976,50 @@ function AppWithConfig({
               hingeQueueRef.current?.receive(result);
             }
           } catch {}
-          return;
+          return false;
         }
-        if (bytes[0] !== 0x82) return;
+        if (bytes[0] !== 0x82) return false;
         try {
           const cfg = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as StreamConfig;
-          if (cfg.width <= 0 || cfg.height <= 0) return;
+          if (cfg.width <= 0 || cfg.height <= 0) return false;
           // An upgrade can succeed before the server rejects input with 1013.
           // A valid config frame confirms that this socket was admitted.
-          if (wsRef.current === ws) inputRetryNotice.admitted();
           // A rotation clears the native named pose. Observe the received
           // config even when its values equal the previous React state.
           if (cfg.hingePose === null && !hingePendingRef.current) setOrientationOverride(false);
           setWsStreamConfig((prev) =>
             screenConfigsEqual(prev, cfg) ? prev : cfg,
           );
+          return true;
         } catch {}
-      };
-      ws.onclose = (event) => {
-        if (!stopped && event.code === 1013) inputRetryNotice.rejected(event.reason || "The server is busy. Try again shortly.");
-        if (wsRef.current === ws) {
-          wsRef.current = null;
-          setInputSocketOpen(false);
-        }
-        if (!stopped) {
-          setPhysicalPose(undefined);
-          sentHingePoseRef.current = undefined;
-          setOrientationOverride(false);
-        }
-        if (!stopped && hingePendingRef.current) {
+        return false;
+      },
+      onDisconnect() {
+        setInputSocketOpen(false);
+        setPhysicalPose(undefined);
+        sentHingePoseRef.current = undefined;
+        setOrientationOverride(false);
+        if (hingePendingRef.current) {
           hingeQueueRef.current?.clear();
           setHingePreview(null);
           setHingeError("Connection lost while changing the device pose.");
         }
-        scheduleReconnect();
-      };
-      ws.onerror = () => {
-        ws.close();
-      };
-    };
-
-    connect();
+      },
+      onRefused: showInputSocketError,
+    });
+    inputSocketRef.current = inputSocket;
+    inputSocket.start();
 
     return () => {
-      stopped = true;
-      if (reconnectTimer) clearTimeout(reconnectTimer);
-      inputRetryNotice.dispose();
-      if (wsRef.current === currentWs) wsRef.current = null;
+      if (inputSocketRef.current === inputSocket) inputSocketRef.current = null;
       hingeQueueRef.current?.clear();
-      currentWs?.close();
+      inputSocket.dispose();
     };
   }, [config.wsUrl]);
 
   const sendWs = useCallback((tag: number, payload: object) => {
     pendingWsMessagesRef.current = sendOrQueueWsMessage(
-      wsRef.current,
+      inputSocketRef.current?.socket ?? null,
       pendingWsMessagesRef.current,
       tag,
       payload,
