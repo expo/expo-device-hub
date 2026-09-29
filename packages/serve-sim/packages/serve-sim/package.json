@@ -45,6 +45,8 @@
     "dist/simcam/libSimCameraInjector.dylib",
     "dist/simcam/serve-sim-camera-helper",
     "dist/simax/serve-sim-ax-settings",
+    "dist/simpb/serve-sim-pasteboard",
+    "dist/simpb/ServeSimPasteboard.app",
     "dist/simnet/libSimNetProxy.dylib",
     "src/ax-shared.ts",
     "src/ax.ts",
@@ -65,6 +67,9 @@
     "Sources/SimNetProxy/build.sh",
     "Sources/SimAXSettings/sim-ax-settings.m",
     "Sources/SimAXSettings/build.sh",
+    "Sources/SimPasteboard/sim-pasteboard.m",
+    "Sources/SimPasteboard/Info.plist",
+    "Sources/SimPasteboard/build.sh",
     "dist/native/serve-sim-native.node",
     "dist/bin/LiveKitWebRTC.framework"
   ],
