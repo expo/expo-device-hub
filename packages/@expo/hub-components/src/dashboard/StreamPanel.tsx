@@ -61,7 +61,6 @@ export function StreamPanel({
   return (
     <section
       style={{
-        position: 'relative',
         flex: 1,
         minWidth: 0,
         display: 'flex',
@@ -140,13 +139,12 @@ export function StreamPanel({
       </div>
       <div
         style={{
-          position: 'absolute',
-          left: '50%',
+          position: 'fixed',
+          right: 16,
           bottom: 16,
-          transform: 'translateX(-50%)',
           zIndex: 3,
           width: 'max-content',
-          maxWidth: 'calc(100% - 32px)',
+          maxWidth: 'calc(100vw - 32px)',
         }}>
         <ScreenshotToast
           toast={screenshot.toast}
