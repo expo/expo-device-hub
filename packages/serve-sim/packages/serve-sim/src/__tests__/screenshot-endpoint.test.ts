@@ -85,7 +85,7 @@ describe("POST /api/screenshot artifact outcome (stubbed simctl)", () => {
     }
   }
 
-  test("a saved capture carries only the status header", async () => {
+  test("a saved capture persists the returned PNG and carries only the status header", async () => {
     await captureWithDirectory(
       async (root) => root,
       async (res, directory) => {
@@ -95,7 +95,9 @@ describe("POST /api/screenshot artifact outcome (stubbed simctl)", () => {
         expect(res.headers.has("x-expo-screenshot-artifact-error")).toBe(false);
         expect(res.headers.get("access-control-expose-headers")).toContain("X-Expo-Screenshot-Artifact");
         expect(Buffer.from(await res.arrayBuffer())).toEqual(PNG);
-        expect(await readdir(directory)).toHaveLength(1);
+        const files = await readdir(directory);
+        expect(files).toHaveLength(1);
+        expect(await readFile(join(directory, files[0]!))).toEqual(PNG);
       },
     );
   });
@@ -129,28 +131,6 @@ requireE2E("screenshot-endpoint", Boolean(bootedUdid));
 
 describeWithSim(`POST /api/screenshot (booted sim ${bootedUdid ?? "<skipped>"})`, () => {
   const PNG_MAGIC = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-
-  test("persists the exact returned PNG when artifact storage is configured", async () => {
-    const directory = await mkdtemp(join(tmpdir(), "screenshot-endpoint-"));
-    const previous = process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
-    process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = directory;
-    try {
-      const res = await middleware(new Request(
-        `http://localhost:3200/preview/api/screenshot?device=${bootedUdid}`,
-        { method: "POST" },
-      ));
-      expect(res?.status).toBe(200);
-      const files = await readdir(directory);
-      expect(files).toHaveLength(1);
-      const [file] = files;
-      if (!file) throw new Error("Missing screenshot artifact");
-      expect(await readFile(join(directory, file))).toEqual(Buffer.from(await res!.arrayBuffer()));
-    } finally {
-      if (previous === undefined) delete process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY;
-      else process.env.EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY = previous;
-      await rm(directory, { recursive: true, force: true });
-    }
-  }, SIMULATOR_TEST_TIMEOUT_MS);
 
   test("returns a PNG for an explicit device", async () => {
     const res = await middleware(
