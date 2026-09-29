@@ -83,6 +83,7 @@ export function writeSimPasteboardUnlocked(udid: string, text: string): Promise<
 export interface PasteboardReadResult {
   text: string;
   relaunchedApp: string | null;
+  cleanupWarning?: string;
 }
 
 export async function readPasteboardText(args: string[], options: SimctlOptions = {}): Promise<string> {

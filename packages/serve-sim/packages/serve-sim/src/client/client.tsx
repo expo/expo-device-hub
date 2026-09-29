@@ -63,6 +63,7 @@ import { HingeControls } from "./components/hinge-controls";
 import { screenConfigsEqual } from "./simulator/screen-config-state";
 import { HINGE_POSES, hingeControlState, type HingeControlCommand, type HingeControlState, type HingePose } from "../hinge-control";
 import { createAcknowledgedControlQueue, type AcknowledgedControlReply } from "./utils/acknowledged-control-queue";
+import { createInputBarriers } from "../socket/client-input-barriers";
 import { ToolsPanel } from "./components/tools-panel";
 import { WebKitDevtoolsPanel } from "./components/webkit-devtools-panel";
 import { useMediaDrop } from "./hooks/use-media-drop";
@@ -88,6 +89,7 @@ import { openHostEventStream, runHostAction } from "../socket/client-control";
 import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
 import { KeyboardPasteGate } from "./utils/keyboard-paste-gate";
+import { copySimClipboardAfterInput } from "./utils/sim-clipboard";
 import { showClipboardKeyCleanupWarning, useClipboardToast } from "./hooks/use-clipboard-toast";
 import { ActionMenu } from "./components/action-menu";
 import {
@@ -932,6 +934,15 @@ function AppWithConfig({
     },
   }), []);
   useEffect(() => () => keyboardInput.dispose(), [keyboardInput]);
+  const inputBarriersRef = useRef<ReturnType<typeof createInputBarriers> | null>(null);
+  inputBarriersRef.current ??= createInputBarriers((connection, requestId) => {
+    const socket = inputSocketRef.current;
+    return connection === socket?.connection && socket.trySend(0x11, { requestId });
+  });
+  const cancelPendingClipboardInput = useCallback(() => {
+    keyboardInput.cancel();
+    inputBarriersRef.current?.cancel();
+  }, [keyboardInput]);
   if (!hingeQueueRef.current) {
     hingeQueueRef.current = createAcknowledgedControlQueue<HingeControlCommand>({
       send: (request) => {
@@ -990,6 +1001,15 @@ function AppWithConfig({
           } catch {}
           return false;
         }
+        if (bytes[0] === 0x91) {
+          try {
+            inputBarriersRef.current?.receive(
+              inputSocket.connection,
+              JSON.parse(new TextDecoder().decode(bytes.subarray(1))),
+            );
+          } catch {}
+          return false;
+        }
         if (bytes[0] !== WS_MSG_CONFIG) return false;
         try {
           const cfg = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as StreamConfig;
@@ -1006,7 +1026,7 @@ function AppWithConfig({
         return false;
       },
       onDisconnect() {
-        keyboardInput.cancel();
+        cancelPendingClipboardInput();
         setInputSocketOpen(false);
         setPhysicalPose(undefined);
         sentHingePoseRef.current = undefined;
@@ -1024,13 +1044,13 @@ function AppWithConfig({
     inputSocket.start();
 
     return () => {
-      keyboardInput.cancel();
+      cancelPendingClipboardInput();
       if (inputSocketRef.current === inputSocket) inputSocketRef.current = null;
       hingeQueueRef.current?.clear();
       inputSocket.dispose();
       dismissInputSocketError();
     };
-  }, [config.wsUrl, config.inputAdmission, keyboardInput]);
+  }, [config.wsUrl, config.inputAdmission, cancelPendingClipboardInput, keyboardInput]);
 
   const sendWs = useCallback((tag: number, payload: object) => {
     inputSocketRef.current?.send(tag, payload);
@@ -1282,9 +1302,17 @@ function AppWithConfig({
   }, [sendKey]);
 
   const sendPasteRequest = useCallback((text?: string) => keyboardInput.paste(text), [keyboardInput]);
+  const readClipboardAfterInput = useCallback((isCurrent: () => boolean) => {
+    const connection = inputSocketRef.current?.connection;
+    return keyboardInput.run((inputIsCurrent) => copySimClipboardAfterInput(
+      config.device,
+      () => inputBarriersRef.current!.wait(connection),
+      () => inputIsCurrent() && isCurrent(),
+    ));
+  }, [config.device, keyboardInput]);
   const sendTextToSim = useCallback((text: string) => sendPasteRequest(text), [sendPasteRequest]);
 
-  const clipboard = useClipboardToast(sendTextToSim);
+  const clipboard = useClipboardToast(config.device, readClipboardAfterInput, sendTextToSim);
 
   const simContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1954,6 +1982,11 @@ function AppWithConfig({
               />
               <ActionMenu
                 items={[
+                  {
+                    label: "Copy from Simulator",
+                    description: "Simulator clipboard to this device",
+                    onSelect: () => void clipboard.copyFromSim(),
+                  },
                   {
                     label: "Paste from Device",
                     description: "This device's clipboard to the simulator",

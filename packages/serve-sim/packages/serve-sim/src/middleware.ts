@@ -70,6 +70,7 @@ import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
 import { PasteboardTooLargeError, writeSimPasteboard } from "./sim-pasteboard";
 import { readSimPasteboardResult } from "./sim-pasteboard-reader";
+import { PasteboardCopyTimeoutError } from "./sim-pasteboard-copy";
 
 /** Captured traffic is decrypted credentials; `no-cache` would still let a cache keep a copy. */
 const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;
@@ -2686,7 +2687,16 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           return;
         }
 
-        const result = await readSimPasteboardResult(udid);
+        // Copy needs the input session to hold its turn through the clipboard read.
+        const copy = new URLSearchParams(qIndex === -1 ? "" : rawUrl.slice(qIndex + 1)).get("copy") === "1";
+        const session = copy ? peekDeviceSession(udid) : undefined;
+        if (copy && !session) {
+          respond(409, { ok: false, error: "No simulator input session for this device" });
+          return;
+        }
+        const result = session
+          ? await session.copyPasteboard()
+          : await readSimPasteboardResult(udid);
         respond(200, { ok: true, ...result });
       } catch (error) {
         if (error instanceof PasteboardTooLargeError) {
@@ -2694,7 +2704,12 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           return;
         }
         console.error(`[serve-sim] Could not access the simulator pasteboard on ${udid}:`, error);
-        respond(500, { ok: false, error: "Could not access the simulator pasteboard" });
+        respond(error instanceof PasteboardCopyTimeoutError ? 504 : 500, {
+          ok: false,
+          error: error instanceof PasteboardCopyTimeoutError
+            ? error.message
+            : "Could not access the simulator pasteboard",
+        });
       }
       return;
     }

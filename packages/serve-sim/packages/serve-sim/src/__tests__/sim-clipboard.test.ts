@@ -1,9 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { HID_USAGE_BY_CODE } from "../client/utils/hid";
 import {
+  copySimClipboardAfterInput,
+  readSimClipboard,
   readTextFromBrowserClipboard,
+  simCopyHidEvents,
   pasteRequestFits,
   simPasteHidEvents,
+  simSelectAllHidEvents,
 } from "../client/utils/sim-clipboard";
 
 const usage = (code: string): number => {
@@ -40,6 +44,26 @@ describe("sim paste HID", () => {
     ]);
   });
 
+  test("sends Cmd+C for the copy shortcut", () => {
+    const KeyC = usage("KeyC");
+    expect(simCopyHidEvents(held())).toEqual([
+      { type: "down", usage: MetaLeft },
+      { type: "down", usage: KeyC },
+      { type: "up", usage: KeyC },
+      { type: "up", usage: MetaLeft },
+    ]);
+  });
+
+  test("sends Cmd+A for select all", () => {
+    const KeyA = usage("KeyA");
+    expect(simSelectAllHidEvents(held())).toEqual([
+      { type: "down", usage: MetaLeft },
+      { type: "down", usage: KeyA },
+      { type: "up", usage: KeyA },
+      { type: "up", usage: MetaLeft },
+    ]);
+  });
+
   test("lifts a held Control for Cmd+V and presses it again after", () => {
     expect(simPasteHidEvents(held(ControlLeft))).toEqual([
       { type: "up", usage: ControlLeft },
@@ -59,8 +83,18 @@ describe("sim paste HID", () => {
     ]);
   });
 
-  test("lifts a held Option for Cmd+V", () => {
+  test("lifts a held Shift or Option for Cmd+C and Cmd+V", () => {
+    const ShiftLeft = usage("ShiftLeft");
     const AltRight = usage("AltRight");
+    const KeyC = usage("KeyC");
+    expect(simCopyHidEvents(held(ShiftLeft))).toEqual([
+      { type: "up", usage: ShiftLeft },
+      { type: "down", usage: MetaLeft },
+      { type: "down", usage: KeyC },
+      { type: "up", usage: KeyC },
+      { type: "up", usage: MetaLeft },
+      { type: "down", usage: ShiftLeft },
+    ]);
     expect(simPasteHidEvents(held(AltRight, MetaLeft))).toEqual([
       { type: "up", usage: AltRight },
       { type: "down", usage: KeyV },
@@ -107,6 +141,105 @@ describe("readTextFromBrowserClipboard", () => {
       expect(await readTextFromBrowserClipboard()).toBe("café 🎉");
     });
   });
+});
+
+describe("readSimClipboard", () => {
+  function withStubs(
+    response: Response,
+    run: (requests: Array<{ input: string; init?: RequestInit }>) => Promise<void>,
+  ): Promise<void> {
+    const realFetch = globalThis.fetch;
+    const realWindow = Reflect.get(globalThis, "window");
+    const requests: Array<{ input: string; init?: RequestInit }> = [];
+    Object.defineProperty(globalThis, "window", {
+      value: {
+        __SIM_PREVIEW__: { basePath: "/", execToken: "test-token" },
+        location: { pathname: "/" },
+      },
+      configurable: true,
+      writable: true,
+    });
+    const stub: typeof fetch = Object.assign(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        requests.push({ input: String(input), init });
+        return response;
+      },
+      { preconnect: realFetch.preconnect },
+    );
+    globalThis.fetch = stub;
+    return run(requests).finally(() => {
+      globalThis.fetch = realFetch;
+      if (realWindow === undefined) Reflect.deleteProperty(globalThis, "window");
+      else Object.defineProperty(globalThis, "window", { value: realWindow, configurable: true, writable: true });
+    });
+  }
+
+  test("POSTs the selected device and returns the endpoint result", async () => {
+    await withStubs(
+      Response.json({ ok: true, text: "café 🎉", relaunchedApp: "dev.example.app" }),
+      async (requests) => {
+      expect(await readSimClipboard("UDID-1")).toEqual({
+        text: "café 🎉",
+        relaunchedApp: "dev.example.app",
+      });
+      expect(requests).toEqual([
+        {
+          input: "/api/pasteboard?device=UDID-1",
+          init: {
+            method: "POST",
+            headers: { Authorization: "Bearer test-token" },
+          },
+        },
+      ]);
+      },
+    );
+  });
+
+  test("asks the server to copy first with copy", async () => {
+    await withStubs(Response.json({ ok: true, text: "alpha" }), async (requests) => {
+      expect(await readSimClipboard("UDID-1", { copy: true })).toEqual({ text: "alpha", relaunchedApp: null });
+      expect(requests.map((request) => request.input)).toEqual(["/api/pasteboard?device=UDID-1&copy=1"]);
+    });
+  });
+
+  test("holds the browser Copy request behind prior input and cancels it after a device switch", async () => {
+    await withStubs(Response.json({ ok: true, text: "selected" }), async (requests) => {
+      let release!: () => void;
+      const barrier = new Promise<void>((resolve) => { release = resolve; });
+      const copy = copySimClipboardAfterInput("UDID-1", () => barrier, () => true);
+      await Promise.resolve();
+      expect(requests).toEqual([]);
+      release();
+      expect(await copy).toEqual({ text: "selected", relaunchedApp: null });
+      expect(requests.map((request) => request.input)).toEqual(["/api/pasteboard?device=UDID-1&copy=1"]);
+    });
+    await withStubs(Response.json({ ok: true, text: "old" }), async (requests) => {
+      let release!: () => void;
+      const barrier = new Promise<void>((resolve) => { release = resolve; });
+      let current = true;
+      const copy = copySimClipboardAfterInput("UDID-1", () => barrier, () => current);
+      current = false;
+      release();
+      expect(await copy).toBeNull();
+      expect(requests).toEqual([]);
+    });
+  });
+
+  test("surfaces the endpoint's own error message", async () => {
+    await withStubs(
+      Response.json({ ok: false, error: "Timed out reading the simulator pasteboard" }, { status: 500 }),
+      async () => {
+        await expect(readSimClipboard("UDID-1")).rejects.toThrow(/Timed out/);
+      },
+    );
+  });
+
+  test("falls back to a status message when the body carries no error", async () => {
+    await withStubs(Response.json({}, { status: 502 }), async () => {
+      await expect(readSimClipboard("UDID-1")).rejects.toThrow(/502/);
+    });
+  });
+
 });
 
 describe("pasteRequestFits", () => {
