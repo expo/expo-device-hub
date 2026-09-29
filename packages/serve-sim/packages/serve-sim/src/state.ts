@@ -31,6 +31,8 @@ export interface ServeSimDeviceState {
   url: string;
   streamUrl: string;
   wsUrl: string;
+  /** This helper confirms accepted input sockets before screen dimensions are known. */
+  inputAdmission?: true;
   streamSettings?: StreamSettings;
   /** Present under `--require-token` or on a loopback host, so local subcommands can reach gated routes. */
   token?: string;
@@ -77,6 +79,7 @@ export function inProcessServeSimState(
     url: `http://${h}:${port}`,
     streamUrl: `http://${h}:${port}${prefix}/helper/${udid}/stream.mjpeg`,
     wsUrl: `ws://${h}:${port}${prefix}/helper/${udid}/ws`,
+    inputAdmission: true,
     ...(streamSettings ? { streamSettings } : {}),
   };
 }

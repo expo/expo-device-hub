@@ -22,7 +22,7 @@ class FakeSocket {
   }
 }
 
-function setup() {
+function setup(requireAdmission = true) {
   const sockets: FakeSocket[] = [];
   const errors: string[] = [];
   let recoveries = 0;
@@ -35,6 +35,8 @@ function setup() {
     onRefused: (reason) => { errors.push(reason); },
     onRecovered: () => { recoveries++; },
   }, {
+    requireAdmission,
+    legacyOpenGraceMs: 20,
     reconnectDelayMs: 10,
     refusalDelayMs: 40,
     openSocket: () => {
@@ -52,6 +54,34 @@ function setup() {
     get recoveries() { return recoveries; },
   };
 }
+
+test("legacy helper sends input on open without a dimension config", () => {
+  const state = setup(false);
+  try {
+    state.input.start();
+    state.input.send(0x04, { button: "home" });
+    state.sockets[0]!.open();
+    expect(state.admissions).toBe(1);
+    expect(new Uint8Array(state.sockets[0]!.sent[0]!)[0]).toBe(0x04);
+    state.sockets[0]!.message("admitted");
+    expect(state.admissions).toBe(1);
+  } finally {
+    state.input.dispose();
+  }
+});
+
+test("legacy helper still reports an immediate 1013 refusal", async () => {
+  const state = setup(false);
+  try {
+    state.input.start();
+    state.sockets[0]!.open();
+    state.sockets[0]!.close(1013, "busy");
+    await Bun.sleep(50);
+    expect(state.errors).toEqual(["busy"]);
+  } finally {
+    state.input.dispose();
+  }
+});
 
 test("a retry admitted by a config frame clears a temporary refusal", async () => {
   const state = setup();

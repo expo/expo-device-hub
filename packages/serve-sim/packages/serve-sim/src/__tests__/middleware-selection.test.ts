@@ -9,6 +9,7 @@ import {
   type ServeSimState,
 } from "../middleware";
 import { parseForegroundAppLogMessage } from "../foreground-tracker";
+import { inProcessServeSimState } from "../state";
 
 const states: ServeSimState[] = [
   {
@@ -44,6 +45,11 @@ describe("selectServeSimState", () => {
 });
 
 describe("previewConfigForState", () => {
+  test("advertises input admission only for helpers that support it", () => {
+    expect(previewConfigForState(states[0]!, "/preview", "token-xyz").inputAdmission).toBeUndefined();
+    const currentHelper = inProcessServeSimState("DEVICE-C", 3102);
+    expect(previewConfigForState(currentHelper, "/preview", "token-xyz").inputAdmission).toBe(true);
+  });
   test("returns the full client config shape with device-scoped endpoints", () => {
     const state = states[1]!;
     expect(previewConfigForState(state, "/preview", "token-xyz")).toEqual({

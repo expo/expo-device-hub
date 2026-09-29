@@ -7,6 +7,7 @@ declare global {
       url: string;
       streamUrl: string;
       wsUrl: string;
+      inputAdmission?: true;
       pid: number;
       port: number;
       device: string;

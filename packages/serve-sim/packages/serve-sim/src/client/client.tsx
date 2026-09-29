@@ -142,7 +142,7 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 function previewConfigKey(config: PreviewConfig | null): string {
   return config
-    ? `${config.device}:${config.pid}:${config.streamUrl}:${config.wsUrl}:${JSON.stringify(config.streamSettings ?? null)}`
+    ? `${config.device}:${config.pid}:${config.streamUrl}:${config.wsUrl}:${config.inputAdmission === true}:${JSON.stringify(config.streamSettings ?? null)}`
     : "";
 }
 
@@ -990,7 +990,7 @@ function AppWithConfig({
       },
       onRefused: showInputSocketError,
       onRecovered: dismissInputSocketError,
-    });
+    }, { requireAdmission: config.inputAdmission === true });
     inputSocketRef.current = inputSocket;
     inputSocket.start();
 
@@ -1000,7 +1000,7 @@ function AppWithConfig({
       inputSocket.dispose();
       dismissInputSocketError();
     };
-  }, [config.wsUrl]);
+  }, [config.wsUrl, config.inputAdmission]);
 
   const sendWs = useCallback((tag: number, payload: object) => {
     inputSocketRef.current?.send(tag, payload);

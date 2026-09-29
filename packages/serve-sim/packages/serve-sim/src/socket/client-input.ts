@@ -16,6 +16,8 @@ export function createInputSocket(
   url: string,
   handlers: InputSocketHandlers,
   {
+    requireAdmission = true,
+    legacyOpenGraceMs = 1000,
     reconnectDelayMs = 1000,
     refusalDelayMs = 13_000,
     openSocket = (address: string) => new WebSocket(address),
@@ -35,20 +37,35 @@ export function createInputSocket(
     const ws = openSocket(url);
     ws.binaryType = "arraybuffer";
     socket = ws;
+    const confirmAdmission = () => {
+      if (refusalTimer) clearTimeout(refusalTimer);
+      refusalTimer = null;
+      const wasReported = reported;
+      reported = false;
+      if (wasReported) handlers.onRecovered();
+    };
+    const admit = (confirmed: boolean) => {
+      const firstAdmission = !admitted;
+      admitted = true;
+      pendingMessages = flushWsMessageQueue(ws, pendingMessages);
+      if (firstAdmission) handlers.onAdmitted();
+      if (confirmed) confirmAdmission();
+    };
+    ws.onopen = () => {
+      if (stopped || socket !== ws || requireAdmission) return;
+      // Older helpers have no admission frame and may have no dimensions yet.
+      admit(false);
+      // Give an immediate 1013 refusal time to arrive before clearing its notice.
+      setTimeout(() => {
+        if (!stopped && socket === ws && ws.readyState === WebSocket.OPEN) confirmAdmission();
+      }, legacyOpenGraceMs);
+    };
     ws.onmessage = (event) => {
       if (stopped || socket !== ws) return;
       const admissionFrame = event.data instanceof ArrayBuffer &&
         event.data.byteLength === 1 && new Uint8Array(event.data)[0] === WS_MSG_INPUT_ADMITTED;
       if (admissionFrame || handlers.onMessage(event.data)) {
-        const firstAdmission = !admitted;
-        admitted = true;
-        pendingMessages = flushWsMessageQueue(ws, pendingMessages);
-        if (firstAdmission) handlers.onAdmitted();
-        if (refusalTimer) clearTimeout(refusalTimer);
-        refusalTimer = null;
-        const wasReported = reported;
-        reported = false;
-        if (wasReported) handlers.onRecovered();
+        admit(true);
       }
     };
     ws.onclose = (event) => {
@@ -78,7 +95,7 @@ export function createInputSocket(
 
   return {
     send(tag: number, payload: object) {
-      // Opening the WebSocket does not mean DeviceSession accepted input.
+      // New helpers require admission; legacy helpers keep their prior open behavior.
       pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload);
     },
     trySend(tag: number, payload: object) {
