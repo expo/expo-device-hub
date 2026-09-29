@@ -130,7 +130,7 @@ describe("an ungated preview answers only for hosts it knows", () => {
   });
 
   test("closes a helper socket for a rebinding host, and survives two Host headers", async () => {
-    const upgrade = (hosts: string[]) => new Promise<string>((resolve) => {
+    const upgrade = (hosts: string[]) => new Promise<string>((resolve, reject) => {
       const socket = connect(port, "127.0.0.1", () => {
         socket.write(
           `GET /helper/ws?device=D HTTP/1.1\r\n${hosts.map((host) => `Host: ${host}\r\n`).join("")}` +
@@ -142,7 +142,10 @@ describe("an ungated preview answers only for hosts it knows", () => {
       socket.on("data", (chunk) => void (reply += chunk.toString()));
       socket.on("close", () => resolve(reply));
       socket.on("error", () => resolve(reply));
-      socket.setTimeout(2000, () => socket.destroy());
+      socket.setTimeout(2000, () => {
+        reject(new Error("refused upgrade did not close the socket"));
+        socket.destroy();
+      });
     });
     expect(await upgrade(["attacker.example"])).toBe("");
     expect(await upgrade(["localhost", "attacker.example"])).toBe("");
