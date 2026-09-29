@@ -1,8 +1,8 @@
-# @expo/emulator-capture
+# expo-emulator-capture
 
 Experimental Android emulator capture, aiming for a high-performance pipeline that enables **4K video streams at 120 FPS and beyond** on supported hardware. The project currently focuses exclusively on **x86-64 Linux with NVIDIA GPUs**.
 
-Available as an opt-in integration with [Expo Device Hub](../../expo-device-hub).
+Available as an opt-in integration with [Expo Device Hub](../expo-device-hub).
 This workspace package is private pending the distribution prerequisites listed in
 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md#distribution-status). Build and
 launch it from a checkout; Hub does not install or launch the native injector.

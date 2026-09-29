@@ -1,5 +1,5 @@
 {
-  "name": "@expo/emulator-capture",
+  "name": "expo-emulator-capture",
   "version": "0.0.0",
   "private": true,
   "description": "High-performance Android emulator capture",
@@ -14,7 +14,7 @@
     "cuda",
     "nvenc"
   ],
-  "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/@expo/emulator-capture",
+  "homepage": "https://github.com/expo/expo-device-hub/tree/main/packages/expo-emulator-capture",
   "bugs": {
     "url": "https://github.com/expo/expo-device-hub/issues"
   },
@@ -23,7 +23,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/expo/expo-device-hub.git",
-    "directory": "packages/@expo/emulator-capture"
+    "directory": "packages/expo-emulator-capture"
   },
   "type": "module",
   "bin": {

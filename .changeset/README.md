@@ -5,7 +5,7 @@ pending changelog entries that drive the next release — each published package
 and `CHANGELOG.md` are generated from these files.
 
 Three packages are published from this repo: **`expo-device-hub`**, **`@expo/hub-client`**, and
-**`@expo/serve-sim`**. Every other workspace package, including **`@expo/emulator-capture`**,
+**`@expo/serve-sim`**. Every other workspace package, including **`expo-emulator-capture`**,
 is `private` and is skipped by `changeset publish`.
 
 ## Add a changeset with every change

@@ -29,4 +29,4 @@ This repository includes third-party code that is licensed separately. See:
 - serve-emu — Apache License 2.0:
   packages/serve-emu/LICENSE
 - emulator-capture native dependencies:
-  packages/@expo/emulator-capture/THIRD_PARTY_LICENSES.md
+  packages/expo-emulator-capture/THIRD_PARTY_LICENSES.md

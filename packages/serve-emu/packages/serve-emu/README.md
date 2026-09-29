@@ -264,7 +264,7 @@ The GPU override (`SERVE_EMU_EXPERIMENTAL_GPU_SOCKET` and
 `SERVE_EMU_EXPERIMENTAL_GPU_SERIAL`) is supported only through Hub or the middleware
 API. Standalone `serve-emu start` rejects it: its session replacement needs
 overlapping captures, while the native socket supports one consumer. See the
-[capture package](https://github.com/expo/expo-device-hub/tree/main/packages/@expo/emulator-capture) for setup.
+[capture package](https://github.com/expo/expo-device-hub/tree/main/packages/expo-emulator-capture) for setup.
 
 `PUT /api/stream-mode` accepts optional `grpcImageMode` (`png`, `mmap`, or `rgb888`),
 `inputSource` (`scrcpy` or `grpc`), and `encoder` (`software` or `hardware`) when
