@@ -6,9 +6,13 @@ import WebSocket from "ws";
 import { isAllowedHost } from "../host-allowlist";
 import { simMiddleware } from "../middleware";
 import { servePreview, type PreviewServer } from "../runtime";
-import { freePortAsync } from "./helpers";
+import { freePortAsync, useTempStateDir } from "./helpers";
 
 const TOKEN = "host-allowlist-token";
+let tempState: ReturnType<typeof useTempStateDir>;
+
+beforeAll(() => { tempState = useTempStateDir(); });
+afterAll(() => { tempState?.restore(); });
 
 describe("isAllowedHost", () => {
   test("allows localhost, IP literals, and a missing Host", () => {
