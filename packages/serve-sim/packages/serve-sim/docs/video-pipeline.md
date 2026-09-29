@@ -76,7 +76,11 @@ H.264 encoder factory gives each H.264 peer a proxy over one
 `VTCompressionSession`.
 Proxies deduplicate submissions by frame timestamp and distribute the one
 compressed result to the peers. The shared target bitrate is the minimum of
-active peers' requests; a join or PLI requests an IDR. Each peer still owns
+active peers' requests; a join or PLI requests an IDR. `DataRateLimits` hold the
+shared encoder to that target over one second and to 1.5 times it over a tenth
+of a second. With `AverageBitRate` alone, the first frames of a full-screen
+change ran to two or three times the target, and libwebrtc answered by dropping
+frames before encode. Each peer still owns
 its connection, congestion controller, and RTP packet stream.
 If a peer misses a shared delta frame, it waits for the next shared IDR;
 recovery does not replay frames or start another encoder.

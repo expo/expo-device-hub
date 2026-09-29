@@ -39,6 +39,16 @@ actor H264Encoder {
     private let constrainedBaseline: Bool
     private let dynamicBitrate: Bool
 
+    /// Byte and second pairs for the WebRTC shared encoder (dynamic bitrate): the target over one
+    /// second, and 1.5 times it over a tenth of a second. AverageBitRate alone let the first frames
+    /// of a full-screen change run to two or three times WebRTC's target, and libwebrtc answered
+    /// the overshoot by dropping frames before encode for 3 to 5 seconds.
+    private static func dataRateLimits(bitrate: Int) -> CFArray {
+        let bytesPerSecond = Double(bitrate) / 8
+        return [NSNumber(value: bytesPerSecond), NSNumber(value: 1.0),
+                NSNumber(value: bytesPerSecond * 0.15), NSNumber(value: 0.1)] as CFArray
+    }
+
     init(fps: Int = 60, bitrate: Int = 6_000_000,
          constrainedBaseline: Bool = false, dynamicBitrate: Bool = false) {
         self.fps = Int32(max(1, fps))
@@ -168,6 +178,8 @@ actor H264Encoder {
         if dynamicBitrate, fps == nextFps, let session,
            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate,
                                 value: NSNumber(value: nextBitrate)) == noErr {
+            VTSessionSetProperty(session, key: kVTCompressionPropertyKey_DataRateLimits,
+                                 value: Self.dataRateLimits(bitrate: nextBitrate))
             bitrate = nextBitrate
             return
         }
@@ -235,7 +247,7 @@ actor H264Encoder {
         }
         guard status == noErr, let sess else { return }
 
-        let props: [(CFString, Any)] = [
+        var props: [(CFString, Any)] = [
             (kVTCompressionPropertyKey_RealTime, kCFBooleanTrue!),
             (kVTCompressionPropertyKey_ProfileLevel, constrainedBaseline
                 ? kVTProfileLevel_H264_ConstrainedBaseline_AutoLevel
@@ -249,6 +261,9 @@ actor H264Encoder {
             // don't wait for the natural IDR — we force one on connect.
             (kVTCompressionPropertyKey_MaxKeyFrameInterval, NSNumber(value: fps * 5)),
         ]
+        if dynamicBitrate {
+            props.append((kVTCompressionPropertyKey_DataRateLimits, Self.dataRateLimits(bitrate: bitrate)))
+        }
         for (key, value) in props {
             let propertyStatus = VTSessionSetProperty(sess, key: key, value: value as CFTypeRef)
             if propertyStatus != noErr {
