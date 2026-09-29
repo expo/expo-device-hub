@@ -28,6 +28,7 @@ export class ClientTouchState {
   readonly #touches = new Map<number, { gesture: Touch; record: boolean }>();
   #current: TouchInputTarget | null = null;
   #closed = false;
+  #closeTask: Promise<void> | null = null;
 
   constructor(target: () => TouchInputTarget, source = "ws") {
     this.#target = target;
@@ -70,29 +71,46 @@ export class ClientTouchState {
     return accepted;
   }
 
-  close(): void {
-    if (this.#closed) return;
+  close(): Promise<void> {
+    if (this.#closeTask) return this.#closeTask;
     this.#closed = true;
+    let resolve!: () => void;
+    let reject!: (error: unknown) => void;
+    // Publish the result before enqueueing: abort and finish must observe the
+    // same cleanup, including its failure, rather than enqueueing duplicate UPs.
+    this.#closeTask = new Promise<void>((accept, fail) => {
+      resolve = accept;
+      reject = fail;
+    });
+    const releases: Promise<unknown>[] = [];
     try {
       const current = this.#current;
-      if (!current || current.identity !== this.#target().identity) return;
-      for (const { gesture, record } of this.#touches.values()) {
-        try {
-          // The queue reserves an UP for every admitted DOWN, even when full.
-          const release = current.enqueue(
-            { ...gesture, action: "up" },
-            `${this.#source}:disconnect`,
-            record,
-          );
-          void release.completion.catch(() => {});
-        } catch {
-          // A stopped/replaced input session owns its own transport teardown.
+      if (current && current.identity === this.#target().identity) {
+        for (const { gesture, record } of this.#touches.values()) {
+          try {
+            // The queue reserves an UP for every admitted DOWN, even when full.
+            releases.push(
+              current.enqueue({ ...gesture, action: "up" }, `${this.#source}:disconnect`, record)
+                .completion,
+            );
+          } catch (error) {
+            releases.push(Promise.reject(error));
+          }
         }
       }
+    } catch (error) {
+      releases.push(Promise.reject(error));
     } finally {
       this.#touches.clear();
       this.#current = null;
     }
+    // Try every release and wait for all of them, even if one fails first.
+    void Promise.allSettled(releases).then((results) => {
+      const failure = results.find((result) => result.status === "rejected");
+      if (failure) reject(failure.reason);
+      else resolve();
+    });
+    return this.#closeTask;
   }
 }
 
@@ -106,13 +124,20 @@ export function replayTouchInput(target: () => TouchInputTarget) {
         input = new ClientTouchState(target, "session:replay");
         inputs.set(signal, input);
         const captured = input;
-        signal.addEventListener("abort", () => captured.close(), { once: true });
+        signal.addEventListener(
+          "abort",
+          () => {
+            void captured.close().catch(() => {});
+          },
+          { once: true },
+        );
       }
       return input.enqueue(gesture, false, true);
     },
-    finish(signal: AbortSignal): void {
-      inputs.get(signal)?.close();
-      inputs.delete(signal);
+    finish(signal: AbortSignal): Promise<void> {
+      // Keep the signal-keyed entry so repeated finalization shares the result.
+      // The WeakMap releases it when the replay signal is no longer retained.
+      return inputs.get(signal)?.close() ?? Promise.resolve();
     },
   };
 }

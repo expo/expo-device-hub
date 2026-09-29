@@ -2055,7 +2055,7 @@ async function createAppInternal(
     });
 
     socket.onClose(() => {
-      client.touches.close();
+      void client.touches.close().catch(() => {});
       clients.delete(client);
     });
   };

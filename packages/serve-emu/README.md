@@ -664,6 +664,8 @@ a touch sent entirely with `record: false` stays unrecorded.
 Replay owns a separate set of pointers. It skips a retained `move`/`up` whose
 `down` has fallen out of the bounded recording and releases any remaining
 replay touches when playback finishes or is cancelled.
+Replay waits for those queued releases before reporting its final status. A
+release failure is reported in `lastError`, including when replay was cancelled.
 
 Use `/ws?frame-meta=1` to receive a 24-byte `SEMU` v2 frame metadata header before each H.264 access unit: magic `SEMU` (4B), version=2 (1B), flags (1B, bit 0 = keyframe), reserved (2B), PTS (8B BE, µs), and the server send time (8B BE, epoch µs). Same-host clients can compare the send time against their own clock to measure transit and glass-to-glass latency. The bundled UI uses this mode to avoid per-frame NAL scans and to track PTS/keyframe/latency state.
 

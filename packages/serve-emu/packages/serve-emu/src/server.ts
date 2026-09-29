@@ -3404,7 +3404,7 @@ export async function startServer(
       },
       close(ws) {
         if (ws.data.handle) {
-          ws.data.handle.touches.close();
+          void ws.data.handle.touches.close().catch(() => {});
           ws.data.context.clients.delete(ws.data.handle);
         }
       },
