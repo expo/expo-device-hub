@@ -15,7 +15,7 @@ import {
 type DeviceStateOwner = object;
 
 type ReplayInputTarget = {
-  finish?(signal: AbortSignal): void;
+  finish?(signal: AbortSignal): Promise<void> | void;
   dispatchGesture(
     gesture: Gesture,
     signal: AbortSignal,
@@ -84,8 +84,12 @@ export class DeviceSessionState {
       clock: options.routeClock,
     });
     this.replayHandlers = {
-      finish: (signal) => {
-        for (const target of this.#inputTargets.values()) target.finish?.(signal);
+      finish: async (signal) => {
+        const results = await Promise.allSettled(
+          Array.from(this.#inputTargets.values(), async (target) => target.finish?.(signal)),
+        );
+        const failure = results.find((result) => result.status === "rejected");
+        if (failure) throw failure.reason;
       },
       dispatchGesture: async (gesture, signal) => {
         if (signal.aborted) {

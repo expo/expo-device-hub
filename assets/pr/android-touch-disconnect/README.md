@@ -83,3 +83,35 @@ Replay status was `completed`; Hub health was `streaming`, with no last error.
 
 Test browsers and servers were stopped, the temporary Android app uninstalled,
 and the emulator shut down after verification.
+
+
+## Review follow-up: await replay touch releases
+
+[Devin's review](https://github.com/expo/expo-device-hub/pull/184#discussion_r4133173494)
+identified that replay could report completion before its queued UP finished.
+Codex reproduced the delay and failure cases with the production recorder,
+device-state and input-queue classes, using a controlled input writer.
+
+The follow-up returns a shared cleanup Promise, waits for every release through
+all finalization layers, and records release failures. Abort and finalization
+reuse the same result; cancellation during cleanup stays cancelled and retains
+any cleanup error. WebSocket disconnect cleanup remains fire-and-forget.
+
+Validation by Codex:
+
+- Regression-first commit `cad3fab`: six new tests failed before the fix.
+- After the fix: 93 related input/recorder tests passed. Cases include blocked
+  UP, failed UP, cancellation before/during cleanup, and a failed release while
+  another release is still pending.
+- Full serve-emu suite: 1,156 passed, with the same pre-existing Vite WebSocket
+  proxy timeout remaining as its one failure.
+- Package typecheck, root typecheck, serve-emu build, Hub vendoring/server build,
+  documentation synchronization and packed-package smoke passed.
+- Rebuilt Hub, Node 24.14.0 / Bun 1.3.14, the same Android 17 emulator:
+  replaying a held touch released only the replay pointer; the original viewer
+  continued moving and released when its tab closed. Native events were
+  DOWN → POINTER_DOWN → POINTER_UP → MOVE → UP, ending with zero pointers.
+  Injected transport delay/failure was tested through the controlled writer,
+  not by modifying the emulator transport.
+
+Human review of this follow-up remains pending.
