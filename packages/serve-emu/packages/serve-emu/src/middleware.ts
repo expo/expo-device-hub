@@ -1,4 +1,3 @@
-import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -25,6 +24,7 @@ import {
   type OrientationMode,
 } from "./adb.ts";
 import { screenshotResponse } from "./screenshot-response.ts";
+import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import { getFoldStatus, setFoldPosture } from "./fold.ts";
 import {
