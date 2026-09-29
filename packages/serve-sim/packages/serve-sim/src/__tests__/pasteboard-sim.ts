@@ -263,7 +263,7 @@ export function nativeAddonExists(): boolean {
   return candidates.some((candidate) => existsSync(candidate));
 }
 
-function commandChord(code: "KeyC" | "KeyA"): KeyEvent[] {
+function commandChord(code: "KeyC" | "KeyA" | "KeyV"): KeyEvent[] {
   const command = HID_USAGE_BY_CODE.MetaLeft!;
   const key = HID_USAGE_BY_CODE[code]!;
   return [
@@ -290,6 +290,11 @@ export async function sendSimCopyShortcut(udid: string): Promise<void> {
 
 export async function sendSimSelectAllShortcut(udid: string): Promise<void> {
   await sendHidEvents(udid, commandChord("KeyA"));
+  await Bun.sleep(150);
+}
+
+export async function sendSimPasteShortcut(udid: string): Promise<void> {
+  await sendHidEvents(udid, commandChord("KeyV"));
   await Bun.sleep(150);
 }
 

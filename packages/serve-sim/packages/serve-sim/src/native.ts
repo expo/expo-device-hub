@@ -261,6 +261,12 @@ export class NativeHid {
     return this.guard("key", () => this.handle.key(type, usage), undefined);
   }
 
+  /** Clipboard shortcuts need a failed keypress to reach their acknowledgement path. */
+  keyChecked(type: KeyType, usage: number): Promise<void> {
+    if (this.inputUnavailable) return Promise.reject(new Error("Simulator input is unavailable"));
+    return Promise.resolve().then(() => this.handle.key(type, usage));
+  }
+
   /** anchorX/anchorY default to screen center when omitted. */
   scroll(dx: number, dy: number, w: number, h: number, anchorX?: number, anchorY?: number): Promise<void> {
     return this.guard("scroll", () => this.handle.scroll(dx, dy, anchorX ?? NaN, anchorY ?? NaN, w, h), undefined);

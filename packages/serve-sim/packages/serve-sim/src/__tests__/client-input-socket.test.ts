@@ -246,3 +246,29 @@ test("disposing stops reconnects and pending refusal reports", async () => {
   expect(state.sockets).toHaveLength(1);
   expect(state.errors).toEqual([]);
 });
+
+test("clipboard requests require admission and never replay after reconnect", async () => {
+  const state = setup();
+  const request = Uint8Array.of(0x12, 1);
+  try {
+    state.input.start();
+    state.sockets[0]!.open();
+    expect(state.input.connection).toBeNull();
+    expect(state.input.trySendEncoded(request)).toBe(false);
+    state.sockets[0]!.message("admitted");
+    const connection = state.input.connection;
+    expect(connection).not.toBeNull();
+    expect(state.input.trySendEncoded(request)).toBe(true);
+    state.sockets[0]!.close();
+    expect(state.input.connection).toBeNull();
+    expect(state.input.trySendEncoded(request)).toBe(false);
+    await Bun.sleep(20);
+    state.sockets[1]!.open();
+    state.sockets[1]!.message("admitted");
+    expect(state.input.connection).not.toBe(connection);
+    expect(state.sockets[1]!.sent).toHaveLength(0);
+  } finally {
+    state.input.dispose();
+    expect(state.input.connection).toBeNull();
+  }
+});

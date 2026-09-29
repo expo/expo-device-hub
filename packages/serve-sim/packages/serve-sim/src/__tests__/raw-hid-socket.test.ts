@@ -28,6 +28,19 @@ class FakeSocket extends EventEmitter {
 }
 
 describe("raw HID socket heartbeat", () => {
+  test("rejects an oversized input frame before buffering its body", () => {
+    const socket = new FakeSocket();
+    const header = Buffer.alloc(10);
+    header[0] = 0x82;
+    header[1] = 127;
+    header.writeBigUInt64BE(4n * 1024n * 1024n + 1n, 2);
+    const ws = rawHidSocket(socket as unknown as Socket, header);
+    let closes = 0;
+    ws.on("close", () => { closes++; });
+    expect(closes).toBe(1);
+    expect(socket.destroyed).toBe(true);
+  });
+
   test("reports a close that arrived in the upgrade head before the session subscribed", () => {
     const socket = new FakeSocket();
     const ws = rawHidSocket(socket as unknown as Socket, Buffer.from([0x88, 0x00]));
