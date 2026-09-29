@@ -16,6 +16,8 @@ export function isAllowedHost(hostHeader: string | readonly string[] | undefined
   if (typeof hostHeader !== "string") return false;
   const hostname = hostnameOf(hostHeader);
   if (hostname === null) return false;
+  // Fetch can join duplicate Host headers into one comma-separated value.
+  if (!/^[a-z0-9.-]+$/.test(hostname)) return isIP(hostname) !== 0;
   if (hostname === "localhost" || hostname.endsWith(".localhost")) return true;
   return isIP(hostname) !== 0;
 }

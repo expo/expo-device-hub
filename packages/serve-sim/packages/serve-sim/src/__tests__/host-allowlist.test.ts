@@ -25,6 +25,7 @@ describe("isAllowedHost", () => {
 
   test("refuses two Host headers, even when one is allowed", () => {
     expect(isAllowedHost(["localhost", "attacker.example"])).toBe(false);
+    expect(isAllowedHost("attacker.example, app.localhost")).toBe(false);
   });
 
   test("refuses other names, including ones that only start like loopback", () => {
