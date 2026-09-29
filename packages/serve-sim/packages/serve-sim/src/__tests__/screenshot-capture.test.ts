@@ -40,7 +40,7 @@ describe("tunneled screenshot capture", () => {
     expect(requests[0]!.init?.method).toBe("POST");
     expect(blob.type).toBe("image/png");
     expect(new Uint8Array(await blob.arrayBuffer())).toEqual(png);
-    expect(artifact).toEqual({ status: "unknown" });
+    expect(artifact).toBeNull();
   });
 
   test("reads the session artifact outcome from the response headers", async () => {
@@ -62,7 +62,7 @@ describe("tunneled screenshot capture", () => {
       }),
     ).toEqual({ status: "failed", error: "EACCES: permission denied" });
     expect(await capture({ "X-Expo-Screenshot-Artifact": "failed" })).toEqual({ status: "failed" });
-    expect(await capture({ "X-Expo-Screenshot-Artifact": "something-new" })).toEqual({ status: "unknown" });
+    expect(await capture({ "X-Expo-Screenshot-Artifact": "something-new" })).toBeNull();
   });
 
   test("surfaces the server's screenshot error", async () => {

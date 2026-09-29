@@ -29,11 +29,14 @@ export function fetchIosScreenshot(
   );
 }
 
-function screenshotArtifact(headers: Headers): ScreenshotArtifact {
+function screenshotArtifact(headers: Headers): ScreenshotArtifact | null {
   const status = headers.get('X-Expo-Screenshot-Artifact');
+  if (status === null) return null;
   if (status === 'failed') {
     const error = headers.get('X-Expo-Screenshot-Artifact-Error')?.trim();
     return error ? { status, error } : { status };
   }
-  return status === 'saved' || status === 'disabled' ? { status } : { status: 'unknown' };
+  if (status === 'saved' || status === 'disabled') return { status };
+  console.warn(`Ignoring unknown X-Expo-Screenshot-Artifact value: ${status}`);
+  return null;
 }

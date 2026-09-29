@@ -47,7 +47,8 @@ function savedDismissMs(toast: ScreenshotToast): number {
   return toast.stagedOnly ? WARNING_DISMISS_MS : SAVED_DISMISS_MS;
 }
 
-export function browserDownloadNotice(artifact: ScreenshotArtifact): { message?: string; dismissMs: number } {
+export function browserDownloadNotice(artifact: ScreenshotArtifact | null): { message?: string; dismissMs: number } {
+  if (artifact === null) return { dismissMs: SAVED_DISMISS_MS };
   switch (artifact.status) {
     case "saved":
       return { message: "Saved to session artifacts", dismissMs: SAVED_DISMISS_MS };
@@ -57,7 +58,6 @@ export function browserDownloadNotice(artifact: ScreenshotArtifact): { message?:
         dismissMs: WARNING_DISMISS_MS,
       };
     case "disabled":
-    case "unknown":
       return { dismissMs: SAVED_DISMISS_MS };
   }
 }

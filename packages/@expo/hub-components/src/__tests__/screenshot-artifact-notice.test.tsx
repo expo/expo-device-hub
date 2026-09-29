@@ -34,9 +34,6 @@ describe('ScreenshotArtifactNotice', () => {
     expect(
       renderToStaticMarkup(<ScreenshotArtifactNotice artifact={{ status: 'disabled' }} />),
     ).toBe('');
-    expect(
-      renderToStaticMarkup(<ScreenshotArtifactNotice artifact={{ status: 'unknown' }} />),
-    ).toBe('');
     expect(renderToStaticMarkup(<ScreenshotArtifactNotice artifact={null} />)).toBe('');
   });
 });

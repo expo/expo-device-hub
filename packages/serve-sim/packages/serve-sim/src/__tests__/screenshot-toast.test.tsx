@@ -184,7 +184,7 @@ describe("browser download session artifact notice", () => {
 
   test("adds nothing outside a session or for an older server", () => {
     expect(browserDownloadNotice({ status: "disabled" })).toEqual({ dismissMs: 3500 });
-    expect(browserDownloadNotice({ status: "unknown" })).toEqual({ dismissMs: 3500 });
+    expect(browserDownloadNotice(null)).toEqual({ dismissMs: 3500 });
   });
 
   test("renders the notice under the download action", () => {

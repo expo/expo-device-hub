@@ -30,7 +30,7 @@ describe('screenshot capture', () => {
     expect(requests[0]!.init).toEqual({ method: 'POST', cache: 'no-store' });
     expect(capture?.blob.type).toBe('image/png');
     expect(new Uint8Array(await capture!.blob.arrayBuffer())).toEqual(PNG);
-    expect(capture?.artifact).toEqual({ status: 'unknown' });
+    expect(capture?.artifact).toBeNull();
   });
 
   test('reads the session artifact outcome from the response headers', async () => {
@@ -50,9 +50,7 @@ describe('screenshot capture', () => {
     expect(await artifact({ 'X-Expo-Screenshot-Artifact': 'failed' })).toEqual({
       status: 'failed',
     });
-    expect(await artifact({ 'X-Expo-Screenshot-Artifact': 'later' })).toEqual({
-      status: 'unknown',
-    });
+    expect(await artifact({ 'X-Expo-Screenshot-Artifact': 'later' })).toBeNull();
   });
 
   test('resolves null when the capture fails', async () => {

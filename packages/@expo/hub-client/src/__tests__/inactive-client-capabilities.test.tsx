@@ -175,5 +175,5 @@ test('Android screenshot posts to serve-emu for the selected device', async () =
     { url: 'https://hub.test/api/screenshot?device=emulator%205554', init: { method: 'POST', cache: 'no-store' } },
   ]);
   expect(new Uint8Array(await capture!.blob.arrayBuffer())).toEqual(png);
-  expect(capture!.artifact).toEqual({ status: 'unknown' });
+  expect(capture!.artifact).toBeNull();
 });

@@ -538,21 +538,24 @@ export type DeviceScreenRecordingStatus = 'unknown' | 'waiting' | 'recording' | 
 /**
  * Whether a screenshot also reached the session artifacts, read from the
  * backend's `X-Expo-Screenshot-Artifact` response headers. `disabled` means the
- * backend runs outside an EAS session; `unknown` means it sent no header, as
- * older serve-sim and serve-emu builds do.
+ * backend runs outside an EAS session.
  */
 export type ScreenshotArtifact =
-  | { status: 'saved' | 'disabled' | 'unknown' }
+  | { status: 'saved' | 'disabled' }
   | {
       status: 'failed';
       /** Why the save failed, when the backend says. */
       error?: string;
     };
 
-/** A still PNG of the device and its session artifact outcome. */
+/**
+ * A still PNG of the device and its session artifact outcome. `artifact` is
+ * `null` when the backend sent no header, as older serve-sim and serve-emu
+ * builds do, or a value this client does not know.
+ */
 export type ScreenshotCapture = {
   blob: Blob;
-  artifact: ScreenshotArtifact;
+  artifact: ScreenshotArtifact | null;
 };
 
 /**

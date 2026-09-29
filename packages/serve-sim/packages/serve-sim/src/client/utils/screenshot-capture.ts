@@ -27,24 +27,27 @@ async function screenshotErrorMessage(response: Response): Promise<string> {
   return `Screenshot failed (${response.status})`;
 }
 
-// `unknown` means the server sent no artifact header, as older serve-sim builds do.
 export type ScreenshotArtifact =
-  | { status: "saved" | "disabled" | "unknown" }
+  | { status: "saved" | "disabled" }
   | { status: "failed"; error?: string };
 
 interface ScreenshotCapture {
   png: Blob;
-  artifact: ScreenshotArtifact;
+  // null when the server sent no artifact header, as older serve-sim builds do, or an unknown value.
+  artifact: ScreenshotArtifact | null;
 }
 
 // Literal names: screenshot-artifacts.ts imports node:fs and must stay out of the client bundle.
-function screenshotArtifact(headers: Headers): ScreenshotArtifact {
+function screenshotArtifact(headers: Headers): ScreenshotArtifact | null {
   const status = headers.get("X-Expo-Screenshot-Artifact");
+  if (status === null) return null;
   if (status === "failed") {
     const error = headers.get("X-Expo-Screenshot-Artifact-Error")?.trim();
     return error ? { status, error } : { status };
   }
-  return status === "saved" || status === "disabled" ? { status } : { status: "unknown" };
+  if (status === "saved" || status === "disabled") return { status };
+  console.warn(`Ignoring unknown X-Expo-Screenshot-Artifact value: ${status}`);
+  return null;
 }
 
 export async function fetchScreenshotPng(
