@@ -649,6 +649,19 @@ Connect to `/ws` for the raw Annex-B H.264 stream. Send JSON control messages ov
 {"type":"reset-video"}
 ```
 
+Continuous `touch` messages use a connection-local `pointerId` (default `0`).
+Start each pointer with `action: "down"`, then send `move` and `up` on the same
+connection. Disconnecting releases that connection's held touches through the
+input queue; it does not release another viewer's pointers or stop the device
+stream. This also applies to input-only `/ws?video=0` connections used with
+WebRTC. After reconnecting or replacing the input session, begin a new gesture
+with `down`; an old `move` or `up` cannot continue it.
+
+Recorded touches carry server-assigned IDs so simultaneous viewers remain
+distinguishable during replay. Disconnect releases are recorded as
+`ws:disconnect` when any accepted event in that touch opted into recording;
+a touch sent entirely with `record: false` stays unrecorded.
+
 Use `/ws?frame-meta=1` to receive a 24-byte `SEMU` v2 frame metadata header before each H.264 access unit: magic `SEMU` (4B), version=2 (1B), flags (1B, bit 0 = keyframe), reserved (2B), PTS (8B BE, µs), and the server send time (8B BE, epoch µs). Same-host clients can compare the send time against their own clock to measure transit and glass-to-glass latency. The bundled UI uses this mode to avoid per-frame NAL scans and to track PTS/keyframe/latency state.
 
 For H.264 sources, each browser tab can independently select WebSocket or
