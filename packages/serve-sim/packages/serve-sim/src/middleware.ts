@@ -48,6 +48,7 @@ import {
 } from "./devicekit-chrome";
 import { serveDeviceKitModelAsset } from "./devicekit-model";
 import { validatePanelRoute } from "./panel-route";
+import { isAllowedHost, refusedHostMessage } from "./host-allowlist";
 import { createExecWebSocketHandler, type UiRequestHandler } from "./exec-ws";
 import { crashRuntime } from "./crash/runtime";
 import { handleCrashesRequestAfter, handleCrashReportRequest } from "./crash/routes";
@@ -1563,6 +1564,13 @@ export interface SimMiddlewareOptions {
   frameAncestors?: string[];
   /** Public page the Share button copies instead of this preview's address. */
   shareUrl?: string;
+  /**
+   * Without the token gate, the preview answers only for `localhost` and IP addresses; other `Host`
+   * headers get 403, which stops DNS rebinding from reading the session token. Set this to answer
+   * for any host (a `.local` name, a tunnel) without the gate. Insecure: a rebinding page can then
+   * read the token. Ignored under `requirePreviewToken`, where the gate already stops it.
+   */
+  allowAnyHostWhenInsecure?: boolean;
   /** @deprecated Use `streamSettings: { transport: "http", codec }`. */
   codec?: string;
   /**
@@ -1745,6 +1753,11 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const corsOrigins = [...(options?.corsOrigins ?? [])];
   const frameAncestors = options?.frameAncestors ?? [];
   const shareUrl = options?.shareUrl;
+  const allowAnyHostWhenInsecure = options?.allowAnyHostWhenInsecure ?? false;
+  // Under the token gate a rebinding page has no cookie and cannot read the token, so only an
+  // ungated preview needs its Host checked.
+  const hostAllowed = (host: string | readonly string[] | undefined | null): boolean =>
+    requirePreviewToken || allowAnyHostWhenInsecure || isAllowedHost(host);
   // The proxied DevTools frontend sits behind the same cookie, so its document needs the policy too.
   const framePolicyHeaders: Record<string, string> = requirePreviewToken
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
@@ -1808,6 +1821,13 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       res.setHeader("Vary", "Origin");
       const corsHeaders = corsAllowOriginHeaders(req.headers.origin, corsOrigins);
       for (const [name, value] of Object.entries(corsHeaders)) res.setHeader(name, value);
+    }
+    // After CORS, so a configured origin can read why its host was refused.
+    const hostHeader = req.headers.host;
+    if (ownPath && !hostAllowed(hostHeader)) {
+      res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+      res.end(refusedHostMessage(String(hostHeader)));
+      return;
     }
     // A preflight carries no cookie and no token, so it has to be answered before the gate.
     if (ownPath && req.method === "OPTIONS") {
@@ -2706,7 +2726,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // Upgrades skip the HTTP request path, and the HID and devtools sockets carry no token of
     // their own, so gate them here too.
     if (
-      !assertUpgradeAccess(
+      !hostAllowed(req.headers.host)
+      || !assertUpgradeAccess(
         upgradeAuthHeaders(req.headers),
         execToken,
         { required: requirePreviewToken },
@@ -2789,7 +2810,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // Embedded hosts forward accepted sockets and bypass the request gate. The exec channel
     // re-checks the token itself; the helper HID socket does not.
     if (
-      !assertUpgradeAccess(
+      !hostAllowed(request.headers.get("host"))
+      || !assertUpgradeAccess(
         upgradeAuthHeaders(request),
         execToken,
         { required: requirePreviewToken },

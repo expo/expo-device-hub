@@ -1726,6 +1726,7 @@ async function serve(
     corsOrigins?: string[];
     frameAncestors?: string[];
     shareUrl?: string;
+    allowAnyHostWhenInsecure?: boolean;
     debugStreamPath?: string;
     requireToken?: boolean;
     quiet?: boolean;
@@ -1766,6 +1767,7 @@ async function serve(
     corsOrigins: options.corsOrigins ?? [],
     frameAncestors: options.frameAncestors ?? [],
     shareUrl: options.shareUrl,
+    allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
     execToken: previewToken,
     requirePreviewToken,
   });
@@ -2064,6 +2066,11 @@ program
     (value: string, prev: string[]) => [...prev, value],
     [] as string[],
   )
+  .option(
+    "--allow-any-host-when-insecure",
+    "Without --require-token, answer for any host name, not only localhost and IP addresses " +
+      "(a .local name, a tunnel). Insecure: a DNS rebinding page could then read the session token.",
+  )
   .option("-l, --list [device]", "List running streams")
   .option("-k, --kill [device]", "Kill running stream(s)")
   .addHelpText(
@@ -2297,6 +2304,7 @@ Examples:
         corsOrigins: opts.corsOrigin,
         frameAncestors: opts.frameAncestor,
         shareUrl: opts.shareUrl,
+        allowAnyHostWhenInsecure: !!opts.allowAnyHostWhenInsecure,
         debugStreamPath,
         requireToken: !!opts.requireToken,
         quiet: !!opts.quiet,

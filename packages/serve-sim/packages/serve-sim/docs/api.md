@@ -114,6 +114,22 @@ not.
 
 The preview page receives the token in its injected config as `execToken`.
 
+## Allowed hosts
+
+Without `--require-token`, the preview page embeds the session token and `/` is
+not gated. A page on another domain that resolves to this machine (DNS
+rebinding) is same-origin in the browser, so it could read that token. To stop
+it, an ungated preview answers only for `localhost`, `*.localhost`, and IP
+addresses; a rebinding page always arrives with its own domain name. Any other
+`Host` gets 403 before the page or the token is served, and a WebSocket from
+such a host is closed before it can authenticate.
+
+To open an ungated preview on another name (a `.local` name, a tunnel), pass
+`--allow-any-host-when-insecure` (`allowAnyHostWhenInsecure` when embedding).
+That turns the check off, so a rebinding page could read the token again. Under
+`--require-token` the check is off anyway: a rebinding page has no cookie for
+the preview and cannot read the token.
+
 ## CORS
 
 Every route answers with the configured policy. Pass an origin with
