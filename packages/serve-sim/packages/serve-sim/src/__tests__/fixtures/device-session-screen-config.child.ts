@@ -263,7 +263,10 @@ async function start(
     ? session!.handleConfig(req, res)
     : session!.handleMjpeg(req, res));
   wsServer = new WebSocketServer({ server });
-  wsServer.on("connection", (socket) => session!.attachHidSocket(socket));
+  wsServer.on("connection", (socket, request) => session!.attachHidSocket(
+    socket,
+    new URL(request.url ?? "/", "http://localhost").searchParams.get("inputClientId") ?? undefined,
+  ));
   await new Promise<void>((resolve) => server!.listen(0, "127.0.0.1", resolve));
   const address = server.address();
   if (address === null || typeof address === "string") throw new Error("Missing TCP address");
@@ -903,6 +906,39 @@ describe("shifted keyboard routing", () => {
       clients.push(replacement);
       await Bun.sleep(20);
       expect(replacement.readyState).toBe(WebSocket.OPEN);
+    } finally {
+      for (const client of clients) client.terminate();
+      await waitUntil(() => (session as unknown as { admittedHidSockets: Set<unknown> }).admittedHidSockets.size === 0);
+    }
+  });
+
+  test("replaces a reconnect from the same browser before checking the socket cap", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const clients = [ws!];
+    const browserOne = "1".repeat(32);
+    const browserTwo = "2".repeat(32);
+    const connect = async (clientId?: string): Promise<WebSocket> => {
+      const endpoint = url.replace("http:", "ws:");
+      const client = new WebSocket(clientId ? `${endpoint}?inputClientId=${clientId}` : endpoint);
+      await new Promise<void>((resolve, reject) => {
+        client.once("open", resolve);
+        client.once("error", reject);
+      });
+      return client;
+    };
+    try {
+      const previous = await connect(browserOne);
+      clients.push(previous);
+      for (let index = 2; index < 8; index++) clients.push(await connect());
+      const closed = new Promise<void>((resolve) => previous.once("close", () => resolve()));
+      const replacement = await connect(browserOne);
+      clients.push(replacement);
+      await closed;
+      expect(replacement.readyState).toBe(WebSocket.OPEN);
+      expect((session as unknown as { hidSockets: Set<unknown> }).hidSockets.size).toBe(8);
+      const anotherBrowser = await connect(browserTwo);
+      const rejected = new Promise<number>((resolve) => anotherBrowser.once("close", resolve));
+      expect(await rejected).toBe(1013);
     } finally {
       for (const client of clients) client.terminate();
       await waitUntil(() => (session as unknown as { admittedHidSockets: Set<unknown> }).admittedHidSockets.size === 0);

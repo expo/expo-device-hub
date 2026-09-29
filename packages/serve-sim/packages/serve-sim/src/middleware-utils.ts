@@ -9,6 +9,15 @@ export interface UpgradeHandlerWebSocket {
   on(event: "close", listener: () => void): void;
 }
 
+export function isHidWebSocketPath(upstreamPath: string): boolean {
+  return new URL(upstreamPath, "http://serve-sim.local").pathname === "/ws";
+}
+
+export function inputClientIdFromUrl(url: URL): string | undefined {
+  const clientId = url.searchParams.get("inputClientId");
+  return clientId && /^[0-9a-f]{32}$/i.test(clientId) ? clientId : undefined;
+}
+
 export function claimHelperHidSocket(
   request: Request,
   websocket: UpgradeHandlerWebSocket,
@@ -16,26 +25,26 @@ export function claimHelperHidSocket(
     helperProxyTarget(rawUrl: string): { device: string | null; upstreamPath: string } | null;
     fallbackDevice: string | null;
     resolveSession: {
-      (device: string): { attachHidSocket(ws: UpgradeHandlerWebSocket): void };
+      (device: string): { attachHidSocket(ws: UpgradeHandlerWebSocket, clientId?: string): void };
     };
   },
 ): boolean {
   const url = new URL(request.url, "http://serve-sim.local");
   const target = helperProxyTarget(`${url.pathname}${url.search}`);
-  if (!target || target.upstreamPath !== "/ws") return false;
+  if (!target || !isHidWebSocketPath(target.upstreamPath)) return false;
   const device = target.device ?? fallbackDevice ?? null;
   if (!device) {
     websocket.close();
     return true;
   }
-  let session: { attachHidSocket(ws: UpgradeHandlerWebSocket): void };
+  let session: { attachHidSocket(ws: UpgradeHandlerWebSocket, clientId?: string): void };
   try {
     session = resolveSession(device);
   } catch {
     websocket.close(); // not booted / capture unavailable
     return true;
   }
-  session.attachHidSocket(websocket);
+  session.attachHidSocket(websocket, inputClientIdFromUrl(url));
   return true;
 }
 

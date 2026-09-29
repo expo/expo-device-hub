@@ -944,6 +944,8 @@ function AppWithConfig({
   const coarsePointerRef = useRef(false);
   useEffect(() => {
     let stopped = false;
+    const inputClientId = Array.from(crypto.getRandomValues(new Uint8Array(16)),
+      (byte) => byte.toString(16).padStart(2, "0")).join("");
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let currentWs: WebSocket | null = null;
     pendingWsMessagesRef.current = [];
@@ -958,7 +960,9 @@ function AppWithConfig({
 
     const connect = () => {
       setInputSocketOpen(false);
-      const ws = new WebSocket(config.wsUrl);
+      const wsUrl = new URL(config.wsUrl, window.location.href);
+      wsUrl.searchParams.set("inputClientId", inputClientId);
+      const ws = new WebSocket(wsUrl);
       ws.binaryType = "arraybuffer";
       currentWs = ws;
       wsRef.current = ws;

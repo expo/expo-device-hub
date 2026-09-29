@@ -69,6 +69,15 @@ describe("handleWebSocket helper HID dispatch", () => {
     expect(handled).toBe(true);
   });
 
+  test("claims a helper HID socket with a reconnect client ID", () => {
+    const ws = fakeSocket();
+    const handled = handleWebSocket(
+      new Request(`http://localhost:3200/preview/helper/NOT-A-REAL-UDID/ws?inputClientId=${"a".repeat(32)}`),
+      ws,
+    );
+    expect(handled).toBe(true);
+  });
+
   test("closes a helper HID socket with no resolvable device", () => {
     const ws = fakeSocket();
     const handled = handleWebSocket(

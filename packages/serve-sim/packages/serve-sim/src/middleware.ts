@@ -25,7 +25,7 @@ import { readCameraStatus } from "./camera-helper";
 import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type CaptureRuntime } from "./capture";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
-import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy, inputClientIdFromUrl, isHidWebSocketPath } from "./middleware-utils";
 import {
   closeDeviceSession,
   getDeviceSession,
@@ -1079,15 +1079,26 @@ export async function retryPendingCaptureCleanup(deps: CaptureCleanupDeps = {}):
  * bridge) rather than via `ws`'s server, whose handshake doesn't flush under
  * Bun — and the production CLI is a bun-compiled binary.
  */
-function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
+// Reconnects replace the prior socket; this deadline clears clients that never reconnect.
+const HID_PING_INTERVAL_MS = 1000;
+const HID_PONG_TIMEOUT_MS = 10_000;
+
+export function rawHidSocket(
+  socket: Socket,
+  head: Buffer,
+  heartbeat = { pingIntervalMs: HID_PING_INTERVAL_MS, pongTimeoutMs: HID_PONG_TIMEOUT_MS },
+): HidSocket {
   const messageCbs: Array<(d: Buffer) => void> = [];
   const closeCbs: Array<() => void> = [];
   let buffered = Buffer.from(head);
   let closed = false;
+  let heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  let pingSentAt: number | null = null;
 
   const fireClose = () => {
     if (closed) return;
     closed = true;
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
     for (const cb of closeCbs) cb();
   };
   const shutdown = (code?: number, reason = "") => {
@@ -1117,6 +1128,7 @@ function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
       buffered = buffered.subarray(frame.consumed);
       if (frame.opcode === 0x8) return shutdown();       // close
       if (frame.opcode === 0x9) { sendBrowserFrame(socket, 0xa, frame.payload); continue; } // ping → pong
+      if (frame.opcode === 0xa) { pingSentAt = null; continue; } // pong
       if (frame.opcode === 0x1 || frame.opcode === 0x2) {
         for (const cb of messageCbs) cb(frame.payload);
       }
@@ -1127,11 +1139,28 @@ function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
   socket.on("close", fireClose);
   socket.on("error", fireClose);
   if (head.length) drain();
+  if (!closed) {
+    const checkHeartbeat = () => {
+      if (closed) return;
+      if (pingSentAt !== null) {
+        if (Date.now() - pingSentAt >= heartbeat.pongTimeoutMs) shutdown();
+        return;
+      }
+      pingSentAt = Date.now();
+      try { sendBrowserFrame(socket, 0x9); } catch { shutdown(); }
+    };
+    checkHeartbeat();
+    if (!closed) {
+      heartbeatTimer = setInterval(checkHeartbeat, heartbeat.pingIntervalMs);
+      heartbeatTimer.unref?.();
+    }
+  }
 
   return {
     send(data: Buffer) { sendBrowserFrame(socket, 0x2, data); },
     on(event: "message" | "close" | "error", cb: (data: Buffer) => void) {
       if (event === "message") messageCbs.push(cb);
+      else if (closed) (cb as () => void)();
       else closeCbs.push(cb as () => void);
     },
     close: shutdown,
@@ -1155,7 +1184,11 @@ function attachHidInProcess(
     return false;
   }
   if (!writeWebSocketAccept(req, socket, execToken)) return true; // bad request handled
-  session.attachHidSocket(rawHidSocket(socket, head));
+  const clientId = inputClientIdFromUrl(new URL(req.url ?? "/", "http://serve-sim.local"));
+  session.attachHidSocket(
+    rawHidSocket(socket, head),
+    clientId,
+  );
   return true;
 }
 
@@ -3214,7 +3247,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
     const device = helperTarget.device ?? selectedDevice;
-    if (helperTarget.upstreamPath === "/ws") {
+    if (isHidWebSocketPath(helperTarget.upstreamPath)) {
       // HID input is delivered to the in-process DeviceSession.
       if (attachHidInProcess(req, socket, execToken, head, device, streamSettings)) return;
       socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
