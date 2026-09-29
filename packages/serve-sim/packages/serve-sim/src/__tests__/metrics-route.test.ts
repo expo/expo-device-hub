@@ -96,7 +96,7 @@ describe("handleMetricsRequest", () => {
     const { req } = createFakeReq();
     const { res, status } = createFakeRes();
 
-    handleMetricsRequest(req, res, null, cache, noopTracker);
+    handleMetricsRequest(req, res, null, cache, noopTracker, null);
 
     expect(status()).toBe(404);
     expect(created).toHaveLength(0);
@@ -107,7 +107,7 @@ describe("handleMetricsRequest", () => {
     const { req, close } = createFakeReq();
     const { res, writes } = createFakeRes();
 
-    handleMetricsRequest(req, res, inProcessServeSimState("UDID-1", 4000), cache, noopTracker);
+    handleMetricsRequest(req, res, inProcessServeSimState("UDID-1", 4000), cache, noopTracker, null);
 
     const metaFrame = writes[1] ?? "";
     expect(metaFrame).toStartWith("event: meta\ndata:");
@@ -136,8 +136,8 @@ describe("handleMetricsRequest", () => {
     const resA = createFakeRes();
     const resB = createFakeRes();
 
-    handleMetricsRequest(a.req, resA.res, state, cache, noopTracker);
-    handleMetricsRequest(b.req, resB.res, state, cache, noopTracker);
+    handleMetricsRequest(a.req, resA.res, state, cache, noopTracker, null);
+    handleMetricsRequest(b.req, resB.res, state, cache, noopTracker, null);
 
     expect(created).toHaveLength(1);
 
@@ -156,8 +156,8 @@ describe("handleMetricsRequest", () => {
     const a = createFakeReq();
     const b = createFakeReq();
 
-    handleMetricsRequest(a.req, createFakeRes().res, state, cache, noopTracker);
-    handleMetricsRequest(b.req, createFakeRes().res, state, cache, noopTracker);
+    handleMetricsRequest(a.req, createFakeRes().res, state, cache, noopTracker, null);
+    handleMetricsRequest(b.req, createFakeRes().res, state, cache, noopTracker, null);
     expect(created).toHaveLength(1);
 
     a.close();
@@ -168,7 +168,7 @@ describe("handleMetricsRequest", () => {
 
     // With the shared sampler evicted, a fresh subscriber builds a new one.
     const c = createFakeReq();
-    handleMetricsRequest(c.req, createFakeRes().res, state, cache, noopTracker);
+    handleMetricsRequest(c.req, createFakeRes().res, state, cache, noopTracker, null);
     expect(created).toHaveLength(2);
 
     c.close();

@@ -16,6 +16,7 @@ import { WebSocket } from "ws";
 import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
+import { hostProcessSampler, type HostProcessSampler } from "./host-process-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
 import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
 import {
@@ -1699,6 +1700,7 @@ export function handleMetricsRequest(
   state: ServeSimState | null,
   samplerCache: MetricsSamplerCache = metricsSamplerCache,
   tracker: ForegroundTrackerCache = foregroundTracker,
+  hostSampler: Pick<HostProcessSampler, "subscribe"> | null = hostProcessSampler,
 ): void {
   if (!state) {
     res.writeHead(404);
@@ -1719,6 +1721,10 @@ export function handleMetricsRequest(
     if (!res.writableEnded) res.write("data: " + JSON.stringify(sample) + "\n\n");
   });
   res.write("event: meta\ndata: " + JSON.stringify(meta) + "\n\n");
+  // TEST BUILD ONLY: host-wide processes and GPU clients, as `event: host` frames.
+  const unsubscribeHost = hostSampler?.subscribe((sample) => {
+    if (!res.writableEnded) res.write("event: host\ndata: " + JSON.stringify(sample) + "\n\n");
+  });
   // Heartbeat keeps an idle stream alive through buffering proxies.
   const heartbeat = setInterval(() => {
     if (!res.writableEnded) res.write(":\n\n");
@@ -1726,6 +1732,7 @@ export function handleMetricsRequest(
   req.on("close", () => {
     clearInterval(heartbeat);
     unsubscribe();
+    unsubscribeHost?.();
     foreground.unsubscribe();
   });
 }
