@@ -2836,7 +2836,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const message =
           (typeof stderr === "string" && stderr.trim()) ||
           (err instanceof Error ? err.message : String(err));
-        recordScreenshotEvent(udid, { status: "capture-failed", error: message });
+        // The event log is browser-readable; simctl's stderr can name host paths, so it stays here.
+        console.error(`simctl screenshot failed for ${udid}:`, message);
+        recordScreenshotEvent(udid, { status: "capture-failed", error: "simctl screenshot failed" });
         res.writeHead(500, {
           "Cache-Control": "no-store",
           "Content-Type": "application/json",
