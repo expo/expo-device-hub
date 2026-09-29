@@ -204,7 +204,9 @@ public struct ContinuousFramePacer: Sendable {
         if tokens >= 1 {
             return tickScheduled ? .pumpNow : startChain(atNanoseconds: now, afterNanoseconds: 0)
         }
-        // Replaces the pending wake, which may be a later repeat deadline, with the next token.
+        // Replaces the pending wake, which may be a later repeat deadline, with the next token. A
+        // replacement is not a chained tick, so it leaves the watchdog's liveness clock alone.
+        guard !tickScheduled else { return .schedule(nanoseconds: nanosecondsUntilToken()) }
         return startChain(atNanoseconds: now, afterNanoseconds: nanosecondsUntilToken())
     }
 
