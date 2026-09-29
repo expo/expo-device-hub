@@ -42,7 +42,11 @@ function screenshotFilename(name: string): string {
 /** How long the session artifact notice stays under the controls after a download. */
 const SCREENSHOT_NOTICE_MS = 6000;
 
-/** The session artifact notice under the controls; nothing outside an EAS session or for an older backend. */
+/**
+ * The session artifact notice above the controls; nothing outside an EAS session or for an older
+ * backend. It lives in the gap between the frame and the toolbar, which the viewport reserves, so
+ * the panel never clips it; two lines at this line height still fit the gap.
+ */
 export function ScreenshotArtifactNotice({ artifact }: { artifact: ScreenshotArtifact | null }) {
   if (artifact?.status !== 'saved' && artifact?.status !== 'failed') return null;
   const failed = artifact.status === 'failed';
@@ -52,9 +56,10 @@ export function ScreenshotArtifactNotice({ artifact }: { artifact: ScreenshotArt
       aria-live="polite"
       style={{
         ...textSize.xs,
+        lineHeight: 1.3,
         display: 'block',
         maxWidth: 360,
-        margin: '8px auto 0',
+        margin: '0 auto 4px',
         textAlign: 'center',
         overflowWrap: 'anywhere',
         color: failed ? text.warning : text.tertiary,
@@ -167,13 +172,19 @@ export function StreamPanel({
             <DeviceTitle key={device.id} device={device} status={client.status} recording={client.screenRecording} />
           </div>
           <div
+            data-testid="stream-controls-band"
             style={{
               position: 'absolute',
               left: '50%',
-              top: `calc(100% + ${CONTROLS_GAP}px)`,
+              top: '100%',
+              height: STREAM_CONTROLS_HEIGHT + CONTROLS_GAP,
               width: 'max-content',
               transform: 'translateX(-50%)',
+              display: 'flex',
+              flexDirection: 'column',
+              justifyContent: 'flex-end',
             }}>
+            <ScreenshotArtifactNotice artifact={screenshotArtifact} />
             <StreamControls
               recording={client.screenRecording}
               appearance={client.appearance}
@@ -192,7 +203,6 @@ export function StreamPanel({
                 noticeTimer.current = setTimeout(() => setScreenshotArtifact(null), SCREENSHOT_NOTICE_MS);
               }}
             />
-            <ScreenshotArtifactNotice artifact={screenshotArtifact} />
           </div>
         </div>
       </div>
