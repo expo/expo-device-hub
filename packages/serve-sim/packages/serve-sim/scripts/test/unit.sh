@@ -14,12 +14,14 @@ ROOT="$(cd "$HERE/../../../.." && pwd)"
 STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/serve-sim-test.XXXXXX")"
 trap 'rm -rf "$STATE_DIR"' EXIT
 export SERVE_SIM_STATE_DIR="$STATE_DIR"
+# The capture CA normally lives in the user's Application Support folder; tests keep their own.
+export SERVE_SIM_CAPTURE_CA_DIR="$STATE_DIR/capture-ca"
 export PATH="$HERE/shims:$PATH"
 # Values left exported from an e2e run must not turn skips into failures here.
 unset SERVE_SIM_E2E_REQUIRED SERVE_SIM_TEST_UDID
 
 cd "$ROOT"
 if [ $# -eq 0 ]; then
-  set -- packages/serve-sim/src/__tests__/ packages/serve-sim/scripts/tart/__tests__/
+  set -- packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/
 fi
 bun test --max-concurrency=1 "$@"

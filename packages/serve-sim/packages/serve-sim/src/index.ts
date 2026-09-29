@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { captureRuntime } from "./capture/runtime";
 import { Command, InvalidArgumentError } from "commander";
 import { execFileSync, execSync, spawn as nodeSpawn, type ChildProcess } from "child_process";
 import { existsSync, mkdirSync, openSync, closeSync, readSync, readFileSync, unlinkSync, writeFileSync } from "fs";
@@ -28,6 +29,7 @@ import { launchAppAsync } from "./launch-app";
 import {
   assertKnownCapabilities,
   hasDefaultCapabilities,
+  registerCapability,
 } from "./capabilities";
 import {
   applyDefaultCapabilities,
@@ -402,10 +404,16 @@ let releasingDevices: Promise<void> | undefined;
 function disarmDevicesArmedHereAsync(): Promise<void> {
   return releasingDevices ??= (async () => {
     await waitForLaunchUpdates();
+    // Per device, like disarmDevicesArmedHere: one device that fails to release (shut down while
+    // another session holds it) must not leave the devices after it armed.
     for (const udid of devicesArmedHere()) {
-      await releaseSession(udid, process.pid, (capability) => {
-        if (capability.name === "camera") stopExistingHelper(udid);
-      });
+      try {
+        await releaseSession(udid, process.pid, (capability) => {
+          if (capability.name === "camera") stopExistingHelper(udid);
+        });
+      } catch (error) {
+        console.error(`Could not clean up capabilities on ${udid}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
   })();
 }
@@ -2551,5 +2559,6 @@ program
   .argument("[args...]")
   .action((args: string[]) => uiSettings(args));
 
+registerCapability(captureRuntime.capability);
 
 await program.parseAsync(process.argv);

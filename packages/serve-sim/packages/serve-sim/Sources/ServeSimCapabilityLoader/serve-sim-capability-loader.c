@@ -5,6 +5,7 @@
 //
 // Config format, one capability per line, written by the launch manager:
 //   <user|all>\t<dylib>\t[KEY=VALUE;KEY=VALUE]\t<delay-ms>
+// Startup images prefix their record with startup\t and register without dlopen.
 //
 // The launch manager sets SERVE_SIM_CAPABILITIES_CONFIG alongside the insert,
 // per simulator, so the config can live with the rest of serve-sim's state
@@ -20,6 +21,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <limits.h>
 
 #define CONFIG_VAR "SERVE_SIM_CAPABILITIES_CONFIG"
 #define MAX_CONFIG_BYTES (64 * 1024)
@@ -173,6 +175,7 @@ static void load_capabilities(struct Load *load) {
   size_t count = 0;
   char *line, *lines = config;
   while ((line = strsep(&lines, "\n")) != NULL) {
+    if (strncmp(line, "startup\t", 8) == 0) continue;
     char *dylib, *env;
     unsigned delay_ms;
     if (!capability_applies(line, load->exec_path, &dylib, &env, &delay_ms)) continue;
@@ -319,4 +322,32 @@ static void serve_sim_capability_loader_init(void) {
     watch_config(load);
     load_capabilities(load);
   });
+}
+
+void serve_sim_startup(void (*initialize)(void)) {
+  const char *tmp = getenv("TMPDIR");
+  const char *config_path = getenv(CONFIG_VAR);
+  if (!tmp || !strstr(tmp, "/Containers/Data/Application/") || !config_path || *config_path != '/') return;
+  char executable[1024];
+  uint32_t size = sizeof executable;
+  if (_NSGetExecutablePath(executable, &size) != 0) return;
+  Dl_info image;
+  char actual[PATH_MAX];
+  if (!dladdr((const void *)initialize, &image) || !realpath(image.dli_fname, actual)) return;
+  char *config = malloc(MAX_CONFIG_BYTES);
+  if (!config) return;
+  if (read_config(config_path, config, MAX_CONFIG_BYTES) == 0) {
+    char *line, *lines = config;
+    while ((line = strsep(&lines, "\n")) != NULL) {
+      if (strncmp(line, "startup\t", 8) != 0) continue;
+      char *dylib, *env;
+      unsigned delay;
+      if (!capability_applies(line + 8, executable, &dylib, &env, &delay) || delay != 0) continue;
+      char expected[PATH_MAX];
+      if (!realpath(dylib, expected) || strcmp(expected, actual) != 0) continue;
+      if (!env || apply_env(env) == 0) initialize();
+      break;
+    }
+  }
+  free(config);
 }
