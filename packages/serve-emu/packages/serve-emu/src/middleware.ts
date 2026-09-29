@@ -3121,6 +3121,11 @@ export function createRouter(
       return serveStaticFile(url.pathname) ?? new Response("not found", { status: 404 });
     }
 
+    // Capture has side effects, so the method gate runs before ensure() resolves or starts a device.
+    if (url.pathname === "/api/screenshot" && req.method !== "POST") {
+      return new Response("method not allowed", { status: 405 });
+    }
+
     // Everything else operates on a single device.
     let app: EmuApp;
     try {
