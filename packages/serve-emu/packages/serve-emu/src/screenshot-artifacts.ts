@@ -64,14 +64,18 @@ async function writeFailureRecord(record: string, file: string, error: string): 
 export const SCREENSHOT_ARTIFACT_HEADER = "X-Expo-Screenshot-Artifact";
 export const SCREENSHOT_ARTIFACT_ERROR_HEADER = "X-Expo-Screenshot-Artifact-Error";
 const MAX_ERROR_HEADER_LENGTH = 512;
+// Anything outside printable ASCII (space through tilde) except whitespace; fs errors can hold any path.
+const NOT_PRINTABLE_ASCII = /[^\x20-\x7e\s]/g;
+// Newlines and tabs are not allowed in a header value; collapse every whitespace run to one space.
+const WHITESPACE_RUN = /\s+/g;
 
 // The preview UIs read these to tell the user whether the capture they downloaded also reached the
-// session artifacts. Header values must be printable ASCII, and fs error messages can hold any path.
+// session artifacts.
 export function screenshotArtifactHeaders(result: ScreenshotArtifactResult): Record<string, string> {
   if (result.status !== "failed") return { [SCREENSHOT_ARTIFACT_HEADER]: result.status };
   const error = result.error
-    .replace(/[^\x20-\x7e\s]/g, "")
-    .replace(/\s+/g, " ")
+    .replace(NOT_PRINTABLE_ASCII, "")
+    .replace(WHITESPACE_RUN, " ")
     .trim()
     .slice(0, MAX_ERROR_HEADER_LENGTH);
   return { [SCREENSHOT_ARTIFACT_HEADER]: "failed", [SCREENSHOT_ARTIFACT_ERROR_HEADER]: error };
