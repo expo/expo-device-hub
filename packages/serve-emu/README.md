@@ -824,11 +824,9 @@ Useful manual checks include first video frame, browser refresh recovery, multip
 ## Package Identity
 
 The npm package, CLI executable, workspace, and supported import specifiers all
-use the `serve-emu` name. Publish releases from that workspace:
-
-```sh
-npm publish --workspace packages/serve-emu
-```
+use the `serve-emu` name. `serve-emu` ships inside `expo-device-hub`. See the
+monorepo [`RELEASING.md`](https://github.com/expo/expo-device-hub/blob/main/RELEASING.md)
+for how to release it.
 
 ## Contributing
 

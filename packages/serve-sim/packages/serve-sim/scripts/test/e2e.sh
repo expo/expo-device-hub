@@ -29,6 +29,8 @@ else
   OWN_STATE_DIR=true
   export SERVE_SIM_STATE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/serve-sim-e2e.XXXXXX")"
 fi
+# The capture CA normally lives in the user's Application Support folder; e2e runs keep their own.
+export SERVE_SIM_CAPTURE_CA_DIR="${SERVE_SIM_CAPTURE_CA_DIR:-$SERVE_SIM_STATE_DIR/capture-ca}"
 cleanup() {
   if [ "$OWN_STATE_DIR" = true ]; then
     # --kill reads the same state directory, so it reaches only servers this run started.
@@ -43,6 +45,6 @@ export SERVE_SIM_E2E_REQUIRED=1
 
 cd "$ROOT"
 if [ $# -eq 0 ]; then
-  set -- packages/serve-sim/src/__tests__/ packages/serve-sim/scripts/tart/__tests__/
+  set -- packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/
 fi
 bun test --max-concurrency=1 "$@"

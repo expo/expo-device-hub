@@ -17,7 +17,7 @@
  * via the __PREVIEW_HTML_B64__ build-time define.
  */
 import { resolve } from "path";
-import { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync } from "fs";
+import { mkdirSync, mkdtempSync, writeFileSync, rmSync, readFileSync, cpSync } from "fs";
 import { spawnSync } from "child_process";
 import { tmpdir } from "os";
 import tailwindPlugin from "bun-plugin-tailwind";
@@ -309,5 +309,28 @@ if (nativeBuild.status !== 0) {
   process.exit(nativeBuild.status ?? 1);
 }
 console.log("dist/native/serve-sim-native.node");
+
+
+// Build the capture dylib for injection into third-party apps.
+
+const netBuild = spawnSync(
+  "bash",
+  [resolve(root, "Sources/SimNetProxy/build.sh"), resolve(distDir, "simnet")],
+  { stdio: "inherit" },
+);
+if (netBuild.status !== 0) {
+  console.error("SimNetProxy dylib build failed.");
+  process.exit(netBuild.status ?? 1);
+}
+console.log("dist/simnet/libSimNetProxy.dylib");
+
+// mitmproxy loads the Python add-on from disk.
+
+cpSync(resolve(root, "src/capture/mitm-addon"), resolve(distDir, "capture/mitm-addon"), {
+  recursive: true,
+  // Exclude interpreter-specific bytecode.
+  filter: (source) => !source.includes("__pycache__"),
+});
+console.log("dist/capture/mitm-addon/");
 
 console.log("Done.");

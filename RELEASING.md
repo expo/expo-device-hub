@@ -6,8 +6,7 @@ This monorepo publishes three public packages:
 - **`@expo/hub-client`** — the device-client hooks and the `DeviceScreen` component.
 - **`@expo/serve-sim`** — the iOS simulator server in `packages/serve-sim/packages/serve-sim`.
 
-Every other workspace package is marked `private` or listed in `.changeset/config.json` `ignore`,
-and is skipped by the release tooling.
+Every other workspace package is marked `private` and is skipped by the release tooling.
 
 Releases are driven by [changesets](https://github.com/changesets/changesets): the version
 bump and changelog for each package are computed from the `.changeset/*.md` entries that have
