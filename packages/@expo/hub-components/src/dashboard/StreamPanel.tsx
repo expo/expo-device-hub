@@ -1,75 +1,23 @@
-import { type ComponentType, useEffect, useRef, useState } from 'react';
+import { type ComponentType } from 'react';
 
 import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
   type ScreenSize,
-  type ScreenshotArtifact,
 } from '@expo/hub-client';
-import { bg, border, text, textSize } from '../primitives';
+import { bg, border } from '../primitives';
 import { type Device } from './data';
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
 import { type DeviceFrameAssets } from './deviceFrame';
 import { PhoneFrame } from './PhoneFrame';
+import { ScreenshotToast, useScreenshotToast } from './ScreenshotToast';
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from './StreamControls';
-
-/** Trigger a browser download of `blob` under `filename`. */
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoke on the next tick, once the click has consumed the object URL.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
 
 /** Space between the title pill and the top of the device frame. */
 const TITLE_GAP = 32;
 /** Space between the bottom of the device frame and the toolbar. */
 const CONTROLS_GAP = 32;
-
-/** Filesystem-safe screenshot name, e.g. `iPhone-16-2026-06-30T12-34-56.png`. */
-function screenshotFilename(name: string): string {
-  const slug = name.trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'device';
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, '');
-  return `${slug}-${stamp}.png`;
-}
-
-/** How long the session artifact notice stays under the controls after a download. */
-const SCREENSHOT_NOTICE_MS = 6000;
-
-/**
- * The session artifact notice above the controls; nothing outside an EAS session or for an older
- * backend. It lives in the gap between the frame and the toolbar, which the viewport reserves, so
- * the panel never clips it; two lines at this line height still fit the gap.
- */
-export function ScreenshotArtifactNotice({ artifact }: { artifact: ScreenshotArtifact | null }) {
-  if (artifact?.status !== 'saved' && artifact?.status !== 'failed') return null;
-  const failed = artifact.status === 'failed';
-  return (
-    <span
-      role="status"
-      aria-live="polite"
-      style={{
-        ...textSize.xs,
-        lineHeight: 1.3,
-        display: 'block',
-        maxWidth: 360,
-        margin: '0 auto 4px',
-        textAlign: 'center',
-        overflowWrap: 'anywhere',
-        color: failed ? text.warning : text.tertiary,
-      }}>
-      {failed
-        ? `Downloaded. Not saved to session artifacts${artifact.error ? `: ${artifact.error}` : ''}`
-        : 'Saved to session artifacts'}
-    </span>
-  );
-}
 
 /**
  * Center panel: the selected device's stream and its controls. Rendered as the
@@ -108,15 +56,12 @@ export function StreamPanel({
   /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
   deviceFrameAssets?: DeviceFrameAssets;
 }) {
-  const [screenshotArtifact, setScreenshotArtifact] = useState<ScreenshotArtifact | null>(null);
-  const noticeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => () => {
-    if (noticeTimer.current) clearTimeout(noticeTimer.current);
-  }, []);
+  const screenshot = useScreenshotToast(client, device.name);
 
   return (
     <section
       style={{
+        position: 'relative',
         flex: 1,
         minWidth: 0,
         display: 'flex',
@@ -172,19 +117,13 @@ export function StreamPanel({
             <DeviceTitle key={device.id} device={device} status={client.status} recording={client.screenRecording} />
           </div>
           <div
-            data-testid="stream-controls-band"
             style={{
               position: 'absolute',
               left: '50%',
-              top: '100%',
-              height: STREAM_CONTROLS_HEIGHT + CONTROLS_GAP,
+              top: `calc(100% + ${CONTROLS_GAP}px)`,
               width: 'max-content',
               transform: 'translateX(-50%)',
-              display: 'flex',
-              flexDirection: 'column',
-              justifyContent: 'flex-end',
             }}>
-            <ScreenshotArtifactNotice artifact={screenshotArtifact} />
             <StreamControls
               recording={client.screenRecording}
               appearance={client.appearance}
@@ -194,17 +133,27 @@ export function StreamPanel({
               onHome={() => client.pressButton('home')}
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
-              onSave={async () => {
-                const capture = await client.screenshot();
-                if (!capture) return;
-                downloadBlob(capture.blob, screenshotFilename(device.name));
-                if (noticeTimer.current) clearTimeout(noticeTimer.current);
-                setScreenshotArtifact(capture.artifact);
-                noticeTimer.current = setTimeout(() => setScreenshotArtifact(null), SCREENSHOT_NOTICE_MS);
-              }}
+              onSave={screenshot.capture}
             />
           </div>
         </div>
+      </div>
+      <div
+        style={{
+          position: 'absolute',
+          left: '50%',
+          bottom: 16,
+          transform: 'translateX(-50%)',
+          zIndex: 3,
+          width: 'max-content',
+          maxWidth: 'calc(100% - 32px)',
+        }}>
+        <ScreenshotToast
+          toast={screenshot.toast}
+          onDownloadAgain={screenshot.downloadAgain}
+          onPause={screenshot.pause}
+          onResume={screenshot.resume}
+        />
       </div>
     </section>
   );

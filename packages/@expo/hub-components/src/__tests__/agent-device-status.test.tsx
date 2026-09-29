@@ -229,33 +229,6 @@ describe('agent device status', () => {
     expect(pixelArtworkTag).not.toContain('data-testid="device-frame-artwork"');
   });
 
-  test('keeps the toolbar and the screenshot notice inside the band the viewport reserves', () => {
-    const markup = renderToStaticMarkup(
-      <StreamPanel
-        device={IPHONE}
-        client={STREAMING_CLIENT}
-        deviceFrameAssets={FRAME_ASSETS}
-        DeviceScreen={() => null}
-        displayScreen={() => null}
-      />
-    );
-    const viewportStart = markup.indexOf('data-testid="device-frame-viewport"');
-    const viewportTag = markup.slice(viewportStart, markup.indexOf('>', viewportStart) + 1);
-    const bandStart = markup.indexOf('data-testid="stream-controls-band"');
-    const bandTag = markup.slice(bandStart, markup.indexOf('>', bandStart) + 1);
-    const bandHeight = Number(bandTag.match(/height:(\d+)px/)?.[1]);
-    const reservedBottom = Number(viewportTag.match(/padding:\d+px 0 (\d+)px/)?.[1]);
-
-    expect(bandHeight).toBe(reservedBottom);
-    expect(bandTag).toContain('top:100%');
-    expect(bandTag).toContain('flex-direction:column');
-    expect(bandTag).toContain('justify-content:flex-end');
-    const band = markup.slice(bandStart);
-    const toolbarStart = band.indexOf('role="toolbar"');
-    expect(toolbarStart).toBeGreaterThan(0);
-    expect(band.slice(toolbarStart)).toMatch(/<\/div><\/div><\/div><\/div><\/section>$/);
-  });
-
   test('gives every device state one panel-sized frame viewport', () => {
     const markup = renderToStaticMarkup(
       <StreamPanel
