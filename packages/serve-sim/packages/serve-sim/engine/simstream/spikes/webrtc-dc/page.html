@@ -1,7 +1,11 @@
 <!doctype html>
 <html><head><meta charset="utf-8"><title>simstream over WebRTC data channel (__MODE__)</title>
-<style>html,body{margin:0;background:#000;height:100%}canvas{display:block;height:100vh;margin:0 auto}</style>
+<style>html,body{margin:0;background:#000;height:100%;touch-action:none;user-select:none;-webkit-user-select:none}
+canvas{display:block;height:100vh;margin:0 auto}
+.buttons{position:fixed;right:12px;bottom:12px;display:flex;flex-direction:column;gap:6px}
+.buttons button{padding:8px 14px;border:1px solid #2c2c32;border-radius:8px;background:#17171b;color:#cfd2d6;font:13px system-ui;cursor:pointer}</style>
 </head><body><canvas id="screen"></canvas>
+<div class="buttons"><button data-button="home">Home</button><button data-button="lock">Lock</button></div>
 <script>
 // Spike page: the simstream engine's stream over a WebRTC data channel (see bridge.mjs).
 // Decode and presentation match serve-sim's use-simstream-stream.ts, so the transport is the only
@@ -46,6 +50,8 @@ function configure(c) {
   decoder = new VideoDecoder({
     output: (frame) => {
       stats.decoded++;
+      const t0 = decodeStarted.get(frame.timestamp);
+      if (t0 !== undefined) { decodeStarted.delete(frame.timestamp); if (metrics.recording) metrics.decodeLat.push(performance.now() - t0); }
       sendAck(frame.timestamp);
       if (!drawnThisRefresh) present(frame); else { latest?.close(); latest = frame; }
       schedule();
@@ -78,7 +84,8 @@ function noteStall(now) {
 }
 // In-page metrics (no pixel readback): frame age from the header's capture time (server clock),
 // corrected by an NTP-style clock offset against the server's time endpoint.
-const metrics = window.__metrics = { offsetMs: 0, ages: [], decodeTimes: [], recording: false };
+const metrics = window.__metrics = { offsetMs: 0, ages: [], decodeTimes: [], xfers: [], decodeLat: [], recording: false };
+const decodeStarted = new Map();   // seq -> performance.now() at decode()
 async function measureOffset() {
   const samples = [];
   for (let i = 0; i < 25; i++) {
@@ -90,7 +97,7 @@ async function measureOffset() {
   metrics.offsetMs = samples.slice(0, 6).reduce((a, x) => a + x.off, 0) / 6;
 }
 measureOffset().catch(() => {});
-window.__startRecording = () => { metrics.ages = []; metrics.decodeTimes = []; metrics.recording = true; };
+window.__startRecording = () => { metrics.ages = []; metrics.decodeTimes = []; metrics.xfers = []; metrics.decodeLat = []; metrics.recording = true; };
 window.__summary = () => {
   const a = metrics.ages.slice().sort((x, y) => x - y), d = metrics.decodeTimes;
   const q = (p) => a.length ? a[Math.min(a.length - 1, Math.floor(p * a.length))] : null;
@@ -99,7 +106,18 @@ window.__summary = () => {
   return { mode: MODE, frames: d.length, fps: +(d.length / secs).toFixed(1),
     ageMean: +(a.reduce((x, y) => x + y, 0) / (a.length || 1)).toFixed(1), ageP50: q(0.5), ageP95: q(0.95), ageP99: q(0.99),
     freezes50: gaps.filter((g) => g > 50).length, worstGapMs: Math.round(Math.max(0, ...gaps)), offsetMs: +metrics.offsetMs.toFixed(1),
-    stalls: stats.stalls.length, nacks: stats.nacksSent, lost: stats.lostFrames, keyReq: stats.keyRequests };
+    stalls: stats.stalls.length, nacks: stats.nacksSent, lost: stats.lostFrames, keyReq: stats.keyRequests,
+    // Frames over 50 KB: first-to-last chunk arrival (how fast the transport delivers a big frame).
+    ...(() => { const big = metrics.xfers.filter((x) => x.bytes > 50_000); const ms = big.map((x) => x.ms).sort((x, y) => x - y);
+      const pq = (p) => ms.length ? Math.round(ms[Math.min(ms.length - 1, Math.floor(p * ms.length))]) : null;
+      const mbps = big.length ? +(big.reduce((n, x) => n + x.bytes, 0) * 8 / 1000 / big.reduce((n, x) => n + Math.max(1, x.ms), 0)).toFixed(1) : null;
+      const dl = metrics.decodeLat.slice().sort((x, y) => x - y);
+      // Per second: frames decoded and median frame age relative to the run's lowest age (clock offset cancels).
+      const minAge = Math.min(...metrics.ages); const t0 = metrics.decodeTimes[0] ?? 0; const buckets = [];
+      metrics.decodeTimes.forEach((t, i) => { const b = Math.floor((t - t0) / 1000); (buckets[b] ??= []).push(metrics.ages[i] - minAge); });
+      const timeline = [...buckets].map((b) => b ? `${b.length}f/${Math.round(b.sort((x, y) => x - y)[b.length >> 1])}ms` : '0f');
+      return { timeline, bigFrames: big.length, bigXferP50: pq(0.5), bigXferP95: pq(0.95), bigXferMbps: mbps,
+        decodeP50: dl.length ? +dl[Math.floor(dl.length / 2)].toFixed(1) : null, decodeP95: dl.length ? +dl[Math.floor(dl.length * 0.95)].toFixed(1) : null }; })() };
 };
 function decodeFrame(buf) {
   stats.frames++;
@@ -114,6 +132,8 @@ function decodeFrame(buf) {
   if (!decoder || decoder.state !== 'configured') return;
   if (waitingForKey && !isKey) return;
   waitingForKey = false;
+  decodeStarted.set(seq, performance.now());
+  if (decodeStarted.size > 300) decodeStarted.delete(decodeStarted.keys().next().value);
   decoder.decode(new EncodedVideoChunk({ type: isKey ? 'key' : 'delta', timestamp: seq, data: buf.subarray(HEADER) }));
 }
 
@@ -154,13 +174,14 @@ function onChunk(data) {
   if (nextId === null) nextId = id;
   if (id < nextId) return;
   let p = partial.get(id);
-  if (!p) partial.set(id, p = { count, got: 0, parts: new Array(count) });
+  if (!p) partial.set(id, p = { count, got: 0, parts: new Array(count), first: now });
   if (!p.parts[idx]) { p.parts[idx] = u8.subarray(CHUNK_HEADER); p.got++; }
   if (p.got === p.count) {
     partial.delete(id);
     const len = p.parts.reduce((n, x) => n + x.length, 0), whole = new Uint8Array(len);
     let o = 0; for (const x of p.parts) { whole.set(x, o); o += x.length; }
     complete.set(id, whole);
+    if (metrics.recording) metrics.xfers.push({ ms: now - p.first, bytes: len });
   }
   drain();
 }
@@ -194,7 +215,7 @@ if (MODE === 'ws') {
   const ws = new WebSocket(`ws://${location.hostname}:__ENGINE_PORT__/stream`);
   ws.binaryType = 'arraybuffer';
   ctl = { get readyState() { return ws.readyState === 1 ? 'open' : 'closed'; }, send: (m) => ws.send(m) };
-  ws.onopen = () => { send({ t: 'hello', codecs: ['h264'] }); send({ t: 'settings', transitions: new URLSearchParams(location.search).get('transitions') || 'soft', hevc: false }); };
+  ws.onopen = () => { send({ t: 'hello', codecs: ['h264'] }); send({ t: 'settings', transitions: new URLSearchParams(location.search).get('transitions') || 'burst', hevc: false }); };
   let nextSeqWs = 0;
   ws.onmessage = (e) => {
     if (typeof e.data === 'string') { const m = JSON.parse(e.data); if (m.t === 'config') configure(m); return; }
@@ -211,7 +232,7 @@ pc.ondatachannel = ({ channel }) => {
   if (channel.label === 'ack') ackChannel = channel;
   if (channel.label === 'ctl') {
     ctl = channel;
-    channel.onopen = () => { send({ t: 'hello', codecs: ['h264'] }); send({ t: 'settings', transitions: new URLSearchParams(location.search).get('transitions') || 'soft', hevc: false }); };
+    channel.onopen = () => { send({ t: 'hello', codecs: ['h264'] }); send({ t: 'settings', transitions: new URLSearchParams(location.search).get('transitions') || 'burst', hevc: false }); };
     channel.onmessage = (e) => { const m = JSON.parse(e.data); if (m.t === 'config') configure(m); };
   }
 };
@@ -226,4 +247,74 @@ signal.onmessage = async (e) => {
   }
   if (m.t === 'cand') { try { await pc.addIceCandidate({ candidate: m.candidate, sdpMid: m.mid }); } catch {} }
 };
+// Input, as in the engine's own page (Sources/simstream/Web/index.html): touches, edge swipes, keys
+// and hardware buttons go on the reliable ctl channel; the bridge passes them to the engine.
+const EDGE = { none: 0, top: 1, left: 2, bottom: 3, right: 4 };
+const EDGE_ZONE = { x: 0.04, y: 0.03 };
+const BEZEL_PX = 32;
+let gesture = null, inputSeq = 0;
+function position(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: (e.clientX - r.left) / r.width, y: (e.clientY - r.top) / r.height, r };
+}
+function edgeAt({ x, y }) {
+  if (y >= 1 - EDGE_ZONE.y) return EDGE.bottom;
+  if (x <= EDGE_ZONE.x) return EDGE.left;
+  if (x >= 1 - EDGE_ZONE.x) return EDGE.right;
+  if (y <= EDGE_ZONE.y) return EDGE.top;
+  return EDGE.none;
+}
+const clamp = (v) => Math.min(1, Math.max(0, v));
+function touch(phase, e) {
+  let { x, y } = position(e);
+  if (phase === 'down') {
+    if (gesture.edge === EDGE.bottom) y = 0.999;
+    if (gesture.edge === EDGE.top) y = 0.001;
+    if (gesture.edge === EDGE.left) x = 0.001;
+    if (gesture.edge === EDGE.right) x = 0.999;
+  }
+  send({ t: 'touch', p: phase, x: clamp(x), y: clamp(y), seq: ++inputSeq, edge: gesture.edge });
+}
+document.addEventListener('pointerdown', (e) => {
+  if (gesture || e.target.closest('button')) return;
+  const p = position(e);
+  const bezelX = BEZEL_PX / p.r.width, bezelY = BEZEL_PX / p.r.height;
+  const onScreen = p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1;
+  if (!(p.x >= -bezelX && p.x <= 1 + bezelX && p.y >= -bezelY && p.y <= 1 + bezelY)) return;
+  e.preventDefault();
+  document.body.setPointerCapture(e.pointerId);
+  gesture = { pointerId: e.pointerId, edge: onScreen ? edgeAt(p) : edgeAt({ x: clamp(p.x), y: clamp(p.y) }) };
+  touch('down', e);
+});
+document.addEventListener('pointermove', (e) => { if (gesture?.pointerId === e.pointerId) touch('move', e); });
+const release = (e) => { if (gesture?.pointerId !== e.pointerId) return; touch('up', e); gesture = null; };
+document.addEventListener('pointerup', release);
+document.addEventListener('pointercancel', release);
+
+// KeyboardEvent.code -> USB HID usage (page 0x07)
+const HID = {
+  Enter: 0x28, Escape: 0x29, Backspace: 0x2a, Tab: 0x2b, Space: 0x2c, Minus: 0x2d, Equal: 0x2e,
+  BracketLeft: 0x2f, BracketRight: 0x30, Backslash: 0x31, Semicolon: 0x33, Quote: 0x34, Backquote: 0x35,
+  Comma: 0x36, Period: 0x37, Slash: 0x38, CapsLock: 0x39, Delete: 0x4c,
+  ArrowRight: 0x4f, ArrowLeft: 0x50, ArrowDown: 0x51, ArrowUp: 0x52,
+  ControlLeft: 0xe0, ShiftLeft: 0xe1, AltLeft: 0xe2, ControlRight: 0xe4, ShiftRight: 0xe5, AltRight: 0xe6,
+};
+for (let i = 0; i < 26; i++) HID['Key' + String.fromCharCode(65 + i)] = 0x04 + i;
+for (let i = 1; i <= 9; i++) HID['Digit' + i] = 0x1d + i;
+HID.Digit0 = 0x27;
+function onKey(e, down) {
+  if (e.metaKey) return;
+  const usage = HID[e.code];
+  if (usage === undefined) return;
+  e.preventDefault();
+  if (down && e.repeat) return;
+  send({ t: 'key', usage, down });
+}
+window.addEventListener('keydown', (e) => onKey(e, true));
+window.addEventListener('keyup', (e) => onKey(e, false));
+for (const el of document.querySelectorAll('[data-button]')) {
+  const b = el.dataset.button;
+  el.addEventListener('pointerdown', () => send({ t: 'button', b, down: true }));
+  el.addEventListener('pointerup', () => send({ t: 'button', b, down: false }));
+}
 </script></body></html>
