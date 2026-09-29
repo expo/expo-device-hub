@@ -54,7 +54,7 @@ import { LogsDrawer } from "./components/logs-drawer";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
 import { ServeSimToaster, showInputSocketError } from "./components/app-toasts";
-import { createInputSocket } from "../socket/browser-input";
+import { createInputSocket } from "../socket/client-input";
 import { ShareSessionButton } from "./components/share-session-button";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
 import { StreamStatusPill } from "./components/stream-status-pill";

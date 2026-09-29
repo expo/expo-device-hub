@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createInputSocket } from "../socket/browser-input";
+import { createInputSocket } from "../socket/client-input";
 
 class FakeSocket {
   binaryType = "blob";
