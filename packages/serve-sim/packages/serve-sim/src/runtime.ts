@@ -6,7 +6,7 @@ import type { Socket } from "net";
 import { createConnection, createServer as createNetServer, type Server as NetServer } from "net";
 import { WebSocketServer } from "ws";
 import { EXEC_WS_MAX_MESSAGE_BYTES } from "./exec-ws-utils";
-import { type UpgradeHandlerWebSocket } from "./middleware-utils";
+import type { UpgradeHandlerWebSocket } from "./socket/types";
 import {
   RequestBodyTooLargeError,
   nodeRequestToWeb,

@@ -6,7 +6,7 @@ import type { Socket } from "net";
 
 import { accessCookieName } from "../session-auth";
 import { simMiddleware } from "../middleware";
-import type { UpgradeHandlerWebSocket } from "../middleware-utils";
+import type { UpgradeHandlerWebSocket } from "../socket/types";
 
 const TOKEN = "preview-token-xyz";
 const ORIGIN = "http://192.168.1.20:34567";

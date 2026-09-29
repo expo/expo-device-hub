@@ -54,7 +54,7 @@ import { LogsDrawer } from "./components/logs-drawer";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
 import { ServeSimToaster, showInputSocketError } from "./components/app-toasts";
-import { createRetryingInputSocket } from "./utils/retrying-input-socket";
+import { createInputSocket } from "../socket/browser-input";
 import { ShareSessionButton } from "./components/share-session-button";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
 import { StreamStatusPill } from "./components/stream-status-pill";
@@ -115,12 +115,6 @@ import {
   SIMULATOR_RESIZE_VIEWPORT_HEIGHT_RESERVED_FOR_CHROME,
   SIMULATOR_RESIZE_VIEWPORT_INSET_FOR_PRESENTATION,
 } from "./utils/simulator-resize";
-import {
-  flushWsMessageQueue,
-  sendOrQueueWsMessage,
-  trySendWsMessage,
-  type QueuedWsMessage,
-} from "./utils/ws-send-queue";
 import {
   webRtcFallbackDecision,
   type WebRtcCodec,
@@ -917,11 +911,11 @@ function AppWithConfig({
 
   // Touch/button relay via direct WebSocket
   const [inputSocketOpen, setInputSocketOpen] = useState(false);
-  const inputSocketRef = useRef<ReturnType<typeof createRetryingInputSocket> | null>(null);
+  const inputSocketRef = useRef<ReturnType<typeof createInputSocket> | null>(null);
   if (!hingeQueueRef.current) {
     hingeQueueRef.current = createAcknowledgedControlQueue<HingeControlCommand>({
       send: (request) => {
-        if (!trySendWsMessage(inputSocketRef.current?.socket ?? null, 0x10, request)) return false;
+        if (!inputSocketRef.current?.trySend(0x10, request)) return false;
         if (request.command.control === "pose") sentHingePoseRef.current = request.command.value;
         const pose = sentHingePoseRef.current;
         setHingeCommands((previous) => recordDuoHingeCommand(previous, request.command, pose));
@@ -941,27 +935,16 @@ function AppWithConfig({
       },
     });
   }
-  const pendingWsMessagesRef = useRef<QueuedWsMessage[]>([]);
   const coarsePointerRef = useRef(false);
   useEffect(() => {
-    pendingWsMessagesRef.current = [];
     setInputSocketOpen(false);
-    const inputSocket = createRetryingInputSocket(config.wsUrl, {
-      onOpen(ws) {
+    const inputSocket = createInputSocket(config.wsUrl, {
+      onOpen() {
         setInputSocketOpen(true);
-        pendingWsMessagesRef.current = flushWsMessageQueue(
-          ws,
-          pendingWsMessagesRef.current,
-        );
         // A touch client disconnects the sim's hardware keyboard so its
         // on-screen keyboard shows; desktop leaves it connected.
         if (coarsePointerRef.current) {
-          pendingWsMessagesRef.current = sendOrQueueWsMessage(
-            ws,
-            pendingWsMessagesRef.current,
-            0x0e,
-            { enabled: false },
-          );
+          inputSocket.send(0x0e, { enabled: false });
         }
       },
       onMessage(data) {
@@ -1018,12 +1001,7 @@ function AppWithConfig({
   }, [config.wsUrl]);
 
   const sendWs = useCallback((tag: number, payload: object) => {
-    pendingWsMessagesRef.current = sendOrQueueWsMessage(
-      inputSocketRef.current?.socket ?? null,
-      pendingWsMessagesRef.current,
-      tag,
-      payload,
-    );
+    inputSocketRef.current?.send(tag, payload);
   }, []);
 
   const keySender = useMemo(

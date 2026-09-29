@@ -1,19 +1,23 @@
 import { expect, test } from "bun:test";
-import { createRetryingInputSocket } from "../client/utils/retrying-input-socket";
+import { createInputSocket } from "../socket/browser-input";
 
 class FakeSocket {
   binaryType = "blob";
+  readyState = 0;
+  sent: ArrayBuffer[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: unknown }) => void) | null = null;
   onclose: ((event: { code: number; reason: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   closed = false;
 
-  open() { this.onopen?.(); }
+  open() { this.readyState = 1; this.onopen?.(); }
   message(data: unknown) { this.onmessage?.({ data }); }
+  send(data: ArrayBuffer) { this.sent.push(data); }
   close(code = 1000, reason = "") {
     if (this.closed) return;
     this.closed = true;
+    this.readyState = 3;
     this.onclose?.({ code, reason });
   }
 }
@@ -23,7 +27,7 @@ function setup() {
   const errors: string[] = [];
   let opens = 0;
   let disconnects = 0;
-  const input = createRetryingInputSocket("ws://localhost/ws", {
+  const input = createInputSocket("ws://localhost/ws", {
     onOpen: () => { opens++; },
     onMessage: (data) => data === "admitted",
     onDisconnect: () => { disconnects++; },
@@ -54,8 +58,27 @@ test("a retry admitted by a config frame clears a temporary refusal", async () =
     expect(state.errors).toEqual([]);
     expect(state.opens).toBe(2);
     expect(state.disconnects).toBe(1);
-    expect(state.input.socket).toBe(state.sockets[1] as unknown as WebSocket);
     expect(state.sockets[1]!.binaryType).toBe("arraybuffer");
+  } finally {
+    state.input.dispose();
+  }
+});
+
+test("queued input flushes on reconnect while acknowledged commands never queue", async () => {
+  const state = setup();
+  try {
+    state.input.start();
+    state.input.send(0x03, { type: "begin" });
+    expect(state.input.trySend(0x10, { requestId: 1 })).toBe(false);
+    state.sockets[0]!.open();
+    expect(new Uint8Array(state.sockets[0]!.sent[0]!)[0]).toBe(0x03);
+    expect(state.input.trySend(0x10, { requestId: 1 })).toBe(true);
+    state.sockets[0]!.close();
+    state.input.send(0x04, { button: "home" });
+    await Bun.sleep(20);
+    state.sockets[1]!.open();
+    expect(new Uint8Array(state.sockets[1]!.sent[0]!)[0]).toBe(0x04);
+    expect(state.sockets[1]!.sent).toHaveLength(1);
   } finally {
     state.input.dispose();
   }

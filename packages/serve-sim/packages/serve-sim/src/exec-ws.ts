@@ -3,7 +3,8 @@ import {
   requestHost,
   type SseRequestHandler,
 } from "./exec-ws-utils";
-import { isWebOrigin, originMatches, type UpgradeHandlerWebSocket } from "./middleware-utils";
+import { isWebOrigin, originMatches } from "./middleware-utils";
+import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { InvalidHostActionError, runHostActionAsync } from "./host-actions";
 import {
   TOKEN_SUBPROTOCOL_PREFIX,

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "events";
 import type { Socket } from "net";
-import { rawHidSocket } from "../middleware";
+import { rawHidSocket } from "../socket/server-input";
 
 class FakeSocket extends EventEmitter {
   destroyed = false;

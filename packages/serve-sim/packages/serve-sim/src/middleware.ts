@@ -25,12 +25,11 @@ import { readCameraStatus } from "./camera-helper";
 import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type CaptureRuntime } from "./capture";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
-import { corsAllowOriginHeaders, frameAncestorsPolicy, isHidWebSocketPath } from "./middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
 import {
   closeDeviceSession,
   getDeviceSession,
   peekDeviceSession,
-  type HidSocket,
 } from "./device-session";
 import {
   acceptedTokenSubprotocol,
@@ -65,8 +64,9 @@ import { handleCrashesRequestAfter, handleCrashReportRequest } from "./crash/rou
 export { handleCrashesRequest, handleCrashReportRequest } from "./crash/routes";
 import { booleanParam } from "./request-params";
 import { logBufferCache, type LogBufferCache, type LogLine } from "./log-buffer";
-import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware-utils";
-import { HID_HEARTBEAT, createSocketHeartbeat } from "./socket-heartbeat";
+import { parseWebSocketFrame, sendBrowserFrame, websocketFrame } from "./socket/frames";
+import { claimHelperHidSocket, isHidWebSocketPath, rawHidSocket } from "./socket/server-input";
+import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
@@ -618,68 +618,6 @@ function helperProxyTarget(rawUrl: string, prefix: string): { device: string | n
 
 const WS_ACCEPT_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
-function websocketFrame(opcode: number, payload: Buffer<ArrayBufferLike>): Buffer {
-  const length = payload.length;
-  let header: Buffer;
-  if (length < 126) {
-    header = Buffer.from([0x80 | opcode, length]);
-  } else if (length <= 0xffff) {
-    header = Buffer.alloc(4);
-    header[0] = 0x80 | opcode;
-    header[1] = 126;
-    header.writeUInt16BE(length, 2);
-  } else {
-    header = Buffer.alloc(10);
-    header[0] = 0x80 | opcode;
-    header[1] = 127;
-    header.writeBigUInt64BE(BigInt(length), 2);
-  }
-  return Buffer.concat([header, payload]);
-}
-
-type ParsedWebSocketFrame = {
-  opcode: number;
-  payload: Buffer<ArrayBufferLike>;
-  consumed: number;
-};
-
-function parseWebSocketFrame(buffer: Buffer): ParsedWebSocketFrame | null {
-  if (buffer.length < 2) return null;
-  const opcode = buffer[0]! & 0x0f;
-  const masked = (buffer[1]! & 0x80) !== 0;
-  let length = buffer[1]! & 0x7f;
-  let offset = 2;
-  if (length === 126) {
-    if (buffer.length < offset + 2) return null;
-    length = buffer.readUInt16BE(offset);
-    offset += 2;
-  } else if (length === 127) {
-    if (buffer.length < offset + 8) return null;
-    const bigLength = buffer.readBigUInt64BE(offset);
-    if (bigLength > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new Error("WebSocket frame too large");
-    }
-    length = Number(bigLength);
-    offset += 8;
-  }
-  const maskOffset = offset;
-  if (masked) offset += 4;
-  if (buffer.length < offset + length) return null;
-  const payload = Buffer.from(buffer.subarray(offset, offset + length));
-  if (masked) {
-    const mask = buffer.subarray(maskOffset, maskOffset + 4);
-    for (let i = 0; i < payload.length; i++) {
-      payload[i] = payload[i]! ^ mask[i % 4]!;
-    }
-  }
-  return { opcode, payload, consumed: offset + length };
-}
-
-function sendBrowserFrame(socket: Socket, opcode: number, payload: Buffer<ArrayBufferLike> = Buffer.alloc(0)): void {
-  if (socket.destroyed || !socket.writable) return;
-  socket.write(websocketFrame(opcode, payload));
-}
-
 type PendingWebSocketFrame = {
   opcode: number;
   payload: Buffer<ArrayBufferLike>;
@@ -1072,86 +1010,6 @@ export async function retryPendingCaptureCleanup(deps: CaptureCleanupDeps = {}):
       }
     }),
   );
-}
-
-/**
- * Adapt a raw upgraded socket into the minimal HidSocket the DeviceSession
- * needs. We do the WebSocket framing by hand (same helpers as the DevTools
- * bridge) rather than via `ws`'s server, whose handshake doesn't flush under
- * Bun — and the production CLI is a bun-compiled binary.
- */
-export function rawHidSocket(
-  socket: Socket,
-  head: Buffer,
-  heartbeat = HID_HEARTBEAT,
-): HidSocket {
-  const messageCbs: Array<(d: Buffer) => void> = [];
-  const closeCbs: Array<() => void> = [];
-  let buffered = Buffer.from(head);
-  let closed = false;
-  let stopHeartbeat = () => {};
-  let receivedPong = () => {};
-
-  const fireClose = () => {
-    if (closed) return;
-    closed = true;
-    stopHeartbeat();
-    for (const cb of closeCbs) cb();
-  };
-  const shutdown = (code?: number, reason = "") => {
-    fireClose();
-    const payload = code === undefined ? Buffer.alloc(0) : Buffer.alloc(2 + Buffer.byteLength(reason));
-    if (code !== undefined) {
-      payload.writeUInt16BE(code);
-      payload.write(reason, 2);
-    }
-    try {
-      socket.end(websocketFrame(0x8, payload));
-      socket.destroySoon();
-    } catch { socket.destroy(); }
-  };
-
-  const drain = () => {
-    if (closed) return;
-    for (;;) {
-      let frame: ParsedWebSocketFrame | null;
-      try {
-        frame = parseWebSocketFrame(buffered);
-      } catch {
-        shutdown();
-        return;
-      }
-      if (!frame) return;
-      buffered = buffered.subarray(frame.consumed);
-      if (frame.opcode === 0x8) return shutdown();       // close
-      if (frame.opcode === 0x9) { sendBrowserFrame(socket, 0xa, frame.payload); continue; } // ping → pong
-      if (frame.opcode === 0xa) { receivedPong(); continue; } // pong
-      if (frame.opcode === 0x1 || frame.opcode === 0x2) {
-        for (const cb of messageCbs) cb(frame.payload);
-      }
-    }
-  };
-
-  socket.on("data", (chunk: Buffer) => { buffered = Buffer.concat([buffered, chunk]); drain(); });
-  socket.on("close", fireClose);
-  socket.on("error", fireClose);
-  if (head.length) drain();
-  if (!closed) {
-    const monitor = createSocketHeartbeat(() => sendBrowserFrame(socket, 0x9), shutdown, heartbeat);
-    stopHeartbeat = monitor.stop;
-    receivedPong = monitor.pong;
-    monitor.start();
-  }
-
-  return {
-    send(data: Buffer) { sendBrowserFrame(socket, 0x2, data); },
-    on(event: "message" | "close" | "error", cb: (data: Buffer) => void) {
-      if (event === "message") messageCbs.push(cb);
-      else if (closed) (cb as () => void)();
-      else closeCbs.push(cb as () => void);
-    },
-    close: shutdown,
-  };
 }
 
 /** Upgrade an in-process HID `/ws` socket onto a DeviceSession. Returns false when no session can serve it. */

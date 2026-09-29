@@ -7,7 +7,7 @@ import {
   trySendWsMessage,
   WS_OPEN_READY_STATE,
   type WsSendTarget,
-} from "../client/utils/ws-send-queue";
+} from "../socket/send-queue";
 
 function sentPayload(data: Uint8Array) {
   return {

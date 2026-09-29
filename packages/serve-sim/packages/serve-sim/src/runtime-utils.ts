@@ -1,7 +1,7 @@
 import { type IncomingMessage, type ServerResponse } from "http";
 import { once } from "events";
 import { Readable } from "stream";
-import { type UpgradeHandlerWebSocket } from "./middleware-utils";
+import type { UpgradeHandlerWebSocket } from "./socket/types";
 
 type RequestInitWithDuplex = RequestInit & { duplex?: "half" };
 

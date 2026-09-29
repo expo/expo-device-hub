@@ -1,13 +1,15 @@
+import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage } from "./send-queue";
+
 type InputSocketHandlers = {
-  onOpen(socket: WebSocket): void;
+  onOpen(): void;
   /** Return true when the server's config frame confirms input was admitted. */
   onMessage(data: unknown): boolean;
   onDisconnect(): void;
   onRefused(reason: string): void;
 };
 
-/** Own the input socket's reconnect loop and its temporary 1013 refusal window. */
-export function createRetryingInputSocket(
+/** Own input sends, reconnects, and the temporary 1013 refusal window. */
+export function createInputSocket(
   url: string,
   handlers: InputSocketHandlers,
   {
@@ -22,6 +24,7 @@ export function createRetryingInputSocket(
   let admitted = false;
   let reported = false;
   let stopped = false;
+  let pendingMessages: QueuedWsMessage[] = [];
 
   const connect = () => {
     if (stopped || socket) return;
@@ -29,7 +32,11 @@ export function createRetryingInputSocket(
     const ws = openSocket(url);
     ws.binaryType = "arraybuffer";
     socket = ws;
-    ws.onopen = () => { if (!stopped && socket === ws) handlers.onOpen(ws); };
+    ws.onopen = () => {
+      if (stopped || socket !== ws) return;
+      pendingMessages = flushWsMessageQueue(ws, pendingMessages);
+      handlers.onOpen();
+    };
     ws.onmessage = (event) => {
       if (stopped || socket !== ws) return;
       if (handlers.onMessage(event.data)) {
@@ -65,7 +72,12 @@ export function createRetryingInputSocket(
   };
 
   return {
-    get socket() { return socket; },
+    send(tag: number, payload: object) {
+      pendingMessages = sendOrQueueWsMessage(socket, pendingMessages, tag, payload);
+    },
+    trySend(tag: number, payload: object) {
+      return trySendWsMessage(socket, tag, payload);
+    },
     start: connect,
     dispose() {
       stopped = true;
@@ -73,6 +85,7 @@ export function createRetryingInputSocket(
       if (refusalTimer) clearTimeout(refusalTimer);
       socket?.close();
       socket = null;
+      pendingMessages = [];
     },
   };
 }

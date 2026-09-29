@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { simMiddleware } from "../middleware";
-import { claimHelperHidSocket } from "../middleware-utils";
-import type { UpgradeHandlerWebSocket } from "../middleware-utils";
+import { claimHelperHidSocket } from "../socket/server-input";
+import type { UpgradeHandlerWebSocket } from "../socket/types";
 
 // handleWebSocket receives host-accepted sockets (Expo CLI plugin WS routes,
 // the standalone hub CLI own the HTTP upgrade), so the helper HID channel must
