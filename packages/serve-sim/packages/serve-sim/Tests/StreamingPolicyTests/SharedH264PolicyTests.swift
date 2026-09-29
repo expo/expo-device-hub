@@ -78,6 +78,43 @@ final class SharedH264PolicyTests: XCTestCase {
         XCTAssertEqual(policy.beginFrame(timestamp: 1_027 * ms, requestedIDR: false), true)
     }
 
+    func testRefusalInsideTheIntervalForcesAKeyframeWhenItEnds() {
+        var policy = SharedH264Policy(defaultBitrate: 6_000_000)
+        policy.join(peer: 1, bitrate: 6_000_000)
+        policy.join(peer: 2, bitrate: 6_000_000)
+        let ms: Int64 = 1_000_000
+        XCTAssertEqual(policy.beginFrame(timestamp: 10 * ms, requestedIDR: false), true)
+        // Peer 2's sender refuses the join keyframe, then the keyframe that refusal forced.
+        policy.deliveryRejected(peer: 2, frameTimestamp: 10 * ms)
+        XCTAssertEqual(policy.beginFrame(timestamp: 27 * ms, requestedIDR: false), true)
+        XCTAssertEqual(policy.takeStarvedPeers(excluding: [1]), [2])
+        policy.deliveryRejected(peer: 2, frameTimestamp: 27 * ms)
+        // The sender then takes frames again, but a delta cannot restart its stream. Inside the
+        // interval nothing more is forced.
+        XCTAssertFalse(policy.frameWasStale(peer: 2))
+        XCTAssertEqual(policy.beginFrame(timestamp: 994 * ms, requestedIDR: false), false)
+        // The first frame after the interval is a keyframe for the waiting peer, once.
+        XCTAssertEqual(policy.beginFrame(timestamp: 1_011 * ms, requestedIDR: false), true)
+        XCTAssertEqual(policy.takeStarvedPeers(excluding: [1]), [2])
+        XCTAssertEqual(policy.beginFrame(timestamp: 1_028 * ms, requestedIDR: false), false)
+    }
+
+    func testKeyframeInsideTheIntervalCancelsTheDeferredOne() {
+        var policy = SharedH264Policy(defaultBitrate: 6_000_000)
+        policy.join(peer: 1, bitrate: 6_000_000)
+        policy.join(peer: 2, bitrate: 6_000_000)
+        let ms: Int64 = 1_000_000
+        XCTAssertEqual(policy.beginFrame(timestamp: 10 * ms, requestedIDR: false), true)
+        policy.deliveryRejected(peer: 2, frameTimestamp: 10 * ms)
+        XCTAssertEqual(policy.beginFrame(timestamp: 27 * ms, requestedIDR: false), true)
+        XCTAssertEqual(policy.takeStarvedPeers(excluding: [1]), [2])
+        policy.deliveryRejected(peer: 2, frameTimestamp: 27 * ms)
+        // A keyframe request inside the interval recovers the waiting peer.
+        XCTAssertEqual(policy.beginFrame(timestamp: 44 * ms, requestedIDR: true), true)
+        XCTAssertEqual(policy.takeStarvedPeers(excluding: [1]), [2])
+        XCTAssertEqual(policy.beginFrame(timestamp: 1_011 * ms, requestedIDR: false), false)
+    }
+
     func testCaughtUpAndLeftPeersAreNotStarved() {
         var policy = SharedH264Policy(defaultBitrate: 6_000_000)
         policy.join(peer: 1, bitrate: 6_000_000)
