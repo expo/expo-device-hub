@@ -111,6 +111,8 @@ Options:
       --detach        Spawn server and exit (daemon mode)
   -q, --quiet         JSON-only output
       --no-preview    Skip the web UI; stream in foreground only
+      --no-simulator-window
+                      Boot and stream without opening Simulator.app or Device Hub
       --codec <codec> HTTP stream codec: 'auto', 'h264', or 'mjpeg'
       --transport <http|webrtc>
                       Stream transport (default: http)

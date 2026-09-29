@@ -321,7 +321,7 @@ function isProcessAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-function bootDevice(udid: string): void {
+function bootDevice(udid: string, simulatorWindow: boolean): void {
   if (!isDeviceBooted(udid)) {
     try {
       execSync(`xcrun simctl boot ${udid}`, { encoding: "utf-8", stdio: "pipe" });
@@ -332,8 +332,10 @@ function bootDevice(udid: string): void {
       }
     }
   }
-  // Open the selected Xcode's Simulator or Device Hub in the background.
+  // Open the selected Xcode's Simulator or Device Hub in the background, unless the caller wants the
+  // device without a window (--no-simulator-window).
   // Ignore failure: `open` can hang or miss a window server on headless hosts.
+  if (!simulatorWindow) return;
   try {
     openSimulatorHost(udid);
   } catch {}
@@ -358,8 +360,8 @@ async function findAvailablePort(start: number): Promise<number> {
   throw new Error(`No available port found in range ${start}-${start + 99}`);
 }
 
-async function ensureBooted(udid: string): Promise<void> {
-  bootDevice(udid);
+async function ensureBooted(udid: string, simulatorWindow: boolean): Promise<void> {
+  bootDevice(udid, simulatorWindow);
   // `simctl bootstatus -b` blocks until the device's services are actually ready
   // (not just flipped to "Booted"). Much more reliable than polling `simctl list`.
   try {
@@ -453,7 +455,7 @@ async function waitForStateFile(udid: string, timeoutMs = 150_000): Promise<Serv
 async function startHelper(
   udid: string,
   port: number,
-  opts: { detach: boolean; stream?: StreamSettings },
+  opts: { detach: boolean; stream?: StreamSettings; simulatorWindow: boolean },
 ): Promise<{ pid: number; child?: ChildProcess }> {
   debugHelper("startHelper udid=%s port=%d detach=%s", udid, port, opts.detach);
 
@@ -464,7 +466,9 @@ async function startHelper(
 
   const logFile = join(stateDir(), `server-${udid}.log`);
   const logFd = openSync(logFile, "w");
-  const { command, args } = reExecArgs(streamHelperArgs(udid, port, host, opts.stream));
+  const { command, args } = reExecArgs(
+    streamHelperArgs(udid, port, host, opts.stream, { simulatorWindow: opts.simulatorWindow }),
+  );
   const child = nodeSpawn(command, args, {
     detached: opts.detach,
     stdio: ["ignore", logFd, logFd],
@@ -492,6 +496,7 @@ async function follow(
   devices: string[],
   startPort: number,
   quiet: boolean,
+  simulatorWindow: boolean,
   stream?: StreamSettings,
   replaceMismatchedStream = false,
 ) {
@@ -537,7 +542,7 @@ async function follow(
     }
 
     port = await findAvailablePort(port);
-    const { child } = await startHelper(udid, port, { detach: false, stream });
+    const { child } = await startHelper(udid, port, { detach: false, stream, simulatorWindow });
 
     if (child) {
       children.set(udid, child);
@@ -639,6 +644,7 @@ async function follow(
 async function detach(
   devices: string[],
   startPort: number,
+  simulatorWindow: boolean,
   stream?: StreamSettings,
   replaceMismatchedStream = false,
 ): Promise<ServerState[]> {
@@ -672,7 +678,7 @@ async function detach(
     }
 
     port = await findAvailablePort(port);
-    await startHelper(udid, port, { detach: true, stream });
+    await startHelper(udid, port, { detach: true, stream, simulatorWindow });
 
     // Reuse the detached server's own in-process state (same-origin /helper URLs).
     states.push(readState(udid) ?? inProcessServeSimState(udid, port, "/", "127.0.0.1"));
@@ -1729,6 +1735,7 @@ async function serve(
     debugStreamPath?: string;
     requireToken?: boolean;
     quiet?: boolean;
+    simulatorWindow?: boolean;
   } = {},
 ) {
   const quiet = !!options.quiet;
@@ -1746,7 +1753,7 @@ async function serve(
     if (!quiet && devices.length === 0 && readAllStates().length === 0) {
       console.log("Starting simulator stream...");
     }
-    for (const udid of targetDevices) await ensureBooted(udid);
+    for (const udid of targetDevices) await ensureBooted(udid, options.simulatorWindow !== false);
   } catch (err) {
     return failStartup(err instanceof Error ? err.message : String(err));
   }
@@ -1943,6 +1950,10 @@ program
   .option("--detach", "Spawn helper and exit (daemon mode)")
   .option("-q, --quiet", "Suppress human-readable output, JSON only")
   .option("--no-preview", "Skip the web preview server; stream in foreground only")
+  .option(
+    "--no-simulator-window",
+    "Boot and stream devices without opening Simulator.app or Device Hub",
+  )
   .option("--transport <http|webrtc>", "Stream transport", "http")
   .option(
     "--launch-app-identifier <id>",
@@ -2189,6 +2200,8 @@ Examples:
       hasDefaultCapabilities();
 
     const startPort: number | undefined = opts.port;
+    // Commander sets simulatorWindow to false for --no-simulator-window.
+    const simulatorWindow = opts.simulatorWindow !== false;
     const streamOptionsProvided = wasProvided("transport")
       || wasProvided("codec")
       || webRtcOptionProvided
@@ -2254,7 +2267,7 @@ Examples:
           }
         }
         for (const udid of targets) {
-          await ensureBooted(udid);
+          await ensureBooted(udid, simulatorWindow);
           if (sessionStopping) return;
         }
         const isStreamHelper = process.env[STREAM_HELPER_ENV] === "1";
@@ -2287,10 +2300,10 @@ Examples:
     }
     if (sessionStopping) return;
     if (opts.detach) {
-      const states = await detach(targets, startPort ?? 3100, stream, streamOptionsProvided);
+      const states = await detach(targets, startPort ?? 3100, simulatorWindow, stream, streamOptionsProvided);
       printStatesJSON(states);
     } else if (opts.preview === false) {
-      await follow(targets, startPort ?? 3100, !!opts.quiet, stream, streamOptionsProvided);
+      await follow(targets, startPort ?? 3100, !!opts.quiet, simulatorWindow, stream, streamOptionsProvided);
     } else {
       await serve(startPort ?? 3200, targets, startPort !== undefined, opts.host, {
         stream,
@@ -2300,6 +2313,7 @@ Examples:
         debugStreamPath,
         requireToken: !!opts.requireToken,
         quiet: !!opts.quiet,
+        simulatorWindow,
       });
     }
   });

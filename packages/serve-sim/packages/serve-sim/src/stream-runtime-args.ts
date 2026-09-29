@@ -104,6 +104,7 @@ export function streamHelperArgs(
   port: number,
   host: string,
   settings?: StreamSettings,
+  options: { simulatorWindow?: boolean } = {},
 ): string[] {
   return [
     udid,
@@ -112,5 +113,7 @@ export function streamHelperArgs(
     "--host",
     host,
     ...streamRuntimeArgs(settings),
+    // The helper boots the device again, so it must skip the window too.
+    ...(options.simulatorWindow === false ? ["--no-simulator-window"] : []),
   ];
 }

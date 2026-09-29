@@ -135,4 +135,11 @@ describe("streamHelperArgs", () => {
       "vp9",
     ]);
   });
+
+  test("passes --no-simulator-window on, so the helper also boots without the window", () => {
+    expect(streamHelperArgs("DEVICE-A", 3100, "127.0.0.1", undefined, { simulatorWindow: false }))
+      .toEqual(["DEVICE-A", "--port", "3100", "--host", "127.0.0.1", "--no-simulator-window"]);
+    expect(streamHelperArgs("DEVICE-A", 3100, "127.0.0.1", undefined, { simulatorWindow: true }))
+      .not.toContain("--no-simulator-window");
+  });
 });
