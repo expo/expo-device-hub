@@ -55,6 +55,9 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const deadline = useRef<number | null>(null);
   const remaining = useRef<number | null>(null);
+  // Hovered or focused: the toast holds until the pointer and focus leave it, even when the
+  // dismiss timer has not started yet because the capture is still running.
+  const held = useRef(false);
 
   const show = useCallback((next: ScreenshotToastState | null) => {
     const prev = current.current;
@@ -79,6 +82,7 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
     (ms: number) => {
       clearTimer();
       remaining.current = ms;
+      if (held.current) return;
       deadline.current = Date.now() + ms;
       timer.current = setTimeout(dismiss, ms);
     },
@@ -86,12 +90,14 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
   );
 
   const pause = useCallback(() => {
+    held.current = true;
     if (!timer.current || deadline.current == null) return;
     remaining.current = Math.max(0, deadline.current - Date.now());
     clearTimer();
   }, [clearTimer]);
 
   const resume = useCallback(() => {
+    held.current = false;
     if (remaining.current != null) schedule(remaining.current);
   }, [schedule]);
 
@@ -222,8 +228,14 @@ export function ScreenshotToast({
           onClick={onDownloadAgain}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          onFocus={(event) => setFocused(isFocusVisible(event))}
-          onBlur={() => setFocused(false)}
+          onFocus={(event) => {
+            setFocused(isFocusVisible(event));
+            onPause();
+          }}
+          onBlur={() => {
+            setFocused(false);
+            onResume();
+          }}
           style={{
             ...PILL_STYLE,
             backgroundColor: hovered ? bg.hover : bg.default,
