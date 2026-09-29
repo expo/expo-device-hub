@@ -58,10 +58,13 @@ path. A frame that arrives while one is in flight replaces the waiting frame.
 backend. Metal retains the VideoToolbox fallback; the other two modes use
 only the selected backend.
 
-`WebRTCPublisher` paces the latest resized frame at the configured viewer rate.
-When a 60 Hz source lands a fraction of a millisecond after a slot, the pump
-waits one scheduling tolerance for it instead of repeating the previous frame;
-an idle screen has no cadence and repeats at the configured rate. The simulator
+`WebRTCPublisher` paces the latest resized frame with a token bucket. A fresh
+frame goes out when it arrives while a token is left. Tokens refill at 1.5
+times the configured viewer rate, so a burst of frames after a late capture copy
+goes out whole instead of the newest replacing the middle one. The previous
+frame repeats at the configured rate: one interval after the last send on an
+idle screen, and 1.5 intervals after it while the source is active, so a late
+fresh frame keeps its token. The simulator
 rewrites its surface without new content, 70 to 120 times a second against 60
 app frames on EAS. A resized frame whose sparse fingerprint (every other row and
 every fourth byte of both planes) matches the previous frame replaces the

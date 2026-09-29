@@ -110,9 +110,10 @@ one native-size snapshot in a latest-frame mailbox; viewers receive a separate
 scaled or letterboxed buffer. A slow encoder cannot build an unbounded capture
 backlog. `ViewerFrameResizer` scales or letterboxes accepted frames to the
 shared canvas on its own queue. `WebRTCPublisher` retains the newest resized
-frame and uses one absolute-cadence pump as the only configured FPS controller. After the first
-frame, it continuously resubmits that retained buffer with fresh presentation
-timestamps; new captures replace it without building a backlog. The libwebrtc
+frame and uses one pump as the only configured FPS controller. A fresh frame goes out when it
+arrives while the pump's token bucket, refilled at 1.5 times the configured rate, has a token.
+Without a fresh frame, the pump resubmits the retained buffer with fresh presentation
+timestamps at the configured rate; new captures replace it without building a backlog. The libwebrtc
 source adapter uses a 1,000 FPS safety ceiling and RTP senders have no additional
 FPS cap, avoiding independently phased frame droppers. The publisher only accepts
 frames while at least one peer is connected. Its shared video source fans each
@@ -130,9 +131,9 @@ showed it silently degrading to send-on-arrival on a virtualized macOS VM
 - Each chain tick is armed as a strict, zero-leeway `DispatchSourceTimer`, which
   opts out of the timer coalescing that stretched `asyncAfter` wake-ups. At most
   one timer is pending at a time, so a replacement chain cannot race a zombie.
-- A late tick advances to the next cadence slot but never skips slots; a stall
-  longer than an interval re-anchors to the present instead of draining a
-  catch-up burst. Consistently late timers therefore cost phase, not rate.
+- A repeat is planned from the last send, and the bucket holds at most two
+  tokens, so a stall never drains a catch-up burst. Consistently late timers
+  therefore lower the repeat rate a little, not the rate of fresh frames.
 - Arrivals watch chain liveness. If a scheduled pump has not ticked for four
   intervals, the next capture arrival restarts the chain under a fresh
   generation. Restarts are counted and exposed as `pumpRestarts` in

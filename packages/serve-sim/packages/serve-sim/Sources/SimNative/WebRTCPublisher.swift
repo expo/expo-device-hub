@@ -174,6 +174,10 @@ private struct PendingWebRTCOffer {
 final class WebRTCPublisher: @unchecked Sendable {
     private static let signalingTimeoutMs = 10_000
     private static let connectionTimeoutMs = 10_000
+    /// Fresh frames may go out this much faster than the configured rate; repeats keep the rate.
+    /// A capture copy that waits behind the simulator's GPU work releases frames in bursts, and at
+    /// the rate itself the pacer held each fresh frame 2 to 14 ms (median, EAS) for a token.
+    private static let freshFrameRateMultiplier = 1.5
 
     /// The playout-delay extension the sender stamps on every packet. The
     /// default stays min 0 / max 0 — render every frame as soon as it arrives.
@@ -266,7 +270,10 @@ final class WebRTCPublisher: @unchecked Sendable {
         self.frameRatePolicy = frameRatePolicy
         self.targetBitrate = max(100_000, targetBitrate)
         self.maxDimension = max(0, maxDimension)
-        self.framePacer = ContinuousFramePacer(framesPerSecond: normalizedMaxFps)
+        self.framePacer = ContinuousFramePacer(
+            framesPerSecond: normalizedMaxFps, mode: .bucket,
+            freshRateMultiplier: Self.freshFrameRateMultiplier
+        )
         self.rawEncodeCanvas = encodeCanvas
         self.encodeCanvas = Self.canvasSize(for: encodeCanvas, maxDimension: maxDimension)
         h264FrameModeOverride = Self.h264FrameModeOverride()
