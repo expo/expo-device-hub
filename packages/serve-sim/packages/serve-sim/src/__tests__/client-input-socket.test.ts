@@ -25,6 +25,7 @@ class FakeSocket {
 function setup() {
   const sockets: FakeSocket[] = [];
   const errors: string[] = [];
+  let recoveries = 0;
   let opens = 0;
   let disconnects = 0;
   const input = createInputSocket("ws://localhost/ws", {
@@ -32,6 +33,7 @@ function setup() {
     onMessage: (data) => data === "admitted",
     onDisconnect: () => { disconnects++; },
     onRefused: (reason) => { errors.push(reason); },
+    onRecovered: () => { recoveries++; },
   }, {
     reconnectDelayMs: 10,
     refusalDelayMs: 40,
@@ -41,7 +43,14 @@ function setup() {
       return socket as unknown as WebSocket;
     },
   });
-  return { input, sockets, errors, get opens() { return opens; }, get disconnects() { return disconnects; } };
+  return {
+    input,
+    sockets,
+    errors,
+    get opens() { return opens; },
+    get disconnects() { return disconnects; },
+    get recoveries() { return recoveries; },
+  };
 }
 
 test("a retry admitted by a config frame clears a temporary refusal", async () => {
@@ -64,21 +73,44 @@ test("a retry admitted by a config frame clears a temporary refusal", async () =
   }
 });
 
-test("queued input flushes on reconnect while acknowledged commands never queue", async () => {
+test("queued input waits for admission and acknowledged commands never queue", async () => {
   const state = setup();
   try {
     state.input.start();
     state.input.send(0x03, { type: "begin" });
     expect(state.input.trySend(0x10, { requestId: 1 })).toBe(false);
     state.sockets[0]!.open();
+    expect(state.sockets[0]!.sent).toHaveLength(0);
+    expect(state.input.trySend(0x10, { requestId: 1 })).toBe(false);
+    state.sockets[0]!.message("admitted");
     expect(new Uint8Array(state.sockets[0]!.sent[0]!)[0]).toBe(0x03);
     expect(state.input.trySend(0x10, { requestId: 1 })).toBe(true);
     state.sockets[0]!.close();
     state.input.send(0x04, { button: "home" });
     await Bun.sleep(20);
     state.sockets[1]!.open();
+    expect(state.sockets[1]!.sent).toHaveLength(0);
+    state.sockets[1]!.message("admitted");
     expect(new Uint8Array(state.sockets[1]!.sent[0]!)[0]).toBe(0x04);
     expect(state.sockets[1]!.sent).toHaveLength(1);
+  } finally {
+    state.input.dispose();
+  }
+});
+
+test("a refused open preserves fresh queued input for the next admitted socket", async () => {
+  const state = setup();
+  try {
+    state.input.start();
+    state.input.send(0x04, { button: "home" });
+    state.sockets[0]!.open();
+    expect(state.sockets[0]!.sent).toHaveLength(0);
+    state.sockets[0]!.close(1013, "busy");
+    await Bun.sleep(20);
+    state.sockets[1]!.open();
+    state.sockets[1]!.message("admitted");
+    expect(state.sockets[1]!.sent).toHaveLength(1);
+    expect(new Uint8Array(state.sockets[1]!.sent[0]!)[0]).toBe(0x04);
   } finally {
     state.input.dispose();
   }
@@ -96,6 +128,23 @@ test("persistent 1013 refusals report once while reconnecting", async () => {
     state.sockets.at(-1)!.close(1013, "busy");
     await Bun.sleep(50);
     expect(state.errors).toEqual(["busy"]);
+  } finally {
+    state.input.dispose();
+  }
+});
+
+test("admission after a reported refusal clears the failure notice", async () => {
+  const state = setup();
+  try {
+    state.input.start();
+    state.sockets[0]!.close(1013, "busy");
+    await Bun.sleep(50);
+    expect(state.errors).toEqual(["busy"]);
+    state.sockets[1]!.open();
+    state.sockets[1]!.message("admitted");
+    expect(state.recoveries).toBe(1);
+    state.sockets[1]!.message("admitted");
+    expect(state.recoveries).toBe(1);
   } finally {
     state.input.dispose();
   }

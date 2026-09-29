@@ -53,7 +53,7 @@ import { IconButton } from "./components/icon-button";
 import { LogsDrawer } from "./components/logs-drawer";
 import { ResizeHandle } from "./components/resize-handle";
 import { SimulatorResizeCornerHandle } from "./components/simulator-resize-corner-handle";
-import { ServeSimToaster, showInputSocketError } from "./components/app-toasts";
+import { ServeSimToaster, dismissInputSocketError, showInputSocketError } from "./components/app-toasts";
 import { createInputSocket } from "../socket/client-input";
 import { ShareSessionButton } from "./components/share-session-button";
 import { SimulatorResizeSizeBadge } from "./components/simulator-resize-size-badge";
@@ -989,6 +989,7 @@ function AppWithConfig({
         }
       },
       onRefused: showInputSocketError,
+      onRecovered: dismissInputSocketError,
     });
     inputSocketRef.current = inputSocket;
     inputSocket.start();

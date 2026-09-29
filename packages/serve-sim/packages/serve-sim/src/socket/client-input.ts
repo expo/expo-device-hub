@@ -6,6 +6,8 @@ type InputSocketHandlers = {
   onMessage(data: unknown): boolean;
   onDisconnect(): void;
   onRefused(reason: string): void;
+  /** Clear a previously reported refusal once input is admitted. */
+  onRecovered(): void;
 };
 
 /** Own input sends, reconnects, and the temporary 1013 refusal window. */
@@ -34,16 +36,18 @@ export function createInputSocket(
     socket = ws;
     ws.onopen = () => {
       if (stopped || socket !== ws) return;
-      pendingMessages = flushWsMessageQueue(ws, pendingMessages);
       handlers.onOpen();
     };
     ws.onmessage = (event) => {
       if (stopped || socket !== ws) return;
       if (handlers.onMessage(event.data)) {
         admitted = true;
+        pendingMessages = flushWsMessageQueue(ws, pendingMessages);
         if (refusalTimer) clearTimeout(refusalTimer);
         refusalTimer = null;
+        const wasReported = reported;
         reported = false;
+        if (wasReported) handlers.onRecovered();
       }
     };
     ws.onclose = (event) => {
@@ -73,10 +77,11 @@ export function createInputSocket(
 
   return {
     send(tag: number, payload: object) {
-      pendingMessages = sendOrQueueWsMessage(socket, pendingMessages, tag, payload);
+      // Opening the WebSocket does not mean DeviceSession accepted input.
+      pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload);
     },
     trySend(tag: number, payload: object) {
-      return trySendWsMessage(socket, tag, payload);
+      return admitted && trySendWsMessage(socket, tag, payload);
     },
     start: connect,
     dispose() {
