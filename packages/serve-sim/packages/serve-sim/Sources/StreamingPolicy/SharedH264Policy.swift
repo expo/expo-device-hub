@@ -8,6 +8,10 @@ public struct SharedH264Policy {
     /// receive a frame again. It gets the next keyframe instead.
     private var starvedPeers = Set<Int>()
     public private(set) var starvedRecoveries: UInt64 = 0
+    /// Frame time of the last keyframe a refused delivery forced.
+    private var lastRefusalIDRTimestamp: Int64?
+    /// Refused deliveries force at most one keyframe per this much frame time.
+    public static let refusalIDRIntervalNanoseconds: Int64 = 1_000_000_000
 
     public init(defaultBitrate: Int) {
         self.defaultBitrate = max(1, defaultBitrate)
@@ -34,6 +38,20 @@ public struct SharedH264Policy {
         let newlyStarved = starvedPeers.insert(peer).inserted
         if newlyStarved { forceNextIDR = true }
         return newlyStarved
+    }
+
+    /// The peer's sender refused the frame with capture time `frameTimestamp`, for example because
+    /// it is not active yet or is paused. It waits for the next keyframe like a starved peer. The
+    /// first refusal forces one, so a viewer whose sender activates late still starts at once, but
+    /// later ones force at most one per `refusalIDRIntervalNanoseconds`: a sender that keeps
+    /// refusing would otherwise make every keyframe force the next, and every viewer would get a
+    /// keyframe-only stream.
+    public mutating func deliveryRejected(peer: Int, frameTimestamp: Int64) {
+        starvedPeers.insert(peer)
+        if let last = lastRefusalIDRTimestamp,
+           frameTimestamp &- last < Self.refusalIDRIntervalNanoseconds { return }
+        lastRefusalIDRTimestamp = frameTimestamp
+        forceNextIDR = true
     }
 
     /// The peer received a frame through the normal path; it is no longer starved.

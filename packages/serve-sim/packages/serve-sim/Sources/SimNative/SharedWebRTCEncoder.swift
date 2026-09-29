@@ -416,7 +416,7 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
             lastDeliveredTimestamp[peer] = packet.timestamp
             policy.caughtUp(peer: peer)
         } else {
-            policy.frameWasStale(peer: peer)
+            policy.deliveryRejected(peer: peer, frameTimestamp: packet.timestamp)
         }
     }
 
