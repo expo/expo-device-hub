@@ -7,7 +7,7 @@
 set -u
 NAME=$1; CONFIGS=$2; REPS=${3:-2}
 HERE=${0:A:h}
-SERVER=seths-mac-mini; H=seths-mac-mini.tail441c0f.ts.net
+SERVER=seths-mac-mini; H=${SERVER_HOST:-seths-mac-mini.tail441c0f.ts.net}
 L=seth@sethwebster-expo.tail441c0f.ts.net; LN=/Users/seth/.local/share/mise/installs/node/22.20.0/bin/node
 SN=/Users/sethwebster/.asdf/installs/nodejs/24.14.0/bin/node
 U=B3AFC702-8CB5-45BF-A221-99740EC51B4B

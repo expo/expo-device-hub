@@ -1,0 +1,6 @@
+# Iteration 7: over the public internet (not Tailscale, so pf/dummynet can shape it), under loss
+# from netem.sh on the Mini (1% then 3%). Bridges bind the Mini's LAN address + a forwarded UDP port
+# and offer their public address via STUN; the page and WebSocket go to the home IP.
+ws-direct   8816 ws
+dc-nack     8812 nack DC_ACKS=unreliable SCTP_SACK_MS=5 SCTP_RTO_MIN=40 SCTP_RTO_MAX=200 SCTP_RTO_INIT=200 DC_BIND=192.168.1.221 DC_PORT=40011 DC_STUN=stun:stun.l.google.com:19302
+dc-ordered  8813 ordered DC_ACKS=unreliable SCTP_SACK_MS=5 SCTP_RTO_MIN=40 SCTP_RTO_MAX=200 SCTP_RTO_INIT=200 DC_BIND=192.168.1.221 DC_PORT=40012 DC_STUN=stun:stun.l.google.com:19302

@@ -52,7 +52,12 @@ const server = http.createServer((req, res) => {
 });
 
 new WebSocketServer({ server, path: '/signal' }).on('connection', (signal) => {
-  const pc = new ndc.PeerConnection('bridge', { iceServers: [] });
+  // Public-path tests: bind ICE to one address and a fixed UDP port (forwarded on the router), and use
+  // STUN so the public address is offered; otherwise ICE may pick an overlay path (e.g. Tailscale).
+  const rtcConfig = { iceServers: process.env.DC_STUN ? [process.env.DC_STUN] : [] };
+  if (process.env.DC_BIND) rtcConfig.bindAddress = process.env.DC_BIND;
+  if (process.env.DC_PORT) { rtcConfig.portRangeBegin = Number(process.env.DC_PORT); rtcConfig.portRangeEnd = Number(process.env.DC_PORT); }
+  const pc = new ndc.PeerConnection('bridge', rtcConfig);
   // Register before creating channels: creating one starts negotiation and emits the offer.
   pc.onLocalDescription((sdp, type) => signal.send(JSON.stringify({ t: 'sdp', sdp, type })));
   pc.onLocalCandidate((candidate, mid) => signal.send(JSON.stringify({ t: 'cand', candidate, mid })));
