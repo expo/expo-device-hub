@@ -48,7 +48,7 @@ export interface CaptureCounts {
   /** Pump slots that waited one tolerance for a late frame, and sends that repeated a frame. */
   pumpDeferrals?: number | null;
   pumpRepeats?: number | null;
-  /** Frames whose sparse fingerprint matched the previous one, so the pacer was not woken. */
+  /** Frames with the same pixels as the retained one, so they did not count as fresh. */
   unchangedFrames?: number | null;
   cpuFallbacks: number | null;
   poolDrops?: number | null;
