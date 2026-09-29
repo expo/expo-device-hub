@@ -1,3 +1,4 @@
+import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
@@ -220,6 +221,7 @@ export type AppClock = {
 type SessionStatus = "streaming" | "stopped" | "error";
 
 type Client = {
+  touches: ClientTouchState;
   id: number;
   socket: StreamSocket;
   video: boolean;
@@ -674,24 +676,44 @@ async function createAppInternal(
     Array.isArray(value) ||
     (value as Record<string, unknown>).record !== false;
 
-  const dispatchGesture = async (gesture: Gesture, source: string, record = true) => {
+  const enqueueGesture = (gesture: Gesture, source: string, record = true) => {
     if (status !== "streaming") throw new Error(`session is ${status}`);
     if (captureRestarting) throw new Error("video capture is restarting");
     const generation = sessionGeneration;
     const handle = session.controls.enqueue(gesture, screen);
-    try {
-      await handle.completion;
-    } catch (error) {
-      if (generation !== sessionGeneration || captureRestarting) {
-        throw new Error("video capture restarted during input");
-      }
-      throw error;
-    }
-    if (generation !== sessionGeneration || captureRestarting) {
-      throw new Error("video capture restarted during input");
-    }
-    if (record) sessionRecorder.recordGesture(handle.gesture, source);
+    const completion = handle.completion.then(
+      (result) => {
+        if (generation !== sessionGeneration || captureRestarting) {
+          throw new Error("video capture restarted during input");
+        }
+        if (record) sessionRecorder.recordGesture(handle.gesture, source);
+        return result;
+      },
+      (error: unknown) => {
+        if (generation !== sessionGeneration || captureRestarting) {
+          throw new Error("video capture restarted during input");
+        }
+        throw error;
+      },
+    );
+    return { ...handle, completion };
   };
+
+  const dispatchGesture = async (gesture: Gesture, source: string, record = true) => {
+    await enqueueGesture(gesture, source, record).completion;
+  };
+
+  const inputTarget = () => {
+    const controls = session.controls;
+    return {
+      identity: controls,
+      enqueue(gesture: Gesture, source: string, record: boolean) {
+        if (session.controls !== controls) throw new Error("input session changed");
+        return enqueueGesture(gesture, source, record);
+      },
+    };
+  };
+  const enqueueReplayGesture = replayTouchInput(inputTarget);
 
   const applyLocation = async (fix: GeoFix, source: string, record = true) => {
     routePlayback.stop();
@@ -708,7 +730,7 @@ async function createAppInternal(
             ? signal.reason
             : new DOMException("session replay cancelled", "AbortError");
         }
-        await dispatchGesture(gesture, "session:replay", false);
+        await enqueueReplayGesture(gesture, signal).completion;
       },
     });
   };
@@ -1992,6 +2014,7 @@ async function createAppInternal(
       return;
     }
     const client: Client = {
+      touches: new ClientTouchState(inputTarget),
       id: nextClientId++,
       socket,
       video: meta.video ?? true,
@@ -2019,7 +2042,7 @@ async function createAppInternal(
           return;
         }
         const msg = parseGesture(payload);
-        void dispatchGesture(msg, "ws", shouldRecord(payload))
+        void client.touches.enqueue(msg, shouldRecord(payload)).completion
           .then(() => {
             if (acknowledge) sendJson(socket, { ok: true });
           })
@@ -2030,6 +2053,7 @@ async function createAppInternal(
     });
 
     socket.onClose(() => {
+      client.touches.close();
       clients.delete(client);
     });
   };
