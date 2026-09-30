@@ -3,7 +3,7 @@ import { spawn, type ChildProcess } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
-import { e2eDevice, requireE2E } from "./e2e-preconditions";
+import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 import { freePortAsync, installShims, killHelpersForDevice, useTempStateDir } from "./helpers";
 
 const CLI = join(import.meta.dir, "../..", "dist/serve-sim.js");
@@ -27,12 +27,14 @@ describeOrSkip("simctl calls before the preview is ready", () => {
   let shims: ReturnType<typeof installShims>;
   let server: ChildProcess | undefined;
   let calls: string[] = [];
+  let insertBefore: string | null = null;
   const log = () => join(tempState.dir, "xcrun.log");
   const stateFile = () => join(tempState.dir, `server-${udid!}.json`);
 
   beforeAll(async () => {
     tempState = useTempStateDir();
     killHelpersForDevice(udid!);
+    insertBefore = readInsert(udid!);
     // Logs each call, then runs the real xcrun.
     shims = installShims({ xcrun: `#!/bin/sh\necho "$*" >> ${JSON.stringify(log())}\nexec /usr/bin/xcrun "$@"\n` });
     const port = await freePortAsync();
@@ -64,6 +66,13 @@ describeOrSkip("simctl calls before the preview is ready", () => {
 
   test("waits for the boot once", () => {
     expect(calls.filter((call) => call.startsWith(`simctl bootstatus ${udid}`))).toHaveLength(1);
+  });
+
+  test("starts on a device with no serve-sim insert left behind", () => {
+    // A loader or startup image an earlier run left inserted makes the stale check read the
+    // insert again, under the lock, so the counts below would not hold.
+    expect(insertBefore).not.toBeNull();
+    expect(insertBefore).not.toMatch(/libServeSim(CapabilityLoader|Trampoline)\.dylib|libSimNetProxy\.dylib/);
   });
 
   test("reads each launchd value only as often as arming needs", () => {
