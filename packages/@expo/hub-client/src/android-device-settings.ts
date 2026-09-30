@@ -1,4 +1,4 @@
-import { type DeviceSettingKey } from './types';
+import { type DeviceSettingKey } from './types.js';
 
 export type AndroidDeviceSettingKey = Extract<
   DeviceSettingKey,

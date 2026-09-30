@@ -1,6 +1,6 @@
 import { useEffect, useRef, type RefObject } from 'react';
 
-import { AvccDemuxer, avcCodecString, isAvccSupported, type AvccChunkType } from './avcc';
+import { AvccDemuxer, avcCodecString, isAvccSupported, type AvccChunkType } from './avcc.js';
 
 export interface UseAvccStreamOptions {
   /** Base serve-sim helper URL, without `/stream.avcc`. */

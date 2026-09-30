@@ -6,8 +6,8 @@ import {
   agentInteractionPointsAt,
   agentInteractionPointsWithTravelAt,
   agentInteractionTravelMs,
-} from '../agent-interaction-animation';
-import { type AgentInteraction } from '../types';
+} from '../agent-interaction-animation.js';
+import { type AgentInteraction } from '../types.js';
 
 const INTERACTION: AgentInteraction = {
   id: 'interaction-1',

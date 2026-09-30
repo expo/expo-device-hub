@@ -1,16 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 
-import { DEVICE_STREAM_SETTING_BOUNDS } from '../stream-settings';
+import { DEVICE_STREAM_SETTING_BOUNDS } from '../stream-settings.js';
 
 import {
   androidStreamSettingsPatch,
   parseAndroidStreamSettings,
-} from '../android-stream-settings';
+} from '../android-stream-settings.js';
 import {
   androidStreamSourceErrorMessage,
   parseAndroidStreamSource,
-} from '../android-stream-source';
-import { androidWsUrlFor, parseServeEmuStreamSettings } from '../useAndroidDevice';
+} from '../android-stream-source.js';
+import { androidWsUrlFor, parseServeEmuStreamSettings } from '../useAndroidDevice.js';
 
 describe('serve-emu stream contract', () => {
   test('uses a metadata video socket for H.264 and an input-only socket for WebRTC', () => {

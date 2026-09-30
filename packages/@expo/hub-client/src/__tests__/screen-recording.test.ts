@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 
-import { areRecordingControlsLocked, parseScreenRecordingStatus } from '../screen-recording';
+import { areRecordingControlsLocked, parseScreenRecordingStatus } from '../screen-recording.js';
 
 test('unknown recording status locks controls while confirmed absence unlocks them', () => {
   expect(areRecordingControlsLocked('unknown')).toBe(true);

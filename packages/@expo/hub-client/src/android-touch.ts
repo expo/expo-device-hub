@@ -3,7 +3,7 @@
  * its own message with a stable id.
  */
 
-import { type MultiTouchSample, type TouchSample } from './types';
+import { type MultiTouchSample, type TouchSample } from './types.js';
 
 type UnitPoint = MultiTouchSample['a'];
 type TouchPhase = TouchSample['phase'];

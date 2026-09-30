@@ -1,4 +1,4 @@
-import { type DeviceEvent } from './types';
+import { type DeviceEvent } from './types.js';
 
 export const MAX_ANDROID_DEVICE_EVENTS = 500;
 

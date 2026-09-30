@@ -6,9 +6,9 @@ import {
   loadIosAccessibility,
   parseAndroidAccessibility,
   parseIosAccessibility,
-} from '../accessibility';
-import { type FetchLike } from '../sse';
-import { type AccessibilitySnapshot } from '../types';
+} from '../accessibility.js';
+import { type FetchLike } from '../sse.js';
+import { type AccessibilitySnapshot } from '../types.js';
 
 const CAPTURED_AT = '2026-09-09T10:00:00.000Z';
 const CAPTURED_AT_MS = Date.parse(CAPTURED_AT);

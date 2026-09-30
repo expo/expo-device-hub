@@ -18,24 +18,24 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { type AccessibilityLoader, loadAndroidAccessibility } from './accessibility';
-import { appendActivitySample } from './activity';
+import { type AccessibilityLoader, loadAndroidAccessibility } from './accessibility.js';
+import { appendActivitySample } from './activity.js';
 import {
   EMPTY_ANDROID_ACTIVITY,
   nextAndroidActivityAfterSilence,
   parseAndroidActivityFrame,
-} from './android-activity';
-import { apiUrl, deviceApiUrl } from './android-api-url';
-import { readAndroidLocation, writeAndroidLocation } from './android-location';
-import { androidPermissionsBackend } from './android-permissions';
-import { carryForwardAppIcon, fetchAndroidAppIcon } from './android-app-icon';
+} from './android-activity.js';
+import { apiUrl, deviceApiUrl } from './android-api-url.js';
+import { readAndroidLocation, writeAndroidLocation } from './android-location.js';
+import { androidPermissionsBackend } from './android-permissions.js';
+import { carryForwardAppIcon, fetchAndroidAppIcon } from './android-app-icon.js';
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
   createAndroidEventCursor,
   mergeAndroidEventSnapshotCursor,
   reconcileAndroidSessionEvents,
-} from './android-events';
+} from './android-events.js';
 import {
   ANDROID_DEVICE_SETTING_KEYS,
   ANDROID_POLLED_DEVICE_SETTING_KEYS,
@@ -45,27 +45,27 @@ import {
   androidDisplayWidthDpFromPayload,
   createAndroidDeviceSettingVersions,
   parseAndroidDeviceSetting,
-} from './android-device-settings';
+} from './android-device-settings.js';
 import {
   androidStreamSettingsPatch,
   parseAndroidStreamSettings,
-} from './android-stream-settings';
+} from './android-stream-settings.js';
 import {
   androidStreamSourceErrorMessage,
   parseAndroidStreamSource,
-} from './android-stream-source';
-import { androidTouchMessage } from './android-touch';
-import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
-import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
-import { KeyedWriteTracker } from './keyed-write-tracker';
-import { androidMessageForKeyboardInput } from './keyboard';
-import { MsePlayer } from './mse-player';
+} from './android-stream-source.js';
+import { androidTouchMessage } from './android-touch.js';
+import { mergeAuthoritativeDeviceSetting } from './device-setting-writes.js';
+import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264.js';
+import { KeyedWriteTracker } from './keyed-write-tracker.js';
+import { androidMessageForKeyboardInput } from './keyboard.js';
+import { MsePlayer } from './mse-player.js';
 import {
   isDeliberateServerClose,
   RECONNECT_BASE_DELAY_MS,
   STREAM_RECONNECT_GRACE_MS,
   scheduleReconnect,
-} from './stream-reconnect';
+} from './stream-reconnect.js';
 import {
   IDLE_STREAM_SWITCH,
   isStreamSwitchPending,
@@ -73,15 +73,15 @@ import {
   type StreamSwitchEvent,
   type StreamSwitchState,
   streamSwitchTimeoutMs,
-} from './stream-switch';
-import { useAccessibility } from './useAccessibility';
-import { useAndroidCamera } from './useAndroidCamera';
-import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
-import { useAppPermissions } from './useAppPermissions';
-import { useStreamSettingsResource } from './useStreamSettingsResource';
-import { parseScreenRecordingStatus } from './screen-recording';
-import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
-import { presentedVideoFrameDelta } from './video-frame-metadata';
+} from './stream-switch.js';
+import { useAccessibility } from './useAccessibility.js';
+import { useAndroidCamera } from './useAndroidCamera.js';
+import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation.js';
+import { useAppPermissions } from './useAppPermissions.js';
+import { useStreamSettingsResource } from './useStreamSettingsResource.js';
+import { parseScreenRecordingStatus } from './screen-recording.js';
+import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream.js';
+import { presentedVideoFrameDelta } from './video-frame-metadata.js';
 import {
   type ConnectionStatus,
   type DeviceAppearance,
@@ -106,7 +106,7 @@ import {
   type RunningDevice,
   type ScreenSize,
   type TouchSample,
-} from './types';
+} from './types.js';
 
 const MAX_LOGS = 200;
 const SOFT_DECODE_QUEUE_SIZE = 4;

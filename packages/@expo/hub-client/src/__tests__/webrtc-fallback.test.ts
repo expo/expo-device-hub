@@ -4,7 +4,7 @@ import {
   nextWebRtcFallbackCodec,
   webRtcFailureDisposition,
   webRtcFallbackDecision,
-} from '../webrtc-fallback';
+} from '../webrtc-fallback.js';
 
 describe('WebRTC fallback', () => {
   test('tries VP8 and VP9 after H.264', () => {

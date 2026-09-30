@@ -8,7 +8,7 @@ import {
   mergeIosEventLogPayload,
   parseIosEventLogPayload,
   type IosEventLogEntry,
-} from '../ios-events';
+} from '../ios-events.js';
 
 function entry(id: number, overrides: Partial<IosEventLogEntry> = {}): IosEventLogEntry {
   return {

@@ -5,7 +5,7 @@ import {
   type DeviceStreamEncoderStats,
   type DeviceStreamStats,
   type DeviceStreamStatsSample,
-} from './types';
+} from './types.js';
 
 const MIN_WINDOW_MS = 250;
 const POLL_MS = 1_000;

@@ -2,7 +2,7 @@ import {
   type AgentInteraction,
   type AgentInteractionPoint,
   type AgentInteractionSegment,
-} from './types';
+} from './types.js';
 
 const CURSOR_TRAVEL_MS = 220;
 export const AGENT_INTERACTION_IDLE_TIMEOUT_MS = 60 * 1000;
