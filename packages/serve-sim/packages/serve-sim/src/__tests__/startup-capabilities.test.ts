@@ -30,6 +30,7 @@ beforeEach(() => {
 const fs = require('node:fs');
 const path = ${JSON.stringify(envPath)};
 const failure = ${JSON.stringify(failurePath)};
+fs.appendFileSync(path + '.log', process.argv.slice(2).join(' ') + '\\n');
 if (fs.existsSync(${JSON.stringify(shutdownPath)})) {
   process.stderr.write('Process spawn via launchd failed because device is not booted.');
   process.exit(1);
@@ -52,7 +53,8 @@ if (name === 'DYLD_INSERT_LIBRARIES' && command !== 'getenv' && fs.existsSync(fa
 if (command === 'getenv') process.stdout.write(env[name] || '');
 if (command === 'setenv') env[name] = value;
 if (command === 'unsetenv') delete env[name];
-fs.writeFileSync(path, JSON.stringify(env));
+// Reads run in parallel, so only a write rewrites the file a concurrent read may be parsing.
+if (command !== 'getenv') fs.writeFileSync(path, JSON.stringify(env));
 ` });
 });
 
@@ -75,6 +77,17 @@ test("startup capture uses shared inserts and capability environment", async () 
   await disableCapability(UDID, null, "capture", { relaunch: false });
   expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
   expect(managedStartupDylibs(UDID)).toEqual([]);
+});
+
+test("publishing reads each launchd value once", async () => {
+  await enable();
+  const reads = readFileSync(`${envPath}.log`, "utf8").trim().split("\n")
+    .filter((line) => line.includes("getenv"));
+  // The two reads run in parallel, so their order varies.
+  expect(reads.sort()).toEqual([
+    `simctl spawn ${UDID} launchctl getenv DYLD_INSERT_LIBRARIES`,
+    `simctl spawn ${UDID} launchctl getenv SERVE_SIM_CAPABILITIES_CONFIG`,
+  ]);
 });
 
 test("hybrid capture keeps its early insert and publishes a deferred load for running apps", async () => {
