@@ -178,8 +178,12 @@ function withoutOurs(current: string, startupDylibs: string[] = []): string[] {
     .filter((entry) => entry !== "" && !isCapabilityLoaderPath(entry) && !startupDylibs.includes(entry));
 }
 
+async function readLaunchdEnv(udid: string, name: string): Promise<string> {
+  return (await simctl(["spawn", udid, "launchctl", "getenv", name], 15_000)).trim();
+}
+
 async function readInsert(udid: string): Promise<string> {
-  return (await simctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000)).trim();
+  return readLaunchdEnv(udid, INSERT);
 }
 
 function startupDylibs(capabilities: Record<string, Capability>): string[] {
@@ -191,11 +195,12 @@ function startupDylibs(capabilities: Record<string, Capability>): string[] {
 async function armInsert(
   udid: string,
   dylib: string,
-  capabilities: Record<string, Capability> = readLaunchState(udid)?.capabilities ?? {},
-  previousStartup = managedStartupDylibs(udid),
+  capabilities: Record<string, Capability>,
+  previousStartup: string[],
+  currentInsert: string,
 ): Promise<void> {
   const desired = startupDylibs(capabilities);
-  const retained = withoutOurs(await readInsert(udid), previousStartup);
+  const retained = withoutOurs(currentInsert, previousStartup);
   const next = [...new Set([...retained, dylib, ...desired])].join(":");
   writeManagedStartupDylibs(udid, [...previousStartup, ...desired]);
   await simctl(["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)], 15_000);
@@ -221,8 +226,7 @@ async function snapshotCapabilityLaunch(udid: string): Promise<CapabilityLaunchS
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const startupDylibs = managedStartupDylibs(udid);
-  const insert = await readInsert(udid);
-  const configPath = (await simctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], 15_000)).trim();
+  const [insert, configPath] = await Promise.all([readInsert(udid), readLaunchdEnv(udid, CONFIG_VAR)]);
   return { config, configPath, insert, startupDylibs };
 }
 
@@ -276,7 +280,8 @@ async function publishLaunchState(udid: string, state: LaunchState): Promise<voi
 
   try {
     commitCapabilityConfig(udid, withdrawnOnly);
-    await armInsert(udid, capabilityLoaderPath(), state.capabilities, previous.startupDylibs);
+    // The snapshot read the insert under this lock, so arming need not read it again.
+    await armInsert(udid, capabilityLoaderPath(), state.capabilities, previous.startupDylibs, previous.insert);
     if (config !== withdrawnOnly) commitCapabilityConfig(udid, config);
     writeLaunchState(udid, state);
   } catch (error) {
