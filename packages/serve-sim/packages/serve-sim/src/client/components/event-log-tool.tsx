@@ -55,7 +55,7 @@ export function EventLogTool({
       open={open}
       onOpenChange={setOpen}
       data-event-log=""
-      summaryClassName="grid [grid-template-columns:auto_1fr_auto] items-center gap-2 text-left"
+      summaryClassName="grid [grid-template-columns:auto_1fr_auto_auto] items-center gap-2 text-left"
       summary={
         <>
           <span className="text-[11px] font-semibold text-white/50 uppercase tracking-[0.08em] leading-none">

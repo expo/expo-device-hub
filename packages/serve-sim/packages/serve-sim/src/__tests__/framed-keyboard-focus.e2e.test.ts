@@ -149,10 +149,21 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     return session;
   }
 
-  async function clickOnce(point: { x: number; y: number }): Promise<void> {
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point });
-    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", buttons: 1, clickCount: 1 });
-    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: 1 });
+  async function clickOnce(point: { x: number; y: number }, sessionId?: string): Promise<void> {
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseMoved", ...point }, sessionId);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mousePressed", ...point, button: "left", buttons: 1, clickCount: 1 }, sessionId);
+    await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: 1 }, sessionId);
+  }
+
+  async function clickHardwareKeyboard(frame: string): Promise<void> {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline && await cdp.evaluate<boolean>(`${HARDWARE_KEYBOARD_SWITCH}.hasAttribute("disabled")`, frame)) {
+      await Bun.sleep(100);
+    }
+    expect(await cdp.evaluate<boolean>(`${HARDWARE_KEYBOARD_SWITCH}.hasAttribute("disabled")`, frame)).toBe(false);
+    await cdp.evaluate(`(${HARDWARE_KEYBOARD_SWITCH}).scrollIntoView({ block: "center" })`, frame);
+    await Bun.sleep(300);
+    await clickOnce(await waitForElement(HARDWARE_KEYBOARD_SWITCH, frame), frame);
   }
 
   async function typeKeys(text: string): Promise<void> {
@@ -260,6 +271,7 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
   }, 90_000);
 
   test("the keyboard still types after switching the hardware keyboard in the tools panel", async () => {
+    cli("ui", "hardware-keyboard", "on", "-d", udid!);
     const frame = await openFramed();
     const stream = await waitForElement(STREAM_LAYER, frame, 0.75);
     const start = await launchTextField();
@@ -270,8 +282,9 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     if (!await elementCenter(HARDWARE_KEYBOARD_SWITCH, frame)) {
       await clickOnce(await waitForElement(TOOLS_BUTTON, frame));
     }
-    const hardwareKeyboard = await waitForElement(HARDWARE_KEYBOARD_SWITCH, frame);
-    await clickOnce(hardwareKeyboard);
+    await waitForElement(HARDWARE_KEYBOARD_SWITCH, frame);
+    expect(await cdp.evaluate<string>(`${HARDWARE_KEYBOARD_SWITCH}.getAttribute("aria-checked")`, frame)).toBe("true");
+    await clickHardwareKeyboard(frame);
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline && await cdp.evaluate<string>(`${HARDWARE_KEYBOARD_SWITCH}.getAttribute("aria-checked")`, frame) !== "false") {
       await Bun.sleep(100);
@@ -282,7 +295,7 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     await typeKeys("X!");
     await waitFor(() => lastText(start), "zqX!");
 
-    await clickOnce(hardwareKeyboard);
+    await clickHardwareKeyboard(frame);
     await clickOnce(stream);
     await typeKeys("w");
     await waitFor(() => lastText(start), "zqX!w");

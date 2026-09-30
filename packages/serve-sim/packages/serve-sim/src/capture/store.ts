@@ -1,6 +1,6 @@
 export const CAPTURE_SCHEMA_VERSION = 1;
 
-const MAX_REQUESTS = 500;
+export const MAX_REQUESTS = 500;
 const TRAFFIC_BUCKET_MS = 100;
 const TRAFFIC_WINDOW_BUCKETS = 10;
 

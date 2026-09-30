@@ -7,7 +7,7 @@ import { runChildSuite } from "./fixtures/run-child-suite";
 describe("client runHostAction", () => {
   it("handshakes, pairs replies, and maps refusals to failed results", async () => {
     const { exitCode, output } = await runChildSuite("client-exec.child.ts", { timeoutMs: 45_000 });
-    expect(output).toContain("6 pass");
+    expect(output).toContain("7 pass");
     expect(exitCode).toBe(0);
   }, 60_000);
 
