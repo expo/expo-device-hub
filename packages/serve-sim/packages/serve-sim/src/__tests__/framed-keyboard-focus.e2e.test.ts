@@ -149,6 +149,7 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
         `(() => {
           const layer = ${STREAM_LAYER};
           return layer && document.elementFromPoint(${point.x}, ${point.y}) === layer &&
+            document.querySelector('[data-input-socket-open]')?.getAttribute('data-input-socket-open') === 'true' &&
             !document.body.innerText.includes("Connecting...");
         })()`,
         sessionId,

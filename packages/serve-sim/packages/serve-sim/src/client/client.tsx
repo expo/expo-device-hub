@@ -916,6 +916,7 @@ function AppWithConfig({
 
   // Touch/button relay via direct WebSocket
   const wsRef = useRef<WebSocket | null>(null);
+  const [inputSocketOpen, setInputSocketOpen] = useState(false);
   if (!hingeQueueRef.current) {
     hingeQueueRef.current = createAcknowledgedControlQueue<HingeControlCommand>({
       send: (request) => {
@@ -956,11 +957,13 @@ function AppWithConfig({
     };
 
     const connect = () => {
+      setInputSocketOpen(false);
       const ws = new WebSocket(config.wsUrl);
       ws.binaryType = "arraybuffer";
       currentWs = ws;
       wsRef.current = ws;
       ws.onopen = () => {
+        setInputSocketOpen(true);
         pendingWsMessagesRef.current = flushWsMessageQueue(
           ws,
           pendingWsMessagesRef.current,
@@ -1005,7 +1008,10 @@ function AppWithConfig({
       };
       ws.onclose = (event) => {
         if (!stopped && event.code === 1013) showInputSocketError(event.reason || "The server is busy. Try again shortly.");
-        if (wsRef.current === ws) wsRef.current = null;
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+          setInputSocketOpen(false);
+        }
         if (!stopped) {
           setPhysicalPose(undefined);
           sentHingePoseRef.current = undefined;
@@ -1583,6 +1589,7 @@ function AppWithConfig({
     <AxStateProvider endpoint={axOverlayEnabled ? config?.axEndpoint : undefined}>
     <div
       ref={scrollContainerRef}
+      data-input-socket-open={inputSocketOpen}
       className={`flex flex-col items-center h-dvh bg-page font-system box-border ${
         phoneKeyboardRaised ? "justify-start overflow-y-hidden" : "justify-center"
       } ${presentation ? "gap-0" : "pt-16 pb-6 sm:py-6 gap-3"}`}
