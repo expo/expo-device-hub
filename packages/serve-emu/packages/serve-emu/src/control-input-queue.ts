@@ -293,6 +293,7 @@ export class ControlInputQueue {
   #scheduled = false;
   #closedError: Error | null = null;
   #openPointers = new Set<string>();
+  #appliedPointers = new Set<string>();
 
   constructor(options: ControlInputQueueOptions) {
     const adapters = [options.writer, options.socket, options.dispatcher].filter(
@@ -484,6 +485,7 @@ export class ControlInputQueue {
     this.#writer?.close?.(this.#closedError);
     this.#dispatcher?.close?.(this.#closedError);
     this.#openPointers.clear();
+    this.#appliedPointers.clear();
 
     const pending = this.#pending;
     this.#pending = [];
@@ -601,6 +603,11 @@ export class ControlInputQueue {
               "control input queue closed",
             );
           }
+          if (entry.gesture?.type === "touch") {
+            const key = `touch:${entry.gesture.pointerId ?? 0}`;
+            if (entry.gesture.action === "down") this.#appliedPointers.add(key);
+            else if (entry.gesture.action === "up") this.#appliedPointers.delete(key);
+          }
           for (const waiter of entry.waiters) {
             waiter.resolve({ status: waiter.status });
           }
@@ -612,6 +619,7 @@ export class ControlInputQueue {
             this.#rejectEntry(entry, err);
             this.#release(entry);
             this.#active = null;
+            this.#reconcileRejectedTouch(entry, err);
             continue;
           }
           const failure =
@@ -640,6 +648,46 @@ export class ControlInputQueue {
     } finally {
       this.#running = false;
       if (!this.#closedError && this.#pending.length > 0) this.#schedule();
+    }
+  }
+
+  #reconcileRejectedTouch(entry: QueueEntry, error: ControlInputRejectedError): void {
+    if (entry.gesture?.type !== "touch") return;
+    const pointerKey = `touch:${entry.gesture.pointerId ?? 0}`;
+    if (entry.gesture.action === "down" && !this.#appliedPointers.has(pointerKey)) {
+      // A rejected DOWN never reached the device. Its queued MOVE/UP must not
+      // become orphan input. Stop at a later DOWN, including direct queue users
+      // that reuse the same ID rather than allocating a fresh one per gesture.
+      let dependent = true;
+      this.#pending = this.#pending.filter((candidate) => {
+        const gesture = candidate.gesture;
+        if (
+          !dependent ||
+          gesture?.type !== "touch" ||
+          `touch:${gesture.pointerId ?? 0}` !== pointerKey
+        ) return true;
+        if (gesture.action === "down") {
+          dependent = false;
+          return true;
+        }
+        this.#rejectEntry(
+          candidate,
+          new ControlInputRejectedError("touch DOWN was rejected", { cause: error }),
+        );
+        this.#release(candidate);
+        return false;
+      });
+    }
+    // Reservations describe the state after admitted work, not just the state
+    // already written. A pending UP carries its own release capacity. A failed
+    // UP gives that slot back to its still-held pointer; a failed DOWN frees it.
+    this.#openPointers = new Set(this.#appliedPointers);
+    for (const pending of this.#pending) {
+      const gesture = pending.gesture;
+      if (gesture?.type !== "touch") continue;
+      const key = `touch:${gesture.pointerId ?? 0}`;
+      if (gesture.action === "down") this.#openPointers.add(key);
+      else if (gesture.action === "up") this.#openPointers.delete(key);
     }
   }
 
