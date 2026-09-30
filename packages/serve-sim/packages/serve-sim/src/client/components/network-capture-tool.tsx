@@ -6,7 +6,7 @@ import {
   type CaptureAttachment,
   type CaptureMeta,
 } from "../hooks/use-capture-stream";
-import { runHostAction } from "../utils/exec";
+import { runHostAction } from "../../socket/client-control";
 import { downloadHar } from "../utils/har-download";
 import { simAuthHeaders, simEndpoint } from "../utils/sim-endpoint";
 import { CollapsibleSection } from "./collapsible-section";

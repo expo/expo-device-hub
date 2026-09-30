@@ -8,7 +8,7 @@ import {
   type CapturedBody,
   type CapturedRequest,
 } from "../../capture/store";
-import { openHostEventStream, runHostAction } from "../utils/exec";
+import { openHostEventStream, runHostAction } from "../../socket/client-control";
 
 export type { CaptureMeta, CaptureAttachment, CapturedBody, CapturedRequest };
 
