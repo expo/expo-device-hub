@@ -7,7 +7,15 @@ export const SERVE_SIM_OPTIONS_ENV = 'EXPO_DEVICE_HUB_SERVE_SIM_OPTIONS';
 export type StandaloneServeSimOptions = {
   streamSettings?: StreamSettings;
   metricsCorsOrigins?: string[];
+  /** Device hub has no token gate, so serve-sim allows network capture only on a loopback host. */
+  loopbackOnly?: boolean;
 };
+
+// The same rule as serve-sim's own: a name such as `127.example.com` is not loopback.
+function isLoopbackHost(host: string): boolean {
+  const bare = host.replace(/^\[|\]$/g, '').toLowerCase();
+  return bare === 'localhost' || bare === '127.0.0.1' || bare === '::1';
+}
 
 function streamSettingsFor(options: CliOptions): StreamSettings | undefined {
   const encoderSettings = {
@@ -46,6 +54,7 @@ function streamSettingsFor(options: CliOptions): StreamSettings | undefined {
 export function standaloneServeSimOptions(options: CliOptions): StandaloneServeSimOptions {
   const streamSettings = streamSettingsFor(options);
   return {
+    loopbackOnly: isLoopbackHost(options.host),
     ...(streamSettings ? { streamSettings } : {}),
     ...(options.metricsCorsOrigins && options.metricsCorsOrigins.length > 0
       ? { metricsCorsOrigins: options.metricsCorsOrigins }

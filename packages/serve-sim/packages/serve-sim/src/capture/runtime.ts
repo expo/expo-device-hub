@@ -99,6 +99,8 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   const deviceCapture = new Map<string, boolean>();
   const operations = new DeviceOperationQueue();
   const enables = new Map<string, EnableRequest>();
+  // Set when this server must not capture at all, such as a public preview without a token gate.
+  let refusal: string | null = null;
   // Viewers belong to the device, not to one session, so a stream opened before capture starts, or
   // kept open across a restart, follows each new session.
   const viewers = new Map<string, Set<(event: CaptureEvent) => void>>();
@@ -128,6 +130,9 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   };
 
   const prepareSession = async (udid: string, request?: EnableRequest): Promise<PreparedCapability> => {
+    // Every way in ends here: enableForDevice, the panel, and the capability registry that
+    // `--enable networkCapture` and default capabilities go through. A refused host refuses them all.
+    if (refusal) throw new Error(refusal);
     if (request) assertRequested(udid, request);
     const existing = byUdid.get(udid);
     if (existing?.proxy) {
@@ -255,6 +260,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       const promise = operations.enqueue(udid, async () => {
         assertRequested(udid, request);
         try {
+          if (refusal) throw new Error(refusal);
           // Inside the try, so a failed cleanup reports as a CaptureEnableError like any other.
           const existing = byUdid.get(udid);
           if (existing?.meta.attachment === "failed") {
@@ -300,11 +306,21 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
 
     disableForDevice: disableDevice,
 
+    /** Refuse every capture start with `reason`, or allow starts again with null. */
+    refuseCapture(reason: string | null): void {
+      refusal = reason;
+    },
+
+    /** Disable every device, waiting for all of them; rejects with every failure once all settle. */
     async disableAll(): Promise<void> {
       // A start that failed before it had a session is not in byUdid; disabling it clears its
       // failed meta, so viewers do not keep reading a failure after capture is turned off.
       const devices = new Set([...byUdid.keys(), ...failedStarts.keys(), ...operations.devices()]);
-      await Promise.all([...devices].map(disableDevice));
+      const results = await Promise.allSettled([...devices].map(disableDevice));
+      const failures = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+      if (failures.length > 0) {
+        throw new AggregateError(failures, `Could not disable network capture on ${failures.length} device(s).`);
+      }
     },
 
     subscribe(udid: string, listener: (event: CaptureEvent) => void): { meta: CaptureMeta; unsubscribe: () => void } {

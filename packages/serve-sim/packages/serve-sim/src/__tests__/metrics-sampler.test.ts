@@ -8,6 +8,7 @@ import {
   NetworkThroughputMonitor,
   parseNetSampleByPid,
   sampleUserApp,
+  sampleWithRateOverride,
   sumPhysFootprintBytes,
   type MetricSample,
 } from "../metrics-sampler";
@@ -595,5 +596,31 @@ describe("createMetricsSamplerCache", () => {
     second.unsubscribe();
     third.unsubscribe();
     expect(second.meta.udid).toBe(UDID);
+  });
+});
+
+describe("network capture rate override", () => {
+  const usage = { bundleId: "dev.expo.A", processKey: "1", cpuSeconds: 1, memBytes: 1, netInBytesPerSec: 0, netOutBytesPerSec: 0 };
+  const fakeSample = (async (_udid: string, deps?: { networkRate?: (pids: number[]) => { netInBytesPerSec: number; netOutBytesPerSec: number } }) => {
+    const net = deps!.networkRate!([1]);
+    return { ...usage, ...net };
+  }) as typeof sampleUserApp;
+  const perApp = () => ({ netInBytesPerSec: 10, netOutBytesPerSec: 1 });
+
+  it("marks the proxy's rate as device-wide", async () => {
+    const reading = await sampleWithRateOverride(UDID, () => ({ netInBytesPerSec: 500, netOutBytesPerSec: 50 }), perApp, fakeSample);
+    expect(reading).toMatchObject({ netInBytesPerSec: 500, netOutBytesPerSec: 50, netScope: "device" });
+  });
+
+  it("keeps the per-app rate unmarked when capture has no rate", async () => {
+    const reading = await sampleWithRateOverride(UDID, () => null, perApp, fakeSample);
+    expect(reading).toMatchObject({ netInBytesPerSec: 10, netOutBytesPerSec: 1 });
+    expect(reading?.netScope).toBeUndefined();
+  });
+
+  it("passes the scope through to each sample", async () => {
+    const sampler = new MetricsSampler({ udid: UDID, sample: async () => ({ ...usage, netScope: "device" as const }), now: () => 0, hostCores: 8 });
+    expect((await sampler.tickOnce())?.netScope).toBe("device");
+    sampler.stop();
   });
 });

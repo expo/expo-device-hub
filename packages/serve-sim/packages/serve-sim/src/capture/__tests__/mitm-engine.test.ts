@@ -98,12 +98,15 @@ describe("locateMitmdump", () => {
 });
 
 describe("mitmdumpMissingMessage", () => {
-  test("says what is missing, why it isn't bundled, and the command that fixes it", () => {
+  test("says in one line what is missing and the command that fixes it", () => {
     const message = mitmdumpMissingMessage();
+    expect(message).toContain("mitmproxy is not installed");
     expect(message).toContain("brew install mitmproxy");
-    expect(message).toContain("mitmproxy.org/downloads");
-    // The escape hatch matters for anyone whose install is somewhere unusual.
-    expect(message).toContain("SERVE_SIM_MITMDUMP");
+    expect(message).not.toContain("\n");
+  });
+
+  test("names a SERVE_SIM_MITMDUMP override that cannot run", () => {
+    expect(mitmdumpMissingMessage("/nope/mitmdump")).toContain("SERVE_SIM_MITMDUMP points at /nope/mitmdump");
   });
 });
 

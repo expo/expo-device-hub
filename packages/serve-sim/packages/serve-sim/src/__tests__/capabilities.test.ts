@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   capabilitiesToApply,
   clearRegisteredCapabilities,
+  missingCapabilities,
   registerCapability,
   registeredCapabilities,
   UnknownCapabilityError,
@@ -112,5 +113,14 @@ describe("applyDefaultCapabilities", () => {
 
     expect(await applyDefaultCapabilities("NOT-A-DEVICE", "com.example.app")).toEqual([]);
     expect(asked).toEqual(["a-throws", "also-on"]);
+  });
+});
+
+describe("missingCapabilities", () => {
+  test("reports a requested capability that did not apply, unless --disable also names it", () => {
+    expect(missingCapabilities({ enable: ["a", "b"] }, ["a"])).toEqual(["b"]);
+    // --disable wins, so a capability both enabled and disabled is not expected to apply.
+    expect(missingCapabilities({ enable: ["networkCapture"], disable: ["networkCapture"] }, [])).toEqual([]);
+    expect(missingCapabilities({}, [])).toEqual([]);
   });
 });

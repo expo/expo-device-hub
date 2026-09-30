@@ -165,13 +165,8 @@ export function mitmdumpMissingMessage(override?: string): string {
       "executable, or unset it to use the copy on your PATH."
     );
   }
-  return (
-    "Network capture needs mitmproxy, which isn't installed. It terminates HTTP(S) so the " +
-    "requests can be shown, and it isn't bundled because it is an 87MB signed binary that most projects " +
-    "never need.\n\nInstall it with:  brew install mitmproxy\n\nOr download it from " +
-    "https://mitmproxy.org/downloads and drag mitmproxy.app to /Applications. Then start capture again. " +
-    "If it lives somewhere unusual, point SERVE_SIM_MITMDUMP at the mitmdump executable."
-  );
+  // One line: the panel and the CLI both show it as the reason capture did not start.
+  return "mitmproxy is not installed. Install it to use network capture: brew install mitmproxy";
 }
 
 function locateAddon(): string {

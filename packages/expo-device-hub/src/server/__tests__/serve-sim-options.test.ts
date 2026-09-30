@@ -8,14 +8,26 @@ import {
 } from '../serve-sim-options';
 
 describe('standaloneServeSimOptions', () => {
+  test('allows network capture only when the hub binds to loopback', () => {
+    expect(standaloneServeSimOptions(parseCliOptions([])).loopbackOnly).toBe(true);
+    expect(standaloneServeSimOptions(parseCliOptions(['--host', 'localhost'])).loopbackOnly).toBe(true);
+    expect(standaloneServeSimOptions(parseCliOptions(['--host', '0.0.0.0'])).loopbackOnly).toBe(false);
+    expect(standaloneServeSimOptions(parseCliOptions(['--host', '10.0.1.112'])).loopbackOnly).toBe(false);
+    // A name that starts with 127 is not a loopback address.
+    expect(standaloneServeSimOptions(parseCliOptions(['--host', '127.example.com'])).loopbackOnly).toBe(false);
+  });
+
   test('maps Hub HTTP transports with the default 60 FPS to serve-sim', () => {
     expect(standaloneServeSimOptions(parseCliOptions([]))).toEqual({
+      loopbackOnly: true,
       streamSettings: { transport: 'http', h264Fps: 60 },
     });
     expect(standaloneServeSimOptions(parseCliOptions(['--transport', 'mjpeg']))).toEqual({
+      loopbackOnly: true,
       streamSettings: { transport: 'http', codec: 'mjpeg', h264Fps: 60 },
     });
     expect(standaloneServeSimOptions(parseCliOptions(['--transport', 'h264']))).toEqual({
+      loopbackOnly: true,
       streamSettings: { transport: 'http', codec: 'h264', h264Fps: 60 },
     });
   });
@@ -39,6 +51,7 @@ describe('standaloneServeSimOptions', () => {
         ]),
       ),
     ).toEqual({
+      loopbackOnly: true,
       streamSettings: {
         transport: 'webrtc',
         codec: 'vp9',
@@ -57,6 +70,7 @@ describe('standaloneServeSimOptions', () => {
 
   test('uses the serve-sim WebRTC codec default', () => {
     expect(standaloneServeSimOptions(parseCliOptions(['--transport', 'webrtc']))).toEqual({
+      loopbackOnly: true,
       streamSettings: { transport: 'webrtc', codec: 'h264', h264Fps: 60 },
     });
   });
@@ -78,6 +92,7 @@ describe('standaloneServeSimOptions', () => {
         ]),
       ),
     ).toEqual({
+      loopbackOnly: true,
       streamSettings: {
         transport: 'http',
         maxDimension: 1280,
