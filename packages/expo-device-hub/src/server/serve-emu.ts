@@ -15,11 +15,16 @@ import {
   SERVE_EMU_OPTIONS_ENV,
   serveEmuWebSocketOptions,
 } from './serve-emu-options';
+import { SESSION_TOKEN } from './session-token';
 
 export const EMU_PREFIX = '/vendor/serve-emu';
 
 const serveEmuOptions = readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]);
-const router = createRouter(serveEmuOptions);
+const router = createRouter({
+  ...serveEmuOptions,
+  // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
+  ...(SESSION_TOKEN ? { sessionToken: SESSION_TOKEN } : {}),
+});
 
 export const emuCameraFeeds: EmulatorCameraFeeds = {
   launchArgs: cameraLaunchArgs,
@@ -54,6 +59,11 @@ export function handleEmuRequest(request: Request): Promise<Response> {
 }
 
 async function attachEmuSocket(socket: WsWebSocketLike, request: Request): Promise<void> {
+  // Before `ensure`, which starts the device.
+  if (!router.authorizeUpgrade(request)) {
+    socket.close(1008, 'Unauthorized');
+    return;
+  }
   const url = new URL(request.url);
   let serial: string;
   try {

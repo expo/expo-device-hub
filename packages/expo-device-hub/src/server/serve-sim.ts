@@ -12,6 +12,7 @@ import {
   readStandaloneServeSimOptions,
   SERVE_SIM_OPTIONS_ENV,
 } from './serve-sim-options';
+import { SESSION_TOKEN } from './session-token';
 
 export const SIM_PREFIX = '/vendor/serve-sim';
 // Must be the full mount path: serve-sim bakes basePath into the client-facing URLs it returns
@@ -23,6 +24,8 @@ const middleware = simMiddleware({
   basePath: SIM_BASE_PATH,
   proxyHelpers: true,
   ...standaloneOptions,
+  // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
+  ...(SESSION_TOKEN ? { execToken: SESSION_TOKEN, requirePreviewToken: true } : {}),
 });
 
 const SERVE_SIM_STATE_DIR = join(tmpdir(), 'serve-sim');

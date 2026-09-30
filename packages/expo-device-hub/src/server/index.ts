@@ -25,11 +25,18 @@ import { configureClientShell } from './client-shell';
 import { argentInteractionWebSocketHandler } from './argent-interaction-websocket';
 import { deviceListWebSocketHandler, refreshDeviceList } from './device-list-websocket';
 import { type HubDeviceList, listDevices } from './devices';
-import { handleEasEndpoint } from './eas-endpoints';
+import { ANDROID_RECORDING_STOP_ROUTE, handleEasEndpoint, READY_ROUTE } from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
 import { EMU_PREFIX, emuCameraFeeds, emuWebSocketHandler, handleEmuRequest, finishAndroidScreenRecording } from './serve-emu';
 import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
+import {
+  authorizeRequest,
+  authorizeUpgrade,
+  frameAncestorsPolicy,
+  withBearerToken,
+} from './session-auth';
+import { SESSION_TOKEN } from './session-token';
 import { SERVER_HIDE_SIDEBAR } from './sidebar';
 import { listNewDeviceOptions } from './sim-options';
 import { SERVER_TRANSPORT } from './transport';
@@ -43,6 +50,13 @@ const CREATE_DEVICE_ROUTE = '/api/devices/create';
 const NEW_DEVICE_OPTIONS_ROUTE = '/api/new-device-options';
 const DEVICES_WEBSOCKET_ROUTE = '/api/devices/ws';
 const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = '/api/argent-interactions/ws';
+
+// Under a session token every route needs it, so a new route is gated by default. A liveness
+// probe cannot carry a token, and EAS stops a recording with its own token instead.
+const UNGATED_ROUTES = new Set([READY_ROUTE, ANDROID_RECORDING_STOP_ROUTE]);
+const FRAME_POLICY_HEADERS: Record<string, string> = SESSION_TOKEN
+  ? { 'Content-Security-Policy': frameAncestorsPolicy([]) }
+  : {};
 
 // The exported dashboard shell (dist/client/index.html, a sibling of the
 // dist/server bundle this file becomes). Its asset URLs are relative and its
@@ -76,6 +90,7 @@ async function serveClientIndexHtml(): Promise<Response | null> {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',
         'Cache-Control': 'no-store',
+        ...FRAME_POLICY_HEADERS,
       },
     }
   );
@@ -91,8 +106,31 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function isSimPath(pathname: string): boolean {
+  return pathname === SIM_PREFIX || pathname.startsWith(`${SIM_PREFIX}/`);
+}
+
+/**
+ * The response that refuses a request, or the request to route. An authorized request carries
+ * the token as a bearer, because the vendored backends' own gates never see the Hub's cookie.
+ */
+function gateRequest(request: Request, pathname: string): Request | Response {
+  if (!SESSION_TOKEN || UNGATED_ROUTES.has(pathname)) return request;
+  // A preflight cannot carry the token, and serve-sim answers one before its own gate.
+  if (request.method === 'OPTIONS' && isSimPath(pathname)) return request;
+  return (
+    authorizeRequest(request, SESSION_TOKEN, {
+      mountPath: MOUNT_PATH,
+      htmlHeaders: FRAME_POLICY_HEADERS,
+    }) ?? withBearerToken(request, SESSION_TOKEN)
+  );
+}
+
 export default async function handler(request: Request): Promise<Response | null> {
   const { pathname, searchParams } = new URL(request.url);
+  const gated = gateRequest(request, pathname);
+  if (gated instanceof Response) return gated;
+  request = gated;
 
   const easResponse = await handleEasEndpoint(request, {
     mountPath: MOUNT_PATH,
@@ -106,7 +144,7 @@ export default async function handler(request: Request): Promise<Response | null
     return serveClientIndexHtml();
   }
 
-  if (pathname === SIM_PREFIX || pathname.startsWith(`${SIM_PREFIX}/`)) {
+  if (isSimPath(pathname)) {
     return handleSimRequest(request);
   }
   if (pathname === EMU_PREFIX || pathname.startsWith(`${EMU_PREFIX}/`)) {
@@ -192,12 +230,29 @@ export default async function handler(request: Request): Promise<Response | null
   return null;
 }
 
+type GatedSocket = { close(code?: number, reason?: string): void };
+
+/** Upgrades skip the request gate, so each socket route checks the token before its handler. */
+function gatedSocket<Socket extends GatedSocket>(
+  handle: (socket: Socket, request: Request) => void
+): (socket: Socket, request: Request) => void {
+  const token = SESSION_TOKEN;
+  if (!token) return handle;
+  return (socket, request) => {
+    if (!authorizeUpgrade(request, token)) {
+      socket.close(1008, 'Unauthorized');
+      return;
+    }
+    handle(socket, withBearerToken(request, token));
+  };
+}
+
 export const webSocketHandlers = {
-  [DEVICES_WEBSOCKET_ROUTE]: deviceListWebSocketHandler,
-  [ARGENT_INTERACTIONS_WEBSOCKET_ROUTE]: argentInteractionWebSocketHandler,
-  [`${SIM_PREFIX}/exec-ws`]: simWebSocketHandler,
-  [`${SIM_PREFIX}/helper/ws`]: simWebSocketHandler,
-  [`${EMU_PREFIX}/ws`]: emuWebSocketHandler,
+  [DEVICES_WEBSOCKET_ROUTE]: gatedSocket(deviceListWebSocketHandler),
+  [ARGENT_INTERACTIONS_WEBSOCKET_ROUTE]: gatedSocket(argentInteractionWebSocketHandler),
+  [`${SIM_PREFIX}/exec-ws`]: gatedSocket(simWebSocketHandler),
+  [`${SIM_PREFIX}/helper/ws`]: gatedSocket(simWebSocketHandler),
+  [`${EMU_PREFIX}/ws`]: gatedSocket(emuWebSocketHandler),
 };
 
 function filterBooted(list: HubDeviceList): HubDeviceList {
