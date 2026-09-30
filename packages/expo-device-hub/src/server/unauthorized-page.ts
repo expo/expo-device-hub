@@ -1,39 +1,68 @@
-// serve-sim's token form (`unauthorized-page.ts`), titled for the Hub. No caller-controlled value
-// reaches this HTML, so nothing here is escaped.
+// serve-sim's token form (`unauthorized-page.ts`), titled for the Hub and styled like its
+// dashboard. No caller-controlled value reaches this HTML, so nothing here is escaped.
 
+// The dashboard's theme: light by default, dark when the system prefers it, as the dashboard
+// does. The page loads before the gate passes, so it cannot load the dashboard's stylesheet. It
+// copies the variables it uses, and `unauthorized-page.test.ts` keeps each copy equal to the
+// dashboard's value. Text sizes follow `heading['2xl']`, `textSize.sm`, and `textSize.base`.
 const STYLE = `
 :root{
-  color-scheme:dark;
-  --slate-1:#111113;--slate-2:#18191b;--slate-6:#363a3f;
-  --slate-11:#b0b4ba;--slate-12:#edeef0;
-  --blue-10:#3b9eff;--red-7:#8c333a;--red-11:#ff9592
+  color-scheme:light;
+  --expo-color-white:#fff;--expo-color-black:#000;
+  --expo-font-sans:'Inter',-apple-system,'system-ui',sans-serif;
+  --expo-radius-md:6px;--expo-radius-lg:8px;
+  --expo-theme-background-default:#fff;--expo-theme-background-subtle:#f9f9fb;
+  --expo-theme-background-element:#f0f0f3;
+  --expo-theme-border-default:#d9d9e0;--expo-theme-border-danger:#f4a9aa;
+  --expo-theme-text-default:#1c2024;--expo-theme-text-secondary:#60646c;
+  --expo-theme-text-danger:#ce2c31;
+  --expo-theme-button-primary-background:#000;--expo-theme-button-primary-border:transparent;
+  --expo-theme-button-primary-hover:#60646c;--expo-theme-button-primary-text:#fff
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    color-scheme:dark;
+    --expo-theme-background-default:#111113;--expo-theme-background-subtle:#18191b;
+    --expo-theme-background-element:#212225;
+    --expo-theme-border-default:#363a3f;--expo-theme-border-danger:#8c333a;
+    --expo-theme-text-default:#edeef0;--expo-theme-text-secondary:#b0b4ba;
+    --expo-theme-text-danger:#ff9592;
+    --expo-theme-button-primary-background:#fff;
+    --expo-theme-button-primary-hover:hsl(from #fff h s calc(l - 20));
+    --expo-theme-button-primary-text:#111113
+  }
 }
 *{box-sizing:border-box}
 body{margin:0;min-height:100dvh;display:flex;align-items:center;justify-content:center;padding:40px 16px;
-  background:var(--slate-2);color:var(--slate-12);
-  font:14px/1.45 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-  -webkit-font-smoothing:antialiased}
-main{width:100%;max-width:400px;padding:28px 24px 24px;background:var(--slate-1);
-  border:1px solid var(--slate-6);border-radius:8px;display:flex;flex-direction:column;gap:20px}
+  background:var(--expo-theme-background-subtle);color:var(--expo-theme-text-default);
+  font:14px/1.6 var(--expo-font-sans);-webkit-font-smoothing:antialiased}
+main{width:100%;max-width:400px;padding:28px 24px 24px;background:var(--expo-theme-background-default);
+  border:1px solid var(--expo-theme-border-default);border-radius:var(--expo-radius-lg);
+  display:flex;flex-direction:column;gap:20px}
 .badge{display:flex;width:44px;height:44px;align-items:center;justify-content:center;margin:0 auto;
-  border-radius:8px;background:#000}
+  border-radius:var(--expo-radius-lg);background:var(--expo-color-black);color:var(--expo-color-white)}
 .titles{text-align:center}
-h1{margin:0;font-size:24px;line-height:1.25;font-weight:600;letter-spacing:-.02em}
-.lead{margin:8px 0 0;font-size:14px;font-weight:500;line-height:1.45;color:var(--slate-11)}
+h1{margin:0;font-size:24px;line-height:1.2;font-weight:600;letter-spacing:-.5px}
+.lead{margin:8px 0 0;color:var(--expo-theme-text-secondary)}
 form{display:flex;flex-direction:column;gap:8px}
-label{font-size:14px;font-weight:500}
-input{width:100%;height:44px;padding:0 12px;border-radius:8px;border:1px solid var(--slate-6);
-  background:var(--slate-2);color:var(--slate-12);font:inherit;font-size:16px}
-input:focus{outline:2px solid var(--blue-10);outline-offset:1px}
-input[aria-invalid="true"]{border-color:var(--red-7)}
-.field-error{margin:0;padding:0 8px;font-size:14px;line-height:1.45;color:var(--red-11)}
-button{height:44px;margin-top:4px;border:0;border-radius:8px;background:#fff;
-  color:var(--slate-1);font:inherit;font-size:16px;font-weight:500;cursor:pointer}
-button:hover{background:#ccc}
+label{font-weight:500}
+input{width:100%;height:44px;padding:0 12px;border-radius:var(--expo-radius-md);
+  border:1px solid var(--expo-theme-border-default);background:var(--expo-theme-background-default);
+  color:var(--expo-theme-text-default);caret-color:var(--expo-theme-text-default);
+  font:inherit;font-size:16px;outline:none}
+input:focus{box-shadow:0 0 0 3px var(--expo-theme-background-element)}
+input[aria-invalid="true"]{border-color:var(--expo-theme-border-danger)}
+.field-error{margin:0;padding:0 8px;color:var(--expo-theme-text-danger)}
+button{height:44px;margin-top:4px;padding:0 24px;border:1px solid var(--expo-theme-button-primary-border);
+  border-radius:var(--expo-radius-lg);background:var(--expo-theme-button-primary-background);
+  color:var(--expo-theme-button-primary-text);font:inherit;font-size:16px;font-weight:500;cursor:pointer;
+  transition:background-color 150ms ease,transform 100ms ease}
+button:hover{background:var(--expo-theme-button-primary-hover)}
+button:active{transform:scale(.98)}
 `.trim();
 
 const EXPO_MARK = `<svg width="26" height="22" viewBox="0 0 26 22" fill="none" aria-hidden="true">
-  <path d="m13.7431 0h-2.1422c-.9888 0-1.8954.528587-2.35103 1.37085l-9.079617 16.78415c-.2108052.3897-.2266421.8499-.043082 1.2521l.751794 1.6472c.467825 1.025 1.940765 1.1283 2.558855.1794l8.60688-13.21307c.1352-.20753.3723-.3336.6273-.3336s.4921.12607.6273.3336l8.6069 13.21307c.6181.9489 2.091.8456 2.5588-.1794l.7518-1.6472c.1836-.4022.1678-.8624-.0431-1.2521l-9.0796-16.78415c-.4556-.842263-1.3622-1.37085-2.351-1.37085z" fill="#fff"/>
+  <path d="m13.7431 0h-2.1422c-.9888 0-1.8954.528587-2.35103 1.37085l-9.079617 16.78415c-.2108052.3897-.2266421.8499-.043082 1.2521l.751794 1.6472c.467825 1.025 1.940765 1.1283 2.558855.1794l8.60688-13.21307c.1352-.20753.3723-.3336.6273-.3336s.4921.12607.6273.3336l8.6069 13.21307c.6181.9489 2.091.8456 2.5588-.1794l.7518-1.6472c.1836-.4022.1678-.8624-.0431-1.2521l-9.0796-16.78415c-.4556-.842263-1.3622-1.37085-2.351-1.37085z" fill="currentColor"/>
 </svg>`;
 
 // A plain GET submit would drop the rest of the query, such as ?device=.
