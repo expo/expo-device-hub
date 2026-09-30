@@ -335,7 +335,13 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       policy = next;
     },
 
-    enableForDevice(udid: string): Promise<CaptureMeta> {
+    /** What a session keeps when its enable names no fields. */
+    defaultFields(): readonly CaptureField[] {
+      return policy;
+    },
+
+    /** `fields`, when given, is what this session keeps instead of the server's default. */
+    enableForDevice(udid: string, fields?: readonly CaptureField[]): Promise<CaptureMeta> {
       const pending = enables.get(udid);
       if (pending && !pending.failed) {
         return pending.promise;
@@ -343,7 +349,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       const request: EnableRequest = {
         cancelled: false,
         failed: false,
-        fields: [...policy],
+        fields: [...(fields ?? policy)],
         promise: Promise.resolve(notEnabledMeta(udid, policy)),
       };
       const promise = operations.enqueue(udid, async () => {
@@ -515,6 +521,19 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       if (!disk) return null;
       await disk.flush();
       return disk.harPath;
+    },
+
+    /**
+     * Change what a running session keeps, without restarting its proxy. Requests already recorded
+     * keep what they were recorded with. Null when the device is not capturing.
+     */
+    setFieldsForDevice(udid: string, next: readonly CaptureField[]): CaptureMeta | null {
+      const session = byUdid.get(udid);
+      if (!session?.proxy || session.meta.attachment !== "capturing") return null;
+      session.proxy.setFields(next);
+      session.meta.fields = [...next];
+      session.store.publishMeta(session.meta);
+      return session.meta;
     },
 
     clearForDevice(udid: string): boolean {

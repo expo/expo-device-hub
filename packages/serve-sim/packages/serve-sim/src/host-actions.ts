@@ -2,6 +2,8 @@ import { rm, stat } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
 
+import { CAPTURE_FIELDS } from "./capture/fields";
+
 import {
   type HostActionResult,
   type Invocation,
@@ -60,6 +62,12 @@ const FileSource = z.union([
   z.object({ uploadId: UploadId }),
   z.object({ path: ConfinedPath }),
 ]);
+
+/** Each capture field once; the four the capture proxy knows. */
+const CaptureFieldList = z.array(z.enum(CAPTURE_FIELDS)).max(CAPTURE_FIELDS.length).refine(
+  (fields) => new Set(fields).size === fields.length,
+  "list each capture field once",
+);
 
 const ACTION_SCHEMAS = {
   "appearance.get": z.object({ udid: Device }),
@@ -128,8 +136,9 @@ const ACTION_SCHEMAS = {
     first: z.boolean().optional(),
   }),
   "upload.remove": z.object({ uploadId: UploadId }),
-  "capture.reboot": z.object({ udid: DeviceUdid, enabled: z.boolean() }),
-  "capture.enable": z.object({ udid: DeviceUdid }),
+  "capture.reboot": z.object({ udid: DeviceUdid, enabled: z.boolean(), fields: CaptureFieldList.optional() }),
+  "capture.enable": z.object({ udid: DeviceUdid, fields: CaptureFieldList.optional() }),
+  "capture.fields": z.object({ udid: DeviceUdid, fields: CaptureFieldList }),
   "capture.clear": z.object({ udid: DeviceUdid }),
   "capture.body": z.object({ udid: DeviceUdid, id: CaptureRequestId }),
 } as const;
@@ -149,6 +158,7 @@ const PROCEDURE_ACTIONS = [
   "screenshot.thumbnail",
   "capture.reboot",
   "capture.enable",
+  "capture.fields",
   "capture.clear",
   "capture.body",
 ] as const satisfies readonly HostActionName[];
@@ -333,7 +343,7 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
       const { closeDeviceSession } = await import("./device-session");
       closeDeviceSession(p.udid);
       try {
-        const meta = await rebootWithCapture(p.udid, p.enabled);
+        const meta = p.fields ? await rebootWithCapture(p.udid, p.enabled, {}, p.fields) : await rebootWithCapture(p.udid, p.enabled);
         // The device rebooted, but capture did not start: report a failed action, not a toggle.
         if (p.enabled && meta.attachment === "failed") {
           return {
@@ -357,7 +367,7 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
       const p = parseParams(action, raw);
       const { captureRuntime } = await import("./capture");
       try {
-        const meta = await captureRuntime.enableForDevice(p.udid);
+        const meta = await captureRuntime.enableForDevice(p.udid, p.fields);
         captureRuntime.setDeviceCaptureEnabled(p.udid, true);
         return ok(JSON.stringify(meta));
       } catch (error) {
@@ -367,6 +377,15 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
           exitCode: 1,
         };
       }
+    }
+    case "capture.fields": {
+      const p = parseParams(action, raw);
+      const { captureRuntime } = await import("./capture");
+      const meta = captureRuntime.setFieldsForDevice(p.udid, p.fields);
+      if (!meta) {
+        return { stdout: "", stderr: "Network capture is not on for this device. Enable it first.", exitCode: 1 };
+      }
+      return ok(JSON.stringify(meta));
     }
     case "capture.clear": {
       const p = parseParams(action, raw);

@@ -18,17 +18,33 @@ except ImportError:
 
 CONTROL = os.environ.get("SERVE_SIM_CAPTURE_CONTROL_URL")
 TOKEN = os.environ.get("SERVE_SIM_CAPTURE_CONTROL_TOKEN", "")
-# Absent fields mean metadata only.
-FIELDS = {
-    part.strip()
-    for part in os.environ.get("SERVE_SIM_CAPTURE_FIELDS", "").split(",")
-    if part.strip()
-}
-WANT_HEADERS = "header" in FIELDS
-WANT_REQUEST_BODY = "request-body" in FIELDS
-WANT_RESPONSE_BODY = "response-body" in FIELDS
-# Query values require explicit opt-in.
-WANT_QUERY = "query" in FIELDS
+
+def _parse_fields(text):
+    return frozenset(part.strip() for part in text.split(",") if part.strip())
+
+
+# Absent fields mean metadata only; query values, headers, and bodies each require opt-in. serve-sim
+# rewrites the fields file to change them while the session runs; an unreadable file keeps the last.
+FIELDS_FILE = os.environ.get("SERVE_SIM_CAPTURE_FIELDS_FILE")
+_fields = _parse_fields(os.environ.get("SERVE_SIM_CAPTURE_FIELDS", ""))
+_fields_stamp = None
+
+
+def _want(field):
+    global _fields, _fields_stamp
+    if FIELDS_FILE:
+        try:
+            stat = os.stat(FIELDS_FILE)
+            # serve-sim renames a new file into place, so the inode changes with every write.
+            stamp = (stat.st_ino, stat.st_mtime_ns, stat.st_size)
+            if stamp != _fields_stamp:
+                with open(FIELDS_FILE, encoding="utf-8") as handle:
+                    _fields = _parse_fields(handle.read())
+                _fields_stamp = stamp
+        except OSError:
+            pass
+    return field in _fields
+
 REDACTED = "[REDACTED]"
 
 MAX_BODY_BYTES = 512 * 1024
@@ -183,7 +199,7 @@ def done():
 
 def _headers_of(message):
     # Headers only when asked for; redaction happens on the session side.
-    if not WANT_HEADERS:
+    if not _want("header"):
         return {}
     return _clip_headers({name.lower(): value for name, value in message.headers.items()})
 
@@ -196,7 +212,7 @@ def _mime_of(message):
 
 def _safe_url(raw):
     text = str(raw or "")
-    if WANT_QUERY or "?" not in text:
+    if _want("query") or "?" not in text:
         return _clip(text, MAX_URL_CHARS)
     head, _, query = text.partition("?")
     if not query:
@@ -320,8 +336,8 @@ def response(flow):
             "status": reply.status_code,
             "ttfbMs": round((reply.timestamp_start - started) * 1000, 1),
             "durationMs": round((reply.timestamp_end - started) * 1000, 1),
-            "req": _part(flow.request, WANT_REQUEST_BODY),
-            "res": _part(reply, WANT_RESPONSE_BODY),
+            "req": _part(flow.request, _want("request-body")),
+            "res": _part(reply, _want("response-body")),
         },
     )
 
@@ -337,7 +353,7 @@ def error(flow):
             "id": flow.id,
             "status": None,
             "error": _clip(flow.error, MAX_ERROR_CHARS) or "the request failed before a response",
-            "req": _part(flow.request, WANT_REQUEST_BODY),
+            "req": _part(flow.request, _want("request-body")),
         },
     )
 

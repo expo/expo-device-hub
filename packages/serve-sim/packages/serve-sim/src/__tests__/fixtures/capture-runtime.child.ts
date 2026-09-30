@@ -39,6 +39,7 @@ function harness(
           address: "127.0.0.1:9123",
           portFile: "/tmp/fake-confdir/proxy-port",
           caPem: async () => CA_PEM,
+          setFields: () => {},
           close: overrides.closeProxy ?? (async () => void calls.push("proxy-closed")),
         };
       }),
@@ -152,7 +153,7 @@ describe("capture runtime", () => {
       startProxy: async (_store, deps) => {
         starts++;
         killProxy = deps.onUnexpectedExit ?? (() => {});
-        return { address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM, close: async () => {} };
+        return { address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
       },
       clearInjection: async () => { clearing.release(); await clear.promise; },
     });
@@ -205,6 +206,48 @@ describe("capture runtime", () => {
     runtime.setFields(["header", "request-body", "response-body"]);
     const meta = await runtime.enableForDevice(UDID);
     expect(meta.fields).toEqual(["header", "request-body", "response-body"]);
+  });
+
+  test("starts a session with the fields its enable asked for, over the server default", async () => {
+    let started: readonly string[] = [];
+    const { runtime } = harness({
+      startProxy: async (_store, deps) => {
+        started = deps.fields ?? [];
+        return { address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
+      },
+    });
+    const meta = await runtime.enableForDevice(UDID, ["header", "request-body"]);
+    expect(started).toEqual(["header", "request-body"]);
+    expect(meta.fields).toEqual(["header", "request-body"]);
+  });
+
+  test("changes a running session's fields without restarting its proxy, and tells viewers", async () => {
+    const applied: (readonly string[])[] = [];
+    let starts = 0;
+    const { runtime } = harness({
+      startProxy: async () => {
+        starts++;
+        return {
+          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
+          setFields: (fields) => void applied.push(fields), close: async () => {},
+        };
+      },
+    });
+    expect(runtime.setFieldsForDevice(UDID, ["header"])).toBeNull();
+    await runtime.enableForDevice(UDID);
+    const metas: string[][] = [];
+    const { unsubscribe } = runtime.subscribe(UDID, (event) => {
+      if (event.type === "meta") metas.push([...event.meta.fields]);
+    });
+    try {
+      const meta = runtime.setFieldsForDevice(UDID, ["header", "response-body"]);
+      expect(meta?.fields).toEqual(["header", "response-body"]);
+      expect(applied).toEqual([["header", "response-body"]]);
+      expect(metas).toContainEqual(["header", "response-body"]);
+      expect(starts).toBe(1);
+    } finally {
+      unsubscribe();
+    }
   });
 
   test("reports a device that was never enabled, rather than inventing a session", () => {
@@ -524,7 +567,7 @@ describe("capture runtime", () => {
     const { runtime } = harness({
       startProxy: async (_store, deps) => {
         killProxy = deps.onUnexpectedExit ?? (() => {});
-        return { address: "127.0.0.1:9123", portFile: "/tmp/fake-confdir/proxy-port", caPem: async () => CA_PEM, close: async () => {} };
+        return { address: "127.0.0.1:9123", portFile: "/tmp/fake-confdir/proxy-port", caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
       },
     });
     await runtime.enableForDevice(UDID);
@@ -549,6 +592,7 @@ describe("capture runtime", () => {
           address: "127.0.0.1:9123",
           portFile: PORT_FILE,
           caPem: async () => CA_PEM,
+          setFields: () => {},
           close: async () => void calls.push("proxy-closed"),
         };
       },
@@ -578,6 +622,7 @@ describe("capture runtime", () => {
           address: "127.0.0.1:9123",
           portFile: PORT_FILE,
           caPem: async () => CA_PEM,
+          setFields: () => {},
           close: async () => void calls.push("proxy-closed"),
         };
       },
@@ -605,6 +650,7 @@ describe("capture runtime", () => {
           address: "127.0.0.1:9123",
           portFile: "/tmp/fake-confdir/proxy-port",
           caPem: async () => CA_PEM,
+          setFields: () => {},
           close: async () => {},
         };
       },
@@ -646,7 +692,7 @@ describe("capture runtime", () => {
     const { runtime } = harness({
       startProxy: async () => {
         await gate;
-        return { address: "127.0.0.1:9123", portFile: "/tmp/fake-confdir/proxy-port", caPem: async () => CA_PEM, close: async () => {} };
+        return { address: "127.0.0.1:9123", portFile: "/tmp/fake-confdir/proxy-port", caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
       },
     });
 
@@ -682,7 +728,7 @@ describe("capture runtime", () => {
       checkIntervalMs: 0,
       startProxy: async (_store, deps) => {
         killProxy = deps.onUnexpectedExit ?? (() => {});
-        return { address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM, close: async () => {} };
+        return { address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM, setFields: () => {}, close: async () => {} };
       },
       isInjected: async () => {
         // The second probe is still waiting when the proxy exits.
@@ -1038,6 +1084,7 @@ describe("capture runtime", () => {
           address: "127.0.0.1:9123",
           portFile: PORT_FILE,
           caPem: async () => CA_PEM,
+          setFields: () => {},
           close: async () => {},
         };
       },
@@ -1114,6 +1161,7 @@ fs.writeFileSync(path, JSON.stringify(env));
           address: "127.0.0.1:9123",
           portFile: PORT_FILE,
           caPem: async () => CA_PEM,
+          setFields: () => {},
           close: async () => void calls.push("proxy-closed"),
         };
       },
