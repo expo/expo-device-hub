@@ -21,8 +21,10 @@ describe("CaptureStore", () => {
 
     store.update(id, { durationMs: 30 }, /* settled */ true);
     expect(seen.map((e) => e.type)).toEqual(["started", "finished"]);
-    const finished = seen[1]!;
-    if (finished.type !== "finished") throw new Error("expected a finished frame");
+    const finished = seen[1];
+    if (finished === undefined || finished.type !== "finished") {
+      throw new Error("expected a finished frame");
+    }
     expect(finished.request.status).toBe(200);
     expect(finished.request.durationMs).toBe(30);
   });
@@ -56,8 +58,9 @@ describe("CaptureStore", () => {
     const id = store.start("GET", "https://pinned.example.com/");
     store.update(id, { failure: "certificate pinning", durationMs: 1 }, /* settled */ true);
     const [request] = store.list();
-    expect(request!.status).toBeNull();
-    expect(request!.failure).toBe("certificate pinning");
+    if (request === undefined) throw new Error("expected a request");
+    expect(request.status).toBeNull();
+    expect(request.failure).toBe("certificate pinning");
   });
 
   test("ignores updates for a request that has left the window", () => {
@@ -85,6 +88,10 @@ describe("CaptureStore", () => {
       responseBinary: false,
     });
     expect(store.body(id)?.responseBody).toBe('{"ok":true}');
+    // Bodies are not part of the streamed record.
+    const [listed] = store.list();
+    if (listed === undefined) throw new Error("expected a listed request");
+    expect("responseBody" in listed).toBe(false);
 
     store.clear();
     expect(store.body(id)).toBeNull();
@@ -134,8 +141,11 @@ describe("CaptureStore", () => {
     for (let i = 0; i < 520; i++) store.start("GET", `https://example.com/${i}`);
     const list = store.list();
     expect(list).toHaveLength(500);
-    expect(list[0]!.url).toBe("https://example.com/20");
-    expect(list.at(-1)!.url).toBe("https://example.com/519");
+    const first = list[0];
+    const last = list.at(-1);
+    if (first === undefined || last === undefined) throw new Error("expected window bounds");
+    expect(first.url).toBe("https://example.com/20");
+    expect(last.url).toBe("https://example.com/519");
   });
 
   test("a subscriber that clears on eviction still sees events that match the list", () => {

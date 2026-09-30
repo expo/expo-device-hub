@@ -20,7 +20,7 @@ beforeEach(() => {
     capabilities: {
       networkCapture: {
         name: "networkCapture", dylib: DYLIB, scope: "userApps" as const,
-        loadPhase: "startup" as const, ownerPid: null, bundleId: null,
+        loadPhase: "startupAndDeferred" as const, ownerPid: null, bundleId: null,
         env: { SIMNET_PROXY_PORT_FILE: portFile },
       },
     },
