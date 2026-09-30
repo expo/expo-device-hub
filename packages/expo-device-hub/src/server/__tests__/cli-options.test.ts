@@ -32,6 +32,8 @@ describe('parseCliOptions', () => {
       metricsCorsOrigins: [],
       hideSidebar: false,
       hideBootDevice: false,
+      requireToken: false,
+      frameAncestors: [],
       help: false,
     });
   });
@@ -227,6 +229,8 @@ describe('parseCliOptions', () => {
       '--turn-credential',
       '--webrtc-ice-policy',
       '--metrics-cors-origin',
+      '--require-token',
+      '--frame-ancestor',
     ]) {
       expect(HELP).toContain(flag);
     }
@@ -240,6 +244,23 @@ describe('parseCliOptions', () => {
     expect(HELP).toContain('default: rgb888');
     expect(HELP).toContain('--encoder <encoder>');
     expect(HELP).toContain('software, hardware (default: software)');
+  });
+
+  // The same flag as serve-sim's, so a command that starts one can start the other.
+  test('requires the session token on request', () => {
+    expect(parseCliOptions(['--require-token']).requireToken).toBe(true);
+    expect(parseCliOptions(['--host', '0.0.0.0', '--require-token']).host).toBe('0.0.0.0');
+  });
+
+  test('collects every --frame-ancestor, as serve-sim does', () => {
+    expect(
+      parseCliOptions([
+        '--require-token',
+        '--frame-ancestor',
+        'https://*.expo.dev',
+        '--frame-ancestor=http://localhost:3000',
+      ]).frameAncestors
+    ).toEqual(['https://*.expo.dev', 'http://localhost:3000']);
   });
 
   test('hides the device list sidebar on request', () => {
@@ -282,6 +303,8 @@ describe('parseCliOptions', () => {
       metricsCorsOrigins: [],
       hideSidebar: false,
       hideBootDevice: false,
+      requireToken: false,
+      frameAncestors: [],
       help: false,
     });
     expect(parseCliOptions(['--help'])).toEqual({ host: '127.0.0.1', help: true });

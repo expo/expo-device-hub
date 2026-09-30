@@ -81,6 +81,7 @@ mock.module('../devices', () => ({
 const previousEnv = { ...process.env };
 process.env.EXPO_DEVICE_HUB_BASE_PATH = '';
 process.env.EXPO_DEVICE_HUB_SESSION_TOKEN = TOKEN;
+process.env.EXPO_DEVICE_HUB_FRAME_ANCESTORS = JSON.stringify(['https://*.expo.dev']);
 process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN = 'recording-token';
 const server = await import('../index');
 
@@ -125,8 +126,21 @@ function openSocket(route: string, headers: Record<string, string> = {}) {
 
 describe('the Hub under a session token', () => {
   test('hands the token to the vendored serve-sim and serve-emu gates', () => {
-    expect(simOptions).toMatchObject({ execToken: TOKEN, requirePreviewToken: true });
+    expect(simOptions).toMatchObject({
+      execToken: TOKEN,
+      requirePreviewToken: true,
+      frameAncestors: ['https://*.expo.dev'],
+    });
     expect(emuOptions).toMatchObject({ sessionToken: TOKEN });
+  });
+
+  test('lets only the Hub and each --frame-ancestor frame its pages', async () => {
+    const response = await request('/', { headers: { 'sec-fetch-dest': 'document' } });
+
+    expect(response?.status).toBe(401);
+    expect(response?.headers.get('content-security-policy')).toBe(
+      "frame-ancestors 'self' https://*.expo.dev"
+    );
   });
 
   test('refuses its own routes and both backends without the token', async () => {

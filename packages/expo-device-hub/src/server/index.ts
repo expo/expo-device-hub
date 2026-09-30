@@ -43,7 +43,7 @@ import {
   frameAncestorsPolicy,
   withBearerToken,
 } from './session-auth';
-import { SESSION_TOKEN } from './session-token';
+import { FRAME_ANCESTORS, SESSION_TOKEN } from './session-token';
 import { SERVER_HIDE_SIDEBAR } from './sidebar';
 import { listNewDeviceOptions } from './sim-options';
 import { SERVER_TRANSPORT } from './transport';
@@ -67,7 +67,7 @@ const SIM_CAPTURE_PREFIX = `${SIM_PREFIX}/network-capture`;
 const SIM_HELPER_PREFIX = `${SIM_PREFIX}/helper/`;
 const TOKEN_SUBPROTOCOL_PREFIXES = [SIM_TOKEN_SUBPROTOCOL_PREFIX, EMU_TOKEN_SUBPROTOCOL_PREFIX];
 const FRAME_POLICY_HEADERS: Record<string, string> = SESSION_TOKEN
-  ? { 'Content-Security-Policy': frameAncestorsPolicy([]) }
+  ? { 'Content-Security-Policy': frameAncestorsPolicy(FRAME_ANCESTORS) }
   : {};
 /** For the files the standalone CLI serves itself once `handler` passed a request on. */
 export const staticFileHeaders: Readonly<Record<string, string>> = FRAME_POLICY_HEADERS;

@@ -12,7 +12,7 @@ import {
   readStandaloneServeSimOptions,
   SERVE_SIM_OPTIONS_ENV,
 } from './serve-sim-options';
-import { SESSION_TOKEN } from './session-token';
+import { FRAME_ANCESTORS, SESSION_TOKEN } from './session-token';
 
 export const SIM_PREFIX = '/vendor/serve-sim';
 /**
@@ -30,7 +30,9 @@ const middleware = simMiddleware({
   proxyHelpers: true,
   ...standaloneOptions,
   // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
-  ...(SESSION_TOKEN ? { execToken: SESSION_TOKEN, requirePreviewToken: true } : {}),
+  ...(SESSION_TOKEN
+    ? { execToken: SESSION_TOKEN, requirePreviewToken: true, frameAncestors: FRAME_ANCESTORS }
+    : {}),
 });
 
 const SERVE_SIM_STATE_DIR = join(tmpdir(), 'serve-sim');
