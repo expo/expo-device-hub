@@ -2,7 +2,7 @@
   "expo": {
     "name": "expo-device-hub",
     "slug": "expo-device-hub",
-    "owner": "expo",
+    "owner": "expo-ci",
     "extra": {
       "eas": {
         "projectId": "05537bfc-41b0-49c3-bab5-a308bf2392bf"
