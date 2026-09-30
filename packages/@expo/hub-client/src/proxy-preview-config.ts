@@ -21,12 +21,12 @@ export function middlewareEndpointForBrowser(
   publicEndpoint.search = '';
   publicEndpoint.hash = '';
 
-  const endpoint = new URL(advertisedPath, publicEndpoint);
-  const prefix = [internalPath, mountPath]
-    .filter(Boolean)
-    .sort((a, b) => b.length - a.length)
-    .find((path) => endpoint.pathname === path || endpoint.pathname.startsWith(`${path}/`));
-  const route = endpoint.pathname.slice(prefix?.length ?? 0).replace(/^\/+/, '');
+  // Resolve against the server's own mount so relative and absolute paths both carry basePath.
+  const endpoint = new URL(advertisedPath, new URL(`${internalPath}/`, publicEndpoint));
+  const hasBase =
+    internalPath !== '' &&
+    (endpoint.pathname === internalPath || endpoint.pathname.startsWith(`${internalPath}/`));
+  const route = endpoint.pathname.slice(hasBase ? internalPath.length : 0).replace(/^\/+/, '');
   publicEndpoint.pathname = `${mountPath}/${route}`;
   publicEndpoint.search = endpoint.search;
   publicEndpoint.hash = endpoint.hash;

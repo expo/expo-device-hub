@@ -95,18 +95,23 @@ describe('middlewareEndpointForBrowser', () => {
     ).toBe('https://stream.example.test:8443/preview/session/ax?device=DEVICE-A');
   });
 
-  test('maps routes from a root-mounted backend without duplicating the public prefix', () => {
+  test('maps routes from a root-mounted backend onto the public mount', () => {
     expect(middlewareEndpointForBrowser('/grid/api', publicMount, '')).toBe(
       'https://stream.example.test:8443/preview/session/grid/api',
     );
     expect(middlewareEndpointForBrowser('appstate?device=DEVICE-A', publicMount, '')).toBe(
       'https://stream.example.test:8443/preview/session/appstate?device=DEVICE-A',
     );
-    expect(middlewareEndpointForBrowser('/preview/session/grid/api', publicMount, '')).toBe(
-      'https://stream.example.test:8443/preview/session/grid/api',
+  });
+
+  test('strips only the advertised base path, even when a route starts like the public mount', () => {
+    // A root-mounted server exposed under /grid owns its own /grid/api route.
+    const gridMount = new URL('https://stream.example.test/grid/');
+    expect(middlewareEndpointForBrowser('/grid/api', gridMount, '')).toBe(
+      'https://stream.example.test/grid/grid/api',
     );
-    expect(middlewareEndpointForBrowser('/preview/session/grid/api', publicMount, '/preview')).toBe(
-      'https://stream.example.test:8443/preview/session/grid/api',
+    expect(middlewareEndpointForBrowser('/ax?device=DEVICE-A', gridMount, '')).toBe(
+      'https://stream.example.test/grid/ax?device=DEVICE-A',
     );
   });
 
