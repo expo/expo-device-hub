@@ -100,6 +100,20 @@ describe("createRouter without a session token", () => {
   test("refuses an empty token rather than running open", () => {
     expect(() => trackedRouter("")).toThrow("sessionToken");
   });
+
+  // A client sends the token as a header, a query, or a subprotocol, so the
+  // router refuses one that cannot travel unchanged in all three.
+  test("refuses a token that some clients could never send", () => {
+    for (const token of ["a,b", " padded ", "with space", "a+b", "YWJjZA==", "semi;colon", "caf\u00e9"]) {
+      expect(() => trackedRouter(token)).toThrow("sessionToken");
+    }
+  });
+
+  test("takes base64url, hex, and UUID tokens", () => {
+    for (const token of ["jJ3k_Qx-9Zp2", "9f86d081884c7d65", "550e8400-e29b-41d4-a716-446655440000", "a.b~c"]) {
+      expect(() => trackedRouter(token)).not.toThrow();
+    }
+  });
 });
 
 describe("createRouter with a session token", () => {

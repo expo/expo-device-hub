@@ -181,6 +181,7 @@ Data-bearing requests without a valid token get `401`; WebSocket upgrades and st
 
 - HTTP requests send `Authorization: Bearer <token>`, or `?token=<token>` when the caller cannot set a header, such as `EventSource`.
 - WebSocket upgrades send the bearer header or the `serve-emu.token.<token>` subprotocol. They never take `?token=`, because proxy and tunnel access logs record query strings.
+- The token may use only letters, digits, and `-._~`. These travel unchanged in a header, a query, and a subprotocol, so every client can send the token. `createRouter` throws on an empty token or any other character. base64url, hex, and UUID tokens qualify.
 - A request without the token gets `401` with `{ "ok": false, "error": { "code": "unauthorized", ... } }`. The response never echoes a presented value. For an origin in `allowedOrigins`, it carries CORS headers, so that page can read the refusal.
 
 The router sets no cookie. A host that serves a browser UI, such as Expo Device Hub, owns the browser session and forwards the token as a bearer header.

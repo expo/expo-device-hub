@@ -15,6 +15,16 @@ export const SESSION_TOKEN_SUBPROTOCOL_PREFIX = "serve-emu.token.";
 /** A client offers one token, or a stale one and the current one. More are not compared. */
 const MAX_TOKEN_SUBPROTOCOLS = 4;
 
+/**
+ * Letters, digits, and `-._~` travel unchanged in a header, a URL query, a
+ * cookie, and a WebSocket subprotocol, so a token made of them works for every
+ * client. base64url, hex, and UUID tokens qualify. serve-sim and Expo Device
+ * Hub apply the same rule.
+ */
+export function isUsableSessionToken(token: string): boolean {
+  return /^[A-Za-z0-9._~-]+$/.test(token);
+}
+
 /** Constant-time string compare that never throws on length mismatch. */
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a, "utf8");
