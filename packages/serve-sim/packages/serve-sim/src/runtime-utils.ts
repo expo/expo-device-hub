@@ -2,6 +2,7 @@ import { type IncomingMessage, type ServerResponse } from "http";
 import { once } from "events";
 import { Readable } from "stream";
 import type { UpgradeHandlerWebSocket } from "./socket/types";
+import { rememberLocalPort } from "./request-local-port";
 
 type RequestInitWithDuplex = RequestInit & { duplex?: "half" };
 
@@ -73,7 +74,7 @@ export function nodeRequestToWeb(
       init.duplex = "half";
     }
   }
-  return new Request(url, init);
+  return rememberLocalPort(new Request(url, init), req.socket?.localPort);
 }
 
 export async function writeWebResponse(

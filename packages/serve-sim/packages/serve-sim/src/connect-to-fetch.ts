@@ -1,6 +1,7 @@
 import { EventEmitter } from "events";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { Socket } from "net";
+import { localPortOf } from "./request-local-port";
 
 type Next = (error?: unknown) => void | Promise<void>;
 
@@ -45,7 +46,7 @@ export function connectToFetch(
     method: request.method,
     url: `${requestUrl.pathname}${requestUrl.search}`,
     headers: headersFromRequest(request),
-    socket: { localPort: Number(requestUrl.port) || undefined },
+    socket: { localPort: localPortOf(request) ?? (Number(requestUrl.port) || undefined) },
     destroy() {
       closeRequest();
     },
