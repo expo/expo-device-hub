@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createInputSocket } from "../socket/client-input";
+import { WS_REASON_INPUT_UNAVAILABLE } from "../socket/input-protocol";
 
 class FakeSocket {
   binaryType = "blob";
@@ -75,9 +76,9 @@ test("legacy helper still reports an immediate 1013 refusal", async () => {
   try {
     state.input.start();
     state.sockets[0]!.open();
-    state.sockets[0]!.close(1013, "busy");
+    state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
     await Bun.sleep(50);
-    expect(state.errors).toEqual(["busy"]);
+    expect(state.errors).toEqual([WS_REASON_INPUT_UNAVAILABLE]);
   } finally {
     state.input.dispose();
   }
@@ -88,7 +89,7 @@ test("a retry admitted by a config frame clears a temporary refusal", async () =
   try {
     state.input.start();
     state.sockets[0]!.open();
-    state.sockets[0]!.close(1013, "busy");
+    state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
     await Bun.sleep(20);
     state.sockets[1]!.open();
     state.sockets[1]!.message("other frame");
@@ -174,7 +175,7 @@ test("a refused open preserves fresh queued input for the next admitted socket",
     state.input.send(0x04, { button: "home" });
     state.sockets[0]!.open();
     expect(state.sockets[0]!.sent).toHaveLength(0);
-    state.sockets[0]!.close(1013, "busy");
+    state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
     await Bun.sleep(20);
     state.sockets[1]!.open();
     state.sockets[1]!.message("admitted");
@@ -189,14 +190,31 @@ test("persistent 1013 refusals report once while reconnecting", async () => {
   const state = setup();
   try {
     state.input.start();
-    state.sockets[0]!.close(1013, "busy");
+    state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
     await Bun.sleep(20);
-    state.sockets[1]!.close(1013, "busy");
+    state.sockets[1]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
     await Bun.sleep(50);
-    expect(state.errors).toEqual(["busy"]);
-    state.sockets.at(-1)!.close(1013, "busy");
+    expect(state.errors).toEqual([WS_REASON_INPUT_UNAVAILABLE]);
+    state.sockets.at(-1)!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
     await Bun.sleep(50);
-    expect(state.errors).toEqual(["busy"]);
+    expect(state.errors).toEqual([WS_REASON_INPUT_UNAVAILABLE]);
+  } finally {
+    state.input.dispose();
+  }
+});
+
+test("queue overload reports dropped input immediately and recovery leaves the warning visible", async () => {
+  const state = setup();
+  try {
+    state.input.start();
+    state.sockets[0]!.open();
+    state.sockets[0]!.message(Uint8Array.of(0x83).buffer);
+    state.sockets[0]!.close(1013, "Simulator input queue full; send smaller batches or slow down");
+    expect(state.errors).toEqual(["Simulator input queue full; send smaller batches or slow down"]);
+    await Bun.sleep(20);
+    state.sockets[1]!.open();
+    state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
+    expect(state.recoveries).toBe(0);
   } finally {
     state.input.dispose();
   }
@@ -206,9 +224,9 @@ test("admission after a reported refusal clears the failure notice", async () =>
   const state = setup();
   try {
     state.input.start();
-    state.sockets[0]!.close(1013, "busy");
+    state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
     await Bun.sleep(50);
-    expect(state.errors).toEqual(["busy"]);
+    expect(state.errors).toEqual([WS_REASON_INPUT_UNAVAILABLE]);
     state.sockets[1]!.open();
     state.sockets[1]!.message("admitted");
     expect(state.recoveries).toBe(1);
@@ -222,7 +240,7 @@ test("admission after a reported refusal clears the failure notice", async () =>
 test("disposing stops reconnects and pending refusal reports", async () => {
   const state = setup();
   state.input.start();
-  state.sockets[0]!.close(1013, "busy");
+  state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
   state.input.dispose();
   await Bun.sleep(55);
   expect(state.sockets).toHaveLength(1);

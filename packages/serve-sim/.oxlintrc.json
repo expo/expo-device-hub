@@ -21,7 +21,9 @@
   "overrides": [
     {
       "files": [
-        "packages/serve-sim/src/client/**"
+        "packages/serve-sim/src/client/**",
+        "packages/serve-sim/src/socket/client-*.ts",
+        "packages/serve-sim/src/socket/send-queue.ts"
       ],
       "rules": {
         "import/no-nodejs-modules": "error"
@@ -29,7 +31,9 @@
     },
     {
       "files": [
-        "packages/serve-sim/src/*.ts"
+        "packages/serve-sim/src/*.ts",
+        "packages/serve-sim/src/socket/server-*.ts",
+        "packages/serve-sim/src/socket/control-utils.ts"
       ],
       "rules": {
         "no-restricted-globals": [

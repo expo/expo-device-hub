@@ -34,7 +34,7 @@ import { validatePanelRoute } from "./panel-route";
 import { isHingeControlCommand, hingeControlState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
 import { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } from "./ui-settings";
 import { eventLogEventForHidMessage, formatEventLogPoint, recordEventLogEvent, updateEventLogEvent } from "./event-log";
-import { WS_MSG_CONFIG, WS_MSG_INPUT_ADMITTED } from "./socket/input-protocol";
+import { WS_MSG_CONFIG, WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./socket/input-protocol";
 import {
   MAX_WEBRTC_SIGNALING_BODY_BYTES,
   WebRtcSignalingError,
@@ -1075,7 +1075,7 @@ export class DeviceSession {
 
   attachHidSocket(ws: HidSocket): void {
     if (this.phase !== "running" || this.hidSockets.size >= MAX_HID_SOCKETS) {
-      ws.close(1013, "Simulator input unavailable; retry after other clients disconnect");
+      ws.close(1013, WS_REASON_INPUT_UNAVAILABLE);
       return;
     }
     this.hidSockets.add(ws);

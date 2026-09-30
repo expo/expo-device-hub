@@ -1,5 +1,5 @@
 import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage } from "./send-queue";
-import { WS_MSG_INPUT_ADMITTED } from "./input-protocol";
+import { WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 type InputSocketHandlers = {
   onAdmitted(): void;
@@ -19,6 +19,8 @@ export function createInputSocket(
     requireAdmission = true,
     legacyOpenGraceMs = 1000,
     reconnectDelayMs = 1000,
+    // Longer than the server's HID_HEARTBEAT pong timeout plus one reconnect, so a slot held
+    // by a stranded socket frees up before the notice shows.
     refusalDelayMs = 13_000,
     openSocket = (address: string) => new WebSocket(address),
   } = {},
@@ -72,7 +74,14 @@ export function createInputSocket(
       if (stopped || socket !== ws) return;
       socket = null;
       admitted = false;
-      if (event.code === 1013 && !refusalTimer && !reported) {
+      if (event.code === 1013 && event.reason !== WS_REASON_INPUT_UNAVAILABLE) {
+        // An admitted socket can lose queued input before a retry succeeds.
+        // Keep that warning visible for its normal toast duration after recovery.
+        if (refusalTimer) clearTimeout(refusalTimer);
+        refusalTimer = null;
+        reported = false;
+        handlers.onRefused(event.reason || "The server is busy. Try again shortly.");
+      } else if (event.code === 1013 && !refusalTimer && !reported) {
         const reason = event.reason || "The server is busy. Try again shortly.";
         refusalTimer = setTimeout(() => {
           refusalTimer = null;
