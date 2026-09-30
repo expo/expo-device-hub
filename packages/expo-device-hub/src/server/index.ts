@@ -44,6 +44,7 @@ import {
   withBearerToken,
 } from './session-auth';
 import { FRAME_ANCESTORS, SESSION_TOKEN } from './session-token';
+import { SERVER_SHARE_URL } from './share-url';
 import { SERVER_HIDE_SIDEBAR } from './sidebar';
 import { listNewDeviceOptions } from './sim-options';
 import { SERVER_TRANSPORT } from './transport';
@@ -92,14 +93,15 @@ async function serveClientIndexHtml(): Promise<Response | null> {
     }
   }
   return new Response(
-    configureClientShell(
-      clientIndexHtml,
-      MOUNT_PATH,
-      SERVER_PLATFORM_FILTER,
-      SERVER_TRANSPORT,
-      SERVER_HIDE_SIDEBAR,
-      SERVER_HIDE_BOOT_DEVICE
-    ),
+    configureClientShell(clientIndexHtml, {
+      mountPath: MOUNT_PATH,
+      platform: SERVER_PLATFORM_FILTER,
+      transport: SERVER_TRANSPORT,
+      hideSidebar: SERVER_HIDE_SIDEBAR,
+      hideBootDevice: SERVER_HIDE_BOOT_DEVICE,
+      sessionToken: SESSION_TOKEN,
+      shareUrl: SERVER_SHARE_URL,
+    }),
     {
       headers: {
         'Content-Type': 'text/html; charset=utf-8',

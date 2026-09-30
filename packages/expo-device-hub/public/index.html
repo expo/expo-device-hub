@@ -28,6 +28,15 @@
         if ('{{hideBootDevice}}' === 'true') {
           window.__EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE__ = true;
         }
+        // Set under --require-token and --share-url, for the Share button's link.
+        var sessionToken = '{{sessionToken}}';
+        if (sessionToken && sessionToken.charAt(0) !== '{') {
+          window.__EXPO_DEVICE_HUB_SESSION_TOKEN__ = sessionToken;
+        }
+        var shareUrl = '{{shareUrl}}';
+        if (shareUrl && shareUrl.charAt(0) !== '{') {
+          window.__EXPO_DEVICE_HUB_SHARE_URL__ = shareUrl;
+        }
       })();
     </script>
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->

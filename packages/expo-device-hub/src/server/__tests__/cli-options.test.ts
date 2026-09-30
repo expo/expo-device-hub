@@ -263,6 +263,18 @@ describe('parseCliOptions', () => {
     ).toEqual(['https://*.expo.dev', 'http://localhost:3000']);
   });
 
+  test('takes the --share-url the Share button copies, as serve-sim does', () => {
+    expect(parseCliOptions(['--share-url', 'https://expo.dev/device-preview/abc']).shareUrl).toBe(
+      'https://expo.dev/device-preview/abc'
+    );
+    expect(parseCliOptions([]).shareUrl).toBeUndefined();
+    expect(() => parseCliOptions(['--share-url', 'ftp://expo.dev/abc'])).toThrow(
+      '--share-url must be an http(s) URL.'
+    );
+    expect(() => parseCliOptions(['--share-url', 'not a url'])).toThrow('--share-url must be an http(s) URL.');
+    expect(HELP).toContain('--share-url <url>');
+  });
+
   test('hides the device list sidebar on request', () => {
     expect(parseCliOptions(['--hide-sidebar']).hideSidebar).toBe(true);
     expect(HELP).toContain('--hide-sidebar');

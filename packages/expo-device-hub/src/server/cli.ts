@@ -18,6 +18,7 @@ import {
   SERVE_SIM_OPTIONS_ENV,
 } from './serve-sim-options';
 import { FRAME_ANCESTORS_ENV, SESSION_TOKEN_ENV } from './session-token';
+import { SHARE_URL_ENV } from './share-url';
 
 type HubServerModule = typeof import('./index');
 type WebSocketRouteHandler = (socket: unknown, request: Request, server: WebSocketServer) => void;
@@ -92,6 +93,11 @@ async function main(): Promise<void> {
     process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE = 'true';
   } else {
     delete process.env.EXPO_DEVICE_HUB_HIDE_BOOT_DEVICE;
+  }
+  if (options.shareUrl) {
+    process.env[SHARE_URL_ENV] = options.shareUrl;
+  } else {
+    delete process.env[SHARE_URL_ENV];
   }
   process.env[SERVE_EMU_OPTIONS_ENV] = encodeStandaloneServeEmuOptions(options);
   process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options);
