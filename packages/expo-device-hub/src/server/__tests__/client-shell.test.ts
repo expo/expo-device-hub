@@ -38,6 +38,15 @@ describe('configureClientShell', () => {
     ).toBe("<script>var sessionToken = 'tok-1'; var shareUrl = 'https://expo.dev/device-preview/abc';</script>");
   });
 
+  // String.replaceAll reads `$$`, `$&`, `` $` `` and `$'` in a string replacement as patterns.
+  test('injects a value that contains replacement patterns as it is', () => {
+    const shareUrl = "https://expo.dev/?a=$$&b=$&&c=$`&d=$'";
+
+    expect(configureClientShell("before '{{shareUrl}}' after", { mountPath: '', shareUrl })).toBe(
+      "before 'https://expo.dev/?a=$$\\u0026b=$\\u0026\\u0026c=$`\\u0026d=$\\u0027' after"
+    );
+  });
+
   // A URL path may keep a quote, so each value is escaped for the string literal it lands in.
   test('cannot end the script or the string it is injected into', () => {
     const html = configureClientShell(share, {

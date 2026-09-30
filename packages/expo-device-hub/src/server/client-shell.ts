@@ -33,12 +33,13 @@ export function configureClientShell(
     shareUrl,
   }: ClientShellOptions
 ): string {
+  // Function replacements: a string one would read `$$`, `$&`, `` $` `` and `$'` as patterns.
   return html
-    .replaceAll('{{mount}}', mountPath)
-    .replaceAll('{{platform}}', platform ?? '')
-    .replaceAll('{{transport}}', transport ?? '')
-    .replaceAll('{{hideSidebar}}', String(hideSidebar))
-    .replaceAll('{{hideBootDevice}}', String(hideBootDevice))
-    .replaceAll('{{sessionToken}}', jsStringContent(sessionToken ?? ''))
-    .replaceAll('{{shareUrl}}', jsStringContent(shareUrl ?? ''));
+    .replaceAll('{{mount}}', () => mountPath)
+    .replaceAll('{{platform}}', () => platform ?? '')
+    .replaceAll('{{transport}}', () => transport ?? '')
+    .replaceAll('{{hideSidebar}}', () => String(hideSidebar))
+    .replaceAll('{{hideBootDevice}}', () => String(hideBootDevice))
+    .replaceAll('{{sessionToken}}', () => jsStringContent(sessionToken ?? ''))
+    .replaceAll('{{shareUrl}}', () => jsStringContent(shareUrl ?? ''));
 }
