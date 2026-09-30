@@ -142,12 +142,14 @@ test("rejected DOWN cancels only its queued moves and UP, not later gestures", a
     const first = observed(a.enqueue(touch("down")).completion);
     await gate.entered;
     const move = observed(a.enqueue(touch("move")).completion);
+    const coalescedMove = observed(a.enqueue(touch("move")).completion);
     const up = observed(a.enqueue(touch("up")).completion);
     const next = observed(a.enqueue(touch("down")).completion);
     const other = observed(b.enqueue(touch("down")).completion);
     gate.reject();
-    const results = await Promise.all([first, move, up, next, other]);
+    const results = await Promise.all([first, move, coalescedMove, up, next, other]);
     expect(results.map((r) => r.status)).toEqual([
+      "rejected",
       "rejected",
       "rejected",
       "rejected",
@@ -283,6 +285,67 @@ test("queue rejection stops invalidating dependencies at the next DOWN of the sa
     expect(h.queue.snapshot().reservedReleases).toBe(0);
   } finally {
     gate.resolve();
+    h.queue.close();
+  }
+});
+
+test("failed UP restores its reserved slot even while other input fills the queue", async () => {
+  const h = harness(4);
+  const a = h.owner();
+  const b = h.owner();
+  const upGate = h.block("up");
+  let moveGate: ReturnType<typeof h.block> | undefined;
+  try {
+    await a.enqueue(touch("down")).completion;
+    await b.enqueue(touch("down")).completion;
+    const up = observed(a.enqueue(touch("up")).completion);
+    await upGate.entered;
+    moveGate = h.block("move");
+    const moves = [
+      observed(b.enqueue(touch("move")).completion),
+      observed(b.enqueue(touch("move")).completion),
+    ];
+    expect(h.queue.snapshot()).toMatchObject({ depth: 3, reservedReleases: 1 });
+    upGate.reject();
+    await up;
+    await moveGate.entered;
+    expect(h.queue.snapshot()).toMatchObject({ depth: 2, reservedReleases: 2 });
+    const close = a.close();
+    expect(h.queue.snapshot()).toMatchObject({ depth: 3, reservedReleases: 1 });
+    moveGate.resolve();
+    await Promise.all(moves);
+    await close;
+    expect(h.held.size).toBe(1);
+    await b.close();
+    expect(h.held.size).toBe(0);
+  } finally {
+    upGate.resolve();
+    moveGate?.resolve();
+    await Promise.allSettled([a.close(), b.close()]);
+    h.queue.close();
+  }
+});
+
+test("a rejected disconnect retry is reported without retrying indefinitely", async () => {
+  const h = harness(2);
+  const owner = h.owner();
+  const gate = h.block("up");
+  try {
+    await owner.enqueue(touch("down")).completion;
+    const up = observed(owner.enqueue(touch("up")).completion);
+    await gate.entered;
+    const close = owner.close();
+    const result = observed(close);
+    h.rejectNext("up");
+    gate.reject();
+    expect((await up).status).toBe("rejected");
+    expect((await result).status).toBe("rejected");
+    expect(owner.close()).toBe(close);
+    expect(h.attempts.map((t) => t.action)).toEqual(["down", "up", "up"]);
+    expect(h.held.size).toBe(1);
+  } finally {
+    gate.resolve();
+    await owner.close().catch(() => {});
     h.queue.close();
   }
 });

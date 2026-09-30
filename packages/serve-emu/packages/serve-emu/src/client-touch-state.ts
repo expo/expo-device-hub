@@ -1,4 +1,8 @@
-import type { ControlInputHandle } from "./control-input-queue.ts";
+import {
+  ControlInputRejectedError,
+  type ControlInputCompletion,
+  type ControlInputHandle,
+} from "./control-input-queue.ts";
 import type { Gesture } from "./input.ts";
 
 type Touch = Extract<Gesture, { type: "touch" }>;
@@ -9,6 +13,15 @@ export type TouchInputTarget = {
   /** The recording lifetime; IDs must not repeat when its capture is replaced. */
   pointerNamespace: object;
   enqueue(gesture: Gesture, source: string, record: boolean): ControlInputHandle;
+};
+
+type TouchCycle = {
+  target: TouchInputTarget;
+  gesture: Touch;
+  record: boolean;
+  down: Promise<ControlInputCompletion>;
+  downRejected: boolean;
+  up: Promise<ControlInputCompletion> | null;
 };
 
 // Zero remains available to the atomic tap/swipe commands. Both binary scrcpy
@@ -25,7 +38,10 @@ function allocatePointerId(target: object): number {
 export class ClientTouchState {
   readonly #target: () => TouchInputTarget;
   readonly #source: string;
-  readonly #touches = new Map<number, { gesture: Touch; record: boolean }>();
+  readonly #touches = new Map<number, TouchCycle>();
+  // An admitted UP allows a new gesture with the same local ID. Keep the old
+  // cycle until its release succeeds so a late rejection cannot lose ownership.
+  readonly #unreleased = new Set<TouchCycle>();
   #current: TouchInputTarget | null = null;
   #closed = false;
   #closeTask: Promise<void> | null = null;
@@ -42,33 +58,120 @@ export class ClientTouchState {
       // A surviving viewer must start a new gesture after capture replacement.
       // Never redirect its old pointer releases to the new input queue.
       this.#touches.clear();
+      this.#unreleased.clear();
       this.#current = target;
     }
     if (gesture.type !== "touch") return target.enqueue(gesture, this.#source, record);
 
     const localId = gesture.pointerId ?? 0;
     const previous = this.#touches.get(localId);
-    if (!previous && gesture.action !== "down" && skipOrphanTouches) {
-      // The bounded replay buffer can begin in the middle of a gesture. Do not
-      // attach that retained MOVE/UP to a pointer owned by a live viewer.
+    const held = previous && !previous.up && !previous.downRejected;
+    if (!held && gesture.action !== "down" && skipOrphanTouches) {
+      // A bounded replay can start in the middle of a gesture.
       return { gesture, completion: Promise.resolve({ status: "coalesced" }) };
     }
-    if (gesture.action === "down" ? previous : !previous) {
+    if (gesture.action === "down" ? held : !held) {
       throw new Error(
         gesture.action === "down" ? "pointer is already down" : "pointer is not down",
       );
     }
     const mapped: Touch = {
       ...gesture,
-      pointerId: previous?.gesture.pointerId ?? allocatePointerId(target.pointerNamespace),
+      pointerId:
+        gesture.action === "down"
+          ? allocatePointerId(target.pointerNamespace)
+          : previous!.gesture.pointerId,
     };
     const accepted = target.enqueue(mapped, this.#source, record);
-    // Track admission, not completion: close can race an in-flight DOWN. A
-    // rejected enqueue must not create a pointer or consume release capacity.
-    if (gesture.action === "up") this.#touches.delete(localId);
-    else
-      this.#touches.set(localId, { gesture: mapped, record: record || previous?.record === true });
-    return accepted;
+    const cycle: TouchCycle =
+      gesture.action === "down"
+        ? {
+            target,
+            gesture: mapped,
+            record,
+            down: accepted.completion,
+            downRejected: false,
+            up: null,
+          }
+        : previous!;
+    cycle.gesture = mapped;
+    cycle.record ||= record;
+    if (gesture.action === "down") {
+      this.#touches.set(localId, cycle);
+      this.#unreleased.add(cycle);
+    }
+    const completion = accepted.completion.then(
+      (result) => {
+        if (gesture.action === "up") {
+          this.#unreleased.delete(cycle);
+          if (this.#touches.get(localId) === cycle) this.#touches.delete(localId);
+        }
+        return result;
+      },
+      (error: unknown) => {
+        if (error instanceof ControlInputRejectedError) {
+          if (gesture.action === "down") {
+            cycle.downRejected = true;
+            this.#unreleased.delete(cycle);
+            if (this.#touches.get(localId) === cycle) this.#touches.delete(localId);
+          } else if (gesture.action === "up" && cycle.up === completion) {
+            cycle.up = null;
+          }
+        }
+        throw error;
+      },
+    );
+    if (gesture.action === "down") cycle.down = completion;
+    else if (gesture.action === "up") cycle.up = completion;
+    return { ...accepted, completion };
+  }
+
+  #queueRelease(cycle: TouchCycle): Promise<void> {
+    if (cycle.downRejected || cycle.target.identity !== this.#target().identity) {
+      return Promise.resolve();
+    }
+    let release: Promise<ControlInputCompletion>;
+    try {
+      release = cycle.target.enqueue(
+        { ...cycle.gesture, action: "up" },
+        `${this.#source}:disconnect`,
+        cycle.record,
+      ).completion;
+    } catch (error) {
+      release = Promise.reject(error);
+    }
+    return release.then(
+      () => {},
+      async (error: unknown) => {
+        try {
+          await cycle.down;
+        } catch (downError) {
+          // The queue cancels a dependent UP when its DOWN was rejected. Nothing
+          // was pressed, so cleanup is complete rather than a release failure.
+          if (downError instanceof ControlInputRejectedError) return;
+        }
+        throw error;
+      },
+    );
+  }
+
+  #releaseCycle(cycle: TouchCycle): Promise<void> {
+    if (!cycle.up) return this.#queueRelease(cycle);
+    return cycle.up.then(
+      () => {},
+      async (error: unknown) => {
+        if (!(error instanceof ControlInputRejectedError)) throw error;
+        try {
+          await cycle.down;
+        } catch (downError) {
+          if (downError instanceof ControlInputRejectedError) return;
+          throw downError;
+        }
+        // A user UP already in flight is not duplicated. If it is rejected, send
+        // one cleanup UP; failure of that cleanup is reported without retrying.
+        return this.#queueRelease(cycle);
+      },
+    );
   }
 
   close(): Promise<void> {
@@ -84,24 +187,16 @@ export class ClientTouchState {
     });
     const releases: Promise<unknown>[] = [];
     try {
-      const current = this.#current;
-      if (current && current.identity === this.#target().identity) {
-        for (const { gesture, record } of this.#touches.values()) {
-          try {
-            // The queue reserves an UP for every admitted DOWN, even when full.
-            releases.push(
-              current.enqueue({ ...gesture, action: "up" }, `${this.#source}:disconnect`, record)
-                .completion,
-            );
-          } catch (error) {
-            releases.push(Promise.reject(error));
-          }
+      for (const cycle of this.#unreleased) {
+        try {
+          releases.push(this.#releaseCycle(cycle));
+        } catch (error) {
+          releases.push(Promise.reject(error));
         }
       }
-    } catch (error) {
-      releases.push(Promise.reject(error));
     } finally {
       this.#touches.clear();
+      this.#unreleased.clear();
       this.#current = null;
     }
     // Try every release and wait for all of them, even if one fails first.

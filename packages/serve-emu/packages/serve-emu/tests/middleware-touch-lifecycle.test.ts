@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { ControlInputQueue } from "../src/control-input-queue.ts";
+import { ControlInputQueue, ControlInputRejectedError } from "../src/control-input-queue.ts";
 import { createApp } from "../src/middleware.ts";
 import type { Gesture } from "../src/input.ts";
 import type { StreamSocket } from "../src/stream-socket.ts";
@@ -36,9 +36,14 @@ async function harness(semantic: boolean, video: boolean, maxDepth = 128) {
   let touches: Touch[];
   let queue: ControlInputQueue;
   let block = false;
+  let rejectAction: Touch["action"] | null = null;
   let unblock: (() => void) | null = null;
   const write = async (gesture: Touch) => {
     touches.push(gesture);
+    if (rejectAction === gesture.action) {
+      rejectAction = null;
+      throw new ControlInputRejectedError(`rejected ${gesture.action}`);
+    }
     if (block) {
       block = false;
       await new Promise<void>((resolve) => {
@@ -145,6 +150,9 @@ async function harness(semantic: boolean, video: boolean, maxDepth = 128) {
       const viewer = new Viewer();
       app.attachWebSocket(viewer, { video, frameMeta: false });
       return viewer;
+    },
+    rejectNext(action: Touch["action"]) {
+      rejectAction = action;
     },
     blockNext() {
       block = true;
@@ -451,6 +459,50 @@ for (const semantic of [false, true]) {
           await h.stop();
         }
       });
+
+      if (semantic) {
+        test("a nonfatal semantic DOWN rejection leaves the viewer usable", async () => {
+          const h = await harness(semantic, video);
+          try {
+            const viewer = h.viewer();
+            h.rejectNext("down");
+            viewer.touch("down");
+            await h.settle();
+            expect(viewer.messages.at(-1)).toMatchObject({ ok: false });
+            expect(h.queue.snapshot().reservedReleases).toBe(0);
+            viewer.touch("down");
+            viewer.touch("up");
+            await h.settle();
+            expect((await h.recorded()).events).toHaveLength(2);
+            expect(h.queue.snapshot()).toMatchObject({ closed: false, reservedReleases: 0 });
+          } finally {
+            await h.stop();
+          }
+        });
+
+        test("a rejected semantic UP is retried by viewer disconnect cleanup", async () => {
+          const h = await harness(semantic, video);
+          try {
+            const viewer = h.viewer();
+            viewer.touch("down");
+            await h.settle();
+            h.rejectNext("up");
+            viewer.touch("up");
+            await h.settle();
+            expect(viewer.messages.at(-1)).toMatchObject({ ok: false });
+            viewer.close();
+            await h.settle();
+            expect(h.touches.map((t) => t.action)).toEqual(["down", "up", "up"]);
+            expect((await h.recorded()).events.at(-1)).toMatchObject({
+              source: "ws:disconnect",
+              gesture: { action: "up" },
+            });
+            expect(h.queue.snapshot()).toMatchObject({ closed: false, reservedReleases: 0 });
+          } finally {
+            await h.stop();
+          }
+        });
+      }
 
       test("queues disconnect release after an admitted down before it completes", async () => {
         const h = await harness(semantic, video, 2);
