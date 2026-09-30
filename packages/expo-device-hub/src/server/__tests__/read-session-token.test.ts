@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { readSessionToken } from '../session-token';
+import { readSessionToken } from '../read-session-token';
 
 const STANDALONE = { EXPO_DEVICE_HUB_BASE_PATH: '' };
 
