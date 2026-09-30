@@ -78,7 +78,8 @@ async function attachEmuSocket(socket: EmuSocket, request: Request): Promise<voi
     return;
   }
   const { video, frameMeta } = serveEmuWebSocketOptions(url);
-  router.attachWebSocket(fromWsSocket(socket), { serial, video, frameMeta });
+  // The router checks the token again here and closes the socket without it.
+  router.attachWebSocket(fromWsSocket(socket), { serial, video, frameMeta, request });
 }
 
 export const emuWebSocketHandler = (socket: EmuSocket, request: Request): void => {

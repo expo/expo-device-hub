@@ -13,6 +13,7 @@ const simRequests: Request[] = [];
 const simSockets: Request[] = [];
 const emuRequests: Request[] = [];
 const emuUpgrades: Request[] = [];
+const emuAttached: Array<{ request?: Request }> = [];
 let simOptions: Record<string, unknown> = {};
 let emuOptions: Record<string, unknown> = {};
 let deviceListings = 0;
@@ -51,7 +52,9 @@ mock.module('../../../vendor/serve-emu/dist/middleware.js', () => ({
         return true;
       },
       ensure: async () => ({ serial: 'emulator-5554' }),
-      attachWebSocket: () => {},
+      attachWebSocket: (_socket: unknown, options: { request?: Request }) => {
+        emuAttached.push(options);
+      },
       startScreenRecording: async () => {},
       finishScreenRecording: async () => null,
       stopAll: async () => {},
@@ -83,6 +86,7 @@ beforeEach(() => {
   simSockets.length = 0;
   emuRequests.length = 0;
   emuUpgrades.length = 0;
+  emuAttached.length = 0;
   deviceListings = 0;
 });
 
@@ -233,9 +237,11 @@ describe('the Hub under a session token', () => {
 
     expect(openSocket('/vendor/serve-sim/exec-ws', same).closed).toBeNull();
     expect(openSocket('/vendor/serve-emu/ws', { 'sec-websocket-protocol': `serve-emu.token.${TOKEN}` }).closed).toBeNull();
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
     expect(simSockets.map((r) => r.headers.get('authorization'))).toEqual([`Bearer ${TOKEN}`]);
     expect(emuUpgrades.map((r) => r.headers.get('authorization'))).toEqual([`Bearer ${TOKEN}`]);
+    // serve-emu's `attachWebSocket` checks the token again and closes a socket that has none.
+    expect(emuAttached.map((o) => o.request?.headers.get('authorization'))).toEqual([`Bearer ${TOKEN}`]);
   });
 });
