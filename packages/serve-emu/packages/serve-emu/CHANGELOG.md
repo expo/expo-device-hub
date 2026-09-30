@@ -20,6 +20,10 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 ### Added
 
 - Save screenshot captures to `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` when it is set, and report the outcome in the `X-Expo-Screenshot-Artifact` header.
+- `createRouter({ sessionToken })` requires a session token on every routed
+  request, as a bearer header or `?token=`, and `router.authorizeUpgrade`
+  checks WebSocket upgrades for a bearer header or a `serve-emu.token.`
+  subprotocol. Without it the router stays open.
 - `GET /api/metrics` streams foreground app CPU, memory, and network samples as SSE.
 - Add `GET /api/apps/permissions`, `POST /api/apps/revoke`, and
   `POST /api/apps/reset-permissions` to list, revoke, and reset one package's

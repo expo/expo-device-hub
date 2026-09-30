@@ -138,6 +138,11 @@ import {
   WebRtcStatsCollector,
   WebRtcStatsRequestError,
 } from "./webrtc-stats.ts";
+import {
+  requestHasSessionToken,
+  sessionTokenRequiredResponse,
+  upgradeHasSessionToken,
+} from "./session-token.ts";
 
 export { fromBunSocket, fromWsSocket } from "./stream-socket.ts";
 export type { StreamSocket, WsWebSocketLike } from "./stream-socket.ts";
@@ -172,6 +177,7 @@ export type {
 export { STREAM_TRANSPORTS } from "./stream-settings.ts";
 export type { StreamTransport } from "./stream-settings.ts";
 export { cameraLaunchArgs, handleCameraRequest, seedCameraFeeds } from "./camera.ts";
+export { SESSION_TOKEN_SUBPROTOCOL_PREFIX } from "./session-token.ts";
 export { CAMERA_FACINGS } from "./shared/api-contracts.ts";
 export type { CameraFacing, CameraFeedStatus, CameraStatus } from "./shared/api-contracts.ts";
 
@@ -2187,7 +2193,14 @@ export function createApp(
   return createAppInternal(opts, dependencies);
 }
 
-export type RouterDefaults = Partial<AppOptions>;
+export type RouterDefaults = Partial<AppOptions> & {
+  /**
+   * Session token every request and WebSocket upgrade must present, as with
+   * serve-sim's `--require-token`. `./session-token.ts` lists where each may
+   * carry it. Unset keeps the router open.
+   */
+  sessionToken?: string;
+};
 
 export type RouterDependencies = {
   listDevices?: typeof listDevices;
@@ -2209,11 +2222,19 @@ export type RouterDependencies = {
  * fleet listing are served without requiring any device. Both `server.ts` (Bun)
  * and the Expo DevTools plugin mount this onto their own transport, so the
  * device-routing logic lives here once rather than in each transport.
+ *
+ * With a `sessionToken`, every request is refused before routing unless it
+ * carries the token, so a new route is gated by default. A transport calls
+ * `authorizeUpgrade` before it starts a device for a WebSocket.
  */
 export function createRouter(
-  defaults: RouterDefaults = {},
+  { sessionToken, ...defaults }: RouterDefaults = {},
   dependencies: RouterDependencies = {},
 ) {
+  // An empty token would read as "no token" below and leave the router open.
+  if (sessionToken === "") {
+    throw new Error("sessionToken must not be empty. Omit it to leave the router open.");
+  }
   const readOnlineDevices = dependencies.listDevices ?? listDevices;
   const readAllDevices = dependencies.listAllDevices ?? listAllDevices;
   const readAvds = dependencies.listAvds ?? listAvds;
@@ -2826,6 +2847,12 @@ export function createRouter(
 
   const handleRequest = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
+    // The one exception, as in the standalone server: a browser cannot attach
+    // the token to the statistics preflight, and it returns no live state.
+    const statsPreflight = req.method === "OPTIONS" && url.pathname === "/webrtc/stats";
+    if (sessionToken && !statsPreflight && !requestHasSessionToken(req, sessionToken)) {
+      return sessionTokenRequiredResponse();
+    }
     if (
       req.method !== "GET" &&
       req.method !== "HEAD" &&
@@ -3127,6 +3154,11 @@ export function createRouter(
     return app.handleRequest(req);
   };
 
+  // Upgrades never reach `handleRequest`, so the transport checks each one
+  // here before `ensure` starts its device. Always true without a token.
+  const authorizeUpgrade = (req: Request): boolean =>
+    !sessionToken || upgradeHasSessionToken(req, sessionToken);
+
   // Attach a video/gesture socket to an already-resolved, already-started
   // device. The transport ensures the serial before upgrading and passes it
   // here, so the app should exist; close defensively if it raced away.
@@ -3189,6 +3221,7 @@ export function createRouter(
     startScreenRecording,
     finishScreenRecording: () => screenRecording?.recorder.finish() ?? Promise.resolve(null),
     handleRequest,
+    authorizeUpgrade,
     attachWebSocket,
     stopAll,
   };

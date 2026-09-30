@@ -1,0 +1,173 @@
+import { describe, expect, test } from "bun:test";
+import type { Device } from "../src/adb.ts";
+import {
+  createRouter,
+  SESSION_TOKEN_SUBPROTOCOL_PREFIX,
+  type EmuApp,
+  type RouterDependencies,
+} from "../src/middleware.ts";
+
+const TOKEN = "router-session-token";
+const SERIAL = "emulator-5554";
+
+function trackedRouter(sessionToken?: string) {
+  const created: string[] = [];
+  const launched: string[] = [];
+  const devices: Device[] = [{ serial: SERIAL, state: "device" }];
+  const dependencies: RouterDependencies = {
+    listDevices: async () => devices,
+    listAllDevices: async () => devices.map((device) => ({ ...device })),
+    listAvds: async () => [],
+    listRunningAvds: async () => [],
+    resolveRunningAvds: async () => [],
+    createApp: async ({ serial }) => {
+      created.push(serial);
+      return {
+        session: { mode: "scrcpy", inputSource: "scrcpy", meta: { deviceName: serial } },
+        getInputSource: () => "scrcpy",
+        isStreaming: () => true,
+        health: () => ({ status: "streaming" }),
+        webRtcStats: () => null,
+        handleRequest: async (request: Request) =>
+          Response.json({ ok: true, path: new URL(request.url).pathname }),
+        attachWebSocket: () => {},
+        stop: async () => {},
+      } as unknown as EmuApp;
+    },
+    startEmulator: async ({ avd }) => {
+      launched.push(avd);
+      return { serial: SERIAL, proc: null, ownsProcess: false, cameraFeed: false, stop: () => {} };
+    },
+  };
+  const router = createRouter(sessionToken === undefined ? {} : { sessionToken }, dependencies);
+  const request = (path: string, init?: RequestInit) =>
+    router.handleRequest(new Request(`http://router.test${path}`, init));
+  return { router, request, created, launched };
+}
+
+function upgrade(headers: Record<string, string> = {}, query = ""): Request {
+  return new Request(`http://router.test/ws${query}`, { headers });
+}
+
+describe("createRouter without a session token", () => {
+  test("answers requests and upgrades as before", async () => {
+    const { router, request } = trackedRouter();
+
+    expect((await request("/api/devices")).status).toBe(200);
+    expect(router.authorizeUpgrade(upgrade())).toBe(true);
+  });
+
+  test("refuses an empty token rather than running open", () => {
+    expect(() => trackedRouter("")).toThrow("sessionToken");
+  });
+});
+
+describe("createRouter with a session token", () => {
+  test("refuses every route without the token, before any device starts", async () => {
+    const { request, created, launched } = trackedRouter(TOKEN);
+    const json = { "Content-Type": "application/json" };
+    const refused: Array<[string, RequestInit?]> = [
+      ["/"],
+      ["/index.html"],
+      ["/health"],
+      ["/api"],
+      ["/api/devices"],
+      ["/api/device-grid"],
+      ["/api/logcat"],
+      ["/api/stream-mode"],
+      ["/api/camera"],
+      ["/webrtc/stats?sessionId=00000000-0000-4000-8000-000000000000"],
+      ["/webrtc/offer", { method: "POST", headers: json, body: "{}" }],
+      ["/webrtc/offer", { method: "OPTIONS" }],
+      ["/api/devices/select", { method: "POST", headers: json, body: `{"serial":"${SERIAL}"}` }],
+      ["/api/avds/start", { method: "POST", headers: json, body: '{"avd":"Pixel"}' }],
+    ];
+
+    const statuses = await Promise.all(
+      refused.map(async ([path, init]) => [path, (await request(path, init)).status]),
+    );
+
+    expect(statuses.filter(([, status]) => status !== 401)).toEqual([]);
+    expect(created).toEqual([]);
+    expect(launched).toEqual([]);
+  });
+
+  test("answers with a structured 401 that names the scheme and never echoes a token", async () => {
+    const { request } = trackedRouter(TOKEN);
+
+    const response = await request("/api/devices?token=wrong-token", {
+      headers: { Authorization: "Bearer another-wrong-token" },
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toBe("Bearer");
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    const body = await response.text();
+    expect(JSON.parse(body)).toMatchObject({ ok: false, error: { code: "unauthorized" } });
+    expect(body).not.toContain("wrong-token");
+    expect(body).not.toContain(TOKEN);
+  });
+
+  test("accepts the token as a bearer header", async () => {
+    const { request, created } = trackedRouter(TOKEN);
+
+    expect((await request("/api/devices", { headers: { Authorization: `Bearer ${TOKEN}` } })).status).toBe(200);
+    expect((await request("/api", { headers: { authorization: `bearer ${TOKEN}` } })).status).toBe(200);
+    expect(created).toEqual([SERIAL]);
+  });
+
+  test("accepts the token as a query parameter, for callers that cannot set a header", async () => {
+    const { request } = trackedRouter(TOKEN);
+
+    expect((await request(`/api/devices?token=${TOKEN}`)).status).toBe(200);
+  });
+
+  test("refuses a wrong token in either place", async () => {
+    const { request } = trackedRouter(TOKEN);
+
+    expect((await request("/api/devices", { headers: { Authorization: "Bearer nope" } })).status).toBe(401);
+    expect((await request("/api/devices?token=nope")).status).toBe(401);
+    expect((await request(`/api/devices?token=${TOKEN}x`)).status).toBe(401);
+  });
+
+  // A browser cannot attach the token to a preflight; it carries no live state.
+  test("answers the WebRTC statistics preflight without the token", async () => {
+    const { request } = trackedRouter(TOKEN);
+
+    expect((await request("/webrtc/stats", { method: "OPTIONS" })).status).toBe(204);
+  });
+});
+
+describe("authorizeUpgrade with a session token", () => {
+  const { router } = trackedRouter(TOKEN);
+
+  // Browser clients hard-code this prefix, so it is part of the wire contract.
+  test("names the token subprotocol prefix clients offer", () => {
+    expect(SESSION_TOKEN_SUBPROTOCOL_PREFIX).toBe("serve-emu.token.");
+  });
+
+  test("accepts a bearer header", () => {
+    expect(router.authorizeUpgrade(upgrade({ Authorization: `Bearer ${TOKEN}` }))).toBe(true);
+  });
+
+  test("accepts the token subprotocol, alone or among others", () => {
+    expect(router.authorizeUpgrade(upgrade({ "Sec-WebSocket-Protocol": `serve-emu.token.${TOKEN}` }))).toBe(true);
+    expect(
+      router.authorizeUpgrade(
+        upgrade({ "Sec-WebSocket-Protocol": `chat, serve-emu.token.stale, serve-emu.token.${TOKEN}` }),
+      ),
+    ).toBe(true);
+  });
+
+  test("refuses an upgrade with no token, a wrong token, or another package's prefix", () => {
+    expect(router.authorizeUpgrade(upgrade())).toBe(false);
+    expect(router.authorizeUpgrade(upgrade({ Authorization: "Bearer nope" }))).toBe(false);
+    expect(router.authorizeUpgrade(upgrade({ "Sec-WebSocket-Protocol": "serve-emu.token.nope" }))).toBe(false);
+    expect(router.authorizeUpgrade(upgrade({ "Sec-WebSocket-Protocol": `serve-sim.token.${TOKEN}` }))).toBe(false);
+  });
+
+  // Proxy and tunnel access logs record query strings, so a socket never takes the token there.
+  test("refuses the token in the query string", () => {
+    expect(router.authorizeUpgrade(upgrade({}, `?token=${TOKEN}`))).toBe(false);
+  });
+});
