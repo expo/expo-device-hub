@@ -54,6 +54,10 @@ const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = '/api/argent-interactions/ws';
 // Under a session token every route needs it, so a new route is gated by default. A liveness
 // probe cannot carry a token, and EAS stops a recording with its own token instead.
 const UNGATED_ROUTES = new Set([READY_ROUTE, ANDROID_RECORDING_STOP_ROUTE]);
+// serve-sim never takes the token from a capture URL, and takes recording control only with a
+// bearer. The Hub keeps both rules, so its own cookie and query token do not widen them.
+const SIM_CAPTURE_PREFIX = `${SIM_PREFIX}/network-capture`;
+const SIM_HELPER_PREFIX = `${SIM_PREFIX}/helper/`;
 const FRAME_POLICY_HEADERS: Record<string, string> = SESSION_TOKEN
   ? { 'Content-Security-Policy': frameAncestorsPolicy([]) }
   : {};
@@ -110,20 +114,35 @@ function isSimPath(pathname: string): boolean {
   return pathname === SIM_PREFIX || pathname.startsWith(`${SIM_PREFIX}/`);
 }
 
+function isEmuPath(pathname: string): boolean {
+  return pathname === EMU_PREFIX || pathname.startsWith(`${EMU_PREFIX}/`);
+}
+
+// serve-sim drops empty segments and reads the first one as the device, so
+// `/helper/<udid>//recording/video/` is recording control too.
+function isSimRecordingControl(pathname: string): boolean {
+  if (!pathname.startsWith(SIM_HELPER_PREFIX)) return false;
+  const segments = pathname.slice(SIM_HELPER_PREFIX.length).split('/').filter(Boolean);
+  return segments.length === 3 && segments[1] === 'recording' && segments[2] === 'video';
+}
+
 /**
  * The response that refuses a request, or the request to route. An authorized request carries
  * the token as a bearer, because the vendored backends' own gates never see the Hub's cookie.
+ * Recording control keeps the credential it came with.
  */
 function gateRequest(request: Request, pathname: string): Request | Response {
   if (!SESSION_TOKEN || UNGATED_ROUTES.has(pathname)) return request;
-  // A preflight cannot carry the token, and serve-sim answers one before its own gate.
-  if (request.method === 'OPTIONS' && isSimPath(pathname)) return request;
-  return (
-    authorizeRequest(request, SESSION_TOKEN, {
-      mountPath: MOUNT_PATH,
-      htmlHeaders: FRAME_POLICY_HEADERS,
-    }) ?? withBearerToken(request, SESSION_TOKEN)
-  );
+  // A preflight cannot carry the token. Each backend answers or refuses one in its own gate, and
+  // routes none: serve-sim answers every preflight, serve-emu only the WebRTC statistics one.
+  if (request.method === 'OPTIONS' && (isSimPath(pathname) || isEmuPath(pathname))) return request;
+  const refused = authorizeRequest(request, SESSION_TOKEN, {
+    mountPath: MOUNT_PATH,
+    htmlHeaders: FRAME_POLICY_HEADERS,
+    allowQueryToken: !pathname.startsWith(SIM_CAPTURE_PREFIX),
+  });
+  if (refused) return refused;
+  return isSimRecordingControl(pathname) ? request : withBearerToken(request, SESSION_TOKEN);
 }
 
 export default async function handler(request: Request): Promise<Response | null> {
@@ -147,7 +166,7 @@ export default async function handler(request: Request): Promise<Response | null
   if (isSimPath(pathname)) {
     return handleSimRequest(request);
   }
-  if (pathname === EMU_PREFIX || pathname.startsWith(`${EMU_PREFIX}/`)) {
+  if (isEmuPath(pathname)) {
     return handleEmuRequest(request);
   }
 
@@ -230,7 +249,10 @@ export default async function handler(request: Request): Promise<Response | null
   return null;
 }
 
-type GatedSocket = { close(code?: number, reason?: string): void };
+type GatedSocket = {
+  close(code?: number, reason?: string): void;
+  on(event: 'error', listener: () => void): unknown;
+};
 
 /** Upgrades skip the request gate, so each socket route checks the token before its handler. */
 function gatedSocket<Socket extends GatedSocket>(
@@ -239,6 +261,9 @@ function gatedSocket<Socket extends GatedSocket>(
   const token = SESSION_TOKEN;
   if (!token) return handle;
   return (socket, request) => {
+    // `ws` emits `error` when a peer breaks the protocol, even while the socket closes, and an
+    // error with no listener throws. Without this, a client without the token could stop the Hub.
+    socket.on('error', () => socket.close());
     if (!authorizeUpgrade(request, token)) {
       socket.close(1008, 'Unauthorized');
       return;

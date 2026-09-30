@@ -19,6 +19,9 @@ import { SESSION_TOKEN } from './session-token';
 
 export const EMU_PREFIX = '/vendor/serve-emu';
 
+/** The `ws` socket the transport hands over; `on('error')` lets the Hub guard it. */
+type EmuSocket = WsWebSocketLike & { on(event: 'error', listener: () => void): unknown };
+
 const serveEmuOptions = readStandaloneServeEmuOptions(process.env[SERVE_EMU_OPTIONS_ENV]);
 const router = createRouter({
   ...serveEmuOptions,
@@ -58,7 +61,7 @@ export function handleEmuRequest(request: Request): Promise<Response> {
   return router.handleRequest(forwarded);
 }
 
-async function attachEmuSocket(socket: WsWebSocketLike, request: Request): Promise<void> {
+async function attachEmuSocket(socket: EmuSocket, request: Request): Promise<void> {
   // Before `ensure`, which starts the device.
   if (!router.authorizeUpgrade(request)) {
     socket.close(1008, 'Unauthorized');
@@ -78,6 +81,6 @@ async function attachEmuSocket(socket: WsWebSocketLike, request: Request): Promi
   router.attachWebSocket(fromWsSocket(socket), { serial, video, frameMeta });
 }
 
-export const emuWebSocketHandler = (socket: WsWebSocketLike, request: Request): void => {
+export const emuWebSocketHandler = (socket: EmuSocket, request: Request): void => {
   void attachEmuSocket(socket, request);
 };

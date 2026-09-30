@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test';
+import { EventEmitter } from 'node:events';
 
 import { accessCookieName } from '../session-auth';
 
@@ -160,13 +161,44 @@ describe('the Hub under a session token', () => {
     expect(emuRequests.map((r) => r.headers.get('authorization'))).toEqual([`Bearer ${TOKEN}`]);
   });
 
-  // serve-sim answers a preflight before its own gate and never routes it.
-  test('passes a serve-sim preflight through without a credential', async () => {
-    const response = await request('/vendor/serve-sim/api', { method: 'OPTIONS' });
+  // A preflight cannot carry the token. Each backend answers or refuses one before its own gate.
+  test('passes a backend preflight through without a credential, and refuses one for the Hub', async () => {
+    expect((await request('/vendor/serve-sim/api', { method: 'OPTIONS' }))?.status).toBe(200);
+    expect((await request('/vendor/serve-emu/webrtc/stats', { method: 'OPTIONS' }))?.status).toBe(200);
 
-    expect(response?.status).toBe(200);
     expect(simRequests.map((r) => r.headers.get('authorization'))).toEqual([null]);
+    expect(emuRequests.map((r) => r.headers.get('authorization'))).toEqual([null]);
     expect((await request('/api/devices', { method: 'OPTIONS' }))?.status).toBe(401);
+  });
+
+  // serve-sim takes recording control only with a bearer, never with its cookie.
+  test('forwards recording control with the credential it came with, never one it adds', async () => {
+    const path = '/vendor/serve-sim/helper/UDID-1/recording/video';
+
+    await request(path, { method: 'POST', headers: SAME_ORIGIN, body: '{}' });
+    await request(path, { method: 'POST', headers: { Authorization: `Bearer ${TOKEN}` }, body: '{}' });
+
+    expect(simRequests.map((r) => r.headers.get('authorization'))).toEqual([null, `Bearer ${TOKEN}`]);
+  });
+
+  // serve-sim drops empty path segments, so these paths reach recording control too.
+  test('adds no bearer to recording control spelled with extra slashes', async () => {
+    for (const path of [
+      '/vendor/serve-sim/helper/UDID-1//recording/video',
+      '/vendor/serve-sim/helper//UDID-1/recording//video/',
+    ]) {
+      await request(path, { method: 'POST', headers: SAME_ORIGIN, body: '{}' });
+    }
+
+    expect(simRequests.map((r) => r.headers.get('authorization'))).toEqual([null, null]);
+  });
+
+  // serve-sim never takes the token from a capture URL, which logs and referrers can record.
+  test('refuses a query token on the capture routes', async () => {
+    expect((await request(`/vendor/serve-sim/network-capture?device=UDID-1&token=${TOKEN}`))?.status).toBe(401);
+    expect(
+      (await request('/vendor/serve-sim/network-capture?device=UDID-1', { headers: SAME_ORIGIN }))?.status
+    ).toBe(200);
   });
 
   test('closes every socket that carries no token, before it reaches a backend', () => {
@@ -175,6 +207,25 @@ describe('the Hub under a session token', () => {
     }
     expect(simSockets).toEqual([]);
     expect(emuUpgrades).toEqual([]);
+  });
+
+  // `ws` emits `error` when a peer breaks the protocol, even while the socket closes, and an error
+  // with no listener throws. Without one, any client could stop the Hub, token or not.
+  test('handles a socket error on a refused socket and on an accepted serve-emu socket', () => {
+    const refused = Object.assign(new EventEmitter(), { close() {} });
+    const accepted = Object.assign(new EventEmitter(), { close() {}, bufferedAmount: 0, send() {} });
+    const handlers = server.webSocketHandlers as Record<string, (socket: unknown, request: Request) => void>;
+
+    handlers['/api/devices/ws'](refused, new Request(`${ORIGIN}/api/devices/ws`));
+    handlers['/vendor/serve-emu/ws'](
+      accepted,
+      new Request(`${ORIGIN}/vendor/serve-emu/ws`, {
+        headers: { 'sec-websocket-protocol': `serve-emu.token.${TOKEN}` },
+      })
+    );
+
+    expect(() => refused.emit('error', new Error('WS_ERR_EXPECTED_MASK'))).not.toThrow();
+    expect(() => accepted.emit('error', new Error('WS_ERR_EXPECTED_MASK'))).not.toThrow();
   });
 
   test('forwards an authorized socket to each backend with the token as a bearer', async () => {

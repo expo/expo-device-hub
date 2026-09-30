@@ -122,16 +122,18 @@ export type SessionGateOptions = {
   mountPath: string;
   /** Added to an HTML response, such as the frame policy. */
   htmlHeaders?: Record<string, string>;
+  /** False ignores `?token=`, as serve-sim does on its capture routes. */
+  allowQueryToken?: boolean;
 };
 
 /** Null lets the request through; otherwise the response that answers it. */
 export function authorizeRequest(
   request: Request,
   token: string,
-  { mountPath, htmlHeaders }: SessionGateOptions,
+  { mountPath, htmlHeaders, allowQueryToken = true }: SessionGateOptions,
 ): Response | null {
   const url = new URL(request.url);
-  const fromQuery = url.searchParams.get('token');
+  const fromQuery = allowQueryToken ? url.searchParams.get('token') : null;
   if (fromQuery !== null && safeEqual(fromQuery, token)) {
     // A page load trades the token for a cookie, so it leaves the URL and the page's own requests
     // carry it. A caller that can set neither header nor cookie, such as EventSource, is served.

@@ -49,7 +49,10 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
 // Same-origin WebSockets: the exec/control channel (/exec-ws) and the HID input
 // socket (/helper/ws?device=<udid>). Expo CLI accepts the upgrade for each
 // registered route and hands us the socket; simMiddleware dispatches by path.
-export const simWebSocketHandler = (socket: { close(): void }, request: Request): void => {
+export const simWebSocketHandler = (
+  socket: { close(): void; on(event: 'error', listener: () => void): unknown },
+  request: Request,
+): void => {
   const url = new URL(request.url);
   const rewritten = new Request(
     `${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`,

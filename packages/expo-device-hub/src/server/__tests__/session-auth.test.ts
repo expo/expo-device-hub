@@ -109,6 +109,16 @@ describe('authorizeRequest', () => {
     expect(gate('/api/devices', { headers: { Authorization: `Bearer ${TOKEN}` } })).toBeNull();
   });
 
+  test('ignores a query token where the caller turns it off', () => {
+    const options = { mountPath: '', allowQueryToken: false };
+    const refuse = (init: RequestInit) =>
+      authorizeRequest(new Request(`${ORIGIN}/network-capture?token=${TOKEN}`, init), TOKEN, options);
+
+    expect(refuse({ headers: { accept: 'application/json' } })?.status).toBe(401);
+    expect(refuse({ headers: NAVIGATION })?.status).toBe(401);
+    expect(refuse({ headers: { Authorization: `Bearer ${TOKEN}` } })).toBeNull();
+  });
+
   test('accepts the cookie on a same-origin request and on the page load after the redirect', () => {
     expect(gate('/api/devices', { headers: { cookie, 'sec-fetch-site': 'same-origin' } })).toBeNull();
     expect(gate('/api/devices', { headers: { cookie, origin: ORIGIN, host: '192.168.1.20:3400' } })).toBeNull();
