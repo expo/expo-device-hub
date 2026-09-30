@@ -65,6 +65,7 @@ export {
   useScreenshotToast,
   type ScreenshotToastState,
 } from './dashboard/ScreenshotToast';
+export { ShareButton, type ShareLink } from './dashboard/ShareButton';
 export { DeviceTitle, type DeviceTitleProps } from './dashboard/DeviceTitle';
 export { EmptyState } from './dashboard/EmptyState';
 export { DeviceSection, type DeviceSectionProps } from './dashboard/DeviceSection';

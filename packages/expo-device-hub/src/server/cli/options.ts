@@ -38,6 +38,7 @@ Options:
                              in the startup link. Use it whenever the Hub is reachable from the network.
       --frame-ancestor <origin> Allow this origin to embed the Hub in a frame (repeatable). Accepts a
                              subdomain wildcard, e.g. https://*.expo.dev. Only applies with --require-token.
+      --share-url <url>      URL the Share button copies, instead of the Hub's address
       --platform <platform>  Show only iOS simulators or Android emulators (ios or android)
       --transport <transport> Preferred transport: ${TRANSPORTS.join(', ')} (default: ${DEFAULT_TRANSPORT})
       --webrtc-codec <codec> WebRTC video codec: ${WEBRTC_CODECS.join(', ')} (default: ${DEFAULT_WEBRTC_CODEC})
@@ -86,6 +87,8 @@ export type CliOptions = {
   requireToken?: boolean;
   /** Origins allowed to frame the Hub; serve-sim ignores them without `--require-token`, too. */
   frameAncestors?: string[];
+  /** Page the Share button copies instead of the Hub's address, as in serve-sim. */
+  shareUrl?: string;
   androidRecordingDirectory?: string;
   help: boolean;
 };
@@ -135,6 +138,14 @@ function parseIceUrls(
   return urls;
 }
 
+function parseShareUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.protocol === 'http:' || url.protocol === 'https:') return url.href;
+  } catch {}
+  throw new Error(`--share-url must be an http(s) URL.\n\n${HELP}`);
+}
+
 export function parseCliOptions(args: string[]): CliOptions {
   let values: {
     port?: string;
@@ -159,6 +170,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     'hide-boot-device': boolean;
     'require-token': boolean;
     'frame-ancestor': string[];
+    'share-url'?: string;
     'android-recording-directory'?: string;
     help: boolean;
   };
@@ -191,6 +203,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         'hide-boot-device': { type: 'boolean', default: false },
         'require-token': { type: 'boolean', default: false },
         'frame-ancestor': { type: 'string', multiple: true, default: [] },
+        'share-url': { type: 'string' },
         'android-recording-directory': { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
       },
@@ -200,6 +213,8 @@ export function parseCliOptions(args: string[]): CliOptions {
   }
 
   if (values.help) return { host: values.host, help: true };
+
+  const shareUrl = values['share-url'] === undefined ? undefined : parseShareUrl(values['share-url']);
 
   const port = values.port !== undefined ? Number(values.port) : undefined;
   if (port !== undefined && (!Number.isInteger(port) || port < 0 || port > 65535)) {
@@ -334,6 +349,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     hideBootDevice: values['hide-boot-device'],
     requireToken: values['require-token'],
     frameAncestors: values['frame-ancestor'],
+    ...(shareUrl !== undefined ? { shareUrl } : {}),
     ...(androidRecordingDirectory !== undefined ? { androidRecordingDirectory } : {}),
     help: false,
   };
