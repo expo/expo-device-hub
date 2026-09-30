@@ -665,6 +665,11 @@ input queue; it does not release another viewer's pointers or stop the device
 stream. This also applies to input-only `/ws?video=0` connections used with
 WebRTC. After reconnecting or replacing the input session, begin a new gesture
 with `down`; an old `move` or `up` cannot continue it.
+If a touch is admitted but later rejected without closing the input queue,
+its ownership and release capacity are reconciled. A rejected `down` permits
+a fresh gesture and cancels its dependent queued `move`/`up`. A rejected `up`
+remains eligible for disconnect cleanup, even if a newer gesture already uses
+the same connection-local ID.
 
 Recorded touches carry server-assigned IDs so simultaneous viewers remain
 distinguishable during replay. Disconnect releases are recorded as
