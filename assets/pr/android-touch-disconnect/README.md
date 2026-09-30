@@ -115,3 +115,47 @@ Validation by Codex:
   not by modifying the emulator transport.
 
 Human review of this follow-up remains pending.
+
+
+## Review follow-up: reconcile nonfatal touch rejection
+
+[Devin's second review](https://github.com/expo/expo-device-hub/pull/184#discussion_r4133502671)
+identified ownership changes that survived a nonfatal dispatcher rejection.
+The stated before-first-frame example was not reproduced in the stock Hub:
+`startGrpcSession` waits for its first image and H.264 readiness before publishing
+the session. Validation instead injects `ControlInputRejectedError` into the
+production input queue, covering the recovery contract it already supports.
+
+Regression-first commit `2e52733` added eight tests that failed on the previous
+revision. Implementation `0ce96d6` retains each unreleased touch cycle until its
+UP succeeds, so a later gesture with the same local ID cannot hide a rejected
+older release. Disconnect awaits a pending user UP and sends one cleanup UP if
+that user operation is rejected; it does not retry cleanup indefinitely.
+
+The queue reconciles reservations after nonfatal rejection using successfully
+written pointers and the remaining admitted operations. A rejected DOWN cancels
+only its queued dependent MOVE/UP, stopping at a later DOWN of the same ID.
+Other gestures and clients keep their order. Reconciliation scans the bounded
+queue only on the rejection path.
+
+Validation by Codex:
+
+- 130 focused input, queue and replay tests passed across eight files. Coverage
+  includes repeated DOWN rejection, UP rejection, pending/coalesced dependents,
+  a following gesture with the same local ID, full-queue release capacity,
+  disconnect races, stale-session failures, and failure of the cleanup retry.
+- An initial aggregate run had 1,170 passes and the previously observed Vite
+  proxy timeout. With the verified Bun 1.3.14 binary pinned directly, the final
+  root test run and complete serve-emu aggregate check passed: 1,171 tests,
+  zero failures. The Vite test itself was not modified.
+- Root typecheck, CI-filtered root build, Hub vendoring/server build, README
+  synchronization and packed-package smoke passed. A failed temporary bunx
+  installation wrapper was bypassed; its failed checks were rerun.
+- Rebuilt Hub on Node 24.14.0 with the Android 17 test emulator: normal drag,
+  two-viewer isolation, replay of a held touch, and tab-close cleanup passed.
+  The last native sequence was DOWN → POINTER_DOWN → POINTER_UP → MOVE → UP;
+  the observer showed zero active pointers afterward. No emulator transport
+  failure was injected, and the gRPC startup sequence was not changed.
+
+Human final-diff review remains pending. The review thread was not automatically
+resolved.
