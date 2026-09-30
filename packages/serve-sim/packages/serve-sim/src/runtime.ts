@@ -155,6 +155,9 @@ export async function servePreview(opts: {
   host?: string;
 }): Promise<PreviewServer> {
   const isBun = !!process.versions.bun;
+  // Set once bound. Under Bun, regular HTTP arrives on an internal listener behind the front
+  // server, so the accepting socket's port is not the one clients use.
+  let publicPort: number | undefined;
   const wss = new WebSocketServer({
     noServer: true,
     maxPayload: EXEC_WS_MAX_MESSAGE_BYTES,
@@ -166,7 +169,7 @@ export async function servePreview(opts: {
     },
     (req, res) => {
       void (async () => {
-        const request = nodeRequestToWeb(req, res, await readRequestBodyAsync(req));
+        const request = nodeRequestToWeb(req, res, await readRequestBodyAsync(req), publicPort);
         const response = await opts.middleware(request);
         await writeWebResponse(req, res, response);
       })().catch((error) => {
@@ -186,7 +189,7 @@ export async function servePreview(opts: {
     },
   );
   internalServer.on("upgrade", (req, socket, head) => {
-    const request = nodeRequestToWeb(req);
+    const request = nodeRequestToWeb(req, undefined, undefined, publicPort);
     if (opts.middleware.handleWebSocket && isExecWebSocketPath(req.url ?? "")) {
       wss.handleUpgrade(req, socket, head, (websocket) => {
         const handled = opts.middleware.handleWebSocket?.(
@@ -236,7 +239,7 @@ export async function servePreview(opts: {
   }
 
   let maybeFrontServer: NetServer | undefined;
-  let publicPort = internalAddress.port;
+  publicPort = internalAddress.port;
   if (isBun) {
     // Work around Bun node:http upgrade forwarding issues by binding the public
     // port with a small TCP front server and proxying regular HTTP internally.
