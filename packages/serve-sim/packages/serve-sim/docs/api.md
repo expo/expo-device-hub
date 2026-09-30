@@ -114,6 +114,12 @@ not.
 
 The preview page receives the token in its injected config as `execToken`.
 
+An embedder can pass its own `execToken` to `simMiddleware`. It must not be
+empty, because the exec channel would then accept an empty `token` frame from
+any client. Under `requirePreviewToken` it may use only letters, digits, and
+`-._~`: these travel unchanged as a bearer, a query, a cookie, and a
+subprotocol. `simMiddleware` throws on any other token.
+
 ## Allowed hosts
 
 Without `--require-token`, the preview page embeds the session token and `/` is

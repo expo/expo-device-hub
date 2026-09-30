@@ -31,6 +31,7 @@ import {
   assertCaptureAccess,
   assertPreviewAccess,
   assertUpgradeAccess,
+  isUsableSessionToken,
   upgradeAuthHeaders,
 } from "./session-auth";
 import {
@@ -1863,6 +1864,17 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // because they can't read this value (it's only injected into the preview page).
   const execToken = options?.execToken ?? randomBytes(32).toString("base64url");
   const requirePreviewToken = options?.requirePreviewToken ?? false;
+  // The exec channel compares a client's `token` frame with this value, so an
+  // empty token would accept the empty frame any client can send.
+  if (execToken === "") throw new Error("execToken must not be empty. Omit it to generate one.");
+  // Under the gate it is also the session token, which a client may send as a
+  // bearer, a query, a cookie, or a subprotocol. Without the gate the exec
+  // client sends a token outside that set in its first frame instead.
+  if (requirePreviewToken && !isUsableSessionToken(execToken)) {
+    throw new Error(
+      "Under requirePreviewToken, execToken must be one or more letters, digits, '-', '.', '_', or '~'.",
+    );
+  }
   const corsOrigins = [...(options?.corsOrigins ?? [])];
   const frameAncestors = options?.frameAncestors ?? [];
   const shareUrl = options?.shareUrl;

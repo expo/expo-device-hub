@@ -139,6 +139,7 @@ import {
   WebRtcStatsRequestError,
 } from "./webrtc-stats.ts";
 import {
+  isUsableSessionToken,
   requestHasSessionToken,
   sessionTokenRequiredResponse,
   upgradeHasSessionToken,
@@ -2250,8 +2251,11 @@ export function createRouter(
   dependencies: RouterDependencies = {},
 ) {
   // An empty token would read as "no token" below and leave the router open.
-  if (sessionToken === "") {
-    throw new Error("sessionToken must not be empty. Omit it to leave the router open.");
+  // Other characters cannot travel everywhere a client may send the token.
+  if (sessionToken !== undefined && !isUsableSessionToken(sessionToken)) {
+    throw new Error(
+      "sessionToken must be one or more letters, digits, '-', '.', '_', or '~'. Omit it to leave the router open.",
+    );
   }
   const readOnlineDevices = dependencies.listDevices ?? listDevices;
   const readAllDevices = dependencies.listAllDevices ?? listAllDevices;
