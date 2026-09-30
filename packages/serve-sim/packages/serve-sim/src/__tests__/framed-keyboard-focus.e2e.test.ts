@@ -141,6 +141,23 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     throw new Error(`No element matched ${expression} within 30s.`);
   }
 
+  async function waitForStream(sessionId?: string): Promise<{ x: number; y: number }> {
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      const point = await elementCenter(STREAM_LAYER, sessionId, 0.75);
+      if (point && await cdp.evaluate<boolean>(
+        `(() => {
+          const layer = ${STREAM_LAYER};
+          return layer && document.elementFromPoint(${point.x}, ${point.y}) === layer &&
+            !document.body.innerText.includes("Connecting...");
+        })()`,
+        sessionId,
+      )) return point;
+      await Bun.sleep(200);
+    }
+    throw new Error("The stream did not become ready to receive a click within 30s.");
+  }
+
   async function openFramed(): Promise<string> {
     const session = await load(`http://127.0.0.1:${parent.port}/`);
     if (!session) throw new Error("Chrome did not attach to the cross-origin preview frame.");
@@ -254,8 +271,8 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
 
   test("one click on the stream lets the keyboard type into the simulator", async () => {
     await load(simUrl);
-    const stream = await waitForElement(STREAM_LAYER, undefined, 0.75);
     const start = await launchTextField();
+    const stream = await waitForStream();
     await clickOnce(stream);
     await typeKeys("zq");
     await waitFor(() => lastText(start), "zq");
@@ -263,8 +280,8 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
 
   test("one click on the stream lets the keyboard type when framed by another origin", async () => {
     const frame = await openFramed();
-    const stream = await waitForElement(STREAM_LAYER, frame, 0.75);
     const start = await launchTextField();
+    const stream = await waitForStream(frame);
     await clickOnce(stream);
     await typeKeys("zq");
     await waitFor(() => lastText(start), "zq");
@@ -273,8 +290,8 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
   test("the keyboard still types after switching the hardware keyboard in the tools panel", async () => {
     cli("ui", "hardware-keyboard", "on", "-d", udid!);
     const frame = await openFramed();
-    const stream = await waitForElement(STREAM_LAYER, frame, 0.75);
     const start = await launchTextField();
+    const stream = await waitForStream(frame);
     await clickOnce(stream);
     await typeKeys("zq");
     await waitFor(() => lastText(start), "zq");

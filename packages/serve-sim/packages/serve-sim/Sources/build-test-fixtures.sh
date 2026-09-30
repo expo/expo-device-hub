@@ -4,6 +4,5 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 bash "$HERE/ServeSimProbe/build.sh"
 bash "$HERE/ServeSimLaunchFixture/build.sh"
-bash "$HERE/ServeSimCrashFixture/build.sh"
 bash "$HERE/SimNetProbe/build.sh"
 bash "$HERE/ServeSimNetworkRequestFixture/build.sh"
