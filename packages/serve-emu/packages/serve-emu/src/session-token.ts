@@ -57,14 +57,18 @@ export function upgradeHasSessionToken(req: Request, token: string): boolean {
     );
 }
 
-/** The refusal for a request without the token. It never echoes a presented value. */
-export function sessionTokenRequiredResponse(): Response {
+/**
+ * The refusal for a request without the token. It never echoes a presented
+ * value. `corsHeaders` let an allowed origin read the refusal, so a client on
+ * another origin sees a 401 rather than a network error.
+ */
+export function sessionTokenRequiredResponse(corsHeaders: Record<string, string> = {}): Response {
   return apiErrorResponse(
     new ApiError(
       401,
       "unauthorized",
       "This server requires its session token. Send it as 'Authorization: Bearer <token>'.",
-      { headers: { "WWW-Authenticate": "Bearer", "Cache-Control": "no-store" } },
+      { headers: { ...corsHeaders, "WWW-Authenticate": "Bearer", "Cache-Control": "no-store" } },
     ),
   );
 }
