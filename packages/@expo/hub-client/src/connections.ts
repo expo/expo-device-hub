@@ -1,4 +1,5 @@
 
+import { publicServeSimMount, publicUrlForRoute } from './serve-sim-urls';
 import { type DevicePlatform } from './types';
 
 const VENDOR_PREFIXES: Record<DevicePlatform, string> = {
@@ -46,8 +47,7 @@ export async function startIosHelper(
   endpoint: string,
   fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = fetch,
 ): Promise<void> {
-  const base = trimTrailingSlash(sameOrigin(endpoint));
-  await fetchImpl(`${base}/grid/api/start`, {
+  await fetchImpl(publicUrlForRoute(publicServeSimMount(endpoint), 'grid/api/start'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ udid }),

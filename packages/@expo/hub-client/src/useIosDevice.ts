@@ -51,6 +51,12 @@ import {
 } from './ios-events';
 import { hostUiRequest, runHostAction } from './exec-ws';
 import { getIosAppDetails } from './ios-app-details';
+import {
+  isAttachedPreviewApi,
+  type PreviewApi,
+  type ResolvedIosConnection,
+  resolveIosConnection,
+} from './ios-connection';
 import { clearIosLocation, setIosLocation } from './ios-location';
 import { fetchScreenshot } from './screenshot';
 import { hidUsageForCode } from './keyboard';
@@ -84,7 +90,7 @@ import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { createPacedKeySender } from './paced-key-sender';
-import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config';
+import { publicServeSimMount, publicUrlForRoute } from './serve-sim-urls';
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
@@ -93,7 +99,7 @@ import { useAppPermissions } from './useAppPermissions';
 import { useAvccStream } from './useAvccStream';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
-import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
+import { useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
   type WebRtcCodec,
@@ -182,76 +188,6 @@ function iosStreamSettingsPatch(
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
-function toWs(url: string): string {
-  return url.replace(/^http/, 'ws');
-}
-
-/**
- * `…/helper/<udid>/ws` -> `…/helper/ws?device=<udid>`
- * serve-sim
- */
-export function toQueryStyleHelperWsUrl(wsUrl: string): string {
-  const url = new URL(wsUrl);
-  const match = url.pathname.match(/^(.*\/helper)\/([^/]+)\/ws$/);
-  if (!match) throw new Error(`Invalid helper ws url, no deviceId matched: ${wsUrl}`);
-  url.pathname = `${match[1]}/ws`;
-  if (!url.searchParams.has('device')) {
-    url.searchParams.set('device', decodeURIComponent(match[2]));
-  }
-  return url.toString();
-}
-
-/** Resolved connection: where to stream video/input, and how to reach logs/devices. */
-interface ResolvedConfig {
-  /** Base serve-sim helper URL used by `/stream.avcc`. */
-  url: string;
-  streamUrl: string;
-  wsUrl: string;
-  device: string | null;
-  /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
-  execWsUrl: string | null;
-  execToken: string | null;
-  /** Relative SSE path to subscribe for logs, e.g. `/logs?device=<udid>`. */
-  logsPath: string | null;
-  /** Absolute URL of the foreground-app SSE stream. */
-  appStateUrl: string | null;
-  /** Relative SSE path for normalized serve-sim events. */
-  eventsPath: string | null;
-  /** Relative SSE path for foreground app activity. */
-  metricsPath: string | null;
-  axUrl: string | null;
-  /** Runtime encoder settings endpoint on the selected helper. */
-  streamSettingsUrl: string | null;
-  /** Initial server-provided stream settings, if present. */
-  initialStreamSettings: unknown;
-  gridApiUrl: string | null;
-  webRtcCodec: WebRtcCodec;
-  webRtcIceServers?: WebRtcIceServer[];
-}
-
-/** Shape of the serve-sim middleware `/api` (and grid) responses we read. */
-interface PreviewApi {
-  url?: string;
-  streamUrl?: string;
-  wsUrl?: string;
-  device?: string;
-  basePath?: string;
-  execToken?: string;
-  logsEndpoint?: string;
-  appStateEndpoint?: string;
-  eventLogEventsEndpoint?: string;
-  metricsEndpoint?: string;
-  axEndpoint?: string;
-  streamSettingsEndpoint?: string;
-  gridApiEndpoint?: string;
-  proxyHelpers?: boolean;
-  streamSettings?:
-    | ({ transport: 'http'; codec?: 'auto' | 'h264' | 'mjpeg' } &
-        Partial<DeviceStreamEncoderSettings>)
-    | ({ transport: 'webrtc'; codec: WebRtcCodec; iceServers?: WebRtcIceServer[] } &
-        Partial<DeviceStreamEncoderSettings>);
-}
-
 // The server, device, and token that one resolved config belongs to.
 function connectionKey(baseUrl: string, device: string | null, token: string | null): string {
   return JSON.stringify([baseUrl, device, token]);
@@ -281,7 +217,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Effect cleanups still close the old connections with the credentials they opened them with.
   const [resolvedConfig, setResolvedConfig] = useState<{
     key: string;
-    config: ResolvedConfig;
+    config: ResolvedIosConnection;
   } | null>(null);
   const config =
     active && baseUrl && resolvedConfig?.key === connectionKey(baseUrl, targetDevice, token)
@@ -601,53 +537,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setStatus('connecting');
     setError(null);
 
-    // `baseUrl` may carry a path prefix (the plugin mount), so join onto it
-    // rather than `new URL('/api', baseUrl)`, which would drop that prefix.
-    const apiUrl = `${baseUrl.replace(/\/$/, '')}/api${
-      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
-    }`;
-
-    const toMiddleware = (rawConfig: PreviewApi): ResolvedConfig => {
-      const middlewareUrl = new URL(baseUrl, window.location.href);
-      const c = proxyPreviewConfigForBrowser(rawConfig, middlewareUrl);
-      const basePath = c.basePath === '/' ? '' : (c.basePath ?? '');
-      const absoluteMiddlewareUrl = (path?: string): string | null =>
-        path
-          ? c.proxyHelpers
-            ? middlewareEndpointForBrowser(path, middlewareUrl, basePath)
-            : new URL(path, middlewareUrl).toString()
-          : null;
-      const appStateUrl = absoluteMiddlewareUrl(c.appStateEndpoint);
-      return {
-        url: c.url!,
-        // An <img> and an EventSource cannot set a header.
-        streamUrl: withSessionTokenQuery(c.streamUrl ?? `${c.url}/stream.mjpeg`, token),
-        wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
-        device: c.device ?? null,
-        execWsUrl: toWs(absoluteMiddlewareUrl(`${basePath}/exec-ws`)!),
-        execToken: c.execToken ?? null,
-        // These are subscription paths inside exec-ws, not browser URLs. The
-        // server validates them against its internal middleware mount.
-        logsPath: c.logsEndpoint ?? null,
-        appStateUrl: appStateUrl && withSessionTokenQuery(appStateUrl, token),
-        eventsPath: c.eventLogEventsEndpoint ?? null,
-        metricsPath: c.metricsEndpoint ?? null,
-        axUrl: absoluteMiddlewareUrl(c.axEndpoint),
-        // A proxied helper URL uses the public middleware mount above rather
-        // than an advertised internal host port that may be 0.
-        streamSettingsUrl: c.streamSettingsEndpoint
-          ? c.proxyHelpers
-            ? `${c.url}/stream-settings`
-            : absoluteMiddlewareUrl(c.streamSettingsEndpoint)
-          : null,
-        initialStreamSettings: c.streamSettings,
-        gridApiUrl: absoluteMiddlewareUrl(c.gridApiEndpoint ?? `${basePath}/grid/api`),
-        webRtcCodec: c.streamSettings?.transport === 'webrtc' ? c.streamSettings.codec : 'h264',
-        ...(c.streamSettings?.transport === 'webrtc' && c.streamSettings.iceServers
-          ? { webRtcIceServers: c.streamSettings.iceServers }
-          : {}),
-      };
-    };
+    const mount = publicServeSimMount(baseUrl);
+    const apiUrl = publicUrlForRoute(mount, 'api', { device: targetDevice });
 
     // Ask the grid to attach a helper for this device at most once per effect
     // run (i.e. per device). Resets whenever `targetDevice`/`baseUrl` change.
@@ -662,13 +553,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           return;
         }
         const c = (await res.json()) as PreviewApi | null;
-        if (c && c.url && c.device) {
+        if (isAttachedPreviewApi(c)) {
           if (!cancelled) {
-            const resolved = toMiddleware(c);
+            const resolved = resolveIosConnection(c, mount);
             setWebRtcCodec(resolved.webRtcCodec);
             setResolvedConfig({
               key: connectionKey(baseUrl, targetDevice, token),
-              config: resolved,
+              config: {
+                ...resolved,
+                // An <img> and an EventSource cannot set a header.
+                streamUrl: withSessionTokenQuery(resolved.streamUrl, token),
+                appStateUrl: resolved.appStateUrl && withSessionTokenQuery(resolved.appStateUrl, token),
+              },
             });
           }
           return;
