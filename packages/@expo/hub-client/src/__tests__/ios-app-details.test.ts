@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type ExecResult, fetchIosAppDetails, getIosAppDetails } from '../ios-app-details';
+import {
+  type ExecResult,
+  fetchIosAppDetails,
+  fetchIosAppIcon,
+  getIosAppDetails,
+} from '../ios-app-details';
 import { type HostActionParams } from '../exec-ws';
 
 const APP_PATH = '/Users/dev/Library/Developer/CoreSimulator/Devices/UDID/Foo.app';
@@ -106,6 +111,21 @@ describe('fetchIosAppDetails', () => {
     expect(calls.some((call) => call.action === 'file.readBase64')).toBe(false);
   });
 
+  test('leaves the icon to the HTTP route when asked to', async () => {
+    const { run, calls } = fakeRun({
+      container: ok(APP_PATH),
+      plist: ok(JSON.stringify(INFO_PLIST)),
+      iconPath: ok(`${APP_PATH}/AppIcon60x60@2x.png`),
+      base64: ok('aWNvbg=='),
+    });
+
+    const details = await fetchIosAppDetails(run, 'UDID', 'com.example.foo', { includeIcon: false });
+    expect(details?.label).toBe('Foo');
+    // No key at all, so merging the details cannot clear an icon the route already set.
+    expect(details && 'iconDataUrl' in details).toBe(false);
+    expect(calls.map((call) => call.action)).toEqual(['app.container', 'app.infoPlist']);
+  });
+
   test('survives an unparseable Info.plist', async () => {
     const { run } = fakeRun({ container: ok(APP_PATH), plist: ok('not json') });
     const details = await fetchIosAppDetails(run, 'UDID', 'com.example.foo');
@@ -144,5 +164,40 @@ describe('getIosAppDetails', () => {
     // …while a resolved value is served from cache without re-running actions.
     expect(second).toBe(first);
     expect(calls.length).toBe(callsAfterFirst);
+  });
+});
+
+describe('fetchIosAppIcon', () => {
+  const ICON_URL = 'https://sim.example.test/preview/api/apps/icon?device=UDID';
+
+  test('asks the advertised route for the bundle and returns a data URL', async () => {
+    const urls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      urls.push(url);
+      return Response.json({
+        ok: true,
+        bundleId: 'com.example.foo',
+        icon: { mimeType: 'image/png', data: 'aWNvbg==' },
+      });
+    }) as unknown as typeof fetch;
+
+    expect(await fetchIosAppIcon(ICON_URL, 'com.example.foo', fetchImpl)).toBe(
+      'data:image/png;base64,aWNvbg==',
+    );
+    expect(urls).toEqual([
+      'https://sim.example.test/preview/api/apps/icon?device=UDID&bundleId=com.example.foo',
+    ]);
+  });
+
+  test('returns null when the app has no loose icon', async () => {
+    const fetchImpl = (async () =>
+      Response.json({ ok: true, bundleId: 'com.example.foo', icon: null })) as unknown as typeof fetch;
+    expect(await fetchIosAppIcon(ICON_URL, 'com.example.foo', fetchImpl)).toBeNull();
+  });
+
+  test('rejects on an error status', async () => {
+    const fetchImpl = (async () =>
+      Response.json({ ok: false, error: 'not installed' }, { status: 404 })) as unknown as typeof fetch;
+    await expect(fetchIosAppIcon(ICON_URL, 'com.example.foo', fetchImpl)).rejects.toThrow('404');
   });
 });

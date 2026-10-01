@@ -14,13 +14,15 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
+for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath, bundleId } of [
   {
     name: 'remote server on another origin',
     baseUrl: 'https://stream.example.test/preview/session',
     pageUrl: 'https://example.com/device',
     publicBase: 'https://stream.example.test/preview/session',
     advertisedBasePath: '/internal',
+    // The icon cache is process-wide, so each case foregrounds its own app.
+    bundleId: 'com.example.remote',
   },
   {
     name: 'relative middleware mount',
@@ -28,6 +30,7 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
     pageUrl: 'https://example.com/device',
     publicBase: 'https://example.com/preview/session',
     advertisedBasePath: '/internal',
+    bundleId: 'com.example.relative',
   },
   {
     name: 'same-origin Expo plugin mount',
@@ -35,6 +38,7 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
     pageUrl: 'http://localhost:8081/index',
     publicBase: 'http://localhost:8081/_expo/plugins/expo-device-hub/vendor/serve-sim',
     advertisedBasePath: '/_expo/plugins/expo-device-hub/vendor/serve-sim',
+    bundleId: 'com.example.plugin',
   },
 ]) test(`iOS hook resolves all browser URLs from the ${name}`, async () => {
   const sockets: Array<{
@@ -44,6 +48,7 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
   }> = [];
   const fetchUrls: string[] = [];
   const eventSourceUrls: string[] = [];
+  const eventSources: Array<{ onmessage?: (event: { data: string }) => void }> = [];
   const page = new URL(pageUrl);
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   stubGlobal('window', {
@@ -83,7 +88,11 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
     close() {}
   });
   stubGlobal('EventSource', class {
-    constructor(url: string) { eventSourceUrls.push(url); }
+    onmessage?: (event: { data: string }) => void;
+    constructor(url: string) {
+      eventSourceUrls.push(url);
+      eventSources.push(this);
+    }
     close() {}
   });
   stubGlobal('fetch', async (url: string) => {
@@ -98,11 +107,19 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
         eventLogEventsEndpoint: `${advertisedBasePath}/api/event-log/events?device=DEVICE-A`,
         metricsEndpoint: `${advertisedBasePath}/metrics?device=DEVICE-A`,
         appStateEndpoint: `${advertisedBasePath}/appstate?device=DEVICE-A`,
+        appIconEndpoint: `${advertisedBasePath}/api/apps/icon?device=DEVICE-A`,
         axEndpoint: `${advertisedBasePath}/ax?device=DEVICE-A`,
         gridApiEndpoint: `${advertisedBasePath}/grid/api`,
         url: `https://stream.example.test:0${advertisedBasePath}/helper/DEVICE-A`,
         streamUrl: `https://stream.example.test:0${advertisedBasePath}/helper/DEVICE-A/stream.mjpeg`,
         wsUrl: `wss://stream.example.test:0${advertisedBasePath}/helper/DEVICE-A/ws`,
+      });
+    }
+    if (url.includes('/api/apps/icon')) {
+      return Response.json({
+        ok: true,
+        bundleId,
+        icon: { mimeType: 'image/png', data: 'aWNvbg==' },
       });
     }
     return Response.json({ devices: [] });
@@ -129,11 +146,18 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
     client.attachEvents();
     client.refreshAccessibility();
   });
+  await act(async () => {
+    for (const source of eventSources) {
+      source.onmessage?.({ data: JSON.stringify({ bundleId, pid: 7 }) });
+    }
+  });
 
   expect(fetchUrls).toContain(`${baseUrl}/api?device=DEVICE-A`);
   expect(fetchUrls).toContain(`${publicBase}/grid/api`);
   expect(fetchUrls).toContain(`${publicBase}/ax?device=DEVICE-A`);
   expect(eventSourceUrls).toContain(`${publicBase}/appstate?device=DEVICE-A`);
+  expect(fetchUrls).toContain(`${publicBase}/api/apps/icon?device=DEVICE-A&bundleId=${bundleId}`);
+  expect(client.foregroundApp?.iconDataUrl).toBe('data:image/png;base64,aWNvbg==');
   expect(new URL(image.src).origin + new URL(image.src).pathname).toBe(
     `${publicBase}/helper/DEVICE-A/stream.mjpeg`,
   );
