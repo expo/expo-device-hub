@@ -687,7 +687,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setStreamStatsEnabled,
   } = useWebRtcStream({
     offerUrl: config ? `${config.url}/webrtc/offer` : '',
-    closeUrl: config ? withSessionTokenQuery(`${config.url}/webrtc/close`, token) : '',
+    closeUrl: config ? `${config.url}/webrtc/close` : '',
+    closeBeaconUrl: config ? withSessionTokenQuery(`${config.url}/webrtc/close`, token) : '',
     statsUrl: config ? `${config.url}/webrtc/stats` : '',
     enabled: active && useWebRtc && !!config,
     codec: activeWebRtcCodec,
