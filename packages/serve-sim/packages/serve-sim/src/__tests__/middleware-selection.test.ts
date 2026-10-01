@@ -52,6 +52,7 @@ describe("previewConfigForState", () => {
       logsEndpoint: "/preview/logs?device=DEVICE-B",
       crashesEndpoint: "/preview/crashes?device=DEVICE-B",
       appStateEndpoint: "/preview/appstate?device=DEVICE-B",
+      appIconEndpoint: "/preview/api/apps/icon?device=DEVICE-B",
       eventLogEndpoint: "/preview/api/event-log?device=DEVICE-B",
       eventLogEventsEndpoint: "/preview/api/event-log/events?device=DEVICE-B",
       metricsEndpoint: "/preview/metrics?device=DEVICE-B",

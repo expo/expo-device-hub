@@ -134,3 +134,18 @@ describe("devtools proxy", () => {
     expect(upstream).not.toContain("token=");
   });
 });
+
+describe("the app icon route's wiring into the middleware", () => {
+  // A tunneled client reads the icon with one plain GET, so the route sits behind the same gate
+  // as every other route and takes the `?token=` form an <img> or fetch without headers can send.
+  it("is gated", async () => {
+    const res = await fetch(`${BASE}/api/apps/icon?device=${DEVICE}&bundleId=com.example.foo`);
+    expect(res.status).toBe(401);
+  });
+
+  it("reaches the icon handler with a query token", async () => {
+    const res = await fetch(`${BASE}/api/apps/icon?device=${DEVICE}&bundleId=-bad&token=${TOKEN}`);
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ ok: false, error: "bundleId must look like com.example.app" });
+  });
+});
