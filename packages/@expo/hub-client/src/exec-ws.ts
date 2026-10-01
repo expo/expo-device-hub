@@ -1,3 +1,4 @@
+import { type ControlSocket } from './control-socket.js';
 /**
  * One-shot requests over the serve-sim middleware's **exec-ws** control socket,
  * mirroring the serve-sim client's `utils/exec.ts` (serve-sim #136).
@@ -12,9 +13,8 @@
  *
  * The channel runs a fixed set of host actions (`app.container`,
  * `app.infoPlist`, `appearance.set`, …) rather than shell commands: the preview
- * link is shareable, so no value the page sends ever reaches a shell. Each
- * request here opens its own short-lived socket; the log stream keeps a
- * long-lived one (see `useIosDevice`).
+ * link is shareable, so no value the page sends ever reaches a shell. The iOS
+ * hook supplies its owned channel; standalone callers retain one-shot sockets.
  */
 
 export interface HostActionResult {
@@ -58,7 +58,9 @@ function execWsRequest(
   body: Record<string, unknown>,
   timeoutMs: number,
   protocols?: string[],
+  channel?: ControlSocket,
 ): Promise<ExecReply> {
+  if (channel) return channel.request(body, timeoutMs) as Promise<ExecReply>;
   return new Promise((resolve, reject) => {
     let ws: WebSocket;
     try {
@@ -113,6 +115,7 @@ export async function runHostAction(
   params?: HostActionParams,
   /** Subprotocols that carry the session token of a gated serve-sim (see `./session-token`). */
   protocols?: string[],
+  channel?: ControlSocket,
 ): Promise<HostActionResult> {
   let reply: ExecReply;
   try {
@@ -122,6 +125,7 @@ export async function runHostAction(
       { action, params },
       ACTION_TIMEOUT_MS,
       protocols,
+      channel,
     );
   } catch (err) {
     if (err instanceof Error && isActionRejection(err.message)) {
@@ -154,6 +158,7 @@ export async function hostUiRequest(
   payload: UiRequestPayload,
   /** Subprotocols that carry the session token of a gated serve-sim (see `./session-token`). */
   protocols?: string[],
+  channel?: ControlSocket,
 ): Promise<UiRequestResult> {
   const reply = await execWsRequest(
     execWsUrl,
@@ -161,6 +166,7 @@ export async function hostUiRequest(
     { ui: payload },
     UI_TIMEOUT_MS,
     protocols,
+    channel,
   );
   const result: UiRequestResult = {};
   if (reply.status !== undefined) result.status = reply.status;
