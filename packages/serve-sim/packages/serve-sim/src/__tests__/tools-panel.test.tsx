@@ -17,7 +17,7 @@ const defaultProps: ComponentProps<typeof ToolsPanel> = {
   onToggleAxOverlay: noop,
   streamSettings: {
     transport: "http",
-    httpCodec: "auto",
+    httpCodec: "auto", simstreamTransport: "websocket",
     webRtcCodec: "h264",
     mjpegFps: 60,
     mjpegQuality: 0.7,

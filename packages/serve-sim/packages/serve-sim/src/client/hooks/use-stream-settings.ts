@@ -9,15 +9,17 @@ import {
   streamEncoderSettingsFrom,
   type StreamControlSettings,
   type StreamEncoderSettings,
+  type SimstreamTransport,
   type StreamPlaybackSettings,
   type StreamSettings,
 } from "../../stream-settings";
 
 const HTTP_CODEC_STORAGE_KEY = "serve-sim:codec";
+const SIMSTREAM_TRANSPORT_STORAGE_KEY = "serve-sim:simstream-transport";
 const STREAM_SETTINGS_REVALIDATE_INTERVAL_MS = 3000;
 
 function initialControlSettings(initialSettings: StreamSettings | undefined): StreamControlSettings {
-  const settings = streamControlSettingsFrom(initialSettings);
+  const settings = withSimstreamTransport(streamControlSettingsFrom(initialSettings));
   if (settings.transport !== "http" || settings.httpCodec !== "auto") return settings;
   try {
     const stored = window.localStorage.getItem(HTTP_CODEC_STORAGE_KEY);
@@ -28,6 +30,20 @@ function initialControlSettings(initialSettings: StreamSettings | undefined): St
     // Storage can be unavailable in an embedded or privacy-restricted viewer.
   }
   return settings;
+}
+
+/** The viewer's simstream transport: `?simstream=websocket|rtp` (remembered), else the stored choice. */
+function withSimstreamTransport(settings: StreamControlSettings): StreamControlSettings {
+  let chosen: string | null = null;
+  try {
+    chosen = new URLSearchParams(window.location.search).get("simstream");
+    if (chosen) window.localStorage.setItem(SIMSTREAM_TRANSPORT_STORAGE_KEY, chosen);
+    else chosen = window.localStorage.getItem(SIMSTREAM_TRANSPORT_STORAGE_KEY);
+  } catch {
+    // Storage can be unavailable in an embedded or privacy-restricted viewer: the URL still applies.
+  }
+  // Unknown values fall back to the current transport when normalized.
+  return chosen ? mergeStreamControlSettings(settings, { simstreamTransport: chosen as SimstreamTransport }) : settings;
 }
 
 /** Keep playback choices per viewer while synchronizing shared native encoder controls. */
@@ -124,12 +140,15 @@ export function useStreamSettings({
   }, [device, endpoint, initialSettings]);
 
   const updatePlayback = useCallback((patch: Partial<StreamPlaybackSettings>) => {
-    if (!transportLocked && patch.httpCodec !== undefined) {
-      try {
+    try {
+      if (!transportLocked && patch.httpCodec !== undefined) {
         window.localStorage.setItem(HTTP_CODEC_STORAGE_KEY, patch.httpCodec);
-      } catch {
-        // Keep the in-memory preference when storage is unavailable.
       }
+      if (patch.simstreamTransport !== undefined) {
+        window.localStorage.setItem(SIMSTREAM_TRANSPORT_STORAGE_KEY, patch.simstreamTransport);
+      }
+    } catch {
+      // Keep the in-memory preference when storage is unavailable.
     }
     const next = mergeStreamPlaybackSettings(settingsRef.current, patch, transportLocked);
     if (next === settingsRef.current) return;

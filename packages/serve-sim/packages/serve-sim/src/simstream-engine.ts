@@ -72,23 +72,36 @@ export function ensureSimstreamEngine(udid: string): Promise<number> {
   return port;
 }
 
+type UpgradeRequest = { method?: string; headers: Record<string, string | string[] | undefined>; rawHeaders?: string[] };
+
+/** The device's engine port, or null after answering the upgrade with a 503. */
+async function enginePortFor(udid: string, socket: Socket): Promise<number | null> {
+  try {
+    return await ensureSimstreamEngine(udid);
+  } catch (error) {
+    socket.end(`HTTP/1.1 503 Service Unavailable\r\n\r\n${String(error)}`);
+    return null;
+  }
+}
+
+/** Hands a socket to the relay process; resolves false if the relay couldn't take it. */
+function sendToRelay(relay: ChildProcess, message: object, socket: Socket): Promise<boolean> {
+  return new Promise((resolve) => {
+    try {
+      relay.send(message, socket, { keepOpen: false }, (error) => resolve(!error));
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
 /**
  * Pipes an upgraded browser WebSocket to the device's engine, rewriting the request path to the
  * engine's `/stream`. The engine speaks plain RFC 6455, so the handshake passes through untouched.
  */
-export async function pipeSimstreamUpgrade(
-  udid: string,
-  req: { method?: string; headers: Record<string, string | string[] | undefined>; rawHeaders?: string[] },
-  socket: Socket,
-  head: Buffer,
-): Promise<void> {
-  let port: number;
-  try {
-    port = await ensureSimstreamEngine(udid);
-  } catch (error) {
-    socket.end(`HTTP/1.1 503 Service Unavailable\r\n\r\n${String(error)}`);
-    return;
-  }
+export async function pipeSimstreamUpgrade(udid: string, req: UpgradeRequest, socket: Socket, head: Buffer): Promise<void> {
+  const port = await enginePortFor(udid, socket);
+  if (port === null) return;
   const lines = [`GET /stream HTTP/1.1`];
   const raw = req.rawHeaders ?? [];
   for (let i = 0; i + 1 < raw.length; i += 2) lines.push(`${raw[i]}: ${raw[i + 1]}`);
@@ -97,18 +110,28 @@ export async function pipeSimstreamUpgrade(
   // Hand the socket to the relay process so this process's event-loop stalls can't touch the
   // video. If the relay is unavailable (e.g. under Bun, or its script is missing), pipe here.
   const relay = await getRelay();
-  if (relay) {
-    const message = { type: "pipe", port, request, head: head.toString("base64") };
-    const sent = await new Promise<boolean>((resolve) => {
-      try {
-        relay.send(message, socket, { keepOpen: false }, (error) => resolve(!error));
-      } catch {
-        resolve(false);
-      }
-    });
-    if (sent) return;
-  }
+  if (relay && await sendToRelay(relay, { type: "pipe", port, request, head: head.toString("base64") }, socket)) return;
   relaySocket(socket, port, request, head);
+}
+
+/**
+ * simstream over a WebRTC video track: the upgraded socket is the browser's signaling WebSocket.
+ * The relay process upgrades it and bridges the engine to RTP (see `bridgeSimstreamRtp`), off this
+ * process's event loop. `iceServers` are in node-datachannel's form (see `iceServerUrls`).
+ */
+export async function pipeSimstreamRtpUpgrade(
+  udid: string,
+  req: UpgradeRequest,
+  socket: Socket,
+  head: Buffer,
+  iceServers: string[],
+): Promise<void> {
+  const port = await enginePortFor(udid, socket);
+  if (port === null) return;
+  const relay = await getRelay();
+  const message = { type: "rtp", port, headers: req.headers, head: head.toString("base64"), iceServers };
+  if (relay && await sendToRelay(relay, message, socket)) return;
+  socket.end("HTTP/1.1 501 Not Implemented\r\n\r\nsimstream's WebRTC transport runs in the simstream relay process, which needs Node.");
 }
 
 let relayProcess: Promise<ChildProcess | null> | null = null;

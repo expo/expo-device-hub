@@ -1,5 +1,6 @@
 import { execFile, spawn, type ChildProcess } from "child_process";
-import { pipeSimstreamUpgrade } from "./simstream-engine.js";
+import { pipeSimstreamRtpUpgrade, pipeSimstreamUpgrade } from "./simstream-engine.js";
+import { iceServerUrls } from "./simstream-ice.js";
 import { readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -2602,9 +2603,15 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
       return;
     }
-    if (helperTarget.upstreamPath.split("?")[0] === "/simstream" && device) {
+    const helperPath = helperTarget.upstreamPath.split("?")[0];
+    if (helperPath === "/simstream" && device) {
       // `--codec simstream` video: piped to the device's simstream engine process.
       void pipeSimstreamUpgrade(device, req as any, socket, head);
+      return;
+    }
+    if (helperPath === "/simstream-rtp" && device) {
+      // The same video as a WebRTC video track: this is the signaling socket (see simstream-rtp.ts).
+      void pipeSimstreamRtpUpgrade(device, req as any, socket, head, iceServerUrls(streamSettings?.iceServers));
       return;
     }
     socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
