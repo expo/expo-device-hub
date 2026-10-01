@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { webRtcFailureDisposition } from "../webrtc-fallback";
+import { webRtcFailureDisposition } from "../webrtc-fallback.js";
 import {
   initialPlaybackStallState,
   nextPlaybackStallState,
@@ -8,7 +8,7 @@ import {
   selectInboundReport,
   type PlaybackProgress,
   type PlaybackStallState,
-} from "../webrtc-playback-stall";
+} from "../webrtc-playback-stall.js";
 
 describe("tracking whether decoding has stopped", () => {
   const run = (samples: PlaybackProgress[]) => {

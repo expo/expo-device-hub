@@ -3,7 +3,7 @@ import {
   playbackStallAction,
   STALL_RECONNECT_TTL_MS,
   webRtcFailureDisposition,
-} from "../webrtc-fallback";
+} from "../webrtc-fallback.js";
 
 describe("WebRTC failure policy", () => {
   test("uses codec fallback only when a connected peer cannot decode its first frame", () => {
@@ -123,4 +123,3 @@ describe("what a stall verdict does", () => {
     expect(playbackStallAction("wait", null)).toBe("none");
   });
 });
-
