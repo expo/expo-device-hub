@@ -1949,14 +1949,14 @@ program
     },
     "h264",
   )
-  .option("--stun-url <url[,url...]>", "STUN URL(s) for WebRTC ICE", (value) => {
+  .option("--stun-url <url[,url...]>", "STUN URL(s) for WebRTC ICE (also simstream's WebRTC transport)", (value) => {
     try {
       return parseIceUrlList(value, "stun");
     } catch (error) {
       throw new InvalidArgumentError((error as Error).message);
     }
   })
-  .option("--turn-url <url[,url...]>", "TURN URL(s) for WebRTC ICE", (value) => {
+  .option("--turn-url <url[,url...]>", "TURN URL(s) for WebRTC ICE (also simstream's WebRTC transport)", (value) => {
     try {
       return parseIceUrlList(value, "turn");
     } catch (error) {
@@ -2053,15 +2053,10 @@ Examples:
       process.exit(1);
     }
     const wasProvided = (name: string) => program.getOptionValueSource(name) === "cli";
-    const webRtcOptionProvided = [
-      "webrtcCodec",
-      "stunUrl",
-      "turnUrl",
-      "turnUsername",
-      "turnCredential",
-    ].some(wasProvided);
-    if (opts.transport === "http" && webRtcOptionProvided) {
-      console.error("WebRTC options require --transport webrtc.");
+    // ICE servers also serve simstream's WebRTC (RTP) transport, which runs under --transport http.
+    const iceOptionProvided = ["stunUrl", "turnUrl", "turnUsername", "turnCredential"].some(wasProvided);
+    if (opts.transport === "http" && (wasProvided("webrtcCodec") || (iceOptionProvided && opts.codec !== "simstream"))) {
+      console.error("WebRTC options require --transport webrtc (STUN/TURN also work with --codec simstream).");
       process.exit(1);
     }
     if (opts.transport === "webrtc" && wasProvided("codec")) {
@@ -2110,6 +2105,7 @@ Examples:
       : {
           transport: "http",
           codec: opts.codec,
+          ...(webrtcIceServers.length ? { iceServers: webrtcIceServers } : {}),
           ...encoderOptions,
         };
     const bundleId =
@@ -2148,7 +2144,8 @@ Examples:
     const startPort: number | undefined = opts.port;
     const streamOptionsProvided = wasProvided("transport")
       || wasProvided("codec")
-      || webRtcOptionProvided
+      || wasProvided("webrtcCodec")
+      || iceOptionProvided
       || encoderOptionNames.some(wasProvided);
     const debugStreamPath = opts.debugStream?.trim();
     if (opts.debugStream !== undefined) {

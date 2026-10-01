@@ -14,6 +14,22 @@ import {
 } from "../stream-settings";
 
 describe("stream settings", () => {
+  test("simstream plays over its WebSocket unless the viewer picks WebRTC (RTP)", () => {
+    expect(DEFAULT_STREAM_CONTROL_SETTINGS.simstreamTransport).toBe("websocket");
+    const rtp = mergeStreamPlaybackSettings(DEFAULT_STREAM_CONTROL_SETTINGS, { simstreamTransport: "rtp" });
+    expect(rtp.simstreamTransport).toBe("rtp");
+    expect(normalizeStreamControlSettings({ simstreamTransport: "carrier-pigeon" as never }, rtp).simstreamTransport).toBe("rtp");
+  });
+
+  test("keeps ICE servers on HTTP settings for simstream's WebRTC transport", () => {
+    const iceServers = [{ urls: ["stun:stun.example.com:3478"] }];
+    expect(streamControlSettingsFrom({ transport: "http", codec: "simstream", iceServers })).toMatchObject({
+      transport: "http",
+      httpCodec: "simstream",
+      iceServers,
+    });
+  });
+
   test("keeps MJPEG at 120 fps while video accepts 140 fps", () => {
     expect(normalizeStreamControlSettings({ mjpegFps: 120, h264Fps: 140 })).toMatchObject({
       mjpegFps: 120,

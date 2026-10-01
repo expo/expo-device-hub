@@ -1,9 +1,9 @@
 // Joins as a viewer, saves the received H.264 stream verbatim (Annex B) with arrival times,
 // and drives the demo gestures over the same connection.
-import { openSync, writeSync, closeSync, readFileSync, writeFileSync } from 'node:fs';
+import { openSync, writeSync, closeSync, readFileSync } from 'node:fs';
 const [URL, OUT] = process.argv.slice(2);
 const steps = JSON.parse(readFileSync('/tmp/demo-steps.json', 'utf8')).filter((s) => s.op !== 'shot');
-const fd = openSync(OUT + '.h264', 'w'); const arrivals = []; let configs = 0, started = false;
+const fd = openSync(OUT + '.h264', 'w'); const arrivals = []; let configs = 0;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const START = Buffer.from([0, 0, 0, 1]);
 const ws = new WebSocket(URL.replace(/^http/, 'ws').replace(/\/?$/, '/stream')); ws.binaryType = 'arraybuffer';
