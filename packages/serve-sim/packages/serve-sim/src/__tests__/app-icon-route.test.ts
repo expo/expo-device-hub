@@ -1,6 +1,15 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import type { IncomingMessage, ServerResponse } from "http";
-import { type AppIconDeps, appIconCandidates, handleAppIconRequest, readAppIcon } from "../app-icon";
+import { tmpdir } from "os";
+import { join } from "path";
+import {
+  type AppIconDeps,
+  appContainerFromResult,
+  appIconCandidates,
+  handleAppIconRequest,
+  readAppIcon,
+} from "../app-icon";
 
 const UDID = "11111111-2222-3333-4444-555555555555";
 const APP_PATH = "/sim/Containers/Bundle/Application/X/Foo.app";
@@ -12,13 +21,13 @@ const INFO_PLIST = {
 
 function fakeDeps(overrides: Partial<AppIconDeps> & { files?: Record<string, Buffer> } = {}) {
   const reads: string[] = [];
-  const files = overrides.files ?? { [`${APP_PATH}/AppIcon60x60@2x.png`]: PNG };
+  const files = overrides.files ?? { "AppIcon60x60@2x.png": PNG };
   const deps: AppIconDeps = {
     appContainer: async () => APP_PATH,
     readInfoPlist: async () => INFO_PLIST,
-    readIconFile: async (path) => {
-      reads.push(path);
-      return files[path] ?? null;
+    readIconFile: async (_appPath, name) => {
+      reads.push(name);
+      return files[name] ?? null;
     },
     ...overrides,
   };
@@ -49,6 +58,8 @@ function createFakeRes() {
 }
 
 const req = (method = "GET") => ({ method, headers: {} }) as unknown as IncomingMessage;
+const device = async () => UDID;
+const ICON_URL = "/api/apps/icon?bundleId=com.example.foo";
 
 describe("appIconCandidates", () => {
   test("tries the largest plist icon first, with the same names as the preview client", () => {
@@ -75,6 +86,28 @@ describe("appIconCandidates", () => {
   });
 });
 
+describe("appContainerFromResult", () => {
+  test("reads the app path from simctl's output", () => {
+    expect(appContainerFromResult({ stdout: `${APP_PATH}\n`, stderr: "", exitCode: 0 })).toBe(APP_PATH);
+  });
+
+  test("treats simctl's no-such-file error as not installed", () => {
+    // What `simctl get_app_container <udid> <unknown bundle> app` prints on Xcode 27.1.
+    const stderr =
+      "An error was encountered processing the command (domain=NSPOSIXErrorDomain, code=2):\n" +
+      "The operation couldn’t be completed. No such file or directory\nNo such file or directory\n";
+    expect(appContainerFromResult({ stdout: "", stderr, exitCode: 2 })).toBeNull();
+  });
+
+  test("throws on a timeout or any other failure, so it is not reported as not installed", () => {
+    expect(() => appContainerFromResult({ stdout: "", stderr: "did not finish", exitCode: 1, timedOut: true }))
+      .toThrow("did not finish");
+    expect(() => appContainerFromResult({ stdout: "", stderr: "Invalid device: X", exitCode: 148 }))
+      .toThrow("Invalid device");
+    expect(() => appContainerFromResult({ stdout: "\n", stderr: "", exitCode: 0 })).toThrow();
+  });
+});
+
 describe("readAppIcon", () => {
   test("returns the first loose PNG that exists, base64-encoded", async () => {
     const { deps, reads } = fakeDeps();
@@ -82,7 +115,7 @@ describe("readAppIcon", () => {
       mimeType: "image/png",
       data: PNG.toString("base64"),
     });
-    expect(reads).toEqual([`${APP_PATH}/AppIcon60x60@3x.png`, `${APP_PATH}/AppIcon60x60@2x.png`]);
+    expect(reads).toEqual(["AppIcon60x60@3x.png", "AppIcon60x60@2x.png"]);
   });
 
   test("returns null when the icon is only in Assets.car", async () => {
@@ -91,7 +124,7 @@ describe("readAppIcon", () => {
   });
 
   test("skips a file that is not a PNG", async () => {
-    const { deps } = fakeDeps({ files: { [`${APP_PATH}/AppIcon60x60@3x.png`]: Buffer.from("not a png") } });
+    const { deps } = fakeDeps({ files: { "AppIcon60x60@3x.png": Buffer.from("not a png") } });
     expect(await readAppIcon(UDID, "com.example.foo", deps)).toBeNull();
   });
 
@@ -101,11 +134,31 @@ describe("readAppIcon", () => {
   });
 });
 
+describe("reading the icon file from disk", () => {
+  const root = mkdtempSync(join(tmpdir(), "serve-sim-app-icon-"));
+  const appPath = join(root, "Foo.app");
+  mkdirSync(appPath);
+  writeFileSync(join(root, "outside.png"), PNG);
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+  const onDisk = { appContainer: async () => appPath, readInfoPlist: async () => INFO_PLIST };
+
+  test("reads a PNG inside the bundle", async () => {
+    writeFileSync(join(appPath, "AppIcon60x60@2x.png"), PNG);
+    expect((await readAppIcon(UDID, "com.example.foo", onDisk))?.data).toBe(PNG.toString("base64"));
+    rmSync(join(appPath, "AppIcon60x60@2x.png"));
+  });
+
+  test("does not follow an icon symlink out of the bundle", async () => {
+    symlinkSync(join(root, "outside.png"), join(appPath, "AppIcon60x60@3x.png"));
+    symlinkSync("../outside.png", join(appPath, "AppIcon60x60@2x.png"));
+    expect(await readAppIcon(UDID, "com.example.foo", onDisk)).toBeNull();
+  });
+});
+
 describe("handleAppIconRequest", () => {
-  test("answers with the serve-emu icon contract", async () => {
-    const { deps } = fakeDeps();
+  test("answers with the icon contract shared with serve-emu", async () => {
     const out = createFakeRes();
-    await handleAppIconRequest(req(), out.res, UDID, "/api/apps/icon?bundleId=com.example.foo", deps);
+    await handleAppIconRequest(req(), out.res, ICON_URL, device, fakeDeps().deps);
     expect(out.status()).toBe(200);
     expect(out.headers()["Content-Type"]).toBe("application/json");
     expect(out.json()).toEqual({
@@ -116,19 +169,18 @@ describe("handleAppIconRequest", () => {
   });
 
   test("answers icon null when the app has no loose PNG", async () => {
-    const { deps } = fakeDeps({ files: {} });
     const out = createFakeRes();
-    await handleAppIconRequest(req(), out.res, UDID, "/api/apps/icon?bundleId=com.example.foo", deps);
+    await handleAppIconRequest(req(), out.res, ICON_URL, device, fakeDeps({ files: {} }).deps);
     expect(out.status()).toBe(200);
     expect(out.json()).toEqual({ ok: true, bundleId: "com.example.foo", icon: null });
   });
 
-  test("rejects a missing or malformed bundle id before touching the host", async () => {
+  test("rejects a missing or malformed bundle id before it selects a device", async () => {
     let touched = false;
-    const { deps } = fakeDeps({ appContainer: async () => ((touched = true), APP_PATH) });
+    const resolveUdid = async () => ((touched = true), UDID);
     for (const query of ["", "?bundleId=", "?bundleId=-rf", "?bundleId=a%2Fb"]) {
       const out = createFakeRes();
-      await handleAppIconRequest(req(), out.res, UDID, `/api/apps/icon${query}`, deps);
+      await handleAppIconRequest(req(), out.res, `/api/apps/icon${query}`, resolveUdid, fakeDeps().deps);
       expect(out.status()).toBe(400);
       expect(out.json().ok).toBe(false);
     }
@@ -137,19 +189,33 @@ describe("handleAppIconRequest", () => {
 
   test("answers 404 without a device or when the app is not installed", async () => {
     const noDevice = createFakeRes();
-    await handleAppIconRequest(req(), noDevice.res, null, "/api/apps/icon?bundleId=com.example.foo", fakeDeps().deps);
+    await handleAppIconRequest(req(), noDevice.res, ICON_URL, async () => null, fakeDeps().deps);
     expect(noDevice.status()).toBe(404);
 
     const missing = createFakeRes();
-    const { deps } = fakeDeps({ appContainer: async () => null });
-    await handleAppIconRequest(req(), missing.res, UDID, "/api/apps/icon?bundleId=com.example.foo", deps);
+    await handleAppIconRequest(req(), missing.res, ICON_URL, device, fakeDeps({ appContainer: async () => null }).deps);
     expect(missing.status()).toBe(404);
     expect(missing.json()).toEqual({ ok: false, error: "App com.example.foo is not installed on the simulator" });
   });
 
-  test("answers 405 to a write-shaped request", async () => {
+  test("answers 503 when the lookup fails, so a client can retry", async () => {
     const out = createFakeRes();
-    await handleAppIconRequest(req("POST"), out.res, UDID, "/api/apps/icon?bundleId=com.example.foo", fakeDeps().deps);
-    expect(out.status()).toBe(405);
+    const failing = fakeDeps({
+      appContainer: async () => {
+        throw new Error("The xcrun command did not finish within 120s and was stopped.");
+      },
+    });
+    await handleAppIconRequest(req(), out.res, ICON_URL, device, failing.deps);
+    expect(out.status()).toBe(503);
+    expect(out.json()).toEqual({ ok: false, error: "The xcrun command did not finish within 120s and was stopped." });
+  });
+
+  test("answers 405 to anything but GET", async () => {
+    for (const method of ["POST", "HEAD"]) {
+      const out = createFakeRes();
+      await handleAppIconRequest(req(method), out.res, ICON_URL, device, fakeDeps().deps);
+      expect(out.status()).toBe(405);
+      expect(out.headers().Allow).toBe("GET");
+    }
   });
 });

@@ -2842,9 +2842,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
 
     // JSON: an installed app's icon, so a remote client needs no exec-ws round trips for it.
     if (url === base + "/api/apps/icon") {
-      const states = await readServeSimStates();
-      const state = selectServeSimState(states, selectedDevice);
-      await handleAppIconRequest(req, res, state?.device ?? null, rawUrl);
+      await handleAppIconRequest(req, res, rawUrl, async () =>
+        selectServeSimState(await readServeSimStates(), selectedDevice)?.device ?? null);
       return;
     }
 
