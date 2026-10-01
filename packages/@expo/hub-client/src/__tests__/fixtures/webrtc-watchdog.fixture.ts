@@ -1,4 +1,5 @@
 import { afterEach, expect, mock, test } from "bun:test";
+import { sessionTokenFetch } from '../../session-token.js';
 import {
   PLAYBACK_STALL_POLLS,
   PLAYBACK_STALL_POLL_MS,
@@ -22,6 +23,8 @@ let clock = 0;
 let offerStatus = 200;
 let offersPosted = 0;
 let offerBody = "nope";
+let senderFrames = 0;
+let statsAuthorization: string | null = null;
 
 class FakePeer {
   connectionState = "connected";
@@ -80,6 +83,7 @@ Object.assign(globalThis, {
     },
   },
   window: {
+    location: { href: "http://local/" },
     setInterval: fakeSetInterval,
     clearInterval: fakeClearInterval,
     setTimeout: fakeSetTimeout,
@@ -94,9 +98,11 @@ Object.assign(globalThis, {
   RTCPeerConnection: FakePeer,
   RTCRtpReceiver: { getCapabilities: () => ({ codecs: [] }) },
   MediaStream: class {},
-  fetch: async (input: string) => {
+  fetch: async (value: string | URL, init?: RequestInit) => {
+    const input = String(value);
     if (input.includes("/stats")) {
-      return new Response(JSON.stringify({ sessions: [{ framesEncoded: 0 }] }));
+      statsAuthorization = new Headers(init?.headers).get("authorization");
+      return new Response(JSON.stringify({ sessions: [{ sessionId: new URL(input).searchParams.get("sessionId"), framesEncoded: senderFrames }] }));
     }
     if (input.includes("/offer")) offersPosted += 1;
     if (input.includes("/offer") && offerStatus !== 200) {
@@ -117,7 +123,7 @@ afterEach(() => {
 });
 
 /// Options a test passes to the hook on top of the defaults. Reset by every `start`.
-let hookOptions: { allowCodecFallback?: boolean; expectContinuousFrames?: boolean } = {};
+let hookOptions: { allowCodecFallback?: boolean; expectContinuousFrames?: boolean; fetchImpl?: Parameters<typeof useWebRtcStream>[0]["fetchImpl"] } = {};
 
 async function start(
   visible: "visible" | "hidden" = "visible",
@@ -133,6 +139,8 @@ async function start(
   offerStatus = offerAnswers;
   offersPosted = 0;
   offerBody = "nope";
+  senderFrames = 0;
+  statsAuthorization = null;
   clock = 0;
   timers.clear();
   intervals.clear();
@@ -162,6 +170,12 @@ async function reconnect() {
   await flush();
   peers[0]?.ontrack?.({ track: {}, streams: [{}] });
   peers[0]?.onconnectionstatechange?.();
+}
+
+function fireTimer(delay: number) {
+  const entry = [...timers.entries()].find(([, timer]) => timer.delay === delay);
+  if (!entry) throw new Error(`Expected a ${delay}ms timer`);
+  timers.delete(entry[0]); entry[1].callback();
 }
 
 function resolveStats(framesReceived: number, framesDecoded = framesReceived, id = "video", mediaTypeOnly = false) {
@@ -382,4 +396,50 @@ test("brief hide/show between polls invalidates the decoder-stall run", async ()
   visibilityListener();
   await pollStall([{ received: 1000, decoded: 100 }]);
   expect(updates).not.toContain(STALLED);
+});
+
+test("first-frame watchdog pauses while hidden and restarts on resume", async () => {
+  const hook = await start("hidden"); expect(timers.size).toBe(0);
+  visibility = "visible"; visibilityListener?.(); fireTimer(4_000); await flush();
+  resolveStats(10); await flush(); visibility = "hidden"; visibilityListener?.();
+  expect(timers.size).toBe(0); expect(failures()).toEqual([]);
+  visibility = "visible"; visibilityListener?.(); hook.markFrameDecoded();
+  expect(timers.size).toBe(0);
+});
+
+test("first-frame decision uses connection state when stats arrive", async () => {
+  await start(); fireTimer(4_000); await flush();
+  peers[0]!.connectionState = "disconnected"; resolveStats(0); await flush();
+  expect(failures()).toEqual([]);
+  expect(updates).toContain("WebRTC did not establish a video path. Retrying...");
+});
+
+test("a hidden and resumed first-frame read cannot judge the new generation", async () => {
+  await start(); fireTimer(4_000); await flush();
+  visibility = "hidden"; visibilityListener?.(); visibility = "visible"; visibilityListener?.();
+  resolveStats(0); await flush(); expect(failures()).toEqual([]);
+  expect([...timers.values()].some(timer => timer.delay === 4_000)).toBe(true);
+});
+
+test("an encoding sender with no received frames retries transport", async () => {
+  await start(); senderFrames = 50; fireTimer(4_000); await flush(); resolveStats(0); await flush();
+  expect(failures()).toEqual([]); expect(updates).toContain("WebRTC did not establish a video path. Retrying...");
+});
+
+test("hung first-frame stats reach a finite decision", async () => {
+  await start(); fireTimer(4_000); await flush(); fireTimer(2_000); await flush();
+  expect(failures()).toMatchObject([{kind: "codec"}]);
+});
+
+
+test("first-frame sender diagnosis retains the session bearer", async () => {
+  hookOptions = { fetchImpl: sessionTokenFetch("token-A") };
+  await start();
+  senderFrames = 50;
+  fireTimer(4_000);
+  await flush();
+  resolveStats(0);
+  await flush();
+  expect(statsAuthorization).toBe("Bearer token-A");
+  expect(updates).toContain("WebRTC did not establish a video path. Retrying...");
 });
