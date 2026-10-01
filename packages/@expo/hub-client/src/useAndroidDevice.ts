@@ -212,7 +212,8 @@ export function parseServeEmuStreamSettings(value: unknown): ServeEmuStreamSetti
   };
 }
 
-export function useAndroidDeviceClient(options: DeviceConnectionOptions): DeviceClient {
+// Until the Android client sends `token`, it refuses one rather than drop it.
+export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 'token'>): DeviceClient {
   const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
   const active = enabled && !!baseUrl;
 
