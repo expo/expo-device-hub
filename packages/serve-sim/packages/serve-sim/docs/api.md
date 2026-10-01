@@ -14,6 +14,7 @@ server's selected device.
 | `/` | The preview page. |
 | `/api` | Current device and stream state, including `execToken`. |
 | `/api/screenshot` | `POST`. A still PNG. |
+| `/api/apps/icon?bundleId=<id>` | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed. |
 | `/helper/<udid>/recording/video` | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token. |
 | `/api/events`, `/api/event-log`, `/api/event-log/events` | Device events and the recorded log. |
 | `/metrics` | CPU, memory and network samples, one per second. |
