@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { getDisplayRotation, type DisplayRotation } from "./adb.ts";
 import {
   ControlInputQueue,
   ControlInputRejectedError,
@@ -41,6 +42,7 @@ import {
   compileGesture,
   normalizeTextForControl,
   type Gesture,
+  type Screen,
 } from "./input.ts";
 import {
   SCRCPY_DEFAULTS,
@@ -976,6 +978,28 @@ function createGrpcImageCaptureTransport(options: {
   };
 }
 
+function rotateUnitTouch(x: number, y: number, rotation: number) {
+  if (rotation === 1) return { x: 1 - y, y: x };
+  if (rotation === 2) return { x: 1 - x, y: 1 - y };
+  if (rotation === 3) return { x: y, y: 1 - x };
+  return { x, y };
+}
+
+function rotateScrcpyGesture(gesture: Gesture, rotation: number): Gesture {
+  switch (gesture.type) {
+    case "tap":
+    case "touch":
+      return { ...gesture, ...rotateUnitTouch(gesture.x, gesture.y, rotation) };
+    case "swipe": {
+      const start = rotateUnitTouch(gesture.x1, gesture.y1, rotation);
+      const end = rotateUnitTouch(gesture.x2, gesture.y2, rotation);
+      return { ...gesture, x1: start.x, y1: start.y, x2: end.x, y2: end.y };
+    }
+    default:
+      return gesture;
+  }
+}
+
 export type GrpcDisplayGeometry = {
   encodedSize: { width: number; height: number };
   touchSize: { width: number; height: number };
@@ -987,13 +1011,16 @@ export function resolveGrpcDisplayGeometry(options: {
   inputHeight: number;
   nativeWidth: number;
   nativeHeight: number;
+  rotation?: number;
 }): GrpcDisplayGeometry {
   const croppedWidth = options.inputWidth - (options.inputWidth % 2);
   const croppedHeight = options.inputHeight - (options.inputHeight % 2);
   const encodedSize = { width: croppedWidth, height: croppedHeight };
+  const rotation = options.rotation ?? 0;
+  const swappedAxes = rotation === 1 || rotation === 3;
   const touchSize = {
-    width: options.nativeWidth,
-    height: options.nativeHeight,
+    width: swappedAxes ? options.nativeHeight : options.nativeWidth,
+    height: swappedAxes ? options.nativeWidth : options.nativeHeight,
   };
 
   const toPixel = (unit: number, size: number) =>
@@ -1003,11 +1030,12 @@ export function resolveGrpcDisplayGeometry(options: {
     encodedSize,
     touchSize,
     mapTouch(unitX, unitY) {
-      // Emulator screenshots are already oriented and touch coordinates use
-      // that same physical top-left coordinate space.
+      // Screenshots are oriented, but sendTouch injects coordinates into the
+      // unrotated framebuffer. Undo the image rotation before scaling.
+      const point = rotateUnitTouch(unitX, unitY, rotation);
       return {
-        x: toPixel(unitX, touchSize.width),
-        y: toPixel(unitY, touchSize.height),
+        x: toPixel(point.x, touchSize.width),
+        y: toPixel(point.y, touchSize.height),
       };
     },
   };
@@ -1313,6 +1341,10 @@ export type GrpcSessionDependencies = {
     serial: string,
     signal: AbortSignal,
   ) => Promise<string>;
+  readDisplayRotation?: (
+    serial: string,
+    signal: AbortSignal,
+  ) => Promise<DisplayRotation>;
   startScrcpyControl?: typeof startScrcpyControl;
   runtime?: Partial<GrpcSessionRuntime>;
 };
@@ -1915,6 +1947,7 @@ export async function startGrpcSession(
       inputHeight: image.height,
       nativeWidth: nativeTouchSize.width,
       nativeHeight: nativeTouchSize.height,
+      rotation: image.rotation,
     });
   };
   encoderLifecycle = new GrpcEncoderLifecycle<GrpcSessionEncoder>((restart) => {
@@ -2238,12 +2271,50 @@ export async function startGrpcSession(
 
   const createScrcpyControls = (session: ScrcpyControlSession) => {
     const writer = new SocketControlWriter(session.controlSocket);
+    const readRotation = dependencies.readDisplayRotation ??
+      ((serial: string, signal: AbortSignal) => getDisplayRotation(serial, undefined, signal));
+    const pointers = new Set<number>();
+    let touchGeometry: { rotation: number; screen: Screen } | null = null;
+    const readGeometry = async (signal: AbortSignal) => {
+      const displayRotation = await readRotation(serial, signal).catch((cause: unknown) => {
+        throw new ControlInputRejectedError("Could not determine Android display rotation", { cause });
+      });
+      throwIfAborted(signal, "touch geometry refresh aborted");
+      // The launcher can stay portrait while gRPC rotates its screenshot.
+      // scrcpy expects coordinates and dimensions in Android's display space.
+      const rotation = ((latest?.rotation ?? 0) - displayRotation + 4) % 4;
+      const sideways = rotation === 1 || rotation === 3;
+      return {
+        rotation,
+        screen: sideways
+          ? { width: nativeTouchSize.height, height: nativeTouchSize.width }
+          : { ...nativeTouchSize },
+      };
+    };
     return new ControlInputQueue({
       dispatcher: {
         async dispatchGesture(gesture, _screen, signal) {
-          // With scrcpy video disabled, touch coordinates must target the native
-          // display directly rather than the downscaled gRPC encoder output.
-          for (const step of compileGesture(gesture, nativeTouchSize).steps) {
+          let screen = nativeTouchSize;
+          let mapped = gesture;
+          if (gesture.type === "tap" || gesture.type === "swipe") {
+            const geometry = await readGeometry(signal);
+            screen = geometry.screen;
+            mapped = rotateScrcpyGesture(gesture, geometry.rotation);
+          } else if (gesture.type === "touch") {
+            const pointerId = gesture.pointerId ?? 0;
+            // A failed down must not leave subsequent moves using stale geometry.
+            if (gesture.action !== "down" && !pointers.has(pointerId)) return;
+            // Refresh for each new gesture, even when video geometry is unchanged.
+            // Keep all pointers in a drag on one mapping without querying ADB on moves.
+            if (!touchGeometry || (gesture.action === "down" && pointers.size === 0)) {
+              touchGeometry = await readGeometry(signal);
+            }
+            screen = touchGeometry.screen;
+            mapped = rotateScrcpyGesture(gesture, touchGeometry.rotation);
+            if (gesture.action === "down") pointers.add(pointerId);
+            else if (gesture.action === "up") pointers.delete(pointerId);
+          }
+          for (const step of compileGesture(mapped, screen).steps) {
             if (step.delayMs > 0) {
               await runtime.sleep(step.delayMs, signal);
             }
@@ -2252,6 +2323,8 @@ export async function startGrpcSession(
         },
         resetVideo: resetGrpcVideo,
         close(reason) {
+          pointers.clear();
+          touchGeometry = null;
           writer.close(reason);
         },
       },
