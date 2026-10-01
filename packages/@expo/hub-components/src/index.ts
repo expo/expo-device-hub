@@ -61,6 +61,7 @@ export { LogSidebar, type LogSidebarProps } from './dashboard/LogSidebar';
 export { StreamPanel } from './dashboard/StreamPanel';
 export {
   ScreenshotToast,
+  ScreenshotToaster,
   useScreenshotToast,
   type ScreenshotToastState,
 } from './dashboard/ScreenshotToast';

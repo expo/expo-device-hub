@@ -2,30 +2,29 @@ import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
 import { type ScreenshotArtifact } from '@expo/hub-client';
-import { artifactNotice, ScreenshotToast, type ScreenshotToastState } from '../dashboard/ScreenshotToast';
+import {
+  artifactNotice,
+  ScreenshotToast,
+  ScreenshotToaster,
+  type ScreenshotToastState,
+} from '../dashboard/ScreenshotToast';
 
-const noop = () => {};
-
-function render(toast: ScreenshotToastState | null): string {
-  return renderToStaticMarkup(
-    <ScreenshotToast toast={toast} onDownloadAgain={noop} onPause={noop} onResume={noop} />,
-  );
+function render(toast: ScreenshotToastState): string {
+  return renderToStaticMarkup(<ScreenshotToast toast={toast} onDownloadAgain={() => {}} />);
 }
 
 function saved(artifact: ScreenshotArtifact | null): ScreenshotToastState {
-  return { phase: 'saved', id: 1, url: 'blob:http://hub/shot', filename: 'Pixel-10.png', artifact };
+  return { phase: 'saved', url: 'blob:http://hub/shot', artifact };
 }
 
 describe('ScreenshotToast', () => {
   test('shows the thumbnail, the download action, and the saved artifact', () => {
     const markup = render(saved({ status: 'saved' }));
-    expect(markup).toContain('role="status"');
-    expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain('<img src="blob:http://hub/shot"');
     expect(markup).toContain('>Screenshot saved</span>');
     expect(markup).toContain('>Download again</span>');
     expect(markup).toContain('>Saved to session artifacts</span>');
-    expect(markup).toContain('<button type="button" aria-label="Download screenshot again"');
+    expect(markup).toContain('<button type="button" data-testid="screenshot-toast" aria-label="Download screenshot again"');
   });
 
   test('warns with the reason when the artifact save failed', () => {
@@ -45,20 +44,22 @@ describe('ScreenshotToast', () => {
   });
 
   test('shows an empty thumbnail and no action while capturing', () => {
-    const markup = render({ phase: 'capturing', id: 1 });
+    const markup = render({ phase: 'capturing' });
     expect(markup).toContain('>Capturing screenshot…</span>');
     expect(markup).not.toContain('<img');
     expect(markup).not.toContain('<button');
   });
 
   test('reports a failed capture without an action', () => {
-    const markup = render({ phase: 'capture-failed', id: 1 });
+    const markup = render({ phase: 'capture-failed' });
     expect(markup).toContain('>Screenshot failed</span>');
     expect(markup).not.toContain('<button');
   });
 
-  test('renders nothing without a toast', () => {
-    expect(render(null)).toBe('');
+  test('announces the toasts through a polite live region', () => {
+    const markup = renderToStaticMarkup(<ScreenshotToaster />);
+    expect(markup).toContain('aria-label="Screenshot notifications');
+    expect(markup).toContain('aria-live="polite"');
   });
 });
 

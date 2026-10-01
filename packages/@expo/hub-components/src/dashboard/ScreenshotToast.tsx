@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Toaster, toast as sonnerToast } from 'sonner';
 
 import { type DeviceClient, type ScreenshotArtifact } from '@expo/hub-client';
 import { bg, border, ChevronRightIcon, isFocusVisible, radius, shadow, text, textSize } from '../primitives';
 
 export type ScreenshotToastState =
-  | { phase: 'capturing'; id: number }
-  | { phase: 'saved'; id: number; url: string; filename: string; artifact: ScreenshotArtifact | null }
-  | { phase: 'capture-failed'; id: number };
+  | { phase: 'capturing' }
+  | { phase: 'saved'; url: string; artifact: ScreenshotArtifact | null }
+  | { phase: 'capture-failed' };
 
 const SAVED_DISMISS_MS = 3500;
 // The failure reason appears only here, so the reader needs time to finish it.
@@ -43,105 +44,92 @@ function download(url: string, filename: string): void {
   a.remove();
 }
 
+const TOASTER_ID = 'hub-screenshot';
+
+/** Where the screenshot toasts render: the bottom-right corner of the viewport, clear of the toolbar. */
+export function ScreenshotToaster() {
+  return (
+    <Toaster
+      id={TOASTER_ID}
+      position="bottom-right"
+      offset={16}
+      gap={8}
+      toastOptions={{ unstyled: true }}
+      // Sonner's default Alt+T moves focus to the toasts, which would steal keys from the device.
+      // No key has the code ' ', so this disables the hotkey and keeps the region label clean.
+      hotkey={[' ']}
+      containerAriaLabel="Screenshot notifications"
+    />
+  );
+}
+
 /**
- * Captures a screenshot, downloads it, and drives the toast that reports it. The toast keeps the
- * PNG's object URL alive for its thumbnail and "Download again" until it goes away.
+ * Captures a screenshot, downloads it, and shows the toast that reports it. Each saved toast keeps
+ * the PNG's object URL alive for its thumbnail and "Download again" until it closes.
  */
 export function useScreenshotToast(client: DeviceClient, deviceName: string) {
-  const [toast, setToast] = useState<ScreenshotToastState | null>(null);
-  const current = useRef<ScreenshotToastState | null>(null);
-  const seq = useRef(0);
   const inFlight = useRef(false);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const deadline = useRef<number | null>(null);
-  const remaining = useRef<number | null>(null);
-  // Hovered or focused: the toast holds until the pointer and focus leave it, even when the
-  // dismiss timer has not started yet because the capture is still running.
-  const held = useRef(false);
-
-  const show = useCallback((next: ScreenshotToastState | null) => {
-    const prev = current.current;
-    if (prev?.phase === 'saved') URL.revokeObjectURL(prev.url);
-    current.current = next;
-    setToast(next);
-  }, []);
-
-  const clearTimer = useCallback(() => {
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = null;
-    deadline.current = null;
-  }, []);
-
-  const dismiss = useCallback(() => {
-    clearTimer();
-    remaining.current = null;
-    show(null);
-  }, [clearTimer, show]);
-
-  const schedule = useCallback(
-    (ms: number) => {
-      clearTimer();
-      remaining.current = ms;
-      if (held.current) return;
-      deadline.current = Date.now() + ms;
-      timer.current = setTimeout(dismiss, ms);
-    },
-    [clearTimer, dismiss],
-  );
-
-  const pause = useCallback(() => {
-    held.current = true;
-    if (!timer.current || deadline.current == null) return;
-    remaining.current = Math.max(0, deadline.current - Date.now());
-    clearTimer();
-  }, [clearTimer]);
-
-  const resume = useCallback(() => {
-    held.current = false;
-    if (remaining.current != null) schedule(remaining.current);
-  }, [schedule]);
+  const open = useRef(new Map<string | number, string | null>());
 
   useEffect(
     () => () => {
-      seq.current++;
-      clearTimer();
-      if (current.current?.phase === 'saved') URL.revokeObjectURL(current.current.url);
-      current.current = null;
+      for (const [id, url] of open.current) {
+        sonnerToast.dismiss(id);
+        if (url) URL.revokeObjectURL(url);
+      }
+      open.current.clear();
     },
-    [clearTimer],
+    [],
   );
 
-  const capture = useCallback(async () => {
+  return useCallback(async () => {
     if (inFlight.current) return;
     inFlight.current = true;
-    const id = ++seq.current;
-    clearTimer();
-    remaining.current = null;
-    show({ phase: 'capturing', id });
+    const id = sonnerToast.custom(() => <ScreenshotToast toast={{ phase: 'capturing' }} />, {
+      toasterId: TOASTER_ID,
+      duration: Infinity,
+    });
+    open.current.set(id, null);
+    const close = () => {
+      const url = open.current.get(id);
+      if (url) URL.revokeObjectURL(url);
+      open.current.delete(id);
+    };
     try {
       const shot = await client.screenshot();
-      if (seq.current !== id) return;
+      if (!open.current.has(id)) return;
       if (!shot) {
-        show({ phase: 'capture-failed', id });
-        schedule(FAILED_DISMISS_MS);
+        sonnerToast.custom(() => <ScreenshotToast toast={{ phase: 'capture-failed' }} />, {
+          id,
+          toasterId: TOASTER_ID,
+          duration: FAILED_DISMISS_MS,
+          onDismiss: close,
+          onAutoClose: close,
+        });
         return;
       }
       const url = URL.createObjectURL(shot.blob);
+      open.current.set(id, url);
       const filename = screenshotFilename(deviceName);
       download(url, filename);
-      show({ phase: 'saved', id, url, filename, artifact: shot.artifact });
-      schedule(artifactNotice(shot.artifact).dismissMs);
+      const { dismissMs } = artifactNotice(shot.artifact);
+      // Sonner holds the toast while it is hovered; keyboard focus holds it here.
+      const show = (duration: number) =>
+        sonnerToast.custom(
+          () => (
+            <ScreenshotToast
+              toast={{ phase: 'saved', url, artifact: shot.artifact }}
+              onDownloadAgain={() => download(url, filename)}
+              onFocusChange={(focused) => show(focused ? Infinity : dismissMs)}
+            />
+          ),
+          { id, toasterId: TOASTER_ID, duration, onDismiss: close, onAutoClose: close },
+        );
+      show(dismissMs);
     } finally {
       inFlight.current = false;
     }
-  }, [client, deviceName, clearTimer, schedule, show]);
-
-  const downloadAgain = useCallback(() => {
-    const t = current.current;
-    if (t?.phase === 'saved') download(t.url, t.filename);
-  }, []);
-
-  return { toast, capture, downloadAgain, dismiss, pause, resume };
+  }, [client, deviceName]);
 }
 
 const PILL_STYLE = {
@@ -163,28 +151,19 @@ const PILL_STYLE = {
 
 /**
  * The pill that reports a screenshot: a thumbnail, the capture state, and for a saved capture a
- * "Download again" action and the session artifact outcome. Hovering it holds it on screen.
+ * "Download again" action and the session artifact outcome.
  */
 export function ScreenshotToast({
   toast,
   onDownloadAgain,
-  onPause,
-  onResume,
+  onFocusChange,
 }: {
-  toast: ScreenshotToastState | null;
-  onDownloadAgain: () => void;
-  onPause: () => void;
-  onResume: () => void;
+  toast: ScreenshotToastState;
+  onDownloadAgain?: () => void;
+  onFocusChange?: (focused: boolean) => void;
 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  // The pointer and keyboard focus hold the toast independently; it resumes only when both have left.
-  const pointerIn = useRef(false);
-  const focusIn = useRef(false);
-  const release = () => {
-    if (!pointerIn.current && !focusIn.current) onResume();
-  };
-  if (!toast) return null;
 
   const title =
     toast.phase === 'capturing'
@@ -220,51 +199,40 @@ export function ScreenshotToast({
     </>
   );
 
+  if (toast.phase !== 'saved') {
+    return (
+      <div data-testid="screenshot-toast" style={PILL_STYLE}>
+        {body}
+      </div>
+    );
+  }
   return (
-    <div
-      role="status"
-      aria-live="polite"
+    <button
+      type="button"
       data-testid="screenshot-toast"
-      onMouseEnter={() => {
-        pointerIn.current = true;
-        onPause();
+      aria-label="Download screenshot again"
+      onClick={onDownloadAgain}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onFocus={(event) => {
+        setFocused(isFocusVisible(event));
+        onFocusChange?.(true);
       }}
-      onMouseLeave={() => {
-        pointerIn.current = false;
-        release();
+      onBlur={() => {
+        setFocused(false);
+        onFocusChange?.(false);
+      }}
+      style={{
+        ...PILL_STYLE,
+        backgroundColor: hovered ? bg.hover : bg.default,
+        boxShadow: focused ? `0 0 0 2px ${border.secondary}, ${shadow.lg}` : shadow.lg,
+        outline: 'none',
+        cursor: 'pointer',
+        transition: 'background-color 120ms ease',
       }}>
-      {toast.phase === 'saved' ? (
-        <button
-          type="button"
-          aria-label="Download screenshot again"
-          onClick={onDownloadAgain}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          onFocus={(event) => {
-            setFocused(isFocusVisible(event));
-            focusIn.current = true;
-            onPause();
-          }}
-          onBlur={() => {
-            setFocused(false);
-            focusIn.current = false;
-            release();
-          }}
-          style={{
-            ...PILL_STYLE,
-            backgroundColor: hovered ? bg.hover : bg.default,
-            boxShadow: focused ? `0 0 0 2px ${border.secondary}, ${shadow.lg}` : shadow.lg,
-            outline: 'none',
-            cursor: 'pointer',
-            transition: 'background-color 120ms ease',
-          }}>
-          {body}
-          <ChevronRightIcon style={{ marginLeft: 'auto', flexShrink: 0, color: text.secondary }} />
-        </button>
-      ) : (
-        <div style={PILL_STYLE}>{body}</div>
-      )}
-    </div>
+      {body}
+      <ChevronRightIcon style={{ marginLeft: 'auto', flexShrink: 0, color: text.secondary }} />
+    </button>
   );
 }
 

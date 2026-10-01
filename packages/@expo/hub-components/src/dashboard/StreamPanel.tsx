@@ -11,7 +11,7 @@ import { type Device } from './data';
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
 import { type DeviceFrameAssets } from './deviceFrame';
 import { PhoneFrame } from './PhoneFrame';
-import { ScreenshotToast, useScreenshotToast } from './ScreenshotToast';
+import { ScreenshotToaster, useScreenshotToast } from './ScreenshotToast';
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from './StreamControls';
 
 /** Space between the title pill and the top of the device frame. */
@@ -56,7 +56,7 @@ export function StreamPanel({
   /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
   deviceFrameAssets?: DeviceFrameAssets;
 }) {
-  const screenshot = useScreenshotToast(client, device.name);
+  const captureScreenshot = useScreenshotToast(client, device.name);
 
   return (
     <section
@@ -132,27 +132,12 @@ export function StreamPanel({
               onHome={() => client.pressButton('home')}
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
-              onSave={screenshot.capture}
+              onSave={captureScreenshot}
             />
           </div>
         </div>
       </div>
-      <div
-        style={{
-          position: 'fixed',
-          right: 16,
-          bottom: 16,
-          zIndex: 3,
-          width: 'max-content',
-          maxWidth: 'calc(100vw - 32px)',
-        }}>
-        <ScreenshotToast
-          toast={screenshot.toast}
-          onDownloadAgain={screenshot.downloadAgain}
-          onPause={screenshot.pause}
-          onResume={screenshot.resume}
-        />
-      </div>
+      <ScreenshotToaster />
     </section>
   );
 }
