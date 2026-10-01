@@ -2,5 +2,5 @@
 '@expo/hub-client': patch
 ---
 
-Label failed serve-sim screenshot events in the Events panel with the reason
-the screenshot was not captured or not saved to session artifacts.
+A failed iOS screenshot event in `events` now has the failure reason in its
+`message`, for example `Screenshot failed: simctl screenshot failed`.

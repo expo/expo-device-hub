@@ -14,8 +14,7 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 ### Added
 
-- Persist screenshot captures for EAS artifact upload when `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` is configured. A save failure is logged, writes a `.failed.json` record for the EAS worker to report, and the screenshot is still returned, but it is not yet recorded as a session event.
-
+- Save screenshot captures to `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` when it is set.
 - `GET /api/metrics` streams foreground app CPU, memory, and network samples as SSE.
 - Add `GET /api/apps/permissions`, `POST /api/apps/revoke`, and
   `POST /api/apps/reset-permissions` to list, revoke, and reset one package's
