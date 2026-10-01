@@ -82,6 +82,7 @@ import {
 } from './types';
 import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
+import { IOS_INPUT_UNAVAILABLE_MESSAGE, iosInputCloseError } from './ios-input-error';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { createPacedKeySender } from './paced-key-sender';
 import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config';
@@ -99,7 +100,6 @@ import {
   type WebRtcCodec,
   webRtcFallbackDecision,
 } from './webrtc-fallback';
-import { IOS_INPUT_UNAVAILABLE_MESSAGE, iosInputCloseError } from './ios-input-error';
 import {
   flushWsMessageQueue,
   type QueuedWsMessage,
@@ -108,6 +108,9 @@ import {
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
+// serve-sim accepts the upgrade before it admits an input socket, then closes
+// a refused socket at once. An open socket that outlives this was admitted.
+const INPUT_ADMISSION_MS = 1000;
 const ACTIVITY_STALE_MS = 8000;
 const noop = () => {};
 
@@ -270,7 +273,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
-  // serve-sim's rejection of the input socket (close 1013), kept until a socket opens.
+  // serve-sim's rejection of the input socket (close 1013), kept until a socket is admitted.
   const [inputSocketError, setInputSocketError] = useState<string | null>(null);
   // serve-sim's native HID setup failed; lasts until serve-sim restarts.
   const [inputUnavailable, setInputUnavailable] = useState(false);
@@ -934,7 +937,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!wsUrl) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let admissionTimer: ReturnType<typeof setTimeout> | null = null;
     hasWsConfigRef.current = false;
+    // Opening is not admission: a refused socket opens, then closes with 1013.
+    const admitInput = () => {
+      if (admissionTimer) clearTimeout(admissionTimer);
+      admissionTimer = null;
+      if (!cancelled) setInputSocketError(null);
+    };
 
     const connect = () => {
       if (cancelled) return;
@@ -947,7 +957,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
       ws.onopen = () => {
-        if (!cancelled) setInputSocketError(null);
+        if (!cancelled) admissionTimer = setTimeout(admitInput, INPUT_ADMISSION_MS);
         // Deliver whatever the user did while the socket was down.
         pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
         // The Hub owns keyboard forwarding while this socket is active. Keep the
@@ -958,6 +968,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (!cancelled) setHardwareKeyboardConnectedState(false);
       };
       ws.onmessage = (event) => {
+        // serve-sim sends nothing to a socket it refuses.
+        admitInput();
         if (!(event.data instanceof ArrayBuffer)) return;
         const bytes = new Uint8Array(event.data);
         if (bytes.length < 1 || bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
@@ -982,6 +994,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       ws.onclose = (event) => {
         if (cancelled) return;
         wsRef.current = null;
+        if (admissionTimer) clearTimeout(admissionTimer);
+        admissionTimer = null;
         const rejection = iosInputCloseError(event.code, event.reason);
         if (rejection) setInputSocketError(rejection);
         retryTimer = setTimeout(connect, RECONNECT_MS);
@@ -997,6 +1011,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
+      if (admissionTimer) clearTimeout(admissionTimer);
       try {
         wsRef.current?.close();
       } catch {}
