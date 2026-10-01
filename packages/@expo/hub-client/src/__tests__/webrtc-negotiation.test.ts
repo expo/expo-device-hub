@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, test } from "bun:test";
 
 import {
   closeWebRtcSession,
@@ -7,49 +7,74 @@ import {
   WebRtcSignalingTimeoutError,
 } from '../webrtc-negotiation.js';
 
-describe('WebRTC offer negotiation', () => {
-  test('returns a lasting named 409 without retrying it', async () => {
+describe("WebRTC offer negotiation", () => {
+  test("returns a lasting named 409 without retrying it", async () => {
     let requests = 0;
     const response = await postWebRtcOffer({
-      url: 'https://example.test/webrtc/offer', body: '{}',
-      requestTimeoutMs: 100, busyRetryIntervalMs: 0, busyRetryCount: 1,
-      fetchImpl: async () => { requests++; return Response.json({ error: 'no_panel_streams' }, { status: 409 }); },
+      url: "https://example.test/webrtc/offer",
+      body: "{}",
+      requestTimeoutMs: 100,
+      busyRetryIntervalMs: 0,
+      busyRetryCount: 1,
+      fetchImpl: async () => {
+        requests++;
+        return Response.json({ error: "no_panel_streams" }, { status: 409 });
+      },
     });
     expect(response.status).toBe(409);
-    expect(await response.json()).toEqual({ error: 'no_panel_streams' });
+    expect(await response.json()).toEqual({ error: "no_panel_streams" });
     expect(requests).toBe(1);
   });
 
-  test('the signaling deadline also bounds a stalled 409 body', async () => {
-    await expect(postWebRtcOffer({
-      url: 'https://example.test/webrtc/offer', body: '{}',
-      requestTimeoutMs: 5, busyRetryIntervalMs: 0, busyRetryCount: 1,
-      fetchImpl: async (_url, init) => new Response(new ReadableStream({
-        start(controller) { init?.signal?.addEventListener('abort', () => controller.error(init.signal?.reason), { once: true }); },
-      }), { status: 409 }),
-    })).rejects.toBeInstanceOf(WebRtcSignalingTimeoutError);
+  test("the signaling deadline also bounds a stalled 409 body", async () => {
+    await expect(
+      postWebRtcOffer({
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
+        requestTimeoutMs: 5,
+        busyRetryIntervalMs: 0,
+        busyRetryCount: 1,
+        fetchImpl: async (_url, init) =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                init?.signal?.addEventListener(
+                  "abort",
+                  () => controller.error(init.signal?.reason),
+                  { once: true },
+                );
+              },
+            }),
+            { status: 409 },
+          ),
+      }),
+    ).rejects.toBeInstanceOf(WebRtcSignalingTimeoutError);
   });
 
-  test('ordinary close aborts a server that never replies', async () => {
-    let signal: AbortSignal | null = null;
+  test("ordinary close aborts a server that never replies", async () => {
+    const signals: AbortSignal[] = [];
     await closeWebRtcSession({
-      url: 'https://example.test/webrtc/close', sessionId: 'session-1',
+      url: "https://example.test/webrtc/close",
+      sessionId: "session-1",
       fetchImpl: async (_url, init) => {
-        signal = init?.signal ?? null;
-        if (!signal) throw new Error('Missing close deadline');
-        await new Promise<void>((_resolve, reject) => signal?.addEventListener('abort', () => reject(signal?.reason), { once: true }));
+        const signal = init?.signal;
+        if (!signal) throw new Error("Missing close deadline");
+        signals.push(signal);
+        await new Promise<void>((_resolve, reject) =>
+          signal?.addEventListener("abort", () => reject(signal?.reason), { once: true }),
+        );
         return new Response(null);
       },
     });
-    expect(signal?.aborted).toBe(true);
+    expect(signals[0]?.aborted).toBe(true);
   });
 
-  test('uses a fresh deadline after a busy response', async () => {
+  test("uses a fresh deadline after a busy response", async () => {
     const signals: AbortSignal[] = [];
     let requests = 0;
     const response = await postWebRtcOffer({
-      url: 'https://example.test/webrtc/offer',
-      body: '{}',
+      url: "https://example.test/webrtc/offer",
+      body: "{}",
       requestTimeoutMs: 100,
       busyRetryIntervalMs: 0,
       busyRetryCount: 1,
@@ -64,11 +89,11 @@ describe('WebRTC offer negotiation', () => {
     expect(signals[0]).not.toBe(signals[1]);
   });
 
-  test('reports exhausted offer contention', async () => {
+  test("reports exhausted offer contention", async () => {
     await expect(
       postWebRtcOffer({
-        url: 'https://example.test/webrtc/offer',
-        body: '{}',
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
         requestTimeoutMs: 100,
         busyRetryIntervalMs: 0,
         busyRetryCount: 1,
@@ -77,17 +102,17 @@ describe('WebRTC offer negotiation', () => {
     ).rejects.toBeInstanceOf(WebRtcSignalingBusyError);
   });
 
-  test('reports an individual signaling timeout', async () => {
+  test("reports an individual signaling timeout", async () => {
     await expect(
       postWebRtcOffer({
-        url: 'https://example.test/webrtc/offer',
-        body: '{}',
+        url: "https://example.test/webrtc/offer",
+        body: "{}",
         requestTimeoutMs: 5,
         busyRetryIntervalMs: 0,
         busyRetryCount: 0,
         fetchImpl: async (_url, init) => {
           await new Promise<void>((_resolve, reject) => {
-            init?.signal?.addEventListener('abort', () => reject(init.signal?.reason), {
+            init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), {
               once: true,
             });
           });
@@ -97,12 +122,12 @@ describe('WebRTC offer negotiation', () => {
     ).rejects.toBeInstanceOf(WebRtcSignalingTimeoutError);
   });
 
-  test('uses a beacon to release a session during pagehide', async () => {
+  test("uses a beacon to release a session during pagehide", async () => {
     let fetched = false;
     const beaconBodies: Blob[] = [];
     await closeWebRtcSession({
-      url: 'https://example.test/webrtc/close',
-      sessionId: 'session-1',
+      url: "https://example.test/webrtc/close",
+      sessionId: "session-1",
       keepalive: true,
       sendBeacon: (_url, body) => {
         beaconBodies.push(body as Blob);
@@ -114,7 +139,7 @@ describe('WebRTC offer negotiation', () => {
       },
     });
     expect(fetched).toBe(false);
-    expect(await beaconBodies[0]!.text()).toBe(JSON.stringify({ sessionId: 'session-1' }));
+    expect(await beaconBodies[0]!.text()).toBe(JSON.stringify({ sessionId: "session-1" }));
   });
 
   // A beacon cannot set a header, so only it may carry the token in its URL. Proxy logs record URLs.
