@@ -85,9 +85,22 @@ The stream and input URLs then use that server. Start serve-sim with
 `--cors-origin http://localhost:8081`. Without it, the exec-ws socket closes, and logs,
 events, metrics and UI requests stop, even when both servers run on `localhost`.
 
-hub-client does not send a serve-sim access token yet. A serve-sim server started with
-`--require-token` answers these requests with 401. EAS Simulator Preview sessions always
-use a token, so embedding them needs the client token support which is planned.
+A serve-sim started with `--require-token`, such as an EAS Simulator Preview session, needs
+its session token on every request. Pass it as `token`:
+
+```tsx
+const ios = useIosDeviceClient({
+  baseUrl: 'https://sim.example.test/preview/session',
+  device: udid,
+  streamMode: 'mjpeg',
+  token,
+});
+```
+
+The client sends it as `Authorization: Bearer <token>` and as a `serve-sim.token.<token>`
+WebSocket subprotocol. It adds `?token=` only where a browser cannot set a header: the MJPEG
+`<img>`, the app-state `EventSource`, and the WebRTC close URL that `sendBeacon` posts. The
+token does not replace `--cors-origin`. Only the iOS client sends the token so far.
 
 If the whole Device Hub is remote, pass its public mount to `useActiveDeviceClient`, for
 example `https://hub.example.test/device-hub`.

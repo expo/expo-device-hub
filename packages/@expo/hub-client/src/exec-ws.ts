@@ -57,11 +57,12 @@ function execWsRequest(
   execToken: string,
   body: Record<string, unknown>,
   timeoutMs: number,
+  protocols?: string[],
 ): Promise<ExecReply> {
   return new Promise((resolve, reject) => {
     let ws: WebSocket;
     try {
-      ws = new WebSocket(execWsUrl);
+      ws = new WebSocket(execWsUrl, protocols);
     } catch (err) {
       reject(err);
       return;
@@ -110,10 +111,18 @@ export async function runHostAction(
   execToken: string,
   action: string,
   params?: HostActionParams,
+  /** Subprotocols that carry the session token of a gated serve-sim (see `./session-token`). */
+  protocols?: string[],
 ): Promise<HostActionResult> {
   let reply: ExecReply;
   try {
-    reply = await execWsRequest(execWsUrl, execToken, { action, params }, ACTION_TIMEOUT_MS);
+    reply = await execWsRequest(
+      execWsUrl,
+      execToken,
+      { action, params },
+      ACTION_TIMEOUT_MS,
+      protocols,
+    );
   } catch (err) {
     if (err instanceof Error && isActionRejection(err.message)) {
       return { stdout: '', stderr: err.message, exitCode: 1 };
@@ -143,8 +152,16 @@ export async function hostUiRequest(
   execWsUrl: string,
   execToken: string,
   payload: UiRequestPayload,
+  /** Subprotocols that carry the session token of a gated serve-sim (see `./session-token`). */
+  protocols?: string[],
 ): Promise<UiRequestResult> {
-  const reply = await execWsRequest(execWsUrl, execToken, { ui: payload }, UI_TIMEOUT_MS);
+  const reply = await execWsRequest(
+    execWsUrl,
+    execToken,
+    { ui: payload },
+    UI_TIMEOUT_MS,
+    protocols,
+  );
   const result: UiRequestResult = {};
   if (reply.status !== undefined) result.status = reply.status;
   if (reply.ok !== undefined) result.ok = reply.ok;

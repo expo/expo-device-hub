@@ -83,6 +83,7 @@ import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { createPacedKeySender } from './paced-key-sender';
 import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config';
+import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
 import { useAccessibility } from './useAccessibility';
@@ -241,8 +242,10 @@ interface PreviewApi {
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
+  const { baseUrl, enabled = true, device: targetDevice = null, streamMode, token = null } = options;
   const active = enabled && !!baseUrl;
+  const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
+  const socketProtocols = useMemo(() => sessionTokenProtocols('ios', token), [token]);
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -423,13 +426,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!c || !c.execWsUrl || !c.execToken || !c.device) return;
       const previous = hardwareKeyboardConnected;
       setHardwareKeyboardConnectedState(connected);
-      void hostUiRequest(c.execWsUrl, c.execToken, {
-        device: c.device,
-        option: UI_OPTION_HARDWARE_KEYBOARD,
-        value: connected ? 'on' : 'off',
-      }).catch(() => setHardwareKeyboardConnectedState(previous));
+      void hostUiRequest(
+        c.execWsUrl,
+        c.execToken,
+        {
+          device: c.device,
+          option: UI_OPTION_HARDWARE_KEYBOARD,
+          value: connected ? 'on' : 'off',
+        },
+        socketProtocols,
+      ).catch(() => setHardwareKeyboardConnectedState(previous));
     },
-    [config, hardwareKeyboardConnected],
+    [config, hardwareKeyboardConnected, socketProtocols],
   );
 
   const toggleSoftwareKeyboard = useCallback(() => {
@@ -472,8 +480,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
     const udid = config?.device ?? targetDevice;
-    return fetchScreenshot(baseUrl, udid);
-  }, [baseUrl, targetDevice, config]);
+    return fetchScreenshot(baseUrl, udid, sessionFetch);
+  }, [baseUrl, targetDevice, config, sessionFetch]);
 
   // Apply any serve-sim UI option over its authenticated exec-ws request
   // channel. The state is optimistic so the selected pill/switch responds at
@@ -493,15 +501,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (key === 'appearance' && (value === 'light' || value === 'dark')) {
         setAppearanceState(value);
       }
-      void hostUiRequest(execWsUrl, execToken, {
-        device,
-        option: key,
-        value,
-      })
+      void hostUiRequest(execWsUrl, execToken, { device, option: key, value }, socketProtocols)
         .catch(async () => {
           if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
           try {
-            const result = await hostUiRequest(execWsUrl, execToken, { device });
+            const result = await hostUiRequest(execWsUrl, execToken, { device }, socketProtocols);
             if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
             const authoritative: DeviceSettings = {};
             for (const [nextKey, nextValue] of Object.entries(result.status ?? {})) {
@@ -527,7 +531,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [config],
+    [config, socketProtocols],
   );
 
   const setAppearance = useCallback(
@@ -586,9 +590,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             ? middlewareEndpointForBrowser(path, middlewareUrl, basePath)
             : new URL(path, middlewareUrl).toString()
           : null;
+      const appStateUrl = absoluteMiddlewareUrl(c.appStateEndpoint);
       return {
         url: c.url!,
-        streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
+        // An <img> and an EventSource cannot set a header.
+        streamUrl: withSessionTokenQuery(c.streamUrl ?? `${c.url}/stream.mjpeg`, token),
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         device: c.device ?? null,
         execWsUrl: toWs(absoluteMiddlewareUrl(`${basePath}/exec-ws`)!),
@@ -596,7 +602,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         // These are subscription paths inside exec-ws, not browser URLs. The
         // server validates them against its internal middleware mount.
         logsPath: c.logsEndpoint ?? null,
-        appStateUrl: absoluteMiddlewareUrl(c.appStateEndpoint),
+        appStateUrl: appStateUrl && withSessionTokenQuery(appStateUrl, token),
         eventsPath: c.eventLogEventsEndpoint ?? null,
         metricsPath: c.metricsEndpoint ?? null,
         axUrl: absoluteMiddlewareUrl(c.axEndpoint),
@@ -623,7 +629,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const resolve = async () => {
       if (cancelled) return;
       try {
-        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(3000) });
+        const res = await sessionFetch(apiUrl, { signal: AbortSignal.timeout(3000) });
         if (!res.ok) {
           if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
           return;
@@ -643,7 +649,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         // because the user selected this device. Then poll until it attaches.
         if (targetDevice && !startRequested) {
           startRequested = true;
-          void startIosHelper(targetDevice, baseUrl).catch(() => {});
+          void startIosHelper(targetDevice, baseUrl, sessionFetch).catch(() => {});
         }
         if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
       } catch {
@@ -656,7 +662,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [active, baseUrl, targetDevice, setWebRtcCodec]);
+  }, [active, baseUrl, targetDevice, setWebRtcCodec, sessionFetch, token]);
 
   const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
   const onAvccFrame = useCallback((frameDelta = 1) => {
@@ -681,11 +687,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setStreamStatsEnabled,
   } = useWebRtcStream({
     offerUrl: config ? `${config.url}/webrtc/offer` : '',
-    closeUrl: config ? `${config.url}/webrtc/close` : '',
+    closeUrl: config ? withSessionTokenQuery(`${config.url}/webrtc/close`, token) : '',
     statsUrl: config ? `${config.url}/webrtc/stats` : '',
     enabled: active && useWebRtc && !!config,
     codec: activeWebRtcCodec,
     iceServers: config?.webRtcIceServers,
+    fetchImpl: sessionFetch,
   });
   const handledWebRtcFailureRef = useRef<string | null>(null);
 
@@ -783,6 +790,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     url: config?.url ?? '',
     enabled: active && useAvcc && !!config,
     canvasRef,
+    fetchImpl: sessionFetch,
     onFirstFrame: () => {
       setStatus('streaming');
       setError(null);
@@ -870,7 +878,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (cancelled) return;
       let ws: WebSocket;
       try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, socketProtocols);
       } catch {
         return;
       }
@@ -929,7 +937,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       pendingWsRef.current = [];
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, sendWs]);
+  }, [wsUrl, sendWs, socketProtocols]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
@@ -943,8 +951,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const axUrl = config?.axUrl ?? null;
 
   const accessibilityLoader = useMemo<AccessibilityLoader | null>(
-    () => (axUrl ? (signal) => loadIosAccessibility(axUrl, signal) : null),
-    [axUrl],
+    () => (axUrl ? (signal) => loadIosAccessibility(axUrl, signal, sessionFetch) : null),
+    [axUrl, sessionFetch],
   );
   const accessibilityState = useAccessibility(accessibilityLoader);
 
@@ -953,9 +961,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     () =>
       execWsUrl && execToken
         ? (action: string, params?: Parameters<typeof runHostAction>[3]) =>
-            runHostAction(execWsUrl, execToken, action, params)
+            runHostAction(execWsUrl, execToken, action, params, socketProtocols)
         : null,
-    [execWsUrl, execToken],
+    [execWsUrl, execToken, socketProtocols],
   );
 
   const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
@@ -1076,7 +1084,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (cancelled) return;
       buffers.clear();
       try {
-        ws = new WebSocket(execWsUrl);
+        ws = new WebSocket(execWsUrl, socketProtocols);
       } catch {
         markInterrupted();
         retryTimer = setTimeout(connect, RECONNECT_MS);
@@ -1141,6 +1149,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     eventsPath,
     metricsPath,
     deviceUdid,
+    socketProtocols,
   ]);
 
   // ── Simulator settings (best-effort) — one status request hydrates every
@@ -1154,7 +1163,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
-    hostUiRequest(execWsUrl, execToken, { device: deviceUdid })
+    hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols)
       .then((res) => {
         if (cancelled) return;
         const next: DeviceSettings = {};
@@ -1178,7 +1187,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
     };
-  }, [execWsUrl, execToken, deviceUdid]);
+  }, [execWsUrl, execToken, deviceUdid, socketProtocols]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
@@ -1193,6 +1202,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       initialSettings: normalizedInitialStreamSettings,
       parse: parseIosStreamSettings,
       toPatch: iosStreamSettingsPatch,
+      fetchImpl: sessionFetch,
     },
   );
 
@@ -1262,7 +1272,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
-    fetch(gridApiUrl, { signal: AbortSignal.timeout(3000) })
+    sessionFetch(gridApiUrl, { signal: AbortSignal.timeout(3000) })
       .then((r) => r.json())
       .then((data: { devices?: Array<Record<string, unknown>> }) => {
         if (cancelled || !Array.isArray(data.devices) || data.devices.length === 0) return;
@@ -1282,7 +1292,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
     };
-  }, [gridApiUrl]);
+  }, [gridApiUrl, sessionFetch]);
 
   return {
     platform: 'ios',

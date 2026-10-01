@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from 'react';
 
 import { AvccDemuxer, avcCodecString, isAvccSupported, type AvccChunkType } from './avcc';
+import { type SessionFetch } from './session-token';
 
 export interface UseAvccStreamOptions {
   /** Base serve-sim helper URL, without `/stream.avcc`. */
@@ -13,6 +14,8 @@ export interface UseAvccStreamOptions {
   onResize?: (width: number, height: number) => void;
   onError?: (message: string) => void;
   onDecoderError?: () => void;
+  /** Sends a gated backend's session token; plain `fetch` by default. */
+  fetchImpl?: SessionFetch;
 }
 
 const RETRY_DELAY_MS = 1_000;
@@ -29,6 +32,7 @@ export function useAvccStream({
   onResize,
   onError,
   onDecoderError,
+  fetchImpl = fetch,
 }: UseAvccStreamOptions): void {
   const callbacks = useRef({
     onFirstFrame,
@@ -166,7 +170,7 @@ export function useAvccStream({
     const read = async () => {
       demuxer.reset();
       try {
-        const response = await fetch(`${url}/stream.avcc`, { signal: controller.signal });
+        const response = await fetchImpl(`${url}/stream.avcc`, { signal: controller.signal });
         if (!response.ok) throw new Error(`H.264 stream failed (${response.status})`);
         const reader = response.body?.getReader();
         if (!reader) return;
@@ -197,5 +201,5 @@ export function useAvccStream({
       }
       decoder = null;
     };
-  }, [url, enabled, canvasRef]);
+  }, [url, enabled, canvasRef, fetchImpl]);
 }
