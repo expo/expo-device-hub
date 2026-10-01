@@ -21,7 +21,7 @@ export function parseAndroidFix(value: unknown): DeviceGeoFix | null {
 
 /** GET /api/location. Null when the read could not be answered, so the caller can retry. */
 export async function readAndroidLocation(
-  fetchImpl: typeof fetch,
+  fetchImpl: (input: string, init?: RequestInit) => Promise<Response>,
   url: string,
   signal?: AbortSignal,
 ): Promise<DeviceLocationRead | null> {
@@ -38,7 +38,7 @@ export async function readAndroidLocation(
 }
 
 export async function writeAndroidLocation(
-  fetchImpl: typeof fetch,
+  fetchImpl: (input: string, init?: RequestInit) => Promise<Response>,
   url: string,
   fix: DeviceGeoFix,
 ): Promise<DeviceGeoFix> {

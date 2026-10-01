@@ -529,11 +529,11 @@ export interface DeviceConnectionOptions {
    */
   streamMode: DeviceStreamMode;
   /**
-   * Session token of a serve-sim started with `--require-token`, such as an EAS
-   * Simulator Preview session, for a page on another origin. The client sends it
-   * as a bearer header, a WebSocket subprotocol, and `?token=` where a browser
-   * cannot set a header. A page serve-sim served itself can omit it: its cookie
-   * covers every request. Only `useIosDeviceClient` sends it so far.
+   * Session token of a Hub, serve-sim, or serve-emu started with `--require-token`,
+   * such as an EAS Simulator Preview session, for a page on another origin. The
+   * client sends it as a bearer header, a WebSocket subprotocol, and `?token=`
+   * where a browser cannot set a header. A page the server served itself can omit
+   * it: its cookie covers every request.
    */
   token?: string | null;
 }

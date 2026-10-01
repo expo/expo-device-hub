@@ -97,10 +97,40 @@ const ios = useIosDeviceClient({
 });
 ```
 
-The token does not replace `--cors-origin`. Only the iOS client sends the token so far.
+The token does not replace `--cors-origin`.
 
 If the whole Device Hub is remote, pass its public mount to `useActiveDeviceClient`, for
 example `https://hub.example.test/device-hub`.
+
+## Connect to a token-gated Hub
+
+A Hub started with `npx expo-device-hub --require-token` needs its session token on every
+request. The Hub dashboard itself needs nothing extra: opening the link with the token gives
+the browser a cookie that covers every request. A page on another origin has no such cookie,
+so pass the token to the hook:
+
+```tsx
+const client = useActiveDeviceClient(
+  { platform: 'ios', device: udid, streamMode: 'mjpeg' },
+  'http://127.0.0.1:3400',
+  { token },
+);
+```
+
+The platform hooks take the same `token` option. The client sends it as
+`Authorization: Bearer <token>`, as a `serve-sim.token.<token>` or `serve-emu.token.<token>`
+WebSocket subprotocol, and as `?token=` only where a browser cannot set a header (the MJPEG
+`<img>`, `EventSource`).
+
+The token does not replace CORS, and the Hub has no option to allow other origins yet. So from
+another origin, only part of the client works today:
+
+- **Android:** the H.264 stream and the input socket work from any origin. The Hub sets no
+  allowed origins for serve-emu, so the other requests fail, WebRTC included.
+- **iOS:** the client reads serve-sim's `/api` first, and serve-sim lets only loopback origins
+  read its responses. So the client works only from a loopback page, such as one on
+  `localhost`. There, logs, events, metrics, device settings, location, and app actions still
+  fail: they use serve-sim's control socket, which refuses every other origin.
 
 ## Call device controls
 

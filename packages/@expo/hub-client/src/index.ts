@@ -25,7 +25,11 @@ export {
 export { displayScreen, streamGeometry } from './orientation';
 export { useIosDeviceClient } from './useIosDevice';
 export { useAndroidDeviceClient } from './useAndroidDevice';
-export { useActiveDeviceClient, type ActiveDeviceTarget } from './useActiveDeviceClient';
+export {
+  useActiveDeviceClient,
+  type ActiveDeviceClientOptions,
+  type ActiveDeviceTarget,
+} from './useActiveDeviceClient';
 export { useCoarsePointer } from './useCoarsePointer';
 export { isVisualViewportKeyboardRaised, readNativeKeyboardRaised } from './viewport-keyboard';
 export {

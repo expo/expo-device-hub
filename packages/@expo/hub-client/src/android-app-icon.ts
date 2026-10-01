@@ -2,7 +2,7 @@ import { deviceApiUrl } from './android-api-url';
 import { asRecord } from './app-permissions';
 import { type ForegroundApp } from './types';
 
-type FetchImpl = typeof fetch;
+type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
 
 /** Mirrors `APP_ICON_MIME_TYPES` in serve-emu's API contracts. */
 const APP_ICON_MIME_TYPES = ['image/png', 'image/webp', 'image/jpeg', 'image/gif'];
