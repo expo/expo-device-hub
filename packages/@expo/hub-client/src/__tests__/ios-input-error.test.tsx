@@ -195,14 +195,14 @@ test('retired callbacks and paced keys never cross device identity', async () =>
   await act(async () => a.onmessage?.({data: Uint8Array.of(0x83).buffer}));
   const old = client();
   await act(async () => {
-    old.sendKeyEvents(Array.from({length: 100}, (_, i) => ({type: i % 2 ? 'up' as const : 'down' as const, usage: 4})));
+    old.sendKeyEvents!(Array.from({length: 100}, (_, i) => ({type: i % 2 ? 'up' as const : 'down' as const, usage: 4})));
     changeDevice('DEVICE-B');
   });
   const b = helperSockets().find(socket => socket.url.includes('DEVICE-B'))!; b.readyState = 1;
   await act(async () => b.onmessage?.({data: Uint8Array.of(0x83).buffer}));
   await act(async () => {old.sendKey({phase:'down',code:'KeyA',key:'a',repeat:false}); await new Promise(resolve => setTimeout(resolve,30));});
   expect(b.sent.filter(data => new Uint8Array(data)[0] === 6)).toHaveLength(0);
-  await act(async () => client().sendKey({phase:'down',code:'KeyB',key:'b',repeat:false}));
+  await act(async () => {client().sendKey({phase:'down',code:'KeyB',key:'b',repeat:false});});
   expect(b.sent.filter(data => new Uint8Array(data)[0] === 6)).toHaveLength(1);
 
 });
