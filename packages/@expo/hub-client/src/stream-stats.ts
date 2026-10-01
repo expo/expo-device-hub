@@ -435,6 +435,8 @@ function emptyStats(): DeviceStreamStats {
   };
 }
 
+export type SubscribeClientStats = (listener: (report: RTCStatsReport, at: number) => void) => () => void;
+
 /** Own the single stats poll for a WebRTC peer so UI remounts do not reset history. */
 export function useWebRtcStreamStats(
   connection: WebRtcStatsConnection | null,
@@ -442,6 +444,7 @@ export function useWebRtcStreamStats(
   presentedFrames: Readonly<{ current: number }>,
   enabled: boolean,
   fetchImpl: SessionFetch = fetch,
+  subscribeClientStats?: SubscribeClientStats,
 ): DeviceStreamStats | null {
   const [stats, setStats] = useState<DeviceStreamStats | null>(null);
   const previousRef = useRef<WebRtcClientCounters | null>(null);
@@ -510,32 +513,35 @@ export function useWebRtcStreamStats(
       }
     };
 
+    const acceptClientReport = (report: RTCStatsReport, atMs: number) => {
+      if (stopped) return;
+      const presentedFrameCount = presentedFrames.current;
+      const counters = readWebRtcClientCounters(report, atMs, presentedFrameCount);
+      if (counters === null) return;
+      const client = describeWebRtcClientCounters(previousRef.current, counters);
+      previousRef.current = counters;
+      lastClientSampleAtRef.current = atMs;
+      const next: DeviceStreamStatsSample = {
+        atMs,
+        serverFps: serverStats.serverFps,
+        ...client,
+      };
+      setStats((current) => {
+        const retained = current ?? emptyStats();
+        return {
+          ...retained,
+          samples: appendStreamStatsSample(retained.samples, next),
+          stale: false,
+        };
+      });
+    };
+
     const sampleClient = async () => {
-      if (clientPolling || stopped) return;
+      if (subscribeClientStats || clientPolling || stopped) return;
       clientPolling = true;
       try {
         const report = await readStatsBeforeDeadline(connection.peerConnection);
-        if (stopped || report === null) return;
-        const atMs = Date.now();
-        const presentedFrameCount = presentedFrames.current;
-        const counters = readWebRtcClientCounters(report, atMs, presentedFrameCount);
-        if (counters === null) return;
-        const client = describeWebRtcClientCounters(previousRef.current, counters);
-        previousRef.current = counters;
-        lastClientSampleAtRef.current = atMs;
-        const next: DeviceStreamStatsSample = {
-          atMs,
-          serverFps: serverStats.serverFps,
-          ...client,
-        };
-        setStats((current) => {
-          const retained = current ?? emptyStats();
-          return {
-            ...retained,
-            samples: appendStreamStatsSample(retained.samples, next),
-            stale: false,
-          };
-        });
+        if (report !== null) acceptClientReport(report, Date.now());
       } catch {
         // Closing peer connections reject getStats. The watchdog marks retained data stale.
       } finally {
@@ -543,6 +549,7 @@ export function useWebRtcStreamStats(
       }
     };
 
+    const unsubscribe = subscribeClientStats?.(acceptClientReport);
     void sampleServer();
     void sampleClient();
     const pollTimer = window.setInterval(() => {
@@ -565,11 +572,12 @@ export function useWebRtcStreamStats(
 
     return () => {
       stopped = true;
+      unsubscribe?.();
       serverController?.abort();
       window.clearInterval(pollTimer);
       window.clearInterval(staleTimer);
     };
-  }, [connection, enabled, presentedFrames, statsUrl, fetchImpl]);
+  }, [connection, enabled, presentedFrames, statsUrl, fetchImpl, subscribeClientStats]);
 
   return stats;
 }
