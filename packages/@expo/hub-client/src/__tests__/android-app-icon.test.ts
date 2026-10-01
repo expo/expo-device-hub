@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   carryForwardAppIcon,
   fetchAndroidAppIcon,
-  parseAndroidAppIcon,
+  parseAppIconResponse,
 } from '../android-app-icon';
 
 const BASE = 'http://localhost:3400/vendor/serve-emu';
@@ -70,10 +70,10 @@ describe('Android app icon', () => {
 
 });
 
-describe('parseAndroidAppIcon', () => {
+describe('parseAppIconResponse', () => {
   test('accepts every MIME type the backend can return', () => {
     for (const mimeType of ['image/png', 'image/webp', 'image/jpeg', 'image/gif']) {
-      expect(parseAndroidAppIcon({ ok: true, icon: { mimeType, data: 'aWNvbg==' } })).toBe(
+      expect(parseAppIconResponse({ ok: true, icon: { mimeType, data: 'aWNvbg==' } })).toBe(
         `data:${mimeType};base64,aWNvbg==`,
       );
     }
@@ -81,29 +81,29 @@ describe('parseAndroidAppIcon', () => {
 
   test('rejects a MIME type outside that set instead of building its data URL', () => {
     expect(() =>
-      parseAndroidAppIcon({ ok: true, icon: { mimeType: 'image/svg+xml', data: 'PHN2Zz4=' } }),
+      parseAppIconResponse({ ok: true, icon: { mimeType: 'image/svg+xml', data: 'PHN2Zz4=' } }),
     ).toThrow('mimeType is invalid');
     expect(() =>
-      parseAndroidAppIcon({ ok: true, icon: { mimeType: 'text/html;base64,x', data: 'eA==' } }),
+      parseAppIconResponse({ ok: true, icon: { mimeType: 'text/html;base64,x', data: 'eA==' } }),
     ).toThrow('mimeType is invalid');
   });
 
   test('rejects a payload that is not a success envelope', () => {
-    expect(() => parseAndroidAppIcon(null)).toThrow('response is invalid');
-    expect(() => parseAndroidAppIcon([{ ok: true, icon: null }])).toThrow('response is invalid');
-    expect(() => parseAndroidAppIcon({ ok: false, error: 'nope' })).toThrow('response is invalid');
+    expect(() => parseAppIconResponse(null)).toThrow('response is invalid');
+    expect(() => parseAppIconResponse([{ ok: true, icon: null }])).toThrow('response is invalid');
+    expect(() => parseAppIconResponse({ ok: false, error: 'nope' })).toThrow('response is invalid');
   });
 
   test('rejects a missing or malformed icon member', () => {
-    expect(() => parseAndroidAppIcon({ ok: true })).toThrow('must be an object');
-    expect(() => parseAndroidAppIcon({ ok: true, icon: 'data:image/png;base64,aWNvbg==' })).toThrow(
+    expect(() => parseAppIconResponse({ ok: true })).toThrow('must be an object');
+    expect(() => parseAppIconResponse({ ok: true, icon: 'data:image/png;base64,aWNvbg==' })).toThrow(
       'must be an object',
     );
-    expect(() => parseAndroidAppIcon({ ok: true, icon: { mimeType: 'image/png' } })).toThrow(
+    expect(() => parseAppIconResponse({ ok: true, icon: { mimeType: 'image/png' } })).toThrow(
       'data is invalid',
     );
     expect(() =>
-      parseAndroidAppIcon({ ok: true, icon: { mimeType: 'image/png', data: '' } }),
+      parseAppIconResponse({ ok: true, icon: { mimeType: 'image/png', data: '' } }),
     ).toThrow('data is invalid');
   });
 });
