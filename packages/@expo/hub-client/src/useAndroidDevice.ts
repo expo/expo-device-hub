@@ -922,7 +922,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setStreamStatsEnabled,
   } = useWebRtcStream({
     offerUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/offer', targetDevice) : '',
-    closeUrl: baseUrl
+    closeUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/close', targetDevice) : '',
+    closeBeaconUrl: baseUrl
       ? withSessionTokenQuery(deviceApiUrl(baseUrl, '/webrtc/close', targetDevice), token)
       : '',
     statsUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/stats', targetDevice) : '',
