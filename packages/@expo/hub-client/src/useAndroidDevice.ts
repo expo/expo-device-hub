@@ -431,11 +431,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // first available, matching the stream).
   const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
-    return fetchScreenshot(
-      `${apiUrl(baseUrl, '/api/screenshot')}${
-        targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
-      }`,
-    );
+    return fetchScreenshot(baseUrl, targetDevice);
   }, [baseUrl, targetDevice]);
 
   // Device-wide options use the same GET/POST contracts as serve-emu's own UI.

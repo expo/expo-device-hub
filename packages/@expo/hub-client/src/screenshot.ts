@@ -1,12 +1,17 @@
+import { apiUrl } from './android-api-url';
 import { type ScreenshotArtifact, type ScreenshotCapture } from './types';
 
 type ScreenshotFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
-/** Capture a still PNG through a screenshot endpoint, along with whether it reached the session artifacts. */
+/** Capture a still PNG through serve-sim's or serve-emu's POST-only screenshot endpoint, along with whether it reached the session artifacts. */
 export async function fetchScreenshot(
-  url: string,
+  baseUrl: string,
+  device?: string | null,
   fetchImpl: ScreenshotFetch = fetch,
 ): Promise<ScreenshotCapture | null> {
+  const url = `${apiUrl(baseUrl, '/api/screenshot')}${
+    device ? `?device=${encodeURIComponent(device)}` : ''
+  }`;
   try {
     const response = await fetchImpl(url, { method: 'POST', cache: 'no-store' });
     if (!response.ok) return null;
@@ -14,19 +19,6 @@ export async function fetchScreenshot(
   } catch {
     return null;
   }
-}
-
-/** Capture a still PNG through serve-sim's POST-only screenshot endpoint. */
-export function fetchIosScreenshot(
-  baseUrl: string,
-  device?: string | null,
-  fetchImpl: ScreenshotFetch = fetch,
-): Promise<ScreenshotCapture | null> {
-  const base = baseUrl.replace(/\/$/, '');
-  return fetchScreenshot(
-    `${base}/api/screenshot${device ? `?device=${encodeURIComponent(device)}` : ''}`,
-    fetchImpl,
-  );
 }
 
 function screenshotArtifact(headers: Headers): ScreenshotArtifact | null {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fetchIosScreenshot, fetchScreenshot } from '../screenshot';
+import { fetchScreenshot } from '../screenshot';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 
@@ -9,7 +9,7 @@ function pngResponse(headers: Record<string, string> = {}) {
 }
 
 describe('screenshot capture', () => {
-  test('posts to the serve-sim screenshot endpoint for the selected device', async () => {
+  test('posts to the screenshot endpoint for the selected device', async () => {
     const requests: Array<{ input: string; init?: RequestInit }> = [];
     const respond = pngResponse();
     const fetchImpl = async (input: string, init?: RequestInit) => {
@@ -17,7 +17,7 @@ describe('screenshot capture', () => {
       return respond();
     };
 
-    const capture = await fetchIosScreenshot(
+    const capture = await fetchScreenshot(
       'http://localhost:3400/vendor/serve-sim/',
       'DEVICE A/B',
       fetchImpl,
@@ -35,7 +35,7 @@ describe('screenshot capture', () => {
 
   test('reads the session artifact outcome from the response headers', async () => {
     const artifact = async (headers: Record<string, string>) =>
-      (await fetchScreenshot('/api/screenshot', pngResponse(headers)))?.artifact;
+      (await fetchScreenshot('', null, pngResponse(headers)))?.artifact;
 
     expect(await artifact({ 'X-Expo-Screenshot-Artifact': 'saved' })).toEqual({ status: 'saved' });
     expect(await artifact({ 'X-Expo-Screenshot-Artifact': 'disabled' })).toEqual({
@@ -55,12 +55,12 @@ describe('screenshot capture', () => {
 
   test('resolves null when the capture fails', async () => {
     expect(
-      await fetchScreenshot('/api/screenshot', async () =>
+      await fetchScreenshot('', null, async () =>
         Response.json({ ok: false, error: 'screencap failed' }, { status: 400 }),
       ),
     ).toBeNull();
     expect(
-      await fetchScreenshot('/api/screenshot', async () => {
+      await fetchScreenshot('', null, async () => {
         throw new TypeError('network down');
       }),
     ).toBeNull();

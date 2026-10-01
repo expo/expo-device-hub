@@ -52,7 +52,7 @@ import {
 import { hostUiRequest, runHostAction } from './exec-ws';
 import { getIosAppDetails } from './ios-app-details';
 import { clearIosLocation, setIosLocation } from './ios-location';
-import { fetchIosScreenshot } from './screenshot';
+import { fetchScreenshot } from './screenshot';
 import { hidUsageForCode } from './keyboard';
 import {
   type ConnectionStatus,
@@ -472,7 +472,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
     const udid = config?.device ?? targetDevice;
-    return fetchIosScreenshot(baseUrl, udid);
+    return fetchScreenshot(baseUrl, udid);
   }, [baseUrl, targetDevice, config]);
 
   // Apply any serve-sim UI option over its authenticated exec-ws request
