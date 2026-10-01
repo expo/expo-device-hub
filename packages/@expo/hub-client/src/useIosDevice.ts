@@ -322,9 +322,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
   const sendWs = useCallback((tag: number, payload: object) => {
-    if (!deviceSettingConfigRef.current) return;
+    if (!config || config !== deviceSettingConfigRef.current) return;
     inputSocketRef.current?.send(tag, payload);
-  }, []);
+  }, [config]);
 
   const sendTouch = useCallback((sample: TouchSample) => {
     const orientation = streamGeometry(screenRef.current).inputOrientation;

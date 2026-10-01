@@ -20,6 +20,7 @@ const CLIENT_LIMIT_REASON = 'Simulator input unavailable; retry after other clie
 type FakeSocket = {
   url: string;
   readyState: number;
+  sent: ArrayBuffer[];
   onopen?: () => void;
   onmessage?: (event: { data: unknown }) => void;
   onclose?: (event: { code: number; reason: string }) => void;
@@ -45,38 +46,38 @@ async function renderIosClient(inputAdmission: unknown = true) {
   stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
   stubGlobal('WebSocket', class {
     readyState = 0;
+    sent: ArrayBuffer[] = [];
     constructor(readonly url: string) {
       sockets.push(this);
     }
-    send() {}
+    send(data: ArrayBuffer) { this.sent.push(data); }
     close() {}
   });
   stubGlobal('EventSource', class {
     close() {}
   });
   stubGlobal('fetch', async (url: string) => {
-    if (new URL(String(url), 'http://localhost:3200').pathname === '/sim/api') {
-      return Response.json({
-        inputAdmission: inputAdmission === false ? undefined : inputAdmission,
-        device: 'DEVICE-A',
-        url: 'http://localhost:3200/sim/helper/DEVICE-A',
-        streamUrl: 'http://localhost:3200/sim/helper/DEVICE-A/stream.mjpeg',
-        wsUrl: 'ws://localhost:3200/sim/helper/DEVICE-A/ws',
-      });
+    const endpoint = new URL(String(url), 'http://localhost:3200');
+    if (endpoint.pathname === '/sim/api') {
+      const device = endpoint.searchParams.get('device');
+      return Response.json({inputAdmission: inputAdmission === false ? undefined : inputAdmission, device,
+        url: `http://localhost:3200/sim/helper/${device}`,
+        streamUrl: `http://localhost:3200/sim/helper/${device}/stream.mjpeg`,
+        wsUrl: `ws://localhost:3200/sim/helper/${device}/ws`});
     }
     return Response.json({ devices: [] });
   });
 
   let client!: DeviceClient;
-  function Harness() {
-    client = useIosDeviceClient({ baseUrl: '/sim', device: 'DEVICE-A', streamMode: 'mjpeg' });
+  function Harness({device = 'DEVICE-A'}: {device?: string}) {
+    client = useIosDeviceClient({ baseUrl: '/sim', device, streamMode: 'mjpeg' });
     return null;
   }
   await act(async () => {
     renderer = create(<Harness />);
   });
   const helperSockets = () => sockets.filter((socket) => socket.url.includes('/helper/'));
-  return { client: () => client, helperSockets };
+  return { client: () => client, helperSockets, changeDevice: (device: string) => renderer!.update(<Harness device={device} />) };
 }
 
 function configFrame(config: object): ArrayBuffer {
@@ -169,6 +170,7 @@ for (const inputAdmission of [true, 'true']) {
 }
 
 
+
 test('an overload warning survives admission but expires without changing owners', async () => {
   const { client, helperSockets } = await renderIosClient();
   const socket = helperSockets()[0]!;
@@ -184,4 +186,23 @@ test('an overload warning survives admission but expires without changing owners
   expect(client().inputError).toBe(reason);
   await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
   expect(client().inputError).toBeNull();
+});
+
+
+test('retired callbacks and paced keys never cross device identity', async () => {
+  const {client, helperSockets, changeDevice} = await renderIosClient();
+  const a = helperSockets()[0]!; a.readyState = 1;
+  await act(async () => a.onmessage?.({data: Uint8Array.of(0x83).buffer}));
+  const old = client();
+  await act(async () => {
+    old.sendKeyEvents(Array.from({length: 100}, (_, i) => ({type: i % 2 ? 'up' as const : 'down' as const, usage: 4})));
+    changeDevice('DEVICE-B');
+  });
+  const b = helperSockets().find(socket => socket.url.includes('DEVICE-B'))!; b.readyState = 1;
+  await act(async () => b.onmessage?.({data: Uint8Array.of(0x83).buffer}));
+  await act(async () => {old.sendKey({phase:'down',code:'KeyA',key:'a',repeat:false}); await new Promise(resolve => setTimeout(resolve,30));});
+  expect(b.sent.filter(data => new Uint8Array(data)[0] === 6)).toHaveLength(0);
+  await act(async () => client().sendKey({phase:'down',code:'KeyB',key:'b',repeat:false}));
+  expect(b.sent.filter(data => new Uint8Array(data)[0] === 6)).toHaveLength(1);
+
 });

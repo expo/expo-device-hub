@@ -245,6 +245,42 @@ export function DeviceScreen({
     setFingers(null);
   };
 
+  const cancelGestures = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
+    const pending = pendingRef.current;
+    pendingRef.current = {};
+    const points = [...pointersRef.current.values()];
+    const a = pending.multi?.a ?? points[0];
+    let b = pending.multi?.b ?? points[1];
+    if (modeRef.current === 'single' && a) sendTouch({ phase: 'end', ...(pending.single ?? a) });
+    else if (a && (modeRef.current === 'two' || modeRef.current === 'alt')) {
+      b ??= altShiftRef.current
+        ? { x: clamp01(a.x + panOffsetRef.current.x), y: clamp01(a.y + panOffsetRef.current.y) }
+        : { x: 1 - a.x, y: 1 - a.y };
+      sendMultiTouch?.({ phase: 'end', a, b });
+    }
+    for (const id of pointersRef.current.keys()) {
+      try { surfaceRef.current?.releasePointerCapture(id); } catch {}
+    }
+    pointersRef.current.clear();
+    modeRef.current = 'none';
+    singleIdRef.current = null;
+    setFingers(null);
+  }, [sendTouch, sendMultiTouch]);
+  useEffect(() => {
+    const hidden = () => { if (document.hidden) cancelGestures(); };
+    window.addEventListener('blur', cancelGestures);
+    window.addEventListener('pagehide', cancelGestures);
+    document.addEventListener('visibilitychange', hidden);
+    return () => {
+      window.removeEventListener('blur', cancelGestures);
+      window.removeEventListener('pagehide', cancelGestures);
+      document.removeEventListener('visibilitychange', hidden);
+      cancelGestures();
+    };
+  }, [cancelGestures]);
+
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     const p = pointFrom(event.clientX, event.clientY);
@@ -417,6 +453,7 @@ export function DeviceScreen({
         }}
         onBlur={() => {
           releasePressedKeys();
+          cancelGestures();
         }}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
