@@ -129,11 +129,30 @@ const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'ios', name: 'iPhone Simulator', platform: 'ios', current: true },
 ];
 
-const IOS_STREAM_CAPABILITIES = {
-  modeAvailability: { mjpeg: true, h264: true, webrtc: true },
+const IOS_HTTP_STREAM_CAPABILITIES = {
+  modeAvailability: { mjpeg: true, h264: true, webrtc: false },
   httpCodecs: ['auto', 'h264', 'mjpeg'],
+  webRtcCodecs: [],
+} as const satisfies DeviceStreamCapabilities;
+
+const IOS_WEBRTC_STREAM_CAPABILITIES = {
+  modeAvailability: { mjpeg: false, h264: false, webrtc: true },
+  httpCodecs: [],
   webRtcCodecs: ['h264', 'vp9', 'vp8'],
 } as const satisfies DeviceStreamCapabilities;
+
+/**
+ * Stream modes for the transport serve-sim advertises in `/api`. serve-sim
+ * locks a WebRTC server to WebRTC and refuses its HTTP streams; a missing or
+ * unknown value is its HTTP default.
+ */
+export function iosStreamCapabilities(streamSettings: unknown): DeviceStreamCapabilities {
+  const transport =
+    streamSettings && typeof streamSettings === 'object'
+      ? (streamSettings as { transport?: unknown }).transport
+      : undefined;
+  return transport === 'webrtc' ? IOS_WEBRTC_STREAM_CAPABILITIES : IOS_HTTP_STREAM_CAPABILITIES;
+}
 
 // The counterclockwise rotation order (matches Simulator's "Rotate Left"): each
 // press advances one step, so four presses come back around to portrait.
@@ -1317,7 +1336,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setLocation,
     clearLocation,
     ...appPermissions,
-    streamCapabilities: IOS_STREAM_CAPABILITIES,
+    streamCapabilities: config ? iosStreamCapabilities(config.initialStreamSettings) : null,
     screenRecording: null,
     streamSettings,
     streamSettingsPending,
