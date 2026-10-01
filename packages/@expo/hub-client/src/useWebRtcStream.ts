@@ -1,3 +1,4 @@
+import { raiseH264OfferLevel } from './webrtc-sdp-level.js';
 import { startPlaybackStallWatchdog } from './playback-stall-watchdog.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { readStatsBeforeDeadline } from './bounded-webrtc-stats.js';
@@ -75,16 +76,18 @@ export function buildWebRtcOfferPayload({
   codec,
   iceServers,
   sendIceServersInOffer = true,
+  raiseH264Level = false,
 }: {
   description: RTCSessionDescriptionInit;
   sessionId: string;
   codec: WebRtcCodec;
   iceServers: WebRtcIceServer[];
   sendIceServersInOffer?: boolean;
+  raiseH264Level?: boolean;
 }): Record<string, unknown> {
   return {
     type: description.type,
-    sdp: description.sdp,
+    sdp: raiseH264Level && codec === 'h264' && description.sdp ? raiseH264OfferLevel(description.sdp) : description.sdp,
     sessionId,
     codec,
     ...(sendIceServersInOffer ? { iceServers } : {}),
@@ -150,6 +153,7 @@ export function useWebRtcStream({
   fetchImpl = fetch,
   transportLocked = false,
   retryKey = 0,
+  raiseH264Level = false,
 }: {
   offerUrl: string;
   closeUrl: string;
@@ -175,6 +179,8 @@ export function useWebRtcStream({
   transportLocked?: boolean;
   /** Consumer-owned retries, including reselecting the current codec. */
   retryKey?: number;
+  /** serve-sim accepts asymmetric H.264 levels beyond Chrome's default 3.1. */
+  raiseH264Level?: boolean;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -245,6 +251,7 @@ export function useWebRtcStream({
     restartState.generation,
     transportLocked,
     retryKey,
+    raiseH264Level,
   ]);
 
   useEffect(() => {
@@ -511,6 +518,7 @@ export function useWebRtcStream({
               codec,
               iceServers: servers,
               sendIceServersInOffer,
+              raiseH264Level,
             }),
           ),
         });
@@ -583,6 +591,7 @@ export function useWebRtcStream({
     fetchImpl,
     transportLocked,
     retryKey,
+    raiseH264Level,
   ]);
 
   return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled, subscribeStats };
