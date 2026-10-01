@@ -7,6 +7,7 @@ import WebSocket from "ws";
 import { parseDetachState } from "./detach-state";
 import { freePortAsync, useTempStateDir } from "./helpers";
 import { sendKeyEventsToWs, textToKeyEvents } from "../text-to-keys";
+import { WS_MSG_INPUT_ADMITTED } from "../socket/input-protocol";
 import type { ServeSimDeviceState } from "../state";
 
 const CLI_PATH = join(import.meta.dir, "../../dist/serve-sim.js");
@@ -60,8 +61,24 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
     );
     socket.binaryType = "arraybuffer";
     await new Promise<void>((resolve, reject) => {
-      socket.onopen = () => resolve();
-      socket.onerror = () => reject(new Error(`WebSocket connection failed: ${state.wsUrl}`));
+      let settled = false;
+      const timeout = setTimeout(() => finish(new Error("Input socket was not admitted")), 10_000);
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        if (error) {
+          socket.terminate();
+          reject(error);
+        } else resolve();
+      };
+      // An open WebSocket is not necessarily in DeviceSession's eight admitted slots.
+      socket.onmessage = (event) => {
+        const bytes = event.data instanceof ArrayBuffer ? new Uint8Array(event.data) : null;
+        if (bytes?.length === 1 && bytes[0] === WS_MSG_INPUT_ADMITTED) finish();
+      };
+      socket.onerror = () => finish(new Error(`WebSocket connection failed: ${state.wsUrl}`));
+      socket.onclose = (event) => finish(new Error(`Input socket closed before admission (${event.code})`));
     });
     sockets.push(socket);
     return socket;
