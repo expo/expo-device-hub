@@ -255,7 +255,7 @@ export function StreamSettingsTool({
           <SettingSelect
             label="Video FPS"
             value={String(settings.h264Fps)}
-            options={streamFpsOptions(settings.h264Fps)}
+            options={streamFpsOptions(settings.h264Fps, 120)}
             disabled={
               encoderSettingsDisabled
               || (httpActive && (!avccSupported || settings.httpCodec === "mjpeg"))
