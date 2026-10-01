@@ -1972,6 +1972,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         ? 'reconnecting'
         : status,
     error,
+    // Only WebRTC sends input on its own socket; otherwise input shares the video socket and `error`.
+    inputError: webRtcInputError,
     screen,
     fps,
     devices,

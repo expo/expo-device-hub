@@ -575,6 +575,13 @@ export interface DeviceClient {
   platform: DevicePlatform;
   status: ConnectionStatus;
   error: string | null;
+  /**
+   * Why touch and keyboard input cannot reach the device while video can,
+   * or null. Cleared when the input channel works again. iOS: serve-sim
+   * refused the input socket (too many clients, or a full input queue) or its
+   * native HID setup failed. Android: the WebRTC input socket is down.
+   */
+  inputError: string | null;
   /** Host recording status; unknown until metadata loads, null when no recording was requested. */
   screenRecording: DeviceScreenRecordingStatus | null;
   /** Screen size once known; null while connecting. */
