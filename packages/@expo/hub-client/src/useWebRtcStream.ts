@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { readStatsBeforeDeadline } from './bounded-webrtc-stats.js';
 
 import {
   type WebRtcCodec,
@@ -108,7 +109,7 @@ export async function videoRtpArriving(pc: RTCPeerConnection | null): Promise<bo
   if (!pc) return false;
   try {
     let arriving = false;
-    (await pc.getStats()).forEach((entry) => {
+    (await readStatsBeforeDeadline(pc))?.forEach((entry) => {
       if (entry.type !== 'inbound-rtp') return;
       const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number };
       if (video.kind !== 'video') return;
