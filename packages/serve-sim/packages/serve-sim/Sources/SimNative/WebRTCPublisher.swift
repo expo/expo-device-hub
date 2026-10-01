@@ -112,6 +112,9 @@ struct WebRTCCaptureCounts: Codable {
     let stallSumMs: Double
     let pollTicks: UInt64
     let pollLateSumMs: Double
+    let surfaceLosses: UInt64
+    let surfaceLostMs: Double
+    let rewires: UInt64
 }
 
 /// What is known about the encoder behind the live sessions. Surfaced so a software encoder
