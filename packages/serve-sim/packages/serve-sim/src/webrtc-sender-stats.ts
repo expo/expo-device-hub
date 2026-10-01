@@ -88,6 +88,8 @@ export interface SharedCanvas {
   steps: number;
   /** Peers that lagged the shared encoder's cache and were restarted with a keyframe. */
   starvedRecoveries?: number | null;
+  /** Times the shared encoder fell back from low-latency to default rate control. */
+  lowLatencyFallbacks?: number | null;
 }
 
 export interface SenderStats {
@@ -209,6 +211,7 @@ function readSharedCanvas(raw: unknown): SharedCanvas | null {
   return {
     width: width as number, height: height as number, scale: scale as number, step: step as number, steps: steps as number,
     starvedRecoveries: maybeNumber(raw.starvedRecoveries),
+    lowLatencyFallbacks: maybeNumber(raw.lowLatencyFallbacks),
   };
 }
 

@@ -192,4 +192,50 @@ final class SharedWebRTCEncoderTests: XCTestCase {
         XCTAssertEqual(calls, [.videoFrameKey, .videoFrameKey])
     }
 
+    /// The fallback to default rate control shows in /webrtc/stats, not only in a debug log.
+    /// VideoToolbox drops the second frame of a low-latency 320x640 session on Apple silicon hosts,
+    /// and the fallback that follows sends that frame as a keyframe.
+    func testFallbackShowsInTheSharedCount() throws {
+        let factory = SharedWebRTCEncoderFactory(bitrate: 500_000, fps: 60, h264Allowed: { true })
+        let info = LKRTCVideoCodecInfo(name: "H264", parameters: ["packetization-mode": "1"])
+        let proxy = try XCTUnwrap(factory.createEncoder(info))
+        defer { factory.stop() }
+        let settings = settings()
+        settings.width = 320
+        settings.height = 640
+        settings.startBitrate = 500
+        XCTAssertEqual(proxy.startEncode(with: settings, numberOfCores: 2), 0)
+
+        var buffer: CVPixelBuffer?
+        let attributes: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [:]]
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 320, 640, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+                                           attributes as CFDictionary, &buffer), kCVReturnSuccess)
+        let pixels = try XCTUnwrap(buffer)
+        CVPixelBufferLockBaseAddress(pixels, [])
+        for plane in 0..<2 {
+            memset(CVPixelBufferGetBaseAddressOfPlane(pixels, plane), 128,
+                   CVPixelBufferGetBytesPerRowOfPlane(pixels, plane) * CVPixelBufferGetHeightOfPlane(pixels, plane))
+        }
+        CVPixelBufferUnlockBaseAddress(pixels, [])
+
+        var delivered: [LKRTCFrameType] = []
+        var arrived = XCTestExpectation(description: "a frame")
+        proxy.setCallback { image, _ in
+            delivered.append(image.frameType)
+            arrived.fulfill()
+            return true
+        }
+        for n in Int64(1)...2 {
+            arrived = expectation(description: "frame \(n)")
+            let frame = LKRTCVideoFrame(buffer: LKRTCCVPixelBuffer(pixelBuffer: pixels), rotation: ._0,
+                                        timeStampNs: n * 1_000_000)
+            XCTAssertEqual(proxy.encode(frame, codecSpecificInfo: nil, frameTypes: []), 0)
+            wait(for: [arrived], timeout: 5)
+        }
+        if delivered.last == .videoFrameDelta { throw XCTSkip("VideoToolbox kept the second frame on this host") }
+        // The count is read after delivery.
+        let deadline = Date().addingTimeInterval(2)
+        while factory.lowLatencyFallbacks() == 0, Date() < deadline { usleep(10_000) }
+        XCTAssertEqual(factory.lowLatencyFallbacks(), 1)
+    }
 }

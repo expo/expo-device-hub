@@ -72,6 +72,10 @@ final class SharedWebRTCEncoderFactory: NSObject, LKRTCVideoEncoderFactory {
         shared.starvedRecoveries()
     }
 
+    func lowLatencyFallbacks() -> UInt64 {
+        shared.lowLatencyFallbacks()
+    }
+
     func peerStats() -> [SharedEncoderPeerStats] {
         shared.peerStats()
     }
@@ -121,6 +125,7 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
     private var queuedFrame: QueuedFrame?
     private var stopped = false
     private var encodedFrames: UInt64 = 0
+    private var fallbacks: UInt64 = 0
     private var fps: Int
     private var resolution: SharedResolutionPolicy
     private var scaleObserver: ((Double) -> Void)?
@@ -181,6 +186,10 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
 
     func starvedRecoveries() -> UInt64 {
         onQueue { policy.starvedRecoveries }
+    }
+
+    func lowLatencyFallbacks() -> UInt64 {
+        onQueue { fallbacks }
     }
 
     func peerStats() -> [SharedEncoderPeerStats] {
@@ -338,6 +347,9 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
             await encoder.update(fps: fps, bitrate: frame.bitrate)
             let output = try? await encoder.encode(frame.buffer, forceKeyframe: frame.forceIDR)
             queue.async { self.complete(timestamp: timestamp, output: output) }
+            // After delivery, so the frame does not wait for it. Reads can land out of order.
+            let fallbacks = await encoder.lowLatencyFallbacks
+            queue.async { self.fallbacks = max(self.fallbacks, fallbacks) }
         }
     }
 

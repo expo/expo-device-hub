@@ -33,6 +33,9 @@ actor H264Encoder {
     private var emittedDescription = false
     private var frameCount: Int64 = 0
     private var lowLatencyEnabled = true
+    /// Times the encoder fell back from low-latency to default rate control. Nothing turns
+    /// low-latency rate control back on, so it is 0 or 1 for one encoder.
+    private(set) var lowLatencyFallbacks: UInt64 = 0
     private var forceKeyframeAfterReset = false
     private var encodeInFlight = false
     private var pendingSettings: (fps: Int32, bitrate: Int)?
@@ -103,8 +106,14 @@ actor H264Encoder {
             rebuildSession()
             throw Errors.encodingFailed
         }
+        // VideoToolbox drops the second frame of most low-latency sessions (noErr, no sample,
+        // kVTEncodeInfo_FrameDropped), and that drop lands here too, so most sessions run default
+        // rate control from their second frame. We keep that: on EAS, staying on low-latency rate
+        // control dropped about 12 frames a second in full-screen motion, for a latency gain no
+        // benchmark has measured.
         streamDiagnosticLog("[stream:h264] low-latency encode failed; retrying with default rate control")
         lowLatencyEnabled = false
+        lowLatencyFallbacks &+= 1
         forceKeyframeAfterReset = true
         rebuildSession()
         guard let fallbackSession = self.session else {
@@ -242,6 +251,7 @@ actor H264Encoder {
         if lowLatencyEnabled && (status != noErr || sess == nil) {
             streamDiagnosticLog("[stream:h264] low-latency session unavailable; using default rate control")
             lowLatencyEnabled = false
+            lowLatencyFallbacks &+= 1
             sess = nil
             status = create(spec: nil)
         }

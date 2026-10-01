@@ -246,7 +246,18 @@ describe("viewer resize and shared canvas", () => {
       sharedCanvas: { width: 640, height: 1392, scale: 1, step: 0, steps: 0 },
     });
     expect(stats.viewerResize).toEqual({ backend: "metal", submitted: 60, passedThrough: 60, scaled: 0 });
-    expect(stats.sharedCanvas).toEqual({ width: 640, height: 1392, scale: 1, step: 0, steps: 0, starvedRecoveries: null });
+    expect(stats.sharedCanvas).toEqual({
+      width: 640, height: 1392, scale: 1, step: 0, steps: 0, starvedRecoveries: null, lowLatencyFallbacks: null,
+    });
+  });
+
+  test("reads the shared encoder's counters", () => {
+    const stats = readSenderStats({
+      sessions: [],
+      sharedCanvas: { width: 640, height: 1392, scale: 1, step: 0, steps: 0, starvedRecoveries: 2, lowLatencyFallbacks: 1 },
+    });
+    expect(stats.sharedCanvas?.starvedRecoveries).toBe(2);
+    expect(stats.sharedCanvas?.lowLatencyFallbacks).toBe(1);
   });
 
   test("reports null for an absent or malformed shared canvas", () => {
