@@ -97,10 +97,7 @@ const ios = useIosDeviceClient({
 });
 ```
 
-The client sends it as `Authorization: Bearer <token>` and as a `serve-sim.token.<token>`
-WebSocket subprotocol. It adds `?token=` only where a browser cannot set a header: the MJPEG
-`<img>`, the app-state `EventSource`, and the WebRTC close URL that `sendBeacon` posts. The
-token does not replace `--cors-origin`. Only the iOS client sends the token so far.
+The token does not replace `--cors-origin`. Only the iOS client sends the token so far.
 
 If the whole Device Hub is remote, pass its public mount to `useActiveDeviceClient`, for
 example `https://hub.example.test/device-hub`.
