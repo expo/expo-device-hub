@@ -89,8 +89,8 @@ export function buildWebRtcOfferPayload({
   };
 }
 
-export function isRetryableWebRtcOfferStatus(status: number): boolean {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
+export function isRetryableWebRtcOfferStatus(status: number, transportLocked = false): boolean {
+  return (transportLocked && status === 404) || status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
 export function shouldFallbackCodecAfterFirstFrameTimeout(
@@ -145,6 +145,8 @@ export function useWebRtcStream({
   onBeforeDisconnect,
   restartKey = null,
   fetchImpl = fetch,
+  transportLocked = false,
+  retryKey = 0,
 }: {
   offerUrl: string;
   closeUrl: string;
@@ -165,6 +167,9 @@ export function useWebRtcStream({
   restartKey?: WebRtcRestartKey;
   /** Sends a gated backend's session token; plain `fetch` by default. */
   fetchImpl?: SessionFetch;
+  transportLocked?: boolean;
+  /** Consumer-owned retries, including reselecting the current codec. */
+  retryKey?: number;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -223,6 +228,8 @@ export function useWebRtcStream({
     sendIceServersInOffer,
     allowCodecFallback,
     restartState.generation,
+    transportLocked,
+    retryKey,
   ]);
 
   useEffect(() => {
@@ -466,7 +473,7 @@ export function useWebRtcStream({
           const status = response.status;
           await response.body?.cancel();
           const message = `WebRTC offer failed: HTTP ${status}.`;
-          if (isRetryableWebRtcOfferStatus(status)) retryTransport(message);
+          if (isRetryableWebRtcOfferStatus(status, transportLocked)) retryTransport(message);
           else failPermanently(message);
           return;
         }
@@ -525,6 +532,8 @@ export function useWebRtcStream({
     retryGeneration,
     restartState.generation,
     fetchImpl,
+    transportLocked,
+    retryKey,
   ]);
 
   return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };
