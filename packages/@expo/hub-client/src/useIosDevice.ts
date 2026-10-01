@@ -50,7 +50,7 @@ import {
   mergeIosEventLogPayload,
 } from './ios-events';
 import { hostUiRequest, runHostAction } from './exec-ws';
-import { getIosAppDetails } from './ios-app-details';
+import { getIosAppDetails, getIosAppIcon } from './ios-app-details';
 import { clearIosLocation, setIosLocation } from './ios-location';
 import { fetchIosScreenshot } from './ios-screenshot';
 import { hidUsageForCode } from './keyboard';
@@ -202,6 +202,8 @@ interface ResolvedConfig {
   logsPath: string | null;
   /** Absolute URL of the foreground-app SSE stream. */
   appStateUrl: string | null;
+  /** Absolute URL of the app icon route, when the server has one. */
+  appIconUrl: string | null;
   /** Relative SSE path for normalized serve-sim events. */
   eventsPath: string | null;
   /** Relative SSE path for foreground app activity. */
@@ -226,6 +228,7 @@ interface PreviewApi {
   execToken?: string;
   logsEndpoint?: string;
   appStateEndpoint?: string;
+  appIconEndpoint?: string;
   eventLogEventsEndpoint?: string;
   metricsEndpoint?: string;
   axEndpoint?: string;
@@ -596,6 +599,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         // server validates them against its internal middleware mount.
         logsPath: c.logsEndpoint ?? null,
         appStateUrl: absoluteMiddlewareUrl(c.appStateEndpoint),
+        appIconUrl: absoluteMiddlewareUrl(c.appIconEndpoint),
         eventsPath: c.eventLogEventsEndpoint ?? null,
         metricsPath: c.metricsEndpoint ?? null,
         axUrl: absoluteMiddlewareUrl(c.axEndpoint),
@@ -1233,12 +1237,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Foreground app details (name, versions, icon) — introspected from the
   //    app bundle on the host over exec-ws whenever the foreground bundle id
-  //    changes. Cached per udid:bundleId, so revisits apply instantly. ──
+  //    changes. Cached per udid:bundleId, so revisits apply instantly. A server
+  //    with the icon route serves the icon over plain HTTP instead. ──
   const foregroundAppId = foregroundApp?.id ?? null;
+  const appIconUrl = config?.appIconUrl ?? null;
   useEffect(() => {
     if (!foregroundAppId || !runAction || !deviceUdid) return;
     let cancelled = false;
-    getIosAppDetails(runAction, deviceUdid, foregroundAppId)
+    getIosAppDetails(runAction, deviceUdid, foregroundAppId, { includeIcon: !appIconUrl })
       .then((details) => {
         if (cancelled || !details) return;
         setForegroundApp((prev) =>
@@ -1251,7 +1257,25 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
     };
-  }, [foregroundAppId, runAction, deviceUdid]);
+  }, [foregroundAppId, runAction, deviceUdid, appIconUrl]);
+
+  useEffect(() => {
+    if (!foregroundAppId || !appIconUrl || !deviceUdid) return;
+    let cancelled = false;
+    getIosAppIcon(appIconUrl, deviceUdid, foregroundAppId)
+      .then((iconDataUrl) => {
+        if (cancelled || !iconDataUrl) return;
+        setForegroundApp((prev) =>
+          prev && prev.id === foregroundAppId ? { ...prev, iconDataUrl } : prev,
+        );
+      })
+      .catch(() => {
+        /* route unavailable or app not installed — the placeholder still renders */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [foregroundAppId, appIconUrl, deviceUdid]);
 
   // ── Running simulators (middleware /grid/api) ──
   const gridApiUrl = config?.gridApiUrl ?? null;

@@ -4,10 +4,10 @@ import { type ForegroundApp } from './types';
 
 type FetchImpl = typeof fetch;
 
-/** Mirrors `APP_ICON_MIME_TYPES` in serve-emu's API contracts. */
+/** Mirrors `APP_ICON_MIME_TYPES` in serve-emu's API contracts. serve-sim's route answers the same shape. */
 const APP_ICON_MIME_TYPES = ['image/png', 'image/webp', 'image/jpeg', 'image/gif'];
 
-export function parseAndroidAppIcon(payload: unknown): string | null {
+export function parseAppIconResponse(payload: unknown): string | null {
   const body = asRecord(payload);
   if (!body || body.ok !== true) throw new Error('app icon response is invalid');
   if (body.icon === null) return null;
@@ -31,7 +31,7 @@ export async function fetchAndroidAppIcon(
   url.searchParams.set('packageName', packageName);
   const res = await fetchImpl(url.toString(), { cache: 'no-store' });
   if (!res.ok) throw new Error(`app icon request failed with ${res.status}`);
-  return parseAndroidAppIcon(await res.json());
+  return parseAppIconResponse(await res.json());
 }
 
 /**
