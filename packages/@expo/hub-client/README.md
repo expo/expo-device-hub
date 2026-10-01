@@ -89,6 +89,9 @@ hub-client does not send a serve-sim access token yet. A serve-sim server starte
 `--require-token` answers these requests with 401. EAS Simulator Preview sessions always
 use a token, so embedding them needs the client token support which is planned.
 
+The iOS foreground app icon comes from serve-sim's `/api/apps/icon` route, a plain GET, when
+the server advertises it. Older servers serve it over exec-ws.
+
 If the whole Device Hub is remote, pass its public mount to `useActiveDeviceClient`, for
 example `https://hub.example.test/device-hub`.
 
