@@ -37,12 +37,15 @@ function waitForRetry(delayMs: number, signal?: AbortSignal): Promise<void> {
 
 export async function closeWebRtcSession({
   url,
+  beaconUrl = url,
   sessionId,
   keepalive = false,
   sendBeacon,
   fetchImpl = fetch,
 }: {
   url: string;
+  /** Where the beacon posts. A beacon cannot set a header, so this may carry a query token. */
+  beaconUrl?: string;
   sessionId: string;
   keepalive?: boolean;
   sendBeacon?: SendBeaconLike;
@@ -57,7 +60,7 @@ export async function closeWebRtcSession({
   if (keepalive && beacon) {
     try {
       // text/plain is CORS-safelisted, so unload does not rely on a preflight.
-      if (beacon(url, new Blob([body], { type: 'text/plain;charset=UTF-8' }))) return;
+      if (beacon(beaconUrl, new Blob([body], { type: 'text/plain;charset=UTF-8' }))) return;
     } catch {}
   }
   await fetchImpl(url, {

@@ -128,6 +128,7 @@ function createSessionId(): string {
 export function useWebRtcStream({
   offerUrl,
   closeUrl,
+  closeBeaconUrl = closeUrl,
   statsUrl = '',
   enabled,
   codec,
@@ -139,8 +140,9 @@ export function useWebRtcStream({
   fetchImpl = fetch,
 }: {
   offerUrl: string;
-  /** Also posted by `navigator.sendBeacon` on unload, which cannot set a header. */
   closeUrl: string;
+  /** `closeUrl` for `navigator.sendBeacon` on unload, which cannot set a header. */
+  closeBeaconUrl?: string;
   /** Device-scoped WebRTC sender statistics endpoint. */
   statsUrl?: string;
   enabled: boolean;
@@ -197,6 +199,7 @@ export function useWebRtcStream({
     enabled,
     offerUrl,
     closeUrl,
+    closeBeaconUrl,
     codec,
     iceServers,
     iceTransportPolicy,
@@ -241,7 +244,13 @@ export function useWebRtcStream({
 
     const closeRemoteSession = (keepalive = false): Promise<void> => {
       if (closePromise) return closePromise;
-      closePromise = closeWebRtcSession({ url: closeUrl, sessionId, keepalive, fetchImpl });
+      closePromise = closeWebRtcSession({
+        url: closeUrl,
+        beaconUrl: closeBeaconUrl,
+        sessionId,
+        keepalive,
+        fetchImpl,
+      });
       return closePromise;
     };
     const releaseOnPageHide = () => void closeRemoteSession(true);
@@ -485,6 +494,7 @@ export function useWebRtcStream({
     enabled,
     offerUrl,
     closeUrl,
+    closeBeaconUrl,
     codec,
     iceServers,
     iceTransportPolicy,

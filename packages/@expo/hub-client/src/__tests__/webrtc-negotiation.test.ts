@@ -80,4 +80,26 @@ describe('WebRTC offer negotiation', () => {
     expect(fetched).toBe(false);
     expect(await beaconBodies[0]!.text()).toBe(JSON.stringify({ sessionId: 'session-1' }));
   });
+
+  // A beacon cannot set a header, so only it may carry the token in its URL. Proxy logs record URLs.
+  test('sends the beacon URL only to the beacon, and the plain URL to a POST', async () => {
+    const beaconUrls: string[] = [];
+    const fetchedUrls: string[] = [];
+    await closeWebRtcSession({
+      url: 'https://example.test/webrtc/close',
+      beaconUrl: 'https://example.test/webrtc/close?token=tok-1',
+      sessionId: 'session-1',
+      keepalive: true,
+      sendBeacon: (url) => {
+        beaconUrls.push(String(url));
+        return false;
+      },
+      fetchImpl: async (url) => {
+        fetchedUrls.push(String(url));
+        return new Response(null, { status: 204 });
+      },
+    });
+    expect(beaconUrls).toEqual(['https://example.test/webrtc/close?token=tok-1']);
+    expect(fetchedUrls).toEqual(['https://example.test/webrtc/close']);
+  });
 });
