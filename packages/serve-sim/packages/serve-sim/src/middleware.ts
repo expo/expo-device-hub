@@ -65,7 +65,7 @@ import { handleCrashesRequestAfter, handleCrashReportRequest } from "./crash/rou
 export { handleCrashesRequest, handleCrashReportRequest } from "./crash/routes";
 import { booleanParam } from "./request-params";
 import { logBufferCache, type LogBufferCache, type LogLine } from "./log-buffer";
-import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware-utils";
+import { claimHelperHidSocket, startHidHeartbeat, type UpgradeHandlerWebSocket } from "./middleware-utils";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
@@ -1079,7 +1079,18 @@ export async function retryPendingCaptureCleanup(deps: CaptureCleanupDeps = {}):
  * bridge) rather than via `ws`'s server, whose handshake doesn't flush under
  * Bun — and the production CLI is a bun-compiled binary.
  */
-function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
+/**
+ * Adapt an upgraded raw socket to a {@link HidSocket}. The DeviceSession frees
+ * the socket's input slot only on `close`/`error`, so every way a peer can go
+ * away must end here: a close frame, a TCP FIN (node:http keeps upgraded
+ * sockets half-open, so FIN alone never fires `close`), or a silent drop the
+ * heartbeat detects.
+ */
+export function rawHidSocket(
+  socket: Socket,
+  head: Buffer,
+  heartbeatOptions?: Parameters<typeof startHidHeartbeat>[2],
+): HidSocket {
   const messageCbs: Array<(d: Buffer) => void> = [];
   const closeCbs: Array<() => void> = [];
   let buffered = Buffer.from(head);
@@ -1088,8 +1099,17 @@ function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
   const fireClose = () => {
     if (closed) return;
     closed = true;
+    heartbeat.stop();
     for (const cb of closeCbs) cb();
   };
+  const heartbeat = startHidHeartbeat(
+    () => sendBrowserFrame(socket, 0x9),
+    () => {
+      socket.destroy();
+      fireClose();
+    },
+    heartbeatOptions,
+  );
   const shutdown = (code?: number, reason = "") => {
     fireClose();
     const payload = code === undefined ? Buffer.alloc(0) : Buffer.alloc(2 + Buffer.byteLength(reason));
@@ -1115,6 +1135,7 @@ function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
       }
       if (!frame) return;
       buffered = buffered.subarray(frame.consumed);
+      heartbeat.alive(); // any frame, pong included, proves the peer is there
       if (frame.opcode === 0x8) return shutdown();       // close
       if (frame.opcode === 0x9) { sendBrowserFrame(socket, 0xa, frame.payload); continue; } // ping → pong
       if (frame.opcode === 0x1 || frame.opcode === 0x2) {
@@ -1124,6 +1145,7 @@ function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
   };
 
   socket.on("data", (chunk: Buffer) => { buffered = Buffer.concat([buffered, chunk]); drain(); });
+  socket.on("end", () => { if (!closed) shutdown(); });
   socket.on("close", fireClose);
   socket.on("error", fireClose);
   if (head.length) drain();

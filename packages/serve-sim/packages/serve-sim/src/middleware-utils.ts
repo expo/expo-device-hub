@@ -7,17 +7,56 @@ export interface UpgradeHandlerWebSocket {
   on(event: "message", listener: (data: Buffer<ArrayBufferLike>) => void): void;
   on(event: "error", listener: (error?: unknown) => void): void;
   on(event: "close", listener: () => void): void;
+  on(event: "pong", listener: () => void): void;
+  /** `ws` library extras. A host socket with both gets the HID heartbeat. */
+  ping?(): void;
+  terminate?(): void;
+}
+
+/** How often an input socket is pinged, and how many unanswered pings make it dead. */
+export const HID_PING_INTERVAL_MS = 20_000;
+export const HID_MISSED_PINGS_LIMIT = 2;
+
+/**
+ * Ping a socket with standard WebSocket ping frames (browsers answer them
+ * without page code) and call `dead` once `missedLimit` pings in a row got no
+ * `alive()`. serve-sim caps input sockets per device, so a peer that vanished
+ * without a close (sleep, network change, a proxy dropping it) would otherwise
+ * hold its slot until a write fails, and an idle input socket gets few writes.
+ * The pings also keep proxies from closing an idle socket.
+ */
+export function startHidHeartbeat(
+  ping: () => void,
+  dead: () => void,
+  { intervalMs = HID_PING_INTERVAL_MS, missedLimit = HID_MISSED_PINGS_LIMIT } = {},
+): { alive(): void; stop(): void } {
+  let missed = 0;
+  const timer = setInterval(() => {
+    if (missed >= missedLimit) {
+      clearInterval(timer);
+      dead();
+      return;
+    }
+    missed++;
+    try { ping(); } catch {}
+  }, intervalMs);
+  timer.unref?.();
+  return {
+    alive() { missed = 0; },
+    stop() { clearInterval(timer); },
+  };
 }
 
 export function claimHelperHidSocket(
   request: Request,
   websocket: UpgradeHandlerWebSocket,
-  { helperProxyTarget, fallbackDevice, resolveSession }: {
+  { helperProxyTarget, fallbackDevice, resolveSession, heartbeat: heartbeatOptions }: {
     helperProxyTarget(rawUrl: string): { device: string | null; upstreamPath: string } | null;
     fallbackDevice: string | null;
     resolveSession: {
       (device: string): { attachHidSocket(ws: UpgradeHandlerWebSocket): void };
     };
+    heartbeat?: Parameters<typeof startHidHeartbeat>[2];
   },
 ): boolean {
   const url = new URL(request.url, "http://serve-sim.local");
@@ -34,6 +73,14 @@ export function claimHelperHidSocket(
   } catch {
     websocket.close(); // not booted / capture unavailable
     return true;
+  }
+  if (websocket.ping && websocket.terminate) {
+    const ping = websocket.ping.bind(websocket);
+    const terminate = websocket.terminate.bind(websocket);
+    const heartbeat = startHidHeartbeat(ping, terminate, heartbeatOptions);
+    websocket.on("pong", heartbeat.alive);
+    websocket.on("message", heartbeat.alive);
+    websocket.on("close", heartbeat.stop);
   }
   session.attachHidSocket(websocket);
   return true;
