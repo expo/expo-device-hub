@@ -60,7 +60,7 @@ import {
 } from './ios-connection.js';
 import { clearIosLocation, setIosLocation } from './ios-location.js';
 import { fetchScreenshot } from './screenshot.js';
-import { hidUsageForCode } from './keyboard.js';
+import { iosMessageForKeyboardInput } from './keyboard.js';
 import {
   type ConnectionStatus,
   type DeviceActivity,
@@ -373,9 +373,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   const sendKey = useCallback(
     (input: KeyboardInput): boolean => {
-      const usage = hidUsageForCode(input.code);
-      if (usage === null) return false;
-      sendWs(WS_MSG_KEY, { type: input.phase, usage });
+      const message = iosMessageForKeyboardInput(input);
+      if (!message) return false;
+      sendWs(WS_MSG_KEY, message);
       return true;
     },
     [sendWs],
