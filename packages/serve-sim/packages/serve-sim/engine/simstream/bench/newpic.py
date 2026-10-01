@@ -34,6 +34,13 @@ def moving_ms(op):
 def rate(d, a, b):
     return None if b <= a else round(float((d[a:b] > THR).sum()) * 60 / (b - a), 1)
 
+def stall(d, a, b):
+    """The longest stretch (ms) with no new picture in frames a..b."""
+    longest = run = 0
+    for x in d[a:b] > THR:
+        run = 0 if x else run + 1; longest = max(longest, run)
+    return round(longest * 1000 / 60)
+
 results = {}
 for src in args:
     meta = json.load(open(src.rsplit(".", 1)[0] + ".json"))
@@ -49,7 +56,7 @@ for src in args:
         if not len(hits):
             rows.setdefault(kind, []).append({"k": k, "response": None}); continue
         first = mark + int(hits[0]); move = round(moving_ms(op) * 60 / 1000)
-        row = {"k": k, "response": int(hits[0]), "drag": rate(d, first, first + move)}
+        row = {"k": k, "response": int(hits[0]), "drag": rate(d, first, first + move), "stall": stall(d, first, first + move)}
         if meta.get("moves") is not None and move:
             # Pointermoves the page received while the finger moved (recorded from the same press).
             got = [c for f, c in meta["moves"] if mark <= f < mark + move]
@@ -58,6 +65,7 @@ for src in args:
         if kind == "fling":
             a = first + move; b = min(nxt, a + 30)
             row["momentum"] = rate(d, a, b)
+            row["stall"] = max(row["stall"], stall(d, a, a + 15))  # the first quarter second of momentum
             row["energy"] = round(float(d[a:nxt].sum()), 1)  # total picture change after the lift
         rows.setdefault(kind, []).append(row)
     mean = lambda xs: round(sum(xs) / len(xs), 1) if xs else None
@@ -66,6 +74,10 @@ for src in args:
         "zoom": mean([r["drag"] for r in rows.get("zoom", []) if r.get("drag") is not None]),
         "jiggle": mean([r["drag"] for r in rows.get("jiggle", []) if r.get("drag") is not None]),
     }
+    # Zooms are left out: Maps stops zooming at the whole-earth view, so their stills are the app's.
+    stalls = [r["stall"] for kind, rs in rows.items() if kind != "zoom" for r in rs if r.get("stall") is not None]
+    summary["worst stall"] = max(stalls) if stalls else None       # ms, while the picture should move
+    summary["stalls >100 ms"] = sum(x > 100 for x in stalls)
     for kind in ("pan", "zoom", "jiggle"):
         summary["input " + kind] = mean([r["input"] for r in rows.get(kind, []) if r.get("input") is not None])
     if meta.get("dispatch"): summary["dispatch"] = meta["dispatch"]
@@ -74,11 +86,14 @@ for src in args:
         summary[name + " energy"] = r.get("energy")
     results[os.path.basename(src)] = {"summary": summary, "rows": rows}
 
-names = [n for n in next(iter(results.values()))["summary"] if "energy" not in n and not n.startswith(("input", "dispatch"))] if results else []
+names = [n for n in next(iter(results.values()))["summary"] if "energy" not in n and not n.startswith(("input", "dispatch", "worst", "stalls"))] if results else []
 print(f"new pictures per second (THR {THR}); fling columns are the half second after the lift")
 print(f"{'':12}" + "".join(f"{n:>13}" for n in names))
 for src, r in results.items():
     print(f"{src:12}" + "".join(f"{'-' if r['summary'][n] is None else r['summary'][n]:>13}" for n in names))
+print("longest stretch with no new picture while it should move (ms) / gestures with one over 100 ms:")
+for src, r in results.items():
+    print(f"{src:12}{r['summary']['worst stall']:>13}{r['summary']['stalls >100 ms']:>13}")
 print("picture change after the lift (sum of per-frame differences):")
 for src, r in results.items():
     print(f"{src:12}" + "".join(f"{str(r['summary'].get(n + ' energy', '-')):>13}" for n in names if n.startswith(("fling", "final"))))

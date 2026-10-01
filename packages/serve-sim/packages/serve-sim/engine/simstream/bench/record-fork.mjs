@@ -4,6 +4,7 @@
 // screen. Input is driven through the page itself (CDP mouse events on the simulator view).
 //
 // node record-fork.mjs URL "LABEL" OUT_BASENAME route|barcode [PORT]
+// REC_HW=no-preference lets the recorder encode in software (e.g. in a VM with no video encoder).
 //   route:   runs route-fork.json (from the home screen); barcode: records 20 s of the clock page with
 //            its measured display latency in the caption.
 // Writes OUT_BASENAME.h264 (60 fps Annex B) and OUT_BASENAME.json (start frame, refresh gaps, stats).
@@ -65,7 +66,7 @@ const RECORDER = `(async () => {
   const flush = () => { if (!pending.length) return; let total = 0; for (const p of pending) total += p.length; const all = new Uint8Array(total); let o = 0; for (const p of pending) { all.set(p, o); o += p.length; } pending.length = 0; let s = ''; for (let i = 0; i < all.length; i += 0x8000) s += String.fromCharCode.apply(null, all.subarray(i, i + 0x8000)); __out(btoa(s)); };
   S.outputs = 0;
   const enc = new VideoEncoder({ output: (chunk) => { S.outputs++; const b = new Uint8Array(chunk.byteLength); chunk.copyTo(b); pending.push(b); }, error: (e) => { S.error = String(e); } });
-  enc.configure({ codec: 'avc1.640033', width: W, height: OH, bitrate: 24e6, framerate: 60, latencyMode: 'realtime', hardwareAcceleration: 'prefer-hardware', avc: { format: 'annexb' } });
+  enc.configure({ codec: 'avc1.640033', width: W, height: OH, bitrate: 24e6, framerate: 60, latencyMode: 'realtime', hardwareAcceleration: ${JSON.stringify(process.env.REC_HW || 'prefer-hardware')}, avc: { format: 'annexb' } });
   let lastCode = null, changeTimes = [], latWin = [];
   const t0 = performance.now();
   await new Promise((resolve) => {
@@ -116,8 +117,14 @@ const RECORDER = `(async () => {
 })()`;
 
 try {
-  // REC_PRELOAD: script run before the page's own (e.g. to pick a setting the page keeps in localStorage).
-  if (process.env.REC_PRELOAD) { await cdp('Page.enable'); await cdp('Page.addScriptToEvaluateOnNewDocument', { source: process.env.REC_PRELOAD }); }
+  // REC_PRELOAD: script, or a file of script beside this one, run before the page's own (e.g. to pick a
+  // setting the page keeps in localStorage). Every page also keeps its peer connections, so the
+  // network path WebRTC chose can be reported.
+  const preload = process.env.REC_PRELOAD || '';
+  const preloadFile = new globalThis.URL(preload.replace(/^\.\//, ''), import.meta.url);
+  const source = /^[\w./-]+\.js$/.test(preload) ? readFileSync(preloadFile, 'utf8') : preload;
+  const keepPcs = `window.__pcs = []; if (window.RTCPeerConnection) window.RTCPeerConnection = class extends RTCPeerConnection { constructor(...a) { super(...a); __pcs.push(this); } };`;
+  await cdp('Page.enable'); await cdp('Page.addScriptToEvaluateOnNewDocument', { source: keepPcs + source });
   await cdp('Page.navigate', { url: URL });
   for (let i = 0; i < 120; i++) { await sleep(250); if (await ev(`!!([...document.querySelectorAll('video')].find(v=>v.videoWidth>0) || [...document.querySelectorAll('canvas')].find(c=>c.width>200&&c.height>400) || [...document.querySelectorAll('img')].find(i=>i.naturalWidth>200&&i.naturalHeight>400))`)) break; }
   // Streams that start small (WebRTC ramps its resolution) aren't ready for input yet: wait for the
@@ -168,10 +175,16 @@ try {
   await sleep(1500); // let the encoder flush
   const q = (xs, p) => { const v = xs.slice().sort((a, b) => a - b); return v.length ? +v[Math.min(v.length - 1, Math.floor(p * v.length))].toFixed(1) : null; };
   const dispatch = { moves: late.length, lateP50: q(late, 0.5), lateP95: q(late, 0.95), lateMax: q(late, 1), callP50: q(call, 0.5), callP95: q(call, 0.95), callMax: q(call, 1) };
+  // The candidate pair each peer connection is using (local -> remote), and touches the Agent Hub
+  // preload rerouted to the engine.
+  const paths = await ev(`Promise.all((window.__pcs || []).map(async (pc) => { const s = [...(await pc.getStats()).values()]; const by = (id) => s.find((x) => x.id === id);
+    const pair = s.find((x) => x.type === 'candidate-pair' && x.nominated && x.state === 'succeeded'); if (!pair) return null;
+    const l = by(pair.localCandidateId), r = by(pair.remoteCandidateId); return l.address + ':' + l.port + ' (' + l.candidateType + ') -> ' + r.address + ':' + r.port + ' (' + r.candidateType + ') rtt ' + Math.round((pair.currentRoundTripTime || 0) * 1000) + ' ms'; }))`);
+  const engineTouches = await ev('window.__engineTouches ?? null');
   const stats = await ev(`(() => { const g = __rec.gaps; const lat = __rec.lat.slice().sort((a,b)=>a-b); return { frames: __rec.n, outputs: __rec.outputs, marks: __rec.marks, moves: __rec.moves, size: __rec.size, error: __rec.error || null, gapsOver20: g.filter(x => x > 20).length, gapMax: Math.max(...g), latMean: lat.length ? lat.reduce((a,b)=>a+b,0)/lat.length : null, latP95: lat.length ? lat[Math.floor(lat.length*0.95)] : null }; })()`);
-  writeFileSync(`${OUT}.json`, JSON.stringify({ label: LABEL, url: URL, mode: MODE, startFrame, plan, rect, dispatch, ...stats }));
+  writeFileSync(`${OUT}.json`, JSON.stringify({ label: LABEL, url: URL, mode: MODE, startFrame, plan, rect, dispatch, paths, engineTouches, ...stats }));
   console.log(JSON.stringify({ label: LABEL, startFrame, frames: stats.frames, marks: stats.marks.length, planned: plan.length - 1,
-    pointermoves: stats.moves.length, dispatched: dispatch.moves, lateP95: dispatch.lateP95, callP95: dispatch.callP95, error: stats.error }));
+    pointermoves: stats.moves.length, dispatched: dispatch.moves, lateP95: dispatch.lateP95, callP95: dispatch.callP95, paths, engineTouches, error: stats.error }));
 } finally {
   await sleep(300); out.end(); ws.close(); chrome.kill();
 }
