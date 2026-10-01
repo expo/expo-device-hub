@@ -230,6 +230,10 @@ The stream and input URLs then use that server. Start serve-sim with
 `--cors-origin http://localhost:8081`. Without it, the exec-ws socket closes, and logs,
 events, metrics and UI requests stop, even when both servers run on `localhost`.
 
+The foreground app icon does not need exec-ws. hub-client reads it from serve-sim's
+`/api/apps/icon` route, a plain GET, when `/api` advertises the route. Older servers send the
+icon over exec-ws.
+
 A serve-sim started with `--require-token`, such as an EAS Simulator Preview session, needs
 its session token on every request. Pass it as `options.token`:
 
