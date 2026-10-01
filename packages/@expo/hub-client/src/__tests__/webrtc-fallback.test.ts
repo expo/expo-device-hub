@@ -7,6 +7,13 @@ import {
 } from '../webrtc-fallback.js';
 
 describe('WebRTC fallback', () => {
+  test('keeps permanent failure visible on a locked transport', () => {
+    expect(webRtcFallbackDecision('h264', 'h264', { kind: 'permanent' }, true)).toBeNull();
+  });
+
+  test('restarts an exhausted locked ladder instead of requesting HTTP', () => {
+    expect(webRtcFallbackDecision('h264', 'vp9', { kind: 'codec', codec: 'vp9' }, true)).toEqual({ type: 'restart-ladder', codec: 'h264' });
+  });
   test('tries VP8 and VP9 after H.264', () => {
     expect(nextWebRtcFallbackCodec('h264', 'h264')).toBe('vp8');
     expect(nextWebRtcFallbackCodec('h264', 'vp8')).toBe('vp9');
