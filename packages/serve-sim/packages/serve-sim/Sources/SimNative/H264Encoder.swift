@@ -45,7 +45,9 @@ actor H264Encoder {
     /// Byte and second pairs for the WebRTC shared encoder (dynamic bitrate): the target over one
     /// second, and 1.5 times it over a tenth of a second. AverageBitRate alone let the first frames
     /// of a full-screen change run to two or three times WebRTC's target, and libwebrtc answered
-    /// the overshoot by dropping frames before encode for 3 to 5 seconds.
+    /// the overshoot by dropping frames before encode for 3 to 5 seconds. The windows count
+    /// presentation time, which `encode` takes from a frame counter at `fps`, not wall time: frames
+    /// that arrive faster than `fps` count as spread out, and slower frames as packed together.
     private static func dataRateLimits(bitrate: Int) -> CFArray {
         let bytesPerSecond = Double(bitrate) / 8
         return [NSNumber(value: bytesPerSecond), NSNumber(value: 1.0),
