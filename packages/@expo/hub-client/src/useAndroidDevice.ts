@@ -212,7 +212,8 @@ export function parseServeEmuStreamSettings(value: unknown): ServeEmuStreamSetti
   };
 }
 
-// Until the Android client sends `token`, it refuses one rather than drop it.
+// Until the Android client sends `token`, its type refuses one in an object literal. A
+// variable typed `DeviceConnectionOptions` still passes, and the token is dropped.
 export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 'token'>): DeviceClient {
   const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
   const active = enabled && !!baseUrl;
