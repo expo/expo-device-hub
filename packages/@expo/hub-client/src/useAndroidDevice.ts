@@ -943,10 +943,6 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
   const webRtcSourceGeneration = androidWebRtcRestartKey(streamSource, pendingStreamSource);
   const webRtcSourceGenerationRef = useRef(webRtcSourceGeneration);
   const webRtcSourceRevisionRef = useRef(0);
-  const webRtcInputOwnersRef = useRef(new WeakMap<WebSocket, {
-    revision: number;
-    openedDuringSourceRequest: boolean;
-  }>());
   useLayoutEffect(() => {
     // Initial discovery identifies the existing connection rather than replacing it.
     if (webRtcSourceGenerationRef.current !== null &&
@@ -1638,7 +1634,6 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       wsRef.current = ws;
       let opened = false;
       const owner = { revision: webRtcSourceRevisionRef.current, openedDuringSourceRequest: false };
-      webRtcInputOwnersRef.current.set(ws, owner);
       ws.onopen = () => {
         if (cancelled || wsRef.current !== ws) return;
         opened = true;
