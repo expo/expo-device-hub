@@ -419,7 +419,7 @@ describe("scrcpy async lifecycle", () => {
       "max_size=1280",
       "video_bit_rate=8000000",
       "max_fps=60",
-      "video_codec_options=i-frame-interval=10",
+      "video_codec_options=i-frame-interval=1",
       "clipboard_autosync=false",
       "cleanup=true",
     ]);
