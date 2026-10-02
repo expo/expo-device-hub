@@ -24,10 +24,11 @@ export function parseInboundVideo(report: RTCStatsReport): InboundVideo[] {
   report.forEach((entry) => {
     if (entry.type !== "inbound-rtp") return;
     const video = entry as RTCInboundRtpStreamStats & {
+      mediaType?: string;
       framesReceived?: number;
       framesDecoded?: number;
     };
-    if (video.kind !== "video") return;
+    if (video.kind !== "video" && video.mediaType !== "video") return;
     reports.push({
       id: video.id,
       framesReceived: video.framesReceived ?? 0,

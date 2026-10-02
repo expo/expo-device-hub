@@ -112,8 +112,8 @@ export async function videoRtpArriving(pc: RTCPeerConnection | null): Promise<bo
     let arriving = false;
     (await readStatsBeforeDeadline(pc))?.forEach((entry) => {
       if (entry.type !== 'inbound-rtp') return;
-      const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number };
-      if (video.kind !== 'video') return;
+      const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number; mediaType?: string };
+      if (video.kind !== 'video' && video.mediaType !== 'video') return;
       if ((video.framesReceived ?? 0) > 0) arriving = true;
     });
     return arriving;

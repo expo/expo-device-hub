@@ -164,13 +164,13 @@ async function reconnect() {
   peers[0]?.onconnectionstatechange?.();
 }
 
-function resolveStats(framesReceived: number, framesDecoded = framesReceived, id = "video") {
+function resolveStats(framesReceived: number, framesDecoded = framesReceived, id = "video", mediaTypeOnly = false) {
   const read = pendingStats.shift();
   if (!read) throw new Error("Expected an inbound stats read");
   read.resolve(new Map([[id, {
     id,
     type: "inbound-rtp",
-    kind: "video",
+    [mediaTypeOnly ? "mediaType" : "kind"]: "video",
     framesReceived,
     framesDecoded,
   }]]));
@@ -179,14 +179,14 @@ function resolveStats(framesReceived: number, framesDecoded = framesReceived, id
 /// Drive the stall watchdog with one sample per poll, advancing the clock like a real timer.
 /// `gapMs` fakes a sleep between two polls without raising visibilitychange.
 async function pollStall(
-  samples: { received: number; decoded: number; id?: string }[],
+  samples: { received: number; decoded: number; id?: string; mediaTypeOnly?: boolean }[],
   gapMs = POLL_MS,
 ) {
   for (const sample of samples) {
     clock += gapMs;
     for (const tick of intervals.values()) tick();
     await flush();
-    if (pendingStats.length > 0) resolveStats(sample.received, sample.decoded, sample.id);
+    if (pendingStats.length > 0) resolveStats(sample.received, sample.decoded, sample.id, sample.mediaTypeOnly);
     await flush();
   }
 }
@@ -217,6 +217,34 @@ test("the first stall reconnects on the same codec", async () => {
   await pollStall(frozenRun(100));
   expect(failures()).toEqual([]);
   expect(updates).toContain(STALLED);
+});
+
+test("mediaType-only receiver reports still recover a frozen decoder", async () => {
+  const hook = await start();
+  hook.markFrameDecoded();
+  await pollStall(frozenRun(100).map(sample => ({ ...sample, mediaTypeOnly: true })));
+  expect(failures()).toEqual([]);
+  expect(updates).toContain(STALLED);
+});
+
+test("a hung stats read does not reconnect video that keeps presenting frames", async () => {
+  const hook = await start();
+  hook.markFrameDecoded();
+  for (let poll = 0; poll < 12; poll++) {
+    clock += POLL_MS;
+    for (const tick of intervals.values()) tick();
+    await flush();
+    hook.markFrameDecoded();
+    const deadline = [...timers.entries()].find(([, timer]) => timer.delay === 2_000);
+    expect(deadline).toBeDefined();
+    clock += 2_000;
+    timers.delete(deadline![0]);
+    deadline![1].callback();
+    await flush();
+  }
+  expect(pendingStats).toHaveLength(1);
+  expect(closed).toBe(0);
+  expect(updates).not.toContain(STALLED);
 });
 
 
