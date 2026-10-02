@@ -28,8 +28,15 @@ import { type HubDeviceList, listDevices } from './devices';
 import { ANDROID_RECORDING_STOP_ROUTE, handleEasEndpoint, READY_ROUTE } from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
-import { EMU_PREFIX, emuCameraFeeds, emuWebSocketHandler, handleEmuRequest, finishAndroidScreenRecording } from './serve-emu';
-import { SIM_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
+import {
+  EMU_PREFIX,
+  EMU_TOKEN_SUBPROTOCOL_PREFIX,
+  emuCameraFeeds,
+  emuWebSocketHandler,
+  handleEmuRequest,
+  finishAndroidScreenRecording,
+} from './serve-emu';
+import { SIM_PREFIX, SIM_TOKEN_SUBPROTOCOL_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
 import {
   authorizeRequest,
   authorizeUpgrade,
@@ -58,6 +65,7 @@ const UNGATED_ROUTES = new Set([READY_ROUTE, ANDROID_RECORDING_STOP_ROUTE]);
 // bearer. The Hub keeps both rules, so its own cookie and query token do not widen them.
 const SIM_CAPTURE_PREFIX = `${SIM_PREFIX}/network-capture`;
 const SIM_HELPER_PREFIX = `${SIM_PREFIX}/helper/`;
+const TOKEN_SUBPROTOCOL_PREFIXES = [SIM_TOKEN_SUBPROTOCOL_PREFIX, EMU_TOKEN_SUBPROTOCOL_PREFIX];
 const FRAME_POLICY_HEADERS: Record<string, string> = SESSION_TOKEN
   ? { 'Content-Security-Policy': frameAncestorsPolicy([]) }
   : {};
@@ -284,7 +292,7 @@ function gatedSocket<Socket extends GatedSocket>(
     // `ws` emits `error` when a peer breaks the protocol, even while the socket closes, and an
     // error with no listener throws. Without this, a client without the token could stop the Hub.
     socket.on('error', () => socket.close());
-    if (!authorizeUpgrade(request, token)) {
+    if (!authorizeUpgrade(request, token, TOKEN_SUBPROTOCOL_PREFIXES)) {
       socket.close(1008, 'Unauthorized');
       return;
     }

@@ -11,9 +11,6 @@ import { unauthorizedPage } from './unauthorized-page';
 
 const ACCESS_COOKIE = 'expo_device_hub_access';
 
-/** Browsers name the token as a subprotocol for the backend they reach through the Hub. */
-const TOKEN_SUBPROTOCOL_PREFIXES = ['serve-sim.token.', 'serve-emu.token.'];
-
 // Cookies ignore the port, so two Hubs on one host would overwrite each other's.
 export function accessCookieName(token: string): string {
   const suffix = createHash('sha256').update(token).digest('hex').slice(0, 8);
@@ -45,12 +42,12 @@ function hasCookieToken(request: Request, token: string): boolean {
   return false;
 }
 
-function hasSubprotocolToken(request: Request, token: string): boolean {
+function hasSubprotocolToken(request: Request, token: string, prefixes: readonly string[]): boolean {
   return (request.headers.get('sec-websocket-protocol') ?? '')
     .split(',')
     .map((entry) => entry.trim())
     .some((entry) =>
-      TOKEN_SUBPROTOCOL_PREFIXES.some(
+      prefixes.some(
         (prefix) => entry.startsWith(prefix) && safeEqual(entry.slice(prefix.length), token),
       ),
     );
@@ -186,9 +183,19 @@ export function authorizeRequest(
   );
 }
 
-/** A WebSocket takes a bearer header, a token subprotocol, or a same-origin cookie. No `?token=`. */
-export function authorizeUpgrade(request: Request, token: string): boolean {
-  if (hasBearerToken(request, token) || hasSubprotocolToken(request, token)) return true;
+/**
+ * A WebSocket takes a bearer header, a token subprotocol, or a same-origin cookie. No `?token=`.
+ * Browsers name the token as a subprotocol under the prefix of the backend they reach through
+ * the Hub, so the caller passes each backend's prefix.
+ */
+export function authorizeUpgrade(
+  request: Request,
+  token: string,
+  subprotocolPrefixes: readonly string[],
+): boolean {
+  if (hasBearerToken(request, token) || hasSubprotocolToken(request, token, subprotocolPrefixes)) {
+    return true;
+  }
   return hasCookieToken(request, token) && isSameOriginRequest(request);
 }
 

@@ -44,6 +44,7 @@ mock.module('../../../vendor/serve-emu/dist/middleware.js', () => ({
   cameraLaunchArgs: () => [],
   seedCameraFeeds: async () => {},
   fromWsSocket: (socket: unknown) => socket,
+  SESSION_TOKEN_SUBPROTOCOL_PREFIX: 'serve-emu.token.',
   createRouter: (options: Record<string, unknown>) => {
     emuOptions = options;
     return {

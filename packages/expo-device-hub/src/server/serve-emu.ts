@@ -4,6 +4,7 @@ import {
   createRouter,
   fromWsSocket,
   seedCameraFeeds,
+  SESSION_TOKEN_SUBPROTOCOL_PREFIX,
   type WsWebSocketLike,
 } from '../../vendor/serve-emu/dist/middleware.js';
 
@@ -18,6 +19,8 @@ import {
 import { SESSION_TOKEN } from './session-token';
 
 export const EMU_PREFIX = '/vendor/serve-emu';
+/** The subprotocol prefix a browser names serve-emu's session token under. */
+export const EMU_TOKEN_SUBPROTOCOL_PREFIX: string = SESSION_TOKEN_SUBPROTOCOL_PREFIX;
 
 /** The `ws` socket the transport hands over; `on('error')` lets the Hub guard it. */
 type EmuSocket = WsWebSocketLike & { on(event: 'error', listener: () => void): unknown };

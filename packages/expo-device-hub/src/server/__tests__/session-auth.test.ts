@@ -149,8 +149,9 @@ describe('authorizeRequest', () => {
 });
 
 describe('authorizeUpgrade', () => {
-  const upgrade = (headers: Record<string, string>, query = '') =>
-    authorizeUpgrade(new Request(`${ORIGIN}/api/devices/ws${query}`, { headers }), TOKEN);
+  const PREFIXES = ['serve-sim.token.', 'serve-emu.token.'];
+  const upgrade = (headers: Record<string, string>, query = '', prefixes = PREFIXES) =>
+    authorizeUpgrade(new Request(`${ORIGIN}/api/devices/ws${query}`, { headers }), TOKEN, prefixes);
 
   test('accepts a bearer header', () => {
     expect(upgrade({ Authorization: `Bearer ${TOKEN}` })).toBe(true);
@@ -162,6 +163,14 @@ describe('authorizeUpgrade', () => {
     expect(upgrade({ 'sec-websocket-protocol': `binary, serve-emu.token.${TOKEN}` })).toBe(true);
     expect(upgrade({ 'sec-websocket-protocol': 'serve-emu.token.not-it' })).toBe(false);
     expect(upgrade({ 'sec-websocket-protocol': `other.token.${TOKEN}` })).toBe(false);
+  });
+
+  // Each backend names its own prefix, so the Hub reads the token only under those.
+  test('reads the token only under the prefixes it is given', () => {
+    const offered = { 'sec-websocket-protocol': `serve-emu.token.${TOKEN}` };
+
+    expect(upgrade(offered, '', ['serve-emu.token.'])).toBe(true);
+    expect(upgrade(offered, '', ['serve-sim.token.'])).toBe(false);
   });
 
   test('accepts the cookie only from the same origin', () => {
