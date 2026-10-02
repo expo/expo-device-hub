@@ -57,6 +57,9 @@ const source = (sessionGeneration: number): DeviceStreamSourceStatus & { ok: tru
   ok: true,
   mode: sessionGeneration === 1 ? 'scrcpy' : 'grpc-screenshot',
   grpcImageMode: 'mmap',
+  encoder: 'software',
+  encoderName: null,
+  availableEncoders: ['software'],
   inputSource: 'scrcpy',
   availableInputSources: ['scrcpy', 'grpc'],
   availableModes: ['scrcpy', 'grpc-screenshot'],
@@ -284,6 +287,15 @@ describe('Android WebRTC capture replacement hooks', () => {
     expect(Peer.instances[1].closed).toBe(false);
   });
 
+  test('restarts immediately for a deliberate server close outside a pending switch', async () => {
+    await mount();
+    await act(async () => ControlSocket.instances[0].onclose?.({ code: 1012 }));
+    expect(offers).toBe(2);
+    expect(Peer.instances[0].closed).toBe(true);
+    expect(retainedFrame()?.style.visibility).toBe('visible');
+    expect(client.status).toBe('reconnecting');
+  });
+
   test.each(['before', 'with'] as const)(
     'keeps controls pending if the control socket recovers %s the PUT response',
     async (timing) => {
@@ -295,7 +307,8 @@ describe('Android WebRTC capture replacement hooks', () => {
       await reconnectControl();
       if (timing === 'before') {
         await act(async () => ControlSocket.instances[1].onopen?.());
-        expect(client.status).toBe('streaming');
+        expect(client.status).toBe('reconnecting');
+        expect(offers).toBe(1);
         await confirmReplacement();
       } else {
         await act(async () => {

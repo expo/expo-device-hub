@@ -736,7 +736,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           }
         });
     },
-    [dispatchStreamSwitch, refreshStreamSource, retainWebRtcFrame, setPendingStreamSource, streamSourceUrl, useWebRtc],
+    [
+      dispatchStreamSwitch,
+      refreshStreamSource,
+      retainWebRtcFrame,
+      setPendingStreamSource,
+      streamSourceUrl,
+      useWebRtc,
+    ],
   );
 
   const setStreamSource = useCallback(
@@ -1618,7 +1625,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         if (wsRef.current === ws) wsRef.current = null;
         const wasHealthy = opened;
         opened = false;
-        if (wasHealthy && isDeliberateServerClose(event.code)) {
+        if (
+          wasHealthy &&
+          isDeliberateServerClose(event.code) &&
+          !isStreamSwitchPending(streamSwitchRef.current)
+        ) {
+          // A pending switch restarts through its confirmed generation or
+          // settings response. Avoid replacing that peer a second time.
           // serve-emu stops the old video peer along with this control socket.
           // Renegotiate now instead of waiting for ICE loss and its grace period;
           // the new input socket alone must not make the old video read as live.
