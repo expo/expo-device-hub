@@ -37,6 +37,9 @@ jobs:
       - name: Typecheck
         run: bunx turbo run typecheck --only
 
+      - name: Typecheck Hub client UI E2E harness
+        run: bun run --filter expo-device-hub typecheck:e2e:client
+
       - name: Test
         run: bun run test
 

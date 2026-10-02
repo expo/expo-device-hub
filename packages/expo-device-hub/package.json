@@ -94,6 +94,8 @@
     "web": "expo start --web",
     "cli": "bun dist/server/cli.mjs",
     "test": "bun test",
+    "test:e2e:client": "bun scripts/e2e/run.ts",
+    "typecheck:e2e:client": "tsc -p scripts/e2e/tsconfig.json",
     "build": "bun run build:web && bun run build:vendor && bun run build:server",
     "build:web": "expo export --platform web --output-dir dist/client",
     "build:vendor": "bun run scripts/vendor.ts",
