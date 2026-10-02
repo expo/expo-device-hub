@@ -48,6 +48,7 @@ import {
 import { parseCaptureFields } from "./capture/fields";
 import { killOwnListeners } from "./ports";
 import { findBootedDevice, resolveDevice } from "./device";
+import { SLIM_OPTION, parseSlimOption, registerSlimCommand, startSlimInBackground } from "./sim-slim";
 import { openSimulatorHost } from "./simulator-host";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
 import { permissions } from "./permissions";
@@ -2174,6 +2175,7 @@ program
     "Without --require-token, answer for any host name, not only localhost and IP addresses " +
       "(a .local name, a tunnel). Insecure: a DNS rebinding page could then read the session token.",
   )
+  .option(...SLIM_OPTION)
   .option("-l, --list [device]", "List running streams")
   .option("-k, --kill [device]", "Kill running stream(s)")
   .addHelpText(
@@ -2289,6 +2291,7 @@ Examples:
       console.error(error instanceof Error ? error.message : error);
       process.exit(1);
     }
+    const slim = parseSlimOption(opts.slimSimulator);
     // Only take over device selection when something has to happen before the
     // run mode starts. Otherwise follow and detach pick their own target, as
     // they did before this flag existed.
@@ -2353,6 +2356,7 @@ Examples:
         ...(openUrl ? ["--open-url"] : []),
         ...(capabilities.enable.length > 0 ? ["--enable"] : []),
         ...(capabilities.disable.length > 0 ? ["--disable"] : []),
+        ...(slim ? ["--slim-simulator"] : []),
       ];
       if (unsupported.length > 0) {
         console.error(
@@ -2403,6 +2407,7 @@ Examples:
         }
         for (const udid of targets) {
           await ensureBooted(udid);
+          if (slim) startSlimInBackground(udid, slim);
           if (sessionStopping) return;
         }
         const isStreamHelper = process.env[STREAM_HELPER_ENV] === "1";
@@ -2716,6 +2721,8 @@ program
   .helpOption(false)
   .argument("[args...]")
   .action((args: string[]) => uiSettings(args));
+
+registerSlimCommand(program, deviceOpt);
 
 registerCapability(captureRuntime.capability);
 
