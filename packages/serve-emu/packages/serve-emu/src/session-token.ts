@@ -12,6 +12,9 @@ import { ApiError, apiErrorResponse } from "./api/api-error.ts";
 /** A browser cannot set a header on a WebSocket, so it names the token as a subprotocol. */
 export const SESSION_TOKEN_SUBPROTOCOL_PREFIX = "serve-emu.token.";
 
+/** A client offers one token, or a stale one and the current one. More are not compared. */
+const MAX_TOKEN_SUBPROTOCOLS = 4;
+
 /** Constant-time string compare that never throws on length mismatch. */
 function safeEqual(a: string, b: string): boolean {
   const ab = Buffer.from(a, "utf8");
@@ -50,11 +53,9 @@ export function upgradeHasSessionToken(req: Request, token: string): boolean {
   return (req.headers.get("sec-websocket-protocol") ?? "")
     .split(",")
     .map((entry) => entry.trim())
-    .some(
-      (entry) =>
-        entry.startsWith(SESSION_TOKEN_SUBPROTOCOL_PREFIX) &&
-        safeEqual(entry.slice(SESSION_TOKEN_SUBPROTOCOL_PREFIX.length), token),
-    );
+    .filter((entry) => entry.startsWith(SESSION_TOKEN_SUBPROTOCOL_PREFIX))
+    .slice(0, MAX_TOKEN_SUBPROTOCOLS)
+    .some((entry) => safeEqual(entry.slice(SESSION_TOKEN_SUBPROTOCOL_PREFIX.length), token));
 }
 
 /**

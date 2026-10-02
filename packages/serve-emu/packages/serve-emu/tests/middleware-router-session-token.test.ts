@@ -246,6 +246,21 @@ describe("authorizeUpgrade with a session token", () => {
   });
 
   // Proxy and tunnel access logs record query strings, so a socket never takes the token there.
+  // Only the first few token subprotocols are compared, so a long list of guesses costs little.
+  test("compares only the first four token subprotocols it is offered", () => {
+    const guesses = Array.from({ length: 50 }, (_, i) => `serve-emu.token.guess-${i}`);
+    expect(
+      router.authorizeUpgrade(
+        upgrade({ "Sec-WebSocket-Protocol": [...guesses, `serve-emu.token.${TOKEN}`].join(", ") }),
+      ),
+    ).toBe(false);
+    expect(
+      router.authorizeUpgrade(
+        upgrade({ "Sec-WebSocket-Protocol": [...guesses.slice(0, 3), `serve-emu.token.${TOKEN}`].join(", ") }),
+      ),
+    ).toBe(true);
+  });
+
   test("refuses the token in the query string", () => {
     expect(router.authorizeUpgrade(upgrade({}, `?token=${TOKEN}`))).toBe(false);
   });
