@@ -41,9 +41,13 @@ export function endpointFor(
  * explicit user action (selecting/adding a device), never automatically. Requires
  * `serve-sim` on PATH on the host (the middleware spawns `serve-sim --detach`).
  */
-export async function startIosHelper(udid: string, endpoint: string): Promise<void> {
+export async function startIosHelper(
+  udid: string,
+  endpoint: string,
+  fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = fetch,
+): Promise<void> {
   const base = trimTrailingSlash(sameOrigin(endpoint));
-  await fetch(`${base}/grid/api/start`, {
+  await fetchImpl(`${base}/grid/api/start`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ udid }),
