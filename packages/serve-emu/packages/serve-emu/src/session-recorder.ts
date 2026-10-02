@@ -65,6 +65,8 @@ export const DEFAULT_MAX_SESSION_EVENTS = 2_000;
 export const DEFAULT_MAX_SESSION_BYTES = 1024 * 1024;
 
 export type ReplayHandlers = {
+  /** Release replay-owned input when the retained event sequence ends. */
+  finish?: (signal: AbortSignal) => Promise<void> | void;
   dispatchGesture: (
     gesture: Gesture,
     signal: AbortSignal,
@@ -473,6 +475,17 @@ export class SessionRecorder {
         this.#lastError = err instanceof Error ? err.message : String(err);
       }
     } finally {
+      // A bounded recording may end mid-gesture. Finish its input ownership
+      // without marking a successfully completed replay as aborted.
+      try {
+        await handlers.finish?.(replay.controller.signal);
+      } catch (error) {
+        if (outcome !== "cancelled") outcome = "error";
+        this.#lastError = error instanceof Error ? error.message : String(error);
+      }
+      // Cancellation may arrive while waiting for the final UP. Preserve it,
+      // but retain any cleanup error so a failed release is not hidden.
+      if (replay.controller.signal.aborted) outcome = "cancelled";
       if (this.#activeReplay?.id === replay.id) {
         const finishedAt = new Date(this.#clock.now()).toISOString();
         this.#replaying = false;

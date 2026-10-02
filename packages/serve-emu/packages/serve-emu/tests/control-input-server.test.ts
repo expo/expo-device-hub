@@ -385,6 +385,10 @@ describe("server control input integration", () => {
       );
       await waitFor(() => ws.sent.length === 1, "completed ACK missing");
       expect(ws.sent[0]).toMatchObject({ ok: true, status: "completed" });
+      harness.handlers.websocket.message(ws, JSON.stringify({
+        type: "touch", action: "down", x: 0.2, y: 0.2, pointerId: 1, ack: false,
+      }));
+      await waitFor(() => queue.snapshot().depth === 0);
 
       writer.blockNextWrite();
       harness.handlers.websocket.message(
@@ -537,4 +541,35 @@ describe("server control input integration", () => {
       harness.started.stop();
     }
   });
+});
+
+
+test("disconnect releases only its viewer's held touches", async () => {
+  const harness = await createHarness();
+  const queue = harness.queues.get("device-a")!;
+  const writer = harness.writers.get("device-a")!;
+  try {
+    const first = await harness.openWebSocket();
+    const second = await harness.openWebSocket();
+    await waitFor(() => queue.snapshot().depth === 0);
+    for (const ws of [first, second]) {
+      harness.handlers.websocket.message(ws, JSON.stringify({
+        type: "touch", action: "down", x: 0.4, y: 0.6, pointerId: 0,
+      }));
+    }
+    await waitFor(() => queue.snapshot().depth === 0);
+    const downs = writer.packets.filter((packet) => packet[0] === 2 && packet[1] === 0);
+    expect(downs).toHaveLength(2);
+    expect(downs[0]!.readBigUInt64BE(2)).not.toBe(downs[1]!.readBigUInt64BE(2));
+    harness.handlers.websocket.close(first);
+    harness.handlers.websocket.close(first);
+    await waitFor(() => queue.snapshot().depth === 0);
+    const ups = writer.packets.filter((packet) => packet[0] === 2 && packet[1] === 1);
+    expect(ups).toHaveLength(1);
+    expect(ups[0]!.readBigUInt64BE(2)).toBe(downs[0]!.readBigUInt64BE(2));
+    expect(queue.snapshot().reservedReleases).toBe(1);
+    harness.handlers.websocket.close(second);
+    await waitFor(() => queue.snapshot().depth === 0);
+    expect(queue.snapshot().reservedReleases).toBe(0);
+  } finally { await harness.started.stop(); }
 });

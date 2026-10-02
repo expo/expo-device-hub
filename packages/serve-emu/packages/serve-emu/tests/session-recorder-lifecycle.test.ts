@@ -445,3 +445,23 @@ describe("SessionRecorder legacy replay validation", () => {
     expect(recorder.summary().lastError).toBe("legacy string failure");
   });
 });
+
+
+test("reports replay input cleanup failure without aborting a completed signal", async () => {
+  const recorder = new SessionRecorder();
+  recorder.recordGesture({ type: "tap", x: 0.5, y: 0.5 }, "rest:tap");
+  let finished = 0;
+  const replay = recorder.startReplay({
+    dispatchGesture() {},
+    setLocation() {},
+    finish(signal) {
+      expect(signal.aborted).toBe(false);
+      finished++;
+      throw new Error("input cleanup failed");
+    },
+  });
+  expect(await replay.completion).toMatchObject({
+    replayStatus: "error", lastError: "input cleanup failed", replaying: false,
+  });
+  expect(finished).toBe(1);
+});
