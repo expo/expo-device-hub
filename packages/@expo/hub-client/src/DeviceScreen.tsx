@@ -4,10 +4,12 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 
+import { listenForInputCancellation } from './input-cancellation.js';
 import { streamGeometry } from './orientation.js';
 import { wheelDeltaToPixels } from './scroll-wheel.js';
 import { AgentInteractionIndicator } from './AgentInteractionIndicator.js';
@@ -146,20 +148,6 @@ export function DeviceScreen({
     pressedKeysRef.current.clear();
   }, [sendKey]);
 
-  useEffect(() => {
-    const onWindowBlur = () => releasePressedKeys();
-    const onVisibilityChange = () => {
-      if (document.hidden) releasePressedKeys();
-    };
-    window.addEventListener('blur', onWindowBlur);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      window.removeEventListener('blur', onWindowBlur);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      releasePressedKeys();
-    };
-  }, [releasePressedKeys]);
-
   const keyboardInputFrom = (
     event: ReactKeyboardEvent<HTMLDivElement>,
     phase: KeyboardInput['phase'],
@@ -268,18 +256,11 @@ export function DeviceScreen({
     singleIdRef.current = null;
     setFingers(null);
   }, [sendTouch, sendMultiTouch]);
-  useEffect(() => {
-    const hidden = () => { if (document.hidden) cancelGestures(); };
-    window.addEventListener('blur', cancelGestures);
-    window.addEventListener('pagehide', cancelGestures);
-    document.addEventListener('visibilitychange', hidden);
-    return () => {
-      window.removeEventListener('blur', cancelGestures);
-      window.removeEventListener('pagehide', cancelGestures);
-      document.removeEventListener('visibilitychange', hidden);
-      cancelGestures();
-    };
-  }, [cancelGestures]);
+  useLayoutEffect(() => {
+    const cancel = () => { releasePressedKeys(); cancelGestures(); };
+    const stopListening = listenForInputCancellation(cancel);
+    return () => { stopListening(); cancel(); };
+  }, [releasePressedKeys, cancelGestures]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;

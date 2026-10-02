@@ -383,11 +383,12 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
   }, []);
 
   const send = useCallback((message: Record<string, unknown>): boolean => {
+    if (!active || deviceScopeRef.current !== deviceScope) return false;
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
     ws.send(JSON.stringify({ ack: false, ...message }));
     return true;
-  }, []);
+  }, [active, deviceScope]);
 
   const sendTouch = useCallback(
     (sample: TouchSample) => {

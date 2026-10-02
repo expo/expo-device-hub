@@ -28,6 +28,12 @@ type FakeSocket = {
 
 async function renderIosClient(inputAdmission: unknown = true) {
   const sockets: FakeSocket[] = [];
+  const listeners = new Map<string, Set<() => void>>();
+  const addListener = (name: string, callback: () => void) => {
+    const current = listeners.get(name) ?? new Set();
+    current.add(callback); listeners.set(name, current);
+  };
+  const removeListener = (name: string, callback: () => void) => listeners.get(name)?.delete(callback);
   const realTimeout = globalThis.setTimeout;
   stubGlobal('setTimeout', (callback: () => void, delay: number) => realTimeout(callback, delay === 13_000 ? 20 : delay === 1500 ? 10 : delay === 1000 || delay === 5000 ? 20 : delay));
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
@@ -38,12 +44,12 @@ async function renderIosClient(inputAdmission: unknown = true) {
       protocol: 'http:',
       host: 'localhost:3200',
     },
-    addEventListener() {},
-    removeEventListener() {},
+    addEventListener: addListener,
+    removeEventListener: removeListener,
     setTimeout,
     clearTimeout,
   });
-  stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
+  stubGlobal('document', { hidden: false, addEventListener: addListener, removeEventListener: removeListener });
   stubGlobal('WebSocket', class {
     readyState = 0;
     sent: ArrayBuffer[] = [];
@@ -77,7 +83,7 @@ async function renderIosClient(inputAdmission: unknown = true) {
     renderer = create(<Harness />);
   });
   const helperSockets = () => sockets.filter((socket) => socket.url.includes('/helper/'));
-  return { client: () => client, helperSockets, changeDevice: (device: string) => renderer!.update(<Harness device={device} />) };
+  return { client: () => client, helperSockets, dispatch: (name: string) => listeners.get(name)?.forEach(callback => callback()), changeDevice: (device: string) => renderer!.update(<Harness device={device} />) };
 }
 
 function configFrame(config: object): ArrayBuffer {
@@ -205,4 +211,36 @@ test('retired callbacks and paced keys never cross device identity', async () =>
   await act(async () => {client().sendKey({phase:'down',code:'KeyB',key:'b',repeat:false});});
   expect(b.sent.filter(data => new Uint8Array(data)[0] === 6)).toHaveLength(1);
 
+});
+
+
+for (const event of ['blur', 'visibilitychange', 'pagehide']) {
+  test(`${event} cancels a paced batch and releases only its held keys`, async () => {
+    const { client, helperSockets, dispatch } = await renderIosClient();
+    const socket = helperSockets()[0]!;
+    socket.readyState = 1;
+    await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+    await act(async () => {
+      client().sendKeyEvents!([{ type: 'down', usage: 225 }, { type: 'down', usage: 4 }, { type: 'up', usage: 4 }, { type: 'up', usage: 225 }]);
+      if (event === 'visibilitychange') Object.assign(document, { hidden: true });
+      dispatch(event);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    });
+    const keys = socket.sent.filter(data => new Uint8Array(data)[0] === 6)
+      .map(data => JSON.parse(new TextDecoder().decode(new Uint8Array(data).slice(1))));
+    expect(keys).toEqual([{ type: 'down', usage: 225 }, { type: 'up', usage: 225 }]);
+  });
+}
+
+test('blur before admission discards pending keys instead of typing them on recovery', async () => {
+  const { client, helperSockets, dispatch } = await renderIosClient();
+  const socket = helperSockets()[0]!;
+  socket.readyState = 1;
+  await act(async () => {
+    client().sendKeyEvents!([{ type: 'down', usage: 4 }, { type: 'up', usage: 4 }]);
+    dispatch('blur');
+    socket.onmessage?.({ data: Uint8Array.of(0x83).buffer });
+    await new Promise(resolve => setTimeout(resolve, 30));
+  });
+  expect(socket.sent.filter(data => new Uint8Array(data)[0] === 6)).toHaveLength(0);
 });

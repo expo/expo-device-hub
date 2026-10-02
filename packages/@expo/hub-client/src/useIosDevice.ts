@@ -88,6 +88,7 @@ import {
 import { NO_PENDING_CAMERA_WRITES } from './device-camera.js';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes.js';
 import { KeyedWriteTracker } from './keyed-write-tracker.js';
+import { listenForInputCancellation } from './input-cancellation.js';
 import { createPacedKeySender } from './paced-key-sender.js';
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token.js';
 import { publicServeSimMount, publicUrlForRoute } from './serve-sim-urls.js';
@@ -388,7 +389,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       createPacedKeySender((event) => sendWs(WS_MSG_KEY, { type: event.type, usage: event.usage })),
     [sendWs],
   );
-  useEffect(() => () => keySender.dispose(), [keySender]);
+  useEffect(() => {
+    const cancel = () => {
+      const releases = keySender.cancel();
+      if (!config || config !== deviceSettingConfigRef.current) return;
+      const socket = inputSocketRef.current;
+      socket?.discardQueued(WS_MSG_KEY);
+      for (const event of releases) socket?.trySend(WS_MSG_KEY, event);
+    };
+    const stopListening = listenForInputCancellation(cancel);
+    return () => { stopListening(); keySender.dispose(); };
+  }, [config, keySender]);
   const sendKeyEvents = useCallback(
     (events: ReadonlyArray<HidKeyEvent>) => keySender.enqueue(events),
     [keySender],

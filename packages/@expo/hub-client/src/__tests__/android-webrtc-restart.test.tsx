@@ -49,7 +49,8 @@ class ControlSocket {
   constructor() {
     ControlSocket.instances.push(this);
   }
-  send() {}
+  sent: string[] = [];
+  send(message: string) { this.sent.push(message); }
   close() {}
 }
 
@@ -478,4 +479,35 @@ test('control reconnected to the old source during staging preserves progressing
   expect([...timeouts.values()].some(timer => timer.delay === 4_000)).toBe(false);
   expect(offers).toBe(2);
   expect(Peer.instances[1].closed).toBe(false);
+});
+
+
+test('Android input callbacks and held gestures cannot cross a device handoff', async () => {
+  await mount();
+  const oldClient = client;
+  const oldSocket = ControlSocket.instances[0];
+  const surface = container.querySelector('[role="application"]') as HTMLDivElement;
+  Object.defineProperty(surface, 'getBoundingClientRect', { value: () => ({ left: 0, top: 0, width: 100, height: 200 }) });
+  Object.assign(surface, { setPointerCapture() {}, releasePointerCapture() {} });
+  const frames = new Map<number, FrameRequestCallback>();
+  installGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(1, callback); return 1; });
+  installGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+  const pointer = (type: string, x: number) => new window.PointerEvent(type, { bubbles: true, pointerId: 1, pointerType: 'mouse', button: 0, clientX: x, clientY: 20 });
+  await act(async () => surface.dispatchEvent(pointer('pointerdown', 10)));
+  await act(async () => surface.dispatchEvent(pointer('pointermove', 20)));
+  expect(frames.size).toBe(1);
+  await act(async () => root.render(<Harness device="emulator-5556" />));
+  const replacementSocket = ControlSocket.instances.at(-1)!;
+  expect(replacementSocket).not.toBe(oldSocket);
+  await act(async () => replacementSocket.onopen?.());
+  expect(frames.size).toBe(0);
+  await act(async () => {
+    oldClient.sendTouch({ phase: 'move', x: .5, y: .5 });
+    oldClient.sendKey({ phase: 'down', code: 'KeyA', key: 'a', repeat: false });
+    surface.dispatchEvent(pointer('pointermove', 30));
+    surface.dispatchEvent(pointer('pointerup', 30));
+  });
+  expect(replacementSocket.sent.map(message => JSON.parse(message)).filter(message => message.type !== 'reset-video')).toEqual([]);
+  await act(async () => surface.dispatchEvent(pointer('pointerdown', 40)));
+  expect(replacementSocket.sent.map(message => JSON.parse(message)).some(message => message.type === 'touch')).toBe(true);
 });
