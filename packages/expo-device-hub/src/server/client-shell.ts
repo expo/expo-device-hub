@@ -12,10 +12,11 @@ export type ClientShellOptions = {
   shareUrl?: string;
 };
 
-// These land in a single-quoted string inside a <script>. A URL path may keep a quote.
+// These land in a single-quoted string inside a <script>. A URL path may keep a quote, and a
+// line break would end the string.
 function jsStringContent(value: string): string {
   return value.replace(
-    /[\\'"<>&\u2028\u2029]/g,
+    /[\\'"<>&\n\r\u2028\u2029]/g,
     (char) => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`
   );
 }

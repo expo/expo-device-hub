@@ -59,4 +59,12 @@ describe('configureClientShell', () => {
     expect(html).toContain('\\u0027');
     expect(html).toContain('\\u003c/script\\u003e');
   });
+
+  // A line break ends a single-quoted string literal, so the script would not parse.
+  test('keeps a line break inside the string it is injected into', () => {
+    const shareUrl = 'a\nb\rc\u2028d';
+    const script = configureClientShell("return '{{shareUrl}}';", { mountPath: '', shareUrl });
+
+    expect(new Function(script)()).toBe(shareUrl);
+  });
 });
