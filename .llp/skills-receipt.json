@@ -20,5 +20,8 @@
     ".agents/skills/llp-orient/SKILL.md": "sha256:6a421cd027e06676e2fe2ecc104ea8a7f6ab6ba4f7013fbbbbc42c52df532a90",
     ".agents/skills/llp-review/SKILL.md": "sha256:b79df36f677dd1150b45f9ab518bb96985ee01599153a441aad3ab81abc94e5c"
   },
+  "tools": {
+    ".llp/ref-check": "sha256:c8055431baf17084078bcf1e18e01a85db1123ade7800bacd93c761cf094760c"
+  },
   "detached": []
 }

@@ -20,6 +20,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      # Runs on the clean checkout, before any build: ref-check also scans
+      # git-ignored output such as packages/expo-device-hub/vendor/.
+      - name: LLP references
+        run: python3 .llp/ref-check --root .
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:

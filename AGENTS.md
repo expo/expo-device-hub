@@ -26,10 +26,11 @@ This repo uses [LLP v0.5.2](https://github.com/ccheever/llp/tree/v0.5.2). One co
 - When you change code that has a `@ref`, check that the section still applies. Update or remove the `@ref` if it does not.
 - Do not annotate mechanically. A `@ref` must tell the reader something that the code and the file name do not.
 - Land LLP updates in the same commit as the code change that caused them.
+- Run `bun run llp:check` before you push. It runs `.llp/ref-check` (copied from LLP v0.5.2), a deterministic script that validates `@ref` targets, LLP headers, numbers, and the `current/` and `foundation/` links. CI runs it right after checkout, before any build. It also scans git-ignored build output such as `packages/expo-device-hub/vendor/`, so stale build output from another branch can make it fail locally; delete that output or run it on a clean checkout.
 
 ## Agent skills
 
-The core LLP skills are installed once, in `.agents/skills/`, which Codex and other Agent Skills clients read. `.claude/skills` is a symlink to `../.agents/skills`, because Claude Code reads only `.claude/skills/`. `.llp/skills-receipt.json` records the release and the hash of each file. Do not edit the installed skill files. Run `/llp-adopt update` to update them.
+The core LLP skills are installed once, in `.agents/skills/`, which Codex and other Agent Skills clients read. `.claude/skills` is a symlink to `../.agents/skills`, because Claude Code reads only `.claude/skills/`. `.llp/skills-receipt.json` records the release and the hash of each skill file and of `.llp/ref-check`. Do not edit the installed skill files. Run `/llp-adopt update` to update them.
 
 The symlink is a deliberate exception to the LLP rule that installs are copies, never symlinks. Our reading of that rule is that it stops a skill from changing when an upstream checkout outside the repo changes, without a diff or a receipt update. Here the link target is a committed copy in this repo, so every change still goes through a git diff and the receipt hashes. When `/llp-adopt update` runs, write only to `.agents/skills/` and keep the symlink.
 
