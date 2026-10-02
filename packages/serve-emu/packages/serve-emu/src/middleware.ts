@@ -138,6 +138,11 @@ import {
   WebRtcStatsCollector,
   WebRtcStatsRequestError,
 } from "./webrtc-stats.ts";
+import {
+  requestHasSessionToken,
+  sessionTokenRequiredResponse,
+  upgradeHasSessionToken,
+} from "./session-token.ts";
 
 export { fromBunSocket, fromWsSocket } from "./stream-socket.ts";
 export type { StreamSocket, WsWebSocketLike } from "./stream-socket.ts";
@@ -172,6 +177,7 @@ export type {
 export { STREAM_TRANSPORTS } from "./stream-settings.ts";
 export type { StreamTransport } from "./stream-settings.ts";
 export { cameraLaunchArgs, handleCameraRequest, seedCameraFeeds } from "./camera.ts";
+export { SESSION_TOKEN_SUBPROTOCOL_PREFIX } from "./session-token.ts";
 export { CAMERA_FACINGS } from "./shared/api-contracts.ts";
 export type { CameraFacing, CameraFeedStatus, CameraStatus } from "./shared/api-contracts.ts";
 
@@ -1186,11 +1192,7 @@ async function createAppInternal(
     ...webRtcCorsHeaders(req),
     "Content-Type": "application/json; charset=utf-8",
   });
-  const webRtcForbiddenOrigin = (req: Request) =>
-    Response.json(
-      { error: "forbidden_origin", message: "Request origin is not allowed for WebRTC signaling." },
-      { status: 403, headers: webRtcJsonHeaders(req) },
-    );
+  const webRtcForbiddenOrigin = (req: Request) => webRtcForbiddenOriginResponse(req, opts);
 
   const handleRequest = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
@@ -2172,6 +2174,26 @@ function inputSourceForApp(app: EmuApp): InputSource {
   return readSource?.() ?? streamSessionForApp(app).inputSource;
 }
 
+function webRtcForbiddenOriginResponse(req: Request, policy: BrowserOriginPolicy): Response {
+  return Response.json(
+    { error: "forbidden_origin", message: "Request origin is not allowed for WebRTC signaling." },
+    {
+      status: 403,
+      headers: { ...corsHeadersForRequest(req, policy), "Content-Type": "application/json; charset=utf-8" },
+    },
+  );
+}
+
+/**
+ * The answer to an `OPTIONS /webrtc/offer` or `/webrtc/close` preflight. It
+ * needs no device, so the router gives it before `ensure` and a preflight never
+ * starts one. It matches what the device app answers.
+ */
+function webRtcSignalingPreflightResponse(req: Request, policy: BrowserOriginPolicy): Response {
+  if (!isAllowedBrowserOrigin(req, policy)) return webRtcForbiddenOriginResponse(req, policy);
+  return new Response(null, { status: 204, headers: corsHeadersForRequest(req, policy) });
+}
+
 export function createApp(
   opts: AppOptions & { streamMode?: "scrcpy" },
   dependencies?: CreateAppDependencies,
@@ -2187,7 +2209,14 @@ export function createApp(
   return createAppInternal(opts, dependencies);
 }
 
-export type RouterDefaults = Partial<AppOptions>;
+export type RouterDefaults = Partial<AppOptions> & {
+  /**
+   * Session token every request and WebSocket upgrade must present, as with
+   * serve-sim's `--require-token`. `./session-token.ts` lists where each may
+   * carry it. Unset keeps the router open.
+   */
+  sessionToken?: string;
+};
 
 export type RouterDependencies = {
   listDevices?: typeof listDevices;
@@ -2206,14 +2235,24 @@ export type RouterDependencies = {
  * Multi-device router. Owns a lazily-populated `Map<serial, EmuApp>` and routes
  * each request to the app for its `?device=<serial>` query (falling back to the
  * first available device when absent). The UI shell and the `/api/devices`
- * fleet listing are served without requiring any device. Both `server.ts` (Bun)
- * and the Expo DevTools plugin mount this onto their own transport, so the
- * device-routing logic lives here once rather than in each transport.
+ * fleet listing are served without requiring any device. An embedding host,
+ * such as Expo Device Hub, mounts this onto its own transport. The standalone
+ * `server.ts` does not use it: it has its own routing and its own token gate.
+ *
+ * With a `sessionToken`, every request is refused before routing unless it
+ * carries the token, so a new route is gated by default. The WebRTC preflights
+ * are the only exception. A transport calls `authorizeUpgrade` before it starts
+ * a device for a WebSocket, and passes the upgrade request to `attachWebSocket`,
+ * which refuses a socket without the token.
  */
 export function createRouter(
-  defaults: RouterDefaults = {},
+  { sessionToken, ...defaults }: RouterDefaults = {},
   dependencies: RouterDependencies = {},
 ) {
+  // An empty token would read as "no token" below and leave the router open.
+  if (sessionToken === "") {
+    throw new Error("sessionToken must not be empty. Omit it to leave the router open.");
+  }
   const readOnlineDevices = dependencies.listDevices ?? listDevices;
   const readAllDevices = dependencies.listAllDevices ?? listAllDevices;
   const readAvds = dependencies.listAvds ?? listAvds;
@@ -2826,6 +2865,16 @@ export function createRouter(
 
   const handleRequest = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
+    // A browser cannot attach the token to a preflight, so the WebRTC
+    // preflights skip the gate, as serve-sim's preflights do. They return no
+    // live state. The signaling ones are answered here, before `ensure`.
+    if (req.method === "OPTIONS" && (url.pathname === "/webrtc/offer" || url.pathname === "/webrtc/close")) {
+      return webRtcSignalingPreflightResponse(req, defaults);
+    }
+    const statsPreflight = req.method === "OPTIONS" && url.pathname === "/webrtc/stats";
+    if (sessionToken && !statsPreflight && !requestHasSessionToken(req, sessionToken)) {
+      return sessionTokenRequiredResponse(corsHeadersForRequest(req, defaults));
+    }
     if (
       req.method !== "GET" &&
       req.method !== "HEAD" &&
@@ -3127,13 +3176,25 @@ export function createRouter(
     return app.handleRequest(req);
   };
 
+  // Upgrades never reach `handleRequest`, so the transport checks each one
+  // here before `ensure` starts its device. Always true without a token.
+  const authorizeUpgrade = (req: Request): boolean =>
+    !sessionToken || upgradeHasSessionToken(req, sessionToken);
+
   // Attach a video/gesture socket to an already-resolved, already-started
   // device. The transport ensures the serial before upgrading and passes it
   // here, so the app should exist; close defensively if it raced away.
+  // With a token, `request` is the upgrade the socket came from, and a socket
+  // without the token is closed, so a transport that skips `authorizeUpgrade`
+  // fails closed.
   const attachWebSocket = (
     socket: StreamSocket,
-    opts: { serial: string; frameMeta: boolean; video?: boolean },
+    opts: { serial: string; frameMeta: boolean; video?: boolean; request?: Request },
   ): void => {
+    if (sessionToken && !(opts.request && upgradeHasSessionToken(opts.request, sessionToken))) {
+      socket.close(1008, "Unauthorized");
+      return;
+    }
     const app = apps.get(opts.serial);
     if (!app) {
       socket.close(1011, "device not ready");
@@ -3189,6 +3250,7 @@ export function createRouter(
     startScreenRecording,
     finishScreenRecording: () => screenRecording?.recorder.finish() ?? Promise.resolve(null),
     handleRequest,
+    authorizeUpgrade,
     attachWebSocket,
     stopAll,
   };
