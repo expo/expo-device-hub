@@ -10,7 +10,8 @@ let pendingStats: { resolve: (value: Map<string, unknown>) => void }[] = [];
 let peers: FakePeer[] = [];
 let closed = 0;
 let visibility: "visible" | "hidden" = "visible";
-let visibilityListener: (() => void) | undefined;
+const visibilityListeners = new Set<() => void>();
+const visibilityListener = () => visibilityListeners.forEach(listener => listener());
 let nextTimer = 0;
 const timers = new Map<number, { callback: () => void; delay: number }>();
 let nextInterval = 0;
@@ -72,10 +73,10 @@ Object.assign(globalThis, {
     get hidden() { return visibility === "hidden"; },
     get visibilityState() { return visibility; },
     addEventListener(name: string, listener: () => void) {
-      if (name === "visibilitychange") visibilityListener = listener;
+      if (name === "visibilitychange") visibilityListeners.add(listener);
     },
     removeEventListener(name: string, listener: () => void) {
-      if (name === "visibilitychange" && visibilityListener === listener) visibilityListener = undefined;
+      if (name === "visibilitychange") visibilityListeners.delete(listener);
     },
   },
   window: {
@@ -294,6 +295,19 @@ test("stats subscribers share the watchdog's single read", async () => {
   expect(reports).toEqual([1]); expect(pendingStats).toHaveLength(0);
   unsubscribe(); await pollStall([{received: 200, decoded: 200}]);
   expect(reports).toEqual([1]);
+});
+
+test("brief hide/show between polls invalidates the decoder-stall run", async () => {
+  const hook = await start();
+  hook.markFrameDecoded();
+  await pollStall(frozenRun(100).slice(0, PLAYBACK_STALL_POLLS));
+  visibility = "hidden";
+  visibilityListener();
+  clock += 200;
+  visibility = "visible";
+  visibilityListener();
+  await pollStall([{ received: 1000, decoded: 100 }]);
+  expect(updates).not.toContain(STALLED);
 });
 
 cleanup.forEach((stop) => stop?.());

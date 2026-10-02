@@ -81,7 +81,7 @@ export function startPlaybackStallWatchdog({
     lastPollAt = null;
   };
 
-  const stop = startExclusivePoll(async () => {
+  const stopPolling = startExclusivePoll(async () => {
     if (!readable()) {
       invalidate();
       return;
@@ -141,5 +141,13 @@ export function startPlaybackStallWatchdog({
     retryTransport("WebRTC playback stalled.");
   }, PLAYBACK_STALL_POLL_MS);
 
-  return { stop, invalidate };
+  document.addEventListener("visibilitychange", invalidate);
+  return {
+    stop() {
+      document.removeEventListener("visibilitychange", invalidate);
+      invalidate();
+      stopPolling();
+    },
+    invalidate,
+  };
 }
