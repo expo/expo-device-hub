@@ -7,7 +7,7 @@ export const SERVE_SIM_OPTIONS_ENV = 'EXPO_DEVICE_HUB_SERVE_SIM_OPTIONS';
 export type StandaloneServeSimOptions = {
   streamSettings?: StreamSettings;
   metricsCorsOrigins?: string[];
-  /** Device hub has no token gate, so serve-sim allows network capture only on a loopback host. */
+  /** Without the session token, serve-sim allows network capture only on a loopback host. */
   loopbackOnly?: boolean;
 };
 

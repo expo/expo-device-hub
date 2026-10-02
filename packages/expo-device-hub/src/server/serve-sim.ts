@@ -12,8 +12,14 @@ import {
   readStandaloneServeSimOptions,
   SERVE_SIM_OPTIONS_ENV,
 } from './serve-sim-options';
+import { SESSION_TOKEN } from './session-token';
 
 export const SIM_PREFIX = '/vendor/serve-sim';
+/**
+ * The subprotocol prefix a browser names serve-sim's session token under. serve-sim's middleware
+ * entry does not export its `TOKEN_SUBPROTOCOL_PREFIX`, so this copies it.
+ */
+export const SIM_TOKEN_SUBPROTOCOL_PREFIX = 'serve-sim.token.';
 // Must be the full mount path: serve-sim bakes basePath into the client-facing URLs it returns
 // (grid / exec-ws / stream), so a shorter value silently breaks the iOS client.
 const SIM_BASE_PATH = `${MOUNT_PATH}${SIM_PREFIX}`;
@@ -23,6 +29,8 @@ const middleware = simMiddleware({
   basePath: SIM_BASE_PATH,
   proxyHelpers: true,
   ...standaloneOptions,
+  // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
+  ...(SESSION_TOKEN ? { execToken: SESSION_TOKEN, requirePreviewToken: true } : {}),
 });
 
 const SERVE_SIM_STATE_DIR = join(tmpdir(), 'serve-sim');
@@ -46,7 +54,10 @@ export async function handleSimRequest(request: Request): Promise<Response | nul
 // Same-origin WebSockets: the exec/control channel (/exec-ws) and the HID input
 // socket (/helper/ws?device=<udid>). Expo CLI accepts the upgrade for each
 // registered route and hands us the socket; simMiddleware dispatches by path.
-export const simWebSocketHandler = (socket: { close(): void }, request: Request): void => {
+export const simWebSocketHandler = (
+  socket: { close(): void; on(event: 'error', listener: () => void): unknown },
+  request: Request,
+): void => {
   const url = new URL(request.url);
   const rewritten = new Request(
     `${url.origin}${MOUNT_PATH}${url.pathname}${url.search}`,
