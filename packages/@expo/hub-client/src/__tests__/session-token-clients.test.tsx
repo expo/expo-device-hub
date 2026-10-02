@@ -3,6 +3,7 @@ import { useLayoutEffect } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { type DeviceClient, type DeviceConnectionOptions } from '../types';
+import { useAndroidDeviceClient } from '../useAndroidDevice';
 import { useIosDeviceClient } from '../useIosDevice';
 import { createGlobalStubs } from './test-globals';
 
@@ -211,5 +212,53 @@ describe('useIosDeviceClient with a session token', () => {
     ].filter((url) => new URL(url).host === 'a.test');
     expect(toServerA).toEqual([]);
     expect(network.fetches).toContainEqual({ url: `${SERVER_B}/api?device=UDID-1`, authorization: 'Bearer tok-b' });
+  });
+});
+
+const ANDROID_BASE = 'https://hub.test/vendor/serve-emu';
+const androidApi = (url: URL) =>
+  url.pathname === '/vendor/serve-emu/api' ? { size: { width: 1080, height: 2400 } } : {};
+
+/** The H.264 socket opens only where the browser can decode it. */
+function stubWebCodecs() {
+  stubGlobal('VideoDecoder', class {});
+  stubGlobal('EncodedVideoChunk', class {});
+}
+
+describe('useAndroidDeviceClient with a session token', () => {
+  test('presents the token on every request, socket, and event stream it opens', async () => {
+    const network = stubNetwork(androidApi);
+    stubWebCodecs();
+
+    const client = await render(
+      useAndroidDeviceClient,
+      { baseUrl: ANDROID_BASE, device: 'emulator-5554', streamMode: 'h264', token: 'tok-1' },
+      network
+    );
+    await act(async () => client.attachLogs());
+
+    expect(network.fetches.length).toBeGreaterThan(1);
+    expect(network.fetches.filter((call) => call.authorization !== 'Bearer tok-1')).toEqual([]);
+    expect(network.sockets.length).toBeGreaterThan(0);
+    expect(network.sockets.filter((socket) => socket.protocols?.[0] !== 'serve-emu.token.tok-1')).toEqual([]);
+    expect(network.sockets.every((socket) => !socket.url.includes('token='))).toBe(true);
+    expect(network.eventSources.length).toBe(2);
+    expect(network.eventSources.every((url) => url.includes('token=tok-1'))).toBe(true);
+  });
+
+  test('adds no credential without one', async () => {
+    const network = stubNetwork(androidApi);
+    stubWebCodecs();
+
+    const client = await render(
+      useAndroidDeviceClient,
+      { baseUrl: ANDROID_BASE, device: 'emulator-5554', streamMode: 'h264' },
+      network
+    );
+    await act(async () => client.attachLogs());
+
+    expect(network.fetches.every((call) => call.authorization === null)).toBe(true);
+    expect(network.sockets.every((socket) => socket.protocols === undefined)).toBe(true);
+    expect(network.eventSources.some((url) => url.includes('token='))).toBe(false);
   });
 });

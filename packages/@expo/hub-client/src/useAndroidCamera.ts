@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useEffect, useRef, useState } from "react";
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { deviceApiUrl } from "./android-api-url";
 import {
@@ -12,6 +12,7 @@ import {
 } from "./android-camera";
 import { NO_PENDING_CAMERA_WRITES } from "./device-camera";
 import { KeyedWriteTracker } from "./keyed-write-tracker";
+import { sessionTokenFetch, type SessionToken, withSessionTokenQuery } from "./session-token";
 import { type DeviceCameraFacing } from "./types";
 
 const CAMERA_POLL_MS = 3000;
@@ -23,11 +24,14 @@ interface UseAndroidCameraOptions {
   /** Identity of the current connection. A change invalidates in-flight reads and writes. */
   scope: string;
   scopeRef: RefObject<string>;
+  /** A gated backend's session token (see `./session-token`). */
+  token?: SessionToken;
 }
 
-function cameraImageUrl(baseUrl: string, device: string | null) {
+// The preview renders these in an <img>, which cannot set a header.
+function cameraImageUrl(baseUrl: string, device: string | null, token: SessionToken) {
   return (facing: DeviceCameraFacing, digest: string | null) =>
-    deviceApiUrl(baseUrl, androidCameraImagePath(facing, digest), device);
+    withSessionTokenQuery(deviceApiUrl(baseUrl, androidCameraImagePath(facing, digest), device), token);
 }
 
 /** Host-fed emulator camera images: polls serve-emu for the feeds and replaces them. */
@@ -37,7 +41,9 @@ export function useAndroidCamera({
   device,
   scope,
   scopeRef,
+  token = null,
 }: UseAndroidCameraOptions) {
+  const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
   const [camera, setCamera] = useState(NO_ANDROID_CAMERA);
   const [cameraPending, setCameraPending] =
     useState<ReadonlySet<DeviceCameraFacing>>(NO_PENDING_CAMERA_WRITES);
@@ -53,7 +59,7 @@ export function useAndroidCamera({
       const request = tracker.start(facing);
       if (!request) return;
       writeVersionsRef.current[facing]++;
-      const imageUrl = cameraImageUrl(baseUrl, device);
+      const imageUrl = cameraImageUrl(baseUrl, device, token);
       const statusUrl = deviceApiUrl(baseUrl, "/api/camera", device);
       const heldFacings = new Set(CAMERA_FACINGS.filter((other) => other !== facing));
 
@@ -68,7 +74,7 @@ export function useAndroidCamera({
       setCameraError(null);
       setCameraPending(tracker.pending);
 
-      void fetch(deviceApiUrl(baseUrl, androidCameraImagePath(facing, null), device), init)
+      void sessionFetch(deviceApiUrl(baseUrl, androidCameraImagePath(facing, null), device), init)
         .then(async (response) => {
           const payload: unknown = await response.json().catch(() => null);
           if (!tracker.isCurrent(request) || scopeRef.current !== scope) return;
@@ -77,7 +83,7 @@ export function useAndroidCamera({
             return;
           }
           setCameraError(androidCameraErrorMessage(response.status, payload));
-          const refreshed: unknown = await fetch(statusUrl, { cache: "no-store" })
+          const refreshed: unknown = await sessionFetch(statusUrl, { cache: "no-store" })
             .then((refresh) => (refresh.ok ? refresh.json() : null))
             .catch(() => null);
           if (!tracker.isCurrent(request) || scopeRef.current !== scope) return;
@@ -91,7 +97,7 @@ export function useAndroidCamera({
           if (tracker.finish(request)) setCameraPending(tracker.pending);
         });
     },
-    [baseUrl, device, scope, scopeRef],
+    [baseUrl, device, scope, scopeRef, sessionFetch, token],
   );
 
   const setCameraImage = useCallback(
@@ -123,7 +129,7 @@ export function useAndroidCamera({
     let cancelled = false;
     let polling = false;
     let controller: AbortController | null = null;
-    const imageUrl = cameraImageUrl(baseUrl, device);
+    const imageUrl = cameraImageUrl(baseUrl, device, token);
     const url = deviceApiUrl(baseUrl, "/api/camera", device);
 
     const poll = async () => {
@@ -134,7 +140,7 @@ export function useAndroidCamera({
       const next = new AbortController();
       controller = next;
       try {
-        const response = await fetch(url, { cache: "no-store", signal: next.signal });
+        const response = await sessionFetch(url, { cache: "no-store", signal: next.signal });
         const read = response.ok ? parseAndroidCameraStatus(await response.json(), imageUrl) : null;
         if (cancelled || scopeRef.current !== scope) return;
         const heldFacings = staleCameraFacings(
@@ -158,7 +164,7 @@ export function useAndroidCamera({
       controller?.abort();
       tracker.reset();
     };
-  }, [active, baseUrl, device, scope, scopeRef]);
+  }, [active, baseUrl, device, scope, scopeRef, sessionFetch, token]);
 
   return {
     camera: camera.status,

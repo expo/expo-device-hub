@@ -81,6 +81,7 @@ import { useAppPermissions } from './useAppPermissions';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { parseScreenRecordingStatus } from './screen-recording';
 import { fetchScreenshot } from './screenshot';
+import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
@@ -212,11 +213,11 @@ export function parseServeEmuStreamSettings(value: unknown): ServeEmuStreamSetti
   };
 }
 
-// Until the Android client sends `token`, its type refuses one in an object literal. A
-// variable typed `DeviceConnectionOptions` still passes, and the token is dropped.
-export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 'token'>): DeviceClient {
-  const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
+export function useAndroidDeviceClient(options: DeviceConnectionOptions): DeviceClient {
+  const { baseUrl, enabled = true, device: targetDevice = null, streamMode, token = null } = options;
   const active = enabled && !!baseUrl;
+  const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
+  const socketProtocols = useMemo(() => sessionTokenProtocols('android', token), [token]);
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -421,20 +422,20 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     const url = `${apiUrl(baseUrl, '/api/orientation')}${
       targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
     }`;
-    void fetch(url, {
+    void sessionFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orientation: next }),
     }).catch(() => {});
-  }, [baseUrl, targetDevice, screen]);
+  }, [baseUrl, targetDevice, screen, sessionFetch]);
 
   // serve-emu captures the frame buffer server-side (`adb exec-out screencap
   // -p`) and returns the PNG bytes; `?device=` selects the serial (omitted →
   // first available, matching the stream).
   const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
-    return fetchScreenshot(baseUrl, targetDevice);
-  }, [baseUrl, targetDevice]);
+    return fetchScreenshot(baseUrl, targetDevice, sessionFetch);
+  }, [baseUrl, targetDevice, sessionFetch]);
 
   // Device-wide options use the same GET/POST contracts as serve-emu's own UI.
   // Writes are optimistic and independently serialized by key; a failed write
@@ -457,7 +458,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       setDeviceSettings((current) => ({ ...(current ?? {}), [key]: value }));
       if (key === 'appearance') setAppearanceState(value as DeviceAppearance);
 
-      void fetch(url, {
+      void sessionFetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestOptions.body),
@@ -475,7 +476,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
           if (!tracker.isCurrent(request) || deviceScopeRef.current !== scope) return;
           let authoritative: string | null = null;
           try {
-            const response = await fetch(url, { cache: 'no-store' });
+            const response = await sessionFetch(url, { cache: 'no-store' });
             if (!response.ok) throw new Error('Device option refresh failed');
             authoritative = parseAndroidDeviceSetting(
               settingKey,
@@ -503,7 +504,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
           if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [baseUrl, deviceScope, deviceSettings, targetDevice],
+    [baseUrl, deviceScope, deviceSettings, targetDevice, sessionFetch],
   );
 
   const setAppearance = useCallback(
@@ -518,6 +519,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       device: targetDevice,
       scope: deviceScope,
       scopeRef: deviceScopeRef,
+      token,
     });
 
   const accessibilityLoader = useMemo<AccessibilityLoader | null>(
@@ -527,9 +529,10 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
             loadAndroidAccessibility(
               deviceApiUrl(baseUrl, '/api/accessibility', targetDevice),
               signal,
+              sessionFetch,
             )
         : null,
-    [active, baseUrl, targetDevice],
+    [active, baseUrl, targetDevice, sessionFetch],
   );
   const accessibilityState = useAccessibility(accessibilityLoader);
 
@@ -540,10 +543,10 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       locationUrl === null
         ? null
         : {
-            read: (signal) => readAndroidLocation(fetch, locationUrl, signal),
-            set: (fix) => writeAndroidLocation(fetch, locationUrl, fix),
+            read: (signal) => readAndroidLocation(sessionFetch, locationUrl, signal),
+            set: (fix) => writeAndroidLocation(sessionFetch, locationUrl, fix),
           },
-    [locationUrl],
+    [locationUrl, sessionFetch],
   );
   const {
     location,
@@ -555,8 +558,9 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
   } = useDeviceLocation(locationBackend);
 
   const permissionsBackend = useMemo(
-    () => (active && baseUrl ? androidPermissionsBackend(baseUrl, targetDevice) : null),
-    [active, baseUrl, targetDevice],
+    () =>
+      active && baseUrl ? androidPermissionsBackend(baseUrl, targetDevice, sessionFetch) : null,
+    [active, baseUrl, targetDevice, sessionFetch],
   );
   const appPermissions = useAppPermissions({
     active,
@@ -578,6 +582,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     initialSettings: null,
     parse: parseAndroidStreamSettings,
     toPatch: androidStreamSettingsPatch,
+    fetchImpl: sessionFetch,
   });
 
   const refreshStreamSource = useCallback(
@@ -595,7 +600,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       const controller = new AbortController();
       streamSourceRefreshControllerRef.current = controller;
       try {
-        const response = await fetch(streamSourceUrl, {
+        const response = await sessionFetch(streamSourceUrl, {
           cache: 'no-store',
           signal: controller.signal,
         });
@@ -635,7 +640,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
         }
       }
     },
-    [streamSourceUrl],
+    [streamSourceUrl, sessionFetch],
   );
 
   const putStreamMode = useCallback(
@@ -660,7 +665,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       dispatchStreamSwitch({ type: 'request-start', live: streamLiveRef.current });
       setStreamSourceError(null);
       let failed = false;
-      void fetch(streamSourceUrl, {
+      void sessionFetch(streamSourceUrl, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -709,7 +714,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
           }
         });
     },
-    [dispatchStreamSwitch, refreshStreamSource, streamSourceUrl],
+    [dispatchStreamSwitch, refreshStreamSource, streamSourceUrl, sessionFetch],
   );
 
   const setStreamSource = useCallback(
@@ -863,7 +868,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       polling = true;
       controller = new AbortController();
       try {
-        const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        const response = await sessionFetch(url, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) return;
         const info = (await response.json()) as ServeEmuApiInfo;
         if (cancelled) return;
@@ -899,7 +904,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       clearInterval(timer);
       controller?.abort();
     };
-  }, [active, baseUrl, deviceScope, targetDevice]);
+  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch]);
 
   const webRtcRequested = streamMode === 'webrtc';
   const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
@@ -918,6 +923,9 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
   } = useWebRtcStream({
     offerUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/offer', targetDevice) : '',
     closeUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/close', targetDevice) : '',
+    closeBeaconUrl: baseUrl
+      ? withSessionTokenQuery(deviceApiUrl(baseUrl, '/webrtc/close', targetDevice), token)
+      : '',
     statsUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/stats', targetDevice) : '',
     enabled: active && useWebRtc,
     codec: 'h264',
@@ -932,6 +940,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     sendIceServersInOffer: false,
     allowCodecFallback: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
+    fetchImpl: sessionFetch,
   });
 
   const restartWebRtc = useCallback(() => {
@@ -1360,7 +1369,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       if (cancelled) return;
       let ws: WebSocket;
       try {
-        ws = new WebSocket(androidWsUrlFor(baseUrl, targetDevice, true));
+        ws = new WebSocket(androidWsUrlFor(baseUrl, targetDevice, true), socketProtocols);
       } catch (err) {
         setStatus('error');
         setError(err instanceof Error ? err.message : 'Invalid server URL');
@@ -1470,7 +1479,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     // Reconnect only when the target device or server changes — not on every
     // status/fps/screen state update this effect writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, baseUrl, targetDevice, waitingForWebRtcMetadata, useWebRtc]);
+  }, [active, baseUrl, targetDevice, waitingForWebRtcMetadata, useWebRtc, socketProtocols]);
 
   // ── WebRTC input WebSocket ──
   // Video travels over the peer connection, but low-latency JSON input and
@@ -1505,7 +1514,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       if (cancelled) return;
       let ws: WebSocket;
       try {
-        ws = new WebSocket(inputUrl);
+        ws = new WebSocket(inputUrl, socketProtocols);
       } catch {
         retryInput('WebRTC input connection failed. Retrying...', 1006, false);
         return;
@@ -1555,7 +1564,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       if (wsRef.current === ws) wsRef.current = null;
       setWebRtcInputReady(false);
     };
-  }, [active, baseUrl, targetDevice, useWebRtc]);
+  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
@@ -1563,7 +1572,10 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     let source: EventSource | null = null;
     try {
       source = new EventSource(
-        apiUrl(baseUrl, `/api/logcat${targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''}`),
+        withSessionTokenQuery(
+          apiUrl(baseUrl, `/api/logcat${targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''}`),
+          token,
+        ),
       );
     } catch {
       return;
@@ -1577,7 +1589,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       } catch {}
     });
     return () => source?.close();
-  }, [logsEnabled, active, baseUrl, targetDevice]);
+  }, [logsEnabled, active, baseUrl, targetDevice, token]);
 
   // ── Activity metrics (SSE) ──
   useEffect(() => {
@@ -1589,7 +1601,9 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     setActivity(EMPTY_ANDROID_ACTIVITY);
     let source: EventSource;
     try {
-      source = new EventSource(deviceApiUrl(baseUrl, '/api/metrics', targetDevice));
+      source = new EventSource(
+        withSessionTokenQuery(deviceApiUrl(baseUrl, '/api/metrics', targetDevice), token),
+      );
     } catch {
       setActivity({ ...EMPTY_ANDROID_ACTIVITY, errored: true });
       return;
@@ -1625,7 +1639,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       clearInterval(watchdog);
       source.close();
     };
-  }, [active, baseUrl, targetDevice]);
+  }, [active, baseUrl, targetDevice, token]);
 
   // ── Recorded input/session events (polling, best-effort) ──
   // serve-emu records Hub-originated touches, keyboard input, hardware buttons,
@@ -1650,7 +1664,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       polling = true;
       controller = new AbortController();
       try {
-        const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        const response = await sessionFetch(url, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) return;
         const snapshot = (await response.json()) as { events?: AndroidSessionEvent[] };
         if (cancelled || !Array.isArray(snapshot.events)) return;
@@ -1683,7 +1697,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       clearInterval(timer);
       controller?.abort();
     };
-  }, [eventsEnabled, active, baseUrl, targetDevice]);
+  }, [eventsEnabled, active, baseUrl, targetDevice, sessionFetch]);
 
   // ── Running devices (best-effort) ──
   useEffect(() => {
@@ -1695,7 +1709,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     // `/api/devices` is serve-emu's fleet listing — it must stay device-agnostic
     // (no `?device=`). The streamed device is the selected serial, or serve-emu's
     // first-available default when none is selected.
-    fetch(apiUrl(baseUrl, '/api/devices'))
+    sessionFetch(apiUrl(baseUrl, '/api/devices'))
       .then((r) => r.json())
       .then((data: { devices?: Array<Record<string, unknown>>; defaultSerial?: string }) => {
         if (cancelled || !Array.isArray(data.devices) || data.devices.length === 0) return;
@@ -1718,7 +1732,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     return () => {
       cancelled = true;
     };
-  }, [active, baseUrl, targetDevice]);
+  }, [active, baseUrl, targetDevice, sessionFetch]);
 
   // ── Foreground app (best-effort) — serve-emu has no push channel for app
   //    switches, so poll `/api/foreground` (dumpsys window) on an interval. ──
@@ -1731,7 +1745,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     }`;
     const poll = async () => {
       try {
-        const res = await fetch(url, { cache: 'no-store' });
+        const res = await sessionFetch(url, { cache: 'no-store' });
         const data = (await res.json()) as {
           ok?: boolean;
           app?: {
@@ -1769,13 +1783,13 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       cancelled = true;
       clearInterval(timer);
     };
-  }, [active, baseUrl, targetDevice]);
+  }, [active, baseUrl, targetDevice, sessionFetch]);
 
   const foregroundAppId = foregroundApp?.id ?? null;
   useEffect(() => {
     if (!active || !baseUrl || !foregroundAppId) return;
     let cancelled = false;
-    fetchAndroidAppIcon(baseUrl, targetDevice, foregroundAppId)
+    fetchAndroidAppIcon(baseUrl, targetDevice, foregroundAppId, sessionFetch)
       .then((iconDataUrl) => {
         if (cancelled || !iconDataUrl) return;
         setForegroundApp((prev) =>
@@ -1786,7 +1800,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     return () => {
       cancelled = true;
     };
-  }, [active, baseUrl, targetDevice, foregroundAppId]);
+  }, [active, baseUrl, targetDevice, foregroundAppId, sessionFetch]);
 
   // ── Device options (best-effort) ──
   // Keep Hub in sync with changes made on-device or through serve-emu's own UI.
@@ -1821,7 +1835,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
           const controller = new AbortController();
           nextControllers.push(controller);
           try {
-            const response = await fetch(
+            const response = await sessionFetch(
               deviceApiUrl(baseUrl, androidDeviceSettingPathFor(key), targetDevice),
               { cache: 'no-store', signal: controller.signal },
             );
@@ -1886,7 +1900,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     void poll(ANDROID_DEVICE_SETTING_KEYS);
     // Read once: an emulator's hardware keyboard does not come and go, and the
     // settings poll already spawns one adb read per key every few seconds.
-    void fetch(deviceApiUrl(baseUrl, '/api/software-keyboard', targetDevice), {
+    void sessionFetch(deviceApiUrl(baseUrl, '/api/software-keyboard', targetDevice), {
       cache: 'no-store',
     })
       .then((response) => (response.ok ? response.json() : null))
@@ -1909,7 +1923,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       for (const controller of controllers) controller.abort();
       tracker.reset();
     };
-  }, [active, baseUrl, deviceScope, targetDevice]);
+  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch]);
 
   return {
     platform: 'android',

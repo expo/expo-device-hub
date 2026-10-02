@@ -53,8 +53,10 @@ describe('withSessionTokenQuery', () => {
 });
 
 describe('sessionTokenProtocols', () => {
-  test("names serve-sim's prefix", () => {
+  // Each backend reads only its own prefix; the Hub accepts both.
+  test('names the prefix of the backend the socket reaches', () => {
     expect(sessionTokenProtocols('ios', 'tok')).toEqual(['serve-sim.token.tok']);
+    expect(sessionTokenProtocols('android', 'tok')).toEqual(['serve-emu.token.tok']);
     expect(sessionTokenProtocols('ios', '')).toBeUndefined();
   });
 });
