@@ -107,8 +107,7 @@ import {
   webRtcFallbackDecision,
 } from './webrtc-fallback.js';
 import { createInputSocket } from './input-socket.js';
-import { WS_MSG_CONFIG } from './input-protocol.js';
-import { WS_REASON_INPUT_UNAVAILABLE } from './input-protocol.js';
+import { WS_MSG_CONFIG, WS_REASON_INPUT_UNAVAILABLE } from './input-protocol.js';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
