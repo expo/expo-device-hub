@@ -88,7 +88,7 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
   });
   stubGlobal('fetch', async (url: string) => {
     fetchUrls.push(url);
-    if (url === `${baseUrl}/api?device=DEVICE-A`) {
+    if (url === `${publicBase}/api?device=DEVICE-A`) {
       return Response.json({
         device: 'DEVICE-A',
         basePath: advertisedBasePath,
@@ -130,7 +130,7 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
     client.refreshAccessibility();
   });
 
-  expect(fetchUrls).toContain(`${baseUrl}/api?device=DEVICE-A`);
+  expect(fetchUrls).toContain(`${publicBase}/api?device=DEVICE-A`);
   expect(fetchUrls).toContain(`${publicBase}/grid/api`);
   expect(fetchUrls).toContain(`${publicBase}/ax?device=DEVICE-A`);
   expect(eventSourceUrls).toContain(`${publicBase}/appstate?device=DEVICE-A`);
@@ -147,4 +147,10 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
   expect(subscriptions).toContainEqual({ sub: 1, path: `${advertisedBasePath}/logs?device=DEVICE-A` });
   expect(subscriptions).toContainEqual({ sub: 2, path: `${advertisedBasePath}/api/event-log/events?device=DEVICE-A` });
   expect(subscriptions).toContainEqual({ sub: 3, path: `${advertisedBasePath}/metrics?device=DEVICE-A` });
+
+  // The API fixture omits streamSettingsEndpoint, so encoder controls stay unavailable.
+  await act(async () => client.updateStreamSettings({ mjpegFps: 20 }));
+  expect(client.capabilities.streamSettings).toBe(false);
+  expect(client.streamSettings).toBeNull();
+  expect(fetchUrls).not.toContain(`${publicBase}/helper/DEVICE-A/stream-settings`);
 });
