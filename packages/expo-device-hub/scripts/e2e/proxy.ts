@@ -23,6 +23,7 @@ type SocketData = {
   pending: Array<string | Uint8Array>;
   timer?: ReturnType<typeof setInterval>;
   closed: boolean;
+  stalled?: boolean;
 };
 
 export function startProxy(options: {
@@ -84,6 +85,10 @@ export function startProxy(options: {
         mode = next;
         for (const socket of inputs) socket.close(1013, reason);
         return Response.json({ mode });
+      }
+      if (url.pathname === "/_e2e/control-stall" && request.method === "POST") {
+        for (const socket of controls) socket.data.stalled = true;
+        return Response.json({ ok: true });
       }
       if (url.pathname === "/_e2e/control-drop" && request.method === "POST") {
         for (const socket of controls) socket.close(1012, "E2E restart");
@@ -214,6 +219,7 @@ export function startProxy(options: {
           data.pending = [];
         };
         upstream.onmessage = ({ data: message }) => {
+          if (data.stalled) return;
           if (data.channel === "control") {
             try {
               const reply = JSON.parse(String(message));
@@ -287,6 +293,7 @@ export function startProxy(options: {
               });
           } catch {}
         }
+        if (data.stalled) return;
         const upstream = data.upstream;
         if (upstream?.readyState === WebSocket.OPEN) upstream.send(message);
         else data.pending.push(typeof message === "string" ? message : new Uint8Array(message));

@@ -10,7 +10,9 @@ for UIKit readiness as well as WebSocket admission.
 
 It covers advancing H264 video, native keyboard/shifted characters, refused and
 delayed admission recovery, gesture cancellation on blur, pooled native controls
-and subscription reconnects, and video/input recovery after a backend restart.
+and subscription reconnects after both a close and a silent OPEN connection, and
+video/input recovery after a backend restart. The blur assertion has a negative
+regression test that injects stale movement during the native end wait.
 
 ## Run
 
@@ -18,7 +20,8 @@ Install dependencies and build the client/UI packages:
 
 ```sh
 bun install --frozen-lockfile
-bun run --filter '@expo/hub-client' --filter '@expo/hub-components' build
+bun run --filter '@expo/hub-client' build
+bun run --filter '@expo/hub-components' build
 ```
 
 Build serve-sim and its existing native fixture on macOS with Xcode:
@@ -80,6 +83,6 @@ Full token-gated session replacement, decoder stalls with continuing RTP,
 Safari/iPad and Android remain separate acceptance work. A complete middleware
 restart can change its authentication identity; the restart case currently proves
 video/input recovery, while subscription recovery is checked on a dropped control
-connection with the same middleware identity.
+connection and a silent OPEN channel with the same middleware identity.
 CI typechecks this harness; the native/browser suite currently runs locally and
 needs a macOS Simulator lane before it can be a device-backed CI gate.

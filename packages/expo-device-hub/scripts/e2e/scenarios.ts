@@ -132,6 +132,38 @@ function metricsReceived(events: WireEvent[], afterConnection = 0) {
   );
 }
 
+/** Keep the movement baseline before the queued RAF and the native end wait. */
+export async function runBlurScenario() {
+  await post("launch", { keyboard: false });
+  await until(fixture, (text) => text.includes("input-ready"), "native touch fixture ready");
+  const before = (await fixture()).length;
+  pointer("down", 0.5, 0.4);
+  await until(
+    fixture,
+    (text) => text.slice(before).includes("touch-began"),
+    "native drag begins before blur",
+  );
+  const moves = (await state()).events.filter(
+    (event) => event.tag === 3 && event.type === "move",
+  ).length;
+  pointer("move", 0.5, 0.5);
+  window.dispatchEvent(new Event("blur"));
+  await until(
+    fixture,
+    (text) => text.slice(before).includes("touch-ended"),
+    "native drag ends on blur",
+  );
+  const log = (await fixture()).slice(before);
+  assert(log.includes("touch-began"), "Native app received the gesture");
+  await pause(100);
+  assert(
+    (await state()).events.filter((event) => event.tag === 3 && event.type === "move").length ===
+      moves,
+    "Cancelled animation frame did not send later drag movement",
+  );
+  pointer("up", 0.5, 0.5);
+}
+
 /** Executes in the real browser, through production DOM handlers and native input.
  * Synthetic DOM events make the same cases runnable in the collaborative browser
  * and headless runner. OS focus/trusted-event delivery is a separate acceptance check.
@@ -228,36 +260,7 @@ export async function runScenarios() {
         );
       },
     );
-    await check("Blur ends a live native drag and cancels queued movement", async () => {
-      await post("launch", { keyboard: false });
-      await until(fixture, (text) => text.includes("input-ready"), "native touch fixture ready");
-      const before = (await fixture()).length;
-      pointer("down", 0.5, 0.4);
-      await until(
-        fixture,
-        (text) => text.slice(before).includes("touch-began"),
-        "native drag begins before blur",
-      );
-      pointer("move", 0.5, 0.5);
-      window.dispatchEvent(new Event("blur"));
-      await until(
-        fixture,
-        (text) => text.slice(before).includes("touch-ended"),
-        "native drag ends on blur",
-      );
-      const log = (await fixture()).slice(before);
-      assert(log.includes("touch-began"), "Native app received the gesture");
-      const moves = (await state()).events.filter(
-        (event) => event.tag === 3 && event.type === "move",
-      ).length;
-      await pause(100);
-      assert(
-        (await state()).events.filter((event) => event.tag === 3 && event.type === "move")
-          .length === moves,
-        "Cancelled animation frame did not send later drag movement",
-      );
-      pointer("up", 0.5, 0.5);
-    });
+    await check("Blur ends a live native drag and cancels queued movement", runBlurScenario);
     await check(
       "Dashboard controls and reconnecting subscriptions share the control pool",
       async () => {
@@ -327,6 +330,27 @@ export async function runScenarios() {
         await advancingVideo();
       },
     );
+    await check("A silent OPEN control channel heals dashboard subscriptions", async () => {
+      const before = await state();
+      const lastConnection = Math.max(
+        ...before.events
+          .filter((event) => event.channel === "control")
+          .map((event) => event.connection),
+      );
+      await post("control-stall");
+      await until(
+        state,
+        (value) => value.controlConnections === before.controlConnections + 1,
+        "health probe retires the silent OPEN channel",
+        20_000,
+      );
+      await until(
+        state,
+        (value) => metricsReceived(value.events, lastConnection),
+        "native metrics return after health-driven reconnect",
+      );
+      await advancingVideo();
+    });
     await check(
       "Backend restart restores video and native input through the dashboard",
       async () => {
