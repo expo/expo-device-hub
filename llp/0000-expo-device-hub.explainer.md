@@ -52,6 +52,8 @@ For iOS, serve-sim runs a helper process for each device on a local port. The Hu
 
 `vendor/` is a build output. `scripts/vendor.ts` runs `npm pack` on each package in `vendorDependencies` and unpacks it to `vendor/<name>`, so the Hub ships the same files that npm would install [observed: `packages/expo-device-hub/scripts/vendor.ts`]. Rebuild it with `bun run build:vendor` after you change serve-sim or serve-emu.
 
+The Hub vendors serve-sim and serve-emu on purpose, so that its copies cannot conflict with other versions of these packages in a project that uses `expo-device-hub` [confirmed] (Krystof Woldrich, 2026-10-02). Do not replace the vendored copies with normal npm dependencies.
+
 ### The browser side
 
 The dashboard (`src/Dashboard.tsx`) renders Expo DOM components with inline styles from `@expo/hub-components` [observed: `packages/expo-device-hub/AGENTS.md`]. It connects to devices through `@expo/hub-client`.
@@ -64,12 +66,16 @@ The two protocols differ mainly because the servers started as separate projects
 
 The goal is to unify the serve-sim and serve-emu protocols. Until then, every new feature must behave the same on iOS and Android, so that unification stays possible [confirmed] (Krystof Woldrich, 2026-10-02). See [constraint 10](#same-behavior).
 
+### Direction: flat package layout
+
+The plan is to flatten the nested `packages/serve-sim/packages/serve-sim` and `packages/serve-emu/packages/serve-emu` folders, and to remove the duplicate READMEs, agent files, and other files that the nesting causes [confirmed] (Krystof Woldrich, 2026-10-02). Until that happens, treat the nested layout as temporary: do not build new tooling or paths that depend on it.
+
 ## Constraints you must not simplify away
 
 Each item names the code that depends on it. Do not "clean up" this code without reading the source first.
 
 1. <a id="sim-base-path"></a>**serve-sim needs the full mount path as `basePath`.** serve-sim writes `basePath` into the URLs it returns to the client (grid, exec-ws, stream). A shorter value breaks the iOS client without an error [observed: comment on `SIM_BASE_PATH` in `src/server/serve-sim.ts`].
-2. <a id="hub-client-separate"></a>**`@expo/hub-client` is a separate published package** so the Expo dashboard website can use the same code to show devices [observed: `README.md` "hub-client"]. Do not move its code into the plugin.
+2. <a id="hub-client-separate"></a>**`@expo/hub-client` is a separate published package** so the Expo dashboard website can use the same code to show devices [observed: `README.md` "hub-client"]. Do not move its code into the plugin. Its API is not frozen: the package is in alpha, and the website pins an exact version, so breaking changes are allowed when they are necessary [confirmed] (Krystof Woldrich, 2026-10-02).
 3. <a id="ui-matches-website"></a>**The Hub UI must match the Expo dashboard website.** Use the tokens and the `Button` from `@expo/hub-components`; never hard-code colors, sizes, radii, or shadows. The `@expo/styleguide` React components cannot be imported, because their index pulls in `next/link`, which Metro cannot bundle. That is why `@expo/hub-components` keeps its own ports [observed: `packages/expo-device-hub/AGENTS.md`].
 4. <a id="emu-input-path"></a>**serve-emu writes input directly to the scrcpy control socket.** Do not use `adb shell input`; it is too slow for agent workflows [observed: `packages/serve-emu/AGENTS.md` "Runtime Assumptions"].
 5. <a id="emu-auth"></a>**serve-emu binds to loopback by default.** A non-loopback bind requires a token unless `--unsafe-no-auth` is passed. The token gate runs before routing, so new routes are covered. Never put the token in `/health`, `/api`, error bodies, or reconnect URLs [observed: `packages/serve-emu/AGENTS.md` "Server and API Guidance"].
@@ -83,7 +89,8 @@ Each item names the code that depends on it. Do not "clean up" this code without
 
 - serve-sim is an Expo-maintained fork of [EvanBacon/serve-sim](https://github.com/EvanBacon/serve-sim) [observed: `packages/serve-sim/packages/serve-sim/README.md`]. It was vendored on 2026-06-10, became a git submodule on 2026-07-09, and moved into this repo in #79 (2026-09-23). It is published as `@expo/serve-sim` from this repo since #125 [observed: git history].
 - serve-emu came from `expo/serve-emu` and moved into this repo in #78 (2026-09-09) [observed: git history, PR #78].
-- Both moves kept the upstream directory layout, which is why the packages sit at `packages/serve-sim/packages/serve-sim` and `packages/serve-emu/packages/serve-emu` [observed: PR #78 and #79 descriptions].
+- Both moves kept the upstream directory layout, which is why the packages sit at `packages/serve-sim/packages/serve-sim` and `packages/serve-emu/packages/serve-emu` [observed: PR #78 and #79 descriptions]. This layout is temporary; see [Direction: flat package layout](#direction-flat-package-layout).
+- Only serve-sim is published on its own, as `@expo/serve-sim`, because people used it before `expo-device-hub` existed. serve-emu stays private, and there is no plan to publish it as `@expo/serve-emu`; the Hub ships it vendored [confirmed] (Krystof Woldrich, 2026-10-02).
 - The servers moved into this repo so that one PR can change all the projects at once. This makes development faster and stops the implementations in the packages from diverging [confirmed] (Krystof Woldrich, 2026-10-02).
 
 ## Why one LLP corpus for the whole repo
@@ -113,6 +120,4 @@ These documents are not LLPs yet. Follow-on LLPs will convert or link them.
 
 ## Open questions for the maintainer
 
-1. Which parts of the `@expo/hub-client` public API must an agent never rename or change without a coordinated change in the Expo dashboard website?
-2. Will the nested `packages/serve-sim/packages/serve-sim` and `packages/serve-emu/packages/serve-emu` layout be flattened? Until this is answered, treat the layout as in flux, not as a decision.
-3. Is publishing serve-emu as `@expo/serve-emu` still planned? `RELEASING.md` lists it as private.
+None at this time.
