@@ -143,6 +143,7 @@ export function useWebRtcStream({
   iceTransportPolicy = 'all',
   sendIceServersInOffer = true,
   allowCodecFallback = true,
+  expectContinuousFrames = true,
   onKeyframeNeeded,
   onBeforeDisconnect,
   restartKey = null,
@@ -162,6 +163,8 @@ export function useWebRtcStream({
   iceTransportPolicy?: RTCIceTransportPolicy;
   sendIceServersInOffer?: boolean;
   allowCodecFallback?: boolean;
+  /** False for sources that emit frames only when the display changes. */
+  expectContinuousFrames?: boolean;
   onKeyframeNeeded?: () => void;
   /** Preserve the displayed frame before closing the current peer. */
   onBeforeDisconnect?: () => void;
@@ -237,6 +240,7 @@ export function useWebRtcStream({
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    expectContinuousFrames,
     restartState.generation,
     transportLocked,
     retryKey,
@@ -400,6 +404,7 @@ export function useWebRtcStream({
       reconnectedAt: stallReconnectAtRef,
       failCodec: () => allowCodecFallback ? failCodec() : retryTransport('WebRTC playback stalled.'),
       retryTransport,
+      expectContinuousFrames,
     });
 
     const waitForIce = (connection: RTCPeerConnection) =>
@@ -549,6 +554,7 @@ export function useWebRtcStream({
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    expectContinuousFrames,
     onKeyframeNeeded,
     onBeforeDisconnect,
     retryGeneration,

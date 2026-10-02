@@ -114,7 +114,7 @@ const flush = async () => {
 let cleanup: (void | (() => void))[] = [];
 
 /// Options a test passes to the hook on top of the defaults. Reset by every `start`.
-let hookOptions: { allowCodecFallback?: boolean } = {};
+let hookOptions: { allowCodecFallback?: boolean; expectContinuousFrames?: boolean } = {};
 
 async function start(
   visible: "visible" | "hidden" = "visible",
@@ -228,6 +228,52 @@ test("a stall with no media arriving is charged to the transport", async () => {
   expect(updates).toContain(STALLED);
 });
 
+test("a change-driven Android source stays connected through 30-second idle periods", async () => {
+  hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
+  const hook = await start();
+  hook.markFrameDecoded();
+  for (let period = 0; period < 3; period++) {
+    const at = 100 + period;
+    await pollStall(Array.from({ length: 30 }, () => ({ received: at, decoded: at })));
+  }
+  expect(closed).toBe(0);
+  expect(failures()).toEqual([]);
+  expect(updates).not.toContain(STALLED);
+});
+
+test("idle time does not spend a newly arriving Android frame's decode deadline", async () => {
+  hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
+  const hook = await start();
+  hook.markFrameDecoded();
+  await pollStall(Array.from({ length: 8 }, () => ({ received: 100, decoded: 100 })));
+  await pollStall([{ received: 101, decoded: 100 }, { received: 101, decoded: 101 }]);
+  expect(closed).toBe(0);
+  expect(updates).not.toContain(STALLED);
+});
+
+test("one newly arriving Android frame gets a full deadline before decoder recovery", async () => {
+  hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
+  const hook = await start();
+  hook.markFrameDecoded();
+  await pollStall(Array.from({ length: 8 }, () => ({ received: 100, decoded: 100 })));
+  await pollStall(Array.from({ length: PLAYBACK_STALL_POLLS - 1 }, () => ({ received: 101, decoded: 100 })));
+  expect(closed).toBe(0);
+  await pollStall([{ received: 101, decoded: 100 }]);
+  expect(closed).toBe(1);
+  expect(updates).toContain(STALLED);
+});
+
+test("an idle Android source still recovers when arriving frames stop decoding", async () => {
+  hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
+  const hook = await start();
+  hook.markFrameDecoded();
+  await pollStall(Array.from({ length: 30 }, () => ({ received: 100, decoded: 100 })));
+  await pollStall(frozenRun(100, 101));
+  expect(closed).toBe(1);
+  expect(updates).toContain(STALLED);
+  expect(failures()).toEqual([]);
+});
+
 test("a decoder that catches up never reports a stall", async () => {
   const hook = await start();
   hook.markFrameDecoded();
@@ -279,7 +325,7 @@ test("a repeated decoder stall demotes only after a same-codec reconnect", async
 });
 
 test("Android retries its transport instead of walking the iOS codec ladder", async () => {
-  hookOptions = { allowCodecFallback: false };
+  hookOptions = { allowCodecFallback: false, expectContinuousFrames: false };
   const hook = await start(); hook.markFrameDecoded();
   await pollStall(frozenRun(100)); await reconnect(); hook.markFrameDecoded();
   await pollStall(frozenRun(100));

@@ -975,6 +975,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
         : 'all',
     sendIceServersInOffer: false,
     allowCodecFallback: false,
+    expectContinuousFrames: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
     onBeforeDisconnect: retainWebRtcFrame,
     restartKey: webRtcSourceGeneration,

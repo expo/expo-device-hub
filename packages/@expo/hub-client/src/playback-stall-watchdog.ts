@@ -56,6 +56,7 @@ export function startPlaybackStallWatchdog({
   reconnectedAt,
   failCodec,
   retryTransport,
+  expectContinuousFrames = true,
 }: {
   peer: () => RTCPeerConnection | null;
   /// Worth a `getStats` at all. A hidden tab's decoder may stop, which looks like a dead one.
@@ -67,6 +68,8 @@ export function startPlaybackStallWatchdog({
   reconnectedAt: { current: number | null };
   failCodec: () => void;
   retryTransport: (message: string) => void;
+  /** Change-driven sources may stay connected without producing any new frames. */
+  expectContinuousFrames?: boolean;
 }): PlaybackStallWatchdog {
   let state = initialPlaybackStallState;
   let pinned: { id: string; framesReceived: number } | null = null;
@@ -116,6 +119,12 @@ export function startPlaybackStallWatchdog({
     }
     if (selected.id !== pinned?.id) state = initialPlaybackStallState;
     pinned = { id: selected.id, framesReceived: selected.framesReceived };
+    // Idle time must not spend the decoder's deadline. The frozen-run baseline stays
+    // behind once a new frame arrives, so even a single undecoded frame gets a full run.
+    if (!expectContinuousFrames && selected.framesReceived <= state.received) {
+      state = { decoded: selected.framesDecoded, received: selected.framesReceived, stalledPolls: 0 };
+      return;
+    }
     const next = nextPlaybackStallState(state, {
       decoded: selected.framesDecoded,
       received: selected.framesReceived,
