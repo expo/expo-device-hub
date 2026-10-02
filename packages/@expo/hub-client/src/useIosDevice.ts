@@ -105,8 +105,7 @@ import {
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
-// serve-sim accepts the upgrade before it admits an input socket, then closes
-// a refused socket at once. An open socket that outlives this was admitted.
+// Compatibility grace period for legacy helpers without admission acknowledgements.
 const INPUT_ADMISSION_MS = 1000;
 const ACTIVITY_STALE_MS = 8000;
 
@@ -123,6 +122,7 @@ const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
 // client sends this too so the on-screen keyboard shows.
 const WS_MSG_HARDWARE_KEYBOARD = 0x0e;
 const WS_TAG_SCREEN_CONFIG = 0x82;
+const WS_TAG_INPUT_ADMITTED = 0x83;
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
 const HID_USAGE_R = 0x15; // 'r'
@@ -218,6 +218,7 @@ interface ResolvedConfig {
   url: string;
   streamUrl: string;
   wsUrl: string;
+  inputAdmission: boolean;
   device: string | null;
   /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
   execWsUrl: string | null;
@@ -245,6 +246,7 @@ interface PreviewApi {
   url?: string;
   streamUrl?: string;
   wsUrl?: string;
+  inputAdmission?: unknown;
   device?: string;
   basePath?: string;
   execToken?: string;
@@ -300,6 +302,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const inputSocketAdmittedRef = useRef(false);
   // Input that arrived while the helper socket was down; flushed on reconnect
   // (bounded, and stale entries are dropped — see `./ws-send-queue`).
   const pendingWsRef = useRef<QueuedWsMessage[]>([]);
@@ -370,7 +373,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
   const sendWs = useCallback((tag: number, payload: object) => {
-    pendingWsRef.current = sendOrQueueWsMessage(wsRef.current, pendingWsRef.current, tag, payload);
+    pendingWsRef.current = sendOrQueueWsMessage(
+      inputSocketAdmittedRef.current ? wsRef.current : null, pendingWsRef.current, tag, payload,
+    );
   }, []);
 
   const sendTouch = useCallback((sample: TouchSample) => {
@@ -617,6 +622,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         url: c.url!,
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
+        // An absent/false flag identifies legacy servers. Unknown present values
+        // fail closed rather than treating an unrecognized contract as legacy.
+        inputAdmission: c.inputAdmission !== undefined && c.inputAdmission !== false,
         device: c.device ?? null,
         execWsUrl: toWs(absoluteMiddlewareUrl(`${basePath}/exec-ws`)!),
         execToken: c.execToken ?? null,
@@ -886,6 +894,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
+  const requiresInputAdmission = config?.inputAdmission ?? true;
   useEffect(() => {
     setHardwareKeyboardConnectedState(null);
     setInputSocketError(null);
@@ -912,28 +921,43 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
-      ws.onopen = () => {
-        if (!cancelled) admissionTimer = setTimeout(admitInput, INPUT_ADMISSION_MS);
-        // Deliver whatever the user did while the socket was down.
+      inputSocketAdmittedRef.current = false;
+      const activateInput = () => {
+        if (cancelled || wsRef.current !== ws || inputSocketAdmittedRef.current) return;
+        inputSocketAdmittedRef.current = true;
         pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
-        // The Hub owns keyboard forwarding while this socket is active. Keep the
-        // Simulator's separate host-keyboard connection off so iOS shows its
-        // software keyboard while browser HID keys continue to type. serve-sim
-        // reconnects it once the last input socket detaches.
         sendWs(WS_MSG_HARDWARE_KEYBOARD, { enabled: false });
-        if (!cancelled) setHardwareKeyboardConnectedState(false);
+        setHardwareKeyboardConnectedState(false);
+      };
+      ws.onopen = () => {
+        if (!cancelled && !requiresInputAdmission) {
+          admissionTimer = setTimeout(admitInput, INPUT_ADMISSION_MS);
+        }
+        // Modern helpers must admit the socket before receiving queued input.
+        // Legacy helpers have no acknowledgement and retain OPEN compatibility.
+        if (!requiresInputAdmission) activateInput();
       };
       ws.onmessage = (event) => {
-        // serve-sim sends nothing to a socket it refuses.
-        admitInput();
+        if (cancelled || wsRef.current !== ws) return;
         if (!(event.data instanceof ArrayBuffer)) return;
         const bytes = new Uint8Array(event.data);
+        if (bytes.length === 1 && bytes[0] === WS_TAG_INPUT_ADMITTED) {
+          activateInput();
+          admitInput();
+          return;
+        }
         if (bytes.length < 1 || bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
         try {
           const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize & {
             inputUnavailable?: boolean;
           };
-          if (!cancelled) setInputUnavailable(c.inputUnavailable === true);
+          if (
+            typeof c?.width !== 'number' || !Number.isFinite(c.width) || c.width <= 0 ||
+            typeof c.height !== 'number' || !Number.isFinite(c.height) || c.height <= 0 ||
+            (c.inputUnavailable !== undefined && typeof c.inputUnavailable !== 'boolean')
+          ) return;
+          if (!requiresInputAdmission) admitInput();
+          setInputUnavailable(c.inputUnavailable === true);
           if (c.width > 0 && c.height > 0) {
             hasWsConfigRef.current = true;
             setScreen((prev) =>
@@ -950,6 +974,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       ws.onclose = (event) => {
         if (cancelled) return;
         wsRef.current = null;
+        inputSocketAdmittedRef.current = false;
         if (admissionTimer) clearTimeout(admissionTimer);
         admissionTimer = null;
         const rejection = iosInputCloseError(event.code, event.reason);
@@ -972,11 +997,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         wsRef.current?.close();
       } catch {}
       wsRef.current = null;
+      inputSocketAdmittedRef.current = false;
       // Queued input was for this device; don't replay it on the next one.
       pendingWsRef.current = [];
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, sendWs]);
+  }, [wsUrl, requiresInputAdmission, sendWs]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
