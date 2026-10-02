@@ -1797,16 +1797,14 @@ async function serve(
     else console.error(message);
     process.exit(1);
   };
-  // Boot the target simulators; the preview server streams them in-process
-  // (no spawned helper). Sessions are created lazily on the first stream request.
+  // The preview server streams the target simulators in-process (no spawned helper). Sessions are
+  // created lazily on the first stream request. The default command booted these devices and
+  // cleared a stale capability loader before arming them, so they are not booted again here.
   let targetDevices: string[];
   try {
     targetDevices = resolveTargetDevices(devices);
     if (!quiet && devices.length === 0 && readAllStates().length === 0) {
       console.log("Starting simulator stream...");
-    }
-    for (const udid of targetDevices) {
-      await ensureBooted(udid);
     }
   } catch (err) {
     return failStartup(err instanceof Error ? err.message : String(err));
