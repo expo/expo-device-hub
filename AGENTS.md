@@ -12,9 +12,9 @@ This repo uses [LLP v0.5.2](https://github.com/ccheever/llp/tree/v0.5.2). One co
 
 - Documents live flat in `llp/` and are named `NNNN-slug.type.md`, for example `0003-serve-sim-input.explainer.md`. Sub-LLPs use dotted numbers: `0003.000-input-protocol.spec.md`. Never reuse a number, and never rename a document to move it.
 - `llp/current/` and `llp/foundation/` hold relative symlinks only. `current/` is the work in progress: link a document when work starts and remove the link when the work is done. `foundation/` is the smallest set of `Active` documents from which the design could be recreated.
-- Orient in this order: `llp/foundation/`, then `llp/current/`, then the `@ref`s in the code you touch.
+- Start with [LLP 0000](llp/0000-expo-device-hub.explainer.md), the root document. Then orient in this order: `llp/foundation/`, then `llp/current/`, then the `@ref`s in the code you touch.
 - Every document starts with a header: `Type`, `Status`, `Systems`, `Author`, `Date`; optional `Role`, `Revised`, `Related`.
-- Use these `Systems` names every time: `Hub`, `ServeSim`, `ServeEmu`, `Example`, `CI`, `Release`. Add a name here before you use a new one.
+- Use these `Systems` names every time: `Hub`, `HubClient`, `HubComponents`, `AppleUtils`, `AndroidUtils`, `ServeSim`, `ServeEmu`, `Example`, `CI`, `Release`, `LLP`. LLP 0000 maps each name to its package. Add a name here before you use a new one.
 - Types: RFC, Spec, Decision, Plan, Explainer, Principles, Guide, Issue, Research.
 - Documents are living. When the design changes, update the document, or mark it `Superseded` or `Tombstoned` in the header. Do not leave a stale document unmarked.
 - When an agent writes a "why" that it found by reading code, tag the claim `[observed]` (say where), `[confirmed]` (a named human and a date), or `[inferred]`. A document with `[inferred]` claims stays `Draft`.
@@ -38,5 +38,5 @@ Before editing a subsystem with documented design, orient first: read its
 governing LLP, and for non-trivial work invoke `llp-orient` to assemble a
 context pack of the constraints the change must respect.
 
-Skills: orient = context before coding · create = author one LLP · review = LLP 0005 loop, scaled to stakes · adopt = set up LLP in any repo or package, interview-first retrofit, install/update the skills · maintain = drift / pre-PR / reconcile / retire / curate (promote → archive → realign, LLP 0011.000)
+Skills: orient = context before coding · create = author one LLP · review = LLP 0005 loop, scaled to stakes · adopt = set up LLP in any repo, install/update the skills · maintain = drift / pre-PR / reconcile / retire / curate (promote → archive → realign, LLP 0011.000)
 <!-- END LLP SKILLS MANAGED BLOCK -->
