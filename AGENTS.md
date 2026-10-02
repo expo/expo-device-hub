@@ -6,9 +6,7 @@ Write PR descriptions for reviewers, not as chat transcripts. Summarize meaningf
 
 # Linked Literate Programming (LLP)
 
-This repo uses LLP from the `main` branch of `ccheever/llp`, pinned to commit [`5dd8a03`](https://github.com/ccheever/llp/tree/5dd8a033c125e95ccc2536e734afdc924de7d094) (`v0.5.2-3-g5dd8a03`). This commit has no release tag. `.llp/skills-receipt.json` records the full SHA. Read the spec at that commit, not at a tag: [LLP 0000](https://github.com/ccheever/llp/blob/5dd8a033c125e95ccc2536e734afdc924de7d094/llp/0000-linked-literate-programming.explainer.md) and the adoption guide [LLP 0001](https://github.com/ccheever/llp/blob/5dd8a033c125e95ccc2536e734afdc924de7d094/llp/0001-adopting-llp.guide.md).
-
-One corpus at the repo root covers all packages, because the packages are tightly coupled.
+This repo uses [LLP v0.5.2](https://github.com/ccheever/llp/tree/v0.5.2). One corpus at the repo root covers all packages, because the packages are tightly coupled. The spec is [LLP 0000](https://github.com/ccheever/llp/blob/v0.5.2/llp/0000-linked-literate-programming.explainer.md).
 
 ## LLP documents
 
@@ -31,18 +29,14 @@ One corpus at the repo root covers all packages, because the packages are tightl
 
 ## Agent skills
 
-The core LLP skills are installed once, in `.agents/skills/`, which Codex and other Agent Skills clients read. `.claude/skills` is a symlink to `../.agents/skills`, because Claude Code reads only `.claude/skills/`. `.llp/skills-receipt.json` records the source commit SHA and the hash of each file. Do not edit the installed skill files.
+The core LLP skills are installed once, in `.agents/skills/`, which Codex and other Agent Skills clients read. `.claude/skills` is a symlink to `../.agents/skills`, because Claude Code reads only `.claude/skills/`. `.llp/skills-receipt.json` records the release and the hash of each file. Do not edit the installed skill files. Run `/llp-adopt update` to update them.
 
-The skills come from an untagged commit, so `/llp-adopt update`, which looks for release tags, does not apply as written. To update, compare the receipt's `commit` with `git ls-remote https://github.com/ccheever/llp refs/heads/main`. If they differ, copy the five core skills from the new commit, show the diff for review, and write the new SHA and file hashes to the receipt in the same commit.
-
-The skill files cite LLP documents through URLs pinned to `v0.5.2`, because upstream did not update the pins on `main`. Some cited documents, such as `0001.000-retrofit-interview.guide.md`, do not exist at `v0.5.2`. Read the cited documents at the commit in the receipt instead.
-
-The symlink is a deliberate exception to the LLP rule that installs are copies, never symlinks. Our reading of that rule is that it stops a skill from changing when an upstream checkout outside the repo changes, without a diff or a receipt update. Here the link target is a committed copy in this repo, so every change still goes through a git diff and the receipt hashes. When you update the skills, write only to `.agents/skills/` and keep the symlink.
+The symlink is a deliberate exception to the LLP rule that installs are copies, never symlinks. Our reading of that rule is that it stops a skill from changing when an upstream checkout outside the repo changes, without a diff or a receipt update. Here the link target is a committed copy in this repo, so every change still goes through a git diff and the receipt hashes. When `/llp-adopt update` runs, write only to `.agents/skills/` and keep the symlink.
 
 <!-- BEGIN LLP SKILLS MANAGED BLOCK -->
 Before editing a subsystem with documented design, orient first: read its
 governing LLP, and for non-trivial work invoke `llp-orient` to assemble a
 context pack of the constraints the change must respect.
 
-Skills: orient = context before coding · create = author one LLP · review = LLP 0005 loop, scaled to stakes · adopt = set up LLP in any repo or package, interview-first retrofit, install/update the skills · maintain = drift / pre-PR / reconcile / retire / curate (promote → archive → realign, LLP 0011.000)
+Skills: orient = context before coding · create = author one LLP · review = LLP 0005 loop, scaled to stakes · adopt = set up LLP in any repo, install/update the skills · maintain = drift / pre-PR / reconcile / retire / curate (promote → archive → realign, LLP 0011.000)
 <!-- END LLP SKILLS MANAGED BLOCK -->

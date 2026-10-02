@@ -1,10 +1,7 @@
 {
   "origin": "https://github.com/ccheever/llp",
-  "ref": "main",
-  "tag": null,
-  "commit": "5dd8a033c125e95ccc2536e734afdc924de7d094",
-  "describe": "v0.5.2-3-g5dd8a03",
-  "note": "Installed from an untagged main commit at the maintainer's request, not from a release tag. Pin by commit SHA; compare this SHA to upstream main to find updates.",
+  "tag": "v0.5.2",
+  "commit": "bf43fc0d8f9fb028a33d8c2090e398a5af8b5c8c",
   "installedAt": "2026-10-02",
   "scope": "project",
   "runtimes": {
@@ -17,11 +14,11 @@
     "delivery": false
   },
   "files": {
-    ".agents/skills/llp-adopt/SKILL.md": "sha256:2480015dccd13cea84a26c033f94a1ef2f2b1bcd6626be4a10a930bb1c50ba81",
-    ".agents/skills/llp-create/SKILL.md": "sha256:ae24c967996779080e22d1995dd32f64b847e2fdca6feea3e03145b391adc315",
-    ".agents/skills/llp-maintain/SKILL.md": "sha256:65d9e7c09553da287660808fc8cfa2b8aeb1c32f794bed1e0a35992f06e41b9f",
-    ".agents/skills/llp-orient/SKILL.md": "sha256:88caee954dee018ca31f1c14f604e6c248cdea599b02489e1c895d3c10a602e0",
-    ".agents/skills/llp-review/SKILL.md": "sha256:c7c8ba1792c05904ceba394577619504d6a35749769ffe7051c0e0ca22ead4d1"
+    ".agents/skills/llp-adopt/SKILL.md": "sha256:a4ae6b27d44d26fe3ba6701c9d15be1823b528edca15d180ad5668ac45bc07e0",
+    ".agents/skills/llp-create/SKILL.md": "sha256:8711aa16bd90597b66410771de8a90c6e66f1fdf9e15eec169b07cdbddb7a71d",
+    ".agents/skills/llp-maintain/SKILL.md": "sha256:e956c3fefb0f345293b3054c7fb9af3edb31ffbd92c328510371f3074956a3ac",
+    ".agents/skills/llp-orient/SKILL.md": "sha256:6a421cd027e06676e2fe2ecc104ea8a7f6ab6ba4f7013fbbbbc42c52df532a90",
+    ".agents/skills/llp-review/SKILL.md": "sha256:b79df36f677dd1150b45f9ab518bb96985ee01599153a441aad3ab81abc94e5c"
   },
   "detached": []
 }
