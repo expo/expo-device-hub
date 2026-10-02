@@ -39,8 +39,12 @@ export type StreamSwitchEvent =
    */
   | { type: 'request-start'; live: boolean }
   | { type: 'request-failure' }
-  /** `replaced` is whether the server started a new session generation. */
-  | { type: 'request-success'; replaced: boolean }
+  /**
+   * `replaced` is whether the server started a new session generation.
+   * `restartRequired` means the client must still renegotiate video, even if
+   * the control socket recovered before the response arrived.
+   */
+  | { type: 'request-success'; replaced: boolean; restartRequired?: boolean }
   /** The live stream stopped delivering frames (or lost its control channel). */
   | { type: 'stream-interrupted' }
   /** The stream is live again. */
@@ -97,7 +101,9 @@ export function reduceStreamSwitch(
         case 'request-failure':
           return IDLE_STREAM_SWITCH;
         case 'request-success':
-          if (!event.replaced || state.recovered) return IDLE_STREAM_SWITCH;
+          if (!event.replaced) return IDLE_STREAM_SWITCH;
+          if (event.restartRequired) return AWAITING_FRAME;
+          if (state.recovered) return IDLE_STREAM_SWITCH;
           return state.interrupted ? AWAITING_FRAME : AWAITING_INTERRUPTION;
         case 'timeout':
           return state;
