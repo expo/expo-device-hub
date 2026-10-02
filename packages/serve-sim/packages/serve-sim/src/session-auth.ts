@@ -203,6 +203,16 @@ export function assertPreviewAccess(
 
 export const TOKEN_SUBPROTOCOL_PREFIX = "serve-sim.token.";
 
+/**
+ * Letters, digits, and `-._~` travel unchanged in a header, a URL query, a
+ * cookie, and a WebSocket subprotocol, so a session token made of them works
+ * for every client. base64url, hex, and UUID tokens qualify. serve-emu and
+ * Expo Device Hub apply the same rule.
+ */
+export function isUsableSessionToken(token: string): boolean {
+  return /^[A-Za-z0-9._~-]+$/.test(token);
+}
+
 // A CR or LF here would forge a header line in the handshake.
 const SUBPROTOCOL_TOKEN = /^[!#$%&'*+\-.0-9A-Za-z^_`|~]+$/;
 

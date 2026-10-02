@@ -1,11 +1,10 @@
-export const SESSION_TOKEN_ENV = 'EXPO_DEVICE_HUB_SESSION_TOKEN';
+import { readSessionToken, SESSION_TOKEN_ENV } from './read-session-token';
+
+export { SESSION_TOKEN_ENV };
 export const FRAME_ANCESTORS_ENV = 'EXPO_DEVICE_HUB_FRAME_ANCESTORS';
 
-/** Set only by the standalone CLI, under `--require-token`, before it imports the server bundle. */
-export const SESSION_TOKEN =
-  process.env.EXPO_DEVICE_HUB_BASE_PATH === ''
-    ? process.env[SESSION_TOKEN_ENV] || undefined
-    : undefined;
+/** The session token for this process, or `undefined` when the Hub is open. */
+export const SESSION_TOKEN = readSessionToken(process.env);
 
 /** `--frame-ancestor` origins, a JSON array. They apply only under the token, as in serve-sim. */
 export const FRAME_ANCESTORS: string[] = SESSION_TOKEN
