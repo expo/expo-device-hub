@@ -70,3 +70,48 @@ test('failed auth has a deadline and disposal cancels reconnects', async () => {
   channel.subscribe('/logs', () => {}, () => {}); channel.dispose();
   await Bun.sleep(40); expect(sockets).toHaveLength(2);
 });
+
+test('shared actions and UI requests wait for a server slot', async () => {
+  const {channel, ready} = setup();
+  const requests = Array.from({length: 10}, (_, n) => channel.request(
+    n % 2 ? {ui: {request: n}} : {action: `write-${n}`}, 1000,
+  ));
+  const ws = ready();
+  const sent = () => ws.sent.filter(msg => typeof msg.id === 'number');
+  expect(sent()).toHaveLength(8);
+  ws.reply({id: sent()[0]!.id, ok: true});
+  expect(sent()).toHaveLength(9);
+  ws.reply({id: sent()[1]!.id, ok: true});
+  expect(sent()).toHaveLength(10);
+  for (const request of sent().slice(2)) ws.reply({id: request.id, ok: true});
+  expect((await Promise.all(requests)).every(reply => reply.ok)).toBe(true);
+});
+
+test('aborting a sent action keeps its server slot until the reply arrives', async () => {
+  const {channel, ready} = setup();
+  const abort = new AbortController();
+  const first = channel.request({action: 'first'}, 1000, abort.signal).catch(error => error);
+  const active = Array.from({length: 7}, (_, n) => channel.request({action: `active-${n}`}, 1000));
+  const queued = channel.request({action: 'queued'}, 1000);
+  const ws = ready();
+  abort.abort(new Error('abandoned'));
+  expect((await first).message).toBe('abandoned');
+  expect(ws.sent.some(msg => msg.action === 'queued')).toBe(false);
+  ws.reply({id: ws.sent.find(msg => msg.action === 'first')!.id, ok: true});
+  expect(ws.sent.some(msg => msg.action === 'queued')).toBe(true);
+  for (const request of ws.sent.filter(msg => typeof msg.id === 'number' && msg.action !== 'first'))
+    ws.reply({id: request.id, ok: true});
+  await Promise.all([...active, queued]);
+});
+
+test('queued request deadlines reject without sending an expired write', async () => {
+  const {channel, ready} = setup();
+  const active = Array.from({length: 8}, (_, n) => channel.request({action: `active-${n}`}, 1000));
+  const queued = channel.request({action: 'expired'}, 10);
+  const ws = ready();
+  await expect(queued).rejects.toThrow('timeout');
+  for (const request of ws.sent.filter(msg => typeof msg.id === 'number'))
+    ws.reply({id: request.id, ok: true});
+  await Promise.all(active);
+  expect(ws.sent.some(msg => msg.action === 'expired')).toBe(false);
+});

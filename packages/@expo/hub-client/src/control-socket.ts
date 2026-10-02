@@ -1,3 +1,6 @@
+// serve-sim shares eight action/UI slots per control connection.
+const MAX_IN_FLIGHT_REQUESTS = 8;
+
 /** A control channel belongs to one client identity, never to the module. */
 export function createControlSocket(
   url: string,
@@ -27,6 +30,8 @@ export function createControlSocket(
   let healthTimer: ReturnType<typeof setTimeout> | undefined;
   let healthProbeId: number | undefined;
   const pending = new Map<number, Pending>();
+  // Aborted or timed-out writes occupy a server slot until their reply.
+  const inFlight = new Set<number>();
   const subscriptions = new Map<number, Subscription>();
 
   const clearHealth = () => {
@@ -44,6 +49,7 @@ export function createControlSocket(
     if (disposed || socket !== ws) return;
     socket = null;
     ready = false;
+    inFlight.clear();
     clearTimeout(connectTimer);
     clearHealth();
     for (const request of [...pending.values()]) request.finish(error);
@@ -67,6 +73,17 @@ export function createControlSocket(
       ws.send(JSON.stringify(body));
     } catch {
       fail(ws, new Error("exec-ws error"));
+    }
+  };
+  const sendRequests = () => {
+    const ws = socket;
+    if (!ws || !ready || disposed) return;
+    for (const [id, request] of pending) {
+      if (socket !== ws || inFlight.size >= MAX_IN_FLIGHT_REQUESTS) break;
+      if (request.sent) continue;
+      request.sent = true;
+      inFlight.add(id);
+      send(ws, { ...request.body, id });
     }
   };
   const scheduleHealthCheck = (ws: WebSocket) => {
@@ -114,11 +131,7 @@ export function createControlSocket(
         ready = true;
         clearTimeout(connectTimer);
         scheduleHealthCheck(ws);
-        for (const [id, request] of pending) {
-          if (socket !== ws) break;
-          request.sent = true;
-          send(ws, { ...request.body, id });
-        }
+        sendRequests();
         for (const [id, sub] of subscriptions) {
           if (socket !== ws) break;
           sendSubscription(id, sub);
@@ -132,9 +145,11 @@ export function createControlSocket(
           scheduleHealthCheck(ws);
           return;
         }
+        inFlight.delete(msg.id);
         const request = pending.get(msg.id);
         if (request?.sent)
           request.finish(typeof msg.error === "string" ? new Error(msg.error) : undefined, msg);
+        sendRequests();
       } else if (typeof msg.sub === "number") {
         const id = msg.sub;
         const sub = subscriptions.get(id);
@@ -174,15 +189,14 @@ export function createControlSocket(
           signal?.removeEventListener("abort", abort);
           if (error) reject(error);
           else resolve(reply ?? {});
+          sendRequests();
         };
         const abort = () => finish(signal?.reason ?? new DOMException("Aborted", "AbortError"));
         const timer = setTimeout(() => finish(new Error("exec-ws timeout")), timeoutMs);
         signal?.addEventListener("abort", abort, { once: true });
         pending.set(id, { body, sent: false, finish });
-        if (ready && socket) {
-          pending.get(id)!.sent = true;
-          send(socket, { ...body, id });
-        } else connect();
+        if (ready) sendRequests();
+        else connect();
       });
     },
     subscribe(path: string, data: (chunk: string) => void, end: () => void) {
@@ -210,6 +224,7 @@ export function createControlSocket(
     dispose() {
       if (disposed) return;
       disposed = true;
+      inFlight.clear();
       clearTimeout(connectTimer);
       clearTimeout(retryTimer);
       clearHealth();
