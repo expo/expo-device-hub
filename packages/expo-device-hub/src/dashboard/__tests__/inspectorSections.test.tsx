@@ -1054,6 +1054,27 @@ test('hides WebRTC statistics when another transport is active', () => {
   expect(html).not.toContain('role="img"');
 });
 
+test('WebRTC-only iOS servers do not promise an MJPEG fallback in insecure browsers', () => {
+  const client = {
+    ...inspectorClient('ios'),
+    streamCapabilities: {
+      modeAvailability: { mjpeg: false, h264: false, webrtc: true },
+      httpCodecs: [],
+      webRtcCodecs: ['h264', 'vp9', 'vp8'],
+    },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection
+      client={client}
+      defaultOpen
+      streamMode="webrtc"
+      streamModeAvailability={{ mjpeg: true, h264: false, webrtc: false }}
+    />,
+  );
+  expect(html).toContain('WebRTC requires localhost or HTTPS.');
+  expect(html).not.toContain('MJPEG remains available');
+});
+
 test('explains when the Android host was not launched with WebRTC', () => {
   const client = {
     ...inspectorClient('android'),

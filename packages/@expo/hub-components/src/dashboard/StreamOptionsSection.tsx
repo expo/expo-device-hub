@@ -342,7 +342,7 @@ export function StreamOptionsSection({
       )}
       {restricted && (
         <SectionNote>
-          {client.platform === 'android'
+          {client.platform === 'android' || !backend.modeAvailability.mjpeg
             ? 'WebRTC requires localhost or HTTPS.'
             : 'H.264 and WebRTC require localhost or HTTPS. MJPEG remains available on insecure HTTP.'}
         </SectionNote>
