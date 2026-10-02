@@ -940,6 +940,18 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: 'reset-video' });
   }, [send]);
+  const webRtcSourceGeneration = androidWebRtcRestartKey(streamSource, pendingStreamSource);
+  const webRtcSourceGenerationRef = useRef(webRtcSourceGeneration);
+  const webRtcSourceRevisionRef = useRef(0);
+  useLayoutEffect(() => {
+    // Initial discovery identifies the existing connection rather than replacing it.
+    if (webRtcSourceGenerationRef.current !== null &&
+        webRtcSourceGenerationRef.current !== webRtcSourceGeneration) {
+      webRtcSourceRevisionRef.current += 1;
+    }
+    webRtcSourceGenerationRef.current = webRtcSourceGeneration;
+  }, [webRtcSourceGeneration]);
+
   const {
     stream: webRtcStream,
     error: webRtcError,
@@ -965,7 +977,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     allowCodecFallback: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
     onBeforeDisconnect: retainWebRtcFrame,
-    restartKey: androidWebRtcRestartKey(streamSource, pendingStreamSource),
+    restartKey: webRtcSourceGeneration,
   });
 
   const restartWebRtc = useCallback(() => {
@@ -1585,9 +1597,6 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     let cancelled = false;
     let reconnectDelay = RECONNECT_BASE_DELAY_MS;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    // Whether the current socket opened; a deliberate server close of an open
-    // control channel (capture-source switch) is retried almost immediately.
-    let opened = false;
     const inputUrl = androidWsUrlFor(baseUrl, targetDevice, false);
     setWebRtcInputReady(false);
     setWebRtcInputError(null);
@@ -1611,9 +1620,12 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
         return;
       }
       wsRef.current = ws;
+      let opened = false;
+      let sourceRevision = webRtcSourceRevisionRef.current;
       ws.onopen = () => {
-        if (cancelled) return;
+        if (cancelled || wsRef.current !== ws) return;
         opened = true;
+        sourceRevision = webRtcSourceRevisionRef.current;
         reconnectDelay = RECONNECT_BASE_DELAY_MS;
         setWebRtcInputReady(true);
         setWebRtcInputError(null);
@@ -1623,17 +1635,18 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
         // onclose owns retry scheduling.
       };
       ws.onclose = (event) => {
-        if (cancelled) return;
-        if (wsRef.current === ws) wsRef.current = null;
+        if (cancelled || wsRef.current !== ws) return;
+        wsRef.current = null;
         const wasHealthy = opened;
         opened = false;
         if (
           wasHealthy &&
           isDeliberateServerClose(event.code) &&
+          sourceRevision === webRtcSourceRevisionRef.current &&
           !isStreamSwitchPending(streamSwitchRef.current)
         ) {
-          // A pending switch restarts through its confirmed generation or
-          // settings response. Avoid replacing that peer a second time.
+          // A confirmed source generation already replaced the old peer, even
+          // if its control close arrives after the replacement paints.
           // serve-emu stops the old video peer along with this control socket.
           // Renegotiate now instead of waiting for ICE loss and its grace period;
           // the new input socket alone must not make the old video read as live.

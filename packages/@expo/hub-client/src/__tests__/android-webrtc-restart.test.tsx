@@ -408,3 +408,24 @@ describe('Android WebRTC capture replacement hooks', () => {
     expect(retainedFrame()?.style.visibility).toBe('hidden');
   });
 });
+
+
+test('a delayed old control close cannot replace fresh generation video twice', async () => {
+  await mount();
+  await act(async () => client.setStreamSource('grpc-screenshot'));
+  await confirmReplacement();
+  await act(async () => Peer.instances[1].deliverTrack());
+  await paintFrame();
+  expect(client.streamSourcePending).toBe(false);
+  expect(offers).toBe(2);
+  const old = ControlSocket.instances[0];
+  await act(async () => old.onclose?.({ code: 1012 }));
+  expect(offers).toBe(2);
+  expect(Peer.instances[1].closed).toBe(false);
+  await reconnectControl();
+  await act(async () => ControlSocket.instances[1].onopen?.());
+  await act(async () => old.onclose?.({ code: 1012 }));
+  expect(offers).toBe(2);
+  await act(async () => ControlSocket.instances[1].onclose?.({ code: 1012 }));
+  expect(offers).toBe(3);
+});
