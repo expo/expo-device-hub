@@ -70,6 +70,7 @@ export interface ResolvedIosConnection {
   streamSettingsUrl: string | null;
   /** Initial server-provided stream settings, if present. */
   initialStreamSettings: unknown;
+  transportLocked: boolean;
   gridApiUrl: string | null;
   webRtcCodec: WebRtcCodec;
   webRtcIceServers?: WebRtcIceServer[];
@@ -233,6 +234,7 @@ export function resolveIosConnection(api: AttachedPreviewApi, mount: URL): Resol
     metricsPath: api.metricsEndpoint ?? null,
     axUrl: advertisedUrl(api.axEndpoint),
     initialStreamSettings: api.streamSettings,
+    transportLocked: api.streamSettings?.transport === 'webrtc',
     gridApiUrl: advertisedUrl(api.gridApiEndpoint) ?? middlewareUrls.forRoute('grid/api'),
     webRtcCodec: webRtcSettings ? webRtcSettings.codec : 'h264',
     ...(webRtcSettings?.iceServers ? { webRtcIceServers: webRtcSettings.iceServers } : {}),
