@@ -1,10 +1,11 @@
 import { type DevicePlatform } from './types';
 
 /**
- * A Hub, serve-sim, or serve-emu started with `--require-token` accepts its session token as a
- * bearer header, as `?token=` where a browser cannot set a header (`<img>`, `EventSource`), and as
- * a WebSocket subprotocol, never in a socket URL. A page the Hub served itself needs none of this:
- * the cookie it traded the link token for covers every request.
+ * A Hub or serve-sim started with `--require-token` accepts its session token as a bearer header,
+ * as `?token=` where a browser cannot set a header (`<img>`, `EventSource`), and as a WebSocket
+ * subprotocol, never in a socket URL. The Hub hands the token on to serve-emu, whose standalone
+ * `--token` server takes no subprotocol. A page the server served itself needs none of this: the
+ * cookie it traded the link token for covers every request.
  */
 export type SessionToken = string | null | undefined;
 
