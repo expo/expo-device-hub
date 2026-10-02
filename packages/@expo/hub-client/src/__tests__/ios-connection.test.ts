@@ -30,6 +30,7 @@ describe('resolveIosConnection with proxied helpers', () => {
       streamSettingsUrl:
         'https://sim.example.test:8443/preview/session/helper/DEVICE-A/stream-settings',
       device: 'DEVICE-A',
+      inputAdmission: false,
       execWsUrl: 'wss://sim.example.test:8443/preview/session/exec-ws',
       execToken: 'token',
       // exec-ws subscription paths stay on the server's own mount.

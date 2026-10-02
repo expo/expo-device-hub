@@ -74,7 +74,8 @@ async function renderIosClient(inputAdmission?: unknown) {
     },
   );
   stubGlobal("fetch", async (url: string) => {
-    if (url === "/sim/api?device=DEVICE-A") {
+    const endpoint = new URL(String(url), "http://localhost:3200");
+    if (endpoint.pathname === "/sim/api" && endpoint.searchParams.get("device") === "DEVICE-A") {
       return Response.json({
         device: "DEVICE-A",
         ...(inputAdmission !== undefined ? { inputAdmission } : {}),
