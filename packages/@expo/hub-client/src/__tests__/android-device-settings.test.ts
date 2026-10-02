@@ -9,7 +9,7 @@ import {
   androidTextSizeForFontScale,
   createAndroidDeviceSettingVersions,
   parseAndroidDeviceSetting,
-} from '../android-device-settings';
+} from '../android-device-settings.js';
 
 describe('Android font-size mapping', () => {
   test('maps the S–XL UI values onto serve-emu numeric scales', () => {

@@ -12,28 +12,28 @@
  * See `./types.ts` for the full contract.
  */
 
-export * from './types';
-export { areRecordingControlsLocked } from './screen-recording';
-export { DeviceScreen } from './DeviceScreen';
-export { KeyboardCapture, type KeyboardCaptureProps } from './KeyboardCapture';
+export * from './types.js';
+export { areRecordingControlsLocked } from './screen-recording.js';
+export { DeviceScreen } from './DeviceScreen.js';
+export { KeyboardCapture, type KeyboardCaptureProps } from './KeyboardCapture.js';
 export {
   AGENT_INTERACTION_IDLE_TIMEOUT_MS,
   agentInteractionCursorExpiresAt,
   agentInteractionEndMs,
   agentInteractionPointsAt,
-} from './agent-interaction-animation';
-export { displayScreen, streamGeometry } from './orientation';
-export { useIosDeviceClient } from './useIosDevice';
-export { useAndroidDeviceClient } from './useAndroidDevice';
-export { useActiveDeviceClient, type ActiveDeviceTarget } from './useActiveDeviceClient';
-export { useCoarsePointer } from './useCoarsePointer';
-export { isVisualViewportKeyboardRaised, readNativeKeyboardRaised } from './viewport-keyboard';
+} from './agent-interaction-animation.js';
+export { displayScreen, streamGeometry } from './orientation.js';
+export { useIosDeviceClient } from './useIosDevice.js';
+export { useAndroidDeviceClient } from './useAndroidDevice.js';
+export { useActiveDeviceClient, type ActiveDeviceTarget } from './useActiveDeviceClient.js';
+export { useCoarsePointer } from './useCoarsePointer.js';
+export { isVisualViewportKeyboardRaised, readNativeKeyboardRaised } from './viewport-keyboard.js';
 export {
   KEYBOARD_CAPTURE_ATTRIBUTES,
   keydownForward,
   keyEventsForBeforeInput,
   keyEventsForInputType,
   keyEventsForTextChange,
-} from './mobile-keyboard';
-export { createPacedKeySender, type PacedKeySender } from './paced-key-sender';
-export { textToKeyEventsLenient } from './text-to-keys';
+} from './mobile-keyboard.js';
+export { createPacedKeySender, type PacedKeySender } from './paced-key-sender.js';
+export { textToKeyEventsLenient } from './text-to-keys.js';

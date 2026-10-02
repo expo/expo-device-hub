@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type ParsedSseBlock, type FetchLike, drainSseChunk, readSseSnapshot } from '../sse';
+import { type ParsedSseBlock, type FetchLike, drainSseChunk, readSseSnapshot } from '../sse.js';
 
 function drainAll(chunks: readonly string[]): { blocks: ParsedSseBlock[]; tail: string } {
   const blocks: ParsedSseBlock[] = [];

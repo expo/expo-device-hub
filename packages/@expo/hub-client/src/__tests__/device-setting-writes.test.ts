@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { mergeAuthoritativeDeviceSetting } from '../device-setting-writes';
+import { mergeAuthoritativeDeviceSetting } from '../device-setting-writes.js';
 
 describe('mergeAuthoritativeDeviceSetting', () => {
   test('rolls back only the failed option without clobbering another optimistic write', () => {

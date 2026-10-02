@@ -3,7 +3,7 @@ import {
   carryForwardAppIcon,
   fetchAndroidAppIcon,
   parseAndroidAppIcon,
-} from '../android-app-icon';
+} from '../android-app-icon.js';
 
 const BASE = 'http://localhost:3400/vendor/serve-emu';
 

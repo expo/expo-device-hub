@@ -10,9 +10,9 @@
  * the simulator.
  */
 
-import { hidUsageForCode } from './keyboard';
-import { textToKeyEventsLenient } from './text-to-keys';
-import { type HidKeyEvent } from './types';
+import { hidUsageForCode } from './keyboard.js';
+import { textToKeyEventsLenient } from './text-to-keys.js';
+import { type HidKeyEvent } from './types.js';
 
 const BACKSPACE = hidUsageForCode('Backspace')!;
 const ENTER = hidUsageForCode('Enter')!;

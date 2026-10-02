@@ -8,8 +8,8 @@ import {
   NO_ANDROID_CAMERA,
   parseAndroidCameraStatus,
   staleCameraFacings,
-} from "../android-camera";
-import { type DeviceCameraFacing } from "../types";
+} from "../android-camera.js";
+import { type DeviceCameraFacing } from "../types.js";
 
 const stubImageUrl = (facing: DeviceCameraFacing, digest: string | null) =>
   `image:${facing}:${digest ?? "none"}`;

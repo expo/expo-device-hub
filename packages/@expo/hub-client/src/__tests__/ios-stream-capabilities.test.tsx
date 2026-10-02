@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { iosStreamCapabilities, useIosDeviceClient } from '../useIosDevice';
-import { type DeviceClient } from '../types';
-import { createGlobalStubs } from './test-globals';
+import { iosStreamCapabilities, useIosDeviceClient } from '../useIosDevice.js';
+import { type DeviceClient } from '../types.js';
+import { createGlobalStubs } from './test-globals.js';
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 

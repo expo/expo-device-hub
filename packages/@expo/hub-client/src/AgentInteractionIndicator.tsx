@@ -6,9 +6,9 @@ import {
   agentInteractionPointsAt,
   agentInteractionPointsWithTravelAt,
   agentInteractionTravelMs,
-} from './agent-interaction-animation';
-import { AGENT_TOUCH_INDICATOR_STYLE } from './TouchIndicator';
-import { type AgentInteraction, type AgentInteractionPoint } from './types';
+} from './agent-interaction-animation.js';
+import { AGENT_TOUCH_INDICATOR_STYLE } from './TouchIndicator.js';
+import { type AgentInteraction, type AgentInteractionPoint } from './types.js';
 
 const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)';
 

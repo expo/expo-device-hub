@@ -1,6 +1,6 @@
-import { NO_PENDING_PERMISSION_WRITES } from './app-permissions';
-import { NO_PENDING_CAMERA_WRITES } from './device-camera';
-import { DeviceClient } from './types';
+import { NO_PENDING_PERMISSION_WRITES } from './app-permissions.js';
+import { NO_PENDING_CAMERA_WRITES } from './device-camera.js';
+import { DeviceClient } from './types.js';
 
 /** Inert client returned while no device is selected — module-level so its
  *  identity is stable across renders. */

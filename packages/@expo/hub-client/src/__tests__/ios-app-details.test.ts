@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type ExecResult, fetchIosAppDetails, getIosAppDetails } from '../ios-app-details';
-import { type HostActionParams } from '../exec-ws';
+import { type ExecResult, fetchIosAppDetails, getIosAppDetails } from '../ios-app-details.js';
+import { type HostActionParams } from '../exec-ws.js';
 
 const APP_PATH = '/Users/dev/Library/Developer/CoreSimulator/Devices/UDID/Foo.app';
 

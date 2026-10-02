@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { WHEEL_LINE_HEIGHT_PX, wheelDeltaToPixels } from '../scroll-wheel';
+import { WHEEL_LINE_HEIGHT_PX, wheelDeltaToPixels } from '../scroll-wheel.js';
 
 describe('wheelDeltaToPixels', () => {
   test('passes pixel-mode deltas through', () => {

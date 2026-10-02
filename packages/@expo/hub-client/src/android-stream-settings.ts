@@ -2,8 +2,8 @@ import {
   DEFAULT_DEVICE_STREAM_SETTINGS,
   DEVICE_STREAM_SETTING_BOUNDS,
   normalizeDeviceStreamSettings,
-} from './stream-settings';
-import { type DeviceStreamEncoderSettings } from './types';
+} from './stream-settings.js';
+import { type DeviceStreamEncoderSettings } from './types.js';
 
 export type AndroidStreamSettingsPatch = Partial<
   Pick<DeviceStreamEncoderSettings, 'maxDimension' | 'h264Fps' | 'h264Bitrate'>

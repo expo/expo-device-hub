@@ -5,10 +5,10 @@ import {
   IOS_INPUT_BUSY_MESSAGE,
   IOS_INPUT_UNAVAILABLE_MESSAGE,
   iosInputCloseError,
-} from "../ios-input-error";
-import { type DeviceClient } from "../types";
-import { useIosDeviceClient } from "../useIosDevice";
-import { createGlobalStubs } from "./test-globals";
+} from "../ios-input-error.js";
+import { type DeviceClient } from "../types.js";
+import { useIosDeviceClient } from "../useIosDevice.js";
+import { createGlobalStubs } from "./test-globals.js";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 

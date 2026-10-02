@@ -1,4 +1,4 @@
-import { type DeviceStreamEncoderSettings } from './types';
+import { type DeviceStreamEncoderSettings } from './types.js';
 
 export const DEVICE_STREAM_SETTING_BOUNDS = {
   mjpegFps: [1, 120],

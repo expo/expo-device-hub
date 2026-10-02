@@ -4,8 +4,8 @@ import {
   humanize,
   readPermissions,
   heldPermissionIds,
-} from "../app-permissions";
-import { type AppPermission } from "../types";
+} from "../app-permissions.js";
+import { type AppPermission } from "../types.js";
 
 const row = (id: string, state: AppPermission["state"]): AppPermission => ({
   id,
