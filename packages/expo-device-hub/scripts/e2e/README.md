@@ -58,6 +58,8 @@ caller-owned Simulator booted.
 The printed evidence directory retains `verification.json`, `native-fixture.tsv`,
 `wire.json`, `backend.log` and the dashboard bundle. Headless runs also save
 `dashboard.png`; collaborative runs can record the same UI using the preview.
+Subscription recovery requires fresh native sample timestamps to reach all three rendered Activity charts; upstream traffic alone cannot pass. Negative harness tests reject unavailable, stale and paused charts and samples from the retired connection.
+
 Wire evidence omits tokens and typed text; native fixture text is test input only.
 
 Check the harness with:

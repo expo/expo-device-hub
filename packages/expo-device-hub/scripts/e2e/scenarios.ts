@@ -124,18 +124,45 @@ function button(label: string) {
   assert(element, `Dashboard ${label} control exists`);
   return element;
 }
-function metricsReceived(events: WireEvent[], afterConnection = 0) {
-  return events.some(
-    (subscription) =>
-      subscription.channel === "control" &&
-      subscription.connection > afterConnection &&
-      subscription.path?.startsWith("/metrics") &&
-      events.some(
-        (reply) =>
-          reply.connection === subscription.connection &&
-          reply.subscriptionId === subscription.subscriptionId &&
-          reply.subscriptionData === true,
-      ),
+function activitySampleTime(): number | null {
+  const activity = document.querySelector<HTMLElement>('[data-testid="activity-charts"]');
+  const raw = activity?.getAttribute("data-sample-time");
+  if (!raw || activity?.textContent?.match(/unavailable|Waiting for activity|paused/)) return null;
+  if (activity?.querySelectorAll('svg[role="img"]').length !== 3) return null;
+  const time = Number(raw);
+  return Number.isFinite(time) ? time : null;
+}
+
+/** Require a new native sample from the replacement connection to reach the rendered charts. */
+export async function waitForActivityRecovery(
+  afterConnection = 0,
+  previousSample: number | null = null,
+  timeoutMs = 20_000,
+) {
+  await until(
+    async () => {
+      const { events } = await state();
+      const rendered = activitySampleTime();
+      return (
+        rendered !== null &&
+        rendered !== previousSample &&
+        events.some(
+          (subscription) =>
+            subscription.channel === "control" &&
+            subscription.connection > afterConnection &&
+            subscription.path?.startsWith("/metrics") &&
+            events.some(
+              (reply) =>
+                reply.connection === subscription.connection &&
+                reply.subscriptionId === subscription.subscriptionId &&
+                reply.sampleTime === rendered,
+            ),
+        )
+      );
+    },
+    Boolean,
+    "Activity renders a fresh native sample from the current control subscription",
+    timeoutMs,
   );
 }
 
@@ -309,30 +336,22 @@ export async function runScenarios() {
           [...paths].some((path) => path?.startsWith("/metrics")),
           "Real dashboard subscribes to metrics",
         );
-        await until(
-          state,
-          (value) => metricsReceived(value.events),
-          "native metrics data arrives on pooled subscription",
-        );
+        await waitForActivityRecovery();
+        const previousSample = activitySampleTime();
         await post("control-drop");
         await until(
           state,
           (value) => value.controlConnections === before.controlConnections + 1,
           "control reconnect",
         );
-        await until(
-          state,
-          (value) =>
-            metricsReceived(
-              value.events,
-              Math.max(
-                ...before.events
-                  .filter((event) => event.channel === "control")
-                  .map((event) => event.connection),
-                0,
-              ),
-            ),
-          "metrics resubscribes and receives data on replacement control",
+        await waitForActivityRecovery(
+          Math.max(
+            ...before.events
+              .filter((event) => event.channel === "control")
+              .map((event) => event.connection),
+            0,
+          ),
+          previousSample,
         );
         await advancingVideo();
       },
@@ -344,6 +363,7 @@ export async function runScenarios() {
           .filter((event) => event.channel === "control")
           .map((event) => event.connection),
       );
+      const previousSample = activitySampleTime();
       await post("control-stall");
       await until(
         state,
@@ -351,11 +371,7 @@ export async function runScenarios() {
         "health probe retires the silent OPEN channel",
         20_000,
       );
-      await until(
-        state,
-        (value) => metricsReceived(value.events, lastConnection),
-        "native metrics return after health-driven reconnect",
-      );
+      await waitForActivityRecovery(lastConnection, previousSample);
       await advancingVideo();
     });
     await check(

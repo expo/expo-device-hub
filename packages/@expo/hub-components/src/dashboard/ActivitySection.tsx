@@ -69,7 +69,7 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
   else if (activity?.stale) message = 'Activity data is paused. Showing the most recent samples.';
 
   return (
-    <div data-testid="activity-charts" style={{ minWidth: 0, paddingTop: 8 }}>
+    <div data-testid="activity-charts" data-sample-time={latest?.t} style={{ minWidth: 0, paddingTop: 8 }}>
       {message && (
         <span
           role={activity?.errored ? 'alert' : undefined}

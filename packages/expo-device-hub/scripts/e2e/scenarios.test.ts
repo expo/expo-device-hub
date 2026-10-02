@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { nativeTextEdits, runBlurScenario } from "./scenarios";
+import { nativeTextEdits, runBlurScenario, waitForActivityRecovery } from "./scenarios";
 
 const restore: (() => void)[] = [];
 afterEach(() =>
@@ -60,4 +60,58 @@ test("expired-input assertions ignore readiness notifications but retain every t
   expect(nativeTextEdits(before + "text\t2\thub!x\ntext\t3\thub!\n")).not.toBe(
     nativeTextEdits(before),
   );
+});
+
+function setupActivity(sampleTime: number | null, message = "", connection = 2) {
+  stub("document", {
+    querySelector: () => ({
+      getAttribute: () => (sampleTime === null ? null : String(sampleTime)),
+      textContent: message,
+      querySelectorAll: () => [{}, {}, {}],
+    }),
+  });
+  stub("fetch", async () =>
+    Response.json({
+      events: [
+        { channel: "control", connection, path: "/metrics", subscriptionId: 1 },
+        {
+          channel: "control",
+          connection,
+          subscriptionId: 1,
+          subscriptionData: true,
+          sampleTime: 200,
+        },
+      ],
+    }),
+  );
+}
+
+test("subscription recovery rejects upstream data that never reaches Activity", async () => {
+  setupActivity(null, "Activity data is unavailable for this app.");
+  await expect(waitForActivityRecovery(1, 100, 150)).rejects.toThrow(
+    "Activity renders a fresh native sample",
+  );
+});
+
+test("subscription recovery rejects stale charts even with upstream replacement data", async () => {
+  setupActivity(100);
+  await expect(waitForActivityRecovery(1, 100, 150)).rejects.toThrow(
+    "Activity renders a fresh native sample",
+  );
+});
+
+test("subscription recovery rejects paused charts and data from the retired connection", async () => {
+  setupActivity(200, "Activity data is paused.");
+  await expect(waitForActivityRecovery(1, 100, 150)).rejects.toThrow(
+    "Activity renders a fresh native sample",
+  );
+  setupActivity(200, "", 1);
+  await expect(waitForActivityRecovery(1, 100, 150)).rejects.toThrow(
+    "Activity renders a fresh native sample",
+  );
+});
+
+test("subscription recovery accepts a fresh replacement sample rendered by Activity", async () => {
+  setupActivity(200);
+  await expect(waitForActivityRecovery(1, 100, 150)).resolves.toBeUndefined();
 });

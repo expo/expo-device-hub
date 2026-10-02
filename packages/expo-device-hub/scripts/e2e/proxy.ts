@@ -14,6 +14,7 @@ export type WireEvent = {
   ok?: boolean;
   subscriptionId?: number;
   subscriptionData?: boolean;
+  sampleTime?: number;
 };
 type SocketData = {
   path: string;
@@ -236,13 +237,23 @@ export function startProxy(options: {
                 typeof reply.data === "string" &&
                 /^data:/m.test(reply.data)
               )
-                record({
-                  at: Date.now(),
-                  channel: "control",
-                  connection: data.connection,
-                  subscriptionId: reply.sub,
-                  subscriptionData: true,
-                });
+                for (const line of reply.data.split("\n")) {
+                  if (!line.startsWith("data:")) continue;
+                  let sampleTime: number | undefined;
+                  try {
+                    const sample = JSON.parse(line.slice(5));
+                    if (typeof sample.t === "number" && Number.isFinite(sample.t))
+                      sampleTime = sample.t;
+                  } catch {}
+                  record({
+                    at: Date.now(),
+                    channel: "control",
+                    connection: data.connection,
+                    subscriptionId: reply.sub,
+                    subscriptionData: true,
+                    sampleTime,
+                  });
+                }
             } catch {}
           }
           if (!data.closed)
