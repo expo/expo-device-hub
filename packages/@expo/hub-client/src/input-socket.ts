@@ -116,6 +116,9 @@ export function createInputSocket(
       // New helpers require admission; legacy helpers keep their prior open behavior.
       pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload);
     },
+    discardQueued(tag: number) {
+      pendingMessages = pendingMessages.filter(message => message.tag !== tag);
+    },
     trySend(tag: number, payload: object) {
       return admitted && trySendWsMessage(socket, tag, payload);
     },

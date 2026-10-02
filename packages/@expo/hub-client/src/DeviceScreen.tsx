@@ -4,10 +4,12 @@ import {
   type PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 
+import { listenForInputCancellation } from './input-cancellation.js';
 import { streamGeometry } from './orientation.js';
 import { wheelDeltaToPixels } from './scroll-wheel.js';
 import { AgentInteractionIndicator } from './AgentInteractionIndicator.js';
@@ -127,6 +129,7 @@ export function DeviceScreen({
     sendMultiTouch,
     sendScroll,
     sendKey,
+    cancelInput,
     screen,
     status,
     error,
@@ -145,20 +148,6 @@ export function DeviceScreen({
     }
     pressedKeysRef.current.clear();
   }, [sendKey]);
-
-  useEffect(() => {
-    const onWindowBlur = () => releasePressedKeys();
-    const onVisibilityChange = () => {
-      if (document.hidden) releasePressedKeys();
-    };
-    window.addEventListener('blur', onWindowBlur);
-    document.addEventListener('visibilitychange', onVisibilityChange);
-    return () => {
-      window.removeEventListener('blur', onWindowBlur);
-      document.removeEventListener('visibilitychange', onVisibilityChange);
-      releasePressedKeys();
-    };
-  }, [releasePressedKeys]);
 
   const keyboardInputFrom = (
     event: ReactKeyboardEvent<HTMLDivElement>,
@@ -230,10 +219,10 @@ export function DeviceScreen({
 
   // Second finger position for Alt-drag: mirror around center (pinch) or a
   // locked offset (pan, with Shift) — matches serve-sim.
-  const altSecondFinger = (p: Point): Point =>
+  const altSecondFinger = useCallback((p: Point): Point =>
     altShiftRef.current
       ? { x: clamp01(p.x + panOffsetRef.current.x), y: clamp01(p.y + panOffsetRef.current.y) }
-      : { x: 1 - p.x, y: 1 - p.y };
+      : { x: 1 - p.x, y: 1 - p.y }, []);
 
   const endMulti = (a: Point, b: Point) => {
     if (rafRef.current) {
@@ -244,6 +233,37 @@ export function DeviceScreen({
     sendMultiTouch?.({ phase: 'end', a, b });
     setFingers(null);
   };
+
+  const cancelGestures = useCallback(() => {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    rafRef.current = 0;
+    const pending = pendingRef.current;
+    pendingRef.current = {};
+    const points = [...pointersRef.current.values()];
+    const a = pending.multi?.a ?? points[0];
+    let b = pending.multi?.b ?? points[1];
+    if (modeRef.current === 'single' && a) sendTouch({ phase: 'end', ...(pending.single ?? a) });
+    else if (a && (modeRef.current === 'two' || modeRef.current === 'alt')) {
+      b ??= altSecondFinger(a);
+      sendMultiTouch?.({ phase: 'end', a, b });
+    }
+    for (const id of pointersRef.current.keys()) {
+      try { surfaceRef.current?.releasePointerCapture(id); } catch {}
+    }
+    pointersRef.current.clear();
+    modeRef.current = 'none';
+    singleIdRef.current = null;
+    setFingers(null);
+  }, [sendTouch, sendMultiTouch, altSecondFinger]);
+  const cancelBrowserInput = useCallback(() => {
+    releasePressedKeys();
+    cancelGestures();
+    cancelInput?.();
+  }, [releasePressedKeys, cancelGestures, cancelInput]);
+  useLayoutEffect(() => {
+    const stopListening = listenForInputCancellation(cancelBrowserInput);
+    return () => { stopListening(); cancelBrowserInput(); };
+  }, [cancelBrowserInput]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
@@ -415,9 +435,7 @@ export function DeviceScreen({
           borderRadius,
           outline: 'none',
         }}
-        onBlur={() => {
-          releasePressedKeys();
-        }}
+        onBlur={cancelBrowserInput}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onPointerDown={onPointerDown}
