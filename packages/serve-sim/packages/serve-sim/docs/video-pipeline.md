@@ -129,7 +129,9 @@ recording path has no CPU scaling fallback.
 
 A monotonic 60 Hz timer submits the latest safe snapshot and repeats it when
 the simulator has no new image. Thus 60 output samples per second is a target,
-not a promise of 60 distinct rendered frames. The recorder bounds pending
+not a promise of 60 distinct rendered frames. A keyframe comes at least every
+60 samples and every second of recording time, so a browser player can seek to
+within a second. The recorder bounds pending
 frames, pixel buffers, and writer work, and counts coalesced ticks, drops,
 repeats, backpressure, and encode time. Overloaded hosts can miss the target.
 
