@@ -72,7 +72,8 @@ export function createInputSocket(
       if (stopped || socket !== ws) return;
       const admissionFrame = event.data instanceof ArrayBuffer &&
         event.data.byteLength === 1 && new Uint8Array(event.data)[0] === WS_MSG_INPUT_ADMITTED;
-      if (admissionFrame || handlers.onMessage(event.data)) {
+      const legacyAdmission = handlers.onMessage(event.data);
+      if (admissionFrame || (!requireAdmission && legacyAdmission)) {
         admit(true);
       }
     };

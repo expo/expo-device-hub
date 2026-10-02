@@ -31,7 +31,7 @@ function setup(requireAdmission = true) {
   let disconnects = 0;
   const input = createInputSocket("ws://localhost/ws", {
     onAdmitted: () => { admissions++; },
-    onMessage: (data) => data === "admitted",
+    onMessage: (data) => data === "legacy config",
     onDisconnect: () => { disconnects++; },
     onRefused: (reason) => { errors.push(reason); },
     onRecovered: () => { recoveries++; },
@@ -64,7 +64,7 @@ test("legacy helper sends input on open without a dimension config", () => {
     state.sockets[0]!.open();
     expect(state.admissions).toBe(1);
     expect(new Uint8Array(state.sockets[0]!.sent[0]!)[0]).toBe(0x04);
-    state.sockets[0]!.message("admitted");
+    state.sockets[0]!.message(Uint8Array.of(0x83).buffer);
     expect(state.admissions).toBe(1);
   } finally {
     state.input.dispose();
@@ -84,7 +84,7 @@ test("legacy helper still reports an immediate 1013 refusal", async () => {
   }
 });
 
-test("a retry admitted by a config frame clears a temporary refusal", async () => {
+test("an explicitly admitted retry clears a temporary refusal", async () => {
   const state = setup();
   try {
     state.input.start();
@@ -93,7 +93,7 @@ test("a retry admitted by a config frame clears a temporary refusal", async () =
     await Bun.sleep(20);
     state.sockets[1]!.open();
     state.sockets[1]!.message("other frame");
-    state.sockets[1]!.message("admitted");
+    state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
     await Bun.sleep(45);
     expect(state.errors).toEqual([]);
     expect(state.admissions).toBe(1);
@@ -104,21 +104,21 @@ test("a retry admitted by a config frame clears a temporary refusal", async () =
   }
 });
 
-test("admission callback waits for a valid config frame and runs once per socket", async () => {
+test("admission callback waits for acknowledgement and runs once per socket", async () => {
   const state = setup();
   try {
     state.input.start();
     state.sockets[0]!.open();
     state.sockets[0]!.message("other frame");
     expect(state.admissions).toBe(0);
-    state.sockets[0]!.message("admitted");
-    state.sockets[0]!.message("admitted");
+    state.sockets[0]!.message(Uint8Array.of(0x83).buffer);
+    state.sockets[0]!.message(Uint8Array.of(0x83).buffer);
     expect(state.admissions).toBe(1);
     state.sockets[0]!.close();
     await Bun.sleep(20);
     state.sockets[1]!.open();
     expect(state.admissions).toBe(1);
-    state.sockets[1]!.message("admitted");
+    state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
     expect(state.admissions).toBe(2);
   } finally {
     state.input.dispose();
@@ -136,7 +136,7 @@ test("server admission flushes input before screen dimensions are available", ()
     expect(state.admissions).toBe(1);
     expect(state.sockets[0]!.sent).toHaveLength(1);
     expect(new Uint8Array(state.sockets[0]!.sent[0]!)[0]).toBe(0x04);
-    state.sockets[0]!.message("admitted");
+    state.sockets[0]!.message(Uint8Array.of(0x83).buffer);
     expect(state.admissions).toBe(1);
   } finally {
     state.input.dispose();
@@ -152,7 +152,7 @@ test("queued input waits for admission and acknowledged commands never queue", a
     state.sockets[0]!.open();
     expect(state.sockets[0]!.sent).toHaveLength(0);
     expect(state.input.trySend(0x10, { requestId: 1 })).toBe(false);
-    state.sockets[0]!.message("admitted");
+    state.sockets[0]!.message(Uint8Array.of(0x83).buffer);
     expect(new Uint8Array(state.sockets[0]!.sent[0]!)[0]).toBe(0x03);
     expect(state.input.trySend(0x10, { requestId: 1 })).toBe(true);
     state.sockets[0]!.close();
@@ -160,7 +160,7 @@ test("queued input waits for admission and acknowledged commands never queue", a
     await Bun.sleep(20);
     state.sockets[1]!.open();
     expect(state.sockets[1]!.sent).toHaveLength(0);
-    state.sockets[1]!.message("admitted");
+    state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
     expect(new Uint8Array(state.sockets[1]!.sent[0]!)[0]).toBe(0x04);
     expect(state.sockets[1]!.sent).toHaveLength(1);
   } finally {
@@ -178,7 +178,7 @@ test("a refused open preserves fresh queued input for the next admitted socket",
     state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
     await Bun.sleep(20);
     state.sockets[1]!.open();
-    state.sockets[1]!.message("admitted");
+    state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
     expect(state.sockets[1]!.sent).toHaveLength(1);
     expect(new Uint8Array(state.sockets[1]!.sent[0]!)[0]).toBe(0x04);
   } finally {
@@ -228,9 +228,9 @@ test("admission after a reported refusal clears the failure notice", async () =>
     await Bun.sleep(50);
     expect(state.errors).toEqual([WS_REASON_INPUT_UNAVAILABLE]);
     state.sockets[1]!.open();
-    state.sockets[1]!.message("admitted");
+    state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
     expect(state.recoveries).toBe(1);
-    state.sockets[1]!.message("admitted");
+    state.sockets[1]!.message(Uint8Array.of(0x83).buffer);
     expect(state.recoveries).toBe(1);
   } finally {
     state.input.dispose();
@@ -277,4 +277,40 @@ test('a constructor failure retries and disposal cancels that retry', async () =
   }, {reconnectDelayMs: 10, openSocket() { if (++attempts === 1) throw new Error('temporary'); return socket as unknown as WebSocket; }});
   input.start(); await Bun.sleep(20); expect(attempts).toBe(2);
   input.dispose(); await Bun.sleep(20); expect(attempts).toBe(2);
+});
+
+
+test("modern config frames do not admit input or clear a reported refusal", async () => {
+  const state = setup();
+  try {
+    state.input.start();
+    state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
+    await Bun.sleep(50);
+    const retry = state.sockets[1]!;
+    retry.open();
+    state.input.send(0x04, { button: "home" });
+    retry.message("legacy config");
+    expect(state.errors).toEqual([WS_REASON_INPUT_UNAVAILABLE]);
+    expect(state.recoveries).toBe(0);
+    expect(state.admissions).toBe(0);
+    expect(retry.sent).toHaveLength(0);
+    expect(state.input.trySend(0x10, { requestId: 1 })).toBe(false);
+    retry.message(Uint8Array.of(0x83).buffer);
+    expect(state.recoveries).toBe(1);
+    expect(state.admissions).toBe(1);
+    expect(retry.sent).toHaveLength(1);
+  } finally { state.input.dispose(); }
+});
+
+test("legacy config confirms recovery without waiting for an unsupported acknowledgement", async () => {
+  const state = setup(false);
+  try {
+    state.input.start();
+    state.sockets[0]!.close(1013, WS_REASON_INPUT_UNAVAILABLE);
+    await Bun.sleep(50);
+    state.sockets[1]!.open();
+    expect(state.recoveries).toBe(0);
+    state.sockets[1]!.message("legacy config");
+    expect(state.recoveries).toBe(1);
+  } finally { state.input.dispose(); }
 });
