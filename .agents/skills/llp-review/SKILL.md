@@ -27,7 +27,7 @@ A document enters `Review` (the author's opt-in to a formal loop), or review is 
 
 ## Workflow
 
-> **Recipe (advisory)** — locate and read the document fully. If this session can act as one independent family reviewer (and didn't author the draft), write that review using the LLP 0005 standard prompt. For each further input the author wants — pasted manual review, sub-agent on a different family, CLI runner — prepare the prompt and **stop until it is actually provided**. Structure each review body: overall assessment · strengths (cite sections) · concerns (with severity and what would resolve each) · suggestions · open questions · recommended next step.
+> **Recipe (advisory)** — corpus root = nearest `llp/` walking up from the path in scope (LLP 0001 §Unit of adoption). Locate and read the document fully. If this session can act as one independent family reviewer (and didn't author the draft), write that review using the LLP 0005 standard prompt. For each further input the author wants — pasted manual review, sub-agent on a different family, CLI runner — prepare the prompt and **stop until it is actually provided**. Structure each review body: overall assessment · strengths (cite sections) · concerns (with severity and what would resolve each) · suggestions · open questions · recommended next step.
 
 ## Artifact
 

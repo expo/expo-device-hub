@@ -15,7 +15,7 @@ This monorepo contains the Hub, the browser libraries that connect to devices, a
 
 Read this document first. It tells you which package owns what, how the packages connect, and which constraints you must not simplify away. Each section names where to look next.
 
-> **Provenance.** An agent wrote this draft from the code, the package `AGENTS.md` files, and the git history. `[observed]` claims give their source. `[confirmed]` claims name a human and a date. `[inferred]` claims are guesses that a maintainer must confirm or delete. This document stays `Draft` until every `[inferred]` claim is resolved.
+> **Provenance.** An agent wrote this draft from the code, the package `AGENTS.md` files, and the git history, before a maintainer interview (the LLP `--skip-interview` path). `[observed]` claims give their source. `[confirmed]` claims name a human and a date. `[inferred]` claims are guesses that a maintainer must confirm or delete. The constraints below are `[observed]` from code and maintainer-written docs; none is confirmed in an interview yet. This document stays `Draft` until the interview has run and every `[inferred]` claim is resolved. The interview record is in `.llp/adopt-run.md`, which is not committed.
 
 ## Packages
 

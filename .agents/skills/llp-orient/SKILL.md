@@ -27,7 +27,7 @@ Start of a coding task that touches an area with documented design. The orient-f
 
 ## Workflow
 
-> **Recipe (advisory)** — read `llp/foundation/` first (the kernel; the root LLP is there once `Active` — on a fresh adoption it is still `Draft` and sits in `current/`), then skim `llp/current/` (the declared working set); both hold relative links — symlinks, or small files containing the relative path — so `ls` answers and either form resolves. Then the root LLP's systems vocabulary. `Grep '@ref'` over the files in scope and `Read` each target — these are the highest-signal context. `Grep` the `**Systems:**` headers across `llp/` for LLPs governing the subsystems touched; read the governing ones (Spec, Decision, Principles, relevant RFCs). Follow `Related:` and nearby `@ref` targets one hop out; stop there unless something is clearly load-bearing. Stale-pin nudge (skip offline): read the installed tag from the skills receipt (or a `source:` pin), compare `git ls-remote --tags <origin>` — if upstream is newer, say so in one line ("skills at v0.3.0, upstream v0.5.2 — run /llp-adopt update") and move on; never update from here.
+> **Recipe (advisory)** — corpus root = nearest `llp/` walking up from the path in scope (LLP 0001 §Unit of adoption); "no corpus" is an empty walk, not cwd-relative absence. Read `llp/foundation/` first (the kernel; the root LLP is there once `Active` — on a fresh adoption it is still `Draft` and sits in `current/`), then skim `llp/current/` (the declared working set); both hold relative links — symlinks, or small files containing the relative path — so `ls` answers and either form resolves. Then the root LLP's systems vocabulary. `Grep '@ref'` over the files in scope and `Read` each target — these are the highest-signal context. `Grep` the `**Systems:**` headers across `llp/` for LLPs governing the subsystems touched; read the governing ones (Spec, Decision, Principles, relevant RFCs). Follow `Related:` and nearby `@ref` targets one hop out; stop there unless something is clearly load-bearing. Stale-pin nudge (skip offline): read the installed tag from the skills receipt (or a `source:` pin), compare `git ls-remote --tags <origin>` — if upstream is newer, say so in one line ("skills at v0.3.0, upstream v0.5.2 — run /llp-adopt update") and move on; never update from here.
 
 ## Artifact
 
@@ -43,6 +43,6 @@ A context pack with these sections, faster to read than the documents it points 
 
 ## Hand-offs
 
-- No corpus (`llp/` missing or stub) → `llp-adopt`.
+- No corpus (no `llp/` walking up from the path in scope) → `llp-adopt`.
 - The task needs a decision no LLP covers → `llp-create` (or `llp-review` if proposal-shaped).
 - An `@ref` target or anchor doesn't resolve → `llp-maintain`.

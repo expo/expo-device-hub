@@ -10,7 +10,7 @@ source: ccheever/llp@v0.5.2
 <!-- @ref https://github.com/ccheever/llp/blob/v0.5.2/llp/0000-linked-literate-programming.explainer.md#6-validation-ref-check — the deterministic subset lives in ref-check, not here -->
 <!-- @ref https://github.com/ccheever/llp/blob/v0.5.2/llp/0011.000-curation-pass.guide.md — the curate intent follows this procedure -->
 
-The upkeep engine. Living documents rot into misleading guidance unless code and docs co-evolve; this skill finds the drift and **proposes** fixes. The propose-only line is what lets one skill cover four maintenance moments without becoming a mega-skill.
+The upkeep engine. Living documents rot into misleading guidance unless code and docs co-evolve; this skill finds the drift and **proposes** fixes. The propose-only line is what lets one skill cover four maintenance moments without becoming a mega-skill. Corpus root = nearest `llp/` walking up from the path in scope (LLP 0001 §Unit of adoption).
 
 Invoke as `/llp-maintain --intent <pre-pr | audit | reconcile | retire-proposal | curate>` (each has a sensible default scope).
 
