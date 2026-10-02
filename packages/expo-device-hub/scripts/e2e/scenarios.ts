@@ -133,6 +133,13 @@ function activitySampleTime(): number | null {
   return Number.isFinite(time) ? time : null;
 }
 
+function latestControlConnection(events: readonly WireEvent[]): number {
+  return Math.max(
+    0,
+    ...events.filter((event) => event.channel === "control").map((event) => event.connection),
+  );
+}
+
 /** Require a new native sample from the replacement connection to reach the rendered charts. */
 export async function waitForActivityRecovery(
   afterConnection = 0,
@@ -344,25 +351,13 @@ export async function runScenarios() {
           (value) => value.controlConnections === before.controlConnections + 1,
           "control reconnect",
         );
-        await waitForActivityRecovery(
-          Math.max(
-            ...before.events
-              .filter((event) => event.channel === "control")
-              .map((event) => event.connection),
-            0,
-          ),
-          previousSample,
-        );
+        await waitForActivityRecovery(latestControlConnection(before.events), previousSample);
         await advancingVideo();
       },
     );
     await check("A silent OPEN control channel heals dashboard subscriptions", async () => {
       const before = await state();
-      const lastConnection = Math.max(
-        ...before.events
-          .filter((event) => event.channel === "control")
-          .map((event) => event.connection),
-      );
+      const lastConnection = latestControlConnection(before.events);
       const previousSample = activitySampleTime();
       await post("control-stall");
       await until(
