@@ -61,6 +61,8 @@ const SIM_HELPER_PREFIX = `${SIM_PREFIX}/helper/`;
 const FRAME_POLICY_HEADERS: Record<string, string> = SESSION_TOKEN
   ? { 'Content-Security-Policy': frameAncestorsPolicy([]) }
   : {};
+/** For the files the standalone CLI serves itself once `handler` passed a request on. */
+export const staticFileHeaders: Readonly<Record<string, string>> = FRAME_POLICY_HEADERS;
 
 // The exported dashboard shell (dist/client/index.html, a sibling of the
 // dist/server bundle this file becomes). Its asset URLs are relative and its
@@ -145,11 +147,29 @@ function gateRequest(request: Request, pathname: string): Request | Response {
   return isSimRecordingControl(pathname) ? request : withBearerToken(request, SESSION_TOKEN);
 }
 
+/**
+ * Every response the gate let through names who may frame it, not only the dashboard: a backend
+ * page, such as serve-emu's own UI, takes input too. A response that already names its frame
+ * policy, such as serve-sim's pages, keeps its own.
+ */
+function withFramePolicy(response: Response | null): Response | null {
+  const policy = FRAME_POLICY_HEADERS['Content-Security-Policy'];
+  if (!response || !policy) return response;
+  if (response.headers.get('content-security-policy')?.includes('frame-ancestors')) return response;
+  // A copy, because a backend's response headers may be immutable, as a redirect's are.
+  const framed = new Response(response.body, response);
+  framed.headers.append('Content-Security-Policy', policy);
+  return framed;
+}
+
 export default async function handler(request: Request): Promise<Response | null> {
-  const { pathname, searchParams } = new URL(request.url);
-  const gated = gateRequest(request, pathname);
+  const gated = gateRequest(request, new URL(request.url).pathname);
   if (gated instanceof Response) return gated;
-  request = gated;
+  return withFramePolicy(await routeRequest(gated));
+}
+
+async function routeRequest(request: Request): Promise<Response | null> {
+  const { pathname, searchParams } = new URL(request.url);
 
   const easResponse = await handleEasEndpoint(request, {
     mountPath: MOUNT_PATH,

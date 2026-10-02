@@ -106,7 +106,10 @@ async function main(): Promise<void> {
         writeFetchResponse(response, res);
         return;
       }
-      if (req.method === 'GET' && (await serveStaticFile(req, res))) return;
+      if (req.method === 'GET') {
+        for (const [name, value] of Object.entries(hubServer.staticFileHeaders)) res.setHeader(name, value);
+        if (await serveStaticFile(req, res)) return;
+      }
       writeFetchResponse(new Response('Not Found', { status: 404 }), res);
     } catch (error) {
       console.error(error);

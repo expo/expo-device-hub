@@ -24,6 +24,10 @@ mock.module('../../../vendor/serve-sim/dist/middleware.js', () => ({
     return Object.assign(
       async (request: Request) => {
         simRequests.push(request);
+        // serve-sim names its own frame policy on its pages.
+        if (new URL(request.url).pathname.endsWith('/framed')) {
+          return new Response('sim', { headers: { 'Content-Security-Policy': "frame-ancestors 'self' https://a.dev" } });
+        }
         return new Response('sim');
       },
       {
@@ -45,6 +49,8 @@ mock.module('../../../vendor/serve-emu/dist/middleware.js', () => ({
     return {
       handleRequest: async (request: Request) => {
         emuRequests.push(request);
+        // A redirect's headers are immutable.
+        if (new URL(request.url).pathname === '/moved') return Response.redirect('http://emu.test/', 302);
         return new Response('emu');
       },
       authorizeUpgrade: (request: Request) => {
@@ -163,6 +169,22 @@ describe('the Hub under a session token', () => {
 
     expect(simRequests.map((r) => r.headers.get('authorization'))).toEqual([`Bearer ${TOKEN}`]);
     expect(emuRequests.map((r) => r.headers.get('authorization'))).toEqual([`Bearer ${TOKEN}`]);
+  });
+
+  // serve-emu's own UI is a page that takes input, so no gated response may be framed by any site.
+  test('sends the frame policy on every response it routes, not only on the dashboard', async () => {
+    for (const path of ['/vendor/serve-emu/', '/vendor/serve-emu/moved', '/vendor/serve-sim/api', '/readyz']) {
+      const response = await request(path, { headers: SAME_ORIGIN });
+      expect([path, response?.headers.get('content-security-policy')]).toEqual([path, "frame-ancestors 'self'"]);
+    }
+    // The CLI sets these on the static files it serves after `handler` passed a request on.
+    expect(server.staticFileHeaders).toEqual({ 'Content-Security-Policy': "frame-ancestors 'self'" });
+  });
+
+  test("keeps a backend's own frame policy", async () => {
+    const response = await request('/vendor/serve-sim/framed', { headers: SAME_ORIGIN });
+
+    expect(response?.headers.get('content-security-policy')).toBe("frame-ancestors 'self' https://a.dev");
   });
 
   // A preflight cannot carry the token. Each backend answers or refuses one before its own gate.
