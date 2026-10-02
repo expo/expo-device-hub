@@ -301,6 +301,43 @@ describe("API contracts", () => {
       streamMode: "grpc-screenshot",
       sessionGeneration: 4,
     });
+    const experimentalGpuCapture = {
+      backend: "gfxstream-cuda-nvenc",
+      encoderName: "h264_nvenc",
+      packets: 120,
+      bytes: 1_000_000,
+      requestedKeyFrames: 2,
+      queuedBytes: 0,
+      fps: 120,
+      nativeSize: { width: 1440, height: 2560 },
+      streamSize: { width: 720, height: 1280 },
+      maxSize: 1280,
+    };
+    const gpuHealth = {
+      ...health,
+      streamMode: "scrcpy",
+      captureBackend: "gfxstream-cuda-nvenc",
+      experimentalGpuCapture,
+    };
+    expect(parseHealthResponse(gpuHealth)).toMatchObject({
+      captureBackend: "gfxstream-cuda-nvenc",
+      experimentalGpuCapture,
+    });
+    expect(parseHealthResponse({
+      ...health,
+      captureBackend: "grpc-screenshot",
+      experimentalGpuCapture: null,
+    })).toMatchObject({ captureBackend: "grpc-screenshot", experimentalGpuCapture: null });
+    expect(parseHealthResponse(health).experimentalGpuCapture).toBeUndefined();
+    expect(() => parseHealthResponse({ ...gpuHealth, captureBackend: "unknown" })).toThrow("captureBackend");
+    expect(() => parseHealthResponse({
+      ...gpuHealth,
+      experimentalGpuCapture: { ...experimentalGpuCapture, packets: "120" },
+    })).toThrow("experimentalGpuCapture.packets");
+    expect(() => parseHealthResponse({
+      ...gpuHealth,
+      experimentalGpuCapture: { ...experimentalGpuCapture, nativeSize: { width: "1440", height: 2560 } },
+    })).toThrow("experimentalGpuCapture.nativeSize.width");
     expect(() => parseHealthResponse({ ...health, clientsDetail: [{}] })).toThrow(
       "clientsDetail[0].id",
     );

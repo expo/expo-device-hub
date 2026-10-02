@@ -142,6 +142,56 @@ const patchStreamSettings = (
   });
 
 describe("standalone server stream settings", () => {
+  test("rejects the middleware-only GPU override before opening a session", async () => {
+    const previous = process.env.SERVE_EMU_EXPERIMENTAL_GPU_SOCKET;
+    let opened = false;
+    process.env.SERVE_EMU_EXPERIMENTAL_GPU_SOCKET = "/tmp/capture.sock";
+    try {
+      await expect(startServer(
+        { serial: "emulator-5554", port: 3300 },
+        {
+          openSession: async (options) => {
+            opened = true;
+            return fakeSession(options.serial, options.mode).session;
+          },
+          serve: capturingServe({ options: null }),
+        },
+      )).rejects.toThrow("supported only by the Hub / serve-emu middleware");
+      expect(opened).toBe(false);
+    } finally {
+      if (previous === undefined) delete process.env.SERVE_EMU_EXPERIMENTAL_GPU_SOCKET;
+      else process.env.SERVE_EMU_EXPERIMENTAL_GPU_SOCKET = previous;
+    }
+  });
+
+  test("samples capture diagnostics once per health response", async () => {
+    let samples = 0;
+    const captured: CapturedServer = { options: null };
+    const source = fakeSession("emulator-5554", "grpc-screenshot", "mmap").session;
+    const diagnostics = source.diagnostics!();
+    const started = await startServer(
+      { serial: "emulator-5554", port: 3300, streamMode: "grpc-screenshot" },
+      {
+        openSession: async () => ({
+          ...source,
+          diagnostics: () => { samples++; return diagnostics; },
+        }),
+        serve: capturingServe(captured),
+      },
+    );
+    try {
+      const before = samples;
+      expect(await (await request(captured, "/health")).json()).toMatchObject({
+        captureBackend: "grpc-screenshot",
+        experimentalGpuCapture: null,
+        grpcCapture: diagnostics.grpcCapture,
+      });
+      expect(samples - before).toBe(1);
+    } finally {
+      await started.stop();
+    }
+  });
+
   test("GET and PATCH report and apply the active encoder settings", async () => {
     const opens: StartEmuSessionOptions[] = [];
     const captured: CapturedServer = { options: null };
