@@ -7,7 +7,7 @@ import {
   AVCC_TAG_SEED,
   AvccDemuxer,
   avcCodecString,
-} from '../avcc';
+} from '../avcc.js';
 
 function envelope(tag: number, payload: number[]): Uint8Array {
   const length = payload.length + 1;

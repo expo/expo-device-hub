@@ -5,8 +5,8 @@ import {
   keyEventsForBeforeInput,
   keyEventsForInputType,
   keyEventsForTextChange,
-} from '../mobile-keyboard';
-import { textToKeyEventsLenient } from '../text-to-keys';
+} from '../mobile-keyboard.js';
+import { textToKeyEventsLenient } from '../text-to-keys.js';
 
 describe('textToKeyEventsLenient', () => {
   test("skips characters the US map can't reach instead of dropping the string", () => {

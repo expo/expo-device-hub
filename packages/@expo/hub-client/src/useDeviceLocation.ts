@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { type DeviceGeoFix, type DeviceLocationCapabilities } from "./types";
+import { type DeviceGeoFix, type DeviceLocationCapabilities } from "./types.js";
 
 /** What a backend reports about its simulated-location support and its remembered fix. */
 export interface DeviceLocationRead {

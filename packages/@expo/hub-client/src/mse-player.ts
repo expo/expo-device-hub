@@ -15,7 +15,7 @@
  * unchanged.
  */
 
-import { FragmentedMp4Muxer } from './mp4-muxer';
+import { FragmentedMp4Muxer } from './mp4-muxer.js';
 
 /** Broadly-supported baseline H.264 type; the floor for the MSE path being usable. */
 const BASELINE_MP4 = 'video/mp4; codecs="avc1.42E01E"';

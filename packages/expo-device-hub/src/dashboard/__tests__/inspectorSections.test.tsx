@@ -22,6 +22,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     platform,
     status: 'streaming',
     error: null,
+    inputError: null,
     screenRecording: null,
     screen: { width: 390, height: 844 },
     fps: 60,

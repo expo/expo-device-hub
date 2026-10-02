@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 
-import { endpointFor, startIosHelper } from '../connections';
-import { createGlobalStubs } from './test-globals';
+import { endpointFor, startIosHelper } from '../connections.js';
+import { createGlobalStubs } from './test-globals.js';
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 

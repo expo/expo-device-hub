@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { androidTouchMessage } from '../android-touch';
+import { androidTouchMessage } from '../android-touch.js';
 
 const A = { x: 0.25, y: 0.5 };
 

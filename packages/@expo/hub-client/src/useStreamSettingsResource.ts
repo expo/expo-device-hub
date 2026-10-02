@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import { DEFAULT_DEVICE_STREAM_SETTINGS, sameDeviceStreamSettings } from './stream-settings';
-import { type DeviceStreamEncoderSettings } from './types';
+import { type SessionFetch } from './session-token.js';
+import { DEFAULT_DEVICE_STREAM_SETTINGS, sameDeviceStreamSettings } from './stream-settings.js';
+import { type DeviceStreamEncoderSettings } from './types.js';
 
 type StreamSettingsParser = (
   value: unknown,
@@ -17,6 +18,8 @@ interface UseStreamSettingsResourceOptions {
   initialSettings: DeviceStreamEncoderSettings | null;
   parse: StreamSettingsParser;
   toPatch: StreamSettingsPatchBuilder;
+  /** Sends a gated backend's session token; plain `fetch` by default. */
+  fetchImpl?: SessionFetch;
 }
 
 /** Shared GET/PATCH state machine for serve-sim and serve-emu encoder settings. */
@@ -25,6 +28,7 @@ export function useStreamSettingsResource({
   initialSettings,
   parse,
   toPatch,
+  fetchImpl = fetch,
 }: UseStreamSettingsResourceOptions) {
   const [streamSettings, setStreamSettings] = useState<DeviceStreamEncoderSettings | null>(
     initialSettings,
@@ -50,7 +54,7 @@ export function useStreamSettingsResource({
       const controller = new AbortController();
       readControllerRef.current = controller;
       try {
-        const response = await fetch(url, { cache: 'no-store', signal: controller.signal });
+        const response = await fetchImpl(url, { cache: 'no-store', signal: controller.signal });
         if (!response.ok) throw new Error(`Stream settings request failed (${response.status})`);
         const next = parse(
           await response.json(),
@@ -73,7 +77,7 @@ export function useStreamSettingsResource({
         }
       }
     },
-    [parse, url],
+    [fetchImpl, parse, url],
   );
 
   useEffect(() => {
@@ -109,7 +113,7 @@ export function useStreamSettingsResource({
       setStreamSettings(optimistic);
       setStreamSettingsPending(true);
       // Let the device client wait for the write before replacing its transport.
-      return fetch(url, {
+      return fetchImpl(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestPatch),
@@ -141,7 +145,7 @@ export function useStreamSettingsResource({
           }
         });
     },
-    [parse, toPatch, url],
+    [fetchImpl, parse, toPatch, url],
   );
 
   const refreshStreamSettings = useCallback(() => {

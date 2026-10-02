@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { type DeviceLocationRead, useDeviceLocation } from "../useDeviceLocation";
-import { createGlobalStubs } from "./test-globals";
+import { type DeviceLocationRead, useDeviceLocation } from "../useDeviceLocation.js";
+import { createGlobalStubs } from "./test-globals.js";
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 

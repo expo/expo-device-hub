@@ -28,14 +28,14 @@
     "src",
     "!src/__tests__"
   ],
-  "main": "./dist/index.mjs",
-  "module": "./dist/index.mjs",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "default": "./dist/index.mjs"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     }
   },
   "sideEffects": false,
@@ -43,8 +43,8 @@
     "access": "public"
   },
   "scripts": {
-    "build": "swc src -d dist --strip-leading-paths --out-file-extension mjs --delete-dir-on-start --ignore \"**/__tests__/**\" && tsc -p tsconfig.build.json",
-    "dev": "swc src -d dist --strip-leading-paths --out-file-extension mjs --ignore \"**/__tests__/**\" -w",
+    "build": "swc src -d dist --strip-leading-paths --delete-dir-on-start --ignore \"**/__tests__/**\" && tsc -p tsconfig.build.json",
+    "dev": "swc src -d dist --strip-leading-paths --ignore \"**/__tests__/**\" -w",
     "clean": "rm -rf dist",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
@@ -60,9 +60,12 @@
     "@swc/core": "^1.15.43",
     "@types/bun": "latest",
     "@types/react": "~19.2.2",
+    "@types/react-dom": "~19.2.2",
     "@types/react-test-renderer": "19.1.0",
+    "happy-dom": "^20.14.0",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
+    "react-dom": "catalog:",
     "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },

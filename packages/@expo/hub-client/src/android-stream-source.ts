@@ -4,12 +4,20 @@ import {
   type DeviceInputSource,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
-} from './types';
+} from './types.js';
 
 const ANDROID_STREAM_SOURCES = [
   'scrcpy',
   'grpc-screenshot',
 ] as const satisfies readonly DeviceStreamSource[];
+
+/** A confirmed replacement must reconnect before its first frame commits the UI selection. */
+export function androidWebRtcRestartKey(
+  displayed: Pick<DeviceStreamSourceStatus, 'sessionGeneration'> | null,
+  pending: Pick<DeviceStreamSourceStatus, 'sessionGeneration'> | null,
+): number | null {
+  return pending?.sessionGeneration ?? displayed?.sessionGeneration ?? null;
+}
 
 function isAndroidStreamSource(value: unknown): value is DeviceStreamSource {
   return ANDROID_STREAM_SOURCES.some((source) => source === value);

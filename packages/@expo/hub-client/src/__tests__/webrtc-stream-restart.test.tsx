@@ -1,12 +1,12 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { androidStreamSettingsPatch, parseAndroidStreamSettings } from '../android-stream-settings';
-import { deviceScreenPresentsMedia } from '../DeviceScreen';
-import { useAndroidDeviceClient } from '../useAndroidDevice';
-import { useStreamSettingsResource } from '../useStreamSettingsResource';
-import { useWebRtcStream } from '../useWebRtcStream';
-import { createGlobalStubs } from './test-globals';
+import { androidStreamSettingsPatch, parseAndroidStreamSettings } from '../android-stream-settings.js';
+import { deviceScreenPresentsMedia } from '../DeviceScreen.js';
+import { useAndroidDeviceClient } from '../useAndroidDevice.js';
+import { useStreamSettingsResource } from '../useStreamSettingsResource.js';
+import { useWebRtcStream } from '../useWebRtcStream.js';
+import { createGlobalStubs } from './test-globals.js';
 
 // These tests exercise hook lifecycles with controlled transport/media events.
 // react-test-renderer keeps them in the existing Bun runner without adding a
@@ -49,6 +49,58 @@ afterEach(async () => {
   restoreGlobals();
   Peer.instances = [];
   ControlSocket.instances = [];
+});
+
+// The bearer header covers every close POST, so only the unload beacon carries `?token=`.
+test('closes with the plain URL, and puts the token URL only on the unload beacon', async () => {
+  stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('RTCPeerConnection', Peer);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  const beaconUrls: string[] = [];
+  stubGlobal('navigator', {
+    sendBeacon: (url: string) => {
+      beaconUrls.push(url);
+      return true;
+    },
+  });
+  const closeRequests: string[] = [];
+  let offerStatus = 400;
+  stubGlobal('fetch', async (url: string) => {
+    if (url.includes('/close')) closeRequests.push(url);
+    return Response.json({ type: 'answer', sdp: 'answer' }, { status: url.endsWith('/offer') ? offerStatus : 200 });
+  });
+
+  function Harness() {
+    useWebRtcStream({
+      offerUrl: 'https://hub.test/webrtc/offer',
+      closeUrl: 'https://hub.test/webrtc/close',
+      closeBeaconUrl: 'https://hub.test/webrtc/close?token=tok-1',
+      enabled: true,
+      codec: 'h264',
+      allowCodecFallback: false,
+    });
+    return null;
+  }
+
+  // A refused offer fails the session for good, which closes it with a POST.
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  expect(closeRequests).toEqual(['https://hub.test/webrtc/close']);
+  await act(async () => renderer?.unmount());
+  expect(beaconUrls).toEqual([]);
+
+  // Leaving the page closes a live session with the beacon.
+  offerStatus = 200;
+  closeRequests.length = 0;
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  await act(async () => renderer?.unmount());
+  renderer = undefined;
+  expect(beaconUrls).toEqual(['https://hub.test/webrtc/close?token=tok-1']);
+  expect(closeRequests).toEqual([]);
 });
 
 test('a known server restart replaces a still-connected peer without waiting for ICE failure', async () => {

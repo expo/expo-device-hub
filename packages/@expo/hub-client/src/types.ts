@@ -528,6 +528,14 @@ export interface DeviceConnectionOptions {
    * Each backend adapter maps unavailable choices to one of its supported modes.
    */
   streamMode: DeviceStreamMode;
+  /**
+   * Session token of a serve-sim started with `--require-token`, such as an EAS
+   * Simulator Preview session, for a page on another origin. The client sends it
+   * as a bearer header, a WebSocket subprotocol, and `?token=` where a browser
+   * cannot set a header. A page serve-sim served itself can omit it: its cookie
+   * covers every request. Only `useIosDeviceClient` sends it so far.
+   */
+  token?: string | null;
 }
 
 /** Which element the implementation paints into. */
@@ -567,6 +575,13 @@ export interface DeviceClient {
   platform: DevicePlatform;
   status: ConnectionStatus;
   error: string | null;
+  /**
+   * Why touch and keyboard input cannot reach the device while video can,
+   * or null. Cleared when the input channel works again. iOS: serve-sim
+   * refused the input socket (too many clients, or a full input queue) or its
+   * native HID setup failed. Android: the WebRTC input socket is down.
+   */
+  inputError: string | null;
   /** Host recording status; unknown until metadata loads, null when no recording was requested. */
   screenRecording: DeviceScreenRecordingStatus | null;
   /** Screen size once known; null while connecting. */
@@ -710,9 +725,14 @@ export interface DeviceClient {
   /**
    * Ref callback for the paint target. The hook owns the element: `canvas`
    * receives decoded H.264 frames, `img` points at MJPEG, and `video` receives
-   * a WebRTC MediaStream.
+   * a WebRTC MediaStream. The optional canvas covers video with a retained
+   * frame while a replacement stream is connecting; the hook owns its pixels
+   * and visibility.
    */
-  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => void;
+  attachVideo: (
+    el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null,
+    retainedFrame?: HTMLCanvasElement | null,
+  ) => void;
 
   /** Forward a normalized touch/drag to the device. */
   sendTouch: (sample: TouchSample) => void;

@@ -1,9 +1,9 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { useIosDeviceClient } from '../useIosDevice';
-import { type DeviceClient } from '../types';
-import { createGlobalStubs } from './test-globals';
+import { useIosDeviceClient } from '../useIosDevice.js';
+import { type DeviceClient } from '../types.js';
+import { createGlobalStubs } from './test-globals.js';
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 
@@ -88,7 +88,7 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
   });
   stubGlobal('fetch', async (url: string) => {
     fetchUrls.push(url);
-    if (url === `${baseUrl}/api?device=DEVICE-A`) {
+    if (url === `${publicBase}/api?device=DEVICE-A`) {
       return Response.json({
         device: 'DEVICE-A',
         basePath: advertisedBasePath,
@@ -130,7 +130,7 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
     client.refreshAccessibility();
   });
 
-  expect(fetchUrls).toContain(`${baseUrl}/api?device=DEVICE-A`);
+  expect(fetchUrls).toContain(`${publicBase}/api?device=DEVICE-A`);
   expect(fetchUrls).toContain(`${publicBase}/grid/api`);
   expect(fetchUrls).toContain(`${publicBase}/ax?device=DEVICE-A`);
   expect(eventSourceUrls).toContain(`${publicBase}/appstate?device=DEVICE-A`);

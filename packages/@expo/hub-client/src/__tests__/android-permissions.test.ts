@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { androidPermissionsBackend, parseAndroidPermissions } from "../android-permissions";
+import { androidPermissionsBackend, parseAndroidPermissions } from "../android-permissions.js";
 
 const BASE = "http://localhost:3400/vendor/serve-emu";
 

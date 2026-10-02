@@ -1,5 +1,5 @@
-import { type DeviceGeoFix } from "./types";
-import { type DeviceLocationRead } from "./useDeviceLocation";
+import { type DeviceGeoFix } from "./types.js";
+import { type DeviceLocationRead } from "./useDeviceLocation.js";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;

@@ -1,12 +1,12 @@
-import { endpointFor } from './connections';
+import { endpointFor } from './connections.js';
 import {
   type DeviceClient,
   type DeviceConnectionOptions,
   type DevicePlatform,
-} from './types';
-import { useAndroidDeviceClient } from './useAndroidDevice';
-import { useIosDeviceClient } from './useIosDevice';
-import { NOOP_DEVICE_CLIENT } from './useNoopDeviceClient';
+} from './types.js';
+import { useAndroidDeviceClient } from './useAndroidDevice.js';
+import { useIosDeviceClient } from './useIosDevice.js';
+import { NOOP_DEVICE_CLIENT } from './useNoopDeviceClient.js';
 
 export interface ActiveDeviceTarget {
   platform: DevicePlatform;

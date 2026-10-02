@@ -12,6 +12,8 @@ gesture, and keyboard input back to the device.
   `expo-device-hub` DevTools plugin installed, or run `npx expo-device-hub` standalone.
   The hooks talk to the Hub's `/vendor/serve-sim` and `/vendor/serve-emu` routes.
 - React 18 or newer.
+- TypeScript consumers can use any `moduleResolution` setting. The declaration files use
+  explicit `.js` import extensions, so `node16` and `nodenext` resolve them.
 - A browser. The package uses `WebSocket`, `EventSource`, WebCodecs, Media Source
   Extensions, and WebRTC, so it is not meant to run in Node.
 
@@ -85,9 +87,19 @@ The stream and input URLs then use that server. Start serve-sim with
 `--cors-origin http://localhost:8081`. Without it, the exec-ws socket closes, and logs,
 events, metrics and UI requests stop, even when both servers run on `localhost`.
 
-hub-client does not send a serve-sim access token yet. A serve-sim server started with
-`--require-token` answers these requests with 401. EAS Simulator Preview sessions always
-use a token, so embedding them needs the client token support which is planned.
+A serve-sim started with `--require-token`, such as an EAS Simulator Preview session, needs
+its session token on every request. Pass it as `token`:
+
+```tsx
+const ios = useIosDeviceClient({
+  baseUrl: 'https://sim.example.test/preview/session',
+  device: udid,
+  streamMode: 'mjpeg',
+  token,
+});
+```
+
+The token does not replace `--cors-origin`. Only the iOS client sends the token so far.
 
 If the whole Device Hub is remote, pass its public mount to `useActiveDeviceClient`, for
 example `https://hub.example.test/device-hub`.

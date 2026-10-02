@@ -18,24 +18,24 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
-import { type AccessibilityLoader, loadAndroidAccessibility } from './accessibility';
-import { appendActivitySample } from './activity';
+import { type AccessibilityLoader, loadAndroidAccessibility } from './accessibility.js';
+import { appendActivitySample } from './activity.js';
 import {
   EMPTY_ANDROID_ACTIVITY,
   nextAndroidActivityAfterSilence,
   parseAndroidActivityFrame,
-} from './android-activity';
-import { apiUrl, deviceApiUrl } from './android-api-url';
-import { readAndroidLocation, writeAndroidLocation } from './android-location';
-import { androidPermissionsBackend } from './android-permissions';
-import { carryForwardAppIcon, fetchAndroidAppIcon } from './android-app-icon';
+} from './android-activity.js';
+import { apiUrl, deviceApiUrl } from './android-api-url.js';
+import { readAndroidLocation, writeAndroidLocation } from './android-location.js';
+import { androidPermissionsBackend } from './android-permissions.js';
+import { carryForwardAppIcon, fetchAndroidAppIcon } from './android-app-icon.js';
 import {
   type AndroidSessionEvent,
   clearAndroidEventCursor,
   createAndroidEventCursor,
   mergeAndroidEventSnapshotCursor,
   reconcileAndroidSessionEvents,
-} from './android-events';
+} from './android-events.js';
 import {
   ANDROID_DEVICE_SETTING_KEYS,
   ANDROID_POLLED_DEVICE_SETTING_KEYS,
@@ -45,27 +45,29 @@ import {
   androidDisplayWidthDpFromPayload,
   createAndroidDeviceSettingVersions,
   parseAndroidDeviceSetting,
-} from './android-device-settings';
+} from './android-device-settings.js';
 import {
   androidStreamSettingsPatch,
   parseAndroidStreamSettings,
-} from './android-stream-settings';
+} from './android-stream-settings.js';
 import {
   androidStreamSourceErrorMessage,
+  androidWebRtcRestartKey,
   parseAndroidStreamSource,
-} from './android-stream-source';
-import { androidTouchMessage } from './android-touch';
-import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
-import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
-import { KeyedWriteTracker } from './keyed-write-tracker';
-import { androidMessageForKeyboardInput } from './keyboard';
-import { MsePlayer } from './mse-player';
+} from './android-stream-source.js';
+import { androidTouchMessage } from './android-touch.js';
+import { mergeAuthoritativeDeviceSetting } from './device-setting-writes.js';
+import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264.js';
+import { KeyedWriteTracker } from './keyed-write-tracker.js';
+import { androidMessageForKeyboardInput } from './keyboard.js';
+import { MsePlayer } from './mse-player.js';
+import { RetainedVideoFrame } from './retained-video-frame.js';
 import {
   isDeliberateServerClose,
   RECONNECT_BASE_DELAY_MS,
   STREAM_RECONNECT_GRACE_MS,
   scheduleReconnect,
-} from './stream-reconnect';
+} from './stream-reconnect.js';
 import {
   IDLE_STREAM_SWITCH,
   isStreamSwitchPending,
@@ -73,16 +75,16 @@ import {
   type StreamSwitchEvent,
   type StreamSwitchState,
   streamSwitchTimeoutMs,
-} from './stream-switch';
-import { useAccessibility } from './useAccessibility';
-import { useAndroidCamera } from './useAndroidCamera';
-import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
-import { useAppPermissions } from './useAppPermissions';
-import { useStreamSettingsResource } from './useStreamSettingsResource';
-import { parseScreenRecordingStatus } from './screen-recording';
-import { fetchScreenshot } from './screenshot';
-import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
-import { presentedVideoFrameDelta } from './video-frame-metadata';
+} from './stream-switch.js';
+import { useAccessibility } from './useAccessibility.js';
+import { useAndroidCamera } from './useAndroidCamera.js';
+import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation.js';
+import { useAppPermissions } from './useAppPermissions.js';
+import { useStreamSettingsResource } from './useStreamSettingsResource.js';
+import { parseScreenRecordingStatus } from './screen-recording.js';
+import { fetchScreenshot } from './screenshot.js';
+import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream.js';
+import { presentedVideoFrameDelta } from './video-frame-metadata.js';
 import {
   type ConnectionStatus,
   type DeviceAppearance,
@@ -108,7 +110,7 @@ import {
   type RunningDevice,
   type ScreenSize,
   type TouchSample,
-} from './types';
+} from './types.js';
 
 const MAX_LOGS = 200;
 const SOFT_DECODE_QUEUE_SIZE = 4;
@@ -118,6 +120,8 @@ const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
+const WEBRTC_RESUME_KEYFRAME_DELAY_MS = 1_000;
+const WEBRTC_RESUME_TIMEOUT_MS = 4_000;
 
 const KEYCODE_R = 46;
 
@@ -212,7 +216,9 @@ export function parseServeEmuStreamSettings(value: unknown): ServeEmuStreamSetti
   };
 }
 
-export function useAndroidDeviceClient(options: DeviceConnectionOptions): DeviceClient {
+// Until the Android client sends `token`, its type refuses one in an object literal. A
+// variable typed `DeviceConnectionOptions` still passes, and the token is dropped.
+export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 'token'>): DeviceClient {
   const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
   const active = enabled && !!baseUrl;
 
@@ -237,6 +243,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     ReadonlySet<DeviceSettingKey>
   >(() => new Set());
   const [streamSource, setStreamSourceState] = useState<DeviceStreamSourceStatus | null>(null);
+  const [pendingStreamSource, setPendingStreamSourceState] =
+    useState<DeviceStreamSourceStatus | null>(null);
   // True until the first authoritative read of the capture source completes.
   const [streamSourceLoading, setStreamSourceLoading] = useState(false);
   const [streamSourceError, setStreamSourceError] = useState<string | null>(null);
@@ -271,6 +279,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const wsRef = useRef<WebSocket | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const retainedWebRtcFrameRef = useRef(new RetainedVideoFrame());
   // Monotonic log id source, persisted across logcat reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
@@ -296,6 +305,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const streamSwitchRef = useRef<StreamSwitchState>(IDLE_STREAM_SWITCH);
   // The server's answer to a switch, held back until the new stream is on screen.
   const pendingStreamSourceRef = useRef<DeviceStreamSourceStatus | null>(null);
+  // Events read synchronously from the ref; rendering subscribes to the state copy.
+  const setPendingStreamSource = useCallback((next: DeviceStreamSourceStatus | null) => {
+    pendingStreamSourceRef.current = next;
+    setPendingStreamSourceState(next);
+  }, []);
   const streamLiveRef = useRef(false);
   const streamSourceControllerRef = useRef<AbortController | null>(null);
   const streamSourceRefreshControllerRef = useRef<AbortController | null>(null);
@@ -308,10 +322,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const commitPendingStreamSource = useCallback(() => {
     const next = pendingStreamSourceRef.current;
     if (!next) return;
-    pendingStreamSourceRef.current = null;
+    setPendingStreamSource(null);
     streamSourceRef.current = next;
     setStreamSourceState(next);
-  }, []);
+  }, [setPendingStreamSource]);
 
   /**
    * Advance the switch tracker synchronously (callers may read the result) and
@@ -331,10 +345,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   );
 
   const resetStreamSwitch = useCallback(() => {
-    pendingStreamSourceRef.current = null;
+    setPendingStreamSource(null);
     streamSwitchRef.current = IDLE_STREAM_SWITCH;
     setStreamSwitch(IDLE_STREAM_SWITCH);
-  }, []);
+  }, [setPendingStreamSource]);
   useEffect(
     () => () => {
       streamSourceControllerRef.current?.abort();
@@ -344,13 +358,19 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   );
 
   const attachVideo = useCallback(
-    (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
+    (
+      el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null,
+      retainedFrame: HTMLCanvasElement | null = null,
+    ) => {
       canvasRef.current = el?.tagName === 'CANVAS' ? (el as HTMLCanvasElement) : null;
       const video = el?.tagName === 'VIDEO' ? (el as HTMLVideoElement) : null;
+      retainedWebRtcFrameRef.current.attach(video, retainedFrame);
       setWebRtcVideoElement((current) => (current === video ? current : video));
     },
     [],
   );
+
+  const retainWebRtcFrame = useCallback(() => retainedWebRtcFrameRef.current.retain(), []);
 
   const attachLogs = useCallback(() => setLogsEnabled(true), []);
   const detachLogs = useCallback(() => setLogsEnabled(false), []);
@@ -636,6 +656,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [streamSourceUrl],
   );
 
+  const webRtcRequested = streamMode === 'webrtc';
+  const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
+  const useWebRtc =
+    webRtcRequested && serverStreamSettings?.transport === 'webrtc';
+
   const putStreamMode = useCallback(
     (body: {
       mode: DeviceStreamSource;
@@ -651,10 +676,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         return;
       }
       const previousGeneration = streamSourceRef.current?.sessionGeneration ?? null;
+      if (useWebRtc) retainWebRtcFrame();
       const request = ++streamSourceRequestRef.current;
       const controller = new AbortController();
       streamSourceControllerRef.current = controller;
-      pendingStreamSourceRef.current = null;
+      setPendingStreamSource(null);
       dispatchStreamSwitch({ type: 'request-start', live: streamLiveRef.current });
       setStreamSourceError(null);
       let failed = false;
@@ -680,10 +706,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             // and closed this viewer's sockets. Hold the new source back until
             // the replacement stream is on screen so the sidebar and the device
             // frame change together (a same-generation answer changed nothing).
-            pendingStreamSourceRef.current = next;
+            setPendingStreamSource(next);
+            if (next.sessionGeneration === previousGeneration) {
+              retainedWebRtcFrameRef.current.release();
+            }
             dispatchStreamSwitch({
               type: 'request-success',
               replaced: next.sessionGeneration !== previousGeneration,
+              restartRequired: useWebRtc,
             });
           }
         })
@@ -691,6 +721,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           // The server stages source changes atomically, so the previous source
           // remains authoritative when a replacement fails.
           if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
+            retainedWebRtcFrameRef.current.release();
             setStreamSourceError(
               cause instanceof Error ? cause.message : 'Unable to change stream source.',
             );
@@ -707,7 +738,14 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           }
         });
     },
-    [dispatchStreamSwitch, refreshStreamSource, streamSourceUrl],
+    [
+      dispatchStreamSwitch,
+      refreshStreamSource,
+      retainWebRtcFrame,
+      setPendingStreamSource,
+      streamSourceUrl,
+      useWebRtc,
+    ],
   );
 
   const setStreamSource = useCallback(
@@ -899,13 +937,21 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, deviceScope, targetDevice]);
 
-  const webRtcRequested = streamMode === 'webrtc';
-  const waitingForWebRtcMetadata = webRtcRequested && serverStreamSettings === null;
-  const useWebRtc =
-    webRtcRequested && serverStreamSettings?.transport === 'webrtc';
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: 'reset-video' });
   }, [send]);
+  const webRtcSourceGeneration = androidWebRtcRestartKey(streamSource, pendingStreamSource);
+  const webRtcSourceGenerationRef = useRef(webRtcSourceGeneration);
+  const webRtcSourceRevisionRef = useRef(0);
+  useLayoutEffect(() => {
+    // Initial discovery identifies the existing connection rather than replacing it.
+    if (webRtcSourceGenerationRef.current !== null &&
+        webRtcSourceGenerationRef.current !== webRtcSourceGeneration) {
+      webRtcSourceRevisionRef.current += 1;
+    }
+    webRtcSourceGenerationRef.current = webRtcSourceGeneration;
+  }, [webRtcSourceGeneration]);
+
   const {
     stream: webRtcStream,
     error: webRtcError,
@@ -930,6 +976,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     sendIceServersInOffer: false,
     allowCodecFallback: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
+    onBeforeDisconnect: retainWebRtcFrame,
+    restartKey: webRtcSourceGeneration,
   });
 
   const restartWebRtc = useCallback(() => {
@@ -1039,13 +1087,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSwitch.phase,
   ]);
 
+  const recoverWebRtcPlaybackRef = useRef<(() => void) | null>(null);
+
   // Attach the negotiated MediaStream to DeviceScreen's current <video> node.
   // The node is stateful (rather than only a ref) so a remount reattaches the
   // stream and frame observer even when the MediaStream itself is unchanged.
   useEffect(() => {
     if (!useWebRtc) return;
     const video = webRtcVideoElement;
-    // A pending negotiation leaves the existing media or saved poster in place.
+    // The retained-frame canvas covers peer teardown and srcObject replacement
+    // until this stream has a frame ready to display.
     if (!video || !webRtcStream) return;
 
     let stopped = false;
@@ -1054,9 +1105,61 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let fpsCount = 0;
     let fpsStartedAt = performance.now();
     let previousPresentedFrames: number | null = null;
+    let previousCurrentTime = video.currentTime;
+    let resuming = false;
+    let wasHidden = document.hidden;
+    let keyframeTimer: number | undefined;
+    let resumeTimer: number | undefined;
+
+    const clearResumeTimers = () => {
+      if (keyframeTimer !== undefined) window.clearTimeout(keyframeTimer);
+      if (resumeTimer !== undefined) window.clearTimeout(resumeTimer);
+      keyframeTimer = undefined;
+      resumeTimer = undefined;
+    };
+
+    const recoverPlayback = () => {
+      if (stopped || document.hidden) return;
+      clearResumeTimers();
+      resuming = true;
+      firstFrame = true;
+      previousCurrentTime = video.currentTime;
+      fpsCount = 0;
+      fpsStartedAt = performance.now();
+      setWebRtcVideoReady(false);
+      setFps(0);
+      void video.play().catch(() => {});
+      // Share one foreground deadline for visibility and ambiguous control loss.
+      // A newly presented frame preserves the existing peer; hidden time never
+      // consumes the deadline. The reconnecting input socket also requests a keyframe.
+      keyframeTimer = window.setTimeout(requestWebRtcKeyframe, WEBRTC_RESUME_KEYFRAME_DELAY_MS);
+      resumeTimer = window.setTimeout(() => {
+        clearResumeTimers();
+        restartWebRtcStream();
+      }, WEBRTC_RESUME_TIMEOUT_MS);
+    };
+    recoverWebRtcPlaybackRef.current = recoverPlayback;
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        wasHidden = true;
+        clearResumeTimers();
+        return;
+      }
+      if (stopped || !wasHidden) return;
+      wasHidden = false;
+      recoverPlayback();
+    };
 
     const markFrame = (presentedFrameDelta = 1) => {
       if (stopped) return;
+      // loadeddata can describe a buffered old frame. Foreground recovery
+      // requires actual presentation progress, not just media readiness.
+      if (resuming && (document.hidden || presentedFrameDelta === 0)) return;
+      if (resuming) {
+        resuming = false;
+        clearResumeTimers();
+      }
       if (video.videoWidth > 0 && video.videoHeight > 0) {
         const width = video.videoWidth;
         const height = video.videoHeight;
@@ -1067,6 +1170,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (firstFrame) {
         firstFrame = false;
         video.removeAttribute('poster');
+        retainedWebRtcFrameRef.current.release();
         setWebRtcVideoReady(true);
       }
       markWebRtcFrameDecoded(presentedFrameDelta);
@@ -1080,10 +1184,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
     };
     const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
-      const presentedFrameDelta = presentedVideoFrameDelta(
-        previousPresentedFrames,
-        metadata.presentedFrames,
-      );
+      const presentedFrameDelta =
+        resuming && metadata.presentedFrames === previousPresentedFrames
+          ? 0
+          : presentedVideoFrameDelta(previousPresentedFrames, metadata.presentedFrames);
       if (
         Number.isSafeInteger(metadata.presentedFrames) &&
         metadata.presentedFrames >= 0
@@ -1093,7 +1197,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       markFrame(presentedFrameDelta);
       frameCallback = video.requestVideoFrameCallback(onVideoFrame);
     };
-    const onTimeUpdate = () => markFrame();
+    const onTimeUpdate = () => {
+      if (video.paused || video.currentTime === previousCurrentTime) return;
+      previousCurrentTime = video.currentTime;
+      markFrame();
+    };
     const onLoadedData = () => markFrame(0);
 
     video.srcObject = webRtcStream;
@@ -1104,10 +1212,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       video.addEventListener('timeupdate', onTimeUpdate);
     }
     video.addEventListener('loadeddata', onLoadedData, { once: true });
+    document.addEventListener('visibilitychange', onVisibilityChange);
     void video.play().catch(() => {});
 
     return () => {
       stopped = true;
+      if (recoverWebRtcPlaybackRef.current === recoverPlayback) {
+        recoverWebRtcPlaybackRef.current = null;
+      }
+      clearResumeTimers();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
@@ -1116,7 +1230,19 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       setWebRtcVideoReady(false);
       setFps(0);
     };
-  }, [useWebRtc, webRtcStream, webRtcVideoElement, markWebRtcFrameDecoded]);
+  }, [
+    useWebRtc,
+    webRtcStream,
+    webRtcVideoElement,
+    markWebRtcFrameDecoded,
+    restartWebRtcStream,
+    requestWebRtcKeyframe,
+  ]);
+
+  useEffect(() => {
+    const retainedFrame = retainedWebRtcFrameRef.current;
+    return () => retainedFrame.reset();
+  }, [active, baseUrl, targetDevice, useWebRtc]);
 
   // Detach the media only when this surface stops showing WebRTC or moves to
   // another device; a lost stream alone keeps its last frame (see above).
@@ -1483,9 +1609,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     let cancelled = false;
     let reconnectDelay = RECONNECT_BASE_DELAY_MS;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    // Whether the current socket opened; a deliberate server close of an open
-    // control channel (capture-source switch) is retried almost immediately.
-    let opened = false;
     const inputUrl = androidWsUrlFor(baseUrl, targetDevice, false);
     setWebRtcInputReady(false);
     setWebRtcInputError(null);
@@ -1509,9 +1632,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         return;
       }
       wsRef.current = ws;
+      let opened = false;
+      const owner = { revision: webRtcSourceRevisionRef.current, openedDuringSourceRequest: false };
       ws.onopen = () => {
-        if (cancelled) return;
+        if (cancelled || wsRef.current !== ws) return;
         opened = true;
+        owner.revision = webRtcSourceRevisionRef.current;
+        owner.openedDuringSourceRequest = streamSwitchRef.current.phase === 'requesting';
         reconnectDelay = RECONNECT_BASE_DELAY_MS;
         setWebRtcInputReady(true);
         setWebRtcInputError(null);
@@ -1521,15 +1648,20 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         // onclose owns retry scheduling.
       };
       ws.onclose = (event) => {
-        if (cancelled) return;
-        if (wsRef.current === ws) wsRef.current = null;
+        if (cancelled || wsRef.current !== ws) return;
+        wsRef.current = null;
         const wasHealthy = opened;
         opened = false;
-        if (wasHealthy && isDeliberateServerClose(event.code)) {
-          // serve-emu stops the old video peer along with this control socket.
-          // Renegotiate now instead of waiting for ICE loss and its grace period;
-          // the new input socket alone must not make the old video read as live.
-          restartWebRtcRef.current();
+        if (wasHealthy && isDeliberateServerClose(event.code) &&
+            !isStreamSwitchPending(streamSwitchRef.current)) {
+          if (owner.revision === webRtcSourceRevisionRef.current) {
+            restartWebRtcRef.current();
+          } else if (owner.openedDuringSourceRequest) {
+            // OPEN during staging cannot identify which source accepted input.
+            // Let fresh replacement frames prove health before replacing its peer.
+            recoverWebRtcPlaybackRef.current?.();
+          }
+          // A known old source already caused a peer replacement on confirmation.
         }
         retryInput('WebRTC input disconnected. Retrying...', event.code, wasHealthy);
       };
@@ -1919,6 +2051,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         ? 'reconnecting'
         : status,
     error,
+    // Only WebRTC sends input on its own socket; otherwise input shares the video socket and `error`.
+    inputError: webRtcInputError,
     screen,
     fps,
     devices,

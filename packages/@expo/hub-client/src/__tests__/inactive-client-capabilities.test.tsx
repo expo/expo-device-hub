@@ -1,10 +1,10 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { useAndroidDeviceClient } from '../useAndroidDevice';
-import { useIosDeviceClient } from '../useIosDevice';
-import { type DeviceClient, type DeviceConnectionOptions } from '../types';
-import { createGlobalStubs } from './test-globals';
+import { useAndroidDeviceClient } from '../useAndroidDevice.js';
+import { useIosDeviceClient } from '../useIosDevice.js';
+import { type DeviceClient, type DeviceConnectionOptions } from '../types.js';
+import { createGlobalStubs } from './test-globals.js';
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
 

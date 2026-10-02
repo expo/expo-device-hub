@@ -4,14 +4,20 @@ import {
   type WebRtcCodec,
   type WebRtcStreamFailure,
   webRtcFailureDisposition,
-} from './webrtc-fallback';
+} from './webrtc-fallback.js';
 import {
   closeWebRtcSession,
   postWebRtcOffer,
   WebRtcSignalingBusyError,
   WebRtcSignalingTimeoutError,
-} from './webrtc-negotiation';
-import { useWebRtcStreamStats, type WebRtcStatsConnection } from './stream-stats';
+} from './webrtc-negotiation.js';
+import { useWebRtcStreamStats, type WebRtcStatsConnection } from './stream-stats.js';
+import {
+  observeWebRtcRestartKey,
+  type WebRtcRestartKey,
+  type WebRtcRestartState,
+} from './webrtc-restart.js';
+import { type SessionFetch } from './session-token.js';
 
 export type WebRtcIceServer = {
   urls: string[];
@@ -127,6 +133,7 @@ function createSessionId(): string {
 export function useWebRtcStream({
   offerUrl,
   closeUrl,
+  closeBeaconUrl = closeUrl,
   statsUrl = '',
   enabled,
   codec,
@@ -135,9 +142,14 @@ export function useWebRtcStream({
   sendIceServersInOffer = true,
   allowCodecFallback = true,
   onKeyframeNeeded,
+  onBeforeDisconnect,
+  restartKey = null,
+  fetchImpl = fetch,
 }: {
   offerUrl: string;
   closeUrl: string;
+  /** `closeUrl` for `navigator.sendBeacon` on unload, which cannot set a header. */
+  closeBeaconUrl?: string;
   /** Device-scoped WebRTC sender statistics endpoint. */
   statsUrl?: string;
   enabled: boolean;
@@ -147,6 +159,12 @@ export function useWebRtcStream({
   sendIceServersInOffer?: boolean;
   allowCodecFallback?: boolean;
   onKeyframeNeeded?: () => void;
+  /** Preserve the displayed frame before closing the current peer. */
+  onBeforeDisconnect?: () => void;
+  /** Re-negotiate when an authoritative source generation changes; null means unknown. */
+  restartKey?: WebRtcRestartKey;
+  /** Sends a gated backend's session token; plain `fetch` by default. */
+  fetchImpl?: SessionFetch;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -154,6 +172,12 @@ export function useWebRtcStream({
   const [statsConnection, setStatsConnection] = useState<WebRtcStatsConnection | null>(null);
   const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   const [retryGeneration, setRetryGeneration] = useState(0);
+  const [restartState, setRestartState] = useState<WebRtcRestartState>({
+    key: restartKey,
+    generation: 0,
+  });
+  const nextRestartState = observeWebRtcRestartKey(restartState, restartKey);
+  if (nextRestartState !== restartState) setRestartState(nextRestartState);
   const firstFrameTimeoutRef = useRef<number | undefined>(undefined);
   const firstFrameDecodedRef = useRef(false);
   const presentedFramesRef = useRef(0);
@@ -163,6 +187,7 @@ export function useWebRtcStream({
     statsUrl,
     presentedFramesRef,
     streamStatsEnabled,
+    fetchImpl,
   );
 
   const markFrameDecoded = useCallback((presentedFrameDelta = 1) => {
@@ -191,11 +216,13 @@ export function useWebRtcStream({
     enabled,
     offerUrl,
     closeUrl,
+    closeBeaconUrl,
     codec,
     iceServers,
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    restartState.generation,
   ]);
 
   useEffect(() => {
@@ -235,7 +262,13 @@ export function useWebRtcStream({
 
     const closeRemoteSession = (keepalive = false): Promise<void> => {
       if (closePromise) return closePromise;
-      closePromise = closeWebRtcSession({ url: closeUrl, sessionId, keepalive });
+      closePromise = closeWebRtcSession({
+        url: closeUrl,
+        beaconUrl: closeBeaconUrl,
+        sessionId,
+        keepalive,
+        fetchImpl,
+      });
       return closePromise;
     };
     const releaseOnPageHide = () => void closeRemoteSession(true);
@@ -255,6 +288,7 @@ export function useWebRtcStream({
     };
 
     const closePeer = () => {
+      onBeforeDisconnect?.();
       clearFirstFrameTimeout();
       clearDisconnectedTimer();
       setStream(null);
@@ -413,6 +447,7 @@ export function useWebRtcStream({
         if (!local) throw new Error('WebRTC offer was not created');
         const response = await postWebRtcOffer({
           url: offerUrl,
+          fetchImpl,
           signal: lifecycleController.signal,
           requestTimeoutMs: SIGNALING_REQUEST_TIMEOUT_MS,
           busyRetryIntervalMs: BUSY_RETRY_INTERVAL_MS,
@@ -461,6 +496,7 @@ export function useWebRtcStream({
 
     return () => {
       stopped = true;
+      onBeforeDisconnect?.();
       window.removeEventListener('pagehide', releaseOnPageHide);
       window.removeEventListener('beforeunload', releaseOnPageHide);
       lifecycleController.abort();
@@ -478,13 +514,17 @@ export function useWebRtcStream({
     enabled,
     offerUrl,
     closeUrl,
+    closeBeaconUrl,
     codec,
     iceServers,
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
     onKeyframeNeeded,
+    onBeforeDisconnect,
     retryGeneration,
+    restartState.generation,
+    fetchImpl,
   ]);
 
   return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };
