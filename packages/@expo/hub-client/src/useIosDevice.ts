@@ -641,6 +641,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     fetchImpl: sessionFetch,
     transportLocked: streamTransportLocked,
     retryKey: webRtcRetryKey,
+    raiseH264Level: true,
   });
   const handledWebRtcFailureRef = useRef<string | null>(null);
   const ladderBackoffRef = useRef(createLadderBackoff());
