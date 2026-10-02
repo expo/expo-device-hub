@@ -1,4 +1,4 @@
-import { expect, mock, test } from "bun:test";
+import { afterEach, expect, mock, test } from "bun:test";
 import {
   PLAYBACK_STALL_POLLS,
   PLAYBACK_STALL_POLL_MS,
@@ -112,6 +112,9 @@ const flush = async () => {
   for (let i = 0; i < 40; i++) await Promise.resolve();
 };
 let cleanup: (void | (() => void))[] = [];
+afterEach(() => {
+  cleanup.splice(0).forEach((stop) => stop?.());
+});
 
 /// Options a test passes to the hook on top of the defaults. Reset by every `start`.
 let hookOptions: { allowCodecFallback?: boolean; expectContinuousFrames?: boolean } = {};
@@ -121,7 +124,6 @@ async function start(
   offerAnswers = 200,
   transportLocked = true,
 ) {
-  cleanup.forEach((stop) => stop?.());
   effects = [];
   updates = [];
   pendingStats = [];
@@ -151,9 +153,7 @@ async function start(
   return hook;
 }
 
-/// What `retryTransport` causes: a new `retryGeneration` re-runs the stream effect while the
-/// component stays mounted, so every ref survives. Re-running it alone models that; calling
-/// the hook again would be a remount and would hand back fresh refs.
+// Re-run the stream effect without remounting so same-codec retry refs survive.
 async function reconnect() {
   cleanup[2]?.();
   pendingStats = [];
@@ -355,5 +355,3 @@ test("brief hide/show between polls invalidates the decoder-stall run", async ()
   await pollStall([{ received: 1000, decoded: 100 }]);
   expect(updates).not.toContain(STALLED);
 });
-
-cleanup.forEach((stop) => stop?.());

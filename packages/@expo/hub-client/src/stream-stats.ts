@@ -437,7 +437,7 @@ function emptyStats(): DeviceStreamStats {
 
 export type SubscribeClientStats = (listener: (report: RTCStatsReport, at: number) => void) => () => void;
 
-/** Own the single stats poll for a WebRTC peer so UI remounts do not reset history. */
+/** Retain per-peer history and consume shared receiver samples when available. */
 export function useWebRtcStreamStats(
   connection: WebRtcStatsConnection | null,
   statsUrl: string,

@@ -9,7 +9,6 @@ import {
   selectInboundReport,
 } from "./webrtc-playback-stall.js";
 
-/// A read always settles within its deadline, and the gap limit clears a deadline plus a poll.
 const READ_DEADLINE_MS = PLAYBACK_STALL_POLL_MS * 2;
 const POLL_GAP_LIMIT_MS = PLAYBACK_STALL_POLL_MS * PLAYBACK_STALL_POLLS;
 
@@ -19,7 +18,7 @@ export interface InboundVideo {
   framesDecoded: number | null;
 }
 
-/// Every inbound video report. Which one to judge is `selectInboundReport`'s decision.
+/** Read video counters before selecting the active report. */
 export function parseInboundVideo(report: RTCStatsReport): InboundVideo[] {
   const reports: InboundVideo[] = [];
   report.forEach((entry) => {
@@ -40,14 +39,11 @@ export function parseInboundVideo(report: RTCStatsReport): InboundVideo[] {
 
 export interface PlaybackStallWatchdog {
   stop: () => void;
-  /// End the current run without a verdict. Anything that makes the counters incomparable.
+  /** Reset samples whose counters are no longer comparable. */
   invalidate: () => void;
 }
 
-/**
- * Past the first paint a decoder can still give up, leaving the session connected, receiving,
- * and decoding nothing. This watches the decode counters for exactly that.
- */
+/** Recover playback stalls after first paint while sharing receiver samples with the UI. */
 export function startPlaybackStallWatchdog({
   peer,
   readable,
@@ -59,12 +55,12 @@ export function startPlaybackStallWatchdog({
   expectContinuousFrames = true,
 }: {
   peer: () => RTCPeerConnection | null;
-  /// Worth a `getStats` at all. A hidden tab's decoder may stop, which looks like a dead one.
+  /** Hidden tabs do not read or judge decoder progress. */
   readable: () => boolean;
-  /// Whether a frozen decoder would mean anything yet. The panel is fed either way.
+  /** Judge only connected peers that have already presented a frame. */
   judgeable: () => boolean;
   publish: (report: RTCStatsReport, at: number) => void;
-  /// When this codec was last reconnected for a stall.
+  /** Most recent same-codec stall retry. */
   reconnectedAt: { current: number | null };
   failCodec: () => void;
   retryTransport: (message: string) => void;
@@ -92,9 +88,7 @@ export function startPlaybackStallWatchdog({
     const reading = generation;
     const pc = peer();
     const report = await readStatsBeforeDeadline(pc, READ_DEADLINE_MS);
-    // Stamped on arrival, because that is when the counters in it were read. Stamping the
-    // call instead puts the read's own latency into the panel's rate divisor.
-    // A read the replaced peer finishes late would open the next one's history.
+    // Stamp arrivals and ignore stats completed by a replaced peer.
     if (report && readable() && peer() === pc) publish(report, Date.now());
     // Re-checked after the read: the tab can hide or the connection drop in flight.
     if (!judgeable() || !pc) {
@@ -119,8 +113,7 @@ export function startPlaybackStallWatchdog({
     }
     if (selected.id !== pinned?.id) state = initialPlaybackStallState;
     pinned = { id: selected.id, framesReceived: selected.framesReceived };
-    // Idle time must not spend the decoder's deadline. The frozen-run baseline stays
-    // behind once a new frame arrives, so even a single undecoded frame gets a full run.
+    // Idle samples reset the budget; new undecoded frames retain the frozen-run baseline.
     if (!expectContinuousFrames && selected.framesReceived <= state.received) {
       state = { decoded: selected.framesDecoded, received: selected.framesReceived, stalledPolls: 0 };
       return;
