@@ -392,7 +392,8 @@ actor HIDInjector {
     // forwarding genuine HID scroll events through a privileged pointer service
     // (`com.apple.private.hid.client.event-filter`); an unprivileged helper can't
     // capture host HID or synthesize events iOS accepts (synthetic scroll to the
-    // pointer service 0x35 is silently dropped). See docs/scroll-injection-devicehub.md.
+    // pointer service 0x35 is silently dropped).
+    // @ref LLP 0006 — How Simulator.app forwards scroll to the iOS Simulator
     //
     // So we scroll the way a finger does: translate the wheel delta into a touch
     // drag on the selected screen's digitizer — the same path taps/swipes use, which

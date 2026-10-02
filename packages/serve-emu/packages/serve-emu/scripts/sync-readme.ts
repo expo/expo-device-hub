@@ -11,7 +11,6 @@ const PACKAGE_README_PATH = resolve(import.meta.dir, "../README.md");
 const PACKAGE_LINK_REWRITES = [
   ["packages/serve-emu/package.json", "package.json"],
   ["packages/serve-emu/CHANGELOG.md", "CHANGELOG.md"],
-  ["packages/serve-emu/docs/protocol.md", "docs/protocol.md"],
   [
     "CONTRIBUTING.md",
     "https://github.com/expo/expo-device-hub/blob/main/packages/serve-emu/CONTRIBUTING.md",

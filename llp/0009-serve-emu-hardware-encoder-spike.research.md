@@ -1,4 +1,14 @@
-# Hardware H.264 encoder spike
+# LLP 0009: Hardware H.264 encoder spike
+
+**Type:** Research
+**Status:** Active
+**Systems:** ServeEmu
+**Author:** Krystof Woldrich
+**Date:** 2026-09-10
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/hardware-encoder-spike.md`; links and paths updated)
+**Related:** LLP 0008
+
+> File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
 
 Validated on 2026-09-10 on macOS 26.6.2, Apple M4 Pro, Homebrew ffmpeg 9.0.1.
 The plan's older M2 / ffmpeg 8.1.2 environment description does not describe this host.
@@ -77,10 +87,10 @@ read/write access to the chosen render device.
 
 ## Reproducing the browser comparison
 
-From the repository root, serve the [animation fixture](fixtures/hardware-encoding-animation.html):
+From the repository root, serve the [animation fixture](assets/0009/hardware-encoding-animation.html):
 
 ```sh
-python3 -m http.server 3401 --bind 127.0.0.1 --directory packages/serve-emu/packages/serve-emu/docs/fixtures
+python3 -m http.server 3401 --bind 127.0.0.1 --directory llp/assets/0009
 ```
 
 Open `http://10.0.2.2:3401/hardware-encoding-animation.html` in Android Chrome,

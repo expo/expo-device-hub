@@ -1,4 +1,14 @@
-# Hinge controls and display selection
+# LLP 0004: Hinge controls and display selection
+
+**Type:** Explainer
+**Status:** Active
+**Systems:** ServeSim, Hub
+**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich
+**Date:** 2026-09-23
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Related:** LLP 0001
+
+> File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 The iPhone Duo's physical pose combines a **hinge angle** with the device's
 orientation. Three shortcuts below the phone select Fully folded, Partially open,
@@ -261,7 +271,7 @@ display and orientation; capture and touch routing must follow the same display.
 A session recording follows that same active display. It uses a fixed canvas
 large enough for both native panels, with even dimensions for H.264; the
 smaller panel is letterboxed during fold/unfold. See
-[Video pipeline and recording](video-pipeline.md).
+[Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md).
 
 The 3D preview retains one model while the active stream changes between the
 cover and inner displays. Pointer input is projected onto the visible active

@@ -685,7 +685,7 @@ explicit `device` query. Invalid requests return `400`, while an unknown,
 closed, or otherwise unavailable viewer returns `503`. Reading stats never
 starts an idle WebRTC publisher.
 
-See the [protocol reference](packages/serve-emu/docs/protocol.md) for the complete scrcpy v3/v4 framing, control packet, and `SEMU` v1/v2 wire formats.
+See the [protocol reference](https://github.com/expo/expo-device-hub/blob/main/llp/0008-serve-emu-protocol.spec.md) for the complete scrcpy v3/v4 framing, control packet, and `SEMU` v1/v2 wire formats.
 
 ## How It Works
 
