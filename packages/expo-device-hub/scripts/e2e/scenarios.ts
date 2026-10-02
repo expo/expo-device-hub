@@ -44,6 +44,13 @@ const state = async () =>
     inputAttempts: Array<{ at: number; mode: InputMode; connection: number }>;
   };
 const fixture = async () => await (await fetch("/_e2e/fixture")).text();
+/** Readiness notifications share the fixture log but are not typed input. */
+export function nativeTextEdits(log: string): string {
+  return log
+    .split("\n")
+    .filter((line) => line.startsWith("text\t"))
+    .join("\n");
+}
 const refusal = () =>
   [...document.querySelectorAll('[role="status"]')].some((element) =>
     element.textContent?.includes("Simulator input unavailable"),
@@ -224,7 +231,7 @@ export async function runScenarios() {
       async () => {
         await post("input", { mode: "refuse" });
         await until(refusal, Boolean, "persistent input refusal is announced", 25_000);
-        const before = await fixture();
+        const before = nativeTextEdits(await fixture());
         const transition = Date.now();
         await post("input", { mode: "delay-refuse" });
         await until(
@@ -249,7 +256,7 @@ export async function runScenarios() {
         await post("input", { mode: "normal" });
         await until(refusal, (value) => !value, "native admission clears refusal");
         assert(
-          (await fixture()) === before,
+          nativeTextEdits(await fixture()) === before,
           "Expired unadmitted key was not replayed into native app",
         );
         key("KeyY", "y");

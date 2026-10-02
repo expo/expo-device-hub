@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { runBlurScenario } from "./scenarios";
+import { nativeTextEdits, runBlurScenario } from "./scenarios";
 
 const restore: (() => void)[] = [];
 afterEach(() =>
@@ -52,4 +52,12 @@ test("the native blur scenario rejects movement delivered during its end wait", 
 test("the native blur scenario accepts cancellation with no movement", async () => {
   setup(false);
   await expect(runBlurScenario()).resolves.toBeUndefined();
+});
+
+test("expired-input assertions ignore readiness notifications but retain every text edit", () => {
+  const before = "keyboard-ready\ntext\t1\thub!\n";
+  expect(nativeTextEdits(before + "software-keyboard-ready\n")).toBe(nativeTextEdits(before));
+  expect(nativeTextEdits(before + "text\t2\thub!x\ntext\t3\thub!\n")).not.toBe(
+    nativeTextEdits(before),
+  );
 });
