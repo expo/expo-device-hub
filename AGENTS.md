@@ -29,7 +29,9 @@ This repo uses [LLP v0.5.2](https://github.com/ccheever/llp/tree/v0.5.2). One co
 
 ## Agent skills
 
-The core LLP skills are installed twice, as identical copies: `.claude/skills/` for Claude Code and `.agents/skills/` for Codex. `.llp/skills-receipt.json` records the release and the hash of each file. Do not edit the installed skill files. Run `/llp-adopt update` to update both copies together.
+The core LLP skills are installed once, in `.agents/skills/`, which Codex and other Agent Skills clients read. `.claude/skills` is a symlink to `../.agents/skills`, because Claude Code reads only `.claude/skills/`. `.llp/skills-receipt.json` records the release and the hash of each file. Do not edit the installed skill files. Run `/llp-adopt update` to update them.
+
+The symlink is a deliberate exception to the LLP rule that installs are copies, never symlinks. Our reading of that rule is that it stops a skill from changing when an upstream checkout outside the repo changes, without a diff or a receipt update. Here the link target is a committed copy in this repo, so every change still goes through a git diff and the receipt hashes. When `/llp-adopt update` runs, write only to `.agents/skills/` and keep the symlink.
 
 <!-- BEGIN LLP SKILLS MANAGED BLOCK -->
 Before editing a subsystem with documented design, orient first: read its
