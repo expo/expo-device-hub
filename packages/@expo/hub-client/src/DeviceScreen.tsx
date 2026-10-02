@@ -218,10 +218,10 @@ export function DeviceScreen({
 
   // Second finger position for Alt-drag: mirror around center (pinch) or a
   // locked offset (pan, with Shift) — matches serve-sim.
-  const altSecondFinger = (p: Point): Point =>
+  const altSecondFinger = useCallback((p: Point): Point =>
     altShiftRef.current
       ? { x: clamp01(p.x + panOffsetRef.current.x), y: clamp01(p.y + panOffsetRef.current.y) }
-      : { x: 1 - p.x, y: 1 - p.y };
+      : { x: 1 - p.x, y: 1 - p.y }, []);
 
   const endMulti = (a: Point, b: Point) => {
     if (rafRef.current) {
@@ -243,9 +243,7 @@ export function DeviceScreen({
     let b = pending.multi?.b ?? points[1];
     if (modeRef.current === 'single' && a) sendTouch({ phase: 'end', ...(pending.single ?? a) });
     else if (a && (modeRef.current === 'two' || modeRef.current === 'alt')) {
-      b ??= altShiftRef.current
-        ? { x: clamp01(a.x + panOffsetRef.current.x), y: clamp01(a.y + panOffsetRef.current.y) }
-        : { x: 1 - a.x, y: 1 - a.y };
+      b ??= altSecondFinger(a);
       sendMultiTouch?.({ phase: 'end', a, b });
     }
     for (const id of pointersRef.current.keys()) {
@@ -255,7 +253,7 @@ export function DeviceScreen({
     modeRef.current = 'none';
     singleIdRef.current = null;
     setFingers(null);
-  }, [sendTouch, sendMultiTouch]);
+  }, [sendTouch, sendMultiTouch, altSecondFinger]);
   useLayoutEffect(() => {
     const cancel = () => { releasePressedKeys(); cancelGestures(); };
     const stopListening = listenForInputCancellation(cancel);
