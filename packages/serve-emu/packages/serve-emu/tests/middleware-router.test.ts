@@ -898,6 +898,35 @@ describe("createRouter stream mode", () => {
     await router.stopAll();
   });
 
+  test("physical devices ignore an emulator-only default stream mode", async () => {
+    const state = {
+      devices: [
+        { serial: "192.168.1.20:5555", state: "device" },
+        { serial: "emulator-5554", state: "device" },
+      ],
+      avds: [] as string[],
+      running: [] as RunningAvd[],
+      created: [] as string[],
+      stopped: [] as string[],
+      createdModes: [] as StreamMode[],
+      createdInputSources: [] as InputSource[],
+    };
+    const router = createRouter(
+      { streamMode: "grpc-screenshot" },
+      routerDependencies(state),
+    );
+
+    try {
+      await router.ensure("192.168.1.20:5555");
+      await router.ensure("emulator-5554");
+
+      expect(state.created).toEqual(["192.168.1.20:5555", "emulator-5554"]);
+      expect(state.createdModes).toEqual(["scrcpy", "grpc-screenshot"]);
+    } finally {
+      await router.stopAll();
+    }
+  });
+
   test("uses the shared stream mode request validation", async () => {
     const state = {
       devices: [{ serial: "emulator-5554", state: "device" }],

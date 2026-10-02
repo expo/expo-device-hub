@@ -943,16 +943,20 @@ async function createAppInternal(
             // whose embedded screen size disagrees), and resync every client onto
             // the new stream from a fresh keyframe.
             if (f.width > 0 && f.height > 0) {
+              const sizeChanged =
+                screen.width !== f.width || screen.height !== f.height;
               screen.width = f.width;
               screen.height = f.height;
               cachedConfig = null;
               for (const c of clients) {
                 if (!c.video) continue;
                 c.awaitingKeyFrame = true;
-                sendJson(c.socket, {
-                  type: "video-session",
-                  size: { width: f.width, height: f.height },
-                });
+                if (sizeChanged) {
+                  sendJson(c.socket, {
+                    type: "video-session",
+                    size: { width: f.width, height: f.height },
+                  });
+                }
               }
               webRtcPublisher?.resetVideoSource();
             }
@@ -2342,10 +2346,12 @@ export function createRouter(
     return first.serial;
   };
 
+  const defaultStreamModeFor = (serial: string): StreamMode =>
+    (isEmulatorSerial(serial) ? defaults.streamMode : undefined) ?? "scrcpy";
+
   const createConfiguredApp = async (
     serial: string,
-    streamMode =
-      streamModeOverrides.get(serial) ?? defaults.streamMode ?? "scrcpy",
+    streamMode = streamModeOverrides.get(serial) ?? defaultStreamModeFor(serial),
     parentSignal?: AbortSignal,
     deviceState?: DeviceSessionState,
     encoderSettings?: StreamEncoderSettings,
@@ -2539,7 +2545,7 @@ export function createRouter(
       requestedGrpcImageMode ?? currentGrpcImageMode;
     const currentMode = current
       ? streamSessionForApp(current).mode
-      : streamModeOverrides.get(serial) ?? defaults.streamMode ?? "scrcpy";
+      : streamModeOverrides.get(serial) ?? defaultStreamModeFor(serial);
     const configuredInputSource =
       inputSourceOverrides.get(serial) ??
       defaults.inputSource ??
