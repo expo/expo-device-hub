@@ -5,10 +5,18 @@ export type StartupAddress = {
   lanAddress?: string;
   /** Set under `--require-token`. The links carry it, since only the operator is told it. */
   sessionToken?: string;
+  /** `--frame-ancestor` origins given without `--require-token`, which apply only under it. */
+  ignoredFrameAncestors?: readonly string[];
 };
 
 /** What the CLI prints once it listens, in the shape serve-sim prints for `--require-token`. */
-export function startupMessage({ host, port, lanAddress, sessionToken }: StartupAddress): string {
+export function startupMessage({
+  host,
+  port,
+  lanAddress,
+  sessionToken,
+  ignoredFrameAncestors = [],
+}: StartupAddress): string {
   const isLoopback = host === 'localhost' || host === '127.0.0.1' || host === '::1';
   const isWildcard = host === '0.0.0.0' || host === '::';
   const link = (hostname: string) =>
@@ -35,6 +43,9 @@ export function startupMessage({ host, port, lanAddress, sessionToken }: Startup
         : '  This Hub is listening on the network with no token required. Anyone who can reach it ' +
             'can control the devices and run commands on this machine. Pass --require-token to gate it.'
     );
+  }
+  if (ignoredFrameAncestors.length > 0) {
+    lines.push('', '  --frame-ancestor has no effect without --require-token.');
   }
   return lines.join('\n');
 }

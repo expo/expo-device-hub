@@ -43,6 +43,22 @@ describe('startupMessage', () => {
     expect(message).toContain('Pass --require-token to gate it.');
   });
 
+  // As in serve-sim, `--frame-ancestor` applies only under the token, so say that it did nothing.
+  test('says that --frame-ancestor has no effect without --require-token', () => {
+    const message = startupMessage({
+      host: '127.0.0.1',
+      port: 3400,
+      ignoredFrameAncestors: ['https://*.expo.dev'],
+    });
+
+    expect(message.split('\n').at(-1)).toBe(
+      '  --frame-ancestor has no effect without --require-token.'
+    );
+    expect(startupMessage({ host: '127.0.0.1', port: 3400, ignoredFrameAncestors: [] })).not.toContain(
+      '--frame-ancestor'
+    );
+  });
+
   test('names a specific host in its network link', () => {
     const message = startupMessage({ host: '192.168.1.20', port: 3400, sessionToken: 'tok-123' });
 

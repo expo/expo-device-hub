@@ -209,6 +209,7 @@ async function main(): Promise<void> {
       port: (server.address() as AddressInfo).port,
       lanAddress: lanAddress(),
       sessionToken,
+      ignoredFrameAncestors: sessionToken ? [] : options.frameAncestors,
     })
   );
 }
