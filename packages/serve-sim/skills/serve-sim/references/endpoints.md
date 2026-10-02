@@ -73,6 +73,7 @@ mounts it at `/`. Prefix the paths below with that configured base.
 | `GET` | `/ax` | SSE accessibility snapshots. |
 | `POST` | `/exec` | Host command execution; requires JSON, same-origin checks, and bearer token. |
 | `GET` | `/appstate` | Frontmost-app event stream. |
+| `GET` | `/api/apps/icon?bundleId=<id>` | Installed app icon as JSON: `{ok, bundleId, icon: {mimeType, data} \| null}`. |
 | `GET` | `/grid/api` | Simulator/device list. |
 | `POST` | `/grid/api/start` | Boot and register a simulator. |
 | `POST` | `/grid/api/shutdown` | Shut down and unregister a simulator. |

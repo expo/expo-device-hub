@@ -19,6 +19,7 @@ import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
 import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type CaptureRuntime } from "./capture";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
+import { handleAppIconRequest } from "./app-icon";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
 import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
 import {
@@ -934,6 +935,7 @@ export function previewConfigForState(
   logsEndpoint: string;
   crashesEndpoint: string;
   appStateEndpoint: string;
+  appIconEndpoint: string;
   eventLogEndpoint: string;
   eventLogEventsEndpoint: string;
   metricsEndpoint: string;
@@ -974,6 +976,7 @@ export function previewConfigForState(
     logsEndpoint: endpoint(base, "/logs", state.device),
     crashesEndpoint: endpoint(base, "/crashes", state.device),
     appStateEndpoint: endpoint(base, "/appstate", state.device),
+    appIconEndpoint: endpoint(base, "/api/apps/icon", state.device),
     eventLogEndpoint: endpoint(base, "/api/event-log", state.device),
     eventLogEventsEndpoint: endpoint(base, "/api/event-log/events", state.device),
     metricsEndpoint: endpoint(base, "/metrics", state.device),
@@ -2606,6 +2609,13 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         // Best-effort cleanup; the PNG is already in memory by now.
         await unlink(file).catch(() => {});
       }
+      return;
+    }
+
+    // JSON: an installed app's icon, so a remote client needs no exec-ws round trips for it.
+    if (url === base + "/api/apps/icon") {
+      await handleAppIconRequest(req, res, rawUrl, async () =>
+        selectServeSimState(await readServeSimStates(), selectedDevice)?.device ?? null);
       return;
     }
 
