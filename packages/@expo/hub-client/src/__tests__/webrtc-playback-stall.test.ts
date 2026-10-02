@@ -142,3 +142,28 @@ describe("choosing which inbound report to judge", () => {
     expect(selectInboundReport([], { id: "a", framesReceived: 1 })).toBeNull();
   });
 });
+
+
+test("bursty active RTP still detects frozen decode beside a retired high-count SSRC", () => {
+  let pinned: { id: string; framesReceived: number } | null = null;
+  let previous: { id: string; framesReceived: number }[] = [];
+  let state = initialPlaybackStallState;
+  let stalls = 0;
+  let selectedActive = false;
+  for (let poll = 0; poll < 40; poll++) {
+    const reports = [
+      { id: "retired", framesReceived: 10_000 },
+      { id: "active", framesReceived: 100 + Math.floor(poll / 4) * 10 },
+    ];
+    const selected: { id: string; framesReceived: number } = selectInboundReport(reports, pinned, previous)!;
+    previous = reports;
+    if (selectedActive) expect(selected.id).toBe("active");
+    selectedActive ||= selected.id === "active";
+    if (selected.id !== pinned?.id) state = initialPlaybackStallState;
+    pinned = selected;
+    const next = nextPlaybackStallState(state, { decoded: 100, received: selected.framesReceived });
+    if (next.stalled && next.mediaArriving) stalls++;
+    state = next.stalled ? initialPlaybackStallState : next.state;
+  }
+  expect(stalls).toBeGreaterThan(0);
+});

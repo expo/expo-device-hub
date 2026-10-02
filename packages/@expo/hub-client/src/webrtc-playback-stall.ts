@@ -79,5 +79,7 @@ export function selectInboundReport<T extends InboundReport>(
     }
   }
   if (advancingSibling) return advancingSibling;
+  // Lifetime totals cannot make a report live again once history shows it is idle.
+  if (previousReports.length > 0) return pinned;
   return liveliest.framesReceived > pinned.framesReceived ? liveliest : pinned;
 }
