@@ -1,5 +1,5 @@
 import { execFile, execFileSync } from "node:child_process";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import { dirname, join } from "node:path";
 import type { Socket } from "node:net";
@@ -33,8 +33,8 @@ async function waitFor(read: () => boolean): Promise<void> {
 }
 
 describeOrSkip("capture through a configured HTTP proxy", () => {
-  test("uses absolute HTTP requests and authenticated CONNECT, keeping credentials out of capture and argv", async () => {
-    const secret = "p@ss:upstream-secret";
+  test("uses absolute HTTP requests and authenticated CONNECT, keeping credentials out of disk, capture and argv", async () => {
+    const secret = "p@ss:üñïcode-upstream-secret";
     const auth = "Basic " + Buffer.from(`user:${secret}`).toString("base64");
     const seen: { method: string; url: string; auth?: string }[] = [];
     const upstream = createServer((req, res) => {
@@ -53,9 +53,13 @@ describeOrSkip("capture through a configured HTTP proxy", () => {
     });
     const config = join(dirname(proxy.portFile), "config.yaml");
     try {
-      expect(statSync(config).mode & 0o777).toBe(0o600);
+      expect(existsSync(config)).toBe(false);
       expect(statSync(dirname(config)).mode & 0o777).toBe(0o700);
-      expect(JSON.parse(readFileSync(config, "utf8"))).toEqual({ upstream_auth: `user:${secret}` });
+      for (const name of readdirSync(dirname(config))) {
+        const contents = readFileSync(join(dirname(config), name));
+        expect(contents.includes(Buffer.from(secret))).toBe(false);
+        expect(contents.includes(Buffer.from(auth))).toBe(false);
+      }
       const argv = execFileSync("ps", ["-axo", "args"], { encoding: "utf8" }).split("\n").filter((line) => line.includes(dirname(config))).join("\n");
       expect(argv).toContain("upstream:http://127.0.0.1:");
       expect(argv).not.toContain(secret);
@@ -77,7 +81,7 @@ describeOrSkip("capture through a configured HTTP proxy", () => {
       await proxy.close();
       await close(upstream);
     }
-    expect(existsSync(config)).toBe(false);
+    expect(existsSync(dirname(config))).toBe(false);
   }, 30_000);
 
   test("fails a refused proxy request without falling back to the reachable origin", async () => {

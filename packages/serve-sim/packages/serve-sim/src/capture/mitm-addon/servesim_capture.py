@@ -161,6 +161,16 @@ def _post(path, payload):
     _outbox.put_nowait((path, body, size))
 
 
+def load(loader):
+    # serve-sim closes this anonymous pipe after sending the credentials. On script reload it is
+    # already at EOF, so leave mitmproxy's existing in-memory option alone.
+    auth = sys.stdin.buffer.read().decode("utf-8")
+    if auth:
+        from mitmproxy import ctx
+
+        ctx.options.update(upstream_auth=auth)
+
+
 def running():
     _post("/ready", {"addon": "servesim_capture"})
 
