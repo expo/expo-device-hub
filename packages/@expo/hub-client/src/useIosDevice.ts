@@ -105,10 +105,10 @@ import {
   webRtcFallbackDecision,
 } from './webrtc-fallback.js';
 import { createInputSocket } from './input-socket.js';
+import { WS_REASON_INPUT_UNAVAILABLE } from './input-protocol.js';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
-// Compatibility grace period for legacy helpers without admission acknowledgements.
 const ACTIVITY_STALE_MS = 8000;
 
 // serve-sim binary WS message tags (serve-sim-client `SimulatorView`).
@@ -803,6 +803,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setInputUnavailable(false);
     if (!wsUrl) return;
     hasWsConfigRef.current = false;
+    let noticeTimer: ReturnType<typeof setTimeout> | undefined;
     const input = createInputSocket(wsUrl, {
       onAdmitted() {
         // The helper restores its host keyboard connection after the last owner leaves.
@@ -823,12 +824,22 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         } catch { return false; }
       },
       onDisconnect() { setHardwareKeyboardConnectedState(null); },
-      onRefused(reason) { setInputSocketError(reason); },
+      onRefused(reason) {
+        clearTimeout(noticeTimer);
+        setInputSocketError(reason);
+        // Admission cannot undo commands already lost to a queue overflow.
+        if (reason !== WS_REASON_INPUT_UNAVAILABLE) {
+          noticeTimer = setTimeout(() => {
+            setInputSocketError(current => current === reason ? null : current);
+          }, 5_000);
+        }
+      },
       onRecovered() { setInputSocketError(null); },
     }, { requireAdmission: requireInputAdmission, reconnectDelayMs: RECONNECT_MS, openSocket: (address) => new WebSocket(address, socketProtocols) });
     inputSocketRef.current = input;
     input.start();
     return () => {
+      clearTimeout(noticeTimer);
       input.dispose();
       if (inputSocketRef.current === input) inputSocketRef.current = null;
       setHardwareKeyboardConnectedState(null);

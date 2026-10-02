@@ -39,7 +39,7 @@ type FakeSocket = {
 async function renderIosClient(inputAdmission: unknown = true) {
   const sockets: FakeSocket[] = [];
   const realTimeout = globalThis.setTimeout;
-  stubGlobal('setTimeout', (callback: () => void, delay: number) => realTimeout(callback, delay === 13_000 ? 20 : delay === 1500 ? 10 : delay === 1000 ? 20 : delay));
+  stubGlobal('setTimeout', (callback: () => void, delay: number) => realTimeout(callback, delay === 13_000 ? 20 : delay === 1500 ? 10 : delay === 1000 || delay === 5000 ? 20 : delay));
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   stubGlobal('window', {
     location: {
@@ -178,3 +178,21 @@ for (const inputAdmission of [true, 'true']) {
     expect(client().hardwareKeyboardConnected).toBe(false);
   });
 }
+
+
+test('an overload warning survives admission but expires without changing owners', async () => {
+  const { client, helperSockets } = await renderIosClient();
+  const socket = helperSockets()[0]!;
+  socket.readyState = 1;
+  await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+  const reason = 'Simulator input queue full; send smaller batches or slow down';
+  await act(async () => socket.onclose?.({ code: 1013, reason }));
+  expect(client().inputError).toBe(reason);
+  await act(async () => new Promise(resolve => setTimeout(resolve, 12)));
+  const retry = helperSockets()[1]!;
+  retry.readyState = 1;
+  await act(async () => retry.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+  expect(client().inputError).toBe(reason);
+  await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+  expect(client().inputError).toBeNull();
+});
