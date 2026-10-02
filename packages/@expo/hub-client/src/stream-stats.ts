@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { type SessionFetch } from './session-token.js';
 import {
   type DeviceStreamCaptureStats,
   type DeviceStreamEncoderStats,
@@ -411,10 +412,11 @@ async function requestWebRtcServerStats(
   statsUrl: string,
   sessionId: string,
   signal: AbortSignal,
+  fetchImpl: SessionFetch,
 ): Promise<WebRtcServerStats> {
   const url = new URL(statsUrl, window.location.href);
   url.searchParams.set('sessionId', sessionId);
-  const response = await fetch(url, { cache: 'no-store', signal });
+  const response = await fetchImpl(url, { cache: 'no-store', signal });
   if (!response.ok) {
     await response.body?.cancel();
     throw new Error(`WebRTC server statistics unavailable (${response.status})`);
@@ -438,6 +440,7 @@ export function useWebRtcStreamStats(
   statsUrl: string,
   presentedFrames: Readonly<{ current: number }>,
   enabled: boolean,
+  fetchImpl: SessionFetch = fetch,
 ): DeviceStreamStats | null {
   const [stats, setStats] = useState<DeviceStreamStats | null>(null);
   const previousRef = useRef<WebRtcClientCounters | null>(null);
@@ -477,6 +480,7 @@ export function useWebRtcStreamStats(
           statsUrl,
           connection.sessionId,
           controller.signal,
+          fetchImpl,
         );
         if (stopped) return;
         const publisher = next.publisherCounters
@@ -564,7 +568,7 @@ export function useWebRtcStreamStats(
       window.clearInterval(pollTimer);
       window.clearInterval(staleTimer);
     };
-  }, [connection, enabled, presentedFrames, statsUrl]);
+  }, [connection, enabled, presentedFrames, statsUrl, fetchImpl]);
 
   return stats;
 }

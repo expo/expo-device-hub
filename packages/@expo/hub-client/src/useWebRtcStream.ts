@@ -17,6 +17,7 @@ import {
   type WebRtcRestartKey,
   type WebRtcRestartState,
 } from './webrtc-restart.js';
+import { type SessionFetch } from './session-token.js';
 
 export type WebRtcIceServer = {
   urls: string[];
@@ -132,6 +133,7 @@ function createSessionId(): string {
 export function useWebRtcStream({
   offerUrl,
   closeUrl,
+  closeBeaconUrl = closeUrl,
   statsUrl = '',
   enabled,
   codec,
@@ -142,9 +144,12 @@ export function useWebRtcStream({
   onKeyframeNeeded,
   onBeforeDisconnect,
   restartKey = null,
+  fetchImpl = fetch,
 }: {
   offerUrl: string;
   closeUrl: string;
+  /** `closeUrl` for `navigator.sendBeacon` on unload, which cannot set a header. */
+  closeBeaconUrl?: string;
   /** Device-scoped WebRTC sender statistics endpoint. */
   statsUrl?: string;
   enabled: boolean;
@@ -158,6 +163,8 @@ export function useWebRtcStream({
   onBeforeDisconnect?: () => void;
   /** Re-negotiate when an authoritative source generation changes; null means unknown. */
   restartKey?: WebRtcRestartKey;
+  /** Sends a gated backend's session token; plain `fetch` by default. */
+  fetchImpl?: SessionFetch;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -180,6 +187,7 @@ export function useWebRtcStream({
     statsUrl,
     presentedFramesRef,
     streamStatsEnabled,
+    fetchImpl,
   );
 
   const markFrameDecoded = useCallback((presentedFrameDelta = 1) => {
@@ -208,6 +216,7 @@ export function useWebRtcStream({
     enabled,
     offerUrl,
     closeUrl,
+    closeBeaconUrl,
     codec,
     iceServers,
     iceTransportPolicy,
@@ -253,7 +262,13 @@ export function useWebRtcStream({
 
     const closeRemoteSession = (keepalive = false): Promise<void> => {
       if (closePromise) return closePromise;
-      closePromise = closeWebRtcSession({ url: closeUrl, sessionId, keepalive });
+      closePromise = closeWebRtcSession({
+        url: closeUrl,
+        beaconUrl: closeBeaconUrl,
+        sessionId,
+        keepalive,
+        fetchImpl,
+      });
       return closePromise;
     };
     const releaseOnPageHide = () => void closeRemoteSession(true);
@@ -432,6 +447,7 @@ export function useWebRtcStream({
         if (!local) throw new Error('WebRTC offer was not created');
         const response = await postWebRtcOffer({
           url: offerUrl,
+          fetchImpl,
           signal: lifecycleController.signal,
           requestTimeoutMs: SIGNALING_REQUEST_TIMEOUT_MS,
           busyRetryIntervalMs: BUSY_RETRY_INTERVAL_MS,
@@ -498,6 +514,7 @@ export function useWebRtcStream({
     enabled,
     offerUrl,
     closeUrl,
+    closeBeaconUrl,
     codec,
     iceServers,
     iceTransportPolicy,
@@ -507,6 +524,7 @@ export function useWebRtcStream({
     onBeforeDisconnect,
     retryGeneration,
     restartState.generation,
+    fetchImpl,
   ]);
 
   return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };

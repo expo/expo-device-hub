@@ -51,6 +51,12 @@ import {
 } from './ios-events.js';
 import { hostUiRequest, runHostAction } from './exec-ws.js';
 import { getIosAppDetails } from './ios-app-details.js';
+import {
+  isAttachedPreviewApi,
+  type PreviewApi,
+  type ResolvedIosConnection,
+  resolveIosConnection,
+} from './ios-connection.js';
 import { clearIosLocation, setIosLocation } from './ios-location.js';
 import { fetchScreenshot } from './screenshot.js';
 import { hidUsageForCode } from './keyboard.js';
@@ -80,10 +86,10 @@ import {
 } from './types.js';
 import { NO_PENDING_CAMERA_WRITES } from './device-camera.js';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes.js';
-import { IOS_INPUT_UNAVAILABLE_MESSAGE, iosInputCloseError } from './ios-input-error.js';
 import { KeyedWriteTracker } from './keyed-write-tracker.js';
 import { createPacedKeySender } from './paced-key-sender.js';
-import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config.js';
+import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token.js';
+import { publicServeSimMount, publicUrlForRoute } from './serve-sim-urls.js';
 import { type ParsedSseBlock, drainSseChunk } from './sse.js';
 import { normalizeDeviceStreamSettings } from './stream-settings.js';
 import { useAccessibility } from './useAccessibility.js';
@@ -91,8 +97,9 @@ import { useAppPermissions } from './useAppPermissions.js';
 import { useAvccStream } from './useAvccStream.js';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation.js';
 import { useStreamSettingsResource } from './useStreamSettingsResource.js';
-import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream.js';
+import { useWebRtcStream } from './useWebRtcStream.js';
 import { presentedVideoFrameDelta } from './video-frame-metadata.js';
+import { IOS_INPUT_UNAVAILABLE_MESSAGE, iosInputCloseError } from './ios-input-error.js';
 import {
   type WebRtcCodec,
   webRtcFallbackDecision,
@@ -193,81 +200,15 @@ function iosStreamSettingsPatch(
   return Object.keys(patch).length > 0 ? patch : null;
 }
 
-function toWs(url: string): string {
-  return url.replace(/^http/, 'ws');
-}
-
-/**
- * `…/helper/<udid>/ws` -> `…/helper/ws?device=<udid>`
- * serve-sim
- */
-export function toQueryStyleHelperWsUrl(wsUrl: string): string {
-  const url = new URL(wsUrl);
-  const match = url.pathname.match(/^(.*\/helper)\/([^/]+)\/ws$/);
-  if (!match) throw new Error(`Invalid helper ws url, no deviceId matched: ${wsUrl}`);
-  url.pathname = `${match[1]}/ws`;
-  if (!url.searchParams.has('device')) {
-    url.searchParams.set('device', decodeURIComponent(match[2]));
-  }
-  return url.toString();
-}
-
-/** Resolved connection: where to stream video/input, and how to reach logs/devices. */
-interface ResolvedConfig {
-  /** Base serve-sim helper URL used by `/stream.avcc`. */
-  url: string;
-  streamUrl: string;
-  wsUrl: string;
-  inputAdmission: boolean;
-  device: string | null;
-  /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
-  execWsUrl: string | null;
-  execToken: string | null;
-  /** Relative SSE path to subscribe for logs, e.g. `/logs?device=<udid>`. */
-  logsPath: string | null;
-  /** Absolute URL of the foreground-app SSE stream. */
-  appStateUrl: string | null;
-  /** Relative SSE path for normalized serve-sim events. */
-  eventsPath: string | null;
-  /** Relative SSE path for foreground app activity. */
-  metricsPath: string | null;
-  axUrl: string | null;
-  /** Runtime encoder settings endpoint on the selected helper. */
-  streamSettingsUrl: string | null;
-  /** Initial server-provided stream settings, if present. */
-  initialStreamSettings: unknown;
-  gridApiUrl: string | null;
-  webRtcCodec: WebRtcCodec;
-  webRtcIceServers?: WebRtcIceServer[];
-}
-
-/** Shape of the serve-sim middleware `/api` (and grid) responses we read. */
-interface PreviewApi {
-  url?: string;
-  streamUrl?: string;
-  wsUrl?: string;
-  inputAdmission?: unknown;
-  device?: string;
-  basePath?: string;
-  execToken?: string;
-  logsEndpoint?: string;
-  appStateEndpoint?: string;
-  eventLogEventsEndpoint?: string;
-  metricsEndpoint?: string;
-  axEndpoint?: string;
-  streamSettingsEndpoint?: string;
-  gridApiEndpoint?: string;
-  proxyHelpers?: boolean;
-  streamSettings?:
-    | ({ transport: 'http'; codec?: 'auto' | 'h264' | 'mjpeg' } &
-        Partial<DeviceStreamEncoderSettings>)
-    | ({ transport: 'webrtc'; codec: WebRtcCodec; iceServers?: WebRtcIceServer[] } &
-        Partial<DeviceStreamEncoderSettings>);
-}
-
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
+  const { baseUrl, enabled = true, device: targetDevice = null, streamMode, token = null } = options;
   const active = enabled && !!baseUrl;
+  const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
+  const socketProtocols = useMemo(() => sessionTokenProtocols('ios', token), [token]);
+  const connectionIdentity = useMemo(
+    () => ({ active, baseUrl, targetDevice, token }),
+    [active, baseUrl, targetDevice, token],
+  );
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -285,7 +226,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [eventsEnabled, setEventsEnabled] = useState(false);
   const [activity, setActivity] = useState<DeviceActivity | null>(null);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
-  const [config, setConfig] = useState<ResolvedConfig | null>(null);
+  const [resolvedConnection, setResolvedConnection] = useState<{
+    identity: typeof connectionIdentity;
+    config: ResolvedIosConnection;
+  } | null>(null);
+  // A discovery result owns its endpoint and credential together. Hide the old
+  // result during the render that changes identity, before child hooks can use
+  // the new credential with URLs discovered for the previous session.
+  const config =
+    active && resolvedConnection?.identity === connectionIdentity
+      ? resolvedConnection.config
+      : null;
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
@@ -373,6 +324,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
   const sendWs = useCallback((tag: number, payload: object) => {
+    if (!deviceSettingConfigRef.current) return;
     pendingWsRef.current = sendOrQueueWsMessage(
       inputSocketAdmittedRef.current ? wsRef.current : null, pendingWsRef.current, tag, payload,
     );
@@ -455,13 +407,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!c || !c.execWsUrl || !c.execToken || !c.device) return;
       const previous = hardwareKeyboardConnected;
       setHardwareKeyboardConnectedState(connected);
-      void hostUiRequest(c.execWsUrl, c.execToken, {
-        device: c.device,
-        option: UI_OPTION_HARDWARE_KEYBOARD,
-        value: connected ? 'on' : 'off',
-      }).catch(() => setHardwareKeyboardConnectedState(previous));
+      void hostUiRequest(
+        c.execWsUrl,
+        c.execToken,
+        {
+          device: c.device,
+          option: UI_OPTION_HARDWARE_KEYBOARD,
+          value: connected ? 'on' : 'off',
+        },
+        socketProtocols,
+      ).catch(() => setHardwareKeyboardConnectedState(previous));
     },
-    [config, hardwareKeyboardConnected],
+    [config, hardwareKeyboardConnected, socketProtocols],
   );
 
   const toggleSoftwareKeyboard = useCallback(() => {
@@ -504,8 +461,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
     const udid = config?.device ?? targetDevice;
-    return fetchScreenshot(baseUrl, udid);
-  }, [baseUrl, targetDevice, config]);
+    return fetchScreenshot(publicServeSimMount(baseUrl).toString(), udid, sessionFetch);
+  }, [baseUrl, targetDevice, config, sessionFetch]);
 
   // Apply any serve-sim UI option over its authenticated exec-ws request
   // channel. The state is optimistic so the selected pill/switch responds at
@@ -525,15 +482,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (key === 'appearance' && (value === 'light' || value === 'dark')) {
         setAppearanceState(value);
       }
-      void hostUiRequest(execWsUrl, execToken, {
-        device,
-        option: key,
-        value,
-      })
+      void hostUiRequest(execWsUrl, execToken, { device, option: key, value }, socketProtocols)
         .catch(async () => {
           if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
           try {
-            const result = await hostUiRequest(execWsUrl, execToken, { device });
+            const result = await hostUiRequest(execWsUrl, execToken, { device }, socketProtocols);
             if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
             const authoritative: DeviceSettings = {};
             for (const [nextKey, nextValue] of Object.entries(result.status ?? {})) {
@@ -559,7 +512,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [config],
+    [config, socketProtocols],
   );
 
   const setAppearance = useCallback(
@@ -593,7 +546,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // retried: `baseUrl` is never interpreted as a bare helper.
   useEffect(() => {
     if (!active || !baseUrl) {
-      setConfig(null);
+      setResolvedConnection(null);
       setStatus('idle');
       return;
     }
@@ -602,54 +555,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setStatus('connecting');
     setError(null);
 
-    // `baseUrl` may carry a path prefix (the plugin mount), so join onto it
-    // rather than `new URL('/api', baseUrl)`, which would drop that prefix.
-    const apiUrl = `${baseUrl.replace(/\/$/, '')}/api${
-      targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''
-    }`;
-
-    const toMiddleware = (rawConfig: PreviewApi): ResolvedConfig => {
-      const middlewareUrl = new URL(baseUrl, window.location.href);
-      const c = proxyPreviewConfigForBrowser(rawConfig, middlewareUrl);
-      const basePath = c.basePath === '/' ? '' : (c.basePath ?? '');
-      const absoluteMiddlewareUrl = (path?: string): string | null =>
-        path
-          ? c.proxyHelpers
-            ? middlewareEndpointForBrowser(path, middlewareUrl, basePath)
-            : new URL(path, middlewareUrl).toString()
-          : null;
-      return {
-        url: c.url!,
-        streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
-        wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
-        // An absent/false flag identifies legacy servers. Unknown present values
-        // fail closed rather than treating an unrecognized contract as legacy.
-        inputAdmission: c.inputAdmission !== undefined && c.inputAdmission !== false,
-        device: c.device ?? null,
-        execWsUrl: toWs(absoluteMiddlewareUrl(`${basePath}/exec-ws`)!),
-        execToken: c.execToken ?? null,
-        // These are subscription paths inside exec-ws, not browser URLs. The
-        // server validates them against its internal middleware mount.
-        logsPath: c.logsEndpoint ?? null,
-        appStateUrl: absoluteMiddlewareUrl(c.appStateEndpoint),
-        eventsPath: c.eventLogEventsEndpoint ?? null,
-        metricsPath: c.metricsEndpoint ?? null,
-        axUrl: absoluteMiddlewareUrl(c.axEndpoint),
-        // A proxied helper URL uses the public middleware mount above rather
-        // than an advertised internal host port that may be 0.
-        streamSettingsUrl: c.streamSettingsEndpoint
-          ? c.proxyHelpers
-            ? `${c.url}/stream-settings`
-            : absoluteMiddlewareUrl(c.streamSettingsEndpoint)
-          : null,
-        initialStreamSettings: c.streamSettings,
-        gridApiUrl: absoluteMiddlewareUrl(c.gridApiEndpoint ?? `${basePath}/grid/api`),
-        webRtcCodec: c.streamSettings?.transport === 'webrtc' ? c.streamSettings.codec : 'h264',
-        ...(c.streamSettings?.transport === 'webrtc' && c.streamSettings.iceServers
-          ? { webRtcIceServers: c.streamSettings.iceServers }
-          : {}),
-      };
-    };
+    const mount = publicServeSimMount(baseUrl);
+    const apiUrl = publicUrlForRoute(mount, 'api', { device: targetDevice });
 
     // Ask the grid to attach a helper for this device at most once per effect
     // run (i.e. per device). Resets whenever `targetDevice`/`baseUrl` change.
@@ -658,17 +565,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const resolve = async () => {
       if (cancelled) return;
       try {
-        const res = await fetch(apiUrl, { signal: AbortSignal.timeout(3000) });
+        const res = await sessionFetch(apiUrl, { signal: AbortSignal.timeout(3000) });
         if (!res.ok) {
           if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
           return;
         }
         const c = (await res.json()) as PreviewApi | null;
-        if (c && c.url && c.device) {
+        if (isAttachedPreviewApi(c)) {
           if (!cancelled) {
-            const resolved = toMiddleware(c);
+            const resolved = resolveIosConnection(c, mount);
+            resolved.streamUrl = withSessionTokenQuery(resolved.streamUrl, token);
+            if (resolved.appStateUrl) {
+              resolved.appStateUrl = withSessionTokenQuery(resolved.appStateUrl, token);
+            }
             setWebRtcCodec(resolved.webRtcCodec);
-            setConfig(resolved);
+            setResolvedConnection({ identity: connectionIdentity, config: resolved });
           }
           return;
         }
@@ -678,7 +589,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         // because the user selected this device. Then poll until it attaches.
         if (targetDevice && !startRequested) {
           startRequested = true;
-          void startIosHelper(targetDevice, baseUrl).catch(() => {});
+          void startIosHelper(targetDevice, baseUrl, sessionFetch).catch(() => {});
         }
         if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
       } catch {
@@ -691,7 +602,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [active, baseUrl, targetDevice, setWebRtcCodec]);
+  }, [active, baseUrl, targetDevice, setWebRtcCodec, sessionFetch, token, connectionIdentity]);
 
   const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
   const onAvccFrame = useCallback((frameDelta = 1) => {
@@ -717,10 +628,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   } = useWebRtcStream({
     offerUrl: config ? `${config.url}/webrtc/offer` : '',
     closeUrl: config ? `${config.url}/webrtc/close` : '',
+    closeBeaconUrl: config ? withSessionTokenQuery(`${config.url}/webrtc/close`, token) : '',
     statsUrl: config ? `${config.url}/webrtc/stats` : '',
     enabled: active && useWebRtc && !!config,
     codec: activeWebRtcCodec,
     iceServers: config?.webRtcIceServers,
+    fetchImpl: sessionFetch,
   });
   const handledWebRtcFailureRef = useRef<string | null>(null);
 
@@ -818,6 +731,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     url: config?.url ?? '',
     enabled: active && useAvcc && !!config,
     canvasRef,
+    fetchImpl: sessionFetch,
     onFirstFrame: () => {
       setStatus('streaming');
       setError(null);
@@ -915,7 +829,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (cancelled) return;
       let ws: WebSocket;
       try {
-        ws = new WebSocket(wsUrl);
+        ws = new WebSocket(wsUrl, socketProtocols);
       } catch {
         return;
       }
@@ -1002,7 +916,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       pendingWsRef.current = [];
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, requiresInputAdmission, sendWs]);
+  }, [wsUrl, requiresInputAdmission, sendWs, socketProtocols]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
@@ -1016,8 +930,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const axUrl = config?.axUrl ?? null;
 
   const accessibilityLoader = useMemo<AccessibilityLoader | null>(
-    () => (axUrl ? (signal) => loadIosAccessibility(axUrl, signal) : null),
-    [axUrl],
+    () => (axUrl ? (signal) => loadIosAccessibility(axUrl, signal, sessionFetch) : null),
+    [axUrl, sessionFetch],
   );
   const accessibilityState = useAccessibility(accessibilityLoader);
 
@@ -1026,9 +940,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     () =>
       execWsUrl && execToken
         ? (action: string, params?: Parameters<typeof runHostAction>[3]) =>
-            runHostAction(execWsUrl, execToken, action, params)
+            runHostAction(execWsUrl, execToken, action, params, socketProtocols)
         : null,
-    [execWsUrl, execToken],
+    [execWsUrl, execToken, socketProtocols],
   );
 
   const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
@@ -1149,7 +1063,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (cancelled) return;
       buffers.clear();
       try {
-        ws = new WebSocket(execWsUrl);
+        ws = new WebSocket(execWsUrl, socketProtocols);
       } catch {
         markInterrupted();
         retryTimer = setTimeout(connect, RECONNECT_MS);
@@ -1214,6 +1128,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     eventsPath,
     metricsPath,
     deviceUdid,
+    socketProtocols,
   ]);
 
   // ── Simulator settings (best-effort) — one status request hydrates every
@@ -1227,7 +1142,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
-    hostUiRequest(execWsUrl, execToken, { device: deviceUdid })
+    hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols)
       .then((res) => {
         if (cancelled) return;
         const next: DeviceSettings = {};
@@ -1251,7 +1166,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
     };
-  }, [execWsUrl, execToken, deviceUdid]);
+  }, [execWsUrl, execToken, deviceUdid, socketProtocols]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
@@ -1266,6 +1181,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       initialSettings: normalizedInitialStreamSettings,
       parse: parseIosStreamSettings,
       toPatch: iosStreamSettingsPatch,
+      fetchImpl: sessionFetch,
     },
   );
 
@@ -1335,7 +1251,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
-    fetch(gridApiUrl, { signal: AbortSignal.timeout(3000) })
+    sessionFetch(gridApiUrl, { signal: AbortSignal.timeout(3000) })
       .then((r) => r.json())
       .then((data: { devices?: Array<Record<string, unknown>> }) => {
         if (cancelled || !Array.isArray(data.devices) || data.devices.length === 0) return;
@@ -1355,7 +1271,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
     };
-  }, [gridApiUrl]);
+  }, [gridApiUrl, sessionFetch]);
 
   return {
     platform: 'ios',
