@@ -91,8 +91,7 @@ This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://
 | [`packages/@expo/hub-components`](packages/@expo/hub-components) | Dependency-free UI kit (`Sidebar`, `StreamPanel`, `Button`, …) built on `@expo/styleguide` design tokens, so Hub matches the Expo dashboard website. |
 | [`packages/@expo/hub-apple-utils`](packages/@expo/hub-apple-utils) | Lists, creates, and boots Apple simulator devices via `simctl` (macOS only). |
 | [`packages/@expo/hub-android-utils`](packages/@expo/hub-android-utils) | Lists, creates, and boots Android emulators via `avdmanager` / `sdkmanager` / `emulator`. |
-| [`packages/expo-serve-emu`](packages/expo-serve-emu) | Thin wrapper of `serve-emu`. To be replaced by [`@expo/serve-emu`](http://www.github.com/expo/serve-emu). |
-| [`packages/serve-sim`](packages/serve-sim) | Vendored source for [`@expo/serve-sim`](http://www.github.com/expo/serve-sim). |
+| [`packages/serve-sim`](packages/serve-sim) | Source for [`@expo/serve-sim`](https://www.npmjs.com/package/@expo/serve-sim), maintained and published from this monorepo. |
 | [`packages/serve-emu`](packages/serve-emu) | Source for the `serve-emu` workspace package, maintained in this monorepo. |
 | [`example`](example) | A minimal Expo app with the plugin installed. |
 
@@ -150,10 +149,10 @@ gestures — so this package hides that behind one shared contract:
 - a `KeyboardCapture` component (with `useCoarsePointer`) that lets touch clients
   type into the device with their phone keyboard via `client.sendKeyEvents`.
 
-The serve-sim side tracks the [`@expo/serve-sim`](http://www.github.com/expo/serve-sim)
-web client: host work (simulator settings, app-bundle details) goes through its typed
-exec-ws actions rather than shell commands, and the vendored server in
-[`packages/serve-sim`](packages/serve-sim) is the version the client is written against.
+The serve-sim side tracks the [`@expo/serve-sim`](packages/serve-sim) web client: host work
+(simulator settings, app-bundle details) goes through its typed exec-ws actions rather
+than shell commands. The client is written against the server in
+[`packages/serve-sim`](packages/serve-sim), in this monorepo.
 
 It lives in its own package (rather than inside the plugin) so the **Expo dashboard
 website** can consume the exact same code to mirror devices in the browser. It is published
