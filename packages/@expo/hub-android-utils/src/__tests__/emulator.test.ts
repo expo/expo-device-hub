@@ -9,6 +9,16 @@ import {
   spawnEmulator,
 } from "../emulator";
 
+// Keep the default `process.env` from picking up a developer's own extra args.
+const shellExtraArgs = process.env.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS;
+beforeEach(() => {
+  delete process.env.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS;
+});
+afterEach(() => {
+  if (shellExtraArgs === undefined) delete process.env.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS;
+  else process.env.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS = shellExtraArgs;
+});
+
 describe("emulatorSerial", () => {
   test("formats the adb serial from the console port", () => {
     expect(emulatorSerial(5554)).toBe("emulator-5554");
@@ -49,6 +59,82 @@ describe("buildEmulatorArgs", () => {
     expect(buildEmulatorArgs({ name: "x", port: 5554, extraArgs: [] })).toEqual(plain);
     expect(plain.at(-1)).toBe("5554");
   });
+
+  test("appends EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS after extraArgs", () => {
+    const args = buildEmulatorArgs(
+      { name: "x", port: 5554, extraArgs: ["-camera-back", "imagefile:/tmp/a.png"] },
+      { EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: " -gpu  host\t" },
+    );
+    expect(args.slice(-4)).toEqual(["-camera-back", "imagefile:/tmp/a.png", "-gpu", "host"]);
+  });
+
+  test("preserves whitespace inside a quoted extra argument", () => {
+    const args = buildEmulatorArgs(
+      { name: "x", port: 5554 },
+      {
+        EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: '-camera-back "imagefile:/tmp/my photo.png" -gpu host',
+      },
+    );
+    expect(args.slice(-4)).toEqual(["-camera-back", "imagefile:/tmp/my photo.png", "-gpu", "host"]);
+  });
+
+  test("accepts single quotes and escaped whitespace in extra arguments", () => {
+    const args = buildEmulatorArgs(
+      { name: "x", port: 5554 },
+      {
+        EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS:
+          "-camera-back 'imagefile:/tmp/my photo.png' -data /tmp/my\\ data.img",
+      },
+    );
+    expect(args.slice(-4)).toEqual([
+      "-camera-back",
+      "imagefile:/tmp/my photo.png",
+      "-data",
+      "/tmp/my data.img",
+    ]);
+  });
+
+  test("preserves backslashes in a quoted argument", () => {
+    const args = buildEmulatorArgs(
+      { name: "x", port: 5554 },
+      { EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: String.raw`-data "C:\tmp\data.img"` },
+    );
+    expect(args.slice(-2)).toEqual(["-data", String.raw`C:\tmp\data.img`]);
+  });
+
+  test("preserves literal variable references in extra arguments", () => {
+    const args = buildEmulatorArgs(
+      { name: "x", port: 5554 },
+      { EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: '-data "$HOME/my data.img"' },
+    );
+    expect(args.slice(-2)).toEqual(["-data", "$HOME/my data.img"]);
+  });
+
+  test("rejects shell operators in extra arguments", () => {
+    expect(() =>
+      buildEmulatorArgs(
+        { name: "x", port: 5554 },
+        { EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: "-gpu host && echo unexpected" },
+      ),
+    ).toThrow("Invalid EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: quote shell syntax");
+  });
+
+  test("adds nothing when EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS is unset or blank", () => {
+    const plain = buildEmulatorArgs({ name: "x", port: 5554 }, {});
+    const blank = buildEmulatorArgs(
+      { name: "x", port: 5554 },
+      { EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: " " },
+    );
+    expect(blank).toEqual(plain);
+    expect(plain.at(-1)).toBe("5554");
+  });
+
+  test("reads EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS from process.env by default", () => {
+    process.env.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS = "-gpu host";
+    expect(buildEmulatorArgs({ name: "x", port: 5554 }).slice(-2)).toEqual(["-gpu", "host"]);
+    const command = formatEmulatorCommand("/sdk/emulator/emulator", { name: "x", port: 5554 });
+    expect(command.endsWith("-port 5554 -gpu host")).toBe(true);
+  });
 });
 
 describe("formatEmulatorCommand", () => {
@@ -64,12 +150,18 @@ describe("formatEmulatorCommand", () => {
       port: 5554,
       extraArgs: ["-camera-back", "imagefile:/tmp/a.png"],
     });
-    expect(command.endsWith("-port 5554 -camera-back imagefile:/tmp/a.png")).toBe(true);
+    expect(command.endsWith("-port 5554 -camera-back imagefile\\:/tmp/a.png")).toBe(true);
   });
 
   test("quotes parts containing whitespace", () => {
     const command = formatEmulatorCommand("/my sdk/emulator", { name: "x", port: 5554 });
-    expect(command.startsWith('"/my sdk/emulator"')).toBe(true);
+    expect(command.startsWith("'/my sdk/emulator'")).toBe(true);
+  });
+
+  test("prints a quoted environment argument as one argument", () => {
+    process.env.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS = '-data "/tmp/my data.img"';
+    const command = formatEmulatorCommand("/sdk/emulator", { name: "x", port: 5554 });
+    expect(command.endsWith("-data '/tmp/my data.img'")).toBe(true);
   });
 });
 

@@ -1,4 +1,5 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import { parse, quote } from "shell-quote";
 import { type AndroidUtilsResult, reportError, result } from "./errors";
 import type { BootDeviceOptions } from "./types";
 
@@ -7,11 +8,23 @@ export function emulatorSerial(port: number): string {
   return `emulator-${port}`;
 }
 
+/** Split an environment string into argv without running a shell. */
+function parseExtraArgs(value: string): string[] {
+  // Preserve $NAME literally; spawn does not perform shell expansion.
+  return parse(value, (name) => `$${name}`).map((arg) => {
+    if (typeof arg !== "string") {
+      throw new Error("Invalid EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS: quote shell syntax");
+    }
+    return arg;
+  });
+}
+
 /**
  * Build the `emulator` arguments for a boot.
  * Let the emulator choose the GPU backend that best matches the host.
+ * `EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS` is appended last, with shell-style quoting.
  */
-export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
+export function buildEmulatorArgs(options: BootDeviceOptions, env = process.env): string[] {
   return [
     "-avd",
     options.name,
@@ -23,6 +36,9 @@ export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
     "-port",
     String(options.port),
     ...(options.extraArgs ?? []),
+    ...(env.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS
+      ? parseExtraArgs(env.EXPO_DEVICE_HUB_EMULATOR_EXTRA_ARGS)
+      : []),
   ];
 }
 
@@ -32,9 +48,7 @@ export function buildEmulatorArgs(options: BootDeviceOptions): string[] {
  * visible in their terminal.
  */
 export function formatEmulatorCommand(emulatorPath: string, options: BootDeviceOptions): string {
-  return [emulatorPath, ...buildEmulatorArgs(options)]
-    .map((part) => (/\s/.test(part) ? JSON.stringify(part) : part))
-    .join(" ");
+  return quote([emulatorPath, ...buildEmulatorArgs(options)]);
 }
 
 /**
