@@ -182,6 +182,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const active = enabled && !!baseUrl;
   const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
   const socketProtocols = useMemo(() => sessionTokenProtocols('ios', token), [token]);
+  const connectionIdentity = useMemo(
+    () => ({ active, baseUrl, targetDevice, token }),
+    [active, baseUrl, targetDevice, token],
+  );
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -195,7 +199,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [eventsEnabled, setEventsEnabled] = useState(false);
   const [activity, setActivity] = useState<DeviceActivity | null>(null);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
-  const [config, setConfig] = useState<ResolvedIosConnection | null>(null);
+  const [resolvedConnection, setResolvedConnection] = useState<{
+    identity: typeof connectionIdentity;
+    config: ResolvedIosConnection;
+  } | null>(null);
+  // A discovery result owns its endpoint and credential together. Hide the old
+  // result during the render that changes identity, before child hooks can use
+  // the new credential with URLs discovered for the previous session.
+  const config =
+    active && resolvedConnection?.identity === connectionIdentity
+      ? resolvedConnection.config
+      : null;
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
@@ -282,6 +296,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
   const sendWs = useCallback((tag: number, payload: object) => {
+    if (!deviceSettingConfigRef.current) return;
     pendingWsRef.current = sendOrQueueWsMessage(wsRef.current, pendingWsRef.current, tag, payload);
   }, []);
 
@@ -501,7 +516,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // retried: `baseUrl` is never interpreted as a bare helper.
   useEffect(() => {
     if (!active || !baseUrl) {
-      setConfig(null);
+      setResolvedConnection(null);
       setStatus('idle');
       return;
     }
@@ -534,7 +549,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
               resolved.appStateUrl = withSessionTokenQuery(resolved.appStateUrl, token);
             }
             setWebRtcCodec(resolved.webRtcCodec);
-            setConfig(resolved);
+            setResolvedConnection({ identity: connectionIdentity, config: resolved });
           }
           return;
         }
@@ -557,7 +572,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [active, baseUrl, targetDevice, setWebRtcCodec, sessionFetch, token]);
+  }, [active, baseUrl, targetDevice, setWebRtcCodec, sessionFetch, token, connectionIdentity]);
 
   const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
   const onAvccFrame = useCallback((frameDelta = 1) => {
