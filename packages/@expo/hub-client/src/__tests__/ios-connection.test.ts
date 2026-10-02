@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 
-import { type AttachedPreviewApi, isAttachedPreviewApi, resolveIosConnection } from '../ios-connection';
+import {
+  type AttachedPreviewApi,
+  isAttachedPreviewApi,
+  resolveIosConnection,
+} from '../ios-connection';
 
 const proxiedApi: AttachedPreviewApi = {
   device: 'DEVICE-A',
@@ -55,8 +59,9 @@ describe('resolveIosConnection with proxied helpers', () => {
 
   test('falls back to the grid route under the public mount', () => {
     const { gridApiEndpoint: _, ...api } = proxiedApi;
-    expect(resolveIosConnection(api, new URL('http://localhost:8081/hub/vendor/serve-sim/')).gridApiUrl)
-      .toBe('http://localhost:8081/hub/vendor/serve-sim/grid/api');
+    expect(
+      resolveIosConnection(api, new URL('http://localhost:8081/hub/vendor/serve-sim/')).gridApiUrl,
+    ).toBe('http://localhost:8081/hub/vendor/serve-sim/grid/api');
   });
 });
 
@@ -65,14 +70,16 @@ describe('resolveIosConnection with direct helpers', () => {
   const directApi: AttachedPreviewApi = {
     device: 'DEVICE-A',
     basePath: '',
-    url: 'http://192.168.1.5:3100/helper/DEVICE-A',
+    url: 'http://192.168.1.5:3100',
+    streamUrl: 'http://192.168.1.5:3100/helper/DEVICE-A/stream.mjpeg',
+    wsUrl: 'ws://192.168.1.5:3100/helper/DEVICE-A/ws',
     streamSettingsEndpoint: 'http://192.168.1.5:3100/helper/DEVICE-A/stream-settings',
     axEndpoint: '/ax?device=DEVICE-A',
   };
 
-  test('keeps the advertised helper URLs and derives missing ones from url', () => {
+  test('keeps advertised HTTP URLs on the helper origin and converts the WebSocket route', () => {
     const connection = resolveIosConnection(directApi, mount);
-    expect(connection.url).toBe('http://192.168.1.5:3100/helper/DEVICE-A');
+    expect(connection.url).toBe('http://192.168.1.5:3100');
     expect(connection.streamUrl).toBe('http://192.168.1.5:3100/helper/DEVICE-A/stream.mjpeg');
     expect(connection.wsUrl).toBe('ws://192.168.1.5:3100/helper/ws?device=DEVICE-A');
     expect(connection.streamSettingsUrl).toBe(
@@ -80,9 +87,22 @@ describe('resolveIosConnection with direct helpers', () => {
     );
   });
 
+  test('derives missing stream and WebSocket URLs from the helper URL', () => {
+    const connection = resolveIosConnection(
+      { device: 'DEVICE-A', url: 'http://192.168.1.5:3100/helper/DEVICE-A' },
+      mount,
+    );
+    expect(connection.streamUrl).toBe('http://192.168.1.5:3100/helper/DEVICE-A/stream.mjpeg');
+    expect(connection.wsUrl).toBe('ws://192.168.1.5:3100/helper/ws?device=DEVICE-A');
+  });
+
   test('resolves middleware routes against the mount origin and the server base path', () => {
     const connection = resolveIosConnection(
-      { ...directApi, basePath: '/vendor/serve-sim', axEndpoint: '/vendor/serve-sim/ax?device=DEVICE-A' },
+      {
+        ...directApi,
+        basePath: '/vendor/serve-sim',
+        axEndpoint: '/vendor/serve-sim/ax?device=DEVICE-A',
+      },
       new URL('http://localhost:8081/vendor/serve-sim/'),
     );
     expect(connection.execWsUrl).toBe('ws://localhost:8081/vendor/serve-sim/exec-ws');
@@ -91,7 +111,15 @@ describe('resolveIosConnection with direct helpers', () => {
   });
 
   test('reports no optional URLs that the server did not advertise', () => {
-    const connection = resolveIosConnection({ device: 'DEVICE-A', url: directApi.url }, mount);
+    const connection = resolveIosConnection(
+      {
+        device: directApi.device,
+        url: directApi.url,
+        streamUrl: directApi.streamUrl,
+        wsUrl: directApi.wsUrl,
+      },
+      mount,
+    );
     expect(connection.appStateUrl).toBeNull();
     expect(connection.axUrl).toBeNull();
     expect(connection.streamSettingsUrl).toBeNull();

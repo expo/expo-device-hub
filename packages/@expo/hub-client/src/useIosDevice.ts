@@ -521,11 +521,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Resolve the connection: discover the helper + log/device routes via /api. ──
   //
-  // The Hub starts helpers explicitly (see `startIosHelper`) — it never boots a
-  // sim just by connecting. So when the middleware is reachable but no helper is
-  // attached yet (`/api` → null), we keep polling until the just-started helper
-  // comes up, then resolve its streaming config. An unreachable middleware is
-  // retried: `baseUrl` is never interpreted as a bare helper.
+  // Selecting a target device can start its helper (see `startIosHelper`). When
+  // `/api` has no attached helper yet, request that start once and poll until it
+  // attaches. Without a target device, just poll for an available helper.
+  // Retry an unreachable middleware; `baseUrl` always names the middleware mount.
   useEffect(() => {
     if (!active || !baseUrl) {
       setResolvedConfig(null);
@@ -552,10 +551,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
           return;
         }
-        const c = (await res.json()) as PreviewApi | null;
-        if (isAttachedPreviewApi(c)) {
+        const api = (await res.json()) as PreviewApi | null;
+        if (isAttachedPreviewApi(api)) {
           if (!cancelled) {
-            const resolved = resolveIosConnection(c, mount);
+            const resolved = resolveIosConnection(api, mount);
             setWebRtcCodec(resolved.webRtcCodec);
             setResolvedConfig({
               key: connectionKey(baseUrl, targetDevice, token),
