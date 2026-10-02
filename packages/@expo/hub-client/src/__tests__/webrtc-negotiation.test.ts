@@ -8,6 +8,28 @@ import {
 } from '../webrtc-negotiation.js';
 
 describe("WebRTC offer negotiation", () => {
+  test("retries serve-emu's coded contention response", async () => {
+    let requests = 0;
+    const response = await postWebRtcOffer({
+      url: "https://example.test/webrtc/offer",
+      body: "{}",
+      requestTimeoutMs: 100,
+      busyRetryIntervalMs: 0,
+      busyRetryCount: 1,
+      fetchImpl: async () => {
+        requests++;
+        return requests === 1
+          ? Response.json(
+              { ok: false, code: "webrtc_session_busy", error: "WebRTC signaling already in progress" },
+              { status: 409 },
+            )
+          : Response.json({ type: "answer", sdp: "answer" });
+      },
+    });
+    expect(response.status).toBe(200);
+    expect(requests).toBe(2);
+  });
+
   test("returns a lasting named 409 without retrying it", async () => {
     let requests = 0;
     const response = await postWebRtcOffer({
@@ -23,6 +45,23 @@ describe("WebRTC offer negotiation", () => {
     });
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({ error: "no_panel_streams" });
+    expect(requests).toBe(1);
+  });
+
+  test("does not retry a permanent serve-emu code without an error message", async () => {
+    let requests = 0;
+    const response = await postWebRtcOffer({
+      url: "https://example.test/webrtc/offer",
+      body: "{}",
+      requestTimeoutMs: 100,
+      busyRetryIntervalMs: 0,
+      busyRetryCount: 1,
+      fetchImpl: async () => {
+        requests++;
+        return Response.json({ code: "invalid_offer" }, { status: 409 });
+      },
+    });
+    expect(response.status).toBe(409);
     expect(requests).toBe(1);
   });
 
@@ -81,7 +120,9 @@ describe("WebRTC offer negotiation", () => {
       fetchImpl: async (_url, init) => {
         signals.push(init?.signal as AbortSignal);
         requests++;
-        return new Response(null, { status: requests === 1 ? 409 : 200 });
+        return requests === 1
+          ? Response.json({ error: "webrtc_session_busy" }, { status: 409 })
+          : new Response(null, { status: 200 });
       },
     });
     expect(response.status).toBe(200);

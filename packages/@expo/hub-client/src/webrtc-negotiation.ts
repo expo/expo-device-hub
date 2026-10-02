@@ -81,10 +81,14 @@ export async function closeWebRtcSession({
 async function isSignalingBusy(response: Response): Promise<boolean> {
   const text = await response.clone().text();
   let error: unknown;
+  let code: unknown;
   try {
-    error = (JSON.parse(text) as { error?: unknown } | null)?.error;
+    const body = JSON.parse(text) as { error?: unknown; code?: unknown } | null;
+    error = body?.error;
+    code = body?.code;
   } catch {}
-  return error === undefined || error === "webrtc_session_busy";
+  return code === "webrtc_session_busy" || error === "webrtc_session_busy" ||
+    (code === undefined && error === undefined);
 }
 
 /** Post an SDP offer, retrying while native offer setup is serialized. */
