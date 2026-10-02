@@ -209,6 +209,9 @@ export function toQueryStyleHelperWsUrl(wsUrl: string): string {
 
 /** Resolved connection: where to stream video/input, and how to reach logs/devices. */
 interface ResolvedConfig {
+  /** Discovery request identity; a previous server/device is never current. */
+  baseUrl: string;
+  targetDevice: string | null;
   /** Base serve-sim helper URL used by `/stream.avcc`. */
   url: string;
   streamUrl: string;
@@ -259,7 +262,12 @@ interface PreviewApi {
 }
 
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
-  const { baseUrl, enabled = true, device: targetDevice = null, streamMode } = options;
+  const {
+    baseUrl,
+    enabled = true,
+    device: targetDevice = null,
+    streamMode: requestedStreamMode,
+  } = options;
   const active = enabled && !!baseUrl;
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
@@ -274,7 +282,20 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [eventsEnabled, setEventsEnabled] = useState(false);
   const [activity, setActivity] = useState<DeviceActivity | null>(null);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
-  const [config, setConfig] = useState<ResolvedConfig | null>(null);
+  const [resolvedConfig, setConfig] = useState<ResolvedConfig | null>(null);
+  const config =
+    active &&
+    resolvedConfig &&
+    resolvedConfig.baseUrl === baseUrl &&
+    resolvedConfig.targetDevice === targetDevice
+      ? resolvedConfig
+      : null;
+  const streamCapabilities = config ? iosStreamCapabilities(config.initialStreamSettings) : null;
+  // Preserve supported viewer choices; map unavailable ones to the server's transport.
+  const streamMode =
+    streamCapabilities && !streamCapabilities.modeAvailability[requestedStreamMode]
+      ? (streamCapabilities.modeAvailability.webrtc ? 'webrtc' : 'h264')
+      : requestedStreamMode;
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
@@ -304,7 +325,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
   const [webRtcCodec, setWebRtcCodecState] = useState<DeviceWebRtcCodec>('h264');
   const [activeWebRtcCodec, setActiveWebRtcCodec] = useState<WebRtcCodec>('h264');
-  const [webRtcHttpFallback, setWebRtcHttpFallback] = useState(false);
   const deviceSettingWriteTrackerRef = useRef(new KeyedWriteTracker<DeviceSettingKey>());
   // Async option writes capture their config. Track only committed config so
   // an interrupted concurrent render cannot invalidate a legitimate rollback.
@@ -313,12 +333,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     deviceSettingConfigRef.current = config;
   }, [config]);
   const activityLastSampleAtRef = useRef(0);
-  const useWebRtc = streamMode === 'webrtc' && !webRtcHttpFallback;
-  const wantsAvcc = streamMode === 'h264' || webRtcHttpFallback;
+  const useWebRtc = streamMode === 'webrtc';
+  const wantsAvcc = streamMode === 'h264';
   const useAvcc = wantsAvcc && isAvccSupported() && !avccFallback.fellBack;
   useEffect(() => {
     if (streamMode === 'webrtc') return;
-    setWebRtcHttpFallback(false);
     setActiveWebRtcCodec(webRtcCodec);
   }, [streamMode, webRtcCodec]);
   // True while the in-flight single-finger drag began in the home-indicator band.
@@ -556,7 +575,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const setWebRtcCodec = useCallback((codec: DeviceWebRtcCodec) => {
     setWebRtcCodecState(codec);
     setActiveWebRtcCodec(codec);
-    setWebRtcHttpFallback(false);
   }, []);
 
   const attachLogs = useCallback(() => setLogsEnabled(true), []);
@@ -585,6 +603,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
     let cancelled = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    setConfig(null);
     setStatus('connecting');
     setError(null);
 
@@ -605,6 +624,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             : new URL(path, middlewareUrl).toString()
           : null;
       return {
+        baseUrl,
+        targetDevice,
         url: c.url!,
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
@@ -689,7 +710,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setFps((previous) => (previous === next ? previous : next));
   }, []);
 
-  // ── WebRTC with serve-sim's codec and HTTP fallback policy. ──
+  // ── WebRTC with codec retries, confined to the advertised transport. ──
   const {
     stream: webRtcStream,
     failure: webRtcFailure,
@@ -706,27 +727,28 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     iceServers: config?.webRtcIceServers,
   });
   const handledWebRtcFailureRef = useRef<string | null>(null);
+  const webRtcCodecsExhausted =
+    webRtcFailure?.kind === 'codec' &&
+    webRtcFallbackDecision(webRtcCodec, activeWebRtcCodec, webRtcFailure)?.type === 'switch-to-http';
 
   useEffect(() => {
     if (!useWebRtc || !webRtcFailure) return;
     if (handledWebRtcFailureRef.current === webRtcFailure.sessionId) return;
     handledWebRtcFailureRef.current = webRtcFailure.sessionId;
     const decision = webRtcFallbackDecision(webRtcCodec, activeWebRtcCodec, webRtcFailure);
-    if (!decision) return;
-    if (decision.type === 'switch-to-http') setWebRtcHttpFallback(true);
-    else setActiveWebRtcCodec(decision.codec);
+    if (decision?.type === 'retry-codec') setActiveWebRtcCodec(decision.codec);
   }, [useWebRtc, webRtcFailure, webRtcCodec, activeWebRtcCodec]);
 
   useEffect(() => {
     if (!useWebRtc) return;
-    if (webRtcError) {
+    if (webRtcError || webRtcCodecsExhausted) {
       setStatus('error');
-      setError(webRtcError);
+      setError(webRtcError ?? 'No supported WebRTC codec could establish a video stream.');
     } else if (!webRtcStream) {
       setStatus('connecting');
       setError(null);
     }
-  }, [useWebRtc, webRtcError, webRtcStream]);
+  }, [useWebRtc, webRtcError, webRtcStream, webRtcCodecsExhausted]);
 
   useEffect(() => {
     if (!useWebRtc) return;
@@ -787,7 +809,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // ── H.264 AVCC (WebCodecs) with serve-sim's MJPEG fallback policy. ──
   useEffect(() => {
     dispatchAvccFallback('reset');
-    setWebRtcHttpFallback(false);
     setFps(0);
   }, [streamMode, config?.url, config?.webRtcCodec]);
 
@@ -1336,7 +1357,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setLocation,
     clearLocation,
     ...appPermissions,
-    streamCapabilities: config ? iosStreamCapabilities(config.initialStreamSettings) : null,
+    streamCapabilities,
     screenRecording: null,
     streamSettings,
     streamSettingsPending,
