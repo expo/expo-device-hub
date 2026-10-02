@@ -108,10 +108,10 @@ async function render(
 
 // A serve-sim behind a public mount, the way an EAS Simulator Preview session serves it.
 const IOS_BASE = 'https://sim.test/preview/session';
-const iosApi = (url: URL) =>
-  url.pathname === '/preview/session/api'
+const iosApiAt = (base: string) => (url: URL) =>
+  url.origin === new URL(base).origin && url.pathname === '/preview/session/api'
     ? {
-        url: `${IOS_BASE}/helper/UDID-1`,
+        url: `${base}/helper/UDID-1`,
         device: 'UDID-1',
         basePath: '/preview/session',
         proxyHelpers: true,
@@ -121,6 +121,7 @@ const iosApi = (url: URL) =>
         streamSettingsEndpoint: '/preview/session/helper/UDID-1/stream-settings',
       }
     : undefined;
+const iosApi = iosApiAt(IOS_BASE);
 
 describe('useIosDeviceClient with a session token', () => {
   test('presents the token on every request, socket, and stream it opens', async () => {
@@ -168,5 +169,47 @@ describe('useIosDeviceClient with a session token', () => {
     expect(network.fetches.every((call) => call.authorization === null)).toBe(true);
     expect(network.sockets.every((socket) => socket.protocols === undefined)).toBe(true);
     expect([...network.eventSources, ...network.imageSources].some((url) => url.includes('token='))).toBe(false);
+  });
+
+  // The old config stays in state until the new `/api` answers. Its URLs must not get the new token.
+  test('sends a new token only to the server it belongs to', async () => {
+    const SERVER_A = 'https://a.test/preview/session';
+    const SERVER_B = 'https://b.test/preview/session';
+    // Server B never resolves, so the client keeps polling its `/api`.
+    const network = stubNetwork(iosApiAt(SERVER_A));
+    let options: DeviceConnectionOptions = {
+      baseUrl: SERVER_A,
+      device: 'UDID-1',
+      streamMode: 'mjpeg',
+      token: 'tok-a',
+    };
+    const img = image(network);
+    function Harness() {
+      const { attachVideo } = useIosDeviceClient(options);
+      useLayoutEffect(() => attachVideo(img), [attachVideo]);
+      return null;
+    }
+    await act(async () => {
+      renderer = create(<Harness />);
+    });
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+    expect(network.sockets.length).toBeGreaterThan(0);
+
+    network.fetches.length = 0;
+    network.sockets.length = 0;
+    network.eventSources.length = 0;
+    network.imageSources.length = 0;
+    options = { ...options, baseUrl: SERVER_B, token: 'tok-b' };
+    await act(async () => renderer?.update(<Harness />));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+
+    const toServerA = [
+      ...network.fetches.map((call) => call.url),
+      ...network.sockets.map((socket) => socket.url),
+      ...network.eventSources,
+      ...network.imageSources,
+    ].filter((url) => new URL(url).host === 'a.test');
+    expect(toServerA).toEqual([]);
+    expect(network.fetches).toContainEqual({ url: `${SERVER_B}/api?device=UDID-1`, authorization: 'Bearer tok-b' });
   });
 });

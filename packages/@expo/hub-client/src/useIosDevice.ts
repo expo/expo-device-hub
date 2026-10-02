@@ -241,6 +241,11 @@ interface PreviewApi {
         Partial<DeviceStreamEncoderSettings>);
 }
 
+// The server, device, and token that one resolved config belongs to.
+function connectionKey(baseUrl: string, device: string | null, token: string | null): string {
+  return JSON.stringify([baseUrl, device, token]);
+}
+
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
   const { baseUrl, enabled = true, device: targetDevice = null, streamMode, token = null } = options;
   const active = enabled && !!baseUrl;
@@ -259,7 +264,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [eventsEnabled, setEventsEnabled] = useState(false);
   const [activity, setActivity] = useState<DeviceActivity | null>(null);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
-  const [config, setConfig] = useState<ResolvedConfig | null>(null);
+  // The credentials above follow the options at once, but a new config waits for `/api`. Until
+  // it arrives, the old config is not used, so its URLs never get another connection's token.
+  // Effect cleanups still close the old connections with the credentials they opened them with.
+  const [resolvedConfig, setResolvedConfig] = useState<{
+    key: string;
+    config: ResolvedConfig;
+  } | null>(null);
+  const config =
+    active && baseUrl && resolvedConfig?.key === connectionKey(baseUrl, targetDevice, token)
+      ? resolvedConfig.config
+      : null;
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
@@ -565,7 +580,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // retried: `baseUrl` is never interpreted as a bare helper.
   useEffect(() => {
     if (!active || !baseUrl) {
-      setConfig(null);
+      setResolvedConfig(null);
       setStatus('idle');
       return;
     }
@@ -639,7 +654,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (!cancelled) {
             const resolved = toMiddleware(c);
             setWebRtcCodec(resolved.webRtcCodec);
-            setConfig(resolved);
+            setResolvedConfig({
+              key: connectionKey(baseUrl, targetDevice, token),
+              config: resolved,
+            });
           }
           return;
         }
