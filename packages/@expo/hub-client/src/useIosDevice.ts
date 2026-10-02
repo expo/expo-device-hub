@@ -105,6 +105,7 @@ import { IOS_INPUT_UNAVAILABLE_MESSAGE } from './ios-input-error.js';
 import {
   type WebRtcCodec,
   webRtcFallbackDecision,
+  createLadderBackoff,
 } from './webrtc-fallback.js';
 import { createInputSocket } from './input-socket.js';
 import { WS_MSG_CONFIG, WS_REASON_INPUT_UNAVAILABLE } from './input-protocol.js';
@@ -265,6 +266,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [avccFallback, dispatchAvccFallback] = useReducer(avccFallbackReducer, initialAvccFallback);
   const [webRtcCodec, setWebRtcCodecState] = useState<DeviceWebRtcCodec>('h264');
   const [activeWebRtcCodec, setActiveWebRtcCodec] = useState<WebRtcCodec>('h264');
+  const [webRtcRetryKey, setWebRtcRetryKey] = useState(0);
   const [webRtcHttpFallback, setWebRtcHttpFallback] = useState(false);
   const deviceSettingWriteTrackerRef = useRef(new KeyedWriteTracker<DeviceSettingKey>());
   // Async option writes capture their config. Track only committed config so
@@ -274,14 +276,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     deviceSettingConfigRef.current = config;
   }, [config]);
   const activityLastSampleAtRef = useRef(0);
-  const useWebRtc = streamMode === 'webrtc' && !webRtcHttpFallback;
-  const wantsAvcc = streamMode === 'h264' || webRtcHttpFallback;
+  const streamTransportLocked = config?.transportLocked ?? false;
+  const useWebRtc = streamTransportLocked || (streamMode === 'webrtc' && !webRtcHttpFallback);
+  const wantsAvcc = !streamTransportLocked && (streamMode === 'h264' || webRtcHttpFallback);
   const useAvcc = wantsAvcc && isAvccSupported() && !avccFallback.fellBack;
   useEffect(() => {
-    if (streamMode === 'webrtc') return;
+    if (streamMode === 'webrtc' || streamTransportLocked) return;
     setWebRtcHttpFallback(false);
     setActiveWebRtcCodec(webRtcCodec);
-  }, [streamMode, webRtcCodec]);
+  }, [streamMode, webRtcCodec, streamTransportLocked]);
   // True while the in-flight single-finger drag began in the home-indicator band.
   const edgeGestureRef = useRef(false);
   // Latest screen config, read by the (stable) input callbacks for orientation.
@@ -531,6 +534,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setWebRtcCodecState(codec);
     setActiveWebRtcCodec(codec);
     setWebRtcHttpFallback(false);
+    setWebRtcRetryKey((generation) => generation + 1);
   }, []);
 
   const attachLogs = useCallback(() => setLogsEnabled(true), []);
@@ -632,6 +636,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     markFrameDecoded: markWebRtcFrameDecoded,
     streamStats,
     setStreamStatsEnabled,
+    restart: restartWebRtcStream,
   } = useWebRtcStream({
     offerUrl: config ? `${config.url}/webrtc/offer` : '',
     closeUrl: config ? `${config.url}/webrtc/close` : '',
@@ -641,18 +646,34 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     codec: activeWebRtcCodec,
     iceServers: config?.webRtcIceServers,
     fetchImpl: sessionFetch,
+    transportLocked: streamTransportLocked,
+    retryKey: webRtcRetryKey,
+    raiseH264Level: true,
   });
   const handledWebRtcFailureRef = useRef<string | null>(null);
+  const ladderBackoffRef = useRef(createLadderBackoff());
+  useEffect(() => {
+    ladderBackoffRef.current = createLadderBackoff();
+  }, [config?.url, webRtcCodec, webRtcRetryKey]);
 
   useEffect(() => {
     if (!useWebRtc || !webRtcFailure) return;
     if (handledWebRtcFailureRef.current === webRtcFailure.sessionId) return;
     handledWebRtcFailureRef.current = webRtcFailure.sessionId;
-    const decision = webRtcFallbackDecision(webRtcCodec, activeWebRtcCodec, webRtcFailure);
+    const decision = webRtcFallbackDecision(webRtcCodec, activeWebRtcCodec, webRtcFailure, streamTransportLocked);
     if (!decision) return;
+    const ladderBackoff = ladderBackoffRef.current;
+    ladderBackoff.noteFailure(performance.now());
     if (decision.type === 'switch-to-http') setWebRtcHttpFallback(true);
+    else if (decision.type === 'restart-ladder') {
+      const timer = setTimeout(() => {
+        setActiveWebRtcCodec(decision.codec);
+        restartWebRtcStream();
+      }, ladderBackoff.takeRestartDelayMs());
+      return () => clearTimeout(timer);
+    }
     else setActiveWebRtcCodec(decision.codec);
-  }, [useWebRtc, webRtcFailure, webRtcCodec, activeWebRtcCodec]);
+  }, [useWebRtc, webRtcFailure, webRtcCodec, activeWebRtcCodec, streamTransportLocked, restartWebRtcStream]);
 
   useEffect(() => {
     if (!useWebRtc) return;
@@ -700,6 +721,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
     const onTimeUpdate = () => markFrame();
     const onLoadedData = () => markFrame(0);
+    const onVisibilityChange = () => {
+      if (stopped || document.hidden || videoRef.current !== video || !video.paused) return;
+      void video.play().catch(() => {});
+    };
 
     video.srcObject = webRtcStream;
     if (webRtcStream) {
@@ -707,11 +732,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (supportsVideoFrameCallback) frameCallback = video.requestVideoFrameCallback(onVideoFrame);
       else video.addEventListener('timeupdate', onTimeUpdate);
       video.addEventListener('loadeddata', onLoadedData, { once: true });
+      document.addEventListener('visibilitychange', onVisibilityChange);
       void video.play().catch(() => {});
     }
 
     return () => {
       stopped = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {

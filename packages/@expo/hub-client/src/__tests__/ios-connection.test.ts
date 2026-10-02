@@ -41,6 +41,7 @@ describe('resolveIosConnection with proxied helpers', () => {
       axUrl: 'https://sim.example.test:8443/preview/session/ax?device=DEVICE-A',
       gridApiUrl: 'https://sim.example.test:8443/preview/session/grid/api',
       initialStreamSettings: undefined,
+      transportLocked: false,
       webRtcCodec: 'h264',
     });
   });

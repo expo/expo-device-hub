@@ -1,4 +1,7 @@
+import { raiseH264OfferLevel } from './webrtc-sdp-level.js';
+import { startPlaybackStallWatchdog } from './playback-stall-watchdog.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { readStatsBeforeDeadline } from './bounded-webrtc-stats.js';
 
 import {
   type WebRtcCodec,
@@ -11,7 +14,7 @@ import {
   WebRtcSignalingBusyError,
   WebRtcSignalingTimeoutError,
 } from './webrtc-negotiation.js';
-import { useWebRtcStreamStats, type WebRtcStatsConnection } from './stream-stats.js';
+import { requestWebRtcServerStats, useWebRtcStreamStats, type SubscribeClientStats, type WebRtcStatsConnection } from './stream-stats.js';
 import {
   observeWebRtcRestartKey,
   type WebRtcRestartKey,
@@ -73,24 +76,26 @@ export function buildWebRtcOfferPayload({
   codec,
   iceServers,
   sendIceServersInOffer = true,
+  raiseH264Level = false,
 }: {
   description: RTCSessionDescriptionInit;
   sessionId: string;
   codec: WebRtcCodec;
   iceServers: WebRtcIceServer[];
   sendIceServersInOffer?: boolean;
+  raiseH264Level?: boolean;
 }): Record<string, unknown> {
   return {
     type: description.type,
-    sdp: description.sdp,
+    sdp: raiseH264Level && codec === 'h264' && description.sdp ? raiseH264OfferLevel(description.sdp) : description.sdp,
     sessionId,
     codec,
     ...(sendIceServersInOffer ? { iceServers } : {}),
   };
 }
 
-export function isRetryableWebRtcOfferStatus(status: number): boolean {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
+export function isRetryableWebRtcOfferStatus(status: number, transportLocked = false): boolean {
+  return (transportLocked && status === 404) || status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
 export function shouldFallbackCodecAfterFirstFrameTimeout(
@@ -108,10 +113,10 @@ export async function videoRtpArriving(pc: RTCPeerConnection | null): Promise<bo
   if (!pc) return false;
   try {
     let arriving = false;
-    (await pc.getStats()).forEach((entry) => {
+    (await readStatsBeforeDeadline(pc))?.forEach((entry) => {
       if (entry.type !== 'inbound-rtp') return;
-      const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number };
-      if (video.kind !== 'video') return;
+      const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number; mediaType?: string };
+      if (video.kind !== 'video' && video.mediaType !== 'video') return;
       if ((video.framesReceived ?? 0) > 0) arriving = true;
     });
     return arriving;
@@ -141,10 +146,14 @@ export function useWebRtcStream({
   iceTransportPolicy = 'all',
   sendIceServersInOffer = true,
   allowCodecFallback = true,
+  expectContinuousFrames = true,
   onKeyframeNeeded,
   onBeforeDisconnect,
   restartKey = null,
   fetchImpl = fetch,
+  transportLocked = false,
+  retryKey = 0,
+  raiseH264Level = false,
 }: {
   offerUrl: string;
   closeUrl: string;
@@ -158,6 +167,8 @@ export function useWebRtcStream({
   iceTransportPolicy?: RTCIceTransportPolicy;
   sendIceServersInOffer?: boolean;
   allowCodecFallback?: boolean;
+  /** False for sources that emit frames only when the display changes. */
+  expectContinuousFrames?: boolean;
   onKeyframeNeeded?: () => void;
   /** Preserve the displayed frame before closing the current peer. */
   onBeforeDisconnect?: () => void;
@@ -165,6 +176,11 @@ export function useWebRtcStream({
   restartKey?: WebRtcRestartKey;
   /** Sends a gated backend's session token; plain `fetch` by default. */
   fetchImpl?: SessionFetch;
+  transportLocked?: boolean;
+  /** Consumer-owned retries, including reselecting the current codec. */
+  retryKey?: number;
+  /** serve-sim accepts asymmetric H.264 levels beyond Chrome's default 3.1. */
+  raiseH264Level?: boolean;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -182,12 +198,19 @@ export function useWebRtcStream({
   const firstFrameDecodedRef = useRef(false);
   const presentedFramesRef = useRef(0);
   const transportRetryAttemptRef = useRef(0);
+  const stallReconnectAtRef = useRef<number | null>(null);
+  const statsListenersRef = useRef(new Set<(report: RTCStatsReport, at: number) => void>());
+  const subscribeStats = useCallback<SubscribeClientStats>((listener) => {
+    statsListenersRef.current.add(listener);
+    return () => { statsListenersRef.current.delete(listener); };
+  }, []);
   const streamStats = useWebRtcStreamStats(
     statsConnection,
     statsUrl,
     presentedFramesRef,
     streamStatsEnabled,
     fetchImpl,
+    subscribeStats,
   );
 
   const markFrameDecoded = useCallback((presentedFrameDelta = 1) => {
@@ -212,17 +235,23 @@ export function useWebRtcStream({
 
   useEffect(() => {
     transportRetryAttemptRef.current = 0;
+    stallReconnectAtRef.current = null;
   }, [
     enabled,
     offerUrl,
     closeUrl,
     closeBeaconUrl,
+    statsUrl,
     codec,
     iceServers,
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    expectContinuousFrames,
     restartState.generation,
+    transportLocked,
+    retryKey,
+    raiseH264Level,
   ]);
 
   useEffect(() => {
@@ -248,6 +277,7 @@ export function useWebRtcStream({
     // is not mistaken for a broken codec (serve-sim #161). Bounded: an
     // undecodable stream still falls back.
     let firstFrameGraceUsed = false;
+    let firstFrameGeneration = 0;
     const lifecycleController = new AbortController();
     const sessionId = createSessionId();
     const servers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS;
@@ -276,6 +306,7 @@ export function useWebRtcStream({
     window.addEventListener('beforeunload', releaseOnPageHide);
 
     const clearFirstFrameTimeout = () => {
+      firstFrameGeneration += 1;
       if (firstFrameTimeoutRef.current === undefined) return;
       window.clearTimeout(firstFrameTimeoutRef.current);
       firstFrameTimeoutRef.current = undefined;
@@ -342,7 +373,7 @@ export function useWebRtcStream({
 
     const armFirstFrameTimeout = () => {
       if (
-        stopped ||
+        stopped || failing || document.hidden ||
         firstFrameDecodedRef.current ||
         !trackReceived ||
         !connectionReady ||
@@ -353,13 +384,22 @@ export function useWebRtcStream({
       firstFrameTimeoutRef.current = window.setTimeout(() => {
         firstFrameTimeoutRef.current = undefined;
         if (stopped || firstFrameDecodedRef.current) return;
-        const state = peer?.connectionState ?? 'closed';
-        void videoRtpArriving(peer).then((mediaArriving) => {
-          if (stopped || firstFrameDecodedRef.current || firstFrameTimeoutRef.current !== undefined) {
-            return;
+        const reading = firstFrameGeneration;
+        void (async () => {
+          const mediaArriving = await videoRtpArriving(peer);
+          if (stopped || failing || firstFrameDecodedRef.current || reading !== firstFrameGeneration) return;
+          let senderEncoding: boolean | null = null;
+          if (!mediaArriving && statsUrl) {
+            try {
+              const sender = await requestWebRtcServerStats(statsUrl, sessionId, AbortSignal.timeout(2_000), fetchImpl);
+              const encoded = sender.encoder?.framesEncoded;
+              senderEncoding = typeof encoded === 'number' ? encoded > 0 : null;
+            } catch {}
           }
+          if (stopped || failing || document.hidden || firstFrameDecodedRef.current || reading !== firstFrameGeneration) return;
+          const state = peer?.connectionState ?? 'closed';
           const disposition = webRtcFailureDisposition('first-frame-timeout', state, {
-            mediaArriving,
+            mediaArriving, senderEncoding,
           });
           if (disposition === 'wait' && !firstFrameGraceUsed) {
             firstFrameGraceUsed = true;
@@ -370,9 +410,28 @@ export function useWebRtcStream({
           } else {
             retryTransport('WebRTC did not establish a video path.');
           }
-        });
+        })();
       }, FIRST_FRAME_TIMEOUT_MS);
     };
+
+    const readable = () => !stopped && !failing && peer !== null && !document.hidden;
+    const stall = startPlaybackStallWatchdog({
+      peer: () => peer,
+      readable,
+      judgeable: () => readable() && peer?.connectionState === 'connected' && firstFrameDecodedRef.current,
+      publish: (report, at) => { for (const listener of statsListenersRef.current) listener(report, at); },
+      reconnectedAt: stallReconnectAtRef,
+      failCodec: () => allowCodecFallback ? failCodec() : retryTransport('WebRTC playback stalled.'),
+      retryTransport,
+      expectContinuousFrames,
+    });
+
+    const onVisibilityChange = () => {
+      clearFirstFrameTimeout();
+      firstFrameGraceUsed = false;
+      if (!document.hidden) armFirstFrameTimeout();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const waitForIce = (connection: RTCPeerConnection) =>
       new Promise<void>((resolve) => {
@@ -459,6 +518,7 @@ export function useWebRtcStream({
               codec,
               iceServers: servers,
               sendIceServersInOffer,
+              raiseH264Level,
             }),
           ),
         });
@@ -466,7 +526,7 @@ export function useWebRtcStream({
           const status = response.status;
           await response.body?.cancel();
           const message = `WebRTC offer failed: HTTP ${status}.`;
-          if (isRetryableWebRtcOfferStatus(status)) retryTransport(message);
+          if (isRetryableWebRtcOfferStatus(status, transportLocked)) retryTransport(message);
           else failPermanently(message);
           return;
         }
@@ -497,6 +557,8 @@ export function useWebRtcStream({
     return () => {
       stopped = true;
       onBeforeDisconnect?.();
+      stall.stop();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('pagehide', releaseOnPageHide);
       window.removeEventListener('beforeunload', releaseOnPageHide);
       lifecycleController.abort();
@@ -515,17 +577,22 @@ export function useWebRtcStream({
     offerUrl,
     closeUrl,
     closeBeaconUrl,
+    statsUrl,
     codec,
     iceServers,
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    expectContinuousFrames,
     onKeyframeNeeded,
     onBeforeDisconnect,
     retryGeneration,
     restartState.generation,
     fetchImpl,
+    transportLocked,
+    retryKey,
+    raiseH264Level,
   ]);
 
-  return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };
+  return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled, subscribeStats };
 }
