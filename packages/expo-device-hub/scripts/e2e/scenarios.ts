@@ -233,6 +233,21 @@ export async function runScenarios() {
       const codec = inbound?.codecId ? report.get(inbound.codecId) : undefined;
       assert(codec?.mimeType?.toLowerCase() === "video/h264", "Actual inbound codec is H264");
     });
+    await check("Foreground recovery resumes paused video on the same peer", async () => {
+      const element = video();
+      const peer = window.__hubE2E.peers.at(-1);
+      assert(element && peer?.connectionState === "connected", "Live video is mounted");
+      element.pause();
+      assert(element.paused, "The actual video element pauses");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await until(
+        () => element.paused,
+        (paused) => !paused,
+        "Foreground video resumes",
+      );
+      await advancingVideo();
+      assert(window.__hubE2E.peers.at(-1) === peer, "Resume preserves the healthy peer");
+    });
     await check("Keyboard reaches native UIKit through DeviceScreen", async () => {
       await until(
         state,
