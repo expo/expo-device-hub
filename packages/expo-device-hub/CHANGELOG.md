@@ -1,5 +1,19 @@
 # expo-device-hub
 
+## 0.14.0
+
+### Minor Changes
+
+- fec1fc2: The vendored serve-emu now accepts only `POST /api/screenshot`; `GET` returns 405.
+- ca5ae0e: Show a screenshot toast in the dashboard with a thumbnail, a "Download again" action, and the session artifact outcome, in place of the status line under the controls.
+- f68dd10: Save preview screenshots to `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` when it is
+  set. On iOS, each manual screenshot appears as an event.
+- a68a224: Add network capture for iOS simulators. `--network-capture` records HTTP(S) traffic from third-party apps through a local mitmproxy, metadata only by default; `--network-capture-field` opts into headers, query values, and bodies, with credential headers redacted. Capture requires mitmproxy. On a host reachable beyond loopback, serve-sim allows it only with `--require-token`, and expo-device-hub, which has no token gate, refuses it.
+
+### Patch Changes
+
+- 08a589f: An ungated preview now answers only for `localhost` and IP addresses. Other `Host` headers get 403, which stops a DNS rebinding page from reading the session token. Pass `--allow-any-host-when-insecure` (`allowAnyHostWhenInsecure` when embedding) to answer for any name; that is insecure without `--require-token`. Token-gated previews are unchanged.
+
 ## 0.13.0
 
 ### Minor Changes
