@@ -31,6 +31,21 @@ export function encodeWsMessage(tag: number, payload: object): Uint8Array<ArrayB
   return msg;
 }
 
+/** Commands awaiting a reply must fail on disconnect instead of replaying on reconnect. */
+export function trySendWsMessage(
+  ws: WsSendTarget | null | undefined,
+  tag: number,
+  payload: object,
+): boolean {
+  if (ws?.readyState !== WS_OPEN_READY_STATE) return false;
+  try {
+    ws.send(encodeWsMessage(tag, payload).buffer);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function enqueueWsMessage(
   queue: QueuedWsMessage[],
   message: QueuedWsMessage,
