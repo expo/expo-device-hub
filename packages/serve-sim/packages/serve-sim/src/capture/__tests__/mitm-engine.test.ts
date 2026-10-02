@@ -167,6 +167,12 @@ describe("describeFailure", () => {
     expect(out).toContain("Errno 61");
   });
 
+  test("names an upstream proxy that refused the tunnel, rather than an absent listener", () => {
+    const out = describeFailure("Upstream proxy 127.0.0.1:8899 refused HTTP CONNECT request: 407 Proxy Authentication Required");
+    expect(out).toStartWith("The upstream proxy refused the connection: 407 Proxy Authentication Required.");
+    expect(out).not.toContain("Nothing was listening");
+  });
+
   test("explains an unresolvable host", () => {
     expect(describeFailure("[Errno 8] nodename nor servname provided, or not known")).toContain(
       "could not be resolved",

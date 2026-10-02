@@ -47,6 +47,7 @@ import {
   waitForLaunchUpdates,
 } from "./launch-manager";
 import { parseCaptureFields } from "./capture/fields";
+import { parseCaptureProxy } from "./capture/upstream";
 import { killOwnListeners } from "./ports";
 import { BOOT_TIMEOUT_MS, findBootedDevice, resolveDevice } from "./device";
 import { openSimulatorHost } from "./simulator-host";
@@ -2061,6 +2062,10 @@ program
       "HTTPS is decrypted for the whole boot session and certificate-pinned apps will refuse to connect. " +
       "Requires mitmproxy. Relaunch apps after enabling so they pick up the proxy.",
   )
+  .option(
+    "--network-capture-proxy <url>",
+    "Forward captured traffic through one HTTP proxy (http://[user:password@]host:port), or none for direct. Defaults to direct.",
+  )
   .option("--transport <http|webrtc>", "Stream transport", "http")
   .option("--install-app-path <path>", "Install this .app after boot, before any requested app launch.")
   .option(
@@ -2219,6 +2224,12 @@ Examples:
       validatedAdditionalDylibs();
     } catch (error) {
       printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+      process.exit(1);
+    }
+    try {
+      captureRuntime.setUpstream(parseCaptureProxy(opts.networkCaptureProxy));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
       process.exit(1);
     }
     if (opts.transport !== "http" && opts.transport !== "webrtc") {
