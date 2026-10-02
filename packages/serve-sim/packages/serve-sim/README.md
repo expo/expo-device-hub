@@ -115,6 +115,9 @@ Options:
   -q, --quiet         JSON-only output
       --no-preview    Skip the web UI; stream in foreground only
       --network-capture
+
+      --network-capture-proxy <url>
+          Forward captured traffic through an HTTP proxy (default: direct)
                       Record HTTP(S) for selected devices, including already booted ones
                       (requires mitmproxy; see Network capture below)
       --network-capture-field <field>
@@ -296,6 +299,7 @@ serve-sim capture har -o ./capture.har
 | Flag / command | What it does |
 | --- | --- |
 | `--network-capture` | Start capture on selected devices, including already booted ones |
+| `--network-capture-proxy <url>` | Forward captured traffic through one HTTP proxy, optionally with Basic credentials; `none` selects direct |
 | `--network-capture-field <field>` | Keep `header`, `query`, `request-body`, and/or `response-body` beyond metadata (repeatable or comma-separated). Default: none |
 | `serve-sim capture har -o <path>` | Copy the session's recorded requests, then follow the live stream into a HAR (and JSON next to it). Keeps the newest 10,000 requests |
 
@@ -304,6 +308,11 @@ Use **Enable capture** in the tools panel to start without rebooting. Turning ca
 While capturing, the tools panel lists requests. Session files live under `$TMPDIR/serve-sim/capture-<udid>/` and are removed when capture stops. Capture HTTP routes require the preview session Bearer token.
 
 Requires [mitmproxy](https://mitmproxy.org/) on the host. Relaunch apps after enabling so they pick up the proxy. Details on redaction and risks: [docs/network-capture-security.md](docs/network-capture-security.md).
+
+Captured requests go direct unless `--network-capture-proxy http://host:port` names an upstream HTTP
+proxy. Basic proxy authentication is supported with
+`--network-capture-proxy http://user:password@host:port`. Set `none` to send captured traffic direct.
+macOS proxy settings, PAC files, and auto-discovery are not read.
 
 ## Connectors
 
