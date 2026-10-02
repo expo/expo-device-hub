@@ -713,6 +713,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
     const onTimeUpdate = () => markFrame();
     const onLoadedData = () => markFrame(0);
+    const onVisibilityChange = () => {
+      if (stopped || document.hidden || videoRef.current !== video || !video.paused) return;
+      void video.play().catch(() => {});
+    };
 
     video.srcObject = webRtcStream;
     if (webRtcStream) {
@@ -720,11 +724,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (supportsVideoFrameCallback) frameCallback = video.requestVideoFrameCallback(onVideoFrame);
       else video.addEventListener('timeupdate', onTimeUpdate);
       video.addEventListener('loadeddata', onLoadedData, { once: true });
+      document.addEventListener('visibilitychange', onVisibilityChange);
       void video.play().catch(() => {});
     }
 
     return () => {
       stopped = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
