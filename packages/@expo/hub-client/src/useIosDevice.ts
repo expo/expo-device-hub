@@ -416,7 +416,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
     const udid = config?.device ?? targetDevice;
-    return fetchScreenshot(baseUrl, udid, sessionFetch);
+    return fetchScreenshot(publicServeSimMount(baseUrl).toString(), udid, sessionFetch);
   }, [baseUrl, targetDevice, config, sessionFetch]);
 
   // Apply any serve-sim UI option over its authenticated exec-ws request

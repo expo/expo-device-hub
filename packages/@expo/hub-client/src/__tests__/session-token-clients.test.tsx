@@ -123,6 +123,20 @@ const iosApi = (url: URL) =>
     : undefined;
 
 describe('useIosDeviceClient with a session token', () => {
+  test('screenshots use the same canonical public mount as discovery', async () => {
+    const network = stubNetwork(iosApi);
+    const client = await render(
+      useIosDeviceClient,
+      { baseUrl: `${IOS_BASE}?ignored=1#fragment`, device: 'UDID-1', token: 'tok-1', streamMode: 'mjpeg' },
+      network,
+    );
+    await client.screenshot();
+    expect(network.fetches.at(-1)).toEqual({
+      url: `${IOS_BASE}/api/screenshot?device=UDID-1`,
+      authorization: 'Bearer tok-1',
+    });
+  });
+
   test('presents the token on every request, socket, and stream it opens', async () => {
     const network = stubNetwork(iosApi);
 
