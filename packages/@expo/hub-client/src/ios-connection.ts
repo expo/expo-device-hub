@@ -99,7 +99,7 @@ function resolveHelperUrls(api: AttachedPreviewApi, publicMount: URL): HelperUrl
       wsUrl: httpToWebSocketUrl(
         publicUrlForRoute(publicMount, 'helper/ws', { device: api.device }),
       ),
-      streamSettingsUrl: `${helperUrl}/stream-settings`,
+      streamSettingsUrl: api.streamSettingsEndpoint ? `${helperUrl}/stream-settings` : null,
     };
   }
 
