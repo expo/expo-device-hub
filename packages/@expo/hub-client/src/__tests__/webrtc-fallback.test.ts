@@ -2,11 +2,30 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   nextWebRtcFallbackCodec,
+  createLadderBackoff,
   webRtcFailureDisposition,
   webRtcFallbackDecision,
 } from '../webrtc-fallback.js';
 
 describe('WebRTC fallback', () => {
+  test('locked ladder walks retain backoff until a sustained recovery', () => {
+    const backoff = createLadderBackoff();
+    const delays = [];
+    for (let walk = 0; walk < 7; walk++) {
+      backoff.noteFailure(walk * 40_000);
+      delays.push(backoff.takeRestartDelayMs());
+    }
+    expect(delays).toEqual([2_000, 4_000, 8_000, 16_000, 30_000, 30_000, 30_000]);
+    backoff.noteFailure(330_000);
+    expect(backoff.takeRestartDelayMs()).toBe(2_000);
+  });
+  test('keeps permanent failure visible on a locked transport', () => {
+    expect(webRtcFallbackDecision('h264', 'h264', { kind: 'permanent' }, true)).toBeNull();
+  });
+
+  test('restarts an exhausted locked ladder instead of requesting HTTP', () => {
+    expect(webRtcFallbackDecision('h264', 'vp9', { kind: 'codec', codec: 'vp9' }, true)).toEqual({ type: 'restart-ladder', codec: 'h264' });
+  });
   test('tries VP8 and VP9 after H.264', () => {
     expect(nextWebRtcFallbackCodec('h264', 'h264')).toBe('vp8');
     expect(nextWebRtcFallbackCodec('h264', 'vp8')).toBe('vp9');
