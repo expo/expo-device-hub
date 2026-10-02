@@ -407,6 +407,29 @@ test("first-frame watchdog pauses while hidden and restarts on resume", async ()
   expect(timers.size).toBe(0);
 });
 
+test("foreground resume gets one fresh first-frame grace window", async () => {
+  await start();
+  fireTimer(4_000);
+  await flush();
+  resolveStats(10);
+  await flush();
+  visibility = "hidden";
+  visibilityListener();
+  visibility = "visible";
+  visibilityListener();
+  fireTimer(4_000);
+  await flush();
+  resolveStats(20);
+  await flush();
+  expect(failures()).toEqual([]);
+  expect([...timers.values()].some(timer => timer.delay === 4_000)).toBe(true);
+  fireTimer(4_000);
+  await flush();
+  resolveStats(30);
+  await flush();
+  expect(failures()).toMatchObject([{ kind: "codec", codec: "h264" }]);
+});
+
 test("first-frame decision uses connection state when stats arrive", async () => {
   await start(); fireTimer(4_000); await flush();
   peers[0]!.connectionState = "disconnected"; resolveStats(0); await flush();

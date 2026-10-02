@@ -421,6 +421,7 @@ export function useWebRtcStream({
 
     const onVisibilityChange = () => {
       clearFirstFrameTimeout();
+      firstFrameGraceUsed = false;
       if (!document.hidden) armFirstFrameTimeout();
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
