@@ -15,7 +15,7 @@ This monorepo contains the Hub, the browser libraries that connect to devices, a
 
 Read this document first. It tells you which package owns what, how the packages connect, and which constraints you must not simplify away. Each section names where to look next.
 
-> **Provenance.** An agent wrote this draft from the code, the package `AGENTS.md` files, and the git history. `[observed]` claims give their source. `[confirmed]` claims name a human and a date. `[inferred]` claims are guesses that a maintainer must confirm or delete. This document stays `Draft` until every `[inferred]` claim is resolved.
+> **Provenance.** An agent wrote this draft from the code, the package `AGENTS.md` files, and the git history. `[observed]` claims give their source. `[confirmed]` claims name a human and a date. `[inferred]` claims are guesses that a maintainer must confirm or delete. No `[inferred]` claims remain. The maintainer decides when this document becomes `Active`.
 
 ## Packages
 
@@ -58,7 +58,11 @@ The dashboard (`src/Dashboard.tsx`) renders Expo DOM components with inline styl
 
 serve-sim and serve-emu speak different wire protocols. serve-sim streams MJPEG or H.264 and takes binary touch packets. serve-emu streams H.264 for WebCodecs and takes JSON gestures. `@expo/hub-client` hides this difference behind one client contract [observed: `README.md` "hub-client"].
 
-[inferred] The two protocols differ because the servers started as separate projects, and nobody has unified them yet.
+The two protocols differ mainly because the servers started as separate projects [confirmed] (Krystof Woldrich, 2026-10-02).
+
+### Direction: one device protocol
+
+The goal is to unify the serve-sim and serve-emu protocols. Until then, every new feature must behave the same on iOS and Android, so that unification stays possible [confirmed] (Krystof Woldrich, 2026-10-02). See [constraint 10](#same-behavior).
 
 ## Constraints you must not simplify away
 
@@ -73,13 +77,14 @@ Each item names the code that depends on it. Do not "clean up" this code without
 7. <a id="sim-test-isolation"></a>**serve-sim tests never touch another session's simulator.** `bun run test` puts an `xcrun` shim on `PATH` that refuses `simctl`. `bun run test:e2e` requires `SERVE_SIM_TEST_UDID` and a private state directory. This is because other agents may keep simulators running on the same machine [observed: `packages/serve-sim/AGENTS.md` "Commands"].
 8. <a id="sim-proxy-upgrades"></a>**With `proxyHelpers`, WebSocket upgrades must reach the serve-sim middleware.** If they do not, the page still shows video over HTTP, but simulator input and DevTools stop working [observed: `packages/serve-sim/packages/serve-sim/README.md` "proxyHelpers"]. In the Hub, `simWebSocketHandler` does this.
 9. <a id="native-reload"></a>**The serve-sim N-API addon loads once per process.** After a native rebuild, restart any running serve-sim process before you test [observed: `packages/serve-sim/AGENTS.md` "Native build notes"].
+10. <a id="same-behavior"></a>**A new feature behaves the same on iOS and Android.** Design it for both servers and give it the same behavior on both, even where the wire protocols differ today. A feature that works one way on serve-sim and another way on serve-emu works against the protocol unification [confirmed] (Krystof Woldrich, 2026-10-02).
 
 ## History that still shapes the code
 
 - serve-sim is an Expo-maintained fork of [EvanBacon/serve-sim](https://github.com/EvanBacon/serve-sim) [observed: `packages/serve-sim/packages/serve-sim/README.md`]. It was vendored on 2026-06-10, became a git submodule on 2026-07-09, and moved into this repo in #79 (2026-09-23). It is published as `@expo/serve-sim` from this repo since #125 [observed: git history].
 - serve-emu came from `expo/serve-emu` and moved into this repo in #78 (2026-09-09) [observed: git history, PR #78].
 - Both moves kept the upstream directory layout, which is why the packages sit at `packages/serve-sim/packages/serve-sim` and `packages/serve-emu/packages/serve-emu` [observed: PR #78 and #79 descriptions].
-- [inferred] The servers moved into this repo so that a change to the Hub and a server can land in one PR and one release.
+- The servers moved into this repo so that one PR can change all the projects at once. This makes development faster and stops the implementations in the packages from diverging [confirmed] (Krystof Woldrich, 2026-10-02).
 
 ## Why one LLP corpus for the whole repo
 
@@ -102,10 +107,12 @@ These documents are not LLPs yet. Follow-on LLPs will convert or link them.
 ## Known drift
 
 - The root `README.md` still calls `packages/serve-sim` "Vendored source for `@expo/serve-sim`", but the package is now maintained and published from this repo [observed: #79, #125].
-- The root `README.md` lists `packages/expo-serve-emu`, but that directory does not exist [observed: `ls packages`].
+- The root `README.md` lists `packages/expo-serve-emu`, but that directory does not exist. It was merged into `serve-emu` in `599175f5` [observed: `ls packages`, git history].
+
+#244 fixes both. Remove this section when #244 merges.
 
 ## Open questions for the maintainer
 
-1. Is the `[inferred]` reason for the two wire protocols correct, and should they be unified?
-2. Is the `[inferred]` reason for moving the servers into this repo correct?
-3. Which existing doc should become the first subsystem LLP?
+1. Which parts of the `@expo/hub-client` public API must an agent never rename or change without a coordinated change in the Expo dashboard website?
+2. Will the nested `packages/serve-sim/packages/serve-sim` and `packages/serve-emu/packages/serve-emu` layout be flattened? Until this is answered, treat the layout as in flux, not as a decision.
+3. Is publishing serve-emu as `@expo/serve-emu` still planned? `RELEASING.md` lists it as private.
