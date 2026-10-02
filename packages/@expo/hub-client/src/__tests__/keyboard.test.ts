@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 
-import { androidMessageForKeyboardInput, hidUsageForCode } from '../keyboard';
-import { type KeyboardInput } from '../types';
+import { androidMessageForKeyboardInput, hidUsageForCode } from '../keyboard.js';
+import { type KeyboardInput } from '../types.js';
 
 const input = (key: string, code = key, phase: KeyboardInput['phase'] = 'down'): KeyboardInput => ({
   key,

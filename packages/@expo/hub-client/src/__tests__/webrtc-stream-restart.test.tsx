@@ -1,12 +1,12 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { androidStreamSettingsPatch, parseAndroidStreamSettings } from '../android-stream-settings';
-import { deviceScreenPresentsMedia } from '../DeviceScreen';
-import { useAndroidDeviceClient } from '../useAndroidDevice';
-import { useStreamSettingsResource } from '../useStreamSettingsResource';
-import { useWebRtcStream } from '../useWebRtcStream';
-import { createGlobalStubs } from './test-globals';
+import { androidStreamSettingsPatch, parseAndroidStreamSettings } from '../android-stream-settings.js';
+import { deviceScreenPresentsMedia } from '../DeviceScreen.js';
+import { useAndroidDeviceClient } from '../useAndroidDevice.js';
+import { useStreamSettingsResource } from '../useStreamSettingsResource.js';
+import { useWebRtcStream } from '../useWebRtcStream.js';
+import { createGlobalStubs } from './test-globals.js';
 
 // These tests exercise hook lifecycles with controlled transport/media events.
 // react-test-renderer keeps them in the existing Bun runner without adding a

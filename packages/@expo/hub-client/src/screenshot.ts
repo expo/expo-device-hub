@@ -1,5 +1,5 @@
-import { apiUrl } from './android-api-url';
-import { type ScreenshotArtifact, type ScreenshotCapture } from './types';
+import { apiUrl } from './android-api-url.js';
+import { type ScreenshotArtifact, type ScreenshotCapture } from './types.js';
 
 type ScreenshotFetch = (input: string, init?: RequestInit) => Promise<Response>;
 

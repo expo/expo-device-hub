@@ -1,0 +1,49 @@
+name: Checks
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  pull_request_labeled:
+    labels: [eas-approved]
+
+concurrency:
+  cancel_in_progress: true
+  group: ${{ workflow.filename }}-${{ github.ref }}
+
+defaults:
+  tools:
+    node: 24
+    bun: 1.3.14
+
+jobs:
+  check:
+    name: check
+    runs_on: linux-medium
+    steps:
+      - uses: eas/checkout
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      # --only prevents dependencies from reintroducing the macOS-only serve-sim build.
+      - name: Build packages (excluding serve-sim)
+        run: bun run build --filter='!@expo/serve-sim' --only
+
+      # --only skips the native serve-sim build; its typecheck only needs sources.
+      - name: Typecheck
+        run: bunx turbo run typecheck --only
+
+      - name: Test
+        run: bun run test
+
+      - name: Serve-emu critical coverage
+        run: bun run --filter serve-emu coverage
+
+      - name: Serve-emu documentation and package checks
+        run: |
+          bun run --filter serve-emu docs:check
+          bun run --filter serve-emu test:package

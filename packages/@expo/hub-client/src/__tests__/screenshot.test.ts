@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { fetchScreenshot } from '../screenshot';
+import { fetchScreenshot } from '../screenshot.js';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
 

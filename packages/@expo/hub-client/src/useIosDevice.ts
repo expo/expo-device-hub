@@ -27,14 +27,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 
-import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
+import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback.js';
 import {
   appendActivitySample,
   parseActivityHostCores,
   parseActivitySample,
-} from './activity';
-import { type AccessibilityLoader, loadIosAccessibility } from './accessibility';
-import { isAvccSupported } from './avcc';
+} from './activity.js';
+import { type AccessibilityLoader, loadIosAccessibility } from './accessibility.js';
+import { isAvccSupported } from './avcc.js';
 import {
   HID_EDGE_BOTTOM,
   homeIndicatorEdge,
@@ -42,18 +42,18 @@ import {
   rawEdgeForDisplayEdge,
   rawPointForDisplayPoint,
   streamGeometry,
-} from './orientation';
-import { startIosHelper } from './connections';
+} from './orientation.js';
+import { startIosHelper } from './connections.js';
 import {
   clearIosEventLogState,
   createIosEventLogState,
   mergeIosEventLogPayload,
-} from './ios-events';
-import { hostUiRequest, runHostAction } from './exec-ws';
-import { getIosAppDetails } from './ios-app-details';
-import { clearIosLocation, setIosLocation } from './ios-location';
-import { fetchScreenshot } from './screenshot';
-import { hidUsageForCode } from './keyboard';
+} from './ios-events.js';
+import { hostUiRequest, runHostAction } from './exec-ws.js';
+import { getIosAppDetails } from './ios-app-details.js';
+import { clearIosLocation, setIosLocation } from './ios-location.js';
+import { fetchScreenshot } from './screenshot.js';
+import { hidUsageForCode } from './keyboard.js';
 import {
   type ConnectionStatus,
   type DeviceActivity,
@@ -77,33 +77,36 @@ import {
   type ScreenshotCapture,
   type ScrollSample,
   type TouchSample,
-} from './types';
-import { NO_PENDING_CAMERA_WRITES } from './device-camera';
-import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
-import { KeyedWriteTracker } from './keyed-write-tracker';
-import { createPacedKeySender } from './paced-key-sender';
-import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config';
-import { type ParsedSseBlock, drainSseChunk } from './sse';
-import { normalizeDeviceStreamSettings } from './stream-settings';
-import { useAccessibility } from './useAccessibility';
-import { useAppPermissions } from './useAppPermissions';
-import { useAvccStream } from './useAvccStream';
-import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
-import { useStreamSettingsResource } from './useStreamSettingsResource';
-import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
-import { presentedVideoFrameDelta } from './video-frame-metadata';
+} from './types.js';
+import { NO_PENDING_CAMERA_WRITES } from './device-camera.js';
+import { mergeAuthoritativeDeviceSetting } from './device-setting-writes.js';
+import { IOS_INPUT_UNAVAILABLE_MESSAGE, iosInputCloseError } from './ios-input-error.js';
+import { KeyedWriteTracker } from './keyed-write-tracker.js';
+import { createPacedKeySender } from './paced-key-sender.js';
+import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config.js';
+import { type ParsedSseBlock, drainSseChunk } from './sse.js';
+import { normalizeDeviceStreamSettings } from './stream-settings.js';
+import { useAccessibility } from './useAccessibility.js';
+import { useAppPermissions } from './useAppPermissions.js';
+import { useAvccStream } from './useAvccStream.js';
+import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation.js';
+import { useStreamSettingsResource } from './useStreamSettingsResource.js';
+import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream.js';
+import { presentedVideoFrameDelta } from './video-frame-metadata.js';
 import {
   type WebRtcCodec,
   webRtcFallbackDecision,
-} from './webrtc-fallback';
+} from './webrtc-fallback.js';
 import {
   flushWsMessageQueue,
   type QueuedWsMessage,
   sendOrQueueWsMessage,
-} from './ws-send-queue';
+} from './ws-send-queue.js';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
+// Compatibility grace period for legacy helpers without admission acknowledgements.
+const INPUT_ADMISSION_MS = 1000;
 const ACTIVITY_STALE_MS = 8000;
 
 // serve-sim binary WS message tags (serve-sim-client `SimulatorView`).
@@ -119,6 +122,7 @@ const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
 // client sends this too so the on-screen keyboard shows.
 const WS_MSG_HARDWARE_KEYBOARD = 0x0e;
 const WS_TAG_SCREEN_CONFIG = 0x82;
+const WS_TAG_INPUT_ADMITTED = 0x83;
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
 const HID_USAGE_R = 0x15; // 'r'
@@ -130,11 +134,30 @@ const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'ios', name: 'iPhone Simulator', platform: 'ios', current: true },
 ];
 
-const IOS_STREAM_CAPABILITIES = {
-  modeAvailability: { mjpeg: true, h264: true, webrtc: true },
+const IOS_HTTP_STREAM_CAPABILITIES = {
+  modeAvailability: { mjpeg: true, h264: true, webrtc: false },
   httpCodecs: ['auto', 'h264', 'mjpeg'],
+  webRtcCodecs: [],
+} as const satisfies DeviceStreamCapabilities;
+
+const IOS_WEBRTC_STREAM_CAPABILITIES = {
+  modeAvailability: { mjpeg: false, h264: false, webrtc: true },
+  httpCodecs: [],
   webRtcCodecs: ['h264', 'vp9', 'vp8'],
 } as const satisfies DeviceStreamCapabilities;
+
+/**
+ * Stream modes for the transport serve-sim advertises in `/api`. serve-sim
+ * locks a WebRTC server to WebRTC and refuses its HTTP streams; a missing or
+ * unknown value is its HTTP default.
+ */
+export function iosStreamCapabilities(streamSettings: unknown): DeviceStreamCapabilities {
+  const transport =
+    streamSettings && typeof streamSettings === 'object'
+      ? (streamSettings as { transport?: unknown }).transport
+      : undefined;
+  return transport === 'webrtc' ? IOS_WEBRTC_STREAM_CAPABILITIES : IOS_HTTP_STREAM_CAPABILITIES;
+}
 
 // The counterclockwise rotation order (matches Simulator's "Rotate Left"): each
 // press advances one step, so four presses come back around to portrait.
@@ -195,6 +218,7 @@ interface ResolvedConfig {
   url: string;
   streamUrl: string;
   wsUrl: string;
+  inputAdmission: boolean;
   device: string | null;
   /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
   execWsUrl: string | null;
@@ -222,6 +246,7 @@ interface PreviewApi {
   url?: string;
   streamUrl?: string;
   wsUrl?: string;
+  inputAdmission?: unknown;
   device?: string;
   basePath?: string;
   execToken?: string;
@@ -246,6 +271,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  // serve-sim's rejection of the input socket (close 1013), kept until a socket is admitted.
+  const [inputSocketError, setInputSocketError] = useState<string | null>(null);
+  // serve-sim's native HID setup failed; lasts until serve-sim restarts.
+  const [inputUnavailable, setInputUnavailable] = useState(false);
   const [screen, setScreen] = useState<ScreenSize | null>(null);
   const [fps, setFps] = useState(0);
   const [logs, setLogs] = useState<DeviceLog[]>([]);
@@ -273,6 +302,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const inputSocketAdmittedRef = useRef(false);
   // Input that arrived while the helper socket was down; flushed on reconnect
   // (bounded, and stale entries are dropped — see `./ws-send-queue`).
   const pendingWsRef = useRef<QueuedWsMessage[]>([]);
@@ -343,7 +373,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
   const sendWs = useCallback((tag: number, payload: object) => {
-    pendingWsRef.current = sendOrQueueWsMessage(wsRef.current, pendingWsRef.current, tag, payload);
+    pendingWsRef.current = sendOrQueueWsMessage(
+      inputSocketAdmittedRef.current ? wsRef.current : null, pendingWsRef.current, tag, payload,
+    );
   }, []);
 
   const sendTouch = useCallback((sample: TouchSample) => {
@@ -590,6 +622,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         url: c.url!,
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
+        // An absent/false flag identifies legacy servers. Unknown present values
+        // fail closed rather than treating an unrecognized contract as legacy.
+        inputAdmission: c.inputAdmission !== undefined && c.inputAdmission !== false,
         device: c.device ?? null,
         execWsUrl: toWs(absoluteMiddlewareUrl(`${basePath}/exec-ws`)!),
         execToken: c.execToken ?? null,
@@ -859,12 +894,22 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
+  const requiresInputAdmission = config?.inputAdmission ?? true;
   useEffect(() => {
     setHardwareKeyboardConnectedState(null);
+    setInputSocketError(null);
+    setInputUnavailable(false);
     if (!wsUrl) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let admissionTimer: ReturnType<typeof setTimeout> | null = null;
     hasWsConfigRef.current = false;
+    // Opening is not admission: a refused socket opens, then closes with 1013.
+    const admitInput = () => {
+      if (admissionTimer) clearTimeout(admissionTimer);
+      admissionTimer = null;
+      if (!cancelled) setInputSocketError(null);
+    };
 
     const connect = () => {
       if (cancelled) return;
@@ -876,22 +921,43 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
-      ws.onopen = () => {
-        // Deliver whatever the user did while the socket was down.
+      inputSocketAdmittedRef.current = false;
+      const activateInput = () => {
+        if (cancelled || wsRef.current !== ws || inputSocketAdmittedRef.current) return;
+        inputSocketAdmittedRef.current = true;
         pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
-        // The Hub owns keyboard forwarding while this socket is active. Keep the
-        // Simulator's separate host-keyboard connection off so iOS shows its
-        // software keyboard while browser HID keys continue to type. serve-sim
-        // reconnects it once the last input socket detaches.
         sendWs(WS_MSG_HARDWARE_KEYBOARD, { enabled: false });
-        if (!cancelled) setHardwareKeyboardConnectedState(false);
+        setHardwareKeyboardConnectedState(false);
+      };
+      ws.onopen = () => {
+        if (!cancelled && !requiresInputAdmission) {
+          admissionTimer = setTimeout(admitInput, INPUT_ADMISSION_MS);
+        }
+        // Modern helpers must admit the socket before receiving queued input.
+        // Legacy helpers have no acknowledgement and retain OPEN compatibility.
+        if (!requiresInputAdmission) activateInput();
       };
       ws.onmessage = (event) => {
+        if (cancelled || wsRef.current !== ws) return;
         if (!(event.data instanceof ArrayBuffer)) return;
         const bytes = new Uint8Array(event.data);
+        if (bytes.length === 1 && bytes[0] === WS_TAG_INPUT_ADMITTED) {
+          activateInput();
+          admitInput();
+          return;
+        }
         if (bytes.length < 1 || bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
         try {
-          const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize;
+          const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize & {
+            inputUnavailable?: boolean;
+          };
+          if (
+            typeof c?.width !== 'number' || !Number.isFinite(c.width) || c.width <= 0 ||
+            typeof c.height !== 'number' || !Number.isFinite(c.height) || c.height <= 0 ||
+            (c.inputUnavailable !== undefined && typeof c.inputUnavailable !== 'boolean')
+          ) return;
+          if (!requiresInputAdmission) admitInput();
+          setInputUnavailable(c.inputUnavailable === true);
           if (c.width > 0 && c.height > 0) {
             hasWsConfigRef.current = true;
             setScreen((prev) =>
@@ -905,9 +971,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
         } catch {}
       };
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (cancelled) return;
         wsRef.current = null;
+        inputSocketAdmittedRef.current = false;
+        if (admissionTimer) clearTimeout(admissionTimer);
+        admissionTimer = null;
+        const rejection = iosInputCloseError(event.code, event.reason);
+        if (rejection) setInputSocketError(rejection);
         retryTimer = setTimeout(connect, RECONNECT_MS);
       };
       ws.onerror = () => {
@@ -921,15 +992,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
+      if (admissionTimer) clearTimeout(admissionTimer);
       try {
         wsRef.current?.close();
       } catch {}
       wsRef.current = null;
+      inputSocketAdmittedRef.current = false;
       // Queued input was for this device; don't replay it on the next one.
       pendingWsRef.current = [];
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, sendWs]);
+  }, [wsUrl, requiresInputAdmission, sendWs]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
@@ -1288,6 +1361,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     platform: 'ios',
     status,
     error,
+    inputError: inputUnavailable ? IOS_INPUT_UNAVAILABLE_MESSAGE : inputSocketError,
     screen,
     fps,
     devices,
@@ -1318,7 +1392,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setLocation,
     clearLocation,
     ...appPermissions,
-    streamCapabilities: IOS_STREAM_CAPABILITIES,
+    streamCapabilities: config ? iosStreamCapabilities(config.initialStreamSettings) : null,
     screenRecording: null,
     streamSettings,
     streamSettingsPending,

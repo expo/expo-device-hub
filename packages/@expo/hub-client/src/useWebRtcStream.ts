@@ -4,14 +4,14 @@ import {
   type WebRtcCodec,
   type WebRtcStreamFailure,
   webRtcFailureDisposition,
-} from './webrtc-fallback';
+} from './webrtc-fallback.js';
 import {
   closeWebRtcSession,
   postWebRtcOffer,
   WebRtcSignalingBusyError,
   WebRtcSignalingTimeoutError,
-} from './webrtc-negotiation';
-import { useWebRtcStreamStats, type WebRtcStatsConnection } from './stream-stats';
+} from './webrtc-negotiation.js';
+import { useWebRtcStreamStats, type WebRtcStatsConnection } from './stream-stats.js';
 
 export type WebRtcIceServer = {
   urls: string[];

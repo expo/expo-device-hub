@@ -5,7 +5,7 @@ import {
   postWebRtcOffer,
   WebRtcSignalingBusyError,
   WebRtcSignalingTimeoutError,
-} from '../webrtc-negotiation';
+} from '../webrtc-negotiation.js';
 
 describe('WebRTC offer negotiation', () => {
   test('uses a fresh deadline after a busy response', async () => {

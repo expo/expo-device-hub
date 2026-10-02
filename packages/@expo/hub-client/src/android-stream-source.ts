@@ -4,7 +4,7 @@ import {
   type DeviceInputSource,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
-} from './types';
+} from './types.js';
 
 const ANDROID_STREAM_SOURCES = [
   'scrcpy',

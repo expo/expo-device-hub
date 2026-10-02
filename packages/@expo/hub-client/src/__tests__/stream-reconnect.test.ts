@@ -7,7 +7,7 @@ import {
   scheduleReconnect,
   SERVER_RESTART_RECONNECT_DELAY_MS,
   STREAM_RECONNECT_GRACE_MS,
-} from '../stream-reconnect';
+} from '../stream-reconnect.js';
 
 describe('stream reconnect policy', () => {
   test('recognizes the close codes a server sends on purpose', () => {

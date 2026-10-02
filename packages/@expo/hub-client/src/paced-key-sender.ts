@@ -4,7 +4,7 @@
  * `utils/paced-key-sender.ts`.
  */
 
-import { type HidKeyEvent } from './types';
+import { type HidKeyEvent } from './types.js';
 
 export const KEY_EVENT_PACE_MS = 4;
 

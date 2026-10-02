@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { isVisualViewportKeyboardRaised, KEYBOARD_VIEWPORT_SHRINK_PX } from '../viewport-keyboard';
+import { isVisualViewportKeyboardRaised, KEYBOARD_VIEWPORT_SHRINK_PX } from '../viewport-keyboard.js';
 
 describe('isVisualViewportKeyboardRaised', () => {
   test('treats a large visual-viewport shrink as a raised soft keyboard', () => {

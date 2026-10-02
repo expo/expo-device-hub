@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { codecStringFromSps, FragmentedMp4Muxer } from '../mp4-muxer';
+import { codecStringFromSps, FragmentedMp4Muxer } from '../mp4-muxer.js';
 
 // ── fixtures ────────────────────────────────────────────────────────────────
 // Real SPS/PPS captured from `ffmpeg`/scrcpy output and cross-checked with
