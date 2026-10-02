@@ -429,3 +429,18 @@ test('a delayed old control close cannot replace fresh generation video twice', 
   await act(async () => ControlSocket.instances[1].onclose?.({ code: 1012 }));
   expect(offers).toBe(3);
 });
+
+test('control reconnect before confirmation retains ownership of the new generation', async () => {
+  await mount();
+  await act(async () => client.setStreamSource('grpc-screenshot'));
+  await act(async () => ControlSocket.instances[0].onclose?.({code: 1012}));
+  await reconnectControl();
+  await act(async () => ControlSocket.instances[1].onopen?.());
+  await confirmReplacement();
+  await act(async () => Peer.instances[1].deliverTrack());
+  await paintFrame();
+  expect(client.streamSourcePending).toBe(false);
+  expect(offers).toBe(2);
+  await act(async () => ControlSocket.instances[1].onclose?.({code: 1012}));
+  expect(offers).toBe(3);
+});

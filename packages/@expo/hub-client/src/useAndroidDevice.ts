@@ -943,6 +943,10 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
   const webRtcSourceGeneration = androidWebRtcRestartKey(streamSource, pendingStreamSource);
   const webRtcSourceGenerationRef = useRef(webRtcSourceGeneration);
   const webRtcSourceRevisionRef = useRef(0);
+  const webRtcInputOwnersRef = useRef(new WeakMap<WebSocket, {
+    revision: number;
+    awaitingSourceResponse: boolean;
+  }>());
   useLayoutEffect(() => {
     // Initial discovery identifies the existing connection rather than replacing it.
     if (webRtcSourceGenerationRef.current !== null &&
@@ -950,7 +954,14 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       webRtcSourceRevisionRef.current += 1;
     }
     webRtcSourceGenerationRef.current = webRtcSourceGeneration;
-  }, [webRtcSourceGeneration]);
+    const owner = wsRef.current && webRtcInputOwnersRef.current.get(wsRef.current);
+    // A socket opened during the PUT already belongs to the replacement, even
+    // when its confirmation reaches the browser later.
+    if (owner?.awaitingSourceResponse && streamSwitch.phase !== 'requesting') {
+      owner.revision = webRtcSourceRevisionRef.current;
+      owner.awaitingSourceResponse = false;
+    }
+  }, [webRtcSourceGeneration, streamSwitch.phase]);
 
   const {
     stream: webRtcStream,
@@ -1621,11 +1632,13 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       }
       wsRef.current = ws;
       let opened = false;
-      let sourceRevision = webRtcSourceRevisionRef.current;
+      const owner = { revision: webRtcSourceRevisionRef.current, awaitingSourceResponse: false };
+      webRtcInputOwnersRef.current.set(ws, owner);
       ws.onopen = () => {
         if (cancelled || wsRef.current !== ws) return;
         opened = true;
-        sourceRevision = webRtcSourceRevisionRef.current;
+        owner.revision = webRtcSourceRevisionRef.current;
+        owner.awaitingSourceResponse = streamSwitchRef.current.phase === 'requesting';
         reconnectDelay = RECONNECT_BASE_DELAY_MS;
         setWebRtcInputReady(true);
         setWebRtcInputError(null);
@@ -1642,7 +1655,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
         if (
           wasHealthy &&
           isDeliberateServerClose(event.code) &&
-          sourceRevision === webRtcSourceRevisionRef.current &&
+          owner.revision === webRtcSourceRevisionRef.current &&
           !isStreamSwitchPending(streamSwitchRef.current)
         ) {
           // A confirmed source generation already replaced the old peer, even
