@@ -1,4 +1,14 @@
-# serve-sim API
+# LLP 0003: serve-sim API
+
+**Type:** Spec
+**Status:** Active
+**Systems:** ServeSim
+**Author:** Gabe Debes
+**Date:** 2026-09-23
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/api.md`; links and paths updated)
+**Related:** LLP 0001, LLP 0002
+
+> File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 Paths are relative to the mount point, which is `/` for a standalone
 `serve-sim` and the `basePath` middleware option when embedded.
@@ -34,7 +44,7 @@ running session. The CLI owns and renews the recording lease;
 SIGINT stops it and waits for `recording.mp4` and `session.json`. The server
 also attempts to finalize active recordings during shutdown. One recording may
 run per device. The manifest retains the record-sim upload schema. See
-[Video pipeline and recording](video-pipeline.md) for frame handling and limits.
+[Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md) for frame handling and limits.
 
 To control recording directly, `POST` a JSON body such as
 `{"start":true,"output":"/path/to/empty-dir","recordingId":"client-id"}`.

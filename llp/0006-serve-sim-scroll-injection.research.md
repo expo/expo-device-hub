@@ -1,4 +1,13 @@
-# How Device Hub / Simulator.app forwards scroll to the iOS Simulator
+# LLP 0006: How Device Hub / Simulator.app forwards scroll to the iOS Simulator
+
+**Type:** Research
+**Status:** Active
+**Systems:** ServeSim
+**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo)
+**Date:** 2026-09-23
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/scroll-injection-devicehub.md`; links and paths updated)
+
+> File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 > Reverse-engineered from `SimulatorKit`
 > (`/Applications/Xcode-beta.app/Contents/SharedFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit`)

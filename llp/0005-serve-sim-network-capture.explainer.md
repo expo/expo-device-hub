@@ -1,4 +1,14 @@
-# Network capture
+# LLP 0005: Network capture
+
+**Type:** Explainer
+**Status:** Active
+**Systems:** ServeSim
+**Author:** Gabe Debes
+**Date:** 2026-09-29
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/network-capture-security.md`; links and paths updated)
+**Related:** LLP 0003
+
+> File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 Network capture decrypts supported simulator HTTP(S) traffic. Capture is metadata-only by default;
 headers, query values, and bodies require explicit opt-in because they can contain credentials.

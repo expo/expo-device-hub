@@ -1,4 +1,14 @@
-# Streaming and control protocol reference
+# LLP 0008: Streaming and control protocol reference
+
+**Type:** Spec
+**Status:** Active
+**Systems:** ServeEmu
+**Author:** Imported from expo/serve-emu in #78 (original authors are in that repo)
+**Date:** 2026-09-09
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/protocol.md`; links and paths updated)
+**Related:** LLP 0009
+
+> File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
 
 <!-- scrcpy-server-version: 4.0 -->
 
@@ -200,6 +210,6 @@ notes do not call one out.
 6. With a booted emulator or device, verify the first video frame, browser
    refresh recovery, orientation/size changes, reset-video recovery, tap,
    swipe, text, key, Back, and multiple simultaneous clients.
-7. Pack the npm workspace and confirm that its generated `README.md` and this
-   `docs/protocol.md` are present and that every local link resolves inside the
-   packed package.
+7. Pack the npm workspace and confirm that its generated `README.md` is present
+   and that every local link resolves inside the packed package. This document
+   is not packed; it lives in the repository's `llp/` corpus.

@@ -41,7 +41,6 @@ describe("package README generation", () => {
       "",
       "[`packages/serve-emu/package.json`](packages/serve-emu/package.json)",
       "[`packages/serve-emu/CHANGELOG.md`](packages/serve-emu/CHANGELOG.md)",
-      "[protocol](packages/serve-emu/docs/protocol.md)",
       "[contributing](CONTRIBUTING.md)",
       "Vendored at `packages/serve-emu/vendor/`.",
       "",
@@ -55,7 +54,6 @@ describe("package README generation", () => {
         "",
         "[`package.json`](package.json)",
         "[`CHANGELOG.md`](CHANGELOG.md)",
-        "[protocol](docs/protocol.md)",
         "[contributing](https://github.com/expo/expo-device-hub/blob/main/packages/serve-emu/CONTRIBUTING.md)",
         "Vendored at `vendor/`.",
         "",
@@ -87,7 +85,7 @@ describe("package README generation", () => {
       true,
     );
     expect(packageReadme).toContain(
-      "[protocol reference](docs/protocol.md)",
+      "[protocol reference](https://github.com/expo/expo-device-hub/blob/main/llp/0008-serve-emu-protocol.spec.md)",
     );
     expect(packageReadme).toContain(
       "[`CONTRIBUTING.md`](https://github.com/expo/expo-device-hub/blob/main/packages/serve-emu/CONTRIBUTING.md)",
@@ -122,7 +120,6 @@ describe("package README generation", () => {
     expect(Array.isArray(manifest.files)).toBe(true);
     if (!Array.isArray(manifest.files)) return;
     expect(manifest.files).toContain("README.md");
-    expect(manifest.files).toContain("docs");
     expect(manifest.files).toContain("CHANGELOG.md");
   });
 });

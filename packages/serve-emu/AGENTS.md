@@ -59,7 +59,7 @@ scrcpy setup lazily on first start.
 
 ## scrcpy Protocol Notes
 
-The canonical [protocol reference](packages/serve-emu/docs/protocol.md) is the
+The canonical [protocol reference](../../llp/0008-serve-emu-protocol.spec.md) (LLP 0008) is the
 source of truth for scrcpy v3/v4 framing, control packets, `SEMU` metadata,
 golden bytes, and the scrcpy upgrade checklist. The server version remains
 pinned in `packages/serve-emu/scripts/fetch-scrcpy.ts`; update that marker, the

@@ -1,8 +1,18 @@
-# Video pipeline and recording
+# LLP 0001: Video pipeline and recording
+
+**Type:** Explainer
+**Status:** Active
+**Systems:** ServeSim
+**Author:** Gabe Debes
+**Date:** 2026-09-29
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/video-pipeline.md`; links and paths updated)
+**Related:** LLP 0002, LLP 0003
+
+> File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 This describes the H.264 WebRTC and session-recording paths. See
-[WebRTC architecture](webrtc-architecture.md) for signaling and control, and
-[API](api.md) for the recording endpoint. HTTP video remains a separate transport.
+[WebRTC architecture](0002-serve-sim-webrtc-architecture.explainer.md) for signaling and control, and
+[API](0003-serve-sim-http-api.spec.md) for the recording endpoint. HTTP video remains a separate transport.
 
 ## Frame flow
 

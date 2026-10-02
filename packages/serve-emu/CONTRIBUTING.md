@@ -118,7 +118,7 @@ The pinned version is controlled by `packages/serve-emu/scripts/fetch-scrcpy.ts`
 
 The scrcpy wire protocol can drift between major versions. If you bump the
 scrcpy server version, follow the complete
-[scrcpy upgrade checklist](packages/serve-emu/docs/protocol.md#scrcpy-upgrade-checklist).
+[scrcpy upgrade checklist](../../llp/0008-serve-emu-protocol.spec.md#scrcpy-upgrade-checklist).
 The canonical protocol reference documents the current v3/v4 video framing,
 control messages, `SEMU` WebSocket metadata, and byte-level golden examples. Do
 not duplicate those layouts in another document; update the reference and its
