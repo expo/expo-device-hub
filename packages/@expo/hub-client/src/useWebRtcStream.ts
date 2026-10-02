@@ -420,7 +420,6 @@ export function useWebRtcStream({
     });
 
     const onVisibilityChange = () => {
-      stall.invalidate();
       clearFirstFrameTimeout();
       if (!document.hidden) armFirstFrameTimeout();
     };
