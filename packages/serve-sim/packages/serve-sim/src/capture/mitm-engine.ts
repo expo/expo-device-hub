@@ -19,6 +19,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import type { CaptureStore } from "./store";
+import { assertNotOwnProxy, type CaptureUpstream } from "./upstream";
 import { dirnameOf } from "../runtime";
 import { withStateLockSync } from "../state-lock";
 import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
@@ -298,6 +299,7 @@ export function parseMitmPids(psOutput: string, marker: string, selfPid: number)
 }
 
 export interface MitmProxyDeps {
+  upstream?: CaptureUpstream | null;
   fields?: readonly CaptureField[];
   onUnexpectedExit?: (reason: string) => void;
   onOversizedControlBody?: (info: OversizedControlBodyInfo) => void;
@@ -361,8 +363,10 @@ async function startMitmProxyAttempt(
   mitmdump: string,
   addon: string,
   fields: readonly CaptureField[],
+  upstream: CaptureUpstream | null,
 ): Promise<CaptureProxy> {
   const proxyPort = await freePort();
+  assertNotOwnProxy(upstream, proxyPort);
   const confdir = mkdtempSync(join(tmpdir(), CONFDIR_PREFIX));
   const caFile = join(confdir, "mitmproxy-ca-cert.pem");
   const portFile = join(confdir, "proxy-port");
@@ -384,6 +388,10 @@ async function startMitmProxyAttempt(
   try {
     seedCaInto(confdir);
     writeFileSync(portFile, String(proxyPort));
+    if (upstream?.auth !== undefined) {
+      // JSON is valid YAML. Keep credentials out of argv and remove them with the session confdir.
+      writeFileSync(join(confdir, "config.yaml"), JSON.stringify({ upstream_auth: upstream.auth }), { mode: 0o600 });
+    }
     child = spawn(
       mitmdump,
       [
@@ -394,6 +402,7 @@ async function startMitmProxyAttempt(
         String(proxyPort),
         "--set",
         "anticomp=true",
+        ...(upstream ? ["--mode", `upstream:${upstream.url}`] : []),
         "--set",
         `confdir=${confdir}`,
         "-s",
@@ -540,11 +549,12 @@ export async function startMitmProxy(
   if (!mitmdump) throw new Error(mitmdumpMissingMessage(process.env.SERVE_SIM_MITMDUMP));
   const addon = locateAddon();
   const fields = deps.fields ?? DEFAULT_CAPTURE_FIELDS;
+  const upstream = deps.upstream ?? null;
 
   let lastError: unknown;
   for (let attempt = 0; attempt < STARTUP_ATTEMPTS; attempt++) {
     try {
-      return await startMitmProxyAttempt(store, deps, mitmdump, addon, fields);
+      return await startMitmProxyAttempt(store, deps, mitmdump, addon, fields, upstream);
     } catch (error) {
       lastError = error;
       if (!addressAlreadyInUse(error) && !(error instanceof CaRaceLostError)) throw error;

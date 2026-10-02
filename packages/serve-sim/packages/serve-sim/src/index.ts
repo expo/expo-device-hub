@@ -46,6 +46,7 @@ import {
   waitForLaunchUpdates,
 } from "./launch-manager";
 import { parseCaptureFields } from "./capture/fields";
+import { parseCaptureProxy } from "./capture/upstream";
 import { killOwnListeners } from "./ports";
 import { findBootedDevice, resolveDevice } from "./device";
 import { openSimulatorHost } from "./simulator-host";
@@ -2048,6 +2049,10 @@ program
       "HTTPS is decrypted for the whole boot session and certificate-pinned apps will refuse to connect. " +
       "Requires mitmproxy. Relaunch apps after enabling so they pick up the proxy.",
   )
+  .option(
+    "--network-capture-proxy <url>",
+    "Forward captured traffic through one HTTP proxy (http://[user:password@]host:port), or none for direct. Defaults to direct.",
+  )
   .option("--transport <http|webrtc>", "Stream transport", "http")
   .option(
     "--launch-app-identifier <id>",
@@ -2200,6 +2205,12 @@ Examples:
     if (opts.kill !== undefined) {
       await killStreams(typeof opts.kill === "string" ? opts.kill : undefined);
       return;
+    }
+    try {
+      captureRuntime.setUpstream(parseCaptureProxy(opts.networkCaptureProxy));
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exit(1);
     }
     if (opts.transport !== "http" && opts.transport !== "webrtc") {
       console.error("--transport must be one of: http, webrtc.");

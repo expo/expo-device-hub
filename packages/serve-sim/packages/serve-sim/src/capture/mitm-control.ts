@@ -125,6 +125,8 @@ function bodyText(part: RecordPart | undefined) {
 }
 
 export function describeFailure(raw: string): string {
+  const upstream = /refused HTTP CONNECT request: (\d{3}[^)]*)/.exec(raw);
+  if (upstream) return `The upstream proxy refused the connection: ${upstream[1]!.trim()}. (${raw})`;
   if (/Errno 61|Connect call failed|refused/i.test(raw)) {
     return `Nothing was listening at the address the app connected to. (${raw})`;
   }

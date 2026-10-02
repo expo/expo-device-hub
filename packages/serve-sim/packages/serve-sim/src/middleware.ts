@@ -1,4 +1,5 @@
 import { openSseStream } from "./sse-stream";
+import { parseCaptureProxy } from "./capture/upstream";
 import { execFile, execSync } from "child_process";
 import { createReadStream, readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
 import { readFile, unlink } from "fs/promises";
@@ -1473,6 +1474,8 @@ export interface SimMiddlewareOptions {
   allowAnyHostWhenInsecure?: boolean;
   /** Enable capture for devices started through this middleware. */
   networkCapture?: boolean;
+  /** HTTP upstream proxy URL for capture, optionally with Basic credentials. Unset uses direct connections. */
+  networkCaptureProxy?: string;
   /**
    * The server listens on loopback only. Without the token gate, network capture is refused unless
    * this is set: anyone who can load the preview could otherwise read captured traffic. An embedder
@@ -1879,6 +1882,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
     : {};
   const networkCapture = options?.networkCapture ?? false;
+  if (options?.networkCaptureProxy !== undefined) captureRuntime.setUpstream(parseCaptureProxy(options.networkCaptureProxy));
   // Every host that mounts this middleware gets the same rule, so capture never runs on an ungated
   // preview that others can reach. The refusal covers the panel, the exec socket, and the CLI.
   captureRuntime.refuseCapture(
