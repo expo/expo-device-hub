@@ -147,4 +147,10 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
   expect(subscriptions).toContainEqual({ sub: 1, path: `${advertisedBasePath}/logs?device=DEVICE-A` });
   expect(subscriptions).toContainEqual({ sub: 2, path: `${advertisedBasePath}/api/event-log/events?device=DEVICE-A` });
   expect(subscriptions).toContainEqual({ sub: 3, path: `${advertisedBasePath}/metrics?device=DEVICE-A` });
+
+  // The API fixture omits streamSettingsEndpoint, so encoder controls stay unavailable.
+  await act(async () => client.updateStreamSettings({ mjpegFps: 20 }));
+  expect(client.capabilities.streamSettings).toBe(false);
+  expect(client.streamSettings).toBeNull();
+  expect(fetchUrls).not.toContain(`${publicBase}/helper/DEVICE-A/stream-settings`);
 });
