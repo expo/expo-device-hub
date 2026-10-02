@@ -29,7 +29,7 @@ This repo uses [LLP v0.5.2](https://github.com/ccheever/llp/tree/v0.5.2). One co
 
 ## Agent skills
 
-The core LLP skills are installed in `.claude/skills/`. `.llp/skills-receipt.json` records the release and the file hashes. Do not edit the installed skill files. Run `/llp-adopt update` to update them.
+The core LLP skills are installed twice, as identical copies: `.claude/skills/` for Claude Code and `.agents/skills/` for Codex. `.llp/skills-receipt.json` records the release and the hash of each file. Do not edit the installed skill files. Run `/llp-adopt update` to update both copies together.
 
 <!-- BEGIN LLP SKILLS MANAGED BLOCK -->
 Before editing a subsystem with documented design, orient first: read its
