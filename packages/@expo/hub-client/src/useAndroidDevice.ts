@@ -945,7 +945,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
   const webRtcSourceRevisionRef = useRef(0);
   const webRtcInputOwnersRef = useRef(new WeakMap<WebSocket, {
     revision: number;
-    awaitingSourceResponse: boolean;
+    openedDuringSourceRequest: boolean;
   }>());
   useLayoutEffect(() => {
     // Initial discovery identifies the existing connection rather than replacing it.
@@ -954,14 +954,7 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       webRtcSourceRevisionRef.current += 1;
     }
     webRtcSourceGenerationRef.current = webRtcSourceGeneration;
-    const owner = wsRef.current && webRtcInputOwnersRef.current.get(wsRef.current);
-    // A socket opened during the PUT already belongs to the replacement, even
-    // when its confirmation reaches the browser later.
-    if (owner?.awaitingSourceResponse && streamSwitch.phase !== 'requesting') {
-      owner.revision = webRtcSourceRevisionRef.current;
-      owner.awaitingSourceResponse = false;
-    }
-  }, [webRtcSourceGeneration, streamSwitch.phase]);
+  }, [webRtcSourceGeneration]);
 
   const {
     stream: webRtcStream,
@@ -1098,6 +1091,8 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     streamSwitch.phase,
   ]);
 
+  const recoverWebRtcPlaybackRef = useRef<(() => void) | null>(null);
+
   // Attach the negotiated MediaStream to DeviceScreen's current <video> node.
   // The node is stateful (rather than only a ref) so a remount reattaches the
   // stream and frame observer even when the MediaStream itself is unchanged.
@@ -1127,14 +1122,9 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       resumeTimer = undefined;
     };
 
-    const onVisibilityChange = () => {
-      if (document.hidden) {
-        wasHidden = true;
-        clearResumeTimers();
-        return;
-      }
-      if (stopped || !wasHidden) return;
-      wasHidden = false;
+    const recoverPlayback = () => {
+      if (stopped || document.hidden) return;
+      clearResumeTimers();
       resuming = true;
       firstFrame = true;
       previousCurrentTime = video.currentTime;
@@ -1143,14 +1133,26 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       setWebRtcVideoReady(false);
       setFps(0);
       void video.play().catch(() => {});
-      // A healthy player resumes without disturbing its peer or encoder. Give
-      // it a moment, then request a keyframe; replace the session only if fresh
-      // frames still do not arrive. Hidden time never consumes this deadline.
+      // Share one foreground deadline for visibility and ambiguous control loss.
+      // A newly presented frame preserves the existing peer; hidden time never
+      // consumes the deadline. The reconnecting input socket also requests a keyframe.
       keyframeTimer = window.setTimeout(requestWebRtcKeyframe, WEBRTC_RESUME_KEYFRAME_DELAY_MS);
       resumeTimer = window.setTimeout(() => {
         clearResumeTimers();
         restartWebRtcStream();
       }, WEBRTC_RESUME_TIMEOUT_MS);
+    };
+    recoverWebRtcPlaybackRef.current = recoverPlayback;
+
+    const onVisibilityChange = () => {
+      if (document.hidden) {
+        wasHidden = true;
+        clearResumeTimers();
+        return;
+      }
+      if (stopped || !wasHidden) return;
+      wasHidden = false;
+      recoverPlayback();
     };
 
     const markFrame = (presentedFrameDelta = 1) => {
@@ -1219,6 +1221,9 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
 
     return () => {
       stopped = true;
+      if (recoverWebRtcPlaybackRef.current === recoverPlayback) {
+        recoverWebRtcPlaybackRef.current = null;
+      }
       clearResumeTimers();
       document.removeEventListener('visibilitychange', onVisibilityChange);
       video.removeEventListener('loadeddata', onLoadedData);
@@ -1632,13 +1637,13 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
       }
       wsRef.current = ws;
       let opened = false;
-      const owner = { revision: webRtcSourceRevisionRef.current, awaitingSourceResponse: false };
+      const owner = { revision: webRtcSourceRevisionRef.current, openedDuringSourceRequest: false };
       webRtcInputOwnersRef.current.set(ws, owner);
       ws.onopen = () => {
         if (cancelled || wsRef.current !== ws) return;
         opened = true;
         owner.revision = webRtcSourceRevisionRef.current;
-        owner.awaitingSourceResponse = streamSwitchRef.current.phase === 'requesting';
+        owner.openedDuringSourceRequest = streamSwitchRef.current.phase === 'requesting';
         reconnectDelay = RECONNECT_BASE_DELAY_MS;
         setWebRtcInputReady(true);
         setWebRtcInputError(null);
@@ -1652,18 +1657,16 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
         wsRef.current = null;
         const wasHealthy = opened;
         opened = false;
-        if (
-          wasHealthy &&
-          isDeliberateServerClose(event.code) &&
-          owner.revision === webRtcSourceRevisionRef.current &&
-          !isStreamSwitchPending(streamSwitchRef.current)
-        ) {
-          // A confirmed source generation already replaced the old peer, even
-          // if its control close arrives after the replacement paints.
-          // serve-emu stops the old video peer along with this control socket.
-          // Renegotiate now instead of waiting for ICE loss and its grace period;
-          // the new input socket alone must not make the old video read as live.
-          restartWebRtcRef.current();
+        if (wasHealthy && isDeliberateServerClose(event.code) &&
+            !isStreamSwitchPending(streamSwitchRef.current)) {
+          if (owner.revision === webRtcSourceRevisionRef.current) {
+            restartWebRtcRef.current();
+          } else if (owner.openedDuringSourceRequest) {
+            // OPEN during staging cannot identify which source accepted input.
+            // Let fresh replacement frames prove health before replacing its peer.
+            recoverWebRtcPlaybackRef.current?.();
+          }
+          // A known old source already caused a peer replacement on confirmation.
         }
         retryInput('WebRTC input disconnected. Retrying...', event.code, wasHealthy);
       };

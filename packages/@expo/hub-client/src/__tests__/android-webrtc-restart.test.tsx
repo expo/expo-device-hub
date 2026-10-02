@@ -130,6 +130,8 @@ beforeEach(() => {
     return timerId;
   });
   installGlobal('clearTimeout', (id: number) => timeouts.delete(id));
+  browser.setTimeout = globalThis.setTimeout as unknown as typeof browser.setTimeout;
+  browser.clearTimeout = globalThis.clearTimeout as unknown as typeof browser.clearTimeout;
   let initialSourceRead = true;
   installGlobal('fetch', async (input: string | URL, init?: RequestInit) => {
     const path = new URL(String(input)).pathname;
@@ -430,7 +432,7 @@ test('a delayed old control close cannot replace fresh generation video twice', 
   expect(offers).toBe(3);
 });
 
-test('control reconnect before confirmation retains ownership of the new generation', async () => {
+test('control reconnect before confirmation recovers if the new video stops', async () => {
   await mount();
   await act(async () => client.setStreamSource('grpc-screenshot'));
   await act(async () => ControlSocket.instances[0].onclose?.({code: 1012}));
@@ -442,5 +444,38 @@ test('control reconnect before confirmation retains ownership of the new generat
   expect(client.streamSourcePending).toBe(false);
   expect(offers).toBe(2);
   await act(async () => ControlSocket.instances[1].onclose?.({code: 1012}));
+  expect(offers).toBe(2);
+  const recovery = [...timeouts].find(([, timer]) => timer.delay === 4_000)!;
+  expect(recovery).toBeDefined();
+  timeouts.delete(recovery[0]);
+  await act(async () => recovery[1].callback());
   expect(offers).toBe(3);
+});
+
+
+test('control reconnected to the old source during staging preserves progressing replacement video', async () => {
+  await mount();
+  await act(async () => client.setStreamSource('grpc-screenshot'));
+  await act(async () => ControlSocket.instances[0].onclose?.({ code: 1006 }));
+  const retry = [...timeouts].find(([, timer]) => timer.delay === 500)!;
+  expect(retry).toBeDefined();
+  timeouts.delete(retry[0]);
+  await act(async () => retry[1].callback());
+  await act(async () => ControlSocket.instances[1].onopen?.());
+  await confirmReplacement();
+  await act(async () => Peer.instances[1].deliverTrack());
+  await paintFrame();
+  await act(async () => ControlSocket.instances[1].onclose?.({ code: 1012 }));
+  expect(offers).toBe(2);
+  expect([...timeouts.values()].some(timer => timer.delay === 4_000)).toBe(true);
+  await paintFrame(); // A buffered loadeddata event cannot prove progress.
+  expect([...timeouts.values()].some(timer => timer.delay === 4_000)).toBe(true);
+  await act(async () => {
+    Object.defineProperty(video, 'paused', { value: false });
+    video.currentTime = 1;
+    video.dispatchEvent(new window.Event('timeupdate'));
+  });
+  expect([...timeouts.values()].some(timer => timer.delay === 4_000)).toBe(false);
+  expect(offers).toBe(2);
+  expect(Peer.instances[1].closed).toBe(false);
 });
