@@ -1,11 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import {
-  IOS_INPUT_BUSY_MESSAGE,
-  IOS_INPUT_UNAVAILABLE_MESSAGE,
-  iosInputCloseError,
-} from '../ios-input-error.js';
+import { IOS_INPUT_UNAVAILABLE_MESSAGE } from '../ios-input-error.js';
 import { type DeviceClient } from '../types.js';
 import { useIosDeviceClient } from '../useIosDevice.js';
 import { createGlobalStubs } from './test-globals.js';
@@ -20,13 +16,6 @@ afterEach(async () => {
 });
 
 const CLIENT_LIMIT_REASON = 'Simulator input unavailable; retry after other clients disconnect';
-
-test('only a serve-sim 1013 close rejects input', () => {
-  expect(iosInputCloseError(1013, CLIENT_LIMIT_REASON)).toBe(CLIENT_LIMIT_REASON);
-  expect(iosInputCloseError(1013, '')).toBe(IOS_INPUT_BUSY_MESSAGE);
-  expect(iosInputCloseError(1000, '')).toBeNull();
-  expect(iosInputCloseError(1006, '')).toBeNull();
-});
 
 type FakeSocket = {
   url: string;

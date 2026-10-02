@@ -105,6 +105,7 @@ import {
   webRtcFallbackDecision,
 } from './webrtc-fallback.js';
 import { createInputSocket } from './input-socket.js';
+import { WS_MSG_CONFIG } from './input-protocol.js';
 import { WS_REASON_INPUT_UNAVAILABLE } from './input-protocol.js';
 
 const MAX_LOGS = 200;
@@ -123,7 +124,6 @@ const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
 // Connect/disconnect the guest's hardware keyboard; serve-sim's own touch
 // client sends this too so the on-screen keyboard shows.
 const WS_MSG_HARDWARE_KEYBOARD = 0x0e;
-const WS_TAG_SCREEN_CONFIG = 0x82;
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
 const HID_USAGE_R = 0x15; // 'r'
@@ -813,7 +813,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       onMessage(data) {
         if (!(data instanceof ArrayBuffer)) return false;
         const bytes = new Uint8Array(data);
-        if (bytes[0] !== WS_TAG_SCREEN_CONFIG) return false;
+        if (bytes[0] !== WS_MSG_CONFIG) return false;
         try {
           const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize & { inputUnavailable?: boolean };
           if (typeof c.width !== 'number' || typeof c.height !== 'number' || !Number.isFinite(c.width) || !Number.isFinite(c.height) || c.width <= 0 || c.height <= 0 || (c.inputUnavailable !== undefined && typeof c.inputUnavailable !== 'boolean')) return false;
