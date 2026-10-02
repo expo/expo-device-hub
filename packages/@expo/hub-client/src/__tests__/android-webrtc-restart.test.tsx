@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client';
 
 import { useAndroidDeviceClient } from '../useAndroidDevice.js';
 import { DeviceScreen } from '../DeviceScreen.js';
+import { STREAM_RECONNECT_GRACE_MS } from '../stream-reconnect.js';
 import type { DeviceClient, DeviceStreamSourceStatus } from '../types.js';
 
 class Peer extends EventTarget {
@@ -14,6 +15,7 @@ class Peer extends EventTarget {
   connectionState = 'connected';
   localDescription: RTCSessionDescriptionInit | null = null;
   ontrack: ((event: { streams: object[]; track: object }) => void) | null = null;
+  onconnectionstatechange: (() => void) | null = null;
 
   constructor() {
     super();
@@ -531,4 +533,53 @@ test('retired Android input callbacks stay retired when returning to the same de
   expect(inputMessages()).toEqual([]);
   await act(async () => client.sendTouch({ phase: 'begin', x: 0.2, y: 0.3 }));
   expect(inputMessages()).toHaveLength(1);
+});
+
+test('an input-only outage keeps healthy Android WebRTC video visible beyond reconnect grace', async () => {
+  await mount();
+  const peer = Peer.instances[0];
+  const stream = video.srcObject;
+  await act(async () => ControlSocket.instances[0].onclose?.({ code: 1006 }));
+  await act(async () => {
+    Object.defineProperty(video, 'paused', { value: false });
+    video.currentTime = 1;
+    video.dispatchEvent(new window.Event('timeupdate'));
+  });
+  const grace = [...timeouts].find(([, timer]) => timer.delay === STREAM_RECONNECT_GRACE_MS);
+  if (grace) {
+    timeouts.delete(grace[0]);
+    await act(async () => grace[1].callback());
+  }
+  expect(client.status).toBe('streaming');
+  expect(client.error).toBeNull();
+  const inputError = 'WebRTC input disconnected. Retrying...';
+  expect(client.inputError).toBe(inputError);
+  expect(container.querySelector('[role="status"]')?.textContent).toBe(inputError);
+  expect(container.textContent).toBe(inputError);
+  expect(video.srcObject).toBe(stream);
+  expect(peer.closed).toBe(false);
+
+  const retry = [...timeouts].find(([, timer]) => timer.delay === 500)!;
+  timeouts.delete(retry[0]);
+  await act(async () => retry[1].callback());
+  await act(async () => ControlSocket.instances.at(-1)!.onopen?.());
+  expect(client.status).toBe('streaming');
+  expect(client.inputError).toBeNull();
+  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(Peer.instances).toHaveLength(1);
+});
+
+test('a peer failure still hides interrupted Android video after reconnect grace', async () => {
+  await mount();
+  const peer = Peer.instances[0];
+  peer.connectionState = 'failed';
+  await act(async () => peer.onconnectionstatechange?.());
+  expect(peer.closed).toBe(true);
+  expect(client.status).toBe('reconnecting');
+  const grace = [...timeouts].find(([, timer]) => timer.delay === STREAM_RECONNECT_GRACE_MS)!;
+  expect(grace).toBeDefined();
+  timeouts.delete(grace[0]);
+  await act(async () => grace[1].callback());
+  expect(client.status).toBe('error');
+  expect(client.error).not.toBeNull();
 });

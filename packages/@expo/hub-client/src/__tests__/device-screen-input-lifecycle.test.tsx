@@ -10,7 +10,7 @@ afterEach(async () => {
   renderer = undefined;
   restoreGlobals();
 });
-async function setup() {
+async function setup(inputError: string | null = null) {
   const listeners = new Map<string, Set<() => void>>(),
     frames = new Map<number, FrameRequestCallback>();
   const surface = {
@@ -43,6 +43,7 @@ async function setup() {
     keys: unknown[] = [];
   const client = {
     ...NOOP_DEVICE_CLIENT,
+    inputError,
     status: "streaming" as const,
     screen: { width: 100, height: 200 },
     sendTouch: (sample: unknown) => touch.push(sample),
@@ -140,4 +141,13 @@ test("blur releases held modifiers and forwards browser metadata", async () => {
       altKey: false,
     },
   ]);
+});
+
+
+test('input refusal is announced while the live video stays visible', async () => {
+  await setup('Simulator input unavailable');
+  const notice = renderer!.root.findByProps({ role: 'status' });
+  expect(notice.children).toEqual(['Simulator input unavailable']);
+  expect(renderer!.root.findByType('img')).toBeDefined();
+  expect(renderer!.root.findAllByProps({ children: 'Not connected' })).toHaveLength(0);
 });
