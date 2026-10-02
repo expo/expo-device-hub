@@ -279,7 +279,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [config]);
   const activityLastSampleAtRef = useRef(0);
   const streamTransportLocked = config?.transportLocked ?? false;
-  const useWebRtc = (streamTransportLocked || streamMode === 'webrtc') && !webRtcHttpFallback;
+  const useWebRtc = streamTransportLocked || (streamMode === 'webrtc' && !webRtcHttpFallback);
   const wantsAvcc = !streamTransportLocked && (streamMode === 'h264' || webRtcHttpFallback);
   const useAvcc = wantsAvcc && isAvccSupported() && !avccFallback.fellBack;
   useEffect(() => {
