@@ -11,6 +11,7 @@ import { ScreenRecording } from "../src/screen-recording.ts";
 import {
   type ScrcpySession,
   type VideoFrame,
+  type VideoPacket,
 } from "../src/scrcpy.ts";
 import {
   adaptScrcpySession,
@@ -617,5 +618,89 @@ test("keeps the screen recording active when the capture ends and the app stops"
   } finally {
     await app.stop();
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+function pushableScrcpySession(): {
+  session: ScrcpySession;
+  push: (frame: VideoPacket | null) => void;
+} {
+  const queue: (VideoPacket | null)[] = [];
+  let waiting: ((frame: VideoPacket | null) => void) | null = null;
+  const controlSocket = new EventEmitter() as EventEmitter & {
+    write(data: Uint8Array): boolean;
+  };
+  controlSocket.write = () => true;
+  const session = {
+    transport: "scrcpy",
+    meta: { deviceName: "session-test", codecId: "h264", width: 720, height: 1_280 },
+    protocol: 4,
+    videoReader: {},
+    controlSocket,
+    proc: new EventEmitter(),
+    scid: "00000002",
+    localPort: 27_201,
+    serial: "device-test",
+    readFrame: (): Promise<VideoPacket | null> => {
+      const next = queue.shift();
+      if (next !== undefined) return Promise.resolve(next);
+      return new Promise((resolve) => {
+        waiting = resolve;
+      });
+    },
+    close: () => {},
+  } as unknown as ScrcpySession;
+  return {
+    session,
+    push: (frame) => {
+      if (waiting) {
+        const resolve = waiting;
+        waiting = null;
+        resolve(frame);
+      } else {
+        queue.push(frame);
+      }
+    },
+  };
+}
+
+test("only announces video-session when the scrcpy session size changes", async () => {
+  const { session, push } = pushableScrcpySession();
+  const app = await createApp(
+    { serial: session.serial },
+    { startScrcpy: async () => session },
+  );
+  const sent: (string | Uint8Array)[] = [];
+  app.attachWebSocket(
+    {
+      bufferedAmount: 0,
+      send: (data) => void sent.push(data),
+      close: () => {},
+      onMessage: () => {},
+      onClose: () => {},
+    },
+    { frameMeta: false },
+  );
+  const announced = () =>
+    sent
+      .filter((message): message is string => typeof message === "string")
+      .map((message) => JSON.parse(message))
+      .filter((message) => message.type === "video-session")
+      .map((message) => message.size);
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+  try {
+    expect(announced()).toEqual([]);
+
+    push({ type: "session", width: 720, height: 1_280, clientResized: false });
+    await settle();
+    expect(announced()).toEqual([]);
+
+    push({ type: "session", width: 540, height: 1_000, clientResized: false });
+    await settle();
+    expect(announced()).toEqual([{ width: 540, height: 1_000 }]);
+  } finally {
+    push(null);
+    await app.stop();
   }
 });
