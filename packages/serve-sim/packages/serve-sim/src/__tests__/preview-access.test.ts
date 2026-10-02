@@ -6,7 +6,7 @@ import type { Socket } from "net";
 
 import { accessCookieName } from "../session-auth";
 import { simMiddleware } from "../middleware";
-import type { UpgradeHandlerWebSocket } from "../middleware-utils";
+import type { UpgradeHandlerWebSocket } from "../socket/types";
 
 const TOKEN = "preview-token-xyz";
 const ORIGIN = "http://192.168.1.20:34567";
@@ -224,7 +224,7 @@ describe("websocket upgrades with --require-token", () => {
     const handler = simMiddleware({ basePath: "/", execToken: TOKEN, requirePreviewToken: false });
     const { calls, ws } = fakeWebSocket();
 
-    handler.handleWebSocket?.(new Request(`${ORIGIN}/exec-ws`), ws);
+    handler.handleWebSocket?.(new Request(`${ORIGIN}/exec-ws`, { headers: { host: new URL(ORIGIN).host } }), ws);
 
     expect(calls.closed).toBe(false);
     expect(calls.events).toContain("message");

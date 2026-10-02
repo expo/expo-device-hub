@@ -2,7 +2,8 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { armCapabilityLoader, capabilityLoaderPath, rearmCapabilityLoader } from "../launch-manager";
+import { armCapabilityLoader, capabilityLoaderPath, configureCapability, rearmCapabilityLoader } from "../launch-manager";
+import { readLaunchState } from "../launch-state";
 import { installShims, useTempStateDir } from "./helpers";
 
 let state: ReturnType<typeof useTempStateDir>;
@@ -38,4 +39,19 @@ test.skipIf(!existsSync(capabilityLoaderPath()))("rearming fails when the loader
   } finally {
     renameSync(aside, loader);
   }
+});
+
+test("turning a capability off works on a device shut down outside serve-sim", async () => {
+  const dylib = join(state.dir, "capture.dylib");
+  writeFileSync(dylib, "");
+  const definition = {
+    name: "networkCapture", scope: "userApps" as const, loadPhase: "startup" as const, defaultEnabled: false,
+    async setEnabled({ enabled }: { enabled: boolean }) {
+      return enabled ? { dylib } : null;
+    },
+  };
+  await configureCapability("SHUT-DOWN", definition, { enabled: true, relaunch: false });
+  (await import("node:fs")).unlinkSync(booted);
+  await configureCapability("SHUT-DOWN", definition, { enabled: false, relaunch: false });
+  expect(readLaunchState("SHUT-DOWN")?.capabilities.networkCapture).toBeUndefined();
 });

@@ -28,6 +28,33 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
   }
 }
 
+// -ServeSimFixtureRequest <url> makes one request so a capture test has traffic to find, and records
+// what the app itself saw so the test can tell a capture gap from a request that never completed.
+static void RequestIfAsked(void) {
+  NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
+  NSUInteger flag = [arguments indexOfObject:@"-ServeSimFixtureRequest"];
+  if (flag == NSNotFound || flag + 1 >= arguments.count) {
+    return;
+  }
+  NSURL *url = [NSURL URLWithString:arguments[flag + 1]];
+  if (url == nil) {
+    Record(@"request", @"unparseable-url");
+    return;
+  }
+  NSURLSessionConfiguration *configuration = NSURLSessionConfiguration.ephemeralSessionConfiguration;
+  NSURLSession *session = [NSURLSession sessionWithConfiguration:configuration];
+  [[session dataTaskWithURL:url
+          completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+            if (error != nil) {
+              Record(@"request", [NSString stringWithFormat:@"error %@", error.localizedDescription]);
+              return;
+            }
+            NSInteger status = ((NSHTTPURLResponse *)response).statusCode;
+            Record(@"request", [NSString stringWithFormat:@"status=%ld bytes=%lu", (long)status,
+                                                          (unsigned long)data.length]);
+          }] resume];
+}
+
 // Recorded from +load so a launch that is terminated before
 // didFinishLaunchingWithOptions still leaves a trace.
 @interface FixtureStartRecorder : NSObject
@@ -155,6 +182,7 @@ static void RecordURLContexts(NSSet<UIOpenURLContext *> *contexts) {
       NSLog(@"SERVE_SIM_USER_APP_LOG_MARKER pid=%d", getpid());
     }];
   }
+  RequestIfAsked();
   return YES;
 }
 

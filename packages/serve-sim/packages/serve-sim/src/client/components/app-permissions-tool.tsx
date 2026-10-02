@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Check, X } from "lucide-react";
 import { ReloadIcon } from "../icons";
-import { runHostAction } from "../utils/exec";
+import { runHostAction } from "../../socket/client-control";
 import { CollapsibleSection } from "./collapsible-section";
 import {
   PERMISSION_SERVICES,

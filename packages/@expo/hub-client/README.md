@@ -78,6 +78,20 @@ const android = useAndroidDeviceClient({
 });
 ```
 
+When embedding the iOS screen on another site, pass the public serve-sim mount that serves
+`/api` and `/helper` as `baseUrl`, for example `https://sim.example.test/preview/session`.
+The stream and input URLs then use that server. Start serve-sim with
+`--cors-origin <origin>` for the origin of the embedding page, for example
+`--cors-origin http://localhost:8081`. Without it, the exec-ws socket closes, and logs,
+events, metrics and UI requests stop, even when both servers run on `localhost`.
+
+hub-client does not send a serve-sim access token yet. A serve-sim server started with
+`--require-token` answers these requests with 401. EAS Simulator Preview sessions always
+use a token, so embedding them needs the client token support which is planned.
+
+If the whole Device Hub is remote, pass its public mount to `useActiveDeviceClient`, for
+example `https://hub.example.test/device-hub`.
+
 ## Call device controls
 
 Every control lives on the `DeviceClient`. Controls are no-ops while nothing is connected,
@@ -91,7 +105,11 @@ client.rotate();
 client.reload(); // reload the running React Native bundle
 client.setAppearance('dark'); // 'light' | 'dark'; read it back from client.appearance
 
-const png = await client.screenshot(); // Blob, or null when capture fails
+// { blob, artifact }, or null when capture fails. `artifact` is the session artifact outcome:
+// { status: 'saved' } | { status: 'disabled' } | { status: 'failed', error?: string } | null
+// (null for a backend that does not report one).
+const capture = await client.screenshot();
+if (capture?.artifact?.status === 'failed') console.warn('not saved to session artifacts', capture.artifact.error);
 
 // Input is normalized to 0..1 of the screen, so it works for every device size.
 client.sendTouch({ phase: 'begin', x: 0.5, y: 0.5 });

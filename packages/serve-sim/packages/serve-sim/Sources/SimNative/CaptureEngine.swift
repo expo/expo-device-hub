@@ -2,6 +2,7 @@ import Foundation
 import CoreVideo
 import CoreMedia
 import os
+import StreamingPolicy
 
 // JPEG and AVCC encode only while their HTTP transports have subscribers.
 // Encoded bytes are handed to the node-swift binding, which marshals them onto
@@ -11,6 +12,8 @@ struct Frame: Identifiable {
     let id = UUID()
     let pixelBuffer: CVPixelBuffer
     let timestamp: CMTime
+    /// The viewer canvas the capture actor saw when it produced this frame.
+    var canvas: Dimensions? = nil
 }
 
 protocol FrameEncoder {
@@ -32,6 +35,23 @@ protocol CaptureConsuming: Sendable {
     // (and CaptureEngine waited for all consumers to finish), a single bad consumer could
     // jam up the entire pipeline.
     func handleFrame(_ frame: Frame)
+}
+
+struct RecordingAvailability {
+    private(set) var unavailable = false
+
+    mutating func finalizationFailed(_ error: Error) {
+        let failure = error as NSError
+        unavailable = failure.domain != "serve-sim-recording" || ![13, 17].contains(failure.code)
+    }
+
+    func checkStart() throws {
+        guard !unavailable else {
+            throw NSError(domain: "serve-sim-recording", code: 11, userInfo: [
+                NSLocalizedDescriptionKey: "The recording encoder did not stop cleanly; restart serve-sim before recording again"
+            ])
+        }
+    }
 }
 
 actor CaptureConsumer<E: FrameEncoder>: CaptureConsuming {
@@ -79,7 +99,11 @@ actor CaptureEngine {
     private let deviceUDID: String
     private let screenID: UInt32?
     private let frameCapture = FrameCapture()
+    private let nativeFrameMailbox = NativeFrameMailbox()
     private var phase = Phase.unstarted
+    private var nativeFrameDeliveryActive = false
+    private var nativeFrameDeliveryPending = false
+    private var nativeFrameDeliveryGeneration: UInt64 = 0
 
     // MJPEG is stateless, so all subscribers share one encoder instance.
     private let mjpegEncoder: MJPEGEncoder
@@ -89,6 +113,16 @@ actor CaptureEngine {
     private(set) var screenSize = Dimensions(width: 0, height: 0)
     private var consumers = [UUID: CaptureConsuming]()
     private var webRTCPublisher: WebRTCPublisher?
+    private var webRTCConsumerId: UUID?
+    private var webRTCEncodeCanvas = Dimensions(width: 0, height: 0)
+    /// The shared H.264 canvas the publisher encodes at, as last reported.
+    private var viewerCanvas = Dimensions(width: 0, height: 0)
+    private var recording: NativeVideoRecorder?
+    private var recordingStarting = false
+    private var recordingFinalizing = false
+    private var recordingFinishTask: Task<NativeRecordingResult, Error>?
+    private var recordingAvailability = RecordingAvailability()
+    private var lastViewerCanvasSequence: UInt64?
     private var frameContinuation: AsyncStream<Frame>.Continuation?
     private var cancelledWebRTCSessionIds = Set<String>()
     private var cancelledWebRTCSessionIdOrder: [String] = []
@@ -116,9 +150,11 @@ actor CaptureEngine {
         )
         self.frameContinuation = frameContinuation
         do {
-            await frameCapture.setSnapshotMaxDimension(options.maxDimension)
-            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp in
-                frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp))
+            await refreshSnapshotSize()
+            let nativeFrameMailbox = self.nativeFrameMailbox
+            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas in
+                nativeFrameMailbox.publish(pixelBuffer, timestamp: timestamp, wallClock: Date())
+                frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas))
             }
         } catch {
             frameContinuation.finish()
@@ -132,9 +168,11 @@ actor CaptureEngine {
             await frameCapture.stop()
             return
         }
+        webRTCEncodeCanvas = await frameCapture.webRTCEncodeCanvasSize()
+            ?? Dimensions(width: 0, height: 0)
         Task {
             for await frame in frames {
-                handleFrame(frame)
+                await handleFrame(frame)
             }
         }
         phase = .running
@@ -150,6 +188,7 @@ actor CaptureEngine {
             await onFrame(encoded)
         }
         consumers[id] = consumer
+        Task { [weak self] in await self?.refreshSnapshotSize() }
         return { await self.removeConsumer(id) }
     }
 
@@ -157,14 +196,68 @@ actor CaptureEngine {
         _ id: UUID
     ) {
         consumers.removeValue(forKey: id)
+        Task { [weak self] in await self?.refreshSnapshotSize() }
     }
 
-    private func handleFrame(_ frame: Frame) {
+    /// The capture copy size follows the consumers: native while recording, the configured
+    /// size for MJPEG and AVCC subscribers, otherwise the viewer canvas.
+    private func refreshSnapshotSize() async {
+        let size = CaptureSnapshotPolicy.maxDimension(
+            recording: nativeFrameDeliveryActive,
+            otherConsumers: consumers.keys.contains { $0 != webRTCConsumerId },
+            configuredMaxDimension: options.maxDimension,
+            viewerCanvasLongEdge: max(viewerCanvas.width, viewerCanvas.height)
+        )
+        await frameCapture.setSnapshotMaxDimension(size)
+    }
+
+    private func viewerCanvasChanged(_ canvas: Dimensions, sequence: UInt64,
+                                     publisher: WebRTCPublisher) async {
+        guard webRTCPublisher === publisher,
+              lastViewerCanvasSequence.map({ sequence > $0 }) ?? true else { return }
+        lastViewerCanvasSequence = sequence
+        viewerCanvas = canvas
+        await refreshSnapshotSize()
+    }
+
+    private func handleFrame(_ frame: Frame) async {
         guard phase == .running else { return }
         screenSize = frame.pixelBuffer.dimensions
+        // Another integrated panel can change geometry while this active panel
+        // still delivers frames at the same dimensions. The capture actor sends
+        // its current canvas with each frame, so this costs no actor hop.
+        if let canvas = frame.canvas, canvas != webRTCEncodeCanvas {
+            webRTCEncodeCanvas = canvas
+            webRTCPublisher?.setEncodeCanvas(canvas)
+        }
         for consumer in consumers.values {
             consumer.handleFrame(frame)
         }
+    }
+
+    func startNativeFrameDelivery() async -> (mailbox: NativeFrameMailbox, canvas: Dimensions)? {
+        guard phase == .running, !nativeFrameDeliveryActive,
+              !nativeFrameDeliveryPending else { return nil }
+        nativeFrameDeliveryPending = true
+        nativeFrameDeliveryGeneration &+= 1
+        let generation = nativeFrameDeliveryGeneration
+        let canvas = await frameCapture.recordingCanvasSize()
+        guard phase == .running, generation == nativeFrameDeliveryGeneration else { return nil }
+        nativeFrameDeliveryPending = false
+        guard let canvas else { return nil }
+        nativeFrameDeliveryActive = true
+        await refreshSnapshotSize()
+        guard phase == .running, generation == nativeFrameDeliveryGeneration else { return nil }
+        nativeFrameMailbox.setActive(true)
+        return (nativeFrameMailbox, canvas)
+    }
+
+    func stopNativeFrameDelivery() async {
+        nativeFrameDeliveryGeneration &+= 1
+        nativeFrameDeliveryPending = false
+        nativeFrameMailbox.setActive(false)
+        nativeFrameDeliveryActive = false
+        await refreshSnapshotSize()
     }
 
     func addMJPEGConsumer(
@@ -220,6 +313,7 @@ actor CaptureEngine {
     private func removeAVCCConsumer(_ id: UUID) {
         consumers.removeValue(forKey: id)
         avccEncoders.removeValue(forKey: id)
+        Task { [weak self] in await self?.refreshSnapshotSize() }
         streamDiagnosticLog("[stream:avcc] subscriber removed count=\(avccEncoders.count)")
     }
 
@@ -247,7 +341,7 @@ actor CaptureEngine {
                     maxDimension: options.maxDimension
                 )
             }
-            await frameCapture.setSnapshotMaxDimension(options.maxDimension)
+            await refreshSnapshotSize()
             await webRTCPublisher?.updateSettings(
                 maxFps: options.h264Fps,
                 targetBitrate: options.h264Bitrate,
@@ -301,8 +395,20 @@ actor CaptureEngine {
                 idleFrames: counts.idle,
                 offeredFrames: flow?.offered,
                 forwardedFrames: flow?.forwarded,
+                sharedEncodedFrames: flow?.sharedEncoded,
                 pumpRestarts: flow?.pumpRestarts,
+                canvasMismatchDrops: flow?.canvasMismatchDrops,
+                pumpDeferrals: flow?.pumpDeferrals,
+                pumpRepeats: flow?.pumpRepeats,
+                unchangedFrames: flow?.unchangedFrames,
+                pumpTimerTicks: flow?.pumpTimerTicks,
+                pumpTimerLateSumMs: flow.map { Double($0.pumpTimerLateSumNs) / 1_000_000 },
+                pumpTimerLateMaxMs: flow.map { Double($0.pumpTimerLateMaxNs) / 1_000_000 },
+                sourceSubmitCount: flow?.sourceSubmitCount,
+                sourceSubmitSumMs: flow.map { Double($0.sourceSubmitSumNs) / 1_000_000 },
+                sourceSubmitMaxMs: flow.map { Double($0.sourceSubmitMaxNs) / 1_000_000 },
                 cpuFallbacks: timings.cpuFallbacks,
+                poolDrops: timings.poolDrops,
                 attempts: timings.attempts,
                 stalls: timings.stalls,
                 gapSumMs: Double(timings.gapSumNs) / 1_000_000,
@@ -312,7 +418,10 @@ actor CaptureEngine {
             ),
             encoder: webRTCPublisher?.encoderIdentity(
                 liveCodecs: sessions.filter(\.connected).compactMap(\.codec)
-            )
+            ),
+            viewerResize: webRTCPublisher?.viewerResizeCounters(),
+            sharedCanvas: webRTCPublisher?.sharedCanvasStatus(),
+            sharedEncoderPeers: webRTCPublisher?.sharedEncoderPeerStats()
         ))
         return String(decoding: data, as: UTF8.self)
     }
@@ -326,9 +435,24 @@ actor CaptureEngine {
         await frameCapture.subscribeScreenChanges(callback)
     }
 
-    func stop() async {
+    func stop() async throws {
         if phase == .stopped { return }
         phase = .stopped
+        var recordingError: Error?
+        if let recording {
+            let finishing = recordingFinishTask ?? Task { try await recording.finish() }
+            recordingFinishTask = finishing
+            do {
+                _ = try await finishing.value
+            } catch {
+                recordingError = error
+            }
+        }
+        recording = nil
+        nativeFrameDeliveryGeneration &+= 1
+        nativeFrameDeliveryPending = false
+        nativeFrameDeliveryActive = false
+        nativeFrameMailbox.setActive(false)
         frameContinuation?.finish()
         frameContinuation = nil
         webRTCPublisher?.stop()
@@ -336,6 +460,67 @@ actor CaptureEngine {
         consumers.removeAll()
         avccEncoders.removeAll()
         await frameCapture.stop()
+        if let recordingError { throw recordingError }
+    }
+
+    func startRecording(outputDirectory: String) async throws {
+        guard phase == .running else {
+            throw recordingError(10, "Capture is not running; start the simulator session and retry")
+        }
+        try recordingAvailability.checkStart()
+        guard recording == nil, !recordingStarting, !recordingFinalizing else {
+            throw recordingError(12, "A recording is already active; stop it before starting another")
+        }
+        recordingStarting = true
+        defer { recordingStarting = false }
+        guard let delivery = await startNativeFrameDelivery() else {
+            throw recordingError(13, "The native simulator display is unavailable; check that the device is booted and retry")
+        }
+        guard phase == .running else {
+            await stopNativeFrameDelivery()
+            throw recordingError(14, "Capture stopped before recording could start; restart the session and retry")
+        }
+        do {
+            let recorder = try NativeVideoRecorder(
+                mailbox: delivery.mailbox, canvas: delivery.canvas,
+                outputDirectory: outputDirectory
+            )
+            recording = recorder
+            recorder.start()
+        } catch {
+            await stopNativeFrameDelivery()
+            throw error
+        }
+    }
+
+    func stopRecording() async throws -> String {
+        guard let recording else {
+            throw recordingError(15, "No recording is active; start recording before stopping it")
+        }
+        recordingFinalizing = true
+        let finishing = recordingFinishTask ?? Task { try await recording.finish() }
+        recordingFinishTask = finishing
+        do {
+            let result = try await finishing.value
+            self.recording = nil
+            await stopNativeFrameDelivery()
+            recordingFinalizing = false
+            recordingFinishTask = nil
+            print("[recording] encoder=\(result.encoderID) encoded=\(result.encodedFrames) written=\(result.writtenFrames) repeated=\(result.repeatedFrames) dropped=\(result.droppedTicks) coalesced=\(result.coalescedDrops) sourceUnavailable=\(result.sourceUnavailableTicks) transferPool=\(result.transferPoolDrops) inFlight=\(result.inFlightDrops) writer=\(result.writerDrops) backpressure=\(result.writerBackpressureTicks) encodeFailures=\(result.encodeFailures) maxInFlight=\(result.maxInFlight) meanEncodeMs=\(result.meanEncodeMs) maxEncodeMs=\(result.maxEncodeMs)")
+            return result.manifestPath
+        } catch {
+            self.recording = nil
+            recordingAvailability.finalizationFailed(error)
+            await stopNativeFrameDelivery()
+            recordingFinalizing = false
+            recordingFinishTask = nil
+            throw error
+        }
+    }
+
+    private func recordingError(_ code: Int, _ message: String) -> NSError {
+        NSError(domain: "serve-sim-recording", code: code,
+                userInfo: [NSLocalizedDescriptionKey: message])
     }
 
     private func getWebRTCPublisher() -> WebRTCPublisher {
@@ -346,10 +531,19 @@ actor CaptureEngine {
         let publisher = WebRTCPublisher(
             maxFps: options.h264Fps,
             targetBitrate: options.h264Bitrate,
-            maxDimension: options.maxDimension
+            maxDimension: options.maxDimension,
+            encodeCanvas: webRTCEncodeCanvas
         )
-        consumers[UUID()] = WebRTCConsumer(publisher: publisher)
+        let consumerId = UUID()
+        consumers[consumerId] = WebRTCConsumer(publisher: publisher)
+        webRTCConsumerId = consumerId
         webRTCPublisher = publisher
+        lastViewerCanvasSequence = nil
+        publisher.setCanvasObserver { [weak self, weak publisher] canvas, sequence in
+            guard let publisher else { return }
+            Task { await self?.viewerCanvasChanged(canvas, sequence: sequence,
+                                                   publisher: publisher) }
+        }
         return publisher
     }
 

@@ -37,6 +37,13 @@ public enum H264LevelPolicy {
         return found.min()
     }
 
+    public static func shouldPreferVP8(offer: String, canvasWidth: Int, canvasHeight: Int) -> Bool {
+        guard offer.range(of: "VP8/", options: .caseInsensitive) != nil else { return false }
+        guard canvasWidth > 0, canvasHeight > 0 else { return true }
+        guard let level = minAdvertisedLevel(sdp: offer) else { return false }
+        return macroblocks(width: canvasWidth, height: canvasHeight) > maxFrameSize(levelIdc: level)
+    }
+
     /// The level this side sends at. Only the payloads the answer chose, in its active video
     /// section, count: a rejected section or an unchosen payload does not bound the stream.
     public static func negotiatedLevel(offer: String, answer: String) -> Int? {

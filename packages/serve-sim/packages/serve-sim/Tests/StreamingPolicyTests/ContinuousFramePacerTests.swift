@@ -2,6 +2,62 @@ import XCTest
 @testable import StreamingPolicy
 
 final class ContinuousFramePacerTests: XCTestCase {
+    func testSlotWaitsOneToleranceForAFrameThatIsSlightlyLate() {
+        var pacer = ContinuousFramePacer(framesPerSecond: 60)
+        pacer.setActive(true)
+        XCTAssertEqual(pacer.latestFrameArrived(atNanoseconds: 0), .schedule(nanoseconds: 0))
+        XCTAssertEqual(pacer.tick(atNanoseconds: 0),
+                       .send(timestampNanoseconds: 0, nextDelayNanoseconds: 16_666_666))
+        // A second frame, slightly early, establishes the source cadence.
+        XCTAssertEqual(pacer.latestFrameArrived(atNanoseconds: 16_000_000), .pumpNow)
+        XCTAssertEqual(pacer.tick(atNanoseconds: 16_000_000, chained: false),
+                       .send(timestampNanoseconds: 16_000_000, nextDelayNanoseconds: 17_333_332))
+        XCTAssertEqual(pacer.tick(atNanoseconds: 16_666_666), .wait(nanoseconds: 16_666_666))
+
+        // The third frame lands 0.67 ms after its slot. The chained tick waits
+        // one tolerance instead of repeating frame 1.
+        XCTAssertEqual(pacer.tick(atNanoseconds: 33_333_332), .wait(nanoseconds: 4_166_666))
+        XCTAssertEqual(pacer.deferredTicks, 1)
+        XCTAssertEqual(pacer.latestFrameArrived(atNanoseconds: 34_000_000), .pumpNow)
+        XCTAssertEqual(pacer.tick(atNanoseconds: 34_000_000, chained: false),
+                       .send(timestampNanoseconds: 34_000_000, nextDelayNanoseconds: 15_999_998))
+        XCTAssertEqual(pacer.repeatedSends, 0)
+
+        // The deferred chain tick fires and only re-arms for the next slot.
+        XCTAssertEqual(pacer.tick(atNanoseconds: 37_499_998), .wait(nanoseconds: 13_166_668))
+    }
+
+    func testIdleScreenStillRepeatsAtTheCadence() {
+        var pacer = ContinuousFramePacer(framesPerSecond: 60)
+        pacer.setActive(true)
+        XCTAssertEqual(pacer.latestFrameArrived(atNanoseconds: 0), .schedule(nanoseconds: 0))
+        XCTAssertEqual(pacer.tick(atNanoseconds: 0),
+                       .send(timestampNanoseconds: 0, nextDelayNanoseconds: 16_666_666))
+
+        // No source frames for 200 ms (the capture idle floor): one frame is not
+        // a cadence, so every slot repeats it without waiting.
+        var now: UInt64 = 16_666_666
+        var sends = 0
+        var waits = 0
+        while now < 200_000_000 {
+            switch pacer.tick(atNanoseconds: now) {
+            case let .send(_, next):
+                sends += 1
+                now += next
+            case let .wait(delay):
+                waits += 1
+                now += delay
+            case .stop:
+                XCTFail("unexpected stop")
+                return
+            }
+        }
+        XCTAssertEqual(waits, 0)
+        XCTAssertEqual(pacer.deferredTicks, 0)
+        XCTAssertGreaterThanOrEqual(sends, 10, "the idle screen still streams at the cadence")
+        XCTAssertEqual(pacer.repeatedSends, UInt64(sends))
+    }
+
     func testDueCaptureArrivalCanWakeTheSixtyFpsSlotWithoutStartingAnotherCadence() {
         var pacer = ContinuousFramePacer(framesPerSecond: 60)
         pacer.setActive(true)
@@ -159,6 +215,38 @@ final class ContinuousFramePacerTests: XCTestCase {
         XCTAssertLessThanOrEqual(lastTimestamp, 1_050_000_000)
     }
 
+    func testOneLateTickDoesNotLeaveIdlePumpWaitingTwicePerFrame() {
+        var pacer = ContinuousFramePacer(framesPerSecond: 60)
+        pacer.setActive(true)
+        XCTAssertEqual(pacer.latestFrameArrived(atNanoseconds: 0), .schedule(nanoseconds: 0))
+
+        var deadline: UInt64 = 0
+        var sends = 0
+        var waits = 0
+        var lastSend: UInt64 = 0
+        for tickIndex in 0 ..< 240 {
+            // One moderately late wake followed by ordinary 1.5 ms timer lag.
+            // The old grid could become stuck scheduling an immediate tick,
+            // then a full-interval wait, for every idle repeat.
+            let lateness: UInt64 = tickIndex == 6 ? 8_000_000 : 1_500_000
+            let now = deadline + lateness
+            switch pacer.tick(atNanoseconds: now) {
+            case let .send(timestampNanoseconds, nextDelayNanoseconds):
+                sends += 1
+                lastSend = timestampNanoseconds
+                deadline = now + nextDelayNanoseconds
+            case let .wait(delayNanoseconds):
+                waits += 1
+                deadline = now + delayNanoseconds
+            case .stop:
+                return XCTFail("The idle pump must remain active")
+            }
+        }
+        XCTAssertGreaterThanOrEqual(sends, 230)
+        XCTAssertLessThanOrEqual(waits, 10)
+        XCTAssertLessThanOrEqual(lastSend, 4_100_000_000)
+    }
+
     func testAStallLongerThanAnIntervalReanchorsWithoutASendBurst() {
         var pacer = ContinuousFramePacer(framesPerSecond: 60)
         pacer.setActive(true)
@@ -284,4 +372,20 @@ final class ContinuousFramePacerTests: XCTestCase {
             .schedule(nanoseconds: 0)
         )
     }
+
+    func testUnchangedFramesRestartALostChainInGridMode() {
+        var pacer = ContinuousFramePacer(framesPerSecond: 60, mode: .grid)
+        pacer.setActive(true)
+        XCTAssertEqual(pacer.latestFrameArrived(atNanoseconds: 0), .schedule(nanoseconds: 0))
+        guard case .send = pacer.tick(atNanoseconds: 0) else { return XCTFail("expected the first send") }
+        // The next chained tick is lost. On a static screen only unchanged frames arrive, at the
+        // capture's 5 fps idle floor; they must still let the watchdog restart the chain.
+        XCTAssertEqual(pacer.unchangedFrameArrived(atNanoseconds: 40_000_000), .ignore)
+        XCTAssertEqual(pacer.unchangedFrameArrived(atNanoseconds: 240_000_000), .restart(nanoseconds: 0))
+        // The restarted chain repeats the retained frame; the unchanged frame did not count as fresh.
+        XCTAssertEqual(pacer.repeatedSends, 0)
+        guard case .send = pacer.tick(atNanoseconds: 240_000_000) else { return XCTFail("expected a repeat") }
+        XCTAssertEqual(pacer.repeatedSends, 1)
+    }
+
 }

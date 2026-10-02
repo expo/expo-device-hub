@@ -315,6 +315,21 @@ export function ChevronDownIcon({ size = 14, color = 'currentColor', strokeWidth
   );
 }
 
+/** Lucide `chevron-right` — trailing affordance on the screenshot toast. */
+export function ChevronRightIcon({ size = 16, color = 'currentColor', strokeWidth = 2.25, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <polyline
+        points="9 18 15 12 9 6"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Lucide `chevrons-up-down` — trailing affordance on the Model select. */
 export function ChevronsUpDownIcon({ size = 14, color = 'currentColor', strokeWidth = 2, style }: IconProps) {
   return (

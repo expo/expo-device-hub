@@ -24,6 +24,7 @@ import {
   type OrientationMode,
 } from "./adb.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
+import { screenshotResponse } from "./screenshot-response.ts";
 import { getAccessibilitySnapshot } from "./accessibility.ts";
 import { getFoldStatus, setFoldPosture } from "./fold.ts";
 import {
@@ -1627,19 +1628,11 @@ async function createAppInternal(
     }
 
     if (url.pathname === "/api/screenshot") {
-      if (req.method !== "GET" && req.method !== "POST") {
+      if (req.method !== "POST") {
         return new Response("method not allowed", { status: 405 });
       }
       try {
-        const png = await screencapPng(opts.serial);
-        if (url.searchParams.get("format") === "base64") {
-          return Response.json({
-            ok: true,
-            mimeType: "image/png",
-            data: png.toString("base64"),
-          });
-        }
-        return new Response(new Uint8Array(png), { headers: { "Content-Type": "image/png" } });
+        return await screenshotResponse(await screencapPng(opts.serial), url);
       } catch (err) {
         return Response.json(
           { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -3143,6 +3136,11 @@ export function createRouter(
       url.pathname === "/webrtc/close";
     if (!deviceScoped) {
       return serveStaticFile(url.pathname) ?? new Response("not found", { status: 404 });
+    }
+
+    // Capture has side effects, so the method gate runs before ensure() resolves or starts a device.
+    if (url.pathname === "/api/screenshot" && req.method !== "POST") {
+      return new Response("method not allowed", { status: 405 });
     }
 
     // Everything else operates on a single device.

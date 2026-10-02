@@ -3,12 +3,44 @@ import Testing
 
 @Suite("HID input setup")
 struct HIDInputSetupTests {
+    // Regression guard for Duo reboot recovery: SimHID is constructed with the
+    // device session, before capture resets CoreDevice's boot-bound state.
+    @Test("setup does not start until the first input")
+    func startsOnFirstInput() async throws {
+        let injector = PendingHIDInjector()
+        let setup = HIDInputSetup { try await injector.setup() }
+
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await injector.setupCalls == 0)
+
+        async let touch: Void = setup.run { await injector.touch() }
+        await injector.waitForSetup()
+        #expect(await injector.setupCalls == 1)
+        await injector.finishSetup()
+        try await touch
+        #expect(await injector.targets == [0x103])
+    }
+
+    @Test("concurrent first inputs share one setup")
+    func concurrentFirstInputsShareSetup() async throws {
+        let injector = PendingHIDInjector()
+        let setup = HIDInputSetup { try await injector.setup() }
+
+        async let first: Void = setup.run { await injector.touch() }
+        async let second: Void = setup.run { await injector.touch() }
+        await injector.waitForSetup()
+        await injector.finishSetup()
+        _ = try await (first, second)
+        #expect(await injector.setupCalls == 1)
+        #expect(await injector.targets == [0x103, 0x103])
+    }
+
     @Test("a touch during setup waits for the foldable target instead of using 0x32")
     func waitsForFoldableSetup() async throws {
         let injector = PendingHIDInjector()
         let setup = HIDInputSetup { try await injector.setup() }
-        await injector.waitForSetup()
         async let touch: Void = setup.run { await injector.touch() }
+        await injector.waitForSetup()
 
         try await Task.sleep(for: .milliseconds(20))
         #expect(await injector.targets.isEmpty)
@@ -25,8 +57,8 @@ struct HIDInputSetupTests {
     func rejectsAfterFailure() async throws {
         let injector = PendingHIDInjector()
         let setup = HIDInputSetup { try await injector.setup() }
-        await injector.waitForSetup()
         let pending = Task { try await setup.run { await injector.touch() } }
+        await injector.waitForSetup()
         await injector.finishSetup(failing: true)
 
         await #expect(throws: SetupFailure.unavailable) { try await pending.value }

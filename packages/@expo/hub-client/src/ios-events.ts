@@ -286,8 +286,14 @@ function eventMessage(
       return action ? `${title(action)} app` : 'App event';
     case 'media':
       return 'Add media';
-    case 'screenshot':
-      return 'Screenshot';
+    case 'screenshot': {
+      if (entry.status !== 'error') return 'Screenshot';
+      const label =
+        typeof details?.file === 'string'
+          ? 'Screenshot not saved to session artifacts'
+          : 'Screenshot failed';
+      return typeof details?.error === 'string' ? `${label}: ${details.error}` : label;
+    }
     case 'camera':
       return action ? `Camera ${humanize(action)}` : 'Camera';
     case 'ui-setting': {

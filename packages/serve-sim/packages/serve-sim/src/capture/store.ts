@@ -1,6 +1,6 @@
 export const CAPTURE_SCHEMA_VERSION = 1;
 
-const MAX_REQUESTS = 500;
+export const MAX_REQUESTS = 500;
 const TRAFFIC_BUCKET_MS = 100;
 const TRAFFIC_WINDOW_BUCKETS = 10;
 
@@ -13,6 +13,8 @@ export interface CapturedRequest {
   url: string;
   status: number | null;
   mimeType: string | null;
+  /** Request Content-Type, kept as metadata even when headers are not captured. */
+  requestMimeType?: string | null;
   requestBytes: number;
   responseBytes: number;
   /** Unix time in milliseconds, preserved across exports. */
@@ -42,6 +44,7 @@ export interface CaptureMeta {
   attachment: CaptureAttachment;
   attachError: string | null;
   droppedOversizedBodies: number;
+  fields: string[];
 }
 
 type Listener = (event: CaptureEvent) => void;
@@ -81,6 +84,11 @@ export class CaptureStore {
 
   body(id: string): CapturedBody | null {
     return this.bodies.get(id) ?? null;
+  }
+
+  /** When the request with this id started, or null if this store does not hold it. */
+  startedAt(id: string): number | null {
+    return this.requests.get(id)?.startedAt ?? null;
   }
 
   /** Whether this request's body was dropped for the memory budget, not absent from the start. */

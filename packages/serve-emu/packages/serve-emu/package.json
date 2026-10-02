@@ -1,6 +1,7 @@
 {
   "name": "serve-emu",
   "version": "0.0.5",
+  "private": true,
   "description": "The `npx serve` of Android devices — stream a booted emulator or attached device over WebSocket/WebCodecs or WebRTC H.264.",
   "license": "Apache-2.0",
   "type": "module",

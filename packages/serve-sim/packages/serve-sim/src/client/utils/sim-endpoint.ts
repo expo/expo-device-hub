@@ -7,6 +7,7 @@ declare global {
       url: string;
       streamUrl: string;
       wsUrl: string;
+      inputAdmission?: true;
       pid: number;
       port: number;
       device: string;
@@ -14,6 +15,7 @@ declare global {
       logsEndpoint?: string;
       metricsEndpoint?: string;
       crashesEndpoint?: string;
+      captureEndpoint?: string;
       axEndpoint?: string;
       cameraStatusEndpoint?: string;
       appStateEndpoint?: string;

@@ -67,7 +67,7 @@ export function ScreenshotPanel() {
     setBusy(true);
     setStatus("Capturing...");
     try {
-      const res = await fetch("/api/screenshot", { cache: "no-store" });
+      const res = await fetch("/api/screenshot", { method: "POST", cache: "no-store" });
       if (!res.ok) {
         let message = `HTTP ${res.status}`;
         try {

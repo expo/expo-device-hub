@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { managedStartupDylibs } from "../../capability-config";
-import { createCaptureRuntime, CaptureEnableError } from "../../capture/runtime";
+import { createCaptureRuntime, CaptureEnableError, discardCaptureArtifactsForExit } from "../../capture/runtime";
 import { CaptureStore } from "../../capture/store";
 import { type CaptureProxy, type MitmProxyDeps } from "../../capture/mitm-engine";
 import { installShims, useTempStateDir } from "../helpers";
@@ -21,6 +21,12 @@ function harness(
     trustCa?: (udid: string, caPem: string) => Promise<void>;
     inject?: (udid: string, portFile: string) => Promise<void>;
     clearInjection?: (udid: string) => Promise<void>;
+    isInjected?: (udid: string, portFile: string) => Promise<boolean>;
+    checkIntervalMs?: number;
+    writeDiskArtifacts?: boolean;
+    captureDirFor?: (udid: string) => string;
+    creatorVersion?: string;
+    flushIntervalMs?: number;
   } = {},
 ) {
   const calls: string[] = [];
@@ -44,6 +50,13 @@ function harness(
       publish: overrides.inject ?? (async (_udid, portFile) => void calls.push(`injected:${portFile}`)),
       remove: overrides.clearInjection ?? (async () => void calls.push("injection-cleared")),
     }),
+    isInjected: overrides.isInjected ?? (async () => true),
+    checkIntervalMs: overrides.checkIntervalMs ?? 0,
+    // Default off in unit tests — dedicated disk tests opt in with a temp dir.
+    writeDiskArtifacts: overrides.writeDiskArtifacts ?? false,
+    captureDirFor: overrides.captureDirFor,
+    creatorVersion: overrides.creatorVersion,
+    flushIntervalMs: overrides.flushIntervalMs,
   });
   return { runtime, calls };
 }
@@ -182,8 +195,16 @@ describe("capture runtime", () => {
     expect(meta.attachment).toBe("capturing");
     expect(meta.proxyAddress).toBe("127.0.0.1:9123");
     expect(meta.attachError).toBeNull();
+    expect(meta.fields).toEqual([]);
     // Order matters: an app launched before the CA is trusted fails every HTTPS handshake.
     expect(calls).toEqual(["proxy-started", "trusted:ok", `injected:${PORT_FILE}`]);
+  });
+
+  test("honors an explicit capture field allowlist on new sessions", async () => {
+    const { runtime } = harness();
+    runtime.setFields(["header", "request-body", "response-body"]);
+    const meta = await runtime.enableForDevice(UDID);
+    expect(meta.fields).toEqual(["header", "request-body", "response-body"]);
   });
 
   test("reports a device that was never enabled, rather than inventing a session", () => {
@@ -191,6 +212,7 @@ describe("capture runtime", () => {
     const meta = runtime.metaFor(UDID);
 
     expect(meta.attachment).toBe("not-enabled");
+    expect(meta.fields).toEqual([]);
     expect(meta.attachError).toBeNull();
     expect(runtime.storeFor(UDID)).toBeNull();
     expect(runtime.throughputFor(UDID)).toBeNull();
@@ -310,6 +332,53 @@ describe("capture runtime", () => {
 
     expect(noDylib.metaFor(UDID).attachment).toBe("not-enabled");
     expect(seen).toEqual(["failed", "not-enabled"]);
+  });
+
+  test("disableAll finishes every device before it reports a failure", async () => {
+    const OTHER = "ABCD1234-0000-0000-0000-00000000FFFF";
+    const { runtime } = harness({
+      clearInjection: async (udid) => {
+        if (udid === UDID) throw new Error("device already shut down");
+      },
+    });
+    await runtime.enableForDevice(UDID);
+    await runtime.enableForDevice(OTHER);
+
+    const error = await runtime.disableAll().catch((e) => e);
+    expect(error).toBeInstanceOf(AggregateError);
+    expect((error as AggregateError).errors.map((e) => (e as Error).message)).toEqual(["device already shut down"]);
+    expect(runtime.storeFor(OTHER)).toBeNull();
+  });
+
+  test("refuses every start while capture is refused, and starts again once allowed", async () => {
+    const { runtime, calls } = harness();
+    runtime.refuseCapture("Network capture needs --require-token.");
+    const error = await runtime.enableForDevice(UDID).catch((e) => e);
+    expect(error).toBeInstanceOf(CaptureEnableError);
+    expect(error.meta.attachError).toBe("Network capture needs --require-token.");
+    expect(runtime.metaFor(UDID).attachment).toBe("failed");
+    expect(calls).not.toContain("proxy-started");
+
+    runtime.refuseCapture(null);
+    expect((await runtime.enableForDevice(UDID)).attachment).toBe("capturing");
+  });
+
+  test("refuses the capability registry's path too, so --enable networkCapture cannot bypass it", async () => {
+    const { runtime, calls } = harness();
+    runtime.refuseCapture("Network capture needs --require-token.");
+
+    // applyDefaultCapabilities and `--enable networkCapture` call the registered capability
+    // directly, never enableForDevice.
+    await expect(
+      runtime.capability.setEnabled({ udid: UDID, enabled: true, bundleId: null, options: {} }),
+    ).rejects.toThrow("Network capture needs --require-token.");
+    expect(calls).not.toContain("proxy-started");
+    expect(runtime.storeFor(UDID)).toBeNull();
+
+    runtime.refuseCapture(null);
+    const prepared = await runtime.capability.setEnabled({ udid: UDID, enabled: true, bundleId: null, options: {} });
+    expect(prepared).not.toBeNull();
+    await runtime.disableAll();
   });
 
   test("rejects when the proxy never starts, after publishing failed meta", async () => {
@@ -563,7 +632,9 @@ describe("capture runtime", () => {
 
     const capturing = harness();
     await capturing.runtime.enableForDevice(UDID);
-    capturing.runtime.storeFor(UDID)!.noteTraffic(1500, 200);
+    const capturingStore = capturing.runtime.storeFor(UDID);
+    if (!capturingStore) throw new Error("expected capture store");
+    capturingStore.noteTraffic(1500, 200);
     expect(capturing.runtime.throughputFor(UDID)).toEqual({ netInBytesPerSec: 1500, netOutBytesPerSec: 200 });
   });
 
@@ -589,6 +660,175 @@ describe("capture runtime", () => {
   });
 
 
+  test("reports a device that quietly stopped capturing after consecutive misses", async () => {
+    const { runtime } = harness({ isInjected: async () => false, checkIntervalMs: 0 });
+    const frames: string[] = [];
+    await runtime.enableForDevice(UDID);
+    runtime.subscribe(UDID, (event) => frames.push(event.type));
+
+    // One miss is treated as a transient probe failure.
+    expect((await runtime.refreshForDevice(UDID)).attachment).toBe("capturing");
+    const meta = await runtime.refreshForDevice(UDID);
+
+    expect(meta.attachment).toBe("failed");
+    expect(meta.attachError).toContain("restarted");
+    expect(frames).toContain("meta");
+  });
+
+  test("keeps the proxy's exit reason when it exits while an injection probe waits", async () => {
+    let killProxy = (_reason: string) => {};
+    let probes = 0;
+    const { runtime } = harness({
+      checkIntervalMs: 0,
+      startProxy: async (_store, deps) => {
+        killProxy = deps.onUnexpectedExit ?? (() => {});
+        return { address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM, close: async () => {} };
+      },
+      isInjected: async () => {
+        // The second probe is still waiting when the proxy exits.
+        if (++probes === 2) killProxy("The capture proxy stopped unexpectedly (exit 1).");
+        return false;
+      },
+    });
+    await runtime.enableForDevice(UDID);
+
+    await runtime.refreshForDevice(UDID);
+    const meta = await runtime.refreshForDevice(UDID);
+
+    expect(meta.attachment).toBe("failed");
+    expect(meta.attachError).toContain("stopped unexpectedly");
+    expect(meta.attachError).not.toContain("restarted");
+  });
+
+  test("asks the device once when several viewers check at the same moment", async () => {
+    let asks = 0;
+    const { runtime } = harness({
+      isInjected: async () => {
+        asks++;
+        return true;
+      },
+    });
+    await runtime.enableForDevice(UDID);
+
+    await Promise.all([
+      runtime.refreshForDevice(UDID),
+      runtime.refreshForDevice(UDID),
+      runtime.refreshForDevice(UDID),
+    ]);
+
+    expect(asks).toBe(1);
+  });
+
+  test("does not ask again straight away, however often it is called", async () => {
+    let asks = 0;
+    const { runtime } = harness({
+      checkIntervalMs: 60_000,
+      isInjected: async () => {
+        asks++;
+        return true;
+      },
+    });
+    await runtime.enableForDevice(UDID);
+
+    await runtime.refreshForDevice(UDID);
+    await runtime.refreshForDevice(UDID);
+
+    expect(asks).toBe(1);
+  });
+
+  test("leaves a healthy device alone and tells nobody", async () => {
+    const { runtime } = harness();
+    const frames: string[] = [];
+    await runtime.enableForDevice(UDID);
+    runtime.subscribe(UDID, (event) => frames.push(event.type));
+
+    expect((await runtime.refreshForDevice(UDID)).attachment).toBe("capturing");
+    expect(frames).toEqual([]);
+  });
+
+  test("keeps a failure that happened before any session when a viewer refreshes", async () => {
+    const noDylib = harnessWithoutDylib();
+    await expect(noDylib.enableForDevice(UDID)).rejects.toBeInstanceOf(CaptureEnableError);
+
+    // No session exists, but the device is not "not enabled": the viewer needs the reason.
+    const meta = await noDylib.refreshForDevice(UDID);
+    expect(meta.attachment).toBe("failed");
+    expect(meta.attachError).toContain("library is missing");
+  });
+
+  test("keeps an existing failure reason rather than replacing it with a vaguer one", async () => {
+    const { runtime } = harness({
+      trustCa: async () => {
+        throw new Error("simctl refused");
+      },
+      isInjected: async () => false,
+    });
+    await expect(runtime.enableForDevice(UDID)).rejects.toBeInstanceOf(CaptureEnableError);
+
+    expect((await runtime.refreshForDevice(UDID)).attachError).toContain("simctl refused");
+  });
+
+  test("reports a device it never enabled as not enabled, without asking the device", async () => {
+    let asked = false;
+    const { runtime } = harness({
+      isInjected: async () => {
+        asked = true;
+        return true;
+      },
+    });
+
+    expect((await runtime.refreshForDevice(UDID)).attachment).toBe("not-enabled");
+    expect(asked).toBe(false);
+  });
+
+  test("does not treat a probe error as an injection miss", async () => {
+    const { runtime } = harness({
+      checkIntervalMs: 0,
+      isInjected: async () => {
+        throw new Error("device not found");
+      },
+    });
+    await runtime.enableForDevice(UDID);
+
+    expect((await runtime.refreshForDevice(UDID)).attachment).toBe("capturing");
+    expect((await runtime.refreshForDevice(UDID)).attachment).toBe("capturing");
+  });
+
+  test("reports a device that was shut down while capturing", async () => {
+    const { runtime } = harness({
+      checkIntervalMs: 0,
+      isInjected: async () => {
+        throw new Error(
+          "Command failed: xcrun simctl spawn X launchctl getenv SERVE_SIM_CAPABILITY_CONFIG\n" +
+            "An error was encountered processing the command (domain=com.apple.CoreSimulator.SimError, code=405):\n" +
+            "Process spawn via launchd failed because device is not booted.",
+        );
+      },
+    });
+    await runtime.enableForDevice(UDID);
+
+    expect((await runtime.refreshForDevice(UDID)).attachment).toBe("capturing");
+    const meta = await runtime.refreshForDevice(UDID);
+    expect(meta.attachment).toBe("failed");
+    expect(meta.attachError).toContain("shut down");
+  });
+
+  test("does not join two misses across a probe error", async () => {
+    const results: (boolean | Error)[] = [false, new Error("device not found"), false];
+    const { runtime } = harness({
+      checkIntervalMs: 0,
+      isInjected: async () => {
+        const next = results.shift();
+        if (next instanceof Error) throw next;
+        return next ?? true;
+      },
+    });
+    await runtime.enableForDevice(UDID);
+
+    for (let i = 0; i < 3; i++) await runtime.refreshForDevice(UDID);
+    expect(runtime.metaFor(UDID).attachment).toBe("capturing");
+  });
+
   test("hands a subscriber the live store without changing what the device does", async () => {
     const { runtime, calls } = harness();
     await runtime.enableForDevice(UDID);
@@ -597,7 +837,9 @@ describe("capture runtime", () => {
     const events: string[] = [];
     const first = runtime.subscribe(UDID, (event) => events.push(event.type));
     const second = runtime.subscribe(UDID, () => {});
-    runtime.storeFor(UDID)!.start("GET", "https://example.test/a");
+    const store = runtime.storeFor(UDID);
+    if (!store) throw new Error("expected capture store");
+    store.start("GET", "https://example.test/a");
     first.unsubscribe();
     second.unsubscribe();
 
@@ -607,6 +849,210 @@ describe("capture runtime", () => {
     expect(runtime.metaFor(UDID).attachment).toBe("capturing");
   });
 
+  test("reports failed capability removal and retains the proxy for cleanup", async () => {
+    let failRemoval = true;
+    const { runtime, calls } = harness({
+      clearInjection: async () => {
+        if (failRemoval) throw new Error("Capability is still armed");
+      },
+    });
+    await runtime.enableForDevice(UDID);
+    await expect(runtime.disableForDevice(UDID)).rejects.toThrow("still armed");
+    expect(calls).not.toContain("proxy-closed");
+    failRemoval = false;
+    await runtime.disableForDevice(UDID);
+    expect(calls).toContain("proxy-closed");
+  });
+
+  test("holds recording ownership until device cleanup finishes", async () => {
+    const { mkdtempSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-runtime-owner-"));
+    const clear = gate();
+    const clearing = gate();
+    const first = harness({ writeDiskArtifacts: true, captureDirFor: () => dir,
+      clearInjection: async () => { clearing.release(); await clear.promise; },
+    });
+    const second = harness({ writeDiskArtifacts: true, captureDirFor: () => dir });
+    await first.runtime.enableForDevice(UDID);
+    const stopping = first.runtime.disableForDevice(UDID);
+    await clearing.promise;
+    try {
+      await expect(second.runtime.enableForDevice(UDID)).rejects.toThrow("Another recording holds");
+      expect(second.calls).toEqual([]);
+    } finally {
+      clear.release();
+      await stopping;
+    }
+    await second.runtime.enableForDevice(UDID);
+    await first.runtime.disableAll();
+    expect(await second.runtime.flushHarPathFor(UDID)).not.toBeNull();
+    await second.runtime.disableAll();
+  });
+
+  test("removes capture files on process exit without any caller wiring it up", async () => {
+    const { existsSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = join(mkdtempSync(join(tmpdir(), "serve-sim-runtime-exit-hook-")), "capture-device");
+    const { runtime } = harness({ writeDiskArtifacts: true, captureDirFor: () => dir });
+    try {
+      await runtime.enableForDevice(UDID);
+      expect(existsSync(dir)).toBe(true);
+      expect(process.listeners("exit")).toContain(discardCaptureArtifactsForExit);
+      discardCaptureArtifactsForExit();
+      expect(existsSync(dir)).toBe(false);
+      await runtime.disableAll();
+    } finally {
+      rmSync(join(dir, ".."), { recursive: true, force: true });
+    }
+  });
+
+  test("removes capture files synchronously for process exit", async () => {
+    const { existsSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = join(mkdtempSync(join(tmpdir(), "serve-sim-runtime-exit-")), "capture-device");
+    const { runtime } = harness({ writeDiskArtifacts: true, captureDirFor: () => dir });
+    try {
+      await runtime.enableForDevice(UDID);
+      expect(existsSync(join(dir, "capture.har"))).toBe(true);
+
+      // No await: an exit handler cannot wait for the async teardown.
+      runtime.discardArtifactsSync();
+      expect(existsSync(dir)).toBe(false);
+
+      await runtime.disableAll();
+      expect(existsSync(dir)).toBe(false);
+    } finally {
+      rmSync(join(dir, ".."), { recursive: true, force: true });
+    }
+  });
+
+  test("writes network-capture.json + capture.har while capturing, then removes them on disable", async () => {
+    const { existsSync, mkdtempSync, readFileSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-runtime-disk-"));
+    const { runtime } = harness({
+      writeDiskArtifacts: true,
+      captureDirFor: () => dir,
+      creatorVersion: "disk-test",
+      // HAR is stream-rebuilt on an interval from NDJSON, not on every finish.
+      flushIntervalMs: 50,
+    });
+
+    try {
+      await runtime.enableForDevice(UDID);
+      const paths = runtime.artifactPathsFor(UDID);
+      expect(paths?.networkCapturePath).toContain("network-capture.json");
+      expect(paths?.harPath).toContain("capture.har");
+
+      const store = runtime.storeFor(UDID);
+      if (!store) throw new Error("expected capture store");
+      const id = store.start("GET", "https://example.test/");
+      store.setBody(id, {
+        requestHeaders: {},
+        responseHeaders: {},
+        requestBody: null,
+        responseBody: "hi",
+        requestTruncated: false,
+        responseTruncated: false,
+        requestBinary: false,
+        responseBinary: false,
+      });
+      store.update(id, { status: 200, durationMs: 3, responseBytes: 2 }, true);
+
+      // NDJSON append is async. The session HAR is rebuilt on demand, as the download route does.
+      const eventsPath = join(dir, "network-capture.json");
+      const harPath = join(dir, "capture.har");
+      expect(await runtime.flushHarPathFor(UDID)).toBe(harPath);
+      const deadline = Date.now() + 2000;
+      let har: { log: { entries: Array<{ response: { content: { text?: string } } }> } } | null =
+        null;
+      while (Date.now() < deadline) {
+        const eventsReady =
+          existsSync(eventsPath) && readFileSync(eventsPath, "utf8").includes('"type":"finished"');
+        if (eventsReady && existsSync(harPath)) {
+          try {
+            const parsed = JSON.parse(readFileSync(harPath, "utf8"));
+            if (parsed.log?.entries?.length === 1) {
+              har = parsed;
+              break;
+            }
+          } catch {
+            // HAR not flushed yet (interval rebuild).
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+
+      const events = readFileSync(eventsPath, "utf8");
+      expect(events).toContain('"type":"finished"');
+      if (har === null) throw new Error("expected capture.har with one entry");
+      expect(har.log.entries).toHaveLength(1);
+      const [entry] = har.log.entries;
+      if (entry === undefined) throw new Error("expected first HAR entry");
+      expect(entry.response.content.text).toBe("hi");
+
+      await runtime.disableForDevice(UDID);
+      expect(runtime.artifactPathsFor(UDID)).toBeNull();
+      expect(existsSync(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("removes capture artifacts when enable fails after disk attach", async () => {
+    const { existsSync, mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-runtime-disk-fail-"));
+    const { runtime } = harness({
+      writeDiskArtifacts: true,
+      captureDirFor: () => dir,
+      trustCa: async () => {
+        throw new Error("ca failed");
+      },
+    });
+
+    try {
+      await expect(runtime.enableForDevice(UDID)).rejects.toMatchObject({
+        name: "CaptureEnableError",
+        meta: { attachment: "failed" },
+      });
+      expect(runtime.artifactPathsFor(UDID)).toBeNull();
+      expect(existsSync(dir)).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("uses one policy for every device, however capture was started", async () => {
+    const seen: (readonly string[])[] = [];
+    const runtime = createCaptureRuntime({
+      startProxy: async (_store, deps) => {
+        seen.push([...(deps.fields ?? [])]);
+        return {
+          address: "127.0.0.1:9123",
+          portFile: PORT_FILE,
+          caPem: async () => CA_PEM,
+          close: async () => {},
+        };
+      },
+      trustCa: async () => {},
+      dylib: () => "/fake/libSimNetProxy.dylib",
+      configure: capabilityHarness(),
+    });
+    runtime.setFields(["header"]);
+
+    await runtime.enableForDevice(UDID);
+    await runtime.disableForDevice(UDID);
+    await runtime.enableForDevice(UDID);
+
+    expect(seen).toEqual([["header"], ["header"]]);
+  });
 });
 
 // The suites above replace the launch-manager transaction with `capabilityHarness`. This one keeps

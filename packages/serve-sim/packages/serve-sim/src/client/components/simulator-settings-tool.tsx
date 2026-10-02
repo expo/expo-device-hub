@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { Box, FoldHorizontal, Image, Laptop, Maximize, SlidersHorizontal } from "lucide-react";
-import { hostUiRequest } from "../utils/exec";
+import { hostUiRequest } from "../../socket/client-control";
 import { parseRuntime } from "../utils/grid";
 import { CollapsibleSection } from "./collapsible-section";
 import { Select } from "./select";

@@ -26,6 +26,7 @@ https://github.com/user-attachments/assets/fbf890f4-c8c7-4684-82be-d677b8a188f8
 - Drag and drop videos and images to add them to the simulator device. 
 - Keyboard commands and hot keys are forwarded to the simulator, including CMD+SHIFT+H to go home.
 - Apple Watch, iPad, and iOS support.
+- Network capture: decrypt and inspect a simulator's HTTPS traffic (see [Network capture](#network-capture)).
 
 ## Log scopes
 
@@ -94,6 +95,8 @@ serve-sim ca-debug <option> <on|off> [-d udid]
                                       (blended|copies|misaligned|offscreen|slow-animations)
 serve-sim memory-warning [-d udid]    Simulate a memory warning
 serve-sim event-log [-d udid]         Show recent simulator events
+serve-sim capture har -o <path> [-d udid]
+                                      Follow a live capture into HAR + JSON files
 
 serve-sim camera <bundle-id> [-d udid] [source-options]
                                       Inject a synthetic camera feed and (re)launch the app
@@ -111,6 +114,13 @@ Options:
       --detach        Spawn server and exit (daemon mode)
   -q, --quiet         JSON-only output
       --no-preview    Skip the web UI; stream in foreground only
+      --network-capture
+                      Record HTTP(S) for selected devices, including already booted ones
+                      (requires mitmproxy; see Network capture below)
+      --network-capture-field <field>
+                      What to keep beyond metadata: header | query |
+                      request-body | response-body (repeatable or
+                      comma-separated; default: none)
       --codec <codec> HTTP stream codec: 'auto', 'h264', or 'mjpeg'
       --transport <http|webrtc>
                       Stream transport (default: http)
@@ -164,22 +174,38 @@ Starting with `--transport webrtc` locks the preview to WebRTC for the lifetime
 of the server. The UI exposes only WebRTC codec and encoder controls, the
 settings API rejects HTTP-only controls, and the MJPEG/AVCC endpoints return
 `409 stream_transport_locked` instead of opening tunneled screen streams.
-While a peer is connected, one absolute-cadence publisher continuously submits
-the latest captured frame at the configured `--video-fps`. SimulatorKit change
+While a peer is connected, one publisher sends each new frame when it arrives,
+up to 1.5 times the configured `--video-fps`, and repeats the latest frame at
+`--video-fps` while the screen does not change. SimulatorKit change
 callbacks are supplemented by a 60 Hz IOSurface seed poll; that poll is a
 fallback cadence, not a capture FPS ceiling. The libwebrtc
 source adapter uses a 1,000 FPS safety ceiling and the RTP sender has no separate
 FPS cap, so neither can phase-collide with the publisher cadence.
 Multiple WebRTC viewers can use the same simulator simultaneously. They share
-one SimulatorKit capture source, while each viewer has an independent peer
-connection, encoder, congestion controller, and helper WebSocket. HTTP streams
+one SimulatorKit capture source and, for H.264, one shared VideoToolbox encoder.
+Each viewer retains its own peer connection, congestion controller, RTP stream,
+and helper WebSocket. VP8 fallback keeps per-peer encoders. HTTP streams
 continue to support multiple viewers as well.
 
-See [WebRTC architecture](docs/webrtc-architecture.md) for the current design,
-control-channel decision, known constraints, and planned direction.
+See [WebRTC architecture](docs/webrtc-architecture.md) for signaling and
+control, and [Video pipeline and recording](docs/video-pipeline.md) for capture,
+scaling, hardware encoding, the recording contract, and measured limits.
 
 See [API](docs/api.md) for the HTTP routes, authentication, CORS and the
 WebSocket endpoints.
+
+### Recording video
+
+Start serve-sim for the simulator, then run:
+
+```sh
+serve-sim record-video --udid <udid> --output <empty-dir>
+```
+
+Send SIGINT to finish the recording. The command prints the path to
+`session.json`, and the output directory contains `recording.mp4`. Sessions
+started with `--require-token` use their bearer token for recording control;
+sessions without it need no token.
 
 ### Examples
 
@@ -251,6 +277,33 @@ Sources:
 - **placeholder** — animated programmatic frames (default).
 - **file** — image (PNG/JPEG/HEIC/…) or video (mp4/mov/m4v/webm/…). The CLI sniffs the kind from the extension and falls back to magic bytes for files without an extension.
 - **webcam** — live `AVCaptureDevice` (built-in, Continuity, external).
+
+## Network capture
+
+Decrypts HTTPS from third-party apps on a simulator (local mitmproxy + trusted CA). Apple system apps such as Safari are left unproxied. Certificate-pinned apps will fail while capture is on. Apps already running when capture starts may miss requests or need a relaunch if they keep using existing network sessions.
+
+```sh
+# Metadata only (default). Headers and bodies are opt-in.
+serve-sim --network-capture
+
+# Include request and/or response bodies
+serve-sim --network-capture --network-capture-field header,request-body,response-body
+
+# Optional: follow the live stream into files you keep
+serve-sim capture har -o ./capture.har
+```
+
+| Flag / command | What it does |
+| --- | --- |
+| `--network-capture` | Start capture on selected devices, including already booted ones |
+| `--network-capture-field <field>` | Keep `header`, `query`, `request-body`, and/or `response-body` beyond metadata (repeatable or comma-separated). Default: none |
+| `serve-sim capture har -o <path>` | Copy the session's recorded requests, then follow the live stream into a HAR (and JSON next to it). Keeps the newest 10,000 requests |
+
+Use **Enable capture** in the tools panel to start without rebooting. Turning capture off restarts the simulator, so running apps cannot keep using a stopped proxy.
+
+While capturing, the tools panel lists requests. Session files live under `$TMPDIR/serve-sim/capture-<udid>/` and are removed when capture stops. Capture HTTP routes require the preview session Bearer token.
+
+Requires [mitmproxy](https://mitmproxy.org/) on the host. Relaunch apps after enabling so they pick up the proxy. Details on redaction and risks: [docs/network-capture-security.md](docs/network-capture-security.md).
 
 ## Connectors
 

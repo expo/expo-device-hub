@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import WebSocket from "ws";
 
-import { gridDeviceState, simMiddleware } from "../middleware";
+import { gridDeviceState, gridStateToken, simMiddleware } from "../middleware";
 import { servePreview, type PreviewServer } from "../runtime";
 
 const PORT = 3467;
@@ -142,6 +142,14 @@ describe("grid-booted devices", () => {
 
     expect(gated.token).toBe(TOKEN);
     expect(ungated.token).toBeUndefined();
+  });
+
+  test("get the token under the gate or on loopback, not on an ungated public host", () => {
+    // Capture commands read it; a public host without the gate refuses capture, so it stays out.
+    expect(gridStateToken(TOKEN, { requirePreviewToken: true, loopbackOnly: false })).toBe(TOKEN);
+    expect(gridStateToken(TOKEN, { requirePreviewToken: false, loopbackOnly: true })).toBe(TOKEN);
+    expect(gridStateToken(TOKEN, { requirePreviewToken: false, loopbackOnly: false })).toBeUndefined();
+    expect(gridStateToken(TOKEN, { requirePreviewToken: false })).toBeUndefined();
   });
 });
 

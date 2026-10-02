@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 
-import { createExecWebSocketHandler } from "../exec-ws";
-import type { UpgradeHandlerWebSocket } from "../middleware-utils";
+import { createExecWebSocketHandler } from "../socket/server-control";
+import type { UpgradeHandlerWebSocket } from "../socket/types";
 
 const TOKEN = "teardown-token";
 

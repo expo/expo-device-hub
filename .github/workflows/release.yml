@@ -12,13 +12,17 @@ on:
         default: false
         type: boolean
 
+# Automatic canary releases from pushes to main share one group, so a newer
+# push cancels the previous run. Each manual release gets its own group, so
+# it is never cancelled or replaced by a later run.
 concurrency:
-  group: release
-  cancel-in-progress: false
+  group: ${{ github.event_name == 'push' && 'release-canary-auto' || format('release-manual-{0}', github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   release:
-    runs-on: macos-latest
+    runs-on:
+      group: macos-publishing
     environment: npm-publish
     env:
       IS_CANARY: ${{ github.event_name == 'push' || inputs.canary }}
@@ -79,9 +83,6 @@ jobs:
           git add -A
           git commit -m "chore(release): version packages"
           git push origin "HEAD:${{ github.ref_name }}"
-
-      - name: Ignore packages excluded from release
-        run: ./scripts/ignore-packages.ts
 
       - name: Publish to npm
         if: ${{ env.IS_CANARY != 'true' }}

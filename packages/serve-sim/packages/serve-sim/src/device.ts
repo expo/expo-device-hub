@@ -59,6 +59,11 @@ export function isAlreadyShutDown(error: unknown): boolean {
   return /Unable to shutdown device in current state: Shutdown/i.test(text);
 }
 
+export function isDeviceNotBooted(error: unknown): boolean {
+  const text = error instanceof Error ? error.message : String(error);
+  return /because device is not booted/i.test(text);
+}
+
 export async function shutdownDevice(udid: string): Promise<void> {
   await simctl(["shutdown", udid], SHUTDOWN_TIMEOUT_MS).catch(
     (error: unknown) => {

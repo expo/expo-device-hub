@@ -8,30 +8,52 @@ export interface ProxyPreviewConfig {
   streamSettingsEndpoint?: string;
 }
 
-type LocationLike = Pick<Location, 'host' | 'protocol'>;
+/** Strip the advertised mount and resolve the route under the public `baseUrl` mount. */
+export function middlewareEndpointForBrowser(
+  advertisedPath: string,
+  middlewareUrl: URL,
+  basePath: string = '',
+): string {
+  const mountPath = middlewareUrl.pathname.replace(/\/+$/, '');
+  const internalPath = basePath.replace(/\/+$/, '');
+  const publicEndpoint = new URL(middlewareUrl);
+  publicEndpoint.pathname = `${mountPath}/`;
+  publicEndpoint.search = '';
+  publicEndpoint.hash = '';
+
+  // Resolve against the server's own mount so relative and absolute paths both carry basePath.
+  const endpoint = new URL(advertisedPath, new URL(`${internalPath}/`, publicEndpoint));
+  const hasBase =
+    internalPath !== '' &&
+    (endpoint.pathname === internalPath || endpoint.pathname.startsWith(`${internalPath}/`));
+  const route = endpoint.pathname.slice(hasBase ? internalPath.length : 0).replace(/^\/+/, '');
+  publicEndpoint.pathname = `${mountPath}/${route}`;
+  publicEndpoint.search = endpoint.search;
+  publicEndpoint.hash = endpoint.hash;
+  return publicEndpoint.toString();
+}
 
 /**
- * Re-anchor the helper URLs in a middleware `/api` config to the browser's own
- * origin, mirroring serve-sim's `utils/preview-config.ts`. Only applies when the
- * server opted into same-origin proxying (`proxyHelpers`); otherwise the config
- * already carries the helper's direct URLs and is used as-is.
+ * Resolve proxied helper URLs against the public middleware mount. The config
+ * can advertise internal paths or an unusable port, while the caller's base URL
+ * is the server and mount the browser can actually reach.
  */
 export function proxyPreviewConfigForBrowser<T extends ProxyPreviewConfig>(
   config: T,
-  location: LocationLike,
+  middlewareUrl: URL,
 ): T {
   if (!config.device || !config.proxyHelpers) return config;
 
-  const basePath = config.basePath === '/' ? '' : (config.basePath ?? '').replace(/\/+$/, '');
-  const devicePath = `${basePath}/helper/${encodeURIComponent(config.device)}`;
-  const httpOrigin = `${location.protocol}//${location.host}`;
-  const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const mountPath = middlewareUrl.pathname.replace(/\/+$/, '');
+  const devicePath = `${mountPath}/helper/${encodeURIComponent(config.device)}`;
+  const httpOrigin = middlewareUrl.origin;
+  const wsProtocol = middlewareUrl.protocol === 'https:' ? 'wss:' : 'ws:';
 
   return {
     ...config,
     url: `${httpOrigin}${devicePath}`,
     streamUrl: `${httpOrigin}${devicePath}/stream.mjpeg`,
-    wsUrl: `${wsProtocol}//${location.host}${devicePath}/ws`,
+    wsUrl: `${wsProtocol}//${middlewareUrl.host}${devicePath}/ws`,
     streamSettingsEndpoint: `${httpOrigin}${devicePath}/stream-settings`,
   };
 }

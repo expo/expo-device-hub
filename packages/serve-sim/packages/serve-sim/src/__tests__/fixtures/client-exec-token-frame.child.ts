@@ -41,7 +41,7 @@ class FakeSocket {
   }
 }
 
-let runHostAction: typeof import("../../client/utils/exec").runHostAction;
+let runHostAction: typeof import("../../socket/client-control").runHostAction;
 
 beforeAll(async () => {
   const globals = globalThis as Record<string, unknown>;
@@ -58,7 +58,7 @@ beforeAll(async () => {
     __SIM_PREVIEW__: { execToken: TOKEN, basePath: "/" },
     location: { href: "http://127.0.0.1:3100/", protocol: "http:", host: "127.0.0.1:3100", pathname: "/" },
   };
-  ({ runHostAction } = await import("../../client/utils/exec"));
+  ({ runHostAction } = await import("../../socket/client-control"));
 });
 
 afterAll(() => {

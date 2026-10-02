@@ -1,6 +1,6 @@
 import { openSseStream } from "./sse-stream";
 import { execFile, execSync } from "child_process";
-import { readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
+import { createReadStream, readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -8,13 +8,16 @@ import { createServer as createNetServer } from "net";
 import { createHash, randomBytes } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { Socket } from "net";
-// `ws` (kept external in the build) supplies a WebSocket *client* for the
-// helper/devtools proxy. Node only exposes a global `WebSocket` on newer LTS
-// lines, and `serve-sim/middleware` is embedded in third-party dev servers, so
-// importing the dependency keeps the proxy working regardless of runtime.
-import { WebSocket } from "ws";
+import {
+  SCREENSHOT_ARTIFACT_ERROR_HEADER,
+  SCREENSHOT_ARTIFACT_HEADER,
+  saveScreenshotArtifact,
+  screenshotArtifactHeaders,
+  type ScreenshotOutcome,
+} from "./screenshot-artifacts";
 import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
+import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type CaptureRuntime } from "./capture";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
 import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
@@ -22,16 +25,17 @@ import {
   closeDeviceSession,
   getDeviceSession,
   peekDeviceSession,
-  type HidSocket,
 } from "./device-session";
 import {
-  acceptedTokenSubprotocol,
+  assertBearerAccess,
+  assertCaptureAccess,
   assertPreviewAccess,
   assertUpgradeAccess,
   upgradeAuthHeaders,
 } from "./session-auth";
 import {
   eventLogEventForAction,
+  eventLogEventForScreenshot,
   readEventLog,
   recordEventLogEvent,
   subscribeEventLog,
@@ -47,16 +51,23 @@ import {
 } from "./devicekit-chrome";
 import { serveDeviceKitModelAsset } from "./devicekit-model";
 import { validatePanelRoute } from "./panel-route";
-import { createExecWebSocketHandler, type UiRequestHandler } from "./exec-ws";
+import { isAllowedHost, refusedHostMessage } from "./host-allowlist";
+import { createExecWebSocketHandler, type UiRequestHandler } from "./socket/server-control";
 import { crashRuntime } from "./crash/runtime";
 import { handleCrashesRequestAfter, handleCrashReportRequest } from "./crash/routes";
 export { handleCrashesRequest, handleCrashReportRequest } from "./crash/routes";
 import { booleanParam } from "./request-params";
 import { logBufferCache, type LogBufferCache, type LogLine } from "./log-buffer";
-import { claimHelperHidSocket, type UpgradeHandlerWebSocket } from "./middleware-utils";
+import { bridgeWebSocketFrames } from "./socket/server-devtools";
+import { writeWebSocketAccept } from "./socket/server-upgrade";
+import { claimHelperHidSocket, isHidWebSocketPath, rawHidSocket } from "./socket/server-input";
+import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
+
+/** Captured traffic is decrypted credentials; `no-cache` would still let a cache keep a copy. */
+const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;
 
 type SimReq = IncomingMessage;
 type SimRes = ServerResponse;
@@ -135,8 +146,14 @@ export type ServeSimState = ServeSimDeviceState;
 const axStreamerCache = createAxStreamerCache();
 // One shared cpu/mem sampler per udid; every /metrics viewer subscribes. Stamp the device name
 // (from the last booted-device snapshot) into the sampler's meta frame when we know it.
+// Host network counters look idle under capture (loopback); proxy totals win via networkRateOverride.
 const metricsSamplerCache = createMetricsSamplerCache(
-  (udid) => new MetricsSampler({ udid, deviceName: bootedDeviceName(udid) }),
+  (udid) =>
+    new MetricsSampler({
+      udid,
+      deviceName: bootedDeviceName(udid),
+      networkRateOverride: () => captureRuntime.throughputFor(udid),
+    }),
 );
 
 let inspectWebKitBridge: Promise<WebKitBridge> | null = null;
@@ -165,6 +182,14 @@ function recordActionEvent(
     if (event) recordEventLogEvent(event);
   } catch {
     // Event-log recording is diagnostic; it must never break the action path.
+  }
+}
+
+function recordScreenshotEvent(udid: string, outcome: ScreenshotOutcome): void {
+  try {
+    recordEventLogEvent(eventLogEventForScreenshot(udid, outcome));
+  } catch {
+    // Event-log recording is diagnostic; it must never break the screenshot response.
   }
 }
 
@@ -372,6 +397,8 @@ export async function readServeSimStates(): Promise<ServeSimState[]> {
     return [];
   }
   const booted = await getBootedUdids();
+  const bootedAt = bootedSnapshot.at;
+  void retryPendingCaptureCleanup();
   const states: ServeSimState[] = [];
   for (const f of files) {
     const path = join(stateDir(), f);
@@ -389,6 +416,10 @@ export async function readServeSimStates(): Promise<ServeSimState[]> {
       // preview stuck on "Connecting...". Recycle the stale state so the
       // caller can spawn a fresh helper bound to whatever is booted.
       const action = classifyStaleState(state, booted, process.pid);
+      if (action !== "keep" && rebootedWithCaptureSince(state.device, bootedAt)) {
+        states.push(state);
+        continue;
+      }
       if (action !== "keep") {
         if (action === "recycle-self") {
           // This device is streamed in-process by *us* (the close button just
@@ -400,6 +431,7 @@ export async function readServeSimStates(): Promise<ServeSimState[]> {
             state.pid,
           );
           closeDeviceSession(state.device);
+          void disableNetworkCaptureForStoppedDevice(state.device);
         } else {
           debugMw(
             "recycling stale helper pid=%d (device %s no longer booted)",
@@ -579,190 +611,6 @@ function helperProxyTarget(rawUrl: string, prefix: string): { device: string | n
   return { device, upstreamPath: `${suffix}${parsed.search}` };
 }
 
-const WS_ACCEPT_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-
-function websocketFrame(opcode: number, payload: Buffer<ArrayBufferLike>): Buffer {
-  const length = payload.length;
-  let header: Buffer;
-  if (length < 126) {
-    header = Buffer.from([0x80 | opcode, length]);
-  } else if (length <= 0xffff) {
-    header = Buffer.alloc(4);
-    header[0] = 0x80 | opcode;
-    header[1] = 126;
-    header.writeUInt16BE(length, 2);
-  } else {
-    header = Buffer.alloc(10);
-    header[0] = 0x80 | opcode;
-    header[1] = 127;
-    header.writeBigUInt64BE(BigInt(length), 2);
-  }
-  return Buffer.concat([header, payload]);
-}
-
-type ParsedWebSocketFrame = {
-  opcode: number;
-  payload: Buffer<ArrayBufferLike>;
-  consumed: number;
-};
-
-function parseWebSocketFrame(buffer: Buffer): ParsedWebSocketFrame | null {
-  if (buffer.length < 2) return null;
-  const opcode = buffer[0]! & 0x0f;
-  const masked = (buffer[1]! & 0x80) !== 0;
-  let length = buffer[1]! & 0x7f;
-  let offset = 2;
-  if (length === 126) {
-    if (buffer.length < offset + 2) return null;
-    length = buffer.readUInt16BE(offset);
-    offset += 2;
-  } else if (length === 127) {
-    if (buffer.length < offset + 8) return null;
-    const bigLength = buffer.readBigUInt64BE(offset);
-    if (bigLength > BigInt(Number.MAX_SAFE_INTEGER)) {
-      throw new Error("WebSocket frame too large");
-    }
-    length = Number(bigLength);
-    offset += 8;
-  }
-  const maskOffset = offset;
-  if (masked) offset += 4;
-  if (buffer.length < offset + length) return null;
-  const payload = Buffer.from(buffer.subarray(offset, offset + length));
-  if (masked) {
-    const mask = buffer.subarray(maskOffset, maskOffset + 4);
-    for (let i = 0; i < payload.length; i++) {
-      payload[i] = payload[i]! ^ mask[i % 4]!;
-    }
-  }
-  return { opcode, payload, consumed: offset + length };
-}
-
-function sendBrowserFrame(socket: Socket, opcode: number, payload: Buffer<ArrayBufferLike> = Buffer.alloc(0)): void {
-  if (socket.destroyed || !socket.writable) return;
-  socket.write(websocketFrame(opcode, payload));
-}
-
-type PendingWebSocketFrame = {
-  opcode: number;
-  payload: Buffer<ArrayBufferLike>;
-};
-
-function webSocketBinary(payload: Buffer<ArrayBufferLike>): Uint8Array<ArrayBuffer> {
-  const bytes = new Uint8Array(payload.length);
-  bytes.set(payload);
-  return bytes;
-}
-
-/**
- * Complete the server side of a WebSocket upgrade by hand (the `ws` server's
- * handshake doesn't flush under Bun). Writes the 101 response and resumes the
- * socket on success; on a missing key writes 400 and returns false.
- */
-function writeWebSocketAccept(req: SimReq, socket: Socket, execToken: string): boolean {
-  const key = req.headers["sec-websocket-key"];
-  if (typeof key !== "string") {
-    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
-    return false;
-  }
-  const accept = createHash("sha1").update(key + WS_ACCEPT_GUID).digest("base64");
-  // A client that offered subprotocols fails the handshake unless one is named back.
-  const subprotocol = acceptedTokenSubprotocol(req.headers, execToken);
-  socket.write(
-    "HTTP/1.1 101 Switching Protocols\r\n" +
-    "Upgrade: websocket\r\n" +
-    "Connection: Upgrade\r\n" +
-    `Sec-WebSocket-Accept: ${accept}\r\n` +
-    (subprotocol ? `Sec-WebSocket-Protocol: ${subprotocol}\r\n` : "") +
-    "\r\n",
-  );
-  socket.resume();
-  return true;
-}
-
-function bridgeWebSocketFrames(
-  req: SimReq,
-  socket: Socket,
-  head: Buffer,
-  upstreamUrl: string,
-  execToken: string,
-): void {
-  if (!writeWebSocketAccept(req, socket, execToken)) return;
-
-  const upstream = new WebSocket(upstreamUrl);
-  upstream.binaryType = "arraybuffer";
-  let upstreamOpen = false;
-  let closed = false;
-  let pendingToUpstream: PendingWebSocketFrame[] = [];
-  let buffered = Buffer.from(head);
-
-  const closeBoth = () => {
-    if (closed) return;
-    closed = true;
-    try { upstream.close(); } catch {}
-    try { socket.end(websocketFrame(0x8, Buffer.alloc(0))); } catch {}
-    try { socket.destroy(); } catch {}
-  };
-
-  const sendToUpstream = (frame: PendingWebSocketFrame) => {
-    if (upstreamOpen && upstream.readyState === WebSocket.OPEN) {
-      upstream.send(frame.opcode === 0x1 ? frame.payload.toString("utf8") : webSocketBinary(frame.payload));
-      return;
-    }
-    pendingToUpstream.push({ opcode: frame.opcode, payload: Buffer.from(frame.payload) });
-  };
-
-  const drainFrames = () => {
-    try {
-      while (buffered.length > 0) {
-        const frame = parseWebSocketFrame(buffered);
-        if (!frame) break;
-        buffered = buffered.subarray(frame.consumed);
-        if (frame.opcode === 0x8) {
-          sendBrowserFrame(socket, 0x8, frame.payload);
-          closeBoth();
-          return;
-        }
-        if (frame.opcode === 0x9) {
-          sendBrowserFrame(socket, 0xA, frame.payload);
-          continue;
-        }
-        if (frame.opcode === 0x1 || frame.opcode === 0x2) {
-          sendToUpstream({ opcode: frame.opcode, payload: frame.payload });
-        }
-      }
-    } catch {
-      closeBoth();
-    }
-  };
-
-  upstream.onopen = () => {
-    upstreamOpen = true;
-    for (const frame of pendingToUpstream) {
-      upstream.send(frame.opcode === 0x1 ? frame.payload.toString("utf8") : webSocketBinary(frame.payload));
-    }
-    pendingToUpstream = [];
-  };
-  upstream.onmessage = (event) => {
-    const data = event.data;
-    const payload = typeof data === "string"
-      ? Buffer.from(data)
-      : Buffer.from(data as ArrayBuffer);
-    sendBrowserFrame(socket, typeof data === "string" ? 0x1 : 0x2, payload);
-  };
-  upstream.onerror = closeBoth;
-  upstream.onclose = closeBoth;
-
-  socket.on("data", (chunk) => {
-    if (typeof chunk === "string") chunk = Buffer.from(chunk);
-    buffered = Buffer.concat([buffered, chunk]);
-    drainFrames();
-  });
-  socket.on("error", closeBoth);
-  socket.on("close", closeBoth);
-  drainFrames();
-}
-
 /** Read camera-helper state without opening the simulator capture session. */
 async function handleCameraStatus(req: SimReq, res: SimRes, device: string): Promise<void> {
   if (!isSimulatorUdid(device)) {
@@ -839,6 +687,16 @@ function serveHelperInProcess(
     void live.handleWebRTCStats(req, res);
     return true;
   }
+  if (endpoint === "/recording/video" && req.method === "GET") {
+    const live = peekDeviceSession(device);
+    if (live) {
+      void live.handleVideoRecording(req, res);
+    } else {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end('{"active":false}');
+    }
+    return true;
+  }
   let session;
   if (panelRoute && (panelRoute[2] === "webrtc/stats" || panelRoute[2] === "webrtc/close")) {
     const live = peekDeviceSession(device);
@@ -867,6 +725,7 @@ function serveHelperInProcess(
     case "/health": session.handleHealth(req, res); return true;
     case "/webrtc/offer": void session.handleWebRTCOffer(req, res); return true;
     case "/webrtc/close": void session.handleWebRTCClose(req, res); return true;
+    case "/recording/video": void session.handleVideoRecording(req, res); return true;
     case "/ax": session.handleAx(req, res); return true;
     case "/foreground": session.handleForeground(req, res); return true;
     default: return false;
@@ -879,6 +738,18 @@ function serveHelperInProcess(
  * preview server itself serves the device's /helper routes in-process. Resolves
  * to an error string on boot failure, or null on success.
  */
+/**
+ * The token a grid device's state file carries: the standalone server's rule, written only where
+ * capture commands can use it (under the token gate, or on loopback; a public ungated host refuses
+ * capture).
+ */
+export function gridStateToken(
+  execToken: string,
+  opts: { requirePreviewToken: boolean; loopbackOnly?: boolean },
+): string | undefined {
+  return opts.requirePreviewToken || opts.loopbackOnly ? execToken : undefined;
+}
+
 /** Carries the session token like the primary device's does, or its readers start failing. */
 export function gridDeviceState(
   udid: string,
@@ -896,11 +767,14 @@ export async function startDeviceInProcess(
   port: number,
   base: string,
   streamSettings?: StreamSettings,
-  /** Session token, when the server runs gated. */
+  /** Session token, when the server runs gated or on loopback, where capture commands read it. */
   sessionToken?: string,
+  onBoot?: () => Promise<void>,
 ): Promise<string | null> {
   // `simctl boot` errors when already booted — ignore and let bootstatus confirm.
-  await new Promise<void>((resolve) => execFile("xcrun", ["simctl", "boot", udid], () => resolve()));
+  await new Promise<void>((resolve) =>
+    execFile("xcrun", ["simctl", "boot", udid], () => resolve()),
+  );
   const ready = await new Promise<boolean>((resolve) => {
     execFile("xcrun", ["simctl", "bootstatus", udid, "-b"], { timeout: 180_000 }, (err) => resolve(!err));
   });
@@ -920,73 +794,95 @@ export async function startDeviceInProcess(
     });
     if (!booted) return `Device ${udid} failed to reach booted state`;
   }
+  await onBoot?.();
   writeServeSimState(gridDeviceState(udid, port, base, streamSettings, sessionToken));
   return null;
 }
 
-/**
- * Adapt a raw upgraded socket into the minimal HidSocket the DeviceSession
- * needs. We do the WebSocket framing by hand (same helpers as the DevTools
- * bridge) rather than via `ws`'s server, whose handshake doesn't flush under
- * Bun — and the production CLI is a bun-compiled binary.
- */
-function rawHidSocket(socket: Socket, head: Buffer): HidSocket {
-  const messageCbs: Array<(d: Buffer) => void> = [];
-  const closeCbs: Array<() => void> = [];
-  let buffered = Buffer.from(head);
-  let closed = false;
+export async function enableNetworkCaptureForStartedDevice(
+  udid: string,
+  enabled: boolean,
+  deps: {
+    enable?: (udid: string) => Promise<{ proxyAddress: string | null }>;
+    log?: (message: string) => void;
+    error?: (message: string) => void;
+  } = {},
+): Promise<void> {
+  if (!captureRuntime.shouldCaptureDevice(udid, enabled)) return;
+  const enable =
+    deps.enable ??
+    (async (id) => captureRuntime.enableForDevice(id));
+  const log = deps.log ?? ((message) => console.log(message));
+  const error = deps.error ?? ((message) => console.error(message));
+  await startCaptureForDevice(udid, {
+    enable,
+    onStarted: (meta) =>
+      log(
+        `Network capture on for ${udid} via ${meta.proxyAddress}. HTTP(S) from third-party apps on ` +
+          "this device is recorded from now on (Apple system apps like Safari are left unproxied; " +
+          "apps already running may keep existing sessions); HTTPS is decrypted, so " +
+          "certificate-pinned apps will refuse to connect.",
+      ),
+    onFailed: (reason) => error(`Network capture could not start for ${udid}. ${reason}`),
+  });
+}
 
-  const fireClose = () => {
-    if (closed) return;
-    closed = true;
-    for (const cb of closeCbs) cb();
-  };
-  const shutdown = (code?: number, reason = "") => {
-    fireClose();
-    const payload = code === undefined ? Buffer.alloc(0) : Buffer.alloc(2 + Buffer.byteLength(reason));
-    if (code !== undefined) {
-      payload.writeUInt16BE(code);
-      payload.write(reason, 2);
-    }
-    try {
-      socket.end(websocketFrame(0x8, payload));
-      socket.destroySoon();
-    } catch { socket.destroy(); }
-  };
+// Capture sessions whose cleanup failed after their device stopped, keyed by device. The value is
+// the session's store, which names that session: a retry only touches it while it is still there,
+// so a newer session on the same device (after a reboot with capture on) is never disabled.
+const pendingCaptureCleanup = new Map<string, unknown>();
+// Polls come often; one retry per device at a time keeps a failing cleanup from piling up.
+const retryingCaptureCleanup = new Set<string>();
 
-  const drain = () => {
-    if (closed) return;
-    for (;;) {
-      let frame: ParsedWebSocketFrame | null;
-      try {
-        frame = parseWebSocketFrame(buffered);
-      } catch {
-        shutdown();
+interface CaptureCleanupDeps {
+  disable?: (udid: string) => Promise<void>;
+  /** The device's current capture session, or null. */
+  session?: (udid: string) => unknown;
+}
+
+export async function disableNetworkCaptureForStoppedDevice(
+  udid: string,
+  deps: CaptureCleanupDeps = {},
+): Promise<boolean> {
+  const disable =
+    deps.disable ??
+    (async (id) => {
+      await captureRuntime.disableForDevice(id);
+    });
+  const sessionOf = deps.session ?? ((id: string) => captureRuntime.storeFor(id));
+  const session = sessionOf(udid);
+  try {
+    await disable(udid);
+    pendingCaptureCleanup.delete(udid);
+    return true;
+  } catch (err) {
+    if (session) pendingCaptureCleanup.set(udid, session);
+    console.warn(
+      `Network capture: disable for ${udid} failed; it is retried on the next device poll:`,
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+
+/** Retry failed cleanups until the session that failed is gone; a newer session is left alone. */
+export async function retryPendingCaptureCleanup(deps: CaptureCleanupDeps = {}): Promise<void> {
+  const sessionOf = deps.session ?? ((id: string) => captureRuntime.storeFor(id));
+  await Promise.all(
+    [...pendingCaptureCleanup].map(async ([udid, session]) => {
+      if (sessionOf(udid) !== session) {
+        pendingCaptureCleanup.delete(udid);
         return;
       }
-      if (!frame) return;
-      buffered = buffered.subarray(frame.consumed);
-      if (frame.opcode === 0x8) return shutdown();       // close
-      if (frame.opcode === 0x9) { sendBrowserFrame(socket, 0xa, frame.payload); continue; } // ping → pong
-      if (frame.opcode === 0x1 || frame.opcode === 0x2) {
-        for (const cb of messageCbs) cb(frame.payload);
+      if (retryingCaptureCleanup.has(udid)) return;
+      retryingCaptureCleanup.add(udid);
+      try {
+        await disableNetworkCaptureForStoppedDevice(udid, deps);
+      } finally {
+        retryingCaptureCleanup.delete(udid);
       }
-    }
-  };
-
-  socket.on("data", (chunk: Buffer) => { buffered = Buffer.concat([buffered, chunk]); drain(); });
-  socket.on("close", fireClose);
-  socket.on("error", fireClose);
-  if (head.length) drain();
-
-  return {
-    send(data: Buffer) { sendBrowserFrame(socket, 0x2, data); },
-    on(event: "message" | "close" | "error", cb: (data: Buffer) => void) {
-      if (event === "message") messageCbs.push(cb);
-      else closeCbs.push(cb as () => void);
-    },
-    close: shutdown,
-  };
+    }),
+  );
 }
 
 /** Upgrade an in-process HID `/ws` socket onto a DeviceSession. Returns false when no session can serve it. */
@@ -1010,6 +906,21 @@ function attachHidInProcess(
   return true;
 }
 
+// Keep the exec bridge allowlist aligned with preview SSE endpoints.
+export function sseStreamPaths(base: string): string[] {
+  return [
+    `${base}/api/events`,
+    `${base}/api/event-log/events`,
+    `${base}/grid/api/status/events`,
+    `${base}/appstate`,
+    `${base}/logs`,
+    `${base}/crashes`,
+    `${base}/metrics`,
+    `${base}/network-capture`,
+    `${base}/ax`,
+  ];
+}
+
 export function previewConfigForState(
   state: ServeSimState,
   base: string,
@@ -1026,6 +937,7 @@ export function previewConfigForState(
   eventLogEndpoint: string;
   eventLogEventsEndpoint: string;
   metricsEndpoint: string;
+  captureEndpoint: string;
   axEndpoint: string;
   cameraStatusEndpoint: string;
   devtoolsEndpoint: string;
@@ -1065,6 +977,7 @@ export function previewConfigForState(
     eventLogEndpoint: endpoint(base, "/api/event-log", state.device),
     eventLogEventsEndpoint: endpoint(base, "/api/event-log/events", state.device),
     metricsEndpoint: endpoint(base, "/metrics", state.device),
+    captureEndpoint: endpoint(base, "/network-capture", state.device),
     axEndpoint: endpoint(base, "/ax", state.device),
     cameraStatusEndpoint: `${base === "/" ? "" : base}/helper/${encodeURIComponent(state.device)}/camera/status`,
     devtoolsEndpoint: endpoint(base, "/devtools", state.device),
@@ -1532,9 +1445,9 @@ export interface SimMiddlewareOptions {
   /** Pin this preview server to a specific simulator UDID. */
   device?: string;
   /**
-   * Per-session bearer token gating the `/exec` shell-exec route.
+   * Per-session bearer token gating `/exec` and network-capture HTTP routes.
    * Auto-generated if omitted. The token is injected into the preview HTML
-   * so the in-page UI can call `/exec` same-origin; LAN attackers and
+   * so the in-page UI can call those routes same-origin; LAN attackers and
    * cross-origin pages cannot read it.
    */
   execToken?: string;
@@ -1551,6 +1464,21 @@ export interface SimMiddlewareOptions {
   frameAncestors?: string[];
   /** Public page the Share button copies instead of this preview's address. */
   shareUrl?: string;
+  /**
+   * Without the token gate, the preview answers only for `localhost` and IP addresses; other `Host`
+   * headers get 403, which stops DNS rebinding from reading the session token. Set this to answer
+   * for any host (a `.local` name, a tunnel) without the gate. Insecure: a rebinding page can then
+   * read the token. Ignored under `requirePreviewToken`, where the gate already stops it.
+   */
+  allowAnyHostWhenInsecure?: boolean;
+  /** Enable capture for devices started through this middleware. */
+  networkCapture?: boolean;
+  /**
+   * The server listens on loopback only. Without the token gate, network capture is refused unless
+   * this is set: anyone who can load the preview could otherwise read captured traffic. An embedder
+   * that does not set it gets capture refused on an ungated preview.
+   */
+  loopbackOnly?: boolean;
   /** @deprecated Use `streamSettings: { transport: "http", codec }`. */
   codec?: string;
   /**
@@ -1695,7 +1623,7 @@ export function handleMetricsRequest(
   }
   res.writeHead(200, {
     "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
+    ...NO_STORE,
     Connection: "keep-alive",
     "X-Accel-Buffering": "no",
   });
@@ -1718,6 +1646,211 @@ export function handleMetricsRequest(
   });
 }
 
+/** Capture SSE (read-only; does not start/stop capture). */
+export function handleNetworkCaptureRequest(
+  req: SimReq,
+  res: SimRes,
+  state: ServeSimState | null,
+  runtime: CaptureRuntime = captureRuntime,
+): void {
+  if (!state) {
+    res.writeHead(404, NO_STORE);
+    res.end("No serve-sim device");
+    return;
+  }
+  // HEAD gets the stream's headers only. Subscribing would leave a listener and a heartbeat that
+  // nothing closes, since a HEAD response ends without the client closing the stream.
+  if ((req.method ?? "GET").toUpperCase() === "HEAD") {
+    res.writeHead(200, { "Content-Type": "text/event-stream", ...NO_STORE });
+    res.end();
+    return;
+  }
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    ...NO_STORE,
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+  res.write(":\n\n");
+
+  const { meta, unsubscribe } = runtime.subscribe(state.device, (event) => {
+    if (!res.writableEnded) res.write("data: " + JSON.stringify(event) + "\n\n");
+  });
+
+  // "initial" tells a reconnecting viewer that the full list follows, so it can drop its old one.
+  res.write("data: " + JSON.stringify({ type: "meta", meta, initial: true }) + "\n\n");
+  for (const request of runtime.storeFor(state.device)?.list() ?? []) {
+    if (res.writableEnded) break;
+    // In-flight rows (null status) replay as started.
+    const type = request.status == null && request.failure == null ? "started" : "finished";
+    res.write("data: " + JSON.stringify({ type, request }) + "\n\n");
+  }
+
+  // Re-verify injection on open + heartbeat (restart drops boot injection).
+  void runtime.refreshForDevice(state.device);
+  const heartbeat = setInterval(() => {
+    if (res.writableEnded) return;
+    res.write(":\n\n");
+    void runtime.refreshForDevice(state.device);
+  }, 15000);
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    unsubscribe();
+  });
+}
+
+/**
+ * Captured data is exported only for a device this process serves. The state directory is shared by
+ * every serve-sim server, so a caller could otherwise name another server's device.
+ */
+function capturedHere(state: ServeSimState | null): ServeSimState | null {
+  return state && state.pid === process.pid ? state : null;
+}
+
+/** On-demand headers/bodies (omitted from the live stream). */
+export function handleCaptureBodyRequest(
+  req: SimReq,
+  res: SimRes,
+  state: ServeSimState | null,
+  id: string,
+  runtime: CaptureRuntime = captureRuntime,
+): void {
+  const owned = capturedHere(state);
+  const store = owned ? runtime.storeFor(owned.device) : null;
+  // Ids restart at r1 in each capture session. A caller that names the start time it saw (the HAR
+  // follower, which can process a frame after capture restarted) never gets a newer session's body.
+  const rawUrl = req.url ?? "";
+  const qIndex = rawUrl.indexOf("?");
+  const expected = qIndex === -1 ? null : new URLSearchParams(rawUrl.slice(qIndex + 1)).get("startedAt");
+  const sameRequest = expected === null || store?.startedAt(id) === Number(expected);
+  const body = sameRequest ? store?.body(id) ?? null : null;
+  if (!body) {
+    res.writeHead(404, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: "No captured body for that request" }));
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "application/json", ...NO_STORE });
+  res.end(JSON.stringify(body));
+}
+
+function waitForResponseDrain(res: SimRes): Promise<void> {
+  if (res.destroyed) return Promise.reject(new Error("Capture download closed before it finished."));
+  return new Promise((resolve, reject) => {
+    const cleanup = () => {
+      res.off("drain", drained);
+      res.off("error", failed);
+      res.off("close", closed);
+    };
+    const drained = () => {
+      cleanup();
+      resolve();
+    };
+    const failed = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+    const closed = () => failed(new Error("Capture download closed before it finished."));
+    res.once("drain", drained);
+    res.once("error", failed);
+    res.once("close", closed);
+  });
+}
+
+/** The session's capture.har from disk, rebuilt on demand. `capture har` keeps its own file. */
+export async function handleCaptureHarRequest(
+  req: SimReq,
+  res: SimRes,
+  state: ServeSimState | null,
+  runtime: CaptureRuntime = captureRuntime,
+): Promise<void> {
+  state = capturedHere(state);
+  if (!state) {
+    res.writeHead(404, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: "No capture session" }));
+    return;
+  }
+  let harPath: string | null;
+  try {
+    harPath = await runtime.flushHarPathFor(state.device);
+  } catch (error) {
+    res.writeHead(500, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(
+      JSON.stringify({
+        error: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return;
+  }
+  if (!harPath || !existsSync(harPath)) {
+    res.writeHead(404, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: "No capture session" }));
+    return;
+  }
+  const filename = `serve-sim-${state.device.slice(0, 8)}.har`;
+  const headers = {
+    "Content-Type": "application/json",
+    "Content-Disposition": `attachment; filename="${filename}"`,
+    ...NO_STORE,
+  };
+  if (req.method === "HEAD") {
+    res.writeHead(200, headers);
+    res.end();
+    return;
+  }
+  try {
+    res.writeHead(200, headers);
+    for await (const chunk of createReadStream(harPath)) {
+      if (res.destroyed) return;
+      if (!res.write(chunk)) await waitForResponseDrain(res);
+    }
+    res.end();
+  } catch (error) {
+    if (!res.destroyed) {
+      res.destroy(error instanceof Error ? error : new Error(String(error)));
+    }
+  }
+}
+
+/**
+ * The session's completed entries as NDJSON, one HAR entry per line. `capture har` seeds from it
+ * so it can stream a large recording instead of parsing one HAR document.
+ */
+export async function handleCaptureEntriesRequest(
+  req: SimReq,
+  res: SimRes,
+  state: ServeSimState | null,
+  runtime: CaptureRuntime = captureRuntime,
+): Promise<void> {
+  state = capturedHere(state);
+  let entriesPath: string | null = null;
+  try {
+    if (state) entriesPath = await runtime.flushEntriesPathFor(state.device);
+  } catch (error) {
+    res.writeHead(500, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }));
+    return;
+  }
+  if (!entriesPath || !existsSync(entriesPath)) {
+    res.writeHead(404, { "Content-Type": "application/json", ...NO_STORE });
+    res.end(JSON.stringify({ error: "No capture session" }));
+    return;
+  }
+  res.writeHead(200, { "Content-Type": "application/x-ndjson", ...NO_STORE });
+  if (req.method === "HEAD") {
+    res.end();
+    return;
+  }
+  try {
+    for await (const chunk of createReadStream(entriesPath)) {
+      if (res.destroyed) return;
+      if (!res.write(chunk)) await waitForResponseDrain(res);
+    }
+    res.end();
+  } catch (error) {
+    if (!res.destroyed) res.destroy(error instanceof Error ? error : new Error(String(error)));
+  }
+}
+
 export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const streamSettings = options?.streamSettings ?? httpStreamSettingsFromLegacyCodec(options?.codec);
   const base = (options?.basePath ?? "/.sim").replace(/\/+$/, "");
@@ -1726,17 +1859,35 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const proxyHelpers = options?.proxyHelpers ?? false;
   const getInspectWebKitBridge = options?.inspectWebKitBridge ?? ensureInspectWebKitBridge;
   // Per-process random token. Anyone who can read the preview HTML same-origin
-  // can call /exec; cross-origin pages and LAN clients cannot, because they
-  // can't read this value (it's only injected into the preview page's config).
+  // can call /exec and network-capture; cross-origin pages and LAN clients cannot,
+  // because they can't read this value (it's only injected into the preview page).
   const execToken = options?.execToken ?? randomBytes(32).toString("base64url");
   const requirePreviewToken = options?.requirePreviewToken ?? false;
   const corsOrigins = [...(options?.corsOrigins ?? [])];
   const frameAncestors = options?.frameAncestors ?? [];
   const shareUrl = options?.shareUrl;
+  const allowAnyHostWhenInsecure = options?.allowAnyHostWhenInsecure ?? false;
+  // Under the token gate a rebinding page has no cookie and cannot read the token, so only an
+  // ungated preview needs its Host checked.
+  const hostAllowed = (host: string | readonly string[] | undefined | null): boolean =>
+    requirePreviewToken || allowAnyHostWhenInsecure || isAllowedHost(host);
+  // An embedded WebSocket adapter must preserve Host; accepting an omitted one bypasses this guard.
+  const upgradeHostAllowed = (host: string | readonly string[] | undefined | null): boolean =>
+    requirePreviewToken || allowAnyHostWhenInsecure || (host != null && host !== "" && isAllowedHost(host));
   // The proxied DevTools frontend sits behind the same cookie, so its document needs the policy too.
   const framePolicyHeaders: Record<string, string> = requirePreviewToken
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
     : {};
+  const networkCapture = options?.networkCapture ?? false;
+  // Every host that mounts this middleware gets the same rule, so capture never runs on an ungated
+  // preview that others can reach. The refusal covers the panel, the exec socket, and the CLI.
+  captureRuntime.refuseCapture(
+    requirePreviewToken || options?.loopbackOnly
+      ? null
+      : "Network capture needs a token-gated preview when the preview is reachable beyond loopback. " +
+          "Without the gate, anyone who can load the preview could read captured traffic. Serve on " +
+          "localhost, or turn on the token gate.",
+  );
 
   crashRuntime.arm();
 
@@ -1783,6 +1934,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   };
 /** Reachable without the session token: liveness probes cannot carry one. */
   const UNGATED_PATHS = ["/healthz", "/readyz"];
+  // Capture routes always require authentication, including future subroutes.
+  const ALWAYS_GATED_PREFIX = "/network-capture";
 
   const connectMiddleware = (async (req: SimReq, res: SimRes, next?: SimNext) => {
     const rawUrl: string = req.url ?? "";
@@ -1797,11 +1950,18 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       const corsHeaders = corsAllowOriginHeaders(req.headers.origin, corsOrigins);
       for (const [name, value] of Object.entries(corsHeaders)) res.setHeader(name, value);
     }
+    // After CORS, so a configured origin can read why its host was refused.
+    const hostHeader = req.headers.host;
+    if (ownPath && !hostAllowed(hostHeader)) {
+      res.writeHead(403, { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" });
+      res.end(refusedHostMessage(String(hostHeader)));
+      return;
+    }
     // A preflight carries no cookie and no token, so it has to be answered before the gate.
     if (ownPath && req.method === "OPTIONS") {
       res.writeHead(204, {
-        "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
-        "Access-Control-Allow-Headers": "Authorization, Content-Type",
+        "Access-Control-Allow-Methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": "Authorization, Content-Type, x-recording-id",
         "Access-Control-Max-Age": "600",
       });
       res.end();
@@ -1815,16 +1975,33 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (
       !UNGATED_PATHS.some((path) => url === base + path)
       && !assertPreviewAccess(req, res, execToken, {
-        required: requirePreviewToken,
+        required: requirePreviewToken || url.startsWith(base + ALWAYS_GATED_PREFIX),
         basePath: base,
         htmlHeaders: framePolicyHeaders,
+        allowQueryToken: !url.startsWith(base + ALWAYS_GATED_PREFIX),
       })
     ) {
       return;
     }
 
+    if (url.startsWith(base + ALWAYS_GATED_PREFIX) && !assertCaptureAccess(req, res)) {
+      return;
+    }
+
+    // Capture routes only read; a write-shaped request gets 405 rather than a read response.
+    if (url.startsWith(base + ALWAYS_GATED_PREFIX)) {
+      const method = (req.method ?? "GET").toUpperCase();
+      if (method !== "GET" && method !== "HEAD") {
+        res.writeHead(405, { "Content-Type": "application/json", Allow: "GET, HEAD", ...NO_STORE });
+        res.end(JSON.stringify({ error: "Network capture routes accept GET and HEAD only." }));
+        return;
+      }
+    }
+
     const helperTarget = helperProxyTarget(rawUrl, helperPrefix);
     if (helperTarget) {
+      if (requirePreviewToken && helperTarget.upstreamPath.split("?")[0] === "/recording/video"
+        && !assertBearerAccess(req, res, execToken)) return;
       const device = helperTarget.device ?? selectedDevice;
       // The device's helper endpoints are served from an in-process
       // NativeCapture/NativeHid DeviceSession.
@@ -2107,7 +2284,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       req.on("data", (chunk: Buffer | string) => {
         body += typeof chunk === "string" ? chunk : chunk.toString();
       });
-      req.on("end", () => {
+      req.on("end", async () => {
         let udid = "";
         try { udid = (JSON.parse(body) as ShutdownRequestBody).udid ?? ""; } catch {}
         if (!/^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(udid)) {
@@ -2122,7 +2299,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         // Drop the snapshot so the next status sample re-queries simctl
         // and prunes any helper bound to this now-shutdown device.
         bootedSnapshot = { at: 0, booted: null, names: new Map(), deviceTypes: new Map() };
-        execFile("xcrun", ["simctl", "shutdown", udid], { timeout: 30_000 }, (err, _stdout, stderr) => {
+        execFile("xcrun", ["simctl", "shutdown", udid], { timeout: 30_000 }, async (err, _stdout, stderr) => {
           if (err) {
             res.writeHead(500, { "Content-Type": "application/json" });
             res.end(JSON.stringify({
@@ -2131,6 +2308,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
             }));
             return;
           }
+          await disableNetworkCaptureForStoppedDevice(udid);
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ ok: true }));
         });
@@ -2159,7 +2337,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           port,
           base,
           streamSettings,
-          requirePreviewToken ? execToken : undefined,
+          gridStateToken(execToken, { requirePreviewToken, loopbackOnly: options?.loopbackOnly }),
+          () => enableNetworkCaptureForStartedDevice(udid, networkCapture),
         ).then((error) => {
           if (res.writableEnded) return;
           if (error) {
@@ -2350,8 +2529,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     }
 
     // Still-PNG capture via `simctl io <udid> screenshot`. Consumed by the
-    // Expo Device Hub dashboard's save-screenshot action (the serve-sim web UI
-    // shells out over exec-ws instead, so it never hits this route). Uses the
+    // Expo Device Hub dashboard's save-screenshot action and by the serve-sim web
+    // UI when it is served through a tunnel (on loopback it uses the
+    // screenshot.capture host action instead). Uses the
     // ?device= selection with a booted-simulator fallback.
     if (url === base + "/api/screenshot") {
       if (req.method !== "POST") {
@@ -2399,9 +2579,14 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           );
         });
         const png = await readFile(file);
+        const artifact = await saveScreenshotArtifact(png);
+        recordScreenshotEvent(udid, artifact);
         res.writeHead(200, {
           "Cache-Control": "no-store",
           "Content-Type": "image/png",
+          // The route allows configured cross-origin callers, and they can only read custom headers listed here.
+          "Access-Control-Expose-Headers": `${SCREENSHOT_ARTIFACT_HEADER}, ${SCREENSHOT_ARTIFACT_ERROR_HEADER}`,
+          ...screenshotArtifactHeaders(artifact),
         });
         res.end(png);
       } catch (err) {
@@ -2409,6 +2594,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const message =
           (typeof stderr === "string" && stderr.trim()) ||
           (err instanceof Error ? err.message : String(err));
+        // The event log is browser-readable; simctl's stderr can name host paths, so it stays here.
+        console.error(`simctl screenshot failed for ${udid}:`, message);
+        recordScreenshotEvent(udid, { status: "capture-failed", error: "simctl screenshot failed" });
         res.writeHead(500, {
           "Cache-Control": "no-store",
           "Content-Type": "application/json",
@@ -2639,6 +2827,50 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
 
+    if (url === base + "/network-capture") {
+      const states = await readServeSimStates();
+      const state = selectServeSimState(states, selectedDevice);
+      handleNetworkCaptureRequest(req, res, state, captureRuntime);
+      return;
+    }
+
+    // Not under "/network-capture/", so these can never be read as a request id.
+    if (url === base + "/network-capture.ndjson") {
+      const states = await readServeSimStates();
+      const state = selectServeSimState(states, selectedDevice);
+      await handleCaptureEntriesRequest(req, res, state, captureRuntime);
+      return;
+    }
+
+    if (url === base + "/network-capture.har") {
+      const states = await readServeSimStates();
+      const state = selectServeSimState(states, selectedDevice);
+      await handleCaptureHarRequest(req, res, state, captureRuntime);
+      return;
+    }
+
+    if (url.startsWith(base + "/network-capture/")) {
+      const rawId = url.slice((base + "/network-capture/").length);
+      let id: string;
+      try {
+        id = decodeURIComponent(rawId);
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json", ...NO_STORE });
+        res.end(
+          JSON.stringify({
+            error:
+              `Malformed percent-escape in the capture id (${rawId}). Copy the id verbatim from ` +
+              "the {base}/network-capture stream.",
+          }),
+        );
+        return;
+      }
+      const states = await readServeSimStates();
+      const state = selectServeSimState(states, selectedDevice);
+      handleCaptureBodyRequest(req, res, state, id, captureRuntime);
+      return;
+    }
+
     // SSE: foreground-app change stream. Emits `{bundleId, pid}` events
     // parsed from SpringBoard's "Setting process visibility to: Foreground"
     // log line. Filtering is done here (not in the browser) so the SSE stream
@@ -2692,7 +2924,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // Upgrades skip the HTTP request path, and the HID and devtools sockets carry no token of
     // their own, so gate them here too.
     if (
-      !assertUpgradeAccess(
+      !upgradeHostAllowed(req.headers.host)
+      || !assertUpgradeAccess(
         upgradeAuthHeaders(req.headers),
         execToken,
         { required: requirePreviewToken },
@@ -2728,7 +2961,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       return;
     }
     const device = helperTarget.device ?? selectedDevice;
-    if (helperTarget.upstreamPath === "/ws") {
+    if (isHidWebSocketPath(helperTarget.upstreamPath)) {
       // HID input is delivered to the in-process DeviceSession.
       if (attachHidInProcess(req, socket, execToken, head, device, streamSettings)) return;
       socket.end("HTTP/1.1 404 Not Found\r\n\r\n");
@@ -2746,24 +2979,23 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     path: `${base}/exec-ws`,
     execToken,
     corsOrigins,
-    ssePrefixes: [
-      `${base}/api/events`,
-      `${base}/api/event-log/events`,
-      `${base}/grid/api/status/events`,
-      `${base}/appstate`,
-      `${base}/logs`,
-      `${base}/crashes`,
-      `${base}/metrics`,
-      `${base}/ax`,
-    ],
+    ssePrefixes: sseStreamPaths(base),
     onUiRequest: handleUiRequest,
     serveSimBinPath: serveSimBinPath(),
     onActionResult: (action, params, result) => recordActionEvent(action, params, result),
     onSseRequest(path, websocketRequest) {
       const url = new URL(path, websocketRequest.url);
-      // The exec channel already authenticated, so its fan-out carries the token past the gate.
+      const origin = websocketRequest.headers.get("origin");
+      const site = websocketRequest.headers.get("sec-fetch-site");
+      // The exec channel already authenticated, so its fan-out carries the token past the gate. It
+      // keeps the socket's origin, so a same-origin-only route still sees who is asking.
       return fetchMiddleware(new Request(url, {
-        headers: { accept: "text/event-stream", authorization: `Bearer ${execToken}` },
+        headers: {
+          accept: "text/event-stream",
+          authorization: `Bearer ${execToken}`,
+          ...(origin ? { origin } : {}),
+          ...(site ? { "sec-fetch-site": site } : {}),
+        },
       }));
     },
   });
@@ -2775,7 +3007,8 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     // Embedded hosts forward accepted sockets and bypass the request gate. The exec channel
     // re-checks the token itself; the helper HID socket does not.
     if (
-      !assertUpgradeAccess(
+      !upgradeHostAllowed(request.headers.get("host"))
+      || !assertUpgradeAccess(
         upgradeAuthHeaders(request),
         execToken,
         { required: requirePreviewToken },

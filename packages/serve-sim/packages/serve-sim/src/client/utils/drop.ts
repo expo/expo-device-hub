@@ -1,4 +1,4 @@
-import { runHostAction } from "./exec";
+import { runHostAction } from "../../socket/client-control";
 
 // ─── File drop (drag media/ipa onto the simulator) ───
 //

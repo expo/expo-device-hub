@@ -68,4 +68,36 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
     expect(code).toBe(1);
     expect(stderr).toContain("Invalid URL 'not-a-url'");
   });
+
+  test("rejects network capture on a public host without the token gate", async () => {
+    const { code, stderr } = await runCli(["--network-capture", "--host", "0.0.0.0"]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("--network-capture on --host 0.0.0.0 needs --require-token");
+  });
+
+  test("rejects capture enabled as a capability on a public host without the token gate", async () => {
+    // Capabilities are applied before the preview server starts, so this must be refused up front.
+    const { code, stderr } = await runCli(["--enable", "networkCapture", "--host", "0.0.0.0"]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("--enable networkCapture on --host 0.0.0.0 needs --require-token");
+  });
+
+  test("does not refuse capture that --disable turns back off", async () => {
+    // --disable wins, so nothing captures and a public preview needs no token for it. A device that
+    // does not exist stops the run right after the check, with or without a simulator to serve.
+    const { code, stderr } = await runCli([
+      "NOT-A-DEVICE", "--enable", "networkCapture", "--disable", "networkCapture", "--host", "0.0.0.0",
+    ]);
+    expect(code).toBe(1);
+    expect(stderr).not.toContain("needs --require-token");
+  });
+
+  test("rejects network capture in the run modes that would record nothing", async () => {
+    // Both exit once the helpers are up, and the proxy lives in this process, so capture would stop with it.
+    for (const mode of ["--detach", "--no-preview"]) {
+      const { code, stderr } = await runCli(["--network-capture", mode]);
+      expect(code).toBe(1);
+      expect(stderr).toContain("--network-capture needs the preview server");
+    }
+  });
 });

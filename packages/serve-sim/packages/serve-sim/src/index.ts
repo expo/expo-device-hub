@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { captureRuntime } from "./capture/runtime";
+import { rebootedWithCaptureSince } from "./capture/reboot";
 import { Command, InvalidArgumentError } from "commander";
 import { execFileSync, execSync, spawn as nodeSpawn, type ChildProcess } from "child_process";
 import { existsSync, mkdirSync, openSync, closeSync, readSync, readFileSync, unlinkSync, writeFileSync } from "fs";
@@ -10,11 +11,13 @@ import WebSocket from "ws";
 import {
   stateDir,
   stateFileForDevice,
+  recordingShutdownFailureFile,
   listStateFiles,
   inProcessServeSimState,
   previewStartupPayload,
   writeServeSimState,
   clearServeSimState,
+  serverBaseUrl,
   type ServeSimDeviceState,
   type StreamSettings,
   type WebRtcIceServer,
@@ -24,9 +27,11 @@ import { logBufferCache } from "./log-buffer";
 import { crashRuntime } from "./crash/runtime";
 import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
+import { runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
 import {
   assertKnownCapabilities,
+  missingCapabilities,
   hasDefaultCapabilities,
   registerCapability,
 } from "./capabilities";
@@ -40,6 +45,7 @@ import {
   stopLaunchSession,
   waitForLaunchUpdates,
 } from "./launch-manager";
+import { parseCaptureFields } from "./capture/fields";
 import { killOwnListeners } from "./ports";
 import { findBootedDevice, resolveDevice } from "./device";
 import { openSimulatorHost } from "./simulator-host";
@@ -63,6 +69,13 @@ import { parseIceUrlList, streamHelperArgs, streamSettingsEqual } from "./stream
 import { MAX_MJPEG_STREAM_FPS, MAX_VIDEO_STREAM_FPS } from "./stream-settings";
 import { parseHingeAngle } from "./hinge-angle";
 import { sendHingeAngleToWs } from "./hinge-command";
+import { finishDeviceRecordingsForShutdown } from "./device-session";
+import { recordingShutdownGraceMs, stopForStreamReplacement, stopProcess } from "./stop-process";
+import { captureHarPaths, followCaptureHar } from "./capture";
+
+// Budget for capture teardown and capability disarming together.
+const SHUTDOWN_TIMEOUT_MS = 20_000;
+const CAPTURE_SHUTDOWN_SHARE_MS = 12_000;
 
 // `import.meta.dir` is Bun-only; resolve once via fileURLToPath so the bundled
 // CLI works under plain `node` too.
@@ -88,6 +101,19 @@ function resolveVersion(): string {
 // and we extract the bytes to a cached location on first use.
 
 type ServerState = ServeSimDeviceState;
+let replacementRecordingFailed = false;
+
+async function replaceHelper(state: ServerState): Promise<void> {
+  const result = await stopForStreamReplacement(state);
+  if (result.forced) {
+    console.error(`Previous serve-sim helper ${state.pid} required SIGKILL during stream-settings replacement.`);
+  }
+  if (result.recordingError) {
+    replacementRecordingFailed = true;
+    process.exitCode = 1;
+    console.error(`Recording finalization failed while replacing helper ${state.pid}: ${result.recordingError}. Starting the replacement helper.`);
+  }
+}
 
 type StreamRuntimeOptions = StreamSettings;
 function ensureStateDir() {
@@ -165,6 +191,10 @@ function readStateFile(file: string): ServerState | null {
     // recycle here so --detach / --list always return a working stream.
     const booted = getBootedUdids();
     if (booted && !booted.has(state.device)) {
+      if (rebootedWithCaptureSince(state.device, bootedSnapshot.at)) {
+        debugState("keeping state for capture reboot on device %s", state.device);
+        return state;
+      }
       if (state.pid === process.pid) {
         // The state belongs to *this* process (an in-process/preview server
         // recorded its own pid via inProcessServeSimState). Never SIGTERM
@@ -303,25 +333,6 @@ function isDeviceBooted(udid: string): boolean {
 
 function isProcessAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
-}
-
-/** Kill a process and wait for it to actually exit. */
-function stopProcess(pid: number): void {
-  try { process.kill(pid, "SIGTERM"); } catch { return; }
-  const deadline = Date.now() + 500;
-  while (Date.now() < deadline) {
-    try {
-      process.kill(pid, 0);
-      sleepSync(25);
-    } catch {
-      return;
-    }
-  }
-  try { process.kill(pid, "SIGKILL"); } catch {}
-  const deadline2 = Date.now() + 500;
-  while (Date.now() < deadline2) {
-    try { process.kill(pid, 0); sleepSync(25); } catch { return; }
-  }
 }
 
 function bootDevice(udid: string): void {
@@ -479,7 +490,7 @@ async function startHelper(
   // The child boots the sim then writes its state once it's bound + serving.
   const state = await waitForStateFile(udid);
   if (!state) {
-    if (child.pid) stopProcess(child.pid);
+    if (child.pid) await stopProcess(child.pid, child);
     let log = "";
     try { log = readFileSync(logFile, "utf-8").trim(); } catch {}
     console.error(log ? `Preview server failed:\n${log}` : "Preview server failed to start");
@@ -524,7 +535,7 @@ async function follow(
     const existing = readState(udid);
     if (existing) {
       if (replaceMismatchedStream && !streamSettingsEqual(existing.streamSettings, stream)) {
-        stopProcess(existing.pid);
+        await replaceHelper(existing);
         clearState(udid);
       } else {
         if (!quiet) {
@@ -588,14 +599,23 @@ async function follow(
     if (!quiet) console.log("\nShutting down...");
     logBufferCache.stopAll();
     crashRuntime.stop();
-    for (const [udid, child] of children) {
+    const stopped = await Promise.all([...children].map(async ([udid, child]) => {
       const pid = child.pid;
-      if (pid) stopProcess(pid);
+      const state = states.find(current => current.device === udid);
+      const graceMs = state
+        ? await recordingShutdownGraceMs(
+            state.streamUrl.replace(/\/stream\.mjpeg$/, "/recording/video"), state.token,
+          )
+        : undefined;
+      const result = pid ? await stopProcess(pid, child, graceMs) : { exitCode: null, signalCode: null, forced: false };
       clearState(udid);
-    }
+      return result;
+    }));
     await disarmDevicesArmedHereAsync();
     children.clear();
-    process.exit(exitCode);
+    const childFailed = stopped.some(({ exitCode: childCode, signalCode, forced }) =>
+      forced || signalCode !== null || (childCode !== null && childCode !== 0));
+    process.exit(childFailed || replacementRecordingFailed ? 1 : exitCode);
   };
 
   // Monitor children — exit when all die (helper crashed / exited on its own)
@@ -657,7 +677,7 @@ async function detach(
     const existing = readState(udid);
     if (existing) {
       if (replaceMismatchedStream && !streamSettingsEqual(existing.streamSettings, stream)) {
-        stopProcess(existing.pid);
+        await replaceHelper(existing);
         clearState(udid);
       } else {
         states.push(existing);
@@ -1710,6 +1730,48 @@ function resolveTargetDevices(devices: string[]): string[] {
   return [fallback.udid];
 }
 
+// One per process: the starter remembers the devices whose capture start failed here, so the
+// preview's second call does not repeat a failed start (see createCaptureStarter).
+let captureStarter: ReturnType<(typeof import("./capture"))["createCaptureStarter"]> | undefined;
+
+/** Why capture is refused on this host, or null: a public preview without the token gate. */
+function publicCaptureRefusal(host: string, requireToken: boolean): string | null {
+  return !isLoopbackHost(host) && !requireToken
+    ? `Network capture needs --require-token when the preview is reachable beyond loopback (--host ${host}). ` +
+        "Without it, anyone who can load the preview could read captured traffic. Restart serve-sim with --require-token."
+    : null;
+}
+
+async function startNetworkCapture(
+  udids: string[],
+  fields: string[] | undefined,
+  quiet: boolean,
+): Promise<void> {
+  const capture = await import("./capture");
+  if (sessionStopping) return;
+  capture.captureRuntime.setFields(capture.resolveCaptureFields(fields));
+  captureStarter ??= capture.createCaptureStarter();
+  await captureStarter(udids, (udid) => ({
+    shouldStop: () => sessionStopping,
+    onStarted: (meta) => {
+      if (quiet) return;
+      console.log(
+        `Network capture on for ${udid} via ${meta.proxyAddress}. HTTP(S) from third-party apps on ` +
+          "this device is recorded from now on (Apple system apps like Safari are left unproxied; " +
+          "apps already running may keep existing sessions); " +
+          "HTTPS is decrypted, so certificate-pinned apps will refuse to connect.",
+      );
+      const artifacts = capture.captureRuntime.artifactPathsFor(udid);
+      if (artifacts) {
+        console.log(
+          `Capture artifacts (live session; removed on exit): ${artifacts.networkCapturePath}, ${artifacts.harPath}`,
+        );
+      }
+    },
+    onFailed: (reason) => console.error(`Network capture could not start for ${udid}. ${reason}`),
+  }));
+}
+
 async function serve(
   servePort: number,
   devices: string[],
@@ -1717,12 +1779,15 @@ async function serve(
   host: string,
   options: {
     stream?: StreamRuntimeOptions;
+    networkCaptureFields?: string[];
     corsOrigins?: string[];
     frameAncestors?: string[];
     shareUrl?: string;
+    allowAnyHostWhenInsecure?: boolean;
     debugStreamPath?: string;
     requireToken?: boolean;
     quiet?: boolean;
+    networkCapture?: boolean;
   } = {},
 ) {
   const quiet = !!options.quiet;
@@ -1740,11 +1805,19 @@ async function serve(
     if (!quiet && devices.length === 0 && readAllStates().length === 0) {
       console.log("Starting simulator stream...");
     }
-    for (const udid of targetDevices) await ensureBooted(udid);
+    for (const udid of targetDevices) {
+      await ensureBooted(udid);
+    }
   } catch (err) {
     return failStartup(err instanceof Error ? err.message : String(err));
   }
   const targetDevice = targetDevices[0];
+
+  const capture = await import("./capture");
+  // The panel can turn capture on too, so a public preview without the token gate refuses it there
+  // as well as for --network-capture.
+  capture.captureRuntime.refuseCapture(publicCaptureRefusal(host, !!options.requireToken));
+  await startNetworkCapture(options.networkCapture ? targetDevices : [], options.networkCaptureFields, quiet);
 
   const { simMiddleware } = await import("./middleware");
   // Standalone serve-sim owns its HTTP server and wires WebSocket upgrades, so
@@ -1760,6 +1833,9 @@ async function serve(
     corsOrigins: options.corsOrigins ?? [],
     frameAncestors: options.frameAncestors ?? [],
     shareUrl: options.shareUrl,
+    allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
+    networkCapture: !!options.networkCapture,
+    loopbackOnly: isLoopbackHost(host),
     execToken: previewToken,
     requirePreviewToken,
   });
@@ -1797,7 +1873,10 @@ async function serve(
   // CLI input subcommands can reach the same-origin /helper ws.
   for (const udid of targetDevices) {
     const state = inProcessServeSimState(udid, boundPort, "/", host, options.stream);
-    writeState(requirePreviewToken ? { ...state, token: previewToken } : state);
+    // Capture CLI commands read this token. A public host without --require-token refuses capture,
+    // so the token is written only where something can use it.
+    const tokenNeeded = requirePreviewToken || isLoopbackHost(host);
+    writeState(tokenNeeded ? { ...state, token: previewToken } : state);
   }
   const clearAll = () => {
     for (const udid of targetDevices) {
@@ -1842,9 +1921,9 @@ async function serve(
       console.log(
         requirePreviewToken
           ? "  This server is listening on the network. The links above carry a token because anyone who " +
-            "has it can run commands on this machine."
+            "has it can read captured traffic and run commands on this machine."
           : "  This server is listening on the network with no token required. Anyone who can reach it can " +
-            "run commands on this machine. Pass --require-token to gate it.",
+            "read captured traffic and run commands on this machine. Pass --require-token to gate it.",
       );
     } else if (networkIP) {
       console.log(`  - Network: \x1b[2muse --host 0.0.0.0 to expose on http://${networkIP}:${boundPort}\x1b[0m`);
@@ -1854,11 +1933,34 @@ async function serve(
     console.log("");
   }
 
+  let shuttingDown = false;
+  // Capture and capability teardown share one shutdown budget, but capture gets only part of it:
+  // a stalled capture step must not use up the time disarming the devices needs.
   const shutdown = async () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     sessionStopping = true;
-    await disarmDevicesArmedHereAsync();
+    const recordingErrors: string[] = [];
+    const recordingsFinished = await finishDeviceRecordingsForShutdown(
+      error => recordingErrors.push(String(error))
+    );
+    if (!recordingsFinished) {
+      try {
+        writeFileSync(recordingShutdownFailureFile(process.pid), JSON.stringify({
+          pid: process.pid, errors: recordingErrors,
+        }), { mode: 0o600 });
+      } catch (error) {
+        console.error(`Could not report recording shutdown failure: ${String(error)}`);
+      }
+    }
+    await runShutdownSteps({
+      stopCapture: () => capture.captureRuntime.disableAll(),
+      disarm: () => disarmDevicesArmedHereAsync(),
+      totalMs: SHUTDOWN_TIMEOUT_MS,
+      captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
+    });
     clearAll();
-    process.exit(0);
+    process.exit(recordingsFinished ? 0 : 1);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
@@ -1921,6 +2023,31 @@ program
   .option("--detach", "Spawn helper and exit (daemon mode)")
   .option("-q, --quiet", "Suppress human-readable output, JSON only")
   .option("--no-preview", "Skip the web preview server; stream in foreground only")
+  .option(
+    "--network-capture-field <field>",
+    "What network capture may keep, beyond method/URL/status/timing/size: header, query, request-body, " +
+      "response-body. Repeatable or comma-separated. Default: none of them, because each can carry " +
+      "credentials; header values are redacted by name.",
+    (value: string, prev: string[]) => {
+      // Rejected here, like --codec, so a typo fails at the flag instead of silently capturing less.
+      try {
+        parseCaptureFields([value]);
+      } catch (error) {
+        throw new InvalidArgumentError(error instanceof Error ? error.message : String(error));
+      }
+      return [...prev, value];
+    },
+    [] as string[],
+  )
+  .option(
+    "--network-capture",
+    "Default network capture on for the devices this process serves, including ones already booted; the UI reboot toggle overrides it per device. " +
+      "Covers third-party apps launched after capture starts, including their startup requests; capture starts " +
+      "once the device has booted, so apps that launch during boot are missed until relaunched. " +
+      "Apple system apps (e.g. Safari) are left unproxied. " +
+      "HTTPS is decrypted for the whole boot session and certificate-pinned apps will refuse to connect. " +
+      "Requires mitmproxy. Relaunch apps after enabling so they pick up the proxy.",
+  )
   .option("--transport <http|webrtc>", "Stream transport", "http")
   .option(
     "--launch-app-identifier <id>",
@@ -2041,6 +2168,11 @@ program
       "can always read, but open the control socket only when named.",
     (value: string, prev: string[]) => [...prev, value],
     [] as string[],
+  )
+  .option(
+    "--allow-any-host-when-insecure",
+    "Without --require-token, answer for any host name, not only localhost and IP addresses " +
+      "(a .local name, a tunnel). Insecure: a DNS rebinding page could then read the session token.",
   )
   .option("-l, --list [device]", "List running streams")
   .option("-k, --kill [device]", "Kill running stream(s)")
@@ -2187,6 +2319,26 @@ Examples:
         process.exit(1);
       }
     }
+    if (opts.networkCapture && (opts.detach || opts.preview === false)) {
+      console.error(
+        "--network-capture needs the preview server, so drop --detach/--no-preview. The proxy and its " +
+          "recordings live in that process; these modes exit and would leave nothing capturing.",
+      );
+      process.exit(1);
+    }
+    const captureFlag = opts.networkCapture
+      ? "--network-capture"
+      : capabilities.enable.includes("networkCapture") && !capabilities.disable.includes("networkCapture")
+        ? "--enable networkCapture"
+        : null;
+    if (captureFlag && !opts.requireToken && !isLoopbackHost(opts.host)) {
+      console.error(
+        `${captureFlag} on --host ${opts.host} needs --require-token. Without it the preview page, ` +
+          "open to anyone who can reach it, carries the session token, and that token also reads the " +
+          "captured traffic.",
+      );
+      process.exit(1);
+    }
     if (opts.requireToken && (opts.detach || opts.preview === false)) {
       console.error(
         "--require-token needs the preview server, so drop --detach/--no-preview. It gates the " +
@@ -2212,6 +2364,14 @@ Examples:
       }
     }
     let targets = devices;
+    let captureStopping: Promise<void> | null = null;
+    const stopNetworkCapture = (): Promise<void> => {
+      captureStopping ??= (async () => {
+        const capture = await import("./capture");
+        await capture.captureRuntime.disableAll();
+      })();
+      return captureStopping;
+    };
     if (!opts.detach) {
       try {
         targets = resolveTargetDevices(devices);
@@ -2221,10 +2381,20 @@ Examples:
         // until it restarts. It loads nothing on its own, so an app that never
         // gets a capability pays a libSystem-only dylib and nothing else.
         {
-          process.on("exit", disarmDevicesArmedHere);
+          process.on("exit", () => {
+            disarmDevicesArmedHere();
+          });
           for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
             process.on(signal, async () => {
               sessionStopping = true;
+              // A failed capture teardown must not keep the devices armed.
+              try {
+                await stopNetworkCapture();
+              } catch (error) {
+                console.error(
+                  `Network capture teardown failed: ${error instanceof Error ? error.message : String(error)}`,
+                );
+              }
               await disarmDevicesArmedHereAsync();
               if (process.listenerCount(signal) > 1) return;
               process.exit(0);
@@ -2242,24 +2412,31 @@ Examples:
             if (sessionStopping) return;
           }
         }
+        // Set before any capability is applied: `--enable networkCapture` starts capture here, before
+        // serve() runs. The flag check above already refuses it; this keeps the runtime in step.
+        (await import("./capture")).captureRuntime.refuseCapture(publicCaptureRefusal(opts.host, !!opts.requireToken));
+        await startNetworkCapture(opts.networkCapture ? targets : [], opts.networkCaptureField, !!opts.quiet);
+        if (sessionStopping) return;
         for (const udid of launchesBeforeStreaming && !isStreamHelper ? targets : []) {
           if (sessionStopping) return;
           if (bundleId) {
             await launchAppAsync(udid, { bundleId, launchArgs, openUrl, capabilities });
           } else {
             const applied = await applyDefaultCapabilities(udid, null, capabilities);
-            const missing = capabilities.enable.filter((name) => !applied.includes(name));
+            const missing = missingCapabilities(capabilities, applied);
             if (missing.length > 0) {
               console.error(
                 `Requested ${missing.join(", ")} but ${missing.length === 1 ? "it" : "they"} ` +
                   `did not apply on ${udid}. See the message above for why.`,
               );
+              await stopNetworkCapture();
               process.exit(1);
             }
           }
         }
       } catch (error) {
         console.error(error instanceof Error ? error.message : error);
+        await stopNetworkCapture();
         process.exit(1);
       }
     }
@@ -2275,14 +2452,163 @@ Examples:
         corsOrigins: opts.corsOrigin,
         frameAncestors: opts.frameAncestor,
         shareUrl: opts.shareUrl,
+        allowAnyHostWhenInsecure: !!opts.allowAnyHostWhenInsecure,
         debugStreamPath,
         requireToken: !!opts.requireToken,
         quiet: !!opts.quiet,
+        networkCapture: !!opts.networkCapture,
+        networkCaptureFields: opts.networkCaptureField,
       });
     }
   });
 
 const deviceOpt = ["-d, --device <udid>", "Target a specific simulator (udid or name)"] as const;
+
+async function waitForRecordingManifest(path: string, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (!existsSync(path) && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  return existsSync(path);
+}
+
+async function waitForServerExit(pid: number, timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try { process.kill(pid, 0); } catch { return true; }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  try { process.kill(pid, 0); } catch { return true; }
+  return false;
+}
+
+async function recordVideo(udid: string, output: string): Promise<void> {
+  const state = readState(udid);
+  if (!state) throw new Error(`No running serve-sim session found for ${udid}; start serve-sim for this device and retry.`);
+  const url = state.streamUrl.replace(/\/stream\.mjpeg$/, "/recording/video");
+  const outputDirectory = resolve(output);
+  const manifestPath = join(outputDirectory, "session.json");
+  if (existsSync(manifestPath)) {
+    throw new Error(`Recording manifest already exists at ${manifestPath}; choose an empty output directory.`);
+  }
+  const recordingId = randomBytes(16).toString("hex");
+  const headers: Record<string, string> = { "x-recording-id": recordingId };
+  if (state.token) headers.Authorization = `Bearer ${state.token}`;
+  let resolveStop: () => void = () => {};
+  const stopping = new Promise<void>((resolve) => { resolveStop = resolve; });
+  let stopRequested = false;
+  let recordingStarted = false;
+  const startAbort = new AbortController();
+  const onSignal = () => {
+    stopRequested = true;
+    if (!recordingStarted) startAbort.abort();
+    resolveStop();
+  };
+  const keepAlive = setInterval(() => {}, 60_000);
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let recordingStopStarted = false;
+  let rejectLease: (error: Error) => void = () => {};
+  const lostLease = new Promise<never>((_, reject) => { rejectLease = reject; });
+  void lostLease.catch(() => {});
+  let finished = false;
+  let startupCancellationDelivered = false;
+  process.on("SIGINT", onSignal);
+  process.on("SIGTERM", onSignal);
+  try {
+    try {
+      const start = await fetch(url, {
+        method: "POST",
+        headers: { ...headers, "Content-Type": "application/json" },
+        body: JSON.stringify({ start: true, output: outputDirectory, recordingId }),
+        signal: AbortSignal.any([AbortSignal.timeout(30_000), startAbort.signal]),
+      });
+      if (!start.ok) {
+        throw new Error(`Recording start failed (${start.status}): ${await start.text()}`);
+      }
+    } catch (error) {
+      if (!stopRequested) throw error;
+      const cancelled = await fetch(url, {
+        method: "DELETE", headers, signal: AbortSignal.timeout(120_000),
+      });
+      startupCancellationDelivered = true;
+      if (cancelled.status === 200) {
+        const result = await cancelled.json() as { manifest?: string };
+        if (result.manifest === manifestPath && await waitForRecordingManifest(manifestPath, 120_000)) {
+          finished = true;
+          console.log(manifestPath);
+          return;
+        }
+      }
+      throw new Error(`Recording start was interrupted before a video was saved: ${String(error)}`);
+    }
+    recordingStarted = true;
+    console.error("serve-sim:recording-started");
+    heartbeat = setInterval(() => {
+      if (recordingStopStarted) return;
+      void fetch(url, { method: "PUT", headers, signal: AbortSignal.timeout(10_000) })
+        .then(async response => {
+          if (!response.ok && !recordingStopStarted) rejectLease(new Error(`Recording lease was lost (${response.status}): ${await response.text()}`));
+        })
+        .catch(error => {
+          if (!recordingStopStarted) rejectLease(error instanceof Error ? error : new Error(String(error)));
+        });
+    }, 5_000);
+    let stopError: unknown;
+    let stopRequestAmbiguous = false;
+    try {
+      await Promise.race([stopping, lostLease]);
+      recordingStopStarted = true;
+      clearInterval(heartbeat);
+      heartbeat = undefined;
+      let stop: Response;
+      try {
+        stop = await fetch(url, {
+          method: "DELETE",
+          headers,
+          signal: AbortSignal.timeout(120_000),
+        });
+      } catch (error) {
+        // The server may finish after a transport error or timeout.
+        stopRequestAmbiguous = true;
+        throw error;
+      }
+      if (!stop.ok) throw new Error(`Recording stop failed (${stop.status}): ${await stop.text()}`);
+      const result = await stop.json() as { manifest?: string };
+      if (result.manifest !== manifestPath) {
+        throw new Error("Recording stop returned an unexpected manifest path");
+      }
+    } catch (error) {
+      stopError = error;
+    }
+    if (stopError && !stopRequestAmbiguous) throw stopError;
+    if (!await waitForRecordingManifest(manifestPath, 120_000)) {
+      throw stopError ?? new Error("Recording stopped without a session.json manifest; inspect the serve-sim session log and retry.");
+    }
+    if (stopError && !stopRequested && !await waitForServerExit(state.pid, 5_000)) {
+      throw new Error(`Recording ended before a stop was requested: ${String(stopError)}. A partial video is available at ${manifestPath}.`);
+    }
+    finished = true;
+    console.log(manifestPath);
+  } finally {
+    recordingStopStarted = true;
+    if (heartbeat) clearInterval(heartbeat);
+    if (!finished && !startupCancellationDelivered) {
+      try {
+        await fetch(url, { method: "DELETE", headers, signal: AbortSignal.timeout(10_000) });
+      } catch {}
+    }
+    clearInterval(keepAlive);
+    process.off("SIGINT", onSignal);
+    process.off("SIGTERM", onSignal);
+  }
+}
+
+program
+  .command("record-video")
+  .description("Record native-size hardware H.264 simulator video until SIGINT")
+  .requiredOption("--udid <udid>", "Simulator UDID")
+  .requiredOption("--output <dir>", "Output directory")
+  .action(async (opts: { udid: string; output: string }) => recordVideo(opts.udid, opts.output));
 
 program
   .command("gesture")
@@ -2392,5 +2718,87 @@ program
   .action((args: string[]) => uiSettings(args));
 
 registerCapability(captureRuntime.capability);
+
+{
+  const capture = program.command("capture").description("Network capture helpers");
+  capture
+    .command("har")
+    .description("Follow the capture stream; write a HAR and its event log")
+    .requiredOption("-o, --out <path>", "HAR file to keep rewriting")
+    .option("--events <path>", "NDJSON event log (default: <name>.network-capture.json beside the HAR)")
+    .option(...deviceOpt)
+    .option(
+      "--flush-ms <ms>",
+      "How often to rewrite the HAR, in milliseconds (250-3600000)",
+      (value) => parseNumberInRange(value, "--flush-ms", 250, 3_600_000, true),
+      5000,
+    )
+    .option("--force", "Replace a recording that already holds requests at --out")
+    .action(async (opts: {
+      out: string;
+      events?: string;
+      device?: string;
+      flushMs: number;
+      force?: boolean;
+    }) => {
+      const udid = opts.device ? resolveDevice(opts.device) : undefined;
+      const state = readState(udid);
+      if (!state) {
+        console.error("No serve-sim server running. Run `serve-sim --network-capture` first.");
+        process.exit(1);
+      }
+      if (!state.token) {
+        // Written only under --require-token or on loopback; a public host without the gate refuses capture.
+        console.error(
+          "This serve-sim session recorded no access token, so the capture routes cannot be reached. " +
+            "Restart serve-sim on localhost, or with --require-token.",
+        );
+        process.exit(1);
+      }
+      const outPath = resolve(opts.out);
+      const eventsPath = opts.events ? resolve(opts.events) : undefined;
+      const ac = new AbortController();
+      const stop = () => ac.abort();
+      process.on("SIGINT", stop);
+      process.on("SIGTERM", stop);
+      console.error(
+        `Recording capture for ${state.device} → ${outPath} (+ ${eventsPath ?? captureHarPaths(outPath).eventsPath}) (Ctrl-C to stop)`,
+      );
+      let began = false;
+      try {
+        const result = await followCaptureHar({
+          onBegin: () => { began = true; },
+          onPause: (reason) => console.error(
+            `${reason}\nStill recording to ${outPath}; requests are appended when capture is on again (Ctrl-C to stop).`,
+          ),
+          onResume: () => console.error("Capture is on again; recording continues."),
+          replace: !!opts.force,
+          baseUrl: serverBaseUrl(state),
+          device: state.device,
+          outPath,
+          eventsPath,
+          flushIntervalMs: opts.flushMs,
+          signal: ac.signal,
+          version: resolveVersion(),
+          token: state.token,
+        });
+        console.error(
+          `The capture stream closed before you stopped the recording, so later requests are not in the HAR. ` +
+            `serve-sim stopped or the connection dropped. To keep recording, run \`serve-sim capture har\` ` +
+            `again with a new --out path. ` +
+            `Wrote ${result.size} entries to ${outPath}.`,
+        );
+        process.exit(1);
+      } catch (err) {
+        if ((err as { name?: string })?.name === "AbortError") {
+          // Stopped before the stream showed capture on: nothing was recorded, and --out is untouched.
+          console.error(began ? `Stopped. HAR at ${outPath}` : `Stopped before recording began; ${outPath} was not written.`);
+          return;
+        }
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+}
 
 await program.parseAsync(process.argv);

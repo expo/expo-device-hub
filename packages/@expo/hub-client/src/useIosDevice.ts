@@ -52,7 +52,7 @@ import {
 import { hostUiRequest, runHostAction } from './exec-ws';
 import { getIosAppDetails } from './ios-app-details';
 import { clearIosLocation, setIosLocation } from './ios-location';
-import { fetchIosScreenshot } from './ios-screenshot';
+import { fetchScreenshot } from './screenshot';
 import { hidUsageForCode } from './keyboard';
 import {
   type ConnectionStatus,
@@ -74,6 +74,7 @@ import {
   type MultiTouchSample,
   type RunningDevice,
   type ScreenSize,
+  type ScreenshotCapture,
   type ScrollSample,
   type TouchSample,
 } from './types';
@@ -81,7 +82,7 @@ import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { createPacedKeySender } from './paced-key-sender';
-import { proxyPreviewConfigForBrowser } from './proxy-preview-config';
+import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
 import { normalizeDeviceStreamSettings } from './stream-settings';
 import { useAccessibility } from './useAccessibility';
@@ -468,10 +469,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
   // and returns the PNG bytes. Use the resolved udid from `/api` (falling back
   // to the requested device); the middleware defaults to the booted sim if none.
-  const screenshot = useCallback(async (): Promise<Blob | null> => {
+  const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
     const udid = config?.device ?? targetDevice;
-    return fetchIosScreenshot(baseUrl, udid);
+    return fetchScreenshot(baseUrl, udid);
   }, [baseUrl, targetDevice, config]);
 
   // Apply any serve-sim UI option over its authenticated exec-ws request
@@ -576,31 +577,38 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }`;
 
     const toMiddleware = (rawConfig: PreviewApi): ResolvedConfig => {
-      const c = proxyPreviewConfigForBrowser(rawConfig, window.location);
-      const basePath = c.basePath ?? '';
+      const middlewareUrl = new URL(baseUrl, window.location.href);
+      const c = proxyPreviewConfigForBrowser(rawConfig, middlewareUrl);
+      const basePath = c.basePath === '/' ? '' : (c.basePath ?? '');
       const absoluteMiddlewareUrl = (path?: string): string | null =>
-        path ? new URL(path, baseUrl).toString() : null;
+        path
+          ? c.proxyHelpers
+            ? middlewareEndpointForBrowser(path, middlewareUrl, basePath)
+            : new URL(path, middlewareUrl).toString()
+          : null;
       return {
         url: c.url!,
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         device: c.device ?? null,
-        execWsUrl: toWs(new URL(`${basePath}/exec-ws`, baseUrl).toString()),
+        execWsUrl: toWs(absoluteMiddlewareUrl(`${basePath}/exec-ws`)!),
         execToken: c.execToken ?? null,
+        // These are subscription paths inside exec-ws, not browser URLs. The
+        // server validates them against its internal middleware mount.
         logsPath: c.logsEndpoint ?? null,
         appStateUrl: absoluteMiddlewareUrl(c.appStateEndpoint),
         eventsPath: c.eventLogEventsEndpoint ?? null,
         metricsPath: c.metricsEndpoint ?? null,
         axUrl: absoluteMiddlewareUrl(c.axEndpoint),
-        // A proxied helper URL is re-anchored to the browser origin above; use
-        // that canonical URL rather than an injected host port that may be 0.
+        // A proxied helper URL uses the public middleware mount above rather
+        // than an advertised internal host port that may be 0.
         streamSettingsUrl: c.streamSettingsEndpoint
           ? c.proxyHelpers
             ? `${c.url}/stream-settings`
             : absoluteMiddlewareUrl(c.streamSettingsEndpoint)
           : null,
         initialStreamSettings: c.streamSettings,
-        gridApiUrl: new URL(c.gridApiEndpoint ?? '/grid/api', baseUrl).toString(),
+        gridApiUrl: absoluteMiddlewareUrl(c.gridApiEndpoint ?? `${basePath}/grid/api`),
         webRtcCodec: c.streamSettings?.transport === 'webrtc' ? c.streamSettings.codec : 'h264',
         ...(c.streamSettings?.transport === 'webrtc' && c.streamSettings.iceServers
           ? { webRtcIceServers: c.streamSettings.iceServers }

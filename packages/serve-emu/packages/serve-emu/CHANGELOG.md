@@ -12,8 +12,14 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 
 - Add strict host hardware H.264 encoding for Android gRPC streaming with `--encoder hardware` and an Encoder control in the standalone UI. Software remains the default; stream-mode and health APIs report the active backend and hardware probe failures.
 
+### Breaking
+
+- Remove `GET /api/screenshot`. It now returns 405, and clients must use
+  `POST /api/screenshot`.
+
 ### Added
 
+- Save screenshot captures to `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` when it is set, and report the outcome in the `X-Expo-Screenshot-Artifact` header.
 - `GET /api/metrics` streams foreground app CPU, memory, and network samples as SSE.
 - Add `GET /api/apps/permissions`, `POST /api/apps/revoke`, and
   `POST /api/apps/reset-permissions` to list, revoke, and reset one package's

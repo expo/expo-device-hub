@@ -161,8 +161,20 @@ describe("capture counts", () => {
       idleFrames: 40,
       offeredFrames: null,
       forwardedFrames: null,
+      sharedEncodedFrames: null,
       pumpRestarts: null,
+      canvasMismatchDrops: null,
+      pumpDeferrals: null,
+      pumpRepeats: null,
+      unchangedFrames: null,
+      pumpTimerTicks: null,
+      pumpTimerLateSumMs: null,
+      pumpTimerLateMaxMs: null,
+      sourceSubmitCount: null,
+      sourceSubmitSumMs: null,
+      sourceSubmitMaxMs: null,
       cpuFallbacks: null,
+      poolDrops: null,
       attempts: null,
       stalls: null,
       gapSumMs: null,
@@ -191,6 +203,69 @@ describe("frame flow counts", () => {
 
     expect(stats.capture?.offeredFrames).toBe(880);
     expect(stats.capture?.forwardedFrames).toBe(300);
+  });
+
+  test("reports one shared H.264 encode counter for all viewers", () => {
+    const stats = readSenderStats({
+      sessions: [], capture: { screenFrames: 1, idleFrames: 10, sharedEncodedFrames: 400 },
+    });
+    expect(stats.capture?.sharedEncodedFrames).toBe(400);
+  });
+
+  test("keeps the pump deferrals, repeats, and canvas mismatch drops", () => {
+    const stats = readSenderStats({
+      sessions: [],
+      capture: { screenFrames: 1, idleFrames: 1, pumpDeferrals: 12, pumpRepeats: 3, canvasMismatchDrops: 1 },
+    });
+    expect(stats.capture?.pumpDeferrals).toBe(12);
+    expect(stats.capture?.pumpRepeats).toBe(3);
+    expect(stats.capture?.canvasMismatchDrops).toBe(1);
+  });
+
+  test("reads cumulative pump and source timing for windowed comparisons", () => {
+    const stats = readSenderStats({
+      sessions: [],
+      capture: {
+        screenFrames: 1, idleFrames: 1,
+        pumpTimerTicks: 120, pumpTimerLateSumMs: 42.5, pumpTimerLateMaxMs: 4.2,
+        sourceSubmitCount: 119, sourceSubmitSumMs: 91.25, sourceSubmitMaxMs: 6.1,
+      },
+    });
+    expect(stats.capture).toMatchObject({
+      pumpTimerTicks: 120, pumpTimerLateSumMs: 42.5, pumpTimerLateMaxMs: 4.2,
+      sourceSubmitCount: 119, sourceSubmitSumMs: 91.25, sourceSubmitMaxMs: 6.1,
+    });
+  });
+});
+
+describe("viewer resize and shared canvas", () => {
+  test("passes the resize counters through and reads the shared canvas", () => {
+    const stats = readSenderStats({
+      sessions: [],
+      viewerResize: { backend: "metal", submitted: 60, passedThrough: 60, scaled: 0 },
+      sharedCanvas: { width: 640, height: 1392, scale: 1, step: 0, steps: 0 },
+    });
+    expect(stats.viewerResize).toEqual({ backend: "metal", submitted: 60, passedThrough: 60, scaled: 0 });
+    expect(stats.sharedCanvas).toEqual({
+      width: 640, height: 1392, scale: 1, step: 0, steps: 0, starvedRecoveries: null, lowLatencyFallbacks: null,
+    });
+  });
+
+  test("reads the shared encoder's counters", () => {
+    const stats = readSenderStats({
+      sessions: [],
+      sharedCanvas: { width: 640, height: 1392, scale: 1, step: 0, steps: 0, starvedRecoveries: 2, lowLatencyFallbacks: 1 },
+    });
+    expect(stats.sharedCanvas?.starvedRecoveries).toBe(2);
+    expect(stats.sharedCanvas?.lowLatencyFallbacks).toBe(1);
+  });
+
+  test("reports null for an absent or malformed shared canvas", () => {
+    expect(readSenderStats({ sessions: [] }).sharedCanvas).toBeNull();
+    expect(readSenderStats({ sessions: [], sharedCanvas: { width: "640" } }).sharedCanvas).toBeNull();
+    expect(readSenderStats({ sessions: [] }).viewerResize).toBeNull();
+    expect(readSenderStats({ sessions: [] }).sharedEncoderPeers).toBeNull();
+    expect(readSenderStats({ sessions: [], sharedEncoderPeers: [{ peer: 1, encodeCalls: 5 }] }).sharedEncoderPeers).toEqual([{ peer: 1, encodeCalls: 5 }]);
   });
 });
 

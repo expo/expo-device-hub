@@ -9,8 +9,7 @@
     "test": "bun run --filter serve-emu test",
     "docs:sync": "bun run --filter serve-emu docs:sync",
     "docs:check": "bun run --filter serve-emu docs:check",
-    "check": "bun run --filter serve-emu check",
-    "release": "bun run --filter serve-emu release"
+    "check": "bun run --filter serve-emu check"
   },
   "trustedDependencies": [
     "node-datachannel"

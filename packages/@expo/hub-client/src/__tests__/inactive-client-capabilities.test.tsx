@@ -4,12 +4,9 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { useAndroidDeviceClient } from '../useAndroidDevice';
 import { useIosDeviceClient } from '../useIosDevice';
 import { type DeviceClient, type DeviceConnectionOptions } from '../types';
+import { createGlobalStubs } from './test-globals';
 
-const originals = new Map<string, PropertyDescriptor | undefined>();
-function stubGlobal(name: string, value: unknown) {
-  originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
-  Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
-}
+const { stubGlobal, restoreGlobals } = createGlobalStubs();
 
 class Socket {
   addEventListener() {}
@@ -22,11 +19,7 @@ let renderer: ReactTestRenderer | undefined;
 afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = undefined;
-  for (const [name, descriptor] of originals) {
-    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-    else Reflect.deleteProperty(globalThis, name);
-  }
-  originals.clear();
+  restoreGlobals();
 });
 
 // serve-sim serves no permissions route, so iOS reports the capability off either way.
@@ -150,4 +143,30 @@ test('recording stays unknown until metadata loads and resets on device changes 
   expect(client?.screenRecording).toBe('unknown');
   await respond(Response.json({ screenRecording: { status: 'recording' } }));
   expect(client?.screenRecording).toBe('recording');
+});
+
+test('Android screenshot posts to serve-emu for the selected device', async () => {
+  stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
+  stubGlobal('WebSocket', Socket);
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+  const requests: { url: string; init?: RequestInit }[] = [];
+  stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+    if (new URL(url).pathname !== '/api/screenshot') return Response.json({}, { status: 404 });
+    requests.push({ url, init });
+    return new Response(png, { headers: { 'Content-Type': 'image/png' } });
+  });
+  let client!: DeviceClient;
+  function Harness() {
+    client = useAndroidDeviceClient({ baseUrl: 'https://hub.test/', device: 'emulator 5554', enabled: true, streamMode: 'h264' });
+    return null;
+  }
+  await act(async () => { renderer = create(<Harness />); });
+  const capture = await client.screenshot();
+  expect(requests).toEqual([
+    { url: 'https://hub.test/api/screenshot?device=emulator%205554', init: { method: 'POST', cache: 'no-store' } },
+  ]);
+  expect(new Uint8Array(await capture!.blob.arrayBuffer())).toEqual(png);
+  expect(capture!.artifact).toBeNull();
 });

@@ -17,6 +17,7 @@ export interface CaptureWindow {
   stalls: number | null;
   stallSumMs: number | null;
   cpuFallbacks: number | null;
+  poolDrops: number | null;
   pumpRestarts: number | null;
 }
 
@@ -33,6 +34,7 @@ export function describeCaptureCounts(
     stalls: current.counts.stalls,
     stallSumMs: current.counts.stallSumMs,
     cpuFallbacks: current.counts.cpuFallbacks,
+    poolDrops: current.counts.poolDrops ?? null,
     pumpRestarts: current.counts.pumpRestarts,
   };
   const unusable: CaptureWindow = {

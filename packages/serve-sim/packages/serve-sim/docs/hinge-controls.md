@@ -258,6 +258,11 @@ Legacy `SimScreenProperties.backlight` was also observed to retain stale values
 after a fold. CoreDevice's display information supplies the authoritative active
 display and orientation; capture and touch routing must follow the same display.
 
+A session recording follows that same active display. It uses a fixed canvas
+large enough for both native panels, with even dimensions for H.264; the
+smaller panel is letterboxed during fold/unfold. See
+[Video pipeline and recording](video-pipeline.md).
+
 The 3D preview retains one model while the active stream changes between the
 cover and inner displays. Pointer input is projected onto the visible active
 display and mapped back to its streamed coordinates.

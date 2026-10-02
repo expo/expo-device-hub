@@ -6,6 +6,7 @@ import { deviceScreenPresentsMedia } from '../DeviceScreen';
 import { useAndroidDeviceClient } from '../useAndroidDevice';
 import { useStreamSettingsResource } from '../useStreamSettingsResource';
 import { useWebRtcStream } from '../useWebRtcStream';
+import { createGlobalStubs } from './test-globals';
 
 // These tests exercise hook lifecycles with controlled transport/media events.
 // react-test-renderer keeps them in the existing Bun runner without adding a
@@ -39,21 +40,13 @@ class Peer {
   }
 }
 
-const originals = new Map<string, PropertyDescriptor | undefined>();
-function stubGlobal(name: string, value: unknown) {
-  originals.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
-  Object.defineProperty(globalThis, name, { value, configurable: true, writable: true });
-}
+const { stubGlobal, restoreGlobals } = createGlobalStubs();
 
 let renderer: ReactTestRenderer | undefined;
 afterEach(async () => {
   if (renderer) await act(async () => renderer?.unmount());
   renderer = undefined;
-  for (const [name, descriptor] of originals) {
-    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-    else Reflect.deleteProperty(globalThis, name);
-  }
-  originals.clear();
+  restoreGlobals();
   Peer.instances = [];
   ControlSocket.instances = [];
 });

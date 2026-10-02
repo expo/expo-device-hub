@@ -835,6 +835,35 @@ describe("createRouter stream mode", () => {
     await router.stopAll();
   });
 
+  test("rejects a screenshot GET before resolving or starting a device", async () => {
+    const noDevices = {
+      devices: [] as Device[],
+      avds: [] as string[],
+      running: [] as RunningAvd[],
+      created: [] as string[],
+      stopped: [] as string[],
+    };
+    const router = createRouter({}, routerDependencies(noDevices));
+    const response = await router.handleRequest(new Request("http://router.test/api/screenshot"));
+    expect(response.status).toBe(405);
+    expect(await response.text()).toBe("method not allowed");
+    expect(noDevices.created).toEqual([]);
+    await router.stopAll();
+
+    const idleDevice = {
+      devices: [{ serial: "emulator-5554", state: "device" }] as Device[],
+      avds: [] as string[],
+      running: [] as RunningAvd[],
+      created: [] as string[],
+      stopped: [] as string[],
+    };
+    const idleRouter = createRouter({}, routerDependencies(idleDevice));
+    const idle = await idleRouter.handleRequest(new Request("http://router.test/api/screenshot"));
+    expect(idle.status).toBe(405);
+    expect(idleDevice.created).toEqual([]);
+    await idleRouter.stopAll();
+  });
+
   test("allows configured browser origins and origin-less agent mutations", async () => {
     const state = {
       devices: [{ serial: "emulator-5554", state: "device" }],

@@ -202,7 +202,7 @@ describe("API client", () => {
       })
     );
 
-    const png = await request("/api/screenshot", { method: "GET" });
+    const png = await request("/api/screenshot", { method: "POST" });
 
     expect(png).toBeInstanceOf(Uint8Array);
     expect(Array.from(png as Uint8Array)).toEqual([0x89, 0x50, 0x4e, 0x47]);

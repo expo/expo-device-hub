@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { AppWindow, ArrowUpRight } from "lucide-react";
 import { type AppDetails, fetchAppDetails } from "../utils/app-icon";
-import { runHostAction } from "../utils/exec";
+import { runHostAction } from "../../socket/client-control";
 import { CollapsibleSection } from "./collapsible-section";
 
 export function isSystemBundleId(bundleId: string): boolean {

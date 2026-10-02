@@ -218,8 +218,16 @@ private func u32(_ v: Int) -> UInt32 {
         try await engine.start()
     }
 
-    @NodeMethod func stop() async {
-        await engine.stop()
+    @NodeMethod func stop() async throws {
+        try await engine.stop()
+    }
+
+    @NodeMethod func startRecording(_ outputDirectory: String) async throws {
+        try await engine.startRecording(outputDirectory: outputDirectory)
+    }
+
+    @NodeMethod func stopRecording() async throws -> String {
+        try await engine.stopRecording()
     }
 
     @NodeMethod func updateStreamSettings(
@@ -276,7 +284,7 @@ private func u32(_ v: Int) -> UInt32 {
     }
 
     deinit {
-        Task { [engine] in await engine.stop() }
+        Task { [engine] in try? await engine.stop() }
     }
 
     enum Errors: Error {

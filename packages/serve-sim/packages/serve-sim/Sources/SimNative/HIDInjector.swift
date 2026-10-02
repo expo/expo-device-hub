@@ -88,7 +88,9 @@ actor HIDInjector {
         }
         self.simDevice = device
         self.deviceUDID = deviceUDID
-        let displayProfile = Self.readDisplayProfile(device: device)
+        // Device Hub's physical orientation is relative to each panel's mounting.
+        // Read the static device profile once; capture supplies the active screen ID.
+        let displayProfile = SimulatorDisplayProfile.read(from: device)
         self.nativeScreenRotations = displayProfile.nativeRotations
         self.isFoldable = displayProfile.isFoldable
         if isFoldable {
@@ -200,21 +202,6 @@ actor HIDInjector {
         selectedScreenID = screenID
         touchTarget.setScreen(screenID, universalHID: isFoldable)
         multiTouchTarget.setScreen(screenID, universalHID: isFoldable)
-    }
-
-    /// Device Hub's physical orientation is relative to each panel's mounting.
-    /// Read the static device profile once; capture supplies the active screen ID.
-    private static func readDisplayProfile(device: NSObject) -> SimulatorDisplayProfile {
-        let typeSelector = NSSelectorFromString("deviceType")
-        let capabilitiesSelector = NSSelectorFromString("capabilities")
-        guard device.responds(to: typeSelector),
-              let type = device.perform(typeSelector)?.takeUnretainedValue() as? NSObject,
-              type.responds(to: capabilitiesSelector),
-              let profile = type.perform(capabilitiesSelector)?.takeUnretainedValue() as? [String: Any],
-              let capabilities = profile["capabilities"] as? [String: Any],
-              let displays = capabilities["displays"] as? [[String: Any]]
-        else { return SimulatorDisplayProfile() }
-        return SimulatorDisplayProfile(displays: displays)
     }
 
     // IndigoHIDEdge values (x4 param to IndigoHIDMessageForMouseNSEvent).

@@ -89,6 +89,7 @@ export function MetricsTool({
             up={latest.netOutBytesPerSec}
             downValues={history.map((s) => s.netInBytesPerSec)}
             upValues={history.map((s) => s.netOutBytesPerSec)}
+            deviceWide={latest.netScope === "device"}
           />
         </>
       ) : null}
@@ -130,16 +131,26 @@ function NetworkRow({
   up,
   downValues,
   upValues,
+  deviceWide = false,
 }: {
   down: number;
   up: number;
   downValues: number[];
   upValues: number[];
+  /** Network capture reports every app's traffic, so the rate is not this app's alone. */
+  deviceWide?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-baseline justify-between">
-        <span className="text-white/50 text-[11px]">Network</span>
+        <span className="text-white/50 text-[11px]">
+          Network
+          {deviceWide && (
+            <span className="text-white/30 ml-1.5" title="While network capture is on, this is every app's proxied traffic">
+              all apps
+            </span>
+          )}
+        </span>
         <span className="tabular-nums text-[11px]">
           <span className="text-cyan-400">↓ {formatRate(down)}</span>
           <span className="text-white/30 mx-1.5">·</span>

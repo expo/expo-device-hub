@@ -483,9 +483,17 @@ export type FileImportResponse = ApiSuccess<{
   kind: "image" | "video" | "file";
 }>;
 
+const SCREENSHOT_ARTIFACT_STATUSES = ["saved", "failed", "disabled"] as const;
+/** Whether the capture also reached `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY`. */
+export type ScreenshotArtifactReport =
+  | { status: "saved" | "disabled" }
+  | { status: "failed"; error: string };
+
 export type ScreenshotBase64Response = ApiSuccess<{
   mimeType: "image/png";
   data: string;
+  /** Absent from servers older than the artifact persistence feature. */
+  artifact?: ScreenshotArtifactReport;
 }>;
 
 export type LogcatEventMap = {
@@ -680,7 +688,6 @@ export type ApiContractMap = {
   "/api/logcat": { GET: EndpointContract<undefined, never> };
   "/api/metrics": { GET: EndpointContract<undefined, never> };
   "/api/screenshot": {
-    GET: EndpointContract<undefined, ScreenshotBase64Response | BinaryPngResponse>;
     POST: EndpointContract<undefined, ScreenshotBase64Response | BinaryPngResponse>;
   };
   "/api/foreground": { GET: EndpointContract<undefined, ForegroundResponse> };
@@ -1723,10 +1730,18 @@ export function parseScreenshotBase64Response(value: unknown): ScreenshotBase64R
   const root = record(value, "screenshot response");
   if (root.ok !== true) fail("screenshot response.ok must be true");
   if (root.mimeType !== "image/png") fail("screenshot response.mimeType must be image/png");
+  const data = string(root.data, "screenshot response.data");
+  if (root.artifact === undefined) return { ok: true, mimeType: "image/png", data };
+  const artifact = record(root.artifact, "screenshot response.artifact");
+  const status = oneOf(artifact.status, SCREENSHOT_ARTIFACT_STATUSES, "screenshot response.artifact.status");
   return {
     ok: true,
     mimeType: "image/png",
-    data: string(root.data, "screenshot response.data"),
+    data,
+    artifact:
+      status === "failed"
+        ? { status, error: string(artifact.error, "screenshot response.artifact.error") }
+        : { status },
   };
 }
 
@@ -2060,7 +2075,7 @@ export const API_SUCCESS_PARSERS = {
   },
   "/api/logcat": { GET: unsupportedStreamingResponse },
   "/api/metrics": { GET: unsupportedStreamingResponse },
-  "/api/screenshot": { GET: parseScreenshotResponse, POST: parseScreenshotResponse },
+  "/api/screenshot": { POST: parseScreenshotResponse },
   "/api/foreground": { GET: parseForegroundResponse },
   "/api/accessibility": { GET: parseAccessibilitySnapshot },
   "/api/accessibility/tap": { POST: parseAccessibilityTapResponse },

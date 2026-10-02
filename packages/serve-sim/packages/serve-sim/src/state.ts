@@ -18,6 +18,11 @@ export function stateFileForDevice(udid: string): string {
   return join(stateDir(), `server-${udid}.json`);
 }
 
+/** Written only when a helper's recording fails during shutdown. */
+export function recordingShutdownFailureFile(pid: number): string {
+  return join(stateDir(), `recording-shutdown-failed-${pid}.json`);
+}
+
 /** Runtime record for a device streamed in-process by a preview server. */
 export interface ServeSimDeviceState {
   pid: number;
@@ -26,8 +31,10 @@ export interface ServeSimDeviceState {
   url: string;
   streamUrl: string;
   wsUrl: string;
+  /** This helper confirms accepted input sockets before screen dimensions are known. */
+  inputAdmission?: true;
   streamSettings?: StreamSettings;
-  /** Present only under `--require-token`, so local subcommands can reach the gated socket. */
+  /** Present under `--require-token` or on a loopback host, so local subcommands can reach gated routes. */
   token?: string;
 }
 
@@ -72,8 +79,17 @@ export function inProcessServeSimState(
     url: `http://${h}:${port}`,
     streamUrl: `http://${h}:${port}${prefix}/helper/${udid}/stream.mjpeg`,
     wsUrl: `ws://${h}:${port}${prefix}/helper/${udid}/ws`,
+    inputAdmission: true,
     ...(streamSettings ? { streamSettings } : {}),
   };
+}
+
+/** The URL a device's routes live under: the origin, plus the mount prefix of an embedded server. */
+export function serverBaseUrl(state: Pick<ServeSimDeviceState, "url" | "streamUrl" | "device">): string {
+  const stream = new URL(state.streamUrl);
+  const helperPath = `/helper/${state.device}/stream.mjpeg`;
+  if (!stream.pathname.endsWith(helperPath)) return state.url;
+  return `${stream.origin}${stream.pathname.slice(0, -helperPath.length)}`;
 }
 
 /** Persist a device's state so other processes / the grid can enumerate it.

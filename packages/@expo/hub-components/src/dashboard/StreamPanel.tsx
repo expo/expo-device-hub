@@ -11,32 +11,13 @@ import { type Device } from './data';
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
 import { type DeviceFrameAssets } from './deviceFrame';
 import { PhoneFrame } from './PhoneFrame';
+import { ScreenshotToaster, useScreenshotToast } from './ScreenshotToast';
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from './StreamControls';
-
-/** Trigger a browser download of `blob` under `filename`. */
-function downloadBlob(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  // Revoke on the next tick, once the click has consumed the object URL.
-  setTimeout(() => URL.revokeObjectURL(url), 0);
-}
 
 /** Space between the title pill and the top of the device frame. */
 const TITLE_GAP = 32;
 /** Space between the bottom of the device frame and the toolbar. */
 const CONTROLS_GAP = 32;
-
-/** Filesystem-safe screenshot name, e.g. `iPhone-16-2026-06-30T12-34-56.png`. */
-function screenshotFilename(name: string): string {
-  const slug = name.trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'device';
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, '');
-  return `${slug}-${stamp}.png`;
-}
 
 /**
  * Center panel: the selected device's stream and its controls. Rendered as the
@@ -75,6 +56,8 @@ export function StreamPanel({
   /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
   deviceFrameAssets?: DeviceFrameAssets;
 }) {
+  const captureScreenshot = useScreenshotToast(client, device.name);
+
   return (
     <section
       style={{
@@ -149,14 +132,12 @@ export function StreamPanel({
               onHome={() => client.pressButton('home')}
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
-              onSave={async () => {
-                const blob = await client.screenshot();
-                if (blob) downloadBlob(blob, screenshotFilename(device.name));
-              }}
+              onSave={captureScreenshot}
             />
           </div>
         </div>
       </div>
+      <ScreenshotToaster />
     </section>
   );
 }

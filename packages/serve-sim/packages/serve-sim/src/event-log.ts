@@ -1,5 +1,7 @@
+import { basename } from "node:path";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
 import { HINGE_POSES, isHingeControlCommand } from "./hinge-control";
+import type { ScreenshotOutcome } from "./screenshot-artifacts";
 
 export type EventLogSource = "hid" | "exec" | "ui";
 export type EventLogStatus = "ok" | "error";
@@ -447,6 +449,25 @@ export function eventLogEventForAction(
       };
     default:
       return null;
+  }
+}
+
+export function eventLogEventForScreenshot(udid: string, outcome: ScreenshotOutcome): EventLogDraft {
+  const base = { device: udid, source: "ui", kind: "screenshot", action: "capture" } as const;
+  switch (outcome.status) {
+    case "disabled":
+      return { ...base, status: "ok", summary: "Screenshot" };
+    case "saved":
+      return { ...base, status: "ok", summary: "Screenshot", details: { file: basename(outcome.file) } };
+    case "failed":
+      return {
+        ...base,
+        status: "error",
+        summary: "Screenshot not saved to session artifacts",
+        details: { file: basename(outcome.file), error: outcome.error },
+      };
+    case "capture-failed":
+      return { ...base, status: "error", summary: "Screenshot failed", details: { error: outcome.error } };
   }
 }
 

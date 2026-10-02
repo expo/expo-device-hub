@@ -553,6 +553,7 @@ describe("server HTTP and WebSocket boundaries", () => {
       ["PATCH", "/api/software-keyboard"],
       ["POST", "/api/logcat"],
       ["POST", "/api/metrics"],
+      ["GET", "/api/screenshot"],
       ["PATCH", "/api/screenshot"],
       ["POST", "/api/foreground"],
       ["POST", "/api/accessibility"],

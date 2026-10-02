@@ -146,7 +146,7 @@ export function ScreenshotToast({
                 {isBrowserDownload ? "Download again" : "Open in Finder"}
               </span>
             )}
-            {toast.status === "saved" && toast.stagedOnly && toast.message && (
+            {toast.status === "saved" && toast.message && (
               <span className="mt-1 text-[11px] text-white/60 break-words">{toast.message}</span>
             )}
           </div>

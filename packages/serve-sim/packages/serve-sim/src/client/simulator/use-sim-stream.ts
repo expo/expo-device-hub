@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
-import { runHostAction } from "../utils/exec";
+import { runHostAction } from "../../socket/client-control";
 
 /** Matches the JSON output of `serve-sim --detach` and `serve-sim --list`. */
 export interface SimStreamInfo {

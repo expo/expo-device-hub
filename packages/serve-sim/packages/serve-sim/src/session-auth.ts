@@ -87,7 +87,7 @@ function accessCookie(
 
 // A cookie rides along on any same-site page's requests, so cookie auth must also prove the
 // origin. A bearer or query token is presented deliberately and needs no such check.
-function isSameOriginRequest(headers: SessionAuthReq["headers"]): boolean {
+export function isSameOriginRequest(headers: SessionAuthReq["headers"]): boolean {
   const site = headerValue(headers["sec-fetch-site"]);
   if (site !== undefined) return site === "same-origin" || site === "none";
   const origin = headerValue(headers.origin);
@@ -128,6 +128,18 @@ function isTopLevelNavigation(req: SessionAuthReq): boolean {
 }
 
 // Returns false when the request has been answered and must stop.
+export function assertBearerAccess(
+  req: SessionAuthReq,
+  res: SessionAuthRes,
+  sessionToken: string,
+): boolean {
+  const token = bearerToken(headerValue(req.headers.authorization));
+  if (token && safeEqualString(token, sessionToken)) return true;
+  res.writeHead(401, { "Content-Type": "text/plain", "Cache-Control": "no-store, private" });
+  res.end("Recording control requires the serve-sim session bearer token.\n");
+  return false;
+}
+
 export function assertPreviewAccess(
   req: SessionAuthReq & { url?: string },
   res: SessionAuthRes,
@@ -136,13 +148,14 @@ export function assertPreviewAccess(
     required: boolean;
     basePath: string;
     htmlHeaders?: Record<string, string>;
+    allowQueryToken?: boolean;
   },
 ): boolean {
   if (!opts.required) return true;
 
   const url = new URL(req.url ?? "/", "http://127.0.0.1");
   const fromQuery = url.searchParams.get("token");
-  if (fromQuery && safeEqualString(fromQuery, sessionToken)) {
+  if (opts.allowQueryToken !== false && fromQuery && safeEqualString(fromQuery, sessionToken)) {
     // A page load trades the token for a cookie so it leaves the URL and the page's own requests
     // carry it. A cross-origin API/SSE caller can send neither header nor cookie, so it is served
     // the query token directly.
@@ -234,6 +247,17 @@ export function upgradeAuthHeaders(
   const headers: SessionAuthReq["headers"] = {};
   for (const name of UPGRADE_AUTH_HEADERS) headers[name] = read(name);
   return headers;
+}
+
+// Capture requires same-origin access. The capture routes are read-only and answer 405 to any
+// write themselves, so a write gets the same answer whatever its content type.
+export function assertCaptureAccess(req: SessionAuthReq, res: SessionAuthRes): boolean {
+  if (!isSameOriginRequest(req.headers)) {
+    res.writeHead(403, { "Content-Type": "application/json", "Cache-Control": "no-store, private" });
+    res.end(JSON.stringify({ error: "Network capture is same-origin only." }));
+    return false;
+  }
+  return true;
 }
 
 // No `?token=` fallback, so this credential never reaches a request URL or a proxy log.

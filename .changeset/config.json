@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["example", "serve-emu"]
+  "privatePackages": { "version": false, "tag": false }
 }

@@ -24,9 +24,12 @@ describe("describeCaptureCounts", () => {
   });
 
   test("still reports the session totals without a window, since one event matters", () => {
-    const only = describeCaptureCounts(null, sampleAt(1_000, { stalls: 3, stallSumMs: 420 }));
+    const only = describeCaptureCounts(null, sampleAt(1_000, {
+      stalls: 3, stallSumMs: 420, poolDrops: 2,
+    }));
     expect(only.stalls).toBe(3);
     expect(only.stallSumMs).toBe(420);
+    expect(only.poolDrops).toBe(2);
   });
 
   test("reads the flow counters as rates over the window", () => {

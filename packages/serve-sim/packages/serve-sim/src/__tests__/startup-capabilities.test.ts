@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { capabilityConfigPath, managedStartupDylibs, writeManagedStartupDylibs } from "../capability-config";
-import { configureCapability, enableCapabilities, disableCapability, disarmStaleCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath, armCapabilityLoader, rearmCapabilityLoader } from "../launch-manager";
+import { configureCapability, enableCapabilities, disableCapability, disarmStaleCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath, armCapabilityLoader, rearmCapabilityLoader, isCapabilityArmed } from "../launch-manager";
 import { installShims, useTempStateDir } from "./helpers";
 import { withLaunchStateLock } from "../launch-state-lock";
 import { readLaunchState } from "../launch-state";
@@ -15,12 +15,14 @@ let state: ReturnType<typeof useTempStateDir>;
 let shims: ReturnType<typeof installShims>;
 let envPath: string;
 let failurePath: string;
+let shutdownPath: string;
 let dylib: string;
 
 beforeEach(() => {
   state = useTempStateDir();
   envPath = join(state.dir, "env.json");
   failurePath = join(state.dir, "fail-insert");
+  shutdownPath = join(state.dir, "shut-down");
   dylib = join(state.dir, "startup.dylib");
   writeFileSync(dylib, "");
   writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/other.dylib" }));
@@ -28,6 +30,10 @@ beforeEach(() => {
 const fs = require('node:fs');
 const path = ${JSON.stringify(envPath)};
 const failure = ${JSON.stringify(failurePath)};
+if (fs.existsSync(${JSON.stringify(shutdownPath)})) {
+  process.stderr.write('Process spawn via launchd failed because device is not booted.');
+  process.exit(1);
+}
 const env = JSON.parse(fs.readFileSync(path, 'utf8'));
 const [,,,, command, name, value] = process.argv.slice(2);
 if (name === 'DYLD_INSERT_LIBRARIES' && command !== 'getenv' && fs.existsSync(failure)) {
@@ -79,6 +85,11 @@ test("hybrid capture keeps its early insert and publishes a deferred load for ru
   const line = `user\t${dylib}\tSIMNET_PROXY_PORT_FILE=/capture/port\t0`;
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(`startup\t${line}\n${line}\n`);
   expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual(["/other.dylib", capabilityLoaderPath(), dylib]);
+  expect(await isCapabilityArmed(UDID, "networkCapture")).toBe(true);
+  const armedEnv = env();
+  writeFileSync(envPath, JSON.stringify({ ...armedEnv, DYLD_INSERT_LIBRARIES: `/other.dylib:${capabilityLoaderPath()}` }));
+  expect(await isCapabilityArmed(UDID, "networkCapture")).toBe(false);
+  writeFileSync(envPath, JSON.stringify(armedEnv));
   await disableCapability(UDID, null, "networkCapture", { relaunch: false });
   expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
 });
@@ -364,6 +375,19 @@ function captureHarness(close: () => Promise<void> = async () => {}) {
     }),
   });
 }
+
+test("capture on a device that was shut down still stops its proxy", async () => {
+  let closed = false;
+  const runtime = captureHarness(async () => {
+    closed = true;
+  });
+  await runtime.enableForDevice(UDID);
+  writeFileSync(shutdownPath, "");
+  await runtime.disableForDevice(UDID);
+  expect(closed).toBe(true);
+  expect(readLaunchState(UDID)?.capabilities.networkCapture).toBeUndefined();
+  expect(runtime.metaFor(UDID).attachment).toBe("not-enabled");
+});
 
 test("uncertain initial publication can be disabled without leaving a startup insert", async () => {
   let closed = false;

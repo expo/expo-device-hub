@@ -1,7 +1,8 @@
 import { type IncomingMessage, type ServerResponse } from "http";
 import { once } from "events";
 import { Readable } from "stream";
-import { type UpgradeHandlerWebSocket } from "./middleware-utils";
+import type { UpgradeHandlerWebSocket } from "./socket/types";
+import { rememberLocalPort } from "./request-local-port";
 
 type RequestInitWithDuplex = RequestInit & { duplex?: "half" };
 
@@ -45,6 +46,8 @@ export function nodeRequestToWeb(
   req: IncomingMessage,
   res?: ServerResponse,
   body?: Buffer,
+  /** The port clients reach this server on; defaults to the accepting socket's port. */
+  localPort: number | undefined = req.socket?.localPort,
 ): Request {
   const headers = new Headers();
   for (const [key, value] of Object.entries(req.headers)) {
@@ -73,7 +76,7 @@ export function nodeRequestToWeb(
       init.duplex = "half";
     }
   }
-  return new Request(url, init);
+  return rememberLocalPort(new Request(url, init), localPort);
 }
 
 export async function writeWebResponse(

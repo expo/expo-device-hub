@@ -28,7 +28,7 @@ describe("tunneled screenshot capture", () => {
       });
     };
 
-    const blob = await fetchScreenshotPng("DEVICE A/B", {
+    const { png: blob, artifact } = await fetchScreenshotPng("DEVICE A/B", {
       endpoint: "/preview/api/screenshot",
       fetchImpl,
     });
@@ -40,6 +40,29 @@ describe("tunneled screenshot capture", () => {
     expect(requests[0]!.init?.method).toBe("POST");
     expect(blob.type).toBe("image/png");
     expect(new Uint8Array(await blob.arrayBuffer())).toEqual(png);
+    expect(artifact).toBeNull();
+  });
+
+  test("reads the session artifact outcome from the response headers", async () => {
+    const capture = (headers: Record<string, string>) =>
+      fetchScreenshotPng("DEVICE-A", {
+        endpoint: "/api/screenshot",
+        fetchImpl: async () =>
+          new Response(new Uint8Array([0x89]), {
+            headers: { "Content-Type": "image/png", ...headers },
+          }),
+      }).then((result) => result.artifact);
+
+    expect(await capture({ "X-Expo-Screenshot-Artifact": "saved" })).toEqual({ status: "saved" });
+    expect(await capture({ "X-Expo-Screenshot-Artifact": "disabled" })).toEqual({ status: "disabled" });
+    expect(
+      await capture({
+        "X-Expo-Screenshot-Artifact": "failed",
+        "X-Expo-Screenshot-Artifact-Error": "EACCES: permission denied",
+      }),
+    ).toEqual({ status: "failed", error: "EACCES: permission denied" });
+    expect(await capture({ "X-Expo-Screenshot-Artifact": "failed" })).toEqual({ status: "failed" });
+    expect(await capture({ "X-Expo-Screenshot-Artifact": "something-new" })).toBeNull();
   });
 
   test("surfaces the server's screenshot error", async () => {

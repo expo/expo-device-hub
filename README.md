@@ -58,6 +58,28 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
+### Screenshots in EAS sessions
+
+Set `EXPO_DEVICE_HUB_SCREENSHOT_DIRECTORY` to save each preview screenshot as a file.
+The browser download still works as before.
+Both serve-sim and serve-emu write each captured PNG to a temporary file in that
+directory, then rename it.
+A saved file has a name such as `screenshot-2026-09-24T08-45-59-123Z-a1b2c3d4e5f6.png`.
+The name contains the UTC capture time and a random suffix.
+If the save fails, serve-sim or serve-emu logs the error to stderr and writes a `screenshot-<time>-<suffix>.failed.json` record with the file name, error, and time into the same directory. The EAS worker reports that record.
+The screenshot response still returns the PNG.
+Each screenshot response carries the save outcome in the `X-Expo-Screenshot-Artifact` header.
+When the save fails, the serve-sim preview and the Device Hub dashboard show a notice after the download.
+On iOS, serve-sim records each manual screenshot as a session event in the Events panel.
+A failed save appears there as an error event with the reason.
+The reason sent to the browser is only the error code, such as `ENOSPC`, or `unknown error`. The full error, with the path, goes only to the stderr line and the `.failed.json` record. The EAS worker reports that record in the job log.
+A serve-sim preview opened on a loopback hostname keeps its Desktop save and does not use the directory.
+Standalone previews without the environment variable keep their existing behavior.
+
+The EAS worker in eas-cli build-tools sets the variable and uploads completed files.
+Upload naming and retry behavior are documented in
+[`deviceRunSessionScreenshots.ts`](https://github.com/expo/eas-cli/blob/main/packages/build-tools/src/steps/utils/deviceRunSessionScreenshots.ts).
+
 ## Repository structure
 
 This is a [Bun](https://bun.sh) workspace orchestrated with [Turborepo](https://turbo.build).

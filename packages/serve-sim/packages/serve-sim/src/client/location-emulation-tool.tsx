@@ -7,7 +7,7 @@
 // (extruded ribbon + ground plane shadow) but flat-shaded so we don't pull
 // in WebGL or a 3D library.
 
-import { runHostAction } from "./utils/exec";
+import { runHostAction } from "../socket/client-control";
 import {
   memo,
   useCallback,

@@ -29,9 +29,11 @@ function harness() {
       publish: async () => void calls.push("injected"),
       remove: async () => void calls.push("injection-cleared"),
     }),
+    writeDiskArtifacts: false,
   });
   const deps = {
     runtime,
+    closeSession: (_udid: string) => void calls.push("session-closed"),
     shutdown: async (_udid: string) => void calls.push("device-shutdown"),
     boot: async (_udid: string) => void calls.push("device-booted"),
     rearm: async (_udid: string) => void calls.push("capabilities-rearmed"),
@@ -57,6 +59,7 @@ describe("rebootWithCapture", () => {
     // The injection has to be applied to the boot that will run the apps, so it comes after the reboot.
     expect(calls).toEqual([
       "injection-cleared",
+      "session-closed",
       "device-shutdown",
       "device-booted",
       "capabilities-rearmed",
@@ -76,6 +79,17 @@ describe("rebootWithCapture", () => {
     // Leaving the previous injection set would point the new boot's apps at a dead port.
     expect(calls.indexOf("injection-cleared")).toBeLessThan(calls.indexOf("device-shutdown"));
     expect(calls.indexOf("proxy-closed")).toBeLessThan(calls.indexOf("device-booted"));
+  });
+
+  test("closes the preview session before the device shuts down, with capture on or off", async () => {
+    // The preview's shutdown control does the same: a session kept across the reboot holds the
+    // previous boot's CoreDevice and HID state, so Duo taps would stop reaching the app.
+    for (const enabled of [true, false]) {
+      const { deps, calls } = harness();
+      await rebootWithCapture(UDID, enabled, deps);
+      expect(calls.filter((call) => call === "session-closed")).toHaveLength(1);
+      expect(calls.indexOf("session-closed")).toBeLessThan(calls.indexOf("device-shutdown"));
+    }
   });
 
   test("reboots into a clean device when capture is turned off", async () => {
@@ -202,6 +216,7 @@ describe("rebootWithCapture", () => {
       trustCa: async () => {},
       dylib: () => "/fake/libSimNetProxy.dylib",
       configure: capabilityHarness(),
+    writeDiskArtifacts: false,
     });
 
     const meta = await rebootWithCapture(UDID, /* enabled */ true, {
@@ -222,7 +237,7 @@ describe("rebootWithCapture", () => {
 
     await rebootWithCapture(UDID, /* enabled */ false, deps);
 
-    expect(calls).toEqual(["injection-cleared", "device-shutdown", "device-booted", "capabilities-rearmed"]);
+    expect(calls).toEqual(["injection-cleared", "session-closed", "device-shutdown", "device-booted", "capabilities-rearmed"]);
   });
 
   test("leaves a device this process never armed alone", async () => {

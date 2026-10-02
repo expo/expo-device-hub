@@ -14,11 +14,16 @@ public struct SnapshotSizePolicy: Equatable, Sendable {
             self.height = SnapshotSizePolicy.even(Double(height) * scale)
             return
         }
-        self.width = SnapshotSizePolicy.even(Double(width))
-        self.height = SnapshotSizePolicy.even(Double(height))
+        let evenLimit = maxDimension > 0 ? max(2, maxDimension & ~1) : Int.max
+        self.width = min(SnapshotSizePolicy.evenCeiling(width), evenLimit)
+        self.height = min(SnapshotSizePolicy.evenCeiling(height), evenLimit)
     }
 
     private static func even(_ value: Double) -> Int {
         max(2, Int(value.rounded()) & ~1)
+    }
+
+    private static func evenCeiling(_ value: Int) -> Int {
+        max(2, value.isMultiple(of: 2) ? value : value + 1)
     }
 }

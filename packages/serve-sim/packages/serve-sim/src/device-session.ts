@@ -34,6 +34,7 @@ import { validatePanelRoute } from "./panel-route";
 import { isHingeControlCommand, hingeControlState, hingePoseOrientation, isTableModeAvailable, type HingeControlCommand, type HingePose, type HingePhysicalOrientation } from "./hinge-control";
 import { getUiOption, refreshDeviceOptionState, setUiOption, setUiOptionIfRevision } from "./ui-settings";
 import { eventLogEventForHidMessage, formatEventLogPoint, recordEventLogEvent, updateEventLogEvent } from "./event-log";
+import { WS_MSG_CONFIG, WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./socket/input-protocol";
 import {
   MAX_WEBRTC_SIGNALING_BODY_BYTES,
   WebRtcSignalingError,
@@ -75,13 +76,14 @@ type InputOperation = {
 // envelopes are framed natively; only the on-connect JPEG seed is built here.
 const AVCC_SEED_TAG = 0x04;
 
-// WS server→client screen-config push (ClientManager.wsMsgConfig).
-const WS_MSG_CONFIG = 0x82;
-
 const MJPEG_TRAILER = Buffer.from("\r\n", "ascii");
 const TOUCH_TAP_MAX_DISTANCE = 0.004;
 const MAX_HID_SOCKETS = 8;
 const MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET = 1024;
+const RECORDING_LEASE_MS = 20_000;
+const INVALID_RECORDING_ID_CHAR = /[^A-Za-z0-9_-]/;
+
+class RecordingStartCancelled extends Error {}
 
 type TouchGestureLog = {
   eventId?: number;
@@ -278,6 +280,19 @@ export class DeviceSession {
   private readonly scheduledInputSockets = new Set<HidSocket>();
   private readonly inputSocketOrder: HidSocket[] = [];
   private readonly inputStateWaiters = new Set<() => void>();
+  private recordingLease?: { id: string; timer: ReturnType<typeof setTimeout> };
+  private readonly recordingLeaseMs = RECORDING_LEASE_MS;
+  private recordingStarting = false;
+  private recordingStartingId?: string;
+  private recordingStartCancelled = false;
+  private cancelledRecordingStart?: { id: string; manifest?: string };
+  private recordingStart?: Promise<void>;
+  private recordingFinishing?: Promise<string>;
+  private recordingFinishingId?: string;
+  private lastFinishedRecording?: { id: string; manifest: string };
+  private lastFailedRecording?: { id: string; error: Error };
+  private readonly cancelledBeforeStart = new Map<string, number>();
+  private recordingFailure?: Error;
   private inputQueueDraining = false;
   private readonly activeTouches = new WeakMap<HidSocket, () => Promise<void>>();
   private readonly activeMultiTouches = new WeakMap<HidSocket, () => Promise<void>>();
@@ -331,6 +346,8 @@ export class DeviceSession {
   close(): void {
     if (this.phase !== "running") return;
     this.phase = "stopped";
+    if (this.recordingLease) clearTimeout(this.recordingLease.timer);
+    this.recordingLease = undefined;
     clearTimeout(this.screenRefreshTimer);
     this.screenRefreshTimer = undefined;
     void this.unsubscribeScreenChanges?.().catch(() => {});
@@ -343,7 +360,39 @@ export class DeviceSession {
     }
     for (const res of this.panelRequests) res.destroy();
     for (const panel of this.panels.values()) this.stopPanel(panel);
-    void this.capture.stop().catch(() => {});
+    trackClosedSessionStop((async () => {
+      let recordingError: unknown = this.recordingFailure;
+      try {
+        await this.recordingStart;
+      } catch (error) {
+        if (!(error instanceof RecordingStartCancelled)) recordingError ??= error;
+      }
+      try {
+        await this.recordingFinishing;
+      } catch (error) {
+        recordingError ??= error;
+      }
+      try {
+        await this.capture.stop();
+      } catch (error) {
+        recordingError ??= error;
+      }
+      if (recordingError) throw recordingError;
+    })());
+  }
+
+  async finishRecordingForShutdown(): Promise<void> {
+    try {
+      await this.recordingStart;
+    } catch (error) {
+      if (!(error instanceof RecordingStartCancelled)) throw error;
+    }
+    if (this.recordingFinishing) {
+      await this.recordingFinishing;
+    } else if (this.recordingLease) {
+      await this.finishRecording(this.recordingLease.id);
+    }
+    if (this.recordingFailure) throw this.recordingFailure;
   }
 
   // ── Frame handling ───────────────────────────────────────────────────────
@@ -363,6 +412,177 @@ export class DeviceSession {
   private async waitForCapture(): Promise<void> {
     await this.captureStart;
     if (this.phase !== "running") throw new Error("Capture session is stopped");
+  }
+
+  async handleVideoRecording(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    if (req.method === "GET") {
+      this.sendJson(res, 200, {
+        active: !!(this.recordingLease || this.recordingStarting || this.recordingFinishing),
+      });
+      return;
+    }
+    if (req.method === "POST") {
+      try {
+        const body = parseJsonBody(await readRequestBody(req, 16_384), "invalid_recording_request");
+        if (recordingsShuttingDown) {
+          this.sendJson(res, 503, { error: "server_stopping", message: "serve-sim is stopping" });
+          return;
+        }
+        if (typeof body !== "object" || body === null || !("start" in body) || body.start !== true
+          || !("output" in body) || typeof body.output !== "string" || body.output.length === 0
+          || !("recordingId" in body) || typeof body.recordingId !== "string"
+          || body.recordingId.length === 0 || body.recordingId.length > 128
+          || INVALID_RECORDING_ID_CHAR.test(body.recordingId)) {
+          this.sendJson(res, 400, { error: "invalid_recording_request", message: "Pass start: true, output, and an alphanumeric recordingId (hyphens and underscores allowed)" });
+          return;
+        }
+        const cancelledUntil = this.cancelledBeforeStart.get(body.recordingId);
+        if (cancelledUntil && cancelledUntil > Date.now()) {
+          this.sendJson(res, 409, { error: "recording_start_cancelled" });
+          return;
+        }
+        if (this.recordingLease || this.recordingStarting || this.recordingFinishing) {
+          this.sendJson(res, 409, { error: "recording_active", message: "A recording is already active; stop it or wait for its lease to expire" });
+          return;
+        }
+        this.recordingStarting = true;
+        const output = body.output;
+        const recordingId = body.recordingId;
+        this.recordingStartingId = recordingId;
+        this.recordingStartCancelled = false;
+        this.cancelledRecordingStart = undefined;
+        const starting = this.waitForCapture().then(async () => {
+          if (this.recordingStartCancelled) {
+            this.cancelledRecordingStart = { id: recordingId };
+            throw new RecordingStartCancelled("Recording start was cancelled");
+          }
+          await this.capture.startRecording(output);
+          if (this.recordingStartCancelled || this.phase !== "running") {
+            this.cancelledRecordingStart = {
+              id: recordingId, manifest: await this.capture.stopRecording(),
+            };
+            throw new RecordingStartCancelled("Recording start was cancelled");
+          }
+          this.refreshRecordingLease(recordingId);
+        });
+        this.recordingStart = starting;
+        await starting;
+        this.lastFinishedRecording = undefined;
+        this.lastFailedRecording = undefined;
+        this.sendJson(res, 200, { recording: true });
+      } catch (error) {
+        const status = error instanceof WebRtcSignalingError ? error.status : 500;
+        const code = error instanceof WebRtcSignalingError ? error.code : "recording_start_failed";
+        this.sendJson(res, status, { error: code, message: String(error) });
+      } finally {
+        this.recordingStart = undefined;
+        this.recordingStarting = false;
+        this.recordingStartingId = undefined;
+        this.recordingStartCancelled = false;
+      }
+      return;
+    }
+    if (req.method === "PUT") {
+      const recordingId = req.headers["x-recording-id"];
+      if (typeof recordingId !== "string" || recordingId !== this.recordingLease?.id) {
+        this.sendJson(res, 409, { error: "recording_not_owned" });
+        return;
+      }
+      this.refreshRecordingLease(recordingId);
+      this.sendJson(res, 200, { recording: true });
+      return;
+    }
+    if (req.method === "DELETE") {
+      try {
+        const recordingId = req.headers["x-recording-id"];
+        if (typeof recordingId === "string" && this.recordingStarting
+          && recordingId === this.recordingStartingId) {
+          this.recordingStartCancelled = true;
+          await this.recordingStart?.catch(() => {});
+          const manifest = this.recordingLease?.id === recordingId
+            ? await this.finishRecording(recordingId)
+            : this.cancelledRecordingStart?.id === recordingId
+              ? this.cancelledRecordingStart.manifest : undefined;
+          this.sendJson(res, manifest ? 200 : 202, manifest ? { manifest } : { cancelled: true });
+          return;
+        }
+        if (typeof recordingId === "string" && this.cancelledRecordingStart?.id === recordingId) {
+          const manifest = this.cancelledRecordingStart.manifest;
+          this.sendJson(res, manifest ? 200 : 202, manifest ? { manifest } : { cancelled: true });
+          return;
+        }
+        if (typeof recordingId === "string" && this.recordingFinishingId === recordingId) {
+          const manifest = await this.recordingFinishing;
+          this.sendJson(res, 200, { manifest });
+          return;
+        }
+        if (typeof recordingId === "string" && this.lastFinishedRecording?.id === recordingId) {
+          this.sendJson(res, 200, { manifest: this.lastFinishedRecording.manifest });
+          return;
+        }
+        if (typeof recordingId === "string" && this.lastFailedRecording?.id === recordingId) {
+          this.sendJson(res, 500, { error: "recording_stop_failed", message: String(this.lastFailedRecording.error) });
+          return;
+        }
+        if (typeof recordingId === "string" && recordingId.length > 0 && recordingId.length <= 128
+          && !INVALID_RECORDING_ID_CHAR.test(recordingId)
+          && recordingId !== this.recordingLease?.id) {
+          const now = Date.now();
+          for (const [id, until] of this.cancelledBeforeStart) {
+            if (until <= now) this.cancelledBeforeStart.delete(id);
+          }
+          if (!this.cancelledBeforeStart.has(recordingId) && this.cancelledBeforeStart.size >= 512) {
+            this.sendJson(res, 503, { error: "recording_cancellation_limit" });
+            return;
+          }
+          this.cancelledBeforeStart.set(recordingId, now + 120_000);
+          this.sendJson(res, 202, { cancelled: true });
+          return;
+        }
+        if (typeof recordingId !== "string" || recordingId !== this.recordingLease?.id) {
+          this.sendJson(res, 409, { error: "recording_not_owned" });
+          return;
+        }
+        const manifest = await this.finishRecording(recordingId);
+        this.sendJson(res, 200, { manifest });
+      } catch (error) {
+        this.sendJson(res, 500, { error: "recording_stop_failed", message: String(error) });
+      }
+      return;
+    }
+    res.writeHead(405, { Allow: "GET, POST, PUT, DELETE" });
+    res.end();
+  }
+
+  private refreshRecordingLease(id: string): void {
+    if (this.recordingLease) clearTimeout(this.recordingLease.timer);
+    const timer = setTimeout(() => {
+      void this.finishRecording(id).catch(error => {
+        console.warn(`Could not finish expired recording ${id}: ${String(error)}`);
+      });
+    }, this.recordingLeaseMs);
+    this.recordingLease = { id, timer };
+  }
+
+  private async finishRecording(id: string): Promise<string> {
+    if (this.recordingLease?.id !== id) throw new Error("Recording ownership changed");
+    clearTimeout(this.recordingLease.timer);
+    this.recordingLease = undefined;
+    const finishing = this.capture.stopRecording();
+    this.recordingFinishing = finishing;
+    this.recordingFinishingId = id;
+    try {
+      const manifest = await finishing;
+      this.lastFinishedRecording = { id, manifest };
+      return manifest;
+    } catch (error) {
+      this.recordingFailure = error instanceof Error ? error : new Error(String(error));
+      this.lastFailedRecording = { id, error: this.recordingFailure };
+      throw error;
+    } finally {
+      this.recordingFinishing = undefined;
+      this.recordingFinishingId = undefined;
+    }
   }
 
   private latestJpeg(): Buffer | null {
@@ -855,7 +1075,7 @@ export class DeviceSession {
 
   attachHidSocket(ws: HidSocket): void {
     if (this.phase !== "running" || this.hidSockets.size >= MAX_HID_SOCKETS) {
-      ws.close(1013, "Simulator input unavailable; retry after other clients disconnect");
+      ws.close(1013, WS_REASON_INPUT_UNAVAILABLE);
       return;
     }
     this.hidSockets.add(ws);
@@ -864,8 +1084,6 @@ export class DeviceSession {
     this.inFlightOrderedMessages.set(ws, 0);
     this.activeHidKeyUsages.set(ws, new Set());
     this.axHandledKeyUsages.set(ws, new Set());
-    const cfg = this.configFrame();
-    if (cfg) ws.send(cfg); // seed dimensions/orientation, replacing the old poll
     ws.on("message", (data: Buffer) => {
       if (this.phase !== "running" || this.detachedHidSockets.has(ws)) return;
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
@@ -898,6 +1116,9 @@ export class DeviceSession {
     });
     ws.on("close", () => this.detachHidSocket(ws));
     ws.on("error", () => this.detachHidSocket(ws));
+    ws.send(Buffer.from([WS_MSG_INPUT_ADMITTED]));
+    const cfg = this.configFrame();
+    if (cfg) ws.send(cfg); // seed dimensions/orientation, replacing the old poll
   }
 
   private detachHidSocket(ws: HidSocket): void {
@@ -1673,6 +1894,19 @@ export class DeviceSession {
 // ── Registry ─────────────────────────────────────────────────────────────
 
 const sessions = new Map<string, DeviceSession>();
+const closedSessionStops = new Set<Promise<void>>();
+const closedSessionStopErrors: unknown[] = [];
+let recordingsShuttingDown = false;
+
+function trackClosedSessionStop(stopping: Promise<void>): void {
+  const tracked = stopping.catch(error => {
+    closedSessionStopErrors.push(error);
+    console.error(`Device session finalization failed: ${String(error)}`);
+  }).finally(() => {
+    closedSessionStops.delete(tracked);
+  });
+  closedSessionStops.add(tracked);
+}
 
 /** Existing session only. Reading stats must never be the thing that starts capture. */
 export function peekDeviceSession(udid: string): DeviceSession | undefined {
@@ -1711,4 +1945,27 @@ export function closeDeviceSession(udid: string): void {
     session.close();
     sessions.delete(udid);
   }
+}
+
+export async function finishDeviceRecordingsForShutdown(
+  onFailure?: (error: unknown) => void,
+): Promise<boolean> {
+  recordingsShuttingDown = true;
+  const results = await Promise.allSettled(
+    [...sessions.values()].map(session => session.finishRecordingForShutdown())
+  );
+  while (closedSessionStops.size > 0) {
+    await Promise.all(closedSessionStops);
+  }
+  const closedErrors = closedSessionStopErrors.splice(0);
+  let succeeded = closedErrors.length === 0;
+  for (const error of closedErrors) onFailure?.(error);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      succeeded = false;
+      onFailure?.(result.reason);
+      console.error(`Recording finalization failed during serve-sim shutdown: ${String(result.reason)}`);
+    }
+  }
+  return succeeded;
 }
