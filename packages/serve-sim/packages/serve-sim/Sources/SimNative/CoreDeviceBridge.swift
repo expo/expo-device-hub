@@ -43,7 +43,13 @@ actor CoreDeviceBridge {
             return hingeStates[udid] ?? HingeState()
         }
         if let angle {
-            hingeStates[udid, default: HingeState()].angle = angle
+            var state = hingeStates[udid] ?? HingeState()
+            if state.angle.map({ abs($0 - angle) <= 0.01 }) != true {
+                state.orientation = nil
+                state.tableMode = nil
+            }
+            state.angle = angle
+            hingeStates[udid] = state
         }
         // If readback is unavailable, retain the last individually successful
         // sends, including the portion of a preset applied before its failure.
