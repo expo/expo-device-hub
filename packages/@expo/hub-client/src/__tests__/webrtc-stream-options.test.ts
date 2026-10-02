@@ -4,12 +4,20 @@ import {
   buildWebRtcOfferPayload,
   isRetryableWebRtcOfferStatus,
   preferredVideoCodecs,
+  videoRtpArriving,
   shouldFallbackCodecAfterFirstFrameTimeout,
   type WebRtcIceServer,
   type WebRtcVideoCodecCapability,
 } from '../useWebRtcStream.js';
 
 describe('WebRTC stream options', () => {
+  test('first-frame diagnosis finishes even when the browser stats read hangs', async () => {
+    const peer = { getStats: () => new Promise<RTCStatsReport>(() => {}) } as RTCPeerConnection;
+    let timer: ReturnType<typeof setTimeout>;
+    const result = await Promise.race([videoRtpArriving(peer), new Promise(resolve => { timer = setTimeout(() => resolve('hung'), 2_100); })]);
+    clearTimeout(timer!);
+    expect(result).toBe(false);
+  });
   test('a locked helper can retry a transient missing offer route', () => {
     expect(isRetryableWebRtcOfferStatus(404, true)).toBe(true);
     expect(isRetryableWebRtcOfferStatus(404, false)).toBe(false);
