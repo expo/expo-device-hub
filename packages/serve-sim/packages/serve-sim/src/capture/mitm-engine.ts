@@ -385,13 +385,10 @@ async function startMitmProxyAttempt(
   }
 
   let child: ChildProcess;
+  let credentialPipeFailed = false;
   try {
     seedCaInto(confdir);
     writeFileSync(portFile, String(proxyPort));
-    if (upstream?.auth !== undefined) {
-      // JSON is valid YAML. Keep credentials out of argv and remove them with the session confdir.
-      writeFileSync(join(confdir, "config.yaml"), JSON.stringify({ upstream_auth: upstream.auth }), { mode: 0o600 });
-    }
     child = spawn(
       mitmdump,
       [
@@ -409,7 +406,7 @@ async function startMitmProxyAttempt(
         addon,
       ],
       {
-        stdio: ["ignore", "pipe", "pipe"],
+        stdio: ["pipe", "pipe", "pipe"],
         env: {
           ...process.env,
           SERVE_SIM_CAPTURE_CONTROL_URL: `http://127.0.0.1:${control.port}`,
@@ -419,6 +416,12 @@ async function startMitmProxyAttempt(
         },
       },
     );
+    // The addon reads to EOF before announcing readiness; credentials never enter a file or argv.
+    child.stdin!.once("error", () => {
+      credentialPipeFailed = true;
+      child.kill("SIGTERM");
+    });
+    child.stdin!.end(upstream?.auth ?? "");
   } catch (error) {
     await closeControlServer(control);
     rmSync(confdir, { recursive: true, force: true });
@@ -502,10 +505,11 @@ async function startMitmProxyAttempt(
     announced = true;
   });
   while (Date.now() < deadline) {
-    if (exited) {
+    if (exited || credentialPipeFailed) {
       await close();
       throw new Error(
         `The capture proxy exited before it started listening.\n${
+          credentialPipeFailed ? "Could not deliver the capture proxy's startup credentials." :
           spawnError || output.trim() || "No output from mitmproxy."
         }`,
       );

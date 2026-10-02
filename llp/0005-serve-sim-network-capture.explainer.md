@@ -42,14 +42,15 @@ capture start creates one and trusts it, and erasing the simulator removes the o
 Captured traffic goes direct by default. `--network-capture-proxy http://host:port` forwards it through
 one HTTP proxy, including an EAS local-egress proxy supplied by build-tools. `none` explicitly selects
 direct traffic. macOS proxy settings, bypass lists, PAC files, and auto-discovery are not read.
-All captured destinations use the configured
-proxy, so it must also be able to reach any local destinations the app uses.
+All captured destinations use the configured proxy, so it must also be able to reach any local
+destinations the app uses.
 
 Basic proxy authentication uses `http://user:password@host:port`. Percent-encode reserved characters
 in the username or password. A credential-bearing launch argument is visible in serve-sim's process
 arguments and may be saved in shell history. serve-sim removes credentials from the address given to
-mitmproxy and writes them to a mode-600 config file in its private session directory. That directory is removed
-on shutdown; credentials are not included in capture metadata, panel messages, or HAR files.
+mitmproxy and sends them over an anonymous pipe to the addon, which sets authentication in memory.
+No credential config file is written; credentials are not included in capture metadata, panel
+messages, or HAR files.
 Proxy authentication headers are redacted when header capture is enabled. HTTP proxy connections
 are unencrypted, so use a trusted network or a loopback tunnel for an authenticated upstream.
 SOCKS, HTTPS proxy endpoints, Digest, NTLM, and Negotiate authentication are not supported.
