@@ -28,6 +28,15 @@ describe('startupMessage', () => {
     expect(message).toContain('The links above carry a token because anyone who has it can control');
   });
 
+  // The links are plain http, so on the network the token travels in clear text.
+  test('warns that a network link sends the token in clear text', () => {
+    const network = startupMessage({ host: '0.0.0.0', port: 3400, lanAddress: '192.168.1.20', sessionToken: 'tok-123' });
+    const loopback = startupMessage({ host: '127.0.0.1', port: 3400, sessionToken: 'tok-123' });
+
+    expect(network).toContain('These links use plain http.');
+    expect(loopback).not.toContain('plain http');
+  });
+
   test('puts the token in the local link on loopback too', () => {
     const message = startupMessage({ host: '127.0.0.1', port: 3400, sessionToken: 'tok-123' });
 

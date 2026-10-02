@@ -39,7 +39,9 @@ export function startupMessage({
       '',
       sessionToken
         ? '  This Hub is listening on the network. The links above carry a token because anyone ' +
-            'who has it can control the devices, read captured traffic, and run commands on this machine.'
+            'who has it can control the devices, read captured traffic, and run commands on this machine. ' +
+            'These links use plain http. On a network you do not trust, anyone who can watch the traffic ' +
+            'can read the token, so put the Hub behind an https proxy or tunnel there.'
         : '  This Hub is listening on the network with no token required. Anyone who can reach it ' +
             'can control the devices and run commands on this machine. Pass --require-token to gate it.'
     );
