@@ -60,6 +60,28 @@ the device dashboard without a running Expo project:
 npx expo-device-hub
 ```
 
+### Require a token
+
+When the Hub is reachable from the network, start it with `--require-token`, the same flag
+as in `serve-sim`. The CLI mints a session token and prints links that carry it:
+
+```
+$ npx expo-device-hub --host 0.0.0.0 --require-token
+Expo Device Hub ready
+
+  Local:   http://localhost:3400/?token=<token>
+  Network: http://192.168.1.20:3400/?token=<token>
+```
+
+Opening a link trades the token for an HttpOnly cookie and removes it from the address bar.
+After that, the dashboard, the Hub API, the iOS and Android backends, and every WebSocket
+need the token. A page load without it shows a form to enter it. Scripts send
+`Authorization: Bearer <token>`. `/readyz` stays open for liveness probes. Anyone who has
+the token can control the devices, so share a link only with people who may.
+
+Only the Hub itself may frame a gated page. To let another site embed it, pass
+`--frame-ancestor <origin>` once for each origin, for example `https://*.expo.dev`.
+
 ### Record an Android session
 
 Recording is opt-in and starts with the Hub, even when no browser viewer is connected.

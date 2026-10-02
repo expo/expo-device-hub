@@ -7,6 +7,8 @@ const TOKEN = 'hub-gate-token';
 const ORIGIN = 'http://192.168.1.20:3400';
 const cookie = `${accessCookieName(TOKEN)}=${encodeURIComponent(TOKEN)}`;
 const SAME_ORIGIN = { cookie, 'sec-fetch-site': 'same-origin' };
+// The policy for the `--frame-ancestor` origin the CLI hands over below.
+const FRAME_POLICY = "frame-ancestors 'self' https://*.expo.dev";
 
 // What reached each vendored backend, and with which credential.
 const simRequests: Request[] = [];
@@ -81,6 +83,7 @@ mock.module('../devices', () => ({
 const previousEnv = { ...process.env };
 process.env.EXPO_DEVICE_HUB_BASE_PATH = '';
 process.env.EXPO_DEVICE_HUB_SESSION_TOKEN = TOKEN;
+process.env.EXPO_DEVICE_HUB_FRAME_ANCESTORS = JSON.stringify(['https://*.expo.dev']);
 process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN = 'recording-token';
 const server = await import('../index');
 
@@ -125,8 +128,19 @@ function openSocket(route: string, headers: Record<string, string> = {}) {
 
 describe('the Hub under a session token', () => {
   test('hands the token to the vendored serve-sim and serve-emu gates', () => {
-    expect(simOptions).toMatchObject({ execToken: TOKEN, requirePreviewToken: true });
+    expect(simOptions).toMatchObject({
+      execToken: TOKEN,
+      requirePreviewToken: true,
+      frameAncestors: ['https://*.expo.dev'],
+    });
     expect(emuOptions).toMatchObject({ sessionToken: TOKEN });
+  });
+
+  test('lets only the Hub and each --frame-ancestor frame its pages', async () => {
+    const response = await request('/', { headers: { 'sec-fetch-dest': 'document' } });
+
+    expect(response?.status).toBe(401);
+    expect(response?.headers.get('content-security-policy')).toBe(FRAME_POLICY);
   });
 
   test('refuses its own routes and both backends without the token', async () => {
@@ -176,10 +190,10 @@ describe('the Hub under a session token', () => {
   test('sends the frame policy on every response it routes, not only on the dashboard', async () => {
     for (const path of ['/vendor/serve-emu/', '/vendor/serve-emu/moved', '/vendor/serve-sim/api', '/readyz']) {
       const response = await request(path, { headers: SAME_ORIGIN });
-      expect([path, response?.headers.get('content-security-policy')]).toEqual([path, "frame-ancestors 'self'"]);
+      expect([path, response?.headers.get('content-security-policy')]).toEqual([path, FRAME_POLICY]);
     }
     // The CLI sets these on the static files it serves after `handler` passed a request on.
-    expect(server.staticFileHeaders).toEqual({ 'Content-Security-Policy': "frame-ancestors 'self'" });
+    expect(server.staticFileHeaders).toEqual({ 'Content-Security-Policy': FRAME_POLICY });
   });
 
   test("keeps a backend's own frame policy", async () => {

@@ -34,6 +34,10 @@ Usage: expo-device-hub [options]
 Options:
   -p, --port <port>          Port to listen on (default: ${DEFAULT_PORT}, or the next available port)
       --host <host>          Host to bind (default: 127.0.0.1; use 0.0.0.0 to expose on your local network)
+      --require-token        Require the session token to open the Hub or call its API, and print it
+                             in the startup link. Use it whenever the Hub is reachable from the network.
+      --frame-ancestor <origin> Allow this origin to embed the Hub in a frame (repeatable). Accepts a
+                             subdomain wildcard, e.g. https://*.expo.dev. Only applies with --require-token.
       --platform <platform>  Show only iOS simulators or Android emulators (ios or android)
       --transport <transport> Preferred transport: ${TRANSPORTS.join(', ')} (default: ${DEFAULT_TRANSPORT})
       --webrtc-codec <codec> WebRTC video codec: ${WEBRTC_CODECS.join(', ')} (default: ${DEFAULT_WEBRTC_CODEC})
@@ -78,6 +82,10 @@ export type CliOptions = {
   metricsCorsOrigins?: string[];
   hideSidebar?: boolean;
   hideBootDevice?: boolean;
+  /** serve-sim's flag: the CLI mints a session token and the server gates every route with it. */
+  requireToken?: boolean;
+  /** Origins allowed to frame the Hub; serve-sim ignores them without `--require-token`, too. */
+  frameAncestors?: string[];
   androidRecordingDirectory?: string;
   help: boolean;
 };
@@ -149,6 +157,8 @@ export function parseCliOptions(args: string[]): CliOptions {
     'metrics-cors-origin': string[];
     'hide-sidebar': boolean;
     'hide-boot-device': boolean;
+    'require-token': boolean;
+    'frame-ancestor': string[];
     'android-recording-directory'?: string;
     help: boolean;
   };
@@ -179,6 +189,8 @@ export function parseCliOptions(args: string[]): CliOptions {
         'metrics-cors-origin': { type: 'string', multiple: true, default: [] },
         'hide-sidebar': { type: 'boolean', default: false },
         'hide-boot-device': { type: 'boolean', default: false },
+        'require-token': { type: 'boolean', default: false },
+        'frame-ancestor': { type: 'string', multiple: true, default: [] },
         'android-recording-directory': { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
       },
@@ -320,6 +332,8 @@ export function parseCliOptions(args: string[]): CliOptions {
     metricsCorsOrigins: values['metrics-cors-origin'],
     hideSidebar: values['hide-sidebar'],
     hideBootDevice: values['hide-boot-device'],
+    requireToken: values['require-token'],
+    frameAncestors: values['frame-ancestor'],
     ...(androidRecordingDirectory !== undefined ? { androidRecordingDirectory } : {}),
     help: false,
   };

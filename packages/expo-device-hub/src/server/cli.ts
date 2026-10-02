@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { networkInterfaces } from 'node:os';
@@ -6,6 +7,7 @@ import { URL } from 'node:url';
 
 import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } from './cli/node-fetch-server';
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
+import { startupMessage } from './cli/startup';
 import { staticFileHandler } from './cli/static-files';
 import {
   encodeStandaloneServeEmuOptions,
@@ -15,6 +17,7 @@ import {
   encodeStandaloneServeSimOptions,
   SERVE_SIM_OPTIONS_ENV,
 } from './serve-sim-options';
+import { FRAME_ANCESTORS_ENV, SESSION_TOKEN_ENV } from './session-token';
 
 type HubServerModule = typeof import('./index');
 type WebSocketRouteHandler = (socket: unknown, request: Request, server: WebSocketServer) => void;
@@ -92,9 +95,20 @@ async function main(): Promise<void> {
   }
   process.env[SERVE_EMU_OPTIONS_ENV] = encodeStandaloneServeEmuOptions(options);
   process.env[SERVE_SIM_OPTIONS_ENV] = encodeStandaloneServeSimOptions(options);
+  // Minted here, not in the server, because the operator has to be told what it is.
+  const sessionToken = options.requireToken ? randomBytes(32).toString('base64url') : undefined;
+  if (sessionToken) {
+    process.env[SESSION_TOKEN_ENV] = sessionToken;
+    process.env[FRAME_ANCESTORS_ENV] = JSON.stringify(options.frameAncestors ?? []);
+  } else {
+    delete process.env[SESSION_TOKEN_ENV];
+    delete process.env[FRAME_ANCESTORS_ENV];
+  }
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
   const hubServer = (await import('./index.mjs')) as HubServerModule;
   const handler = hubServer.default;
+  // The server read it at import. The processes it starts later have no use for it.
+  delete process.env[SESSION_TOKEN_ENV];
 
   const serveStaticFile = staticFileHandler(new URL('../client/', import.meta.url));
 
@@ -189,21 +203,15 @@ async function main(): Promise<void> {
     }
   }
 
-  const boundPort = (server.address() as AddressInfo).port;
-  const isLoopback =
-    options.host === 'localhost' || options.host === '127.0.0.1' || options.host === '::1';
-  const isWildcard = options.host === '0.0.0.0' || options.host === '::';
-  console.log('Expo Device Hub ready\n');
-  if (isLoopback || isWildcard) {
-    console.log(`  Local:   http://localhost:${boundPort}`);
-  }
-  if (isWildcard) {
-    console.log(`  Network: http://${lanAddress() ?? options.host}:${boundPort}`);
-  } else if (isLoopback) {
-    console.log('  Network: pass --host 0.0.0.0 to expose on your local network');
-  } else {
-    console.log(`  Network: http://${options.host}:${boundPort}`);
-  }
+  console.log(
+    startupMessage({
+      host: options.host,
+      port: (server.address() as AddressInfo).port,
+      lanAddress: lanAddress(),
+      sessionToken,
+      ignoredFrameAncestors: sessionToken ? [] : options.frameAncestors,
+    })
+  );
 }
 
 main().catch((error) => {
