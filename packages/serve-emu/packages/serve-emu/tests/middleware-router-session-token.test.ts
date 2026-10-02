@@ -104,7 +104,7 @@ describe("createRouter without a session token", () => {
   // A client sends the token as a header, a query, or a subprotocol, so the
   // router refuses one that cannot travel unchanged in all three.
   test("refuses a token that some clients could never send", () => {
-    for (const token of ["a,b", " padded ", "with space", "a+b", "YWJjZA==", "semi;colon", "caf\u00e9"]) {
+    for (const token of ["a,b", " padded ", "with space", "a+b", "YWJjZA==", "semi;colon", "caf\u00e9", "end\n", "end\r", "end\r\n", "end\u2028"]) {
       expect(() => trackedRouter(token)).toThrow("sessionToken");
     }
   });

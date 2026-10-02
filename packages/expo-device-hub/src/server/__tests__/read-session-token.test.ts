@@ -16,7 +16,7 @@ describe('readSessionToken', () => {
 
   // The Hub and both backends take the token as a bearer, a query, a cookie, or a subprotocol.
   test('refuses a token that some clients could never send', () => {
-    for (const token of ['a,b', ' padded ', 'with space', 'a+b', 'YWJjZA==', 'semi;colon', 'café']) {
+    for (const token of ['a,b', ' padded ', 'with space', 'a+b', 'YWJjZA==', 'semi;colon', 'café', 'end\n', 'end\r', 'end\r\n', 'end\u2028']) {
       expect(() => readSessionToken({ ...STANDALONE, EXPO_DEVICE_HUB_SESSION_TOKEN: token })).toThrow(
         'EXPO_DEVICE_HUB_SESSION_TOKEN'
       );

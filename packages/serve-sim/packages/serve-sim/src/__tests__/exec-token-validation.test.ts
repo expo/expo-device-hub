@@ -12,7 +12,7 @@ describe("simMiddleware execToken", () => {
 
   // Under the gate a client sends the token as a bearer, a query, a cookie, or a subprotocol.
   test("refuses a token some clients could never send under the gate", () => {
-    for (const token of ["a,b", " padded ", "with space", "a+b", "YWJjZA==", "semi;colon", "café"]) {
+    for (const token of ["a,b", " padded ", "with space", "a+b", "YWJjZA==", "semi;colon", "café", "end\n", "end\r", "end\r\n", "end\u2028"]) {
       expect(() => simMiddleware({ basePath: "/", execToken: token, requirePreviewToken: true })).toThrow("execToken");
     }
   });
