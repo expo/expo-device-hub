@@ -8,6 +8,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   platform: 'ios',
   status: 'idle',
   error: null,
+  inputError: null,
   screen: null,
   fps: 0,
   devices: [],
