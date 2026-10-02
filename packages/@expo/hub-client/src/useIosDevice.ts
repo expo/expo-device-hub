@@ -388,17 +388,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       createPacedKeySender((event) => sendWs(WS_MSG_KEY, { type: event.type, usage: event.usage })),
     [sendWs],
   );
-  useEffect(() => {
-    const cancel = () => {
-      const releases = keySender.cancel();
-      if (!config || config !== deviceSettingConfigRef.current) return;
-      const socket = inputSocketRef.current;
-      socket?.discardQueued(WS_MSG_KEY);
-      for (const event of releases) socket?.trySend(WS_MSG_KEY, event);
-    };
-    const stopListening = listenForInputCancellation(cancel);
-    return () => { stopListening(); keySender.dispose(); };
+  const cancelInput = useCallback(() => {
+    const releases = keySender.cancel();
+    if (!config || config !== deviceSettingConfigRef.current) return;
+    const socket = inputSocketRef.current;
+    for (const tag of [WS_MSG_KEY, WS_MSG_TOUCH, WS_MSG_MULTI_TOUCH, WS_MSG_SCROLL]) {
+      socket?.discardQueued(tag);
+    }
+    for (const event of releases) socket?.trySend(WS_MSG_KEY, event);
   }, [config, keySender]);
+  useEffect(() => {
+    const stopListening = listenForInputCancellation(cancelInput);
+    return () => { stopListening(); keySender.dispose(); };
+  }, [cancelInput, keySender]);
   const sendKeyEvents = useCallback(
     (events: ReadonlyArray<HidKeyEvent>) => keySender.enqueue(events),
     [keySender],
@@ -1211,6 +1213,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     attachVideo,
     sendTouch,
     sendMultiTouch,
+    cancelInput,
     sendKey,
     sendKeyEvents,
     sendScroll,

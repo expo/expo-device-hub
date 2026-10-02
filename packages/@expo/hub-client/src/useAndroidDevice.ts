@@ -296,9 +296,12 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
     setRecordingSnapshot({ scope: deviceScope, status: active ? 'unknown' : null });
   }
   const deviceScopeRef = useRef(deviceScope);
+  const inputIdentity = useMemo(() => Symbol(deviceScope), [deviceScope]);
+  const committedInputIdentityRef = useRef(inputIdentity);
   useLayoutEffect(() => {
     deviceScopeRef.current = deviceScope;
-  }, [deviceScope]);
+    committedInputIdentityRef.current = inputIdentity;
+  }, [deviceScope, inputIdentity]);
   const streamSourceRequestRef = useRef(0);
   const streamSourceRef = useRef<DeviceStreamSourceStatus | null>(null);
   const streamSourceLoadingRef = useRef(false);
@@ -383,12 +386,12 @@ export function useAndroidDeviceClient(options: Omit<DeviceConnectionOptions, 't
   }, []);
 
   const send = useCallback((message: Record<string, unknown>): boolean => {
-    if (!active || deviceScopeRef.current !== deviceScope) return false;
+    if (!active || committedInputIdentityRef.current !== inputIdentity) return false;
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
     ws.send(JSON.stringify({ ack: false, ...message }));
     return true;
-  }, [active, deviceScope]);
+  }, [active, inputIdentity]);
 
   const sendTouch = useCallback(
     (sample: TouchSample) => {

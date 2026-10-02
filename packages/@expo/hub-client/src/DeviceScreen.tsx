@@ -129,6 +129,7 @@ export function DeviceScreen({
     sendMultiTouch,
     sendScroll,
     sendKey,
+    cancelInput,
     screen,
     status,
     error,
@@ -254,11 +255,15 @@ export function DeviceScreen({
     singleIdRef.current = null;
     setFingers(null);
   }, [sendTouch, sendMultiTouch, altSecondFinger]);
+  const cancelBrowserInput = useCallback(() => {
+    releasePressedKeys();
+    cancelGestures();
+    cancelInput?.();
+  }, [releasePressedKeys, cancelGestures, cancelInput]);
   useLayoutEffect(() => {
-    const cancel = () => { releasePressedKeys(); cancelGestures(); };
-    const stopListening = listenForInputCancellation(cancel);
-    return () => { stopListening(); cancel(); };
-  }, [releasePressedKeys, cancelGestures]);
+    const stopListening = listenForInputCancellation(cancelBrowserInput);
+    return () => { stopListening(); cancelBrowserInput(); };
+  }, [cancelBrowserInput]);
 
   const onPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (event.pointerType === 'mouse' && event.button !== 0) return;
@@ -430,10 +435,7 @@ export function DeviceScreen({
           borderRadius,
           outline: 'none',
         }}
-        onBlur={() => {
-          releasePressedKeys();
-          cancelGestures();
-        }}
+        onBlur={cancelBrowserInput}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
         onPointerDown={onPointerDown}

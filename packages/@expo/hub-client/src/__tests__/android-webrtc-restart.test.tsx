@@ -499,6 +499,8 @@ test('Android input callbacks and held gestures cannot cross a device handoff', 
   await act(async () => root.render(<Harness device="emulator-5556" />));
   const replacementSocket = ControlSocket.instances.at(-1)!;
   expect(replacementSocket).not.toBe(oldSocket);
+  expect(oldSocket.sent.map(message => JSON.parse(message))
+    .filter(message => message.type === 'touch').map(message => message.action)).toEqual(['down', 'up']);
   await act(async () => replacementSocket.onopen?.());
   expect(frames.size).toBe(0);
   await act(async () => {
@@ -510,4 +512,23 @@ test('Android input callbacks and held gestures cannot cross a device handoff', 
   expect(replacementSocket.sent.map(message => JSON.parse(message)).filter(message => message.type !== 'reset-video')).toEqual([]);
   await act(async () => surface.dispatchEvent(pointer('pointerdown', 40)));
   expect(replacementSocket.sent.map(message => JSON.parse(message)).some(message => message.type === 'touch')).toBe(true);
+});
+
+test('retired Android input callbacks stay retired when returning to the same device', async () => {
+  await mount();
+  const firstClient = client;
+  await act(async () => root.render(<Harness device="emulator-5556" />));
+  await act(async () => ControlSocket.instances.at(-1)!.onopen?.());
+  await act(async () => root.render(<Harness device="emulator-5554" />));
+  const returnedSocket = ControlSocket.instances.at(-1)!;
+  await act(async () => returnedSocket.onopen?.());
+  const inputMessages = () => returnedSocket.sent.map(message => JSON.parse(message))
+    .filter(message => message.type !== 'reset-video');
+  await act(async () => {
+    firstClient.sendTouch({ phase: 'begin', x: 0.5, y: 0.5 });
+    expect(firstClient.sendKey({ phase: 'down', code: 'KeyA', key: 'a', repeat: false })).toBe(false);
+  });
+  expect(inputMessages()).toEqual([]);
+  await act(async () => client.sendTouch({ phase: 'begin', x: 0.2, y: 0.3 }));
+  expect(inputMessages()).toHaveLength(1);
 });

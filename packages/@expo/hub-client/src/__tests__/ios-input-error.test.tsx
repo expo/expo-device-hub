@@ -2,6 +2,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from '../ios-input-error.js';
+import { DeviceScreen } from '../DeviceScreen.js';
 import { type DeviceClient } from '../types.js';
 import { useIosDeviceClient } from '../useIosDevice.js';
 import { createGlobalStubs } from './test-globals.js';
@@ -26,7 +27,7 @@ type FakeSocket = {
   onclose?: (event: { code: number; reason: string }) => void;
 };
 
-async function renderIosClient(inputAdmission: unknown = true) {
+async function renderIosClient(inputAdmission: unknown = true, { renderScreen = false } = {}) {
   const sockets: FakeSocket[] = [];
   const listeners = new Map<string, Set<() => void>>();
   const addListener = (name: string, callback: () => void) => {
@@ -77,10 +78,20 @@ async function renderIosClient(inputAdmission: unknown = true) {
   let client!: DeviceClient;
   function Harness({device = 'DEVICE-A'}: {device?: string}) {
     client = useIosDeviceClient({ baseUrl: '/sim', device, streamMode: 'mjpeg' });
-    return null;
+    return renderScreen ? <DeviceScreen client={client} /> : null;
   }
+  const surface = {
+    focus() {},
+    setPointerCapture() {},
+    releasePointerCapture() {},
+    addEventListener() {},
+    removeEventListener() {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 200 }),
+  };
   await act(async () => {
-    renderer = create(<Harness />);
+    renderer = create(<Harness />, {
+      createNodeMock: node => node.type === 'div' ? surface : null,
+    });
   });
   const helperSockets = () => sockets.filter((socket) => socket.url.includes('/helper/'));
   return { client: () => client, helperSockets, dispatch: (name: string) => listeners.get(name)?.forEach(callback => callback()), changeDevice: (device: string) => renderer!.update(<Harness device={device} />) };
@@ -243,4 +254,61 @@ test('blur before admission discards pending keys instead of typing them on reco
     await new Promise(resolve => setTimeout(resolve, 30));
   });
   expect(socket.sent.filter(data => new Uint8Array(data)[0] === 6)).toHaveLength(0);
+});
+
+function gestureMessages(socket: FakeSocket) {
+  return socket.sent.filter(data => [3, 5].includes(new Uint8Array(data)[0]!))
+    .map(data => JSON.parse(new TextDecoder().decode(new Uint8Array(data).slice(1))));
+}
+
+for (const gesture of ['single', 'multi'] as const) {
+  for (const cancellation of ['surface blur', 'blur', 'visibilitychange', 'pagehide']) {
+    test(`${cancellation} abandons an unadmitted ${gesture} gesture`, async () => {
+      const { helperSockets, dispatch } = await renderIosClient(true, { renderScreen: true });
+      const socket = helperSockets()[0]!;
+      socket.readyState = 1;
+      const surface = renderer!.root.findByProps({ role: 'application' });
+      await act(async () => surface.props.onPointerDown({
+        pointerId: 1, pointerType: 'mouse', button: 0,
+        clientX: 20, clientY: 60, altKey: gesture === 'multi', shiftKey: false,
+        preventDefault() {},
+      }));
+      await act(async () => {
+        if (cancellation === 'surface blur') surface.props.onBlur();
+        else {
+          if (cancellation === 'visibilitychange') Object.assign(document, { hidden: true });
+          dispatch(cancellation);
+        }
+        socket.onmessage?.({ data: Uint8Array.of(0x83).buffer });
+      });
+      expect(gestureMessages(socket)).toEqual([]);
+    });
+  }
+
+  test(`surface blur still releases an admitted ${gesture} gesture`, async () => {
+    const { helperSockets } = await renderIosClient(true, { renderScreen: true });
+    const socket = helperSockets()[0]!;
+    socket.readyState = 1;
+    await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+    const surface = renderer!.root.findByProps({ role: 'application' });
+    await act(async () => surface.props.onPointerDown({
+      pointerId: 1, pointerType: 'mouse', button: 0,
+      clientX: 20, clientY: 60, altKey: gesture === 'multi', shiftKey: false,
+      preventDefault() {},
+    }));
+    await act(async () => surface.props.onBlur());
+    expect(gestureMessages(socket).map(message => message.type)).toEqual(['begin', 'end']);
+  });
+}
+
+test('a completed tap before admission still reaches the device', async () => {
+  const { client, helperSockets } = await renderIosClient();
+  const socket = helperSockets()[0]!;
+  socket.readyState = 1;
+  await act(async () => {
+    client().sendTouch({ phase: 'begin', x: 0.2, y: 0.3 });
+    client().sendTouch({ phase: 'end', x: 0.2, y: 0.3 });
+    socket.onmessage?.({ data: Uint8Array.of(0x83).buffer });
+  });
+  expect(gestureMessages(socket).map(message => message.type)).toEqual(['begin', 'end']);
 });
