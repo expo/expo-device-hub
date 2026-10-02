@@ -1,22 +1,18 @@
-/// Deciding whether a stream has stopped decoding, from the counters `getStats` reports.
-
-/// One read a second, shared with the stats panel so nothing polls `getStats` twice.
+/** Receiver polling is shared with the stats panel. */
 export const PLAYBACK_STALL_POLL_MS = 1_000;
-/// Polls, not wall-clock: a hidden tab's interval is throttled, so elapsed time there says
-/// nothing about whether decoding stopped. Eight of them is the same eight seconds as before.
+/** Count active polls; hidden tabs can throttle timers. */
 export const PLAYBACK_STALL_POLLS = 8;
 
 export interface PlaybackProgress {
-  /// Null when the browser does not report the counter, which is not the same as zero.
+  /** Null when the browser does not report decoded frames. */
   decoded: number | null;
-  /// Whole frames assembled from RTP. Loss keeps bytes climbing while no frame completes, so
-  /// bytes would read as healthy media.
+  /** Complete RTP frames; byte growth alone does not prove frame delivery. */
   received: number;
 }
 
 export interface PlaybackStallState {
   decoded: number | null;
-  /// As of the poll that began the frozen run, so bursty delivery still counts as arriving.
+  /** Frozen-run baseline, retained until decoding progresses. */
   received: number;
   stalledPolls: number;
 }
@@ -27,8 +23,7 @@ export const initialPlaybackStallState: PlaybackStallState = {
   stalledPolls: 0,
 };
 
-/// Whether decoding stopped while media keeps arriving. Anything ambiguous restarts the run
-/// rather than accusing the decoder.
+/** Compare decode progress, retaining the received-frame baseline during a stall. */
 export function nextPlaybackStallState(
   state: PlaybackStallState,
   progress: PlaybackProgress,
@@ -54,8 +49,7 @@ export interface InboundReport {
   framesReceived: number;
 }
 
-/// Which inbound report to judge when a connection carries more than one. Following one by id
-/// alone pins a report for an SSRC that has gone away, so a stalled pin yields to a live one.
+/** Follow the active SSRC, yielding to an advancing sibling when the pinned report stops. */
 export function selectInboundReport<T extends InboundReport>(
   reports: T[],
   previous: InboundReport | null,

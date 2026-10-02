@@ -91,13 +91,10 @@ export function webRtcFailureDisposition(
   return "transport";
 }
 
-/// How long a same-codec reconnect counts against the codec. Past this the next stall is a
-/// separate incident, not the same one continuing, and earns its own reconnect.
+/** Repeated stalls within this window can demote the codec. */
 export const STALL_RECONNECT_TTL_MS = 30_000;
 
-/// The codec gets a reconnect before it is blamed, or one bad run of frames costs hardware
-/// H.264 for the session. Elapsed time rather than a flag, so two unrelated stalls hours
-/// apart do not add up to a demotion.
+/** Retry the codec once before demoting it for another stall in the same window. */
 export function playbackStallAction(
   disposition: WebRtcFailureDisposition,
   msSinceCodecReconnect: number | null,
