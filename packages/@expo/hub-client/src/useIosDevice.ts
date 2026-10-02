@@ -212,6 +212,7 @@ interface ResolvedConfig {
   /** Discovery request identity; a previous server/device is never current. */
   baseUrl: string;
   targetDevice: string | null;
+  generation: number;
   /** Base serve-sim helper URL used by `/stream.avcc`. */
   url: string;
   streamUrl: string;
@@ -283,11 +284,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [activity, setActivity] = useState<DeviceActivity | null>(null);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   const [resolvedConfig, setConfig] = useState<ResolvedConfig | null>(null);
+  const [discoveryGeneration, rediscover] = useReducer((generation: number) => generation + 1, 0);
   const config =
     active &&
     resolvedConfig &&
     resolvedConfig.baseUrl === baseUrl &&
-    resolvedConfig.targetDevice === targetDevice
+    resolvedConfig.targetDevice === targetDevice &&
+    resolvedConfig.generation === discoveryGeneration
       ? resolvedConfig
       : null;
   const streamCapabilities = config ? iosStreamCapabilities(config.initialStreamSettings) : null;
@@ -315,6 +318,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Input that arrived while the helper socket was down; flushed on reconnect
   // (bounded, and stale entries are dropped — see `./ws-send-queue`).
   const pendingWsRef = useRef<QueuedWsMessage[]>([]);
+  const pendingWsDestinationRef = useRef<{ wsUrl: string; device: string | null } | null>(null);
   // Monotonic log id source, persisted across log-stream reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
@@ -572,7 +576,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     [setDeviceSetting],
   );
 
-  const setWebRtcCodec = useCallback((codec: DeviceWebRtcCodec) => {
+  const setInitialWebRtcCodec = useCallback((codec: DeviceWebRtcCodec) => {
     setWebRtcCodecState(codec);
     setActiveWebRtcCodec(codec);
   }, []);
@@ -626,6 +630,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return {
         baseUrl,
         targetDevice,
+        generation: discoveryGeneration,
         url: c.url!,
         streamUrl: c.streamUrl ?? `${c.url}/stream.mjpeg`,
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
@@ -671,7 +676,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (c && c.url && c.device) {
           if (!cancelled) {
             const resolved = toMiddleware(c);
-            setWebRtcCodec(resolved.webRtcCodec);
+            setInitialWebRtcCodec(resolved.webRtcCodec);
             setConfig(resolved);
           }
           return;
@@ -695,7 +700,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
     };
-  }, [active, baseUrl, targetDevice, setWebRtcCodec]);
+  }, [active, baseUrl, targetDevice, discoveryGeneration, setInitialWebRtcCodec]);
 
   const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
   const onAvccFrame = useCallback((frameDelta = 1) => {
@@ -716,6 +721,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     failure: webRtcFailure,
     error: webRtcError,
     markFrameDecoded: markWebRtcFrameDecoded,
+    restart: restartWebRtc,
     streamStats,
     setStreamStatsEnabled,
   } = useWebRtcStream({
@@ -730,6 +736,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const webRtcCodecsExhausted =
     webRtcFailure?.kind === 'codec' &&
     webRtcFallbackDecision(webRtcCodec, activeWebRtcCodec, webRtcFailure)?.type === 'switch-to-http';
+
+  const setWebRtcCodec = useCallback(
+    (codec: DeviceWebRtcCodec) => {
+      setInitialWebRtcCodec(codec);
+      // Selecting an already-active failed codec does not change the stream
+      // hook's inputs, so retry its session explicitly.
+      if (codec === activeWebRtcCodec && webRtcFailure) restartWebRtc();
+    },
+    [activeWebRtcCodec, webRtcFailure, restartWebRtc, setInitialWebRtcCodec],
+  );
 
   useEffect(() => {
     if (!useWebRtc || !webRtcFailure) return;
@@ -898,9 +914,26 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
+  const controlDevice = config?.device ?? null;
+  useEffect(() => {
+    pendingWsDestinationRef.current = null;
+    pendingWsRef.current = [];
+    return () => {
+      pendingWsRef.current = [];
+    };
+  }, [active, baseUrl, targetDevice]);
+
   useEffect(() => {
     setHardwareKeyboardConnectedState(null);
     if (!wsUrl) return;
+    const previousDestination = pendingWsDestinationRef.current;
+    if (
+      previousDestination &&
+      (previousDestination.wsUrl !== wsUrl || previousDestination.device !== controlDevice)
+    ) {
+      pendingWsRef.current = [];
+    }
+    pendingWsDestinationRef.current = { wsUrl, device: controlDevice };
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     hasWsConfigRef.current = false;
@@ -916,6 +949,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
       ws.onopen = () => {
+        if (cancelled) return;
         // Deliver whatever the user did while the socket was down.
         pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
         // The Hub owns keyboard forwarding while this socket is active. Keep the
@@ -947,7 +981,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       ws.onclose = () => {
         if (cancelled) return;
         wsRef.current = null;
-        retryTimer = setTimeout(connect, RECONNECT_MS);
+        // A replacement server can keep the same helper URL while advertising
+        // another transport or session token. Refresh middleware discovery.
+        retryTimer = setTimeout(() => {
+          if (!cancelled) rediscover();
+        }, RECONNECT_MS);
       };
       ws.onerror = () => {
         try {
@@ -964,11 +1002,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         wsRef.current?.close();
       } catch {}
       wsRef.current = null;
-      // Queued input was for this device; don't replay it on the next one.
-      pendingWsRef.current = [];
+      // Keep fresh input across rediscovery; connection/device changes clear
+      // it above, and the queue drops expired messages before delivery.
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, sendWs]);
+  }, [wsUrl, controlDevice, sendWs, rediscover]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
