@@ -141,10 +141,10 @@ export function startPlaybackStallWatchdog({
     retryTransport("WebRTC playback stalled.");
   }, PLAYBACK_STALL_POLL_MS);
 
-  document.addEventListener("visibilitychange", invalidate);
+  if (typeof document !== "undefined") document.addEventListener("visibilitychange", invalidate);
   return {
     stop() {
-      document.removeEventListener("visibilitychange", invalidate);
+      if (typeof document !== "undefined") document.removeEventListener("visibilitychange", invalidate);
       invalidate();
       stopPolling();
     },
