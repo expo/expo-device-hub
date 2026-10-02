@@ -8,6 +8,7 @@ import {
   HomeIcon,
   RefreshIcon,
   RotateIcon,
+  ShareIcon,
   ThemeIcon,
   bg,
   border,
@@ -15,6 +16,7 @@ import {
   text,
 } from '../primitives';
 import { type ColorScheme } from './data';
+import { ShareButton, type ShareLink } from './ShareButton';
 
 const GROUP_PADDING = 4;
 const GROUP_GAP = 24;
@@ -44,8 +46,9 @@ function ControlGroup({ children }: { children: ReactNode }) {
 
 /**
  * Controls under the device stream. Both platforms share one toolbar: a pill
- * with Save · Theme · Home · Reload, plus a separate Rotate button. Each button
- * shows its label as a tooltip on hover. Device-level actions (Android Back and
+ * with Save · Theme · Home · Reload, plus a separate Rotate button, and a
+ * separate Share button when there is a link to share. Each button shows its
+ * label as a tooltip on hover. Device-level actions (Android Back and
  * Recents keys, shutting down or removing the device) live in the inspector's
  * Device options section.
  *
@@ -61,6 +64,7 @@ export function StreamControls({
   onRotate,
   onSave,
   recording = null,
+  share,
 }: {
   /** The device's current dark/light appearance; null while unknown. */
   appearance: ColorScheme | null;
@@ -75,6 +79,8 @@ export function StreamControls({
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
   recording?: DeviceScreenRecordingStatus | null;
+  /** The link the Share button copies. No Share button without one. */
+  share?: ShareLink;
 }) {
   const recordingControlsLocked = areRecordingControlsLocked(recording);
   return (
@@ -120,6 +126,15 @@ export function StreamControls({
           style={recordingControlsLocked ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
         />
       </ControlGroup>
+      {share && (
+        <ControlGroup>
+          <ShareButton
+            icon={<ShareIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+            url={share.url}
+            carriesToken={share.carriesToken}
+          />
+        </ControlGroup>
+      )}
     </div>
   );
 }

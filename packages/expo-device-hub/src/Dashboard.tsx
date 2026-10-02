@@ -55,6 +55,7 @@ import {
   browserStreamModeAvailability,
 } from './dashboard/streamMode';
 import { dashboardPlatformFilter } from './platform-filter';
+import { dashboardShareLink } from './share';
 
 /** Append `extra` devices not already present in `base` (deduped by id). */
 function mergeById(base: Device[], extra: Device[]): Device[] {
@@ -291,6 +292,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
       : null,
     basePath()
   );
+  // The page, token, and share URL are fixed for this load.
+  const share = useMemo(dashboardShareLink, []);
   const agentInteractions = useArgentInteractions();
   const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
   const agentDeviceIds = Object.keys(agentInteractions);
@@ -369,6 +372,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           showDeviceFrame={showDeviceFrame}
           deviceFrameAssets={DEVICE_FRAME_ASSETS}
+          share={share}
         />
       ) : (
         <EmptyState

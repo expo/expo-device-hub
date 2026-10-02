@@ -285,6 +285,21 @@ export function WarningIcon({ size = 16, color = 'currentColor', strokeWidth = 2
   );
 }
 
+/** Lucide `share` — copies a link to this Hub session. */
+export function ShareIcon({ size = 16, color = 'currentColor', strokeWidth = 1.67, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <path
+        d="M12 2v13M16 6l-4-4-4 4M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 /** Lucide `check` — trailing mark on the selected recent row. */
 export function CheckIcon({ size = 17, color = 'currentColor', strokeWidth = 2.5, style }: IconProps) {
   return (

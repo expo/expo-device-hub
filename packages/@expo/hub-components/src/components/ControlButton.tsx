@@ -17,17 +17,35 @@ export type ControlButtonProps = {
   icon: ReactNode;
   label: string;
   tooltip?: string;
+  /**
+   * Overrides hover and focus: `true` shows the tooltip, e.g. to confirm an action on touch;
+   * `false` hides it, e.g. while a panel covers it.
+   */
+  tooltipOpen?: boolean;
 } & ButtonHTMLAttributes<HTMLButtonElement>;
 
 export const ControlButton = forwardRef<HTMLButtonElement, ControlButtonProps>(
   function ControlButton(
-    { icon, label, tooltip, style, onMouseEnter, onMouseLeave, onMouseDown, onMouseUp, onFocus, onBlur, ...rest },
+    {
+      icon,
+      label,
+      tooltip,
+      tooltipOpen,
+      style,
+      onMouseEnter,
+      onMouseLeave,
+      onMouseDown,
+      onMouseUp,
+      onFocus,
+      onBlur,
+      ...rest
+    },
     ref
   ) {
     const [hovered, setHovered] = useState(false);
     const [pressed, setPressed] = useState(false);
     const [focused, setFocused] = useState(false);
-    const tooltipVisible = hovered || focused;
+    const tooltipVisible = tooltipOpen ?? (hovered || focused);
 
     return (
       <span style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>

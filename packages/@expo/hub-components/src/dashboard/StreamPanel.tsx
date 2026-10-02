@@ -12,6 +12,7 @@ import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
 import { type DeviceFrameAssets } from './deviceFrame';
 import { PhoneFrame } from './PhoneFrame';
 import { ScreenshotToaster, useScreenshotToast } from './ScreenshotToast';
+import { type ShareLink } from './ShareButton';
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from './StreamControls';
 
 /** Space between the title pill and the top of the device frame. */
@@ -38,6 +39,7 @@ export function StreamPanel({
   framed = true,
   showDeviceFrame = true,
   deviceFrameAssets,
+  share,
 }: {
   device: Device;
   client: DeviceClient;
@@ -55,6 +57,8 @@ export function StreamPanel({
   showDeviceFrame?: boolean;
   /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
   deviceFrameAssets?: DeviceFrameAssets;
+  /** The link the toolbar's Share button copies. No Share button without one. */
+  share?: ShareLink;
 }) {
   const captureScreenshot = useScreenshotToast(client, device.name);
 
@@ -133,6 +137,7 @@ export function StreamPanel({
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}
+              share={share}
             />
           </div>
         </div>

@@ -51,6 +51,21 @@ describe('StreamControls', () => {
     expect(markup.indexOf('aria-label="Rotate"')).toBeGreaterThan(markup.lastIndexOf('border-radius:var(--expo-radius-xl)'));
   });
 
+  test('adds Share in its own pill after Rotate, only when there is a link to share', () => {
+    const markup = renderToStaticMarkup(
+      <StreamControls
+        appearance="dark"
+        onToggleAppearance={() => {}}
+        share={{ url: 'http://192.168.1.20:3400/?token=tok-1', carriesToken: true }}
+      />
+    );
+    const labels = buttonTags(markup).map((tag) => tag.match(/aria-label="([^"]+)"/)?.[1]);
+
+    expect(labels).toEqual(['Save', 'Theme', 'Home', 'Reload', 'Rotate', 'Share']);
+    expect([...markup.matchAll(/border-radius:var\(--expo-radius-xl\)/g)]).toHaveLength(3);
+    expect(markup).toContain('Copy share link (includes access token)');
+  });
+
   test('shows every label as a tooltip above its button and exposes Theme as a switch', () => {
     const markup = renderToStaticMarkup(
       <StreamControls appearance="dark" onToggleAppearance={() => {}} />

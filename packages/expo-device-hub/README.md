@@ -82,6 +82,10 @@ the token can control the devices, so share a link only with people who may.
 Only the Hub itself may frame a gated page. To let another site embed it, pass
 `--frame-ancestor <origin>` once for each origin, for example `https://*.expo.dev`.
 
+The Share button in the toolbar under the device copies a link to the Hub. On a gated Hub,
+the link carries the token. To share another page instead, such as a site that embeds the
+Hub, pass `--share-url <url>`.
+
 ### Record an Android session
 
 Recording is opt-in and starts with the Hub, even when no browser viewer is connected.
