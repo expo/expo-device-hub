@@ -137,7 +137,58 @@ Compressed H.264 samples go to `AVAssetWriterInput` with `outputSettings: nil`,
 so the MP4 writer does not encode again. On successful finalization the output
 directory contains `recording.mp4` and `session.json`. The manifest keeps the
 record-sim upload contract: `firstFrameWallClock` with `unixMs` and `iso8601`,
-`width`, `height`, and `recording`.
+`width`, `height`, and `recording`. It also includes an optional `deviceStates`
+timeline:
+
+```json
+{
+  "deviceStates": [
+    {
+      "timeMs": 0,
+      "state": { "width": 2007, "height": 2853, "orientation": "landscape_left", "screenId": 3, "hingeAngle": 180, "physicalOrientation": "portrait", "tableMode": false }
+    },
+    {
+      "timeMs": 2400,
+      "state": { "width": 1398, "height": 2034, "orientation": "landscape_left", "screenId": 1, "hingeAngle": 80, "physicalOrientation": "facedown", "tableMode": true }
+    }
+  ]
+}
+```
+
+Each event is the full known device state of a submitted video frame, committed
+to the timeline only after that frame is successfully appended to the MP4.
+The first event has `timeMs: 0`; subsequent times use the video's presentation
+clock relative to its first frame. Unchanged states are omitted. Changes are
+coalesced to the latest written state at most four times per second, with
+250 ms between normal updates. On stop, the last update in a partial interval
+is replaced by the final written state, and adjacent duplicate states are
+removed. A clip shorter than 250 ms retains both its initial and final state
+when they differ. Every timestamp still identifies an actual written frame.
+An event's `width` and `height` describe the active source panel; the manifest's top-level
+dimensions describe the fixed recording canvas.
+
+`orientation` comes from native screen metadata and uses `portrait`,
+`portrait_upside_down`, `landscape_left`, or `landscape_right`. On Duo,
+`hingeAngle` is in degrees from 0 (closed) to 180 (open), and `screenId`
+identifies the active panel. `physicalOrientation` describes the device pose,
+using `portrait`, `pud`, `landscape-left`, `landscape-right`, `faceup`, or
+`facedown`; `tableMode` describes the device's Table Mode setting. Screen
+orientation and physical orientation can differ when an app locks its interface.
+
+Unknown fields are omitted rather than inferred. Duo's successful serve-sim
+commands update cached hinge and physical state, which is sampled with video
+frames at the recording cadence. A bounded native hinge-angle readback observes
+external angle changes with a one-second pause between reads. The recording path has no
+readback for physical orientation or Table Mode, so they remain unknown until
+serve-sim observes a successful command that establishes them. Ordinary iPhones
+omit Duo fields.
+Treat each event as a complete snapshot: absent optional fields are unknown.
+Physical and Table Mode commands reconcile the angle before sending. If that
+read is unavailable, freshly successful fields survive the first recovered
+angle read; a changed angle invalidates older pose fields. Cached commands are recorded
+even when motion readback is unsupported. External pose changes at an unchanged
+angle cannot be read back.
+Short external angle changes that return between readbacks can also be missed.
 
 ## Control and shutdown
 

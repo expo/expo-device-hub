@@ -122,6 +122,8 @@ actor CaptureEngine {
     private var recordingFinalizing = false
     private var recordingFinishTask: Task<NativeRecordingResult, Error>?
     private var recordingAvailability = RecordingAvailability()
+    private var recordingHingeTask: Task<Void, Never>?
+    private var recordingHingeReadbackTask: Task<Void, Never>?
     private var lastViewerCanvasSequence: UInt64?
     private var frameContinuation: AsyncStream<Frame>.Continuation?
     private var cancelledWebRTCSessionIds = Set<String>()
@@ -152,8 +154,11 @@ actor CaptureEngine {
         do {
             await refreshSnapshotSize()
             let nativeFrameMailbox = self.nativeFrameMailbox
-            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas in
-                nativeFrameMailbox.publish(pixelBuffer, timestamp: timestamp, wallClock: Date())
+            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas, screen in
+                nativeFrameMailbox.publish(
+                    pixelBuffer, timestamp: timestamp, wallClock: Date(),
+                    deviceState: screen.recordingDeviceState
+                )
                 frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas))
             }
         } catch {
@@ -253,6 +258,7 @@ actor CaptureEngine {
     }
 
     func stopNativeFrameDelivery() async {
+        stopRecordingHingeUpdates()
         nativeFrameDeliveryGeneration &+= 1
         nativeFrameDeliveryPending = false
         nativeFrameMailbox.setActive(false)
@@ -438,6 +444,7 @@ actor CaptureEngine {
     func stop() async throws {
         if phase == .stopped { return }
         phase = .stopped
+        stopRecordingHingeUpdates()
         var recordingError: Error?
         if let recording {
             let finishing = recordingFinishTask ?? Task { try await recording.finish() }
@@ -481,6 +488,10 @@ actor CaptureEngine {
             throw recordingError(14, "Capture stopped before recording could start; restart the session and retry")
         }
         do {
+            await startRecordingHingeUpdates()
+            guard phase == .running else {
+                throw recordingError(14, "Capture stopped before recording could start; restart the session and retry")
+            }
             let recorder = try NativeVideoRecorder(
                 mailbox: delivery.mailbox, canvas: delivery.canvas,
                 outputDirectory: outputDirectory
@@ -491,6 +502,43 @@ actor CaptureEngine {
             await stopNativeFrameDelivery()
             throw error
         }
+    }
+
+    private func startRecordingHingeUpdates() async {
+        guard await frameCapture.isFoldable, phase == .running else { return }
+        let udid = deviceUDID
+        let mailbox = nativeFrameMailbox
+        let bridge = CoreDeviceBridge.shared
+        let cached = await bridge.cachedHingeState(udid: udid)
+        guard phase == .running else { return }
+        mailbox.updateHingeState(cached)
+        recordingHingeTask = Task {
+            while !Task.isCancelled {
+                let state = await bridge.cachedHingeState(udid: udid)
+                guard !Task.isCancelled else { return }
+                mailbox.updateHingeState(state)
+                do { try await Task.sleep(for: .milliseconds(16)) }
+                catch { return }
+            }
+        }
+        guard await bridge.supportsHingeAngle(udid: udid), phase == .running else { return }
+        let initial = await bridge.hingeState(udid: udid)
+        guard phase == .running else { return }
+        mailbox.updateHingeState(initial)
+        recordingHingeReadbackTask = Task {
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(1)) }
+                catch { return }
+                _ = await bridge.hingeState(udid: udid)
+            }
+        }
+    }
+
+    private func stopRecordingHingeUpdates() {
+        recordingHingeTask?.cancel()
+        recordingHingeTask = nil
+        recordingHingeReadbackTask?.cancel()
+        recordingHingeReadbackTask = nil
     }
 
     func stopRecording() async throws -> String {

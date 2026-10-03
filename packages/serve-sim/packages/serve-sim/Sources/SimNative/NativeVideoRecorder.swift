@@ -60,6 +60,8 @@ final class NativeVideoRecorder: @unchecked Sendable {
     private var writer: AVAssetWriter?
     private var input: AVAssetWriterInput?
     private var firstFrameWallClock: Date?
+    private var firstWrittenPTS: CMTime?
+    private var deviceStateTimeline = RecordingDeviceStateTimeline()
     private var lastSnapshotTimestamp: CMTime?
     private var canvasBuffer: CVPixelBuffer?
     private var startNanoseconds: UInt64 = 0
@@ -244,6 +246,7 @@ final class NativeVideoRecorder: @unchecked Sendable {
         guard let canvasBuffer else { return }
         let pts = CMTime(value: index, timescale: 60)
         let wallClock = startWallClock.addingTimeInterval(Double(index) / 60)
+        let deviceState = frame.deviceState
         let properties: NSDictionary? = forceIDR
             ? [kVTEncodeFrameOptionKey_ForceKeyFrame: kCFBooleanTrue!] : nil
         forceIDR = false
@@ -261,18 +264,20 @@ final class NativeVideoRecorder: @unchecked Sendable {
             let elapsedNs = DispatchTime.now().uptimeNanoseconds - encodeStartNs
             self.queue.async {
                 self.complete(index: index, pts: pts, wallClock: wallClock,
-                              status: result, sample: sample, encodeElapsedNs: elapsedNs)
+                              deviceState: deviceState, status: result,
+                              sample: sample, encodeElapsedNs: elapsedNs)
             }
         }
         if status != noErr {
             complete(index: index, pts: pts, wallClock: wallClock,
-                     status: status, sample: nil,
+                     deviceState: deviceState, status: status, sample: nil,
                      encodeElapsedNs: DispatchTime.now().uptimeNanoseconds - encodeStartNs)
         }
     }
 
     private func complete(index: Int64, pts: CMTime, wallClock: Date,
-                          status: OSStatus, sample: CMSampleBuffer?, encodeElapsedNs: UInt64) {
+                          deviceState: RecordingDeviceState, status: OSStatus,
+                          sample: CMSampleBuffer?, encodeElapsedNs: UInt64) {
         guard pending.remove(index) != nil else { return }
         encodeCompletions &+= 1
         encodeTimeSumNs &+= encodeElapsedNs
@@ -334,6 +339,12 @@ final class NativeVideoRecorder: @unchecked Sendable {
         writtenFrames &+= 1
         awaitingKeyframe = false
         if firstFrameWallClock == nil { firstFrameWallClock = wallClock }
+        if firstWrittenPTS == nil { firstWrittenPTS = pts }
+        if let firstWrittenPTS {
+            deviceStateTimeline.append(
+                state: deviceState, timeMs: CMTimeSubtract(pts, firstWrittenPTS).seconds * 1_000
+            )
+        }
     }
 
     private func recordFailure(_ error: Error) {
@@ -454,9 +465,10 @@ final class NativeVideoRecorder: @unchecked Sendable {
             guard writer.status == .completed else {
                 throw writer.error ?? Self.error(14, "MP4 writer did not finish")
             }
+            deviceStateTimeline.finish()
             let manifest = RecordingManifest(
                 firstFrame: firstFrameWallClock,
-                width: canvas.width, height: canvas.height
+                width: canvas.width, height: canvas.height, deviceStates: deviceStateTimeline.entries
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
