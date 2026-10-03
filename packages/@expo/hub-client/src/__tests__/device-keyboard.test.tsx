@@ -76,13 +76,24 @@ test('Option+Shift+1–5 select the Duo poses in Xcode order and never reach the
     expect(event.prevented).toBe(true);
     expect(commands.at(-1)).toEqual({ control: 'pose', value: pose });
   }
+  // Releasing a consumed shortcut key sends nothing either: the device never
+  // saw the press, so it must not see a release.
+  const release = keyEvent({ code: 'Digit5' });
+  await act(async () => surface.props.onKeyUp(release));
+  expect(release.prevented).toBe(true);
+  expect(keys).toHaveLength(0);
   // Auto-repeat does not resend, and Command+digits stay with the browser.
   await act(async () => surface.props.onKeyDown(keyEvent({ code: 'Digit1', altKey: true, shiftKey: true, repeat: true })));
   expect(commands).toHaveLength(5);
   const tabSwitch = keyEvent({ code: 'Digit1', altKey: true, shiftKey: true, metaKey: true });
   await act(async () => surface.props.onKeyDown(tabSwitch));
   expect(commands).toHaveLength(5);
-  expect(keys.filter((input) => input.code.startsWith('Digit')).map((input) => input.code)).toEqual(['Digit1']);
+  // That Command+digit press was forwarded, so its release is forwarded too.
+  await act(async () => surface.props.onKeyUp(keyEvent({ code: 'Digit1', metaKey: true })));
+  expect(keys.filter((input) => input.code.startsWith('Digit')).map((input) => `${input.code}:${input.phase}`)).toEqual([
+    'Digit1:down',
+    'Digit1:up',
+  ]);
 });
 
 test('without a hinge the shortcut is an ordinary keystroke', async () => {

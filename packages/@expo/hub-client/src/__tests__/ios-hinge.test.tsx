@@ -91,20 +91,26 @@ function installBrowser({ duo }: { duo: boolean }) {
   stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
   stubGlobal('WebSocket', FakeSocket);
   stubGlobal('fetch', async (url: string) => {
-    const { pathname } = new URL(url);
+    const { pathname, searchParams } = new URL(url);
     if (pathname === '/api') {
+      // device-1 is the Duo under test (or a plain iPhone); device-2 is always a plain iPhone.
+      const device = searchParams.get('device') ?? 'device-1';
+      const foldable = duo && device === 'device-1';
       return Response.json({
-        url: 'https://hub.test/helper/device-1',
-        wsUrl: 'wss://hub.test/helper/device-1/ws',
-        device: 'device-1',
+        url: `https://hub.test/helper/${device}`,
+        wsUrl: `wss://hub.test/helper/${device}/ws`,
+        device,
         basePath: '/',
         gridApiEndpoint: '/grid/api',
-        chrome: duo ? { identifier: 'phone15' } : { identifier: 'phone17pro' },
+        chrome: foldable ? { identifier: 'phone15' } : { identifier: 'phone17pro' },
       });
     }
     if (pathname === '/grid/api') {
       return Response.json({
-        devices: [{ device: 'device-1', name: duo ? 'iPhone Duo' : 'iPhone 17 Pro', helper: {} }],
+        devices: [
+          { device: 'device-1', name: duo ? 'iPhone Duo' : 'iPhone 17 Pro', helper: {} },
+          { device: 'device-2', name: 'iPhone 17 Pro', helper: {} },
+        ],
       });
     }
     return Response.json({}, { status: 404 });
@@ -192,6 +198,59 @@ test('pose commands go out acknowledged on the input socket and preview until th
   expect(client().hinge?.pose).toBe('open');
   expect(client().hinge?.tableModeAvailable).toBe(true);
   expect(client().screen?.screenId).toBe(3);
+});
+
+test('switching to another simulator forgets the previous screen config at once', async () => {
+  installBrowser({ duo: true });
+  const { socket, client, update } = await connect({ duoPreview: '3d' });
+  await act(async () => socket.push(0x82, INNER_OPEN));
+  expect(client().hinge?.modelActive).toBe(true);
+
+  await update({ device: 'device-2' });
+  await act(async () => {});
+  // The old Duo config must not classify the plain iPhone or park its stream
+  // while its own helper has not pushed a config yet.
+  expect(client().screen).toBeNull();
+  expect(client().hinge).toBeNull();
+  const next = FakeSocket.instances.find((instance) => instance.url.includes('device-2'));
+  expect(next).toBeDefined();
+  await act(async () => next!.open());
+  await act(async () => next!.push(0x82, { width: 1206, height: 2622, orientation: 'portrait', screenId: 1 }));
+  expect(client().screen?.width).toBe(1206);
+  expect(client().hinge).toBeNull();
+});
+
+test('a rejected preset restores the 3D view it replaced, unless a rotation superseded it', async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, INNER_OPEN));
+  const openView = client().hinge!.view;
+  expect(openView.fixedLeftFold).toBeUndefined();
+
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'laptop' }));
+  expect(client().hinge?.view.fixedLeftFold).toBeDefined();
+  await act(async () =>
+    socket.push(0x90, { requestId: 1, ok: false, error: 'Simulator could not change the device pose.' }),
+  );
+  expect(client().hinge?.error).toBe('Simulator could not change the device pose.');
+  expect(client().hinge?.view).toEqual(openView);
+
+  // A rotation during the request owns the view; the rejection keeps it.
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'laptop' }));
+  await act(async () => client().rotate());
+  const rotatedView = client().hinge!.view;
+  expect(rotatedView).not.toEqual(openView);
+  await act(async () => socket.push(0x90, { requestId: 2, ok: false, error: 'Rejected' }));
+  expect(client().hinge?.view).toEqual(rotatedView);
+
+  // A confirmed preset keeps its own view and forgets the restore point.
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'open' }));
+  await act(async () => socket.push(0x90, { requestId: 3, ok: true }));
+  await act(async () => socket.push(0x82, INNER_OPEN));
+  const confirmed = client().hinge!.view;
+  await act(async () => client().hinge!.setControl({ control: 'angle', value: 120 }));
+  await act(async () => socket.push(0x90, { requestId: 4, ok: false, error: 'Rejected' }));
+  expect(client().hinge?.view).toEqual(confirmed);
 });
 
 test('a rejected hinge command surfaces its error and drops the preview', async () => {
