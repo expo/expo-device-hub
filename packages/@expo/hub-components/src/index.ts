@@ -88,6 +88,11 @@ export { CollapsibleSection } from './dashboard/CollapsibleSection';
 export { KeyboardSection } from './dashboard/KeyboardSection';
 export { PhoneFrame, type PhoneFrameFoldPreview } from './dashboard/PhoneFrame';
 export {
+  deviceScreenClipPath,
+  deviceScreenCornersClipPath,
+  type ScreenCornerRadiiCqw,
+} from './dashboard/deviceScreenClipPath';
+export {
   deviceFrameLayout,
   deviceFrameRotation,
   type DeviceFrameAsset,

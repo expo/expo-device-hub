@@ -38,6 +38,11 @@ import {
   INITIAL_DUO_HINGE_COMMANDS,
   recordDuoHingeCommand,
 } from './duo/duo-hinge-commands';
+import {
+  type DeviceDisplayChrome,
+  displayChromeForScreen,
+  displayCornerRadii,
+} from './display-corners';
 import { duoIntendedScreen, duoPhysicalPoseChanged } from './duo/duo-pose';
 import {
   DUO_FACE_DOWN_HELD,
@@ -92,6 +97,7 @@ import {
   type DeviceConnectionOptions,
   type DeviceHinge,
   type DeviceLog,
+  type DisplayCornerRadii,
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamCapabilities,
@@ -290,8 +296,8 @@ interface ResolvedConfig {
   gridApiUrl: string | null;
   /** Middleware route serving Xcode's iPhone Duo model (`grid/api/devicekit-model`). */
   deviceKitModelUrl: string | null;
-  /** DeviceKit chrome identifier advertised for the device, e.g. `phone15` for the Duo's cover. */
-  chromeIdentifier: string | null;
+  /** DeviceKit chrome advertised for the device: `phone15` is the Duo's cover, with its inner display as a variant. */
+  chrome: DeviceDisplayChrome | null;
   webRtcCodec: WebRtcCodec;
   webRtcIceServers?: WebRtcIceServer[];
 }
@@ -315,7 +321,7 @@ interface PreviewApi {
   streamSettingsEndpoint?: string;
   gridApiEndpoint?: string;
   /** Bezel geometry for `device`; its identifier names the DeviceKit chrome profile. */
-  chrome?: { identifier?: string } | null;
+  chrome?: DeviceDisplayChrome | null;
   proxyHelpers?: boolean;
   streamSettings?:
     | ({ transport: 'http'; codec?: 'auto' | 'h264' | 'mjpeg' } &
@@ -440,11 +446,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // inner display variant) or by its name.
   const currentDeviceId = config?.device ?? targetDevice;
   const deviceName = devices.find((device) => device.id === currentDeviceId)?.name;
+  const chromeIdentifier = config?.chrome?.identifier;
   const isDuo =
     screen?.supportsHingeAngle === true ||
-    config?.chromeIdentifier === 'phone14' ||
-    config?.chromeIdentifier === 'phone15' ||
+    chromeIdentifier === 'phone14' ||
+    chromeIdentifier === 'phone15' ||
     /\biphone\s+duo\b/i.test(deviceName ?? '');
+  // The flat view rounds the active display with its own glass corners, as the
+  // 3D model shows them head-on. Other devices keep the Hub's calibrated shape.
+  const displayCorners = useMemo<DisplayCornerRadii | null>(
+    () =>
+      isDuo && config?.chrome
+        ? displayCornerRadii(displayChromeForScreen(config.chrome, screen?.screenId), screen?.orientation)
+        : null,
+    [isDuo, config?.chrome, screen?.screenId, screen?.orientation],
+  );
   // The 3D model feeds both panels itself, so the flat stream parks meanwhile.
   const modelActive = isDuo && duoPreview === '3d';
   const [hingePending, setHingePending] = useState(false);
@@ -908,7 +924,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         initialStreamSettings: c.streamSettings,
         gridApiUrl: absoluteMiddlewareUrl(c.gridApiEndpoint ?? `${basePath}/grid/api`),
         deviceKitModelUrl: absoluteMiddlewareUrl(`${basePath}/grid/api/devicekit-model`),
-        chromeIdentifier: c.chrome?.identifier ?? null,
+        chrome: c.chrome ?? null,
         webRtcCodec: c.streamSettings?.transport === 'webrtc' ? c.streamSettings.codec : 'h264',
         ...(c.streamSettings?.transport === 'webrtc' && c.streamSettings.iceServers
           ? { webRtcIceServers: c.streamSettings.iceServers }
@@ -2036,6 +2052,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     inputError: inputUnavailable ? IOS_INPUT_UNAVAILABLE_MESSAGE : inputSocketError,
     screen,
     hinge,
+    displayCorners,
     fps,
     devices,
     logs,

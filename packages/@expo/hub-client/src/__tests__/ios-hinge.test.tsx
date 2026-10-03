@@ -53,6 +53,24 @@ afterEach(async () => {
   restoreGlobals();
 });
 
+// Xcode 27.1's DeviceKit profiles for the Duo: the cover is the primary, the inner display a variant.
+const DUO_CHROME = {
+  identifier: 'phone15',
+  screen: { x: 34, y: 23, width: 466, height: 678 },
+  screenRadius: 33.5,
+  screenCornerRadii: { topLeft: 8, topRight: 59, bottomRight: 59, bottomLeft: 8 },
+  screenId: 1,
+  displayVariants: {
+    3: {
+      identifier: 'phone14',
+      screen: { x: 27, y: 27, width: 626, height: 890 },
+      screenRadius: 51.5,
+      screenCornerRadii: { topLeft: 51.5, topRight: 51.5, bottomRight: 51.5, bottomLeft: 51.5 },
+      screenId: 3,
+    },
+  },
+};
+
 const COVER = {
   width: 1398,
   height: 2034,
@@ -110,7 +128,7 @@ function installBrowser({ duo }: { duo: boolean }) {
         device,
         basePath: '/',
         gridApiEndpoint: '/grid/api',
-        chrome: foldable ? { identifier: 'phone15' } : { identifier: 'phone17pro' },
+        chrome: foldable ? DUO_CHROME : { identifier: 'phone17pro', screen: { width: 402, height: 874 }, screenRadius: 62 },
       });
     }
     if (pathname === '/grid/api') {
@@ -160,8 +178,21 @@ test('a device without a hinge exposes no hinge state and rotates counterclockwi
   );
   expect(client().hinge).toBeNull();
   expect(client().screen?.screenId).toBe(1);
+  // Only the Duo trades the generic iPhone shape for its own glass corners.
+  expect(client().displayCorners).toBeNull();
   await act(async () => client().rotate());
   expect(socket.frames().at(-1)).toEqual({ tag: 0x07, payload: { orientation: 'landscape_left' } });
+});
+
+test("the flat view gets the active display's glass corners, turned with the device", async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  // Before the first config the cover profile applies.
+  expect(client().displayCorners).toEqual({ topLeft: 8 / 466, topRight: 59 / 466, bottomRight: 59 / 466, bottomLeft: 8 / 466 });
+  await act(async () => socket.push(0x82, INNER_OPEN));
+  expect(client().displayCorners).toEqual({ topLeft: 51.5 / 626, topRight: 51.5 / 626, bottomRight: 51.5 / 626, bottomLeft: 51.5 / 626 });
+  await act(async () => socket.push(0x82, { ...COVER, orientation: 'landscape_right' }));
+  expect(client().displayCorners).toEqual({ topLeft: 59 / 678, topRight: 59 / 678, bottomRight: 8 / 678, bottomLeft: 8 / 678 });
 });
 
 test('the Duo reports its hinge from the pushed screen config and keeps the flat stream by default', async () => {

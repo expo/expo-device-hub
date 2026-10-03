@@ -15,7 +15,11 @@ import {
   deviceViewportStyle,
   type DeviceFrameAssets,
 } from './deviceFrame';
-import { deviceScreenClipPath } from './deviceScreenClipPath';
+import {
+  deviceScreenClipPath,
+  deviceScreenCornersClipPath,
+  type ScreenCornerRadiiCqw,
+} from './deviceScreenClipPath';
 
 const PRELOADED_FRAME_STYLE: CSSProperties = {
   position: 'absolute',
@@ -112,7 +116,22 @@ export function PhoneFrame({
   // `cqw` resolves against the width, but the radius should stay a fraction of
   // the *short* side so the corners look the same in portrait and landscape.
   const radiusCqw = (radiusFraction / Math.max(ratio, 1)) * 100;
-  const borderRadius = `${radiusCqw.toFixed(3)}cqw`;
+  // A display that describes its own glass, like the iPhone Duo's cover and
+  // inner panel, is clipped to those corners: what the 3D model shows head-on,
+  // without the frame. The client already turned them with the device.
+  const displayCorners: ScreenCornerRadiiCqw | null = client?.displayCorners
+    ? {
+        topLeft: client.displayCorners.topLeft * 100,
+        topRight: client.displayCorners.topRight * 100,
+        bottomRight: client.displayCorners.bottomRight * 100,
+        bottomLeft: client.displayCorners.bottomLeft * 100,
+      }
+    : null;
+  const borderRadius = displayCorners
+    ? [displayCorners.topLeft, displayCorners.topRight, displayCorners.bottomRight, displayCorners.bottomLeft]
+        .map((corner) => `${corner.toFixed(3)}cqw`)
+        .join(' ')
+    : `${radiusCqw.toFixed(3)}cqw`;
   const live = client && client.status !== 'idle';
   const overlayVisible =
     !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
@@ -179,13 +198,16 @@ export function PhoneFrame({
         inset: 0,
         // One responsive path clips both the stream and every overlay, which
         // avoids fractional seams between separate composited masks.
-        clipPath: deviceScreenClipPath(radiusCqw, squircle),
+        clipPath: displayCorners
+          ? deviceScreenCornersClipPath(displayCorners, false)
+          : deviceScreenClipPath(radiusCqw, squircle),
       };
 
   return (
     <div
       data-testid="device-screen-frame"
       data-device-frame-kind={framed ? device.deviceFrame : 'none'}
+      data-display-corners={displayCorners ? 'device' : undefined}
       data-agent-active={agentInteraction ? 'true' : 'false'}
       style={framed ? framed.frameStyle : { ...wrapperStyle, borderRadius }}
       onPointerEnter={(event) => {

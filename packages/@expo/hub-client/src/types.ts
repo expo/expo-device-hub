@@ -77,6 +77,19 @@ export interface ScreenSize extends HingeControlState {
   physicalOrientation?: HingePhysicalOrientation;
 }
 
+/**
+ * Corner radii of the active display's glass as the viewer sees it, clockwise
+ * from top left, each a fraction of the displayed width. serve-sim reads them
+ * from Xcode's DeviceKit profile; the iPhone Duo's cover, for example, is
+ * nearly square at the hinge and round at the outer edge.
+ */
+export interface DisplayCornerRadii {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+}
+
 /** How an iPhone Duo is presented: the flat active display, or Xcode's folding 3D model. */
 export type DuoPreviewMode = '2d' | '3d';
 
@@ -712,6 +725,12 @@ export interface DeviceClient {
   screen: ScreenSize | null;
   /** iPhone Duo hinge state and controls; null for devices without a hinge. */
   hinge: DeviceHinge | null;
+  /**
+   * The active display's own glass corners for the flat view, oriented with
+   * the device; null keeps the presentation's generic shape for the platform.
+   * Set for the iPhone Duo, whose displays the generic iPhone shape cannot express.
+   */
+  displayCorners: DisplayCornerRadii | null;
   /** Best-effort frames-per-second (0 when unavailable). */
   fps: number;
   /** Running devices the server exposes (may be a placeholder list). */
