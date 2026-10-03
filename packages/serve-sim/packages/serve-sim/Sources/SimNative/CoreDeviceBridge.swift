@@ -15,12 +15,27 @@ actor CoreDeviceBridge {
     private var capabilities = BootBoundCache<String, String, CoreDeviceCapabilityObject>()
     private var hingeSupport: [String: Bool] = [:]
     private var hingeResetGenerations: [String: UInt64] = [:]
-    struct HingeState {
+    struct HingeState: Equatable, Sendable {
         var angle: Double?
         var orientation: String?
         var tableMode: Bool?
     }
     private var hingeStates: [String: HingeState] = [:]
+    private var hingeStateRevisions: [String: UInt64] = [:]
+    private let hingeAngleReader: (@Sendable (String) async -> Double?)?
+
+    init(hingeAngleReader: (@Sendable (String) async -> Double?)? = nil) {
+        self.hingeAngleReader = hingeAngleReader
+    }
+
+    func cachedHingeState(udid: String) -> HingeState {
+        hingeStates[udid] ?? HingeState()
+    }
+
+    func updateHingeState(udid: String, _ update: (inout HingeState) -> Void) {
+        update(&hingeStates[udid, default: HingeState()])
+        hingeStateRevisions[udid, default: 0] &+= 1
+    }
 
     /// CoreDevice's capability objects belong to a simulator boot. A new capture
     /// session must not reuse them after that device boots again in the same
@@ -34,20 +49,30 @@ actor CoreDeviceBridge {
         hingeResetGenerations[udid, default: 0] &+= 1
         hingeSupport.removeValue(forKey: udid)
         hingeStates.removeValue(forKey: udid)
+        hingeStateRevisions.removeValue(forKey: udid)
     }
 
     func hingeState(udid: String) async -> HingeState {
         let generation = hingeResetGenerations[udid, default: 0]
-        let angle = await readHingeAngle(udid: udid)
-        guard hingeResetGenerations[udid, default: 0] == generation else {
-            return hingeStates[udid] ?? HingeState()
-        }
+        let previous = hingeStates[udid]
+        let revision = hingeStateRevisions[udid, default: 0]
+        let angle: Double?
+        if let hingeAngleReader { angle = await hingeAngleReader(udid) }
+        else { angle = await readHingeAngle(udid: udid) }
+        // Preserve newer commands, reads, and boot state across the native await.
+        guard hingeResetGenerations[udid, default: 0] == generation,
+              hingeStateRevisions[udid, default: 0] == revision else { return cachedHingeState(udid: udid) }
         if let angle {
-            hingeStates[udid, default: HingeState()].angle = angle
+            updateHingeState(udid: udid) { state in
+                if let oldAngle = previous?.angle, abs(oldAngle - angle) > 0.01 {
+                    state = HingeState()
+                }
+                state.angle = angle
+            }
         }
         // If readback is unavailable, retain the last individually successful
         // sends, including the portion of a preset applied before its failure.
-        return hingeStates[udid] ?? HingeState()
+        return cachedHingeState(udid: udid)
     }
 
     func remoteDevice(udid: String) async throws -> CoreDeviceRemoteDevice {
@@ -127,7 +152,7 @@ actor CoreDeviceBridge {
         let generation = hingeResetGenerations[udid, default: 0]
         let sent = await sendControl(udid: udid, data: data)
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { hingeStates[udid, default: HingeState()].angle = angle }
+        if sent { updateHingeState(udid: udid) { $0.angle = angle } }
         return sent
     }
 
@@ -171,7 +196,7 @@ actor CoreDeviceBridge {
         // still fail, and a real send failure must not be reported as success.
         guard SSCoreDeviceTableModeAvailable() else {
             fputs("[hid] CoreDevice Table Mode unavailable in this Xcode\n", stderr)
-            if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
+            if !enabled { updateHingeState(udid: udid) { $0.tableMode = false } }
             return !enabled
         }
         let generation = hingeResetGenerations[udid, default: 0]
@@ -183,13 +208,13 @@ actor CoreDeviceBridge {
             )
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
             let sent = SSCoreDeviceSendTableMode(capability.storage, enabled)
-            if sent { hingeStates[udid, default: HingeState()].tableMode = enabled }
+            if sent { updateHingeState(udid: udid) { $0.tableMode = enabled } }
             if !sent { capabilities.removeValue(forKey: "\(udid):\(metadataSymbol)") }
             return sent
         } catch BridgeError.unavailable {
             fputs("[hid] CoreDevice Table Mode capability unavailable\n", stderr)
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-            if !enabled { hingeStates[udid, default: HingeState()].tableMode = false }
+            if !enabled { updateHingeState(udid: udid) { $0.tableMode = false } }
             return !enabled
         } catch {
             fputs("[hid] CoreDevice Table Mode failed: \(error)\n", stderr)
@@ -204,7 +229,7 @@ actor CoreDeviceBridge {
         let generation = hingeResetGenerations[udid, default: 0]
         let sent = await sendControl(udid: udid, data: data)
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { hingeStates[udid, default: HingeState()].orientation = value }
+        if sent { updateHingeState(udid: udid) { $0.orientation = value } }
         return sent
     }
 

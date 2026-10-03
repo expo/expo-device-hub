@@ -42,7 +42,7 @@ actor FrameCapture {
     private var pollGrid: PollDeadlineGrid?
     /// Each frame carries the viewer canvas computed on this actor, so the engine
     /// never has to hop back here on the frame path.
-    private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?) -> Void)?
+    private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?, CapturedScreenInfo) -> Void)?
     private var webRTCCanvasCache: Dimensions?
     private var screenObservers: [UUID: @Sendable () -> Void] = [:]
     private var frameCount: UInt64 = 0
@@ -101,7 +101,7 @@ actor FrameCapture {
     private var ioClient: NSObject?
 
     func start(deviceUDID: String, screenID: UInt32? = nil,
-               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void) async throws {
+               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?, CapturedScreenInfo) -> Void) async throws {
         self.onFrame = onFrame
         self.deviceUDID = deviceUDID
         fixedScreenID = screenID
@@ -530,7 +530,8 @@ actor FrameCapture {
         }
         frameCount += 1
         if force { idleFrameCount += 1 } else { screenFrameCount += 1 }
-        onFrame?(copy, timestamp, webRTCEncodeCanvasSize())
+        onFrame?(copy, timestamp, webRTCEncodeCanvasSize(),
+                 CapturedScreenInfo(width: w, height: h, display: display))
     }
 
     /// Snapshotting straight to the delivery size avoids moving the whole framebuffer through
