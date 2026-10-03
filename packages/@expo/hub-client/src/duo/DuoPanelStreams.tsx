@@ -44,14 +44,17 @@ function DuoPanelStream({
   const decoded = useRef(false);
   const feedsRef = useRef(feeds);
   feedsRef.current = feeds;
+  const activeRef = useRef(active);
+  activeRef.current = active;
 
+  // Stable, so a panel handoff never restarts the hidden feed's decoder.
   const onFrame = useCallback(() => {
     if (!decoded.current) {
       decoded.current = true;
       setStreaming(true);
     }
-    if (active) feedsRef.current.onFrame?.();
-  }, [active]);
+    if (activeRef.current) feedsRef.current.onFrame?.();
+  }, []);
 
   useMjpegPanel(mode === 'mjpeg' ? `${url}/stream.mjpeg` : null, imgRef, onFrame);
 
