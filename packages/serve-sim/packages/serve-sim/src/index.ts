@@ -28,6 +28,7 @@ import { crashRuntime } from "./crash/runtime";
 import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
 import { runShutdownSteps } from "./shutdown-budget";
+import { hasHostSignalHandler } from "./process-signal-handlers";
 import { launchAppAsync } from "./launch-app";
 import {
   assertKnownCapabilities,
@@ -2386,7 +2387,7 @@ Examples:
             disarmDevicesArmedHere();
           });
           for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
-            process.on(signal, async () => {
+            const onSessionSignal = async () => {
               sessionStopping = true;
               // A failed capture teardown must not keep the devices armed.
               try {
@@ -2397,9 +2398,10 @@ Examples:
                 );
               }
               await disarmDevicesArmedHereAsync();
-              if (process.listenerCount(signal) > 1) return;
+              if (hasHostSignalHandler(signal, onSessionSignal)) return;
               process.exit(0);
-            });
+            };
+            process.on(signal, onSessionSignal);
           }
         }
         for (const udid of targets) {

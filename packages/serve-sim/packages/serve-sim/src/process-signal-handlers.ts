@@ -4,7 +4,7 @@ export function markFallbackSignalHandler(handler: (signal: NodeJS.Signals) => v
   fallbackHandlers.add(handler);
 }
 
-/** Library cleanup hooks defer to the host that owns its shutdown. */
-export function hasHostSignalHandler(signal: NodeJS.Signals): boolean {
-  return process.listeners(signal).some((handler) => !fallbackHandlers.has(handler));
+/** Library fallback hooks do not own shutdown. */
+export function hasHostSignalHandler(signal: NodeJS.Signals, exclude?: (signal: NodeJS.Signals) => void): boolean {
+  return process.listeners(signal).some((handler) => handler !== exclude && !fallbackHandlers.has(handler));
 }

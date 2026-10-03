@@ -13,9 +13,11 @@ type Probe = {
   slowDisarm?: boolean;
   repeat?: boolean;
   releaseOnSignal?: boolean;
+  deferToOtherHost?: boolean;
+  otherHost?: boolean;
 };
 
-async function stopEmbeddedHost({ signal, host, capture, update, slowDisarm, repeat, releaseOnSignal }: Probe) {
+async function stopEmbeddedHost({ signal, host, capture, update, slowDisarm, repeat, releaseOnSignal, deferToOtherHost, otherHost }: Probe) {
   const state = useTempStateDir();
   const udid = `EMBEDDED-CLEANUP-${process.pid}`;
   const ready = join(state.dir, "ready");
@@ -45,14 +47,17 @@ async function stopEmbeddedHost({ signal, host, capture, update, slowDisarm, rep
         const { appendFileSync, writeFileSync } = await import("fs");
         const { setCapabilityEnabled, readLaunchState, releaseSession } = await import(${JSON.stringify(manager)});
         const { clipboardCapability } = await import(${JSON.stringify(clipboard)});
-        const installHost = () => process.on(${JSON.stringify(signal)}, () => {
+        const { hasHostSignalHandler } = await import(${JSON.stringify(join(import.meta.dir, "../process-signal-handlers.ts"))});
+        const onHostSignal = async () => {
           appendFileSync(${JSON.stringify(handled)}, ${JSON.stringify("handled\n")});
-          ${releaseOnSignal ? `void releaseSession(${JSON.stringify(udid)}, process.pid, () => {});` : ""}
+          ${releaseOnSignal ? `${deferToOtherHost ? "await" : "void"} releaseSession(${JSON.stringify(udid)}, process.pid, () => {});` : ""}
+          ${deferToOtherHost ? `if (hasHostSignalHandler(${JSON.stringify(signal)}, onHostSignal)) return;` : ""}
           setTimeout(() => {
             writeFileSync(${JSON.stringify(hostStatus)}, readLaunchState(${JSON.stringify(udid)})?.capabilities.clipboard ? "retained" : "released");
             process.exit(23);
           }, 100);
-        });
+        };
+        const installHost = () => process.on(${JSON.stringify(signal)}, onHostSignal);
         const installCapture = async () => {
           const { captureReapersForTest } = await import(${JSON.stringify(engine)});
           captureReapersForTest.add(() => appendFileSync(${JSON.stringify(reaped)}, ${JSON.stringify("reaped\n")}));
@@ -64,6 +69,10 @@ async function stopEmbeddedHost({ signal, host, capture, update, slowDisarm, rep
         ${host === "after" ? "installHost();" : ""}
         ${host === "during" ? "setTimeout(installHost, 100);" : ""}
         ${capture === "after" ? "await installCapture();" : ""}
+        ${otherHost ? `process.on(${JSON.stringify(signal)}, () => setTimeout(() => {
+          writeFileSync(${JSON.stringify(hostStatus)}, readLaunchState(${JSON.stringify(udid)})?.capabilities.clipboard ? "retained" : "released");
+          process.exit(24);
+        }, 250));` : ""}
         setInterval(() => {}, 1000);
         ${update ? `
           void setCapabilityEnabled(${JSON.stringify(udid)}, {
@@ -104,7 +113,7 @@ async function stopEmbeddedHost({ signal, host, capture, update, slowDisarm, rep
             exitTimeout = setTimeout(() => reject(new Error(`Embedded host did not stop: ${stderr}`)), 12_000);
           }),
         ]);
-        expect(result).toEqual(host ? { code: 23, signal: null } : { code: null, signal });
+        expect(result).toEqual(host ? { code: otherHost ? 24 : 23, signal: null } : { code: null, signal });
         if (host) {
           expect(readFileSync(handled, "utf8")).toBe("handled\n");
           expect(readFileSync(hostStatus, "utf8")).toBe(host === "during" || releaseOnSignal ? "released" : "retained");
@@ -152,7 +161,9 @@ for (const host of ["before", "after"] as const) {
 for (const capture of ["before", "after"] as const) {
   test(`embedded cleanup cooperates with a capture reaper registered ${capture}`, () => stopEmbeddedHost({ signal: "SIGTERM", capture }));
   test(`host shutdown owns clipboard and capture registered ${capture}`, () => stopEmbeddedHost({ signal: "SIGTERM", capture, host: "after" }));
+  test(`CLI shutdown ignores fallback hooks with capture registered ${capture}`, () => stopEmbeddedHost({ signal: "SIGTERM", capture, host: "after", releaseOnSignal: true, deferToOtherHost: true }), 15_000);
 }
+test("CLI shutdown defers to another host owner", () => stopEmbeddedHost({ signal: "SIGTERM", capture: "after", host: "after", releaseOnSignal: true, deferToOtherHost: true, otherHost: true }));
 test("signal cleanup waits for publication, refuses later enables, and handles repeated signals", () => stopEmbeddedHost({ signal: "SIGTERM", update: "finishes", repeat: true }));
 test("a host registered during cleanup receives the original signal once", () => stopEmbeddedHost({ signal: "SIGTERM", update: "finishes", host: "during" }));
 test("a stalled publication cannot suppress default signal termination", () => stopEmbeddedHost({ signal: "SIGTERM", update: "stalls", capture: "before" }), 15_000);
