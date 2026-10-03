@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 
 // Pinned scrcpy server version. Bumping it means re-validating the wire protocol
 // in `scrcpy.ts` (the framing drifts between scrcpy majors).
-// @ref LLP 0008 — Canonical wire spec and upgrade checklist
+// @ref LLP 0008#scrcpy-upgrade-checklist — Canonical wire spec and upgrade checklist
 export const SCRCPY_VERSION = "4.0";
 
 const DOWNLOAD_URL = `https://github.com/Genymobile/scrcpy/releases/download/v${SCRCPY_VERSION}/scrcpy-server-v${SCRCPY_VERSION}`;
