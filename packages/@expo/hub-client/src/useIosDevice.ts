@@ -595,8 +595,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setHingePending(pending);
         setHingeCommands((previous) => ({ ...previous, pending }));
       },
-      onError: (message, command) => {
-        if (command.control === 'pose') restorePresetView();
+      onResult: (command, reply) => {
+        // An acknowledged preset owns the view from here; a later failure
+        // must not undo it.
+        if (reply.ok && command.control === 'pose') presetRestoreRef.current = null;
+      },
+      onError: (message) => {
+        // A failure discards the whole queue, including any preset whose view
+        // is already showing but was never sent or confirmed.
+        restorePresetView();
         presetRestoreRef.current = null;
         setHingeError(message);
         setHingePreview(null);
@@ -615,7 +622,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // the simulator's physical orientation (for example Laptop on a table).
     if (command.control === 'pose') {
       // Remember the view before the first preset of a burst; it is dropped
-      // once the helper confirms the preset.
+      // once the helper acknowledges a preset.
       presetRestoreRef.current ??= {
         view: duoViewRef.current,
         generation: viewGenerationRef.current,
@@ -753,6 +760,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
     let cancelled = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    // A newly selected device must not keep streaming the previous helper
+    // under its name while its own config resolves.
+    setConfig(null);
     setStatus('connecting');
     setError(null);
 
