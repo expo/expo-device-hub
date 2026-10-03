@@ -57,11 +57,13 @@ test("a retry tick does not start a second read while the first is in flight", a
   const client = await mount(backend);
 
   expect(signals).toHaveLength(1);
+  expect(client().locationCapabilities).toBe(false);
   for (let i = 0; i < 3; i++) await act(async () => ticks[0]!());
   expect(signals).toHaveLength(1);
 
   await act(async () => settle({ supported: true, location: { latitude: 1, longitude: 2 } }));
   expect(client().location).toEqual({ latitude: 1, longitude: 2 });
+  expect(client().locationCapabilities).toEqual({});
 });
 
 test("a settled read lets the next retry tick read again", async () => {
@@ -84,3 +86,23 @@ test("unmounting aborts the in-flight read", async () => {
   renderer = undefined;
   expect(signals[0]!.aborted).toBe(true);
 });
+
+for (const canClear of [false, true]) {
+  test(`location writes keep unchanged ${canClear ? "clearable" : "set-only"} capabilities`, async () => {
+    const client = await mount({
+      set: async (fix) => fix,
+      ...(canClear ? { clear: async () => {} } : {}),
+    });
+    const capabilities = client().locationCapabilities;
+    expect(capabilities).toEqual(canClear ? { clear: true } : {});
+    const fix = { latitude: 1, longitude: 2 };
+    await act(async () => client().setLocation(fix));
+    expect(client().location).toEqual(fix);
+    expect(client().locationCapabilities).toBe(capabilities);
+    if (canClear) {
+      await act(async () => client().clearLocation());
+      expect(client().location).toBeNull();
+      expect(client().locationCapabilities).toBe(capabilities);
+    }
+  });
+}

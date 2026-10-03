@@ -1,10 +1,8 @@
 # @expo/hub-client
 
-React hooks and a `DeviceScreen` component that mirror a live iOS simulator or Android
-emulator in the browser. This is the device-client layer of
-[Expo Device Hub](https://github.com/expo/expo-device-hub): it connects to the Hub's streaming
-backends (serve-sim for iOS, serve-emu for Android), paints the video, and forwards touch,
-gesture, and keyboard input back to the device.
+Render live iOS simulators and Android emulators in a React app. Connect through
+[Expo Device Hub](https://github.com/expo/expo-device-hub), show the device with
+`DeviceScreen`, and send touch, keyboard, and device controls.
 
 ## Requirements
 
@@ -12,8 +10,7 @@ gesture, and keyboard input back to the device.
   `expo-device-hub` DevTools plugin installed, or run `npx expo-device-hub` standalone.
   The hooks talk to the Hub's `/vendor/serve-sim` and `/vendor/serve-emu` routes.
 - React 18 or newer.
-- A browser. The package uses `WebSocket`, `EventSource`, WebCodecs, Media Source
-  Extensions, and WebRTC, so it is not meant to run in Node.
+- A browser to show the video and send input.
 
 ## Install
 
@@ -23,11 +20,9 @@ npm install @expo/hub-client
 
 ## Render a live device screen
 
-`useActiveDeviceClient` opens one connection to the selected device and returns a
-`DeviceClient`: the live connection state plus the controls. `DeviceScreen` paints that
-client's video and forwards pointer, gesture, and keyboard input. It is absolutely positioned
-and fills its parent, so give the parent a size and `position: relative`. `displayScreen`
-gives you the orientation-corrected screen size once the stream reports it.
+Use `useActiveDeviceClient` when the screen and controls live in one component.
+`DeviceScreen` fills its parent, so give the parent a size and `position: relative`.
+`displayScreen` gives you the screen size after accounting for rotation.
 
 ```tsx
 import { DeviceScreen, displayScreen, useActiveDeviceClient } from '@expo/hub-client';
@@ -60,37 +55,118 @@ export function LiveDevice({ udid }: { udid: string }) {
 - `client.status` moves through `'idle'`, `'connecting'`, `'streaming'`, and `'error'`
   (Android also reports `'reconnecting'`). `client.error` holds the last failure message.
 
-To talk to one backend directly, use the platform hooks with the backend's base URL:
+## Share a connection between components
+
+Use `DeviceClientProvider` when your screen, controls, and metrics live in separate
+components. They share one connection, and each component updates only for the client
+properties it reads.
+
+### Add the provider
+
+Wrap the components that need the device connection. The components below all use this
+provider:
 
 ```tsx
-import { useAndroidDeviceClient, useIosDeviceClient } from '@expo/hub-client';
+import { DeviceClientProvider } from '@expo/hub-client';
 
-const ios = useIosDeviceClient({
-  baseUrl: 'http://localhost:3400/vendor/serve-sim',
-  device: udid,
-  streamMode: 'h264',
-});
-
-const android = useAndroidDeviceClient({
-  baseUrl: 'http://localhost:3400/vendor/serve-emu',
-  device: 'emulator-5554',
-  streamMode: 'h264',
-});
+export function LiveSession({ udid }: { udid: string }) {
+  return (
+    <DeviceClientProvider
+      key={udid}
+      platform="ios"
+      options={{
+        baseUrl: 'http://localhost:3400/vendor/serve-sim',
+        device: udid,
+        streamMode: 'webrtc',
+      }}
+    >
+      <Screen />
+      <Controls />
+      <Cpu />
+    </DeviceClientProvider>
+  );
+}
 ```
 
-When embedding the iOS screen on another site, pass the public serve-sim mount that serves
-`/api` and `/helper` as `baseUrl`, for example `https://sim.example.test/preview/session`.
-The stream and input URLs then use that server. Start serve-sim with
-`--cors-origin <origin>` for the origin of the embedding page, for example
-`--cors-origin http://localhost:8081`. Without it, the exec-ws socket closes, and logs,
-events, metrics and UI requests stop, even when both servers run on `localhost`.
+For Android, use `platform="android"`, your serve-emu URL, and an adb serial such as
+`'emulator-5554'` for `device`.
 
-hub-client does not send a serve-sim access token yet. A serve-sim server started with
-`--require-token` answers these requests with 401. EAS Simulator Preview sessions always
-use a token, so embedding them needs the client token support which is planned.
+Use one provider per session. When switching sessions, set its `key` to the session ID
+so the old connection closes. Set `options.enabled` to `false` to disconnect, or use
+`platform={null}` while no device is selected.
 
-If the whole Device Hub is remote, pass its public mount to `useActiveDeviceClient`, for
-example `https://hub.example.test/device-hub`.
+### Read state and controls
+
+Destructure everything you need from one `useDeviceClient()` call:
+
+```tsx
+import { useDeviceClient } from '@expo/hub-client';
+
+function Controls() {
+  const { status, pressButton, rotate, reload } = useDeviceClient();
+  const connected = status === 'streaming';
+
+  return (
+    <div>
+      <span>{status}</span>
+      <button disabled={!connected} onClick={() => pressButton('home')}>Home</button>
+      <button disabled={!connected} onClick={rotate}>Rotate</button>
+      <button disabled={!connected} onClick={reload}>Reload</button>
+    </div>
+  );
+}
+```
+
+Status and control changes update this component. FPS, metrics, and log changes do not.
+
+### Show the screen
+
+Use `useDeviceScreenClient` with `DeviceScreen`. It follows screen and input changes
+without updating for metrics or logs.
+
+```tsx
+import { DeviceScreen, displayScreen, useDeviceScreenClient } from '@expo/hub-client';
+
+function Screen() {
+  const client = useDeviceScreenClient();
+  const screen = displayScreen(client.screen);
+  const aspectRatio = screen ? `${screen.width} / ${screen.height}` : '9 / 19.5';
+
+  return (
+    <div style={{ position: 'relative', width: 360, aspectRatio }}>
+      <DeviceScreen client={client} />
+    </div>
+  );
+}
+```
+
+### Show CPU usage
+
+Use `useDeviceClientSelector` when you need one value from a larger object. This component
+updates when the latest CPU percentage changes, even if memory or network readings change.
+
+```tsx
+import { useDeviceClientSelector } from '@expo/hub-client';
+
+function Cpu() {
+  const cpuPct = useDeviceClientSelector((client) => client.activity?.samples.at(-1)?.cpuPct);
+
+  return <span>{cpuPct == null ? 'Waiting for metrics' : `CPU ${cpuPct.toFixed(1)}%`}</span>;
+}
+```
+
+Reading `activity` with `useDeviceClient` would update the component whenever any part
+of `activity` changes.
+
+### Keep updates focused
+
+- Read state in your component body so it updates with the device. Data read only in an
+  event handler can be out of date. Controls such as `client.rotate()` use the latest callback.
+- Pick named properties when destructuring. Spreading the client or using `{ status, ...rest }`
+  subscribes to every property. Reading `activity.samples` subscribes to the whole `activity` object.
+- Keep selectors simple. Return a number, string, boolean, or an existing object. If you
+  build a new object, pass a comparison function as the second argument.
+- Treat the client and its data as read-only.
 
 ## Call device controls
 
@@ -127,6 +203,43 @@ Optional features such as device settings, camera feeds, the accessibility tree,
 and app permissions are only available on some backends. Check `client.capabilities` before
 you show their controls. The full `DeviceClient` contract, with a comment on every field, is
 in [`src/types.ts`](./src/types.ts).
+
+## Connect to a backend directly
+
+To connect directly to a backend, use `useIosDeviceClient` or `useAndroidDeviceClient`
+with that server's URL. For example, this component shows an Android connection's status:
+
+```tsx
+import { useAndroidDeviceClient } from '@expo/hub-client';
+
+function AndroidStatus() {
+  const { status } = useAndroidDeviceClient({
+    baseUrl: 'http://localhost:3400/vendor/serve-emu',
+    device: 'emulator-5554',
+    streamMode: 'h264',
+  });
+
+  return <span>{status}</span>;
+}
+```
+
+## Remote connections
+
+If the whole Device Hub is remote, pass its public mount to `useActiveDeviceClient`, for
+example `https://hub.example.test/device-hub`.
+
+### iOS embedding
+
+When embedding the iOS screen on another site, pass the public serve-sim mount that serves
+`/api` and `/helper` as `baseUrl`, for example `https://sim.example.test/preview/session`.
+The stream and input URLs then use that server. Start serve-sim with
+`--cors-origin <origin>` for the origin of the embedding page, for example
+`--cors-origin http://localhost:8081`. Without it, the exec-ws socket closes, and logs,
+events, metrics and UI requests stop, even when both servers run on `localhost`.
+
+hub-client does not send a serve-sim access token yet. A serve-sim server started with
+`--require-token` answers these requests with 401. EAS Simulator Preview sessions always
+use a token, so embedding them needs the client token support which is planned.
 
 ## License
 

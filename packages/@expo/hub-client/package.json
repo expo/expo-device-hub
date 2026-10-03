@@ -55,14 +55,21 @@
   "peerDependencies": {
     "react": ">=18.0.0"
   },
+  "dependencies": {
+    "use-sync-external-store": "^1.7.0"
+  },
   "devDependencies": {
     "@swc/cli": "^0.8.1",
     "@swc/core": "^1.15.43",
     "@types/bun": "latest",
     "@types/react": "~19.2.2",
+    "@types/react-dom": "19.2.3",
     "@types/react-test-renderer": "19.1.0",
+    "@types/use-sync-external-store": "1.5.0",
+    "happy-dom": "^20.14.5",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
+    "react-dom": "19.2.3",
     "react-test-renderer": "19.2.3",
     "typescript": "~6.0.3"
   },

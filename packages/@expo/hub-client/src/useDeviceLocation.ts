@@ -26,6 +26,8 @@ interface LocationState extends DeviceLocationRead {
 }
 
 const READ_RETRY_MS = 3000;
+const SET_LOCATION_CAPABILITIES: DeviceLocationCapabilities = {};
+const CLEAR_LOCATION_CAPABILITIES: DeviceLocationCapabilities = { clear: true };
 
 const NO_LOCATION: LocationState = {
   supported: false,
@@ -117,8 +119,8 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null) {
   const supported = backend ? (backend.read ? state.supported : true) : false;
   const locationCapabilities: DeviceLocationCapabilities = supported
     ? backend?.clear
-      ? { clear: true }
-      : {}
+      ? CLEAR_LOCATION_CAPABILITIES
+      : SET_LOCATION_CAPABILITIES
     : false;
 
   return {

@@ -15,6 +15,13 @@
 export * from './types';
 export { areRecordingControlsLocked } from './screen-recording';
 export { DeviceScreen } from './DeviceScreen';
+export {
+  DeviceClientProvider,
+  useDeviceClientSelector,
+  type DeviceClientProviderProps,
+} from './DeviceClientProvider';
+export { useDeviceClient } from './useDeviceClient';
+export { useDeviceScreenClient } from './useDeviceScreenClient';
 export { KeyboardCapture, type KeyboardCaptureProps } from './KeyboardCapture';
 export {
   AGENT_INTERACTION_IDLE_TIMEOUT_MS,
