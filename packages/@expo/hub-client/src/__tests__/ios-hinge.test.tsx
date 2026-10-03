@@ -193,6 +193,11 @@ test("the flat view gets the active display's glass corners, turned with the dev
   expect(client().displayCorners).toEqual({ topLeft: 51.5 / 626, topRight: 51.5 / 626, bottomRight: 51.5 / 626, bottomLeft: 51.5 / 626 });
   await act(async () => socket.push(0x82, { ...COVER, orientation: 'landscape_right' }));
   expect(client().displayCorners).toEqual({ topLeft: 59 / 678, topRight: 59 / 678, bottomRight: 8 / 678, bottomLeft: 8 / 678 });
+  // Landscape dimensions without an orientation field still turn the corners.
+  await act(async () =>
+    socket.push(0x82, { ...COVER, width: 2034, height: 1398, orientation: undefined }),
+  );
+  expect(client().displayCorners).toEqual({ topLeft: 8 / 678, topRight: 8 / 678, bottomRight: 59 / 678, bottomLeft: 59 / 678 });
 });
 
 test('the Duo reports its hinge from the pushed screen config and keeps the flat stream by default', async () => {

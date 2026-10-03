@@ -41,6 +41,7 @@ import {
 import {
   type DeviceDisplayChrome,
   displayChromeForScreen,
+  displayClipOrientation,
   displayCornerRadii,
 } from './display-corners';
 import { duoIntendedScreen, duoPhysicalPoseChanged } from './duo/duo-pose';
@@ -457,9 +458,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const displayCorners = useMemo<DisplayCornerRadii | null>(
     () =>
       isDuo && config?.chrome
-        ? displayCornerRadii(displayChromeForScreen(config.chrome, screen?.screenId), screen?.orientation)
+        ? displayCornerRadii(
+            displayChromeForScreen(config.chrome, screen?.screenId),
+            displayClipOrientation(screen),
+          )
         : null,
-    [isDuo, config?.chrome, screen?.screenId, screen?.orientation],
+    [isDuo, config?.chrome, screen],
   );
   // The 3D model feeds both panels itself, so the flat stream parks meanwhile.
   const modelActive = isDuo && duoPreview === '3d';

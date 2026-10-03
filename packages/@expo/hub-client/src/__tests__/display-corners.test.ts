@@ -3,6 +3,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   type DeviceDisplayChrome,
   displayChromeForScreen,
+  displayClipOrientation,
   displayCornerRadii,
 } from '../display-corners';
 
@@ -34,6 +35,15 @@ describe('displayChromeForScreen', () => {
     expect(displayChromeForScreen(DUO, 1)?.identifier).toBe('phone15');
     expect(displayChromeForScreen(DUO, undefined)).toBe(DUO);
     expect(displayChromeForScreen(DUO, 7)).toBe(DUO);
+  });
+});
+
+describe('displayClipOrientation', () => {
+  test('uses the reported orientation, and otherwise reads it from the dimensions', () => {
+    expect(displayClipOrientation({ width: 2034, height: 1398, orientation: 'landscape_right' })).toBe('landscape_right');
+    expect(displayClipOrientation({ width: 2034, height: 1398 })).toBe('landscape_left');
+    expect(displayClipOrientation({ width: 1398, height: 2034 })).toBe('portrait');
+    expect(displayClipOrientation(null)).toBeUndefined();
   });
 });
 
