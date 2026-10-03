@@ -68,6 +68,11 @@ class Cdp {
     return (reply.result as { value: T }).value;
   }
 
+  async evaluateAsync<T>(expression: string, sessionId?: string): Promise<T> {
+    const reply = await this.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, sessionId);
+    return (reply.result as { value: T }).value;
+  }
+
   close(): void {
     this.ws.close();
   }
@@ -184,6 +189,25 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     await clickOnce(await waitForElement(HARDWARE_KEYBOARD_SWITCH, frame), frame);
   }
 
+  async function openClipboardMenu(frame: string): Promise<void> {
+    // The trigger sits inside an out-of-process iframe. Clicking its CDP rectangle can land
+    // on the parent surface even when the iframe DOM reports a valid local rectangle.
+    const trigger = `document.querySelector('[aria-label="Clipboard actions"]')`;
+    const deadline = Date.now() + 15_000;
+    let enabled = false;
+    while (Date.now() < deadline) {
+      enabled = await cdp.evaluate<boolean>(
+        `(() => { const button = ${trigger}; return !!button && !button.disabled; })()`, frame,
+      );
+      if (enabled) break;
+      await Bun.sleep(100);
+    }
+    expect(enabled).toBe(true);
+    expect(await cdp.evaluate<boolean>(
+      `(() => { const button = ${trigger}; if (!button || button.disabled) return false; button.click(); return true; })()`, frame,
+    )).toBe(true);
+  }
+
   async function typeKeys(text: string): Promise<void> {
     for (const key of text) {
       const shifted = key === "!" || key.toUpperCase() === key && key.toLowerCase() !== key;
@@ -240,7 +264,22 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
       port: 0,
       hostname: "127.0.0.1",
       fetch: () => new Response(
-        `<!doctype html><body style="margin:0"><iframe src="${simUrl}" style="width:100vw;height:100vh;border:0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" allow="clipboard-write; fullscreen"></iframe></body>`,
+        `<!doctype html><body style="margin:0"><iframe src="${simUrl}" style="width:100vw;height:100vh;border:0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" allow="clipboard-write; fullscreen"></iframe><script>
+          window.clipboardPermissionRequests = [];
+          window.clipboardPermissionGrants = [];
+          window.addEventListener("message", (event) => {
+            const iframe = document.querySelector("iframe");
+            if (event.source !== iframe.contentWindow) return;
+            if (event.data?.type === "serve-sim:permission-request") {
+              window.clipboardPermissionRequests.push(event.data.permission);
+              if (event.data.permission === "clipboard-read" && !iframe.allow.includes("clipboard-read")) {
+                iframe.allow = "clipboard-read; clipboard-write; fullscreen";
+                window.clipboardPermissionGrants.push(event.data.permission);
+                iframe.src = iframe.src;
+              }
+            }
+          });
+        </script></body>`,
         { headers: { "content-type": "text/html" } },
       ),
     });
@@ -299,6 +338,92 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     await clickOnce(stream);
     await typeKeys("zq");
     await waitFor(() => lastText(start), "zq");
+  }, 90_000);
+
+  test("a framed Paste request can gain clipboard-read after the parent grants and reloads", async () => {
+    let frame = await openFramed();
+    // The browser's own clipboard grant is independent of the parent's iframe policy.
+    // Grant it here so the test isolates the parent-policy request and reload path.
+    await cdp.send("Browser.setPermission", {
+      permission: { name: "clipboard-read" },
+      setting: "granted",
+      origin: `http://127.0.0.1:${parent.port}`,
+      embeddedOrigin: new URL(simUrl).origin,
+    });
+    const allowed = () => cdp.evaluate<boolean>(
+      `document.permissionsPolicy?.allowsFeature("clipboard-read") ?? document.featurePolicy?.allowsFeature("clipboard-read") ?? false`,
+      frame,
+    );
+    expect(await allowed()).toBe(false);
+
+    await openClipboardMenu(frame);
+    await clickOnce(await waitForElement(
+      `[...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.includes("Paste from Device"))`,
+      frame,
+    ));
+    const deadline = Date.now() + 10_000;
+    let requests: string[] = [];
+    while (Date.now() < deadline) {
+      requests = await cdp.evaluate<string[]>("window.clipboardPermissionRequests");
+      if (requests.includes("clipboard-read")) break;
+      await Bun.sleep(100);
+    }
+    expect(requests).toContain("clipboard-read");
+
+    expect(await cdp.evaluate<string[]>("window.clipboardPermissionGrants")).toContain("clipboard-read");
+    const grantDeadline = Date.now() + 15_000;
+    let granted = false;
+    while (Date.now() < grantDeadline) {
+      frame = cdp.frameSessions.at(-1) ?? frame;
+      granted = await allowed();
+      if (granted) break;
+      await Bun.sleep(100);
+    }
+    expect(granted).toBe(true);
+    expect(await cdp.evaluateAsync<string>(
+      `navigator.permissions.query({ name: "clipboard-read" }).then((permission) => permission.state)`, frame,
+    )).toBe("granted");
+    const toastDeadline = Date.now() + 10_000;
+    let grantToast = false;
+    while (Date.now() < toastDeadline) {
+      grantToast = await cdp.evaluate<boolean>(
+        `document.body.innerText.includes("Clipboard allowed. Paste again")`, frame,
+      );
+      if (grantToast) break;
+      await Bun.sleep(100);
+    }
+    expect(grantToast).toBe(true);
+
+    const start = await launchTextField();
+    const stream = await waitForElement(STREAM_LAYER, frame, 0.75);
+    await clickOnce(stream);
+    const text = "framed paste after permission";
+    expect(await cdp.evaluateAsync<boolean>(
+      `navigator.clipboard.writeText(${JSON.stringify(text)}).then(() => true, () => false)`, frame,
+    )).toBe(true);
+    await openClipboardMenu(frame);
+    await clickOnce(await waitForElement(
+      `[...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.includes("Paste from Device"))`,
+      frame,
+    ));
+    const pasteDeadline = Date.now() + 8_000;
+    let pasteToasts = "";
+    const seenToasts = new Set<string>();
+    while (Date.now() < pasteDeadline) {
+      pasteToasts = await cdp.evaluate<string>(
+        `[...document.querySelectorAll('[data-testid="clipboard-toast"]')].map((toast) => toast.textContent).join(' | ')`,
+        frame,
+      );
+      if (pasteToasts) seenToasts.add(pasteToasts);
+      if (pasteToasts.includes("Pasted into simulator")) break;
+      await Bun.sleep(100);
+    }
+    expect([...seenToasts].join(" | ")).toContain("Pasted into simulator");
+    try {
+      await waitFor(() => lastText(start), text);
+    } catch {
+      throw new Error(`Paste did not reach the simulator after success toast: ${pasteToasts}`);
+    }
   }, 90_000);
 
   test("the keyboard still types after switching the hardware keyboard in the tools panel", async () => {

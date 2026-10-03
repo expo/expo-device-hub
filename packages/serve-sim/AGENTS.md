@@ -42,9 +42,12 @@ predicts a green PR.
   state directory, so it never kills another session's server. It builds the
   test fixtures, then sets `SERVE_SIM_E2E_REQUIRED=1` so every precondition
   fails instead of skipping. Every suite that picks a device with
-  `e2eDevice()` also calls `requireE2E()`; a test enforces the pairing. One
-  suite, `ui-settings.e2e`, skips on CI by design because `simctl ui` hangs
-  on shared runners; `SERVE_SIM_UI_E2E=1` forces it on. On exit the run
+  `e2eDevice()` also calls `requireE2E()`; a test enforces the pairing. Two
+  suites skip on CI by design, and they still check their preconditions:
+  `ui-settings.e2e`, because `simctl ui` hangs on shared runners
+  (`SERVE_SIM_UI_E2E=1` forces it on), and `sim-clipboard.e2e`, because the
+  `simctl pbpaste` round-trip is unreliable there
+  (`SERVE_SIM_CLIPBOARD_E2E=1` forces it on). On exit the run
   kills any server it started and removes its state directory. Export
   `SERVE_SIM_STATE_DIR` yourself to point a run at a server you started, and
   it is left alone. Example: `SERVE_SIM_TEST_UDID=<udid> bun run test:e2e --
