@@ -1,4 +1,4 @@
-// @ref LLP 0008 — Canonical control-message layout and upgrade checklist
+// @ref LLP 0008#control-socket-packets — Canonical control-message layout and upgrade checklist
 // ControlMessage type codes validated against the pinned scrcpy server.
 const TYPE_INJECT_KEYCODE = 0;
 const TYPE_INJECT_TEXT = 1;

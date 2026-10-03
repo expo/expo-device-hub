@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { SCRCPY_VERSION, ensureScrcpyServer } from "./scrcpy-server.ts";
 import { execText } from "./exec.ts";
 
-// @ref LLP 0008 — Canonical scrcpy wire layouts and upgrade checklist
+// @ref LLP 0008#video-packets — Canonical scrcpy wire layouts and upgrade checklist
 const DEVICE_JAR_CACHE_PATH =
   `/data/local/tmp/serve-emu-scrcpy-server-v${SCRCPY_VERSION}.jar`;
 
