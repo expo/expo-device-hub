@@ -1,15 +1,7 @@
-export type FramePermission = "camera" | "clipboard-read";
+type FramePermission = "clipboard-read";
 
 type PermissionsPolicy = { allowsFeature(feature: string): boolean };
 type PolicyDocument = Document & { permissionsPolicy?: PermissionsPolicy; featurePolicy?: PermissionsPolicy };
-
-/** True when this page is framed and the embedding page has not granted the permission. */
-export function framePolicyBlocks(permission: FramePermission): boolean {
-  if (window.parent === window) return false;
-  const doc: PolicyDocument = document;
-  const policy = doc.permissionsPolicy ?? doc.featurePolicy;
-  return policy ? !policy.allowsFeature(permission) : false;
-}
 
 /** On a failed read, an uninspectable frame policy may be the cause. */
 export function frameMayNeedPermissionAfterFailure(permission: FramePermission, browserHasReadApi: boolean): boolean {

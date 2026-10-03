@@ -155,7 +155,7 @@ Options:
                       Turn on a capability that is off by default (repeatable)
       --disable <capability>
                       Turn off a capability that is on by default (repeatable).
-                      Capabilities: camera (off), clipboard (on)
+                      Capabilities: camera (off), clipboard (on), networkCapture (off)
       --list [device] List running streams
       --kill [device] Kill running stream(s)
 
@@ -448,7 +448,7 @@ bun run --filter @expo/serve-sim tart-dev
 
 `tart-dev` starts the VM if needed, boots an iPhone 17, runs `bun run dev.ts` on the guest, and tunnels guest `:3200` to the host. Host port `3200` must be free. Ctrl-C stops the tunnel and the guest server.
 
-`tart-test` uses the same guest, but runs `bun test` there as `expo`. With no files it runs every pasteboard and clipboard test (Copy HID, inject, the endpoint, SpringBoard). Pass paths to run something else.
+`tart-test` uses the same guest, but runs `bun test` there as `expo`. With no files it runs the selected pasteboard and clipboard suites (Copy HID, inject, the endpoint, SpringBoard). Pass paths to run something else.
 
 ```sh
 bun run --filter @expo/serve-sim tart-test

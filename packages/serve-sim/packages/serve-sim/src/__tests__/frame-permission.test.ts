@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { frameMayNeedPermissionAfterFailure, framePolicyBlocks, requestFramePermission, takeFramePermissionGrant } from "../client/utils/frame-permission";
+import { frameMayNeedPermissionAfterFailure, requestFramePermission, takeFramePermissionGrant } from "../client/utils/frame-permission";
 
 type Frame = {
   posted: Array<{ message: unknown; targetOrigin: string }>;
@@ -43,41 +43,15 @@ function withFrame(policy: "permissionsPolicy" | "featurePolicy" | null, allowed
   }));
 }
 
-describe("framePolicyBlocks", () => {
-  test("reports a permission the embedding page did not grant", () => {
+describe("frameMayNeedPermissionAfterFailure", () => {
+  test("requests help after a failed read when the embedding page did not grant permission", () => {
     withFrame("permissionsPolicy", ["clipboard-write"], () => {
-      expect(framePolicyBlocks("clipboard-read")).toBe(true);
+      expect(frameMayNeedPermissionAfterFailure("clipboard-read", true)).toBe(true);
     });
   });
 
   test("reads the older featurePolicy API", () => {
     withFrame("featurePolicy", ["clipboard-write"], () => {
-      expect(framePolicyBlocks("clipboard-read")).toBe(true);
-    });
-  });
-
-  test("passes a permission the embedding page granted", () => {
-    withFrame("permissionsPolicy", ["clipboard-read"], () => {
-      expect(framePolicyBlocks("clipboard-read")).toBe(false);
-    });
-  });
-
-  test("passes a page that is not framed", () => {
-    const self: { parent?: unknown } = {};
-    self.parent = self;
-    withGlobals({ window: self, document: {} }, () => {
-      expect(framePolicyBlocks("clipboard-read")).toBe(false);
-    });
-  });
-
-  test("does not guess when the browser has no policy API", () => {
-    withFrame(null, [], () => {
-      expect(framePolicyBlocks("camera")).toBe(false);
-    });
-  });
-
-  test("requests help after a failed read when a frame has no policy API", () => {
-    withFrame(null, [], () => {
       expect(frameMayNeedPermissionAfterFailure("clipboard-read", true)).toBe(true);
     });
   });
@@ -85,6 +59,20 @@ describe("framePolicyBlocks", () => {
   test("does not request a grant for unrelated read failures when policy allows it", () => {
     withFrame("permissionsPolicy", ["clipboard-read"], () => {
       expect(frameMayNeedPermissionAfterFailure("clipboard-read", true)).toBe(false);
+    });
+  });
+
+  test("does not request a grant when the page is not framed", () => {
+    const self: { parent?: unknown } = {};
+    self.parent = self;
+    withGlobals({ window: self, document: {} }, () => {
+      expect(frameMayNeedPermissionAfterFailure("clipboard-read", true)).toBe(false);
+    });
+  });
+
+  test("requests help after a failed read when a frame has no policy API", () => {
+    withFrame(null, [], () => {
+      expect(frameMayNeedPermissionAfterFailure("clipboard-read", true)).toBe(true);
     });
   });
 
@@ -116,7 +104,6 @@ describe("frame permission requests", () => {
       expect(takeFramePermissionGrant("clipboard-read")).toBe(false);
 
       frame.allow(["clipboard-read"]);
-      expect(takeFramePermissionGrant("camera")).toBe(false);
       expect(takeFramePermissionGrant("clipboard-read")).toBe(true);
       expect(takeFramePermissionGrant("clipboard-read")).toBe(false);
     });
