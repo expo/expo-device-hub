@@ -61,7 +61,7 @@ final class NativeVideoRecorder: @unchecked Sendable {
     private var input: AVAssetWriterInput?
     private var firstFrameWallClock: Date?
     private var firstWrittenPTS: CMTime?
-    private var deviceStates: [RecordingManifest.DeviceState] = []
+    private var deviceStateTimeline = RecordingDeviceStateTimeline()
     private var lastSnapshotTimestamp: CMTime?
     private var canvasBuffer: CVPixelBuffer?
     private var startNanoseconds: UInt64 = 0
@@ -340,11 +340,10 @@ final class NativeVideoRecorder: @unchecked Sendable {
         awaitingKeyframe = false
         if firstFrameWallClock == nil { firstFrameWallClock = wallClock }
         if firstWrittenPTS == nil { firstWrittenPTS = pts }
-        if deviceStates.last?.state != deviceState, let firstWrittenPTS {
-            deviceStates.append(.init(
-                timeMs: CMTimeSubtract(pts, firstWrittenPTS).seconds * 1_000,
-                state: deviceState
-            ))
+        if let firstWrittenPTS {
+            deviceStateTimeline.append(
+                state: deviceState, timeMs: CMTimeSubtract(pts, firstWrittenPTS).seconds * 1_000
+            )
         }
     }
 
@@ -466,9 +465,10 @@ final class NativeVideoRecorder: @unchecked Sendable {
             guard writer.status == .completed else {
                 throw writer.error ?? Self.error(14, "MP4 writer did not finish")
             }
+            deviceStateTimeline.finish()
             let manifest = RecordingManifest(
                 firstFrame: firstFrameWallClock,
-                width: canvas.width, height: canvas.height, deviceStates: deviceStates
+                width: canvas.width, height: canvas.height, deviceStates: deviceStateTimeline.entries
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

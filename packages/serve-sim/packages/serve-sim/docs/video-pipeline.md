@@ -158,8 +158,13 @@ timeline:
 Each event is the full known device state of a submitted video frame, committed
 to the timeline only after that frame is successfully appended to the MP4.
 The first event has `timeMs: 0`; subsequent times use the video's presentation
-clock relative to its first frame. Unchanged states are omitted. An event's
-`width` and `height` describe the active source panel; the manifest's top-level
+clock relative to its first frame. Unchanged states are omitted. Changes are
+coalesced to the latest written state at most four times per second, with
+250 ms between normal updates. On stop, the last update in a partial interval
+is replaced by the final written state, and adjacent duplicate states are
+removed. A clip shorter than 250 ms retains both its initial and final state
+when they differ. Every timestamp still identifies an actual written frame.
+An event's `width` and `height` describe the active source panel; the manifest's top-level
 dimensions describe the fixed recording canvas.
 
 `orientation` comes from native screen metadata and uses `portrait`,

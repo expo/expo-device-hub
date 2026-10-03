@@ -250,7 +250,7 @@ final class NativeVideoRecorderTests: XCTestCase {
             mailbox.publish(frame, timestamp: CMTime(value: Int64(index + 1), timescale: 60),
                             wallClock: Date(), deviceState: state)
             expected.append(state)
-            try await Task.sleep(for: .milliseconds(250))
+            try await Task.sleep(for: .milliseconds(350))
         }
         let result = try await recorder.finish()
         let data = try Data(contentsOf: URL(fileURLWithPath: result.manifestPath))
@@ -273,6 +273,55 @@ final class NativeVideoRecorderTests: XCTestCase {
         let restored = try XCTUnwrap(entries[4]["state"] as? [String: Any])
         XCTAssertEqual(restored["physicalOrientation"] as? String, "portrait")
         XCTAssertEqual(restored["tableMode"] as? Bool, false)
+    }
+
+    func testRapidHingeChangesAreCappedAndKeepFinalWrittenState() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("serve-sim-recorder-hinge-rate-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = NativeFrameMailbox()
+        mailbox.setActive(true)
+        let frame = try recordingFrame(width: 120, height: 240)
+        mailbox.publish(frame, timestamp: .zero, wallClock: Date(), deviceState: RecordingDeviceState(
+            width: 120, height: 240, orientation: "portrait", screenId: 0
+        ))
+        mailbox.updateHingeState(.init(angle: 0))
+        let recorder = try NativeVideoRecorder(
+            mailbox: mailbox, canvas: Dimensions(width: 120, height: 240),
+            outputDirectory: directory.path, bitrate: 2_000_000
+        )
+        recorder.start()
+        try await Task.sleep(for: .milliseconds(300))
+        for angle in 1...60 {
+            mailbox.updateHingeState(.init(angle: Double(angle)))
+            try await Task.sleep(for: .milliseconds(16))
+        }
+        mailbox.updateHingeState(.init(angle: 90))
+        try await Task.sleep(for: .milliseconds(80))
+        let result = try await recorder.finish()
+        let manifest = try JSONDecoder().decode(
+            RecordingManifest.self,
+            from: Data(contentsOf: URL(fileURLWithPath: result.manifestPath))
+        )
+        let states = try XCTUnwrap(manifest.deviceStates)
+        XCTAssertEqual(states.first?.timeMs, 0)
+        XCTAssertEqual(states.first?.state.hingeAngle, 0)
+        XCTAssertEqual(states.last?.state.hingeAngle, 90)
+        XCTAssertTrue(states.contains { (1...60).contains($0.state.hingeAngle ?? -1) })
+        XCTAssertGreaterThan(result.repeatedFrames, 20)
+        let sampleTimes = try await recordedSampleTimes(at: directory.appendingPathComponent("recording.mp4"))
+        let firstSampleTime = try XCTUnwrap(sampleTimes.first)
+        for event in states {
+            XCTAssertLessThanOrEqual(states.filter {
+                $0.timeMs >= event.timeMs && $0.timeMs < event.timeMs + 1_000 - 0.01
+            }.count, 4)
+            XCTAssertTrue(sampleTimes.contains {
+                abs(($0 - firstSampleTime) - event.timeMs) < 0.01
+            })
+        }
+        for (prior, next) in zip(states, states.dropFirst()) {
+            XCTAssertNotEqual(next.state, prior.state)
+        }
     }
 
     func testMailboxUpdatesPoseOnUnchangedFrameAndClearsUnknownFields() throws {

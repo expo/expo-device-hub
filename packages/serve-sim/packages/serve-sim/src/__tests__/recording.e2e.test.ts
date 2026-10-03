@@ -314,6 +314,7 @@ test.skipIf(!device)("records the simulator to a native-size H.264 file with a m
       expect(event.timeMs).toBeLessThanOrEqual(mp4.durationSeconds * 1000);
       expect(event.state.width).toBeGreaterThan(0);
       expect(event.state.height).toBeGreaterThan(0);
+      expect(events.filter(next => next.timeMs >= event.timeMs && next.timeMs < event.timeMs + 1000 - 0.01).length).toBeLessThanOrEqual(4);
       if (i > 0) {
         expect(event.timeMs).toBeGreaterThan(events[i - 1]!.timeMs);
         expect(event.state).not.toEqual(events[i - 1]!.state);
