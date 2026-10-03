@@ -107,6 +107,24 @@ final class RecordingDeviceStateTimelineTests: XCTestCase {
         XCTAssertEqual(timeline.entries.count, 2)
     }
 
+    func testFinishPreservesLongHeldRotationWhenTheFinalFrameReturnsToPortrait() {
+        var timeline = RecordingDeviceStateTimeline()
+        let portrait = state(angle: 90)
+        let landscape = RecordingDeviceState(
+            width: 240, height: 120, orientation: "landscape_left", screenId: 0, hingeAngle: 90
+        )
+        timeline.append(state: portrait, timeMs: 0)
+        timeline.append(state: landscape, timeMs: 250)
+        timeline.append(state: landscape, timeMs: 9_750)
+        timeline.append(state: portrait, timeMs: 10_000)
+        timeline.finish()
+        XCTAssertEqual(timeline.entries, [
+            .init(timeMs: 0, state: portrait),
+            .init(timeMs: 250, state: landscape),
+            .init(timeMs: 10_000, state: portrait),
+        ])
+    }
+
     func testFinishOnEmptyTimelineHasNoEntries() {
         var timeline = RecordingDeviceStateTimeline()
         timeline.finish()
