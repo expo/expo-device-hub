@@ -25,6 +25,7 @@ export interface ActiveDeviceClientOptions {
  * Connect to whichever device is selected and return its live {@link DeviceClient}.
  * With no target selected yet, returns {@link NOOP_DEVICE_CLIENT} so callers can render
  * an idle UI without connecting anything.
+ * @deprecated Use DeviceClientProvider with useDeviceClient or useDeviceScreenClient instead.
  */
 export function useActiveDeviceClient(
   target: ActiveDeviceTarget | null,

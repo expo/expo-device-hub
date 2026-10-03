@@ -8,13 +8,13 @@
  * H.264 (WebCodecs) and takes JSON gestures over a single WebSocket — so this
  * file defines one shared shape both can implement:
  *
- *   - a **hook** ({@link DeviceClientHook}) that owns the connection and returns
- *     the live {@link DeviceClient} state + controls, and
+ *   - {@link DeviceClientProvider} to own the connection, with {@link useDeviceClient}
+ *     and {@link useDeviceClientSelector} to read its state and controls, and
  *   - a **component** ({@link DeviceScreen}, see `./DeviceScreen.tsx`) that paints
  *     the stream and forwards pointer/gesture input.
  *
- * `useIosDeviceClient` (serve-sim) and `useAndroidDeviceClient` (serve-emu) are
- * the two implementations; `DeviceScreen` renders whichever one is active.
+ * Pass the result of {@link useDeviceScreenClient} to `DeviceScreen` to follow
+ * screen and input changes without subscribing to metrics, FPS or logs.
  */
 
 import { type CSSProperties } from 'react';
@@ -800,6 +800,20 @@ export interface DeviceClient {
 /** A platform implementation of the connection half of the interface. */
 export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClient;
 
+/** The client fields read by DeviceScreen. Full DeviceClient values remain valid inputs. */
+export type DeviceScreenClient = Pick<
+  DeviceClient,
+  | 'videoKind'
+  | 'attachVideo'
+  | 'sendTouch'
+  | 'sendMultiTouch'
+  | 'sendScroll'
+  | 'sendKey'
+  | 'screen'
+  | 'status'
+  | 'error'
+>;
+
 /** Props for the shared {@link DeviceScreen} component rendered inside PhoneFrame. */
 export interface DeviceScreenProps {
   client: DeviceClient;
@@ -809,4 +823,9 @@ export interface DeviceScreenProps {
   borderRadius?: CSSProperties['borderRadius'];
   /** Apply the iOS `corner-shape: squircle`. */
   squircle?: boolean;
+}
+
+/** The built-in screen also accepts the inputs returned by useDeviceScreenClient. */
+export interface DeviceScreenInputProps extends Omit<DeviceScreenProps, 'client'> {
+  client: DeviceScreenClient;
 }

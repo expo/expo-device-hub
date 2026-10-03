@@ -59,12 +59,14 @@ import {
   type DeviceActivity,
   type DeviceAppearance,
   type DeviceClient,
+  type DeviceCapabilities,
   type DeviceConnectionOptions,
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
+  type DeviceStreamSettingCapabilities,
   type DeviceWebRtcCodec,
   type DeviceOrientation,
   type ForegroundApp,
@@ -106,6 +108,7 @@ import {
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
 const ACTIVITY_STALE_MS = 8000;
+const noop = () => {};
 
 // serve-sim binary WS message tags (serve-sim-client `SimulatorView`).
 const WS_MSG_TOUCH = 0x03;
@@ -119,7 +122,7 @@ const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
 // Connect/disconnect the guest's hardware keyboard; serve-sim's own touch
 // client sends this too so the on-screen keyboard shows.
 const WS_MSG_HARDWARE_KEYBOARD = 0x0e;
-const WS_TAG_SCREEN_CONFIG = 0x82;
+export const WS_TAG_SCREEN_CONFIG = 0x82;
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
 const HID_USAGE_R = 0x15; // 'r'
@@ -136,6 +139,14 @@ const IOS_STREAM_CAPABILITIES = {
   httpCodecs: ['auto', 'h264', 'mjpeg'],
   webRtcCodecs: ['h264', 'vp9', 'vp8'],
 } as const satisfies DeviceStreamCapabilities;
+
+const IOS_STREAM_SETTING_CAPABILITIES = {
+  mjpegFps: true,
+  mjpegQuality: true,
+  maxDimension: true,
+  h264Bitrate: true,
+  h264Fps: true,
+} as const satisfies DeviceStreamSettingCapabilities;
 
 // The counterclockwise rotation order (matches Simulator's "Rotate Left"): each
 // press advances one step, so four presses come back around to portrait.
@@ -246,6 +257,7 @@ function connectionKey(baseUrl: string, device: string | null, token: string | n
   return JSON.stringify([baseUrl, device, token]);
 }
 
+/** @deprecated Use DeviceClientProvider with useDeviceClient or useDeviceScreenClient instead. */
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
   const { baseUrl, enabled = true, device: targetDevice = null, streamMode, token = null } = options;
   const active = enabled && !!baseUrl;
@@ -747,8 +759,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
     const markFrame = (presentedFrameDelta = 1) => {
       if (stopped) return;
-      if (video.videoWidth > 0 && video.videoHeight > 0 && !hasWsConfigRef.current) {
-        setScreen({ width: video.videoWidth, height: video.videoHeight });
+      const { videoWidth: width, videoHeight: height } = video;
+      if (width > 0 && height > 0 && !hasWsConfigRef.current) {
+        setScreen((prev) =>
+          prev &&
+          prev.orientation === undefined &&
+          prev.width === width &&
+          prev.height === height
+            ? prev
+            : { width, height },
+        );
       }
       onAvccFrame(presentedFrameDelta);
       markWebRtcFrameDecoded(presentedFrameDelta);
@@ -817,7 +837,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     onFrame: onAvccFrame,
     onDecodedFrame: () => dispatchAvccFallback('decoded-frame'),
     onResize: (width, height) => {
-      if (!hasWsConfigRef.current) setScreen({ width, height });
+      if (!hasWsConfigRef.current) {
+        setScreen((prev) =>
+          prev &&
+          prev.orientation === undefined &&
+          prev.width === width &&
+          prev.height === height
+            ? prev
+            : { width, height },
+        );
+      }
     },
     onError: (message) => {
       setStatus('error');
@@ -851,7 +880,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       setError(null);
       if (!hasWsConfigRef.current) {
         setScreen((prev) =>
-          prev && prev.width === el.naturalWidth && prev.height === el.naturalHeight
+          prev &&
+          prev.orientation === undefined &&
+          prev.width === el.naturalWidth &&
+          prev.height === el.naturalHeight
             ? prev
             : { width: el.naturalWidth, height: el.naturalHeight },
         );
@@ -1019,7 +1051,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const watchdog = setInterval(() => {
       const lastSampleAt = activityLastSampleAtRef.current;
       if (lastSampleAt > 0 && Date.now() - lastSampleAt > ACTIVITY_STALE_MS) {
-        setActivity((current) => (current ? { ...current, stale: true } : current));
+        setActivity((current) => (current && !current.stale ? { ...current, stale: true } : current));
       }
     }, 1000);
     return () => clearInterval(watchdog);
@@ -1313,6 +1345,32 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [gridApiUrl, sessionFetch]);
 
+  const deviceSettingsAvailable = !!execWsUrl && !!execToken && !!deviceUdid;
+  const activityAvailable = !!metricsPath;
+  const eventsAvailable = !!eventsPath;
+  const accessibilityAvailable = accessibilityLoader !== null;
+  const streamSettingsAvailable = !!streamSettingsUrl;
+  const capabilities = useMemo<DeviceCapabilities>(
+    () => ({
+      deviceSettings: deviceSettingsAvailable,
+      activity: activityAvailable,
+      events: eventsAvailable,
+      camera: false,
+      accessibility: accessibilityAvailable,
+      streamSettings: streamSettingsAvailable ? IOS_STREAM_SETTING_CAPABILITIES : false,
+      location: locationCapabilities,
+      permissions: false,
+    }),
+    [
+      deviceSettingsAvailable,
+      activityAvailable,
+      eventsAvailable,
+      accessibilityAvailable,
+      streamSettingsAvailable,
+      locationCapabilities,
+    ],
+  );
+
   return {
     platform: 'ios',
     status,
@@ -1338,8 +1396,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     camera: null,
     cameraPending: NO_PENDING_CAMERA_WRITES,
     cameraError: null,
-    setCameraImage: () => {},
-    clearCameraImage: () => {},
+    setCameraImage: noop,
+    clearCameraImage: noop,
     ...accessibilityState,
     location,
     locationPending,
@@ -1355,32 +1413,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     streamSource: null,
     streamSourcePending: false,
     streamSourceError: null,
-    setStreamSource: () => {},
-    setGrpcImageMode: () => {},
-    setGrpcEncoder: () => {},
-    setGrpcInputSource: () => {},
+    setStreamSource: noop,
+    setGrpcImageMode: noop,
+    setGrpcEncoder: noop,
+    setGrpcInputSource: noop,
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec,
     setWebRtcCodec,
-    capabilities: {
-      deviceSettings: !!execWsUrl && !!execToken && !!deviceUdid,
-      activity: !!metricsPath,
-      events: !!eventsPath,
-      camera: false,
-      accessibility: accessibilityLoader !== null,
-      streamSettings: streamSettingsUrl
-        ? {
-            mjpegFps: true,
-            mjpegQuality: true,
-            maxDimension: true,
-            h264Bitrate: true,
-            h264Fps: true,
-          }
-        : false,
-      location: locationCapabilities,
-      permissions: false,
-    },
+    capabilities,
     foregroundApp,
     videoKind: useWebRtc ? 'video' : useAvcc ? 'canvas' : 'img',
     attachVideo,

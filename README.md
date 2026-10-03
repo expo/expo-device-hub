@@ -142,9 +142,8 @@ two backends speak very different wire protocols — serve-sim streams MJPEG/H.2
 takes binary touch packets, while serve-emu streams H.264 (WebCodecs) and takes JSON
 gestures — so this package hides that behind one shared contract:
 
-- a hook (`useIosDeviceClient` / `useAndroidDeviceClient` and general
-  `useActiveDeviceClient`) that owns the WebSocket connection and exposes the live
-  connection state plus input controls,
+- `DeviceClientProvider` to share one connection, with `useDeviceClient` and
+  `useDeviceClientSelector` to read state and controls,
 - a `DeviceScreen` component that paints whichever stream is active and forwards
   pointer/gesture/keyboard/scroll-wheel input, and
 - a `KeyboardCapture` component (with `useCoarsePointer`) that lets touch clients

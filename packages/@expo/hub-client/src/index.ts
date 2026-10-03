@@ -1,11 +1,11 @@
 /**
- * The common device-client interface + its two implementations.
+ * Shared device connections, screens and controls.
  *
  * - {@link DeviceScreen} — the component rendered inside `PhoneFrame` (replaces
  *   the static `<img>`), shared by both platforms.
- * - {@link useIosDeviceClient} / {@link useAndroidDeviceClient} — the serve-sim
- *   and serve-emu implementations of the connection hook.
- * - {@link useActiveDeviceClient} — picks + connects the selected one.
+ * - {@link DeviceClientProvider} owns the selected device connection.
+ * - {@link useDeviceClient} and {@link useDeviceClientSelector} read state and controls.
+ * - {@link useDeviceScreenClient} reads the inputs needed by {@link DeviceScreen}.
  * - {@link KeyboardCapture} + {@link useCoarsePointer} — phone-keyboard typing
  *   for touch clients, feeding `DeviceClient.sendKeyEvents`.
  *
@@ -15,6 +15,13 @@
 export * from './types';
 export { areRecordingControlsLocked } from './screen-recording';
 export { DeviceScreen } from './DeviceScreen';
+export {
+  DeviceClientProvider,
+  useDeviceClientSelector,
+  type DeviceClientProviderProps,
+} from './DeviceClientProvider';
+export { useDeviceClient } from './useDeviceClient';
+export { useDeviceScreenClient } from './useDeviceScreenClient';
 export { KeyboardCapture, type KeyboardCaptureProps } from './KeyboardCapture';
 export {
   AGENT_INTERACTION_IDLE_TIMEOUT_MS,
