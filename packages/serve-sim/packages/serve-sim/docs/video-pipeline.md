@@ -172,8 +172,8 @@ orientation and physical orientation can differ when an app locks its interface.
 
 Unknown fields are omitted rather than inferred. Duo's successful serve-sim
 commands update cached hinge and physical state, which is sampled with video
-frames at the recording cadence. A bounded native hinge-angle readback runs
-every second to observe external angle changes. The recording path has no
+frames at the recording cadence. A bounded native hinge-angle readback observes
+external angle changes with a one-second pause between reads. The recording path has no
 readback for physical orientation or Table Mode, so they remain unknown until
 serve-sim observes a successful command that establishes them. Ordinary iPhones
 omit Duo fields.
