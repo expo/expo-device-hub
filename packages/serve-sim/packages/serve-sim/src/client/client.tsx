@@ -47,7 +47,7 @@ import {
   KeyboardToggleButton,
 } from "./components/keyboard-capture";
 import { DeviceKitChrome, deviceKitChromeForScreen, deviceKitChromeGeometry, deviceKitScreenRadius, type ChromeButtonPress } from "./components/device-chrome-frame";
-import { createPacedKeySender } from "./utils/paced-key-sender";
+import { createOrderedKeyboardInput } from "./utils/ordered-keyboard-input";
 import { GridPanel } from "./components/grid-panel";
 import { IconButton } from "./components/icon-button";
 import { LogsDrawer } from "./components/logs-drawer";
@@ -87,6 +87,9 @@ import { fileExtension } from "./utils/drop";
 import { openHostEventStream, runHostAction } from "../socket/client-control";
 import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
+import { KeyboardPasteGate } from "./utils/keyboard-paste-gate";
+import { showClipboardKeyCleanupWarning, useClipboardToast } from "./hooks/use-clipboard-toast";
+import { ActionMenu } from "./components/action-menu";
 import {
   DEVICE_SIDEBAR_WIDTH,
   DEVTOOLS_PANEL_WIDTH,
@@ -126,7 +129,6 @@ import {
 
 // Default CSS-pixel width of the fixed 1:1 Duo stage, independent of either screen.
 const DUO_STAGE_DEFAULT_WIDTH = 580;
-
 type PreviewConfig = NonNullable<Window["__SIM_PREVIEW__"]>;
 
 function isLogsShortcut(e: KeyboardEvent): boolean {
@@ -138,6 +140,10 @@ function isTypingTarget(target: EventTarget | null): boolean {
   const tag = target.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
   return target.isContentEditable;
+}
+
+function isActionTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement && !!target.closest("button, [role='menuitem']");
 }
 
 function previewConfigKey(config: PreviewConfig | null): string {
@@ -913,6 +919,19 @@ function AppWithConfig({
   // Touch/button relay via direct WebSocket
   const [inputSocketOpen, setInputSocketOpen] = useState(false);
   const inputSocketRef = useRef<ReturnType<typeof createInputSocket> | null>(null);
+  const selectedDeviceRef = useRef(config.device);
+  selectedDeviceRef.current = config.device;
+  const keyboardInput = useMemo(() => createOrderedKeyboardInput({
+    getDevice: () => selectedDeviceRef.current,
+    getConnection: () => inputSocketRef.current?.connection ?? null,
+    getKeyConnection: () => inputSocketRef.current?.transport ?? null,
+    sendKey: (event) => inputSocketRef.current?.send(0x06, event),
+    sendPaste: (connection, message) => {
+      const socket = inputSocketRef.current;
+      return connection === socket?.connection && socket.trySendEncoded(message);
+    },
+  }), []);
+  useEffect(() => () => keyboardInput.dispose(), [keyboardInput]);
   if (!hingeQueueRef.current) {
     hingeQueueRef.current = createAcknowledgedControlQueue<HingeControlCommand>({
       send: (request) => {
@@ -962,6 +981,15 @@ function AppWithConfig({
           } catch {}
           return false;
         }
+        if (bytes[0] === 0x92) {
+          try {
+            keyboardInput.receive(
+              inputSocket.connection,
+              JSON.parse(new TextDecoder().decode(bytes.subarray(1))),
+            );
+          } catch {}
+          return false;
+        }
         if (bytes[0] !== WS_MSG_CONFIG) return false;
         try {
           const cfg = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as StreamConfig;
@@ -978,6 +1006,7 @@ function AppWithConfig({
         return false;
       },
       onDisconnect() {
+        keyboardInput.cancel();
         setInputSocketOpen(false);
         setPhysicalPose(undefined);
         sentHingePoseRef.current = undefined;
@@ -995,22 +1024,17 @@ function AppWithConfig({
     inputSocket.start();
 
     return () => {
+      keyboardInput.cancel();
       if (inputSocketRef.current === inputSocket) inputSocketRef.current = null;
       hingeQueueRef.current?.clear();
       inputSocket.dispose();
       dismissInputSocketError();
     };
-  }, [config.wsUrl, config.inputAdmission]);
+  }, [config.wsUrl, config.inputAdmission, keyboardInput]);
 
   const sendWs = useCallback((tag: number, payload: object) => {
     inputSocketRef.current?.send(tag, payload);
   }, []);
-
-  const keySender = useMemo(
-    () => createPacedKeySender((e) => sendWs(0x06, e)),
-    [sendWs],
-  );
-  useEffect(() => () => keySender.dispose(), [keySender]);
 
   const onStreamTouch = useCallback(
     (data: { type: string; x: number; y: number; edge?: number }) => {
@@ -1160,8 +1184,8 @@ function AppWithConfig({
   }, [streamConfig, streamConfig?.width, streamConfig?.height, streamConfig?.orientation, streamConfig?.screenId, streamConfig?.hingeAngle, streamConfig?.supportsHingeAngle, streamConfig?.hingePose, streamConfig?.tableMode, streamConfig?.tableModeAvailable, streamConfig?.inputUnavailable]);
 
   const sendKey = useCallback((type: "down" | "up", usage: number) => {
-    sendWs(0x06, { type, usage });
-  }, [sendWs]);
+    keyboardInput.send({ type, usage });
+  }, [keyboardInput]);
 
   // Subscribe to app-state SSE.
   const [currentApp, setCurrentApp] = useState<{ bundleId: string; isReactNative: boolean; pid?: number } | null>(null);
@@ -1257,6 +1281,11 @@ function AppWithConfig({
     sendKey("up", R);
   }, [sendKey]);
 
+  const sendPasteRequest = useCallback((text?: string) => keyboardInput.paste(text), [keyboardInput]);
+  const sendTextToSim = useCallback((text: string) => sendPasteRequest(text), [sendPasteRequest]);
+
+  const clipboard = useClipboardToast(sendTextToSim);
+
   const simContainerRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const flipRef = useRef<HTMLDivElement | null>(null);
@@ -1277,6 +1306,7 @@ function AppWithConfig({
   const simFocusedRef = useRef(true);
   simFocusedRef.current = simFocused;
   const pressedKeysRef = useRef<Set<number>>(new Set());
+  const keyboardPasteGateRef = useRef(new KeyboardPasteGate());
   const coarsePointer = useCoarsePointer();
   coarsePointerRef.current = coarsePointer;
   useBlockPageZoom(coarsePointer);
@@ -1364,16 +1394,32 @@ function AppWithConfig({
 
   useEffect(() => {
     if (simFocused) return;
+    keyboardPasteGateRef.current.cancel();
     const held = pressedKeysRef.current;
     if (held.size === 0) return;
-    for (const usage of held) sendWs(0x06, { type: "up", usage });
+    for (const usage of held) keyboardInput.send({ type: "up", usage });
     held.clear();
-  }, [simFocused, sendWs]);
+  }, [simFocused, keyboardInput]);
+
+  const sendSimulatorPasteKey = useCallback(() => {
+    clipboard.cancelPaste();
+    void sendPasteRequest().then(
+      ({ cleanupWarning }) => { if (cleanupWarning) showClipboardKeyCleanupWarning(cleanupWarning); },
+      (error) => showInputSocketError(error instanceof Error ? error.message : "Could not paste simulator clipboard"),
+    );
+  }, [sendPasteRequest, clipboard]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent, type: "down" | "up") => {
       const simFocused = simFocusedRef.current;
       const keyboardOpen = keyboardOpenRef.current;
+      // Only new presses: a key held while the simulator had focus still has to be released there.
+      if (type === "down" && (e.defaultPrevented || isActionTarget(e.target) ||
+        (isTypingTarget(e.target) && (!keyboardOpen || e.target !== keyboardInputRef.current)))) return;
+      if (type === "down" && e.code === "KeyV" && keyboardPasteGateRef.current.onVKeyDown(e.repeat)) {
+        e.preventDefault();
+        return;
+      }
       if (simFocused && !keyboardOpen) {
         // Leave Command+digits to browser tab switching. Use physical codes so
         // Option+Shift's layout-specific characters do not affect pose lookup.
@@ -1413,6 +1459,36 @@ function AppWithConfig({
           return;
         }
       }
+      if (
+        simFocused &&
+        !keyboardOpen &&
+        e.code === "KeyV" &&
+        (e.metaKey || e.ctrlKey) &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        const held = hidUsageForCode(e.code);
+        if (type === "down" && !e.repeat) keyboardPasteGateRef.current.start();
+        if (type === "up" && keyboardPasteGateRef.current.release(held != null && pressedKeysRef.current.has(held)) === "fallback") {
+          sendSimulatorPasteKey();
+        }
+        if (type === "up" && held != null && pressedKeysRef.current.has(held)) {
+          pressedKeysRef.current.delete(held);
+          keyboardInput.send({ type, usage: held });
+        }
+        return;
+      }
+      if (type === "up" && e.code === "KeyV" && keyboardPasteGateRef.current.isWaiting) {
+        const usage = hidUsageForCode("KeyV");
+        const release = keyboardPasteGateRef.current.release(usage != null && pressedKeysRef.current.has(usage));
+        if (release === "release" && usage != null && pressedKeysRef.current.delete(usage)) {
+          // A new plain V was pressed after a lost shortcut keyup. Release it, not paste.
+          keyboardInput.send({ type: "up", usage });
+          return;
+        }
+        if (release === "fallback") sendSimulatorPasteKey();
+        return;
+      }
       if (type === "up") {
         // Always release a key we are holding, even if the gate changed since the
         // keydown, so a flip between down and up cannot leave it stuck on the sim.
@@ -1420,7 +1496,7 @@ function AppWithConfig({
         if (usage == null || !pressedKeysRef.current.has(usage)) return;
         e.preventDefault();
         pressedKeysRef.current.delete(usage);
-        sendWs(0x06, { type, usage });
+        keyboardInput.send({ type, usage });
         return;
       }
       if (isLogsShortcut(e)) return;
@@ -1432,7 +1508,7 @@ function AppWithConfig({
       if (usage == null) return;
       e.preventDefault();
       pressedKeysRef.current.add(usage);
-      sendWs(0x06, {
+      keyboardInput.send({
         type,
         usage,
         ...(shiftedCharacter(e) !== undefined ? { key: e.key, shifted: true } : {}),
@@ -1440,13 +1516,37 @@ function AppWithConfig({
     };
     const down = (e: KeyboardEvent) => onKey(e, "down");
     const up = (e: KeyboardEvent) => onKey(e, "up");
+    const blur = () => {
+      keyboardPasteGateRef.current.cancel();
+      for (const usage of pressedKeysRef.current) keyboardInput.send({ type: "up", usage });
+      pressedKeysRef.current.clear();
+    };
     window.addEventListener("keydown", down);
     window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
     return () => {
       window.removeEventListener("keydown", down);
       window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
     };
-  }, [sendWs, config.device, rotateBy, supportsHingeAngle, setHingeControl]);
+  }, [sendWs, config.device, rotateBy, supportsHingeAngle, setHingeControl, sendSimulatorPasteKey, keyboardInput]);
+
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      if (!simFocusedRef.current) return;
+      // The hidden mobile keyboard input is a simulator control, not a text field in this page.
+      // Forward its paste as Unicode text rather than diffing it into US-keyboard events.
+      if (isTypingTarget(e.target) && e.target !== keyboardInputRef.current) return;
+      const text = e.clipboardData?.getData("text/plain");
+      const action = keyboardPasteGateRef.current.paste(text ?? "");
+      if (action === "ignore") return;
+      e.preventDefault();
+      if (action === "fallback") sendSimulatorPasteKey();
+      else void clipboard.pasteText(text!);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  }, [clipboard, sendSimulatorPasteKey]);
 
   const uploads = useUploadToasts();
   const screenshot = useScreenshotToast(config.device);
@@ -1628,7 +1728,7 @@ function AppWithConfig({
         )}
         <KeyboardCapture
           open={keyboardOpen}
-          onKeys={(events) => keySender.enqueue(events)}
+          onKeys={(events) => keyboardInput.enqueue(events)}
           inputRef={keyboardInputRef}
         />
         <div
@@ -1852,6 +1952,17 @@ function AppWithConfig({
                 title="Screenshot"
                 onClick={(e) => { e.preventDefault(); void screenshot.capture(); }}
               />
+              <ActionMenu
+                items={[
+                  {
+                    label: "Paste from Device",
+                    description: "This device's clipboard to the simulator",
+                    onSelect: () => void clipboard.pasteFromDevice(),
+                  },
+                ]}
+              >
+                {(trigger) => <SimulatorToolbar.CopyButton title="Clipboard" {...trigger} />}
+              </ActionMenu>
               <SimulatorToolbar.RotateButton title="Rotate device" direction={isDuo ? "right" : "left"} />
             </SimulatorToolbar.Actions>
           </SimulatorToolbar>

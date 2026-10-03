@@ -11,21 +11,32 @@ const ready = !!(udid && app);
 requireE2E("native pasteboard inspection tool", ready);
 
 (ready ? describe : describe.skip)(`native pasteboard tool (${udid ?? "<skipped>"})`, () => {
-  test("reads change count, text, and an item snapshot from the simulator", () => {
+  // Three commands can each make three 15-second attempts; leave room for install and cleanup.
+  test("reads change count, text, and an item snapshot from the simulator", async () => {
     execFileSync("xcrun", ["simctl", "install", udid!, app!], { timeout: 30_000 });
     try {
       const tool = join(app!, "serve-sim-pasteboard");
-      const run = (command: string) => execFileSync("xcrun", ["simctl", "spawn", udid!, tool, command], {
-        encoding: "utf8", timeout: 30_000,
-      });
+      const run = async (command: string): Promise<string> => {
+        for (let attempt = 0; attempt < 3; attempt++) {
+          try {
+            return execFileSync("xcrun", ["simctl", "spawn", udid!, tool, command], {
+              encoding: "utf8", timeout: 15_000,
+            });
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ETIMEDOUT" || attempt === 2) throw error;
+            await Bun.sleep(500);
+          }
+        }
+        throw new Error(`Could not run ${command}`);
+      };
 
-      expect(run("--change-count").trim()).toMatch(/^\d+$/);
-      const text = run("--read-text");
-      const [hasText, encoded] = run("--snapshot").trimEnd().split("\n");
+      expect((await run("--change-count")).trim()).toMatch(/^\d+$/);
+      const text = await run("--read-text");
+      const [hasText, encoded] = (await run("--snapshot")).trimEnd().split("\n");
       expect(hasText).toBe(text.length > 0 ? "1" : "0");
       expect(Buffer.from(encoded!, "base64").subarray(0, 8).toString()).toBe("bplist00");
     } finally {
       execFileSync("xcrun", ["simctl", "uninstall", udid!, bundleId], { timeout: 30_000 });
     }
-  }, 60_000);
+  }, 240_000);
 });

@@ -4,6 +4,7 @@ import {
   enqueueWsMessage,
   flushWsMessageQueue,
   sendOrQueueWsMessage,
+  trySendEncodedWsMessage,
   trySendWsMessage,
   WS_OPEN_READY_STATE,
   type WsSendTarget,
@@ -52,6 +53,13 @@ describe("ws send queue", () => {
       tag: 0x03,
       payload: { type: "begin", x: 0.5 },
     });
+  });
+
+  test("sends an already encoded command without replacing its frame", () => {
+    const { ws, sent } = openWs();
+    const frame = encodeWsMessage(0x12, { requestId: 7, text: "hello" });
+    expect(trySendEncodedWsMessage(ws, frame)).toBe(true);
+    expect(sent).toEqual([frame.buffer]);
   });
 
   test("queues messages while the WebSocket is not open", () => {
