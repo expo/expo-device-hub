@@ -13,11 +13,15 @@ import { type DeviceClient, type KeyboardInput } from './types';
 export function useDeviceKeyboard(client: Pick<DeviceClient, 'sendKey' | 'hinge'>) {
   const { sendKey, hinge } = client;
   const pressedKeysRef = useRef(new Map<string, KeyboardInput>());
+  // Keys whose keydown was consumed as a shortcut; their keyup must not reach
+  // the device either, or it would see a release without a press.
+  const swallowedKeysRef = useRef(new Set<string>());
   const releasePressedKeys = useCallback(() => {
     for (const input of pressedKeysRef.current.values()) {
       sendKey({ ...input, phase: 'up', repeat: false });
     }
     pressedKeysRef.current.clear();
+    swallowedKeysRef.current.clear();
   }, [sendKey]);
 
   useEffect(() => {
@@ -59,6 +63,7 @@ export function useDeviceKeyboard(client: Pick<DeviceClient, 'sendKey' | 'hinge'
       const digit = /^Digit([1-5])$/.exec(event.code);
       if (digit) {
         event.preventDefault();
+        swallowedKeysRef.current.add(event.code);
         const pose = HINGE_POSES[Number(digit[1]) - 1];
         if (pose && !event.repeat) hinge.setControl({ control: 'pose', value: pose.id });
         return;
@@ -73,6 +78,10 @@ export function useDeviceKeyboard(client: Pick<DeviceClient, 'sendKey' | 'hinge'
 
   const onKeyUp = (event: ReactKeyboardEvent<HTMLElement>) => {
     const keyId = event.code || event.key;
+    if (swallowedKeysRef.current.delete(keyId) && !pressedKeysRef.current.has(keyId)) {
+      event.preventDefault();
+      return;
+    }
     const wasPressed = pressedKeysRef.current.delete(keyId);
     const handled = sendKey(keyboardInputFrom(event, 'up'));
     if (wasPressed || handled) event.preventDefault();

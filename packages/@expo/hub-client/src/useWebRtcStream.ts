@@ -134,6 +134,7 @@ export function useWebRtcStream({
   iceTransportPolicy = 'all',
   sendIceServersInOffer = true,
   allowCodecFallback = true,
+  judgeStalls = true,
   onKeyframeNeeded,
 }: {
   offerUrl: string;
@@ -146,6 +147,13 @@ export function useWebRtcStream({
   iceTransportPolicy?: RTCIceTransportPolicy;
   sendIceServersInOffer?: boolean;
   allowCodecFallback?: boolean;
+  /**
+   * Whether a missing first frame counts as a codec or transport failure. An
+   * iPhone Duo's inactive panel passes false: iOS keeps it silent until a
+   * handoff, which must not downgrade the panel that is playing. The deadline
+   * arms once this turns true (serve-sim's `judgeStalls`).
+   */
+  judgeStalls?: boolean;
   onKeyframeNeeded?: () => void;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -156,6 +164,11 @@ export function useWebRtcStream({
   const [retryGeneration, setRetryGeneration] = useState(0);
   const firstFrameTimeoutRef = useRef<number | undefined>(undefined);
   const firstFrameDecodedRef = useRef(false);
+  const judgeStallsRef = useRef(judgeStalls);
+  judgeStallsRef.current = judgeStalls;
+  // The live connection's deadline arming, so a panel that becomes active can
+  // start judging without reconnecting.
+  const armStallDeadlineRef = useRef<(() => void) | null>(null);
   const presentedFramesRef = useRef(0);
   const transportRetryAttemptRef = useRef(0);
   const streamStats = useWebRtcStreamStats(
@@ -309,6 +322,7 @@ export function useWebRtcStream({
     const armFirstFrameTimeout = () => {
       if (
         stopped ||
+        !judgeStallsRef.current ||
         firstFrameDecodedRef.current ||
         !trackReceived ||
         !connectionReady ||
@@ -339,6 +353,8 @@ export function useWebRtcStream({
         });
       }, FIRST_FRAME_TIMEOUT_MS);
     };
+
+    armStallDeadlineRef.current = armFirstFrameTimeout;
 
     const waitForIce = (connection: RTCPeerConnection) =>
       new Promise<void>((resolve) => {
@@ -461,6 +477,7 @@ export function useWebRtcStream({
 
     return () => {
       stopped = true;
+      armStallDeadlineRef.current = null;
       window.removeEventListener('pagehide', releaseOnPageHide);
       window.removeEventListener('beforeunload', releaseOnPageHide);
       lifecycleController.abort();
@@ -486,6 +503,16 @@ export function useWebRtcStream({
     onKeyframeNeeded,
     retryGeneration,
   ]);
+
+  useEffect(() => {
+    if (judgeStalls) {
+      armStallDeadlineRef.current?.();
+    } else if (firstFrameTimeoutRef.current !== undefined) {
+      // A panel that just went inactive may stay silent; do not judge it.
+      window.clearTimeout(firstFrameTimeoutRef.current);
+      firstFrameTimeoutRef.current = undefined;
+    }
+  }, [judgeStalls]);
 
   return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };
 }

@@ -366,6 +366,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const hingePendingRef = useRef(false);
   const [hingeCommands, setHingeCommands] = useState<DuoHingeCommands>(INITIAL_DUO_HINGE_COMMANDS);
   const sentHingePoseRef = useRef<HingePose | null | undefined>(undefined);
+  // The view a pending preset replaced. A rejected, timed-out, or interrupted
+  // preset restores it, unless a later Rotate superseded it.
+  const duoViewRef = useRef<DuoView | null>(null);
+  duoViewRef.current = duoView;
+  const viewGenerationRef = useRef(0);
+  const presetRestoreRef = useRef<{ view: DuoView | null; generation: number } | null>(null);
   const hingeQueueRef = useRef<ReturnType<
     typeof createAcknowledgedControlQueue<HingeControlCommand>
   > | null>(null);
@@ -555,6 +561,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const duo = duoRef.current;
     const next = (duo.isDuo ? ROTATE_RIGHT_CYCLE : ROTATE_LEFT_CYCLE)[current];
     if (duo.isDuo) {
+      viewGenerationRef.current += 1;
       setDuoView((previous) => duoRotateView(previous ?? duo.initialView, 1));
       faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
       setHingePreview(null);
@@ -564,6 +571,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
     sendWs(WS_MSG_ORIENTATION, { orientation: next });
   }, [sendWs]);
+
+  function restorePresetView() {
+    const restore = presetRestoreRef.current;
+    if (restore && restore.generation === viewGenerationRef.current) setDuoView(restore.view);
+  }
 
   // One command at a time: a live slider coalesces into the newest value and a
   // preset replaces queued edits. Replies arrive as 0x90 on the helper socket.
@@ -583,7 +595,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setHingePending(pending);
         setHingeCommands((previous) => ({ ...previous, pending }));
       },
-      onError: (message) => {
+      onError: (message, command) => {
+        if (command.control === 'pose') restorePresetView();
+        presetRestoreRef.current = null;
         setHingeError(message);
         setHingePreview(null);
         setPhysicalPose(undefined);
@@ -600,6 +614,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // Editing the hinge or Table Mode clears the named preset, but preserves
     // the simulator's physical orientation (for example Laptop on a table).
     if (command.control === 'pose') {
+      // Remember the view before the first preset of a burst; it is dropped
+      // once the helper confirms the preset.
+      presetRestoreRef.current ??= {
+        view: duoViewRef.current,
+        generation: viewGenerationRef.current,
+      };
       setPhysicalPose(command.value);
       setOrientationOverride(false);
       setDuoView(duoPresetView(command.value));
@@ -1036,10 +1056,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const wsUrl = config?.wsUrl ?? null;
   useEffect(() => {
     setHardwareKeyboardConnectedState(null);
+    // A new helper, or none, owns the screen config from here. The media
+    // paths fill the size back in until its first push arrives, so a previous
+    // simulator's hinge state never classifies the next one.
+    hasWsConfigRef.current = false;
+    setScreen(null);
     if (!wsUrl) return;
     let cancelled = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    hasWsConfigRef.current = false;
 
     const connect = () => {
       if (cancelled) return;
@@ -1094,9 +1118,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setOrientationOverride(false);
         if (hingePendingRef.current) {
           hingeQueueRef.current?.clear();
+          restorePresetView();
           setHingePreview(null);
           setHingeError('Connection lost while changing the device pose.');
         }
+        presetRestoreRef.current = null;
         retryTimer = setTimeout(connect, RECONNECT_MS);
       };
       ws.onerror = () => {
@@ -1130,6 +1156,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setDuoView(null);
     setHingeCommands(INITIAL_DUO_HINGE_COMMANDS);
     faceDownFramingRef.current = { saved: null, held: false };
+    presetRestoreRef.current = null;
     sentHingePoseRef.current = undefined;
     setOrientationOverride(false);
     hingeQueueRef.current?.clear();
@@ -1152,6 +1179,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       (hingePreview.hingePose === undefined || hingePreview.hingePose === screen.hingePose) &&
       (hingePreview.tableMode === undefined || hingePreview.tableMode === screen.tableMode)
     ) {
+      presetRestoreRef.current = null;
       setHingePreview(null);
     }
   }, [hingePreview, hingePending, screen]);
