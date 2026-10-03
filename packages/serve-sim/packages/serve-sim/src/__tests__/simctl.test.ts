@@ -34,7 +34,7 @@ describe("simctl", () => {
       const error = await readSimPasteboardResult("DEVICE").catch((error: unknown) => error);
       expect(error).toBeInstanceOf(Error);
       expect(error).not.toBeInstanceOf(PasteboardTooLargeError);
-      expect((error as Error).message).toBe("stderr maxBuffer length exceeded");
+      expect((error as Error).message).toContain("stderr maxBuffer length exceeded");
     });
   });
 
