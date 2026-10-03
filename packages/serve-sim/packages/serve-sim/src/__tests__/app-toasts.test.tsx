@@ -120,5 +120,11 @@ describe("ClipboardToastContent", () => {
     expect(html).not.toContain(">Send</button>");
   });
 
-
+  test("shows a Copy button only in the manual state", () => {
+    const html = renderToStaticMarkup(
+      <ClipboardToastContent toast={{ status: "manual", message: "Ready — one click to copy" }} />,
+    );
+    expect(html).toContain("Ready — one click to copy");
+    expect(html).toContain(">Copy</button>");
+  });
 });

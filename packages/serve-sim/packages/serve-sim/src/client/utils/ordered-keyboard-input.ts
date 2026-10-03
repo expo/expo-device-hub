@@ -16,11 +16,20 @@ type PasteInput = {
   resolve(result: PasteResult): void;
   reject(error: Error): void;
 };
+type OrderedAction = {
+  kind: "action";
+  device: string;
+  connection: object | null;
+  run(isCurrent: () => boolean): Promise<unknown>;
+  timeout?: ReturnType<typeof setTimeout>;
+  resolve(result: unknown): void;
+  reject(error: Error): void;
+};
 type Input =
   | { kind: "key"; event: KeyboardInputEvent; device: string; connection: object | null }
   | { kind: "keys"; events: readonly KeyEvent[]; device: string; connection: object | null }
-  | { kind: "idle"; resolve(): void }
-  | PasteInput;
+  | PasteInput
+  | OrderedAction;
 
 /** Keep clipboard commands and keyboard input in their invocation order. */
 export function createOrderedKeyboardInput({
@@ -42,7 +51,7 @@ export function createOrderedKeyboardInput({
   let active: Input | null = null;
   let nextRequestId = 0;
   let disposed = false;
-  const disconnected = () => new Error("Simulator input disconnected during paste");
+  const disconnected = () => new Error("Simulator input disconnected");
   const isCurrent = (input: { device: string; connection: object | null }) =>
     input.device === getDevice() && input.connection === getConnection();
   const isCurrentKey = (input: { device: string; connection: object | null }) =>
@@ -55,12 +64,11 @@ export function createOrderedKeyboardInput({
     if (active?.kind === "keys" && isCurrentKey(active)) sendEvent(event);
   });
 
-  const finishPaste = (input: PasteInput, error?: Error, result: PasteResult = {}) => {
+  const finishInput = (input: PasteInput | OrderedAction, settle: () => void) => {
     if (active !== input) return;
     clearTimeout(input.timeout);
     active = null;
-    if (error) input.reject(error);
-    else input.resolve(result);
+    settle();
     drain();
   };
 
@@ -71,8 +79,6 @@ export function createOrderedKeyboardInput({
       active = input;
       if (input.kind === "key") {
         if (isCurrentKey(input)) sendEvent(input.event);
-      } else if (input.kind === "idle") {
-        input.resolve();
       } else if (input.kind === "keys") {
         pacedKeys.enqueue(input.events);
         void pacedKeys.idle().then(() => {
@@ -81,6 +87,26 @@ export function createOrderedKeyboardInput({
           drain();
         });
         return;
+      } else if (input.kind === "action") {
+        if (!input.connection || !isCurrent(input)) {
+          input.reject(disconnected());
+        } else {
+          input.timeout = setTimeout(() => finishInput(input, () => {
+            input.reject(new Error("Simulator clipboard action timed out"));
+          }), pasteTimeoutMs);
+          void (async () => {
+            try {
+              const result = await input.run(() => active === input && isCurrent(input));
+              finishInput(input, () => {
+                if (isCurrent(input)) input.resolve(result);
+                else input.reject(disconnected());
+              });
+            } catch (error) {
+              finishInput(input, () => input.reject(error instanceof Error ? error : new Error(String(error))));
+            }
+          })();
+          return;
+        }
       } else {
         const connection = getConnection();
         if (!connection || !isCurrent(input)) {
@@ -92,7 +118,9 @@ export function createOrderedKeyboardInput({
           if (!message) {
             input.reject(new Error("This text is too large to paste into the simulator"));
           } else {
-            input.timeout = setTimeout(() => finishPaste(input, new Error("Simulator paste timed out")), pasteTimeoutMs);
+            input.timeout = setTimeout(() => finishInput(input, () => {
+              input.reject(new Error("Simulator paste timed out"));
+            }), pasteTimeoutMs);
             if (sendPaste(connection, message)) return;
             clearTimeout(input.timeout);
             input.reject(disconnected());
@@ -114,10 +142,10 @@ export function createOrderedKeyboardInput({
     queue.length = 0;
     pacedKeys.dispose();
     for (const input of inputs) {
-      if (input.kind === "paste") {
+      if (input.kind === "paste" || input.kind === "action") {
         clearTimeout(input.timeout);
         input.reject(disconnected());
-      } else if (input.kind === "idle") input.resolve();
+      }
     }
   };
 
@@ -137,20 +165,25 @@ export function createOrderedKeyboardInput({
         device: getDevice(), connection: getConnection(), text, resolve, reject,
       }));
     },
+    run<T>(run: (isCurrent: () => boolean) => Promise<T>): Promise<T> {
+      if (disposed) return Promise.reject(disconnected());
+      return new Promise((resolve, reject) => enqueue({
+        kind: "action", run, device: getDevice(), connection: getConnection(),
+        resolve: (result) => resolve(result as T), reject,
+      }));
+    },
     receive(connection: object | null, value: unknown): boolean {
       if (active?.kind !== "paste" || active.connection !== connection || !value || typeof value !== "object") return false;
       const reply = value as { requestId?: unknown; ok?: unknown; error?: unknown; cleanupWarning?: unknown };
       if (reply.requestId !== active.requestId || typeof reply.ok !== "boolean") return false;
-      finishPaste(active, reply.ok ? undefined : new Error(typeof reply.error === "string"
-        ? reply.error : "Could not paste into the simulator"), {
-        cleanupWarning: typeof reply.cleanupWarning === "string" ? reply.cleanupWarning : undefined,
+      const input = active;
+      finishInput(input, () => {
+        if (reply.ok) input.resolve({
+          cleanupWarning: typeof reply.cleanupWarning === "string" ? reply.cleanupWarning : undefined,
+        });
+        else input.reject(new Error(typeof reply.error === "string" ? reply.error : "Could not paste into the simulator"));
       });
       return true;
-    },
-    // A snapshot boundary: input enqueued later cannot prolong this wait.
-    idle(): Promise<void> {
-      if (disposed || (!active && queue.length === 0)) return Promise.resolve();
-      return new Promise((resolve) => enqueue({ kind: "idle", resolve }));
     },
     cancel,
     dispose(): void {

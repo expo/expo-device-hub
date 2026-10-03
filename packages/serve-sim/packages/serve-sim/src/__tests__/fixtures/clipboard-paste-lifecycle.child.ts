@@ -43,7 +43,7 @@ function mount() {
   win.parent = win;
   Object.defineProperty(globalThis, "window", { value: win, configurable: true });
   const sent: string[] = [];
-  const clipboard = useClipboardToast(async (text) => {
+  const clipboard = useClipboardToast("device-a", async () => null, async (text) => {
     sent.push(text);
     return {};
   });
