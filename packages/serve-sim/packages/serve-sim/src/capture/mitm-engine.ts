@@ -22,6 +22,7 @@ import type { CaptureStore } from "./store";
 import { dirnameOf } from "../runtime";
 import { withStateLockSync } from "../state-lock";
 import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
+import { markFallbackSignalHandler } from "../process-signal-handlers";
 import {
   DEFAULT_MAX_CONTROL_BODY_BYTES,
   MAX_CONTROL_BODY_BYTES_ENV,
@@ -332,6 +333,7 @@ function addReaper(reap: () => void): void {
   reapers.add(reap);
   if (listening) return;
   listening = true;
+  markFallbackSignalHandler(onSignal);
   process.once("exit", reapAll);
   for (const signal of SIGNALS) process.on(signal, onSignal);
 }

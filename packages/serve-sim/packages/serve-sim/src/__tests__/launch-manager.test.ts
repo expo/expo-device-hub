@@ -520,6 +520,33 @@ describe("startup capability loading", () => {
     expect(listCapabilities(UDID)).toEqual(["clipboard"]);
   });
 
+  for (const allowed of [false, true]) {
+    test(`checks the relaunch guard after publication (${allowed ? "allowed" : "cancelled"})`, async () => {
+      const calls = join(stateDir(), "guarded-relaunch-calls");
+      const quotedCalls = "'" + calls.replaceAll("'", "'\\''") + "'";
+      let checked = false;
+      await withShimsAsync({ xcrun: `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quotedCalls}\nexit 0\n` }, async () => {
+        await setCapabilityEnabled(UDID, {
+          name: "clipboard", defaultEnabled: true, scope: "allApps",
+          async setEnabled() { return { dylib: "/clipboard.dylib" }; },
+        }, {
+          bundleId: "dev.expo.App", enabled: true, relaunch: true,
+          async canRelaunch() {
+            checked = true;
+            expect(readLaunchState(UDID)?.capabilities.clipboard).toBeDefined();
+            expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("/clipboard.dylib");
+            return allowed;
+          },
+        });
+      });
+      expect(checked).toBe(true);
+      const commands = readFileSync(calls, "utf8");
+      expect(commands.includes(`simctl terminate ${UDID} dev.expo.App`)).toBe(allowed);
+      expect(commands.includes(`simctl launch ${UDID} dev.expo.App`)).toBe(allowed);
+      expect(listCapabilities(UDID)).toEqual(["clipboard"]);
+    });
+  }
+
   test("reuses another live owner's clipboard capability", async () => {
     const owner = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
     const log = join(stateDir(), "simctl-rearm-calls");

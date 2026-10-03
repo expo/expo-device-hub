@@ -33,10 +33,10 @@ export const clipboardCapability: CapabilityDefinition = {
   loadDelayMs: 0,
   async setEnabled({ udid, bundleId, enabled }) {
     if (!enabled) return null;
+    ensureCapabilityProcessCleanup();
     if (bundleId) await simctl(["privacy", udid, "grant", "pasteboard", bundleId]);
     return {
       dylib: locatePasteboardReaderDylib() ?? buildPasteboardReaderDylib(),
-      committed: ensureCapabilityProcessCleanup,
     };
   },
 };
@@ -128,23 +128,27 @@ async function readViaInjectedReader(udid: string): Promise<PasteboardReadResult
   if (afterArming !== null) return { text: afterArming, relaunchedApp: null };
   if (!target.relaunch) return null;
 
-  // Recheck visibility after the timeout before relaunching the target.
-  const current = await frontmostAppFromRecentLogs(udid);
-  if (current?.bundleId !== bundleId) return null;
-
-  debugPasteboard(
-    "%s did not answer on %s after arming %s; relaunching as a last resort",
-    bundleId,
-    udid,
-    CLIPBOARD_CAPABILITY,
-  );
+  let relaunched = false;
   await setCapabilityEnabled(udid, clipboardCapability, {
     bundleId,
     enabled: true,
     relaunch: true,
     reuseIfEnabled: true,
     respectDisabledOverrides: true,
+    async canRelaunch() {
+      const current = await frontmostAppFromRecentLogs(udid);
+      if (current?.bundleId !== bundleId || (frontmost?.bundleId === bundleId && current.pid !== frontmost.pid)) return false;
+      debugPasteboard(
+        "%s did not answer on %s after arming %s; relaunching as a last resort",
+        bundleId,
+        udid,
+        CLIPBOARD_CAPABILITY,
+      );
+      relaunched = true;
+      return true;
+    },
   });
+  if (!relaunched) return null;
   const afterRelaunch = await requestInjectedPasteboard(container, RELAUNCH_TIMEOUT_MS);
   return afterRelaunch === null ? null : { text: afterRelaunch, relaunchedApp: bundleId };
 }
