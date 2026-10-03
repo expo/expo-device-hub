@@ -509,10 +509,9 @@ actor CaptureEngine {
         let udid = deviceUDID
         let mailbox = nativeFrameMailbox
         let bridge = CoreDeviceBridge.shared
-        guard await bridge.supportsHingeAngle(udid: udid), phase == .running else { return }
-        let initial = await bridge.hingeState(udid: udid)
+        let cached = await bridge.cachedHingeState(udid: udid)
         guard phase == .running else { return }
-        mailbox.updateHingeState(initial)
+        mailbox.updateHingeState(cached)
         recordingHingeTask = Task {
             while !Task.isCancelled {
                 let state = await bridge.cachedHingeState(udid: udid)
@@ -522,6 +521,10 @@ actor CaptureEngine {
                 catch { return }
             }
         }
+        guard await bridge.supportsHingeAngle(udid: udid), phase == .running else { return }
+        let initial = await bridge.hingeState(udid: udid)
+        guard phase == .running else { return }
+        mailbox.updateHingeState(initial)
         recordingHingeReadbackTask = Task {
             while !Task.isCancelled {
                 do { try await Task.sleep(for: .seconds(1)) }

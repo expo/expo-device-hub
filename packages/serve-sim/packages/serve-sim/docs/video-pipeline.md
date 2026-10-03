@@ -183,8 +183,11 @@ readback for physical orientation or Table Mode, so they remain unknown until
 serve-sim observes a successful command that establishes them. Ordinary iPhones
 omit Duo fields.
 Treat each event as a complete snapshot: absent optional fields are unknown.
-An external angle change clears previously known physical orientation and
-Table Mode; external pose changes at an unchanged angle cannot be read back.
+Physical and Table Mode commands reconcile the angle before sending. If that
+read is unavailable, freshly successful fields survive the first recovered
+angle read; a changed angle invalidates older pose fields. Cached commands are recorded
+even when motion readback is unsupported. External pose changes at an unchanged
+angle cannot be read back.
 Short external angle changes that return between readbacks can also be missed.
 
 ## Control and shutdown

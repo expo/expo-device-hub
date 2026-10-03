@@ -104,6 +104,154 @@ final class CoreDeviceBridgeTests: XCTestCase {
         XCTAssertEqual(result, .init(angle: 45.5))
         XCTAssertEqual(cached, result)
     }
+
+    func testPhysicalAndTableCommandsReconcileAnExternalAngleBeforeUpdatingState() async throws {
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in 45.5 })
+        await bridge.updateHingeState(udid: udid) { $0 = knownPose }
+
+        let prepared = await bridge.prepareHingeCommand(udid: udid)
+        let command = try XCTUnwrap(prepared)
+        await bridge.updateHingeState(udid: udid, command: command, field: .orientation) { $0.orientation = "facedown" }
+        await bridge.updateHingeState(udid: udid, command: command, field: .tableMode) { $0.tableMode = true }
+
+        let result = await bridge.hingeState(udid: udid)
+        XCTAssertEqual(result, .init(angle: 45.5, orientation: "facedown", tableMode: true))
+    }
+
+    func testUnavailableCommandReadbackPreservesOnlyFreshFieldsWhenAngleRecovers() async throws {
+        let reader = SequencedHingeAngleReader([nil, 45.5])
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in await reader.read() })
+        await bridge.updateHingeState(udid: udid) { $0 = knownPose }
+        let prepared = await bridge.prepareHingeCommand(udid: udid)
+        let command = try XCTUnwrap(prepared)
+
+        await bridge.updateHingeState(udid: udid, command: command, field: .tableMode) { $0.tableMode = true }
+        let beforeRecovery = await bridge.cachedHingeState(udid: udid)
+        XCTAssertEqual(beforeRecovery.angle, knownPose.angle)
+        let recovered = await bridge.hingeState(udid: udid)
+        XCTAssertEqual(recovered, .init(angle: 45.5, tableMode: true))
+    }
+
+    func testUnavailableReadbackRetainsTableReleaseWithoutAPhysicalStateUpdate() async throws {
+        let reader = SequencedHingeAngleReader([nil, 45.5])
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in await reader.read() })
+        await bridge.updateHingeState(udid: udid) { $0 = knownPose }
+        let prepared = await bridge.prepareHingeCommand(udid: udid)
+        let command = try XCTUnwrap(prepared)
+
+        await bridge.updateHingeState(udid: udid, command: command, field: .tableMode) { $0.tableMode = false }
+        // Only table release updates the cache; no physical update follows.
+        let recovered = await bridge.hingeState(udid: udid)
+        XCTAssertEqual(recovered, .init(angle: 45.5, tableMode: false))
+    }
+
+    func testDeferredAngleCommandReadbackRetainsTableReleaseWithoutAnAngleUpdate() async throws {
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in 45.5 })
+        await bridge.updateHingeState(udid: udid) { $0 = knownPose }
+        let prepared = await bridge.prepareHingeCommand(udid: udid, readAngle: false)
+        let command = try XCTUnwrap(prepared)
+        await bridge.updateHingeState(udid: udid, command: command, field: .tableMode) { $0.tableMode = false }
+
+        let recovered = await bridge.hingeState(udid: udid)
+        XCTAssertEqual(recovered, .init(angle: 45.5, tableMode: false))
+    }
+
+    func testSameAngleRecoveryRestoresNormalExternalChangeInvalidation() async throws {
+        let reader = SequencedHingeAngleReader([nil, 180, 45.5])
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in await reader.read() })
+        await bridge.updateHingeState(udid: udid) { $0 = knownPose }
+        let prepared = await bridge.prepareHingeCommand(udid: udid)
+        let command = try XCTUnwrap(prepared)
+        await bridge.updateHingeState(udid: udid, command: command, field: .orientation) { $0.orientation = "faceup" }
+
+        let recovered = await bridge.hingeState(udid: udid)
+        XCTAssertEqual(recovered.orientation, "faceup")
+        let external = await bridge.hingeState(udid: udid)
+        XCTAssertEqual(external, .init(angle: 45.5))
+    }
+
+    func testAngleReadDuringCommandPreventsPreservationAcrossALaterExternalChange() async throws {
+        let reader = SequencedHingeAngleReader([nil, 180, 45.5])
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in await reader.read() })
+        await bridge.updateHingeState(udid: udid) { $0 = knownPose }
+        let prepared = await bridge.prepareHingeCommand(udid: udid)
+        let command = try XCTUnwrap(prepared)
+        _ = await bridge.hingeState(udid: udid)
+        await bridge.updateHingeState(udid: udid, command: command, field: .orientation) { $0.orientation = "faceup" }
+
+        let external = await bridge.hingeState(udid: udid)
+        XCTAssertEqual(external, .init(angle: 45.5))
+    }
+
+    func testLocalAngleCommandResolvesFieldsAwaitingNativeReadback() async throws {
+        let reader = SequencedHingeAngleReader([nil, 45.5])
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in await reader.read() })
+        await bridge.updateHingeState(udid: udid) { $0 = knownPose }
+        let prepared = await bridge.prepareHingeCommand(udid: udid)
+        let command = try XCTUnwrap(prepared)
+        await bridge.updateHingeState(udid: udid, command: command, field: .orientation) { $0.orientation = "faceup" }
+        await bridge.updateHingeAngle(udid: udid, angle: 90)
+
+        let commanded = await bridge.cachedHingeState(udid: udid)
+        XCTAssertEqual(commanded.orientation, "faceup")
+        let external = await bridge.hingeState(udid: udid)
+        XCTAssertEqual(external, .init(angle: 45.5))
+    }
+
+    func testCommandPreparationDiscardedByALocalAngleWriteUsesTheNewBaseline() async throws {
+        let reader = ControlledHingeAngleReader()
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in await reader.read() })
+        await bridge.updateHingeState(udid: udid) { $0 = knownPose }
+        let preparation = Task { await bridge.prepareHingeCommand(udid: udid) }
+        await reader.waitForRead(0)
+        await bridge.updateHingeAngle(udid: udid, angle: 90)
+        await reader.resolve(0, angle: 45.5)
+        let prepared = await preparation.value
+        let command = try XCTUnwrap(prepared)
+        await bridge.updateHingeState(udid: udid, command: command, field: .orientation) { $0.orientation = "faceup" }
+        let read = Task { await bridge.hingeState(udid: udid) }
+        await reader.waitForRead(1)
+        await reader.resolve(1, angle: 45.5)
+
+        let external = await read.value
+        XCTAssertEqual(external, .init(angle: 45.5))
+    }
+
+    func testResetDuringCommandPreparationRejectsThePreviousBoot() async {
+        let reader = ControlledHingeAngleReader()
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in await reader.read() })
+        let preparation = Task { await bridge.prepareHingeCommand(udid: udid) }
+        await reader.waitForRead(0)
+        await bridge.resetForNewCapture(udid: udid)
+        await reader.resolve(0, angle: 45.5)
+
+        let command = await preparation.value
+        XCTAssertNil(command)
+    }
+
+    func testResetAfterPreparationRejectsTheOldCommandAndItsPreservationFields() async throws {
+        let reader = SequencedHingeAngleReader([nil, 45.5])
+        let bridge = CoreDeviceBridge(hingeAngleReader: { _ in await reader.read() })
+        let prepared = await bridge.prepareHingeCommand(udid: udid)
+        let command = try XCTUnwrap(prepared)
+        await bridge.resetForNewCapture(udid: udid)
+        let updated = await bridge.updateHingeState(udid: udid, command: command, field: .tableMode) { $0.tableMode = true }
+
+        XCTAssertFalse(updated)
+        let state = await bridge.hingeState(udid: udid)
+        XCTAssertEqual(state, .init(angle: 45.5))
+    }
+}
+
+private actor SequencedHingeAngleReader {
+    private var angles: [Double?]
+
+    init(_ angles: [Double?]) { self.angles = angles }
+
+    func read() -> Double? {
+        precondition(!angles.isEmpty)
+        return angles.removeFirst()
+    }
 }
 
 private actor ControlledHingeAngleReader {

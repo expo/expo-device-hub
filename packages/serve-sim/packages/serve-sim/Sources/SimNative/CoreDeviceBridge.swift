@@ -20,8 +20,19 @@ actor CoreDeviceBridge {
         var orientation: String?
         var tableMode: Bool?
     }
+    enum HingeField: Hashable { case orientation, tableMode }
+    struct HingeCommand {
+        let generation: UInt64
+        let angleRevision: UInt64
+        let needsAngleReadback: Bool
+    }
+    private struct HingeReadbackState {
+        var revision: UInt64 = 0
+        var pendingFields: Set<HingeField> = []
+    }
     private var hingeStates: [String: HingeState] = [:]
     private var hingeStateRevisions: [String: UInt64] = [:]
+    private var hingeReadbackStates: [String: HingeReadbackState] = [:]
     private let hingeAngleReader: (@Sendable (String) async -> Double?)?
 
     init(hingeAngleReader: (@Sendable (String) async -> Double?)? = nil) {
@@ -32,9 +43,44 @@ actor CoreDeviceBridge {
         hingeStates[udid] ?? HingeState()
     }
 
-    func updateHingeState(udid: String, _ update: (inout HingeState) -> Void) {
+    @discardableResult
+    func updateHingeState(udid: String, command: HingeCommand? = nil, field: HingeField? = nil,
+                          _ update: (inout HingeState) -> Void) -> Bool {
+        guard command.map({ $0.generation == hingeResetGenerations[udid, default: 0] }) ?? true else { return false }
         update(&hingeStates[udid, default: HingeState()])
         hingeStateRevisions[udid, default: 0] &+= 1
+        if let field {
+            if let command, command.needsAngleReadback,
+               command.angleRevision == hingeReadbackStates[udid, default: HingeReadbackState()].revision {
+                hingeReadbackStates[udid, default: HingeReadbackState()].pendingFields.insert(field)
+            } else {
+                hingeReadbackStates[udid, default: HingeReadbackState()].pendingFields.remove(field)
+            }
+        }
+        return true
+    }
+
+    func prepareHingeCommand(udid: String, readAngle: Bool = true) async -> HingeCommand? {
+        let generation = hingeResetGenerations[udid, default: 0]
+        let angleRevision = hingeReadbackStates[udid, default: HingeReadbackState()].revision
+        let read: Bool
+        if readAngle { read = await refreshHingeAngle(udid: udid) }
+        else { read = false }
+        guard hingeResetGenerations[udid, default: 0] == generation else { return nil }
+        let currentRevision = hingeReadbackStates[udid, default: HingeReadbackState()].revision
+        return HingeCommand(generation: generation,
+                            angleRevision: currentRevision,
+                            needsAngleReadback: !read && angleRevision == currentRevision)
+    }
+
+    func updateHingeAngle(udid: String, angle: Double) {
+        updateHingeState(udid: udid) { $0.angle = angle }
+        confirmHingeAngle(udid: udid)
+    }
+
+    private func confirmHingeAngle(udid: String) {
+        hingeReadbackStates[udid, default: HingeReadbackState()].revision &+= 1
+        hingeReadbackStates[udid, default: HingeReadbackState()].pendingFields.removeAll()
     }
 
     /// CoreDevice's capability objects belong to a simulator boot. A new capture
@@ -50,9 +96,15 @@ actor CoreDeviceBridge {
         hingeSupport.removeValue(forKey: udid)
         hingeStates.removeValue(forKey: udid)
         hingeStateRevisions.removeValue(forKey: udid)
+        hingeReadbackStates.removeValue(forKey: udid)
     }
 
     func hingeState(udid: String) async -> HingeState {
+        _ = await refreshHingeAngle(udid: udid)
+        return cachedHingeState(udid: udid)
+    }
+
+    private func refreshHingeAngle(udid: String) async -> Bool {
         let generation = hingeResetGenerations[udid, default: 0]
         let previous = hingeStates[udid]
         let revision = hingeStateRevisions[udid, default: 0]
@@ -61,18 +113,22 @@ actor CoreDeviceBridge {
         else { angle = await readHingeAngle(udid: udid) }
         // Preserve newer commands, reads, and boot state across the native await.
         guard hingeResetGenerations[udid, default: 0] == generation,
-              hingeStateRevisions[udid, default: 0] == revision else { return cachedHingeState(udid: udid) }
+              hingeStateRevisions[udid, default: 0] == revision else { return false }
         if let angle {
+            let pending = hingeReadbackStates[udid]?.pendingFields ?? []
             updateHingeState(udid: udid) { state in
                 if let oldAngle = previous?.angle, abs(oldAngle - angle) > 0.01 {
-                    state = HingeState()
+                    if !pending.contains(.orientation) { state.orientation = nil }
+                    if !pending.contains(.tableMode) { state.tableMode = nil }
                 }
                 state.angle = angle
             }
+            confirmHingeAngle(udid: udid)
+            return true
         }
         // If readback is unavailable, retain the last individually successful
         // sends, including the portion of a preset applied before its failure.
-        return cachedHingeState(udid: udid)
+        return false
     }
 
     func remoteDevice(udid: String) async throws -> CoreDeviceRemoteDevice {
@@ -145,24 +201,26 @@ actor CoreDeviceBridge {
         return capability
     }
 
-    func setHingeAngle(udid: String, angle: Double) async -> Bool {
+    func setHingeAngle(udid: String, angle: Double, command: HingeCommand? = nil) async -> Bool {
+        let generation = command?.generation ?? hingeResetGenerations[udid, default: 0]
+        guard hingeResetGenerations[udid, default: 0] == generation else { return false }
         guard angle.isFinite, (0...180).contains(angle) else { return false }
         guard let rawData = SSCoreDeviceHingeData(angle) else { return false }
         let data = Unmanaged<NSData>.fromOpaque(rawData).takeRetainedValue() as Data
-        let generation = hingeResetGenerations[udid, default: 0]
         let sent = await sendControl(udid: udid, data: data)
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { updateHingeState(udid: udid) { $0.angle = angle } }
+        if sent { updateHingeAngle(udid: udid, angle: angle) }
         return sent
     }
 
     func setHingePose(udid: String, pose: String) async -> Bool {
-        await HingePoseControl.apply(
+        guard let command = await prepareHingeCommand(udid: udid, readAngle: false) else { return false }
+        return await HingePoseControl.apply(
             pose,
             tableModeAvailable: { await self.tableModeAvailable(udid: udid) },
-            setAngle: { await self.setHingeAngle(udid: udid, angle: $0) },
-            setTableMode: { await self.setTableMode(udid: udid, enabled: $0) },
-            setOrientation: { await self.setPhysicalOrientation(udid: udid, value: $0) },
+            setAngle: { await self.setHingeAngle(udid: udid, angle: $0, command: command) },
+            setTableMode: { await self.setTableMode(udid: udid, enabled: $0, command: command) },
+            setOrientation: { await self.setPhysicalOrientation(udid: udid, value: $0, command: command) },
             waitForLandscapeCover: {
                 let clock = ContinuousClock()
                 let deadline = clock.now.advanced(by: .milliseconds(1500))
@@ -190,16 +248,17 @@ actor CoreDeviceBridge {
         )) != nil
     }
 
-    func setTableMode(udid: String, enabled: Bool) async -> Bool {
+    func setTableMode(udid: String, enabled: Bool, command: HingeCommand? = nil) async -> Bool {
+        let generation = command?.generation ?? hingeResetGenerations[udid, default: 0]
+        guard hingeResetGenerations[udid, default: 0] == generation else { return false }
         // Older Xcodes can provide hinge/rotation controls without the table
         // sensor. Releasing an unavailable sensor is a no-op; enabling it must
         // still fail, and a real send failure must not be reported as success.
         guard SSCoreDeviceTableModeAvailable() else {
             fputs("[hid] CoreDevice Table Mode unavailable in this Xcode\n", stderr)
-            if !enabled { updateHingeState(udid: udid) { $0.tableMode = false } }
+            if !enabled { updateHingeState(udid: udid, command: command, field: .tableMode) { $0.tableMode = false } }
             return !enabled
         }
-        let generation = hingeResetGenerations[udid, default: 0]
         do {
             let metadataSymbol = "$s10CoreDevice29UniversalHIDServiceCapabilityVN"
             let capability = try await capability(
@@ -208,13 +267,13 @@ actor CoreDeviceBridge {
             )
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
             let sent = SSCoreDeviceSendTableMode(capability.storage, enabled)
-            if sent { updateHingeState(udid: udid) { $0.tableMode = enabled } }
+            if sent { updateHingeState(udid: udid, command: command, field: .tableMode) { $0.tableMode = enabled } }
             if !sent { capabilities.removeValue(forKey: "\(udid):\(metadataSymbol)") }
             return sent
         } catch BridgeError.unavailable {
             fputs("[hid] CoreDevice Table Mode capability unavailable\n", stderr)
             guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-            if !enabled { updateHingeState(udid: udid) { $0.tableMode = false } }
+            if !enabled { updateHingeState(udid: udid, command: command, field: .tableMode) { $0.tableMode = false } }
             return !enabled
         } catch {
             fputs("[hid] CoreDevice Table Mode failed: \(error)\n", stderr)
@@ -222,22 +281,24 @@ actor CoreDeviceBridge {
         }
     }
 
-    func setPhysicalOrientation(udid: String, value: String) async -> Bool {
+    func setPhysicalOrientation(udid: String, value: String, command: HingeCommand? = nil) async -> Bool {
+        let generation = command?.generation ?? hingeResetGenerations[udid, default: 0]
+        guard hingeResetGenerations[udid, default: 0] == generation else { return false }
         guard ["portrait", "pud", "landscape-left", "landscape-right", "faceup", "facedown"].contains(value) else { return false }
         guard let rawData = value.withCString({ SSCoreDeviceOrientationData($0) }) else { return false }
         let data = Unmanaged<NSData>.fromOpaque(rawData).takeRetainedValue() as Data
-        let generation = hingeResetGenerations[udid, default: 0]
         let sent = await sendControl(udid: udid, data: data)
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
-        if sent { updateHingeState(udid: udid) { $0.orientation = value } }
+        if sent { updateHingeState(udid: udid, command: command, field: .orientation) { $0.orientation = value } }
         return sent
     }
 
-    func setOrientation(udid: String, deviceOrientation: UInt32, nativeRotation: Int = 0) async -> Bool {
+    func setOrientation(udid: String, deviceOrientation: UInt32, nativeRotation: Int = 0,
+                        command: HingeCommand? = nil) async -> Bool {
         guard let value = SimulatorScreenOrientation.vendorControlValue(
                   forDeviceOrientation: deviceOrientation, nativeRotation: nativeRotation
               ) else { return false }
-        return await setPhysicalOrientation(udid: udid, value: value)
+        return await setPhysicalOrientation(udid: udid, value: value, command: command)
     }
 
     private func sendControl(udid: String, data: Data) async -> Bool {

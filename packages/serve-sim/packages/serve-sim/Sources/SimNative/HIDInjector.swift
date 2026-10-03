@@ -567,10 +567,12 @@ actor HIDInjector {
 
     func setHingeAngle(_ angle: Double) async -> Bool {
         guard isFoldable, let deviceUDID, angle.isFinite, (0...180).contains(angle) else { return false }
+        let bridge = CoreDeviceBridge.shared
+        guard let command = await bridge.prepareHingeCommand(udid: deviceUDID, readAngle: false) else { return false }
         // Device Hub releases the table sensor when a manual slider edit
         // begins, including edits that remain within a tabletop-capable pose.
-        guard await CoreDeviceBridge.shared.setTableMode(udid: deviceUDID, enabled: false) else { return false }
-        return await CoreDeviceBridge.shared.setHingeAngle(udid: deviceUDID, angle: angle)
+        guard await bridge.setTableMode(udid: deviceUDID, enabled: false, command: command) else { return false }
+        return await bridge.setHingeAngle(udid: deviceUDID, angle: angle, command: command)
     }
 
     func supportsHingeAngle() async -> Bool {
@@ -584,13 +586,15 @@ actor HIDInjector {
 
     func setPhysicalOrientation(_ value: String) async -> Bool {
         guard isFoldable, let deviceUDID else { return false }
-        guard await CoreDeviceBridge.shared.tableModeAvailable(udid: deviceUDID) else { return false }
-        guard await CoreDeviceBridge.shared.setTableMode(udid: deviceUDID, enabled: false) else { return false }
-        guard await CoreDeviceBridge.shared.setPhysicalOrientation(udid: deviceUDID, value: value) else { return false }
+        let bridge = CoreDeviceBridge.shared
+        guard let command = await bridge.prepareHingeCommand(udid: deviceUDID) else { return false }
+        guard await bridge.tableModeAvailable(udid: deviceUDID) else { return false }
+        guard await bridge.setTableMode(udid: deviceUDID, enabled: false, command: command) else { return false }
+        guard await bridge.setPhysicalOrientation(udid: deviceUDID, value: value, command: command) else { return false }
         // A half-open Duo elects its outer surface through the same table state
         // used by the native Tent pose. Orientation alone does not switch it.
         if value == "facedown" {
-            return await CoreDeviceBridge.shared.setTableMode(udid: deviceUDID, enabled: true)
+            return await bridge.setTableMode(udid: deviceUDID, enabled: true, command: command)
         }
         return true
     }
@@ -602,7 +606,9 @@ actor HIDInjector {
 
     func setTableMode(_ enabled: Bool) async -> Bool {
         guard isFoldable, let deviceUDID else { return false }
-        return await CoreDeviceBridge.shared.setTableMode(udid: deviceUDID, enabled: enabled)
+        let bridge = CoreDeviceBridge.shared
+        guard let command = await bridge.prepareHingeCommand(udid: deviceUDID) else { return false }
+        return await bridge.setTableMode(udid: deviceUDID, enabled: enabled, command: command)
     }
 
     /// Toggle a CoreAnimation render debug flag on the simulator. Names are the
@@ -718,13 +724,15 @@ actor HIDInjector {
             // Modern foldable simulators acknowledge legacy GSEvent delivery
             // without changing orientation. Use the same vendor channel as
             // Device Hub and report its failure without a legacy fallback.
+            let bridge = CoreDeviceBridge.shared
+            guard let command = await bridge.prepareHingeCommand(udid: deviceUDID) else { return false }
             let nativeRotation = selectedScreenID.flatMap { nativeScreenRotations[$0] } ?? 0
-            guard await CoreDeviceBridge.shared.setOrientation(
-                udid: deviceUDID, deviceOrientation: orientation, nativeRotation: nativeRotation
+            guard await bridge.setOrientation(
+                udid: deviceUDID, deviceOrientation: orientation, nativeRotation: nativeRotation, command: command
             ) else { return false }
             // A user rotation exits Table Mode, matching Device Hub's rotate
             // control. Preset physical rotations bypass this screen API.
-            return await CoreDeviceBridge.shared.setTableMode(udid: deviceUDID, enabled: false)
+            return await bridge.setTableMode(udid: deviceUDID, enabled: false, command: command)
         }
         guard let device = simDevice else {
             fputs("[hid] sendOrientation: no SimDevice (setup not called?)\n", stderr)
