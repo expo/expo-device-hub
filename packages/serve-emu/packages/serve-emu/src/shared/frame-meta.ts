@@ -2,7 +2,7 @@
 // the browser worker reader (ui/lib/stream-worker.ts) so the header layout
 // can never drift between the two. This module must stay runtime-neutral:
 // no Bun/Node APIs (the UI tsconfig compiles it with DOM lib only).
-// Canonical wire spec and golden examples: ../../docs/protocol.md
+// @ref LLP 0008#semu-websocket-frame-metadata — Canonical wire spec and golden examples
 //
 // Header layout (big-endian):
 //   [0..3]   u32 magic "SEMU"

@@ -1,6 +1,16 @@
-# WebRTC architecture
+# LLP 0002: WebRTC architecture
 
-Status: current implementation and planned direction as of September 2026.
+**Type:** Explainer
+**Status:** Active
+**Systems:** ServeSim
+**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
+**Date:** 2026-09-23
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/webrtc-architecture.md`; links and paths updated)
+**Related:** LLP 0001
+
+> File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
+
+This document describes the current implementation and the planned direction as of September 2026.
 
 ## Scope
 
@@ -14,7 +24,7 @@ Status: current implementation and planned direction as of September 2026.
 The deployment environment is trusted. Authentication and authorization are
 outside this design. Recording is independent of the WebRTC transport and
 consumes owned captured frames alongside it. The capture and recording paths
-are documented in [Video pipeline and recording](video-pipeline.md).
+are documented in [Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md).
 
 ## Decisions
 
@@ -121,7 +131,7 @@ submission out to every peer connection. H.264 proxies deduplicate by frame
 timestamp and use one VideoToolbox encoder; each peer retains its own sender,
 bitrate estimate, and packet stream. VP8 fallback retains per-peer encoders.
 The recording uses a separate hardware H.264 session at native resolution. See
-[Video pipeline and recording](video-pipeline.md) for why this encode is
+[Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md) for why this encode is
 independent of viewer settings.
 
 The pump is hardened against hostile host timing, because a production trace

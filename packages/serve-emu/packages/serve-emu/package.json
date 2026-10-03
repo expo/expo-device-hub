@@ -79,7 +79,6 @@
     "scripts",
     "vendor",
     "dist",
-    "docs",
     "CHANGELOG.md",
     "README.md",
     "LICENSE"

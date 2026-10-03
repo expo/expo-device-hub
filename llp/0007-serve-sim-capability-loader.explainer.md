@@ -1,4 +1,13 @@
-# The capability loader
+# LLP 0007: The capability loader
+
+**Type:** Explainer
+**Status:** Active
+**Systems:** ServeSim
+**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
+**Date:** 2026-09-23
+**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/Sources/ServeSimCapabilityLoader/DESIGN.md`; links and paths updated)
+
+> File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 The capability loader loads capabilities into eligible simulator apps while keeping
 system daemons free of framework dependencies.

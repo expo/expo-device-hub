@@ -73,7 +73,7 @@ rests level and Tent presents the outside cover screen. The original `V68.usdz`
 is loaded locally, without bundling Apple's model or downloading it. The view
 respects the browser's reduced-motion preference. **Simulator → Preview mode**
 switches between 2D and 3D; AX inspection also uses the flat view. See [hinge controls and display
-selection](packages/serve-sim/docs/hinge-controls.md) for Device Hub's hidden
+selection](https://github.com/expo/expo-device-hub/blob/main/llp/0004-serve-sim-hinge-controls.explainer.md) for Device Hub's hidden
 controls and the simulator APIs behind them.
 
 ## CLI
@@ -187,11 +187,11 @@ Each viewer retains its own peer connection, congestion controller, RTP stream,
 and helper WebSocket. VP8 fallback keeps per-peer encoders. HTTP streams
 continue to support multiple viewers as well.
 
-See [WebRTC architecture](docs/webrtc-architecture.md) for signaling and
-control, and [Video pipeline and recording](docs/video-pipeline.md) for capture,
+See [WebRTC architecture](https://github.com/expo/expo-device-hub/blob/main/llp/0002-serve-sim-webrtc-architecture.explainer.md) for signaling and
+control, and [Video pipeline and recording](https://github.com/expo/expo-device-hub/blob/main/llp/0001-serve-sim-video-pipeline.explainer.md) for capture,
 scaling, hardware encoding, the recording contract, and measured limits.
 
-See [API](docs/api.md) for the HTTP routes, authentication, CORS and the
+See [API](https://github.com/expo/expo-device-hub/blob/main/llp/0003-serve-sim-http-api.spec.md) for the HTTP routes, authentication, CORS and the
 WebSocket endpoints.
 
 ### Recording video
@@ -303,7 +303,7 @@ Use **Enable capture** in the tools panel to start without rebooting. Turning ca
 
 While capturing, the tools panel lists requests. Session files live under `$TMPDIR/serve-sim/capture-<udid>/` and are removed when capture stops. Capture HTTP routes require the preview session Bearer token.
 
-Requires [mitmproxy](https://mitmproxy.org/) on the host. Relaunch apps after enabling so they pick up the proxy. Details on redaction and risks: [docs/network-capture-security.md](docs/network-capture-security.md).
+Requires [mitmproxy](https://mitmproxy.org/) on the host. Relaunch apps after enabling so they pick up the proxy. Details on redaction and risks: [Network capture](https://github.com/expo/expo-device-hub/blob/main/llp/0005-serve-sim-network-capture.explainer.md).
 
 ## Connectors
 

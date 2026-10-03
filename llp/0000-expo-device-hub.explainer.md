@@ -80,7 +80,7 @@ Each item names the code that depends on it. Do not "clean up" this code without
 3. <a id="ui-matches-website"></a>**The Hub UI must match the Expo dashboard website.** Use the tokens and the `Button` from `@expo/hub-components`; never hard-code colors, sizes, radii, or shadows. The `@expo/styleguide` React components cannot be imported, because their index pulls in `next/link`, which Metro cannot bundle. That is why `@expo/hub-components` keeps its own ports [observed: `packages/expo-device-hub/AGENTS.md`].
 4. <a id="emu-input-path"></a>**serve-emu writes input directly to the scrcpy control socket.** Do not use `adb shell input`; it is too slow for agent workflows [observed: `packages/serve-emu/AGENTS.md` "Runtime Assumptions"].
 5. <a id="emu-auth"></a>**serve-emu binds to loopback by default.** A non-loopback bind requires a token unless `--unsafe-no-auth` is passed. The token gate runs before routing, so new routes are covered. Never put the token in `/health`, `/api`, error bodies, or reconnect URLs [observed: `packages/serve-emu/AGENTS.md` "Server and API Guidance"].
-6. <a id="emu-protocol"></a>**`packages/serve-emu/packages/serve-emu/docs/protocol.md` is the source of truth for scrcpy framing.** The scrcpy server version is pinned in `scripts/fetch-scrcpy.ts`. Change the pin, the reference, and the parser fixtures together [observed: `packages/serve-emu/AGENTS.md` "scrcpy Protocol Notes"].
+6. <a id="emu-protocol"></a>**[LLP 0008](0008-serve-emu-protocol.spec.md) is the source of truth for scrcpy framing.** The scrcpy server version is pinned in `scripts/fetch-scrcpy.ts`. Change the pin, the reference, and the parser fixtures together [observed: `packages/serve-emu/AGENTS.md` "scrcpy Protocol Notes"].
 7. <a id="sim-test-isolation"></a>**serve-sim tests never touch another session's simulator.** `bun run test` puts an `xcrun` shim on `PATH` that refuses `simctl`. `bun run test:e2e` requires `SERVE_SIM_TEST_UDID` and a private state directory. This is because other agents may keep simulators running on the same machine [observed: `packages/serve-sim/AGENTS.md` "Commands"].
 8. <a id="sim-proxy-upgrades"></a>**With `proxyHelpers`, WebSocket upgrades must reach the serve-sim middleware.** If they do not, the page still shows video over HTTP, but simulator input and DevTools stop working [observed: `packages/serve-sim/packages/serve-sim/README.md` "proxyHelpers"]. In the Hub, `simWebSocketHandler` does this.
 9. <a id="native-reload"></a>**The serve-sim N-API addon loads once per process.** After a native rebuild, restart any running serve-sim process before you test [observed: `packages/serve-sim/AGENTS.md` "Native build notes"].
@@ -102,15 +102,21 @@ The packages are tightly coupled, so one corpus at the repo root covers all of t
 
 | Topic | Source |
 |---|---|
+| serve-sim video pipeline and recording | [LLP 0001](0001-serve-sim-video-pipeline.explainer.md) |
+| serve-sim WebRTC signaling and control | [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md) |
+| serve-sim HTTP routes, auth, CORS, WebSockets | [LLP 0003](0003-serve-sim-http-api.spec.md) |
+| serve-sim hinge controls and display selection | [LLP 0004](0004-serve-sim-hinge-controls.explainer.md) |
+| serve-sim network capture and redaction | [LLP 0005](0005-serve-sim-network-capture.explainer.md) |
+| How Simulator.app forwards scroll (reverse-engineered) | [LLP 0006](0006-serve-sim-scroll-injection.research.md) |
+| serve-sim capability loader | [LLP 0007](0007-serve-sim-capability-loader.explainer.md) |
+| serve-emu scrcpy framing, control packets, `SEMU` metadata | [LLP 0008](0008-serve-emu-protocol.spec.md) |
+| serve-emu hardware H.264 encoder spike | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md) |
 | Hub UI rules and tokens | `packages/expo-device-hub/AGENTS.md` |
 | serve-sim commands, tests, definition of done | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md` |
-| serve-sim video pipeline | `packages/serve-sim/packages/serve-sim/docs/video-pipeline.md`, `packages/serve-sim/packages/serve-sim/docs/webrtc-architecture.md` |
-| serve-sim HTTP API | `packages/serve-sim/packages/serve-sim/docs/api.md` |
-| serve-sim network capture security | `packages/serve-sim/packages/serve-sim/docs/network-capture-security.md` |
-| serve-emu layout, protocol rules, auth | `packages/serve-emu/AGENTS.md`, `packages/serve-emu/packages/serve-emu/docs/protocol.md` |
+| serve-emu layout and auth | `packages/serve-emu/AGENTS.md` |
 | Releases | `RELEASING.md` |
 
-These documents are not LLPs yet. Follow-on LLPs will convert or link them.
+LLPs 0001–0009 were moved here from the package `docs/` folders and from `Sources/ServeSimCapabilityLoader/DESIGN.md`. Agent instructions, READMEs, and process docs stay in their packages.
 
 ## Known drift
 

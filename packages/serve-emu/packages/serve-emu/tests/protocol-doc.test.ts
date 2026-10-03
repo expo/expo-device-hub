@@ -7,7 +7,8 @@ import {
 } from "./fixtures/protocol-golden.ts";
 
 const PROTOCOL_DOC = Bun.file(
-  new URL("../docs/protocol.md", import.meta.url),
+  // The protocol reference lives in the repository-root LLP corpus.
+  new URL("../../../../../llp/0008-serve-emu-protocol.spec.md", import.meta.url),
 );
 
 describe("canonical protocol documentation", () => {
@@ -24,7 +25,7 @@ describe("canonical protocol documentation", () => {
     for (const [name, value] of Object.entries(PROTOCOL_GOLDEN_HEX)) {
       expect(
         docs,
-        `${name} golden is missing or mislabeled in docs/protocol.md`,
+        `${name} golden is missing or mislabeled in LLP 0008`,
       ).toMatch(new RegExp(`^${name}:\\s+${value}$`, "m"));
     }
   });

@@ -2,7 +2,7 @@ export const GOLDEN_SCRCPY_VERSION = "4.0";
 export const SCRCPY_VERSION_DOC_MARKER =
   `<!-- scrcpy-server-version: ${GOLDEN_SCRCPY_VERSION} -->`;
 
-/** Exact compact byte examples mirrored by docs/protocol.md. */
+/** Exact compact byte examples mirrored by LLP 0008 (`llp/0008-serve-emu-protocol.spec.md`). */
 export const PROTOCOL_GOLDEN_HEX = {
   "v3-preamble-tail": "683236340000043800000780",
   "v4-preamble-tail": "68323634800000000000043800000780",
