@@ -50,6 +50,13 @@ For example:
 serve-sim <udid> --network-capture --network-capture-field header,request-body
 ```
 
+These flags set the default. The Network panel can change the fields for a device, including fields
+the flags left off: while capture is off, the choice applies to the next start; while capture is on, it
+applies at once, without restarting the proxy: headers and bodies to requests that finish after the
+change, and query values to requests that start after it. Requests
+already recorded keep what they were recorded with. The panel's capture actions need the session token
+and a same-origin request, like every capture action.
+
 Each body preview is capped at 512 KiB. The in-memory store retains at most 500 requests and allows
 16 MiB for stored headers and bodies. Full transfer sizes are recorded even when previews are truncated
 or omitted. The session HAR records a request when its response arrives, so a request that is still in
