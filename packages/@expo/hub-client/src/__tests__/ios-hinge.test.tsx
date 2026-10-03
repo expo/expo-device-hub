@@ -74,6 +74,9 @@ const INNER_OPEN = {
   tableModeAvailable: true,
 };
 
+/** Holds device-2's `/api` answer so a test can observe the switch before it resolves. */
+const gate: { hold: boolean; release: (() => void) | null } = { hold: false, release: null };
+
 function installBrowser({ duo }: { duo: boolean }) {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   stubGlobal('window', {
@@ -96,6 +99,11 @@ function installBrowser({ duo }: { duo: boolean }) {
       // device-1 is the Duo under test (or a plain iPhone); device-2 is always a plain iPhone.
       const device = searchParams.get('device') ?? 'device-1';
       const foldable = duo && device === 'device-1';
+      if (device === 'device-2' && gate.hold) {
+        await new Promise<void>((resolve) => {
+          gate.release = resolve;
+        });
+      }
       return Response.json({
         url: `https://hub.test/helper/${device}`,
         wsUrl: `wss://hub.test/helper/${device}/ws`,
@@ -206,7 +214,16 @@ test('switching to another simulator forgets the previous screen config at once'
   await act(async () => socket.push(0x82, INNER_OPEN));
   expect(client().hinge?.modelActive).toBe(true);
 
+  gate.hold = true;
   await update({ device: 'device-2' });
+  await act(async () => {});
+  // Before the new device's config resolves, nothing of the old Duo remains:
+  // no hinge, no parked stream, no stale screen under the new name.
+  expect(client().status).toBe('connecting');
+  expect(client().screen).toBeNull();
+  expect(client().hinge).toBeNull();
+  gate.hold = false;
+  await act(async () => gate.release?.());
   await act(async () => {});
   // The old Duo config must not classify the plain iPhone or park its stream
   // while its own helper has not pushed a config yet.
@@ -243,14 +260,26 @@ test('a rejected preset restores the 3D view it replaced, unless a rotation supe
   await act(async () => socket.push(0x90, { requestId: 2, ok: false, error: 'Rejected' }));
   expect(client().hinge?.view).toEqual(rotatedView);
 
-  // A confirmed preset keeps its own view and forgets the restore point.
+  // An acknowledged preset keeps its own view: a later failed edit does not undo it.
   await act(async () => client().hinge!.setControl({ control: 'pose', value: 'open' }));
   await act(async () => socket.push(0x90, { requestId: 3, ok: true }));
-  await act(async () => socket.push(0x82, INNER_OPEN));
-  const confirmed = client().hinge!.view;
+  const acknowledged = client().hinge!.view;
   await act(async () => client().hinge!.setControl({ control: 'angle', value: 120 }));
   await act(async () => socket.push(0x90, { requestId: 4, ok: false, error: 'Rejected' }));
-  expect(client().hinge?.view).toEqual(confirmed);
+  expect(client().hinge?.view).toEqual(acknowledged);
+  await act(async () => socket.push(0x82, INNER_OPEN));
+
+  // A preset queued behind a failing edit is discarded with the queue, so its
+  // view goes too.
+  const beforeEdit = client().hinge!.view;
+  await act(async () => client().hinge!.setControl({ control: 'angle', value: 100 }));
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'laptop' }));
+  expect(client().hinge?.view.fixedLeftFold).toBeDefined();
+  expect(socket.frames().filter((frame) => frame.tag === 0x10)).toHaveLength(5);
+  await act(async () => socket.push(0x90, { requestId: 5, ok: false, error: 'Rejected' }));
+  expect(client().hinge?.pending).toBe(false);
+  expect(socket.frames().filter((frame) => frame.tag === 0x10)).toHaveLength(5);
+  expect(client().hinge?.view).toEqual(beforeEdit);
 });
 
 test('a rejected hinge command surfaces its error and drops the preview', async () => {
