@@ -64,13 +64,17 @@
     },
     "packages/@expo/hub-client": {
       "name": "@expo/hub-client",
-      "version": "1.1.0",
+      "version": "1.2.0",
+      "dependencies": {
+        "three": "^0.186.0",
+      },
       "devDependencies": {
         "@swc/cli": "^0.8.1",
         "@swc/core": "^1.15.43",
         "@types/bun": "latest",
         "@types/react": "~19.2.2",
         "@types/react-test-renderer": "19.1.0",
+        "@types/three": "^0.186.0",
         "oxfmt": "^0.56.0",
         "oxlint": "^1.71.0",
         "react-test-renderer": "19.2.3",
@@ -109,7 +113,7 @@
     },
     "packages/expo-device-hub": {
       "name": "expo-device-hub",
-      "version": "0.13.0",
+      "version": "0.14.0",
       "bin": {
         "expo-device-hub": "dist/server/cli.mjs",
       },
@@ -170,7 +174,7 @@
     },
     "packages/serve-sim/packages/serve-sim": {
       "name": "@expo/serve-sim",
-      "version": "0.4.0",
+      "version": "0.5.0",
       "bin": {
         "serve-sim": "dist/serve-sim.js",
       },

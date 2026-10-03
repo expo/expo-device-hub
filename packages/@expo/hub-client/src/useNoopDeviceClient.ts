@@ -9,6 +9,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   status: 'idle',
   error: null,
   screen: null,
+  hinge: null,
   fps: 0,
   devices: [],
   logs: [],

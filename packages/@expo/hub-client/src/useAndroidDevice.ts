@@ -1911,6 +1911,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   return {
     platform: 'android',
+    hinge: null,
     // The transport can stay live while the server stages new stream settings.
     // Show the pending change immediately without feeding it back into the
     // switch tracker, which must observe the actual interruption and recovery.

@@ -4,6 +4,7 @@ import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
+  type FoldableDeviceScreenProps,
   type ScreenSize,
 } from '@expo/hub-client';
 import { bg } from '../primitives';
@@ -31,6 +32,17 @@ const PRELOADED_FRAME_STYLE: CSSProperties = {
 // height becomes the width instead of the frame shrinking into the old width.
 const MAX_SHORT_SIDE = 480;
 
+// The iPhone Duo's 3D stage keeps one square footprint as the device folds and
+// changes active displays (serve-sim's fixed 1:1 stage). Resizing it with each
+// native screen configuration would animate on top of the hinge motion.
+const DUO_STAGE_WIDTH = 580;
+
+/** Viewer-local 3D options the consumer passes through to `FoldableDeviceScreen`. */
+export type PhoneFrameFoldPreview = Pick<
+  FoldableDeviceScreenProps,
+  'cacheScreenOnFold' | 'sizeMode' | 'onUnavailable'
+>;
+
 const CONFIG: Record<
   Device['platform'],
   { ratio: number; radiusFraction: number; squircle: boolean }
@@ -56,6 +68,8 @@ export function PhoneFrame({
   client,
   agentInteraction,
   DeviceScreen,
+  FoldableDeviceScreen,
+  foldPreview,
   displayScreen,
   showDeviceFrame = true,
   deviceFrameAssets,
@@ -65,6 +79,9 @@ export function PhoneFrame({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
+  /** iPhone Duo 3D renderer, injected from `@expo/hub-client`; without it the Duo stays flat. */
+  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
   /** Viewer-local preference. Ignored when the selected model has no frame. */
@@ -120,6 +137,30 @@ export function PhoneFrame({
       />
     </div>
   );
+
+  // The folding model draws its own device, so neither frame artwork nor the
+  // screen clip applies; the agent overlay still covers the stage.
+  if (live && client.hinge?.modelActive && FoldableDeviceScreen) {
+    return (
+      <div
+        data-testid="device-screen-frame"
+        data-device-frame-kind="duo-model"
+        data-agent-active={agentInteraction ? 'true' : 'false'}
+        style={{
+          ...deviceViewportStyle({ maxShortSide: DUO_STAGE_WIDTH, ratio: 1 }),
+          containerType: 'inline-size',
+        }}
+        onPointerEnter={(event) => {
+          if (event.pointerType === 'mouse') setHovered(true);
+        }}
+        onPointerLeave={() => setHovered(false)}>
+        <div data-testid="device-screen-clip" style={{ position: 'absolute', inset: 0 }}>
+          <FoldableDeviceScreen key={device.id} client={client} {...foldPreview} />
+          {takeoverOverlay}
+        </div>
+      </div>
+    );
+  }
 
   const frameAsset =
     showDeviceFrame && device.deviceFrame ? deviceFrameAssets?.[device.deviceFrame] : undefined;
