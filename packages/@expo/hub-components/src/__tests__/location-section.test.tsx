@@ -11,6 +11,7 @@ const BASE_CLIENT: DeviceClient = {
   inputError: null,
   screenRecording: null,
   screen: { width: 1080, height: 2400 },
+  hinge: null,
   fps: 60,
   devices: [],
   logs: [],

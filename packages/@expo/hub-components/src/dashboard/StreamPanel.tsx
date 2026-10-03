@@ -4,13 +4,14 @@ import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
+  type FoldableDeviceScreenProps,
   type ScreenSize,
 } from '@expo/hub-client';
 import { bg, border } from '../primitives';
 import { type Device } from './data';
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
 import { type DeviceFrameAssets } from './deviceFrame';
-import { PhoneFrame } from './PhoneFrame';
+import { PhoneFrame, type PhoneFrameFoldPreview } from './PhoneFrame';
 import { ScreenshotToaster, useScreenshotToast } from './ScreenshotToast';
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from './StreamControls';
 
@@ -34,6 +35,8 @@ export function StreamPanel({
   client,
   agentInteraction,
   DeviceScreen,
+  FoldableDeviceScreen,
+  foldPreview,
   displayScreen,
   framed = true,
   showDeviceFrame = true,
@@ -44,6 +47,9 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
+  /** iPhone Duo 3D renderer, injected from `@expo/hub-client`; without it the Duo stays flat. */
+  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
   /**
@@ -96,6 +102,8 @@ export function StreamPanel({
             client={client}
             agentInteraction={agentInteraction}
             DeviceScreen={DeviceScreen}
+            FoldableDeviceScreen={FoldableDeviceScreen}
+            foldPreview={foldPreview}
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
             deviceFrameAssets={deviceFrameAssets}
@@ -133,6 +141,16 @@ export function StreamPanel({
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}
+              hinge={
+                client.hinge
+                  ? {
+                      angle: client.hinge.angle,
+                      pose: client.hinge.pose,
+                      pending: client.hinge.pending,
+                      onChange: client.hinge.setControl,
+                    }
+                  : undefined
+              }
             />
           </div>
         </div>

@@ -351,3 +351,45 @@ export function ChevronsUpDownIcon({ size = 14, color = 'currentColor', strokeWi
     </svg>
   );
 }
+
+/** iPhone Duo fold presets, drawn like serve-sim's hinge glyphs: fully folded. */
+export function FoldClosedIcon({ size = 20, color = 'currentColor', strokeWidth = 1.7, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <path
+        d="M8 4.5h7.5a2.3 2.3 0 0 1 2.3 2.3v10.4a2.3 2.3 0 0 1-2.3 2.3H8z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <circle cx="14.5" cy="8" r=".9" fill={color} />
+    </svg>
+  );
+}
+
+/** iPhone Duo partially open, standing in landscape like a half-open book. */
+export function FoldHalfOpenIcon({ size = 20, color = 'currentColor', strokeWidth = 1.7, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <path
+        d="M5.6 5.3 11.5 6.4a2.8 2.8 0 0 0 1 0l5.9-1.1c1.6-.3 2.9.7 2.9 2.3v8.8c0 1.6-1.3 2.6-2.9 2.3l-5.9-1.1a2.8 2.8 0 0 0-1 0l-5.9 1.1c-1.6.3-2.9-.7-2.9-2.3V7.6c0-1.6 1.3-2.6 2.9-2.3Z"
+        stroke={color}
+        strokeWidth={strokeWidth}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="m10.6 8 1.4.3 1.4-.3" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+/** iPhone Duo fully open. */
+export function FoldOpenIcon({ size = 20, color = 'currentColor', strokeWidth = 1.7, style }: IconProps) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" style={style}>
+      <rect x="2.7" y="4.9" width="18.6" height="14.2" rx="2.5" stroke={color} strokeWidth={strokeWidth} />
+      <path d="M10.6 7.3h2.8" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" />
+    </svg>
+  );
+}
