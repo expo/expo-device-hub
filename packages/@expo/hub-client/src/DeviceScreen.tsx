@@ -13,7 +13,7 @@ import { wheelDeltaToPixels } from './scroll-wheel';
 import { AgentInteractionIndicator } from './AgentInteractionIndicator';
 import { TouchIndicator } from './TouchIndicator';
 import {
-  type DeviceScreenProps,
+  type DeviceScreenInputProps,
   type KeyboardInput,
   type MultiTouchSample,
 } from './types';
@@ -55,12 +55,12 @@ export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
  * cover or blank it — that is what keeps an Android capture-source switch or
  * a brief socket drop from flashing black.
  */
-export function deviceScreenPresentsMedia(status: DeviceScreenProps['client']['status']): boolean {
+export function deviceScreenPresentsMedia(status: DeviceScreenInputProps['client']['status']): boolean {
   return status === 'streaming' || status === 'reconnecting';
 }
 
 export function deviceScreenSurfaceStyle(
-  status: DeviceScreenProps['client']['status']
+  status: DeviceScreenInputProps['client']['status']
 ): CSSProperties {
   return {
     ...DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
@@ -121,7 +121,7 @@ export function DeviceScreen({
   borderRadius,
   squircle,
   agentInteraction,
-}: DeviceScreenProps) {
+}: DeviceScreenInputProps) {
   const {
     videoKind,
     attachVideo,

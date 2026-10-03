@@ -792,6 +792,20 @@ export interface DeviceClient {
 /** A platform implementation of the connection half of the interface. */
 export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClient;
 
+/** The client fields read by DeviceScreen. Full DeviceClient values remain valid inputs. */
+export type DeviceScreenClient = Pick<
+  DeviceClient,
+  | 'videoKind'
+  | 'attachVideo'
+  | 'sendTouch'
+  | 'sendMultiTouch'
+  | 'sendScroll'
+  | 'sendKey'
+  | 'screen'
+  | 'status'
+  | 'error'
+>;
+
 /** Props for the shared {@link DeviceScreen} component rendered inside PhoneFrame. */
 export interface DeviceScreenProps {
   client: DeviceClient;
@@ -801,4 +815,9 @@ export interface DeviceScreenProps {
   borderRadius?: CSSProperties['borderRadius'];
   /** Apply the iOS `corner-shape: squircle`. */
   squircle?: boolean;
+}
+
+/** The built-in screen also accepts the inputs returned by useDeviceScreenClient. */
+export interface DeviceScreenInputProps extends Omit<DeviceScreenProps, 'client'> {
+  client: DeviceScreenClient;
 }

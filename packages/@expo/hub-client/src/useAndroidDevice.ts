@@ -87,6 +87,7 @@ import {
   type ConnectionStatus,
   type DeviceAppearance,
   type DeviceClient,
+  type DeviceCapabilities,
   type ScreenshotCapture,
   type DeviceScreenRecordingStatus,
   type DeviceConnectionOptions,
@@ -99,6 +100,8 @@ import {
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamEncoderSettings,
+  type DeviceStreamCapabilities,
+  type DeviceStreamSettingCapabilities,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
   type ForegroundApp,
@@ -118,6 +121,14 @@ const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
+
+const noop = () => {};
+const ANDROID_STREAM_CODECS = ['h264'] as const;
+const ANDROID_STREAM_SETTING_CAPABILITIES = {
+  maxDimension: true,
+  h264Fps: true,
+  h264Bitrate: true,
+} as const satisfies DeviceStreamSettingCapabilities;
 
 const KEYCODE_R = 46;
 
@@ -1909,6 +1920,31 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
   }, [active, baseUrl, deviceScope, targetDevice]);
 
+  const webRtcAvailable = serverStreamSettings?.transport === 'webrtc';
+  const streamCapabilities = useMemo<DeviceStreamCapabilities>(
+    () => ({
+      modeAvailability: { mjpeg: false, h264: true, webrtc: webRtcAvailable },
+      httpCodecs: ANDROID_STREAM_CODECS,
+      webRtcCodecs: ANDROID_STREAM_CODECS,
+    }),
+    [webRtcAvailable],
+  );
+  const accessibilityAvailable = accessibilityLoader !== null;
+  const permissionsAvailable = permissionsBackend !== null;
+  const capabilities = useMemo<DeviceCapabilities>(
+    () => ({
+      deviceSettings: true,
+      activity: true,
+      events: true,
+      camera: cameraSupported,
+      accessibility: accessibilityAvailable,
+      location: locationCapabilities,
+      permissions: permissionsAvailable,
+      streamSettings: ANDROID_STREAM_SETTING_CAPABILITIES,
+    }),
+    [cameraSupported, accessibilityAvailable, locationCapabilities, permissionsAvailable],
+  );
+
   return {
     platform: 'android',
     // The transport can stay live while the server stages new stream settings.
@@ -1967,26 +2003,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamStats,
     setStreamStatsEnabled,
     webRtcCodec: 'h264',
-    setWebRtcCodec: () => {},
-    streamCapabilities: {
-      modeAvailability: {
-        mjpeg: false,
-        h264: true,
-        webrtc: serverStreamSettings?.transport === 'webrtc',
-      },
-      httpCodecs: ['h264'],
-      webRtcCodecs: ['h264'],
-    },
-    capabilities: {
-      deviceSettings: true,
-      activity: true,
-      events: true,
-      camera: cameraSupported,
-      accessibility: accessibilityLoader !== null,
-      location: locationCapabilities,
-      permissions: permissionsBackend !== null,
-      streamSettings: { maxDimension: true, h264Fps: true, h264Bitrate: true },
-    },
+    setWebRtcCodec: noop,
+    streamCapabilities,
+    capabilities,
     foregroundApp,
     videoKind: useWebRtc ? 'video' : 'canvas',
     attachVideo,
@@ -2000,7 +2019,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     appearance,
     setAppearance,
     hardwareKeyboardConnected,
-    setHardwareKeyboardConnected: () => {},
-    toggleSoftwareKeyboard: () => {},
+    setHardwareKeyboardConnected: noop,
+    toggleSoftwareKeyboard: noop,
   };
 }

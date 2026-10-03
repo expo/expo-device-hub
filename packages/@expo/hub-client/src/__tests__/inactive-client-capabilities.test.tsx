@@ -3,6 +3,8 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useAndroidDeviceClient } from '../useAndroidDevice';
 import { useIosDeviceClient } from '../useIosDevice';
+import { DeviceClientProvider } from '../DeviceClientProvider';
+import { useDeviceClient } from '../useDeviceClient';
 import { type DeviceClient, type DeviceConnectionOptions } from '../types';
 import { createGlobalStubs } from './test-globals';
 
@@ -62,6 +64,75 @@ for (const [platform, { useClient, whenEnabled }] of Object.entries(clients)) {
     expect(client.capabilities.permissions).toBe(false);
   });
 }
+
+test("Android stream capability subscribers follow transport changes and ignore ICE changes", async () => {
+  stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  stubGlobal("window", {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
+  stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
+  stubGlobal("WebSocket", Socket);
+  const pollers: (() => void)[] = [];
+  stubGlobal("setInterval", (callback: () => void, ms: number) => {
+    if (ms === 1500) pollers.push(callback);
+    return 0;
+  });
+  stubGlobal("clearInterval", () => {});
+  let transport = "websocket";
+  let iceServers = [{ urls: ["stun:first.test"] }];
+  stubGlobal("fetch", async (url: string) =>
+    new URL(url).pathname === "/api"
+      ? Response.json({
+          stream:
+            transport === "websocket"
+              ? { transport }
+              : { transport, codec: "h264", iceServers, iceTransportPolicy: "all" },
+        })
+      : Response.json({}, { status: 404 }),
+  );
+  let capabilities!: DeviceClient["streamCapabilities"];
+  let renders = 0;
+  function Features() {
+    capabilities = useDeviceClient().streamCapabilities;
+    renders++;
+    return <span>{String(capabilities?.modeAvailability.webrtc)}</span>;
+  }
+  await act(async () => {
+    renderer = create(
+      <DeviceClientProvider
+        platform="android"
+        options={{ baseUrl: "https://hub.test", device: "device-1", streamMode: "h264" }}
+      >
+        <Features />
+      </DeviceClientProvider>,
+    );
+  });
+  expect(pollers).toHaveLength(1);
+  expect(capabilities?.modeAvailability.webrtc).toBe(false);
+  const initial = renders;
+  transport = "webrtc";
+  await act(async () => {
+    pollers[0]!();
+  });
+  expect(capabilities?.modeAvailability.webrtc).toBe(true);
+  expect(renders).toBe(initial + 1);
+  const webRtcCapabilities = capabilities;
+  iceServers = [{ urls: ["stun:second.test"] }];
+  await act(async () => {
+    pollers[0]!();
+  });
+  expect(renders).toBe(initial + 1);
+  expect(capabilities).toBe(webRtcCapabilities);
+  transport = "websocket";
+  await act(async () => {
+    pollers[0]!();
+  });
+  expect(capabilities?.modeAvailability.webrtc).toBe(false);
+  expect(renders).toBe(initial + 2);
+});
 
 test('Android recording metadata follows host transitions and does not leak between selected devices', async () => {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
