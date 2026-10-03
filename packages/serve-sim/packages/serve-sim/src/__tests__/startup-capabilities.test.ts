@@ -5,7 +5,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { capabilityConfigPath, managedStartupDylibs, writeManagedStartupDylibs } from "../capability-config";
-import { configureCapability, enableCapabilities, disableCapability, disarmStaleCapabilityLoader, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath, armCapabilityLoader, rearmCapabilityLoader, isCapabilityArmed } from "../launch-manager";
+import { configureCapability, enableCapabilities, disableCapability, disarmStaleCapabilityLoader, releaseSession, releaseSessionSync, removeCapabilityLoaderSync, capabilityLoaderPath, armCapabilityLoader, rearmCapabilityLoader, isCapabilityArmed } from "../launch-manager";
 import { installShims, useTempStateDir } from "./helpers";
 import { withLaunchStateLock } from "../launch-state-lock";
 import { readLaunchState } from "../launch-state";
@@ -217,6 +217,19 @@ test("failed owner release can retry while another capability remains", async ()
   expect(() => releaseSessionSync(UDID, process.pid, () => {})).toThrow();
   expect(managedStartupDylibs(UDID)).toEqual([dylib]);
   releaseSessionSync(UDID, process.pid, () => {});
+  expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
+  expect(env().DYLD_INSERT_LIBRARIES).toContain(capabilityLoaderPath());
+  expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("camera.dylib");
+  expect(managedStartupDylibs(UDID)).toEqual([]);
+});
+
+test("async owner release can retry without removing another capability", async () => {
+  await enableCapabilities(UDID, null, [{ name: "camera", scope: "allApps", dylib: "/camera.dylib" }], { relaunch: false, ownerPid: null });
+  await enable();
+  writeFileSync(failurePath, "");
+  await expect(releaseSession(UDID, process.pid, () => {})).rejects.toThrow();
+  expect(managedStartupDylibs(UDID)).toEqual([dylib]);
+  await releaseSession(UDID, process.pid, () => {});
   expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
   expect(env().DYLD_INSERT_LIBRARIES).toContain(capabilityLoaderPath());
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("camera.dylib");

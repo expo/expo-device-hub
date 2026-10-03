@@ -1,18 +1,29 @@
 import { existsSync } from "fs";
 import { join } from "path";
 import { assertHostModules, GUEST_PATH, guestPkgPath, shellEscape, type TartGuest } from "./guest";
-import { warmSafari } from "./sim";
 
 export const GUEST_PKG = "/tmp/serve-sim-pkg";
 export const GUEST_SIMPB = "/tmp/simpb";
 
+// The suite `tart test` runs with no arguments. Listed rather than matched by
+// name so a new test file joins it on purpose.
+const CLIPBOARD_SUITE = [
+  "src/__tests__/pasteboard-copy.e2e.test.ts",
+  "src/__tests__/pasteboard-endpoint.test.ts",
+  "src/__tests__/pasteboard-inject.e2e.test.ts",
+  "src/__tests__/pasteboard-request.test.ts",
+  "src/__tests__/sim-clipboard.e2e.test.ts",
+  "src/__tests__/sim-clipboard.test.ts",
+];
+
+export function resolveTestFiles(pkgDir: string, args: string[]): string[] {
+  if (args.length) return args;
+  return CLIPBOARD_SUITE.filter((file) => existsSync(join(pkgDir, file)));
+}
+
 function simpbFiles(pkgDir: string): string[] {
   const dir = join(pkgDir, "dist", "simpb");
-  return [
-    "libSimPasteboardReader.dylib",
-    "libSimPasteboardReaderUI.dylib",
-    "serve-sim-pasteboard",
-  ]
+  return ["libSimPasteboardReader.dylib", "serve-sim-pasteboard"]
     .map((name) => join(dir, name))
     .filter((path) => existsSync(path));
 }
@@ -71,7 +82,6 @@ exec bun test --max-concurrency=1 ${quoted}
 
 export async function testOnce(guest: TartGuest, files: string[], udid: string): Promise<number> {
   await stageGuest(guest);
-  await warmSafari(guest, udid);
   await warmFixture(guest, udid);
   return runGuestTests(guest, files, udid);
 }

@@ -3,6 +3,8 @@ import { basename, join } from "path";
 import {
   capabilitiesToApply,
   capabilityDefinition,
+  forgetDisabledCapabilities,
+  rememberDisabledCapabilities,
   type CapabilityContext,
   type CapabilityDefinition,
   type CapabilityOverrides,
@@ -38,6 +40,7 @@ import {
 import { isDeviceNotBooted } from "./device";
 import { dirnameOf } from "./runtime";
 import { simctl, simctlSync } from "./simctl";
+import { hasHostSignalHandler, markFallbackSignalHandler } from "./process-signal-handlers";
 
 export {
   type Capability,
@@ -57,24 +60,59 @@ const CAPABILITY_LOADER_NAME = "libServeSimCapabilityLoader.dylib";
 const INSERT = "DYLD_INSERT_LIBRARIES";
 const CONFIG_VAR = "SERVE_SIM_CAPABILITIES_CONFIG";
 const TERMINATE_TIMEOUT_MS = 15_000;
+const PROCESS_CLEANUP_TIMEOUT_MS = 10_000;
+const CLEANUP_SIGNALS = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
+
+let processCapabilitiesStopping = false;
+const nativeOperationsAbort = new AbortController();
+const nativeOperations = new Set<Promise<string>>();
+
+function launchSimctl(args: string[], timeout = 30_000): Promise<string> {
+  const operation = simctl(args, { timeout, signal: nativeOperationsAbort.signal });
+  nativeOperations.add(operation);
+  void operation.then(() => nativeOperations.delete(operation), () => nativeOperations.delete(operation));
+  return operation;
+}
+
+function assertCapabilityProcessRunning(): void {
+  if (processCapabilitiesStopping) throw new Error("Cannot enable simulator capabilities while this host is shutting down.");
+}
 
 function releaseLaunchStateUnlocked(
   udid: string, ownerPid: number, onRelease?: (capability: RecordedCapability) => void,
 ): boolean {
   const previous = readLaunchState(udid, ownerPid);
   if (!previous) return false;
-  const kept = Object.fromEntries(
-    Object.entries(previous.capabilities).filter(([, record]) => record.ownerPid !== ownerPid),
-  );
-  const sessionPids = previous.sessionPids?.filter((pid) => pid !== ownerPid);
-  for (const record of Object.values(previous.capabilities)) {
-    if (record.ownerPid === ownerPid) onRelease?.(record);
+  const kept: Record<string, RecordedCapability> = {};
+  for (const [name, record] of Object.entries(previous.capabilities)) {
+    if (record.ownerPids) {
+      const owners = record.ownerPids.filter((pid) => pid !== ownerPid);
+      if (owners.length > 0) {
+        kept[name] = { ...record, ownerPid: owners[0]!, ownerPids: owners };
+      } else if (record.ownerPids.includes(ownerPid)) {
+        onRelease?.(record);
+      }
+    } else if (record.ownerPid === ownerPid) {
+      onRelease?.(record);
+    } else {
+      kept[name] = record;
+    }
   }
-  if (Object.keys(kept).length === 0 && !sessionPids?.length) {
+  const sessionPids = previous.sessionPids?.filter((pid) => pid !== ownerPid);
+  const disabledCapabilities = Object.fromEntries(
+    Object.entries(previous.disabledCapabilities ?? {})
+      .map(([name, owners]) => [name, owners.filter((pid) => pid !== ownerPid)] as const)
+      .filter(([, owners]) => owners.length > 0),
+  );
+  if (Object.keys(kept).length === 0 && !sessionPids?.length && Object.keys(disabledCapabilities).length === 0) {
     clearLaunchState(udid);
     return false;
   }
-  const state: LaunchState = { ...previous, capabilities: kept, ...(sessionPids ? { sessionPids } : {}) };
+  const state: LaunchState = {
+    ...previous, capabilities: kept,
+    ...(sessionPids ? { sessionPids } : {}),
+    disabledCapabilities,
+  };
   writeLaunchState(udid, state);
   commitCapabilityConfig(udid, renderCapabilityConfig(state));
   return true;
@@ -95,6 +133,7 @@ export function releaseSessionSync(
     if (!othersRemain) removeCapabilityLoaderSync(udid);
     else removeReleasedStartupSync(udid, previousStartup);
     armedHere.delete(udid);
+    forgetDisabledCapabilities(udid);
   });
 }
 
@@ -107,9 +146,10 @@ export async function releaseSession(
   await withLaunchStateLock(udid, async () => {
     const previousStartup = managedStartupDylibs(udid);
     const othersRemain = releaseLaunchStateUnlocked(udid, ownerPid, onRelease);
-    if (!othersRemain) removeCapabilityLoaderSync(udid);
-    else removeReleasedStartupSync(udid, previousStartup);
+    if (!othersRemain) await removeCapabilityLoader(udid).catch((error) => reportCapabilityCleanupFailure(udid, error));
+    else await removeReleasedStartup(udid, previousStartup);
     armedHere.delete(udid);
+    forgetDisabledCapabilities(udid);
   });
 }
 
@@ -159,6 +199,66 @@ export function childLaunchEnv(
 
 const armedHere = new Set<string>();
 
+let processCleanupInstalled = false;
+
+function reportCapabilityCleanupFailure(udid: string, error: unknown): void {
+  console.error(
+    `Could not disarm the capability loader on ${udid}; clear it with: xcrun simctl spawn ` +
+      `${udid} launchctl unsetenv DYLD_INSERT_LIBRARIES ` +
+      `(${error instanceof Error ? error.message : String(error)})`,
+  );
+}
+
+/** Release capabilities committed by an embedded host without a serve-sim CLI session. */
+export function ensureCapabilityProcessCleanup(): void {
+  if (processCleanupInstalled) return;
+  processCleanupInstalled = true;
+  process.once("exit", () => {
+    nativeOperationsAbort.abort();
+    for (const udid of devicesArmedHere()) {
+      try {
+        releaseSessionSync(udid, process.pid, () => {});
+      } catch (error) {
+        reportCapabilityCleanupFailure(udid, error);
+      }
+    }
+  });
+  let signalCleanupStarted = false;
+  const onSignal = (signal: NodeJS.Signals) => {
+    if (hasHostSignalHandler(signal) || signalCleanupStarted) return;
+    signalCleanupStarted = true;
+    processCapabilitiesStopping = true;
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      nativeOperationsAbort.abort();
+      void Promise.allSettled(nativeOperations).then(() => {
+        for (const other of CLEANUP_SIGNALS) process.removeListener(other, onSignal);
+        // Restore signal delivery to the host, another library's fallback, or the default action.
+        process.kill(process.pid, signal);
+      });
+    };
+    const timeout = setTimeout(() => {
+      console.error("Capability cleanup did not finish before signal shutdown; stale launch state may need cleanup.");
+      finish();
+    }, PROCESS_CLEANUP_TIMEOUT_MS);
+    void (async () => {
+      await waitForLaunchUpdates();
+      for (const udid of devicesArmedHere()) {
+        try {
+          await releaseSession(udid, process.pid, () => {});
+        } catch (error) {
+          reportCapabilityCleanupFailure(udid, error);
+        }
+      }
+    })().finally(finish);
+  };
+  markFallbackSignalHandler(onSignal);
+  for (const signal of CLEANUP_SIGNALS) process.on(signal, onSignal);
+}
+
 export function devicesArmedHere(): string[] {
   return [...armedHere];
 }
@@ -179,7 +279,7 @@ function withoutOurs(current: string, startupDylibs: string[] = []): string[] {
 }
 
 async function readInsert(udid: string): Promise<string> {
-  return (await simctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000)).trim();
+  return (await launchSimctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000)).trim();
 }
 
 function startupDylibs(capabilities: Record<string, Capability>): string[] {
@@ -198,8 +298,8 @@ async function armInsert(
   const retained = withoutOurs(await readInsert(udid), previousStartup);
   const next = [...new Set([...retained, dylib, ...desired])].join(":");
   writeManagedStartupDylibs(udid, [...previousStartup, ...desired]);
-  await simctl(["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)], 15_000);
-  await simctl(["spawn", udid, "launchctl", "setenv", INSERT, next], 15_000);
+  await launchSimctl(["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)], 15_000);
+  await launchSimctl(["spawn", udid, "launchctl", "setenv", INSERT, next], 15_000);
   writeManagedStartupDylibs(udid, desired);
   armedHere.add(udid);
 }
@@ -222,13 +322,13 @@ async function snapshotCapabilityLaunch(udid: string): Promise<CapabilityLaunchS
   }
   const startupDylibs = managedStartupDylibs(udid);
   const insert = await readInsert(udid);
-  const configPath = (await simctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], 15_000)).trim();
+  const configPath = (await launchSimctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], 15_000)).trim();
   return { config, configPath, insert, startupDylibs };
 }
 
 async function restoreLaunchEnvironment(udid: string, name: string, value: string): Promise<void> {
   const update = value ? ["setenv", name, value] : ["unsetenv", name];
-  await simctl(["spawn", udid, "launchctl", ...update], 15_000);
+  await launchSimctl(["spawn", udid, "launchctl", ...update], 15_000);
 }
 
 async function restoreCapabilityLaunch(
@@ -292,6 +392,16 @@ async function publishLaunchState(udid: string, state: LaunchState): Promise<voi
   }
 }
 
+async function removeReleasedStartup(udid: string, previousStartup: string[]): Promise<void> {
+  const desired = startupDylibs(readLaunchState(udid)?.capabilities ?? {});
+  const removed = previousStartup.filter((path) => !desired.includes(path));
+  if (removed.length === 0) return;
+  const next = (await readInsert(udid)).split(":").filter((path) => !removed.includes(path)).join(":");
+  await launchSimctl(next ? ["spawn", udid, "launchctl", "setenv", INSERT, next]
+    : ["spawn", udid, "launchctl", "unsetenv", INSERT], 15_000);
+  writeManagedStartupDylibs(udid, desired);
+}
+
 function removeReleasedStartupSync(udid: string, previousStartup: string[]): void {
   const desired = startupDylibs(readLaunchState(udid)?.capabilities ?? {});
   const removed = previousStartup.filter((path) => !desired.includes(path));
@@ -309,6 +419,7 @@ export function capabilityLoaderPath(): string {
 
 /** Arm the loader and republish the recorded capabilities; rejects if publication fails. */
 export async function rearmCapabilityLoader(udid: string): Promise<void> {
+  assertCapabilityProcessRunning();
   const dylib = capabilityLoaderPath();
   if (!existsSync(dylib)) {
     throw new Error(
@@ -363,7 +474,7 @@ export function removeCapabilityLoaderSync(udid: string): void {
 }
 
 export async function disarmStaleCapabilityLoader(udid: string): Promise<void> {
-  const current = await simctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000).catch(() => null);
+  const current = await launchSimctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000).catch(() => null);
   if (current === null) {
     console.error(
       `Could not read the current insert on ${udid}, so a stale capability loader from an earlier ` +
@@ -394,14 +505,14 @@ export async function disarmStaleCapabilityLoader(udid: string): Promise<void> {
 }
 
 export async function removeCapabilityLoader(udid: string): Promise<void> {
-  await simctl(["spawn", udid, "launchctl", "unsetenv", CONFIG_VAR], 15_000).catch(
+  await launchSimctl(["spawn", udid, "launchctl", "unsetenv", CONFIG_VAR], 15_000).catch(
     () => undefined,
   );
   const rest = withoutOurs(await readInsert(udid), managedStartupDylibs(udid)).join(":");
   const clear = rest === ""
     ? ["spawn", udid, "launchctl", "unsetenv", INSERT]
     : ["spawn", udid, "launchctl", "setenv", INSERT, rest];
-  await simctl(clear, 15_000);
+  await launchSimctl(clear, 15_000);
   writeManagedStartupDylibs(udid, []);
   try { unlinkSync(capabilityConfigPath(udid)); } catch {}
   armedHere.delete(udid);
@@ -415,6 +526,7 @@ export async function launchApp(
     restart = false,
   }: { bundleId: string; launchArgs?: string[]; restart?: boolean },
 ): Promise<void> {
+  assertCapabilityProcessRunning();
   await withLaunchStateLock(udid, async () => {
     const previous = readLaunchState(udid);
     const state: LaunchState = { ...previous, bundleId, launchArgs, capabilities: previous?.capabilities ?? {} };
@@ -426,32 +538,34 @@ export async function launchApp(
     if (restart) {
       await terminateForRelaunch(udid, bundleId);
     }
-    await simctl(["launch", udid, bundleId, ...launchArgs]);
+    await launchSimctl(["launch", udid, bundleId, ...launchArgs]);
   });
 }
 
 export async function openUrlInApp(udid: string, bundleId: string, openUrl: string): Promise<void> {
   await preapproveUrlSchemeAsync(udid, bundleId, openUrl);
-  await simctl(["openurl", udid, openUrl]);
+  await launchSimctl(["openurl", udid, openUrl]);
 }
 
 type ConfigureOptions = {
   bundleId?: string | null;
   options?: Record<string, string>;
   enabled: boolean;
+  reuseIfEnabled?: boolean;
+  respectDisabledOverrides?: boolean;
+  canRelaunch?: () => Promise<boolean>;
 } & EnableOptions;
 
-/**
- * Unused on `expo` today. Kept because #148, #102, and #53 import it; the
- * first of them to land makes it live. Remove the tag then.
- * @public
- */
 export async function setCapabilityEnabled(
   udid: string,
-  name: string,
+  capability: string | CapabilityDefinition,
   options: ConfigureOptions,
 ): Promise<void> {
-  await configureCapability(udid, capabilityDefinition(name), options);
+  await configureCapability(
+    udid,
+    typeof capability === "string" ? capabilityDefinition(capability) : capability,
+    options,
+  );
 }
 
 function hasForeignCapabilityOwner(
@@ -482,10 +596,17 @@ export async function configureCapability(
     enabled,
     relaunch = true,
     ownerPid = process.pid,
+    reuseIfEnabled = false,
+    respectDisabledOverrides = false,
+    canRelaunch,
   }: ConfigureOptions,
 ): Promise<void> {
+  if (enabled) assertCapabilityProcessRunning();
   const context: CapabilityContext = { udid, bundleId, options, enabled };
   await withLaunchStateLock(udid, async () => {
+    if (enabled && respectDisabledOverrides && readLaunchState(udid)?.disabledCapabilities?.[definition.name]?.length) {
+      throw new Error(`Capability ${definition.name} is disabled for this simulator session.`);
+    }
     if (!enabled) {
       if (!hasForeignCapabilityOwner(udid, definition, ownerPid)) {
         await disableCapabilityUnlocked(udid, bundleId, definition.name, { relaunch: false });
@@ -498,10 +619,29 @@ export async function configureCapability(
     if (!preparation) {
       throw new Error(`Capability ${definition.name} declined to start on ${udid}. Check its configuration and retry.`);
     }
+    const previous = readLaunchState(udid);
+    if (reuseIfEnabled && previous?.capabilities[definition.name]) {
+      const existing = previous.capabilities[definition.name]!;
+      const ownerPids = existing.ownerPid !== null && ownerPid !== null
+        ? [...new Set([...(existing.ownerPids ?? [existing.ownerPid]), ownerPid])]
+        : existing.ownerPids;
+      const reused: LaunchState = {
+        ...previous,
+        capabilities: {
+          ...previous.capabilities,
+          [definition.name]: ownerPids
+            ? { ...existing, ownerPid: ownerPids[0]!, ownerPids }
+            : existing,
+        },
+      };
+      await commitPreparedCapabilities(udid, [preparation], () => publishLaunchState(udid, reused));
+      if (relaunch) await relaunchTarget(udid, bundleId, reused, canRelaunch);
+      return;
+    }
     await publishPreparations(udid, bundleId, [preparation], ownerPid);
     if (relaunch) {
       const state = readLaunchState(udid);
-      if (state) await relaunchTarget(udid, bundleId, state);
+      if (state) await relaunchTarget(udid, bundleId, state, canRelaunch);
     }
   });
 }
@@ -511,11 +651,23 @@ async function publishPreparations(
   bundleId: string | null,
   preparations: CapabilityPreparation[],
   ownerPid: number | null = process.pid,
+  sharedDefaults: string[] = [],
+  baseState?: LaunchState,
+): Promise<void> {
+  return commitPreparedCapabilities(udid, preparations, () => enableCapabilitiesUnlocked(
+    udid, bundleId, preparations.map(({ capability }) => capability),
+    { relaunch: false, ownerPid, sharedDefaults, baseState },
+  ));
+}
+
+async function commitPreparedCapabilities(
+  udid: string,
+  preparations: CapabilityPreparation[],
+  publish: () => Promise<void>,
 ): Promise<void> {
   const previous = readLaunchState(udid);
   try {
-    const capabilities = preparations.map(({ capability }) => capability);
-    await enableCapabilitiesUnlocked(udid, bundleId, capabilities, { relaunch: false, ownerPid });
+    await publish();
   } catch (error) {
     const observerErrors = notifyPreparationFailure(preparations, error);
     if (error instanceof CapabilityRollbackError) {
@@ -556,9 +708,33 @@ export async function applyDefaultCapabilities(
   bundleId: string | null,
   overrides: CapabilityOverrides = {},
 ): Promise<string[]> {
+  assertCapabilityProcessRunning();
   return withLaunchStateLock(udid, async () => {
+    const definitions = capabilitiesToApply(overrides);
+    const previous = readLaunchState(udid);
+    const disabledCapabilities = Object.fromEntries(
+      Object.entries(previous?.disabledCapabilities ?? {})
+        .map(([name, owners]) => [name, owners.filter((pid) => pid !== process.pid)] as const)
+        .filter(([, owners]) => owners.length > 0),
+    );
+    for (const name of overrides.disable ?? []) {
+      disabledCapabilities[name] = [...(disabledCapabilities[name] ?? []), process.pid];
+    }
+    // The most recent session start decides whether a default reader is armed.
+    // A later default enable supersedes an earlier session's disable, while a
+    // later explicit disable removes a reader already armed by another session.
+    for (const definition of definitions) {
+      if (definition.name === "clipboard") delete disabledCapabilities.clipboard;
+    }
+    const capabilities = { ...previous?.capabilities };
+    if (overrides.disable?.includes("clipboard")) delete capabilities.clipboard;
+    const baseState: LaunchState = {
+      ...(previous ?? { launchArgs: [] }),
+      capabilities,
+      disabledCapabilities,
+    };
     const preparations: CapabilityPreparation[] = [];
-    for (const definition of capabilitiesToApply(overrides)) {
+    for (const definition of definitions) {
       try {
         assertCapabilityOwner(udid, definition, process.pid);
         const prepared = await prepareCapability(definition, { udid, bundleId, options: {}, enabled: true });
@@ -567,7 +743,17 @@ export async function applyDefaultCapabilities(
         console.error(`Capability ${definition.name} could not be prepared: ${error instanceof Error ? error.message : String(error)}`);
       }
     }
-    await publishPreparations(udid, bundleId, preparations);
+    const stateChanged = previous
+      ? JSON.stringify(baseState) !== JSON.stringify(previous)
+      : Object.keys(disabledCapabilities).length > 0;
+    if (stateChanged && preparations.length === 0 && Object.keys(previous?.capabilities ?? {}).length === 0) {
+      // A disable with no armed capability has nothing to withdraw from launchd.
+      writeLaunchState(udid, baseState);
+      commitCapabilityConfig(udid, renderCapabilityConfig(baseState));
+    } else if (preparations.length > 0 || stateChanged) {
+      await publishPreparations(udid, bundleId, preparations, process.pid, ["clipboard"], stateChanged ? baseState : undefined);
+    }
+    rememberDisabledCapabilities(udid, overrides.disable ?? []);
     const applied = preparations.map(({ capability }) => capability.name);
     for (const name of overrides.enable ?? []) {
       if (!applied.includes(name)) console.error(`Capability ${name} was requested but did not apply on ${udid}.`);
@@ -601,6 +787,7 @@ export async function enableCapabilities(
   capabilities: Capability[],
   options: EnableOptions = {},
 ): Promise<void> {
+  assertCapabilityProcessRunning();
   await withLaunchStateLock(udid, () => enableCapabilitiesUnlocked(udid, bundleId, capabilities, options));
 }
 
@@ -608,9 +795,9 @@ async function enableCapabilitiesUnlocked(
   udid: string,
   bundleId: string | null,
   capabilities: Capability[],
-  { relaunch = true, ownerPid = process.pid }: EnableOptions = {},
+  { relaunch = true, ownerPid = process.pid, sharedDefaults = [], baseState }: EnableOptions & { sharedDefaults?: string[]; baseState?: LaunchState } = {},
 ): Promise<void> {
-  if (capabilities.length === 0) return;
+  if (capabilities.length === 0 && !baseState) return;
   const dylib = capabilityLoaderPath();
   if (!existsSync(dylib)) {
     throw new Error(
@@ -621,14 +808,22 @@ async function enableCapabilitiesUnlocked(
 
   const previous = readLaunchState(udid);
   const added = Object.fromEntries(
-    capabilities.map((capability) => [
-      capability.name,
-      { ...capability, bundleId, ownerPid },
-    ]),
+    capabilities.map((capability) => {
+      const existing = previous?.capabilities[capability.name];
+      const share = sharedDefaults.includes(capability.name) && ownerPid !== null;
+      const ownerPids = share && existing?.ownerPid !== null
+        ? [...new Set([...(existing?.ownerPids ?? (existing?.ownerPid ? [existing.ownerPid] : [])), ownerPid])]
+        : share && !existing ? [ownerPid] : undefined;
+      return [capability.name, {
+        ...capability, bundleId,
+        ownerPid: ownerPids?.[0] ?? (share && existing?.ownerPid === null ? null : ownerPid),
+        ...(ownerPids ? { ownerPids } : {}),
+      }];
+    }),
   );
   const state: LaunchState = {
-    ...(previous ?? { launchArgs: [], capabilities: {} }),
-    capabilities: { ...previous?.capabilities, ...added },
+    ...(baseState ?? previous ?? { launchArgs: [], capabilities: {} }),
+    capabilities: { ...(baseState ?? previous)?.capabilities, ...added },
   };
   await publishLaunchState(udid, state);
   if (relaunch) await relaunchTarget(udid, bundleId, state);
@@ -636,14 +831,14 @@ async function enableCapabilitiesUnlocked(
 
 /** null when the check itself failed, which is not the same as "not running". */
 async function isRunning(udid: string, bundleId: string): Promise<boolean | null> {
-  const out = await simctl(["spawn", udid, "launchctl", "list"], 15_000).catch(() => null);
+  const out = await launchSimctl(["spawn", udid, "launchctl", "list"], 15_000).catch(() => null);
   if (out === null) return null;
   return out.includes(`UIKitApplication:${bundleId}`);
 }
 
 async function terminateForRelaunch(udid: string, bundleId: string): Promise<void> {
   try {
-    await simctl(["terminate", udid, bundleId], TERMINATE_TIMEOUT_MS);
+    await launchSimctl(["terminate", udid, bundleId], TERMINATE_TIMEOUT_MS);
     return;
   } catch {
   }
@@ -663,12 +858,14 @@ async function relaunchTarget(
   udid: string,
   bundleId: string | null,
   state: LaunchState,
+  canRelaunch?: () => Promise<boolean>,
 ): Promise<void> {
   const target = bundleId ?? state.bundleId;
   if (!target) return;
   const args = target === state.bundleId ? state.launchArgs : [];
+  if (canRelaunch && !(await canRelaunch())) return;
   await terminateForRelaunch(udid, target);
-  await simctl(["launch", udid, target, ...args]);
+  await launchSimctl(["launch", udid, target, ...args]);
 }
 
 export async function disableCapability(
@@ -724,7 +921,7 @@ async function preapproveUrlSchemeAsync(
   const scheme = new URL(openUrl).protocol.slice(0, -1);
   if (scheme === "http" || scheme === "https") return;
   try {
-    await simctl([
+    await launchSimctl([
       "spawn", udid, "defaults", "write",
       URL_SCHEME_APPROVAL_DOMAIN,
       `${URL_SCHEME_APPROVAL_KEY_PREFIX}${scheme}`,

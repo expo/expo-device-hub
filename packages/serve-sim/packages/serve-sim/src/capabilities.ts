@@ -1,3 +1,5 @@
+import { readLaunchState } from "./launch-state";
+
 /** A dylib loaded inside each eligible app process. */
 export interface PreparedCapability {
   dylib: string;
@@ -45,11 +47,6 @@ export function clearRegisteredCapabilities(): void {
   registry.clear();
 }
 
-/**
- * Only caller is `setCapabilityEnabled`, which is kept for open PRs #148,
- * #102, and #53. Remove the tag when one of them lands.
- * @public
- */
 export function capabilityDefinition(name: string): CapabilityDefinition {
   const definition = registry.get(name);
   if (!definition) {
@@ -96,6 +93,33 @@ export class UnknownCapabilityError extends Error {
  */
 export function missingCapabilities({ enable = [], disable = [] }: CapabilityOverrides, applied: readonly string[]): string[] {
   return enable.filter((name) => !disable.includes(name) && !applied.includes(name));
+}
+
+// On-demand enables, like a clipboard read, must not override a device's --disable.
+const disabledByDevice = new Map<string, ReadonlySet<string>>();
+
+export function rememberDisabledCapabilities(udid: string, names: readonly string[]): void {
+  disabledByDevice.set(udid, new Set(names));
+}
+
+export function forgetDisabledCapabilities(udid: string): void {
+  disabledByDevice.delete(udid);
+}
+
+export function capabilityIsDisabled(udid: string, name: string): boolean {
+  const shared = readLaunchState(udid);
+  if (shared?.disabledCapabilities?.[name]?.length) return true;
+  // A session started on another device carries its disable into later grid selections,
+  // even if the selected device already has a reader from an earlier session.
+  for (const [device, names] of disabledByDevice) {
+    if (device !== udid && names.has(name)) return true;
+  }
+  // On the session's original device, a later shared enable supersedes its prior disable.
+  if (shared?.capabilities[name]) return false;
+  // A session's disable also applies to devices selected later in the grid, even if that
+  // device has its own local entry from a previous launch in this process.
+  for (const names of disabledByDevice.values()) if (names.has(name)) return true;
+  return false;
 }
 
 export function capabilitiesToApply({

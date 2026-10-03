@@ -1,0 +1,67 @@
+#import <UIKit/UIKit.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+static int write_whole_file(const char *path, const void *contents, size_t length) {
+  FILE *file = fopen(path, "w");
+  if (file == NULL) return 0;
+  size_t wrote = fwrite(contents, 1, length, file);
+  int closed = fclose(file);
+  return wrote == length && closed == 0;
+}
+
+static void answer(void) {
+  const char *tmp = getenv("TMPDIR");
+  if (tmp == NULL || tmp[0] == '\0') return;
+
+  char request[1024], claimed[1024], done[1024], pending[1024];
+  snprintf(request, sizeof request, "%s/serve-sim-pasteboard.request", tmp);
+  snprintf(claimed, sizeof claimed, "%s/serve-sim-pasteboard.request.claimed", tmp);
+  snprintf(done, sizeof done, "%s/serve-sim-pasteboard.txt.done", tmp);
+  snprintf(pending, sizeof pending, "%s/serve-sim-pasteboard.txt.pending.%d", tmp, getpid());
+
+  // Claim the request before the main-queue read. A timed-out host may write a
+  // new request while that read is pending; the old answer must not unlink it.
+  if (rename(request, claimed) != 0) return;
+  FILE *file = fopen(claimed, "r");
+  if (file == NULL) return;
+  char nonce[128];
+  size_t length = fread(nonce, 1, sizeof nonce - 1, file);
+  fclose(file);
+  unlink(claimed);
+  nonce[length] = '\0';
+
+  __block NSString *text = nil;
+  dispatch_sync(dispatch_get_main_queue(), ^{
+    text = UIPasteboard.generalPasteboard.string ?: @"";
+  });
+
+  // A single rename publishes the nonce and text together. An older reader may finish
+  // after a newer one, but its nonce cannot be paired with the newer text.
+  NSData *data = [text dataUsingEncoding:NSUTF8StringEncoding];
+  NSMutableData *record = [NSMutableData dataWithBytes:nonce length:length];
+  [record appendBytes:"\n" length:1];
+  [record appendData:data];
+  if (!write_whole_file(pending, record.bytes, record.length) || rename(pending, done) != 0) {
+    fprintf(stderr, "[serve-sim] could not publish the pasteboard answer to %s\n", done);
+  }
+}
+
+static void *poll(void *unused) {
+  (void)unused;
+  for (;;) {
+    @autoreleasepool {
+      answer();
+    }
+    usleep(50 * 1000);
+  }
+  return NULL;
+}
+
+__attribute__((constructor))
+static void sim_pasteboard_reader_ui_init(void) {
+  pthread_t thread;
+  if (pthread_create(&thread, NULL, poll, NULL) == 0) pthread_detach(thread);
+}

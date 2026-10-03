@@ -18,7 +18,7 @@ export interface ForegroundApp {
 // names match as whole bundle components (delimited by `.`), so a real app like
 // com.example.CustomerService isn't caught by the "Service" substring.
 const NON_UI_BUNDLE_RE =
-  /(^|\.)(WidgetRenderer|ExtensionHost|Service|PlaceholderApp|InCallService|CallUI|InCallUI)(\.|$)|\.extension(\.|$)|com\.apple\.(Preferences\.Cellular|purplebuddy|chrono|shuttle|usernotificationsui)/i;
+  /(^|\.)(WidgetRenderer|ExtensionHost|Service|PlaceholderApp|InCallService|CallUI|InCallUI)(\.|$)|\.extension(\.|$)|com\.apple\.(?:[^.]*ViewService$|Preferences\.Cellular|purplebuddy|chrono|shuttle|usernotificationsui)/i;
 
 /** True unless the bundle id is a non-UI helper (widget, extension, or background service). */
 export function isUserFacingBundle(bundleId: string): boolean {
@@ -251,3 +251,74 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
 }
 
 export const foregroundTracker = createForegroundTrackerCache();
+
+/** Recover the latest visible app when neither a live tracker nor AX can identify it. */
+export async function frontmostAppFromRecentLogs(udid: string): Promise<ForegroundApp | null> {
+  // A long-lived simulator can have more visibility history than a fixed execFile buffer.
+  // Keep only the latest parsed state while log show streams its boot-long history.
+  return new Promise((resolve) => {
+    const child = spawn("xcrun", [
+      "simctl", "spawn", udid, "log", "show", "--last", "boot", "--style", "ndjson", "--predicate",
+      'process == "SpringBoard" AND eventMessage CONTAINS "Setting process visibility to:"',
+    ], { stdio: ["ignore", "pipe", "ignore"] });
+    let visible: ForegroundApp | null = null;
+    let buffer = "";
+    let settled = false;
+    const finish = (result: ForegroundApp | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(result);
+    };
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(null);
+    }, 15_000);
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      buffer += chunk;
+      let end: number;
+      while ((end = buffer.indexOf("\n")) >= 0) {
+        visible = visibilityAfterLogLine(visible, buffer.slice(0, end));
+        buffer = buffer.slice(end + 1);
+      }
+      if (buffer.length > LINE_BUFFER_LIMIT) buffer = "";
+    });
+    child.once("error", () => finish(null));
+    child.once("close", (code) => {
+      if (buffer) visible = visibilityAfterLogLine(visible, buffer);
+      finish(code === 0 ? visible : null);
+    });
+  });
+}
+
+export function parseRecentVisibilityLogs(output: string): ForegroundApp | null {
+  let visible: ForegroundApp | null = null;
+  for (const line of output.split("\n")) visible = visibilityAfterLogLine(visible, line);
+  return visible;
+}
+
+function visibilityAfterLogLine(visible: ForegroundApp | null, line: string): ForegroundApp | null {
+  let message: string;
+  try {
+    message = (JSON.parse(line) as { eventMessage?: string }).eventMessage ?? "";
+  } catch {
+    return visible;
+  }
+  const match = /\[app<([^>]+)>:(\d+)\] Setting process visibility to: (Foreground|Background|Unknown)/.exec(message);
+  if (!match || !isUserFacingBundle(match[1]!)) return visible;
+  if (match[3] === "Foreground") {
+    return { bundleId: match[1]!, pid: Number(match[2]) };
+  } else if (visible !== null && visible.bundleId === match[1] && visible.pid === Number(match[2])) {
+    // SpringBoard may background an old process after its replacement becomes foreground.
+    return null;
+  }
+  return visible;
+}
+
+/** The current foreground app: live tracker, AX bridge, then recent SpringBoard history. */
+export async function frontmostAppOf(udid: string): Promise<ForegroundApp | null> {
+  const tracked = foregroundTracker.peek(udid);
+  if (tracked) return tracked;
+  return (await frontmostAppViaAx(udid)) ?? frontmostAppFromRecentLogs(udid);
+}

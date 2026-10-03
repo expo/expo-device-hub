@@ -47,6 +47,7 @@
     "dist/simax/serve-sim-ax-settings",
     "dist/simpb/serve-sim-pasteboard",
     "dist/simpb/ServeSimPasteboard.app",
+    "dist/simpb/libSimPasteboardReader.dylib",
     "dist/simnet/libSimNetProxy.dylib",
     "src/ax-shared.ts",
     "src/ax.ts",
@@ -70,6 +71,8 @@
     "Sources/SimPasteboard/sim-pasteboard.m",
     "Sources/SimPasteboard/Info.plist",
     "Sources/SimPasteboard/build.sh",
+    "Sources/SimPasteboardReader/sim-pasteboard-reader.m",
+    "Sources/SimPasteboardReader/build.sh",
     "dist/native/serve-sim-native.node",
     "dist/bin/LiveKitWebRTC.framework"
   ],

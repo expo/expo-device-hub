@@ -28,6 +28,7 @@ import { crashRuntime } from "./crash/runtime";
 import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
 import { runShutdownSteps } from "./shutdown-budget";
+import { hasHostSignalHandler } from "./process-signal-handlers";
 import { launchAppAsync } from "./launch-app";
 import {
   assertKnownCapabilities,
@@ -50,6 +51,7 @@ import { killOwnListeners } from "./ports";
 import { findBootedDevice, resolveDevice } from "./device";
 import { openSimulatorHost } from "./simulator-host";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
+import { clipboardCapability } from "./sim-pasteboard-reader";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";
@@ -2385,7 +2387,7 @@ Examples:
             disarmDevicesArmedHere();
           });
           for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
-            process.on(signal, async () => {
+            const onSessionSignal = async () => {
               sessionStopping = true;
               // A failed capture teardown must not keep the devices armed.
               try {
@@ -2396,9 +2398,10 @@ Examples:
                 );
               }
               await disarmDevicesArmedHereAsync();
-              if (process.listenerCount(signal) > 1) return;
+              if (hasHostSignalHandler(signal, onSessionSignal)) return;
               process.exit(0);
-            });
+            };
+            process.on(signal, onSessionSignal);
           }
         }
         for (const udid of targets) {
@@ -2436,7 +2439,12 @@ Examples:
         }
       } catch (error) {
         console.error(error instanceof Error ? error.message : error);
-        await stopNetworkCapture();
+        sessionStopping = true;
+        try {
+          await stopNetworkCapture();
+        } finally {
+          await disarmDevicesArmedHereAsync();
+        }
         process.exit(1);
       }
     }
@@ -2717,6 +2725,7 @@ program
   .argument("[args...]")
   .action((args: string[]) => uiSettings(args));
 
+registerCapability(clipboardCapability);
 registerCapability(captureRuntime.capability);
 
 {

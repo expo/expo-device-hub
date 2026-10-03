@@ -17,13 +17,14 @@ import {
   releaseSession,
   stopLaunchSession,
   enableCapabilities,
+  setCapabilityEnabled,
   applyDefaultCapabilities,
   armCapabilityLoader,
   capabilityConfigPath,
   capabilityLoaderPath,
   renderCapabilityConfig,
 } from "../launch-manager";
-import { registerCapability, clearRegisteredCapabilities } from "../capabilities";
+import { registerCapability, clearRegisteredCapabilities, forgetDisabledCapabilities, rememberDisabledCapabilities, capabilityIsDisabled } from "../capabilities";
 import { launchAppAsync } from "../launch-app";
 import { stateDir } from "../state";
 import { useTempStateDir, withShimsAsync } from "./helpers";
@@ -414,6 +415,28 @@ describe("session cleanup", () => {
 
 
 describe("graceful launch shutdown", () => {
+  test("a committed capability releases an embedded host's device on process exit", async () => {
+    const manager = join(import.meta.dir, "../launch-manager.ts");
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, async () => {
+      const child = spawn(process.execPath, ["-e", `
+        const { setCapabilityEnabled, ensureCapabilityProcessCleanup } = await import(${JSON.stringify(manager)});
+        await setCapabilityEnabled(${JSON.stringify(UDID)}, {
+          name: "exit-probe", defaultEnabled: false, scope: "allApps",
+          async setEnabled() { return { dylib: "/fake.dylib", committed: ensureCapabilityProcessCleanup }; },
+        }, { enabled: true, relaunch: false });
+      `], { stdio: ["ignore", "ignore", "pipe"], env: process.env });
+      let stderr = "";
+      child.stderr?.on("data", (chunk: Buffer) => { stderr += chunk.toString(); });
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.once("error", reject);
+        child.once("close", resolve);
+      });
+      expect(code).toBe(0);
+      expect(stderr).toBe("");
+      expect(readLaunchState(UDID)).toBeNull();
+    });
+  });
+
   test("awaits an active launch transaction before releasing its capabilities", async () => {
     writeRawState(JSON.stringify({ launchArgs: [], capabilities: {}, sessionPids: [process.ppid] }));
     await withShimsAsync({ xcrun: "#!/bin/sh\nsleep 0.15\nexit 0\n" }, async () => {
@@ -482,6 +505,279 @@ describe("graceful launch shutdown", () => {
 
 
 describe("startup capability loading", () => {
+  test("can enable a definition without registering it globally", async () => {
+    clearRegisteredCapabilities();
+    await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, async () => {
+      await setCapabilityEnabled(UDID, {
+        name: "clipboard",
+        defaultEnabled: true,
+        scope: "allApps",
+        async setEnabled() {
+          return { dylib: "/clipboard.dylib" };
+        },
+      }, { enabled: true, relaunch: false });
+    });
+    expect(listCapabilities(UDID)).toEqual(["clipboard"]);
+  });
+
+  for (const allowed of [false, true]) {
+    test(`checks the relaunch guard after publication (${allowed ? "allowed" : "cancelled"})`, async () => {
+      const calls = join(stateDir(), "guarded-relaunch-calls");
+      const quotedCalls = "'" + calls.replaceAll("'", "'\\''") + "'";
+      let checked = false;
+      await withShimsAsync({ xcrun: `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quotedCalls}\nexit 0\n` }, async () => {
+        await setCapabilityEnabled(UDID, {
+          name: "clipboard", defaultEnabled: true, scope: "allApps",
+          async setEnabled() { return { dylib: "/clipboard.dylib" }; },
+        }, {
+          bundleId: "dev.expo.App", enabled: true, relaunch: true,
+          async canRelaunch() {
+            checked = true;
+            expect(readLaunchState(UDID)?.capabilities.clipboard).toBeDefined();
+            expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toContain("/clipboard.dylib");
+            return allowed;
+          },
+        });
+      });
+      expect(checked).toBe(true);
+      const commands = readFileSync(calls, "utf8");
+      expect(commands.includes(`simctl terminate ${UDID} dev.expo.App`)).toBe(allowed);
+      expect(commands.includes(`simctl launch ${UDID} dev.expo.App`)).toBe(allowed);
+      expect(listCapabilities(UDID)).toEqual(["clipboard"]);
+    });
+  }
+
+  test("reuses another live owner's clipboard capability", async () => {
+    const owner = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    const log = join(stateDir(), "simctl-rearm-calls");
+    const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
+    try {
+      writeRawState(JSON.stringify({
+        launchArgs: [],
+        capabilities: {
+          clipboard: {
+            name: "clipboard", scope: "allApps", dylib: "/other-reader.dylib",
+            bundleId: null, ownerPid: owner.pid,
+          },
+        },
+      }));
+      await withShimsAsync({ xcrun: `#!/bin/sh\nprintf '%s\\n' "$*" >> ${quotedLog}\nexit 0\n` }, async () => {
+        await setCapabilityEnabled(UDID, {
+          name: "clipboard", defaultEnabled: true, scope: "allApps",
+          async setEnabled() { return { dylib: "/this-reader.dylib" }; },
+        }, { enabled: true, relaunch: false, reuseIfEnabled: true });
+      });
+      expect(readLaunchState(UDID)?.capabilities.clipboard).toMatchObject({
+        ownerPid: owner.pid,
+        ownerPids: [owner.pid, process.pid],
+        dylib: "/other-reader.dylib",
+      });
+      expect(readFileSync(log, "utf-8")).toContain(
+        `simctl spawn ${UDID} launchctl setenv DYLD_INSERT_LIBRARIES ${capabilityLoaderPath()}`,
+      );
+      expect(readFileSync(capabilityConfigPath(UDID), "utf-8")).toContain("/other-reader.dylib");
+      expect(releaseLaunchState(UDID, owner.pid!)).toBe(true);
+      expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(process.pid);
+      expect(releaseLaunchState(UDID, process.pid)).toBe(false);
+    } finally {
+      owner.kill("SIGKILL");
+    }
+  });
+
+  test("withdraws a reused owner when its commit hook fails", async () => {
+    const owner = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    const rolledBack: string[] = [];
+    try {
+      writeRawState(JSON.stringify({
+        launchArgs: [], capabilities: {
+          clipboard: {
+            name: "clipboard", scope: "allApps", dylib: "/original.dylib",
+            bundleId: null, ownerPid: owner.pid,
+          },
+        },
+      }));
+      await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, async () => {
+        await expect(setCapabilityEnabled(UDID, {
+          name: "clipboard", defaultEnabled: true, scope: "allApps",
+          async setEnabled() {
+            return {
+              dylib: "/new.dylib",
+              committed() { throw new Error("commit failed"); },
+              async rollback() { rolledBack.push("new"); },
+            };
+          },
+        }, { enabled: true, relaunch: false, reuseIfEnabled: true })).rejects.toThrow("commit failed");
+      });
+      expect(rolledBack).toEqual(["new"]);
+      expect(readLaunchState(UDID)?.capabilities.clipboard).toMatchObject({
+        ownerPid: owner.pid,
+        dylib: "/original.dylib",
+      });
+      expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPids).toBeUndefined();
+    } finally {
+      owner.kill("SIGKILL");
+    }
+  });
+
+  test("a grid-selected device keeps this session's clipboard disable", () => {
+    rememberDisabledCapabilities("SESSION-DEVICE", ["clipboard"]);
+    try {
+      writeRawState(JSON.stringify({
+        launchArgs: [], capabilities: {
+          camera: { name: "camera", scope: "allApps", dylib: "/camera.dylib", bundleId: null, ownerPid: process.pid },
+        },
+      }));
+      expect(capabilityIsDisabled(UDID, "clipboard")).toBe(true);
+    } finally {
+      forgetDisabledCapabilities("SESSION-DEVICE");
+    }
+  });
+
+  test("a grid-selected device keeps the session disable even with an existing reader", () => {
+    rememberDisabledCapabilities("SESSION-DEVICE", ["clipboard"]);
+    try {
+      writeRawState(JSON.stringify({
+        launchArgs: [], capabilities: {
+          clipboard: { name: "clipboard", scope: "allApps", dylib: "/clipboard.dylib", bundleId: null, ownerPid: process.pid },
+        },
+      }));
+      expect(capabilityIsDisabled(UDID, "clipboard")).toBe(true);
+    } finally {
+      forgetDisabledCapabilities("SESSION-DEVICE");
+    }
+  });
+
+  test("keeps the default clipboard reader until the last sharing session exits", async () => {
+    const first = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    clearRegisteredCapabilities();
+    registerCapability({
+      name: "clipboard", defaultEnabled: true, scope: "allApps",
+      async setEnabled() { return { dylib: "/clipboard.dylib" }; },
+    });
+    try {
+      for (const exitingFirst of [first.pid!, process.pid]) {
+        writeRawState(JSON.stringify({
+          launchArgs: [], capabilities: {
+            clipboard: {
+              name: "clipboard", scope: "allApps", dylib: "/clipboard.dylib",
+              bundleId: null, ownerPid: first.pid,
+            },
+          },
+        }));
+        await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, async () => {
+          await applyDefaultCapabilities(UDID, null);
+        });
+        expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPids).toEqual([first.pid!, process.pid]);
+
+        expect(releaseLaunchState(UDID, exitingFirst)).toBe(true);
+        expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPids).toEqual([
+          exitingFirst === first.pid ? process.pid : first.pid!,
+        ]);
+        expect(releaseLaunchState(UDID, exitingFirst === first.pid ? process.pid : first.pid!)).toBe(false);
+        expect(readLaunchState(UDID)).toBeNull();
+      }
+    } finally {
+      first.kill("SIGKILL");
+      clearRegisteredCapabilities();
+      forgetDisabledCapabilities(UDID);
+    }
+  });
+
+  test("shares disabled clipboard overrides and removes them with their owner", async () => {
+    clearRegisteredCapabilities();
+    registerCapability({
+      name: "clipboard", defaultEnabled: false, scope: "allApps",
+      async setEnabled() { return { dylib: "/clipboard.dylib" }; },
+    });
+    try {
+      await applyDefaultCapabilities(UDID, null, { disable: ["clipboard"] });
+      forgetDisabledCapabilities(UDID);
+      expect(readLaunchState(UDID)?.disabledCapabilities?.clipboard).toEqual([process.pid]);
+      await expect(setCapabilityEnabled(UDID, "clipboard", {
+        enabled: true, relaunch: false, respectDisabledOverrides: true,
+      })).rejects.toThrow("disabled for this simulator session");
+      expect(listCapabilities(UDID)).toEqual([]);
+      expect(releaseLaunchState(UDID, process.pid)).toBe(false);
+      expect(readLaunchState(UDID)).toBeNull();
+    } finally {
+      forgetDisabledCapabilities(UDID);
+      clearRegisteredCapabilities();
+    }
+  });
+
+  test("last session start decides the shared clipboard reader state", async () => {
+    const first = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    clearRegisteredCapabilities();
+    registerCapability({
+      name: "clipboard", defaultEnabled: true, scope: "allApps",
+      async setEnabled() { return { dylib: "/clipboard.dylib" }; },
+    });
+    try {
+      await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, async () => {
+        // A disabled, then B starts with defaults: B's later enable wins.
+        writeRawState(JSON.stringify({
+          launchArgs: [], capabilities: {}, disabledCapabilities: { clipboard: [first.pid!] },
+        }));
+        expect(await applyDefaultCapabilities(UDID, null)).toContain("clipboard");
+        expect(readLaunchState(UDID)?.capabilities.clipboard?.ownerPid).toBe(process.pid);
+        expect(readLaunchState(UDID)?.disabledCapabilities?.clipboard).toBeUndefined();
+        // Another process can still have the earlier disable cached in memory.
+        rememberDisabledCapabilities(UDID, ["clipboard"]);
+        expect(capabilityIsDisabled(UDID, "clipboard")).toBe(false);
+
+        // A enabled, then B disables: B's later disable wins.
+        writeRawState(JSON.stringify({
+          launchArgs: [], capabilities: {
+            clipboard: {
+              name: "clipboard", scope: "allApps", dylib: "/clipboard.dylib",
+              bundleId: null, ownerPid: first.pid,
+            },
+          },
+        }));
+        expect(await applyDefaultCapabilities(UDID, null, { disable: ["clipboard"] })).toEqual([]);
+        expect(readLaunchState(UDID)?.capabilities.clipboard).toBeUndefined();
+        expect(readLaunchState(UDID)?.disabledCapabilities?.clipboard).toEqual([process.pid]);
+        expect(capabilityIsDisabled(UDID, "clipboard")).toBe(true);
+        expect(readFileSync(capabilityConfigPath(UDID), "utf-8")).not.toContain("/clipboard.dylib");
+      });
+    } finally {
+      first.kill("SIGKILL");
+      clearRegisteredCapabilities();
+      forgetDisabledCapabilities(UDID);
+    }
+  });
+
+  test("failed default publication restores another session's clipboard reader", async () => {
+    const owner = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+    clearRegisteredCapabilities();
+    registerCapability({ name: "clipboard", defaultEnabled: false, scope: "allApps", async setEnabled() { return { dylib: "/clipboard.dylib" }; } });
+    registerCapability({
+      name: "failing", defaultEnabled: true, scope: "allApps",
+      async setEnabled() {
+        return { dylib: "/failing.dylib", committed() { throw new Error("commit failed"); } };
+      },
+    });
+    const original = {
+      launchArgs: [], capabilities: {
+        clipboard: { name: "clipboard", scope: "allApps" as const, dylib: "/clipboard.dylib", bundleId: null, ownerPid: owner.pid! },
+      },
+    };
+    try {
+      writeRawState(JSON.stringify(original));
+      writeFileSync(capabilityConfigPath(UDID), renderCapabilityConfig(original));
+      await withShimsAsync({ xcrun: "#!/bin/sh\nexit 0\n" }, async () => {
+        await expect(applyDefaultCapabilities(UDID, null, { disable: ["clipboard"] })).rejects.toThrow("commit failed");
+      });
+      expect(readLaunchState(UDID)).toEqual(original);
+      expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(renderCapabilityConfig(original));
+      expect(capabilityIsDisabled(UDID, "clipboard")).toBe(false);
+    } finally {
+      owner.kill("SIGKILL");
+      forgetDisabledCapabilities(UDID);
+      clearRegisteredCapabilities();
+    }
+  });
+
   test("defaults do not restart a remembered app and explicit launch starts once", async () => {
     const log = join(stateDir(), "simctl-startup-calls");
     const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";

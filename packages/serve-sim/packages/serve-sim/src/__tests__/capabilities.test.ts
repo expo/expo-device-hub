@@ -2,10 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
 import {
   capabilitiesToApply,
+  capabilityIsDisabled,
   clearRegisteredCapabilities,
   missingCapabilities,
+  forgetDisabledCapabilities,
   registerCapability,
   registeredCapabilities,
+  rememberDisabledCapabilities,
   UnknownCapabilityError,
 } from "../capabilities";
 import type { CapabilityDefinition } from "../capabilities";
@@ -122,5 +125,31 @@ describe("missingCapabilities", () => {
     // --disable wins, so a capability both enabled and disabled is not expected to apply.
     expect(missingCapabilities({ enable: ["networkCapture"], disable: ["networkCapture"] }, [])).toEqual([]);
     expect(missingCapabilities({}, [])).toEqual([]);
+  });
+});
+
+describe("disabled capabilities", () => {
+  afterEach(() => {
+    forgetDisabledCapabilities("DEVICE-A");
+    forgetDisabledCapabilities("DEVICE-B");
+  });
+
+  test("apply across every device selected in this session", () => {
+    rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
+    rememberDisabledCapabilities("DEVICE-B", []);
+    expect(capabilityIsDisabled("DEVICE-A", "clipboard")).toBe(true);
+    expect(capabilityIsDisabled("DEVICE-B", "clipboard")).toBe(true);
+  });
+
+  test("apply to a device the session did not launch", () => {
+    rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
+    expect(capabilityIsDisabled("DEVICE-PICKED-IN-GRID", "clipboard")).toBe(true);
+  });
+
+  test("end with the session that set them", () => {
+    rememberDisabledCapabilities("DEVICE-A", ["clipboard"]);
+    forgetDisabledCapabilities("DEVICE-A");
+    expect(capabilityIsDisabled("DEVICE-A", "clipboard")).toBe(false);
+    expect(capabilityIsDisabled("DEVICE-PICKED-IN-GRID", "clipboard")).toBe(false);
   });
 });

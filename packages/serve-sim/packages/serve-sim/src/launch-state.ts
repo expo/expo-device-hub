@@ -21,10 +21,13 @@ export interface RecordedCapability extends Capability {
   bundleId: string | null;
   /** Null keeps the capability alive after a one-shot command exits. */
   ownerPid: number | null;
+  /** Live sessions sharing a default capability, currently used by the clipboard reader. */
+  ownerPids?: number[];
 }
 
 export interface LaunchState {
   sessionPids?: number[];
+  disabledCapabilities?: Record<string, number[]>;
   bundleId?: string;
   launchArgs: string[];
   capabilities: Record<string, RecordedCapability>;
@@ -52,17 +55,35 @@ export function readLaunchState(udid: string, retainOwnerPid?: number): LaunchSt
     return null;
   }
   if (typeof parsed !== "object" || parsed === null) return null;
-  const { bundleId, launchArgs, capabilities, sessionPids } = parsed as Partial<LaunchState>;
+  const { bundleId, launchArgs, capabilities, sessionPids, disabledCapabilities } = parsed as Partial<LaunchState>;
+  const liveDisabled = recordedDisabledCapabilities(disabledCapabilities, retainOwnerPid);
   return {
     ...(typeof bundleId === "string" && bundleId ? { bundleId } : {}),
     launchArgs: Array.isArray(launchArgs)
       ? launchArgs.filter((arg): arg is string => typeof arg === "string")
       : [],
     capabilities: recordedCapabilities(capabilities, retainOwnerPid),
+    ...(Object.keys(liveDisabled).length > 0 ? { disabledCapabilities: liveDisabled } : {}),
     ...(Array.isArray(sessionPids) ? { sessionPids: sessionPids.filter(
       (pid) => Number.isInteger(pid) && pid > 0 && !ownerIsGone(pid),
     ) } : {}),
   };
+}
+
+function liveOwnerPids(value: unknown, retainOwnerPid?: number): number[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.filter((pid): pid is number =>
+    Number.isInteger(pid) && pid > 0 && (pid === retainOwnerPid || !ownerIsGone(pid))))];
+}
+
+function recordedDisabledCapabilities(value: unknown, retainOwnerPid?: number): Record<string, number[]> {
+  if (typeof value !== "object" || value === null) return {};
+  const kept: Record<string, number[]> = {};
+  for (const [name, owners] of Object.entries(value)) {
+    const live = liveOwnerPids(owners, retainOwnerPid);
+    if (live.length > 0) kept[name] = live;
+  }
+  return kept;
 }
 
 // Discard malformed records and capabilities whose owner has exited.
@@ -71,16 +92,20 @@ function recordedCapabilities(value: unknown, retainOwnerPid?: number): Record<s
   const kept: Record<string, RecordedCapability> = {};
   for (const [key, record] of Object.entries(value)) {
     if (typeof record !== "object" || record === null) continue;
-    const { name, dylib, scope, bundleId, ownerPid } = record as Partial<RecordedCapability>;
+    const { name, dylib, scope, bundleId, ownerPid, ownerPids } = record as Partial<RecordedCapability>;
     if (typeof name !== "string" || typeof dylib !== "string" || !isCapabilityScope(scope)) {
       continue;
     }
     const owner = typeof ownerPid === "number" ? ownerPid : null;
-    if (owner !== retainOwnerPid && ownerIsGone(owner)) continue;
+    const liveOwners = Array.isArray(ownerPids)
+      ? liveOwnerPids(ownerPids, retainOwnerPid)
+      : null;
+    if (liveOwners ? liveOwners.length === 0 : owner !== retainOwnerPid && ownerIsGone(owner)) continue;
     kept[key] = {
       ...(record as RecordedCapability),
       bundleId: typeof bundleId === "string" ? bundleId : null,
-      ownerPid: owner,
+      ownerPid: liveOwners ? liveOwners[0]! : owner,
+      ...(liveOwners ? { ownerPids: liveOwners } : {}),
     };
   }
   return kept;
@@ -97,4 +122,3 @@ export function writeLaunchState(udid: string, state: LaunchState): void {
   writeFileSync(temp, JSON.stringify(state));
   renameSync(temp, target);
 }
-

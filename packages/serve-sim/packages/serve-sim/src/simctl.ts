@@ -10,15 +10,17 @@ export interface SimctlOptions {
   timeout?: number;
   env?: NodeJS.ProcessEnv;
   maxBuffer?: number;
+  signal?: AbortSignal;
 }
 
 function optionsFor(value: number | SimctlOptions): Required<Pick<SimctlOptions, "timeout" | "maxBuffer">> &
-  Pick<SimctlOptions, "env"> {
+  Pick<SimctlOptions, "env" | "signal"> {
   const options = typeof value === "number" ? { timeout: value } : value;
   return {
     timeout: options.timeout ?? DEFAULT_TIMEOUT_MS,
     maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
     ...(options.env ? { env: options.env } : {}),
+    ...(options.signal ? { signal: options.signal } : {}),
   };
 }
 
@@ -27,12 +29,19 @@ export async function simctlRaw(
   timeoutOrOptions: number | SimctlOptions = {},
 ): Promise<string> {
   const options = optionsFor(timeoutOrOptions);
-  const { stdout } = await execFileAsync("xcrun", ["simctl", ...args], {
+  options.signal?.throwIfAborted();
+  const execution = execFileAsync("xcrun", ["simctl", ...args], {
     encoding: "utf-8",
     timeout: options.timeout,
     maxBuffer: options.maxBuffer,
     env: { ...process.env, ...options.env },
-  }).catch((error: unknown) => {
+    signal: options.signal,
+    killSignal: options.signal ? "SIGKILL" : "SIGTERM",
+  });
+  // Aborting execFile rejects before its child exits; shutdown must wait for the writer to stop.
+  const closed = options.signal ? new Promise<void>((resolve) => execution.child.once("close", () => resolve())) : undefined;
+  const { stdout } = await execution.catch(async (error: unknown) => {
+    if (closed) await closed;
     if (error instanceof Error && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
       throw error;
     }
