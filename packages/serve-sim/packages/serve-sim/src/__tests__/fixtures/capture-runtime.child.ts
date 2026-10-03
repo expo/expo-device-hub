@@ -93,6 +93,178 @@ describe("capture runtime", () => {
     await runtime.disableAll();
   });
 
+  test("joins equivalent fields, including an explicit server default", async () => {
+    const trust = gate();
+    const { runtime, calls } = harness({ trustCa: () => trust.promise });
+    runtime.setFields(["header", "query"]);
+    const first = runtime.enableForDevice(UDID);
+    const second = runtime.enableForDevice(UDID, ["query", "header"]);
+    expect(second).toBe(first);
+    trust.release();
+    expect((await second).fields).toEqual(["header", "query"]);
+    expect(calls.filter((call) => call === "proxy-started")).toHaveLength(1);
+    await runtime.disableAll();
+  });
+
+  test("honors the latest explicit fields while sharing one pending proxy start", async () => {
+    const trust = gate();
+    const applied: (readonly string[])[] = [];
+    let starts = 0;
+    const { runtime } = harness({
+      trustCa: () => trust.promise,
+      startProxy: async () => {
+        starts++;
+        return {
+          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
+          setFields: (fields) => void applied.push([...fields]), close: async () => {},
+        };
+      },
+    });
+    const first = runtime.enableForDevice(UDID, ["header"]);
+    const second = runtime.enableForDevice(UDID, ["response-body"]);
+    const same = runtime.enableForDevice(UDID, ["response-body"]);
+    expect(same).toBe(second);
+    const latest = runtime.enableForDevice(UDID, ["query"]);
+    trust.release();
+    await Promise.all([first, second, same, latest]);
+    expect(runtime.metaFor(UDID).fields).toEqual(["query"]);
+    expect(applied.at(-1)).toEqual(["query"]);
+    expect(starts).toBe(1);
+    await runtime.disableAll();
+  });
+
+  test("an explicit enable updates existing fields while an omitted enable keeps them", async () => {
+    const applied: (readonly string[])[] = [];
+    let starts = 0;
+    const { runtime } = harness({
+      startProxy: async () => {
+        starts++;
+        return {
+          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
+          setFields: (fields) => void applied.push([...fields]), close: async () => {},
+        };
+      },
+    });
+    await runtime.enableForDevice(UDID, ["header"]);
+    expect((await runtime.enableForDevice(UDID, ["response-body"])).fields).toEqual(["response-body"]);
+    expect((await runtime.enableForDevice(UDID)).fields).toEqual(["response-body"]);
+    expect(applied).toEqual([["response-body"]]);
+    expect(starts).toBe(1);
+    await runtime.disableAll();
+  });
+
+  test("an explicit default choice updates an existing session even when an omitted enable is pending", async () => {
+    const { runtime, calls } = harness();
+    await runtime.enableForDevice(UDID, ["header"]);
+    const omitted = runtime.enableForDevice(UDID);
+    const explicit = runtime.enableForDevice(UDID, []);
+    await Promise.all([omitted, explicit]);
+    expect(runtime.metaFor(UDID).fields).toEqual([]);
+    expect(calls.filter((call) => call === "proxy-started")).toHaveLength(1);
+    await runtime.disableAll();
+  });
+
+  test("a failed field change reports an error while the existing session keeps capturing", async () => {
+    let starts = 0;
+    const { runtime } = harness({
+      startProxy: async () => {
+        starts++;
+        return {
+          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
+          setFields: () => { throw new Error("ENOSPC"); }, close: async () => {},
+        };
+      },
+    });
+    await runtime.enableForDevice(UDID, ["header"]);
+    await expect(runtime.enableForDevice(UDID, ["response-body"])).rejects.toThrow("ENOSPC");
+    expect(runtime.metaFor(UDID).attachment).toBe("capturing");
+    expect(runtime.metaFor(UDID).fields).toEqual(["header"]);
+    expect((await runtime.enableForDevice(UDID)).attachment).toBe("capturing");
+    expect(starts).toBe(1);
+    await runtime.disableAll();
+  });
+
+  test.each([undefined, ["response-body"] as const])(
+    "keeps a newer live field choice while an enable with fields %j finishes",
+    async (fields) => {
+      const publishing = gate();
+      const publish = gate();
+      let publications = 0;
+      const { runtime, calls } = harness({
+        inject: async () => {
+          if (++publications === 2) { publishing.release(); await publish.promise; }
+        },
+      });
+      await runtime.enableForDevice(UDID, ["header"]);
+      const pending = runtime.enableForDevice(UDID, fields);
+      await publishing.promise;
+      expect(runtime.setFieldsForDevice(UDID, ["query"])?.fields).toEqual(["query"]);
+      publish.release();
+      expect((await pending).fields).toEqual(["query"]);
+      expect(runtime.metaFor(UDID).fields).toEqual(["query"]);
+      expect(calls.filter((call) => call === "proxy-started")).toHaveLength(1);
+      await runtime.disableAll();
+    },
+  );
+
+  test("a failed live field write leaves a pending enable's field choice intact", async () => {
+    const publishing = gate();
+    const publish = gate();
+    let publications = 0;
+    let starts = 0;
+    const { runtime } = harness({
+      inject: async () => {
+        if (++publications === 2) { publishing.release(); await publish.promise; }
+      },
+      startProxy: async () => {
+        starts++;
+        return {
+          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
+          setFields: (fields) => { if (fields.includes("query")) throw new Error("ENOSPC"); }, close: async () => {},
+        };
+      },
+    });
+    await runtime.enableForDevice(UDID, ["header"]);
+    const pending = runtime.enableForDevice(UDID, ["response-body"]);
+    await publishing.promise;
+    expect(() => runtime.setFieldsForDevice(UDID, ["query"])).toThrow("ENOSPC");
+    expect(runtime.metaFor(UDID).fields).toEqual(["header"]);
+    publish.release();
+    expect((await pending).fields).toEqual(["response-body"]);
+    expect(runtime.metaFor(UDID).attachment).toBe("capturing");
+    expect(starts).toBe(1);
+    await runtime.disableAll();
+  });
+
+  test("differing field choices do not retry a failed pending startup", async () => {
+    const trust = gate();
+    const { runtime, calls } = harness({
+      trustCa: async () => { await trust.promise; throw new Error("trust failed"); },
+    });
+    const first = runtime.enableForDevice(UDID, ["header"]).catch((error: unknown) => error);
+    const second = runtime.enableForDevice(UDID, ["response-body"]).catch((error: unknown) => error);
+    trust.release();
+    expect(await first).toBeInstanceOf(CaptureEnableError);
+    expect(await second).toBeInstanceOf(CaptureEnableError);
+    expect(calls.filter((call) => call === "proxy-started")).toHaveLength(1);
+    expect(runtime.metaFor(UDID).attachment).toBe("failed");
+    await runtime.disableAll();
+  });
+
+  test("shutdown cancels differing field choices queued during startup", async () => {
+    const trust = gate();
+    const { runtime, calls } = harness({ trustCa: () => trust.promise });
+    const first = runtime.enableForDevice(UDID, ["header"]).catch((error: unknown) => error);
+    const second = runtime.enableForDevice(UDID, ["response-body"]).catch((error: unknown) => error);
+    const shutdown = runtime.disableAll();
+    trust.release();
+    await shutdown;
+    expect(await first).toBeInstanceOf(CaptureEnableError);
+    expect(await second).toBeInstanceOf(CaptureEnableError);
+    expect(runtime.metaFor(UDID).attachment).toBe("not-enabled");
+    expect(calls.filter((call) => call === "proxy-started")).toHaveLength(1);
+  });
+
   test("finishes failed startup cleanup before retrying and never clears its successor", async () => {
     const clearing = gate();
     const clear = gate();
@@ -176,7 +348,7 @@ describe("capture runtime", () => {
   test("shutdown cancels an enable already queued behind teardown", async () => {
     const clear = gate();
     const { runtime, calls } = harness({ clearInjection: () => clear.promise });
-    await runtime.enableForDevice(UDID);
+    await runtime.enableForDevice(UDID, ["header"]);
     const stopping = runtime.disableForDevice(UDID);
     const queued = runtime.enableForDevice(UDID).catch((error: unknown) => error);
     const shutdown = runtime.disableAll();
@@ -185,7 +357,9 @@ describe("capture runtime", () => {
     expect(await queued).toBeInstanceOf(CaptureEnableError);
     expect(runtime.metaFor(UDID).attachment).toBe("not-enabled");
     expect(calls.filter((call) => call === "proxy-started")).toHaveLength(1);
-    expect((await runtime.enableForDevice(UDID)).attachment).toBe("capturing");
+    const next = await runtime.enableForDevice(UDID);
+    expect(next.attachment).toBe("capturing");
+    expect(next.fields).toEqual([]);
     await runtime.disableAll();
   });
 

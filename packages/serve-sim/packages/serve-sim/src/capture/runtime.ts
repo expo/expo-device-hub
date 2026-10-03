@@ -46,7 +46,7 @@ interface CaptureSession {
 interface EnableRequest {
   cancelled: boolean;
   failed: boolean;
-  fields: readonly CaptureField[];
+  fields?: readonly CaptureField[];
   promise: Promise<CaptureMeta>;
 }
 
@@ -109,8 +109,12 @@ function cancelledMeta(udid: string, fields: readonly CaptureField[]): CaptureMe
   };
 }
 
-function assertRequested(udid: string, request: EnableRequest): void {
-  if (request.cancelled) throw new CaptureEnableError(cancelledMeta(udid, request.fields));
+function assertRequested(udid: string, request: EnableRequest, defaultFields: readonly CaptureField[]): void {
+  if (request.cancelled) throw new CaptureEnableError(cancelledMeta(udid, request.fields ?? defaultFields));
+}
+
+function sameFields(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((field) => right.includes(field));
 }
 
 // One exit listener for every runtime, installed when the first one writes files. Exits that skip
@@ -217,7 +221,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     // Every way in ends here: enableForDevice, the panel, and the capability registry that
     // `--enable networkCapture` and default capabilities go through. A refused host refuses them all.
     if (refusal) throw new Error(refusal);
-    if (request) assertRequested(udid, request);
+    if (request) assertRequested(udid, request, policy);
     const existing = byUdid.get(udid);
     if (existing?.proxy) {
       if (existing.meta.attachment === "failed") {
@@ -258,9 +262,9 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       });
       session.proxy = proxy;
       meta.proxyAddress = proxy.address;
-      if (request) assertRequested(udid, request);
+      if (request) assertRequested(udid, request, policy);
       await trustCa(udid, await proxy.caPem());
-      if (request) assertRequested(udid, request);
+      if (request) assertRequested(udid, request, policy);
       if (meta.attachment === "failed") throw new Error(meta.attachError ?? "The capture proxy stopped during startup.");
       return {
         dylib,
@@ -318,6 +322,17 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     return operations.enqueue(udid, () => disable(udid));
   };
 
+  const setFieldsForDevice = (udid: string, next: readonly CaptureField[]): CaptureMeta | null => {
+    const session = byUdid.get(udid);
+    if (!session?.proxy || session.meta.attachment !== "capturing") return null;
+    session.proxy.setFields(next);
+    const pending = enables.get(udid);
+    if (pending && !pending.failed) pending.fields = [...next];
+    session.meta.fields = [...next];
+    session.store.publishMeta(session.meta);
+    return session.meta;
+  };
+
   return {
     capability,
 
@@ -343,24 +358,29 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     /** `fields`, when given, is what this session keeps instead of the server's default. */
     enableForDevice(udid: string, fields?: readonly CaptureField[]): Promise<CaptureMeta> {
       const pending = enables.get(udid);
-      if (pending && !pending.failed) {
+      if (pending && !pending.failed && (fields === undefined || sameFields(pending.fields ?? policy, fields))) {
+        if (fields !== undefined) pending.fields = [...fields];
         return pending.promise;
       }
-      const request: EnableRequest = {
+      const shared = pending && !pending.failed ? pending : undefined;
+      const previous = shared?.promise;
+      const request: EnableRequest = shared ?? {
         cancelled: false,
         failed: false,
-        fields: [...(fields ?? policy)],
         promise: Promise.resolve(notEnabledMeta(udid, policy)),
       };
+      if (fields !== undefined) request.fields = [...fields];
       const promise = operations.enqueue(udid, async () => {
-        assertRequested(udid, request);
+        assertRequested(udid, request, policy);
+        if (previous) await previous;
+        let meta: CaptureMeta;
         try {
           if (refusal) throw new Error(refusal);
           // Inside the try, so a failed cleanup reports as a CaptureEnableError like any other.
           const existing = byUdid.get(udid);
           if (existing?.meta.attachment === "failed") {
             await disable(udid);
-            assertRequested(udid, request);
+            assertRequested(udid, request, policy);
           }
           await configure(udid, {
             ...capability,
@@ -370,15 +390,15 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
           }, { enabled: true, relaunch: false });
           if (request.cancelled) {
             await disable(udid);
-            assertRequested(udid, request);
+            assertRequested(udid, request, policy);
           }
           const session = byUdid.get(udid);
           if (!session) throw new Error("The capture session disappeared during startup. Enable capture again.");
-          return session.meta;
+          meta = session.meta;
         } catch (error) {
           request.failed = true;
           const session = byUdid.get(udid);
-          const meta = session?.meta ?? cancelledMeta(udid, request.fields);
+          const meta = session?.meta ?? cancelledMeta(udid, request.fields ?? policy);
           meta.attachment = "failed";
           meta.attachError = error instanceof Error ? error.message : String(error);
           if (session) {
@@ -389,11 +409,15 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
           }
           throw new CaptureEnableError(meta);
         }
+        if (request.fields !== undefined && !sameFields(meta.fields, request.fields)) {
+          setFieldsForDevice(udid, request.fields);
+        }
+        return meta;
       });
       request.promise = promise;
       enables.set(udid, request);
       const forget = () => {
-        if (enables.get(udid) === request) enables.delete(udid);
+        if (enables.get(udid) === request && request.promise === promise) enables.delete(udid);
       };
       void promise.then(forget, forget);
       return promise;
@@ -527,14 +551,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
      * Change what a running session keeps, without restarting its proxy. Requests already recorded
      * keep what they were recorded with. Null when the device is not capturing.
      */
-    setFieldsForDevice(udid: string, next: readonly CaptureField[]): CaptureMeta | null {
-      const session = byUdid.get(udid);
-      if (!session?.proxy || session.meta.attachment !== "capturing") return null;
-      session.proxy.setFields(next);
-      session.meta.fields = [...next];
-      session.store.publishMeta(session.meta);
-      return session.meta;
-    },
+    setFieldsForDevice,
 
     clearForDevice(udid: string): boolean {
       const session = byUdid.get(udid);

@@ -1,5 +1,5 @@
 import { Ban, Check, Download, Folder, Radio, Search, Settings2, TriangleAlert, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   useCaptureStream,
@@ -54,6 +54,7 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
   const [filter, setFilter] = useState("");
   const [changing, setChanging] = useState(false);
   const [changeError, setChangeError] = useState<string | null>(null);
+  const actionScope = useRef({});
   const [streamKey, setStreamKey] = useState(0);
   // The fields last picked, used by the next enable; the server's default until then.
   const [fieldChoice, setFieldChoice] = useState<FieldChoice>(null);
@@ -84,7 +85,15 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
   const slowestMs = useMemo(() => Math.max(1, ...rows.map((request) => request.durationMs ?? 0)), [rows]);
   const groups = useMemo(() => (grouped ? groupByDomain(rows) : []), [grouped, rows]);
 
+  useEffect(() => {
+    // Replies belong to this visit to the device, even if the viewer switches away and back.
+    actionScope.current = {};
+    setChanging(false);
+    setChangeError(null);
+  }, [udid]);
+
   async function toggleCapture(enable: boolean) {
+    const scope = actionScope.current;
     setChanging(true);
     setChangeError(null);
     try {
@@ -93,6 +102,7 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
       const result = liveEnable
         ? await runHostAction("capture.enable", { udid, ...fields })
         : await runHostAction("capture.reboot", { udid, enabled: enable, ...fields });
+      if (scope !== actionScope.current) return;
       if (result.exitCode !== 0) {
         setChangeError(result.stderr || (enable ? "Capture could not be enabled." : "The simulator could not be restarted."));
         return;
@@ -100,13 +110,15 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
       setMeta(JSON.parse(result.stdout) as CaptureMeta);
       setStreamKey((key) => key + 1);
     } catch (error) {
+      if (scope !== actionScope.current) return;
       setChangeError(error instanceof Error ? error.message : "The capture request could not be sent.");
     } finally {
-      setChanging(false);
+      if (scope === actionScope.current) setChanging(false);
     }
   }
 
   async function changeFields(next: CaptureField[]) {
+    const scope = actionScope.current;
     setChangeError(null);
     if (!capturing) {
       setFieldChoice({ udid, fields: next });
@@ -116,6 +128,7 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
     setChanging(true);
     try {
       const result = await runHostAction("capture.fields", { udid, fields: next });
+      if (scope !== actionScope.current) return;
       if (result.exitCode !== 0) {
         setChangeError(result.stderr || "The capture fields could not be changed.");
         return;
@@ -125,17 +138,20 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
       // A later restart keeps what the menu shows now, not an older pick made while capture was off.
       setFieldChoice({ udid, fields: changed.fields.filter(isCaptureField) });
     } catch (error) {
+      if (scope !== actionScope.current) return;
       setChangeError(error instanceof Error ? error.message : "The capture fields could not be changed.");
     } finally {
-      setChanging(false);
+      if (scope === actionScope.current) setChanging(false);
     }
   }
 
   async function clearRequests() {
+    const scope = actionScope.current;
     setChangeError(null);
     try {
       await clear();
     } catch (error) {
+      if (scope !== actionScope.current) return;
       setChangeError(error instanceof Error ? error.message : "Requests could not be cleared.");
     }
   }
