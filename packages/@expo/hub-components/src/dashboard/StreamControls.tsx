@@ -1,10 +1,18 @@
 import { type ReactNode } from 'react';
 
-import { areRecordingControlsLocked, type DeviceScreenRecordingStatus } from '@expo/hub-client';
+import {
+  areRecordingControlsLocked,
+  type DeviceScreenRecordingStatus,
+  type HingeControlCommand,
+  type HingePose,
+} from '@expo/hub-client';
 import {
   CONTROL_BUTTON_SIZE,
   CameraIcon,
   ControlButton,
+  FoldClosedIcon,
+  FoldHalfOpenIcon,
+  FoldOpenIcon,
   HomeIcon,
   RefreshIcon,
   RotateIcon,
@@ -15,6 +23,7 @@ import {
   text,
 } from '../primitives';
 import { type ColorScheme } from './data';
+import { FOLD_POSE_OPTIONS, FOLD_POSE_SHORTCUTS, selectedFoldPose } from './foldPoses';
 
 const GROUP_PADDING = 4;
 const GROUP_GAP = 24;
@@ -23,6 +32,21 @@ const ICON_STROKE = 1.67;
 
 /** Rendered height of the toolbar: a button plus the group's padding and hairline border. */
 export const STREAM_CONTROLS_HEIGHT = CONTROL_BUTTON_SIZE + GROUP_PADDING * 2 + 2;
+
+/** The iPhone Duo's hinge, when the selected device has one. */
+export type StreamControlsHinge = {
+  angle?: number;
+  pose?: HingePose | null;
+  /** A pose change awaits the helper's acknowledgement. */
+  pending?: boolean;
+  onChange: (command: HingeControlCommand) => void;
+};
+
+const FOLD_ICONS = {
+  closed: FoldClosedIcon,
+  book: FoldHalfOpenIcon,
+  open: FoldOpenIcon,
+} as const;
 
 /** A pill that groups toolbar buttons on the shared element surface. */
 function ControlGroup({ children }: { children: ReactNode }) {
@@ -44,10 +68,12 @@ function ControlGroup({ children }: { children: ReactNode }) {
 
 /**
  * Controls under the device stream. Both platforms share one toolbar: a pill
- * with Save · Theme · Home · Reload, plus a separate Rotate button. Each button
- * shows its label as a tooltip on hover. Device-level actions (Android Back and
- * Recents keys, shutting down or removing the device) live in the inspector's
- * Device options section.
+ * with Save · Theme · Home · Reload, plus a separate Rotate button. An iPhone
+ * Duo adds a third pill with its three everyday fold positions, like serve-sim;
+ * the detailed hinge controls live in the inspector. Each button shows its
+ * label as a tooltip on hover. Device-level actions (Android Back and Recents
+ * keys, shutting down or removing the device) live in the inspector's Device
+ * options section.
  *
  * "Reload" reloads the running React Native/Expo bundle via the active device
  * client. "Theme" toggles the **device's** system dark/light appearance (not
@@ -61,6 +87,7 @@ export function StreamControls({
   onRotate,
   onSave,
   recording = null,
+  hinge,
 }: {
   /** The device's current dark/light appearance; null while unknown. */
   appearance: ColorScheme | null;
@@ -75,8 +102,11 @@ export function StreamControls({
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
   recording?: DeviceScreenRecordingStatus | null;
+  /** Fold presets for an iPhone Duo; omitted for other devices. */
+  hinge?: StreamControlsHinge;
 }) {
   const recordingControlsLocked = areRecordingControlsLocked(recording);
+  const selectedPose = hinge ? selectedFoldPose(hinge.angle, hinge.pose) : null;
   return (
     <div
       role="toolbar"
@@ -120,6 +150,31 @@ export function StreamControls({
           style={recordingControlsLocked ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
         />
       </ControlGroup>
+      {hinge && (
+        <ControlGroup>
+          <div
+            role="group"
+            aria-label="Fold position"
+            aria-busy={hinge.pending || undefined}
+            style={{ display: 'flex', alignItems: 'center' }}>
+            {FOLD_POSE_OPTIONS.slice(0, 3).map(({ value, label }) => {
+              const Icon = FOLD_ICONS[value as keyof typeof FOLD_ICONS];
+              const selected = selectedPose === value;
+              return (
+                <ControlButton
+                  key={value}
+                  icon={<Icon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
+                  label={label}
+                  tooltip={`${label} (⌥⇧${FOLD_POSE_SHORTCUTS[value]})`}
+                  aria-pressed={selected}
+                  onClick={() => hinge.onChange({ control: 'pose', value })}
+                  style={selected ? { backgroundColor: bg.selected, color: text.default } : undefined}
+                />
+              );
+            })}
+          </div>
+        </ControlGroup>
+      )}
     </div>
   );
 }

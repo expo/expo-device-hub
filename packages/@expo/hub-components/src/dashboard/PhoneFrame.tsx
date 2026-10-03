@@ -4,6 +4,7 @@ import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
+  type FoldableDeviceScreenProps,
   type ScreenSize,
 } from '@expo/hub-client';
 import { bg } from '../primitives';
@@ -14,7 +15,11 @@ import {
   deviceViewportStyle,
   type DeviceFrameAssets,
 } from './deviceFrame';
-import { deviceScreenClipPath } from './deviceScreenClipPath';
+import {
+  deviceScreenClipPath,
+  deviceScreenCornersClipPath,
+  type ScreenCornerRadiiCqw,
+} from './deviceScreenClipPath';
 
 const PRELOADED_FRAME_STYLE: CSSProperties = {
   position: 'absolute',
@@ -30,6 +35,17 @@ const PRELOADED_FRAME_STYLE: CSSProperties = {
 // in landscape the long side lies horizontally, so what was the portrait
 // height becomes the width instead of the frame shrinking into the old width.
 const MAX_SHORT_SIDE = 480;
+
+// The iPhone Duo's 3D stage keeps one square footprint as the device folds and
+// changes active displays (serve-sim's fixed 1:1 stage). Resizing it with each
+// native screen configuration would animate on top of the hinge motion.
+const DUO_STAGE_WIDTH = 580;
+
+/** Viewer-local 3D options the consumer passes through to `FoldableDeviceScreen`. */
+export type PhoneFrameFoldPreview = Pick<
+  FoldableDeviceScreenProps,
+  'cacheScreenOnFold' | 'sizeMode' | 'onUnavailable'
+>;
 
 const CONFIG: Record<
   Device['platform'],
@@ -56,6 +72,8 @@ export function PhoneFrame({
   client,
   agentInteraction,
   DeviceScreen,
+  FoldableDeviceScreen,
+  foldPreview,
   displayScreen,
   showDeviceFrame = true,
   deviceFrameAssets,
@@ -65,6 +83,9 @@ export function PhoneFrame({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
+  /** iPhone Duo 3D renderer, injected from `@expo/hub-client`; without it the Duo stays flat. */
+  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
   /** Viewer-local preference. Ignored when the selected model has no frame. */
@@ -95,7 +116,22 @@ export function PhoneFrame({
   // `cqw` resolves against the width, but the radius should stay a fraction of
   // the *short* side so the corners look the same in portrait and landscape.
   const radiusCqw = (radiusFraction / Math.max(ratio, 1)) * 100;
-  const borderRadius = `${radiusCqw.toFixed(3)}cqw`;
+  // A display that describes its own glass, like the iPhone Duo's cover and
+  // inner panel, is clipped to those corners: what the 3D model shows head-on,
+  // without the frame. The client already turned them with the device.
+  const displayCorners: ScreenCornerRadiiCqw | null = client?.displayCorners
+    ? {
+        topLeft: client.displayCorners.topLeft * 100,
+        topRight: client.displayCorners.topRight * 100,
+        bottomRight: client.displayCorners.bottomRight * 100,
+        bottomLeft: client.displayCorners.bottomLeft * 100,
+      }
+    : null;
+  const borderRadius = displayCorners
+    ? [displayCorners.topLeft, displayCorners.topRight, displayCorners.bottomRight, displayCorners.bottomLeft]
+        .map((corner) => `${corner.toFixed(3)}cqw`)
+        .join(' ')
+    : `${radiusCqw.toFixed(3)}cqw`;
   const live = client && client.status !== 'idle';
   const overlayVisible =
     !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
@@ -121,6 +157,30 @@ export function PhoneFrame({
     </div>
   );
 
+  // The folding model draws its own device, so neither frame artwork nor the
+  // screen clip applies; the agent overlay still covers the stage.
+  if (live && client.hinge?.modelActive && FoldableDeviceScreen) {
+    return (
+      <div
+        data-testid="device-screen-frame"
+        data-device-frame-kind="duo-model"
+        data-agent-active={agentInteraction ? 'true' : 'false'}
+        style={{
+          ...deviceViewportStyle({ maxShortSide: DUO_STAGE_WIDTH, ratio: 1 }),
+          containerType: 'inline-size',
+        }}
+        onPointerEnter={(event) => {
+          if (event.pointerType === 'mouse') setHovered(true);
+        }}
+        onPointerLeave={() => setHovered(false)}>
+        <div data-testid="device-screen-clip" style={{ position: 'absolute', inset: 0 }}>
+          <FoldableDeviceScreen key={device.id} client={client} {...foldPreview} />
+          {takeoverOverlay}
+        </div>
+      </div>
+    );
+  }
+
   const frameAsset =
     showDeviceFrame && device.deviceFrame ? deviceFrameAssets?.[device.deviceFrame] : undefined;
   const framed = frameAsset
@@ -138,13 +198,16 @@ export function PhoneFrame({
         inset: 0,
         // One responsive path clips both the stream and every overlay, which
         // avoids fractional seams between separate composited masks.
-        clipPath: deviceScreenClipPath(radiusCqw, squircle),
+        clipPath: displayCorners
+          ? deviceScreenCornersClipPath(displayCorners, false)
+          : deviceScreenClipPath(radiusCqw, squircle),
       };
 
   return (
     <div
       data-testid="device-screen-frame"
       data-device-frame-kind={framed ? device.deviceFrame : 'none'}
+      data-display-corners={displayCorners ? 'device' : undefined}
       data-agent-active={agentInteraction ? 'true' : 'false'}
       style={framed ? framed.frameStyle : { ...wrapperStyle, borderRadius }}
       onPointerEnter={(event) => {

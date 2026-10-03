@@ -19,6 +19,16 @@
 
 import { type CSSProperties } from 'react';
 
+import { type DuoHingeCommands } from './duo/duo-hinge-commands';
+import { type DuoView } from './duo/duo-view';
+import {
+  type HingeControlCommand,
+  type HingeControlState,
+  type HingePhysicalOrientation,
+  type HingePose,
+} from './hinge-control';
+import { type WebRtcStreamFailure } from './webrtc-fallback';
+
 export type DevicePlatform = 'ios' | 'android';
 
 /** Viewer-selected transport for the active device stream. */
@@ -45,12 +55,133 @@ export type DeviceOrientation =
   | 'landscape_left'
   | 'landscape_right';
 
-/** Native pixel size of the streamed screen — drives the PhoneFrame aspect ratio. */
-export interface ScreenSize {
+/**
+ * Native pixel size of the streamed screen — drives the PhoneFrame aspect ratio.
+ * serve-sim's screen config carries the active display and, on an iPhone Duo,
+ * the hinge state alongside the size (its `StreamConfig`).
+ */
+export interface ScreenSize extends HingeControlState {
   width: number;
   height: number;
   /** Last known orientation, when the backend reports it (serve-sim). */
   orientation?: DeviceOrientation;
+  /** Active simulator display: 1 is the Duo's cover, 3 its inner display. */
+  screenId?: number;
+  /** Native input setup failed; video can continue without touch or keyboard. */
+  inputUnavailable?: boolean;
+  /** Whether this simulator exposes hinge angle control. */
+  supportsHingeAngle?: boolean;
+  /** Whether the active Duo surface can be selected without changing its hinge angle. */
+  supportsPhysicalOrientation?: boolean;
+  /** Last confirmed physical orientation, separate from the app's screen orientation. */
+  physicalOrientation?: HingePhysicalOrientation;
+}
+
+/**
+ * Corner radii of the active display's glass as the viewer sees it, clockwise
+ * from top left, each a fraction of the displayed width. serve-sim reads them
+ * from Xcode's DeviceKit profile; the iPhone Duo's cover, for example, is
+ * nearly square at the hinge and round at the outer edge.
+ */
+export interface DisplayCornerRadii {
+  topLeft: number;
+  topRight: number;
+  bottomRight: number;
+  bottomLeft: number;
+}
+
+/** How an iPhone Duo is presented: the flat active display, or Xcode's folding 3D model. */
+export type DuoPreviewMode = '2d' | '3d';
+
+/** Transport of the per-panel feeds behind the 3D model. */
+export type DuoPanelStreamMode = 'mjpeg' | 'avcc' | 'webrtc';
+
+export interface DeviceIceServer {
+  urls: string[];
+  username?: string;
+  credential?: string;
+}
+
+/**
+ * Both physical panels' feeds, served by the client while the 3D model is shown.
+ * `FoldableDeviceScreen` decodes them and reports their health back here.
+ */
+export interface DuoPanelFeeds {
+  /** Helper base URL; each panel streams from `${url}/panel/<1|3>/…`. */
+  url: string;
+  mode: DuoPanelStreamMode;
+  codec: DeviceWebRtcCodec;
+  iceServers?: DeviceIceServer[];
+  /** A frame of the presented panel was decoded. */
+  onFrame?: () => void;
+  onStreamingChange: (streaming: boolean) => void;
+  onStreamError: (error: string | null) => void;
+  /** The H.264 decoder failed; the client falls back to MJPEG. */
+  onAvccError: () => void;
+  onWebRtcFailure: (failure: WebRtcStreamFailure) => void;
+}
+
+/** Raw-framebuffer touch the 3D model already mapped; sent on the helper's touch channel unchanged. */
+export interface DuoModelTouch {
+  type: 'begin' | 'move' | 'end';
+  x: number;
+  y: number;
+  edge?: number;
+}
+
+export interface DuoModelMultiTouch {
+  type: 'begin' | 'move' | 'end';
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+export interface DuoModelScroll {
+  dx: number;
+  dy: number;
+  x: number;
+  y: number;
+}
+
+/**
+ * iPhone Duo hinge state and controls, mirroring serve-sim's web client. Angles
+ * and poses show the pending request while a command awaits acknowledgement,
+ * then the helper's confirmed values.
+ */
+export interface DeviceHinge {
+  /** Hinge angle in degrees; undefined until the helper reports it. */
+  angle?: number;
+  /** Named preset in effect, null for a custom angle, undefined until reported. */
+  pose?: HingePose | null;
+  /** Physical pose for display election; undefined follows `pose`, null is unknown. */
+  physicalPose?: HingePose | null;
+  tableMode?: boolean;
+  /** Whether Table Mode can be turned on in the current pose. */
+  tableModeAvailable?: boolean;
+  /** Face down with Table Mode, which elects the cover of a half-open device. */
+  faceDown: boolean;
+  /** The panel the viewer should present: 1 is the cover, 3 the inner display. */
+  activeScreenId: 1 | 3;
+  /** A hinge command awaits the helper's acknowledgement. */
+  pending: boolean;
+  /** The last failed hinge command, cleared when the next one starts. */
+  error: string | null;
+  /** Confirmed native submissions, which the model uses to track panel handoffs. */
+  commands: DuoHingeCommands;
+  /** Saved orientation controls for the 3D model. */
+  view: DuoView;
+  /** Whether the consumer renders the 3D model; the client then feeds both panels and parks the flat stream. */
+  modelActive: boolean;
+  /** Middleware route serving Xcode's `V68.usdz`; null until the connection resolves. */
+  modelUrl: string | null;
+  /** Panel feeds, present while `modelActive`. */
+  panels: DuoPanelFeeds | null;
+  /** Send a hinge command: an angle, a preset, Table Mode, or face up/down. */
+  setControl: (command: HingeControlCommand) => void;
+  sendModelTouch: (sample: DuoModelTouch) => void;
+  sendModelMultiTouch: (sample: DuoModelMultiTouch) => void;
+  sendModelScroll: (sample: DuoModelScroll) => void;
 }
 
 /** A simulator/emulator the server reports as running. */
@@ -528,6 +659,12 @@ export interface DeviceConnectionOptions {
    * Each backend adapter maps unavailable choices to one of its supported modes.
    */
   streamMode: DeviceStreamMode;
+  /**
+   * How an iPhone Duo is rendered. `'3d'` makes the client feed both physical
+   * panels to `FoldableDeviceScreen` and park the flat stream, so pass it only
+   * while that component is rendered. Defaults to `'2d'`.
+   */
+  duoPreview?: DuoPreviewMode;
 }
 
 /** Which element the implementation paints into. */
@@ -571,6 +708,14 @@ export interface DeviceClient {
   screenRecording: DeviceScreenRecordingStatus | null;
   /** Screen size once known; null while connecting. */
   screen: ScreenSize | null;
+  /** iPhone Duo hinge state and controls; null for devices without a hinge. */
+  hinge: DeviceHinge | null;
+  /**
+   * The active display's own glass corners for the flat view, oriented with
+   * the device; null keeps the presentation's generic shape for the platform.
+   * Set for the iPhone Duo, whose displays the generic iPhone shape cannot express.
+   */
+  displayCorners: DisplayCornerRadii | null;
   /** Best-effort frames-per-second (0 when unavailable). */
   fps: number;
   /** Running devices the server exposes (may be a placeholder list). */

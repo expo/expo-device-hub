@@ -32,6 +32,22 @@ export function homeIndicatorEdge({
   return edgeGestures && y >= HOME_INDICATOR_BAND_NORM ? HID_EDGE_BOTTOM : undefined;
 }
 
+/** Simulator's "Rotate Left" order: each step turns the device counterclockwise. */
+export const ROTATE_LEFT_CYCLE: Record<DeviceOrientation, DeviceOrientation> = {
+  portrait: 'landscape_left',
+  landscape_left: 'portrait_upside_down',
+  portrait_upside_down: 'landscape_right',
+  landscape_right: 'portrait',
+};
+
+/** Xcode's Device Hub turns the iPhone Duo clockwise; serve-sim mirrors that for the Duo. */
+export const ROTATE_RIGHT_CYCLE: Record<DeviceOrientation, DeviceOrientation> = {
+  portrait: 'landscape_right',
+  landscape_right: 'portrait_upside_down',
+  portrait_upside_down: 'landscape_left',
+  landscape_left: 'portrait',
+};
+
 export function isLandscapeOrientation(orientation?: DeviceOrientation | null): boolean {
   return orientation === 'landscape_left' || orientation === 'landscape_right';
 }

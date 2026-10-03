@@ -15,6 +15,17 @@
 export * from './types';
 export { areRecordingControlsLocked } from './screen-recording';
 export { DeviceScreen } from './DeviceScreen';
+export { FoldableDeviceScreen, type FoldableDeviceScreenProps } from './duo/FoldableDeviceScreen';
+export {
+  HINGE_POSES,
+  hingeControlState,
+  isHingeControlCommand,
+  isTableModeAvailable,
+  type HingeControlCommand,
+  type HingeControlState,
+  type HingePhysicalOrientation,
+  type HingePose,
+} from './hinge-control';
 export { KeyboardCapture, type KeyboardCaptureProps } from './KeyboardCapture';
 export {
   AGENT_INTERACTION_IDLE_TIMEOUT_MS,

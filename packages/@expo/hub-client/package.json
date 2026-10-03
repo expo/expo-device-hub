@@ -52,6 +52,9 @@
     "format": "oxfmt",
     "format:check": "oxfmt --check"
   },
+  "dependencies": {
+    "three": "^0.186.0"
+  },
   "peerDependencies": {
     "react": ">=18.0.0"
   },
@@ -61,6 +64,7 @@
     "@types/bun": "latest",
     "@types/react": "~19.2.2",
     "@types/react-test-renderer": "19.1.0",
+    "@types/three": "^0.186.0",
     "oxfmt": "^0.56.0",
     "oxlint": "^1.71.0",
     "react-test-renderer": "19.2.3",
