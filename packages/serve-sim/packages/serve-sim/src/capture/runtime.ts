@@ -47,6 +47,7 @@ interface EnableRequest {
   cancelled: boolean;
   failed: boolean;
   fields?: readonly CaptureField[];
+  session?: CaptureSession;
   promise: Promise<CaptureMeta>;
 }
 
@@ -227,6 +228,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       if (existing.meta.attachment === "failed") {
         throw new Error("The previous capture session failed. Disable capture before retrying so its launch configuration can be removed safely.");
       }
+      if (request) request.session = existing;
       return { dylib: requireDylib(), env: { SIMNET_PROXY_PORT_FILE: existing.proxy.portFile } };
     }
     const dylib = requireDylib();
@@ -237,6 +239,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       attachment: "starting", attachError: null, droppedOversizedBodies: 0, fields: sessionFields,
     };
     const session: CaptureSession = { store, meta, proxy: null, ...attachDisk(udid, store) };
+    if (request) request.session = session;
     store.subscribe((event) => {
       if (byUdid.get(udid) === session) notify(udid, event);
     });
@@ -327,7 +330,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     if (!session?.proxy || session.meta.attachment !== "capturing") return null;
     session.proxy.setFields(next);
     const pending = enables.get(udid);
-    if (pending && !pending.failed) pending.fields = [...next];
+    if (pending && !pending.failed && pending.session === session) pending.fields = [...next];
     session.meta.fields = [...next];
     session.store.publishMeta(session.meta);
     return session.meta;
@@ -372,6 +375,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       if (fields !== undefined) request.fields = [...fields];
       const promise = operations.enqueue(udid, async () => {
         assertRequested(udid, request, policy);
+        request.session = byUdid.get(udid);
         if (previous) await previous;
         let meta: CaptureMeta;
         try {
