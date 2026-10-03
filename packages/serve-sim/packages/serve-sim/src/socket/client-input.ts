@@ -104,6 +104,7 @@ export function createInputSocket(
 
   return {
     get connection(): object | null { return admitted ? socket : null; },
+    get transport(): object | null { return socket; },
     trySendEncoded(message: Uint8Array<ArrayBuffer>) {
       return admitted && trySendEncodedWsMessage(socket, message);
     },

@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createInputSocket } from "../socket/client-input";
+import { createOrderedKeyboardInput } from "../client/utils/ordered-keyboard-input";
 import { WS_REASON_INPUT_UNAVAILABLE } from "../socket/input-protocol";
 
 class FakeSocket {
@@ -55,6 +56,43 @@ function setup(requireAdmission = true) {
     get recoveries() { return recoveries; },
   };
 }
+
+test("paced keyboard input survives admission of the same transport", async () => {
+  const state = setup();
+  let resolvePasteSent!: () => void;
+  const pasteSent = new Promise<void>((resolve) => { resolvePasteSent = resolve; });
+  const keyboard = createOrderedKeyboardInput({
+    getDevice: () => "device-a",
+    getConnection: () => state.input.connection,
+    getKeyConnection: () => state.input.transport,
+    sendKey: (event) => state.input.send(0x06, event),
+    sendPaste: (_connection, message) => {
+      const sent = state.input.trySendEncoded(message);
+      if (sent) resolvePasteSent();
+      return sent;
+    },
+  });
+  const events = [
+    { type: "down" as const, usage: 4 }, { type: "up" as const, usage: 4 },
+    { type: "down" as const, usage: 5 }, { type: "up" as const, usage: 5 },
+  ];
+  try {
+    state.input.start();
+    state.sockets[0]!.open();
+    keyboard.enqueue(events);
+    state.sockets[0]!.message("admitted");
+    const paste = keyboard.paste();
+    await pasteSent;
+    keyboard.receive(state.input.connection, { requestId: 1, ok: true });
+    await paste;
+    expect(state.sockets[0]!.sent.filter((message) => new Uint8Array(message)[0] === 0x06).map((message) =>
+      JSON.parse(new TextDecoder().decode(new Uint8Array(message).subarray(1))),
+    )).toEqual(events);
+  } finally {
+    keyboard.dispose();
+    state.input.dispose();
+  }
+});
 
 test("legacy helper sends input on open without a dimension config", () => {
   const state = setup(false);

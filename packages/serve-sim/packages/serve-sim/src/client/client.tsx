@@ -47,7 +47,7 @@ import {
   KeyboardToggleButton,
 } from "./components/keyboard-capture";
 import { DeviceKitChrome, deviceKitChromeForScreen, deviceKitChromeGeometry, deviceKitScreenRadius, type ChromeButtonPress } from "./components/device-chrome-frame";
-import { createPacedKeySender } from "./utils/paced-key-sender";
+import { createOrderedKeyboardInput } from "./utils/ordered-keyboard-input";
 import { GridPanel } from "./components/grid-panel";
 import { IconButton } from "./components/icon-button";
 import { LogsDrawer } from "./components/logs-drawer";
@@ -87,11 +87,7 @@ import { fileExtension } from "./utils/drop";
 import { openHostEventStream, runHostAction } from "../socket/client-control";
 import { hidUsageForCode } from "./utils/hid";
 import { keydownForward, shiftedCharacter } from "./utils/mobile-keyboard";
-import { encodeWsMessage } from "../socket/send-queue";
 import { KeyboardPasteGate } from "./utils/keyboard-paste-gate";
-import {
-  encodePasteRequest,
-} from "./utils/sim-clipboard";
 import { showClipboardKeyCleanupWarning, useClipboardToast } from "./hooks/use-clipboard-toast";
 import { ActionMenu } from "./components/action-menu";
 import {
@@ -925,21 +921,17 @@ function AppWithConfig({
   const inputSocketRef = useRef<ReturnType<typeof createInputSocket> | null>(null);
   const selectedDeviceRef = useRef(config.device);
   selectedDeviceRef.current = config.device;
-  const pasteRequestIdRef = useRef(0);
-  const pendingPasteRef = useRef<{
-    requestId: number;
-    connection: object;
-    timeout: ReturnType<typeof setTimeout>;
-    resolve: (result: { cleanupWarning?: string }) => void;
-    reject: (error: Error) => void;
-  } | null>(null);
-  const cancelPendingPaste = useCallback(() => {
-    const pending = pendingPasteRef.current;
-    if (!pending) return;
-    clearTimeout(pending.timeout);
-    pendingPasteRef.current = null;
-    pending.reject(new Error("Simulator input disconnected during paste"));
-  }, []);
+  const keyboardInput = useMemo(() => createOrderedKeyboardInput({
+    getDevice: () => selectedDeviceRef.current,
+    getConnection: () => inputSocketRef.current?.connection ?? null,
+    getKeyConnection: () => inputSocketRef.current?.transport ?? null,
+    sendKey: (event) => inputSocketRef.current?.send(0x06, event),
+    sendPaste: (connection, message) => {
+      const socket = inputSocketRef.current;
+      return connection === socket?.connection && socket.trySendEncoded(message);
+    },
+  }), []);
+  useEffect(() => () => keyboardInput.dispose(), [keyboardInput]);
   if (!hingeQueueRef.current) {
     hingeQueueRef.current = createAcknowledgedControlQueue<HingeControlCommand>({
       send: (request) => {
@@ -991,16 +983,10 @@ function AppWithConfig({
         }
         if (bytes[0] === 0x92) {
           try {
-            const reply = JSON.parse(new TextDecoder().decode(bytes.subarray(1))) as {
-              requestId?: unknown; ok?: unknown; error?: unknown; cleanupWarning?: unknown;
-            };
-            const pending = pendingPasteRef.current;
-            if (pending?.connection === inputSocket.connection && reply.requestId === pending.requestId && typeof reply.ok === "boolean") {
-              clearTimeout(pending.timeout);
-              pendingPasteRef.current = null;
-              if (reply.ok) pending.resolve({ cleanupWarning: typeof reply.cleanupWarning === "string" ? reply.cleanupWarning : undefined });
-              else pending.reject(new Error(typeof reply.error === "string" ? reply.error : "Could not paste into the simulator"));
-            }
+            keyboardInput.receive(
+              inputSocket.connection,
+              JSON.parse(new TextDecoder().decode(bytes.subarray(1))),
+            );
           } catch {}
           return false;
         }
@@ -1020,7 +1006,7 @@ function AppWithConfig({
         return false;
       },
       onDisconnect() {
-        cancelPendingPaste();
+        keyboardInput.cancel();
         setInputSocketOpen(false);
         setPhysicalPose(undefined);
         sentHingePoseRef.current = undefined;
@@ -1038,23 +1024,17 @@ function AppWithConfig({
     inputSocket.start();
 
     return () => {
-      cancelPendingPaste();
+      keyboardInput.cancel();
       if (inputSocketRef.current === inputSocket) inputSocketRef.current = null;
       hingeQueueRef.current?.clear();
       inputSocket.dispose();
       dismissInputSocketError();
     };
-  }, [config.wsUrl, config.inputAdmission, cancelPendingPaste]);
+  }, [config.wsUrl, config.inputAdmission, keyboardInput]);
 
   const sendWs = useCallback((tag: number, payload: object) => {
     inputSocketRef.current?.send(tag, payload);
   }, []);
-
-  const keySender = useMemo(
-    () => createPacedKeySender((e) => sendWs(0x06, e)),
-    [sendWs],
-  );
-  useEffect(() => () => keySender.dispose(), [keySender]);
 
   const onStreamTouch = useCallback(
     (data: { type: string; x: number; y: number; edge?: number }) => {
@@ -1204,8 +1184,8 @@ function AppWithConfig({
   }, [streamConfig, streamConfig?.width, streamConfig?.height, streamConfig?.orientation, streamConfig?.screenId, streamConfig?.hingeAngle, streamConfig?.supportsHingeAngle, streamConfig?.hingePose, streamConfig?.tableMode, streamConfig?.tableModeAvailable, streamConfig?.inputUnavailable]);
 
   const sendKey = useCallback((type: "down" | "up", usage: number) => {
-    sendWs(0x06, { type, usage });
-  }, [sendWs]);
+    keyboardInput.send({ type, usage });
+  }, [keyboardInput]);
 
   // Subscribe to app-state SSE.
   const [currentApp, setCurrentApp] = useState<{ bundleId: string; isReactNative: boolean; pid?: number } | null>(null);
@@ -1301,51 +1281,7 @@ function AppWithConfig({
     sendKey("up", R);
   }, [sendKey]);
 
-  const pasteChainRef = useRef<Promise<void>>(Promise.resolve());
-
-  const sendPasteRequest = useCallback(
-    (text?: string): Promise<{ cleanupWarning?: string }> => {
-      const device = config.device;
-      const targetConnection = inputSocketRef.current?.connection;
-      const run = pasteChainRef.current.catch(() => {}).then(async () => {
-        await keySender.idle();
-        return new Promise<{ cleanupWarning?: string }>((resolve, reject) => {
-          const inputSocket = inputSocketRef.current;
-          const connection = inputSocket?.connection;
-          if (selectedDeviceRef.current !== device || !connection || connection !== targetConnection) {
-            reject(new Error("Simulator input disconnected during paste"));
-            return;
-          }
-          const requestId = ++pasteRequestIdRef.current;
-          const message = text === undefined
-            ? encodeWsMessage(0x12, { requestId })
-            : encodePasteRequest(requestId, text);
-          if (!message) {
-            reject(new Error("This text is too large to paste into the simulator"));
-            return;
-          }
-          const timeout = setTimeout(() => {
-            if (pendingPasteRef.current?.requestId !== requestId) return;
-            pendingPasteRef.current = null;
-            reject(new Error("Simulator paste timed out"));
-          }, 150_000);
-          pendingPasteRef.current = { requestId, connection, timeout, resolve, reject };
-          if (!inputSocket.trySendEncoded(message)) {
-            clearTimeout(timeout);
-            pendingPasteRef.current = null;
-            reject(new Error("Simulator input disconnected during paste"));
-          }
-        });
-      });
-      pasteChainRef.current = run.then(
-        () => {},
-        () => {},
-      );
-      return run;
-    },
-    [config.device, keySender],
-  );
-
+  const sendPasteRequest = useCallback((text?: string) => keyboardInput.paste(text), [keyboardInput]);
   const sendTextToSim = useCallback((text: string) => sendPasteRequest(text), [sendPasteRequest]);
 
   const clipboard = useClipboardToast(sendTextToSim);
@@ -1461,9 +1397,9 @@ function AppWithConfig({
     keyboardPasteGateRef.current.cancel();
     const held = pressedKeysRef.current;
     if (held.size === 0) return;
-    for (const usage of held) sendWs(0x06, { type: "up", usage });
+    for (const usage of held) keyboardInput.send({ type: "up", usage });
     held.clear();
-  }, [simFocused, sendWs]);
+  }, [simFocused, keyboardInput]);
 
   const sendSimulatorPasteKey = useCallback(() => {
     clipboard.cancelPaste();
@@ -1538,7 +1474,7 @@ function AppWithConfig({
         }
         if (type === "up" && held != null && pressedKeysRef.current.has(held)) {
           pressedKeysRef.current.delete(held);
-          sendWs(0x06, { type, usage: held });
+          keyboardInput.send({ type, usage: held });
         }
         return;
       }
@@ -1547,7 +1483,7 @@ function AppWithConfig({
         const release = keyboardPasteGateRef.current.release(usage != null && pressedKeysRef.current.has(usage));
         if (release === "release" && usage != null && pressedKeysRef.current.delete(usage)) {
           // A new plain V was pressed after a lost shortcut keyup. Release it, not paste.
-          sendWs(0x06, { type: "up", usage });
+          keyboardInput.send({ type: "up", usage });
           return;
         }
         if (release === "fallback") sendSimulatorPasteKey();
@@ -1560,7 +1496,7 @@ function AppWithConfig({
         if (usage == null || !pressedKeysRef.current.has(usage)) return;
         e.preventDefault();
         pressedKeysRef.current.delete(usage);
-        sendWs(0x06, { type, usage });
+        keyboardInput.send({ type, usage });
         return;
       }
       if (isLogsShortcut(e)) return;
@@ -1572,7 +1508,7 @@ function AppWithConfig({
       if (usage == null) return;
       e.preventDefault();
       pressedKeysRef.current.add(usage);
-      sendWs(0x06, {
+      keyboardInput.send({
         type,
         usage,
         ...(shiftedCharacter(e) !== undefined ? { key: e.key, shifted: true } : {}),
@@ -1582,7 +1518,7 @@ function AppWithConfig({
     const up = (e: KeyboardEvent) => onKey(e, "up");
     const blur = () => {
       keyboardPasteGateRef.current.cancel();
-      for (const usage of pressedKeysRef.current) sendWs(0x06, { type: "up", usage });
+      for (const usage of pressedKeysRef.current) keyboardInput.send({ type: "up", usage });
       pressedKeysRef.current.clear();
     };
     window.addEventListener("keydown", down);
@@ -1593,7 +1529,7 @@ function AppWithConfig({
       window.removeEventListener("keyup", up);
       window.removeEventListener("blur", blur);
     };
-  }, [sendWs, config.device, rotateBy, supportsHingeAngle, setHingeControl, sendSimulatorPasteKey]);
+  }, [sendWs, config.device, rotateBy, supportsHingeAngle, setHingeControl, sendSimulatorPasteKey, keyboardInput]);
 
   useEffect(() => {
     const onPaste = (e: ClipboardEvent) => {
@@ -1792,7 +1728,7 @@ function AppWithConfig({
         )}
         <KeyboardCapture
           open={keyboardOpen}
-          onKeys={(events) => keySender.enqueue(events)}
+          onKeys={(events) => keyboardInput.enqueue(events)}
           inputRef={keyboardInputRef}
         />
         <div
