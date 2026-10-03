@@ -16,10 +16,14 @@ const device: Device = {
   deviceFrame: null,
 };
 
-function client(hinge: Partial<DeviceHinge> | null): DeviceClient {
+function client(
+  hinge: Partial<DeviceHinge> | null,
+  displayCorners: DeviceClient['displayCorners'] = null,
+): DeviceClient {
   return {
     status: 'streaming',
     screen: { width: 1398, height: 2034, orientation: 'portrait', screenId: 1 },
+    displayCorners,
     hinge: hinge && {
       faceDown: false,
       activeScreenId: 1,
@@ -81,5 +85,36 @@ describe('PhoneFrame with an iPhone Duo', () => {
       // The cover's own aspect ratio sizes the flat frame.
       expect(markup).toContain(`aspect-ratio:${1398 / 2034}`);
     }
+  });
+});
+
+describe("PhoneFrame with a display that describes its own glass", () => {
+  test("clips the flat Duo cover to its DeviceKit corners instead of the generic iPhone squircle", () => {
+    const corners = { topLeft: 8 / 466, topRight: 59 / 466, bottomRight: 59 / 466, bottomLeft: 8 / 466 };
+    const markup = renderToStaticMarkup(
+      <PhoneFrame
+        device={device}
+        client={client({ modelActive: false }, corners)}
+        DeviceScreen={FlatScreen}
+        displayScreen={(screen) => screen ?? null}
+      />,
+    );
+    expect(markup).toContain('data-display-corners="device"');
+    // Hinge-side corners nearly square, outer corners round, all in container-width units.
+    expect(markup).toContain('shape(from 1.717cqw -0.5px');
+    expect(markup).toContain('calc(100% - 12.661cqw)');
+    expect(markup).toContain('border-radius:1.717cqw 12.661cqw 12.661cqw 1.717cqw');
+    // Circular corners: the control points are the circle's (0.5523 of the
+    // radius), not the iOS superellipse's.
+    expect(markup).toContain('with 6.992cqw 0 from start / 0 -6.992cqw from end');
+    expect(markup).not.toContain('with 7.556cqw');
+  });
+
+  test('keeps the generic shape when the client describes no corners', () => {
+    const markup = renderToStaticMarkup(
+      <PhoneFrame device={device} client={client(null)} DeviceScreen={FlatScreen} displayScreen={(screen) => screen ?? null} />,
+    );
+    expect(markup).not.toContain('data-display-corners');
+    expect(markup).toContain('shape(from 14.066cqw -0.5px');
   });
 });

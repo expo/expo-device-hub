@@ -25,6 +25,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     screenRecording: null,
     screen: { width: 390, height: 844 },
     hinge: null,
+    displayCorners: null,
     fps: 60,
     devices: [],
     logs: [],
