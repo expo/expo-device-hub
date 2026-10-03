@@ -33,6 +33,9 @@ export async function simctlRaw(
     maxBuffer: options.maxBuffer,
     env: { ...process.env, ...options.env },
   }).catch((error: unknown) => {
+    if (error instanceof Error && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+      throw error;
+    }
     const stderr = error instanceof Error && "stderr" in error ? String(error.stderr).trim() : "";
     throw stderr ? new Error(stderr) : error;
   });

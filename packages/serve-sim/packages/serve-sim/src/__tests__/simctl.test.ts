@@ -23,9 +23,15 @@ describe("simctl", () => {
     );
   });
 
-  test("reports an oversized simulator clipboard separately from a command failure", async () => {
-    await withShimsAsync({ xcrun: "#!/bin/sh\nhead -c 4194305 /dev/zero\n" }, async () => {
+  test.each(["", "printf 'diagnostic\\n' >&2\n"])("preserves oversized clipboard errors with stderr %p", async (stderr) => {
+    await withShimsAsync({ xcrun: `#!/bin/sh\n${stderr}head -c 4194305 /dev/zero\n` }, async () => {
       await expect(readSimPasteboardResult("DEVICE")).rejects.toBeInstanceOf(PasteboardTooLargeError);
+    });
+  });
+
+  test("reports stderr for an ordinary command failure", async () => {
+    await withShimsAsync({ xcrun: "#!/bin/sh\nprintf 'diagnostic\\n' >&2\nexit 1\n" }, async () => {
+      await expect(simctlRaw(["list"])).rejects.toThrow("diagnostic");
     });
   });
 });

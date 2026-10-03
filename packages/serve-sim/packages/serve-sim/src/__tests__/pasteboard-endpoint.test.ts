@@ -122,7 +122,7 @@ describe("/api/pasteboard", () => {
   });
 
   test("returns 413 when simulator clipboard text exceeds the read cap", async () => {
-    const shims = installShims({ xcrun: "#!/bin/sh\nhead -c 4194305 /dev/zero\n" });
+    const shims = installShims({ xcrun: "#!/bin/sh\nprintf 'diagnostic\\n' >&2\nhead -c 4194305 /dev/zero\n" });
     try {
       const device = "404F2659-7202-4450-8465-912BD2AB744B";
       const res = await middleware(pasteboardRequest(`?device=${device}`));
