@@ -1,11 +1,12 @@
 # LLP 0000: Expo Device Hub
 
 **Type:** Explainer
-**Status:** Draft
+**Status:** Active
 **Systems:** Hub, HubClient, HubComponents, AppleUtils, AndroidUtils, ServeSim, ServeEmu, Example, Release, LLP
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
+**Revised:** 2026-10-03 (reviewed and made Active by Krystof Woldrich)
 
 ## Summary
 
@@ -15,7 +16,7 @@ This monorepo contains the Hub, the browser libraries that connect to devices, a
 
 Read this document first. It tells you which package owns what, how the packages connect, and which constraints you must not simplify away. Each section names where to look next.
 
-> **Provenance.** An agent wrote this draft from the code, the package `AGENTS.md` files, and the git history. `[observed]` claims give their source. `[confirmed]` claims name a human and a date. `[inferred]` claims are guesses that a maintainer must confirm or delete. No `[inferred]` claims remain. The maintainer decides when this document becomes `Active`.
+> **Provenance.** An agent wrote this draft from the code, the package `AGENTS.md` files, and the git history. `[observed]` claims give their source. `[confirmed]` claims name a human and a date. `[inferred]` claims are guesses that a maintainer must confirm or delete. No `[inferred]` claims remain. Krystof Woldrich reviewed this document and made it `Active` on 2026-10-03.
 
 ## Packages
 
