@@ -6,7 +6,7 @@
  * which round the flat stream with the active display's own corners.
  */
 
-import { type DeviceOrientation, type DisplayCornerRadii } from './types';
+import { type DeviceOrientation, type DisplayCornerRadii, type ScreenSize } from './types';
 
 /** Per-corner radii in the descriptor's point coordinates, clockwise from top left. */
 export interface DeviceDisplayCornerRadii {
@@ -28,6 +28,18 @@ export interface DeviceDisplayChrome {
   screenId?: number;
   /** Other integrated displays of the same device, keyed by their screen id. */
   displayVariants?: Record<string, DeviceDisplayChrome>;
+}
+
+/**
+ * The orientation to turn the corners by. A config without one, such as a size
+ * read from the media before the helper's first push, counts as landscape when
+ * it is wider than tall, as serve-sim's `clipOrientation` does.
+ */
+export function displayClipOrientation(
+  screen: Pick<ScreenSize, 'width' | 'height' | 'orientation'> | null | undefined,
+): DeviceOrientation | undefined {
+  if (!screen) return undefined;
+  return screen.orientation ?? (screen.width > screen.height ? 'landscape_left' : 'portrait');
 }
 
 /** The descriptor of the active display: a variant when one matches, else the primary. */
