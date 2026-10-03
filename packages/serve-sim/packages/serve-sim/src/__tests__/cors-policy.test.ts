@@ -23,6 +23,13 @@ describe("CORS preflight", () => {
     expect(response?.headers.get("access-control-allow-methods")).toContain("OPTIONS");
   });
 
+  test("allows the clipboard write's PUT", async () => {
+    const middleware = simMiddleware({ basePath: "/.sim", corsOrigins: ["https://expo.dev"] });
+    const response = await middleware(preflight("https://expo.dev"));
+
+    expect(response?.headers.get("access-control-allow-methods")).toContain("PUT");
+  });
+
   test("names the configured origin rather than allowing every site", async () => {
     const middleware = simMiddleware({ basePath: "/.sim", corsOrigins: ["https://expo.dev"] });
     const response = await middleware(preflight("https://expo.dev"));

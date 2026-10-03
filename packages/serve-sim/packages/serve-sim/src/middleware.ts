@@ -15,12 +15,13 @@ import {
   screenshotArtifactHeaders,
   type ScreenshotOutcome,
 } from "./screenshot-artifacts";
+import { z } from "zod";
 import { createAxStreamerCache } from "./ax";
 import { readCameraStatus } from "./camera-helper";
 import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type CaptureRuntime } from "./capture";
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
-import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "./middleware-utils";
 import {
   closeDeviceSession,
   getDeviceSession,
@@ -31,8 +32,10 @@ import {
   assertCaptureAccess,
   assertPreviewAccess,
   assertUpgradeAccess,
+  matchesBearerToken,
   upgradeAuthHeaders,
 } from "./session-auth";
+import { readRequestBodyAsync, RequestBodyTooLargeError } from "./runtime-utils";
 import {
   eventLogEventForAction,
   eventLogEventForScreenshot,
@@ -65,6 +68,7 @@ import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
+import { PasteboardTooLargeError, readSimPasteboardResult, writeSimPasteboard } from "./sim-pasteboard";
 
 /** Captured traffic is decrypted credentials; `no-cache` would still let a cache keep a copy. */
 const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;
@@ -211,6 +215,12 @@ const RN_MARKERS = [
 function isSimulatorUdid(value: string): boolean {
   return /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(value);
 }
+
+const MAX_PASTEBOARD_BODY_BYTES = 4 * 1024 * 1024;
+const PasteboardWriteBody = z.object({ text: z.string() });
+const PASTEBOARD_RESPONSE_HEADERS = {
+  "Cache-Control": "no-store",
+};
 
 /** What to do with a persisted device state when reaping during a grid poll. */
 type StaleStateAction = "keep" | "recycle-self" | "recycle-helper";
@@ -2605,6 +2615,85 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       } finally {
         // Best-effort cleanup; the PNG is already in memory by now.
         await unlink(file).catch(() => {});
+      }
+      return;
+    }
+
+    if (url === base + "/api/pasteboard") {
+      const respond = (status: number, body: object) => {
+        res.writeHead(status, { ...PASTEBOARD_RESPONSE_HEADERS, "Content-Type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (req.method !== "POST" && req.method !== "PUT") {
+        res.writeHead(405, {
+          ...PASTEBOARD_RESPONSE_HEADERS,
+          "Content-Type": "text/plain; charset=utf-8",
+        });
+        res.end("method not allowed");
+        return;
+      }
+      // Clipboard access requires both the preview token and a trusted browser origin.
+      if (!isAllowedOrigin(req.headers.origin, hostForRequest(req), corsOrigins)) {
+        respond(403, { ok: false, error: "This origin cannot use the simulator clipboard" });
+        return;
+      }
+      if (!matchesBearerToken(req.headers.authorization, execToken)) {
+        respond(401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+      // connectToFetch replays the body once the handler yields, so read it before any await.
+      const bodyRead =
+        req.method === "PUT" ? readRequestBodyAsync(req, MAX_PASTEBOARD_BODY_BYTES) : null;
+      bodyRead?.catch(() => {}); // the awaited copy below reports the failure
+      let udid = selectedDevice;
+      if (udid && !isSimulatorUdid(udid)) {
+        respond(400, { ok: false, error: "Invalid simulator device ID" });
+        return;
+      }
+      if (!udid) {
+        const booted = await getBootedUdids();
+        udid = (booted && [...booted][0]) ?? null;
+      }
+      if (!udid) {
+        respond(400, { ok: false, error: "No booted simulator available" });
+        return;
+      }
+      try {
+        if (req.method === "PUT") {
+          let body: Buffer | undefined;
+          try {
+            body = await (bodyRead ?? readRequestBodyAsync(req, MAX_PASTEBOARD_BODY_BYTES));
+          } catch (error) {
+            if (!(error instanceof RequestBodyTooLargeError)) throw error;
+            respond(413, { ok: false, error: "Clipboard text is too large" });
+            return;
+          }
+          let json: unknown;
+          try {
+            json = JSON.parse(body?.toString("utf-8") ?? "");
+          } catch {
+            respond(400, { ok: false, error: "Invalid JSON" });
+            return;
+          }
+          const parsed = PasteboardWriteBody.safeParse(json);
+          if (!parsed.success) {
+            respond(400, { ok: false, error: "Clipboard text must be a string" });
+            return;
+          }
+          await writeSimPasteboard(udid, parsed.data.text);
+          respond(200, { ok: true });
+          return;
+        }
+
+        const result = await readSimPasteboardResult(udid);
+        respond(200, { ok: true, ...result });
+      } catch (error) {
+        if (error instanceof PasteboardTooLargeError) {
+          respond(413, { ok: false, error: "Simulator clipboard text is too large" });
+          return;
+        }
+        console.error(`[serve-sim] Could not access the simulator pasteboard on ${udid}:`, error);
+        respond(500, { ok: false, error: "Could not access the simulator pasteboard" });
       }
       return;
     }
