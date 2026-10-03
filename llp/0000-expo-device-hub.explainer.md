@@ -50,7 +50,7 @@ The Hub server imports the serve-sim and serve-emu middleware and mounts it in i
 
 For iOS, serve-sim runs a helper process for each device on a local port. The Hub spawns the serve-sim CLI as a detached process when the preview root is requested and no helper state exists [observed: `ensureHelperSpawned` in `src/server/serve-sim.ts`]. The Hub passes `proxyHelpers: true`, so the browser reaches each helper's stream, control socket, and DevTools through same-origin URLs, and the helper ports stay local to the host [observed: `src/server/serve-sim.ts`; `packages/serve-sim/packages/serve-sim/README.md` "proxyHelpers"].
 
-`vendor/` is a build output. `scripts/vendor.ts` runs `npm pack` on each package in `vendorDependencies` and unpacks it to `vendor/<name>`, so the Hub ships the same files that npm would install [observed: `packages/expo-device-hub/scripts/vendor.ts`]. Rebuild it with `bun run build:vendor` after you change serve-sim or serve-emu.
+`vendor/` is a build output. `scripts/vendor.ts` runs `npm pack` on each package in `vendorDependencies` and unpacks it to `vendor/<name>`, so the Hub ships the same files that npm would install [observed: `packages/expo-device-hub/scripts/vendor.ts`]. Rebuild it with `bun run --filter expo-device-hub build:vendor` after you change serve-sim or serve-emu.
 
 The Hub vendors serve-sim and serve-emu on purpose, so that its copies cannot conflict with other versions of these packages in a project that uses `expo-device-hub` [confirmed] (Krystof Woldrich, 2026-10-02). Do not replace the vendored copies with normal npm dependencies.
 
@@ -103,7 +103,7 @@ The packages are tightly coupled, so one corpus at the repo root covers all of t
 |---|---|
 | Hub UI rules and tokens | `packages/expo-device-hub/AGENTS.md` |
 | serve-sim commands, tests, definition of done | `packages/serve-sim/AGENTS.md`, `packages/serve-sim/REVIEW.md` |
-| serve-sim video pipeline | `packages/serve-sim/packages/serve-sim/docs/video-pipeline.md`, `docs/webrtc-architecture.md` |
+| serve-sim video pipeline | `packages/serve-sim/packages/serve-sim/docs/video-pipeline.md`, `packages/serve-sim/packages/serve-sim/docs/webrtc-architecture.md` |
 | serve-sim HTTP API | `packages/serve-sim/packages/serve-sim/docs/api.md` |
 | serve-sim network capture security | `packages/serve-sim/packages/serve-sim/docs/network-capture-security.md` |
 | serve-emu layout, protocol rules, auth | `packages/serve-emu/AGENTS.md`, `packages/serve-emu/packages/serve-emu/docs/protocol.md` |
