@@ -20,6 +20,13 @@ struct CapturedScreenInfo {
     let width: Int
     let height: Int
     var display: SimDisplayMetadata?
+
+    var recordingDeviceState: RecordingDeviceState {
+        RecordingDeviceState(
+            width: width, height: height,
+            orientation: display?.orientation, screenId: display?.integratedScreenID
+        )
+    }
 }
 
 /// Headless simulator frame capture via direct IOSurface access.
@@ -89,6 +96,7 @@ actor FrameCapture {
     private var screenMetadata: [ObjectIdentifier: SimDisplayMetadata] = [:]
     private var fixedScreenID: UInt32?
     private var deviceUDID: String?
+    private(set) var isFoldable = false
     private var authoritativeDisplay: CoreDeviceDisplayState?
     private var displayInfoTask: Task<Void, Never>?
     private var displayRefreshTask: Task<Void, Never>?
@@ -121,7 +129,9 @@ actor FrameCapture {
 
         // Drop this device's CoreDevice capabilities from the previous boot
         // before HID or display election asks for capabilities from this boot.
-        if SimulatorDisplayProfile.read(from: device).resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
+        let displayProfile = SimulatorDisplayProfile.read(from: device)
+        isFoldable = displayProfile.isFoldable
+        if displayProfile.resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
         }
@@ -625,6 +635,7 @@ actor FrameCapture {
         displayRefreshRequested = false
         screenObservers.removeAll()
         deviceUDID = nil
+        isFoldable = false
         authoritativeDisplay = nil
         displayConfigurationReady = false
         surfacePollTimer?.cancel()

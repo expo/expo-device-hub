@@ -157,10 +157,7 @@ actor CaptureEngine {
             try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas, screen in
                 nativeFrameMailbox.publish(
                     pixelBuffer, timestamp: timestamp, wallClock: Date(),
-                    deviceState: RecordingDeviceState(
-                        width: screen.width, height: screen.height,
-                        orientation: screen.display?.orientation, screenId: screen.display?.screenID
-                    )
+                    deviceState: screen.recordingDeviceState
                 )
                 frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas))
             }
@@ -508,6 +505,7 @@ actor CaptureEngine {
     }
 
     private func startRecordingHingeUpdates() async {
+        guard await frameCapture.isFoldable, phase == .running else { return }
         let udid = deviceUDID
         let mailbox = nativeFrameMailbox
         let bridge = CoreDeviceBridge.shared
