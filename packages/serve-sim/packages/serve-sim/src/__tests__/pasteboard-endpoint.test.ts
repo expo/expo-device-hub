@@ -134,6 +134,22 @@ describe("/api/pasteboard", () => {
     }
   });
 
+  test("returns 500 when diagnostics exceed the buffer with a small clipboard", async () => {
+    const shims = installShims({ xcrun: "#!/bin/sh\nprintf x\nhead -c 4194305 /dev/zero >&2\n" });
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const device = "404F2659-7202-4450-8465-912BD2AB744B";
+      const res = await middleware(pasteboardRequest(`?device=${device}`));
+      expect(res?.status).toBe(500);
+      expect(res?.headers.get("access-control-allow-origin")).toBe(PREVIEW_ORIGIN);
+      expect(await res!.json()).toEqual({ ok: false, error: "Could not access the simulator pasteboard" });
+      expect(log).toHaveBeenCalledTimes(1);
+    } finally {
+      log.mockRestore();
+      shims.restore();
+    }
+  });
+
   test("rejects invalid JSON before writing", async () => {
     const unavailableUdid = "00000000-0000-0000-0000-000000000000";
     const res = await middleware(

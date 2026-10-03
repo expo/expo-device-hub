@@ -89,7 +89,8 @@ export async function readPasteboardText(args: string[], options: SimctlOptions 
   try {
     return await simctlRaw(args, { ...options, maxBuffer: MAX_PASTEBOARD_TEXT_BYTES });
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") {
+    if (error instanceof Error && "code" in error && error.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER" &&
+      error.message.startsWith("stdout ")) {
       throw new PasteboardTooLargeError("Simulator clipboard text is too large");
     }
     throw error;
