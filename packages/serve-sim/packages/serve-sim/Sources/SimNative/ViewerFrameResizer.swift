@@ -22,7 +22,7 @@ struct ViewerResizeCounters: Codable {
     var submitted: UInt64 = 0
     var passedThrough: UInt64 = 0
     var scaled: UInt64 = 0
-    /// Frames that waited behind an in-flight resize and were replaced by a newer frame.
+    /// Waiting frames replaced by a newer frame during resize or output.
     var replaced: UInt64 = 0
     var poolDrops: UInt64 = 0
     var failures: UInt64 = 0
@@ -39,8 +39,8 @@ struct ViewerResizeCounters: Codable {
 /// Scales or letterboxes captured frames to the shared viewer canvas on its own
 /// queue, so the WebRTC frame pump never waits on a resize.
 ///
-/// Latest wins: a frame submitted while one is in flight replaces the waiting
-/// frame. Output buffers come from a bounded pool in the backend; a full pool
+/// Latest wins: one active resize or output and one newest waiting frame.
+/// Output buffers come from a bounded pool in the backend; a full pool
 /// drops the frame. Frames leave in submission order with an increasing
 /// sequence number, on the resizer queue.
 final class ViewerFrameResizer: @unchecked Sendable {
@@ -59,11 +59,13 @@ final class ViewerFrameResizer: @unchecked Sendable {
     private let lock = NSLock()
     private var nextSequence: UInt64 = 0
     private var target: Dimensions?
+    private var pending: Submission?
+    private var drainActive = false
+    private var submittedCount: UInt64 = 0
+    private var replacedCount: UInt64 = 0
     // Confined to `queue`.
     private var backend: ViewerResizeBackend
     private var fallback: ViewerResizeBackend?
-    private var pending: Submission?
-    private var inFlight = false
     private var consecutiveFailures = 0
     private var retiredPoolDrops: UInt64 = 0
     private var counters: ViewerResizeCounters
@@ -107,29 +109,45 @@ final class ViewerFrameResizer: @unchecked Sendable {
     func submit(_ pixelBuffer: CVPixelBuffer, acceptanceGeneration: UInt64 = 0) {
         lock.lock()
         nextSequence &+= 1
-        let submission = Submission(pixelBuffer: pixelBuffer, sequence: nextSequence,
-                                    acceptanceGeneration: acceptanceGeneration,
-                                    submittedNs: DispatchTime.now().uptimeNanoseconds)
+        submittedCount &+= 1
+        if pending != nil { replacedCount &+= 1 }
+        pending = Submission(pixelBuffer: pixelBuffer, sequence: nextSequence,
+                             acceptanceGeneration: acceptanceGeneration,
+                             submittedNs: DispatchTime.now().uptimeNanoseconds)
+        let startDrain = !drainActive
+        drainActive = true
         lock.unlock()
-        queue.async { self.enqueue(submission) }
+        if startDrain { queue.async { self.drain() } }
     }
 
     func currentCounters() -> ViewerResizeCounters {
         queue.sync {
             var value = counters
+            lock.lock()
+            value.submitted = submittedCount
+            value.replaced = replacedCount
+            lock.unlock()
             value.poolDrops = retiredPoolDrops + backend.poolDrops + (fallback?.poolDrops ?? 0)
             return value
         }
     }
 
-    private func enqueue(_ submission: Submission) {
-        counters.submitted &+= 1
-        if inFlight {
-            if pending != nil { counters.replaced &+= 1 }
-            pending = submission
+    private func drain() {
+        lock.lock()
+        guard let submission = pending else {
+            drainActive = false
+            lock.unlock()
             return
         }
+        pending = nil
+        lock.unlock()
         process(submission)
+    }
+
+    private func advance() {
+        // Keep admission active until the next drain checks the slot under the
+        // submit lock. Output may block, but no per-frame closures accumulate.
+        queue.async { self.drain() }
     }
 
     private func process(_ submission: Submission) {
@@ -139,6 +157,7 @@ final class ViewerFrameResizer: @unchecked Sendable {
         guard let target, submission.pixelBuffer.dimensions != target else {
             counters.passedThrough &+= 1
             output(submission.pixelBuffer, submission.sequence, submission.acceptanceGeneration)
+            advance()
             return
         }
         let worker: ViewerResizeBackend
@@ -152,13 +171,13 @@ final class ViewerFrameResizer: @unchecked Sendable {
             counters.unsupported &+= 1
         } else {
             counters.failures &+= 1
+            advance()
             return
         }
         let startNs = DispatchTime.now().uptimeNanoseconds
         let waitMs = Double(startNs &- submission.submittedNs) / 1_000_000
         counters.waitSumMs += waitMs
         counters.waitMaxMs = max(counters.waitMaxMs, waitMs)
-        inFlight = true
         let poolDropsBefore = worker.poolDrops
         worker.resize(submission.pixelBuffer, to: target) { [weak self] result in
             let finishedNs = DispatchTime.now().uptimeNanoseconds
@@ -172,7 +191,6 @@ final class ViewerFrameResizer: @unchecked Sendable {
 
     private func finish(_ submission: Submission, result: CVPixelBuffer?, usedPrimary: Bool,
                         poolDrop: Bool, resizeMs: Double) {
-        inFlight = false
         counters.resizeSumMs += resizeMs
         counters.resizeMaxMs = max(counters.resizeMaxMs, resizeMs)
         if let result {
@@ -192,10 +210,7 @@ final class ViewerFrameResizer: @unchecked Sendable {
                 counters.backendSwitches &+= 1
             }
         }
-        if let next = pending {
-            pending = nil
-            process(next)
-        }
+        advance()
     }
 }
 

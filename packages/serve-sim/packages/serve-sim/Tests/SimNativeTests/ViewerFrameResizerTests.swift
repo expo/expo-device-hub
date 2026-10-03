@@ -7,8 +7,9 @@ private final class ManualBackend: ViewerResizeBackend {
     let name: String
     var poolDrops: UInt64 = 0
     private let lock = NSLock()
+    private let requested = DispatchSemaphore(value: 0)
     private var waiting: [(source: CVPixelBuffer, completion: (CVPixelBuffer?) -> Void)] = []
-    private(set) var requests: [CVPixelBuffer] = []
+    private var recordedRequests: [CVPixelBuffer] = []
     var result: (CVPixelBuffer) -> CVPixelBuffer? = { $0 }
     var supported: (CVPixelBuffer) -> Bool = { _ in true }
 
@@ -19,9 +20,18 @@ private final class ManualBackend: ViewerResizeBackend {
     func resize(_ source: CVPixelBuffer, to target: Dimensions,
                 completion: @escaping (CVPixelBuffer?) -> Void) {
         lock.lock()
-        requests.append(source)
+        recordedRequests.append(source)
         waiting.append((source, completion))
         lock.unlock()
+        requested.signal()
+    }
+
+    var requests: [CVPixelBuffer] {
+        lock.lock(); defer { lock.unlock() }; return recordedRequests
+    }
+
+    func waitForRequest() {
+        XCTAssertEqual(requested.wait(timeout: .now() + 3), .success)
     }
 
     func completeNext() {
@@ -32,20 +42,86 @@ private final class ManualBackend: ViewerResizeBackend {
     }
 }
 
+private final class ImmediateBackend: ViewerResizeBackend {
+    let name = "immediate"
+    var poolDrops: UInt64 = 0
+    var supported: (CVPixelBuffer) -> Bool = { _ in true }
+    func supports(_ source: CVPixelBuffer) -> Bool { supported(source) }
+    func resize(_ source: CVPixelBuffer, to target: Dimensions,
+                completion: @escaping (CVPixelBuffer?) -> Void) {
+        completion(source)
+    }
+}
+
 private final class Delivered: @unchecked Sendable {
     private let lock = NSLock()
-    private var items: [(CVPixelBuffer, UInt64)] = []
+    private let received = DispatchSemaphore(value: 0)
+    private var items: [(CVPixelBuffer, UInt64, UInt64)] = []
 
-    func append(_ buffer: CVPixelBuffer, _ sequence: UInt64) {
-        lock.lock(); items.append((buffer, sequence)); lock.unlock()
+    func append(_ buffer: CVPixelBuffer, _ sequence: UInt64, _ generation: UInt64 = 0) {
+        lock.lock(); items.append((buffer, sequence, generation)); lock.unlock()
+        received.signal()
+    }
+
+    func waitForFrame() {
+        XCTAssertEqual(received.wait(timeout: .now() + 3), .success)
     }
 
     var sequences: [UInt64] { lock.lock(); defer { lock.unlock() }; return items.map(\.1) }
     var buffers: [CVPixelBuffer] { lock.lock(); defer { lock.unlock() }; return items.map(\.0) }
+    var generations: [UInt64] { lock.lock(); defer { lock.unlock() }; return items.map(\.2) }
+}
+
+private final class FrameLifetime {
+    weak var token: NSObject?
+    init(_ token: NSObject) { self.token = token }
 }
 
 final class ViewerFrameResizerTests: XCTestCase {
-    private func settle() { Thread.sleep(forTimeInterval: 0.05) }
+    func testBlockedPassThroughRetainsAndDeliversOnlyNewestWaitingFrame() {
+        let backend = ManualBackend()
+        let delivered = Delivered()
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let newestDelivered = expectation(description: "newest frame delivered")
+        let resizer = ViewerFrameResizer(backend: backend, fallback: nil) { buffer, sequence, _ in
+            if sequence == 1 {
+                entered.signal()
+                XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+            }
+            delivered.append(buffer, sequence)
+            if sequence == 100 { newestDelivered.fulfill() }
+        }
+        defer { release.signal() }
+        resizer.submit(makeBuffer(width: 4, height: 4, format: kCVPixelFormatType_32BGRA))
+        guard entered.wait(timeout: .now() + 3) == .success else {
+            XCTFail("first frame did not reach output")
+            return
+        }
+
+        var lifetimes: [FrameLifetime] = []
+        for _ in 2...100 {
+            autoreleasepool {
+                let frame = makeBuffer(width: 4, height: 4, format: kCVPixelFormatType_32BGRA)
+                let token = NSObject()
+                CVBufferSetAttachment(frame, "test.lifetime" as CFString, token, .shouldNotPropagate)
+                lifetimes.append(FrameLifetime(token))
+                resizer.submit(frame)
+            }
+        }
+        XCTAssertEqual(lifetimes.filter { $0.token != nil }.count, 1,
+                       "blocked output must retain one waiting frame, not 99 queued frames")
+        XCTAssertNotNil(lifetimes.last?.token)
+        release.signal()
+        wait(for: [newestDelivered], timeout: 3)
+
+        XCTAssertEqual(delivered.sequences, [1, 100])
+        XCTAssertTrue(backend.requests.isEmpty)
+        let counters = resizer.currentCounters()
+        XCTAssertEqual(counters.submitted, 100)
+        XCTAssertEqual(counters.passedThrough, 2)
+        XCTAssertEqual(counters.replaced, 98)
+    }
 
     func testPassesThroughWhenSizeMatchesOrNoTarget() {
         let backend = ManualBackend()
@@ -56,9 +132,10 @@ final class ViewerFrameResizerTests: XCTestCase {
         let frame = makeBuffer(width: 64, height: 128, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
 
         resizer.submit(frame)
+        delivered.waitForFrame()
         resizer.setTarget(Dimensions(width: 64, height: 128))
         resizer.submit(frame)
-        settle()
+        delivered.waitForFrame()
 
         XCTAssertEqual(delivered.sequences, [1, 2])
         XCTAssertTrue(delivered.buffers.allSatisfy { $0 === frame })
@@ -80,20 +157,20 @@ final class ViewerFrameResizerTests: XCTestCase {
         }
 
         resizer.submit(frames[0])
-        settle()
+        backend.waitForRequest()
         resizer.submit(frames[1])
         resizer.submit(frames[2])
-        settle()
         XCTAssertEqual(backend.requests.count, 1, "the second and third frames wait behind the first")
 
         backend.completeNext()
-        settle()
+        delivered.waitForFrame()
+        backend.waitForRequest()
         XCTAssertEqual(delivered.sequences, [1])
         XCTAssertEqual(backend.requests.count, 2)
         XCTAssertTrue(backend.requests[1] === frames[2], "the newest waiting frame is resized, the older one is dropped")
 
         backend.completeNext()
-        settle()
+        delivered.waitForFrame()
         XCTAssertEqual(delivered.sequences, [1, 3])
         let counters = resizer.currentCounters()
         XCTAssertEqual(counters.scaled, 2)
@@ -101,25 +178,135 @@ final class ViewerFrameResizerTests: XCTestCase {
         XCTAssertEqual(counters.submitted, 3)
     }
 
-    func testInFlightCompletionKeepsItsAcceptanceGeneration() {
+    func testInFlightCompletionKeepsItsGenerationAndNewestFrameUsesUpdatedTarget() {
         let backend = ManualBackend()
-        var generations: [UInt64] = []
-        let resizer = ViewerFrameResizer(backend: backend, fallback: nil) { _, _, generation in
-            generations.append(generation)
+        let delivered = Delivered()
+        let resizer = ViewerFrameResizer(backend: backend, fallback: nil) { buffer, sequence, generation in
+            delivered.append(buffer, sequence, generation)
         }
         resizer.setTarget(Dimensions(width: 32, height: 64))
         let frame = makeBuffer(width: 64, height: 128,
                                format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
         resizer.submit(frame, acceptanceGeneration: 1)
-        settle()
+        backend.waitForRequest()
         resizer.submit(frame, acceptanceGeneration: 2)
-        settle()
+        resizer.submit(frame, acceptanceGeneration: 3)
+        resizer.setTarget(nil)
 
         backend.completeNext()
-        settle()
-        backend.completeNext()
-        settle()
-        XCTAssertEqual(generations, [1, 2])
+        delivered.waitForFrame()
+        delivered.waitForFrame()
+        XCTAssertEqual(delivered.sequences, [1, 3])
+        XCTAssertEqual(delivered.generations, [1, 3])
+        XCTAssertEqual(backend.requests.count, 1)
+        let counters = resizer.currentCounters()
+        XCTAssertEqual(counters.scaled, 1)
+        XCTAssertEqual(counters.passedThrough, 1)
+        XCTAssertEqual(counters.replaced, 1)
+    }
+
+    func testSynchronousResizeCanSubmitNewestFrameDuringOutputAndRestart() {
+        let backend = ImmediateBackend()
+        let delivered = Delivered()
+        weak var target: ViewerFrameResizer?
+        let resizer = ViewerFrameResizer(backend: backend, fallback: nil) { buffer, sequence, generation in
+            delivered.append(buffer, sequence, generation)
+            if sequence == 1 {
+                target?.submit(buffer, acceptanceGeneration: 2)
+                target?.submit(buffer, acceptanceGeneration: 3)
+            }
+        }
+        target = resizer
+        resizer.setTarget(Dimensions(width: 2, height: 2))
+        let frame = makeBuffer(width: 4, height: 4, format: kCVPixelFormatType_32BGRA)
+
+        resizer.submit(frame, acceptanceGeneration: 1)
+        delivered.waitForFrame()
+        delivered.waitForFrame()
+        XCTAssertEqual(delivered.sequences, [1, 3])
+        XCTAssertEqual(delivered.generations, [1, 3])
+
+        for generation in UInt64(4)...20 {
+            // The first barrier may precede output's queued continuation;
+            // the second waits for that empty drain before the next admission.
+            _ = resizer.currentCounters()
+            _ = resizer.currentCounters()
+            resizer.submit(frame, acceptanceGeneration: generation)
+            delivered.waitForFrame()
+        }
+        XCTAssertEqual(delivered.sequences, [1] + Array(UInt64(3)...20))
+        let counters = resizer.currentCounters()
+        XCTAssertEqual(counters.submitted, 20)
+        XCTAssertEqual(counters.scaled, 19)
+        XCTAssertEqual(counters.replaced, 1)
+    }
+
+    func testUnsupportedFrameAdvancesToWaitingSupportedFrame() {
+        let backend = ImmediateBackend()
+        let entered = DispatchSemaphore(value: 0)
+        let release = DispatchSemaphore(value: 0)
+        let delivered = Delivered()
+        backend.supported = { frame in
+            if CVPixelBufferGetPixelFormatType(frame) == kCVPixelFormatType_32BGRA {
+                entered.signal()
+                XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+                return false
+            }
+            return true
+        }
+        let resizer = ViewerFrameResizer(backend: backend, fallback: nil) { buffer, sequence, _ in
+            delivered.append(buffer, sequence)
+        }
+        defer { release.signal() }
+        resizer.setTarget(Dimensions(width: 2, height: 2))
+        resizer.submit(makeBuffer(width: 4, height: 4, format: kCVPixelFormatType_32BGRA))
+        guard entered.wait(timeout: .now() + 3) == .success else {
+            XCTFail("first frame did not reach backend selection")
+            return
+        }
+        resizer.submit(makeBuffer(width: 4, height: 4, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange))
+        release.signal()
+        delivered.waitForFrame()
+
+        XCTAssertEqual(delivered.sequences, [2])
+        let counters = resizer.currentCounters()
+        XCTAssertEqual(counters.failures, 1)
+        XCTAssertEqual(counters.scaled, 1)
+        XCTAssertEqual(counters.submitted, 2)
+    }
+
+    func testFailedResizeOrPoolDropAdvancesToNewestWaitingFrame() {
+        for poolDrop in [false, true] {
+            let backend = ManualBackend()
+            backend.result = { _ in
+                if poolDrop { backend.poolDrops += 1 }
+                return nil
+            }
+            let delivered = Delivered()
+            let resizer = ViewerFrameResizer(backend: backend, fallback: nil) { buffer, sequence, _ in
+                delivered.append(buffer, sequence)
+            }
+            resizer.setTarget(Dimensions(width: 2, height: 2))
+            let frame = makeBuffer(width: 4, height: 4, format: kCVPixelFormatType_32BGRA)
+            resizer.submit(frame)
+            backend.waitForRequest()
+            resizer.submit(frame)
+            resizer.submit(frame)
+            backend.completeNext()
+            backend.waitForRequest()
+            backend.result = { $0 }
+            backend.completeNext()
+            delivered.waitForFrame()
+
+            XCTAssertEqual(delivered.sequences, [3])
+            let counters = resizer.currentCounters()
+            XCTAssertEqual(counters.submitted, 3)
+            XCTAssertEqual(counters.replaced, 1)
+            XCTAssertEqual(counters.scaled, 1)
+            XCTAssertEqual(counters.failures, poolDrop ? 0 : 1)
+            XCTAssertEqual(counters.poolDrops, poolDrop ? 1 : 0)
+            XCTAssertEqual(counters.backendSwitches, 0)
+        }
     }
 
     func testRepeatedFailuresMoveToTheFallbackBackend() {
@@ -136,19 +323,19 @@ final class ViewerFrameResizerTests: XCTestCase {
 
         for _ in 0..<ViewerFrameResizer.failuresBeforeFallback {
             resizer.submit(frame)
-            settle()
+            failing.waitForRequest()
             failing.completeNext()
-            settle()
+            _ = resizer.currentCounters()
         }
         XCTAssertTrue(delivered.sequences.isEmpty)
         XCTAssertEqual(resizer.currentCounters().backend, "fallback")
         XCTAssertEqual(resizer.currentCounters().poolDrops, 2)
 
         resizer.submit(frame)
-        settle()
+        fallback.waitForRequest()
         XCTAssertEqual(fallback.requests.count, 1)
         fallback.completeNext()
-        settle()
+        delivered.waitForFrame()
         fallback.poolDrops = 1
         XCTAssertEqual(delivered.sequences, [UInt64(ViewerFrameResizer.failuresBeforeFallback + 1)])
         let counters = resizer.currentCounters()
@@ -171,9 +358,9 @@ final class ViewerFrameResizerTests: XCTestCase {
 
         for _ in 0..<ViewerFrameResizer.failuresBeforeFallback {
             resizer.submit(frame)
-            settle()
+            primary.waitForRequest()
             primary.completeNext()
-            settle()
+            _ = resizer.currentCounters()
         }
         XCTAssertEqual(resizer.currentCounters().backend, "primary")
         XCTAssertEqual(resizer.currentCounters().poolDrops,
@@ -182,9 +369,9 @@ final class ViewerFrameResizerTests: XCTestCase {
 
         primary.result = { $0 }
         resizer.submit(frame)
-        settle()
+        primary.waitForRequest()
         primary.completeNext()
-        settle()
+        delivered.waitForFrame()
         XCTAssertEqual(delivered.sequences, [UInt64(ViewerFrameResizer.failuresBeforeFallback + 1)])
         XCTAssertEqual(resizer.currentCounters().backendSwitches, 0)
         XCTAssertTrue(fallback.requests.isEmpty)
@@ -203,16 +390,16 @@ final class ViewerFrameResizerTests: XCTestCase {
         let planar = makeBuffer(width: 64, height: 128, format: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange)
 
         resizer.submit(bgra)
-        settle()
+        fallback.waitForRequest()
         XCTAssertEqual(fallback.requests.count, 1)
         XCTAssertTrue(primary.requests.isEmpty)
         fallback.completeNext()
-        settle()
+        delivered.waitForFrame()
         resizer.submit(planar)
-        settle()
+        primary.waitForRequest()
         XCTAssertEqual(primary.requests.count, 1)
         primary.completeNext()
-        settle()
+        delivered.waitForFrame()
 
         XCTAssertEqual(delivered.sequences, [1, 2])
         let counters = resizer.currentCounters()
