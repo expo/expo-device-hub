@@ -1,0 +1,244 @@
+{
+  "generatedAt": "2026-10-04T08:25:06.489Z",
+  "node": "v24.21.0",
+  "trials": [
+    {
+      "variant": "baseline",
+      "note": "Owned raw peer ignores the WebSocket close, keeps TCP write side open, and sends masked input every 100ms after reading the upgrade. Snapshot taken after 1200ms.",
+      "at1200": {
+        "destroyed": true,
+        "readable": false,
+        "writable": false,
+        "writableFinished": true,
+        "closeAtMs": 3.660457999999977,
+        "receivedClientChunks": 0
+      },
+      "events": [
+        {
+          "ms": 0.025958000000002812,
+          "event": "upgrade"
+        },
+        {
+          "ms": 3.1884999999999764,
+          "event": "server-finish"
+        },
+        {
+          "ms": 3.671541999999988,
+          "event": "server-close",
+          "hadError": false
+        },
+        {
+          "ms": 4.100791999999984,
+          "event": "peer-handshake-read"
+        },
+        {
+          "ms": 4.894582999999983,
+          "event": "peer-error",
+          "code": "ECONNRESET"
+        },
+        {
+          "ms": 4.910957999999994,
+          "event": "peer-close",
+          "hadError": true
+        }
+      ]
+    },
+    {
+      "variant": "end-only",
+      "note": "Owned raw peer ignores the WebSocket close, keeps TCP write side open, and sends masked input every 100ms after reading the upgrade. Snapshot taken after 1200ms.",
+      "at1200": {
+        "destroyed": false,
+        "readable": true,
+        "writable": false,
+        "writableFinished": true,
+        "closeAtMs": null,
+        "receivedClientChunks": 12
+      },
+      "events": [
+        {
+          "ms": 0.0022910000000138098,
+          "event": "upgrade"
+        },
+        {
+          "ms": 0.36599999999998545,
+          "event": "server-finish"
+        },
+        {
+          "ms": 0.3909160000000611,
+          "event": "peer-handshake-read"
+        },
+        {
+          "ms": 0.49308300000006966,
+          "event": "peer-read-end"
+        },
+        {
+          "ms": 0.5090830000001461,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 102.92712500000016,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 203.82345800000007,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 303.77433300000007,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 405.11529100000007,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 507.36075000000005,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 609.606833,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 710.0654580000003,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 812.2820410000002,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 914.6019159999998,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 1016.9379160000001,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 1118.151666,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 1208.7361250000001,
+          "event": "server-close",
+          "hadError": false
+        },
+        {
+          "ms": 1208.7469159999998,
+          "event": "peer-close",
+          "hadError": false
+        }
+      ]
+    },
+    {
+      "variant": "grace",
+      "note": "Owned raw peer ignores the WebSocket close, keeps TCP write side open, and sends masked input every 100ms after reading the upgrade. Snapshot taken after 1200ms.",
+      "at1200": {
+        "destroyed": true,
+        "readable": false,
+        "writable": false,
+        "writableFinished": true,
+        "closeAtMs": 1000.5185000000001,
+        "receivedClientChunks": 10
+      },
+      "events": [
+        {
+          "ms": 0.0009999999997489795,
+          "event": "upgrade"
+        },
+        {
+          "ms": 0.4396670000000995,
+          "event": "server-finish"
+        },
+        {
+          "ms": 0.4642499999999927,
+          "event": "peer-handshake-read"
+        },
+        {
+          "ms": 0.4966669999998885,
+          "event": "peer-read-end"
+        },
+        {
+          "ms": 0.5019999999999527,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 102.82520799999975,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 204.04479200000014,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 306.29112499999974,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 408.53104200000007,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 510.7990420000001,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 613.0050000000001,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 715.236042,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 817.411458,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 919.043208,
+          "event": "server-data",
+          "bytes": 39
+        },
+        {
+          "ms": 1000.5273750000001,
+          "event": "server-close",
+          "hadError": false
+        },
+        {
+          "ms": 1123.553542,
+          "event": "peer-error",
+          "code": "EPIPE"
+        },
+        {
+          "ms": 1123.576375,
+          "event": "peer-close",
+          "hadError": true
+        }
+      ]
+    }
+  ],
+  "publicationNotes": "Original diagnostic trial events retained. Machine-local path prefixes removed from hash labels. stderr replaced by its Error line because Node prints the minified CLI source and local stack paths. These samples are historical; the grace variant is the preliminary bounded-cleanup prototype, not the final published source.",
+  "baselineSourceCommit": "128085cc165cee6ad0868e9cd8661d8e2427c1f4"
+}

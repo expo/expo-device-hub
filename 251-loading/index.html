@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fresh recording MP4 loading comparison</title>
+<style>
+body{font:15px system-ui;line-height:1.5;margin:24px;color:#17222c;background:#f6f7f8}h1{font-size:24px;margin:0 0 8px}p{max-width:950px}button{font:inherit;padding:8px 14px}video{width:220px;max-height:470px;background:#111}table{border-collapse:collapse;font-size:13px}th,td{padding:7px 11px;border-bottom:1px solid #d0d5da;text-align:right}th:first-child,td:first-child{text-align:left}main{display:flex;gap:28px;align-items:start}pre{max-width:1000px;white-space:pre-wrap;font-size:12px}#status{font-weight:600}
+</style>
+<h1>Fresh MP4 loading comparison</h1>
+<p>One fresh recording, identical encoded packets and timestamps, different MP4 index position. Six pairs balance tail-first and front-first order. Every trial uses a fresh no-store URL, a shared 80 Mbps transfer budget, and 150 ms delay per media response.</p>
+<button id="start">Run six pairs</button><p id="status">Checking prepared media…</p>
+<main><video id="video" muted playsinline preload="auto"></video><section><table><thead><tr><th>Trial</th><th>loadeddata</th><th>First frame callback</th><th>Requests</th><th>Valid</th></tr></thead><tbody id="rows"></tbody></table><pre id="summary"></pre></section></main>
+<p><b>Definition:</b> loadeddata measures time from assigning the fresh media source until a frame for the current playback position is available. The first video-frame callback measures callback delivery when a frame is submitted for composition. It is not a pure decoder-latency measurement. Range requests are counted from the loopback server.</p>
+<p><b>Limits:</b> This tests loading from an artificial range server in the current local browser. It does not measure hosted performance, capture smoothness, or sustained playback drops. Unique URLs and no-store responses prevent reuse of these media resources; decoder and process initialization can remain warm. All trials and invalid reasons are retained.</p>
+<script>
+const video = document.querySelector('#video'), status = document.querySelector('#status');
+const rows = document.querySelector('#rows'), summary = document.querySelector('#summary');
+const start = document.querySelector('#start');
+window.results = []; window.loadingState = {busy:false, completed:false};
+let manifest = null;
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+const median = values => {const sorted = values.slice().sort((a,b)=>a-b);const mid=sorted.length>>1;return sorted.length%2?sorted[mid]:(sorted[mid-1]+sorted[mid])/2};
+
+async function runTrial({run, pair, order, variant, batchId}) {
+  video.pause(); video.removeAttribute('src'); video.load();
+  const result = {run,pair,order,variant,batchId,started:new Date().toISOString(),userAgent:navigator.userAgent,sourceHead:manifest.sourceHead,settings:manifest.settings,events:[],rafGaps:[],visibleAtStart:!document.hidden};
+  let begun = performance.now(), rafId, callbackId, lastRaf=null, timer, finished=false;
+  const listeners=[]; let resolveDone;
+  const done = new Promise(resolve=>resolveDone=resolve);
+  function maybeDone(){if(result.loadedDataMs!==undefined && result.firstVideoFrameCallbackMs!==undefined)finish()}
+  for(const name of ['loadstart','loadedmetadata','loadeddata','canplay','playing','waiting','stalled','error']) {
+    const handler=()=>{const elapsed=performance.now()-begun;result.events.push({name,ms:elapsed,media:video.currentTime});
+      if(name==='loadedmetadata')result.loadedMetadataMs=elapsed;
+      if(name==='loadeddata'){result.loadedDataMs=elapsed;maybeDone()}
+      if(name==='playing')result.firstPlayingMs??=elapsed;
+      if(name==='error'){result.error=video.error?.message??`Media error ${video.error?.code}`;finish()}
+    };video.addEventListener(name,handler);listeners.push([name,handler]);
+  }
+  const onVisibility=()=>{if(document.hidden)result.hiddenDuringTrial=true};
+  document.addEventListener('visibilitychange',onVisibility);
+  function raf(now){if(lastRaf!==null)result.rafGaps.push(now-lastRaf);lastRaf=now;rafId=requestAnimationFrame(raf)}
+  async function finish(){
+    if(finished)return;finished=true;clearTimeout(timer);cancelAnimationFrame(rafId);
+    if(callbackId!==undefined)video.cancelVideoFrameCallback(callbackId);
+    listeners.forEach(([name,fn])=>video.removeEventListener(name,fn));document.removeEventListener('visibilitychange',onVisibility);
+    result.width=video.videoWidth;result.height=video.videoHeight;
+    const quality=video.getVideoPlaybackQuality();
+    result.quality={totalVideoFrames:quality.totalVideoFrames,droppedVideoFrames:quality.droppedVideoFrames,corruptedVideoFrames:quality.corruptedVideoFrames};
+    video.pause();video.removeAttribute('src');video.load();
+    result.http=await fetch(`/settle/${run}`,{cache:'no-store'}).then(response=>response.json());
+    result.requestCount=result.http.requests.length;
+    result.requestsStartedByLoadedData=result.loadedDataMs===undefined?null:result.http.requests.filter(item=>item.startedUnix*1000<=result.sourceAssignedUnixMs+result.loadedDataMs).length;
+    result.requestsStartedByFirstCallback=result.firstVideoFrameCallbackMs===undefined?null:result.http.requests.filter(item=>item.startedUnix*1000<=result.sourceAssignedUnixMs+result.firstVideoFrameCallbackMs).length;
+    result.bytesWritten=result.http.requests.reduce((sum,item)=>sum+item.bytesWritten,0);
+    result.rafMaxMs=result.rafGaps.length?Math.max(...result.rafGaps):null;
+    result.invalidReasons=[];
+    if(result.error)result.invalidReasons.push(result.error);
+    if(!result.visibleAtStart||result.hiddenDuringTrial)result.invalidReasons.push('page hidden');
+    if(result.rafMaxMs===null||result.rafMaxMs>=250)result.invalidReasons.push('foreground scheduling not verified');
+    if(result.loadedDataMs===undefined||result.firstVideoFrameCallbackMs===undefined)result.invalidReasons.push('missing loading event');
+    if(!result.http.settled)result.invalidReasons.push('media requests did not settle');
+    result.valid=result.invalidReasons.length===0;
+    await fetch('/results',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(result)});
+    window.results.push(result);
+    const tr=document.createElement('tr');
+    for(const value of [`${pair}.${order} ${variant}`,result.loadedDataMs?.toFixed(1)??'—',result.firstVideoFrameCallbackMs?.toFixed(1)??'—',result.requestCount,result.valid?'yes':result.invalidReasons.join('; ')]){const td=document.createElement('td');td.textContent=value;tr.append(td)}
+    rows.append(tr);resolveDone(result);
+  }
+  timer=setTimeout(()=>{result.error='loading timed out after 15 seconds';finish()},15000);
+  rafId=requestAnimationFrame(raf);
+  if(typeof video.requestVideoFrameCallback!=='function'){result.error='requestVideoFrameCallback unavailable';finish();return await done}
+  callbackId=video.requestVideoFrameCallback((now,metadata)=>{
+    result.firstVideoFrameCallbackMs=performance.now()-begun;
+    result.firstFrame={mediaTime:metadata.mediaTime,presentationTime:metadata.presentationTime,expectedDisplayTime:metadata.expectedDisplayTime,presentedFrames:metadata.presentedFrames,processingDuration:metadata.processingDuration,width:metadata.width,height:metadata.height};maybeDone();
+  });
+  result.url=`/video/${run}/${variant}.mp4`;
+  begun=performance.now();
+  result.sourceAssignedUnixMs=performance.timeOrigin+begun;
+  video.src=result.url;video.load();
+  video.play().catch(error=>{result.error=String(error);finish()});
+  return await done;
+}
+
+window.runBatch=async function(){
+  if(window.loadingState.busy)throw Error('Batch already running');
+  if(!manifest)throw Error('Prepared media not loaded');
+  window.loadingState={busy:true,completed:false,batchId:crypto.randomUUID(),plan:[]};start.disabled=true;
+  const batchId=window.loadingState.batchId;
+  for(let pair=1;pair<=manifest.settings.pairs;pair++){
+    const variants=pair%2?['tail','front']:['front','tail'];
+    variants.forEach((variant,index)=>window.loadingState.plan.push({batchId,pair,order:index+1,variant,run:`${batchId}-p${pair}-${variant}`}));
+  }
+  const batch=[];
+  try{
+    for(const item of window.loadingState.plan){status.textContent=`Running pair ${item.pair}, ${item.variant}…`;batch.push(await runTrial(item));await sleep(300)}
+    const groups=Object.fromEntries(['tail','front'].map(variant=>{
+      const trials=batch.filter(item=>item.variant===variant&&item.valid);
+      return [variant,{valid:trials.length,invalid:batch.filter(item=>item.variant===variant&&!item.valid).length,loadedDataMedianMs:trials.length?median(trials.map(item=>item.loadedDataMs)):null,firstFrameCallbackMedianMs:trials.length?median(trials.map(item=>item.firstVideoFrameCallbackMs)):null,requests:trials.map(item=>item.requestCount)}];
+    }));
+    window.loadingState={...window.loadingState,busy:false,completed:true,groups};
+    summary.textContent=JSON.stringify(window.loadingState,null,2);status.textContent=`Complete: ${batch.length} trials recorded`;return window.loadingState;
+  }catch(error){window.loadingState={...window.loadingState,busy:false,completed:false,error:String(error)};status.textContent=String(error);throw error}
+  finally{start.disabled=false}
+};
+window.startBatch=function(){window.batchPromise=window.runBatch();window.batchPromise.catch(()=>{});return window.loadingState};
+start.onclick=()=>window.startBatch();
+fetch('/manifest',{cache:'no-store'}).then(response=>response.json()).then(value=>{manifest=value;status.textContent=`Ready: ${manifest.packetCount} packet-identical frames, source ${manifest.sourceHead}`}).catch(error=>{status.textContent=String(error);start.disabled=true});
+</script></html>

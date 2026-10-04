@@ -1,0 +1,542 @@
+[
+ {
+  "scenario": "still",
+  "config": "record-sim",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 116.715,
+    "sizeMB": 0.106558,
+    "mbPerMin": 0.05477856316668808,
+    "frames": 3,
+    "keyframes": 1,
+    "keyGapMax": null,
+    "keyShare": 0.7145586079720081
+   },
+   {
+    "pass_": 2,
+    "seconds": 62.885,
+    "sizeMB": 0.120428,
+    "mbPerMin": 0.11490307704540033,
+    "frames": 4,
+    "keyframes": 1,
+    "keyGapMax": null,
+    "keyShare": 0.6368425453633247
+   }
+  ],
+  "mbPerMin": 0.08484082010604421,
+  "spread": [
+   0.05,
+   0.11
+  ],
+  "sizeMB": 0.113493,
+  "seconds": 89.8,
+  "keyframes": 1,
+  "keyShare": 0.6757005766676665,
+  "keyGapMax": 0
+ },
+ {
+  "scenario": "still",
+  "config": "serve-sim-120",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.483333,
+    "sizeMB": 4.728064,
+    "mbPerMin": 4.613995796226596,
+    "frames": 3689,
+    "keyframes": 31,
+    "keyGapMax": 2.0,
+    "keyShare": 0.7570838362357787
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.416667,
+    "sizeMB": 4.736203,
+    "mbPerMin": 4.626955415864557,
+    "frames": 3685,
+    "keyframes": 31,
+    "keyGapMax": 2.0,
+    "keyShare": 0.7576547811374998
+   }
+  ],
+  "mbPerMin": 4.620475606045576,
+  "spread": [
+   4.61,
+   4.63
+  ],
+  "sizeMB": 4.7321335,
+  "seconds": 61.45,
+  "keyframes": 31,
+  "keyShare": 0.7573693086866393,
+  "keyGapMax": 2.0
+ },
+ {
+  "scenario": "still",
+  "config": "serve-sim-60",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.383333,
+    "sizeMB": 8.403976,
+    "mbPerMin": 8.214584242273062,
+    "frames": 3683,
+    "keyframes": 62,
+    "keyGapMax": 1.0,
+    "keyShare": 0.8542793994360186
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.4,
+    "sizeMB": 8.426735,
+    "mbPerMin": 8.234594462540716,
+    "frames": 3684,
+    "keyframes": 62,
+    "keyGapMax": 1.0,
+    "keyShare": 0.8557816733600386
+   }
+  ],
+  "mbPerMin": 8.22458935240689,
+  "spread": [
+   8.21,
+   8.23
+  ],
+  "sizeMB": 8.4153555,
+  "seconds": 61.3916665,
+  "keyframes": 62,
+  "keyShare": 0.8550305363980286,
+  "keyGapMax": 1.0
+ },
+ {
+  "scenario": "still",
+  "config": "serve-sim-30",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.516667,
+    "sizeMB": 15.800338,
+    "mbPerMin": 15.410787453748103,
+    "frames": 3691,
+    "keyframes": 124,
+    "keyGapMax": 0.5,
+    "keyShare": 0.912818204210757
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.366667,
+    "sizeMB": 15.716372,
+    "mbPerMin": 15.3663603728063,
+    "frames": 3671,
+    "keyframes": 123,
+    "keyGapMax": 0.5666670000000025,
+    "keyShare": 0.9130081698085765
+   }
+  ],
+  "mbPerMin": 15.388573913277202,
+  "spread": [
+   15.41,
+   15.37
+  ],
+  "sizeMB": 15.758355,
+  "seconds": 61.441666999999995,
+  "keyframes": 123.5,
+  "keyShare": 0.9129131870096667,
+  "keyGapMax": 0.5666670000000025
+ },
+ {
+  "scenario": "still",
+  "config": "serve-sim-15",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.483333,
+    "sizeMB": 30.312313,
+    "mbPerMin": 29.58100498552998,
+    "frames": 3689,
+    "keyframes": 246,
+    "keyGapMax": 0.25,
+    "keyShare": 0.9436339561512999
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.3,
+    "sizeMB": 30.339188,
+    "mbPerMin": 29.695779445350738,
+    "frames": 3678,
+    "keyframes": 246,
+    "keyGapMax": 0.25,
+    "keyShare": 0.943876080929271
+   }
+  ],
+  "mbPerMin": 29.63839221544036,
+  "spread": [
+   29.58,
+   29.7
+  ],
+  "sizeMB": 30.325750499999998,
+  "seconds": 61.3916665,
+  "keyframes": 246,
+  "keyShare": 0.9437550185402854,
+  "keyGapMax": 0.25
+ },
+ {
+  "scenario": "navigate",
+  "config": "record-sim",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 64.761667,
+    "sizeMB": 38.141347,
+    "mbPerMin": 35.33696592461093,
+    "frames": 840,
+    "keyframes": 29,
+    "keyGapMax": 9.055,
+    "keyShare": 0.08157222496551852
+   },
+   {
+    "pass_": 2,
+    "seconds": 66.381667,
+    "sizeMB": 36.081379,
+    "mbPerMin": 32.612660058687595,
+    "frames": 819,
+    "keyframes": 28,
+    "keyGapMax": 9.681667,
+    "keyShare": 0.08471353482675491
+   }
+  ],
+  "mbPerMin": 33.97481299164926,
+  "spread": [
+   35.34,
+   32.61
+  ],
+  "sizeMB": 37.111363,
+  "seconds": 65.57166699999999,
+  "keyframes": 28.5,
+  "keyShare": 0.08314287989613672,
+  "keyGapMax": 9.681667
+ },
+ {
+  "scenario": "navigate",
+  "config": "serve-sim-120",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 62.166667,
+    "sizeMB": 35.574478,
+    "mbPerMin": 34.334616652361305,
+    "frames": 3730,
+    "keyframes": 32,
+    "keyGapMax": 2.0,
+    "keyShare": 0.08650249323077087
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.283333,
+    "sizeMB": 34.403632,
+    "mbPerMin": 33.68318625881527,
+    "frames": 3677,
+    "keyframes": 31,
+    "keyGapMax": 2.0,
+    "keyShare": 0.08618955525398533
+   }
+  ],
+  "mbPerMin": 34.00890145558829,
+  "spread": [
+   34.33,
+   33.68
+  ],
+  "sizeMB": 34.989055,
+  "seconds": 61.724999999999994,
+  "keyframes": 31.5,
+  "keyShare": 0.08634602424237811,
+  "keyGapMax": 2.0
+ },
+ {
+  "scenario": "navigate",
+  "config": "serve-sim-60",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.166667,
+    "sizeMB": 36.652914,
+    "mbPerMin": 35.95381190215907,
+    "frames": 3670,
+    "keyframes": 62,
+    "keyGapMax": 1.0,
+    "keyShare": 0.15710310055016638
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.15,
+    "sizeMB": 37.920907,
+    "mbPerMin": 37.20775829926411,
+    "frames": 3669,
+    "keyframes": 62,
+    "keyGapMax": 1.0,
+    "keyShare": 0.1496009427130133
+   }
+  ],
+  "mbPerMin": 36.58078510071159,
+  "spread": [
+   35.95,
+   37.21
+  ],
+  "sizeMB": 37.286910500000005,
+  "seconds": 61.1583335,
+  "keyframes": 62,
+  "keyShare": 0.15335202163158984,
+  "keyGapMax": 1.0
+ },
+ {
+  "scenario": "navigate",
+  "config": "serve-sim-30",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 62.0,
+    "sizeMB": 43.450763,
+    "mbPerMin": 42.049125483870974,
+    "frames": 3720,
+    "keyframes": 124,
+    "keyGapMax": 0.5,
+    "keyShare": 0.2835387769271632
+   },
+   {
+    "pass_": 2,
+    "seconds": 62.15,
+    "sizeMB": 42.894871,
+    "mbPerMin": 41.41097763475463,
+    "frames": 3729,
+    "keyframes": 125,
+    "keyGapMax": 0.5,
+    "keyShare": 0.2855145887134093
+   }
+  ],
+  "mbPerMin": 41.7300515593128,
+  "spread": [
+   42.05,
+   41.41
+  ],
+  "sizeMB": 43.172817,
+  "seconds": 62.075,
+  "keyframes": 124.5,
+  "keyShare": 0.28452668282028626,
+  "keyGapMax": 0.5
+ },
+ {
+  "scenario": "navigate",
+  "config": "serve-sim-15",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.116667,
+    "sizeMB": 53.28515,
+    "mbPerMin": 52.31157320800887,
+    "frames": 3667,
+    "keyframes": 245,
+    "keyGapMax": 0.25,
+    "keyShare": 0.4466369337866579
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.05,
+    "sizeMB": 53.619242,
+    "mbPerMin": 52.697043734643735,
+    "frames": 3663,
+    "keyframes": 245,
+    "keyGapMax": 0.25,
+    "keyShare": 0.4426632386039456
+   }
+  ],
+  "mbPerMin": 52.504308471326304,
+  "spread": [
+   52.31,
+   52.7
+  ],
+  "sizeMB": 53.452196,
+  "seconds": 61.083333499999995,
+  "keyframes": 245,
+  "keyShare": 0.4446500861953018,
+  "keyGapMax": 0.25
+ },
+ {
+  "scenario": "scroll",
+  "config": "record-sim",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.885,
+    "sizeMB": 57.766911,
+    "mbPerMin": 56.00734685303385,
+    "frames": 2244,
+    "keyframes": 78,
+    "keyGapMax": 2.266666999999998,
+    "keyShare": 0.18648052468976622
+   },
+   {
+    "pass_": 2,
+    "seconds": 62.58,
+    "sizeMB": 56.8817,
+    "mbPerMin": 54.536625119846605,
+    "frames": 2201,
+    "keyframes": 77,
+    "keyGapMax": 2.25,
+    "keyShare": 0.18684469459217304
+   }
+  ],
+  "mbPerMin": 55.27198598644023,
+  "spread": [
+   56.01,
+   54.54
+  ],
+  "sizeMB": 57.3243055,
+  "seconds": 62.2325,
+  "keyframes": 77.5,
+  "keyShare": 0.18666260964096965,
+  "keyGapMax": 2.266666999999998
+ },
+ {
+  "scenario": "scroll",
+  "config": "serve-sim-120",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.583333,
+    "sizeMB": 40.452105,
+    "mbPerMin": 39.41206462469318,
+    "frames": 3695,
+    "keyframes": 31,
+    "keyGapMax": 2.0,
+    "keyShare": 0.08236175247533863
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.483333,
+    "sizeMB": 40.620715,
+    "mbPerMin": 39.640708808027696,
+    "frames": 3689,
+    "keyframes": 31,
+    "keyGapMax": 2.0,
+    "keyShare": 0.07786374754880325
+   }
+  ],
+  "mbPerMin": 39.526386716360435,
+  "spread": [
+   39.41,
+   39.64
+  ],
+  "sizeMB": 40.536410000000004,
+  "seconds": 61.533333,
+  "keyframes": 31,
+  "keyShare": 0.08011275001207094,
+  "keyGapMax": 2.0
+ },
+ {
+  "scenario": "scroll",
+  "config": "serve-sim-60",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.35,
+    "sizeMB": 44.847515,
+    "mbPerMin": 43.86065036674817,
+    "frames": 3680,
+    "keyframes": 62,
+    "keyGapMax": 1.0,
+    "keyShare": 0.1455995437061061
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.416667,
+    "sizeMB": 45.906131,
+    "mbPerMin": 44.84723763990645,
+    "frames": 3685,
+    "keyframes": 62,
+    "keyGapMax": 1.0,
+    "keyShare": 0.1414087089570337
+   }
+  ],
+  "mbPerMin": 44.353944003327314,
+  "spread": [
+   43.86,
+   44.85
+  ],
+  "sizeMB": 45.376823,
+  "seconds": 61.3833335,
+  "keyframes": 62,
+  "keyShare": 0.1435041263315699,
+  "keyGapMax": 1.0
+ },
+ {
+  "scenario": "scroll",
+  "config": "serve-sim-30",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.416667,
+    "sizeMB": 51.356471,
+    "mbPerMin": 50.171857421048266,
+    "frames": 3685,
+    "keyframes": 123,
+    "keyGapMax": 0.5,
+    "keyShare": 0.2512255000313621
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.4,
+    "sizeMB": 51.931193,
+    "mbPerMin": 50.747094136807824,
+    "frames": 3684,
+    "keyframes": 123,
+    "keyGapMax": 0.5,
+    "keyShare": 0.2541608387681515
+   }
+  ],
+  "mbPerMin": 50.459475778928045,
+  "spread": [
+   50.17,
+   50.75
+  ],
+  "sizeMB": 51.643832,
+  "seconds": 61.4083335,
+  "keyframes": 123,
+  "keyShare": 0.25269316939975683,
+  "keyGapMax": 0.5
+ },
+ {
+  "scenario": "scroll",
+  "config": "serve-sim-15",
+  "passes": [
+   {
+    "pass_": 1,
+    "seconds": 61.35,
+    "sizeMB": 62.417626,
+    "mbPerMin": 61.04413300733496,
+    "frames": 3681,
+    "keyframes": 246,
+    "keyGapMax": 0.25,
+    "keyShare": 0.43011847318381713
+   },
+   {
+    "pass_": 2,
+    "seconds": 61.516667,
+    "sizeMB": 63.204571,
+    "mbPerMin": 61.646289451930166,
+    "frames": 3691,
+    "keyframes": 247,
+    "keyGapMax": 0.25,
+    "keyShare": 0.41982248487932344
+   }
+  ],
+  "mbPerMin": 61.34521122963257,
+  "spread": [
+   61.04,
+   61.65
+  ],
+  "sizeMB": 62.8110985,
+  "seconds": 61.4333335,
+  "keyframes": 246.5,
+  "keyShare": 0.42497047903157026,
+  "keyGapMax": 0.25
+ }
+]

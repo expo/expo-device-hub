@@ -1,0 +1,84 @@
+{
+  "source": "original-pair08-baseline/recording.mp4",
+  "sourceHead": "2749548a49eae6a88677d62e1e87365de5c5f1b4",
+  "sourceFileSha256": "0aacc9e449a1cc8ab29a7b14c5d63abd539bb874d9391baf14ff0cfab937d136",
+  "tailFileSha256": "51367ccb319b9799e4abf3b03882b94f4ec072e3c6b97e4f7b26cd180a0f1286",
+  "packetCount": 2093,
+  "packetAndTimestampIdentity": true,
+  "packetIdentitySha256": "c18387c37ee1ac0a7f24952748c579e3d5cb0b8e4d6fdcb2e8b08a2350932383",
+  "stream": {
+    "codec_name": "h264",
+    "profile": "High",
+    "codec_tag_string": "avc1",
+    "width": 1206,
+    "height": 2622,
+    "pix_fmt": "yuv420p",
+    "level": 51,
+    "time_base": "1/600",
+    "extradata_size": 31,
+    "extradata_hash": "SHA256:6b3a1aa6fb3f0847a4fed621a54d7ea03e837df48c35a416c15f96da880f362e",
+    "color_range": null,
+    "color_space": null,
+    "color_transfer": null,
+    "color_primaries": null
+  },
+  "frontBoxes": [
+    {
+      "type": "ftyp",
+      "offset": 0,
+      "size": 28
+    },
+    {
+      "type": "moov",
+      "offset": 28,
+      "size": 12491
+    },
+    {
+      "type": "mdat",
+      "offset": 12519,
+      "size": 106312699
+    }
+  ],
+  "tailBoxes": [
+    {
+      "type": "ftyp",
+      "offset": 0,
+      "size": 32
+    },
+    {
+      "type": "free",
+      "offset": 32,
+      "size": 8
+    },
+    {
+      "type": "mdat",
+      "offset": 40,
+      "size": 106312691
+    },
+    {
+      "type": "moov",
+      "offset": 106312731,
+      "size": 10388
+    }
+  ],
+  "controlCommand": [
+    "ffmpeg",
+    "-hide_banner",
+    "-nostdin",
+    "-v",
+    "error",
+    "-i",
+    "front.mp4",
+    "-map",
+    "0:v:0",
+    "-c",
+    "copy",
+    "-copyts",
+    "-avoid_negative_ts",
+    "disabled",
+    "-video_track_timescale",
+    "600",
+    "tail.mp4"
+  ],
+  "ffmpegVersion": "ffmpeg version 8.1.2 Copyright (c) 2000-2026 the FFmpeg developers"
+}

@@ -1,0 +1,4390 @@
+{
+  "generatedAt": "2026-10-04T08:22:47.011Z",
+  "node": "v24.21.0",
+  "design": "Frozen ten trials per baseline/end-only and CLI/passive cell; both orders reverse every round. Exact source rawHidSocket/writeWebSocketAccept bundled by Bun, immediate refusal after upgrade. End-only differs by removal of destroySoon only (imports redirected to original source).",
+  "hashesBefore": {
+    "dist/serve-sim.js": "08865027a7f421a7d70e544432cc3eacd9ddbabb51585cb2c236461091aabf42",
+    "src/socket/server-input.ts": "4c12b85b33201b2a838abb85acda78aacf30a9da6d121234f724f2294880d7c9",
+    "src/socket/server-upgrade.ts": "5360ac8ad59da84366806dbc8d6c9e5f3af443efeee761719d399e27d2e6b685"
+  },
+  "hashesAfter": {
+    "dist/serve-sim.js": "08865027a7f421a7d70e544432cc3eacd9ddbabb51585cb2c236461091aabf42",
+    "src/socket/server-input.ts": "4c12b85b33201b2a838abb85acda78aacf30a9da6d121234f724f2294880d7c9",
+    "src/socket/server-upgrade.ts": "5360ac8ad59da84366806dbc8d6c9e5f3af443efeee761719d399e27d2e6b685"
+  },
+  "cells": [
+    {
+      "variant": "baseline",
+      "client": "cli",
+      "trials": 10,
+      "closeCodes": {
+        "1006": 2,
+        "1013": 8
+      },
+      "concludeCodes": {
+        "1013": 8,
+        "null": 2
+      },
+      "exitCodes": {
+        "0": 2,
+        "1": 8
+      },
+      "timedOut": 0
+    },
+    {
+      "variant": "baseline",
+      "client": "passive",
+      "trials": 10,
+      "closeCodes": {
+        "1013": 10
+      },
+      "concludeCodes": {
+        "1013": 10
+      },
+      "exitCodes": {
+        "null": 10
+      },
+      "timedOut": 0
+    },
+    {
+      "variant": "end-only",
+      "client": "cli",
+      "trials": 10,
+      "closeCodes": {
+        "1013": 10
+      },
+      "concludeCodes": {
+        "1013": 10
+      },
+      "exitCodes": {
+        "1": 10
+      },
+      "timedOut": 0
+    },
+    {
+      "variant": "end-only",
+      "client": "passive",
+      "trials": 10,
+      "closeCodes": {
+        "1013": 10
+      },
+      "concludeCodes": {
+        "1013": 10
+      },
+      "exitCodes": {
+        "null": 10
+      },
+      "timedOut": 0
+    }
+  ],
+  "trials": [
+    {
+      "id": "00-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 0,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 304.54712500000005,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 254.679291,
+          "event": "open"
+        },
+        {
+          "ms": 255.14483299999998,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 256.18458300000003,
+          "event": "ping"
+        },
+        {
+          "ms": 256.469875,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 257.05320800000004,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 257.20891600000004,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.014124999999978627,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.5542919999999754,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.7667920000000095,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.9184579999999869,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 1.2000830000000065,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 1.2280830000000265,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 1.4201669999999922,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 1.8171669999999835,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "00-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 0,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 3.751000000000033,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 2.422791000000018,
+          "event": "open"
+        },
+        {
+          "ms": 2.7747080000000324,
+          "event": "ping"
+        },
+        {
+          "ms": 3.2153749999999945,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 3.492750000000001,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.003249999999979991,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.060625000000015916,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.09816599999999198,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.12816600000002154,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.1449999999999818,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.15008299999999508,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.16816599999998516,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.18537500000002183,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "00-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 0,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 184.33941600000003,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 145.753292,
+          "event": "open"
+        },
+        {
+          "ms": 145.957292,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 146.462125,
+          "event": "ping"
+        },
+        {
+          "ms": 146.662458,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 147.175667,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 147.270417,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.004542000000014923,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.13429199999995944,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.27383399999996527,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.32875000000001364,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.34237499999994725,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.36262499999998,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 1.5197090000000344,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 1.7447499999999536,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 1.9288340000000517,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 2.267500000000041,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 2.300459000000046,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "00-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 0,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1.7126250000000027,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 1.045291999999904,
+          "event": "open"
+        },
+        {
+          "ms": 1.1605829999999742,
+          "event": "ping"
+        },
+        {
+          "ms": 1.238999999999919,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 1.519916999999964,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.004332999999974163,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06100000000003547,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.10366599999997561,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.13408300000003237,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.1582500000000664,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.18095800000003237,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.7436660000000757,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.9056249999999864,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 2.0811250000000427,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "01-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 1,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1.3837089999999534,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.9064170000000331,
+          "event": "open"
+        },
+        {
+          "ms": 0.958417000000054,
+          "event": "ping"
+        },
+        {
+          "ms": 1.012124999999969,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 1.1503340000000435,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0036250000000563887,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06983300000001691,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.11250000000006821,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.15170800000009876,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.18466699999999037,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.22658300000000509,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.5810830000000351,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.767208000000096,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 2.3315830000000233,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "01-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 1,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 181.82120800000007,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 144.87741599999998,
+          "event": "open"
+        },
+        {
+          "ms": 145.32683300000002,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 145.986875,
+          "event": "ping"
+        },
+        {
+          "ms": 146.43737499999997,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 147.05675000000002,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 147.182791,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.004332999999974163,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06504199999994853,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.0989999999999327,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.12549999999998818,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.13991699999996854,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.16341699999998127,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 1.7329169999999294,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 2.115332999999964,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 2.497082999999975,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 2.8829999999999245,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 2.926582999999937,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "01-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 1,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1.4616250000000264,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 1.0437919999999394,
+          "event": "open"
+        },
+        {
+          "ms": 1.0882500000000164,
+          "event": "ping"
+        },
+        {
+          "ms": 1.1349579999999833,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 1.305166999999983,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0037499999999681677,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.052541999999903055,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.08554199999991852,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.15304199999991397,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.18237499999997908,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.18666699999994307,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.25395800000001145,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.3211669999999458,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "01-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 1,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 191.86533300000008,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 148.486458,
+          "event": "open"
+        },
+        {
+          "ms": 148.83854100000002,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 149.77975,
+          "event": "ping"
+        },
+        {
+          "ms": 150.171208,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 150.683625,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 150.80029100000002,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.005667000000016742,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06716700000004039,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.10020799999995234,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.12187500000004547,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.141208000000006,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.1440420000000131,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.1671249999999418,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.18879200000003493,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "02-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 2,
+      "node": "v24.21.0",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 306.04208300000005,
+      "closeCode": 1006,
+      "concludeCode": null,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 178.734459,
+          "event": "open"
+        },
+        {
+          "ms": 179.11933399999998,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 180.044875,
+          "event": "ping"
+        },
+        {
+          "ms": 180.57025,
+          "event": "close",
+          "code": 1006,
+          "reason": ""
+        },
+        {
+          "ms": 220.832167,
+          "event": "send",
+          "tag": 3,
+          "bytes": 31,
+          "readyState": 3,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"end\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 272.29008400000004,
+          "event": "exit",
+          "code": 0
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.006792000000132248,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.07216700000003584,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.11245900000017173,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.14112500000010186,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.15954200000010132,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.1626250000001619,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.18895900000006804,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.2132090000000062,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "02-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 2,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1.34699999999998,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.9356250000000728,
+          "event": "open"
+        },
+        {
+          "ms": 0.9729999999999563,
+          "event": "ping"
+        },
+        {
+          "ms": 1.1143750000001091,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 1.1593330000000606,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.006291000000146596,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.04470800000012787,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.06950000000006185,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.08933300000012423,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.10262499999998909,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.1047080000000733,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.12112500000012005,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.13924999999994725,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "02-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 2,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 194.18374999999992,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 156.536542,
+          "event": "open"
+        },
+        {
+          "ms": 156.845,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 157.72687499999998,
+          "event": "ping"
+        },
+        {
+          "ms": 158.06687499999998,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 158.808417,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 158.959125,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.004167000000052212,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06674999999995634,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.11216699999999946,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.14283300000010968,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.15612499999997453,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.2074999999999818,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 2.2138330000000224,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 2.568749999999909,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 2.9141669999999067,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 3.2663749999999254,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 3.3402920000000904,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "02-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 2,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.9412090000000717,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.6005420000001322,
+          "event": "open"
+        },
+        {
+          "ms": 0.6349590000002081,
+          "event": "ping"
+        },
+        {
+          "ms": 0.6727500000001783,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.7831670000000486,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0015419999999721767,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.049791999999797554,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.0780419999998685,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.09437499999989996,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.10445799999979499,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.11895799999979317,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.35370799999986957,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.4866669999998976,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 1.4715419999999995,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "03-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 3,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.7545419999999012,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.4198750000000473,
+          "event": "open"
+        },
+        {
+          "ms": 0.44070799999985866,
+          "event": "ping"
+        },
+        {
+          "ms": 0.47100000000000364,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.625,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0005419999999958236,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.0234170000001086,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.04120899999998073,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.051416999999901236,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.06270900000004076,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.07070900000007896,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.30004200000007586,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.41104199999995217,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 1.6006669999999303,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "03-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 3,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 286.90425000000005,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 249.66449999999998,
+          "event": "open"
+        },
+        {
+          "ms": 249.94791700000002,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 250.510667,
+          "event": "ping"
+        },
+        {
+          "ms": 250.71279199999998,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 251.215083,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 251.30587500000001,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.002457999999933236,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.0701249999999618,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.10325000000011642,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.12920800000006238,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.1414999999999509,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.1648330000000442,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 1.7817500000001019,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 2.032666000000063,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 2.2713330000001406,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 2.5546659999999974,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 2.5932500000001255,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "03-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 3,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1.481999999999971,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.8522499999999127,
+          "event": "open"
+        },
+        {
+          "ms": 0.921291999999994,
+          "event": "ping"
+        },
+        {
+          "ms": 1.1028340000000298,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 1.21287499999994,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0017499999999017746,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.04883299999983137,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.07862499999987449,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.09666599999991377,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.1112079999998059,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.11383299999988594,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.12891599999989012,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.14412499999980355,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "03-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 3,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 187.46133299999997,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 147.492416,
+          "event": "open"
+        },
+        {
+          "ms": 147.899708,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 149.130125,
+          "event": "ping"
+        },
+        {
+          "ms": 149.60925,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 150.245291,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 150.427666,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.002124999999978172,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06154199999991761,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.1013749999999618,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.12291699999991579,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.13937499999997272,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.14245899999991707,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.16716699999983575,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.1875840000000153,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "04-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 4,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 178.40891699999997,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 140.33325000000002,
+          "event": "open"
+        },
+        {
+          "ms": 140.52241600000002,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 141.217791,
+          "event": "ping"
+        },
+        {
+          "ms": 141.44287500000002,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 141.876666,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 141.949083,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0019579999998313724,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06179199999996854,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.09504199999992125,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.11249999999972715,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.1269999999999527,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.1307499999998072,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.14887499999986176,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.1689579999997477,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "04-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 4,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1.4034999999998945,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 1.0057499999998072,
+          "event": "open"
+        },
+        {
+          "ms": 1.0418330000002243,
+          "event": "ping"
+        },
+        {
+          "ms": 1.0767500000001746,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 1.2095420000000559,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0022919999996702245,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.0672919999997248,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.11291699999992488,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.1362500000000182,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.15745799999967858,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.16187499999978172,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.18516699999963748,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.21054199999980483,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "04-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 4,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 183.428042,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 143.41083400000002,
+          "event": "open"
+        },
+        {
+          "ms": 143.83383400000002,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 144.722584,
+          "event": "ping"
+        },
+        {
+          "ms": 145.10012500000002,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 145.936125,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 146.108875,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0017079999997804407,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06770799999958399,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.3097499999998945,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.33637499999986176,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.3517079999996895,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.37037499999996726,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 2.2962499999998727,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 2.710457999999562,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 3.0254579999996167,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 3.593249999999898,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 3.6249579999998787,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "04-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 4,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1.165625000000091,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.8529170000001614,
+          "event": "open"
+        },
+        {
+          "ms": 0.89449999999988,
+          "event": "ping"
+        },
+        {
+          "ms": 0.9282920000000559,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 1.0189580000001115,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0014160000000629225,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.038791000000401255,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.06791600000042308,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.08391600000004473,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.09800000000041109,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.10883300000023155,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.3355830000000424,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.4586659999999938,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 1.3272500000002765,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "05-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 5,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.7312079999996968,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.42908299999999144,
+          "event": "open"
+        },
+        {
+          "ms": 0.451415999999881,
+          "event": "ping"
+        },
+        {
+          "ms": 0.4720830000001115,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.5772079999997004,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.001040999999986525,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.02775000000019645,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.04566599999998289,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.05483300000014424,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.06674999999995634,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.07666599999993196,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.25741599999992104,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.3870409999999538,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 1.510291000000052,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "05-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 5,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 187.09983299999976,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 152.261292,
+          "event": "open"
+        },
+        {
+          "ms": 152.518125,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 153.069375,
+          "event": "ping"
+        },
+        {
+          "ms": 153.28691700000002,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 153.796042,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 153.876042,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.00220900000022084,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.060042000000066764,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.09187500000007276,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.10791700000027049,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.12133399999993344,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.14433400000007168,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 1.5787089999998898,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 1.7758340000000317,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 1.9591249999998581,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 2.2892500000002656,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 2.3106250000000728,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "05-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 5,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 1.097041999999874,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.6700829999999769,
+          "event": "open"
+        },
+        {
+          "ms": 0.6974169999998594,
+          "event": "ping"
+        },
+        {
+          "ms": 0.7234579999999369,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.8418750000000728,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0017079999997804407,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.03958299999976589,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.06045799999992596,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.07249999999976353,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.0856669999998303,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.08708299999989322,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.10333300000002055,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.11683300000004238,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "05-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 5,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 176.74087499999996,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 140.50554200000002,
+          "event": "open"
+        },
+        {
+          "ms": 140.746292,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 141.789375,
+          "event": "ping"
+        },
+        {
+          "ms": 142.154875,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 142.63425,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 142.719625,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0024170000001504377,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.0644999999999527,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.1264169999999467,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.14649999999983265,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.1639580000000933,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.16745799999989686,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.18991700000015044,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.20929200000000492,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "06-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 6,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 181.073625,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 143.053292,
+          "event": "open"
+        },
+        {
+          "ms": 143.45158400000003,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 144.554125,
+          "event": "ping"
+        },
+        {
+          "ms": 144.905417,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 145.37958400000002,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 145.48837500000002,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0019579999998313724,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.0805000000000291,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.11645799999996598,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.13537499999983993,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.15233299999999872,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.15458300000000236,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.17420799999990777,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.19633299999986775,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "06-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 6,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.8774579999999332,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.5582919999997102,
+          "event": "open"
+        },
+        {
+          "ms": 0.5807499999996253,
+          "event": "ping"
+        },
+        {
+          "ms": 0.6050829999999223,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.6951249999997344,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0020000000004074536,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.03979200000003402,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.06370800000013332,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.07654200000024503,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.09004200000026685,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.09125000000040018,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.10333300000002055,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.11633300000039526,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "06-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 6,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 180.32924999999977,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 141.911416,
+          "event": "open"
+        },
+        {
+          "ms": 142.341333,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 143.099416,
+          "event": "ping"
+        },
+        {
+          "ms": 143.342958,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 143.887208,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 144.024875,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0031669999998484855,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.08095899999989342,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.13637500000004366,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.15679199999976845,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.17174999999997453,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.20358399999986432,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 2.518083999999817,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 2.8310419999997976,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 3.0367919999998776,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 3.3594169999996666,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 3.385124999999789,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "06-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 6,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.84375,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.5429579999999987,
+          "event": "open"
+        },
+        {
+          "ms": 0.5647909999997864,
+          "event": "ping"
+        },
+        {
+          "ms": 0.5920830000000024,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.6858330000000024,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.001959000000169908,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.038584000000355445,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.06129200000032142,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.07633400000031543,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.08766700000023775,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.09916700000030687,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.2677920000000995,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.395542000000205,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 1.2615840000003118,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "07-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 7,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.6137080000003152,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.37170800000012605,
+          "event": "open"
+        },
+        {
+          "ms": 0.39566599999989194,
+          "event": "ping"
+        },
+        {
+          "ms": 0.4244160000002921,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.4964580000000751,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0010000000002037268,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.025666999999884865,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.04341699999986304,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.05295799999976225,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.061916999999994005,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.07091700000000856,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.21520800000007512,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.30866699999978664,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 1.4257079999997586,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "07-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 7,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 185.32120799999984,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 148.556291,
+          "event": "open"
+        },
+        {
+          "ms": 148.833583,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 149.40183299999998,
+          "event": "ping"
+        },
+        {
+          "ms": 149.649666,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 150.110791,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 150.196166,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.027250000000094587,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.089125000000422,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.12033400000018446,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.1404170000000704,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.1766250000000582,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.2007090000001881,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 1.7368340000002718,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 2.0121250000001965,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 2.2330840000004173,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 2.5251250000001164,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 2.5446249999999964,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "07-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 7,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.7586660000001757,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.5072079999999914,
+          "event": "open"
+        },
+        {
+          "ms": 0.5302080000001297,
+          "event": "ping"
+        },
+        {
+          "ms": 0.5536250000000109,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.623290999999881,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0015830000002097222,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.03666700000030687,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.05579200000011042,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.06683300000031522,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.08037500000000364,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.08154200000035416,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.09091699999999037,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.10208300000022064,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "07-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 7,
+      "node": "v24.21.0",
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 269.36195799999996,
+      "closeCode": 1006,
+      "concludeCode": null,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 143.511041,
+          "event": "open"
+        },
+        {
+          "ms": 143.89112500000002,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 144.916041,
+          "event": "ping"
+        },
+        {
+          "ms": 145.438333,
+          "event": "close",
+          "code": 1006,
+          "reason": ""
+        },
+        {
+          "ms": 184.714708,
+          "event": "send",
+          "tag": 3,
+          "bytes": 31,
+          "readyState": 3,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"end\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 236.14012499999998,
+          "event": "exit",
+          "code": 0
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.002124999999978172,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06066599999985556,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.08945799999992232,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.10620799999969677,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.12058299999989686,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.1220829999997477,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.14016599999968093,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.15720799999962765,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "08-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 8,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 193.268458,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 159.153584,
+          "event": "open"
+        },
+        {
+          "ms": 159.49599999999998,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 160.448875,
+          "event": "ping"
+        },
+        {
+          "ms": 160.764792,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 161.46420899999998,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 161.583542,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0020409999997355044,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.05858299999999872,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.08783300000004601,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.10283299999991868,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.11599999999998545,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.11774999999988722,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.13449999999966167,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.15104100000007747,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "08-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 8,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.9478750000002947,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.6167500000001382,
+          "event": "open"
+        },
+        {
+          "ms": 0.647291000000223,
+          "event": "ping"
+        },
+        {
+          "ms": 0.6717499999999745,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.7419580000000678,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0017920000000231084,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.043959000000086235,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.06824999999980719,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.08237499999995634,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.09729199999992488,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.09854200000017954,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.10941700000012133,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.12491700000009587,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "08-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 8,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 173.11312499999985,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 136.836458,
+          "event": "open"
+        },
+        {
+          "ms": 137.0725,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 137.56795799999998,
+          "event": "ping"
+        },
+        {
+          "ms": 137.762375,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 138.261125,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 138.35825,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0016249999998763087,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.055917000000135886,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.08800000000019281,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.10279200000013589,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.11374999999998181,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.1272089999997661,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 1.37237499999992,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 1.6284999999998035,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 1.7948339999998097,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 2.1292920000000777,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 2.150749999999789,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "08-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 8,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.7073749999999563,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.4777079999998932,
+          "event": "open"
+        },
+        {
+          "ms": 0.49929100000008475,
+          "event": "ping"
+        },
+        {
+          "ms": 0.5229159999998956,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.5984159999998155,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0015830000002097222,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.03650000000016007,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.05666700000028868,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.07016699999985576,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.07991700000002311,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.09033300000010058,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.23429200000009587,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.3182080000001406,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 1.221292000000176,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "09-end-only-passive",
+      "variant": "end-only",
+      "client": "passive",
+      "iteration": 9,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.5449160000002848,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.34995800000024246,
+          "event": "open"
+        },
+        {
+          "ms": 0.36750000000029104,
+          "event": "ping"
+        },
+        {
+          "ms": 0.3872500000002219,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.4479580000001988,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0006250000001273293,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.0198339999997188,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.03308400000014444,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.04070899999987887,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.048624999999901775,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.05625000000009095,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.1940839999997479,
+          "event": "socket-data",
+          "bytes": 79,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            },
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 0.27054199999975026,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 1.3254590000001372,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 349
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "09-end-only-cli",
+      "variant": "end-only",
+      "client": "cli",
+      "iteration": 9,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 179.6994169999998,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 144.267709,
+          "event": "open"
+        },
+        {
+          "ms": 144.527542,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 145.222709,
+          "event": "ping"
+        },
+        {
+          "ms": 145.588459,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 146.351167,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 146.49475,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0022500000004583853,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.06425000000035652,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.3187920000000304,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.3409590000001117,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.35783400000036636,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.3785840000000462,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 1.738709000000199,
+          "event": "socket-data",
+          "bytes": 39,
+          "frames": [
+            {
+              "opcode": 2,
+              "bytes": 33,
+              "tag": 3,
+              "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+            }
+          ]
+        },
+        {
+          "ms": 2.1522500000000946,
+          "event": "socket-data",
+          "bytes": 6,
+          "frames": [
+            {
+              "opcode": 10,
+              "bytes": 0
+            }
+          ]
+        },
+        {
+          "ms": 2.46349999999984,
+          "event": "socket-data",
+          "bytes": 73,
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ]
+        },
+        {
+          "ms": 2.938625000000684,
+          "event": "socket-peer-end"
+        },
+        {
+          "ms": 2.9645420000006197,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 388
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    },
+    {
+      "id": "09-baseline-passive",
+      "variant": "baseline",
+      "client": "passive",
+      "iteration": 9,
+      "node": "v24.21.0",
+      "exitCode": null,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 0.8168339999992895,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 0.5472919999992882,
+          "event": "open"
+        },
+        {
+          "ms": 0.577249999999367,
+          "event": "ping"
+        },
+        {
+          "ms": 0.5995839999995951,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 0.668666999999914,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0018749999999272404,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.03825000000051659,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.0757499999999709,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.08862500000032014,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.10008300000026793,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.10141699999985576,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.11358300000028976,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.12600000000020373,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": ""
+    },
+    {
+      "id": "09-baseline-cli",
+      "variant": "baseline",
+      "client": "cli",
+      "iteration": 9,
+      "node": "v24.21.0",
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "elapsedMs": 175.063083,
+      "closeCode": 1013,
+      "concludeCode": 1013,
+      "stdout": "",
+      "clientEvents": [
+        {
+          "ms": 138.252666,
+          "event": "open"
+        },
+        {
+          "ms": 138.544083,
+          "event": "send",
+          "tag": 3,
+          "bytes": 33,
+          "readyState": 1,
+          "closeCode": 1006,
+          "payload": "{\"type\":\"begin\",\"x\":0.5,\"y\":0.5}"
+        },
+        {
+          "ms": 139.455833,
+          "event": "ping"
+        },
+        {
+          "ms": 139.734833,
+          "event": "close-frame",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 140.238958,
+          "event": "close",
+          "code": 1013,
+          "reason": "Simulator input unavailable; retry after other clients disconnect"
+        },
+        {
+          "ms": 140.364583,
+          "event": "exit",
+          "code": 1
+        }
+      ],
+      "serverEvents": [
+        {
+          "ms": 0.0023329999994530226,
+          "event": "upgrade",
+          "headBytes": 0,
+          "path": "/helper/BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB/ws"
+        },
+        {
+          "ms": 0.08062499999959982,
+          "event": "handshake-written"
+        },
+        {
+          "ms": 0.1162079999994603,
+          "event": "raw-adapter-created"
+        },
+        {
+          "ms": 0.13854199999968841,
+          "event": "socket-end",
+          "frames": [
+            {
+              "opcode": 8,
+              "bytes": 67,
+              "code": 1013,
+              "reason": "Simulator input unavailable; retry after other clients disconnect"
+            }
+          ],
+          "bytes": 69
+        },
+        {
+          "ms": 0.15679199999976845,
+          "event": "destroySoon",
+          "bytesWritten": 200,
+          "bytesRead": 270
+        },
+        {
+          "ms": 0.15904199999931734,
+          "event": "refusal-returned"
+        },
+        {
+          "ms": 0.19958299999962037,
+          "event": "socket-finish"
+        },
+        {
+          "ms": 0.21991699999944103,
+          "event": "socket-close",
+          "hadError": false,
+          "bytesWritten": 200,
+          "bytesRead": 270
+        }
+      ],
+      "noAdmissionWasSent": true,
+      "stderrSummary": "Error: Simulator input rejected: Simulator input unavailable; retry after other clients disconnect. Try again shortly."
+    }
+  ],
+  "publicationNotes": "Original diagnostic trial events retained. Machine-local path prefixes removed from hash labels. stderr replaced by its Error line because Node prints the minified CLI source and local stack paths. These samples are historical; the grace variant is the preliminary bounded-cleanup prototype, not the final published source.",
+  "baselineSourceCommit": "128085cc165cee6ad0868e9cd8661d8e2427c1f4"
+}

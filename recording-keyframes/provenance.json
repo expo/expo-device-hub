@@ -1,0 +1,43 @@
+{
+  "measurementDate": "2026-10-02",
+  "operator": "Claude Code, at Gabe\u2019s direction",
+  "device": "iPhone 17 Simulator",
+  "runtime": "iOS 26.4",
+  "xcode": "26.4",
+  "recordingSize": "1206 x 2622",
+  "serveSimExperimentCommit": "3d99e2dc1171497fb0ec8d296ce9f8dae90cdf9e",
+  "serveSimExperimentParent": "640f201ed12ca68789bab3f4a0b96bed958be114",
+  "pr243Head": "9f49f1f4ab30815515bfe967424f1387db6d10af",
+  "sourceRelation": "640f201e and 9f49f1f4 have identical recorder source; their only tree difference is changeset text. original-interval-experiment.patch is git diff 640f201e..3d99e2dc and passes git apply --check at 9f49f1f4.",
+  "experimentProperties": {
+    "MaxKeyFrameInterval": "120/60/30/15 frames",
+    "MaxKeyFrameIntervalDuration": "interval / 60 seconds",
+    "recordingAverageBitrate": 30000000,
+    "recordingExpectedFrameRate": 60,
+    "recordingAllowFrameReordering": false
+  },
+  "previewFlags": {
+    "transport": "webrtc",
+    "webrtc-codec": "h264",
+    "max-dimension": 1600,
+    "video-bitrate": 10000000,
+    "video-fps": 60,
+    "require-token": true
+  },
+  "viewer": "Harness starts serve-sim; no browser viewer is opened by the script.",
+  "runOrder": "Pass 1: record-sim, 120,60,30,15. Pass 2: 15,30,60,120,record-sim. Each pass runs still,navigate,scroll in that order.",
+  "scenarioDuration": "60 seconds of input/idle, plus recorder startup/stop. Container duration is read from each actual MP4.",
+  "recordSimBinarySha256": "d2bb03a9553891e463624bcc01f045364444294da08258b8e578bc973849eaae",
+  "recordSimSource": "Built from expo/eas-cli packages/build-tools/resources/record-sim. Original exact source commit was not saved; contextual comparison is not a paired before/after change for PR243.",
+  "rawExport": "Packet timestamps, sizes, flags, and non-sensitive stream/container fields freshly extracted from retained original MP4s by ffprobe 8.1.2. No new recording was made.",
+  "originalResults": "original-size-results.json is the byte-for-byte retained scen/scen-results.json used for the published chart. analyze.py --verify confirms all 30 per-run size/keyframe metrics match those original measurements.",
+  "limits": [
+    "Two runs per cell, descriptive measurements, not confidence bounds.",
+    "No browser seek latency was measured. Keyframes reduce prerequisite decode work; they do not quantize browser seeks.",
+    "Source pauses can cause keyframe timestamp gaps longer than a second; resumed-picture behavior is tested separately.",
+    "Presentation timestamp backsteps in decode packet order may be expected with B-frames, and are not proof of visible frame disorder.",
+    "Frame count and presentation gaps do not prove unique pictures or no stream impact.",
+    "The first record-sim still file has container duration 116.715 seconds; the second 62.885. Both retained, not silently excluded."
+  ],
+  "replicationHarness": "scenario.sh/matrix.sh/drag.mjs preserve scenarios and limits while accepting public paths/device parameters and isolating state. They add readiness failure, input-admission wait, and cleanup. Syntax checks passed; the newly portable device harness has not been re-run on a Simulator."
+}

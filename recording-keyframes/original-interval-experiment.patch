@@ -1,0 +1,25 @@
+diff --git a/packages/serve-sim/packages/serve-sim/Sources/SimNative/NativeVideoRecorder.swift b/packages/serve-sim/packages/serve-sim/Sources/SimNative/NativeVideoRecorder.swift
+index 86b4047c..9cfde245 100644
+--- a/packages/serve-sim/packages/serve-sim/Sources/SimNative/NativeVideoRecorder.swift
++++ b/packages/serve-sim/packages/serve-sim/Sources/SimNative/NativeVideoRecorder.swift
+@@ -87,6 +87,9 @@ final class NativeVideoRecorder: @unchecked Sendable {
+     private var encodeTimeMaxNs: UInt64 = 0
+     private var encodeCompletions: UInt64 = 0
+ 
++    // Local size experiment only, not for the PR.
++    static let experimentFrames = ProcessInfo.processInfo.environment["SERVE_SIM_RECORDING_KEYFRAME_INTERVAL"].flatMap(Int.init) ?? 60
++
+     init(mailbox: NativeFrameMailbox, canvas: Dimensions, outputDirectory: String,
+          bitrate: Int = 30_000_000) throws {
+         guard canvas.width > 0, canvas.height > 0,
+@@ -137,8 +140,8 @@ final class NativeVideoRecorder: @unchecked Sendable {
+                 (kVTCompressionPropertyKey_ExpectedFrameRate, NSNumber(value: 60) as Any),
+                 // At most a second between keyframes, since a browser player seeks to one. Skipped
+                 // ticks leave gaps in the timeline, so the frame count alone can span longer.
+-                (kVTCompressionPropertyKey_MaxKeyFrameInterval, NSNumber(value: 60) as Any),
+-                (kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, NSNumber(value: 1.0) as Any),
++                (kVTCompressionPropertyKey_MaxKeyFrameInterval, NSNumber(value: Self.experimentFrames) as Any),
++                (kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, NSNumber(value: Double(Self.experimentFrames) / 60) as Any),
+             ] {
+                 let result = VTSessionSetProperty(created, key: key, value: value as CFTypeRef)
+                 guard result == noErr else {

@@ -1,0 +1,182 @@
+[
+  {
+    "run": "navigate-record-sim-p1",
+    "sha256": "baa5b9dbf3b54e309afb0bd6ca4d776e8ac9c5ca0b87b00dc190e6da76aa669c",
+    "sizeBytes": 38141347,
+    "packets": 840
+  },
+  {
+    "run": "navigate-record-sim-p2",
+    "sha256": "0465a62c9ae655db69f0d92be9024c7c376a8a5c40d538056232ab0f46a368bf",
+    "sizeBytes": 36081379,
+    "packets": 819
+  },
+  {
+    "run": "navigate-serve-sim-120-p1",
+    "sha256": "eb5b56d15359b90f116b2d3d3d79d711b5c1e08b0a26037cda8f966f939b2371",
+    "sizeBytes": 35574478,
+    "packets": 3730
+  },
+  {
+    "run": "navigate-serve-sim-120-p2",
+    "sha256": "2b91840853d99e99bdad772b866852302b6fbea2c5fdbdfa83483162cd462fb5",
+    "sizeBytes": 34403632,
+    "packets": 3677
+  },
+  {
+    "run": "navigate-serve-sim-15-p1",
+    "sha256": "29eb60bbfdc45d7f1ee4d09307d6f0d85f8daa0ddea3c905b76ac8224785d518",
+    "sizeBytes": 53285150,
+    "packets": 3667
+  },
+  {
+    "run": "navigate-serve-sim-15-p2",
+    "sha256": "04bb4524916d828642125d39936850bcb0459588ad0138cab31c2943b0654014",
+    "sizeBytes": 53619242,
+    "packets": 3663
+  },
+  {
+    "run": "navigate-serve-sim-30-p1",
+    "sha256": "e3d97f71b2e6cff0c6b7df4b865810254eaf987d80a50489cc9611eecf45d628",
+    "sizeBytes": 43450763,
+    "packets": 3720
+  },
+  {
+    "run": "navigate-serve-sim-30-p2",
+    "sha256": "a457c0469f2d057cb77ea4ef2f8922966596491f08a2ca3c6740e260c6b2d846",
+    "sizeBytes": 42894871,
+    "packets": 3729
+  },
+  {
+    "run": "navigate-serve-sim-60-p1",
+    "sha256": "b7907c6e5b39b670d09e7655838f6db191c35dc9a7e1a05e207d7d136e28bd76",
+    "sizeBytes": 36652914,
+    "packets": 3670
+  },
+  {
+    "run": "navigate-serve-sim-60-p2",
+    "sha256": "bae0ce4b81dc6b82cb36dbf2f66fe36b0edcdec0c79cc097fd4fc8d0e22c6683",
+    "sizeBytes": 37920907,
+    "packets": 3669
+  },
+  {
+    "run": "scroll-record-sim-p1",
+    "sha256": "6c8f0a8bac57f95368b48473d5ca5c98fc900881bb5a4d7a4e0c15ec8bf7463e",
+    "sizeBytes": 57766911,
+    "packets": 2244
+  },
+  {
+    "run": "scroll-record-sim-p2",
+    "sha256": "7d6426707c89b208bda79b8ec96140ba2b1e7acf18de91f99667fa72af5c9bb1",
+    "sizeBytes": 56881700,
+    "packets": 2201
+  },
+  {
+    "run": "scroll-serve-sim-120-p1",
+    "sha256": "45de2a99638b05bac10bbf424bcf1137d0b31e2ec256a7e70a6f0bf74e0d7773",
+    "sizeBytes": 40452105,
+    "packets": 3695
+  },
+  {
+    "run": "scroll-serve-sim-120-p2",
+    "sha256": "02ab1e5ecc4685b74025468027eac0d6eb2c35875fee4106468baea707f0499f",
+    "sizeBytes": 40620715,
+    "packets": 3689
+  },
+  {
+    "run": "scroll-serve-sim-15-p1",
+    "sha256": "beb57ddc704da5c8e9b4292dd4137cfb5f0ac3aa1f62bbc1ed449ef923d32f78",
+    "sizeBytes": 62417626,
+    "packets": 3681
+  },
+  {
+    "run": "scroll-serve-sim-15-p2",
+    "sha256": "98a62a0400e270c95422c3a57471820b0a5bba56ff74f6f23527920ec714556b",
+    "sizeBytes": 63204571,
+    "packets": 3691
+  },
+  {
+    "run": "scroll-serve-sim-30-p1",
+    "sha256": "302686594485deaf5374672f9eaeec68aa26836c96bb74c234473000b6fd8d19",
+    "sizeBytes": 51356471,
+    "packets": 3685
+  },
+  {
+    "run": "scroll-serve-sim-30-p2",
+    "sha256": "25607493d237e4fa7279f4331d96c98b8c857578c5a0a1d751312fd8cfe8177e",
+    "sizeBytes": 51931193,
+    "packets": 3684
+  },
+  {
+    "run": "scroll-serve-sim-60-p1",
+    "sha256": "b3987385df77c8fbc090b25bb90163c40fdf6d11a6f8feb5846aa0938088a56a",
+    "sizeBytes": 44847515,
+    "packets": 3680
+  },
+  {
+    "run": "scroll-serve-sim-60-p2",
+    "sha256": "50534999d0cd6731dced4856fb95c32abdc1018be017d895c094b3c36ac87bc8",
+    "sizeBytes": 45906131,
+    "packets": 3685
+  },
+  {
+    "run": "still-record-sim-p1",
+    "sha256": "e077c57fd884f6afa25cd0f62b85dffc1f396b0d873bd7ecaca449f1d79ddf01",
+    "sizeBytes": 106558,
+    "packets": 3
+  },
+  {
+    "run": "still-record-sim-p2",
+    "sha256": "0b37d00b795e91c728595b6b9d56021392caabdda2d438f54a7645d29c800b2a",
+    "sizeBytes": 120428,
+    "packets": 4
+  },
+  {
+    "run": "still-serve-sim-120-p1",
+    "sha256": "66295bd1789a68d3686ee409bed6932b5969cd896c22b2bc4ac3bcb4af1338e7",
+    "sizeBytes": 4728064,
+    "packets": 3689
+  },
+  {
+    "run": "still-serve-sim-120-p2",
+    "sha256": "cef4e9cb29de66cc9cabe874ae166e2249085ca7608325e7f34c935324cfd5a3",
+    "sizeBytes": 4736203,
+    "packets": 3685
+  },
+  {
+    "run": "still-serve-sim-15-p1",
+    "sha256": "4a56d6f0370b05a566154b9d36d35b0fdf9172f30c2561359267c684d7930cd5",
+    "sizeBytes": 30312313,
+    "packets": 3689
+  },
+  {
+    "run": "still-serve-sim-15-p2",
+    "sha256": "12b0b6ab03ea69bbcd8ca206cffbfec19b8b25592cd945f1f8034b61969f946f",
+    "sizeBytes": 30339188,
+    "packets": 3678
+  },
+  {
+    "run": "still-serve-sim-30-p1",
+    "sha256": "b062b1c8ad4509ead53515fab989172065855730422c904ba26d1bb0aaa812c4",
+    "sizeBytes": 15800338,
+    "packets": 3691
+  },
+  {
+    "run": "still-serve-sim-30-p2",
+    "sha256": "29257c7dbe00b3ca1861b5183989e8c06829704b7bc5e060d0815364e212809d",
+    "sizeBytes": 15716372,
+    "packets": 3671
+  },
+  {
+    "run": "still-serve-sim-60-p1",
+    "sha256": "0c2a6095649f17652025cb24c672e70798eb5a6c883493d06440e6cbc623f91e",
+    "sizeBytes": 8403976,
+    "packets": 3683
+  },
+  {
+    "run": "still-serve-sim-60-p2",
+    "sha256": "92e55a6877f9ebfe199e167625bed3e1699ddef2e45202f3f2cab42bbecdf45b",
+    "sizeBytes": 8426735,
+    "packets": 3684
+  }
+]

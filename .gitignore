@@ -1,0 +1,9 @@
+**/__pycache__/
+251-loading/media/
+251-loading/manifest.json
+251-loading/packet-proof.json
+251-loading/failed-*-probe.json
+251-loading/browser-results.jsonl
+251-loading/http-requests.jsonl
+251-loading/*-summary.json
+254-hid/reproduction-*.json
