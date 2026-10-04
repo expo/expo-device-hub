@@ -507,6 +507,8 @@ actor CaptureEngine {
             recordingFinalizing = false
             recordingFinishTask = nil
             print("[recording] encoder=\(result.encoderID) encoded=\(result.encodedFrames) written=\(result.writtenFrames) repeated=\(result.repeatedFrames) dropped=\(result.droppedTicks) coalesced=\(result.coalescedDrops) sourceUnavailable=\(result.sourceUnavailableTicks) transferPool=\(result.transferPoolDrops) inFlight=\(result.inFlightDrops) writer=\(result.writerDrops) backpressure=\(result.writerBackpressureTicks) encodeFailures=\(result.encodeFailures) maxInFlight=\(result.maxInFlight) meanEncodeMs=\(result.meanEncodeMs) maxEncodeMs=\(result.maxEncodeMs)")
+            let history = result.frameHistory
+            print("[recording-history] comparisons=\(history.comparisons) comparisonSumNs=\(history.comparisonSumNs) comparisonMaxNs=\(history.comparisonMaxNs) duplicates=\(history.duplicateFrames) overload=\(history.overloadDrops) stale=\(history.staleDrops) finalization=\(history.finalizationDrops) maxRetained=\(history.maxRetainedFrames)")
             return result.manifestPath
         } catch {
             self.recording = nil
