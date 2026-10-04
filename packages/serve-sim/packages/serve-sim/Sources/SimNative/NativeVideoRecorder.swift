@@ -22,6 +22,7 @@ struct NativeRecordingResult: Sendable {
     let maxInFlight: Int
     let meanEncodeMs: Double
     let maxEncodeMs: Double
+    let frameHistory: NativeFrameHistoryStats
 }
 
 private final class RecordingFinishLatch: @unchecked Sendable {
@@ -64,7 +65,8 @@ final class NativeVideoRecorder: @unchecked Sendable {
     private var canvasBuffer: CVPixelBuffer?
     private var startNanoseconds: UInt64 = 0
     private var startWallClock = Date()
-    private var lastTick: Int64 = -1
+    private var pacer: RecordingFramePacer?
+    private var historyGeneration: UInt64?
     private var pending = Set<Int64>()
     private var lastWrittenPTS: CMTime = .negativeInfinity
     private var awaitingKeyframe = true
@@ -173,6 +175,7 @@ final class NativeVideoRecorder: @unchecked Sendable {
 
     deinit {
         timer?.cancel()
+        if let historyGeneration { mailbox.endRecording(generation: historyGeneration) }
         if let session { VTCompressionSessionInvalidate(session) }
     }
 
@@ -181,8 +184,13 @@ final class NativeVideoRecorder: @unchecked Sendable {
             guard self.timer == nil, !self.closing else { return }
             self.startNanoseconds = DispatchTime.now().uptimeNanoseconds
             self.startWallClock = Date()
-            let timer = DispatchSource.makeTimerSource(queue: self.queue)
-            timer.schedule(deadline: .now(), repeating: .nanoseconds(16_666_667))
+            self.historyGeneration = self.mailbox.beginRecording()
+            self.pacer = RecordingFramePacer(startNanoseconds: self.startNanoseconds)
+            let interval = Int(RecordingFramePacer.intervalNanoseconds)
+            // Give capture one interval to arrive while keeping the first logical PTS at zero.
+            let timer = DispatchSource.makeTimerSource(flags: .strict, queue: self.queue)
+            timer.schedule(deadline: DispatchTime(uptimeNanoseconds: self.startNanoseconds + UInt64(interval)),
+                           repeating: .nanoseconds(interval), leeway: .nanoseconds(0))
             timer.setEventHandler { [weak self] in self?.tick() }
             self.timer = timer
             timer.resume()
@@ -190,25 +198,20 @@ final class NativeVideoRecorder: @unchecked Sendable {
     }
 
     private func tick() {
-        guard !closing, failure == nil, let session else { return }
-        let now = DispatchTime.now().uptimeNanoseconds
-        let currentIndex = Int64((now - startNanoseconds) / 16_666_667)
-        guard currentIndex > lastTick else { return }
-        if currentIndex > lastTick + 1 {
-            let missed = UInt64(currentIndex - lastTick - 1)
-            droppedTicks &+= missed
-            coalescedDrops &+= missed
-        }
-        lastTick = currentIndex
-        submit(index: currentIndex, session: session)
+        guard !closing, failure == nil, let session, var pacer else { return }
+        let decision = pacer.tick(atNanoseconds: DispatchTime.now().uptimeNanoseconds)
+        self.pacer = pacer
+        if let decision { submit(decision, session: session) }
     }
 
-    private func submit(index: Int64, session: VTCompressionSession) {
-        guard let frame = mailbox.latest() else {
-            droppedTicks &+= 1
-            sourceUnavailableTicks &+= 1
-            return
-        }
+    private func submit(_ tick: RecordingFramePacer.Tick, session: VTCompressionSession,
+                        finishing: Bool = false) {
+        droppedTicks &+= tick.missed
+        coalescedDrops &+= tick.missed
+        submit(index: tick.index, session: session, finishing: finishing)
+    }
+
+    private func submit(index: Int64, session: VTCompressionSession, finishing: Bool = false) {
         guard pending.count < Self.maxPendingFrames else {
             droppedTicks &+= 1
             inFlightDrops &+= 1
@@ -219,6 +222,11 @@ final class NativeVideoRecorder: @unchecked Sendable {
             droppedTicks &+= 1
             awaitingKeyframe = true
             forceIDR = true
+            return
+        }
+        guard let frame = mailbox.nextForRecording(finishing: finishing) else {
+            droppedTicks &+= 1
+            sourceUnavailableTicks &+= 1
             return
         }
         if lastSnapshotTimestamp != frame.timestamp || canvasBuffer == nil {
@@ -343,7 +351,14 @@ final class NativeVideoRecorder: @unchecked Sendable {
         guard failure == nil else { return }
         failure = error
         timer?.cancel()
+        endFrameHistory()
         NSLog("[recording] stopped: %@", error.localizedDescription)
+    }
+
+    private func endFrameHistory() {
+        guard let historyGeneration else { return }
+        self.historyGeneration = nil
+        mailbox.endRecording(generation: historyGeneration)
     }
 
     private func openWriter(sample: CMSampleBuffer) throws {
@@ -376,6 +391,7 @@ final class NativeVideoRecorder: @unchecked Sendable {
                 self?.failure = error
                 self?.timer?.cancel()
                 self?.timer = nil
+                self?.endFrameHistory()
                 self?.writer?.cancelWriting()
                 latch.resolve(.failure(error))
                 if let session = self?.session {
@@ -392,6 +408,12 @@ final class NativeVideoRecorder: @unchecked Sendable {
                 self.closing = true
                 self.timer?.cancel()
                 self.timer = nil
+                if self.failure == nil, let session = self.session, var pacer = self.pacer {
+                    let decision = pacer.finish(atNanoseconds: DispatchTime.now().uptimeNanoseconds)
+                    self.pacer = pacer
+                    if let decision { self.submit(decision, session: session, finishing: true) }
+                }
+                self.endFrameHistory()
                 if let session = self.session {
                     DispatchQueue.global(qos: .userInitiated).async {
                         let status = VTCompressionSessionCompleteFrames(
@@ -482,7 +504,8 @@ final class NativeVideoRecorder: @unchecked Sendable {
                 encodeFailures: encodeFailures, maxInFlight: maxInFlight,
                 meanEncodeMs: encodeCompletions == 0 ? 0
                     : Double(encodeTimeSumNs) / Double(encodeCompletions) / 1_000_000,
-                maxEncodeMs: Double(encodeTimeMaxNs) / 1_000_000
+                maxEncodeMs: Double(encodeTimeMaxNs) / 1_000_000,
+                frameHistory: mailbox.historyStats
             )))
         } catch {
             latch.resolve(.failure(error))
