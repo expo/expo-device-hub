@@ -108,7 +108,11 @@ final class NativeVideoRecorderTests: XCTestCase {
         XCTAssertEqual(manifest.width, 322)
         XCTAssertEqual(manifest.height, 242)
         XCTAssertEqual(manifest.recording, "recording.mp4")
-        let asset = AVURLAsset(url: directory.appendingPathComponent("recording.mp4"))
+        let recordingURL = directory.appendingPathComponent("recording.mp4")
+        let boxes = try topLevelMP4Boxes(at: recordingURL)
+        XCTAssertLessThan(try XCTUnwrap(boxes["moov"]), try XCTUnwrap(boxes["mdat"]),
+                          "The MP4 index must precede media data for progressive playback")
+        let asset = AVURLAsset(url: recordingURL)
         let tracks = try await asset.loadTracks(withMediaType: .video)
         let track = try XCTUnwrap(tracks.first)
         let size = try await track.load(.naturalSize)
@@ -119,6 +123,31 @@ final class NativeVideoRecorderTests: XCTestCase {
         XCTAssertGreaterThan(frameRate, 45)
         XCTAssertLessThanOrEqual(frameRate, 60)
         XCTAssertGreaterThan(duration.seconds, 0.4)
+    }
+
+    private func topLevelMP4Boxes(at url: URL) throws -> [String: Int] {
+        let data = try Data(contentsOf: url)
+        var boxes: [String: Int] = [:]
+        var offset = 0
+        while offset < data.count {
+            let remaining = data.count - offset
+            guard remaining >= 8 else { throw NSError(domain: "MP4BoxTest", code: 1) }
+            var size = data[offset..<(offset + 4)].reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+            let type = String(decoding: data[(offset + 4)..<(offset + 8)], as: UTF8.self)
+            let headerSize: UInt64 = size == 1 ? 16 : 8
+            if size == 1 {
+                guard remaining >= 16 else { throw NSError(domain: "MP4BoxTest", code: 2) }
+                size = data[(offset + 8)..<(offset + 16)].reduce(UInt64(0)) { ($0 << 8) | UInt64($1) }
+            } else if size == 0 {
+                size = UInt64(remaining)
+            }
+            guard size >= headerSize, size <= UInt64(remaining) else {
+                throw NSError(domain: "MP4BoxTest", code: 3)
+            }
+            boxes[type] = boxes[type] ?? offset
+            offset += Int(size)
+        }
+        return boxes
     }
 
     func testManifestFailurePreservesMP4ForRecovery() async throws {

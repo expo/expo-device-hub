@@ -352,6 +352,7 @@ final class NativeVideoRecorder: @unchecked Sendable {
         }
         let url = outputDirectory.appendingPathComponent("recording.mp4")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mp4)
+        writer.shouldOptimizeForNetworkUse = true
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: nil,
                                        sourceFormatHint: format)
         input.expectsMediaDataInRealTime = true
