@@ -169,19 +169,27 @@ describe('getIosAppDetails', () => {
 
 describe('fetchIosAppIcon', () => {
   const ICON_URL = 'https://sim.example.test/preview/api/apps/icon?device=UDID';
+  const ICON = { mimeType: 'image/png', data: 'aWNvbg==' };
+
+  /** Answers each request with the next response, or throws when it is an Error. */
+  function fakeFetch(...responses: Array<Response | Error>) {
+    const urls: string[] = [];
+    const fetchImpl = async (url: string) => {
+      urls.push(url);
+      const next = responses.shift();
+      if (!next) throw new Error('unexpected request');
+      if (next instanceof Error) throw next;
+      return next;
+    };
+    return { fetchImpl, urls };
+  }
 
   test('asks the advertised route for the bundle and returns a data URL', async () => {
-    const urls: string[] = [];
-    const fetchImpl = (async (url: string) => {
-      urls.push(url);
-      return Response.json({
-        ok: true,
-        bundleId: 'com.example.foo',
-        icon: { mimeType: 'image/png', data: 'aWNvbg==' },
-      });
-    }) as unknown as typeof fetch;
+    const { fetchImpl, urls } = fakeFetch(
+      Response.json({ ok: true, bundleId: 'com.example.foo', icon: ICON }),
+    );
 
-    expect(await fetchIosAppIcon(ICON_URL, 'com.example.foo', fetchImpl)).toBe(
+    expect(await fetchIosAppIcon(ICON_URL, 'com.example.foo', { fetchImpl })).toBe(
       'data:image/png;base64,aWNvbg==',
     );
     expect(urls).toEqual([
@@ -190,14 +198,67 @@ describe('fetchIosAppIcon', () => {
   });
 
   test('returns null when the app has no loose icon', async () => {
-    const fetchImpl = (async () =>
-      Response.json({ ok: true, bundleId: 'com.example.foo', icon: null })) as unknown as typeof fetch;
-    expect(await fetchIosAppIcon(ICON_URL, 'com.example.foo', fetchImpl)).toBeNull();
+    const { fetchImpl } = fakeFetch(
+      Response.json({ ok: true, bundleId: 'com.example.foo', icon: null }),
+    );
+    expect(await fetchIosAppIcon(ICON_URL, 'com.example.foo', { fetchImpl })).toBeNull();
   });
 
-  test('rejects on an error status', async () => {
-    const fetchImpl = (async () =>
-      Response.json({ ok: false, error: 'not installed' }, { status: 404 })) as unknown as typeof fetch;
-    await expect(fetchIosAppIcon(ICON_URL, 'com.example.foo', fetchImpl)).rejects.toThrow('404');
+  test('asks again on each call, so a reinstalled build shows its new icon', async () => {
+    const { fetchImpl, urls } = fakeFetch(
+      Response.json({ ok: true, bundleId: 'com.example.foo', icon: null }),
+      Response.json({ ok: true, bundleId: 'com.example.foo', icon: ICON }),
+    );
+    expect(await fetchIosAppIcon(ICON_URL, 'com.example.foo', { fetchImpl })).toBeNull();
+    expect(await fetchIosAppIcon(ICON_URL, 'com.example.foo', { fetchImpl })).toBe(
+      'data:image/png;base64,aWNvbg==',
+    );
+    expect(urls.length).toBe(2);
+  });
+
+  test('retries a 5xx and a network error until the route recovers', async () => {
+    const { fetchImpl, urls } = fakeFetch(
+      Response.json({ ok: false, error: 'simctl failed' }, { status: 503 }),
+      new TypeError('Failed to fetch'),
+      Response.json({ ok: true, bundleId: 'com.example.foo', icon: ICON }),
+    );
+    expect(
+      await fetchIosAppIcon(ICON_URL, 'com.example.foo', { fetchImpl, retryDelaysMs: [0, 0, 0] }),
+    ).toBe('data:image/png;base64,aWNvbg==');
+    expect(urls.length).toBe(3);
+  });
+
+  test('gives up after the last retry', async () => {
+    const { fetchImpl, urls } = fakeFetch(
+      Response.json({ ok: false }, { status: 503 }),
+      Response.json({ ok: false }, { status: 503 }),
+    );
+    await expect(
+      fetchIosAppIcon(ICON_URL, 'com.example.foo', { fetchImpl, retryDelaysMs: [0] }),
+    ).rejects.toThrow('503');
+    expect(urls.length).toBe(2);
+  });
+
+  test('does not retry a 4xx', async () => {
+    const { fetchImpl, urls } = fakeFetch(
+      Response.json({ ok: false, error: 'not installed' }, { status: 404 }),
+    );
+    await expect(
+      fetchIosAppIcon(ICON_URL, 'com.example.foo', { fetchImpl, retryDelaysMs: [0, 0, 0] }),
+    ).rejects.toThrow('404');
+    expect(urls.length).toBe(1);
+  });
+
+  test('stops retrying when aborted', async () => {
+    const controller = new AbortController();
+    const { fetchImpl, urls } = fakeFetch(Response.json({ ok: false }, { status: 503 }));
+    const pending = fetchIosAppIcon(ICON_URL, 'com.example.foo', {
+      fetchImpl,
+      signal: controller.signal,
+      retryDelaysMs: [60_000],
+    });
+    controller.abort();
+    await expect(pending).rejects.toThrow();
+    expect(urls.length).toBe(1);
   });
 });

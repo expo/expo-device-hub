@@ -14,15 +14,15 @@ afterEach(async () => {
   restoreGlobals();
 });
 
-for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath, bundleId } of [
+const bundleId = 'com.example.foo';
+
+for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
   {
     name: 'remote server on another origin',
     baseUrl: 'https://stream.example.test/preview/session',
     pageUrl: 'https://example.com/device',
     publicBase: 'https://stream.example.test/preview/session',
     advertisedBasePath: '/internal',
-    // The icon cache is process-wide, so each case foregrounds its own app.
-    bundleId: 'com.example.remote',
   },
   {
     name: 'relative middleware mount',
@@ -30,7 +30,6 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath, bundleId } 
     pageUrl: 'https://example.com/device',
     publicBase: 'https://example.com/preview/session',
     advertisedBasePath: '/internal',
-    bundleId: 'com.example.relative',
   },
   {
     name: 'same-origin Expo plugin mount',
@@ -38,7 +37,6 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath, bundleId } 
     pageUrl: 'http://localhost:8081/index',
     publicBase: 'http://localhost:8081/_expo/plugins/expo-device-hub/vendor/serve-sim',
     advertisedBasePath: '/_expo/plugins/expo-device-hub/vendor/serve-sim',
-    bundleId: 'com.example.plugin',
   },
 ]) test(`iOS hook resolves all browser URLs from the ${name}`, async () => {
   const sockets: Array<{

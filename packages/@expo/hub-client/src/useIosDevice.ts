@@ -50,7 +50,7 @@ import {
   mergeIosEventLogPayload,
 } from './ios-events';
 import { hostUiRequest, runHostAction } from './exec-ws';
-import { getIosAppDetails, getIosAppIcon } from './ios-app-details';
+import { fetchIosAppIcon, getIosAppDetails } from './ios-app-details';
 import { clearIosLocation, setIosLocation } from './ios-location';
 import { fetchScreenshot } from './screenshot';
 import { hidUsageForCode } from './keyboard';
@@ -1300,7 +1300,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // ── Foreground app details (name, versions, icon) — introspected from the
   //    app bundle on the host over exec-ws whenever the foreground bundle id
   //    changes. Cached per udid:bundleId, so revisits apply instantly. A server
-  //    with the icon route serves the icon over plain HTTP instead. ──
+  //    with the icon route serves the icon over plain HTTP instead, fetched
+  //    again on every foreground change. ──
   const foregroundAppId = foregroundApp?.id ?? null;
   const appIconUrl = config?.appIconUrl ?? null;
   useEffect(() => {
@@ -1322,11 +1323,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [foregroundAppId, runAction, deviceUdid, appIconUrl]);
 
   useEffect(() => {
-    if (!foregroundAppId || !appIconUrl || !deviceUdid) return;
-    let cancelled = false;
-    getIosAppIcon(appIconUrl, deviceUdid, foregroundAppId)
+    if (!foregroundAppId || !appIconUrl) return;
+    const controller = new AbortController();
+    fetchIosAppIcon(appIconUrl, foregroundAppId, {
+      fetchImpl: sessionFetch,
+      signal: controller.signal,
+    })
       .then((iconDataUrl) => {
-        if (cancelled || !iconDataUrl) return;
+        if (controller.signal.aborted || !iconDataUrl) return;
         setForegroundApp((prev) =>
           prev && prev.id === foregroundAppId ? { ...prev, iconDataUrl } : prev,
         );
@@ -1334,10 +1338,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       .catch(() => {
         /* route unavailable or app not installed — the placeholder still renders */
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [foregroundAppId, appIconUrl, deviceUdid]);
+    return () => controller.abort();
+  }, [foregroundAppId, appIconUrl, sessionFetch]);
 
   // ── Running simulators (middleware /grid/api) ──
   const gridApiUrl = config?.gridApiUrl ?? null;

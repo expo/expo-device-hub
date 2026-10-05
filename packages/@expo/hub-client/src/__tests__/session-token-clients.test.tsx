@@ -144,6 +144,48 @@ describe('useIosDeviceClient with a session token', () => {
     expect(network.imageSources.every((src) => src.includes('token=tok-1'))).toBe(true);
   });
 
+  test('presents the token on the app icon request', async () => {
+    const network = stubNetwork((url) =>
+      url.pathname === '/preview/session/api/apps/icon'
+        ? { ok: true, bundleId: 'com.example.foo', icon: { mimeType: 'image/png', data: 'aWNvbg==' } }
+        : (() => {
+            const api = iosApi(url);
+            return api && { ...api, appIconEndpoint: '/preview/session/api/apps/icon?device=UDID-1' };
+          })()
+    );
+    const appState: Array<{ onmessage: ((event: { data: string }) => void) | null }> = [];
+    stubGlobal(
+      'EventSource',
+      class {
+        onmessage = null;
+        onerror = null;
+        constructor(url: string) {
+          network.eventSources.push(url);
+          appState.push(this);
+        }
+        addEventListener() {}
+        close() {}
+      }
+    );
+
+    await render(
+      useIosDeviceClient,
+      { baseUrl: IOS_BASE, device: 'UDID-1', streamMode: 'mjpeg', token: 'tok-1' },
+      network
+    );
+    await act(async () => {
+      for (const source of appState) source.onmessage?.({ data: JSON.stringify({ bundleId: 'com.example.foo' }) });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    });
+
+    expect(network.fetches.filter((call) => call.url.includes('/api/apps/icon'))).toEqual([
+      {
+        url: `${IOS_BASE}/api/apps/icon?device=UDID-1&bundleId=com.example.foo`,
+        authorization: 'Bearer tok-1',
+      },
+    ]);
+  });
+
   // serve-sim proxies the helper, so its URLs belong on serve-sim, not on the page that embeds the client.
   test('streams from serve-sim when the page is on another origin', async () => {
     const network = stubNetwork(iosApi, 'https://app.test');

@@ -87,21 +87,63 @@ export async function fetchIosAppDetails(
   };
 }
 
+type FetchImpl = (input: string, init?: RequestInit) => Promise<Response>;
+
+/** Waits before each retry of the icon request. */
+const ICON_RETRY_DELAYS_MS = [1_000, 2_000, 4_000];
+
 /**
  * The app's icon from serve-sim's `/api/apps/icon` route (`appIconEndpoint` in
  * `/api`): one plain GET, so it also reaches a tunneled server whose exec-ws
  * socket the page cannot open. Null when the app has no loose icon PNG.
+ *
+ * Not cached: the route reads the installed bundle on each request, so a
+ * reinstalled build shows its new icon. A network error or a 5xx (the route
+ * answers 503 while simctl fails) is retried a few times. A 4xx is not,
+ * because the same request gets the same answer.
  */
 export async function fetchIosAppIcon(
   appIconUrl: string,
   bundleId: string,
-  fetchImpl: typeof fetch = fetch,
+  {
+    fetchImpl = fetch,
+    signal,
+    retryDelaysMs = ICON_RETRY_DELAYS_MS,
+  }: { fetchImpl?: FetchImpl; signal?: AbortSignal; retryDelaysMs?: readonly number[] } = {},
 ): Promise<string | null> {
   const url = new URL(appIconUrl);
   url.searchParams.set('bundleId', bundleId);
-  const res = await fetchImpl(url.toString(), { cache: 'no-store' });
-  if (!res.ok) throw new Error(`app icon request failed with ${res.status}`);
-  return parseAppIconResponse(await res.json());
+  for (let attempt = 0; ; attempt++) {
+    const canRetry = attempt < retryDelaysMs.length;
+    let res: Response;
+    try {
+      res = await fetchImpl(url.toString(), { cache: 'no-store', signal });
+    } catch (err) {
+      if (signal?.aborted || !canRetry) throw err;
+      await delay(retryDelaysMs[attempt]!, signal);
+      continue;
+    }
+    if (res.ok) return parseAppIconResponse(await res.json());
+    if (res.status < 500 || !canRetry) {
+      throw new Error(`app icon request failed with ${res.status}`);
+    }
+    await delay(retryDelaysMs[attempt]!, signal);
+  }
+}
+
+function delay(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
 }
 
 // Details (icon included) are immutable per installed build, so cache them
@@ -124,24 +166,5 @@ export function getIosAppDetails(
     throw err;
   });
   detailsCache.set(key, pending);
-  return pending;
-}
-
-const iconCache = new Map<string, Promise<string | null>>();
-
-/** {@link fetchIosAppIcon}, cached like {@link getIosAppDetails}. */
-export function getIosAppIcon(
-  appIconUrl: string,
-  udid: string,
-  bundleId: string,
-): Promise<string | null> {
-  const key = `${udid}:${bundleId}`;
-  const cached = iconCache.get(key);
-  if (cached) return cached;
-  const pending = fetchIosAppIcon(appIconUrl, bundleId).catch((err) => {
-    iconCache.delete(key);
-    throw err;
-  });
-  iconCache.set(key, pending);
   return pending;
 }
