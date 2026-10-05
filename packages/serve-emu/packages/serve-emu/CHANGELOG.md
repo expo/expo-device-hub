@@ -11,7 +11,8 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 ## Unreleased
 
 - Add strict host hardware H.264 encoding for Android gRPC streaming with `--encoder hardware` and an Encoder control in the standalone UI. Software remains the default; stream-mode and health APIs report the active backend and hardware probe failures.
-- `--token` can contain only letters, digits, and `-._~`. The CLI throws an error on any other token.
+- `--token` must not be empty and can contain only letters, digits, and `-._~`.
+  The CLI throws an error on any other token.
 
 ### Breaking
 
@@ -26,8 +27,8 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
   checks WebSocket upgrades for a bearer header or a `serve-emu.token.`
   subprotocol. `router.attachWebSocket` takes the upgrade as `request` and
   closes a socket without the token. The WebRTC preflights stay open. Without
-  it the router stays open. The token can contain only letters, digits, and
-  `-._~`. `createRouter` throws an error on any other token.
+  it the router stays open. The token must not be empty and can contain only
+  letters, digits, and `-._~`. `createRouter` throws an error on any other token.
 
 - `GET /api/metrics` streams foreground app CPU, memory, and network samples as SSE.
 - Add `GET /api/apps/permissions`, `POST /api/apps/revoke`, and

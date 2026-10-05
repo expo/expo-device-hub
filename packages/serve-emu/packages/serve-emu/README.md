@@ -114,7 +114,7 @@ serve-emu --running-avds
 | --- | --- | --- |
 | `-p, --port` | `3300` | HTTP port for the preview server |
 | `--host` | `127.0.0.1` | Address to bind. Defaults to loopback so the device is not exposed. Set `0.0.0.0` to serve over the LAN — see [Access control](#access-control) |
-| `--token` | none | Shared secret required on every data-bearing request. Auto-generated for non-loopback binds if omitted. Can contain only letters, digits, and `-._~` |
+| `--token` | none | Shared secret required on every data-bearing request. Auto-generated for non-loopback binds if omitted. Must not be empty and can contain only letters, digits, and `-._~` |
 | `--unsafe-no-auth` | false | Allow a non-loopback bind with **no** authentication (dangerous) |
 | `-s, --serial` | auto | adb device serial; required when multiple devices are online |
 | `--stream-mode` | `scrcpy` | Screen capture source: `scrcpy`, or emulator-only host capture through `grpc-screenshot` |
@@ -181,7 +181,7 @@ Data-bearing requests without a valid token get `401`; WebSocket upgrades and st
 
 - HTTP requests send `Authorization: Bearer <token>`, or `?token=<token>` when the caller cannot set a header, such as `EventSource`.
 - WebSocket upgrades send the bearer header or the `serve-emu.token.<token>` subprotocol. They never take `?token=`, because proxy and tunnel access logs record query strings.
-- The token can contain only letters, digits, and `-._~`. `createRouter` throws an error on any other token.
+- The token must not be empty and can contain only letters, digits, and `-._~`. `createRouter` throws an error on any other token.
 - A request without the token gets `401` with `{ "ok": false, "error": { "code": "unauthorized", ... } }`. The response never echoes a presented value. For an origin in `allowedOrigins`, it carries CORS headers, so that page can read the refusal.
 
 The router sets no cookie. A host that serves a browser UI, such as Expo Device Hub, owns the browser session and forwards the token as a bearer header.

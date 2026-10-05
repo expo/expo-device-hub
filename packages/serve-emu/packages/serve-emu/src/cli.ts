@@ -214,7 +214,7 @@ Options:
                          (exchanged for an HttpOnly cookie); agents send
                          'Authorization: Bearer <secret>'. On a non-loopback
                          bind a token is generated automatically if omitted.
-                         Use only letters, digits, and -._~
+                         Must not be empty; use only letters, digits, and -._~
       --unsafe-no-auth   Allow a non-loopback bind with NO authentication.
                          Anyone who can reach the port can control the device.
   -s, --serial <serial>  adb device serial (defaults to the only booted device)
