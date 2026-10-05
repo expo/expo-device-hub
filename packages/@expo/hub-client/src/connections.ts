@@ -1,4 +1,4 @@
-
+import { publicServeSimMount, publicUrlForRoute } from './serve-sim-urls';
 import { type DevicePlatform } from './types';
 
 const VENDOR_PREFIXES: Record<DevicePlatform, string> = {
@@ -23,8 +23,7 @@ function sameOrigin(path: string): string {
 /**
  * Resolve the base URL for a device's vendored streaming server.
  *
- * `explicit` (already a full endpoint) wins when provided; otherwise the
- * platform's vendor mount is derived from `hubBase` — the Hub mount itself
+ * The platform's vendor mount is derived from `hubBase` — the Hub mount itself
  * ('' or '/' = origin root; trailing slashes trimmed) with the vendor prefix
  * appended.
  */
@@ -46,8 +45,7 @@ export async function startIosHelper(
   endpoint: string,
   fetchImpl: (input: string, init?: RequestInit) => Promise<Response> = fetch,
 ): Promise<void> {
-  const base = trimTrailingSlash(sameOrigin(endpoint));
-  await fetchImpl(`${base}/grid/api/start`, {
+  await fetchImpl(publicUrlForRoute(publicServeSimMount(endpoint), 'grid/api/start'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ udid }),
