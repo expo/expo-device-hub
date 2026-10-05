@@ -1,13 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { type DeviceActivitySample, type DeviceClient } from '@expo/hub-client';
 import { icon, text, textSize } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
-import {
-  MetricChart,
-  type MetricChartSeries,
-  maxChartValue,
-} from './MetricChart';
+import { MetricChart, type MetricChartSeries, maxChartValue } from './MetricChart';
 
 const MAX_SAMPLES = 60;
 /** The CPU sparkline always shows at least one full core of headroom. */
@@ -23,7 +19,7 @@ function formatBytes(value: number) {
   return `${(safeValue / 1024 ** 3).toFixed(1)} GB`;
 }
 
-function latestSample(samples: DeviceActivitySample[]) {
+function latestSample(samples: readonly DeviceActivitySample[]) {
   return samples.at(-1) ?? null;
 }
 
@@ -33,8 +29,21 @@ function latestSample(samples: DeviceActivitySample[]) {
  * Rendered inside the Current app section; {@link ActivitySection} wraps it
  * in its own collapsible section for standalone use.
  */
-export function ActivityCharts({ client }: { client?: DeviceClient }) {
-  const activity = client?.activity ?? null;
+export function ActivityCharts({
+  client,
+  enabled = true,
+}: {
+  client?: DeviceClient;
+  enabled?: boolean;
+}) {
+  const activity = client?.activity.data ?? null;
+  const attach = client?.activity.attach;
+  const detach = client?.activity.detach;
+  useEffect(() => {
+    if (enabled) attach?.();
+    else detach?.();
+    return () => detach?.();
+  }, [attach, detach, enabled]);
   const samples = activity?.samples.slice(-MAX_SAMPLES) ?? [];
   const latest = latestSample(samples);
 
@@ -64,7 +73,7 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
     : undefined;
 
   let message: string | null = null;
-  if (activity?.errored) message = 'Activity data is unavailable for this app.';
+  if (client?.activity.error) message = 'Activity data is unavailable for this app.';
   else if (!latest) message = 'Waiting for activity data…';
   else if (activity?.stale) message = 'Activity data is paused. Showing the most recent samples.';
 
@@ -72,9 +81,8 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
     <div data-testid="activity-charts" style={{ minWidth: 0, paddingTop: 8 }}>
       {message && (
         <span
-          role={activity?.errored ? 'alert' : undefined}
-          style={{ ...textSize.xs, display: 'block', padding: '2px 0 8px', color: text.tertiary }}
-        >
+          role={client?.activity.error ? 'alert' : undefined}
+          style={{ ...textSize.xs, display: 'block', padding: '2px 0 8px', color: text.tertiary }}>
           {message}
         </span>
       )}
@@ -86,8 +94,7 @@ export function ActivityCharts({ client }: { client?: DeviceClient }) {
             flexDirection: 'column',
             gap: 4,
             paddingTop: message ? 0 : 4,
-          }}
-        >
+          }}>
           <MetricChart
             title="CPU"
             value={`${Math.round(latest.cpuPct)}%`}
@@ -120,7 +127,7 @@ export function ActivitySection({ client }: { client?: DeviceClient }) {
 
   return (
     <CollapsibleSection title="Activity" open={open} onOpenChange={setOpen}>
-      <ActivityCharts client={client} />
+      <ActivityCharts client={client} enabled={open} />
     </CollapsibleSection>
   );
 }

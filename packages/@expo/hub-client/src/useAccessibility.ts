@@ -1,10 +1,12 @@
+import type { FeatureRead } from './feature-state';
+import type { BackendDeviceClient } from './backend-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { type AccessibilityLoader } from './accessibility';
-import { type AccessibilitySnapshot, type DeviceClient } from './types';
+import { type AccessibilitySnapshot } from './types';
 
 type AccessibilityClientState = Pick<
-  DeviceClient,
+  BackendDeviceClient,
   'accessibility' | 'accessibilityPending' | 'accessibilityError' | 'refreshAccessibility'
 >;
 
@@ -14,6 +16,7 @@ export const ACCESSIBILITY_READ_TIMEOUT_MS = 10_000;
 export function useAccessibility(
   load: AccessibilityLoader | null,
   timeoutMs: number = ACCESSIBILITY_READ_TIMEOUT_MS,
+  readState?: FeatureRead,
 ): AccessibilityClientState {
   const [accessibility, setAccessibility] = useState<AccessibilitySnapshot | null>(null);
   const [accessibilityPending, setAccessibilityPending] = useState(false);
@@ -27,6 +30,7 @@ export function useAccessibility(
 
     const controller = new AbortController();
     controllerRef.current = controller;
+    readState?.begin();
     setAccessibilityPending(true);
     setAccessibilityError(null);
     // Neither backend bounds the read: serve-emu retries its dump three times at 8 s each and
@@ -36,11 +40,17 @@ export function useAccessibility(
     load(AbortSignal.any([controller.signal, deadline]))
       .then((read) => {
         if (controller.signal.aborted) return;
-        if (read.ok) setAccessibility(read.snapshot);
-        else setAccessibilityError(read.error);
+        if (read.ok) {
+          setAccessibility(read.snapshot);
+          readState?.ready();
+        } else {
+          setAccessibilityError(read.error);
+          readState?.fail(read.error);
+        }
       })
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
+        readState?.fail(deadline.aborted ? new Error('Read timed out') : cause);
         if (deadline.aborted) {
           setAccessibilityError('The device did not answer in time');
           return;
@@ -51,7 +61,12 @@ export function useAccessibility(
       .finally(() => {
         if (controllerRef.current === controller) setAccessibilityPending(false);
       });
-  }, [load, timeoutMs]);
+  }, [load, timeoutMs, readState]);
+
+  useEffect(() => {
+    readState?.idle();
+    return readState?.bind(refreshAccessibility);
+  }, [readState, refreshAccessibility]);
 
   // Reset in the cleanup, not the body: on a loader change React runs this child's
   // refresh-on-open effect first, and clearing after it would abort that read.

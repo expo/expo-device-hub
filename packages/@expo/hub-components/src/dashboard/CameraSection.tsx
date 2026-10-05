@@ -1,3 +1,4 @@
+import { FeatureNotice } from "./FeatureNotice";
 import { type DragEvent, type KeyboardEvent, useRef, useState } from "react";
 
 import {
@@ -48,7 +49,7 @@ export function CameraSection({
     back: null,
     front: null,
   });
-  const camera = client.camera;
+  const camera = client.camera.data;
   const wired = camera?.wiredAtLaunch ?? false;
 
   function openPicker(facing: DeviceCameraFacing) {
@@ -57,7 +58,8 @@ export function CameraSection({
 
   return (
     <CollapsibleSection title="Camera" open={open} onOpenChange={setOpen}>
-      {camera === null ? (
+      {client && <FeatureNotice feature={client.camera} />}
+      {camera === undefined ? (
         <SectionNote>Reading camera feeds…</SectionNote>
       ) : (
         <>
@@ -67,8 +69,8 @@ export function CameraSection({
             if (!feed) return null;
 
             const label = FACING_LABELS[facing];
-            const pending = client.cameraPending.has(facing);
-            const disabled = pending || !wired;
+            const pending = client.camera.writes.pending.has(facing);
+            const disabled = pending || !wired || client.camera.status !== "ready";
             const pickerHandlers = disabled
               ? {}
               : {
@@ -76,7 +78,7 @@ export function CameraSection({
                   onDrop: (event: DragEvent<HTMLDivElement>) => {
                     event.preventDefault();
                     const file = event.dataTransfer.files[0];
-                    if (file) client.setCameraImage(facing, file);
+                    if (file) client.camera.setImage(facing, file);
                   },
                   onClick: () => openPicker(facing),
                   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => {
@@ -144,7 +146,7 @@ export function CameraSection({
                     theme="tertiary"
                     size="xs"
                     disabled={disabled || feed.placeholder}
-                    onClick={() => client.clearCameraImage(facing)}
+                    onClick={() => client.camera.clearImage(facing)}
                   >
                     Reset
                   </Button>
@@ -158,7 +160,7 @@ export function CameraSection({
                   accept="image/png"
                   onChange={(event) => {
                     const file = event.target.files?.[0];
-                    if (file) client.setCameraImage(facing, file);
+                    if (file) client.camera.setImage(facing, file);
                     event.target.value = "";
                   }}
                   style={{ display: "none" }}
@@ -166,7 +168,13 @@ export function CameraSection({
               </div>
             );
           })}
-          {client.cameraError && <SectionNote role="alert">{client.cameraError}</SectionNote>}
+          {(client.camera.error?.message ??
+            [...client.camera.writes.errors.values()][0]?.message) && (
+            <SectionNote role="alert">
+              {client.camera.error?.message ??
+                [...client.camera.writes.errors.values()][0]?.message}
+            </SectionNote>
+          )}
           <SectionNote>{CLOSING_NOTE}</SectionNote>
         </>
       )}

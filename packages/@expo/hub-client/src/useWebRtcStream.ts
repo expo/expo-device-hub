@@ -1,3 +1,4 @@
+import type { FeatureRead } from './feature-state';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
@@ -126,6 +127,7 @@ function createSessionId(): string {
 
 /** Negotiate and maintain a recv-only serve-sim / serve-emu WebRTC stream. */
 export function useWebRtcStream({
+  statsReadState,
   offerUrl,
   closeUrl,
   closeBeaconUrl = closeUrl,
@@ -139,6 +141,7 @@ export function useWebRtcStream({
   onKeyframeNeeded,
   fetchImpl = fetch,
 }: {
+  statsReadState?: FeatureRead;
   offerUrl: string;
   closeUrl: string;
   /** `closeUrl` for `navigator.sendBeacon` on unload, which cannot set a header. */
@@ -171,6 +174,7 @@ export function useWebRtcStream({
     presentedFramesRef,
     streamStatsEnabled,
     fetchImpl,
+    statsReadState,
   );
 
   const markFrameDecoded = useCallback((presentedFrameDelta = 1) => {
@@ -273,9 +277,7 @@ export function useWebRtcStream({
       clearFirstFrameTimeout();
       clearDisconnectedTimer();
       setStream(null);
-      setStatsConnection((current) =>
-        current?.sessionId === sessionId ? null : current,
-      );
+      setStatsConnection((current) => (current?.sessionId === sessionId ? null : current));
       peer?.close();
     };
 
@@ -336,7 +338,11 @@ export function useWebRtcStream({
         if (stopped || firstFrameDecodedRef.current) return;
         const state = peer?.connectionState ?? 'closed';
         void videoRtpArriving(peer).then((mediaArriving) => {
-          if (stopped || firstFrameDecodedRef.current || firstFrameTimeoutRef.current !== undefined) {
+          if (
+            stopped ||
+            firstFrameDecodedRef.current ||
+            firstFrameTimeoutRef.current !== undefined
+          ) {
             return;
           }
           const disposition = webRtcFailureDisposition('first-frame-timeout', state, {
@@ -485,9 +491,7 @@ export function useWebRtcStream({
       clearDisconnectedTimer();
       void closeRemoteSession(true);
       setStream(null);
-      setStatsConnection((current) =>
-        current?.sessionId === sessionId ? null : current,
-      );
+      setStatsConnection((current) => (current?.sessionId === sessionId ? null : current));
       peer?.close();
     };
   }, [

@@ -48,7 +48,7 @@ export function androidPermissionsBackend(
     });
     if (response.ok) return;
     const payload: unknown = await response.json().catch(() => null);
-    throw new Error(errorMessage(payload, "Permission update failed"));
+    throw new Error(`${errorMessage(payload, "Permission update failed")} (${response.status})`);
   };
   return {
     list,

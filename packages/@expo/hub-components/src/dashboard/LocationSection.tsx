@@ -1,3 +1,4 @@
+import { FeatureNotice } from "./FeatureNotice";
 import { useId, useState } from "react";
 
 import { type DeviceClient, type DeviceGeoFix } from "@expo/hub-client";
@@ -33,11 +34,13 @@ export function LocationSection({
   const [inputError, setInputError] = useState<GeoFixInputError | null>(null);
   const inputErrorId = useId();
 
-  const capabilities = client.capabilities.location;
+  const capabilities =
+    client.location.status !== "unsupported" ? { clear: client.location.canClear } : false;
   if (capabilities === false) return null;
 
-  const shown = draft ?? draftFromFix(client.location);
-  const pending = client.locationPending;
+  const shown = draft ?? draftFromFix(client.location.data ?? null);
+  const pending = client.location.writes.pending.has("fix");
+  const disabled = pending || client.location.status !== "ready";
 
   function edit(field: CoordinateField, value: string) {
     setInputError(null);
@@ -54,7 +57,7 @@ export function LocationSection({
 
   function apply(fix: DeviceGeoFix) {
     setInputError(null);
-    client.setLocation(fix);
+    client.location.set(fix);
   }
 
   function applyDraft() {
@@ -68,12 +71,13 @@ export function LocationSection({
 
   return (
     <CollapsibleSection title="Location" open={open} onOpenChange={setOpen}>
+      {client && <FeatureNotice feature={client.location} />}
       <SidebarRow label="Preset">
         <Select
           ariaLabel="Location preset"
           value={presetFor(shown)}
           options={PRESET_OPTIONS}
-          disabled={pending}
+          disabled={disabled}
           onChange={(value) => {
             const fix = presetFix(value);
             if (!fix) return;
@@ -86,7 +90,7 @@ export function LocationSection({
         <SidebarTextInput
           ariaLabel="Latitude"
           value={shown.latitude}
-          disabled={pending}
+          disabled={disabled}
           invalid={inputError?.field === "latitude"}
           describedBy={inputError?.field === "latitude" ? inputErrorId : undefined}
           onChange={(value) => edit("latitude", value)}
@@ -98,7 +102,7 @@ export function LocationSection({
         <SidebarTextInput
           ariaLabel="Longitude"
           value={shown.longitude}
-          disabled={pending}
+          disabled={disabled}
           invalid={inputError?.field === "longitude"}
           describedBy={inputError?.field === "longitude" ? inputErrorId : undefined}
           onChange={(value) => edit("longitude", value)}
@@ -107,15 +111,15 @@ export function LocationSection({
         />
       </SidebarRow>
       <div style={{ display: "flex", gap: 8, padding: "4px 0 8px" }}>
-        <Button theme="secondary" size="xs" disabled={pending} onClick={applyDraft}>
+        <Button theme="secondary" size="xs" disabled={disabled} onClick={applyDraft}>
           Set location
         </Button>
         {capabilities.clear && (
           <Button
             theme="tertiary"
             size="xs"
-            disabled={pending}
-            onClick={() => client.clearLocation()}
+            disabled={disabled}
+            onClick={() => client.location.clear()}
           >
             Clear
           </Button>
@@ -127,12 +131,18 @@ export function LocationSection({
           {inputError.message}
         </SectionNote>
       )}
-      {client.locationError && <SectionNote role="alert">{client.locationError}</SectionNote>}
-      <SectionNote>
-        {client.location
-          ? `Last set: ${formatFix(client.location)}`
-          : "No fix set in this session."}
-      </SectionNote>
+      {(client.location.writes.errors.get("fix")?.message ?? client.location.error?.message) && (
+        <SectionNote role="alert">
+          {(client.location.writes.errors.get("fix")?.message ?? client.location.error?.message)!}
+        </SectionNote>
+      )}
+      {client.location.data !== undefined && (
+        <SectionNote>
+          {client.location.data
+            ? `Last set: ${formatFix(client.location.data)}`
+            : "No fix set in this session."}
+        </SectionNote>
+      )}
     </CollapsibleSection>
   );
 }

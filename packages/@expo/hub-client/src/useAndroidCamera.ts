@@ -1,3 +1,4 @@
+import { checkResponse, withFeatureDeadline, type FeatureRead } from "./feature-state";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { deviceApiUrl } from "./android-api-url";
@@ -19,6 +20,7 @@ const CAMERA_POLL_MS = 3000;
 
 interface UseAndroidCameraOptions {
   active: boolean;
+  readState?: FeatureRead;
   baseUrl: string | null;
   device: string | null;
   /** Identity of the current connection. A change invalidates in-flight reads and writes. */
@@ -42,8 +44,9 @@ export function useAndroidCamera({
   scope,
   scopeRef,
   token = null,
+  readState,
 }: UseAndroidCameraOptions) {
-  const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
+  const sessionFetch = useMemo(() => withFeatureDeadline(sessionTokenFetch(token)), [token]);
   const [camera, setCamera] = useState(NO_ANDROID_CAMERA);
   const [cameraPending, setCameraPending] =
     useState<ReadonlySet<DeviceCameraFacing>>(NO_PENDING_CAMERA_WRITES);
@@ -74,7 +77,7 @@ export function useAndroidCamera({
       setCameraError(null);
       setCameraPending(tracker.pending);
 
-      void sessionFetch(deviceApiUrl(baseUrl, androidCameraImagePath(facing, null), device), init)
+      return sessionFetch(deviceApiUrl(baseUrl, androidCameraImagePath(facing, null), device), init)
         .then(async (response) => {
           const payload: unknown = await response.json().catch(() => null);
           if (!tracker.isCurrent(request) || scopeRef.current !== scope) return;
@@ -88,10 +91,12 @@ export function useAndroidCamera({
             .catch(() => null);
           if (!tracker.isCurrent(request) || scopeRef.current !== scope) return;
           applyStatus(refreshed);
+          throw new Error(androidCameraErrorMessage(response.status, payload));
         })
-        .catch(() => {
+        .catch((cause) => {
           if (!tracker.isCurrent(request) || scopeRef.current !== scope) return;
           setCameraError("Camera update failed");
+          throw cause;
         })
         .finally(() => {
           if (tracker.finish(request)) setCameraPending(tracker.pending);
@@ -133,7 +138,7 @@ export function useAndroidCamera({
     const url = deviceApiUrl(baseUrl, "/api/camera", device);
 
     const poll = async () => {
-      if (cancelled || polling) return;
+      if (cancelled || polling || readState?.isStopped()) return;
       polling = true;
       const pendingAtStart = tracker.pending;
       const versionsAtStart = { ...writeVersionsRef.current };
@@ -141,7 +146,13 @@ export function useAndroidCamera({
       controller = next;
       try {
         const response = await sessionFetch(url, { cache: "no-store", signal: next.signal });
-        const read = response.ok ? parseAndroidCameraStatus(await response.json(), imageUrl) : null;
+        if (response.status === 404) {
+          readState?.unsupported();
+          return;
+        }
+        checkResponse(response);
+        const read = parseAndroidCameraStatus(await response.json(), imageUrl);
+        if (!read) throw new Error("Invalid camera response");
         if (cancelled || scopeRef.current !== scope) return;
         const heldFacings = staleCameraFacings(
           pendingAtStart,
@@ -150,21 +161,28 @@ export function useAndroidCamera({
           writeVersionsRef.current,
         );
         setCamera((current) => applyCameraRead(current, read, heldFacings));
-      } catch {
+        if (read.supported) readState?.ready();
+        else readState?.unsupported();
+      } catch (cause) {
+        if (!cancelled) readState?.fail(cause, true);
       } finally {
         polling = false;
       }
     };
 
+    const unbind = readState?.bind(() => {
+      void poll();
+    });
     void poll();
     const timer = setInterval(() => void poll(), CAMERA_POLL_MS);
     return () => {
+      unbind?.();
       cancelled = true;
       clearInterval(timer);
       controller?.abort();
       tracker.reset();
     };
-  }, [active, baseUrl, device, scope, scopeRef, sessionFetch, token]);
+  }, [active, baseUrl, device, scope, scopeRef, sessionFetch, token, readState]);
 
   return {
     camera: camera.status,

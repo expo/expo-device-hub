@@ -1,3 +1,4 @@
+import type { FeatureRead } from "./feature-state";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -12,13 +13,21 @@ import { type AppPermission, type AppPermissionAction } from "./types";
 
 interface UseAppPermissionsOptions {
   active: boolean;
+  readState?: FeatureRead;
+  resetWrites?: () => void;
   appId: string | null;
   backend: PermissionsBackend | null;
 }
 
 type ListRequest = (backend: PermissionsBackend, appId: string) => Promise<AppPermission[]>;
 
-export function useAppPermissions({ active, backend, appId }: UseAppPermissionsOptions) {
+export function useAppPermissions({
+  active,
+  backend,
+  appId,
+  readState,
+  resetWrites,
+}: UseAppPermissionsOptions) {
   const [permissions, setPermissions] = useState<readonly AppPermission[] | null>(null);
   const [permissionsPending, setPermissionsPending] = useState<ReadonlySet<string>>(
     NO_PENDING_PERMISSION_WRITES,
@@ -34,12 +43,14 @@ export function useAppPermissions({ active, backend, appId }: UseAppPermissionsO
 
   useEffect(() => {
     targetRef.current = target;
+    readState?.reset();
+    resetWrites?.();
     trackerRef.current.reset();
     versionsRef.current = {};
     setPermissions(null);
     setPermissionsPending(NO_PENDING_PERMISSION_WRITES);
     setPermissionsError(null);
-  }, [target]);
+  }, [target, readState, resetWrites]);
 
   const publishPending = (tracker: KeyedWriteTracker<string>) => {
     const pending = tracker.pending;
@@ -62,21 +73,25 @@ export function useAppPermissions({ active, backend, appId }: UseAppPermissionsO
           );
           setPermissions((current) => applyPermissionsRead(current, next, held));
           setPermissionsError(null);
+          readState?.ready();
         },
         (error: unknown) => {
           if (target !== targetRef.current) return;
           setPermissionsError(error instanceof Error ? error.message : "Permission request failed");
+          if (ownIds.length === 0) readState?.fail(error);
+          throw error;
         },
       );
     },
-    [target],
+    [target, readState],
   );
 
   const write = useCallback(
     (ids: readonly string[], run: ListRequest) => {
       const tracker = trackerRef.current;
       const pending = tracker.pending;
-      if (ids.length === 0 || ids.some((id) => pending.has(id))) return;
+      if (ids.some((id) => pending.has(id)))
+        return Promise.reject(new Error("An update is already in progress"));
       const tokens = ids.flatMap((id) => {
         const token = tracker.start(id);
         return token ? [token] : [];
@@ -86,7 +101,7 @@ export function useAppPermissions({ active, backend, appId }: UseAppPermissionsO
       versionsRef.current = versions;
       setPermissionsError(null);
       publishPending(tracker);
-      void request(ids, run).finally(() => {
+      return request(ids, run).finally(() => {
         let changed = false;
         for (const token of tokens) changed = tracker.finish(token) || changed;
         if (changed) publishPending(tracker);
@@ -111,11 +126,20 @@ export function useAppPermissions({ active, backend, appId }: UseAppPermissionsO
   );
 
   const refreshPermissions = useCallback(() => {
-    void request([], (current, app) => current.list(app));
-  }, [request]);
+    readState?.begin();
+    void request([], (current, app) => current.list(app)).catch(() => {});
+  }, [request, readState]);
+
+  useEffect(() => {
+    if (target) refreshPermissions();
+    else if (backend) readState?.ready();
+    return readState?.bind(refreshPermissions);
+  }, [target, backend, readState, refreshPermissions]);
 
   return {
-    permissions,
+    permissionsCurrent: target === targetRef.current,
+    permissionsAppId: target === targetRef.current ? appId : null,
+    permissions: target === targetRef.current ? permissions : null,
     permissionsPending,
     permissionsError,
     setPermission,

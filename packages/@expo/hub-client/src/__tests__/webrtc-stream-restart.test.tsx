@@ -181,7 +181,7 @@ for (const outcome of ['success', 'failure', 'superseded'] as const) {
     await act(async () => {
       renderer = create(<Harness />);
     });
-    expect(settings!.updateStreamSettings({ mjpegFps: 30 })).toBeUndefined();
+    expect(await settings!.updateStreamSettings({ mjpegFps: 30 })).toBe(false);
     let write: Promise<boolean> | undefined;
     await act(async () => {
       write = settings!.updateStreamSettings({ maxDimension: 720 });
@@ -191,7 +191,9 @@ for (const outcome of ['success', 'failure', 'superseded'] as const) {
       await act(async () => renderer!.update(<Harness url={null} />));
     }
     await act(async () => {
-      finishWrite(Response.json({ maxDimension: 720 }, { status: outcome === 'failure' ? 503 : 200 }));
+      finishWrite(
+        Response.json({ maxDimension: 720 }, { status: outcome === 'failure' ? 503 : 200 }),
+      );
       expect(await write).toBe(outcome === 'success');
     });
     expect(settings!.streamSettingsPending).toBe(false);
@@ -317,7 +319,7 @@ async function androidHarness({ delaySource = false } = {}) {
     renderer = create(<Harness />);
   });
   const attach = async (video: Video) => {
-    await act(async () => client.attachVideo(video as unknown as HTMLVideoElement));
+    await act(async () => client.stream.attachVideo(video as unknown as HTMLVideoElement));
   };
   const video = new Video();
   await attach(video);
@@ -326,7 +328,7 @@ async function androidHarness({ delaySource = false } = {}) {
     Peer.instances.at(-1)!.receive({ id: 'initial' });
   });
   await act(async () => video.paint());
-  expect(client.status).toBe('streaming');
+  expect(client.stream.status).toBe('ready');
   return {
     get client() {
       return client;
@@ -374,28 +376,30 @@ test('attaching and remounting the Android video keeps one control socket and us
   await act(async () => socket.serverClose(1012));
   expect(Peer.instances).toHaveLength(2);
   expect(hub.captures).toEqual([remounted]);
-  expect(hub.client.status).toBe('reconnecting');
+  expect(hub.client.stream.status).toBe('reconnecting');
 });
 
 test('Android settings wait for fresh video, preserve the poster past grace, and still time out', async () => {
   const hub = await androidHarness();
-  await act(async () => hub.client.updateStreamSettings({ maxDimension: 720 }));
-  expect(hub.client.status).toBe('reconnecting');
-  expect(hub.client.streamSettingsPending).toBe(true);
+  await act(async () => {
+    void hub.client.streamSettings.update({ maxDimension: 720 });
+  });
+  expect(hub.client.stream.status).toBe('reconnecting');
+  expect(hub.client.streamSettings.writes.pending.size > 0).toBe(true);
   expect(Peer.instances).toHaveLength(1);
   await hub.finishWrite({ maxDimension: 720 });
   expect(Peer.instances).toHaveLength(2);
   expect(hub.video.poster).toContain('data:image/png');
   expect(hub.captures).toEqual([hub.video]);
   await hub.fireTimer(5000);
-  expect(hub.client.status).toBe('reconnecting');
-  expect(deviceScreenPresentsMedia(hub.client.status)).toBe(true);
-  expect(hub.client.streamSettingsPending).toBe(true);
+  expect(hub.client.stream.status).toBe('reconnecting');
+  expect(deviceScreenPresentsMedia(hub.client.stream.status)).toBe(true);
+  expect(hub.client.streamSettings.writes.pending.size > 0).toBe(true);
   await hub.fireTimer(8000);
-  expect(hub.client.status).toBe('connecting');
-  expect(hub.client.streamSettingsPending).toBe(false);
+  expect(hub.client.stream.status).toBe('loading');
+  expect(hub.client.streamSettings.writes.pending.size > 0).toBe(false);
   await hub.paintReplacement();
-  expect(hub.client.status).toBe('streaming');
+  expect(hub.client.stream.status).toBe('ready');
   expect(hub.video.poster).toBe('');
 });
 
@@ -403,65 +407,77 @@ for (const patch of [{ h264Fps: 24 }, { h264Bitrate: 8_000_000 }]) {
   for (const success of [true, false]) {
     test(`Android ${Object.keys(patch)[0]} changes ${success ? 'restart after commit' : 'roll back on failure'}`, async () => {
       const hub = await androidHarness();
-      expect(hub.client.capabilities.streamSettings).toMatchObject({
+      expect(
+        Object.fromEntries([...hub.client.streamSettings.editable].map((key) => [key, true])),
+      ).toMatchObject({
         h264Fps: true,
         h264Bitrate: true,
       });
-      const previous = hub.client.streamSettings;
-      await act(async () => hub.client.updateStreamSettings(patch));
+      const previous = hub.client.streamSettings.data;
+      await act(async () => {
+        void hub.client.streamSettings.update(patch);
+      });
       expect(hub.writes).toHaveLength(1);
       expect(hub.writes[0]).toMatchObject({ path: '/api/stream-settings', body: patch });
-      expect(hub.client.streamSettingsPending).toBe(true);
+      expect(hub.client.streamSettings.writes.pending.size > 0).toBe(true);
       expect(Peer.instances).toHaveLength(1);
       await hub.finishWrite({ ...previous, ...patch }, success ? 200 : 503);
       if (success) {
         expect(Peer.instances).toHaveLength(2);
-        expect(hub.client.streamSettings).toMatchObject(patch);
+        expect(hub.client.streamSettings.data).toMatchObject(patch);
         await hub.paintReplacement();
       } else {
         expect(Peer.instances).toHaveLength(1);
-        expect(hub.client.streamSettings).toEqual(previous);
+        expect(hub.client.streamSettings.data).toEqual(previous);
       }
-      expect(hub.client.status).toBe('streaming');
-      expect(hub.client.streamSettingsPending).toBe(false);
+      expect(hub.client.stream.status).toBe('ready');
+      expect(hub.client.streamSettings.writes.pending.size > 0).toBe(false);
     });
   }
 }
 
 test('Android source changes reject overlapping settings writes and wait for replacement frames', async () => {
   const hub = await androidHarness({ delaySource: true });
-  await act(async () => hub.client.updateStreamSettings({ maxDimension: 720 }));
+  await act(async () => {
+    void hub.client.streamSettings.update({ maxDimension: 720 });
+  });
   expect(hub.writes).toHaveLength(0);
   await hub.finishSource();
-  await act(async () => hub.client.setStreamSource('grpc-screenshot'));
-  await act(async () => hub.client.updateStreamSettings({ maxDimension: 720 }));
+  await act(async () => {
+    void hub.client.streamSource.update({ mode: 'grpc-screenshot' });
+  });
+  await act(async () => {
+    void hub.client.streamSettings.update({ maxDimension: 720 });
+  });
   expect(hub.writes.map((write) => write.path)).toEqual(['/api/stream-mode']);
   await act(async () => ControlSocket.instances.at(-1)!.serverClose(1012));
   await hub.finishWrite({ ...hub.source, mode: 'grpc-screenshot', sessionGeneration: 2 });
   await hub.fireTimer(100);
   await act(async () => ControlSocket.instances.at(-1)!.open());
-  expect(hub.client.status).toBe('reconnecting');
-  expect(hub.client.streamSource?.mode).toBe('scrcpy');
+  expect(hub.client.stream.status).toBe('reconnecting');
+  expect(hub.client.streamSource.data?.mode).toBe('scrcpy');
   await hub.paintReplacement();
-  expect(hub.client.status).toBe('streaming');
-  expect(hub.client.streamSource?.mode).toBe('grpc-screenshot');
-  expect(hub.client.streamSourcePending).toBe(false);
-  expect(hub.client.streamSettingsPending).toBe(false);
+  expect(hub.client.stream.status).toBe('ready');
+  expect(hub.client.streamSource.data?.mode).toBe('grpc-screenshot');
+  expect(hub.client.streamSource.writes.pending.size > 0).toBe(false);
+  expect(hub.client.streamSettings.writes.pending.size > 0).toBe(false);
   expect(hub.video.poster).toBe('');
 });
 
 for (const outcome of ['failure', 'superseded'] as const) {
   test(`Android ${outcome} settings writes do not restart the current peer`, async () => {
     const hub = await androidHarness();
-    await act(async () => hub.client.updateStreamSettings({ maxDimension: 720 }));
+    await act(async () => {
+      void hub.client.streamSettings.update({ maxDimension: 720 });
+    });
     if (outcome === 'superseded') await hub.changeDevice();
     const peersBeforeResponse = Peer.instances.length;
     await hub.finishWrite({ maxDimension: 720 }, outcome === 'failure' ? 503 : 200);
     expect(Peer.instances).toHaveLength(peersBeforeResponse);
     expect(hub.captures).toHaveLength(0);
-    expect(hub.client.streamSettingsPending).toBe(false);
-    expect(hub.client.streamSourcePending).toBe(false);
-    expect(hub.client.streamSettings?.maxDimension).toBe(1280);
-    if (outcome === 'failure') expect(hub.client.status).toBe('streaming');
+    expect(hub.client.streamSettings.writes.pending.size > 0).toBe(false);
+    expect(hub.client.streamSource.writes.pending.size > 0).toBe(false);
+    expect(hub.client.streamSettings.data?.maxDimension).toBe(1280);
+    if (outcome === 'failure') expect(hub.client.stream.status).toBe('ready');
   });
 }

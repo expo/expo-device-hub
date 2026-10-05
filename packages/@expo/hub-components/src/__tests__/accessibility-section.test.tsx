@@ -1,3 +1,8 @@
+import {
+  EMPTY_CLIENT,
+  testFeature,
+  testError,
+} from '../../../hub-client/src/__tests__/feature-fixture';
 import { describe, expect, test } from 'bun:test';
 import { type AccessibilityNode, type DeviceClient } from '@expo/hub-client';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -5,88 +10,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { AccessibilitySection } from '../dashboard/AccessibilitySection';
 
 const BASE_CLIENT: DeviceClient = {
-  platform: 'ios',
-  status: 'streaming',
-  error: null,
-  inputError: null,
-  screenRecording: null,
-  screen: { width: 390, height: 844 },
-  fps: 60,
-  devices: [],
-  logs: [],
-  logsEnabled: false,
-  attachLogs: () => {},
-  detachLogs: () => {},
-  clearLogs: () => {},
-  events: [],
-  eventsEnabled: false,
-  attachEvents: () => {},
-  detachEvents: () => {},
-  clearEvents: () => {},
-  activity: null,
-  deviceSettings: null,
-  deviceSettingsPending: new Set(),
-  setDeviceSetting: () => {},
-  displayWidthDp: null,
-  camera: null,
-  cameraPending: new Set(),
-  cameraError: null,
-  setCameraImage: () => {},
-  clearCameraImage: () => {},
-  location: null,
-  locationPending: false,
-  locationError: null,
-  setLocation: () => {},
-  clearLocation: () => {},
-  permissions: null,
-  permissionsPending: new Set<string>(),
-  permissionsError: null,
-  setPermission: () => {},
-  resetPermissions: () => {},
-  refreshPermissions: () => {},
-  accessibility: null,
-  accessibilityPending: false,
-  accessibilityError: null,
-  refreshAccessibility: () => {},
-  streamCapabilities: null,
-  streamSettings: null,
-  streamSettingsPending: false,
-  updateStreamSettings: () => {},
-  streamSource: null,
-  streamSourcePending: false,
-  streamSourceError: null,
-  setStreamSource: () => {},
-  setGrpcImageMode: () => {},
-  setGrpcEncoder: () => {},
-  setGrpcInputSource: () => {},
-  streamStats: null,
-  setStreamStatsEnabled: () => {},
-  webRtcCodec: 'h264',
-  setWebRtcCodec: () => {},
-  capabilities: {
-    deviceSettings: false,
-    activity: false,
-    events: false,
-    camera: false,
-    accessibility: true,
-    location: false,
-    permissions: false,
-    streamSettings: false,
-  },
-  foregroundApp: null,
-  videoKind: 'img',
-  attachVideo: () => {},
-  sendTouch: () => {},
-  sendKey: () => false,
-  pressButton: () => {},
-  reload: () => {},
-  rotate: () => {},
-  screenshot: async () => null,
-  appearance: 'light',
-  setAppearance: () => {},
-  hardwareKeyboardConnected: null,
-  setHardwareKeyboardConnected: () => {},
-  toggleSoftwareKeyboard: () => {},
+  ...EMPTY_CLIENT,
+  platform: 'android',
+  accessibility: { ...EMPTY_CLIENT.accessibility, ...testFeature(undefined, 'idle') },
 };
 
 const CAPTURED_AT = Date.parse('2026-09-09T10:00:00.000Z');
@@ -126,7 +52,9 @@ function rowTag(html: string, ariaLabel: string) {
 
 describe('AccessibilitySection', () => {
   test('announces a read in flight and disables Refresh', () => {
-    const html = render({ accessibilityPending: true });
+    const html = render({
+      accessibility: { ...BASE_CLIENT.accessibility, status: 'loading', error: null },
+    });
     expect(html).toContain('role="status"');
     expect(html).toContain('Reading the screen…');
     expect(refreshTag(html)).toContain('disabled=""');
@@ -134,8 +62,12 @@ describe('AccessibilitySection', () => {
 
   test('reports a failed read while keeping the last snapshot on screen', () => {
     const html = render({
-      accessibilityError: 'Accessibility unavailable on this simulator.',
-      accessibility: { capturedAt: CAPTURED_AT, nodes: [node()] },
+      accessibility: {
+        ...BASE_CLIENT.accessibility,
+        ...testFeature({ capturedAt: CAPTURED_AT, nodes: [node()] }),
+        status: 'error',
+        error: testError('Accessibility unavailable on this simulator.'),
+      },
     });
     expect(html).toContain('role="alert"');
     expect(html).toContain('Accessibility unavailable on this simulator.');
@@ -143,15 +75,26 @@ describe('AccessibilitySection', () => {
   });
 
   test('reports an empty screen', () => {
-    const html = render({ accessibility: { capturedAt: CAPTURED_AT, nodes: [] } });
+    const html = render({
+      accessibility: {
+        ...BASE_CLIENT.accessibility,
+        ...testFeature({ capturedAt: CAPTURED_AT, nodes: [] }),
+      },
+    });
     expect(html).toContain('No accessible elements on this screen.');
   });
 
   test('lists each element with its role and a capture time', () => {
     const html = render({
       accessibility: {
-        capturedAt: CAPTURED_AT,
-        nodes: [node(), node({ id: 'n2', label: 'Heading', role: 'StaticText', clickable: false })],
+        ...BASE_CLIENT.accessibility,
+        ...testFeature({
+          capturedAt: CAPTURED_AT,
+          nodes: [
+            node(),
+            node({ id: 'n2', label: 'Heading', role: 'StaticText', clickable: false }),
+          ],
+        }),
       },
     });
     expect(html).toContain(`Captured ${new Date(CAPTURED_AT).toLocaleTimeString()}`);
@@ -164,7 +107,13 @@ describe('AccessibilitySection', () => {
 
   test('dims a disabled element and refuses its tap', () => {
     const html = render({
-      accessibility: { capturedAt: CAPTURED_AT, nodes: [node({ label: 'Dimmed', enabled: false })] },
+      accessibility: {
+        ...BASE_CLIENT.accessibility,
+        ...testFeature({
+          capturedAt: CAPTURED_AT,
+          nodes: [node({ label: 'Dimmed', enabled: false })],
+        }),
+      },
     });
     const tag = rowTag(html, 'Tap Dimmed');
     expect(tag).toContain('disabled=""');

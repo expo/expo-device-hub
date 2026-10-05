@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { type ConnectionStatus, type DeviceScreenRecordingStatus } from '@expo/hub-client';
+import { type DeviceClient, type DeviceScreenRecordingStatus } from '@expo/hub-client';
 import {
   bg,
   border,
@@ -17,7 +17,7 @@ import { type Device } from './data';
 
 export type DeviceTitleProps = {
   device: Pick<Device, 'id' | 'name'>;
-  status: ConnectionStatus;
+  status: DeviceClient['stream']['status'];
   recording?: DeviceScreenRecordingStatus | null;
 };
 
@@ -31,16 +31,28 @@ const RECORDING_LABELS: Record<DeviceScreenRecordingStatus, string> = {
 };
 
 const STATUS_APPEARANCE: Record<
-  ConnectionStatus,
+  DeviceClient['stream']['status'],
   { label: string; dotColor: string; ringColor: string; labelColor: string }
 > = {
+  resolving: {
+    label: 'Checking availability',
+    dotColor: icon.warning,
+    ringColor: border.warning,
+    labelColor: text.secondary,
+  },
+  unsupported: {
+    label: 'Offline',
+    dotColor: icon.danger,
+    ringColor: border.danger,
+    labelColor: text.secondary,
+  },
   idle: {
     label: 'Offline',
     dotColor: icon.danger,
     ringColor: border.danger,
     labelColor: text.secondary,
   },
-  connecting: {
+  loading: {
     label: 'Starting',
     dotColor: icon.warning,
     ringColor: border.warning,
@@ -52,7 +64,7 @@ const STATUS_APPEARANCE: Record<
     ringColor: border.warning,
     labelColor: text.secondary,
   },
-  streaming: {
+  ready: {
     label: 'Live',
     dotColor: text.success,
     ringColor: border.success,

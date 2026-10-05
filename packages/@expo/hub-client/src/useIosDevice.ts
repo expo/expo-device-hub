@@ -1,3 +1,6 @@
+import { checkResponse, useFeatureSession, withFeatureDeadline } from './feature-state';
+import { useFeatureClient } from './useFeatureClient';
+import type { BackendDeviceClient } from './backend-client';
 /**
  * serve-sim (iOS) implementation of the {@link DeviceClient} interface.
  *
@@ -25,14 +28,18 @@
  * helper because doing so drops the middleware/helper path from stream URLs.
  */
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react';
 
 import { AVCC_FRAME_TIMEOUT_MS, avccFallbackReducer, initialAvccFallback } from './avcc-fallback';
-import {
-  appendActivitySample,
-  parseActivityHostCores,
-  parseActivitySample,
-} from './activity';
+import { appendActivitySample, parseActivityHostCores, parseActivitySample } from './activity';
 import { type AccessibilityLoader, loadIosAccessibility } from './accessibility';
 import { isAvccSupported } from './avcc';
 import {
@@ -96,15 +103,8 @@ import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocati
 import { useStreamSettingsResource } from './useStreamSettingsResource';
 import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
-import {
-  type WebRtcCodec,
-  webRtcFallbackDecision,
-} from './webrtc-fallback';
-import {
-  flushWsMessageQueue,
-  type QueuedWsMessage,
-  sendOrQueueWsMessage,
-} from './ws-send-queue';
+import { type WebRtcCodec, webRtcFallbackDecision } from './webrtc-fallback';
+import { flushWsMessageQueue, type QueuedWsMessage, sendOrQueueWsMessage } from './ws-send-queue';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
@@ -259,10 +259,15 @@ interface PreviewApi {
   gridApiEndpoint?: string;
   proxyHelpers?: boolean;
   streamSettings?:
-    | ({ transport: 'http'; codec?: 'auto' | 'h264' | 'mjpeg' } &
-        Partial<DeviceStreamEncoderSettings>)
-    | ({ transport: 'webrtc'; codec: WebRtcCodec; iceServers?: WebRtcIceServer[] } &
-        Partial<DeviceStreamEncoderSettings>);
+    | ({
+        transport: 'http';
+        codec?: 'auto' | 'h264' | 'mjpeg';
+      } & Partial<DeviceStreamEncoderSettings>)
+    | ({
+        transport: 'webrtc';
+        codec: WebRtcCodec;
+        iceServers?: WebRtcIceServer[];
+      } & Partial<DeviceStreamEncoderSettings>);
 }
 
 // The server, device, and token that one resolved config belongs to.
@@ -274,8 +279,20 @@ function connectionKey(baseUrl: string, device: string | null, token: string | n
 export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClient {
   const { baseUrl, enabled = true, device: targetDevice = null, streamMode, token = null } = options;
   const active = enabled && !!baseUrl;
-  const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
+  const tokenFetch = useMemo(() => sessionTokenFetch(token), [token]);
+  // Feature reads and writes get a deadline; video streams and long actions do not.
+  const sessionFetch = useMemo(() => withFeatureDeadline(tokenFetch), [tokenFetch]);
   const socketProtocols = useMemo(() => sessionTokenProtocols('ios', token), [token]);
+  const featureSession = useFeatureSession(`${active}\0${baseUrl}\0${targetDevice}`);
+  const [activityEnabled, setActivityEnabled] = useState(false);
+  const [subscriptionRevision, setSubscriptionRevision] = useState(0);
+  useEffect(() => {
+    const refresh = () => setSubscriptionRevision((value) => value + 1);
+    const cleanups = ['logs', 'events', 'activity', 'foregroundApp', 'stream'].map((name) =>
+      featureSession.read(name).bind(refresh),
+    );
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [featureSession]);
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -307,9 +324,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
-  const [deviceSettingsPending, setDeviceSettingsPending] = useState<
-    ReadonlySet<DeviceSettingKey>
-  >(() => new Set());
+  const [deviceSettingsPending, setDeviceSettingsPending] = useState<ReadonlySet<DeviceSettingKey>>(
+    () => new Set(),
+  );
   // Browser HID injection remains active when this is false. Disabling the
   // Simulator-owned host connection lets iOS keep its software keyboard open.
   const [hardwareKeyboardConnected, setHardwareKeyboardConnectedState] = useState<boolean | null>(
@@ -393,24 +410,28 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     pendingWsRef.current = sendOrQueueWsMessage(wsRef.current, pendingWsRef.current, tag, payload);
   }, []);
 
-  const sendTouch = useCallback((sample: TouchSample) => {
-    const orientation = streamGeometry(screenRef.current).inputOrientation;
+  const sendTouch = useCallback(
+    (sample: TouchSample) => {
+      const orientation = streamGeometry(screenRef.current).inputOrientation;
 
-    let displayEdge: number | undefined;
-    if (sample.phase === 'begin') {
-      edgeGestureRef.current = homeIndicatorEdge(sample) !== undefined;
-      if (edgeGestureRef.current) displayEdge = HID_EDGE_BOTTOM;
-    } else if (edgeGestureRef.current) {
-      displayEdge = HID_EDGE_BOTTOM;
-      if (sample.phase === 'end') edgeGestureRef.current = false;
-    }
+      let displayEdge: number | undefined;
+      if (sample.phase === 'begin') {
+        edgeGestureRef.current = homeIndicatorEdge(sample) !== undefined;
+        if (edgeGestureRef.current) displayEdge = HID_EDGE_BOTTOM;
+      } else if (edgeGestureRef.current) {
+        displayEdge = HID_EDGE_BOTTOM;
+        if (sample.phase === 'end') edgeGestureRef.current = false;
+      }
 
-    const p = rawPointForDisplayPoint(orientation, sample.x, sample.y);
-    const edge = displayEdge === undefined ? undefined : rawEdgeForDisplayEdge(orientation, displayEdge);
-    const payload =
-      edge === undefined ? { type: sample.phase, ...p } : { type: sample.phase, ...p, edge };
-    sendWs(WS_MSG_TOUCH, payload);
-  }, [sendWs]);
+      const p = rawPointForDisplayPoint(orientation, sample.x, sample.y);
+      const edge =
+        displayEdge === undefined ? undefined : rawEdgeForDisplayEdge(orientation, displayEdge);
+      const payload =
+        edge === undefined ? { type: sample.phase, ...p } : { type: sample.phase, ...p, edge };
+      sendWs(WS_MSG_TOUCH, payload);
+    },
+    [sendWs],
+  );
 
   const sendMultiTouch = useCallback(
     (sample: MultiTouchSample) => {
@@ -470,7 +491,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!c || !c.execWsUrl || !c.execToken || !c.device) return;
       const previous = hardwareKeyboardConnected;
       setHardwareKeyboardConnectedState(connected);
-      void hostUiRequest(
+      return hostUiRequest(
         c.execWsUrl,
         c.execToken,
         {
@@ -479,7 +500,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           value: connected ? 'on' : 'off',
         },
         socketProtocols,
-      ).catch(() => setHardwareKeyboardConnectedState(previous));
+      ).catch((cause) => {
+        if (deviceSettingConfigRef.current === c) setHardwareKeyboardConnectedState(previous);
+        throw cause;
+      });
     },
     [config, hardwareKeyboardConnected, socketProtocols],
   );
@@ -524,8 +548,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const screenshot = useCallback(async (): Promise<ScreenshotCapture | null> => {
     if (!baseUrl) return null;
     const udid = config?.device ?? targetDevice;
-    return fetchScreenshot(baseUrl, udid, sessionFetch);
-  }, [baseUrl, targetDevice, config, sessionFetch]);
+    return fetchScreenshot(baseUrl, udid, tokenFetch);
+  }, [baseUrl, targetDevice, config, tokenFetch]);
 
   // Apply any serve-sim UI option over its authenticated exec-ws request
   // channel. The state is optimistic so the selected pill/switch responds at
@@ -545,8 +569,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (key === 'appearance' && (value === 'light' || value === 'dark')) {
         setAppearanceState(value);
       }
-      void hostUiRequest(execWsUrl, execToken, { device, option: key, value }, socketProtocols)
-        .catch(async () => {
+      const previous = deviceSettings?.[key];
+      return hostUiRequest(execWsUrl, execToken, { device, option: key, value }, socketProtocols)
+        .catch(async (cause) => {
           if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
           try {
             const result = await hostUiRequest(execWsUrl, execToken, { device }, socketProtocols);
@@ -567,15 +592,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
               }
             }
           } catch {
-            // Keep the optimistic value if both the write and authoritative
-            // refresh channels are temporarily unavailable.
+            if (tracker.isCurrent(request) && deviceSettingConfigRef.current === c) {
+              setDeviceSettings((current) =>
+                mergeAuthoritativeDeviceSetting(
+                  current,
+                  key,
+                  previous === undefined ? {} : { [key]: previous },
+                ),
+              );
+            }
           }
+          throw cause;
         })
         .finally(() => {
           if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [config, socketProtocols],
+    [config, deviceSettings, socketProtocols],
   );
 
   const setAppearance = useCallback(
@@ -615,6 +648,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
     let cancelled = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    setLogs([]);
+    setActivity(null);
+    setForegroundApp(null);
+    setScreen(null);
     setStatus('connecting');
     setError(null);
 
@@ -676,10 +713,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (cancelled) return;
       try {
         const res = await sessionFetch(apiUrl, { signal: AbortSignal.timeout(3000) });
-        if (!res.ok) {
-          if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
-          return;
-        }
+        checkResponse(res);
         const c = (await res.json()) as PreviewApi | null;
         if (c && c.url && c.device) {
           if (!cancelled) {
@@ -689,6 +723,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
               key: connectionKey(baseUrl, targetDevice, token),
               config: resolved,
             });
+            featureSession.resolve();
           }
           return;
         }
@@ -698,20 +733,35 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         // because the user selected this device. Then poll until it attaches.
         if (targetDevice && !startRequested) {
           startRequested = true;
-          void startIosHelper(targetDevice, baseUrl, sessionFetch).catch(() => {});
+          void startIosHelper(targetDevice, baseUrl, tokenFetch).catch(() => {});
         }
         if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
-      } catch {
-        if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
+      } catch (cause) {
+        if (!cancelled && featureSession.read('config').fail(cause, true))
+          pollTimer = setTimeout(resolve, RECONNECT_MS);
       }
     };
+    const unbind = featureSession.read('config').bind(() => {
+      if (pollTimer) clearTimeout(pollTimer);
+      void resolve();
+    });
     void resolve();
 
     return () => {
       cancelled = true;
       if (pollTimer) clearTimeout(pollTimer);
+      unbind();
     };
-  }, [active, baseUrl, targetDevice, setWebRtcCodec, sessionFetch, token]);
+  }, [
+    active,
+    baseUrl,
+    targetDevice,
+    setWebRtcCodec,
+    sessionFetch,
+    tokenFetch,
+    token,
+    featureSession,
+  ]);
 
   const fpsCounterRef = useRef({ frames: 0, startedAt: 0 });
   const onAvccFrame = useCallback((frameDelta = 1) => {
@@ -730,11 +780,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const {
     stream: webRtcStream,
     failure: webRtcFailure,
+    restart: restartWebRtcStream,
     error: webRtcError,
     markFrameDecoded: markWebRtcFrameDecoded,
     streamStats,
     setStreamStatsEnabled,
   } = useWebRtcStream({
+    statsReadState: featureSession.read('streamStats'),
     offerUrl: config ? `${config.url}/webrtc/offer` : '',
     closeUrl: config ? `${config.url}/webrtc/close` : '',
     closeBeaconUrl: config ? withSessionTokenQuery(`${config.url}/webrtc/close`, token) : '',
@@ -742,8 +794,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     enabled: active && useWebRtc && !!config,
     codec: activeWebRtcCodec,
     iceServers: config?.webRtcIceServers,
-    fetchImpl: sessionFetch,
+    fetchImpl: tokenFetch,
   });
+  useEffect(
+    () =>
+      featureSession.read('stream').bind(() => {
+        setSubscriptionRevision((value) => value + 1);
+        restartWebRtcStream();
+      }),
+    [featureSession, restartWebRtcStream],
+  );
+  useEffect(() => {
+    if (config && !config.logsPath) featureSession.read('logs').unsupported();
+  }, [config, featureSession]);
   const handledWebRtcFailureRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -845,10 +908,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [useAvcc, config?.url]);
 
   useAvccStream({
+    revision: subscriptionRevision,
     url: config?.url ?? '',
     enabled: active && useAvcc && !!config,
     canvasRef,
-    fetchImpl: sessionFetch,
+    fetchImpl: tokenFetch,
     onFirstFrame: () => {
       setStatus('streaming');
       setError(null);
@@ -978,7 +1042,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         // software keyboard while browser HID keys continue to type. serve-sim
         // reconnects it once the last input socket detaches.
         sendWs(WS_MSG_HARDWARE_KEYBOARD, { enabled: false });
-        if (!cancelled) setHardwareKeyboardConnectedState(false);
+        if (!cancelled) {
+          setHardwareKeyboardConnectedState(false);
+          featureSession.read('keyboard').ready();
+        }
       };
       ws.onmessage = (event) => {
         if (!(event.data instanceof ArrayBuffer)) return;
@@ -1036,7 +1103,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       pendingWsRef.current = [];
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, inputAdmission, sendWs, socketProtocols]);
+  }, [wsUrl, inputAdmission, sendWs, socketProtocols, featureSession]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
@@ -1053,7 +1120,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     () => (axUrl ? (signal) => loadIosAccessibility(axUrl, signal, sessionFetch) : null),
     [axUrl, sessionFetch],
   );
-  const accessibilityState = useAccessibility(accessibilityLoader);
+  const accessibilityState = useAccessibility(
+    accessibilityLoader,
+    undefined,
+    featureSession.read('accessibility'),
+  );
 
   // One-shot typed host actions (`location.*`, `app.*`) over the exec channel.
   const runAction = useMemo(
@@ -1079,7 +1150,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setLocation,
     clearLocation,
     locationCapabilities,
-  } = useDeviceLocation(locationBackend);
+  } = useDeviceLocation(locationBackend, featureSession.read('location'));
 
   // serve-sim exposes permissions over its CLI channel only, so the Hub has no
   // route to read them. The section stays hidden until serve-sim serves them.
@@ -1091,11 +1162,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   useEffect(() => {
     activityLastSampleAtRef.current = 0;
-    if (!metricsPath) {
-      setActivity(null);
-      return;
-    }
-    setActivity({ hostCores: null, samples: [], errored: false, stale: false });
+    if (!metricsPath || !activityEnabled) return;
+    setActivity(
+      (current) => current ?? { hostCores: null, samples: [], errored: false, stale: false },
+    );
     const watchdog = setInterval(() => {
       const lastSampleAt = activityLastSampleAtRef.current;
       if (lastSampleAt > 0 && Date.now() - lastSampleAt > ACTIVITY_STALE_MS) {
@@ -1103,7 +1173,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
     }, 1000);
     return () => clearInterval(watchdog);
-  }, [metricsPath]);
+  }, [metricsPath, activityEnabled]);
 
   useEffect(() => {
     if (!execWsUrl || !execToken) return;
@@ -1117,7 +1187,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       subscriptions.set(2, 'events');
       paths.set(2, eventsPath);
     }
-    if (metricsPath) {
+    if (metricsPath && activityEnabled) {
       subscriptions.set(3, 'metrics');
       paths.set(3, metricsPath);
     }
@@ -1128,10 +1198,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const buffers = new Map<number, string>();
 
+    const featureName = (kind: 'logs' | 'events' | 'metrics') =>
+      kind === 'metrics' ? 'activity' : kind;
+    for (const kind of subscriptions.values()) featureSession.read(featureName(kind)).begin();
     const markInterrupted = () => {
-      if (metricsPath) {
-        setActivity((current) => (current ? { ...current, errored: true } : current));
-      }
+      let retry = false;
+      for (const kind of subscriptions.values())
+        retry =
+          featureSession
+            .read(featureName(kind))
+            .fail(new Error('Subscription interrupted'), true) || retry;
+      return retry;
     };
 
     const emit = (kind: 'logs' | 'events' | 'metrics', block: ParsedSseBlock) => {
@@ -1143,18 +1220,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         } catch {}
         if (message) {
           setLogs((previous) =>
-            [
-              ...previous,
-              { id: `i${++logSeqRef.current}`, source: 'syslog', message },
-            ].slice(-MAX_LOGS),
+            [...previous, { id: `i${++logSeqRef.current}`, source: 'syslog', message }].slice(
+              -MAX_LOGS,
+            ),
           );
         }
         return;
       }
       if (kind === 'events' && deviceUdid) {
-        setEventLogState((current) =>
-          mergeIosEventLogPayload(current, block.data, deviceUdid),
-        );
+        setEventLogState((current) => mergeIosEventLogPayload(current, block.data, deviceUdid));
         return;
       }
       if (kind !== 'metrics') return;
@@ -1162,9 +1236,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         const payload = JSON.parse(block.data) as unknown;
         if (block.event === 'meta') {
           const hostCores = parseActivityHostCores(payload);
-          setActivity((current) =>
-            current ? { ...current, hostCores, errored: false } : current,
-          );
+          setActivity((current) => (current ? { ...current, hostCores, errored: false } : current));
           return;
         }
         const sample = parseActivitySample(payload);
@@ -1185,12 +1257,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       try {
         ws = new WebSocket(execWsUrl, socketProtocols);
       } catch {
-        markInterrupted();
-        retryTimer = setTimeout(connect, RECONNECT_MS);
+        if (markInterrupted()) retryTimer = setTimeout(connect, RECONNECT_MS);
         return;
       }
       ws.onopen = () => ws?.send(JSON.stringify({ token: execToken }));
       ws.onmessage = (event) => {
+        if (cancelled) return;
         let msg: { ready?: boolean; sub?: number; data?: string; end?: boolean };
         try {
           msg = JSON.parse(String(event.data));
@@ -1198,6 +1270,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           return;
         }
         if (msg.ready) {
+          for (const kind of subscriptions.values()) featureSession.read(featureName(kind)).ready();
           for (const [sub, path] of paths) {
             ws?.send(JSON.stringify({ sub, path }));
           }
@@ -1220,8 +1293,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       };
       ws.onclose = () => {
         if (!cancelled) {
-          markInterrupted();
-          retryTimer = setTimeout(connect, RECONNECT_MS);
+          if (markInterrupted()) retryTimer = setTimeout(connect, RECONNECT_MS);
         }
       };
       ws.onerror = () => {
@@ -1242,6 +1314,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [
     logsEnabled,
     eventsEnabled,
+    activityEnabled,
+    featureSession,
+    subscriptionRevision,
     execWsUrl,
     execToken,
     logsPath,
@@ -1262,31 +1337,42 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
-    hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols)
-      .then((res) => {
-        if (cancelled) return;
-        const next: DeviceSettings = {};
-        for (const [key, value] of Object.entries(res.status ?? {})) {
-          if (typeof value === 'string') next[key as DeviceSettingKey] = value;
-        }
-        setDeviceSettings(next);
-        if (next.appearance === 'light' || next.appearance === 'dark') {
-          setAppearanceState(next.appearance);
-        }
-        // The helper socket's open handler usually settles this first (it
-        // disconnects the hardware keyboard); only fill in an unknown.
-        const keyboardValue = res.status?.[UI_OPTION_HARDWARE_KEYBOARD];
-        if (keyboardValue === 'on' || keyboardValue === 'off') {
-          setHardwareKeyboardConnectedState((prev) => prev ?? keyboardValue === 'on');
-        }
-      })
-      .catch(() => {
-        /* unreachable / unsupported — leave unknown */
-      });
+    const read = () => {
+      void hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols)
+        .then((res) => {
+          if (cancelled) return;
+          const next: DeviceSettings = {};
+          for (const [key, value] of Object.entries(res.status ?? {})) {
+            if (typeof value === 'string') next[key as DeviceSettingKey] = value;
+          }
+          setDeviceSettings(next);
+          featureSession.read('deviceSettings').ready();
+          if (next.appearance === 'light' || next.appearance === 'dark') {
+            setAppearanceState(next.appearance);
+          }
+          // The helper socket's open handler usually settles this first (it
+          // disconnects the hardware keyboard); only fill in an unknown.
+          const keyboardValue = res.status?.[UI_OPTION_HARDWARE_KEYBOARD];
+          if (keyboardValue === 'on' || keyboardValue === 'off') {
+            setHardwareKeyboardConnectedState((prev) => prev ?? keyboardValue === 'on');
+            featureSession.read('keyboard').ready();
+          }
+        })
+        .catch((cause) => {
+          if (cancelled) return;
+          featureSession.read('deviceSettings').fail(cause);
+          featureSession.read('keyboard').fail(cause);
+        });
+    };
+    const unbind = featureSession.read('deviceSettings').bind(read);
+    const unbindKeyboard = featureSession.read('keyboard').bind(read);
+    read();
     return () => {
       cancelled = true;
+      unbind();
+      unbindKeyboard();
     };
-  }, [execWsUrl, execToken, deviceUdid, socketProtocols]);
+  }, [execWsUrl, execToken, deviceUdid, socketProtocols, featureSession]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
@@ -1299,6 +1385,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     {
       url: streamSettingsUrl,
       initialSettings: normalizedInitialStreamSettings,
+      readState: featureSession.read('streamSettings'),
       parse: parseIosStreamSettings,
       toPatch: iosStreamSettingsPatch,
       fetchImpl: sessionFetch,
@@ -1310,21 +1397,34 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   //    SpringBoard foregrounds apps. EventSource reconnects on its own. ──
   const appStateUrl = config?.appStateUrl ?? null;
   useEffect(() => {
-    setForegroundApp(null);
-    if (!appStateUrl) return;
+    if (!appStateUrl) {
+      if (config) featureSession.read('foregroundApp').unsupported();
+      return;
+    }
+    let cancelled = false;
     let source: EventSource | null = null;
     try {
       source = new EventSource(appStateUrl);
-    } catch {
+    } catch (cause) {
+      featureSession.read('foregroundApp').fail(cause);
       return;
     }
+    source.onerror = () => {
+      if (
+        !featureSession.read('foregroundApp').fail(new Error('App subscription interrupted'), true)
+      )
+        source?.close();
+    };
     source.onmessage = (event) => {
+      if (cancelled) return;
       try {
         const data = JSON.parse(String(event.data)) as {
           bundleId?: string;
           pid?: number;
           isReactNative?: boolean;
         };
+        featureSession.read('foregroundApp').ready();
+        if (!data.bundleId) setForegroundApp(null);
         if (data.bundleId) {
           // Merge repeat events for the same app so a relaunch (new pid)
           // doesn't wipe the bundle details filled in below.
@@ -1338,8 +1438,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
       } catch {}
     };
-    return () => source?.close();
-  }, [appStateUrl]);
+    return () => {
+      cancelled = true;
+      source?.close();
+    };
+  }, [appStateUrl, subscriptionRevision, featureSession, config]);
 
   // ── Foreground app details (name, versions, icon) — introspected from the
   //    app bundle on the host over exec-ws whenever the foreground bundle id
@@ -1393,27 +1496,34 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
-    sessionFetch(gridApiUrl, { signal: AbortSignal.timeout(3000) })
-      .then((r) => r.json())
-      .then((data: { devices?: Array<Record<string, unknown>> }) => {
-        if (cancelled || !Array.isArray(data.devices) || data.devices.length === 0) return;
-        setDevices(
-          data.devices.map((d) => ({
-            id: String(d.device ?? d.id ?? 'ios'),
-            name: String(d.name ?? d.device ?? 'Simulator'),
-            system: typeof d.runtime === 'string' ? d.runtime : undefined,
-            platform: 'ios' as const,
-            current: d.helper != null,
-          })),
-        );
-      })
-      .catch(() => {
-        /* unreachable — keep the placeholder */
-      });
+    const read = () => {
+      void sessionFetch(gridApiUrl, { signal: AbortSignal.timeout(3000) })
+        .then((r) => checkResponse(r).json())
+        .then((data: { devices?: Array<Record<string, unknown>> }) => {
+          if (cancelled) return;
+          if (!Array.isArray(data.devices)) throw new Error('Invalid device list');
+          featureSession.read('devices').ready();
+          setDevices(
+            data.devices.map((d) => ({
+              id: String(d.device ?? d.id ?? 'ios'),
+              name: String(d.name ?? d.device ?? 'Simulator'),
+              system: typeof d.runtime === 'string' ? d.runtime : undefined,
+              platform: 'ios' as const,
+              current: d.helper != null,
+            })),
+          );
+        })
+        .catch((cause) => {
+          if (!cancelled) featureSession.read('devices').fail(cause);
+        });
+    };
+    const unbind = featureSession.read('devices').bind(read);
+    read();
     return () => {
       cancelled = true;
+      unbind();
     };
-  }, [gridApiUrl, sessionFetch]);
+  }, [gridApiUrl, sessionFetch, featureSession]);
 
   const deviceSettingsAvailable = !!execWsUrl && !!execToken && !!deviceUdid;
   const activityAvailable = !!metricsPath;
@@ -1441,7 +1551,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     ],
   );
 
-  return {
+  const backend: BackendDeviceClient = {
     platform: 'ios',
     status,
     error,
@@ -1511,4 +1621,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setHardwareKeyboardConnected,
     toggleSoftwareKeyboard,
   };
+  return useFeatureClient(backend, {
+    active,
+    session: featureSession,
+    activityEnabled,
+    setActivityEnabled,
+  });
 }

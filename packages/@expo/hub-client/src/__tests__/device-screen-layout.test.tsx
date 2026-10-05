@@ -29,8 +29,8 @@ describe('DeviceScreen layout', () => {
   });
 
   test('leaves only the live stream surface background transparent', () => {
-    expect(deviceScreenSurfaceStyle('streaming').backgroundColor).toBeUndefined();
-    expect(deviceScreenSurfaceStyle('connecting').backgroundColor).toBe('#000');
+    expect(deviceScreenSurfaceStyle('ready').backgroundColor).toBeUndefined();
+    expect(deviceScreenSurfaceStyle('loading').backgroundColor).toBe('#000');
     expect(deviceScreenSurfaceStyle('error').backgroundColor).toBe('#000');
   });
 
@@ -39,8 +39,8 @@ describe('DeviceScreen layout', () => {
     // cover the previous frame with a status message.
     expect(deviceScreenSurfaceStyle('reconnecting').backgroundColor).toBeUndefined();
     expect(deviceScreenPresentsMedia('reconnecting')).toBe(true);
-    expect(deviceScreenPresentsMedia('streaming')).toBe(true);
-    expect(deviceScreenPresentsMedia('connecting')).toBe(false);
+    expect(deviceScreenPresentsMedia('ready')).toBe(true);
+    expect(deviceScreenPresentsMedia('loading')).toBe(false);
     expect(deviceScreenPresentsMedia('error')).toBe(false);
     expect(deviceScreenPresentsMedia('idle')).toBe(false);
   });

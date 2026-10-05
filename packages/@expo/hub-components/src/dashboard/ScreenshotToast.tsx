@@ -2,7 +2,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Toaster, toast as sonnerToast } from 'sonner';
 
 import { type DeviceClient, type ScreenshotArtifact } from '@expo/hub-client';
-import { bg, border, ChevronRightIcon, isFocusVisible, radius, shadow, text, textSize } from '../primitives';
+import {
+  bg,
+  border,
+  ChevronRightIcon,
+  isFocusVisible,
+  radius,
+  shadow,
+  text,
+  textSize,
+} from '../primitives';
 
 export type ScreenshotToastState =
   | { phase: 'capturing' }
@@ -15,7 +24,10 @@ const WARNING_DISMISS_MS = 12_000;
 const FAILED_DISMISS_MS = 4000;
 
 /** The session artifact line under a saved toast, and how long the toast stays. */
-export function artifactNotice(artifact: ScreenshotArtifact | null): { message?: string; dismissMs: number } {
+export function artifactNotice(artifact: ScreenshotArtifact | null): {
+  message?: string;
+  dismissMs: number;
+} {
   if (artifact?.status === 'saved') {
     return { message: 'Saved to session artifacts', dismissMs: SAVED_DISMISS_MS };
   }
@@ -30,7 +42,11 @@ export function artifactNotice(artifact: ScreenshotArtifact | null): { message?:
 
 /** Filesystem-safe screenshot name, e.g. `iPhone-16-2026-06-30T12-34-56.png`. */
 function screenshotFilename(name: string): string {
-  const slug = name.trim().replace(/[^a-zA-Z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || 'device';
+  const slug =
+    name
+      .trim()
+      .replace(/[^a-zA-Z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '') || 'device';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').replace(/Z$/, '');
   return `${slug}-${stamp}.png`;
 }
@@ -96,9 +112,9 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
       open.current.delete(id);
     };
     try {
-      const shot = await client.screenshot();
+      const result = await client.screenshot();
       if (!open.current.has(id)) return;
-      if (!shot) {
+      if (!result.ok) {
         sonnerToast.custom(() => <ScreenshotToast toast={{ phase: 'capture-failed' }} />, {
           id,
           toasterId: TOASTER_ID,
@@ -108,6 +124,7 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
         });
         return;
       }
+      const shot = result.value;
       const url = URL.createObjectURL(shot.blob);
       open.current.set(id, url);
       const filename = screenshotFilename(deviceName);

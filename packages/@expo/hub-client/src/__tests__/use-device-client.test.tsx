@@ -4,7 +4,7 @@ import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { DeviceClientStoreContext, useDeviceClientSelector } from "../DeviceClientProvider";
 import { createDeviceClientStore } from "../device-client-store";
-import type { DeviceClient, MultiTouchSample } from "../types";
+import type { DeviceClient, ScrollSample } from "../types";
 import { useDeviceClient } from "../useDeviceClient";
 import { createGlobalStubs } from "./test-globals";
 
@@ -16,6 +16,14 @@ afterEach(async () => {
   renderer = undefined;
   restoreGlobals();
 });
+
+/** Change only the stream FPS, as a real backend does once per second. */
+function withFps(client: DeviceClient, fps: number): DeviceClient {
+  return {
+    ...client,
+    stream: { ...client.stream, data: { screen: client.stream.data?.screen ?? null, fps } },
+  } as DeviceClient;
+}
 
 async function mount(children: ReactElement) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -43,7 +51,7 @@ test("an unchanged client does not restart effects or render memoized children",
   let detachments = 0;
   const Child = memo(function Child({ client }: { client: DeviceClient }) {
     childRenders++;
-    return <span>{client.status}</span>;
+    return <span>{client.inputError}</span>;
   });
   function Parent({ label }: { label: string }) {
     const client = useDeviceClient();
@@ -71,7 +79,7 @@ test("an unchanged client does not restart effects or render memoized children",
   expect(childRenders).toBe(1);
   expect(attachments).toBe(1);
   expect(detachments).toBe(0);
-  await act(async () => store.publish({ ...store.getSnapshot(), status: "streaming" }));
+  await act(async () => store.publish({ ...store.getSnapshot(), inputError: "Input busy" }));
   expect(childRenders).toBe(2);
   expect(attachments).toBe(2);
   expect(detachments).toBe(1);
@@ -80,16 +88,19 @@ test("an unchanged client does not restart effects or render memoized children",
 test("destructured controls ignore unread updates and receive status and callback changes", async () => {
   const store = createDeviceClientStore();
   const renders = { controls: 0, fps: 0, unused: 0 };
-  let controls!: Pick<DeviceClient, "status" | "screenshot" | "rotate" | "pressButton" | "reload">;
+  let controls!: Pick<
+    DeviceClient,
+    "inputError" | "screenshot" | "rotate" | "pressButton" | "reload"
+  >;
   let fps = 0;
   function Controls() {
-    const { status, screenshot, rotate, pressButton, reload } = useDeviceClient();
-    controls = { status, screenshot, rotate, pressButton, reload };
+    const { inputError, screenshot, rotate, pressButton, reload } = useDeviceClient();
+    controls = { inputError, screenshot, rotate, pressButton, reload };
     renders.controls++;
     return null;
   }
   function Fps() {
-    fps = useDeviceClient().fps;
+    fps = useDeviceClient().stream.data?.fps ?? 0;
     renders.fps++;
     return null;
   }
@@ -109,16 +120,20 @@ test("destructured controls ignore unread updates and receive status and callbac
   await act(async () =>
     store.publish({
       ...store.getSnapshot(),
-      logs: [{ id: "1", source: "syslog", message: "new log" }],
+      logs: {
+        ...store.getSnapshot().logs,
+        status: "ready",
+        data: [{ id: "1", source: "syslog", message: "new log" }],
+      } as DeviceClient["logs"],
     }),
   );
   expect(renders).toEqual(initial);
-  await act(async () => store.publish({ ...store.getSnapshot(), fps: 30 }));
+  await act(async () => store.publish(withFps(store.getSnapshot(), 30)));
   expect(renders).toEqual({ ...initial, fps: initial.fps + 1 });
   expect(fps).toBe(30);
-  await act(async () => store.publish({ ...store.getSnapshot(), status: "streaming" }));
+  await act(async () => store.publish({ ...store.getSnapshot(), inputError: "Input busy" }));
   expect(renders).toEqual({ ...initial, controls: initial.controls + 1, fps: initial.fps + 1 });
-  expect(controls.status).toBe("streaming");
+  expect(controls.inputError).toBe("Input busy");
   const rotate = () => {};
   await act(async () => store.publish({ ...store.getSnapshot(), rotate }));
   expect(renders).toEqual({ ...initial, controls: initial.controls + 2, fps: initial.fps + 1 });
@@ -161,13 +176,13 @@ for (const initiallyAvailable of [false, true]) {
     const store = createDeviceClientStore();
     const callback = () => {};
     if (initiallyAvailable) {
-      store.publish({ ...store.getSnapshot(), sendMultiTouch: callback });
+      store.publish({ ...store.getSnapshot(), sendScroll: callback });
     }
-    let readCallback!: () => DeviceClient["sendMultiTouch"];
+    let readCallback!: () => DeviceClient["sendScroll"];
     let renders = 0;
     function Controls() {
       const client = useDeviceClient();
-      readCallback = () => client.sendMultiTouch;
+      readCallback = () => client.sendScroll;
       renders++;
       return null;
     }
@@ -180,7 +195,7 @@ for (const initiallyAvailable of [false, true]) {
     await act(async () =>
       store.publish({
         ...store.getSnapshot(),
-        sendMultiTouch: initiallyAvailable ? undefined : callback,
+        sendScroll: initiallyAvailable ? undefined : callback,
       }),
     );
     expect(renders).toBe(initial);
@@ -194,7 +209,7 @@ for (const { name, has } of presenceChecks) {
     let available = false;
     let renders = 0;
     function Controls() {
-      available = has(useDeviceClient(), "sendMultiTouch");
+      available = has(useDeviceClient(), "sendScroll");
       renders++;
       return <span>{String(available)}</span>;
     }
@@ -206,11 +221,11 @@ for (const { name, has } of presenceChecks) {
     expect(available).toBe(false);
     const initial = renders;
     // Presence changes even when the new property's value is undefined.
-    await act(async () => store.publish({ ...store.getSnapshot(), sendMultiTouch: undefined }));
+    await act(async () => store.publish({ ...store.getSnapshot(), sendScroll: undefined }));
     expect(available).toBe(true);
     expect(renders).toBe(initial + 1);
     const withoutMultiTouch = { ...store.getSnapshot() };
-    delete withoutMultiTouch.sendMultiTouch;
+    delete withoutMultiTouch.sendScroll;
     await act(async () => store.publish(withoutMultiTouch));
     expect(available).toBe(false);
     expect(renders).toBe(initial + 2);
@@ -219,24 +234,20 @@ for (const { name, has } of presenceChecks) {
   for (const initiallyAvailable of [false, true]) {
     test(`a retained handler's ${name} check follows callback ${initiallyAvailable ? "removal" : "addition"} without another render`, async () => {
       const store = createDeviceClientStore();
-      const sample: MultiTouchSample = {
-        phase: "begin",
-        a: { x: 0.2, y: 0.2 },
-        b: { x: 0.8, y: 0.8 },
-      };
-      const calls: MultiTouchSample[] = [];
-      const callback = (touch: MultiTouchSample) => {
+      const sample: ScrollSample = { dx: 0, dy: 10, x: 0.5, y: 0.5 };
+      const calls: ScrollSample[] = [];
+      const callback = (touch: ScrollSample) => {
         calls.push(touch);
       };
-      if (initiallyAvailable) store.publish({ ...store.getSnapshot(), sendMultiTouch: callback });
+      if (initiallyAvailable) store.publish({ ...store.getSnapshot(), sendScroll: callback });
       let onClick!: () => void;
       let available: boolean | undefined;
       let renders = 0;
       function Controls() {
         const client = useDeviceClient();
         onClick = () => {
-          available = has(client, "sendMultiTouch");
-          if (available) client.sendMultiTouch!(sample);
+          available = has(client, "sendScroll");
+          if (available) client.sendScroll!(sample);
         };
         renders++;
         return <button onClick={onClick}>Touch</button>;
@@ -249,8 +260,8 @@ for (const { name, has } of presenceChecks) {
       const initial = renders;
       const retainedHandler = onClick;
       const next = { ...store.getSnapshot() };
-      if (initiallyAvailable) delete next.sendMultiTouch;
-      else next.sendMultiTouch = callback;
+      if (initiallyAvailable) delete next.sendScroll;
+      else next.sendScroll = callback;
       await act(async () => store.publish(next));
       expect(renders).toBe(initial);
       await act(async () => retainedHandler());
@@ -269,12 +280,16 @@ for (const initiallyPresent of [false, true]) {
       const initial: ClientWithLabel = { ...store.getSnapshot(), label: "initial" };
       store.publish(initial);
     }
-    let readData!: () => { status: DeviceClient["status"]; label?: string; presence: boolean[] };
+    let readData!: () => {
+      inputError: DeviceClient["inputError"];
+      label?: string;
+      presence: boolean[];
+    };
     let renders = 0;
     function Controls() {
       const client = useDeviceClient() as ClientWithLabel;
       readData = () => ({
-        status: client.status,
+        inputError: client.inputError,
         label: client.label,
         presence: presenceChecks.map(({ has }) => has(client, "label")),
       });
@@ -287,13 +302,13 @@ for (const initiallyPresent of [false, true]) {
       </DeviceClientStoreContext.Provider>,
     );
     const initial = renders;
-    const next: ClientWithLabel = { ...store.getSnapshot(), status: "streaming" };
+    const next: ClientWithLabel = { ...store.getSnapshot(), inputError: "Input busy" };
     if (initiallyPresent) delete next.label;
     else next.label = "new";
     await act(async () => store.publish(next));
     expect(renders).toBe(initial);
     expect(readData()).toEqual({
-      status: "idle",
+      inputError: null,
       label: initiallyPresent ? "initial" : undefined,
       presence: presenceChecks.map(() => initiallyPresent),
     });
@@ -303,15 +318,15 @@ for (const initiallyPresent of [false, true]) {
 test("own-property checks track changes even while the property remains inherited", async () => {
   const store = createDeviceClientStore();
   const callback = () => {};
-  const inherited = Object.assign(Object.create({ sendMultiTouch: callback }), store.getSnapshot());
+  const inherited = Object.assign(Object.create({ sendScroll: callback }), store.getSnapshot());
   store.publish(inherited);
   let own = false;
   let present = false;
   let renders = 0;
   function Controls() {
     const client = useDeviceClient();
-    own = Object.hasOwn(client, "sendMultiTouch");
-    present = "sendMultiTouch" in client;
+    own = Object.hasOwn(client, "sendScroll");
+    present = "sendScroll" in client;
     renders++;
     return null;
   }
@@ -323,7 +338,7 @@ test("own-property checks track changes even while the property remains inherite
   expect(own).toBe(false);
   expect(present).toBe(true);
   const initial = renders;
-  await act(async () => store.publish({ ...store.getSnapshot(), sendMultiTouch: callback }));
+  await act(async () => store.publish({ ...store.getSnapshot(), sendScroll: callback }));
   expect(renders).toBe(initial + 1);
   expect(own).toBe(true);
   expect(present).toBe(true);
@@ -335,10 +350,11 @@ test("own-property checks track changes even while the property remains inherite
 
 test("a newly read property has its current value after ignored updates", async () => {
   const store = createDeviceClientStore();
-  let selected!: DeviceClient["status"] | number;
+  let selected!: DeviceClient["inputError"] | number | undefined;
   let renders = 0;
   function Selected({ field }: { field: "status" | "fps" }) {
-    selected = useDeviceClient()[field];
+    const client = useDeviceClient();
+    selected = field === "fps" ? client.stream.data?.fps : client.inputError;
     renders++;
     return null;
   }
@@ -349,18 +365,18 @@ test("a newly read property has its current value after ignored updates", async 
   );
   await mount(tree("status"));
   const initial = renders;
-  await act(async () => store.publish({ ...store.getSnapshot(), fps: 30 }));
+  await act(async () => store.publish(withFps(store.getSnapshot(), 30)));
   expect(renders).toBe(initial);
   await act(async () => renderer!.update(tree("fps")));
   expect(selected).toBe(30);
   await act(async () => {
-    store.publish({ ...store.getSnapshot(), fps: 60 });
-    store.publish({ ...store.getSnapshot(), fps: 90 });
+    store.publish(withFps(store.getSnapshot(), 60));
+    store.publish(withFps(store.getSnapshot(), 90));
   });
   expect(selected).toBe(90);
   // Previously read fields remain tracked for this provider, even after a conditional read changes.
   const beforeStatusChange = renders;
-  await act(async () => store.publish({ ...store.getSnapshot(), status: "streaming" }));
+  await act(async () => store.publish({ ...store.getSnapshot(), inputError: "Input busy" }));
   expect(renders).toBe(beforeStatusChange + 1);
 });
 
@@ -370,7 +386,7 @@ test("tracked controls can use a selector without subscribing to its source prop
   let connected = false;
   function Controls() {
     const { rotate } = useDeviceClient();
-    connected = useDeviceClientSelector((client) => client.status === "streaming");
+    connected = useDeviceClientSelector((client) => client.stream.status === "ready");
     renders++;
     return (
       <button disabled={!connected} onClick={rotate}>
@@ -384,22 +400,27 @@ test("tracked controls can use a selector without subscribing to its source prop
     </DeviceClientStoreContext.Provider>,
   );
   const initial = renders;
-  await act(async () => store.publish({ ...store.getSnapshot(), status: "connecting" }));
+  const withStatus = (status: DeviceClient["stream"]["status"]) =>
+    ({
+      ...store.getSnapshot(),
+      stream: { ...store.getSnapshot().stream, status },
+    }) as DeviceClient;
+  await act(async () => store.publish(withStatus("loading")));
   expect(renders).toBe(initial);
   expect(connected).toBe(false);
-  await act(async () => store.publish({ ...store.getSnapshot(), status: "streaming" }));
+  await act(async () => store.publish(withStatus("ready")));
   expect(renders).toBe(initial + 1);
   expect(connected).toBe(true);
-  await act(async () => store.publish({ ...store.getSnapshot(), fps: 30 }));
+  await act(async () => store.publish(withFps(store.getSnapshot(), 30)));
   expect(renders).toBe(initial + 1);
 });
 
 test("optional properties are tracked before a backend provides them", async () => {
   const store = createDeviceClientStore();
-  let sendMultiTouch: DeviceClient["sendMultiTouch"];
+  let sendScroll: DeviceClient["sendScroll"];
   let renders = 0;
   function Controls() {
-    ({ sendMultiTouch } = useDeviceClient());
+    ({ sendScroll } = useDeviceClient());
     renders++;
     return null;
   }
@@ -408,25 +429,26 @@ test("optional properties are tracked before a backend provides them", async () 
       <Controls />
     </DeviceClientStoreContext.Provider>,
   );
-  expect(sendMultiTouch).toBeUndefined();
+  expect(sendScroll).toBeUndefined();
   const initial = renders;
   const callback = () => {};
-  await act(async () => store.publish({ ...store.getSnapshot(), sendMultiTouch: callback }));
-  expect(sendMultiTouch).toBe(callback);
+  await act(async () => store.publish({ ...store.getSnapshot(), sendScroll: callback }));
+  expect(sendScroll).toBe(callback);
   expect(renders).toBe(initial + 1);
-  await act(async () => store.publish({ ...store.getSnapshot(), sendMultiTouch: undefined }));
-  expect(sendMultiTouch).toBeUndefined();
+  await act(async () => store.publish({ ...store.getSnapshot(), sendScroll: undefined }));
+  expect(sendScroll).toBeUndefined();
   expect(renders).toBe(initial + 2);
 });
 
 test("provider changes reset tracking and unsubscribe from the previous session", async () => {
   const first = createDeviceClientStore();
   const second = createDeviceClientStore();
-  second.publish({ ...second.getSnapshot(), fps: 24 });
-  let selected!: DeviceClient["status"] | number;
+  second.publish(withFps(second.getSnapshot(), 24));
+  let selected!: DeviceClient["inputError"] | number | undefined;
   let renders = 0;
   function Selected({ field }: { field: "status" | "fps" }) {
-    selected = useDeviceClient()[field];
+    const client = useDeviceClient();
+    selected = field === "fps" ? client.stream.data?.fps : client.inputError;
     renders++;
     return null;
   }
@@ -439,17 +461,17 @@ test("provider changes reset tracking and unsubscribe from the previous session"
   await act(async () => renderer!.update(tree(second, "fps")));
   expect(selected).toBe(24);
   const beforeUpdates = renders;
-  await act(async () => first.publish({ ...first.getSnapshot(), status: "streaming" }));
-  await act(async () => second.publish({ ...second.getSnapshot(), status: "error" }));
+  await act(async () => first.publish({ ...first.getSnapshot(), inputError: "Input busy" }));
+  await act(async () => second.publish({ ...second.getSnapshot(), inputError: "Input lost" }));
   expect(renders).toBe(beforeUpdates);
-  await act(async () => second.publish({ ...second.getSnapshot(), fps: 48 }));
+  await act(async () => second.publish(withFps(second.getSnapshot(), 48)));
   expect(selected).toBe(48);
   expect(renders).toBe(beforeUpdates + 1);
   await act(async () => renderer!.unmount());
   renderer = undefined;
   const beforeUnmountedUpdates = renders;
-  first.publish({ ...first.getSnapshot(), status: "error" });
-  second.publish({ ...second.getSnapshot(), fps: 60 });
+  first.publish({ ...first.getSnapshot(), inputError: "Input lost" });
+  second.publish(withFps(second.getSnapshot(), 60));
   expect(renders).toBe(beforeUnmountedUpdates);
 });
 
@@ -457,12 +479,12 @@ test("a tracked update before subscription is attached is still displayed", asyn
   const store = createDeviceClientStore();
   let fps = 0;
   function Fps() {
-    ({ fps } = useDeviceClient());
+    fps = useDeviceClient().stream.data?.fps ?? 0;
     return <span>{fps}</span>;
   }
   function Publish() {
     useLayoutEffect(() => {
-      store.publish({ ...store.getSnapshot(), fps: 30 });
+      store.publish(withFps(store.getSnapshot(), 30));
     }, []);
     return null;
   }
@@ -479,15 +501,15 @@ test("a tracked update before subscription is attached is still displayed", asyn
 for (const mode of ["spread", "rest"] as const) {
   test(`${mode} subscribes to all properties, including optional properties added later`, async () => {
     const store = createDeviceClientStore();
-    let copy!: Omit<DeviceClient, "status">;
+    let copy!: Omit<DeviceClient, "inputError">;
     let renders = 0;
     function AllProperties() {
       const client = useDeviceClient();
       if (mode === "spread") {
         copy = { ...client };
       } else {
-        const { status, ...rest } = client;
-        void status;
+        const { inputError, ...rest } = client;
+        void inputError;
         copy = rest;
       }
       renders++;
@@ -499,12 +521,12 @@ for (const mode of ["spread", "rest"] as const) {
       </DeviceClientStoreContext.Provider>,
     );
     const initial = renders;
-    await act(async () => store.publish({ ...store.getSnapshot(), fps: 30 }));
-    expect(copy.fps).toBe(30);
+    await act(async () => store.publish(withFps(store.getSnapshot(), 30)));
+    expect(copy.stream.data?.fps).toBe(30);
     expect(renders).toBe(initial + 1);
     const callback = () => {};
-    await act(async () => store.publish({ ...store.getSnapshot(), sendMultiTouch: callback }));
-    expect(copy.sendMultiTouch).toBe(callback);
+    await act(async () => store.publish({ ...store.getSnapshot(), sendScroll: callback }));
+    expect(copy.sendScroll).toBe(callback);
     expect(renders).toBe(initial + 2);
   });
 }

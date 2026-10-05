@@ -2,11 +2,10 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { useLayoutEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { DeviceClientProvider } from "../DeviceClientProvider";
+import { DeviceClientProvider, useDeviceClientSelector } from "../DeviceClientProvider";
 import { AVCC_TAG_DESCRIPTION } from "../avcc";
 import { streamGeometry } from "../orientation";
 import type { DeviceOrientation } from "../types";
-import { useDeviceClient } from "../useDeviceClient";
 import { useDeviceScreenClient } from "../useDeviceScreenClient";
 import { WS_TAG_SCREEN_CONFIG } from "../useIosDevice";
 import { Peer, Video } from "./screen-test-media";
@@ -197,37 +196,35 @@ for (const useVideoFrameCallback of [true, false]) {
     let emptyControlRenders = 0;
     let fps = 0;
     function Fps() {
-      ({ fps } = useDeviceClient());
+      fps = useDeviceClientSelector((client) => client.stream.data?.fps ?? 0);
       return null;
     }
     function Features() {
-      const { capabilities, streamCapabilities } = useDeviceClient();
+      // Feature objects change with their data; select the fields this component shows.
+      const activity = useDeviceClientSelector(
+        (client) => client.activity.status !== "unsupported",
+      );
+      const transports = useDeviceClientSelector((client) => client.stream.transports);
       featureRenders++;
       return (
         <span>
-          {String(capabilities.activity)}:{String(streamCapabilities?.modeAvailability.webrtc)}
+          {String(activity)}:{String(transports.modeAvailability.webrtc)}
         </span>
       );
     }
     function EmptyControls() {
-      const {
-        setCameraImage,
-        clearCameraImage,
-        setStreamSource,
-        setGrpcImageMode,
-        setGrpcEncoder,
-        setGrpcInputSource,
-      } = useDeviceClient();
+      // Actions keep their identity, so unsupported controls never re-render.
+      const setImage = useDeviceClientSelector((client) => client.camera.setImage);
+      const clearImage = useDeviceClientSelector((client) => client.camera.clearImage);
+      const updateSource = useDeviceClientSelector((client) => client.streamSource.update);
       emptyControlRenders++;
       return (
         <button
           onClick={() => {
-            setCameraImage("front", new Blob());
-            clearCameraImage("front");
-            setStreamSource("scrcpy");
-            setGrpcImageMode("png");
-            setGrpcEncoder("software");
-            setGrpcInputSource("scrcpy");
+            void setImage("front", new Blob());
+            void clearImage("front");
+            void updateSource({ mode: "scrcpy", grpcImageMode: "png" });
+            void updateSource({ encoder: "software", inputSource: "scrcpy" });
           }}
         >
           Camera
@@ -262,7 +259,7 @@ for (const useVideoFrameCallback of [true, false]) {
     await act(async () => Peer.instances[0]!.ontrack?.({ streams: [stream], track: {} }));
     expect(video.srcObject).toBe(stream);
     await act(async () => video.frame());
-    expect(client.status).toBe("streaming");
+    expect(client.status).toBe("ready");
     expect(client.screen).toEqual({ width: 360, height: 720 });
     const firstScreen = client.screen;
     const initialRenders = renders;
@@ -400,7 +397,7 @@ test("iOS AVCC resize callbacks preserve screen identity and clear stale orienta
   expect(decoder.state).toBe("configured");
   expect(client.videoKind).toBe("canvas");
   await act(async () => decoder.frame(360, 720));
-  expect(client.status).toBe("streaming");
+  expect(client.status).toBe("ready");
   expect(client.screen).toEqual({ width: 360, height: 720 });
   const firstScreen = client.screen;
   const initialRenders = renders;

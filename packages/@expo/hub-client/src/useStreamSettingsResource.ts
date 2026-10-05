@@ -1,3 +1,5 @@
+import { fetchFeature as fetch } from './feature-state';
+import type { FeatureRead } from './feature-state';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { type SessionFetch } from './session-token';
@@ -15,6 +17,7 @@ type StreamSettingsPatchBuilder = (
 
 interface UseStreamSettingsResourceOptions {
   url: string | null;
+  readState?: FeatureRead;
   initialSettings: DeviceStreamEncoderSettings | null;
   parse: StreamSettingsParser;
   toPatch: StreamSettingsPatchBuilder;
@@ -29,6 +32,7 @@ export function useStreamSettingsResource({
   parse,
   toPatch,
   fetchImpl = fetch,
+  readState,
 }: UseStreamSettingsResourceOptions) {
   const [streamSettings, setStreamSettings] = useState<DeviceStreamEncoderSettings | null>(
     initialSettings,
@@ -49,7 +53,8 @@ export function useStreamSettingsResource({
 
   const requestStreamSettings = useCallback(
     async (clearPendingWhenDone: boolean) => {
-      if (!url || readControllerRef.current || writeControllerRef.current) return;
+      if (!url || readControllerRef.current || writeControllerRef.current || readState?.isStopped())
+        return;
       const request = ++requestRef.current;
       const controller = new AbortController();
       readControllerRef.current = controller;
@@ -62,13 +67,14 @@ export function useStreamSettingsResource({
         );
         if (!next) throw new Error('Stream settings request returned an invalid response');
         if (!controller.signal.aborted && requestRef.current === request) {
+          readState?.ready();
           settingsRef.current = next;
           setStreamSettings((current) =>
             sameDeviceStreamSettings(current, next) ? current : next,
           );
         }
-      } catch {
-        // Keep the last authoritative value. Callers can retry transient reads.
+      } catch (cause) {
+        if (!controller.signal.aborted) readState?.fail(cause);
       } finally {
         if (readControllerRef.current === controller) readControllerRef.current = null;
         if (clearPendingWhenDone && !controller.signal.aborted && requestRef.current === request) {
@@ -77,7 +83,7 @@ export function useStreamSettingsResource({
         }
       }
     },
-    [fetchImpl, parse, url],
+    [fetchImpl, parse, url, readState],
   );
 
   useEffect(() => {
@@ -92,14 +98,27 @@ export function useStreamSettingsResource({
 
     pendingRef.current = true;
     setStreamSettingsPending(true);
+    readState?.reset();
+    const unbind = readState?.bind(() => {
+      void requestStreamSettings(true);
+    });
     void requestStreamSettings(true);
-    return abortRequests;
-  }, [abortRequests, initialSettings, requestStreamSettings, url]);
+    return () => {
+      unbind?.();
+      abortRequests();
+    };
+  }, [abortRequests, initialSettings, requestStreamSettings, url, readState]);
 
   const updateStreamSettings = useCallback(
     (patch: Partial<DeviceStreamEncoderSettings>) => {
       const requestPatch = toPatch(patch);
-      if (!url || !requestPatch || pendingRef.current || writeControllerRef.current) return;
+      if (!url || !requestPatch) return Promise.resolve(false);
+      if (pendingRef.current || writeControllerRef.current)
+        throw {
+          code: 'busy',
+          message: 'An encoder update is already in progress',
+          retryable: true,
+        };
       const previous = settingsRef.current ?? DEFAULT_DEVICE_STREAM_SETTINGS;
       const optimistic = parse({ ...previous, ...requestPatch }, previous);
       if (!optimistic) return;

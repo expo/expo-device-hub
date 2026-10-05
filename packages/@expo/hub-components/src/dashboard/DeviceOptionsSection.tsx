@@ -1,6 +1,12 @@
+import { FeatureNotice } from './FeatureNotice';
+import { recordingPhase } from './recordingPhase';
 import { useId, useState } from 'react';
 
-import { areRecordingControlsLocked, type DeviceClient, type DeviceSettingKey } from '@expo/hub-client';
+import {
+  areRecordingControlsLocked,
+  type DeviceClient,
+  type DeviceSettingKey,
+} from '@expo/hub-client';
 import { Select, type SelectOption } from '../primitives';
 import { CollapsibleSection } from './CollapsibleSection';
 import { KeyboardSection } from './KeyboardSection';
@@ -117,20 +123,22 @@ export function DeviceOptionsSection({
   onRemove?: () => void;
 }) {
   const [open, setOpen] = useState(true);
-  const recordingControlsLocked = areRecordingControlsLocked(client?.screenRecording ?? null);
+  const recordingControlsLocked = areRecordingControlsLocked(
+    recordingPhase(client?.screenRecording),
+  );
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
-    : client?.screenRecording === 'unknown'
+    : recordingPhase(client?.screenRecording) === 'unknown'
       ? 'Unavailable until recording status is known.'
       : 'Unavailable because this would interrupt the recording.';
   const unavailableFrameDescriptionId = useId();
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
-  const settings = client?.deviceSettings ?? null;
-  const noHardwareKeyboard = client?.hardwareKeyboardConnected === false;
-  const pending = client?.deviceSettingsPending ?? EMPTY_PENDING_SETTINGS;
+  const settings = client?.deviceSettings.data?.values ?? null;
+  const noHardwareKeyboard = client?.keyboard.data?.hardwareConnected === false;
+  const pending = client?.deviceSettings.writes.pending ?? EMPTY_PENDING_SETTINGS;
   const platform = client?.platform;
-  const displayWidthDp = client?.displayWidthDp ?? null;
+  const displayWidthDp = client?.deviceSettings.data?.displayWidthDp ?? null;
 
   function visible(key: DeviceSettingKey) {
     if (settings === null) return key === 'appearance' || platform === 'ios';
@@ -142,16 +150,18 @@ export function DeviceOptionsSection({
   }
 
   function disabled(key: DeviceSettingKey) {
-    return settings === null || pending.has(key);
+    return settings === null || client?.deviceSettings.status !== 'ready' || pending.has(key);
   }
 
   function setValue(key: DeviceSettingKey, nextValue: string) {
-    if (settings !== null && !pending.has(key)) client?.setDeviceSetting(key, nextValue);
+    if (settings !== null && !pending.has(key)) client?.deviceSettings.set(key, nextValue);
   }
 
   function settingSelect(key: DeviceSettingKey, label: string, options: SelectOption[]) {
     return (
-      <SidebarRow label={label}>
+      <SidebarRow
+        label={label}
+        description={client?.deviceSettings.writes.errors.get(key)?.message}>
         <Select
           ariaLabel={label}
           options={options}
@@ -167,6 +177,7 @@ export function DeviceOptionsSection({
 
   return (
     <CollapsibleSection title="Device options" open={open} onOpenChange={setOpen}>
+      {client && <FeatureNotice feature={client.deviceSettings} />}
       {showDeviceSettings &&
         visible('appearance') &&
         settingSelect('appearance', 'Appearance', APPEARANCE_OPTIONS)}
@@ -214,7 +225,10 @@ export function DeviceOptionsSection({
       {showDeviceSettings &&
         SWITCH_OPTIONS.map(({ key, label }) =>
           visible(key) ? (
-            <SidebarRow key={key} label={label}>
+            <SidebarRow
+              key={key}
+              label={label}
+              description={client?.deviceSettings.writes.errors.get(key)?.message}>
               <SidebarSwitch
                 checked={value(key) === 'on'}
                 disabled={disabled(key)}
@@ -262,7 +276,9 @@ export function DeviceOptionsSection({
       {client && platform === 'android' && (
         <>
           <SidebarRow label="Back button">
-            <SidebarActionButton onClick={() => client.pressButton('back')}>Press</SidebarActionButton>
+            <SidebarActionButton onClick={() => client.pressButton('back')}>
+              Press
+            </SidebarActionButton>
           </SidebarRow>
           <SidebarRow label="Recents button">
             <SidebarActionButton onClick={() => client.pressButton('recents')}>

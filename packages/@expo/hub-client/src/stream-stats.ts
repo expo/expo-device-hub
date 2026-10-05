@@ -1,3 +1,4 @@
+import type { FeatureRead } from './feature-state';
 import { useEffect, useRef, useState } from 'react';
 
 import { type SessionFetch } from './session-token';
@@ -441,20 +442,27 @@ export function useWebRtcStreamStats(
   presentedFrames: Readonly<{ current: number }>,
   enabled: boolean,
   fetchImpl: SessionFetch = fetch,
+  readState?: FeatureRead,
 ): DeviceStreamStats | null {
   const [stats, setStats] = useState<DeviceStreamStats | null>(null);
   const previousRef = useRef<WebRtcClientCounters | null>(null);
   const lastClientSampleAtRef = useRef(0);
 
+  // Retain history across detach/reconnect, but never across device targets.
+  useEffect(() => {
+    setStats(null);
+  }, [statsUrl, readState]);
+
   useEffect(() => {
     previousRef.current = null;
     lastClientSampleAtRef.current = 0;
     if (!enabled || connection === null || !statsUrl) {
-      setStats(null);
       return;
     }
 
-    setStats(emptyStats());
+    setStats((current) => current ?? emptyStats());
+    let serverHealthy = false;
+    let clientHealthy = false;
     const pollingStartedAt = Date.now();
     let stopped = false;
     let clientPolling = false;
@@ -470,7 +478,7 @@ export function useWebRtcStreamStats(
     let serverController: AbortController | null = null;
 
     const sampleServer = async () => {
-      if (serverPolling || stopped) return;
+      if (serverPolling || stopped || readState?.isStopped()) return;
       serverPolling = true;
       serverController = new AbortController();
       const controller = serverController;
@@ -490,6 +498,8 @@ export function useWebRtcStreamStats(
         const encoder = next.encoder ? { ...next.encoder, ...publisher } : null;
         serverStats = { ...next, encoder };
         lastServerSampleAt = Date.now();
+        serverHealthy = true;
+        if (clientHealthy) readState?.ready();
         setStats((current) =>
           current
             ? {
@@ -500,8 +510,9 @@ export function useWebRtcStreamStats(
               }
             : current,
         );
-      } catch {
-        // Retain the last successful payload; the server watchdog marks it stale.
+      } catch (cause) {
+        serverHealthy = false;
+        if (!stopped) readState?.fail(cause, true);
       } finally {
         window.clearTimeout(timeout);
         if (serverController === controller) serverController = null;
@@ -510,7 +521,7 @@ export function useWebRtcStreamStats(
     };
 
     const sampleClient = async () => {
-      if (clientPolling || stopped) return;
+      if (clientPolling || stopped || readState?.isStopped()) return;
       clientPolling = true;
       const atMs = Date.now();
       const presentedFrameCount = presentedFrames.current;
@@ -522,6 +533,8 @@ export function useWebRtcStreamStats(
         const client = describeWebRtcClientCounters(previousRef.current, counters);
         previousRef.current = counters;
         lastClientSampleAtRef.current = atMs;
+        clientHealthy = true;
+        if (serverHealthy) readState?.ready();
         const next: DeviceStreamStatsSample = {
           atMs,
           serverFps: serverStats.serverFps,
@@ -535,13 +548,18 @@ export function useWebRtcStreamStats(
             stale: false,
           };
         });
-      } catch {
-        // Closing peer connections reject getStats. The watchdog marks retained data stale.
+      } catch (cause) {
+        clientHealthy = false;
+        if (!stopped) readState?.fail(cause, true);
       } finally {
         clientPolling = false;
       }
     };
 
+    const unbind = readState?.bind(() => {
+      void sampleServer();
+      void sampleClient();
+    });
     void sampleServer();
     void sampleClient();
     const pollTimer = window.setInterval(() => {
@@ -564,11 +582,12 @@ export function useWebRtcStreamStats(
 
     return () => {
       stopped = true;
+      unbind?.();
       serverController?.abort();
       window.clearInterval(pollTimer);
       window.clearInterval(staleTimer);
     };
-  }, [connection, enabled, presentedFrames, statsUrl, fetchImpl]);
+  }, [connection, enabled, presentedFrames, statsUrl, fetchImpl, readState]);
 
   return stats;
 }

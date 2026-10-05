@@ -7,6 +7,7 @@ export interface UseAvccStreamOptions {
   /** Base serve-sim helper URL, without `/stream.avcc`. */
   url: string;
   enabled: boolean;
+  revision?: number;
   canvasRef: RefObject<HTMLCanvasElement | null>;
   onFirstFrame?: () => void;
   onFrame?: () => void;
@@ -25,6 +26,7 @@ const FRAME_DURATION_US = 16_667;
 export function useAvccStream({
   url,
   enabled,
+  revision,
   canvasRef,
   onFirstFrame,
   onFrame,
@@ -201,5 +203,5 @@ export function useAvccStream({
       }
       decoder = null;
     };
-  }, [url, enabled, canvasRef, fetchImpl]);
+  }, [url, enabled, canvasRef, fetchImpl, revision]);
 }

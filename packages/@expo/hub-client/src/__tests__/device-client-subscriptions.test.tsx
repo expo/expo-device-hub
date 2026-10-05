@@ -24,6 +24,17 @@ afterEach(async () => {
   restoreGlobals();
 });
 
+/** Publish a feature-shaped stream update. */
+function withStream(client: DeviceClient, patch: Partial<DeviceClient["stream"]>): DeviceClient {
+  return { ...client, stream: { ...client.stream, ...patch } } as DeviceClient;
+}
+/** Change only the FPS; the screen object and the status keep their identity. */
+function withFps(client: DeviceClient, fps: number): DeviceClient {
+  return withStream(client, {
+    data: { screen: client.stream.data?.screen ?? null, fps },
+  } as Partial<DeviceClient["stream"]>);
+}
+
 async function mount(children: ReactElement) {
   stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   await act(async () => {
@@ -42,7 +53,7 @@ for (const { platform, streamMode, videoKind, decoder } of [
     const seen: string[] = [];
     function Screen() {
       const client = useDeviceClient();
-      seen.push(`${client.platform}/${client.videoKind}`);
+      seen.push(`${client.platform}/${client.stream.videoKind}`);
       return null;
     }
     await mount(
@@ -60,7 +71,7 @@ for (const { platform, streamMode, videoKind, decoder } of [
 test("metrics and FPS updates only render their subscribers", async () => {
   const store = createDeviceClientStore();
   const renders = { screen: 0, metrics: 0, fps: 0, controls: 0 };
-  let metrics: DeviceClient["activity"];
+  let metrics: DeviceClient["activity"]["data"];
   let fps = 0;
   function Screen() {
     useDeviceScreenClient();
@@ -68,12 +79,12 @@ test("metrics and FPS updates only render their subscribers", async () => {
     return null;
   }
   function Metrics() {
-    metrics = useDeviceClientSelector((client) => client.activity);
+    metrics = useDeviceClientSelector((client) => client.activity.data);
     renders.metrics++;
     return null;
   }
   function Fps() {
-    fps = useDeviceClientSelector((client) => client.fps);
+    fps = useDeviceClientSelector((client) => client.stream.data?.fps ?? 0);
     renders.fps++;
     return null;
   }
@@ -105,16 +116,21 @@ test("metrics and FPS updates only render their subscribers", async () => {
         },
       ],
       stale: false,
-      errored: false,
     };
-    await act(async () => store.publish({ ...store.getSnapshot(), activity }));
+    await act(async () => {
+      const client = store.getSnapshot();
+      store.publish({
+        ...client,
+        activity: { ...client.activity, status: "ready", data: activity, error: null },
+      } as DeviceClient);
+    });
     expect(renders).toEqual({
       screen: initialRenders.screen,
       controls: initialRenders.controls,
       metrics: initialRenders.metrics + i,
       fps: initialRenders.fps + i - 1,
     });
-    await act(async () => store.publish({ ...store.getSnapshot(), fps: i }));
+    await act(async () => store.publish(withFps(store.getSnapshot(), i)));
     expect(renders).toEqual({
       screen: initialRenders.screen,
       controls: initialRenders.controls,
@@ -142,26 +158,46 @@ test("screen, status, and error changes reach the screen subscriber", async () =
   );
   const initialRenders = renders;
   await act(async () =>
-    store.publish({
-      ...store.getSnapshot(),
-      screen: { width: 1170, height: 2532 },
-    }),
+    store.publish(
+      withStream(store.getSnapshot(), {
+        status: "loading",
+        data: { screen: { width: 1170, height: 2532 }, fps: 0 },
+      } as Partial<DeviceClient["stream"]>),
+    ),
   );
   expect(renders).toBe(initialRenders + 1);
   expect(screen.screen).toEqual({ width: 1170, height: 2532 });
 
-  await act(async () => store.publish({ ...store.getSnapshot(), status: "streaming" }));
+  await act(async () =>
+    store.publish(withStream(store.getSnapshot(), { status: "ready" } as Partial<DeviceClient["stream"]>)),
+  );
   expect(renders).toBe(initialRenders + 2);
-  expect(screen.status).toBe("streaming");
+  expect(screen.status).toBe("ready");
 
-  await act(async () => store.publish({ ...store.getSnapshot(), error: "Disconnected" }));
+  await act(async () =>
+    store.publish(
+      withStream(store.getSnapshot(), {
+        status: "error",
+        error: { code: "network", message: "Disconnected", retryable: true },
+      } as Partial<DeviceClient["stream"]>),
+    ),
+  );
   expect(renders).toBe(initialRenders + 3);
   expect(screen.error).toBe("Disconnected");
+
+  // FPS changes the stream object but none of the screen inputs.
+  await act(async () => store.publish(withFps(store.getSnapshot(), 60)));
+  expect(renders).toBe(initialRenders + 3);
 });
 
 test("selectors follow new props and a changed equality function without a store update", async () => {
   const store = createDeviceClientStore();
-  store.publish({ ...NOOP_DEVICE_CLIENT, fps: 30, status: "streaming" });
+  store.publish(
+    withFps(
+      withStream(NOOP_DEVICE_CLIENT, { status: "ready" } as Partial<DeviceClient["stream"]>),
+      30,
+    ),
+  );
   let selected: unknown;
   function Selected({
     field,
@@ -171,7 +207,7 @@ test("selectors follow new props and a changed equality function without a store
     ignoreChanges?: boolean;
   }) {
     selected = useDeviceClientSelector(
-      (client) => ({ value: client[field] }),
+      (client) => ({ value: field === "fps" ? client.stream.data?.fps : client.stream.status }),
       ignoreChanges ? () => true : (previous, next) => previous.value === next.value,
     );
     return null;
@@ -184,10 +220,12 @@ test("selectors follow new props and a changed equality function without a store
   await mount(tree("fps"));
   expect(selected).toEqual({ value: 30 });
   await act(async () => renderer!.update(tree("status")));
-  expect(selected).toEqual({ value: "streaming" });
+  expect(selected).toEqual({ value: "ready" });
   await act(async () => renderer!.update(tree("status", true)));
-  await act(async () => store.publish({ ...store.getSnapshot(), status: "error" }));
-  expect(selected).toEqual({ value: "streaming" });
+  await act(async () =>
+    store.publish(withStream(store.getSnapshot(), { status: "error" } as Partial<DeviceClient["stream"]>)),
+  );
+  expect(selected).toEqual({ value: "ready" });
   await act(async () => renderer!.update(tree("status")));
   expect(selected).toEqual({ value: "error" });
 });
@@ -197,7 +235,7 @@ test("separate sessions do not share state or retain unmounted subscribers", asy
   const second = createDeviceClientStore();
   const seen: number[] = [];
   function Fps() {
-    seen.push(useDeviceClientSelector((client) => client.fps));
+    seen.push(useDeviceClientSelector((client) => client.stream.data?.fps ?? 0));
     return null;
   }
   await mount(
@@ -205,7 +243,7 @@ test("separate sessions do not share state or retain unmounted subscribers", asy
       <Fps />
     </DeviceClientStoreContext.Provider>,
   );
-  await act(async () => first.publish({ ...first.getSnapshot(), fps: 30 }));
+  await act(async () => first.publish(withFps(first.getSnapshot(), 30)));
   await act(async () =>
     renderer!.update(
       <DeviceClientStoreContext.Provider value={second}>
@@ -215,15 +253,15 @@ test("separate sessions do not share state or retain unmounted subscribers", asy
   );
   expect(seen.at(-1)).toBe(0);
   const renderCount = seen.length;
-  await act(async () => first.publish({ ...first.getSnapshot(), fps: 60 }));
+  await act(async () => first.publish(withFps(first.getSnapshot(), 60)));
   expect(seen).toHaveLength(renderCount);
-  await act(async () => second.publish({ ...second.getSnapshot(), fps: 24 }));
+  await act(async () => second.publish(withFps(second.getSnapshot(), 24)));
   expect(seen.at(-1)).toBe(24);
   await act(async () => renderer!.unmount());
   renderer = undefined;
   const finalRenderCount = seen.length;
-  first.publish({ ...first.getSnapshot(), fps: 90 });
-  second.publish({ ...second.getSnapshot(), fps: 48 });
+  first.publish(withFps(first.getSnapshot(), 90));
+  second.publish(withFps(second.getSnapshot(), 48));
   expect(seen).toHaveLength(finalRenderCount);
 });
 
@@ -231,12 +269,12 @@ test("an update before the subscription is attached is still displayed", async (
   const store = createDeviceClientStore();
   let fps = 0;
   function Fps() {
-    fps = useDeviceClientSelector((client) => client.fps);
+    fps = useDeviceClientSelector((client) => client.stream.data?.fps ?? 0);
     return null;
   }
   function Publish() {
     useLayoutEffect(() => {
-      store.publish({ ...store.getSnapshot(), fps: 30 });
+      store.publish(withFps(store.getSnapshot(), 30));
     }, []);
     return null;
   }
@@ -322,15 +360,15 @@ test("the provider opens only the selected backend and owns its cleanup", async 
   expect(sockets.every((socket) => socket.closed)).toBe(true);
 });
 
-test("server rendering starts idle without opening a connection", () => {
+test("server rendering starts without data and without opening a connection", () => {
   const requests: string[] = [];
   stubGlobal("fetch", async (url: string) => {
     requests.push(url);
     return Response.json({});
   });
   function Status() {
-    const { status } = useDeviceClient();
-    return <span>{status}</span>;
+    const { stream } = useDeviceClient();
+    return <span>{stream.status}</span>;
   }
   const html = renderToString(
     <DeviceClientProvider
@@ -340,6 +378,7 @@ test("server rendering starts idle without opening a connection", () => {
       <Status />
     </DeviceClientProvider>,
   );
-  expect(html).toBe("<span>idle</span>");
+  // The server snapshot is the inert client: every feature reads as unavailable.
+  expect(html).toBe("<span>unsupported</span>");
   expect(requests).toHaveLength(0);
 });

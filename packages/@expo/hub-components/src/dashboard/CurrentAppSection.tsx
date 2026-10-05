@@ -1,3 +1,4 @@
+import { FeatureNotice } from './FeatureNotice';
 import { useState } from 'react';
 
 import { type DeviceClient } from '@expo/hub-client';
@@ -23,8 +24,12 @@ type AppDetail = {
  */
 export function CurrentAppSection({ client }: { client?: DeviceClient }) {
   const [open, setOpen] = useState(true);
-  const app = client?.foregroundApp ?? null;
-  const name = app ? (app.label ?? app.id) : UNKNOWN_VALUE;
+  const app = client?.foregroundApp.data ?? null;
+  const name = app
+    ? (app.label ?? app.id)
+    : client?.foregroundApp.data === null
+      ? 'No app in foreground'
+      : UNKNOWN_VALUE;
 
   const details: AppDetail[] = [
     { label: 'App ID', value: app?.id ?? UNKNOWN_VALUE },
@@ -34,6 +39,7 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
 
   return (
     <CollapsibleSection title="Current app" open={open} onOpenChange={setOpen} divider={false}>
+      {client && <FeatureNotice feature={client.foregroundApp} />}
       <div
         style={{
           display: 'flex',
@@ -68,7 +74,9 @@ export function CurrentAppSection({ client }: { client?: DeviceClient }) {
           <AppDetailRow key={detail.label} detail={detail} />
         ))}
       </dl>
-      {client?.capabilities.activity && <ActivityCharts client={client} />}
+      {client && client.activity.status !== 'unsupported' && (
+        <ActivityCharts client={client} enabled={open} />
+      )}
     </CollapsibleSection>
   );
 }
@@ -119,7 +127,14 @@ function AppDetailRow({ detail }: { detail: AppDetail }) {
         gap: 16,
         padding: '8px 0',
       }}>
-      <dt style={{ ...textSize.sm, fontWeight: 500, flexShrink: 0, margin: 0, color: text.secondary }}>
+      <dt
+        style={{
+          ...textSize.sm,
+          fontWeight: 500,
+          flexShrink: 0,
+          margin: 0,
+          color: text.secondary,
+        }}>
         {detail.label}
       </dt>
       <dd

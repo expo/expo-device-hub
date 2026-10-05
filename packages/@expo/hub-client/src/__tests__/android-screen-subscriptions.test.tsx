@@ -2,8 +2,8 @@ import { afterEach, expect, spyOn, test } from "bun:test";
 import { useLayoutEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { DeviceClientProvider } from "../DeviceClientProvider";
-import type { DeviceActivity, DeviceClient } from "../types";
+import { DeviceClientProvider, useDeviceClientSelector } from "../DeviceClientProvider";
+import type { DeviceClient } from "../types";
 import { useDeviceClient } from "../useDeviceClient";
 import { useDeviceScreenClient } from "../useDeviceScreenClient";
 import { Peer, Video } from "./screen-test-media";
@@ -93,16 +93,25 @@ test("Android metrics and FPS leave screens and controls quiet while handlers us
   let controlRenders = 0;
   let featureRenders = 0;
   let emptyControlRenders = 0;
-  let features!: Pick<DeviceClient, "capabilities" | "streamCapabilities">;
+  let features!: {
+    activity: boolean;
+    transports: DeviceClient["stream"]["transports"];
+  };
   let onRotate!: () => void;
-  let activity: DeviceActivity | null = null;
+  let activity: DeviceClient["activity"]["data"];
   let fps = 0;
   function Metrics() {
-    ({ activity } = useDeviceClient());
+    const { data, attach, detach } = useDeviceClient().activity;
+    activity = data;
+    // Activity is opt-in in the feature API.
+    useLayoutEffect(() => {
+      attach();
+      return detach;
+    }, [attach, detach]);
     return null;
   }
   function Fps() {
-    ({ fps } = useDeviceClient());
+    fps = useDeviceClientSelector((client) => client.stream.data?.fps ?? 0);
     return null;
   }
   function Controls() {
@@ -112,21 +121,27 @@ test("Android metrics and FPS leave screens and controls quiet while handlers us
     return <button onClick={onRotate}>Rotate</button>;
   }
   function Features() {
-    const { capabilities, streamCapabilities } = useDeviceClient();
-    features = { capabilities, streamCapabilities };
+    // Feature objects change with their data; select the fields this component shows.
+    features = {
+      activity: useDeviceClientSelector((client) => client.activity.status !== "unsupported"),
+      transports: useDeviceClientSelector((client) => client.stream.transports),
+    };
     featureRenders++;
-    return <span>{String(capabilities.activity)}</span>;
+    return <span>{String(features.activity)}</span>;
   }
   function EmptyControls() {
-    const { setWebRtcCodec, setHardwareKeyboardConnected, toggleSoftwareKeyboard } =
-      useDeviceClient();
+    const setWebRtcCodec = useDeviceClientSelector((client) => client.stream.setWebRtcCodec);
+    const setHardwareConnected = useDeviceClientSelector(
+      (client) => client.keyboard.setHardwareConnected,
+    );
+    const toggleSoftware = useDeviceClientSelector((client) => client.keyboard.toggleSoftware);
     emptyControlRenders++;
     return (
       <button
         onClick={() => {
           setWebRtcCodec("h264");
-          setHardwareKeyboardConnected(true);
-          toggleSoftwareKeyboard();
+          void setHardwareConnected(true);
+          toggleSoftware();
         }}
       >
         Keyboard
@@ -174,15 +189,15 @@ test("Android metrics and FPS leave screens and controls quiet while handlers us
   expect(video.srcObject).toBe(stream);
   await act(async () => video.frame());
   expect(client.videoKind).toBe("video");
-  expect(client.status).toBe("streaming");
+  expect(client.status).toBe("ready");
   expect(client.screen).toEqual({ width: 360, height: 720 });
   const firstScreen = client.screen;
   const initialRenders = screenRenders;
   const initialControlRenders = controlRenders;
   const initialFeatureRenders = featureRenders;
   const initialEmptyControlRenders = emptyControlRenders;
-  expect(features.capabilities.activity).toBe(true);
-  expect(features.streamCapabilities?.modeAvailability.webrtc).toBe(true);
+  expect(features.activity).toBe(true);
+  expect(features.transports.modeAvailability.webrtc).toBe(true);
 
   for (let i = 1; i <= 2; i++) {
     await act(async () => {
@@ -223,10 +238,4 @@ test("Android metrics and FPS leave screens and controls quiet while handlers us
   expect(controlRenders).toBe(initialControlRenders);
   await act(async () => onRotate());
   expect(rotations).toEqual([{ device: "emulator-5554", orientation: "portrait" }]);
-
-  await act(async () =>
-    socket.onmessage?.({ data: JSON.stringify({ ok: false, error: "Input failed" }) }),
-  );
-  expect(client.error).toBe("Input failed");
-  expect(screenRenders).toBe(initialRenders + 2);
 });

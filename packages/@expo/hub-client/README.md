@@ -65,14 +65,16 @@ so the old connection closes. Set `options.enabled` to `false` to disconnect, or
 
 ### Read state and controls
 
-Destructure everything you need from one `useDeviceClient()` call:
+Destructure the controls you need from one `useDeviceClient()` call, and select single
+values with `useDeviceClientSelector`:
 
 ```tsx
-import { useDeviceClient } from '@expo/hub-client';
+import { useDeviceClient, useDeviceClientSelector } from '@expo/hub-client';
 
 function Controls() {
-  const { status, pressButton, rotate, reload } = useDeviceClient();
-  const connected = status === 'streaming';
+  const { pressButton, rotate, reload } = useDeviceClient();
+  const status = useDeviceClientSelector((client) => client.stream.status);
+  const connected = status === 'ready';
 
   return (
     <div>
@@ -85,9 +87,10 @@ function Controls() {
 }
 ```
 
-Status and control changes update this component. FPS, metrics, and log changes do not.
-Status can be `'idle'`, `'connecting'`, `'streaming'` or `'error'`. Android also reports
-`'reconnecting'` while restoring a stream. Read `error` for the last failure message.
+Stream status and control changes update this component. FPS, metrics, and log changes
+do not. Each feature, such as `stream`, `deviceSettings`, or `logs`, exposes `status`,
+`data`, `error`, and `refresh()`; see [Feature states](#feature-states). Video state is at
+`client.stream`; settings and other features work independently of the first video frame.
 
 ### Show the screen
 
@@ -118,10 +121,20 @@ Use `useDeviceClientSelector` when you need one value from a larger object. This
 updates when the latest CPU percentage changes, even if memory or network readings change.
 
 ```tsx
+import { useEffect } from 'react';
 import { useDeviceClientSelector } from '@expo/hub-client';
 
 function Cpu() {
-  const cpuPct = useDeviceClientSelector((client) => client.activity?.samples.at(-1)?.cpuPct);
+  const attach = useDeviceClientSelector((client) => client.activity.attach);
+  const detach = useDeviceClientSelector((client) => client.activity.detach);
+  const cpuPct = useDeviceClientSelector(
+    (client) => client.activity.data?.samples.at(-1)?.cpuPct,
+  );
+  // Activity is opt-in: collect it while this component is mounted.
+  useEffect(() => {
+    attach();
+    return detach;
+  }, [attach, detach]);
 
   return <span>{cpuPct == null ? 'Waiting for metrics' : `CPU ${cpuPct.toFixed(1)}%`}</span>;
 }
@@ -180,8 +193,10 @@ another origin, only part of the client works today:
 
 ## Call device controls
 
-Every control lives on the `DeviceClient`. Controls are no-ops while nothing is connected,
-and each backend ignores the buttons its platform does not have.
+Feature actions live beside their data. Writes return `Promise<HubResult>`: check `ok` for
+one-shot feedback, or render the feature’s `writes.errors` next to its controls. Writes to
+an unavailable feature return an error. Input commands such as `pressButton` remain
+fire-and-forget; unavailable platform buttons are ignored.
 
 ```ts
 // Hardware buttons: 'home' | 'back' | 'recents' | 'power' | 'appSwitcher' | 'hideKeyboard'
@@ -189,13 +204,17 @@ client.pressButton('home');
 
 client.rotate();
 client.reload(); // reload the running React Native bundle
-client.setAppearance('dark'); // 'light' | 'dark'; read it back from client.appearance
+await client.deviceSettings.set('appearance', 'dark');
+// Read it back from client.deviceSettings.data?.values.appearance.
 
-// { blob, artifact }, or null when capture fails. `artifact` is the session artifact outcome:
+// A result containing { blob, artifact }, or a typed error. `artifact` is the session artifact outcome:
 // { status: 'saved' } | { status: 'disabled' } | { status: 'failed', error?: string } | null
 // (null for a backend that does not report one).
 const capture = await client.screenshot();
-if (capture?.artifact?.status === 'failed') console.warn('not saved to session artifacts', capture.artifact.error);
+if (!capture.ok) console.warn(capture.error.message);
+else if (capture.value.artifact?.status === 'failed') {
+  console.warn('not saved to session artifacts', capture.value.artifact.error);
+}
 
 // Input is normalized to 0..1 of the screen, so it works for every device size.
 client.sendTouch({ phase: 'begin', x: 0.5, y: 0.5 });
@@ -204,14 +223,14 @@ client.sendKey({ phase: 'down', code: 'KeyA', key: 'a', repeat: false });
 client.sendKey({ phase: 'up', code: 'KeyA', key: 'a', repeat: false });
 
 // Logs are off until you attach them.
-client.attachLogs();
-client.logs; // DeviceLog[]
-client.detachLogs();
+client.logs.attach();
+client.logs.data; // readonly DeviceLog[] | undefined
+client.logs.detach(); // Retains collected lines.
 ```
 
 Optional features such as device settings, camera feeds, the accessibility tree, location,
-and app permissions are only available on some backends. Check `client.capabilities` before
-you show their controls. The full `DeviceClient` contract, with a comment on every field, is
+and app permissions are only available on some backends. Hide a feature when its `status` is `unsupported`; show a loader for `resolving` or
+initial `loading`. A network failure is an error, never evidence of missing support. The full `DeviceClient` contract is
 in [`src/types.ts`](./src/types.ts).
 
 ## Remote connections
@@ -253,6 +272,119 @@ its session token on every request. Pass it as `options.token`:
 ```
 
 The token does not replace `--cors-origin`.
+
+## Feature states
+
+| State | Meaning | Typical UI |
+| --- | --- | --- |
+| `resolving` | Discovering configuration and availability | Checking availability… |
+| `unsupported` | Feature is unavailable | Hide the section |
+| `idle` | Available, but not requested or attached | Read/start action |
+| `loading` | First read, explicit refresh, or subscription startup | Loader; retain existing content on refresh |
+| `ready` | The read or subscription succeeded | Content, including a valid empty result |
+| `reconnecting` | Automatic recovery is in progress | Retain content and show “Retrying…” |
+| `error` | Recovery stopped or needs intervention | Error and, when retryable, a Retry action |
+
+Automatic reads usually follow `resolving → loading → ready`. On-demand accessibility
+uses `resolving → idle → loading → ready`. An opt-in stream stays `idle` until `attach()`.
+A first read can also discover that a feature is `unsupported`.
+
+`data === undefined` means no successful read for this target. `foregroundApp.data === null`
+and `location.data === null` are successful empty values. An open log subscription is
+`ready` with `[]` even before the first message.
+
+Refresh retains the previous data. A device or foreground-app change clears data and
+write state for the affected resource; late responses from the old target are ignored.
+Configuration failures propagate to unresolved features, and `refresh()` retries discovery.
+
+```tsx
+function Appearance() {
+  const settings = useDeviceClient().deviceSettings;
+  if (settings.status === 'unsupported') return null;
+
+  return (
+    <section>
+      {(settings.status === 'resolving' || settings.status === 'loading') &&
+        <p>{settings.data ? 'Refreshing…' : 'Loading…'}</p>}
+      {settings.error && <p role="alert">{settings.error.message}</p>}
+      {settings.status === 'reconnecting' && <p>Retrying…</p>}
+      {settings.status === 'error' && settings.error.retryable &&
+        <button onClick={settings.refresh}>Retry</button>}
+      {settings.data && (
+        <button
+          disabled={settings.status !== 'ready' || settings.writes.pending.has('appearance')}
+          onClick={() => { void settings.set('appearance', 'dark'); }}>
+          Use dark appearance
+        </button>
+      )}
+      {settings.writes.errors.get('appearance') &&
+        <p role="alert">{settings.writes.errors.get('appearance')!.message}</p>}
+    </section>
+  );
+}
+```
+
+### Live streams
+
+Logs, events, activity, and WebRTC statistics are opt-in. `enabled` represents consumer
+intent independently of connection health. Attaching before discovery remembers that intent.
+Attach/detach are idempotent controls for one shared subscription; use one owner per feature.
+
+```tsx
+const { activity } = useDeviceClient();
+useEffect(() => {
+  activity.attach();
+  return activity.detach;
+}, [activity.attach, activity.detach]);
+```
+
+Detaching retains data and stops collection. Activity history now starts when attached.
+Telemetry is unsupported on HTTP/WebSocket video transports; its enabled intent is retained
+when switching transports. `refresh()` on a detached stream does not enable collection.
+
+### Writes
+
+- `writes.pending` tracks changed keys; `writes.errors` holds the last failed write per key.
+- Starting a new write clears that key’s error. Read errors remain separate in `error`.
+- An overlapping write returns `{ ok: false, error: { code: 'busy', … } }`.
+- Independent setting keys and camera facings can update concurrently. Encoder and capture
+  changes are serialized because they can replace the same stream.
+- Simple settings update optimistically and restore an authoritative or previous value on
+  failure. Capture-source updates wait for replacement video, with a bounded timeout.
+- Actions and refresh functions keep stable identities across feature updates.
+
+## Migrating from 1.x
+
+This is a breaking change to the existing hooks and `DeviceClient`.
+
+| Before | Now |
+| --- | --- |
+| `client.status`, `error`, `screen`, `fps` | `client.stream.status`, `.error`, `.data?.screen`, `.data?.fps` |
+| `useDeviceScreenClient().status` `'streaming'` | Same flat `status`, `screen`, `error`; `status` uses feature states, so `'ready'` replaces `'streaming'` |
+| `inputError` | Unchanged: `client.inputError` |
+| `client.capabilities.camera` | `client.camera.status !== 'unsupported'` for visibility; check `ready` before editing |
+| `client.deviceSettings` | `client.deviceSettings.data?.values` |
+| `setDeviceSetting(key, value)` | `deviceSettings.set(key, value)` |
+| `deviceSettingsPending` | `deviceSettings.writes.pending` |
+| `appearance`, `setAppearance(mode)` | `deviceSettings.data?.values.appearance`, `deviceSettings.set('appearance', mode)` |
+| `camera`, `setCameraImage`, `clearCameraImage` | `camera.data`, `camera.setImage`, `camera.clearImage` |
+| `location`, `setLocation`, `clearLocation` | `location.data`, `location.set`, `location.clear`; check `location.canClear` |
+| `permissions`, `setPermission`, `resetPermissions` | `permissions.data?.items`, `permissions.set`, `permissions.reset` |
+| `accessibility`, `refreshAccessibility` | `accessibility.data`, `accessibility.refresh` |
+| `logsEnabled`, `attachLogs`, `detachLogs` | `logs.enabled`, `logs.attach`, `logs.detach` |
+| `eventsEnabled`, `attachEvents`, `detachEvents` | `events.enabled`, `events.attach`, `events.detach` |
+| Always-on `activity` | `activity.attach()` / `.detach()`, then `activity.data` |
+| `streamCapabilities`, `webRtcCodec` | `stream.transports`, `stream.webRtcCodec` |
+| `updateStreamSettings(patch)` | `streamSettings.update(patch)`; supported keys are in `.editable` |
+| `setStreamSource(mode)`, `setGrpcEncoder(encoder)`, etc. | `streamSource.update({ mode, encoder, … })` |
+| `setStreamStatsEnabled(boolean)` | `streamStats.attach()` / `.detach()` |
+| `hardwareKeyboardConnected` | `keyboard.data?.hardwareConnected` |
+| `screenRecording` | `screenRecording.data`; use feature status for discovery/failure |
+| `foregroundApp`, `devices` | `foregroundApp.data`, `devices.data` |
+| `screenshot(): ScreenshotCapture | null` | `screenshot(): HubResult<ScreenshotCapture>` |
+
+Touch, keyboard input, hardware buttons, reload, and rotation remain commands on the client.
+The complete interface is in [`src/types.ts`](./src/types.ts).
 
 ## License
 

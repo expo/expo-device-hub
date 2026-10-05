@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { FeatureNotice } from "./FeatureNotice";
+import { useState } from "react";
 
 import { type AppPermissionState, type DeviceClient } from "@expo/hub-client";
 import { Button } from "../primitives";
@@ -23,16 +24,17 @@ export function PermissionsSection({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const { permissions, permissionsPending, permissionsError, refreshPermissions } = client;
-  const appId = client.foregroundApp?.id ?? null;
-
-  useEffect(() => {
-    if (open && appId) refreshPermissions();
-  }, [open, appId, refreshPermissions]);
+  const permissions = client.permissions.data?.items ?? null;
+  const permissionsPending = client.permissions.writes.pending;
+  const permissionsError =
+    client.permissions.error?.message ?? [...client.permissions.writes.errors.values()][0]?.message;
+  const refreshPermissions = client.permissions.refresh;
+  const appId = client.permissions.data?.appId ?? null;
 
   return (
     <CollapsibleSection title="Permissions" open={open} onOpenChange={setOpen}>
-      {appId === null ? (
+      <FeatureNotice feature={client.permissions} />
+      {client.permissions.data === undefined ? null : appId === null ? (
         <SectionNote>No app is in the foreground.</SectionNote>
       ) : permissions === null ? (
         permissionsError ? (
@@ -49,7 +51,8 @@ export function PermissionsSection({
       ) : (
         <>
           {permissions.map((permission) => {
-            const pending = permissionsPending.has(permission.id);
+            const pending =
+              permissionsPending.has(permission.id) || client.permissions.status !== "ready";
             return (
               <SidebarRow
                 key={permission.id}
@@ -61,7 +64,7 @@ export function PermissionsSection({
                     theme="secondary"
                     size="xs"
                     disabled={pending || permission.state === "granted"}
-                    onClick={() => client.setPermission(permission.id, "grant")}
+                    onClick={() => client.permissions.set(permission.id, "grant")}
                   >
                     Grant
                   </Button>
@@ -69,7 +72,7 @@ export function PermissionsSection({
                     theme="tertiary"
                     size="xs"
                     disabled={pending || permission.state === "denied"}
-                    onClick={() => client.setPermission(permission.id, "revoke")}
+                    onClick={() => client.permissions.set(permission.id, "revoke")}
                   >
                     Revoke
                   </Button>
@@ -82,7 +85,7 @@ export function PermissionsSection({
               theme="tertiary"
               size="xs"
               disabled={permissionsPending.size > 0}
-              onClick={client.resetPermissions}
+              onClick={client.permissions.reset}
             >
               Reset all
             </Button>

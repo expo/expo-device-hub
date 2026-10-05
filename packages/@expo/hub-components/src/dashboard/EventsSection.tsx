@@ -1,3 +1,4 @@
+import { FeatureNotice } from './FeatureNotice';
 import { useEffect, useMemo, useState } from 'react';
 
 import { type DeviceClient, type DeviceLog } from '@expo/hub-client';
@@ -8,10 +9,10 @@ import { LogList } from './LogList';
 /** Touch, UI, and command events reported by the selected device backend. */
 export function EventsSection({ client }: { client?: DeviceClient }) {
   const [open, setOpen] = useState(false);
-  const events = client?.events;
-  const enabled = client?.eventsEnabled ?? false;
-  const attachEvents = client?.attachEvents;
-  const detachEvents = client?.detachEvents;
+  const events = client?.events.data;
+  const enabled = client?.events.enabled ?? false;
+  const attachEvents = client?.events.attach;
+  const detachEvents = client?.events.detach;
   const rows: ReadonlyArray<DeviceLog> = useMemo(
     () =>
       (events ?? []).map((event) => ({
@@ -31,13 +32,14 @@ export function EventsSection({ client }: { client?: DeviceClient }) {
 
   return (
     <CollapsibleSection title="Events" open={open} onOpenChange={setOpen}>
+      {client && <FeatureNotice feature={client.events} />}
       <LogControls
         count={events?.length ?? 0}
         running={enabled}
         unit="event"
-        onClear={() => client?.clearEvents()}
-        onStart={() => client?.attachEvents()}
-        onStop={() => client?.detachEvents()}
+        onClear={() => client?.events.clear()}
+        onStart={() => client?.events.attach()}
+        onStop={() => client?.events.detach()}
       />
       <LogList
         logs={rows}

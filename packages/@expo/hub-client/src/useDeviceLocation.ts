@@ -1,3 +1,4 @@
+import type { FeatureRead } from "./feature-state";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { type DeviceGeoFix, type DeviceLocationCapabilities } from "./types";
@@ -42,7 +43,7 @@ function writeFailureMessage(reason: unknown): string {
 }
 
 /** One simulated-location fix per device, held for whichever backend the caller supplies. */
-export function useDeviceLocation(backend: DeviceLocationBackend | null) {
+export function useDeviceLocation(backend: DeviceLocationBackend | null, readState?: FeatureRead) {
   const [state, setState] = useState<LocationState>(NO_LOCATION);
   const generationRef = useRef(0);
   const pendingRef = useRef(false);
@@ -52,43 +53,55 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null) {
     pendingRef.current = false;
     setState(NO_LOCATION);
     const read = backend?.read;
-    if (!read) return;
+    if (!read) {
+      if (backend) readState?.ready();
+      return;
+    }
+    readState?.reset();
 
     let cancelled = false;
     let reading = false;
     let controller: AbortController | null = null;
 
     const attempt = async () => {
-      if (cancelled || reading) return;
+      if (cancelled || reading || readState?.isStopped()) return;
       reading = true;
       controller = new AbortController();
       try {
         const result = await read(controller.signal);
-        if (cancelled || generationRef.current !== generation || !result) return;
+        if (cancelled || generationRef.current !== generation) return;
+        if (!result) throw new Error("Location read failed");
         clearInterval(retry);
         setState((current) => ({ ...current, ...result }));
-      } catch {
+        if (result.supported) readState?.ready();
+        else readState?.unsupported();
+      } catch (cause) {
+        if (!cancelled) readState?.fail(cause, true);
       } finally {
         reading = false;
       }
     };
 
+    const unbind = readState?.bind(() => {
+      void attempt();
+    });
     void attempt();
     const retry = setInterval(() => void attempt(), READ_RETRY_MS);
 
     return () => {
+      unbind?.();
       cancelled = true;
       clearInterval(retry);
       controller?.abort();
     };
-  }, [backend]);
+  }, [backend, readState]);
 
   const write = useCallback((run: () => Promise<DeviceGeoFix | null>) => {
     if (pendingRef.current) return;
     const generation = generationRef.current;
     pendingRef.current = true;
     setState((current) => ({ ...current, pending: true, error: null }));
-    run().then(
+    return run().then(
       (location) => {
         if (generationRef.current !== generation) return;
         pendingRef.current = false;
@@ -98,6 +111,7 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null) {
         if (generationRef.current !== generation) return;
         pendingRef.current = false;
         setState((current) => ({ ...current, pending: false, error: writeFailureMessage(reason) }));
+        throw reason;
       },
     );
   }, []);
@@ -105,7 +119,7 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null) {
   const setLocation = useCallback(
     (fix: DeviceGeoFix) => {
       if (!backend) return;
-      write(() => backend.set(fix));
+      return write(() => backend.set(fix));
     },
     [backend, write],
   );
@@ -113,7 +127,7 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null) {
   const clearLocation = useCallback(() => {
     const clear = backend?.clear;
     if (!clear) return;
-    write(() => clear().then(() => null));
+    return write(() => clear().then(() => null));
   }, [backend, write]);
 
   const supported = backend ? (backend.read ? state.supported : true) : false;
