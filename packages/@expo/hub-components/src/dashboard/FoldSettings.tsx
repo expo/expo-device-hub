@@ -58,6 +58,8 @@ export function FoldSettings({ hinge, preview }: { hinge: DeviceHinge; preview?:
     }
   }, [error]);
 
+  // Like serve-sim, show nothing until the simulator reports a hinge or an angle.
+  if (!(hinge.supported ?? angle !== undefined)) return null;
   const displayedAngle = angleDraft ?? angle;
   const selectedPose = angleDraft !== null ? null : selectedFoldPose(angle, pose);
   const poseValue = selectedPose ?? (displayedAngle === undefined ? 'unknown' : 'custom');

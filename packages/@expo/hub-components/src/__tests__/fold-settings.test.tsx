@@ -6,6 +6,7 @@ import { FoldSettings, type FoldPreviewOption, MODEL_UNAVAILABLE_DESCRIPTION } f
 
 function hinge(overrides: Partial<DeviceHinge> = {}): DeviceHinge {
   return {
+    supported: true,
     faceDown: false,
     activeScreenId: 1,
     pending: false,
@@ -40,6 +41,13 @@ function rowLabels(markup: string) {
 }
 
 describe('FoldSettings', () => {
+  test('renders nothing until the simulator reports a hinge or an angle, like serve-sim', () => {
+    expect(renderToStaticMarkup(<FoldSettings hinge={hinge({ supported: undefined })} />)).toBe('');
+    expect(renderToStaticMarkup(<FoldSettings hinge={hinge({ supported: false, angle: 90 })} />)).toBe('');
+    const angleOnly = renderToStaticMarkup(<FoldSettings hinge={hinge({ supported: undefined, angle: 90 })} />);
+    expect(rowLabels(angleOnly)).toEqual(['Fold pose', 'Hinge angle', 'Table Mode']);
+  });
+
   test('lists the fold rows in serve-sim order with the model options while 3D is shown', () => {
     const markup = renderToStaticMarkup(<FoldSettings hinge={hinge()} preview={preview()} />);
     expect(rowLabels(markup)).toEqual([

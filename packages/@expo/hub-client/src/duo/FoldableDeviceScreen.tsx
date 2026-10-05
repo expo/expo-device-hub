@@ -71,7 +71,7 @@ export function FoldableDeviceScreen({
         streamError={status === 'error' ? error : null}
         cacheScreenOnFold={cacheScreenOnFold}
         sizeMode={sizeMode}
-        onHingeAngleChange={setAngle}
+        onHingeAngleChange={(hinge.supported ?? hinge.angle !== undefined) ? setAngle : undefined}
         onTouch={hinge.sendModelTouch}
         onMultiTouch={hinge.sendModelMultiTouch}
         onScroll={hinge.sendModelScroll}

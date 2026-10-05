@@ -1591,6 +1591,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!isDuo) return null;
     const electedPose = physicalPose === undefined ? previewHingePose : physicalPose;
     return {
+      supported: screen?.supportsHingeAngle,
       angle: previewHingeAngle,
       pose: previewHingePose,
       physicalPose,
@@ -1617,6 +1618,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     };
   }, [
     isDuo,
+    screen?.supportsHingeAngle,
     physicalPose,
     previewHingePose,
     previewHingeAngle,

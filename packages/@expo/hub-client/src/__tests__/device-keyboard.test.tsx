@@ -63,7 +63,7 @@ test('Option+Shift+1–5 select the Duo poses in Xcode order and never reach the
   const setControl = (command: HingeControlCommand) => {
     commands.push(command);
   };
-  const { keys, surface } = await mount({ setControl } as unknown as DeviceHinge);
+  const { keys, surface } = await mount({ supported: true, setControl } as unknown as DeviceHinge);
   for (const [digit, pose] of [
     ['Digit1', 'closed'],
     ['Digit2', 'open'],
@@ -96,11 +96,23 @@ test('Option+Shift+1–5 select the Duo poses in Xcode order and never reach the
   ]);
 });
 
-test('without a hinge the shortcut is an ordinary keystroke', async () => {
-  const { keys, surface } = await mount(null);
-  const event = keyEvent({ code: 'Digit2', altKey: true, shiftKey: true });
-  await act(async () => surface.props.onKeyDown(event));
-  expect(keys).toEqual([{ phase: 'down', code: 'Digit2', key: 'a', repeat: false }]);
-  await act(async () => surface.props.onKeyUp(keyEvent({ code: 'Digit2' })));
-  expect(keys.at(-1)).toEqual({ phase: 'up', code: 'Digit2', key: 'a', repeat: false });
-});
+for (const [name, hinge] of [
+  ['without a hinge', null],
+  // Like serve-sim, the shortcut waits for the simulator to report its hinge.
+  ['before the simulator reports its hinge', { supported: undefined }],
+  ['when the simulator reports no hinge', { supported: false }],
+] as const) {
+  test(`${name} the shortcut is an ordinary keystroke`, async () => {
+    const commands: HingeControlCommand[] = [];
+    const setControl = (command: HingeControlCommand) => {
+      commands.push(command);
+    };
+    const { keys, surface } = await mount(hinge && ({ ...hinge, setControl } as unknown as DeviceHinge));
+    const event = keyEvent({ code: 'Digit2', altKey: true, shiftKey: true });
+    await act(async () => surface.props.onKeyDown(event));
+    expect(keys).toEqual([{ phase: 'down', code: 'Digit2', key: 'a', repeat: false }]);
+    await act(async () => surface.props.onKeyUp(keyEvent({ code: 'Digit2' })));
+    expect(keys.at(-1)).toEqual({ phase: 'up', code: 'Digit2', key: 'a', repeat: false });
+    expect(commands).toHaveLength(0);
+  });
+}

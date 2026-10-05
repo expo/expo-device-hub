@@ -59,7 +59,7 @@ export function useDeviceKeyboard(client: Pick<DeviceClient, 'sendKey' | 'hinge'
     }
     // Physical codes, so Option+Shift's layout-specific characters cannot
     // affect the pose lookup. Command+digits stay with the browser's tabs.
-    if (hinge && event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey) {
+    if (hinge?.supported && event.altKey && event.shiftKey && !event.metaKey && !event.ctrlKey) {
       const digit = /^Digit([1-5])$/.exec(event.code);
       if (digit) {
         event.preventDefault();

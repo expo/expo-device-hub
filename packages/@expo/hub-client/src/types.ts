@@ -150,6 +150,12 @@ export interface DuoModelScroll {
  * then the helper's confirmed values.
  */
 export interface DeviceHinge {
+  /**
+   * Whether the simulator can move its hinge; undefined until the helper
+   * reports it. Like serve-sim, fold controls show once this or `angle` is
+   * known, and the pose shortcuts need it to be true.
+   */
+  supported?: boolean;
   /** Hinge angle in degrees; undefined until the helper reports it. */
   angle?: number;
   /** Named preset in effect, null for a custom angle, undefined until reported. */

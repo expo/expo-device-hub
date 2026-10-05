@@ -206,8 +206,10 @@ test('the Duo reports its hinge from the pushed screen config and keeps the flat
   // DeviceKit's cover chrome identifies the Duo before native capability metadata.
   expect(client().hinge).not.toBeNull();
   expect(client().hinge?.angle).toBeUndefined();
+  expect(client().hinge?.supported).toBeUndefined();
   await act(async () => socket.push(0x82, COVER));
   const hinge = client().hinge!;
+  expect(hinge.supported).toBe(true);
   expect(hinge.angle).toBe(0);
   expect(hinge.pose).toBe('closed');
   expect(hinge.tableMode).toBe(false);
