@@ -905,10 +905,11 @@ export interface DeviceClient {
    */
   reload: () => void;
   /**
-   * Rotate the device. serve-sim sets the next orientation in the
-   * counterclockwise cycle over the helper's orientation channel; serve-emu
-   * locks the opposite portrait/landscape orientation via `POST
-   * /api/orientation`. A no-op if nothing is connected.
+   * Rotate the device. serve-sim sets the next orientation over the helper's
+   * orientation channel, counterclockwise (clockwise for an iPhone Duo) from
+   * the last requested orientation; serve-emu locks the opposite
+   * portrait/landscape orientation via `POST /api/orientation`. A no-op if
+   * nothing is connected.
    */
   rotate: () => void;
   /**

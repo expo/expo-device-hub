@@ -425,6 +425,26 @@ test('a rejected hinge command surfaces its error and drops the preview', async 
   expect(client().hinge?.tableMode).toBe(true);
 });
 
+for (const duo of [true, false]) {
+  test(`fast Rotate presses advance from the last request on ${duo ? 'the Duo' : 'other devices'}, like serve-sim`, async () => {
+    installBrowser({ duo });
+    const { socket, client } = await connect();
+    await act(async () =>
+      socket.push(0x82, duo ? INNER_OPEN : { width: 1206, height: 2622, orientation: 'portrait', screenId: 1 }),
+    );
+    // Both presses land before the helper confirms the first one.
+    await act(async () => client().rotate());
+    await act(async () => client().rotate());
+    const orientations = socket
+      .frames()
+      .filter((frame) => frame.tag === 0x07)
+      .map((frame) => frame.payload.orientation);
+    expect(orientations).toEqual(
+      duo ? ['landscape_right', 'portrait_upside_down'] : ['landscape_left', 'portrait_upside_down'],
+    );
+  });
+}
+
 test('the Duo rotates clockwise like Xcode and serve-sim, and a rotation forgets the native preset', async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();

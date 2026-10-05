@@ -69,14 +69,13 @@ import { type AccessibilityLoader, loadIosAccessibility } from './accessibility'
 import { isAvccSupported } from './avcc';
 import {
   HID_EDGE_BOTTOM,
-  ROTATE_LEFT_CYCLE,
-  ROTATE_RIGHT_CYCLE,
   homeIndicatorEdge,
   rawDeltaForDisplayDelta,
   rawEdgeForDisplayEdge,
   rawPointForDisplayPoint,
   streamGeometry,
 } from './orientation';
+import { createRotationCursor } from './rotation-cursor';
 import { screenConfigsEqual } from './screen-config';
 import { startIosHelper } from './connections';
 import {
@@ -670,16 +669,30 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     key('up', HID_USAGE_R);
   }, [sendWs]);
 
-  // Rotate one step from the last known orientation, over the helper's
-  // orientation channel (tag 0x07 → HID orientation event). The helper confirms
-  // by pushing an updated screen config, which keeps the cycle in sync. Other
-  // devices follow Simulator's counterclockwise "Rotate Left"; the iPhone Duo
-  // turns clockwise like Xcode's Device Hub and serve-sim, and its 3D view turns
-  // at once while the native preset, which a rotation clears, is forgotten.
+  // Rotate one step from the last requested orientation, like serve-sim's
+  // Rotate button, so presses faster than the helper's config push still turn
+  // one step each. The pushed config takes over once it confirms the request.
+  const rotationCursorRef = useRef({ device: currentDeviceId, cursor: createRotationCursor() });
+  useEffect(() => {
+    const rotation = rotationCursorRef.current;
+    if (rotation.device !== currentDeviceId) {
+      rotationCursorRef.current = {
+        device: currentDeviceId,
+        cursor: createRotationCursor(screen?.orientation ?? 'portrait'),
+      };
+    } else {
+      rotation.cursor.updateReadback(screen?.orientation);
+    }
+  }, [currentDeviceId, screen?.orientation]);
+
+  // Send the step over the helper's orientation channel (tag 0x07 → HID
+  // orientation event). Other devices follow Simulator's counterclockwise
+  // "Rotate Left"; the iPhone Duo turns clockwise like Xcode's Device Hub and
+  // serve-sim, and its 3D view turns at once while the native preset, which a
+  // rotation clears, is forgotten.
   const rotate = useCallback(() => {
-    const current = screenRef.current?.orientation ?? 'portrait';
     const duo = duoRef.current;
-    const next = (duo.isDuo ? ROTATE_RIGHT_CYCLE : ROTATE_LEFT_CYCLE)[current];
+    const next = rotationCursorRef.current.cursor.requestNext(duo.isDuo ? 'right' : 'left');
     if (duo.isDuo) {
       presetRestoreRef.current = null;
       setDuoView((previous) => duoRotateView(previous ?? duo.initialView, 1));
