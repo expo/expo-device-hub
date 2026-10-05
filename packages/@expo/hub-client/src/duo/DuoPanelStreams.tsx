@@ -42,6 +42,7 @@ function DuoPanelStream({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [streaming, setStreaming] = useState(false);
   const decoded = useRef(false);
+  const avccDecoded = useRef(false);
   const feedsRef = useRef(feeds);
   feedsRef.current = feeds;
   const activeRef = useRef(active);
@@ -63,6 +64,10 @@ function DuoPanelStream({
     enabled: mode === 'avcc',
     canvasRef,
     onFrame,
+    // onFrame also presents the JPEG seed, which says nothing about H.264 support.
+    onDecodedFrame: () => {
+      avccDecoded.current = true;
+    },
     onDecoderError: () => feedsRef.current.onAvccError(),
   });
 
@@ -120,6 +125,7 @@ function DuoPanelStream({
 
   useEffect(() => {
     decoded.current = false;
+    avccDecoded.current = false;
     setStreaming(false);
   }, [url, mode]);
 
@@ -137,9 +143,9 @@ function DuoPanelStream({
     // An inactive panel may stay silent until iOS wakes it. Only the intended
     // display gets a startup deadline, and a previously decoded panel can idle
     // without permanently downgrading a working session to MJPEG.
-    if (mode !== 'avcc' || !active || decoded.current) return;
+    if (mode !== 'avcc' || !active || avccDecoded.current) return;
     const timer = setTimeout(() => {
-      if (!decoded.current) feedsRef.current.onAvccError();
+      if (!avccDecoded.current) feedsRef.current.onAvccError();
     }, AVCC_FRAME_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [url, mode, active]);

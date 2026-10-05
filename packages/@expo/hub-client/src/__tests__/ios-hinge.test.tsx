@@ -318,6 +318,61 @@ test('a rejected preset restores the 3D view it replaced, unless a rotation supe
   expect(client().hinge?.view).toEqual(beforeEdit);
 });
 
+for (const failure of ['rejection', 'timeout', 'disconnect'] as const) {
+  test(`a queued preset ${failure} restores the last accepted preset's view`, async () => {
+    installBrowser({ duo: true });
+    const deadlines: (() => void)[] = [];
+    const nativeTimeout = setTimeout;
+    if (failure === 'timeout') {
+      stubGlobal('setTimeout', (callback: () => void, ms: number) => {
+        if (ms === 5_000) {
+          deadlines.push(callback);
+          return 0;
+        }
+        return nativeTimeout(callback, ms);
+      });
+    }
+    const { socket, client } = await connect();
+    await act(async () => socket.push(0x82, COVER));
+    await act(async () => client().hinge!.setControl({ control: 'pose', value: 'open' }));
+    const acceptedView = client().hinge!.view;
+    await act(async () => client().hinge!.setControl({ control: 'pose', value: 'laptop' }));
+    const laptopView = client().hinge!.view;
+    expect(laptopView).not.toEqual(acceptedView);
+    await act(async () => socket.push(0x82, INNER_OPEN));
+    await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+    expect(socket.frames().at(-1)?.payload).toEqual({
+      requestId: 2,
+      command: { control: 'pose', value: 'laptop' },
+    });
+    // Acknowledging Open must not interrupt the optimistic Laptop preview.
+    expect(client().hinge?.view).toEqual(laptopView);
+    await act(async () => {
+      if (failure === 'rejection') socket.push(0x90, { requestId: 2, ok: false, error: 'Rejected' });
+      else if (failure === 'timeout') deadlines.at(-1)!();
+      else socket.onclose?.();
+    });
+    expect(client().hinge?.pending).toBe(false);
+    expect(client().hinge?.error).toBeTruthy();
+    expect(client().hinge?.pose).toBe('open');
+    expect(client().hinge?.view).toEqual(acceptedView);
+  });
+}
+
+test('a rotation supersedes recovery even when an earlier queued preset succeeds', async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, COVER));
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'open' }));
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'laptop' }));
+  await act(async () => client().rotate());
+  const rotatedView = client().hinge!.view;
+  await act(async () => socket.push(0x82, INNER_OPEN));
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  await act(async () => socket.push(0x90, { requestId: 2, ok: false, error: 'Rejected' }));
+  expect(client().hinge?.view).toEqual(rotatedView);
+});
+
 test('a rejected hinge command surfaces its error and drops the preview', async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();

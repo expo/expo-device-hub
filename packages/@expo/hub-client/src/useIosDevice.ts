@@ -479,8 +479,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const hingePendingRef = useRef(false);
   const [hingeCommands, setHingeCommands] = useState<DuoHingeCommands>(INITIAL_DUO_HINGE_COMMANDS);
   const sentHingePoseRef = useRef<HingePose | null | undefined>(undefined);
-  // The view a pending preset replaced. A rejected, timed-out, or interrupted
-  // preset restores it, unless a later Rotate superseded it.
+  // The last accepted view before pending presets. A rejected, timed-out, or
+  // interrupted preset restores it, unless a later Rotate superseded it.
   const duoViewRef = useRef<DuoView | null>(null);
   duoViewRef.current = duoView;
   const viewGenerationRef = useRef(0);
@@ -713,9 +713,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         setHingeCommands((previous) => ({ ...previous, pending }));
       },
       onResult: (command, reply) => {
-        // An acknowledged preset owns the view from here; a later failure
-        // must not undo it.
-        if (reply.ok && command.control === 'pose') presetRestoreRef.current = null;
+        // Advance recovery to the accepted preset while later presets can still
+        // be queued. Keep the generation so a later Rotate retains its view.
+        if (reply.ok && command.control === 'pose' && presetRestoreRef.current) {
+          presetRestoreRef.current.view = duoPresetView(command.value);
+        }
       },
       onError: (message) => {
         // A failure discards the whole queue, including any preset whose view
@@ -738,8 +740,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // Editing the hinge or Table Mode clears the named preset, but preserves
     // the simulator's physical orientation (for example Laptop on a table).
     if (command.control === 'pose') {
-      // Remember the view before the first preset of a burst; it is dropped
-      // once the helper acknowledges a preset.
+      // Remember the view before the first preset of a burst; each successful
+      // acknowledgement advances it without changing the optimistic preview.
       presetRestoreRef.current ??= {
         view: duoViewRef.current,
         generation: viewGenerationRef.current,
