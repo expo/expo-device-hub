@@ -77,6 +77,36 @@ test("an unchanged client does not restart effects or render memoized children",
   expect(detachments).toBe(1);
 });
 
+test("a parent render that publishes an equal client renders consumers once", async () => {
+  const store = createDeviceClientStore();
+  let renders = 0;
+  function Status() {
+    const { status } = useDeviceClient();
+    renders++;
+    return <span>{status}</span>;
+  }
+  // Like DeviceClientProvider: a backend hook can rebuild an equal client when its parent renders.
+  function Parent({ label }: { label: string }) {
+    useLayoutEffect(() => {
+      store.publish({ ...store.getSnapshot() });
+    }, [label]);
+    return <Status />;
+  }
+  const tree = (label: string) => (
+    <DeviceClientStoreContext.Provider value={store}>
+      <Parent label={label} />
+    </DeviceClientStoreContext.Provider>
+  );
+  await mount(tree("first"));
+  // An unread update leaves the consumer's last render behind the store.
+  await act(async () => store.publish({ ...store.getSnapshot(), fps: 30 }));
+  const latest = store.getSnapshot();
+  const rendered = renders;
+  await act(async () => renderer!.update(tree("second")));
+  expect(renders).toBe(rendered + 1);
+  expect(store.getSnapshot()).toBe(latest);
+});
+
 test("destructured controls ignore unread updates and receive status and callback changes", async () => {
   const store = createDeviceClientStore();
   const renders = { controls: 0, fps: 0, unused: 0 };
