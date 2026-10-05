@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 
 import { areRecordingControlsLocked, type DeviceClient, type DeviceSettingKey } from '@expo/hub-client';
 import { Select, type SelectOption } from '../primitives';
@@ -122,6 +122,11 @@ export function DeviceOptionsSection({
   onRemove?: () => void;
 }) {
   const [open, setOpen] = useState(true);
+  // Like serve-sim's settings, a failed hinge command opens the section to show its error.
+  const hingeError = client?.hinge?.error ?? null;
+  useEffect(() => {
+    if (hingeError) setOpen(true);
+  }, [hingeError]);
   const recordingControlsLocked = areRecordingControlsLocked(client?.screenRecording ?? null);
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
