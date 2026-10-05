@@ -141,16 +141,6 @@ export function StreamPanel({
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}
-              hinge={
-                client.hinge
-                  ? {
-                      angle: client.hinge.angle,
-                      pose: client.hinge.pose,
-                      pending: client.hinge.pending,
-                      onChange: client.hinge.setControl,
-                    }
-                  : undefined
-              }
             />
           </div>
         </div>

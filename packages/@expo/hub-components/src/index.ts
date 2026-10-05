@@ -104,7 +104,7 @@ export {
 export { LogControls } from './dashboard/LogControls';
 export { LogList } from './dashboard/LogList';
 export { LogRow } from './dashboard/LogRow';
-export { StreamControls, type StreamControlsHinge } from './dashboard/StreamControls';
+export { StreamControls } from './dashboard/StreamControls';
 export {
   FoldSettings,
   MODEL_UNAVAILABLE_DESCRIPTION,
@@ -112,7 +112,7 @@ export {
   TABLE_MODE_UNAVAILABLE_DESCRIPTION,
   type FoldPreviewOption,
 } from './dashboard/FoldSettings';
-export { FOLD_POSE_OPTIONS, FOLD_POSE_SHORTCUTS, selectedFoldPose } from './dashboard/foldPoses';
+export { FOLD_POSE_OPTIONS, selectedFoldPose } from './dashboard/foldPoses';
 export {
   StreamSection,
   type StreamModeAvailability,
