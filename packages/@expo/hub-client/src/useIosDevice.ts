@@ -109,7 +109,8 @@ import {
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
 // serve-sim accepts the upgrade before it admits an input socket, then closes
-// a refused socket at once. An open socket that outlives this was admitted.
+// a refused socket at once. On a server without an admission frame, an open
+// socket that outlives this was admitted.
 const INPUT_ADMISSION_MS = 1000;
 const ACTIVITY_STALE_MS = 8000;
 const noop = () => {};
@@ -127,6 +128,8 @@ const WS_MSG_SOFTWARE_KEYBOARD = 0x0c;
 // client sends this too so the on-screen keyboard shows.
 const WS_MSG_HARDWARE_KEYBOARD = 0x0e;
 export const WS_TAG_SCREEN_CONFIG = 0x82;
+// Sent once to an admitted input socket by servers that advertise `inputAdmission`.
+const WS_MSG_INPUT_ADMITTED = 0x83;
 
 // HID keyboard usage codes (USB HID Usage Page 0x07) for the R reload chord.
 const HID_USAGE_R = 0x15; // 'r'
@@ -211,6 +214,8 @@ interface ResolvedConfig {
   url: string;
   streamUrl: string;
   wsUrl: string;
+  /** The helper sends `WS_MSG_INPUT_ADMITTED` to an admitted input socket. */
+  inputAdmission: boolean;
   device: string | null;
   /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
   execWsUrl: string | null;
@@ -240,6 +245,7 @@ interface PreviewApi {
   url?: string;
   streamUrl?: string;
   wsUrl?: string;
+  inputAdmission?: boolean;
   device?: string;
   basePath?: string;
   execToken?: string;
@@ -634,6 +640,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         // An <img> and an EventSource cannot set a header.
         streamUrl: withSessionTokenQuery(c.streamUrl ?? `${c.url}/stream.mjpeg`, token),
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
+        inputAdmission: c.inputAdmission === true,
         device: c.device ?? null,
         execWsUrl: toWs(absoluteMiddlewareUrl(`${basePath}/exec-ws`)!),
         execToken: c.execToken ?? null,
@@ -930,6 +937,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
+  const inputAdmission = config?.inputAdmission === true;
   useEffect(() => {
     setHardwareKeyboardConnectedState(null);
     setInputSocketError(null);
@@ -940,6 +948,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let admissionTimer: ReturnType<typeof setTimeout> | null = null;
     hasWsConfigRef.current = false;
     // Opening is not admission: a refused socket opens, then closes with 1013.
+    // A refused socket gets no messages, so the admission frame or a screen
+    // config confirms admission.
     const admitInput = () => {
       if (admissionTimer) clearTimeout(admissionTimer);
       admissionTimer = null;
@@ -957,7 +967,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
       ws.onopen = () => {
-        if (!cancelled) admissionTimer = setTimeout(admitInput, INPUT_ADMISSION_MS);
+        // Older servers have no admission frame and may have no screen config yet.
+        if (!cancelled && !inputAdmission) {
+          admissionTimer = setTimeout(admitInput, INPUT_ADMISSION_MS);
+        }
         // Deliver whatever the user did while the socket was down.
         pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
         // The Hub owns keyboard forwarding while this socket is active. Keep the
@@ -968,10 +981,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (!cancelled) setHardwareKeyboardConnectedState(false);
       };
       ws.onmessage = (event) => {
-        // serve-sim sends nothing to a socket it refuses.
-        admitInput();
         if (!(event.data instanceof ArrayBuffer)) return;
         const bytes = new Uint8Array(event.data);
+        if (bytes.length === 1 && bytes[0] === WS_MSG_INPUT_ADMITTED) {
+          admitInput();
+          return;
+        }
         if (bytes.length < 1 || bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
         try {
           const c = JSON.parse(decoder.decode(bytes.subarray(1))) as ScreenSize & {
@@ -979,6 +994,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           };
           if (!cancelled) setInputUnavailable(c.inputUnavailable === true);
           if (c.width > 0 && c.height > 0) {
+            admitInput();
             hasWsConfigRef.current = true;
             setScreen((prev) =>
               prev &&
@@ -1020,7 +1036,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       pendingWsRef.current = [];
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, sendWs, socketProtocols]);
+  }, [wsUrl, inputAdmission, sendWs, socketProtocols]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and

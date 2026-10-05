@@ -36,7 +36,7 @@ type FakeSocket = {
   onclose?: (event: { code: number; reason: string }) => void;
 };
 
-async function renderIosClient() {
+async function renderIosClient({ inputAdmission = false } = {}) {
   const sockets: FakeSocket[] = [];
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   stubGlobal('window', {
@@ -70,6 +70,7 @@ async function renderIosClient() {
         url: 'http://localhost:3200/sim/helper/DEVICE-A',
         streamUrl: 'http://localhost:3200/sim/helper/DEVICE-A/stream.mjpeg',
         wsUrl: 'ws://localhost:3200/sim/helper/DEVICE-A/ws',
+        ...(inputAdmission ? { inputAdmission: true } : {}),
       });
     }
     return Response.json({ devices: [] });
@@ -96,9 +97,10 @@ function configFrame(config: object): ArrayBuffer {
 }
 
 const SCREEN = { width: 390, height: 844, orientation: 'portrait' };
+const ADMITTED_FRAME = new Uint8Array([0x83]).buffer;
 
-async function rejectFirstSocket() {
-  const rendered = await renderIosClient();
+async function rejectFirstSocket(options?: { inputAdmission?: boolean }) {
+  const rendered = await renderIosClient(options);
   const { client, helperSockets } = rendered;
   expect(helperSockets()).toHaveLength(1);
   expect(client().inputError).toBeNull();
@@ -136,7 +138,7 @@ test('a rejected input socket reports inputError until a later socket gets a con
   expect(client().inputError).toBeNull();
 });
 
-test('an input socket that stays open without a config frame clears inputError', async () => {
+test('on a server without admission frames, an input socket that stays open clears inputError', async () => {
   const { client, helperSockets } = await rejectFirstSocket();
 
   await waitForRetry();
@@ -145,6 +147,28 @@ test('an input socket that stays open without a config frame clears inputError',
   await act(async () => admitted.onopen?.());
   expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
   await act(async () => new Promise((resolve) => setTimeout(resolve, 1100)));
+  expect(client().inputError).toBeNull();
+});
+
+test('on a server with admission frames, only the admission frame clears inputError', async () => {
+  const { client, helperSockets } = await rejectFirstSocket({ inputAdmission: true });
+
+  // The refusal close can arrive later than the legacy grace period.
+  await waitForRetry();
+  const refused = helperSockets()[1]!;
+  refused.readyState = 1;
+  await act(async () => refused.onopen?.());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 1100)));
+  expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
+  await act(async () => refused.onclose?.({ code: 1013, reason: CLIENT_LIMIT_REASON }));
+  expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
+
+  await waitForRetry();
+  const admitted = helperSockets()[2]!;
+  admitted.readyState = 1;
+  await act(async () => admitted.onopen?.());
+  expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
+  await act(async () => admitted.onmessage?.({ data: ADMITTED_FRAME }));
   expect(client().inputError).toBeNull();
 });
 
