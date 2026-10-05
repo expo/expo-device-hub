@@ -13,6 +13,7 @@
  */
 
 export * from './types';
+export { resolveDeviceStreamMode } from './stream-mode';
 export { areRecordingControlsLocked } from './screen-recording';
 export { DeviceScreen } from './DeviceScreen';
 export {

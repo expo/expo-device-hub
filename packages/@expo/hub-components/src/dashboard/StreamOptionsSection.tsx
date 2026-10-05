@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import {
   areRecordingControlsLocked,
+  resolveDeviceStreamMode,
   type DeviceClient,
   type DeviceGrpcImageMode,
   type DeviceGrpcEncoder,
@@ -53,7 +54,6 @@ const DEFAULT_STREAM_CAPABILITIES = {
   webRtcCodecs: ['h264', 'vp9', 'vp8'],
 } as const satisfies DeviceStreamCapabilities;
 
-const STREAM_MODE_ORDER: readonly DeviceStreamMode[] = ['mjpeg', 'h264', 'webrtc'];
 const STREAM_SOURCE_OPTIONS: ReadonlyArray<SelectOption<DeviceStreamSource>> = [
   { value: 'scrcpy', label: 'scrcpy' },
   { value: 'grpc-screenshot', label: 'gRPC' },
@@ -149,9 +149,7 @@ export function StreamOptionsSection({
     h264: streamModeAvailability.h264 && backend.modeAvailability.h264,
     webrtc: streamModeAvailability.webrtc && backend.modeAvailability.webrtc,
   };
-  const activeStreamMode = availability[streamMode]
-    ? streamMode
-    : (STREAM_MODE_ORDER.find((mode) => availability[mode]) ?? streamMode);
+  const activeStreamMode = resolveDeviceStreamMode(streamMode, availability);
   const primaryTransport: Exclude<StreamTransport, 'webrtc'> =
     client.platform === 'android' ? 'websocket' : 'http';
   const primaryTransportLabel = client.platform === 'android' ? 'WebSocket' : 'HTTP';

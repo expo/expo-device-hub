@@ -13,13 +13,20 @@ class Socket {
   sent: object[] = [];
   onopen?: () => void;
   onclose?: () => void;
+  onmessage?: (event: { data: string | ArrayBuffer }) => void;
   constructor(readonly url: string) {
     Socket.instances.push(this);
   }
   addEventListener() {}
   removeEventListener() {}
-  send(data: ArrayBuffer) {
-    this.sent.push(JSON.parse(new TextDecoder().decode(new Uint8Array(data).subarray(1))));
+  send(data: ArrayBuffer | string) {
+    this.sent.push(
+      JSON.parse(
+        typeof data === 'string'
+          ? data
+          : new TextDecoder().decode(new Uint8Array(data).subarray(1)),
+      ),
+    );
   }
   open() {
     this.readyState = 1;
@@ -28,6 +35,9 @@ class Socket {
   close() {
     this.readyState = 3;
     this.onclose?.();
+  }
+  receive(data: object) {
+    this.onmessage?.({ data: JSON.stringify(data) });
   }
 }
 
@@ -137,7 +147,7 @@ async function controlledClient(
   const offeredCodecs: string[] = [];
   stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     requests.push(url);
-    if (new URL(url).pathname === '/api') {
+    if (/\/api$/.test(new URL(url).pathname) && !url.includes('/grid/')) {
       return new Promise<Response>((resolve) => discoveries.push(resolve));
     }
     if (url.endsWith('/webrtc/offer')) {
@@ -165,6 +175,12 @@ async function controlledClient(
     },
     requests,
     offeredCodecs,
+    get discoveryCount() {
+      return discoveries.length;
+    },
+    resolveResponse: async (index: number, response: Response) => {
+      await act(async () => discoveries[index]!(response));
+    },
     fireTimer: async (delay: number) => {
       const matching = [...timers].filter(([, timer]) => timer.delay === delay);
       expect(matching.length).toBeGreaterThan(0);
@@ -178,7 +194,8 @@ async function controlledClient(
     resolve: async (
       index: number,
       transport: 'http' | 'webrtc' | undefined,
-      device = 'device-1'
+      device = 'device-1',
+      extra: Record<string, unknown> = {},
     ) => {
       await act(async () =>
         discoveries[index]!(
@@ -186,8 +203,9 @@ async function controlledClient(
             url: `https://hub.test/helper/${device}`,
             device,
             ...(transport ? { streamSettings: { transport, codec: 'h264' } } : {}),
-          })
-        )
+            ...extra,
+          }),
+        ),
       );
     },
     update: async (connection: Partial<DeviceConnectionOptions>) => {
@@ -277,6 +295,249 @@ test('exhausted WebRTC codecs report an error without attempting locked HTTP str
   expect(hub.requests.some((url) => /stream\.(mjpeg|avcc)/.test(url))).toBe(false);
 });
 
+test('an unchanged background discovery preserves the selected WebRTC codec and peer', async () => {
+  const hub = await controlledClient({ streamMode: 'webrtc' }, true);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  stubGlobal('RTCPeerConnection', Peer);
+  await hub.resolve(0, 'webrtc');
+  await act(async () => hub.client.setWebRtcCodec('vp9'));
+  const offers = [...hub.offeredCodecs];
+  await act(async () => Socket.instances.at(-1)!.close());
+  await hub.fireTimer(1500);
+  expect(hub.client.streamCapabilities?.modeAvailability.webrtc).toBe(true);
+  await hub.resolve(1, 'webrtc');
+  expect(hub.client.webRtcCodec).toBe('vp9');
+  expect(hub.offeredCodecs).toEqual(offers);
+});
+
+test('repeated helper failures with unchanged HTTP discovery keep the image stream', async () => {
+  const hub = await controlledClient({}, true);
+  await hub.resolve(0, 'http');
+  let sources = 0;
+  let removals = 0;
+  const image = {
+    set src(_value: string) {
+      sources++;
+    },
+    removeAttribute() {
+      removals++;
+    },
+    addEventListener() {},
+    removeEventListener() {},
+  } as unknown as HTMLImageElement;
+  await act(async () => hub.client.attachVideo(image));
+  const initialSources = sources;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    await act(async () => Socket.instances.at(-1)!.close());
+    await hub.fireTimer(1500);
+    expect(hub.client.streamCapabilities?.modeAvailability.mjpeg).toBe(true);
+    await hub.resolve(attempt, 'http');
+    expect(sources).toBe(initialSources);
+    expect(removals).toBe(0);
+  }
+});
+
+async function configChannel() {
+  for (const socket of Socket.instances.filter(
+    (socket) => socket.url.endsWith('/exec-ws') && socket.readyState !== 3,
+  )) {
+    await act(async () => {
+      socket.open();
+      socket.receive({ ready: true });
+    });
+    const subscription = socket.sent.find(
+      (message) => 'path' in message && String(message.path).includes('/api/events'),
+    ) as { sub: number; path: string } | undefined;
+    if (!subscription) continue;
+    return {
+      socket,
+      path: subscription.path,
+      push: async (value: object | null) => {
+        await act(async () =>
+          socket.receive({ sub: subscription.sub, data: `data: ${JSON.stringify(value)}\n\n` }),
+        );
+      },
+    };
+  }
+  throw new Error('No config subscription');
+}
+
+function preview(transport: 'http' | 'webrtc', extra: Record<string, unknown> = {}) {
+  return {
+    url: 'https://hub.test/helper/device-1',
+    device: 'device-1',
+    execToken: 'exec-1',
+    streamSettings: { transport, codec: 'h264' },
+    ...extra,
+  };
+}
+
+for (const [before, after] of [
+  ['http', 'webrtc'],
+  ['webrtc', 'http'],
+] as const) {
+  test(`exec-ws pushes ${before} to ${after} without another discovery request`, async () => {
+    const hub = await controlledClient({}, true);
+    await hub.resolveResponse(0, Response.json(preview(before)));
+    const channel = await configChannel();
+    expect(channel.path).toBe('/api/events?device=device-1');
+    await channel.push(preview(before));
+    await channel.push(preview(after));
+    expect(hub.client.streamCapabilities?.modeAvailability.webrtc).toBe(after === 'webrtc');
+    expect(hub.client.videoKind).toBe(after === 'webrtc' ? 'video' : 'img');
+    expect(hub.discoveryCount).toBe(1);
+  });
+}
+
+test('a working config subscription keeps helper reconnects off discovery and preserves the codec', async () => {
+  const hub = await controlledClient({ streamMode: 'webrtc' }, true);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  stubGlobal('RTCPeerConnection', Peer);
+  await hub.resolveResponse(0, Response.json(preview('webrtc')));
+  const channel = await configChannel();
+  await channel.push(preview('webrtc'));
+  await act(async () => hub.client.setWebRtcCodec('vp9'));
+  const offers = [...hub.offeredCodecs];
+  const helper = Socket.instances.find((socket) => socket.url.includes('/helper/ws'))!;
+  await act(async () => helper.close());
+  await hub.fireTimer(1500);
+  await channel.push(preview('webrtc', { streamSettings: { codec: 'h264', transport: 'webrtc' } }));
+  expect(hub.client.webRtcCodec).toBe('vp9');
+  expect(hub.offeredCodecs).toEqual(offers);
+  expect(hub.discoveryCount).toBe(1);
+  expect(channel.socket.readyState).toBe(1);
+});
+
+test('exec-ws recovery replaces rotated credentials without resetting the viewer codec', async () => {
+  const hub = await controlledClient({ streamMode: 'webrtc' }, true);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  stubGlobal('RTCPeerConnection', Peer);
+  await hub.resolveResponse(0, Response.json(preview('webrtc')));
+  const channel = await configChannel();
+  await channel.push(preview('webrtc'));
+  await act(async () => hub.client.setWebRtcCodec('vp9'));
+  await act(async () => channel.socket.close());
+  await hub.fireTimer(1500);
+  expect(hub.client.webRtcCodec).toBe('vp9');
+  expect(hub.client.streamCapabilities?.modeAvailability.webrtc).toBe(true);
+  await hub.resolveResponse(1, Response.json(preview('webrtc', { execToken: 'exec-2' })));
+  const replacement = await configChannel();
+  expect(replacement.socket.sent).toContainEqual({ token: 'exec-2' });
+  expect(hub.client.webRtcCodec).toBe('vp9');
+  expect(hub.offeredCodecs.at(-1)).toBe('vp9');
+});
+
+test('a missing helper clears capabilities while retaining a subscription for its replacement', async () => {
+  const hub = await controlledClient({}, true);
+  await hub.resolveResponse(0, Response.json(preview('http')));
+  const channel = await configChannel();
+  await channel.push(null);
+  expect(hub.client.streamCapabilities).toBeNull();
+  const replacement = await configChannel();
+  await replacement.push(preview('webrtc'));
+  expect(hub.client.streamCapabilities?.modeAvailability.webrtc).toBe(true);
+  expect(hub.discoveryCount).toBe(1);
+});
+
+test('a newer pushed config wins over an in-flight background discovery', async () => {
+  const hub = await controlledClient({}, true);
+  await hub.resolveResponse(0, Response.json(preview('http')));
+  const channel = await configChannel();
+  await act(async () => channel.socket.close());
+  await hub.fireTimer(1500);
+  const replacement = await configChannel();
+  await replacement.push(preview('webrtc'));
+  await hub.resolveResponse(1, Response.json(preview('http')));
+  expect(hub.client.streamCapabilities?.modeAvailability.webrtc).toBe(true);
+});
+
+test('encoder updates preserve the viewer codec but a server codec change replaces it', async () => {
+  const hub = await controlledClient({ streamMode: 'webrtc' }, true);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  stubGlobal('RTCPeerConnection', Peer);
+  await hub.resolveResponse(
+    0,
+    Response.json(
+      preview('webrtc', {
+        streamSettings: {
+          transport: 'webrtc',
+          codec: 'h264',
+          iceServers: [{ urls: ['stun:example.test'] }],
+        },
+      }),
+    ),
+  );
+  const channel = await configChannel();
+  await act(async () => hub.client.setWebRtcCodec('vp9'));
+  const offers = [...hub.offeredCodecs];
+  await channel.push(
+    preview('webrtc', {
+      streamSettings: {
+        transport: 'webrtc',
+        codec: 'h264',
+        iceServers: [{ urls: ['stun:example.test'] }],
+        h264Bitrate: 8_000_000,
+      },
+    }),
+  );
+  expect(hub.client.webRtcCodec).toBe('vp9');
+  expect(hub.offeredCodecs).toEqual(offers);
+  await channel.push(preview('webrtc', { streamSettings: { transport: 'webrtc', codec: 'vp8' } }));
+  expect(hub.client.webRtcCodec).toBe('vp8');
+  expect(hub.offeredCodecs.at(-1)).toBe('vp8');
+});
+
+test('config subscriptions use the advertised internal mount and requested device', async () => {
+  const hub = await controlledClient(
+    { baseUrl: 'https://hub.test/public', device: 'device 1' },
+    true,
+  );
+  await hub.resolveResponse(
+    0,
+    Response.json(preview('http', { basePath: '/internal', proxyHelpers: true })),
+  );
+  const channel = await configChannel();
+  expect(channel.socket.url).toBe('wss://hub.test/public/exec-ws');
+  expect(channel.path).toBe('/internal/api/events?device=device%201');
+});
+
+test('a failed background discovery retains the HTTP stream and retries', async () => {
+  const hub = await controlledClient({}, true);
+  await hub.resolve(0, 'http');
+  await act(async () => Socket.instances.at(-1)!.close());
+  await hub.fireTimer(1500);
+  await hub.resolveResponse(1, new Response(null, { status: 503 }));
+  expect(hub.client.streamCapabilities?.modeAvailability.mjpeg).toBe(true);
+  await hub.fireTimer(1500);
+  expect(hub.discoveryCount).toBe(3);
+  await hub.resolve(2, 'http');
+  expect(hub.client.error).toBeNull();
+});
+
+test('a replacement helper PID starts a fresh peer while retaining the viewer codec', async () => {
+  const hub = await controlledClient({ streamMode: 'webrtc' }, true);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  stubGlobal('RTCPeerConnection', Peer);
+  await hub.resolveResponse(0, Response.json(preview('webrtc', { pid: 10 })));
+  const channel = await configChannel();
+  await act(async () => hub.client.setWebRtcCodec('vp9'));
+  const offers = hub.offeredCodecs.length;
+  await channel.push(preview('webrtc', { pid: 11 }));
+  expect(hub.client.webRtcCodec).toBe('vp9');
+  expect(hub.offeredCodecs).toHaveLength(offers + 1);
+  expect(hub.offeredCodecs.at(-1)).toBe('vp9');
+});
+
+test('late config pushes from a previous requested connection are ignored', async () => {
+  const hub = await controlledClient({}, true);
+  await hub.resolveResponse(0, Response.json(preview('http')));
+  const channel = await configChannel();
+  await hub.update({ device: 'device-2' });
+  await hub.resolve(1, 'webrtc', 'device-2');
+  await channel.push(null);
+  expect(hub.client.streamCapabilities?.modeAvailability.webrtc).toBe(true);
+});
+
 for (const [before, after] of [
   ['http', 'webrtc'],
   ['webrtc', 'http'],
@@ -286,7 +547,7 @@ for (const [before, after] of [
     await hub.resolve(0, before);
     await act(async () => Socket.instances.at(-1)!.close());
     await hub.fireTimer(1500);
-    expect(hub.client.streamCapabilities).toBeNull();
+    expect(hub.client.streamCapabilities?.modeAvailability.webrtc).toBe(before === 'webrtc');
     expect(hub.requests.filter((url) => new URL(url).pathname === '/api')).toHaveLength(2);
     await hub.resolve(1, after);
     expect(hub.client.streamCapabilities?.modeAvailability.webrtc).toBe(after === 'webrtc');

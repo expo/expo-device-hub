@@ -152,6 +152,28 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
   };
 }
 
+test.each([
+  { h264: true, httpCodec: undefined, expected: 'H.264' },
+  { h264: false, httpCodec: undefined, expected: 'MJPEG' },
+  { h264: true, httpCodec: 'mjpeg' as const, expected: 'MJPEG' },
+  { h264: true, httpCodec: 'auto' as const, expected: 'Auto' },
+])('HTTP-only controls fall back from WebRTC with codec $expected (h264=$h264, httpCodec=$httpCodec)', ({ h264, httpCodec, expected }) => {
+  const client = {
+    ...inspectorClient('ios'),
+    streamCapabilities: {
+      modeAvailability: { mjpeg: true, h264: true, webrtc: false },
+      httpCodecs: ['auto', 'h264', 'mjpeg'] as const,
+      webRtcCodecs: [],
+    },
+  };
+  const html = renderToStaticMarkup(
+    <StreamOptionsSection client={client} defaultOpen streamMode="webrtc" httpCodec={httpCodec}
+      streamModeAvailability={{ mjpeg: true, h264, webrtc: true }} />,
+  );
+  expect(selectValue(html, 'Stream transport')).toBe('HTTP');
+  expect(selectValue(html, 'HTTP codec')).toBe(expected);
+});
+
 function device(platform: DevicePlatform, deviceFrame: Device['deviceFrame']): Device {
   return {
     id: `${platform}-device`,
