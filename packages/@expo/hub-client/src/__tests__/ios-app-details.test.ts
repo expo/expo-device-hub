@@ -249,6 +249,28 @@ describe('fetchIosAppIcon', () => {
     expect(urls.length).toBe(1);
   });
 
+  test('leaves no abort listener behind after a retry', async () => {
+    const { signal } = new AbortController();
+    let listeners = 0;
+    const add = signal.addEventListener.bind(signal);
+    const remove = signal.removeEventListener.bind(signal);
+    signal.addEventListener = ((...args: Parameters<typeof add>) => {
+      listeners++;
+      add(...args);
+    }) as typeof add;
+    signal.removeEventListener = ((...args: Parameters<typeof remove>) => {
+      listeners--;
+      remove(...args);
+    }) as typeof remove;
+    const { fetchImpl } = fakeFetch(
+      Response.json({ ok: false }, { status: 503 }),
+      Response.json({ ok: true, bundleId: 'com.example.foo', icon: ICON }),
+    );
+
+    await fetchIosAppIcon(ICON_URL, 'com.example.foo', { fetchImpl, signal, retryDelaysMs: [0] });
+    expect(listeners).toBe(0);
+  });
+
   test('stops retrying when aborted', async () => {
     const controller = new AbortController();
     const { fetchImpl, urls } = fakeFetch(Response.json({ ok: false }, { status: 503 }));
