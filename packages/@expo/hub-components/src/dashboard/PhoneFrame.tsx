@@ -109,7 +109,12 @@ export function PhoneFrame({
   // width directly; in landscape it caps the height (width / ratio), so the
   // frame widens on rotation instead of squeezing into the portrait width.
   const wrapperStyle: CSSProperties = {
-    ...deviceViewportStyle({ maxShortSide: MAX_SHORT_SIDE, ratio }),
+    ...deviceViewportStyle({
+      // Match serve-sim's 320px portrait / 620px landscape screen widths.
+      maxShortSide: client?.hinge ? (ratio > 1 ? 620 / ratio : 320) : MAX_SHORT_SIDE,
+      ratio,
+    }),
+    ...(client?.hinge ? { transition: 'width 250ms ease, aspect-ratio 250ms ease' } : {}),
     containerType: 'inline-size',
   };
 
@@ -128,7 +133,12 @@ export function PhoneFrame({
       }
     : null;
   const borderRadius = displayCorners
-    ? [displayCorners.topLeft, displayCorners.topRight, displayCorners.bottomRight, displayCorners.bottomLeft]
+    ? [
+        displayCorners.topLeft,
+        displayCorners.topRight,
+        displayCorners.bottomRight,
+        displayCorners.bottomLeft,
+      ]
         .map((corner) => `${corner.toFixed(3)}cqw`)
         .join(' ')
     : `${radiusCqw.toFixed(3)}cqw`;

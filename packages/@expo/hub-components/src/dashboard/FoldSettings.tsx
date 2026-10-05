@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from 'react';
 
 import { type DeviceHinge, type DuoPreviewMode } from '@expo/hub-client';
 import { Select, type SelectOption, bg, border, radius, text, textSize } from '../primitives';
+import { DisabledControlHint } from '../components/DisabledControlHint';
 import { FOLD_POSE_OPTIONS, selectedFoldPose } from './foldPoses';
 import { SidebarRow, SidebarSlider, SidebarSwitch } from './SidebarRow';
 
@@ -40,7 +41,13 @@ const SLIDER_WIDTH = 112;
  * preview choices. Every change waits for the helper's acknowledgement while
  * the controls stay enabled, so a slider drag feels live.
  */
-export function FoldSettings({ hinge, preview }: { hinge: DeviceHinge; preview?: FoldPreviewOption }) {
+export function FoldSettings({
+  hinge,
+  preview,
+}: {
+  hinge: DeviceHinge;
+  preview?: FoldPreviewOption;
+}) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [angleDraft, setAngleDraft] = useState<number | null>(null);
@@ -67,7 +74,11 @@ export function FoldSettings({ hinge, preview }: { hinge: DeviceHinge; preview?:
     selectedPose === null
       ? [
           ...FOLD_POSE_OPTIONS,
-          { value: poseValue, label: poseValue === 'unknown' ? 'Unknown' : 'Custom', disabled: true },
+          {
+            value: poseValue,
+            label: poseValue === 'unknown' ? 'Unknown' : 'Custom',
+            disabled: true,
+          },
         ]
       : FOLD_POSE_OPTIONS;
   const canChangeTableMode = (tableModeAvailable ?? false) || tableMode === true;
@@ -75,6 +86,14 @@ export function FoldSettings({ hinge, preview }: { hinge: DeviceHinge; preview?:
   const changeAngle = (value: number) => {
     setAngleDraft(value);
     hinge.setControl({ control: 'angle', value });
+  };
+  const selectPose = (value: string) => {
+    const position = FOLD_POSE_OPTIONS.find((option) => option.value === value);
+    if (!position) return;
+    setAngleDraft(null);
+    setAdjusting(false);
+    setEditing(false);
+    hinge.setControl({ control: 'pose', value: position.value });
   };
 
   return (
@@ -84,14 +103,8 @@ export function FoldSettings({ hinge, preview }: { hinge: DeviceHinge; preview?:
           ariaLabel="Fold pose"
           options={poseOptions}
           value={poseValue}
-          onChange={(value) => {
-            const position = FOLD_POSE_OPTIONS.find((option) => option.value === value);
-            if (!position) return;
-            setAngleDraft(null);
-            setAdjusting(false);
-            setEditing(false);
-            hinge.setControl({ control: 'pose', value: position.value });
-          }}
+          onChange={selectPose}
+          onReselect={selectPose}
         />
       </SidebarRow>
       <SidebarRow label="Hinge angle">
@@ -145,12 +158,18 @@ export function FoldSettings({ hinge, preview }: { hinge: DeviceHinge; preview?:
         </span>
       </SidebarRow>
       <SidebarRow label="Table Mode">
-        <SidebarSwitch
-          label="Table Mode"
-          checked={tableMode ?? false}
-          disabled={!canChangeTableMode}
-          onChange={(value) => hinge.setControl({ control: 'table', value })}
-        />
+        <DisabledControlHint
+          reason={
+            !canChangeTableMode ? 'Table Mode is not available in the current pose.' : undefined
+          }
+          label="Table Mode">
+          <SidebarSwitch
+            label="Table Mode"
+            checked={tableMode ?? false}
+            disabled={!canChangeTableMode}
+            onChange={(value) => hinge.setControl({ control: 'table', value })}
+          />
+        </DisabledControlHint>
       </SidebarRow>
       {preview && (
         <>

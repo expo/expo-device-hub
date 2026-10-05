@@ -13,6 +13,12 @@ import {
 } from './webrtc-negotiation';
 import { type SessionFetch } from './session-token';
 import { useWebRtcStreamStats, type WebRtcStatsConnection } from './stream-stats';
+import { raiseH264OfferLevel } from './webrtc-sdp-level';
+import {
+  readStatsBeforeDeadline,
+  startPlaybackStallWatchdog,
+  type PlaybackStallWatchdog,
+} from './webrtc-playback-watchdog';
 
 export type WebRtcIceServer = {
   urls: string[];
@@ -77,7 +83,8 @@ export function buildWebRtcOfferPayload({
 }): Record<string, unknown> {
   return {
     type: description.type,
-    sdp: description.sdp,
+    sdp:
+      codec === 'h264' && description.sdp ? raiseH264OfferLevel(description.sdp) : description.sdp,
     sessionId,
     codec,
     ...(sendIceServersInOffer ? { iceServers } : {}),
@@ -103,7 +110,7 @@ export async function videoRtpArriving(pc: RTCPeerConnection | null): Promise<bo
   if (!pc) return false;
   try {
     let arriving = false;
-    (await pc.getStats()).forEach((entry) => {
+    (await readStatsBeforeDeadline(pc, 2_000))?.forEach((entry) => {
       if (entry.type !== 'inbound-rtp') return;
       const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number };
       if (video.kind !== 'video') return;
@@ -139,6 +146,7 @@ export function useWebRtcStream({
   judgeStalls = true,
   onKeyframeNeeded,
   fetchImpl = fetch,
+  statsEnabled,
 }: {
   offerUrl: string;
   closeUrl: string;
@@ -162,6 +170,8 @@ export function useWebRtcStream({
   onKeyframeNeeded?: () => void;
   /** Sends a gated backend's session token; plain `fetch` by default. */
   fetchImpl?: SessionFetch;
+  /** A consumer that owns multiple peers can select which one supplies statistics. */
+  statsEnabled?: boolean;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -176,13 +186,15 @@ export function useWebRtcStream({
   // The live connection's deadline arming, so a panel that becomes active can
   // start judging without reconnecting.
   const armStallDeadlineRef = useRef<(() => void) | null>(null);
+  const invalidateStallsRef = useRef<(() => void) | null>(null);
   const presentedFramesRef = useRef(0);
   const transportRetryAttemptRef = useRef(0);
+  const playbackReconnectedAt = useRef<number | null>(null);
   const streamStats = useWebRtcStreamStats(
     statsConnection,
     statsUrl,
     presentedFramesRef,
-    streamStatsEnabled,
+    statsEnabled ?? streamStatsEnabled,
     fetchImpl,
   );
 
@@ -208,6 +220,7 @@ export function useWebRtcStream({
 
   useEffect(() => {
     transportRetryAttemptRef.current = 0;
+    playbackReconnectedAt.current = null;
   }, [
     enabled,
     offerUrl,
@@ -243,6 +256,9 @@ export function useWebRtcStream({
     // is not mistaken for a broken codec (serve-sim #161). Bounded: an
     // undecodable stream still falls back.
     let firstFrameGraceUsed = false;
+    let firstFrameGeneration = 0;
+    let playbackWatchdog: PlaybackStallWatchdog | undefined;
+    const visible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
     const lifecycleController = new AbortController();
     const sessionId = createSessionId();
     const servers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS;
@@ -271,6 +287,7 @@ export function useWebRtcStream({
     window.addEventListener('beforeunload', releaseOnPageHide);
 
     const clearFirstFrameTimeout = () => {
+      firstFrameGeneration += 1;
       if (firstFrameTimeoutRef.current === undefined) return;
       window.clearTimeout(firstFrameTimeoutRef.current);
       firstFrameTimeoutRef.current = undefined;
@@ -283,12 +300,11 @@ export function useWebRtcStream({
     };
 
     const closePeer = () => {
+      playbackWatchdog?.invalidate();
       clearFirstFrameTimeout();
       clearDisconnectedTimer();
       setStream(null);
-      setStatsConnection((current) =>
-        current?.sessionId === sessionId ? null : current,
-      );
+      setStatsConnection((current) => (current?.sessionId === sessionId ? null : current));
       peer?.close();
     };
 
@@ -338,6 +354,7 @@ export function useWebRtcStream({
       if (
         stopped ||
         !judgeStallsRef.current ||
+        !visible() ||
         firstFrameDecodedRef.current ||
         !trackReceived ||
         !connectionReady ||
@@ -347,7 +364,8 @@ export function useWebRtcStream({
       }
       firstFrameTimeoutRef.current = window.setTimeout(() => {
         firstFrameTimeoutRef.current = undefined;
-        if (stopped || firstFrameDecodedRef.current) return;
+        if (stopped || firstFrameDecodedRef.current || !visible()) return;
+        const reading = firstFrameGeneration;
         const state = peer?.connectionState ?? 'closed';
         void videoRtpArriving(peer).then((mediaArriving) => {
           // A panel that went inactive during the stats read may stay silent;
@@ -355,6 +373,8 @@ export function useWebRtcStream({
           if (
             stopped ||
             !judgeStallsRef.current ||
+            !visible() ||
+            reading !== firstFrameGeneration ||
             firstFrameDecodedRef.current ||
             firstFrameTimeoutRef.current !== undefined
           ) {
@@ -377,6 +397,38 @@ export function useWebRtcStream({
     };
 
     armStallDeadlineRef.current = armFirstFrameTimeout;
+    const onVisibilityChange = () => {
+      clearFirstFrameTimeout();
+      playbackWatchdog?.invalidate();
+      if (visible()) armFirstFrameTimeout();
+    };
+    if (typeof document !== 'undefined')
+      document.addEventListener('visibilitychange', onVisibilityChange);
+
+    playbackWatchdog = startPlaybackStallWatchdog({
+      peer: () => peer,
+      readable: () =>
+        !stopped && !failing && visible() && firstFrameDecodedRef.current && judgeStallsRef.current,
+      judgeable: () =>
+        !stopped &&
+        !failing &&
+        visible() &&
+        firstFrameDecodedRef.current &&
+        judgeStallsRef.current &&
+        connectionReady,
+      publish: () => {},
+      reconnectedAt: playbackReconnectedAt,
+      failCodec: () => {
+        requestKeyframe();
+        if (allowCodecFallback) failCodec();
+        else retryTransport('WebRTC playback stalled.');
+      },
+      retryTransport,
+    });
+    invalidateStallsRef.current = () => {
+      clearFirstFrameTimeout();
+      playbackWatchdog?.invalidate();
+    };
 
     const waitForIce = (connection: RTCPeerConnection) =>
       new Promise<void>((resolve) => {
@@ -501,6 +553,10 @@ export function useWebRtcStream({
     return () => {
       stopped = true;
       armStallDeadlineRef.current = null;
+      invalidateStallsRef.current = null;
+      playbackWatchdog.stop();
+      if (typeof document !== 'undefined')
+        document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('pagehide', releaseOnPageHide);
       window.removeEventListener('beforeunload', releaseOnPageHide);
       lifecycleController.abort();
@@ -509,9 +565,7 @@ export function useWebRtcStream({
       clearDisconnectedTimer();
       void closeRemoteSession(true);
       setStream(null);
-      setStatsConnection((current) =>
-        current?.sessionId === sessionId ? null : current,
-      );
+      setStatsConnection((current) => (current?.sessionId === sessionId ? null : current));
       peer?.close();
     };
   }, [
@@ -532,10 +586,9 @@ export function useWebRtcStream({
   useEffect(() => {
     if (judgeStalls) {
       armStallDeadlineRef.current?.();
-    } else if (firstFrameTimeoutRef.current !== undefined) {
+    } else {
       // A panel that just went inactive may stay silent; do not judge it.
-      window.clearTimeout(firstFrameTimeoutRef.current);
-      firstFrameTimeoutRef.current = undefined;
+      invalidateStallsRef.current?.();
     }
   }, [judgeStalls]);
 

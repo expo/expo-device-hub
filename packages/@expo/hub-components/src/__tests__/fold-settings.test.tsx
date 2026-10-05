@@ -125,8 +125,9 @@ describe('FoldSettings', () => {
     for (const markup of [unavailable, available]) {
       expect(markup).not.toMatch(/aria-label="Table Mode"[^>]*aria-describedby/);
       expect(markup).not.toContain('rests on a table');
-      expect(markup).not.toContain('not available in the current pose');
     }
+    expect(unavailable).toContain('aria-description="Table Mode is not available in the current pose."');
+    expect(available).not.toContain('Table Mode is not available in the current pose.');
   });
 
   test('keeps controls enabled while a change is pending and announces errors', () => {

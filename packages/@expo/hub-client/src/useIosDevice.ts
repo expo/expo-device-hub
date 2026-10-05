@@ -492,6 +492,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   > | null>(null);
   const [panelStreaming, setPanelStreaming] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
+  const [panelStats, setPanelStats] = useState<DeviceClient['streamStats']>(null);
+  const [streamStatsEnabled, setStreamStatsEnabled] = useState(false);
   const previewHingeAngle = hingePreview?.hingeAngle ?? screen?.hingeAngle;
   const previewHingePose = hingePreview ? hingePreview.hingePose : screen?.hingePose;
   // A pending angle or preset releases Table Mode, so the preview wins over a
@@ -1087,14 +1089,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     error: webRtcError,
     markFrameDecoded: markWebRtcFrameDecoded,
     restart: restartWebRtc,
-    streamStats,
-    setStreamStatsEnabled,
+    streamStats: flatStreamStats,
   } = useWebRtcStream({
     offerUrl: config ? `${config.url}/webrtc/offer` : '',
     closeUrl: config ? `${config.url}/webrtc/close` : '',
     closeBeaconUrl: config ? withSessionTokenQuery(`${config.url}/webrtc/close`, token) : '',
     statsUrl: config ? `${config.url}/webrtc/stats` : '',
     enabled: active && useWebRtc && !!config && !modelActive,
+    statsEnabled: streamStatsEnabled && !modelActive,
     codec: activeWebRtcCodec,
     iceServers: config?.webRtcIceServers,
     fetchImpl: videoFetch,
@@ -1556,6 +1558,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       onFrame: onAvccFrame,
       onStreamingChange: setPanelStreaming,
       onStreamError: setPanelError,
+      statsEnabled: streamStatsEnabled,
+      onStatsChange: setPanelStats,
       onAvccError: onPanelAvccError,
       onWebRtcFailure: applyWebRtcFailure,
     };
@@ -1569,6 +1573,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     onAvccFrame,
     onPanelAvccError,
     applyWebRtcFailure,
+    streamStatsEnabled,
   ]);
   // While the model is shown, the presented panel's health is the connection status.
   useEffect(() => {
@@ -2126,7 +2131,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setGrpcImageMode: noop,
     setGrpcEncoder: noop,
     setGrpcInputSource: noop,
-    streamStats,
+    streamStats: modelActive && useWebRtc ? panelStats : flatStreamStats,
     setStreamStatsEnabled,
     webRtcCodec,
     setWebRtcCodec,

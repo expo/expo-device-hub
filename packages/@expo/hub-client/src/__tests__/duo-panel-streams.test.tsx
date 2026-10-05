@@ -35,9 +35,21 @@ async function connect(token?: string) {
     },
   );
   const deadlines = new Map<number, () => void>();
+  const polls = new Map<number, () => void>();
   let nextTimer = -1;
   const nativeTimeout = setTimeout;
   const nativeClearTimeout = clearTimeout;
+  const nativeInterval = setInterval;
+  const nativeClearInterval = clearInterval;
+  stubGlobal('setInterval', (callback: () => void, ms: number) => {
+    if (ms !== 1_000) return nativeInterval(callback, ms);
+    const id = nextTimer--;
+    polls.set(id, callback);
+    return id;
+  });
+  stubGlobal('clearInterval', (id: ReturnType<typeof setInterval>) => {
+    if (!polls.delete(Number(id))) nativeClearInterval(id);
+  });
   stubGlobal('setTimeout', (callback: () => void, ms: number) => {
     if (ms !== AVCC_FRAME_TIMEOUT_MS) return nativeTimeout(callback, ms);
     const id = nextTimer--;
@@ -48,20 +60,20 @@ async function connect(token?: string) {
     if (!deadlines.delete(Number(id))) nativeClearTimeout(id);
   });
   const requests: Array<{ url: string; authorization: string | null }> = [];
-  stubGlobal(
-    'fetch',
-    async (input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push({ url: String(input), authorization: new Headers(init?.headers).get('authorization') });
-      return new Response(
-        new ReadableStream({
-          start(controller) {
-            // A JPEG seed followed by an avcC description; no H.264 output yet.
-            controller.enqueue(new Uint8Array([0, 0, 0, 2, 4, 255, 0, 0, 0, 5, 1, 1, 66, 0, 30]));
-          },
-        }),
-      );
-    },
-  );
+  stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    requests.push({
+      url: String(input),
+      authorization: new Headers(init?.headers).get('authorization'),
+    });
+    return new Response(
+      new ReadableStream({
+        start(controller) {
+          // A JPEG seed followed by an avcC description; no H.264 output yet.
+          controller.enqueue(new Uint8Array([0, 0, 0, 2, 4, 255, 0, 0, 0, 5, 1, 1, 66, 0, 30]));
+        },
+      }),
+    );
+  });
   const events = { frames: 0, fallbacks: 0, streaming: false };
   const feeds: DuoPanelFeeds = {
     url: 'https://hub.test/helper/duo',
@@ -106,10 +118,17 @@ async function connect(token?: string) {
       act(async () => {
         for (const callback of deadlines.values()) callback();
       }),
-    update: (activeScreenId: 1 | 3, url = feeds.url) =>
+    poll: () =>
+      act(async () => {
+        for (const callback of polls.values()) callback();
+      }),
+    update: (activeScreenId: 1 | 3, url = feeds.url, nextToken = token) =>
       act(async () => {
         renderer!.update(
-          <DuoPanelStreams activeScreenId={activeScreenId} feeds={{ ...feeds, url }} />,
+          <DuoPanelStreams
+            activeScreenId={activeScreenId}
+            feeds={{ ...feeds, url, token: nextToken }}
+          />,
         );
       }),
   };
@@ -121,6 +140,34 @@ test('both H.264 panel streams carry the connection session token', async () => 
     { url: 'https://hub.test/helper/duo/panel/1/stream.avcc', authorization: 'Bearer duo-token' },
     { url: 'https://hub.test/helper/duo/panel/3/stream.avcc', authorization: 'Bearer duo-token' },
   ]);
+});
+
+test('a token change rearms H.264 fallback after the previous panel decoded', async () => {
+  const { decode, update, expire, events } = await connect('first-token');
+  await decode(0);
+  await update(1, undefined, 'next-token');
+  await expire();
+  expect(events.fallbacks).toBe(1);
+});
+
+test('a panel that stops producing frames loses streaming status and recovers on a new frame', async () => {
+  let now = 10_000;
+  stubGlobal(
+    'Date',
+    class extends Date {
+      static now() {
+        return now;
+      }
+    },
+  );
+  const { events, decode, poll } = await connect();
+  await decode(0);
+  expect(events.streaming).toBe(true);
+  now += 2_001;
+  await poll();
+  expect(events.streaming).toBe(false);
+  await decode(0);
+  expect(events.streaming).toBe(true);
 });
 
 test('both MJPEG panels authenticate and reconnect when the token changes', async () => {
@@ -233,17 +280,100 @@ class Peer {
   }
   async setLocalDescription() {}
   async setRemoteDescription() {}
+  async getStats() {
+    return new Map([
+      [
+        'video',
+        {
+          id: 'video',
+          type: 'inbound-rtp',
+          kind: 'video',
+          bytesReceived: 100,
+          framesReceived: 10,
+          framesDecoded: 10,
+        },
+      ],
+    ]);
+  }
   close() {}
 }
 
+test('WebRTC statistics follow the shown panel and stop when collection is disabled', async () => {
+  stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  stubGlobal('window', {
+    location: { href: 'https://hub.test/' },
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+  });
+  stubGlobal('RTCPeerConnection', Peer);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  const requests: Array<{ panel: number; token: string | null }> = [];
+  stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(String(input));
+    if (url.pathname.endsWith('/webrtc/stats')) {
+      const panel = Number(url.pathname.match(/panel\/(\d)/)?.[1]);
+      requests.push({ panel, token: new Headers(init?.headers).get('authorization') });
+      return Response.json({ serverFps: panel });
+    }
+    return Response.json({ type: 'answer', sdp: 'answer' });
+  });
+  let stats: import('../types').DeviceStreamStats | null = null;
+  const feeds: DuoPanelFeeds = {
+    url: 'https://hub.test/helper/duo',
+    token: 'stats-token',
+    mode: 'webrtc',
+    codec: 'h264',
+    statsEnabled: true,
+    onStreamingChange() {},
+    onStreamError() {},
+    onAvccError() {},
+    onWebRtcFailure() {},
+    onStatsChange: (value) => {
+      stats = value;
+    },
+  };
+  Peer.instances = [];
+  await act(async () => {
+    renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} />, {
+      createNodeMock: (element) => (element.type === 'video' ? new FakeVideo() : null),
+    });
+  });
+  await act(async () => {});
+  expect(requests).toEqual([{ panel: 1, token: 'Bearer stats-token' }]);
+  expect(stats!.samples.at(-1)?.serverFps).toBe(1);
+  await act(async () => renderer!.update(<DuoPanelStreams activeScreenId={3} feeds={feeds} />));
+  await act(async () => {});
+  expect(requests.at(-1)?.panel).toBe(3);
+  expect(stats!.samples.at(-1)?.serverFps).toBe(3);
+  expect(Peer.instances).toHaveLength(2);
+  await act(async () =>
+    renderer!.update(
+      <DuoPanelStreams activeScreenId={3} feeds={{ ...feeds, statsEnabled: false }} />,
+    ),
+  );
+  expect(stats).toBeNull();
+});
+
 test("a WebRTC panel's first loaded frame counts without frame callbacks, as in serve-sim", async () => {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
   stubGlobal('RTCPeerConnection', Peer);
   stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
   const requests: Array<{ url: string; authorization: string | null }> = [];
   stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-    requests.push({ url: String(input), authorization: new Headers(init?.headers).get('authorization') });
+    requests.push({
+      url: String(input),
+      authorization: new Headers(init?.headers).get('authorization'),
+    });
     return Response.json({ type: 'answer', sdp: 'answer' });
   });
   Peer.instances = [];
@@ -273,10 +403,12 @@ test("a WebRTC panel's first loaded frame counts without frame callbacks, as in 
     });
   });
   await act(async () => {});
-  expect(requests.filter(({ url }) => url.endsWith('/webrtc/offer'))).toEqual([1, 3].map((screenId) => ({
-    url: `https://hub.test/helper/duo/panel/${screenId}/webrtc/offer`,
-    authorization: 'Bearer duo-token',
-  })));
+  expect(requests.filter(({ url }) => url.endsWith('/webrtc/offer'))).toEqual(
+    [1, 3].map((screenId) => ({
+      url: `https://hub.test/helper/duo/panel/${screenId}/webrtc/offer`,
+      authorization: 'Bearer duo-token',
+    })),
+  );
   for (const peer of Peer.instances) {
     await act(async () => {
       peer.onconnectionstatechange?.();

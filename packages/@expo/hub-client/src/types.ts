@@ -118,6 +118,9 @@ export interface DuoPanelFeeds {
   onFrame?: () => void;
   onStreamingChange: (streaming: boolean) => void;
   onStreamError: (error: string | null) => void;
+  /** Collect statistics only for the panel currently presented by the model. */
+  statsEnabled?: boolean;
+  onStatsChange?: (stats: DeviceStreamStats | null) => void;
   /** The H.264 decoder failed; the client falls back to MJPEG. */
   onAvccError: () => void;
   onWebRtcFailure: (failure: WebRtcStreamFailure) => void;

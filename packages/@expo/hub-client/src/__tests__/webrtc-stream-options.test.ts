@@ -10,6 +10,19 @@ import {
 } from '../useWebRtcStream';
 
 describe('WebRTC stream options', () => {
+  test('advertises H.264 level 5.2 for large displays without changing other codecs', () => {
+    const sdp =
+      'a=fmtp:96 level-asymmetry-allowed=1;profile-level-id=42e01f;packetization-mode=1\r\n';
+    const payload = (codec: 'h264' | 'vp8') =>
+      buildWebRtcOfferPayload({
+        description: { type: 'offer', sdp },
+        sessionId: 'large-panel',
+        codec,
+        iceServers: [],
+      });
+    expect(payload('h264').sdp).toContain('profile-level-id=42e034');
+    expect(payload('vp8').sdp).toBe(sdp);
+  });
   test('prefers H.264 packetization-mode=1 before other H.264 formats', () => {
     const vp8 = { mimeType: 'video/VP8' };
     const h264Mode0 = {

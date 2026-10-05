@@ -1,12 +1,16 @@
 import { type HingePose } from '@expo/hub-client';
 
 /** serve-sim's labels for the iPhone Duo's five presets, listed by the inspector's Fold pose select. */
-export const FOLD_POSE_OPTIONS: ReadonlyArray<{ value: HingePose; label: string }> = [
-  { value: 'closed', label: 'Fully folded' },
-  { value: 'book', label: 'Partially open' },
-  { value: 'open', label: 'Fully open' },
-  { value: 'laptop', label: 'Laptop' },
-  { value: 'tent', label: 'Tent' },
+export const FOLD_POSE_OPTIONS: ReadonlyArray<{
+  value: HingePose;
+  label: string;
+  shortcut: string;
+}> = [
+  { value: 'closed', label: 'Fully folded', shortcut: '⌥⇧1' },
+  { value: 'book', label: 'Partially open', shortcut: '⌥⇧4' },
+  { value: 'open', label: 'Fully open', shortcut: '⌥⇧2' },
+  { value: 'laptop', label: 'Laptop', shortcut: '⌥⇧3' },
+  { value: 'tent', label: 'Tent', shortcut: '⌥⇧5' },
 ];
 
 /**

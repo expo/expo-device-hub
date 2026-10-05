@@ -45,6 +45,8 @@ function DuoPanelStream({
   const [streaming, setStreaming] = useState(false);
   const decoded = useRef(false);
   const avccDecoded = useRef(false);
+  const lastFrameAt = useRef(0);
+  const [feedGeneration, setFeedGeneration] = useState(0);
   const feedsRef = useRef(feeds);
   feedsRef.current = feeds;
   const activeRef = useRef(active);
@@ -52,6 +54,7 @@ function DuoPanelStream({
 
   // Stable, so a panel handoff never restarts the hidden feed's decoder.
   const onFrame = useCallback(() => {
+    lastFrameAt.current = Date.now();
     if (!decoded.current) {
       decoded.current = true;
       setStreaming(true);
@@ -59,7 +62,21 @@ function DuoPanelStream({
     if (activeRef.current) feedsRef.current.onFrame?.();
   }, []);
 
-  useMjpegPanel(mode === 'mjpeg' ? `${url}/stream.mjpeg` : null, imgRef, onFrame, sessionFetch);
+  const resetStreaming = useCallback(() => {
+    decoded.current = false;
+    avccDecoded.current = false;
+    lastFrameAt.current = 0;
+    setStreaming(false);
+    setFeedGeneration((generation) => generation + 1);
+  }, []);
+
+  useMjpegPanel(
+    mode === 'mjpeg' ? `${url}/stream.mjpeg` : null,
+    imgRef,
+    onFrame,
+    sessionFetch,
+    resetStreaming,
+  );
 
   useAvccStream({
     url,
@@ -67,6 +84,7 @@ function DuoPanelStream({
     canvasRef,
     fetchImpl: sessionFetch,
     onFrame,
+    onConnecting: resetStreaming,
     // onFrame also presents the JPEG seed, which says nothing about H.264 support.
     onDecodedFrame: () => {
       avccDecoded.current = true;
@@ -79,6 +97,7 @@ function DuoPanelStream({
     failure: webRtcFailure,
     error: webRtcError,
     markFrameDecoded,
+    streamStats,
   } = useWebRtcStream({
     offerUrl: `${url}/webrtc/offer`,
     closeUrl: `${url}/webrtc/close`,
@@ -91,7 +110,12 @@ function DuoPanelStream({
     // iOS keeps the inactive panel silent until a handoff; only the shown
     // panel's missing frames mean a codec or transport problem.
     judgeStalls: active,
+    statsEnabled: active && (feeds.statsEnabled ?? false),
   });
+
+  useEffect(() => {
+    if (active) feedsRef.current.onStatsChange?.(mode === 'webrtc' ? streamStats : null);
+  }, [active, mode, streamStats]);
 
   useEffect(() => {
     if (mode !== 'webrtc') return;
@@ -138,10 +162,25 @@ function DuoPanelStream({
   }, [mode, webRtcStream, markFrameDecoded, onFrame]);
 
   useEffect(() => {
-    decoded.current = false;
-    avccDecoded.current = false;
-    setStreaming(false);
-  }, [url, mode]);
+    resetStreaming();
+  }, [url, mode, sessionFetch, webRtcStream, resetStreaming]);
+
+  useEffect(() => {
+    const check = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const staleAfter = mode === 'webrtc' ? 3_000 : 2_000;
+      if (lastFrameAt.current && Date.now() - lastFrameAt.current > staleAfter) {
+        decoded.current = false;
+        setStreaming(false);
+      }
+    };
+    const timer = setInterval(check, 1_000);
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', check);
+    return () => {
+      clearInterval(timer);
+      if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', check);
+    };
+  }, [mode]);
 
   useEffect(() => {
     onStatusChange(screenId, { streaming, error: webRtcError, failure: webRtcFailure });
@@ -162,7 +201,7 @@ function DuoPanelStream({
       if (!avccDecoded.current) feedsRef.current.onAvccError();
     }, AVCC_FRAME_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [url, mode, active]);
+  }, [url, mode, active, sessionFetch, feedGeneration]);
 
   const config = DUO_PANEL_CONFIG[screenId];
   const mediaStyle = {
@@ -220,6 +259,7 @@ export function DuoPanelStreams({
     () => () => {
       feedsRef.current.onStreamingChange(false);
       feedsRef.current.onStreamError(null);
+      feedsRef.current.onStatsChange?.(null);
     },
     [],
   );

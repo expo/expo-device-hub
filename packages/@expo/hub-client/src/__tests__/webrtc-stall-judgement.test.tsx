@@ -154,3 +154,164 @@ test('a first-frame verdict read while the panel goes inactive is dropped, and t
   expect(stallDeadlines()).toHaveLength(1);
   expect(Peer.instances).toHaveLength(1);
 });
+
+test('a hidden tab suspends the first-frame deadline and discards a verdict already being read', async () => {
+  const timers = new Map<number, { delay: number; fn: () => void }>();
+  let nextTimer = 1;
+  const listeners = new Map<string, () => void>();
+  const page = {
+    visibilityState: 'hidden',
+    addEventListener: (type: string, fn: () => void) => {
+      listeners.set(type, fn);
+    },
+    removeEventListener: (type: string) => {
+      listeners.delete(type);
+    },
+  };
+  stubGlobal('document', page);
+  stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout: (fn: () => void, delay: number) => {
+      const id = nextTimer++;
+      timers.set(id, { delay, fn });
+      return id;
+    },
+    clearTimeout: (id: number) => {
+      timers.delete(id);
+    },
+  });
+  stubGlobal('RTCPeerConnection', Peer);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  stubGlobal('fetch', async () => Response.json({ type: 'answer', sdp: 'answer' }));
+  let failure: unknown = null;
+  function Harness() {
+    failure = useWebRtcStream({
+      offerUrl: 'https://hub.test/offer',
+      closeUrl: 'https://hub.test/close',
+      enabled: true,
+      codec: 'h264',
+    }).failure;
+    return null;
+  }
+  const deadlines = () =>
+    [...timers.entries()].filter(([, timer]) => timer.delay === FIRST_FRAME_TIMEOUT_MS);
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  const peer = Peer.instances[0]!;
+  await act(async () => peer.deliver());
+  expect(deadlines()).toHaveLength(0);
+  await act(async () => {
+    page.visibilityState = 'visible';
+    listeners.get('visibilitychange')?.();
+  });
+  expect(deadlines()).toHaveLength(1);
+  const [id, timer] = deadlines()[0]!;
+  await act(async () => {
+    timers.delete(id);
+    timer.fn();
+  });
+  expect(peer.pendingStats).toHaveLength(1);
+  await act(async () => {
+    page.visibilityState = 'hidden';
+    listeners.get('visibilitychange')?.();
+  });
+  await act(async () => peer.pendingStats[0]!(new Map()));
+  expect(failure).toBeNull();
+  await act(async () => {
+    page.visibilityState = 'visible';
+    listeners.get('visibilitychange')?.();
+  });
+  expect(deadlines()).toHaveLength(1);
+});
+
+test('playback stalls reconnect the same codec once before a repeated receiving stall falls back', async () => {
+  stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  let now = 10_000;
+  stubGlobal(
+    'performance',
+    new Proxy(performance, {
+      get: (target, key) => {
+        if (key === 'now') return () => now;
+        const value = Reflect.get(target, key, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }),
+  );
+  stubGlobal('window', {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
+  const polls = new Map<number, () => void>();
+  let timerId = 0;
+  stubGlobal('setInterval', (fn: () => void) => {
+    const id = ++timerId;
+    polls.set(id, fn);
+    return id;
+  });
+  stubGlobal('clearInterval', (id: number) => {
+    polls.delete(id);
+  });
+  class PlayingPeer extends Peer {
+    received = 20;
+    async getStats() {
+      return new Map([
+        [
+          'video',
+          {
+            id: 'video',
+            type: 'inbound-rtp',
+            kind: 'video',
+            framesReceived: this.received++,
+            framesDecoded: 1,
+          },
+        ],
+      ]);
+    }
+  }
+  stubGlobal('RTCPeerConnection', PlayingPeer);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  stubGlobal('fetch', async () => Response.json({ type: 'answer', sdp: 'answer' }));
+  let stream: ReturnType<typeof useWebRtcStream>;
+  function Harness() {
+    stream = useWebRtcStream({
+      offerUrl: 'https://hub.test/offer',
+      closeUrl: 'https://hub.test/close',
+      enabled: true,
+      codec: 'h264',
+    });
+    return null;
+  }
+  const stall = async () => {
+    for (let tick = 0; tick < 9; tick++) {
+      now += 1_000;
+      await act(async () => {
+        for (const poll of polls.values()) poll();
+      });
+    }
+  };
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  await act(async () => {
+    Peer.instances[0]!.deliver();
+    stream!.markFrameDecoded();
+  });
+  await stall();
+  expect(stream!.failure).toBeNull();
+  expect(stream!.error).toContain('playback stalled');
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 550));
+  });
+  expect(Peer.instances).toHaveLength(2);
+  await act(async () => {
+    Peer.instances[1]!.deliver();
+    stream!.markFrameDecoded();
+  });
+  await stall();
+  expect(stream!.failure?.kind).toBe('codec');
+});

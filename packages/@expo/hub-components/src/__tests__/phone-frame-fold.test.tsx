@@ -44,9 +44,25 @@ function client(
 }
 
 const FlatScreen = () => <div data-testid="flat-screen" />;
-const ModelScreen = ({ sizeMode }: { sizeMode?: string }) => <div data-testid="model-screen" data-size-mode={sizeMode} />;
+const ModelScreen = ({ sizeMode }: { sizeMode?: string }) => (
+  <div data-testid="model-screen" data-size-mode={sizeMode} />
+);
 
 describe('PhoneFrame with an iPhone Duo', () => {
+  test('uses serve-sim sizing for the flat cover and landscape inner display, with an animated handoff', () => {
+    const render = (width: number, height: number) =>
+      renderToStaticMarkup(
+        <PhoneFrame
+          device={device}
+          client={{ ...client({ modelActive: false }), screen: { width, height } }}
+          DeviceScreen={FlatScreen}
+          displayScreen={(screen) => screen ?? null}
+        />,
+      );
+    expect(render(1398, 2034)).toContain('width:min(320px,');
+    expect(render(2853, 2007)).toContain('width:min(620px,');
+    expect(render(2853, 2007)).toContain('aspect-ratio 250ms ease');
+  });
   test('renders the injected 3D screen on a square stage without a screen clip', () => {
     const markup = renderToStaticMarkup(
       <PhoneFrame
@@ -88,9 +104,14 @@ describe('PhoneFrame with an iPhone Duo', () => {
   });
 });
 
-describe("PhoneFrame with a display that describes its own glass", () => {
-  test("clips the flat Duo cover to its DeviceKit corners instead of the generic iPhone squircle", () => {
-    const corners = { topLeft: 8 / 466, topRight: 59 / 466, bottomRight: 59 / 466, bottomLeft: 8 / 466 };
+describe('PhoneFrame with a display that describes its own glass', () => {
+  test('clips the flat Duo cover to its DeviceKit corners instead of the generic iPhone squircle', () => {
+    const corners = {
+      topLeft: 8 / 466,
+      topRight: 59 / 466,
+      bottomRight: 59 / 466,
+      bottomLeft: 8 / 466,
+    };
     const markup = renderToStaticMarkup(
       <PhoneFrame
         device={device}

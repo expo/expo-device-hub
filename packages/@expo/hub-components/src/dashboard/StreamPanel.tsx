@@ -7,7 +7,7 @@ import {
   type FoldableDeviceScreenProps,
   type ScreenSize,
 } from '@expo/hub-client';
-import { bg, border } from '../primitives';
+import { bg, border, text, textSize } from '../primitives';
 import { type Device } from './data';
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
 import { type DeviceFrameAssets } from './deviceFrame';
@@ -142,6 +142,19 @@ export function StreamPanel({
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}
             />
+            {client.hinge?.error && (
+              <div
+                role="alert"
+                style={{
+                  ...textSize.xs,
+                  color: text.danger,
+                  textAlign: 'center',
+                  maxWidth: 'min(280px, 100cqw)',
+                  margin: '8px auto 0',
+                }}>
+                {client.hinge.error}
+              </div>
+            )}
           </div>
         </div>
       </div>

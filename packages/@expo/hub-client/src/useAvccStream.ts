@@ -11,6 +11,7 @@ export interface UseAvccStreamOptions {
   onFirstFrame?: () => void;
   onFrame?: () => void;
   onDecodedFrame?: () => void;
+  onConnecting?: () => void;
   onResize?: (width: number, height: number) => void;
   onError?: (message: string) => void;
   onDecoderError?: () => void;
@@ -29,6 +30,7 @@ export function useAvccStream({
   onFirstFrame,
   onFrame,
   onDecodedFrame,
+  onConnecting,
   onResize,
   onError,
   onDecoderError,
@@ -38,6 +40,7 @@ export function useAvccStream({
     onFirstFrame,
     onFrame,
     onDecodedFrame,
+    onConnecting,
     onResize,
     onError,
     onDecoderError,
@@ -46,6 +49,7 @@ export function useAvccStream({
     onFirstFrame,
     onFrame,
     onDecodedFrame,
+    onConnecting,
     onResize,
     onError,
     onDecoderError,
@@ -169,6 +173,9 @@ export function useAvccStream({
 
     const read = async () => {
       demuxer.reset();
+      painted = false;
+      decodedFramePainted = false;
+      callbacks.current.onConnecting?.();
       try {
         const response = await fetchImpl(`${url}/stream.avcc`, { signal: controller.signal });
         if (!response.ok) throw new Error(`H.264 stream failed (${response.status})`);

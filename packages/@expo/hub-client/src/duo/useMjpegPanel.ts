@@ -6,7 +6,7 @@
  * never change.
  */
 
-import { useEffect, type RefObject } from 'react';
+import { useEffect, useRef, type RefObject } from 'react';
 
 import { type SessionFetch } from '../session-token';
 import { createMjpegFrameParser } from './mjpeg-frame-parser';
@@ -18,7 +18,10 @@ export function useMjpegPanel(
   imgRef: RefObject<HTMLImageElement | null>,
   onFrame?: () => void,
   fetchImpl: SessionFetch = fetch,
+  onConnecting?: () => void,
 ): void {
+  const onConnectingRef = useRef(onConnecting);
+  onConnectingRef.current = onConnecting;
   useEffect(() => {
     if (!streamUrl) return;
     // The element belongs to the same render as this effect; hold it for cleanup.
@@ -77,6 +80,7 @@ export function useMjpegPanel(
     };
 
     const read = async () => {
+      onConnectingRef.current?.();
       try {
         const response = await fetchImpl(fetchUrl, { signal: controller.signal });
         const reader = response.body?.getReader();
