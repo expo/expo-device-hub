@@ -10,6 +10,7 @@ import {
 } from "./camera.ts";
 import { listAvds, listRunningAvds, startEmulator } from "./emulator.ts";
 import { SCRCPY_DEFAULTS } from "./scrcpy.ts";
+import { isUsableSessionToken } from "./session-token.ts";
 import {
   DEFAULT_HOST,
   DEFAULT_MAX_ACTIVE_UPLOADS,
@@ -213,6 +214,7 @@ Options:
                          (exchanged for an HttpOnly cookie); agents send
                          'Authorization: Bearer <secret>'. On a non-loopback
                          bind a token is generated automatically if omitted.
+                         Use only letters, digits, and -._~
       --unsafe-no-auth   Allow a non-loopback bind with NO authentication.
                          Anyone who can reach the port can control the device.
   -s, --serial <serial>  adb device serial (defaults to the only booted device)
@@ -323,6 +325,12 @@ async function main() {
 
   if ((values["emulator-port"] || values["restart-avd"]) && !values.avd) {
     throw new Error("--emulator-port and --restart-avd require --avd.");
+  }
+
+  // An empty `--token` would leave the server open, and other characters
+  // cannot travel everywhere a client may send the token.
+  if (values.token !== undefined && !isUsableSessionToken(values.token)) {
+    throw new Error("--token must be one or more letters, digits, '-', '.', '_', or '~'.");
   }
 
   const cameraImagePath = stringOption("camera-image");

@@ -11,6 +11,7 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
 ## Unreleased
 
 - Add strict host hardware H.264 encoding for Android gRPC streaming with `--encoder hardware` and an Encoder control in the standalone UI. Software remains the default; stream-mode and health APIs report the active backend and hardware probe failures.
+- `--token` can contain only letters, digits, and `-._~`. The CLI throws an error on any other token.
 
 ### Breaking
 
