@@ -45,6 +45,14 @@ describe('iPhone Duo preview preferences', () => {
     ).toEqual(DEFAULT_DUO_PREVIEW);
   });
 
+  test('a change writes only its own choice, so another tab keeps the others, as in serve-sim', () => {
+    const storage = memoryStorage({ [DUO_PREVIEW_MODE_STORAGE_KEY]: '2d' });
+    persistDuoPreview(storage, { sizeMode: 'physical' });
+    expect(storage.values.get(DUO_PREVIEW_MODE_STORAGE_KEY)).toBe('2d');
+    expect(storage.values.has(DUO_CACHE_SCREEN_ON_FOLD_STORAGE_KEY)).toBe(false);
+    expect(storage.values.get(DUO_PREVIEW_SIZE_STORAGE_KEY)).toBe('physical');
+  });
+
   test('survive a storage that throws', () => {
     const broken = {
       getItem: () => {

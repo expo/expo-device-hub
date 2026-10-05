@@ -93,11 +93,14 @@ export function readDuoPreview(storage: ReadableStorage): DuoPreviewPreferences 
   }
 }
 
-export function persistDuoPreview(storage: WritableStorage, preferences: DuoPreviewPreferences): void {
+/** Writes only the changed choices, like serve-sim, so two open tabs do not undo each other's other choices. */
+export function persistDuoPreview(storage: WritableStorage, patch: Partial<DuoPreviewPreferences>): void {
   try {
-    storage.setItem(DUO_PREVIEW_MODE_STORAGE_KEY, preferences.mode);
-    storage.setItem(DUO_CACHE_SCREEN_ON_FOLD_STORAGE_KEY, String(preferences.cacheScreenOnFold));
-    storage.setItem(DUO_PREVIEW_SIZE_STORAGE_KEY, preferences.sizeMode);
+    if (patch.mode !== undefined) storage.setItem(DUO_PREVIEW_MODE_STORAGE_KEY, patch.mode);
+    if (patch.cacheScreenOnFold !== undefined) {
+      storage.setItem(DUO_CACHE_SCREEN_ON_FOLD_STORAGE_KEY, String(patch.cacheScreenOnFold));
+    }
+    if (patch.sizeMode !== undefined) storage.setItem(DUO_PREVIEW_SIZE_STORAGE_KEY, patch.sizeMode);
   } catch {
     // Storage can be unavailable in restricted browser contexts; keep the in-memory choice.
   }
@@ -186,7 +189,7 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
         const duoPreview = { ...state.duoPreview, ...patch };
         if (typeof window !== 'undefined') {
           try {
-            persistDuoPreview(window.localStorage, duoPreview);
+            persistDuoPreview(window.localStorage, patch);
           } catch {
             // Keep the in-memory choice without storage.
           }

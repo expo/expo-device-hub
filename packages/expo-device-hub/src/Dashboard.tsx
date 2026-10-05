@@ -290,6 +290,9 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   };
 
   const duoModelUnavailable = !!selected && duoModelUnavailableFor === selected.id;
+  // Like serve-sim, switching devices retries the model.
+  const selectedDeviceId = selected?.id ?? null;
+  useEffect(() => setDuoModelUnavailableFor(null), [selectedDeviceId]);
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
   // boots) on load. An iPhone Duo streams both panels only while its 3D model
