@@ -350,7 +350,14 @@ export function useWebRtcStream({
         if (stopped || firstFrameDecodedRef.current) return;
         const state = peer?.connectionState ?? 'closed';
         void videoRtpArriving(peer).then((mediaArriving) => {
-          if (stopped || firstFrameDecodedRef.current || firstFrameTimeoutRef.current !== undefined) {
+          // A panel that went inactive during the stats read may stay silent;
+          // drop the verdict, and the deadline arms again when it is shown.
+          if (
+            stopped ||
+            !judgeStallsRef.current ||
+            firstFrameDecodedRef.current ||
+            firstFrameTimeoutRef.current !== undefined
+          ) {
             return;
           }
           const disposition = webRtcFailureDisposition('first-frame-timeout', state, {

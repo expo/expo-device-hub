@@ -476,6 +476,29 @@ test('the 3D preview feeds both panels through the helper mount and parks the fl
   expect(client().hinge?.angle).toBe(0);
 });
 
+test('switching to 3D stops the flat MJPEG request even after the <img> unmounted', async () => {
+  installBrowser({ duo: true });
+  const { socket, client, update } = await connect({ duoPreview: '3d' });
+  await act(async () => socket.push(0x82, COVER));
+  const img = {
+    src: '',
+    naturalWidth: 0,
+    naturalHeight: 0,
+    addEventListener() {},
+    removeEventListener() {},
+    removeAttribute(name: string) {
+      if (name === 'src') this.src = '';
+    },
+  };
+  await act(async () => client().attachVideo(img as unknown as HTMLImageElement));
+  await update({ duoPreview: '2d' });
+  expect(img.src).toContain('stream.mjpeg');
+  // The 3D model replaces the flat screen: React detaches the ref first.
+  await act(async () => client().attachVideo(null));
+  await update({ duoPreview: '3d' });
+  expect(img.src).toBe('');
+});
+
 test('raw model input bypasses the display-orientation remap', async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();

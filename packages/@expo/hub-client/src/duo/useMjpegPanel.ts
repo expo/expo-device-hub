@@ -27,7 +27,8 @@ export function useMjpegPanel(
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     let pending: string | null = null;
     let painted: string | null = null;
-    let decoding = false;
+    // The frame the <img> is decoding, revoked on cleanup if it never finishes.
+    let decoding: string | null = null;
 
     // `?raw=1` asks for application/octet-stream: WebKit refuses to expose
     // multipart bodies to fetch()'s ReadableStream.
@@ -38,16 +39,16 @@ export function useMjpegPanel(
       const next = pending;
       pending = null;
       if (!next) return;
-      decoding = true;
+      decoding = next;
       img.onload = () => {
-        decoding = false;
+        decoding = null;
         if (painted) URL.revokeObjectURL(painted);
         painted = next;
         onFrame?.();
         if (pending) paintNext();
       };
       img.onerror = () => {
-        decoding = false;
+        decoding = null;
         URL.revokeObjectURL(next);
         if (pending) paintNext();
       };
@@ -103,6 +104,7 @@ export function useMjpegPanel(
       img.onerror = null;
       img.removeAttribute('src');
       if (pending) URL.revokeObjectURL(pending);
+      if (decoding) URL.revokeObjectURL(decoding);
       if (painted) URL.revokeObjectURL(painted);
     };
   }, [streamUrl, imgRef, onFrame]);

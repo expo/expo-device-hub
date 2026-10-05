@@ -104,6 +104,13 @@ function DuoPanelStream({
       frameCallback = video.requestVideoFrameCallback(onVideoFrame);
     };
     const onTimeUpdate = () => markFrame();
+    // Like serve-sim's panel view and the flat stream, the first loaded frame
+    // counts even when frame callbacks do not run, for example in a hidden tab.
+    const onLoadedData = () => {
+      if (stopped) return;
+      markFrameDecoded(0);
+      onFrame();
+    };
     video.srcObject = webRtcStream;
     if (webRtcStream) {
       if (typeof video.requestVideoFrameCallback === 'function') {
@@ -111,10 +118,12 @@ function DuoPanelStream({
       } else {
         video.addEventListener('timeupdate', onTimeUpdate);
       }
+      video.addEventListener('loadeddata', onLoadedData, { once: true });
       void video.play().catch(() => {});
     }
     return () => {
       stopped = true;
+      video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
         video.cancelVideoFrameCallback(frameCallback);

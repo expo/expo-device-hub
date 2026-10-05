@@ -1298,8 +1298,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (retryTimer) clearTimeout(retryTimer);
       img?.removeEventListener('load', markStreaming);
       img?.removeEventListener('error', onError);
-      const el = imgRef.current;
-      if (el) el.removeAttribute('src');
+      // The 3D model may have unmounted the flat <img> already, which nulls the
+      // ref, so stop the multipart request on the element this effect started.
+      img?.removeAttribute('src');
+      imgRef.current?.removeAttribute('src');
       // The helper's pushed config outlives a transport switch.
       if (!hasWsConfigRef.current) setScreen(null);
       setFps(0);

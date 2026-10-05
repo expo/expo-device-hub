@@ -1,8 +1,10 @@
 import { afterEach, expect, test } from 'bun:test';
+import { useRef } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { AVCC_FRAME_TIMEOUT_MS } from '../avcc-fallback';
 import { DuoPanelStreams } from '../duo/DuoPanelStreams';
+import { useMjpegPanel } from '../duo/useMjpegPanel';
 import { type DuoPanelFeeds } from '../types';
 import { createGlobalStubs } from './test-globals';
 
@@ -137,4 +139,146 @@ test('a new feed must decode H.264 even when the previous feed succeeded', async
   await update(1, 'https://hub.test/helper/other-duo');
   await expire();
   expect(events.fallbacks).toBe(1);
+});
+
+/** A `<video>` whose events the test fires; it never runs frame callbacks, like a hidden tab. */
+class FakeVideo {
+  srcObject: unknown = null;
+  listeners = new Map<string, () => void>();
+  addEventListener(type: string, listener: () => void) {
+    this.listeners.set(type, listener);
+  }
+  removeEventListener(type: string) {
+    this.listeners.delete(type);
+  }
+  async play() {}
+  fire(type: string) {
+    this.listeners.get(type)?.();
+  }
+}
+
+class Peer {
+  static instances: Peer[] = [];
+  iceGatheringState = 'complete';
+  connectionState = 'connected';
+  localDescription = { type: 'offer', sdp: 'offer' };
+  ontrack?: (event: { streams: object[]; track: object }) => void;
+  onconnectionstatechange?: () => void;
+  constructor() {
+    Peer.instances.push(this);
+  }
+  addTransceiver() {
+    return {};
+  }
+  async createOffer() {
+    return this.localDescription;
+  }
+  async setLocalDescription() {}
+  async setRemoteDescription() {}
+  close() {}
+}
+
+test("a WebRTC panel's first loaded frame counts without frame callbacks, as in serve-sim", async () => {
+  stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('RTCPeerConnection', Peer);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  stubGlobal('fetch', async () => Response.json({ type: 'answer', sdp: 'answer' }));
+  Peer.instances = [];
+  const videos: FakeVideo[] = [];
+  const events = { frames: 0, streaming: false };
+  const feeds: DuoPanelFeeds = {
+    url: 'https://hub.test/helper/duo',
+    mode: 'webrtc',
+    codec: 'h264',
+    onFrame: () => events.frames++,
+    onStreamingChange: (streaming) => {
+      events.streaming = streaming;
+    },
+    onStreamError() {},
+    onAvccError() {},
+    onWebRtcFailure() {},
+  };
+  await act(async () => {
+    renderer = create(<DuoPanelStreams activeScreenId={1} feeds={feeds} />, {
+      createNodeMock: (element) => {
+        if (element.type !== 'video') return null;
+        const video = new FakeVideo();
+        videos.push(video);
+        return video;
+      },
+    });
+  });
+  await act(async () => {});
+  for (const peer of Peer.instances) {
+    await act(async () => {
+      peer.onconnectionstatechange?.();
+      peer.ontrack?.({ streams: [{}], track: {} });
+    });
+  }
+  expect(events.streaming).toBe(false);
+  // Panel 1 is shown; its first frame loads while frame callbacks stay quiet.
+  await act(async () => videos[0]!.fire('loadeddata'));
+  expect(events.streaming).toBe(true);
+  expect(events.frames).toBe(1);
+});
+
+test('stopping an MJPEG panel mid-decode revokes the frame it was decoding', async () => {
+  stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  stubGlobal('window', { addEventListener() {}, removeEventListener() {} });
+  const created: string[] = [];
+  const revoked: string[] = [];
+  stubGlobal(
+    'URL',
+    class extends URL {
+      static createObjectURL() {
+        const url = `blob:frame-${created.length}`;
+        created.push(url);
+        return url;
+      }
+      static revokeObjectURL(url: string) {
+        revoked.push(url);
+      }
+    },
+  );
+  const jpeg = [0xff, 0xd8, 0xff, 0xd9];
+  const part = new Uint8Array([
+    ...new TextEncoder().encode(
+      `--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${jpeg.length}\r\n\r\n`,
+    ),
+    ...jpeg,
+  ]);
+  stubGlobal(
+    'fetch',
+    async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(part);
+          },
+        }),
+      ),
+  );
+  // The <img> never finishes decoding the frame before the panel stops.
+  const img = {
+    src: '',
+    onload: null,
+    onerror: null,
+    removeAttribute(name: string) {
+      if (name === 'src') this.src = '';
+    },
+  };
+  function Harness({ url }: { url: string | null }) {
+    const ref = useRef(img as unknown as HTMLImageElement);
+    useMjpegPanel(url, ref);
+    return null;
+  }
+  await act(async () => {
+    renderer = create(<Harness url="https://hub.test/helper/duo/panel/1/stream.mjpeg" />);
+  });
+  await act(async () => {});
+  expect(img.src).toBe('blob:frame-0');
+  await act(async () => renderer!.update(<Harness url={null} />));
+  expect(img.src).toBe('');
+  expect(revoked).toEqual(['blob:frame-0']);
 });
