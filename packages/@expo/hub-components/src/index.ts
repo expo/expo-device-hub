@@ -108,8 +108,6 @@ export { StreamControls } from './dashboard/StreamControls';
 export {
   FoldSettings,
   MODEL_UNAVAILABLE_DESCRIPTION,
-  TABLE_MODE_DESCRIPTION,
-  TABLE_MODE_UNAVAILABLE_DESCRIPTION,
   type FoldPreviewOption,
 } from './dashboard/FoldSettings';
 export { FOLD_POSE_OPTIONS, selectedFoldPose } from './dashboard/foldPoses';

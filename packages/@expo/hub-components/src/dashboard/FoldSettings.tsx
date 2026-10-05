@@ -19,9 +19,6 @@ export type FoldPreviewOption = {
   onSizeModeChange: (mode: 'physical' | 'fill') => void;
 };
 
-export const TABLE_MODE_DESCRIPTION =
-  'Tells iOS the device rests on a table. Tent turns it on; rotation or hinge edits turn it off.';
-export const TABLE_MODE_UNAVAILABLE_DESCRIPTION = 'Table Mode is not available in the current pose.';
 export const MODEL_UNAVAILABLE_DESCRIPTION = '3D preview unavailable. Select 3D to retry.';
 
 const PREVIEW_MODE_OPTIONS: ReadonlyArray<SelectOption<DuoPreviewMode>> = [
@@ -48,7 +45,6 @@ export function FoldSettings({ hinge, preview }: { hinge: DeviceHinge; preview?:
   const [draft, setDraft] = useState('');
   const [angleDraft, setAngleDraft] = useState<number | null>(null);
   const [adjusting, setAdjusting] = useState(false);
-  const tableModeDescriptionId = useId();
   const previewDescriptionId = useId();
   const { angle, pose, pending, error, tableMode, tableModeAvailable } = hinge;
 
@@ -146,15 +142,11 @@ export function FoldSettings({ hinge, preview }: { hinge: DeviceHinge; preview?:
           />
         </span>
       </SidebarRow>
-      <SidebarRow
-        label="Table Mode"
-        description={canChangeTableMode ? TABLE_MODE_DESCRIPTION : TABLE_MODE_UNAVAILABLE_DESCRIPTION}
-        descriptionId={tableModeDescriptionId}>
+      <SidebarRow label="Table Mode">
         <SidebarSwitch
           label="Table Mode"
           checked={tableMode ?? false}
           disabled={!canChangeTableMode}
-          descriptionId={tableModeDescriptionId}
           onChange={(value) => hinge.setControl({ control: 'table', value })}
         />
       </SidebarRow>

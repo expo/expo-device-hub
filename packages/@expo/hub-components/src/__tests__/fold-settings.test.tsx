@@ -2,13 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { type DeviceHinge } from '@expo/hub-client';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import {
-  FoldSettings,
-  type FoldPreviewOption,
-  MODEL_UNAVAILABLE_DESCRIPTION,
-  TABLE_MODE_DESCRIPTION,
-  TABLE_MODE_UNAVAILABLE_DESCRIPTION,
-} from '../dashboard/FoldSettings';
+import { FoldSettings, type FoldPreviewOption, MODEL_UNAVAILABLE_DESCRIPTION } from '../dashboard/FoldSettings';
 
 function hinge(overrides: Partial<DeviceHinge> = {}): DeviceHinge {
   return {
@@ -77,7 +71,7 @@ describe('FoldSettings', () => {
     expect(rowLabels(markup)).toEqual(['Fold pose', 'Hinge angle', 'Table Mode']);
   });
 
-  test('shows each named pose with the toolbar labels and infers endpoints only without a reported pose', () => {
+  test("shows each named pose with serve-sim's labels and infers endpoints only without a reported pose", () => {
     for (const [pose, label] of [
       ['closed', 'Fully folded'],
       ['book', 'Partially open'],
@@ -111,16 +105,20 @@ describe('FoldSettings', () => {
 
   test('makes Table Mode available only when supported in the current pose, but always lets it turn off', () => {
     const unavailable = renderToStaticMarkup(<FoldSettings hinge={hinge({ angle: 0 })} />);
-    expect(unavailable).toContain(TABLE_MODE_UNAVAILABLE_DESCRIPTION);
     expect(unavailable).toMatch(/role="switch"[^>]*aria-label="Table Mode"[^>]* disabled=""/);
     const available = renderToStaticMarkup(
       <FoldSettings hinge={hinge({ angle: 80, pose: 'tent', tableMode: true, tableModeAvailable: true })} />,
     );
-    expect(available).toContain(TABLE_MODE_DESCRIPTION);
     expect(available).toMatch(/role="switch"[^>]*aria-checked="true"[^>]*aria-label="Table Mode"/);
     expect(available).not.toMatch(/role="switch"[^>]*aria-label="Table Mode"[^>]* disabled=""/);
     const stuckOn = renderToStaticMarkup(<FoldSettings hinge={hinge({ tableMode: true, tableModeAvailable: false })} />);
     expect(stuckOn).not.toMatch(/role="switch"[^>]*aria-label="Table Mode"[^>]* disabled=""/);
+    // The row is only its label and switch, with no description under it.
+    for (const markup of [unavailable, available]) {
+      expect(markup).not.toMatch(/aria-label="Table Mode"[^>]*aria-describedby/);
+      expect(markup).not.toContain('rests on a table');
+      expect(markup).not.toContain('not available in the current pose');
+    }
   });
 
   test('keeps controls enabled while a change is pending and announces errors', () => {
