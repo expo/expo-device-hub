@@ -25,8 +25,8 @@ This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html):
   checks WebSocket upgrades for a bearer header or a `serve-emu.token.`
   subprotocol. `router.attachWebSocket` takes the upgrade as `request` and
   closes a socket without the token. The WebRTC preflights stay open. Without
-  it the router stays open. It throws on a token that is empty or has
-  characters other than letters, digits, and `-._~`.
+  it the router stays open. The token can contain only letters, digits, and
+  `-._~`. `createRouter` throws an error on any other token.
 
 - `GET /api/metrics` streams foreground app CPU, memory, and network samples as SSE.
 - Add `GET /api/apps/permissions`, `POST /api/apps/revoke`, and
