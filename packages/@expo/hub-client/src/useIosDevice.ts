@@ -897,7 +897,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let lastConfig: ResolvedConfig | null = null;
     // A newly selected device must not keep streaming the previous helper
     // under its name while its own config resolves.
-    setConfig(null);
+    setResolvedConfig(null);
     setStatus('connecting');
     setError(null);
 
@@ -946,7 +946,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           : null,
         initialStreamSettings: c.streamSettings,
         gridApiUrl: absoluteMiddlewareUrl(c.gridApiEndpoint ?? `${basePath}/grid/api`),
-        deviceKitModelUrl: absoluteMiddlewareUrl(`${basePath}/grid/api/devicekit-model`),
+        deviceKitModelUrl: withSessionTokenQuery(
+          absoluteMiddlewareUrl(`${basePath}/grid/api/devicekit-model`)!,
+          token,
+        ),
         chrome: c.chrome ?? null,
         webRtcCodec: c.streamSettings?.transport === 'webrtc' ? c.streamSettings.codec : 'h264',
         ...(c.streamSettings?.transport === 'webrtc' && c.streamSettings.iceServers
@@ -1546,6 +1549,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (!modelActive || !config) return null;
     return {
       url: config.url,
+      token,
       mode: useWebRtc ? 'webrtc' : useAvcc ? 'avcc' : 'mjpeg',
       codec: activeWebRtcCodec,
       iceServers: config.webRtcIceServers,
@@ -1558,6 +1562,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [
     modelActive,
     config,
+    token,
     useWebRtc,
     useAvcc,
     activeWebRtcCodec,

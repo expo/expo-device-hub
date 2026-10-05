@@ -109,6 +109,8 @@ export interface DeviceIceServer {
 export interface DuoPanelFeeds {
   /** Helper base URL; each panel streams from `${url}/panel/<1|3>/…`. */
   url: string;
+  /** Session token for the same backend as the flat stream. */
+  token?: string | null;
   mode: DuoPanelStreamMode;
   codec: DeviceWebRtcCodec;
   iceServers?: DeviceIceServer[];

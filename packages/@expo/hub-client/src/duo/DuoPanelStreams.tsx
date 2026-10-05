@@ -7,9 +7,10 @@
  * `SimulatorView`; only the 3D scene handles input.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AVCC_FRAME_TIMEOUT_MS } from '../avcc-fallback';
+import { sessionTokenFetch, withSessionTokenQuery } from '../session-token';
 import { type DuoPanelFeeds } from '../types';
 import { useAvccStream } from '../useAvccStream';
 import { useWebRtcStream } from '../useWebRtcStream';
@@ -34,7 +35,8 @@ function DuoPanelStream({
   activeScreenId: DuoPanelId;
   onStatusChange: (screenId: DuoPanelId, status: DuoPanelStatus) => void;
 }) {
-  const { mode, codec, iceServers } = feeds;
+  const { mode, codec, iceServers, token = null } = feeds;
+  const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
   const url = duoPanelUrl(feeds.url, screenId);
   const active = activeScreenId === screenId;
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -57,12 +59,13 @@ function DuoPanelStream({
     if (activeRef.current) feedsRef.current.onFrame?.();
   }, []);
 
-  useMjpegPanel(mode === 'mjpeg' ? `${url}/stream.mjpeg` : null, imgRef, onFrame);
+  useMjpegPanel(mode === 'mjpeg' ? `${url}/stream.mjpeg` : null, imgRef, onFrame, sessionFetch);
 
   useAvccStream({
     url,
     enabled: mode === 'avcc',
     canvasRef,
+    fetchImpl: sessionFetch,
     onFrame,
     // onFrame also presents the JPEG seed, which says nothing about H.264 support.
     onDecodedFrame: () => {
@@ -79,10 +82,12 @@ function DuoPanelStream({
   } = useWebRtcStream({
     offerUrl: `${url}/webrtc/offer`,
     closeUrl: `${url}/webrtc/close`,
+    closeBeaconUrl: withSessionTokenQuery(`${url}/webrtc/close`, token),
     statsUrl: `${url}/webrtc/stats`,
     enabled: mode === 'webrtc',
     codec,
     iceServers,
+    fetchImpl: sessionFetch,
     // iOS keeps the inactive panel silent until a handoff; only the shown
     // panel's missing frames mean a codec or transport problem.
     judgeStalls: active,

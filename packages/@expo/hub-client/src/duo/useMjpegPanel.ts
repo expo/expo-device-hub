@@ -8,6 +8,7 @@
 
 import { useEffect, type RefObject } from 'react';
 
+import { type SessionFetch } from '../session-token';
 import { createMjpegFrameParser } from './mjpeg-frame-parser';
 
 const RETRY_MS = 1_000;
@@ -16,6 +17,7 @@ export function useMjpegPanel(
   streamUrl: string | null,
   imgRef: RefObject<HTMLImageElement | null>,
   onFrame?: () => void,
+  fetchImpl: SessionFetch = fetch,
 ): void {
   useEffect(() => {
     if (!streamUrl) return;
@@ -76,7 +78,7 @@ export function useMjpegPanel(
 
     const read = async () => {
       try {
-        const response = await fetch(fetchUrl, { signal: controller.signal });
+        const response = await fetchImpl(fetchUrl, { signal: controller.signal });
         const reader = response.body?.getReader();
         if (!reader) {
           scheduleRetry();
@@ -107,5 +109,5 @@ export function useMjpegPanel(
       if (decoding) URL.revokeObjectURL(decoding);
       if (painted) URL.revokeObjectURL(painted);
     };
-  }, [streamUrl, imgRef, onFrame]);
+  }, [streamUrl, imgRef, onFrame, fetchImpl]);
 }

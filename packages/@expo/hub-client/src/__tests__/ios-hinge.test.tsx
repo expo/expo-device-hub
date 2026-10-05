@@ -15,7 +15,7 @@ class FakeSocket {
   sent: Uint8Array[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: ArrayBuffer }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: { code: number; reason: string }) => void) | null = null;
   onerror: (() => void) | null = null;
   constructor(public url: string) {
     FakeSocket.instances.push(this);
@@ -352,7 +352,7 @@ for (const failure of ['rejection', 'timeout', 'disconnect'] as const) {
     await act(async () => {
       if (failure === 'rejection') socket.push(0x90, { requestId: 2, ok: false, error: 'Rejected' });
       else if (failure === 'timeout') deadlines.at(-1)!();
-      else socket.onclose?.();
+      else socket.onclose?.({ code: 1006, reason: '' });
     });
     expect(client().hinge?.pending).toBe(false);
     expect(client().hinge?.error).toBeTruthy();
@@ -497,6 +497,14 @@ test('switching to 3D stops the flat MJPEG request even after the <img> unmounte
   await act(async () => client().attachVideo(null));
   await update({ duoPreview: '3d' });
   expect(img.src).toBe('');
+});
+
+test('the 3D preview authenticates its model and passes the token to both panels', async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect({ duoPreview: '3d', token: 'duo-token' });
+  await act(async () => socket.push(0x82, COVER));
+  expect(client().hinge?.modelUrl).toBe('https://hub.test/grid/api/devicekit-model?token=duo-token');
+  expect(client().hinge?.panels?.token).toBe('duo-token');
 });
 
 test('raw model input bypasses the display-orientation remap', async () => {
