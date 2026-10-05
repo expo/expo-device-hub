@@ -480,11 +480,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [hingeCommands, setHingeCommands] = useState<DuoHingeCommands>(INITIAL_DUO_HINGE_COMMANDS);
   const sentHingePoseRef = useRef<HingePose | null | undefined>(undefined);
   // The last accepted view before pending presets. A rejected, timed-out, or
-  // interrupted preset restores it, unless a later Rotate superseded it.
+  // interrupted preset restores it. A Rotate supersedes it, so the next preset
+  // records a new one, and only that burst's own accepted presets advance it.
   const duoViewRef = useRef<DuoView | null>(null);
   duoViewRef.current = duoView;
-  const viewGenerationRef = useRef(0);
-  const presetRestoreRef = useRef<{ view: DuoView | null; generation: number } | null>(null);
+  const presetRestoreRef = useRef<{
+    view: DuoView | null;
+    presets: WeakSet<HingeControlCommand>;
+  } | null>(null);
   const hingeQueueRef = useRef<ReturnType<
     typeof createAcknowledgedControlQueue<HingeControlCommand>
   > | null>(null);
@@ -678,7 +681,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     const duo = duoRef.current;
     const next = (duo.isDuo ? ROTATE_RIGHT_CYCLE : ROTATE_LEFT_CYCLE)[current];
     if (duo.isDuo) {
-      viewGenerationRef.current += 1;
+      presetRestoreRef.current = null;
       setDuoView((previous) => duoRotateView(previous ?? duo.initialView, 1));
       faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
       setHingePreview(null);
@@ -691,7 +694,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   function restorePresetView() {
     const restore = presetRestoreRef.current;
-    if (restore && restore.generation === viewGenerationRef.current) setDuoView(restore.view);
+    presetRestoreRef.current = null;
+    if (restore) setDuoView(restore.view);
   }
 
   // One command at a time: a live slider coalesces into the newest value and a
@@ -714,16 +718,16 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       },
       onResult: (command, reply) => {
         // Advance recovery to the accepted preset while later presets can still
-        // be queued. Keep the generation so a later Rotate retains its view.
-        if (reply.ok && command.control === 'pose' && presetRestoreRef.current) {
-          presetRestoreRef.current.view = duoPresetView(command.value);
+        // be queued. A preset from before a Rotate leaves the newer view alone.
+        const restore = presetRestoreRef.current;
+        if (reply.ok && command.control === 'pose' && restore?.presets.has(command)) {
+          restore.view = duoPresetView(command.value);
         }
       },
       onError: (message) => {
         // A failure discards the whole queue, including any preset whose view
         // is already showing but was never sent or confirmed.
         restorePresetView();
-        presetRestoreRef.current = null;
         setHingeError(message);
         setHingePreview(null);
         setPhysicalPose(undefined);
@@ -733,7 +737,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     });
   }
 
-  const setHingeControl = useCallback((command: HingeControlCommand) => {
+  const setHingeControl = useCallback((input: HingeControlCommand) => {
+    // Its own object per request, so recovery knows which burst sent a reply.
+    const command = { ...input };
     const { screen, initialView } = duoRef.current;
     setHingeError(null);
     faceDownFramingRef.current = DUO_FACE_DOWN_HELD;
@@ -742,10 +748,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     if (command.control === 'pose') {
       // Remember the view before the first preset of a burst; each successful
       // acknowledgement advances it without changing the optimistic preview.
-      presetRestoreRef.current ??= {
-        view: duoViewRef.current,
-        generation: viewGenerationRef.current,
-      };
+      presetRestoreRef.current ??= { view: duoViewRef.current, presets: new WeakSet() };
+      presetRestoreRef.current.presets.add(command);
       setPhysicalPose(command.value);
       setOrientationOverride(false);
       setDuoView(duoPresetView(command.value));

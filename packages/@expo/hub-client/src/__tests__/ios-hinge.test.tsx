@@ -373,6 +373,39 @@ test('a rotation supersedes recovery even when an earlier queued preset succeeds
   expect(client().hinge?.view).toEqual(rotatedView);
 });
 
+test('a preset rejected after a rotation restores the turned view', async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, COVER));
+  // Open is accepted, but the helper still reports Closed when the user rotates.
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'open' }));
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  await act(async () => client().rotate());
+  const rotatedView = client().hinge!.view;
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'laptop' }));
+  expect(client().hinge?.view).not.toEqual(rotatedView);
+  await act(async () => socket.push(0x90, { requestId: 2, ok: false, error: 'Rejected' }));
+  expect(client().hinge?.view).toEqual(rotatedView);
+});
+
+test('a preset from before a rotation, accepted later, keeps the turned recovery view', async () => {
+  installBrowser({ duo: true });
+  const { socket, client } = await connect();
+  await act(async () => socket.push(0x82, COVER));
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'open' }));
+  await act(async () => client().rotate());
+  const rotatedView = client().hinge!.view;
+  // Laptop queues behind Open; accepting Open must not drop the turn from recovery.
+  await act(async () => client().hinge!.setControl({ control: 'pose', value: 'laptop' }));
+  await act(async () => socket.push(0x90, { requestId: 1, ok: true }));
+  expect(socket.frames().at(-1)?.payload).toEqual({
+    requestId: 2,
+    command: { control: 'pose', value: 'laptop' },
+  });
+  await act(async () => socket.push(0x90, { requestId: 2, ok: false, error: 'Rejected' }));
+  expect(client().hinge?.view).toEqual(rotatedView);
+});
+
 test('a rejected hinge command surfaces its error and drops the preview', async () => {
   installBrowser({ duo: true });
   const { socket, client } = await connect();
