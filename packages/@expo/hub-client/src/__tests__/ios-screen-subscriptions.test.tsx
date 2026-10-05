@@ -185,7 +185,12 @@ for (const useVideoFrameCallback of [true, false]) {
     stubGlobal("fetch", async (url: string) => {
       if (new URL(url).pathname === "/ios/api") {
         const device = new URL(url).searchParams.get("device") ?? "DEVICE-A";
-        return Response.json({ url: `https://hub.test/ios/helper/${device}`, device });
+        // A WebRTC server advertises its transport; otherwise the client uses HTTP streams.
+        return Response.json({
+          url: `https://hub.test/ios/helper/${device}`,
+          device,
+          streamSettings: { transport: "webrtc" },
+        });
       }
       if (url.endsWith("/webrtc/offer")) return Response.json({ type: "answer", sdp: "answer" });
       return Response.json({}, { status: 404 });
