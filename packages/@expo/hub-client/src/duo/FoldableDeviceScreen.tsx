@@ -28,6 +28,8 @@ const HOST_STYLE: CSSProperties = {
   position: 'absolute',
   inset: 0,
   outline: 'none',
+  // Keep the hinge handles' stacking inside the model, under a consumer's overlay.
+  isolation: 'isolate',
 };
 
 export function FoldableDeviceScreen({
