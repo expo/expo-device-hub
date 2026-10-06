@@ -1,4 +1,3 @@
-import { recordingPhase } from './recordingPhase';
 import { type ComponentType } from 'react';
 
 import {
@@ -118,7 +117,7 @@ export function StreamPanel({
               key={device.id}
               device={device}
               status={client.stream.status}
-              recording={recordingPhase(client.screenRecording)}
+              recording={client.screenRecording}
             />
           </div>
           <div
@@ -130,7 +129,7 @@ export function StreamPanel({
               transform: 'translateX(-50%)',
             }}>
             <StreamControls
-              recording={recordingPhase(client.screenRecording)}
+              recording={client.screenRecording}
               appearance={
                 client.deviceSettings.data?.values.appearance === 'dark'
                   ? 'dark'

@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { testFeature } from '../../../hub-client/src/__tests__/feature-fixture';
+
 import { DeviceTitle } from '../dashboard/DeviceTitle';
 
 describe('device title', () => {
   test.each([
-    ['unknown', 'Checking recording status'],
+    [undefined, 'Checking recording status'],
     ['waiting', 'Starting recording'],
     ['recording', 'Recording'],
     ['finalizing', 'Finishing recording'],
@@ -16,7 +18,7 @@ describe('device title', () => {
       <DeviceTitle
         device={{ id: 'emulator-5554', name: 'Pixel' }}
         status="reconnecting"
-        recording={recording}
+        recording={testFeature(recording, recording === undefined ? 'loading' : 'ready')}
       />,
     );
     expect(markup).toContain('>Reconnecting</span>');

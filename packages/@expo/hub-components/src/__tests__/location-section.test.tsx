@@ -4,7 +4,7 @@ import {
   testError,
 } from "../../../hub-client/src/__tests__/feature-fixture";
 import { describe, expect, test } from "bun:test";
-import { type DeviceClient, type DeviceLocationCapabilities } from "@expo/hub-client";
+import { type DeviceClient } from "@expo/hub-client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { LocationSection } from "../dashboard/LocationSection";
@@ -15,9 +15,12 @@ const BASE_CLIENT: DeviceClient = {
   location: { ...EMPTY_CLIENT.location, ...testFeature(null) },
 };
 
+/** `false` hides location; `clear` marks a backend that can also remove the fix. */
+type LocationSupport = false | { clear?: true };
+
 function locationClient(
   overrides: Partial<DeviceClient> = {},
-  location: DeviceLocationCapabilities = {},
+  location: LocationSupport = {},
 ): DeviceClient {
   return {
     ...BASE_CLIENT,

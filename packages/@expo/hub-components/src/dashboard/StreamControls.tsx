@@ -1,6 +1,6 @@
 import { type ReactNode } from 'react';
 
-import { areRecordingControlsLocked, type DeviceScreenRecordingStatus } from '@expo/hub-client';
+import { areRecordingControlsLocked, type DeviceClient } from '@expo/hub-client';
 import {
   CONTROL_BUTTON_SIZE,
   CameraIcon,
@@ -60,7 +60,7 @@ export function StreamControls({
   onReload,
   onRotate,
   onSave,
-  recording = null,
+  recording,
 }: {
   /** The device's current dark/light appearance; null while unknown. */
   appearance: ColorScheme | null;
@@ -74,7 +74,8 @@ export function StreamControls({
   onRotate?: () => void;
   /** Save a screenshot of the device (triggers a file download). */
   onSave?: () => void;
-  recording?: DeviceScreenRecordingStatus | null;
+  /** The host recording feature; it locks rotation while a recording runs. */
+  recording?: DeviceClient['screenRecording'];
 }) {
   const recordingControlsLocked = areRecordingControlsLocked(recording);
   return (
@@ -111,7 +112,7 @@ export function StreamControls({
           icon={<RotateIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}
           label="Rotate"
           tooltip={
-            recording === 'unknown'
+            recordingControlsLocked && recording?.data === undefined
               ? 'Rotation is unavailable until recording status is known.'
               : recordingControlsLocked ? 'Rotation is unavailable while recording.' : undefined
           }

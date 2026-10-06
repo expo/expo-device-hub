@@ -13,7 +13,6 @@ import type {
   DeviceInputSource,
   DeviceLog,
   DevicePlatform,
-  DeviceScreenRecordingStatus,
   DeviceSettingKey,
   DeviceSettings,
   DeviceStreamCapabilities,
@@ -29,6 +28,7 @@ import type {
   KeyboardInput,
   MultiTouchSample,
   RunningDevice,
+  ScreenRecordingPhase,
   ScreenSize,
   ScreenshotCapture,
   ScrollSample,
@@ -308,3 +308,6 @@ export interface DeviceCapabilities {
 export interface BackendActivity extends DeviceActivity {
   errored: boolean;
 }
+
+/** Recording status as the Android adapter tracks it; `unknown` until metadata loads. */
+export type DeviceScreenRecordingStatus = 'unknown' | ScreenRecordingPhase;

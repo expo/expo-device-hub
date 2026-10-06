@@ -1,4 +1,5 @@
-import { type DeviceScreenRecordingStatus } from './types';
+import type { DeviceScreenRecordingStatus } from './backend-client';
+import { type DeviceClient, type ScreenRecordingPhase } from './types';
 
 export function parseScreenRecordingStatus(value: unknown): DeviceScreenRecordingStatus | null {
   if (!value || typeof value !== 'object' || !('status' in value)) return null;
@@ -14,6 +15,20 @@ export function parseScreenRecordingStatus(value: unknown): DeviceScreenRecordin
   }
 }
 
-export function areRecordingControlsLocked(status: DeviceScreenRecordingStatus | null): boolean {
-  return status === 'unknown' || status === 'waiting' || status === 'recording' || status === 'finalizing';
+const LOCKED_PHASES: ReadonlySet<ScreenRecordingPhase> = new Set([
+  'waiting',
+  'recording',
+  'finalizing',
+]);
+
+/**
+ * Whether controls that would interrupt a host recording stay locked. Until
+ * the recording feature has a phase (resolving, loading, or failed reads) the
+ * controls stay locked; a backend without recording never locks them.
+ */
+export function areRecordingControlsLocked(
+  recording: DeviceClient['screenRecording'] | undefined,
+): boolean {
+  if (!recording || recording.status === 'unsupported') return false;
+  return recording.data === undefined || LOCKED_PHASES.has(recording.data);
 }

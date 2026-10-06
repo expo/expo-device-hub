@@ -383,6 +383,8 @@ This is a breaking change to the existing hooks and `DeviceClient`.
 | `setStreamStatsEnabled(boolean)` | `streamStats.attach()` / `.detach()` |
 | `hardwareKeyboardConnected` | `keyboard.data?.hardwareConnected` |
 | `screenRecording` | `screenRecording.data`; use feature status for discovery/failure |
+| `areRecordingControlsLocked(status)` with `'unknown'` | `areRecordingControlsLocked(client.screenRecording)`; a feature without a phase stays locked. `DeviceScreenRecordingStatus` is now `ScreenRecordingPhase`, without `'unknown'` |
+| `DeviceClientHook` type | Removed; use `DeviceClientProvider` |
 | `foregroundApp`, `devices` | `foregroundApp.data`, `devices.data` |
 | `screenshot(): ScreenshotCapture | null` | `screenshot(): HubResult<ScreenshotCapture>` |
 

@@ -462,7 +462,8 @@ export interface AgentInteraction {
 export interface DeviceConnectionOptions {
   /**
    * Origin (and optional base path) of a running serve-sim / serve-emu server,
-   * e.g. `http://localhost:3100`. When empty/null the hook stays `idle`.
+   * e.g. `http://localhost:3100`. When empty/null nothing connects and every
+   * feature reports `unsupported`.
    */
   baseUrl?: string | null;
   /** Tear the connection down when false. Defaults to true. */
@@ -491,13 +492,8 @@ export interface DeviceConnectionOptions {
 /** Which element the implementation paints into. */
 export type VideoSurfaceKind = 'canvas' | 'img' | 'video';
 
-export type DeviceScreenRecordingStatus =
-  | 'unknown'
-  | 'waiting'
-  | 'recording'
-  | 'finalizing'
-  | 'complete'
-  | 'failed';
+/** Host screen-recording phase. Discovery is the feature status, not a phase. */
+export type ScreenRecordingPhase = 'waiting' | 'recording' | 'finalizing' | 'complete' | 'failed';
 
 /**
  * Whether a screenshot also reached the session artifacts, read from the
@@ -579,7 +575,6 @@ export interface AppPermissionsData {
 export type StreamSourcePatch = Partial<
   Pick<DeviceStreamSourceStatus, 'mode' | 'grpcImageMode' | 'encoder' | 'inputSource'>
 >;
-export type ScreenRecordingPhase = Exclude<DeviceScreenRecordingStatus, 'unknown'>;
 export interface InputData {
   /** The last input command the backend refused, or null. The next input clears it. */
   rejected: HubError | null;
@@ -664,9 +659,6 @@ export interface DeviceClient {
   rotate(): void;
   screenshot(): Promise<HubResult<ScreenshotCapture>>;
 }
-
-/** A platform implementation of the connection half of the interface. */
-export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClient;
 
 /**
  * The stream and input values read by DeviceScreen, flattened from

@@ -1,5 +1,4 @@
 import { FeatureNotice } from './FeatureNotice';
-import { recordingPhase } from './recordingPhase';
 import { useId, useState } from 'react';
 
 import {
@@ -123,12 +122,10 @@ export function DeviceOptionsSection({
   onRemove?: () => void;
 }) {
   const [open, setOpen] = useState(true);
-  const recordingControlsLocked = areRecordingControlsLocked(
-    recordingPhase(client?.screenRecording),
-  );
+  const recordingControlsLocked = areRecordingControlsLocked(client?.screenRecording);
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
-    : recordingPhase(client?.screenRecording) === 'unknown'
+    : client?.screenRecording.data === undefined
       ? 'Unavailable until recording status is known.'
       : 'Unavailable because this would interrupt the recording.';
   const unavailableFrameDescriptionId = useId();

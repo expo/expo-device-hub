@@ -1,5 +1,4 @@
 import { FeatureNotice } from './FeatureNotice';
-import { recordingPhase } from './recordingPhase';
 import { useEffect, useState } from 'react';
 
 import {
@@ -138,12 +137,10 @@ export function StreamOptionsSection({
   onHttpCodecChange,
 }: StreamOptionsSectionProps) {
   const [open, setOpen] = useState(defaultOpen);
-  const recordingControlsLocked = areRecordingControlsLocked(
-    recordingPhase(client.screenRecording),
-  );
+  const recordingControlsLocked = areRecordingControlsLocked(client.screenRecording);
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
-    : recordingPhase(client.screenRecording) === 'unknown'
+    : client.screenRecording.data === undefined
       ? 'Unavailable until recording status is known.'
       : 'Unavailable until recording finishes.';
   const backend: DeviceStreamCapabilities = client.stream.transports ?? DEFAULT_STREAM_CAPABILITIES;

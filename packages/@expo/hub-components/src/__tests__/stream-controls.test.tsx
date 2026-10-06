@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { testFeature } from '../../../hub-client/src/__tests__/feature-fixture';
+
 import { StreamControls } from '../dashboard/StreamControls';
 
 function buttonTags(markup: string) {
@@ -10,7 +12,7 @@ function buttonTags(markup: string) {
 describe('StreamControls', () => {
   test('locks Rotate and explains the pending recording check', () => {
     const markup = renderToStaticMarkup(
-      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="unknown" />,
+      <StreamControls appearance="light" onToggleAppearance={() => {}} recording={testFeature(undefined, 'loading')} />,
     );
     const rotate = buttonTags(markup).find((tag) => tag.includes('aria-label="Rotate"'));
     expect(rotate).toContain('aria-disabled="true"');
@@ -18,7 +20,7 @@ describe('StreamControls', () => {
   });
   test('explains why Rotate is unavailable during recording without disabling app controls', () => {
     const markup = renderToStaticMarkup(
-      <StreamControls appearance="light" onToggleAppearance={() => {}} recording="recording" />,
+      <StreamControls appearance="light" onToggleAppearance={() => {}} recording={testFeature('recording')} />,
     );
     const buttons = buttonTags(markup);
     const rotate = buttons.find((tag) => tag.includes('aria-label="Rotate"'));

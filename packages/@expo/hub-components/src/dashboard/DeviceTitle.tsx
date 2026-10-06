@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { type DeviceClient, type DeviceScreenRecordingStatus } from '@expo/hub-client';
+import { type DeviceClient, type ScreenRecordingPhase } from '@expo/hub-client';
 import {
   bg,
   border,
@@ -18,11 +18,12 @@ import { type Device } from './data';
 export type DeviceTitleProps = {
   device: Pick<Device, 'id' | 'name'>;
   status: DeviceClient['stream']['status'];
-  recording?: DeviceScreenRecordingStatus | null;
+  /** The host recording feature; omitted or unsupported shows no recording label. */
+  recording?: DeviceClient['screenRecording'];
 };
 
-const RECORDING_LABELS: Record<DeviceScreenRecordingStatus, string> = {
-  unknown: 'Checking recording status',
+const RECORDING_LABELS: Record<ScreenRecordingPhase | 'checking', string> = {
+  checking: 'Checking recording status',
   waiting: 'Starting recording',
   recording: 'Recording',
   finalizing: 'Finishing recording',
@@ -83,7 +84,10 @@ const DEVICE_TITLE_SIZE: ButtonSize = 'xs';
 export const DEVICE_TITLE_HEIGHT = BUTTON_HEIGHTS[DEVICE_TITLE_SIZE];
 
 /** Compact stream-status pill that toggles between a device's name and identifier. */
-export function DeviceTitle({ device, status, recording = null }: DeviceTitleProps) {
+export function DeviceTitle({ device, status, recording }: DeviceTitleProps) {
+  // A recording feature without a phase yet is still being checked.
+  const recordingLabel =
+    !recording || recording.status === 'unsupported' ? null : (recording.data ?? 'checking');
   const [revealedId, setRevealedId] = useState<string | null>(null);
   const showingId = revealedId === device.id;
   const label = showingId ? device.id : device.name;
@@ -126,17 +130,17 @@ export function DeviceTitle({ device, status, recording = null }: DeviceTitlePro
           <span aria-live="polite" style={{ flexShrink: 0, color: appearance.labelColor }}>
             {appearance.label}
           </span>
-          {recording && (
+          {recordingLabel && (
             <span
               role="status"
               style={{
                 flexShrink: 0,
                 color:
-                  recording === 'recording' || recording === 'failed'
+                  recordingLabel === 'recording' || recordingLabel === 'failed'
                     ? text.danger
                     : text.secondary,
               }}>
-              {RECORDING_LABELS[recording]}
+              {RECORDING_LABELS[recordingLabel]}
             </span>
           )}
         </>
