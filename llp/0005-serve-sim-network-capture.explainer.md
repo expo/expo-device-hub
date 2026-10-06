@@ -5,8 +5,8 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/network-capture-security.md`; links and paths updated)
-**Related:** LLP 0003
+**Revised:** 2026-10-06 (Codex, directed by Gabe Debes: explicit upstream routing, credential transport, shared runtime policy, and self-proxy retries)
+**Related:** LLP 0003, LLP 0007
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -40,25 +40,53 @@ capture start creates one and trusts it, and erasing the simulator removes the o
 ### Upstream proxy
 
 Captured traffic goes direct by default. `--network-capture-proxy http://host:port` forwards it through
-one HTTP proxy, including an EAS local-egress proxy supplied by build-tools. `none` explicitly selects
+one HTTP proxy. The caller supplies the address, for example to use an EAS local-egress proxy. `none` explicitly selects
 direct traffic. macOS proxy settings, bypass lists, PAC files, and auto-discovery are not read.
 All captured destinations use the configured proxy, so it must also be able to reach any local
-destinations the app uses.
+destinations the app uses [observed: `src/capture/upstream.ts` `parseCaptureProxy`;
+`src/capture/mitm-engine.ts` `startMitmProxyAttempt`].
+
+mitmproxy uses absolute-form requests for plain HTTP and CONNECT for HTTPS. An upstream connection
+or authentication failure fails the captured request; it does not fall back to direct traffic
+[observed: `src/capture/__tests__/upstream-mitmdump.test.ts`].
+
+#### Middleware upstream policy
+
+Embedded middleware mounts share the process-wide `captureRuntime`. Creating a mount sets its default
+upstream for new captures; omitting `networkCaptureProxy` or using `none` resets that default to direct.
+An active capture keeps its upstream until capture is restarted. Use separate processes when mounts
+need different proxies [observed: `src/middleware.ts` `simMiddleware`; `src/capture/runtime.ts`
+`setUpstream` and `prepareSession`; `src/__tests__/fixtures/capture-host-policy.child.ts`].
+Keeping one process-wide policy is intentional [confirmed: Gabe Debes, 2026-10-05].
+
+#### Proxy credentials
 
 Basic proxy authentication uses `http://user:password@host:port`. Percent-encode reserved characters
 in the username or password. A credential-bearing launch argument is visible in serve-sim's process
 arguments and may be saved in shell history. serve-sim removes credentials from the address given to
 mitmproxy and sends them over an anonymous pipe to the addon, which sets authentication in memory.
 No credential config file is written; credentials are not included in capture metadata, panel
-messages, or HAR files.
+messages, or HAR files [observed: `src/capture/upstream.ts` `parseCaptureProxy`;
+`src/capture/mitm-engine.ts` `startMitmProxyAttempt`; `src/capture/__tests__/upstream-mitmdump.test.ts`].
+The addon reads the pipe before announcing readiness; on script reload, EOF leaves its existing
+authentication option intact. A failed credential pipe aborts startup instead of starting a proxy
+without its credentials [observed: `src/capture/mitm-addon/servesim_capture.py` `load` and `running`;
+`src/capture/mitm-engine.ts` `credentialPipeFailed`].
 Proxy authentication headers are redacted when header capture is enabled. HTTP proxy connections
 are unencrypted, so use a trusted network or a loopback tunnel for an authenticated upstream.
-SOCKS, HTTPS proxy endpoints, Digest, NTLM, and Negotiate authentication are not supported.
+SOCKS, HTTPS proxy endpoints, Digest, NTLM, and Negotiate authentication are not supported
+[observed: `src/capture/upstream.ts` `parseCaptureProxy`; `src/capture/redact.ts`;
+`src/capture/mitm-addon/servesim_capture.py` `load`].
 
-mitmproxy uses absolute-form requests for plain HTTP and CONNECT for HTTPS. An upstream connection
-or authentication failure fails the captured request; it does not fall back to direct traffic.
-An IP address or localhost proxy on the capture proxy's own port is rejected without a DNS lookup.
-Other host names that resolve to the capture proxy and loops through another proxy are not detected.
+#### Self-proxy protection
+
+Proxy URLs are normalized before the guard runs. A candidate listener port matching an upstream IP
+address or localhost name is rejected without a DNS lookup, before creating session files or spawning
+mitmdump. This conservative check covers every numeric address, including remote IPs. Startup chooses
+another listener port within its three-attempt limit rather than aborting on the first collision.
+Other host names that resolve to the capture proxy and loops through another proxy are not detected
+[observed: `src/capture/upstream.ts` `assertNotOwnProxy`; `src/capture/mitm-engine.ts`
+`startMitmProxyAttempt` and `startMitmProxy`; `src/capture/__tests__/mitm-engine.test.ts`].
 
 ## What is recorded
 

@@ -10,6 +10,7 @@ export interface CaptureUpstream {
 const hasControlCharacter = (value: string) =>
   Array.from(value).some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127);
 
+// @ref LLP 0005#upstream-proxy — One caller-supplied HTTP proxy; no system lookup or direct fallback.
 export function parseCaptureProxy(value: string | undefined): CaptureUpstream | null {
   const text = value?.trim();
   if (!text || text === "none") return null;
@@ -39,6 +40,7 @@ export class OwnProxyPortError extends Error {
   }
 }
 
+// @ref LLP 0005#self-proxy-protection — Reject numeric/localhost own-port aliases without a DNS lookup.
 export function assertNotOwnProxy(upstream: CaptureUpstream | null, ownPort: number): void {
   if (!upstream) return;
   const url = new URL(upstream.url);

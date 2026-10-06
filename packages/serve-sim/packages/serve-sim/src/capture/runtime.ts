@@ -334,6 +334,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     },
     creatorVersion,
 
+    // @ref LLP 0005#middleware-upstream-policy — Changing the default leaves active sessions on their upstream.
     setUpstream(next: CaptureUpstream | null): void {
       upstream = next;
     },

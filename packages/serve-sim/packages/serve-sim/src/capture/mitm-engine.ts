@@ -417,7 +417,8 @@ async function startMitmProxyAttempt(
         },
       },
     );
-    // The addon reads to EOF before announcing readiness; credentials never enter a file or argv.
+    // @ref LLP 0005#proxy-credentials — Startup credentials travel over stdin, never a file or mitmdump argv.
+    // The addon reads to EOF before announcing readiness.
     child.stdin!.once("error", () => {
       credentialPipeFailed = true;
       child.kill("SIGTERM");
