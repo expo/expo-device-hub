@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/video-pipeline.md`; links and paths updated)
+**Revised:** 2026-10-06 (checked against the code at 5b273a8f; eas-cli integration now merged, H.264 probe and pump-deferral wording fixed) · 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/video-pipeline.md`; links and paths updated)
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -109,8 +109,9 @@ H.264 peers keep `maintainResolution`, so libwebrtc adapts their bitrate and
 frame rate only. VP8 peers use `balanced` and may downscale their own output.
 One constrained H.264 viewer lowers the shared canvas for every viewer.
 `/webrtc/stats` reports the canvas, scale, and step count under `sharedCanvas`,
-the resize counters under `viewerResize`, and the pump deferrals, repeats,
-unchanged frames, and canvas-mismatch drops under `capture`. `capture` also
+the resize counters under `viewerResize`, and the pump deferrals (always zero
+with the token-bucket pacer), repeats, unchanged frames, and canvas-mismatch
+drops under `capture`. `capture` also
 has cumulative pump timer ticks with their total and largest lateness, and the
 count, total, and largest time of the synchronous submit to libwebrtc, so two
 samples give the averages over the window between them.
@@ -119,7 +120,8 @@ Viewer size, rate, bitrate, and negotiated H.264 level affect the live stream,
 not the recording. If the H.264 canvas is not ready or an offered H.264 level cannot decode
 it, a viewer offering VP8 uses the existing per-peer software path. An H.264-only
 viewer can join at a lower level by shrinking the shared canvas to fit.
-The same VP8 path remains when the H.264 hardware probe fails. The recording
+The same VP8 path remains when the VideoToolbox H.264 probe fails; that probe
+needs one encoded test frame, not a hardware encoder. The recording
 encoder is independent of those fallbacks.
 
 ## Session recording
@@ -177,12 +179,13 @@ unresponsive helper after 500 ms. A stream-settings change uses the same
 recording-aware wait before replacing the helper and reports a finalization
 error while still starting the replacement.
 
-The proposed build-tools integration lives in a separate eas-cli PR. Once
-deployed, it will use this command in place of record-sim: one recorder per
-booted device, retaining each completed recording for upload. A device restart
-can produce a second file with a new recording ID. Roll out the serve-sim
-version containing `record-video` before deploying that consumer; an older
-binary cannot satisfy the command. The upload schema is unchanged.
+The build-tools integration landed in eas-cli
+[#4474](https://github.com/expo/eas-cli/pull/4474), merged on 2026-10-02. It
+uses this command in place of record-sim: one recorder per booted device that
+serve-sim serves, retaining each completed recording for upload. A device restart
+can produce a second file with a new recording ID. `record-video` first shipped
+in `@expo/serve-sim` 0.5.0; an older binary cannot satisfy the command. The
+upload schema is unchanged.
 
 ## Performance and validation
 
