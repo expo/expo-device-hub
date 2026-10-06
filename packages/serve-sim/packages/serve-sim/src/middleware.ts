@@ -10,6 +10,7 @@ import { createServer as createNetServer } from "net";
 import { createHash, randomBytes } from "crypto";
 import type { IncomingMessage, ServerResponse } from "http";
 import type { Socket } from "net";
+import { z } from "zod";
 import {
   SCREENSHOT_ARTIFACT_ERROR_HEADER,
   SCREENSHOT_ARTIFACT_HEADER,
@@ -23,7 +24,7 @@ import { captureRuntime, rebootedWithCaptureSince, startCaptureForDevice, type C
 import { createMetricsSamplerCache, MetricsSampler, type MetricsSamplerCache } from "./metrics-sampler";
 import { handleAppIconRequest } from "./app-icon";
 import { foregroundTracker, type ForegroundApp, type ForegroundTrackerCache } from "./foreground-tracker";
-import { corsAllowOriginHeaders, frameAncestorsPolicy } from "./middleware-utils";
+import { corsAllowOriginHeaders, frameAncestorsPolicy, isAllowedOrigin } from "./middleware-utils";
 import {
   closeDeviceSession,
   getDeviceSession,
@@ -35,6 +36,7 @@ import {
   assertPreviewAccess,
   assertUpgradeAccess,
   isUsableSessionToken,
+  matchesBearerToken,
   upgradeAuthHeaders,
 } from "./session-auth";
 import {
@@ -67,10 +69,16 @@ import { writeWebSocketAccept } from "./socket/server-upgrade";
 import { claimHelperHidSocket, isHidWebSocketPath, rawHidSocket } from "./socket/server-input";
 import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
-import { type WebMiddleware } from "./runtime-utils";
+import { readRequestBodyAsync, RequestBodyTooLargeError, type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
+import {
+  MAX_PASTEBOARD_TEXT_BYTES,
+  PasteboardTooLargeError,
+  readSimPasteboardResult,
+  writeSimPasteboard,
+} from "./sim-pasteboard";
 
-/** Captured traffic is decrypted credentials; `no-cache` would still let a cache keep a copy. */
+/** Captured traffic is decrypted credentials and clipboard text is user data; `no-cache` would still let a cache keep a copy. */
 const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;
 
 type SimReq = IncomingMessage;
@@ -215,6 +223,8 @@ const RN_MARKERS = [
 function isSimulatorUdid(value: string): boolean {
   return /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/i.test(value);
 }
+
+const PasteboardWriteBody = z.object({ text: z.string() });
 
 /** What to do with a persisted device state when reaping during a grid poll. */
 type StaleStateAction = "keep" | "recycle-self" | "recycle-helper";
@@ -2638,6 +2648,88 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base + "/api/apps/icon") {
       await handleAppIconRequest(req, res, rawUrl, async () =>
         selectServeSimState(await readServeSimStates(), selectedDevice)?.device ?? null);
+      return;
+    }
+
+    if (url === base + "/api/pasteboard") {
+      const respond = (status: number, body: object) => {
+        res.writeHead(status, { ...NO_STORE, "Content-Type": "application/json" });
+        res.end(JSON.stringify(body));
+      };
+      if (req.method !== "POST" && req.method !== "PUT") {
+        res.writeHead(405, { ...NO_STORE, "Content-Type": "text/plain; charset=utf-8" });
+        res.end("method not allowed");
+        return;
+      }
+      // Clipboard access requires both the preview token and a trusted browser origin.
+      // @ref LLP 0010#who-may-use-the-pasteboard-api — why the preview's own Host counts as trusted
+      if (!isAllowedOrigin(req.headers.origin, hostForRequest(req), corsOrigins)) {
+        respond(403, { ok: false, error: "This origin cannot use the simulator clipboard" });
+        return;
+      }
+      if (!matchesBearerToken(req.headers.authorization, execToken)) {
+        respond(401, { ok: false, error: "Unauthorized" });
+        return;
+      }
+      // connectToFetch replays the body once the handler yields, so read it before any await. JSON
+      // escaping can double the text (a newline becomes `\n`), so the body may be twice the text limit.
+      const bodyRead =
+        req.method === "PUT" ? readRequestBodyAsync(req, 2 * MAX_PASTEBOARD_TEXT_BYTES) : null;
+      bodyRead?.catch(() => {}); // the awaited copy below reports the failure
+      let udid = selectedDevice;
+      if (udid && !isSimulatorUdid(udid)) {
+        respond(400, { ok: false, error: "Invalid simulator device ID" });
+        return;
+      }
+      if (!udid) {
+        const booted = await getBootedUdids();
+        udid = (booted && [...booted][0]) ?? null;
+      }
+      if (!udid) {
+        respond(400, { ok: false, error: "No booted simulator available" });
+        return;
+      }
+      try {
+        if (bodyRead) {
+          let body: Buffer | undefined;
+          try {
+            body = await bodyRead;
+          } catch (error) {
+            if (!(error instanceof RequestBodyTooLargeError)) throw error;
+            respond(413, { ok: false, error: "Clipboard text is too large" });
+            return;
+          }
+          let json: unknown;
+          try {
+            json = JSON.parse(body!.toString("utf-8"));
+          } catch {
+            respond(400, { ok: false, error: "Invalid JSON" });
+            return;
+          }
+          const parsed = PasteboardWriteBody.safeParse(json);
+          if (!parsed.success) {
+            respond(400, { ok: false, error: "Clipboard text must be a string" });
+            return;
+          }
+          if (Buffer.byteLength(parsed.data.text) > MAX_PASTEBOARD_TEXT_BYTES) {
+            respond(413, { ok: false, error: "Clipboard text is too large" });
+            return;
+          }
+          await writeSimPasteboard(udid, parsed.data.text);
+          respond(200, { ok: true });
+          return;
+        }
+
+        const result = await readSimPasteboardResult(udid);
+        respond(200, { ok: true, ...result });
+      } catch (error) {
+        if (error instanceof PasteboardTooLargeError) {
+          respond(413, { ok: false, error: "Simulator clipboard text is too large" });
+          return;
+        }
+        console.error(`[serve-sim] Could not access the simulator pasteboard on ${udid}:`, error);
+        respond(500, { ok: false, error: "Could not access the simulator pasteboard" });
+      }
       return;
     }
 
