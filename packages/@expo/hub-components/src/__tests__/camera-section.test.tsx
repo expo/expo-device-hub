@@ -1,3 +1,8 @@
+import {
+  EMPTY_CLIENT,
+  testFeature,
+  testError,
+} from "../../../hub-client/src/__tests__/feature-fixture";
 import { describe, expect, test } from "bun:test";
 import { type DeviceCameraStatus, type DeviceClient } from "@expo/hub-client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -5,88 +10,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { CameraSection } from "../dashboard/CameraSection";
 
 const BASE_CLIENT: DeviceClient = {
+  ...EMPTY_CLIENT,
   platform: "android",
-  status: "streaming",
-  error: null,
-  inputError: null,
-  screenRecording: null,
-  screen: { width: 1080, height: 2400 },
-  fps: 60,
-  devices: [],
-  logs: [],
-  logsEnabled: false,
-  attachLogs: () => {},
-  detachLogs: () => {},
-  clearLogs: () => {},
-  events: [],
-  eventsEnabled: false,
-  attachEvents: () => {},
-  detachEvents: () => {},
-  clearEvents: () => {},
-  activity: null,
-  deviceSettings: null,
-  deviceSettingsPending: new Set(),
-  setDeviceSetting: () => {},
-  displayWidthDp: null,
-  camera: null,
-  cameraPending: new Set(),
-  cameraError: null,
-  setCameraImage: () => {},
-  clearCameraImage: () => {},
-  accessibility: null,
-  accessibilityPending: false,
-  accessibilityError: null,
-  refreshAccessibility: () => {},
-  location: null,
-  locationPending: false,
-  locationError: null,
-  setLocation: () => {},
-  clearLocation: () => {},
-  permissions: null,
-  permissionsPending: new Set(),
-  permissionsError: null,
-  setPermission: () => {},
-  resetPermissions: () => {},
-  refreshPermissions: () => {},
-  streamCapabilities: null,
-  streamSettings: null,
-  streamSettingsPending: false,
-  updateStreamSettings: () => {},
-  streamSource: null,
-  streamSourcePending: false,
-  streamSourceError: null,
-  setStreamSource: () => {},
-  setGrpcImageMode: () => {},
-  setGrpcEncoder: () => {},
-  setGrpcInputSource: () => {},
-  streamStats: null,
-  setStreamStatsEnabled: () => {},
-  webRtcCodec: "h264",
-  setWebRtcCodec: () => {},
-  capabilities: {
-    deviceSettings: false,
-    activity: false,
-    events: false,
-    camera: true,
-    accessibility: false,
-    permissions: false,
-    streamSettings: {},
-    location: false,
-  },
-  foregroundApp: null,
-  videoKind: "img",
-  attachVideo: () => {},
-  sendTouch: () => {},
-  sendKey: () => false,
-  pressButton: () => {},
-  reload: () => {},
-  rotate: () => {},
-  screenshot: async () => null,
-  appearance: "light",
-  setAppearance: () => {},
-  hardwareKeyboardConnected: null,
-  setHardwareKeyboardConnected: () => {},
-  toggleSoftwareKeyboard: () => {},
+  camera: { ...EMPTY_CLIENT.camera, ...testFeature(undefined) },
 };
 
 function cameraClient(overrides: Partial<DeviceClient> = {}): DeviceClient {
@@ -143,7 +69,11 @@ function render(client: DeviceClient) {
 
 describe("CameraSection", () => {
   test("shows both feeds and keeps Reset available only for a replaced image", () => {
-    const html = render(cameraClient({ camera: cameraStatus(true) }));
+    const html = render(
+      cameraClient({
+        camera: { ...BASE_CLIENT.camera, ...testFeature(cameraStatus(true) ?? undefined) },
+      }),
+    );
 
     const back = feedMarkup(html, "Back camera");
     const front = feedMarkup(html, "Front camera");
@@ -155,7 +85,11 @@ describe("CameraSection", () => {
   });
 
   test("explains an emulator booted without camera feeds and disables every control", () => {
-    const html = render(cameraClient({ camera: cameraStatus(false) }));
+    const html = render(
+      cameraClient({
+        camera: { ...BASE_CLIENT.camera, ...testFeature(cameraStatus(false) ?? undefined) },
+      }),
+    );
 
     expect(html).toContain(
       "This emulator started without camera feeds. Shut it down and boot it from Hub to attach them.",
@@ -170,7 +104,16 @@ describe("CameraSection", () => {
 
   test("reports a failed write as an alert", () => {
     const html = render(
-      cameraClient({ camera: cameraStatus(true), cameraError: "The emulator rejected the image." }),
+      cameraClient({
+        camera: {
+          ...BASE_CLIENT.camera,
+          ...testFeature(cameraStatus(true) ?? undefined),
+          writes: {
+            ...BASE_CLIENT.camera.writes,
+            errors: new Map([["back", testError("The emulator rejected the image.")]]),
+          },
+        },
+      }),
     );
 
     const alert = html.match(/<span role="alert"[^>]*>([^<]*)<\/span>/);

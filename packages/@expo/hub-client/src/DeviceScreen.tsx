@@ -12,7 +12,9 @@ import { streamGeometry } from './orientation';
 import { wheelDeltaToPixels } from './scroll-wheel';
 import { AgentInteractionIndicator } from './AgentInteractionIndicator';
 import { TouchIndicator } from './TouchIndicator';
+import { asDeviceScreenClient } from './device-screen-client';
 import {
+  type DeviceScreenClient,
   type DeviceScreenInputProps,
   type KeyboardInput,
   type MultiTouchSample,
@@ -23,8 +25,7 @@ const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
 type Point = { x: number; y: number };
 
 // Custom round cursor matching serve-sim's finger dot, so taps feel placed.
-const FINGER_CURSOR =
-  `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='9' fill='rgba(255,255,255,0.45)' stroke='rgba(0,0,0,0.55)' stroke-width='1.25'/%3E%3C/svg%3E") 12 12, pointer`;
+const FINGER_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='9' fill='rgba(255,255,255,0.45)' stroke='rgba(0,0,0,0.55)' stroke-width='1.25'/%3E%3C/svg%3E") 12 12, pointer`;
 
 export const DEVICE_SCREEN_SURFACE_LAYOUT_STYLE: CSSProperties = {
   position: 'absolute',
@@ -55,12 +56,12 @@ export const DEVICE_SCREEN_STATUS_LAYOUT_STYLE: CSSProperties = {
  * cover or blank it — that is what keeps an Android capture-source switch or
  * a brief socket drop from flashing black.
  */
-export function deviceScreenPresentsMedia(status: DeviceScreenInputProps['client']['status']): boolean {
-  return status === 'streaming' || status === 'reconnecting';
+export function deviceScreenPresentsMedia(status: DeviceScreenClient['status']): boolean {
+  return status === 'ready' || status === 'reconnecting';
 }
 
 export function deviceScreenSurfaceStyle(
-  status: DeviceScreenInputProps['client']['status']
+  status: DeviceScreenClient['status'],
 ): CSSProperties {
   return {
     ...DEVICE_SCREEN_SURFACE_LAYOUT_STYLE,
@@ -132,7 +133,7 @@ export function DeviceScreen({
     screen,
     status,
     error,
-  } = client;
+  } = asDeviceScreenClient(client);
   const canMulti = !!sendMultiTouch;
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
@@ -223,7 +224,10 @@ export function DeviceScreen({
   const pointFrom = (clientX: number, clientY: number): Point | null => {
     const rect = surfaceRef.current?.getBoundingClientRect();
     if (!rect || rect.width === 0 || rect.height === 0) return null;
-    return { x: clamp01((clientX - rect.left) / rect.width), y: clamp01((clientY - rect.top) / rect.height) };
+    return {
+      x: clamp01((clientX - rect.left) / rect.width),
+      y: clamp01((clientY - rect.top) / rect.height),
+    };
   };
 
   // Second finger position for Alt-drag: mirror around center (pinch) or a
@@ -443,7 +447,7 @@ export function DeviceScreen({
           }}>
           {status === 'error'
             ? (error ?? 'Disconnected')
-            : status === 'connecting'
+            : status === 'resolving' || status === 'loading'
               ? 'Connecting…'
               : 'Not connected'}
         </div>

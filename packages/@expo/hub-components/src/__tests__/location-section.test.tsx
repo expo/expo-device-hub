@@ -1,102 +1,34 @@
+import {
+  EMPTY_CLIENT,
+  testFeature,
+  testError,
+} from "../../../hub-client/src/__tests__/feature-fixture";
 import { describe, expect, test } from "bun:test";
-import { type DeviceClient, type DeviceLocationCapabilities } from "@expo/hub-client";
+import { type DeviceClient } from "@expo/hub-client";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { LocationSection } from "../dashboard/LocationSection";
 
 const BASE_CLIENT: DeviceClient = {
+  ...EMPTY_CLIENT,
   platform: "android",
-  status: "streaming",
-  error: null,
-  inputError: null,
-  screenRecording: null,
-  screen: { width: 1080, height: 2400 },
-  fps: 60,
-  devices: [],
-  logs: [],
-  logsEnabled: false,
-  attachLogs: () => {},
-  detachLogs: () => {},
-  clearLogs: () => {},
-  events: [],
-  eventsEnabled: false,
-  attachEvents: () => {},
-  detachEvents: () => {},
-  clearEvents: () => {},
-  activity: null,
-  deviceSettings: null,
-  deviceSettingsPending: new Set(),
-  setDeviceSetting: () => {},
-  displayWidthDp: null,
-  camera: null,
-  cameraPending: new Set(),
-  cameraError: null,
-  setCameraImage: () => {},
-  clearCameraImage: () => {},
-  accessibility: null,
-  accessibilityPending: false,
-  accessibilityError: null,
-  refreshAccessibility: () => {},
-  location: null,
-  locationPending: false,
-  locationError: null,
-  setLocation: () => {},
-  clearLocation: () => {},
-  permissions: null,
-  permissionsPending: new Set<string>(),
-  permissionsError: null,
-  setPermission: () => {},
-  resetPermissions: () => {},
-  refreshPermissions: () => {},
-  streamCapabilities: null,
-  streamSettings: null,
-  streamSettingsPending: false,
-  updateStreamSettings: () => {},
-  streamSource: null,
-  streamSourcePending: false,
-  streamSourceError: null,
-  setStreamSource: () => {},
-  setGrpcImageMode: () => {},
-  setGrpcEncoder: () => {},
-  setGrpcInputSource: () => {},
-  streamStats: null,
-  setStreamStatsEnabled: () => {},
-  webRtcCodec: "h264",
-  setWebRtcCodec: () => {},
-  capabilities: {
-    deviceSettings: false,
-    activity: false,
-    events: false,
-    camera: false,
-    accessibility: false,
-    streamSettings: {},
-    location: {},
-    permissions: false,
-  },
-  foregroundApp: null,
-  videoKind: "img",
-  attachVideo: () => {},
-  sendTouch: () => {},
-  sendKey: () => false,
-  pressButton: () => {},
-  reload: () => {},
-  rotate: () => {},
-  screenshot: async () => null,
-  appearance: "light",
-  setAppearance: () => {},
-  hardwareKeyboardConnected: null,
-  setHardwareKeyboardConnected: () => {},
-  toggleSoftwareKeyboard: () => {},
+  location: { ...EMPTY_CLIENT.location, ...testFeature(null) },
 };
+
+/** `false` hides location; `clear` marks a backend that can also remove the fix. */
+type LocationSupport = false | { clear?: true };
 
 function locationClient(
   overrides: Partial<DeviceClient> = {},
-  location: DeviceLocationCapabilities = {},
+  location: LocationSupport = {},
 ): DeviceClient {
   return {
     ...BASE_CLIENT,
     ...overrides,
-    capabilities: { ...BASE_CLIENT.capabilities, location },
+    location:
+      location === false
+        ? { ...EMPTY_CLIENT.location }
+        : { ...(overrides.location ?? BASE_CLIENT.location), canClear: !!location.clear },
   };
 }
 
@@ -126,7 +58,14 @@ describe("LocationSection", () => {
   });
 
   test("seeds both boxes from the confirmed fix and names it in the closing note", () => {
-    const html = render(locationClient({ location: { latitude: 37.3349, longitude: -122.009 } }));
+    const html = render(
+      locationClient({
+        location: {
+          ...BASE_CLIENT.location,
+          ...testFeature({ latitude: 37.3349, longitude: -122.009 }),
+        },
+      }),
+    );
 
     expect(inputTag(html, "Latitude")).toContain('value="37.3349"');
     expect(inputTag(html, "Longitude")).toContain('value="-122.009"');
@@ -146,14 +85,29 @@ describe("LocationSection", () => {
       render(client).replace(/ data-test-options="[^"]*"/g, "");
 
     expect(
-      selected(locationClient({ location: { latitude: 37.3349, longitude: -122.009 } })),
+      selected(
+        locationClient({
+          location: {
+            ...BASE_CLIENT.location,
+            ...testFeature({ latitude: 37.3349, longitude: -122.009 }),
+          },
+        }),
+      ),
     ).toContain(">Apple Park</span>");
-    expect(selected(locationClient({ location: { latitude: 1, longitude: 2 } }))).toContain(
-      ">Custom</span>",
-    );
-    expect(selected(locationClient({ location: { latitude: 1, longitude: 2 } }))).not.toContain(
-      ">Apple Park</span>",
-    );
+    expect(
+      selected(
+        locationClient({
+          location: { ...BASE_CLIENT.location, ...testFeature({ latitude: 1, longitude: 2 }) },
+        }),
+      ),
+    ).toContain(">Custom</span>");
+    expect(
+      selected(
+        locationClient({
+          location: { ...BASE_CLIENT.location, ...testFeature({ latitude: 1, longitude: 2 }) },
+        }),
+      ),
+    ).not.toContain(">Apple Park</span>");
   });
 
   test("offers Clear only to a backend that can remove a fix", () => {
@@ -162,7 +116,20 @@ describe("LocationSection", () => {
   });
 
   test("disables every control and posts a status note while a write is in flight", () => {
-    const html = render(locationClient({ locationPending: true }, { clear: true }));
+    const html = render(
+      locationClient(
+        {
+          location: {
+            ...BASE_CLIENT.location,
+            writes: {
+              ...BASE_CLIENT.location.writes,
+              pending: new Set(["fix" as const]),
+            },
+          },
+        },
+        { clear: true },
+      ),
+    );
 
     expect(html).toContain("Updating location…");
     expect(inputTag(html, "Latitude")).toContain('disabled=""');
@@ -172,7 +139,17 @@ describe("LocationSection", () => {
   });
 
   test("reports a refused write as an alert", () => {
-    const html = render(locationClient({ locationError: "latitude out of range" }));
+    const html = render(
+      locationClient({
+        location: {
+          ...BASE_CLIENT.location,
+          writes: {
+            pending: new Set(),
+            errors: new Map([["fix", testError("latitude out of range")]]),
+          },
+        },
+      }),
+    );
 
     const alert = html.match(/<span role="alert"[^>]*>([^<]*)<\/span>/);
     expect(alert?.[1]).toBe("latitude out of range");
@@ -182,6 +159,13 @@ describe("LocationSection", () => {
     const html = render(locationClient());
     const options = html.match(/data-test-options="([^"]*)"/);
 
-    expect(options?.[1].split("\n")).toEqual(["Custom", "Apple Park", "Googleplex", "London", "Tokyo", "Sydney"]);
+    expect(options?.[1].split("\n")).toEqual([
+      "Custom",
+      "Apple Park",
+      "Googleplex",
+      "London",
+      "Tokyo",
+      "Sydney",
+    ]);
   });
 });

@@ -1,10 +1,6 @@
 import { type DeviceClient } from '@expo/hub-client';
 import { bg, icon, radius, text, textSize } from '../primitives';
-import {
-  MetricChart,
-  type MetricChartSeries,
-  maxChartValue,
-} from './MetricChart';
+import { MetricChart, type MetricChartSeries, maxChartValue } from './MetricChart';
 
 const MAX_STATS_SAMPLES = 60;
 const UNAVAILABLE_VALUE = '—';
@@ -129,8 +125,7 @@ function StreamStatisticGroupHeading({
           letterSpacing: '0.04em',
           textAlign: 'left',
           textTransform: 'uppercase',
-        }}
-      >
+        }}>
         {label}
       </span>
     </div>
@@ -158,8 +153,7 @@ function StreamStatisticRow({
         gap: 4,
         padding: '5px 8px',
         opacity: stale ? 0.55 : 1,
-      }}
-    >
+      }}>
       <span
         role="rowheader"
         style={{
@@ -167,8 +161,7 @@ function StreamStatisticRow({
           minWidth: 0,
           color: text.secondary,
           fontWeight: 400,
-        }}
-      >
+        }}>
         {label}
       </span>
       <span
@@ -180,8 +173,7 @@ function StreamStatisticRow({
           fontWeight: 500,
           fontVariantNumeric: 'tabular-nums',
           whiteSpace: 'nowrap',
-        }}
-      >
+        }}>
         {value}
       </span>
     </div>
@@ -192,7 +184,7 @@ export function StreamStatistics({
   stats,
   platform,
 }: {
-  stats: DeviceClient['streamStats'];
+  stats: DeviceClient['streamStats']['data'];
   platform: DeviceClient['platform'];
 }) {
   const samples = stats?.samples.slice(-MAX_STATS_SAMPLES) ?? [];
@@ -207,9 +199,7 @@ export function StreamStatistics({
     {
       label: 'Client FPS',
       color: icon.info,
-      values: samples.flatMap((sample) =>
-        sample.clientFps === null ? [] : [sample.clientFps],
-      ),
+      values: samples.flatMap((sample) => (sample.clientFps === null ? [] : [sample.clientFps])),
     },
   ];
   const clientBitrateSeries: MetricChartSeries[] = [
@@ -319,15 +309,15 @@ export function StreamStatistics({
                     value: formatCount(grpc.messagesReceived),
                   },
                   {
-                    label: grpc.imageMode === 'rgb888'
-                      ? 'Decoded responses'
-                      : 'Selected notifications',
+                    label:
+                      grpc.imageMode === 'rgb888' ? 'Decoded responses' : 'Selected notifications',
                     value: formatCount(grpc.messagesEmitted),
                   },
                   {
-                    label: grpc.imageMode === 'rgb888'
-                      ? 'Predecode coalescing'
-                      : 'Coalesced notifications',
+                    label:
+                      grpc.imageMode === 'rgb888'
+                        ? 'Predecode coalescing'
+                        : 'Coalesced notifications',
                     value: formatCount(grpc.messagesCoalesced),
                   },
                   {
@@ -397,8 +387,7 @@ export function StreamStatistics({
         flexDirection: 'column',
         gap: 8,
         paddingTop: 8,
-      }}
-    >
+      }}>
       {pausedMessage && (
         <span role="status" style={{ ...textSize.xs, color: text.warning }}>
           {pausedMessage}
@@ -418,15 +407,13 @@ export function StreamStatistics({
           overflow: 'visible',
           borderRadius: radius.lg,
           backgroundColor: bg.subtle,
-        }}
-      >
+        }}>
         <div
           role="rowgroup"
           aria-label="Stream statistics"
           data-receiver-stale={stats?.stale || undefined}
           data-server-stale={stats?.serverStale || undefined}
-          style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
-        >
+          style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}>
           <StreamStatisticGroupHeading label="Stream" first />
           <StreamStatisticRow
             label="Server FPS"
@@ -448,8 +435,7 @@ export function StreamStatistics({
           role="rowgroup"
           aria-label="Client statistics"
           data-stale={stats?.stale || undefined}
-          style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
-        >
+          style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}>
           <StreamStatisticGroupHeading label="Client" />
           <StreamStatisticRow
             label="Packet loss"
@@ -495,8 +481,7 @@ export function StreamStatistics({
             role="rowgroup"
             aria-label="Encoder statistics"
             data-stale={stats?.serverStale || undefined}
-            style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
-          >
+            style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}>
             <StreamStatisticGroupHeading label="Encoder" />
             {encoderRows.map((row) => (
               <StreamStatisticRow
@@ -513,8 +498,7 @@ export function StreamStatistics({
             role="rowgroup"
             aria-label="Capture statistics"
             data-stale={stats?.serverStale || undefined}
-            style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}
-          >
+            style={{ display: 'grid', gridTemplateColumns: COMPACT_STATS_COLUMNS }}>
             <StreamStatisticGroupHeading label="Capture" />
             {captureRows.map((row) => (
               <StreamStatisticRow
@@ -536,8 +520,7 @@ export function StreamStatistics({
             gridTemplateColumns: COMPACT_STATS_COLUMNS,
             gap: 8,
             opacity: stats?.stale ? 0.55 : 1,
-          }}
-        >
+          }}>
           <MetricChart
             title="Client FPS"
             value={formatFps(latest.clientFps)}

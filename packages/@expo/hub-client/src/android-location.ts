@@ -1,3 +1,4 @@
+import { checkResponse, httpError, HubRequestError, invalidResponse } from "./feature-state";
 import { type DeviceGeoFix } from "./types";
 import { type DeviceLocationRead } from "./useDeviceLocation";
 
@@ -21,24 +22,30 @@ export function parseAndroidFix(value: unknown): DeviceGeoFix | null {
 
 /** GET /api/location. Null when the read could not be answered, so the caller can retry. */
 export async function readAndroidLocation(
-  fetchImpl: (input: string, init?: RequestInit) => Promise<Response>,
+  fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
   url: string,
   signal?: AbortSignal,
+  strict = false,
 ): Promise<DeviceLocationRead | null> {
   try {
     const response = await fetchImpl(url, { cache: "no-store", signal });
+    if (strict) checkResponse(response);
     if (!response.ok) return null;
     const payload = asRecord(await response.json());
-    if (!payload || typeof payload.emulator !== "boolean") return null;
+    if (!payload || typeof payload.emulator !== "boolean") {
+      if (strict) throw invalidResponse("Invalid location response");
+      return null;
+    }
     if (!payload.emulator) return { supported: false, location: null };
     return { supported: true, location: parseAndroidFix(payload.location) };
-  } catch {
+  } catch (cause) {
+    if (strict) throw cause;
     return null;
   }
 }
 
 export async function writeAndroidLocation(
-  fetchImpl: (input: string, init?: RequestInit) => Promise<Response>,
+  fetchImpl: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
   url: string,
   fix: DeviceGeoFix,
 ): Promise<DeviceGeoFix> {
@@ -51,9 +58,13 @@ export async function writeAndroidLocation(
   const data = asRecord(payload);
   if (!response.ok || data?.ok !== true) {
     const error = data?.error;
-    throw new Error(
-      typeof error === "string" ? error : `Location update failed (${response.status})`,
-    );
+    const message =
+      typeof error === "string" ? error : `Location update failed (${response.status})`;
+    if (!response.ok) throw httpError(response.status, message);
+    // A 200 with `ok: false` is the backend refusing the fix, not a bad reply.
+    throw data?.ok === false
+      ? new HubRequestError(message, undefined, "rejected")
+      : invalidResponse(message);
   }
   return parseAndroidFix(data.location) ?? fix;
 }

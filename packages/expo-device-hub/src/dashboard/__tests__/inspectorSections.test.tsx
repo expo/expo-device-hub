@@ -1,3 +1,8 @@
+import {
+  EMPTY_CLIENT,
+  testFeature,
+  testError,
+} from '../../../../@expo/hub-client/src/__tests__/feature-fixture';
 import { expect, test } from 'bun:test';
 import { type DeviceClient, type DevicePlatform } from '@expo/hub-client';
 import {
@@ -11,144 +16,142 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { LocationSection } from '../../../../@expo/hub-components/src/dashboard/LocationSection';
 import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
 import { PermissionsSection } from '../../../../@expo/hub-components/src/dashboard/PermissionsSection';
-import {
-  StreamOptionsSection,
-} from '../../../../@expo/hub-components/src/dashboard/StreamOptionsSection';
+import { StreamOptionsSection } from '../../../../@expo/hub-components/src/dashboard/StreamOptionsSection';
 import { StreamStatistics } from '../../../../@expo/hub-components/src/dashboard/StreamStatistics';
 
 function inspectorClient(platform: DevicePlatform): DeviceClient {
   const ios = platform === 'ios';
   return {
-    platform,
-    status: 'streaming',
-    error: null,
-    inputError: null,
-    screenRecording: null,
-    screen: { width: 390, height: 844 },
-    fps: 60,
-    devices: [],
-    logs: [],
-    logsEnabled: false,
-    attachLogs: () => {},
-    detachLogs: () => {},
-    clearLogs: () => {},
-    events: [],
-    eventsEnabled: false,
-    attachEvents: () => {},
-    detachEvents: () => {},
-    clearEvents: () => {},
-    activity: { hostCores: ios ? 8 : 4, samples: [], errored: false, stale: false },
-    deviceSettings: ios
-      ? {
-          appearance: 'light',
-          'liquid-glass': 'clear',
-          'color-filter': 'none',
-          'text-size': 'large',
-          'reduce-motion': 'off',
-          'increase-contrast': 'off',
-          'show-borders': 'off',
-          'reduce-transparency': 'off',
-          voiceover: 'off',
-        }
-      : { appearance: 'light', network: 'on', 'text-size': 'medium' },
-    deviceSettingsPending: new Set(),
-    setDeviceSetting: () => {},
-    displayWidthDp: null,
-    camera: null,
-    cameraPending: new Set(),
-    cameraError: null,
-    setCameraImage: () => {},
-    clearCameraImage: () => {},
-    accessibility: null,
-    accessibilityPending: false,
-    accessibilityError: null,
-    refreshAccessibility: () => {},
-    location: null,
-    locationPending: false,
-    locationError: null,
-    setLocation: () => {},
-    clearLocation: () => {},
-    permissions: null,
-    permissionsPending: new Set(),
-    permissionsError: null,
-    setPermission: () => {},
-    resetPermissions: () => {},
-    refreshPermissions: () => {},
-    streamCapabilities: ios
-      ? {
-          modeAvailability: { mjpeg: true, h264: true, webrtc: true },
-          httpCodecs: ['auto', 'h264', 'mjpeg'],
-          webRtcCodecs: ['h264', 'vp9', 'vp8'],
-        }
-      : {
-          modeAvailability: { mjpeg: false, h264: true, webrtc: true },
-          httpCodecs: ['h264'],
-          webRtcCodecs: ['h264'],
-        },
-    streamSettings: {
-      mjpegFps: 60,
-      mjpegQuality: 0.7,
-      maxDimension: 0,
-      h264Bitrate: 6_000_000,
-      h264Fps: 60,
-    },
-    streamSettingsPending: false,
-    updateStreamSettings: () => {},
-    streamSource: ios
-      ? null
-      : {
-          mode: 'scrcpy',
-          grpcImageMode: 'png',
-          encoder: 'software',
-          encoderName: 'libx264',
-          availableEncoders: ['software', 'hardware'],
-          inputSource: 'scrcpy',
-          availableInputSources: ['scrcpy'],
-          availableModes: ['scrcpy', 'grpc-screenshot'],
-          sessionGeneration: 0,
-        },
-    streamSourcePending: false,
-    streamSourceError: null,
-    setStreamSource: () => {},
-    setGrpcImageMode: () => {},
-    setGrpcEncoder: () => {},
-    setGrpcInputSource: () => {},
-    streamStats: null,
-    setStreamStatsEnabled: () => {},
-    webRtcCodec: 'h264',
-    setWebRtcCodec: () => {},
-    capabilities: {
-      deviceSettings: true,
-      activity: true,
-      events: true,
-      camera: false,
-      accessibility: true,
-      permissions: false,
-      streamSettings: ios
+    ...EMPTY_CLIENT,
+    stream: {
+      ...EMPTY_CLIENT.stream,
+      ...testFeature({ screen: { width: 390, height: 844 }, fps: 60 }, 'ready'),
+      videoKind: 'img',
+      webRtcCodec: 'h264',
+      transports: ios
         ? {
-            mjpegFps: true,
-            mjpegQuality: true,
-            maxDimension: true,
-            h264Bitrate: true,
-            h264Fps: true,
+            modeAvailability: { mjpeg: true, h264: true, webrtc: true },
+            httpCodecs: ['auto', 'h264', 'mjpeg'],
+            webRtcCodecs: ['h264', 'vp9', 'vp8'],
           }
-        : { maxDimension: true, h264Fps: true, h264Bitrate: true },
-      location: false,
+        : {
+            modeAvailability: { mjpeg: false, h264: true, webrtc: true },
+            httpCodecs: ['h264'],
+            webRtcCodecs: ['h264'],
+          },
     },
-    foregroundApp: null,
-    videoKind: 'img',
-    attachVideo: () => {},
+    deviceSettings: {
+      ...EMPTY_CLIENT.deviceSettings,
+      ...testFeature({
+        values: ios
+          ? {
+              appearance: 'light',
+              'liquid-glass': 'clear',
+              'color-filter': 'none',
+              'text-size': 'large',
+              'reduce-motion': 'off',
+              'increase-contrast': 'off',
+              'show-borders': 'off',
+              'reduce-transparency': 'off',
+              voiceover: 'off',
+            }
+          : { appearance: 'light', network: 'on', 'text-size': 'medium' },
+        displayWidthDp: null,
+      }),
+      writes: { ...EMPTY_CLIENT.deviceSettings.writes, pending: new Set() },
+    },
+    camera: {
+      ...EMPTY_CLIENT.camera,
+      ...testFeature(undefined),
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+      writes: { ...EMPTY_CLIENT.camera.writes, pending: new Set() },
+    },
+    accessibility: { ...EMPTY_CLIENT.accessibility, ...testFeature(undefined) },
+    location: {
+      ...EMPTY_CLIENT.location,
+      ...testFeature(null),
+      canClear: false,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+      writes: { ...EMPTY_CLIENT.location.writes, pending: new Set<'fix'>() },
+    },
+    permissions: {
+      ...EMPTY_CLIENT.permissions,
+      ...testFeature({ appId: EMPTY_CLIENT.foregroundApp.data?.id ?? null, items: [] }),
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+      writes: { ...EMPTY_CLIENT.permissions.writes, pending: new Set() },
+    },
+    streamSettings: {
+      ...EMPTY_CLIENT.streamSettings,
+      ...testFeature({
+        mjpegFps: 60,
+        mjpegQuality: 0.7,
+        maxDimension: 0,
+        h264Bitrate: 6_000_000,
+        h264Fps: 60,
+      }),
+      editable: new Set(
+        Object.keys(
+          ios
+            ? {
+                mjpegFps: true,
+                mjpegQuality: true,
+                maxDimension: true,
+                h264Bitrate: true,
+                h264Fps: true,
+              }
+            : { maxDimension: true, h264Fps: true, h264Bitrate: true },
+        ) as (keyof NonNullable<DeviceClient['streamSettings']['data']>)[],
+      ),
+      writes: {
+        ...EMPTY_CLIENT.streamSettings.writes,
+        pending: new Set<'maxDimension'>(),
+      },
+    },
+    streamSource: {
+      ...EMPTY_CLIENT.streamSource,
+      ...testFeature(
+        (ios
+          ? null
+          : {
+              mode: 'scrcpy',
+              grpcImageMode: 'png',
+              encoder: 'software',
+              encoderName: 'libx264',
+              availableEncoders: ['software', 'hardware'],
+              inputSource: 'scrcpy',
+              availableInputSources: ['scrcpy'],
+              availableModes: ['scrcpy', 'grpc-screenshot'],
+              sessionGeneration: 0,
+            }) ?? undefined,
+      ),
+      writes: {
+        ...EMPTY_CLIENT.streamSource.writes,
+        pending: new Set<'mode'>(),
+      },
+    },
+    keyboard: { ...EMPTY_CLIENT.keyboard, ...testFeature({ hardwareConnected: ios }) },
+    screenRecording: { ...EMPTY_CLIENT.screenRecording, ...testFeature(undefined, 'unsupported') },
+    devices: { ...EMPTY_CLIENT.devices, ...testFeature([]) },
+    foregroundApp: { ...EMPTY_CLIENT.foregroundApp, ...testFeature(null) },
+    activity: {
+      ...EMPTY_CLIENT.activity,
+      ...testFeature({ hostCores: ios ? 8 : 4, samples: [], stale: false }),
+    },
+    streamStats: { ...EMPTY_CLIENT.streamStats, ...testFeature(undefined) },
+    logs: { ...EMPTY_CLIENT.logs, ...testFeature([]), enabled: false },
+    events: { ...EMPTY_CLIENT.events, ...testFeature([]), enabled: false },
     sendTouch: () => {},
     sendKey: () => false,
     pressButton: () => {},
     reload: () => {},
     rotate: () => {},
-    screenshot: async () => null,
-    appearance: 'light',
-    setAppearance: () => {},
-    hardwareKeyboardConnected: ios,
-    setHardwareKeyboardConnected: () => {},
-    toggleSoftwareKeyboard: () => {},
+    platform: platform,
   };
 }
 
@@ -172,12 +175,10 @@ function device(platform: DevicePlatform, deviceFrame: Device['deviceFrame']): D
   };
 }
 
-type WebRtcStreamStats = NonNullable<DeviceClient['streamStats']>;
+type WebRtcStreamStats = NonNullable<DeviceClient['streamStats']['data']>;
 type WebRtcStreamStatsSample = WebRtcStreamStats['samples'][number];
 
-function streamSample(
-  overrides: Partial<WebRtcStreamStatsSample> = {},
-): WebRtcStreamStatsSample {
+function streamSample(overrides: Partial<WebRtcStreamStatsSample> = {}): WebRtcStreamStatsSample {
   return {
     atMs: 1_000,
     serverFps: null,
@@ -285,9 +286,9 @@ function selectValue(html: string, label: string) {
 function selectOptionLabels(html: string, label: string) {
   const match = selectMarkup(html, label).match(/data-test-options="([^"]*)"/);
   expect(match).not.toBeNull();
-  return match![1].split('\n').map((option) =>
-    option.replace(/&amp;/g, '&').replace(/&quot;/g, '"'),
-  );
+  return match![1]
+    .split('\n')
+    .map((option) => option.replace(/&amp;/g, '&').replace(/&quot;/g, '"'));
 }
 
 function streamStatisticGroupMarkup(html: string, label: string) {
@@ -306,7 +307,10 @@ function streamStatisticValue(group: string, label: string) {
   const cellStart = group.indexOf('<span role="cell"', rowIndex);
   const valueStart = group.indexOf('>', cellStart) + 1;
   const valueEnd = group.indexOf('</span>', valueStart);
-  return group.slice(valueStart, valueEnd).replace(/<[^>]+>/g, '').trim();
+  return group
+    .slice(valueStart, valueEnd)
+    .replace(/<[^>]+>/g, '')
+    .trim();
 }
 
 function openingTag(html: string, marker: string) {
@@ -328,7 +332,14 @@ test('renders every supported iOS inspector section and option', () => {
     />,
   );
 
-  const order = ['Current app', 'Device options', 'Stream options', 'Accessibility', 'Events', 'Logs'];
+  const order = [
+    'Current app',
+    'Device options',
+    'Stream options',
+    'Accessibility',
+    'Events',
+    'Logs',
+  ];
   const positions = order.map((label) => html.indexOf(`<section aria-label="${label}"`));
   expect(positions.every((index) => index >= 0)).toBe(true);
   expect([...positions].sort((a, b) => a - b)).toEqual(positions);
@@ -372,7 +383,9 @@ test('renders every supported iOS inspector section and option', () => {
   expect(sectionMarkup(html, 'Device options')).toContain('grid-template-rows:1fr');
   expect(sectionMarkup(html, 'Device options')).toContain('padding-bottom:12px');
   // The title sits centered in its row, so collapsed sections line up evenly.
-  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain('padding:18px 0');
+  expect(openingTag(html, '<button type="button" aria-expanded="true"')).toContain(
+    'padding:18px 0',
+  );
 });
 
 test('renders Android stream options while omitting unsupported and iOS-only sections', () => {
@@ -415,8 +428,7 @@ test('shows the Camera section only when the client reports camera feeds', () =>
     <LogSidebar
       client={{
         ...android,
-        camera: { wiredAtLaunch: true, feeds: [] },
-        capabilities: { ...android.capabilities, camera: true },
+        camera: { ...android.camera, ...testFeature({ wiredAtLaunch: true, feeds: [] }) },
       }}
     />,
   );
@@ -437,8 +449,12 @@ test('shows the Location section between Camera and Events, with Clear only wher
   const android = inspectorClient('android');
   const client = {
     ...android,
-    camera: { wiredAtLaunch: true, feeds: [] },
-    capabilities: { ...android.capabilities, camera: true, location: {} as const },
+    camera: { ...android.camera, ...testFeature({ wiredAtLaunch: true, feeds: [] }) },
+    location: {
+      ...android.location,
+      canClear: false,
+      ...testFeature(android.location.data ?? null, 'ready'),
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
   expect(html.match(/<section aria-label="Location"/g)).toHaveLength(1);
@@ -446,14 +462,21 @@ test('shows the Location section between Camera and Events, with Clear only wher
   const locationIndex = html.indexOf('<section aria-label="Location"');
   expect(locationIndex).toBeGreaterThan(html.indexOf('<section aria-label="Camera"'));
   expect(locationIndex).toBeLessThan(html.indexOf('<section aria-label="Events"'));
-  expect(
-    renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />),
-  ).not.toContain('<section aria-label="Location"');
+  expect(renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />)).not.toContain(
+    '<section aria-label="Location"',
+  );
 
   const settable = renderToStaticMarkup(<LocationSection client={client} defaultOpen />);
   const clearable = renderToStaticMarkup(
     <LocationSection
-      client={{ ...client, capabilities: { ...client.capabilities, location: { clear: true } } }}
+      client={{
+        ...client,
+        location: {
+          ...client.location,
+          canClear: true,
+          ...testFeature(client.location.data ?? null, 'ready'),
+        },
+      }}
       defaultOpen
     />,
   );
@@ -518,20 +541,21 @@ test('shows PNG, MMAP and RGB888 only while the gRPC source is active', () => {
   const grpcClient = {
     ...inspectorClient('android'),
     streamSource: {
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy', 'grpc'],
-      availableModes: ['scrcpy', 'grpc-screenshot'],
-      sessionGeneration: 1,
+      ...inspectorClient('android').streamSource,
+      ...testFeature({
+        mode: 'grpc-screenshot',
+        grpcImageMode: 'mmap',
+        encoder: 'software',
+        encoderName: 'libx264',
+        availableEncoders: ['software', 'hardware'],
+        inputSource: 'scrcpy',
+        availableInputSources: ['scrcpy', 'grpc'],
+        availableModes: ['scrcpy', 'grpc-screenshot'],
+        sessionGeneration: 1,
+      }),
     },
   } satisfies DeviceClient;
-  const grpcHtml = renderToStaticMarkup(
-    <StreamOptionsSection client={grpcClient} defaultOpen />,
-  );
+  const grpcHtml = renderToStaticMarkup(<StreamOptionsSection client={grpcClient} defaultOpen />);
 
   expect(grpcHtml).toContain('>Input</span>');
   expect(selectOptionLabels(grpcHtml, 'Input source')).toEqual(['scrcpy', 'gRPC']);
@@ -547,7 +571,13 @@ test('shows PNG, MMAP and RGB888 only while the gRPC source is active', () => {
 test('disables the Android capture source select while replacement is pending', () => {
   const client = {
     ...inspectorClient('android'),
-    streamSourcePending: true,
+    streamSource: {
+      ...inspectorClient('android').streamSource,
+      writes: {
+        ...inspectorClient('android').streamSource.writes,
+        pending: new Set(['mode' as const]),
+      },
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
   const source = selectMarkup(html, 'Stream source');
@@ -562,17 +592,23 @@ test('disables every gRPC capture control while replacement is pending', () => {
   const client = {
     ...inspectorClient('android'),
     streamSource: {
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy', 'grpc'],
-      availableModes: ['scrcpy', 'grpc-screenshot'],
-      sessionGeneration: 1,
+      ...inspectorClient('android').streamSource,
+      ...testFeature({
+        mode: 'grpc-screenshot',
+        grpcImageMode: 'mmap',
+        encoder: 'software',
+        encoderName: 'libx264',
+        availableEncoders: ['software', 'hardware'],
+        inputSource: 'scrcpy',
+        availableInputSources: ['scrcpy', 'grpc'],
+        availableModes: ['scrcpy', 'grpc-screenshot'],
+        sessionGeneration: 1,
+      }),
+      writes: {
+        ...inspectorClient('android').streamSource.writes,
+        pending: new Set(['mode' as const]),
+      },
     },
-    streamSourcePending: true,
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
@@ -594,7 +630,18 @@ test('shows no switching hint once the capture source is settled', () => {
 test('shows an Android capture source failure below the switch', () => {
   const client = {
     ...inspectorClient('android'),
-    streamSourceError: 'Unable to change stream source: Emulator gRPC endpoint is unavailable',
+    streamSource: {
+      ...inspectorClient('android').streamSource,
+      writes: {
+        ...inspectorClient('android').streamSource.writes,
+        errors: new Map([
+          [
+            'mode',
+            testError('Unable to change stream source: Emulator gRPC endpoint is unavailable'),
+          ],
+        ]),
+      },
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
@@ -606,15 +653,18 @@ test('hides the Android capture source row when gRPC is unavailable', () => {
   const client = {
     ...inspectorClient('android'),
     streamSource: {
-      mode: 'scrcpy',
-      grpcImageMode: 'png',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy'],
-      availableModes: ['scrcpy'],
-      sessionGeneration: 0,
+      ...inspectorClient('android').streamSource,
+      ...testFeature({
+        mode: 'scrcpy',
+        grpcImageMode: 'png',
+        encoder: 'software',
+        encoderName: 'libx264',
+        availableEncoders: ['software', 'hardware'],
+        inputSource: 'scrcpy',
+        availableInputSources: ['scrcpy'],
+        availableModes: ['scrcpy'],
+        sessionGeneration: 0,
+      }),
     },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
@@ -625,7 +675,13 @@ test('hides the Android capture source row when gRPC is unavailable', () => {
 test('disables Android encoder controls while a stream restart is pending', () => {
   const client = {
     ...inspectorClient('android'),
-    streamSettingsPending: true,
+    streamSettings: {
+      ...inspectorClient('android').streamSettings,
+      writes: {
+        ...inspectorClient('android').streamSettings.writes,
+        pending: new Set(['maxDimension' as const]),
+      },
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
@@ -637,26 +693,31 @@ test('disables Android encoder controls while a stream restart is pending', () =
 test('renders grouped WebRTC statistics with rich client, encoder, and capture values', () => {
   const client = {
     ...inspectorClient('ios'),
-    streamStats: streamStats(
-      [
-        streamSample(),
-        streamSample({
-          atMs: 2_000,
-          serverFps: 30,
-          clientFps: 29,
-          clientBitrateBps: 5_750_000,
-          clientPacketLossRatio: 0.012,
-          clientJitterMs: 8.44,
-          clientJitterBufferMs: 39.6,
-          clientDroppedFrames: 3,
-          clientFreezeCount: 2,
-          clientFreezeDurationMs: 1_500,
-          clientRoundTripMs: 30.6,
-          clientIcePath: 'relay',
-        }),
-      ],
-      { encoder: encoderStats, capture: captureStats },
-    ),
+    streamStats: {
+      ...EMPTY_CLIENT.streamStats,
+      ...testFeature(
+        streamStats(
+          [
+            streamSample(),
+            streamSample({
+              atMs: 2_000,
+              serverFps: 30,
+              clientFps: 29,
+              clientBitrateBps: 5_750_000,
+              clientPacketLossRatio: 0.012,
+              clientJitterMs: 8.44,
+              clientJitterBufferMs: 39.6,
+              clientDroppedFrames: 3,
+              clientFreezeCount: 2,
+              clientFreezeDurationMs: 1_500,
+              clientRoundTripMs: 30.6,
+              clientIcePath: 'relay',
+            }),
+          ],
+          { encoder: encoderStats, capture: captureStats },
+        ),
+      ),
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <StreamOptionsSection
@@ -672,10 +733,7 @@ test('renders grouped WebRTC statistics with rich client, encoder, and capture v
     '<div role="table" aria-label="WebRTC stream statistics" aria-colcount="2"',
   );
   expect(
-    openingTag(
-      html,
-      '<div role="table" aria-label="WebRTC stream statistics" aria-colcount="2"',
-    ),
+    openingTag(html, '<div role="table" aria-label="WebRTC stream statistics" aria-colcount="2"'),
   ).toContain('overflow:visible');
   expect(
     html.match(/grid-template-columns:repeat\(auto-fit, minmax\(150px, 1fr\)\)/g),
@@ -722,35 +780,40 @@ test('renders grouped WebRTC statistics with rich client, encoder, and capture v
 test('keeps measured zero distinct from unavailable WebRTC values', () => {
   const client = {
     ...inspectorClient('ios'),
-    streamStats: streamStats(
-      [
-        streamSample({
-          serverFps: 0,
-          clientFps: 0,
-          clientBitrateBps: 0,
-          clientPacketLossRatio: 0,
-          clientDroppedFrames: 0,
-          clientFreezeCount: 0,
-        }),
-      ],
-      {
-        encoder: {
-          codec: null,
-          encodeFps: 0,
-          targetBitrateBps: null,
-          encodeMsPerFrame: null,
-          framesEncoded: 0,
-          framesSent: 0,
-          framesDropped: 0,
-          packetLossRatio: 0,
-          qualityLimitationReason: 'none',
-          publisherFps: null,
-          publisherSubmittedFrames: null,
-          publisherDroppedFrames: null,
-          payloadBitrateBps: null,
-        },
-      },
-    ),
+    streamStats: {
+      ...EMPTY_CLIENT.streamStats,
+      ...testFeature(
+        streamStats(
+          [
+            streamSample({
+              serverFps: 0,
+              clientFps: 0,
+              clientBitrateBps: 0,
+              clientPacketLossRatio: 0,
+              clientDroppedFrames: 0,
+              clientFreezeCount: 0,
+            }),
+          ],
+          {
+            encoder: {
+              codec: null,
+              encodeFps: 0,
+              targetBitrateBps: null,
+              encodeMsPerFrame: null,
+              framesEncoded: 0,
+              framesSent: 0,
+              framesDropped: 0,
+              packetLossRatio: 0,
+              qualityLimitationReason: 'none',
+              publisherFps: null,
+              publisherSubmittedFrames: null,
+              publisherDroppedFrames: null,
+              payloadBitrateBps: null,
+            },
+          },
+        ),
+      ),
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <StreamOptionsSection
@@ -784,34 +847,36 @@ test('keeps measured zero distinct from unavailable WebRTC values', () => {
 test('shows only the server statistics that serve-emu can provide', () => {
   const client = {
     ...inspectorClient('android'),
-    streamStats: streamStats(
-      [streamSample({ serverFps: 30, clientFps: 29, clientBitrateBps: 3_000_000 })],
-      {
-        encoder: {
-          codec: 'video/H264',
-          encodeFps: 30,
-          targetBitrateBps: 8_000_000,
-          encodeMsPerFrame: null,
-          framesEncoded: 1_200,
-          framesSent: null,
-          framesDropped: null,
-          packetLossRatio: null,
-          qualityLimitationReason: null,
-          publisherFps: 29.5,
-          publisherSubmittedFrames: 1_190,
-          publisherDroppedFrames: 10,
-          payloadBitrateBps: 5_750_000,
-        },
-        capture: {
-          screenFrames: null,
-          idleFrames: null,
-          offeredFrames: 1_200,
-          forwardedFrames: 1_180,
-          pumpRestarts: null,
-          grpc: null,
-        },
-      },
-    ),
+    streamStats: {
+      ...EMPTY_CLIENT.streamStats,
+      ...testFeature(
+        streamStats([streamSample({ serverFps: 30, clientFps: 29, clientBitrateBps: 3_000_000 })], {
+          encoder: {
+            codec: 'video/H264',
+            encodeFps: 30,
+            targetBitrateBps: 8_000_000,
+            encodeMsPerFrame: null,
+            framesEncoded: 1_200,
+            framesSent: null,
+            framesDropped: null,
+            packetLossRatio: null,
+            qualityLimitationReason: null,
+            publisherFps: 29.5,
+            publisherSubmittedFrames: 1_190,
+            publisherDroppedFrames: 10,
+            payloadBitrateBps: 5_750_000,
+          },
+          capture: {
+            screenFrames: null,
+            idleFrames: null,
+            offeredFrames: 1_200,
+            forwardedFrames: 1_180,
+            pumpRestarts: null,
+            grpc: null,
+          },
+        }),
+      ),
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <StreamOptionsSection
@@ -864,79 +929,84 @@ test('shows only the server statistics that serve-emu can provide', () => {
   expect(`${encoder}${capture}`).not.toContain('>—</span>');
 });
 
-test.each(['mmap', 'rgb888'] as const)('shows the %s producer-to-client pipeline diagnostics', (imageMode) => {
-  const client = {
-    ...inspectorClient('android'),
-    streamStats: streamStats(
-      [streamSample({ serverFps: 58, clientFps: 57.5 })],
-      {
-        capture: {
-          screenFrames: null,
-          idleFrames: null,
-          offeredFrames: 580,
-          forwardedFrames: 575,
-          pumpRestarts: null,
-          grpc: {
-            imageMode,
-            producerFps: 60,
-            receiveFps: 59.5,
-            usableImageFps: 59,
-            encoderInputFps: 30,
-            messagesReceived: 600,
-            messagesEmitted: imageMode === 'rgb888' ? 600 : 590,
-            messagesCoalesced: imageMode === 'rgb888' ? 0 : 10,
-            sequenceGaps: 2,
-            imagePayloadBytes: 552_960,
-            transportBytes: 55_296_000,
-            messageBytesReceived: 12_000,
-            mmapFileBytesRead: 56_000_000,
-            mmapReadRetries: 1,
-            mmapTornFramesDropped: 0,
-            productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
-            productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
-            protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
-            mmapReadCopyTimeMs: { p50: 0.3, p95: 0.6 },
-          },
-        },
+test.each(['mmap', 'rgb888'] as const)(
+  'shows the %s producer-to-client pipeline diagnostics',
+  (imageMode) => {
+    const client = {
+      ...inspectorClient('android'),
+      streamStats: {
+        ...EMPTY_CLIENT.streamStats,
+        ...testFeature(
+          streamStats([streamSample({ serverFps: 58, clientFps: 57.5 })], {
+            capture: {
+              screenFrames: null,
+              idleFrames: null,
+              offeredFrames: 580,
+              forwardedFrames: 575,
+              pumpRestarts: null,
+              grpc: {
+                imageMode,
+                producerFps: 60,
+                receiveFps: 59.5,
+                usableImageFps: 59,
+                encoderInputFps: 30,
+                messagesReceived: 600,
+                messagesEmitted: imageMode === 'rgb888' ? 600 : 590,
+                messagesCoalesced: imageMode === 'rgb888' ? 0 : 10,
+                sequenceGaps: 2,
+                imagePayloadBytes: 552_960,
+                transportBytes: 55_296_000,
+                messageBytesReceived: 12_000,
+                mmapFileBytesRead: 56_000_000,
+                mmapReadRetries: 1,
+                mmapTornFramesDropped: 0,
+                productionToReceiveLatencyMs: { p50: 4.2, p95: 8.1 },
+                productionToUsableLatencyMs: { p50: 4.7, p95: 9.2 },
+                protobufDecodeTimeMs: { p50: 0.1, p95: 0.2 },
+                mmapReadCopyTimeMs: { p50: 0.3, p95: 0.6 },
+              },
+            },
+          }),
+        ),
       },
-    ),
-  } satisfies DeviceClient;
-  const html = renderToStaticMarkup(
-    <StreamOptionsSection
-      client={client}
-      defaultOpen
-      streamMode="webrtc"
-      streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
-      onStreamModeChange={() => {}}
-    />,
-  );
-  const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
+    } satisfies DeviceClient;
+    const html = renderToStaticMarkup(
+      <StreamOptionsSection
+        client={client}
+        defaultOpen
+        streamMode="webrtc"
+        streamModeAvailability={{ mjpeg: true, h264: true, webrtc: true }}
+        onStreamModeChange={() => {}}
+      />,
+    );
+    const capture = streamStatisticGroupMarkup(html, 'Capture statistics');
 
-  expect(streamStatisticValue(capture, 'gRPC image mode')).toBe(imageMode.toUpperCase());
-  expect(streamStatisticValue(capture, 'Emulator producer FPS')).toBe('60 FPS');
-  expect(streamStatisticValue(capture, 'Host receive FPS')).toBe('60 FPS');
-  expect(streamStatisticValue(capture, 'Usable image FPS')).toBe('59 FPS');
-  expect(streamStatisticValue(capture, 'Encoder input FPS')).toBe('30 FPS');
-  expect(streamStatisticValue(capture, 'gRPC notifications')).toBe('600');
-  if (imageMode === 'rgb888') {
-    expect(streamStatisticValue(capture, 'Decoded responses')).toBe('600');
-    expect(streamStatisticValue(capture, 'Predecode coalescing')).toBe('0');
-    expect(capture).not.toContain('Selected notifications');
-    expect(capture).not.toContain('Coalesced notifications');
-  } else {
-    expect(streamStatisticValue(capture, 'Selected notifications')).toBe('590');
-    expect(streamStatisticValue(capture, 'Coalesced notifications')).toBe('10');
-  }
-  expect(streamStatisticValue(capture, 'Latest image payload')).toBe('540.0 KiB');
-  expect(streamStatisticValue(capture, 'Produce→usable p50 / p95')).toBe('4.7 / 9.2 ms');
-  if (imageMode === 'mmap') {
-    expect(streamStatisticValue(capture, 'MMAP read p50 / p95')).toBe('0.3 / 0.6 ms');
-    expect(streamStatisticValue(capture, 'Torn frames dropped')).toBe('0');
-  } else {
-    expect(capture).not.toContain('MMAP');
-    expect(capture).not.toContain('Torn frames dropped');
-  }
-});
+    expect(streamStatisticValue(capture, 'gRPC image mode')).toBe(imageMode.toUpperCase());
+    expect(streamStatisticValue(capture, 'Emulator producer FPS')).toBe('60 FPS');
+    expect(streamStatisticValue(capture, 'Host receive FPS')).toBe('60 FPS');
+    expect(streamStatisticValue(capture, 'Usable image FPS')).toBe('59 FPS');
+    expect(streamStatisticValue(capture, 'Encoder input FPS')).toBe('30 FPS');
+    expect(streamStatisticValue(capture, 'gRPC notifications')).toBe('600');
+    if (imageMode === 'rgb888') {
+      expect(streamStatisticValue(capture, 'Decoded responses')).toBe('600');
+      expect(streamStatisticValue(capture, 'Predecode coalescing')).toBe('0');
+      expect(capture).not.toContain('Selected notifications');
+      expect(capture).not.toContain('Coalesced notifications');
+    } else {
+      expect(streamStatisticValue(capture, 'Selected notifications')).toBe('590');
+      expect(streamStatisticValue(capture, 'Coalesced notifications')).toBe('10');
+    }
+    expect(streamStatisticValue(capture, 'Latest image payload')).toBe('540.0 KiB');
+    expect(streamStatisticValue(capture, 'Produce→usable p50 / p95')).toBe('4.7 / 9.2 ms');
+    if (imageMode === 'mmap') {
+      expect(streamStatisticValue(capture, 'MMAP read p50 / p95')).toBe('0.3 / 0.6 ms');
+      expect(streamStatisticValue(capture, 'Torn frames dropped')).toBe('0');
+    } else {
+      expect(capture).not.toContain('MMAP');
+      expect(capture).not.toContain('Torn frames dropped');
+    }
+  },
+);
 
 test('shows the WebRTC measuring state without inventing zero readings', () => {
   const html = renderToStaticMarkup(
@@ -959,7 +1029,7 @@ test('shows the WebRTC measuring state without inventing zero readings', () => {
 test('keeps measuring when the first WebRTC counter sample has no rate window yet', () => {
   const client = {
     ...inspectorClient('android'),
-    streamStats: streamStats([streamSample()]),
+    streamStats: { ...EMPTY_CLIENT.streamStats, ...testFeature(streamStats([streamSample()])) },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <StreamOptionsSection
@@ -979,9 +1049,10 @@ test('keeps measuring when the first WebRTC counter sample has no rate window ye
 test('omits unsupported server groups while retaining client statistics', () => {
   const client = {
     ...inspectorClient('android'),
-    streamStats: streamStats([
-      streamSample({ clientFps: 30, clientBitrateBps: 3_000_000 }),
-    ]),
+    streamStats: {
+      ...EMPTY_CLIENT.streamStats,
+      ...testFeature(streamStats([streamSample({ clientFps: 30, clientBitrateBps: 3_000_000 })])),
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <StreamOptionsSection
@@ -1014,10 +1085,7 @@ test('distinguishes paused server statistics from paused client statistics', () 
     'data-stale="true"',
   );
   expect(
-    streamStatisticValue(
-      streamStatisticGroupMarkup(serverHtml, 'Stream statistics'),
-      'Server FPS',
-    ),
+    streamStatisticValue(streamStatisticGroupMarkup(serverHtml, 'Stream statistics'), 'Server FPS'),
   ).toBe('30 FPS');
   expect(serverHtml).toContain('role="img" aria-label="Client FPS: 29 FPS"');
 
@@ -1032,14 +1100,19 @@ test('distinguishes paused server statistics from paused client statistics', () 
 test('hides WebRTC statistics when another transport is active', () => {
   const client = {
     ...inspectorClient('android'),
-    streamStats: streamStats([
-      streamSample({
-        atMs: 2_000,
-        serverFps: 30,
-        clientFps: 29,
-        clientBitrateBps: 5_750_000,
-      }),
-    ]),
+    streamStats: {
+      ...EMPTY_CLIENT.streamStats,
+      ...testFeature(
+        streamStats([
+          streamSample({
+            atMs: 2_000,
+            serverFps: 30,
+            clientFps: 29,
+            clientBitrateBps: 5_750_000,
+          }),
+        ]),
+      ),
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <StreamOptionsSection
@@ -1058,10 +1131,20 @@ test('hides WebRTC statistics when another transport is active', () => {
 test('explains when the Android host was not launched with WebRTC', () => {
   const client = {
     ...inspectorClient('android'),
-    streamCapabilities: {
-      modeAvailability: { mjpeg: false, h264: true, webrtc: false },
-      httpCodecs: ['h264'],
-      webRtcCodecs: ['h264'],
+    stream: {
+      ...inspectorClient('android').stream,
+      ...testFeature(
+        {
+          screen: inspectorClient('android').stream.data?.screen ?? null,
+          fps: inspectorClient('android').stream.data?.fps ?? 0,
+        },
+        'ready',
+      ),
+      transports: {
+        modeAvailability: { mjpeg: false, h264: true, webrtc: false },
+        httpCodecs: ['h264'],
+        webRtcCodecs: ['h264'],
+      },
     },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
@@ -1112,10 +1195,16 @@ test('renders the Android display-size control the backend reports', () => {
   const client = {
     ...inspectorClient('android'),
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'display-size': 'large',
+      ...inspectorClient('android').deviceSettings,
+      ...testFeature({
+        values: {
+          appearance: 'light',
+          network: 'on',
+          'text-size': 'medium',
+          'display-size': 'large',
+        },
+        displayWidthDp: null,
+      }),
     },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
@@ -1128,12 +1217,17 @@ test('describes the Android display-size control with the resulting dp width', (
   const client = {
     ...inspectorClient('android'),
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'display-size': 'large',
+      ...inspectorClient('android').deviceSettings,
+      ...testFeature({
+        values: {
+          appearance: 'light',
+          network: 'on',
+          'text-size': 'medium',
+          'display-size': 'large',
+        },
+        displayWidthDp: 411,
+      }),
     },
-    displayWidthDp: 411,
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
   const describedBy = /aria-describedby="([^"]+)"/.exec(selectMarkup(html, 'Display size'))?.[1];
@@ -1147,10 +1241,16 @@ test('omits the dp width when the Android device has not reported one', () => {
   const client = {
     ...inspectorClient('android'),
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'display-size': 'large',
+      ...inspectorClient('android').deviceSettings,
+      ...testFeature({
+        values: {
+          appearance: 'light',
+          network: 'on',
+          'text-size': 'medium',
+          'display-size': 'large',
+        },
+        displayWidthDp: null,
+      }),
     },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
@@ -1168,7 +1268,13 @@ test('omits the Android display-size control the backend does not report', () =>
 test('never renders the Android-only display-size control on iOS', () => {
   const client = {
     ...inspectorClient('ios'),
-    deviceSettings: { ...inspectorClient('ios').deviceSettings, 'display-size': 'large' },
+    deviceSettings: {
+      ...inspectorClient('ios').deviceSettings,
+      ...testFeature({
+        values: { ...inspectorClient('ios').deviceSettings.data?.values, 'display-size': 'large' },
+        displayWidthDp: null,
+      }),
+    },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
@@ -1179,12 +1285,18 @@ test('renders the Android accessibility switches the backend reports', () => {
   const client = {
     ...inspectorClient('android'),
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'reduce-motion': 'on',
-      'bold-text': 'on',
-      'increase-contrast': 'off',
+      ...inspectorClient('android').deviceSettings,
+      ...testFeature({
+        values: {
+          appearance: 'light',
+          network: 'on',
+          'text-size': 'medium',
+          'reduce-motion': 'on',
+          'bold-text': 'on',
+          'increase-contrast': 'off',
+        },
+        displayWidthDp: null,
+      }),
     },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
@@ -1197,7 +1309,12 @@ test('renders the Android accessibility switches the backend reports', () => {
 test('omits the Android accessibility switches the backend does not report', () => {
   const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('android')} />);
 
-  for (const label of ['Reduce motion', 'Bold text', 'Increase contrast', 'Force on-screen keyboard']) {
+  for (const label of [
+    'Reduce motion',
+    'Bold text',
+    'Increase contrast',
+    'Force on-screen keyboard',
+  ]) {
     expect(html).not.toContain(`>${label}<`);
   }
 });
@@ -1260,7 +1377,9 @@ test('moves device actions into Device options and hides Remove for physical dev
   expect(section.match(/>Press</g)).toHaveLength(3);
   expect(section).toContain('>Shut down<');
   expect(section).toContain('>Remove<');
-  expect(section.indexOf('>Back button</span>')).toBeGreaterThan(section.indexOf('>Text size</span>'));
+  expect(section.indexOf('>Back button</span>')).toBeGreaterThan(
+    section.indexOf('>Text size</span>'),
+  );
 
   const physical = renderToStaticMarkup(
     <LogSidebar
@@ -1280,11 +1399,23 @@ test('moves device actions into Device options and hides Remove for physical dev
 });
 
 test('styles sidebar action buttons like the select pills', () => {
-  const html = renderToStaticMarkup(<LogSidebar client={inspectorClient('ios')} onShutdown={() => {}} />);
-  const toggle = html.slice(html.lastIndexOf('<button', html.indexOf('>Toggle<')), html.indexOf('>Toggle<') + 1);
+  const html = renderToStaticMarkup(
+    <LogSidebar client={inspectorClient('ios')} onShutdown={() => {}} />,
+  );
+  const toggle = html.slice(
+    html.lastIndexOf('<button', html.indexOf('>Toggle<')),
+    html.indexOf('>Toggle<') + 1,
+  );
   const select = selectMarkup(html, 'Appearance');
 
-  for (const style of ['height:28px', 'border:1px solid var(--expo-theme-border-default)', 'border-radius:var(--expo-radius-lg)', 'background-color:var(--expo-theme-background-element)', 'font-size:14px', 'font-weight:500']) {
+  for (const style of [
+    'height:28px',
+    'border:1px solid var(--expo-theme-border-default)',
+    'border-radius:var(--expo-radius-lg)',
+    'background-color:var(--expo-theme-background-element)',
+    'font-size:14px',
+    'font-weight:500',
+  ]) {
     expect(toggle).toContain(style);
     expect(select).toContain(style);
   }
@@ -1293,7 +1424,13 @@ test('styles sidebar action buttons like the select pills', () => {
 test('disables only the pending Android device setting', () => {
   const client = {
     ...inspectorClient('android'),
-    deviceSettingsPending: new Set(['network'] as const),
+    deviceSettings: {
+      ...inspectorClient('android').deviceSettings,
+      writes: {
+        ...inspectorClient('android').deviceSettings.writes,
+        pending: new Set(['network'] as const),
+      },
+    },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
@@ -1305,7 +1442,13 @@ test('disables only the pending Android device setting', () => {
 test('disables only the device setting with an in-flight update', () => {
   const client = {
     ...inspectorClient('ios'),
-    deviceSettingsPending: new Set(['appearance'] as const),
+    deviceSettings: {
+      ...inspectorClient('ios').deviceSettings,
+      writes: {
+        ...inspectorClient('ios').deviceSettings.writes,
+        pending: new Set(['appearance'] as const),
+      },
+    },
   };
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
@@ -1364,13 +1507,28 @@ test('shows the Permissions section only when the client can change permissions'
   const android = inspectorClient('android');
   const client = {
     ...android,
-    foregroundApp: { id: 'com.android.chrome', label: 'Chrome' },
-    permissions: [
-      { id: 'android.permission.CAMERA', label: 'Camera', state: 'granted' as const },
-      { id: 'android.permission.RECORD_AUDIO', label: 'Record audio', state: 'denied' as const },
-    ],
-    permissionsPending: new Set(['android.permission.RECORD_AUDIO']),
-    capabilities: { ...android.capabilities, permissions: true },
+    permissions: {
+      ...android.permissions,
+      ...testFeature({
+        appId: { id: 'com.android.chrome', label: 'Chrome' }?.id ?? null,
+        items: [
+          { id: 'android.permission.CAMERA', label: 'Camera', state: 'granted' as const },
+          {
+            id: 'android.permission.RECORD_AUDIO',
+            label: 'Record audio',
+            state: 'denied' as const,
+          },
+        ],
+      }),
+      writes: {
+        ...android.permissions.writes,
+        pending: new Set(['android.permission.RECORD_AUDIO']),
+      },
+    },
+    foregroundApp: {
+      ...android.foregroundApp,
+      ...testFeature({ id: 'com.android.chrome', label: 'Chrome' }),
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
@@ -1390,9 +1548,9 @@ test('shows the Permissions section only when the client can change permissions'
   expect(section.match(/>Grant</g)).toHaveLength(2);
   expect(section.match(/>Revoke</g)).toHaveLength(2);
   expect(section).toContain('>Reset all<');
-  const buttons = [...section.matchAll(/<button[^>]*><span[^>]*>(Grant|Revoke|Reset all)<\/span>/g)].map(
-    (match) => `${match[1]}:${match[0].includes('disabled=""') ? 'disabled' : 'enabled'}`,
-  );
+  const buttons = [
+    ...section.matchAll(/<button[^>]*><span[^>]*>(Grant|Revoke|Reset all)<\/span>/g),
+  ].map((match) => `${match[1]}:${match[0].includes('disabled=""') ? 'disabled' : 'enabled'}`);
   expect(buttons).toEqual([
     'Grant:disabled',
     'Revoke:enabled',
@@ -1406,15 +1564,55 @@ test('keeps the frame option disabled with an explanation for unsupported device
   for (const platform of ['ios', 'android'] as const) {
     const client = {
       ...inspectorClient(platform),
-      capabilities: {
-        deviceSettings: false,
-        activity: false,
-        events: true,
-        camera: false,
-        accessibility: false,
-        permissions: false,
-        streamSettings: false,
-        location: false,
+      deviceSettings: {
+        ...inspectorClient(platform).deviceSettings,
+        status: 'unsupported',
+        data: undefined,
+        error: null,
+      },
+      camera: {
+        ...inspectorClient(platform).camera,
+        status: 'unsupported',
+        data: undefined,
+        error: null,
+      },
+      accessibility: {
+        ...inspectorClient(platform).accessibility,
+        status: 'unsupported',
+        data: undefined,
+        error: null,
+      },
+      location: {
+        ...inspectorClient(platform).location,
+        canClear: false,
+        status: 'unsupported',
+        data: undefined,
+        error: null,
+      },
+      permissions: {
+        ...inspectorClient(platform).permissions,
+        status: 'unsupported',
+        data: undefined,
+        error: null,
+      },
+      streamSettings: {
+        ...inspectorClient(platform).streamSettings,
+        editable: new Set(
+          Object.keys({}) as (keyof NonNullable<DeviceClient['streamSettings']['data']>)[],
+        ),
+        status: 'unsupported',
+        data: undefined,
+        error: null,
+      },
+      activity: {
+        ...inspectorClient(platform).activity,
+        status: 'unsupported',
+        data: undefined,
+        error: null,
+      },
+      events: {
+        ...inspectorClient(platform).events,
+        ...testFeature(inspectorClient(platform).events.data),
       },
     } satisfies DeviceClient;
     const html = renderToStaticMarkup(
@@ -1437,17 +1635,57 @@ test('keeps the frame option disabled with an explanation for unsupported device
 test('shows only the viewer-local frame option while iOS device settings are unavailable', () => {
   const client = {
     ...inspectorClient('ios'),
-    capabilities: {
-      deviceSettings: false,
-      activity: false,
-      events: true,
-      camera: false,
-      accessibility: false,
-      location: false,
-      permissions: false,
-      streamSettings: false,
+    deviceSettings: {
+      ...inspectorClient('ios').deviceSettings,
+      ...testFeature(undefined),
+      status: 'unsupported',
+      data: undefined,
+      error: null,
     },
-    deviceSettings: null,
+    camera: {
+      ...inspectorClient('ios').camera,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    accessibility: {
+      ...inspectorClient('ios').accessibility,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    location: {
+      ...inspectorClient('ios').location,
+      canClear: false,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    permissions: {
+      ...inspectorClient('ios').permissions,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    streamSettings: {
+      ...inspectorClient('ios').streamSettings,
+      editable: new Set(
+        Object.keys({}) as (keyof NonNullable<DeviceClient['streamSettings']['data']>)[],
+      ),
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    activity: {
+      ...inspectorClient('ios').activity,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    events: {
+      ...inspectorClient('ios').events,
+      ...testFeature(inspectorClient('ios').events.data),
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <LogSidebar
@@ -1469,18 +1707,23 @@ test('shows RGB888 applied, pending, and failed without changing the selection',
     const client = {
       ...inspectorClient('android'),
       streamSource: {
-        mode: 'grpc-screenshot',
-        grpcImageMode: 'rgb888',
-        encoder: 'software',
-        encoderName: 'libx264',
-        availableEncoders: ['software', 'hardware'],
-        inputSource: 'scrcpy',
-        availableInputSources: ['scrcpy', 'grpc'],
-        availableModes: ['scrcpy', 'grpc-screenshot'],
-        sessionGeneration: 2,
+        ...inspectorClient('android').streamSource,
+        ...testFeature({
+          mode: 'grpc-screenshot',
+          grpcImageMode: 'rgb888',
+          encoder: 'software',
+          encoderName: 'libx264',
+          availableEncoders: ['software', 'hardware'],
+          inputSource: 'scrcpy',
+          availableInputSources: ['scrcpy', 'grpc'],
+          availableModes: ['scrcpy', 'grpc-screenshot'],
+          sessionGeneration: 2,
+        }),
+        writes: {
+          pending: new Set(state === 'pending' ? ['mode' as const] : []),
+          errors: new Map(state === 'failed' ? [['mode', testError('RGB888 capture failed')]] : []),
+        },
       },
-      streamSourcePending: state === 'pending',
-      streamSourceError: state === 'failed' ? 'RGB888 capture failed' : null,
     } satisfies DeviceClient;
     const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
     expect(selectValue(html, 'gRPC image mode')).toBe('RGB888');
@@ -1497,17 +1740,51 @@ test('shows RGB888 applied, pending, and failed without changing the selection',
 test('keeps the Android on-screen keyboard row off iOS while device settings load', () => {
   const client = {
     ...inspectorClient('ios'),
-    capabilities: {
-      deviceSettings: true,
-      activity: false,
-      events: true,
-      camera: false,
-      accessibility: false,
-      location: false,
-      permissions: false,
-      streamSettings: false,
+    deviceSettings: { ...inspectorClient('ios').deviceSettings, ...testFeature(undefined) },
+    camera: {
+      ...inspectorClient('ios').camera,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
     },
-    deviceSettings: null,
+    accessibility: {
+      ...inspectorClient('ios').accessibility,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    location: {
+      ...inspectorClient('ios').location,
+      canClear: false,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    permissions: {
+      ...inspectorClient('ios').permissions,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    streamSettings: {
+      ...inspectorClient('ios').streamSettings,
+      editable: new Set(
+        Object.keys({}) as (keyof NonNullable<DeviceClient['streamSettings']['data']>)[],
+      ),
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    activity: {
+      ...inspectorClient('ios').activity,
+      status: 'unsupported',
+      data: undefined,
+      error: null,
+    },
+    events: {
+      ...inspectorClient('ios').events,
+      ...testFeature(inspectorClient('ios').events.data),
+    },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(
     <LogSidebar
@@ -1524,16 +1801,36 @@ test('keeps the Android on-screen keyboard row off iOS while device settings loa
 
 test('disables the keyboard switch on a device with no hardware keyboard', () => {
   const base = inspectorClient('android');
-  const settings = { ...base, deviceSettings: { 'onscreen-keyboard': 'off' } } as const;
+  const settings = {
+    ...base,
+    deviceSettings: {
+      ...base.deviceSettings,
+      ...testFeature({ values: { 'onscreen-keyboard': 'off' }, displayWidthDp: null }),
+    },
+  } as const;
 
   const without = renderToStaticMarkup(
-    <LogSidebar client={{ ...settings, hardwareKeyboardConnected: false } satisfies DeviceClient} />,
+    <LogSidebar
+      client={
+        {
+          ...settings,
+          keyboard: { ...settings.keyboard, ...testFeature({ hardwareConnected: false }) },
+        } satisfies DeviceClient
+      }
+    />,
   );
   expect(switchMarkup(without, 'Force on-screen keyboard')).toContain('disabled=""');
   expect(without).toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
 
   const with_ = renderToStaticMarkup(
-    <LogSidebar client={{ ...settings, hardwareKeyboardConnected: true } satisfies DeviceClient} />,
+    <LogSidebar
+      client={
+        {
+          ...settings,
+          keyboard: { ...settings.keyboard, ...testFeature({ hardwareConnected: true }) },
+        } satisfies DeviceClient
+      }
+    />,
   );
   expect(switchMarkup(with_, 'Force on-screen keyboard')).not.toContain('disabled=""');
   expect(with_).not.toContain(NO_HARDWARE_KEYBOARD_DESCRIPTION);
@@ -1551,12 +1848,21 @@ test('offers a keyboard dismiss action on Android only', () => {
 test('renders the Android on-screen keyboard switch the backend reports', () => {
   const client = {
     ...inspectorClient('android'),
-    hardwareKeyboardConnected: true,
     deviceSettings: {
-      appearance: 'light',
-      network: 'on',
-      'text-size': 'medium',
-      'onscreen-keyboard': 'on',
+      ...inspectorClient('android').deviceSettings,
+      ...testFeature({
+        values: {
+          appearance: 'light',
+          network: 'on',
+          'text-size': 'medium',
+          'onscreen-keyboard': 'on',
+        },
+        displayWidthDp: null,
+      }),
+    },
+    keyboard: {
+      ...inspectorClient('android').keyboard,
+      ...testFeature({ hardwareConnected: true }),
     },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<LogSidebar client={client} />);
@@ -1565,46 +1871,78 @@ test('renders the Android on-screen keyboard switch the backend reports', () => 
   expect(html).toContain(ONSCREEN_KEYBOARD_DESCRIPTION);
 });
 
-
 test('shows hardware probe failures and the encoder still streaming with a single gRPC source', () => {
   const client = {
     ...inspectorClient('android'),
     streamSource: {
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'rgb888',
-      encoder: 'software',
-      encoderName: 'libx264',
-      availableEncoders: ['software', 'hardware'],
-      hardwareEncoderError: 'No hardware H.264 encoder is available: VideoToolbox device failed.',
-      inputSource: 'grpc',
-      availableInputSources: ['grpc'],
-      availableModes: ['grpc-screenshot'],
-      sessionGeneration: 1,
+      ...inspectorClient('android').streamSource,
+      ...testFeature({
+        mode: 'grpc-screenshot',
+        grpcImageMode: 'rgb888',
+        encoder: 'software',
+        encoderName: 'libx264',
+        availableEncoders: ['software', 'hardware'],
+        hardwareEncoderError: 'No hardware H.264 encoder is available: VideoToolbox device failed.',
+        inputSource: 'grpc',
+        availableInputSources: ['grpc'],
+        availableModes: ['grpc-screenshot'],
+        sessionGeneration: 1,
+      }),
+      writes: {
+        ...inspectorClient('android').streamSource.writes,
+        errors: new Map([
+          [
+            'mode',
+            testError(
+              'Unable to change stream source: No hardware H.264 encoder is available: VideoToolbox device failed.',
+            ),
+          ],
+        ]),
+      },
     },
-    streamSourceError:
-      'Unable to change stream source: No hardware H.264 encoder is available: VideoToolbox device failed.',
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
 
   expect(selectValue(html, 'gRPC encoder')).toBe('Software');
   expect(selectMarkup(html, 'gRPC encoder')).not.toContain('disabled=""');
   expect(html).toContain('VideoToolbox device failed.');
-  expect(html).toContain(client.streamSourceError);
+  expect(html).toContain(client.streamSource.writes.errors.get('mode')!.message);
   expect(html.match(/role="alert"/g)).toHaveLength(1);
   expect(html.match(/VideoToolbox device failed\./g)).toHaveLength(1);
   expect(html).toContain('Active encoder: libx264');
 
   const advisory = renderToStaticMarkup(
-    <StreamOptionsSection client={{ ...client, streamSourceError: null }} defaultOpen />,
+    <StreamOptionsSection
+      client={{
+        ...client,
+        streamSource: {
+          ...client.streamSource,
+          writes: { ...client.streamSource.writes, errors: new Map([]) },
+        },
+      }}
+      defaultOpen
+    />,
   );
-  expect(advisory).toContain(client.streamSource.hardwareEncoderError);
+  expect(advisory).toContain(client.streamSource.data!.hardwareEncoderError!);
   expect(advisory.match(/role="alert"/g)).toHaveLength(1);
 
   const unrelated = renderToStaticMarkup(
-    <StreamOptionsSection client={{ ...client, streamSourceError: 'RGB888 capture failed' }} defaultOpen />,
+    <StreamOptionsSection
+      client={{
+        ...client,
+        streamSource: {
+          ...client.streamSource,
+          writes: {
+            ...client.streamSource.writes,
+            errors: new Map([['mode', testError('RGB888 capture failed')]]),
+          },
+        },
+      }}
+      defaultOpen
+    />,
   );
   expect(unrelated).toContain('RGB888 capture failed');
-  expect(unrelated).not.toContain(client.streamSource.hardwareEncoderError);
+  expect(unrelated).not.toContain(client.streamSource.data!.hardwareEncoderError!);
   expect(unrelated.match(/role="alert"/g)).toHaveLength(1);
 });
 
@@ -1612,47 +1950,98 @@ test('shows the active hardware encoder and hides unresolved encoder names', () 
   const client = {
     ...inspectorClient('android'),
     streamSource: {
-      mode: 'grpc-screenshot',
-      grpcImageMode: 'mmap',
-      encoder: 'hardware',
-      encoderName: 'h264_videotoolbox',
-      availableEncoders: ['software', 'hardware'],
-      inputSource: 'scrcpy',
-      availableInputSources: ['scrcpy', 'grpc'],
-      availableModes: ['scrcpy', 'grpc-screenshot'],
-      sessionGeneration: 1,
+      ...inspectorClient('android').streamSource,
+      ...testFeature({
+        mode: 'grpc-screenshot',
+        grpcImageMode: 'mmap',
+        encoder: 'hardware',
+        encoderName: 'h264_videotoolbox',
+        availableEncoders: ['software', 'hardware'],
+        inputSource: 'scrcpy',
+        availableInputSources: ['scrcpy', 'grpc'],
+        availableModes: ['scrcpy', 'grpc-screenshot'],
+        sessionGeneration: 1,
+      }),
     },
   } satisfies DeviceClient;
   const html = renderToStaticMarkup(<StreamOptionsSection client={client} defaultOpen />);
   expect(selectValue(html, 'gRPC encoder')).toBe('Hardware');
   expect(html).toContain('Active encoder: h264_videotoolbox');
 
-  const unresolved = { ...client, streamSource: { ...client.streamSource, encoderName: null } };
-  expect(renderToStaticMarkup(<StreamOptionsSection client={unresolved} defaultOpen />)).not.toContain(
-    'Active encoder:',
-  );
+  const unresolved = {
+    ...client,
+    streamSource: {
+      ...client.streamSource,
+      ...testFeature({ ...client.streamSource.data!, encoderName: null }),
+    },
+  };
+  expect(
+    renderToStaticMarkup(<StreamOptionsSection client={unresolved} defaultOpen />),
+  ).not.toContain('Active encoder:');
 });
 
 test.each(['unknown', 'waiting', 'recording', 'finalizing', 'complete', 'failed', null] as const)(
-  'recording state %s locks only capture and destructive device controls', (screenRecording) => {
+  'recording state %s locks only capture and destructive device controls',
+  (screenRecording) => {
     const base = inspectorClient('android');
     const client: DeviceClient = {
       ...base,
-      screenRecording,
-      deviceSettings: { ...base.deviceSettings, 'display-size': 'medium' },
+      deviceSettings: {
+        ...base.deviceSettings,
+        ...testFeature({
+          values: { ...base.deviceSettings.data?.values, 'display-size': 'medium' },
+          displayWidthDp: null,
+        }),
+      },
       streamSource: {
-        mode: 'grpc-screenshot', grpcImageMode: 'rgb888', encoder: 'software',
-        encoderName: 'libx264', availableEncoders: ['software', 'hardware'],
-        inputSource: 'grpc', availableInputSources: ['grpc', 'scrcpy'],
-        availableModes: ['grpc-screenshot', 'scrcpy'], sessionGeneration: 0,
+        ...base.streamSource,
+        ...testFeature({
+          mode: 'grpc-screenshot',
+          grpcImageMode: 'rgb888',
+          encoder: 'software',
+          encoderName: 'libx264',
+          availableEncoders: ['software', 'hardware'],
+          inputSource: 'grpc',
+          availableInputSources: ['grpc', 'scrcpy'],
+          availableModes: ['grpc-screenshot', 'scrcpy'],
+          sessionGeneration: 0,
+        }),
+      },
+      screenRecording: {
+        ...base.screenRecording,
+        ...testFeature(
+          screenRecording === 'unknown' ? undefined : (screenRecording ?? undefined),
+          screenRecording === null
+            ? 'unsupported'
+            : screenRecording === 'unknown'
+              ? 'loading'
+              : 'ready',
+        ),
       },
     };
-    const locked = screenRecording === 'unknown' || screenRecording === 'waiting' || screenRecording === 'recording' || screenRecording === 'finalizing';
+    const locked =
+      screenRecording === 'unknown' ||
+      screenRecording === 'waiting' ||
+      screenRecording === 'recording' ||
+      screenRecording === 'finalizing';
     const stream = renderToStaticMarkup(
-      <StreamOptionsSection client={client} defaultOpen streamMode="h264"
-        onStreamModeChange={() => {}} onHttpCodecChange={() => {}} />,
+      <StreamOptionsSection
+        client={client}
+        defaultOpen
+        streamMode="h264"
+        onStreamModeChange={() => {}}
+        onHttpCodecChange={() => {}}
+      />,
     );
-    for (const label of ['Stream source', 'Input source', 'gRPC image mode', 'gRPC encoder', 'Max size', 'Video FPS', 'Video bitrate']) {
+    for (const label of [
+      'Stream source',
+      'Input source',
+      'gRPC image mode',
+      'gRPC encoder',
+      'Max size',
+      'Video FPS',
+      'Video bitrate',
+    ]) {
       expect(selectMarkup(stream, label).includes('disabled=""')).toBe(locked);
     }
     expect(selectMarkup(stream, 'Stream transport')).not.toContain('disabled=""');
@@ -1669,8 +2058,12 @@ test.each(['unknown', 'waiting', 'recording', 'finalizing', 'complete', 'failed'
       const button = deviceOptions.slice(deviceOptions.lastIndexOf('<button', end), end);
       expect(button.includes('disabled=""')).toBe(locked);
     }
-    expect(deviceOptions.includes('until recording status is known')).toBe(screenRecording === 'unknown');
-    expect((deviceOptions.match(/aria-description="Unavailable/g) ?? []).length).toBe(locked ? 2 : 0);
+    expect(deviceOptions.includes('until recording status is known')).toBe(
+      screenRecording === 'unknown',
+    );
+    expect((deviceOptions.match(/aria-description="Unavailable/g) ?? []).length).toBe(
+      locked ? 2 : 0,
+    );
     for (const label of ['Appearance', 'Display size', 'Text size', 'Network']) {
       expect(selectMarkup(deviceOptions, label)).not.toContain('disabled=""');
     }

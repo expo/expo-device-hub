@@ -1,3 +1,4 @@
+import { FeatureNotice } from './FeatureNotice';
 import { useEffect, useState } from 'react';
 
 import {
@@ -139,11 +140,10 @@ export function StreamOptionsSection({
   const recordingControlsLocked = areRecordingControlsLocked(client.screenRecording);
   const recordingDisabledReason = !recordingControlsLocked
     ? undefined
-    : client.screenRecording === 'unknown'
+    : client.screenRecording.data === undefined
       ? 'Unavailable until recording status is known.'
       : 'Unavailable until recording finishes.';
-  const backend: DeviceStreamCapabilities =
-    client.streamCapabilities ?? DEFAULT_STREAM_CAPABILITIES;
+  const backend: DeviceStreamCapabilities = client.stream.transports ?? DEFAULT_STREAM_CAPABILITIES;
   const availability: StreamModeAvailability = {
     mjpeg: streamModeAvailability.mjpeg && backend.modeAvailability.mjpeg,
     h264: streamModeAvailability.h264 && backend.modeAvailability.h264,
@@ -161,11 +161,14 @@ export function StreamOptionsSection({
   const webRtcCodecOptions = WEBRTC_CODEC_OPTIONS.filter((option) =>
     backend.webRtcCodecs.includes(option.value),
   );
-  const settings = client.streamSettings ?? DEFAULT_SETTINGS;
-  const settingsCapabilities = client.capabilities.streamSettings;
-  const streamSource = client.streamSource;
+  const settings = client.streamSettings.data ?? DEFAULT_SETTINGS;
+  const settingsCapabilities = Object.fromEntries(
+    [...client.streamSettings.editable].map((key) => [key, true]),
+  );
+  const streamSource = client.streamSource.data;
   const streamSourceError =
-    client.streamSourceError ??
+    client.streamSource.error?.message ??
+    [...client.streamSource.writes.errors.values()][0]?.message ??
     (streamSource?.mode === 'grpc-screenshot' ? streamSource.hardwareEncoderError : undefined);
   const sourceOptions = STREAM_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableModes.includes(option.value),
@@ -173,11 +176,15 @@ export function StreamOptionsSection({
   const inputSourceOptions = GRPC_INPUT_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableInputSources.includes(option.value),
   );
-  const settingsReady = client.streamSettings !== null;
-  const settingsDisabled = recordingControlsLocked || !settingsReady || client.streamSettingsPending;
-  const transport: StreamTransport =
-    activeStreamMode === 'webrtc' ? 'webrtc' : primaryTransport;
-  const setStreamStatsEnabled = client.setStreamStatsEnabled;
+  const settingsReady = client.streamSettings.data !== undefined;
+  const settingsDisabled =
+    recordingControlsLocked ||
+    !settingsReady ||
+    client.streamSettings.writes.pending.size > 0 ||
+    client.streamSettings.status !== 'ready';
+  const transport: StreamTransport = activeStreamMode === 'webrtc' ? 'webrtc' : primaryTransport;
+  const attachStats = client.streamStats.attach;
+  const detachStats = client.streamStats.detach;
   const httpAvailable = availability.mjpeg || availability.h264;
   const transportOptions: ReadonlyArray<SelectOption<StreamTransport>> = [
     { value: primaryTransport, label: primaryTransportLabel, disabled: !httpAvailable },
@@ -185,9 +192,10 @@ export function StreamOptionsSection({
   ];
 
   useEffect(() => {
-    setStreamStatsEnabled(open && transport === 'webrtc');
-    return () => setStreamStatsEnabled(false);
-  }, [open, setStreamStatsEnabled, transport]);
+    if (open && transport === 'webrtc') attachStats();
+    else detachStats();
+    return () => detachStats();
+  }, [open, attachStats, detachStats, transport]);
 
   function httpCodecAvailable(codec: DeviceHttpCodec): boolean {
     if (codec === 'h264') return availability.h264;
@@ -210,12 +218,10 @@ export function StreamOptionsSection({
     backend.httpCodecs.includes(requestedHttpCodec) && httpCodecAvailable(requestedHttpCodec)
       ? requestedHttpCodec
       : (fallbackHttpCodec ?? requestedHttpCodec);
-  const selectedWebRtcCodec = backend.webRtcCodecs.includes(client.webRtcCodec)
-    ? client.webRtcCodec
-    : (webRtcCodecOptions[0]?.value ?? client.webRtcCodec);
-  const h264Active =
-    transport === 'webrtc' ||
-    (availability.h264 && selectedHttpCodec !== 'mjpeg');
+  const selectedWebRtcCodec = backend.webRtcCodecs.includes(client.stream.webRtcCodec)
+    ? client.stream.webRtcCodec
+    : (webRtcCodecOptions[0]?.value ?? client.stream.webRtcCodec);
+  const h264Active = transport === 'webrtc' || (availability.h264 && selectedHttpCodec !== 'mjpeg');
 
   function httpMode(codec: DeviceHttpCodec): DeviceStreamMode {
     if (codec === 'mjpeg') return 'mjpeg';
@@ -236,17 +242,19 @@ export function StreamOptionsSection({
     key: Key,
     value: DeviceStreamEncoderSettings[Key],
   ) {
-    if (!settingsDisabled) client.updateStreamSettings({ [key]: value });
+    if (!settingsDisabled) client.streamSettings.update({ [key]: value });
   }
 
   const restricted =
     (backend.modeAvailability.h264 && !streamModeAvailability.h264) ||
     (backend.modeAvailability.webrtc && !streamModeAvailability.webrtc);
-  const hostWebRtcDisabled =
-    client.platform === 'android' && !backend.modeAvailability.webrtc;
+  const hostWebRtcDisabled = client.platform === 'android' && !backend.modeAvailability.webrtc;
 
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
+      <FeatureNotice feature={client.streamSettings} />
+      <FeatureNotice feature={client.streamSource} />
+      <FeatureNotice feature={client.streamStats} />
       {streamSource && sourceOptions.length > 1 && (
         <>
           <SidebarRow label="Source">
@@ -254,9 +262,15 @@ export function StreamOptionsSection({
               ariaLabel="Stream source"
               options={sourceOptions}
               value={streamSource.mode}
-              disabled={recordingControlsLocked || client.streamSourcePending}
+              disabled={
+                recordingControlsLocked ||
+                client.streamSource.writes.pending.size > 0 ||
+                client.streamSource.status !== 'ready'
+              }
               disabledReason={recordingDisabledReason}
-              onChange={client.setStreamSource}
+              onChange={(mode) => {
+                void client.streamSource.update({ mode });
+              }}
             />
           </SidebarRow>
         </>
@@ -269,9 +283,15 @@ export function StreamOptionsSection({
                 ariaLabel="Input source"
                 options={inputSourceOptions}
                 value={streamSource.inputSource}
-                disabled={recordingControlsLocked || client.streamSourcePending}
+                disabled={
+                  recordingControlsLocked ||
+                  client.streamSource.writes.pending.size > 0 ||
+                  client.streamSource.status !== 'ready'
+                }
                 disabledReason={recordingDisabledReason}
-                onChange={client.setGrpcInputSource}
+                onChange={(inputSource) => {
+                  void client.streamSource.update({ inputSource });
+                }}
               />
             </SidebarRow>
           )}
@@ -280,9 +300,15 @@ export function StreamOptionsSection({
               ariaLabel="gRPC image mode"
               options={GRPC_IMAGE_MODE_OPTIONS}
               value={streamSource.grpcImageMode}
-              disabled={recordingControlsLocked || client.streamSourcePending}
+              disabled={
+                recordingControlsLocked ||
+                client.streamSource.writes.pending.size > 0 ||
+                client.streamSource.status !== 'ready'
+              }
               disabledReason={recordingDisabledReason}
-              onChange={client.setGrpcImageMode}
+              onChange={(grpcImageMode) => {
+                void client.streamSource.update({ grpcImageMode });
+              }}
             />
           </SidebarRow>
           <SidebarRow label="Encoder">
@@ -293,9 +319,15 @@ export function StreamOptionsSection({
                 disabled: !streamSource.availableEncoders.includes(option.value),
               }))}
               value={streamSource.encoder}
-              disabled={recordingControlsLocked || client.streamSourcePending}
+              disabled={
+                recordingControlsLocked ||
+                client.streamSource.writes.pending.size > 0 ||
+                client.streamSource.status !== 'ready'
+              }
               disabledReason={recordingDisabledReason}
-              onChange={client.setGrpcEncoder}
+              onChange={(encoder) => {
+                void client.streamSource.update({ encoder });
+              }}
             />
           </SidebarRow>
           {streamSource.encoderName && (
@@ -336,7 +368,7 @@ export function StreamOptionsSection({
             options={webRtcCodecOptions}
             value={selectedWebRtcCodec}
             disabled={transport !== 'webrtc' || !availability.webrtc}
-            onChange={(codec: DeviceWebRtcCodec) => client.setWebRtcCodec(codec)}
+            onChange={(codec: DeviceWebRtcCodec) => client.stream.setWebRtcCodec(codec)}
           />
         </SidebarRow>
       )}
@@ -348,7 +380,9 @@ export function StreamOptionsSection({
         </SectionNote>
       )}
       {hostWebRtcDisabled && (
-        <SectionNote>Start the standalone server with --transport webrtc to enable WebRTC.</SectionNote>
+        <SectionNote>
+          Start the standalone server with --transport webrtc to enable WebRTC.
+        </SectionNote>
       )}
       {settingsCapabilities && (
         <>
@@ -371,7 +405,11 @@ export function StreamOptionsSection({
               <Select
                 ariaLabel="MJPEG FPS"
                 value={String(settings.mjpegFps)}
-                options={withCurrentValue(settings.mjpegFps, FPS_OPTIONS, (value) => `${value} FPS`)}
+                options={withCurrentValue(
+                  settings.mjpegFps,
+                  FPS_OPTIONS,
+                  (value) => `${value} FPS`,
+                )}
                 disabled={settingsDisabled || transport !== 'http'}
                 disabledReason={recordingDisabledReason}
                 onChange={(value) => patchSetting('mjpegFps', Number(value))}
@@ -425,7 +463,7 @@ export function StreamOptionsSection({
         </>
       )}
       {transport === 'webrtc' && (
-        <StreamStatistics stats={client.streamStats} platform={client.platform} />
+        <StreamStatistics stats={client.streamStats.data} platform={client.platform} />
       )}
     </CollapsibleSection>
   );

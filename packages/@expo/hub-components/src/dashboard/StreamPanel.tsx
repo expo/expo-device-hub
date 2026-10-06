@@ -113,7 +113,12 @@ export function StreamPanel({
               maxWidth: '100cqw',
               transform: 'translateX(-50%)',
             }}>
-            <DeviceTitle key={device.id} device={device} status={client.status} recording={client.screenRecording} />
+            <DeviceTitle
+              key={device.id}
+              device={device}
+              status={client.stream.status}
+              recording={client.screenRecording}
+            />
           </div>
           <div
             style={{
@@ -125,9 +130,18 @@ export function StreamPanel({
             }}>
             <StreamControls
               recording={client.screenRecording}
-              appearance={client.appearance}
+              appearance={
+                client.deviceSettings.data?.values.appearance === 'dark'
+                  ? 'dark'
+                  : client.deviceSettings.data?.values.appearance === 'light'
+                    ? 'light'
+                    : null
+              }
               onToggleAppearance={() =>
-                client.setAppearance(client.appearance === 'dark' ? 'light' : 'dark')
+                client.deviceSettings.set(
+                  'appearance',
+                  client.deviceSettings.data?.values.appearance === 'dark' ? 'light' : 'dark',
+                )
               }
               onHome={() => client.pressButton('home')}
               onReload={() => client.reload()}

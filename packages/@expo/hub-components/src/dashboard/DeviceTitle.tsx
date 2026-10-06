@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { type ConnectionStatus, type DeviceScreenRecordingStatus } from '@expo/hub-client';
+import { type DeviceClient, type ScreenRecordingPhase } from '@expo/hub-client';
 import {
   bg,
   border,
@@ -17,12 +17,14 @@ import { type Device } from './data';
 
 export type DeviceTitleProps = {
   device: Pick<Device, 'id' | 'name'>;
-  status: ConnectionStatus;
-  recording?: DeviceScreenRecordingStatus | null;
+  status: DeviceClient['stream']['status'];
+  /** The host recording feature; omitted or unsupported shows no recording label. */
+  recording?: DeviceClient['screenRecording'];
 };
 
-const RECORDING_LABELS: Record<DeviceScreenRecordingStatus, string> = {
-  unknown: 'Checking recording status',
+const RECORDING_LABELS: Record<ScreenRecordingPhase | 'checking' | 'unavailable', string> = {
+  checking: 'Checking recording status',
+  unavailable: 'Recording status unavailable',
   waiting: 'Starting recording',
   recording: 'Recording',
   finalizing: 'Finishing recording',
@@ -31,16 +33,28 @@ const RECORDING_LABELS: Record<DeviceScreenRecordingStatus, string> = {
 };
 
 const STATUS_APPEARANCE: Record<
-  ConnectionStatus,
+  DeviceClient['stream']['status'],
   { label: string; dotColor: string; ringColor: string; labelColor: string }
 > = {
+  resolving: {
+    label: 'Checking availability',
+    dotColor: icon.warning,
+    ringColor: border.warning,
+    labelColor: text.secondary,
+  },
+  unsupported: {
+    label: 'Offline',
+    dotColor: icon.danger,
+    ringColor: border.danger,
+    labelColor: text.secondary,
+  },
   idle: {
     label: 'Offline',
     dotColor: icon.danger,
     ringColor: border.danger,
     labelColor: text.secondary,
   },
-  connecting: {
+  loading: {
     label: 'Starting',
     dotColor: icon.warning,
     ringColor: border.warning,
@@ -52,7 +66,7 @@ const STATUS_APPEARANCE: Record<
     ringColor: border.warning,
     labelColor: text.secondary,
   },
-  streaming: {
+  ready: {
     label: 'Live',
     dotColor: text.success,
     ringColor: border.success,
@@ -71,7 +85,12 @@ const DEVICE_TITLE_SIZE: ButtonSize = 'xs';
 export const DEVICE_TITLE_HEIGHT = BUTTON_HEIGHTS[DEVICE_TITLE_SIZE];
 
 /** Compact stream-status pill that toggles between a device's name and identifier. */
-export function DeviceTitle({ device, status, recording = null }: DeviceTitleProps) {
+export function DeviceTitle({ device, status, recording }: DeviceTitleProps) {
+  // Without a phase, the status is still being checked unless the read failed.
+  const recordingLabel =
+    !recording || recording.status === 'unsupported'
+      ? null
+      : (recording.data ?? (recording.status === 'error' ? 'unavailable' : 'checking'));
   const [revealedId, setRevealedId] = useState<string | null>(null);
   const showingId = revealedId === device.id;
   const label = showingId ? device.id : device.name;
@@ -114,17 +133,17 @@ export function DeviceTitle({ device, status, recording = null }: DeviceTitlePro
           <span aria-live="polite" style={{ flexShrink: 0, color: appearance.labelColor }}>
             {appearance.label}
           </span>
-          {recording && (
+          {recordingLabel && (
             <span
               role="status"
               style={{
                 flexShrink: 0,
                 color:
-                  recording === 'recording' || recording === 'failed'
+                  recordingLabel === 'recording' || recordingLabel === 'failed'
                     ? text.danger
                     : text.secondary,
               }}>
-              {RECORDING_LABELS[recording]}
+              {RECORDING_LABELS[recordingLabel]}
             </span>
           )}
         </>

@@ -10,18 +10,20 @@ import { SidebarRow } from './SidebarRow';
 const LIST_MAX_HEIGHT = 320;
 
 function AccessibilityStatus({ client }: { client: DeviceClient }) {
-  if (client.accessibilityPending) {
+  if (client.accessibility.status === 'resolving' || client.accessibility.status === 'loading') {
     return <SectionNote role="status">Reading the screen…</SectionNote>;
   }
-  if (client.accessibilityError) {
-    return <SectionNote role="alert">{client.accessibilityError}</SectionNote>;
+  if (client.accessibility.error?.message) {
+    return <SectionNote role="alert">{client.accessibility.error?.message}</SectionNote>;
   }
-  const snapshot = client.accessibility;
+  const snapshot = client.accessibility.data;
   if (!snapshot) return null;
   if (snapshot.nodes.length === 0) {
     return <SectionNote>No accessible elements on this screen.</SectionNote>;
   }
-  return <SectionNote>{`Captured ${new Date(snapshot.capturedAt).toLocaleTimeString()}`}</SectionNote>;
+  return (
+    <SectionNote>{`Captured ${new Date(snapshot.capturedAt).toLocaleTimeString()}`}</SectionNote>
+  );
 }
 
 function tapNode(client: DeviceClient, node: AccessibilityNode) {
@@ -41,11 +43,15 @@ export function AccessibilitySection({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const { accessibility, accessibilityPending, refreshAccessibility } = client;
+  const accessibility = client.accessibility.data;
+  const accessibilityPending =
+    client.accessibility.status === 'loading' || client.accessibility.status === 'resolving';
+  const refreshAccessibility = client.accessibility.refresh;
 
+  const idle = client.accessibility.status === 'idle';
   useEffect(() => {
-    if (open) refreshAccessibility();
-  }, [open, refreshAccessibility]);
+    if (open && idle) refreshAccessibility();
+  }, [open, idle, refreshAccessibility]);
 
   const nodes = accessibility?.nodes ?? [];
 
@@ -71,9 +77,7 @@ export function AccessibilitySection({
             backgroundColor: bg.subtle,
           }}>
           {nodes.map((node, index) => {
-            const meta = [node.role, node.clickable ? 'tappable' : '']
-              .filter(Boolean)
-              .join(' · ');
+            const meta = [node.role, node.clickable ? 'tappable' : ''].filter(Boolean).join(' · ');
             return (
               <button
                 key={`${node.id}-${index}`}

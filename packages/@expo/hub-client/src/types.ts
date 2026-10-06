@@ -24,19 +24,6 @@ export type DevicePlatform = 'ios' | 'android';
 /** Viewer-selected transport for the active device stream. */
 export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
 
-/**
- * Lifecycle of a single connection:
- *   idle         — nothing to connect to (no base URL / disabled)
- *   connecting   — socket opening, no frames yet
- *   reconnecting — a stream that was live lost its transport and is being
- *                  re-established; the last frame stays on screen meanwhile
- *                  (for example while serve-emu swaps the Android capture
- *                  source). Becomes `error` only when the outage outlives the
- *                  reconnect grace period. Android only.
- *   streaming    — frames are flowing
- *   error        — connection failed or dropped
- */
-export type ConnectionStatus = 'idle' | 'connecting' | 'reconnecting' | 'streaming' | 'error';
 
 /** Device orientation, as reported by serve-sim's stream config. */
 export type DeviceOrientation =
@@ -149,8 +136,7 @@ export interface DeviceActivitySample {
 /** Rolling activity history and health for the selected device. */
 export interface DeviceActivity {
   hostCores: number | null;
-  samples: DeviceActivitySample[];
-  errored: boolean;
+  samples: readonly DeviceActivitySample[];
   stale: boolean;
 }
 
@@ -203,23 +189,11 @@ export interface DeviceStreamSourceStatus {
   sessionGeneration: number;
 }
 
-/** Runtime encoder values the active backend can change without restarting the Hub. */
-export type DeviceStreamSettingCapabilities =
-  | false
-  | Readonly<Partial<Record<keyof DeviceStreamEncoderSettings, true>>>;
-
 /** A WGS84 coordinate the Hub asks a device to report. */
 export interface DeviceGeoFix {
   latitude: number;
   longitude: number;
 }
-
-/**
- * Location control the backend offers. `false` hides the section. Every backend that
- * offers it can set a fix; `clear` marks one that can also remove it (serve-sim only —
- * `adb emu geo fix` has no inverse).
- */
-export type DeviceLocationCapabilities = false | Readonly<{ clear?: true }>;
 
 /** One WebRTC telemetry sample, normally collected once per second. */
 export interface DeviceStreamStatsSample {
@@ -354,23 +328,6 @@ export interface AccessibilitySnapshot {
   nodes: readonly AccessibilityNode[];
 }
 
-/** Explicit backend feature flags used to omit unsupported inspector sections and controls. */
-export interface DeviceCapabilities {
-  deviceSettings: boolean;
-  activity: boolean;
-  events: boolean;
-  /** Host-fed emulator camera images that the backend can read and replace. */
-  camera: boolean;
-  /** An accessibility tree of the current screen that the backend can read on demand. */
-  accessibility: boolean;
-  /** Runtime encoder settings that can be read and patched. */
-  streamSettings: DeviceStreamSettingCapabilities;
-  /** Simulated-location control, and whether the fix can also be removed. */
-  location: DeviceLocationCapabilities;
-  /** Foreground-app permissions that the backend can list and change. */
-  permissions: boolean;
-}
-
 /** How the device answers one permission of the foreground app. */
 export type AppPermissionState = 'granted' | 'denied' | 'limited' | 'undetermined';
 
@@ -422,13 +379,6 @@ export type HardwareButton =
   | 'appSwitcher'
   /** Dismisses the on-screen keyboard. Not a physical button; grouped here because it presses one key. */
   | 'hideKeyboard';
-
-/**
- * Device system appearance. Binary on purpose — the Hub exposes a plain
- * light/dark toggle with no "auto", even where the backend supports one
- * (serve-emu's `uimode night auto`).
- */
-export type DeviceAppearance = 'light' | 'dark';
 
 /** One normalized (0..1) touch sample. The hook maps it to the wire protocol. */
 export interface TouchSample {
@@ -512,7 +462,8 @@ export interface AgentInteraction {
 export interface DeviceConnectionOptions {
   /**
    * Origin (and optional base path) of a running serve-sim / serve-emu server,
-   * e.g. `http://localhost:3100`. When empty/null the hook stays `idle`.
+   * e.g. `http://localhost:3100`. When empty/null nothing connects and every
+   * feature reports `unsupported`.
    */
   baseUrl?: string | null;
   /** Tear the connection down when false. Defaults to true. */
@@ -541,7 +492,8 @@ export interface DeviceConnectionOptions {
 /** Which element the implementation paints into. */
 export type VideoSurfaceKind = 'canvas' | 'img' | 'video';
 
-export type DeviceScreenRecordingStatus = 'unknown' | 'waiting' | 'recording' | 'finalizing' | 'complete' | 'failed';
+/** Host screen-recording phase. Discovery is the feature status, not a phase. */
+export type ScreenRecordingPhase = 'waiting' | 'recording' | 'finalizing' | 'complete' | 'failed';
 
 /**
  * Whether a screenshot also reached the session artifacts, read from the
@@ -566,260 +518,160 @@ export type ScreenshotCapture = {
   artifact: ScreenshotArtifact | null;
 };
 
-/**
- * The live state + controls for one device connection. Returned by the hook and
- * consumed by {@link DeviceScreen} (for video + input) and by the surrounding
- * Hub UI (logs panel, Home control, device lists).
- */
-export interface DeviceClient {
-  platform: DevicePlatform;
-  status: ConnectionStatus;
-  error: string | null;
-  /**
-   * Why touch and keyboard input cannot reach the device while video can,
-   * or null. Cleared when the input channel works again. iOS: serve-sim
-   * refused the input socket (too many clients, or a full input queue) or its
-   * native HID setup failed. Android: the WebRTC input socket is down.
-   */
-  inputError: string | null;
-  /** Host recording status; unknown until metadata loads, null when no recording was requested. */
-  screenRecording: DeviceScreenRecordingStatus | null;
-  /** Screen size once known; null while connecting. */
-  screen: ScreenSize | null;
-  /** Best-effort frames-per-second (0 when unavailable). */
-  fps: number;
-  /** Running devices the server exposes (may be a placeholder list). */
-  devices: RunningDevice[];
-  /** Rolling buffer of recent log lines (best-effort; may be empty). */
-  logs: DeviceLog[];
-  /**
-   * Whether the log stream is currently attached. Logs are **off by default** —
-   * nothing is collected until {@link attachLogs} is called.
-   */
-  logsEnabled: boolean;
-  /** Start streaming device logs (syslog / logcat). */
-  attachLogs: () => void;
-  /** Stop streaming device logs; keeps the lines already collected. */
-  detachLogs: () => void;
-  /** Drop all collected log lines. */
-  clearLogs: () => void;
-
-  /** Rolling buffer of normalized touch, command, and UI-setting events. */
-  events: DeviceEvent[];
-  /** Whether the client is currently subscribed to/polling backend events. */
-  eventsEnabled: boolean;
-  /** Start observing backend events. */
-  attachEvents: () => void;
-  /** Stop observing events while retaining the current rows. */
-  detachEvents: () => void;
-  /** Clear the event rows visible in this client. */
-  clearEvents: () => void;
-
-  /** Live iOS app activity, or null before the first endpoint/config resolution. */
-  activity: DeviceActivity | null;
-
-  /** Backend-supported simulator/device options and their current values. */
-  deviceSettings: DeviceSettings | null;
-  /** Options currently being changed. Writes to other options remain available. */
-  deviceSettingsPending: ReadonlySet<DeviceSettingKey>;
-  /** Change one simulator/device option. Unsupported keys are ignored by each backend. */
-  setDeviceSetting: (key: DeviceSettingKey, value: string) => void;
-  /**
-   * The device's smallest-width dp that the Display size control surfaces, or
-   * null when it is unknown.
-   */
-  displayWidthDp: number | null;
-
-  /** Emulator camera feeds, or null before the first read or when the backend has none. */
-  camera: DeviceCameraStatus | null;
-  /** Facings with an image write or reset in flight. */
-  cameraPending: ReadonlySet<DeviceCameraFacing>;
-  /** Last failed camera write, cleared when the next write starts. */
-  cameraError: string | null;
-  /** Replace one facing's picture with a PNG. The backend refuses other formats. */
-  setCameraImage: (facing: DeviceCameraFacing, png: Blob) => void;
-  /** Restore the backend's "no image set" card for one facing. */
-  clearCameraImage: (facing: DeviceCameraFacing) => void;
-
-  /** Last accessibility snapshot, or null before the first successful read. */
-  accessibility: AccessibilitySnapshot | null;
-  accessibilityPending: boolean;
-  /** Last failed read, cleared when the next read starts. */
-  accessibilityError: string | null;
-  /** Read the accessibility tree of the current screen once. Backends do not stream it. */
-  refreshAccessibility: () => void;
-
-  /**
-   * The last fix a backend confirmed applying, or null when none is known. serve-emu
-   * remembers it for the life of its session (`GET /api/location`); serve-sim has no
-   * read, so this client remembers what it applied and forgets on reload.
-   */
-  location: DeviceGeoFix | null;
-  /** True while a set or clear is in flight. Another write is ignored until it settles. */
-  locationPending: boolean;
-  /** Last failed location write, cleared when the next write starts. */
-  locationError: string | null;
-  /** Point the device at one coordinate. */
-  setLocation: (fix: DeviceGeoFix) => void;
-  /** Remove the simulated fix. A no-op unless `capabilities.location` carries `clear`. */
-  clearLocation: () => void;
-
-  /** Permissions of the foreground app, or null while unknown or without a foreground app. */
-  permissions: readonly AppPermission[] | null;
-  /** Permission ids with a write in flight. A reset holds every id. */
-  permissionsPending: ReadonlySet<string>;
-  /** Last failed permission request, cleared when the next write starts or a read succeeds. */
-  permissionsError: string | null;
-  /** Grant or revoke one permission of the foreground app. */
-  setPermission: (id: string, action: AppPermissionAction) => void;
-  /** Return every permission of the foreground app to its default. */
-  resetPermissions: () => void;
-  /** Read the list again, for example when the section opens. */
-  refreshPermissions: () => void;
-
-  /** Backend-supported viewer transport and codec choices; null hides stream controls. */
-  streamCapabilities: DeviceStreamCapabilities | null;
-  /** Runtime encoder settings, available when `capabilities.streamSettings` lists any keys. */
-  streamSettings: DeviceStreamEncoderSettings | null;
-  streamSettingsPending: boolean;
-  /** Patch one or more runtime encoder values. */
-  updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => void;
-  /** Active Android capture source; null when the backend does not expose source switching. */
-  streamSource: DeviceStreamSourceStatus | null;
-  /**
-   * True from a capture-source request until the replacement stream is on
-   * screen (or the request fails), so controls and frame change together.
-   */
-  streamSourcePending: boolean;
-  /** Last capture-source write failure; cleared when another write begins. */
-  streamSourceError: string | null;
-  /** Stage and atomically activate another Android capture source. */
-  setStreamSource: (source: DeviceStreamSource) => void;
-  /** Restart the gRPC source with compressed PNG or shared-memory RGB delivery. */
-  setGrpcImageMode: (mode: DeviceGrpcImageMode) => void;
-  /** Restart gRPC capture with software or strictly hardware H.264 encoding. */
-  setGrpcEncoder: (encoder: DeviceGrpcEncoder) => void;
-  /** Restart gRPC streaming with scrcpy or emulator-gRPC input delivery. */
-  setGrpcInputSource: (source: DeviceInputSource) => void;
-  /** Live WebRTC stream telemetry; null for HTTP/WebSocket transports. */
-  streamStats: DeviceStreamStats | null;
-  /** Enable telemetry polling while a consumer is displaying WebRTC statistics. */
-  setStreamStatsEnabled: (enabled: boolean) => void;
-  /** Requested WebRTC codec for this viewer. */
-  webRtcCodec: DeviceWebRtcCodec;
-  setWebRtcCodec: (codec: DeviceWebRtcCodec) => void;
-
-  /** Backend feature availability. Presentation uses this to omit unsupported UI. */
-  capabilities: DeviceCapabilities;
-  /**
-   * The app currently in the foreground, or `null` while unknown. serve-sim
-   * pushes changes over its `{base}/appstate` SSE (SpringBoard log driven,
-   * bootstrapped with the current frontmost app); serve-emu polls
-   * `GET /api/foreground` (dumpsys). Best-effort — stays `null` on a backend
-   * that can't report it (e.g. a bare serve-sim helper with no middleware).
-   */
-  foregroundApp: ForegroundApp | null;
-
-  /** Element kind {@link DeviceScreen} should render for this client. */
-  videoKind: VideoSurfaceKind;
-  /**
-   * Ref callback for the paint target. The hook owns the element: `canvas`
-   * receives decoded H.264 frames, `img` points at MJPEG, and `video` receives
-   * a WebRTC MediaStream.
-   */
-  attachVideo: (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => void;
-
-  /** Forward a normalized touch/drag to the device. */
-  sendTouch: (sample: TouchSample) => void;
-  /** Forward a two-finger pinch/pan. Absent only on the no-op client. */
-  sendMultiTouch?: (sample: MultiTouchSample) => void;
-  /**
-   * Forward a physical browser-keyboard event to the device. Returns true when
-   * the event was accepted, allowing {@link DeviceScreen} to suppress the
-   * corresponding browser action while the streamed device has focus.
-   */
-  sendKey: (input: KeyboardInput) => boolean;
-  /**
-   * Type pre-mapped HID key events — e.g. what {@link KeyboardCapture} derives
-   * from phone-keyboard text — paced so iOS doesn't coalesce a burst into lost
-   * keystrokes. Present only on backends with a HID key channel (serve-sim).
-   */
-  sendKeyEvents?: (events: ReadonlyArray<HidKeyEvent>) => void;
-  /**
-   * Forward a scroll-wheel / trackpad pan as a native scroll, so the device
-   * pans content exactly as it would for a physical wheel (no synthesized
-   * drag). Present only on backends that support it (serve-sim).
-   */
-  sendScroll?: (sample: ScrollSample) => void;
-  /** Press a hardware button. */
-  pressButton: (button: HardwareButton) => void;
-  /**
-   * Reload the running React Native/Expo bundle. serve-sim injects ⌘R over the
-   * helper's key channel; serve-emu injects a hardware "R" keypress over scrcpy.
-   * A no-op if nothing is connected; harmless if the foreground app isn't RN.
-   */
-  reload: () => void;
-  /**
-   * Rotate the device. serve-sim sets the next orientation in the
-   * counterclockwise cycle over the helper's orientation channel; serve-emu
-   * locks the opposite portrait/landscape orientation via `POST
-   * /api/orientation`. A no-op if nothing is connected.
-   */
-  rotate: () => void;
-  /**
-   * Capture a still PNG of the device via the backend's `POST /api/screenshot`
-   * (serve-emu `adb screencap` / serve-sim `simctl io screenshot`), resolving
-   * to the PNG and its session artifact outcome, or `null` if capture fails or
-   * nothing is connected. The caller decides what to do with it (e.g. trigger
-   * a file download).
-   */
-  screenshot: () => Promise<ScreenshotCapture | null>;
-
-  /**
-   * Current device system appearance (dark/light), or `null` while unknown or on
-   * a backend that can't report it (e.g. a bare serve-sim helper with no
-   * middleware). Read once the connection resolves; updated by {@link setAppearance}.
-   */
-  appearance: DeviceAppearance | null;
-  /**
-   * Set the device's system appearance. serve-sim runs `simctl ui <udid>
-   * appearance <mode>` (over the middleware exec-ws); serve-emu posts `uimode
-   * night yes|no`. No-op on a backend that can't set it.
-   */
-  setAppearance: (mode: DeviceAppearance) => void;
-
-  /**
-   * Whether Simulator currently treats the Mac keyboard as connected to the
-   * guest. iOS only; null while the helper is unavailable or on Android. The
-   * Hub disconnects it while its input socket is attached so the on-screen
-   * keyboard shows; serve-sim reconnects it once the last client leaves.
-   */
-  hardwareKeyboardConnected: boolean | null;
-  /**
-   * Connect or disconnect the Mac keyboard from the iOS guest (serve-sim's
-   * `hardware-keyboard` simulator setting, over the middleware exec channel).
-   */
-  setHardwareKeyboardConnected: (connected: boolean) => void;
-  /** Toggle the iOS on-screen software keyboard without changing the hardware connection. */
-  toggleSoftwareKeyboard: () => void;
+/** A request failure with a stable code and a UI-ready message. */
+export interface HubError {
+  code:
+    | 'unsupported'
+    | 'busy'
+    | 'network'
+    | 'timeout'
+    | 'auth'
+    | 'rejected'
+    | 'invalid-response'
+    | 'cancelled';
+  message: string;
+  retryable: boolean;
 }
 
-/** A platform implementation of the connection half of the interface. */
-export type DeviceClientHook = (options: DeviceConnectionOptions) => DeviceClient;
+/** Expected request failures are values, never rejected promises. */
+export type HubResult<T = void> = { ok: true; value: T } | { ok: false; error: HubError };
 
-/** The client fields read by DeviceScreen. Full DeviceClient values remain valid inputs. */
-export type DeviceScreenClient = Pick<
-  DeviceClient,
-  | 'videoKind'
-  | 'attachVideo'
-  | 'sendTouch'
-  | 'sendMultiTouch'
-  | 'sendScroll'
-  | 'sendKey'
-  | 'screen'
-  | 'status'
-  | 'error'
+export type FeatureState<D> =
+  | { status: 'resolving'; data: undefined; error: null }
+  | { status: 'unsupported'; data: undefined; error: null }
+  | { status: 'idle'; data: D | undefined; error: null }
+  | { status: 'loading'; data: D | undefined; error: null }
+  | { status: 'ready'; data: D; error: null }
+  | { status: 'reconnecting'; data: D | undefined; error: HubError }
+  | { status: 'error'; data: D | undefined; error: HubError };
+
+/** Data survives refresh/failure of the same target, never a device/app change. */
+export type Feature<D> = FeatureState<D> & { refresh(): void };
+export interface Writes<K extends string> {
+  pending: ReadonlySet<K>;
+  errors: ReadonlyMap<K, HubError>;
+}
+/**
+ * One shared subscription per client. Attach/detach are idempotent, not
+ * reference-counted: one detach stops the data for every consumer.
+ */
+export interface Attachable {
+  enabled: boolean;
+  attach(): void;
+  detach(): void;
+}
+export interface StreamData {
+  screen: ScreenSize | null;
+  fps: number;
+}
+export interface DeviceSettingsData {
+  values: DeviceSettings;
+  displayWidthDp: number | null;
+}
+export interface AppPermissionsData {
+  appId: string | null;
+  items: readonly AppPermission[];
+}
+export type StreamSourcePatch = Partial<
+  Pick<DeviceStreamSourceStatus, 'mode' | 'grpcImageMode' | 'encoder' | 'inputSource'>
 >;
+export interface InputData {
+  /** The last input command the backend refused, or null. The next input clears it. */
+  rejected: HubError | null;
+}
+export type DeviceSettingsFeature = Feature<DeviceSettingsData> & {
+  writes: Writes<DeviceSettingKey>;
+  set(key: DeviceSettingKey, value: string): Promise<HubResult>;
+};
+export type PermissionsFeature = Feature<AppPermissionsData> & {
+  writes: Writes<string>;
+  set(id: string, action: AppPermissionAction): Promise<HubResult>;
+  reset(): Promise<HubResult>;
+};
+
+/** Public device API. Each backend-backed value owns its state and actions. */
+export interface DeviceClient {
+  platform: DevicePlatform;
+  stream: Feature<StreamData> & {
+    videoKind: VideoSurfaceKind;
+    attachVideo(el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null): void;
+    transports: DeviceStreamCapabilities;
+    webRtcCodec: DeviceWebRtcCodec;
+    setWebRtcCodec(codec: DeviceWebRtcCodec): void;
+  };
+  streamSettings: Feature<DeviceStreamEncoderSettings> & {
+    editable: ReadonlySet<keyof DeviceStreamEncoderSettings>;
+    writes: Writes<keyof DeviceStreamEncoderSettings>;
+    update(patch: Partial<DeviceStreamEncoderSettings>): Promise<HubResult>;
+  };
+  streamSource: Feature<DeviceStreamSourceStatus> & {
+    writes: Writes<keyof StreamSourcePatch>;
+    update(patch: StreamSourcePatch): Promise<HubResult>;
+  };
+  streamStats: Feature<DeviceStreamStats> & Attachable;
+  screenRecording: Feature<ScreenRecordingPhase>;
+  devices: Feature<readonly RunningDevice[]>;
+  foregroundApp: Feature<ForegroundApp | null>;
+  logs: Feature<readonly DeviceLog[]> & Attachable & { clear(): void };
+  events: Feature<readonly DeviceEvent[]> & Attachable & { clear(): void };
+  activity: Feature<DeviceActivity> & Attachable;
+  deviceSettings: DeviceSettingsFeature;
+  keyboard: Feature<{ hardwareConnected: boolean }> & {
+    writes: Writes<'hardwareConnected'>;
+    setHardwareConnected(connected: boolean): Promise<HubResult>;
+    toggleSoftware(): void;
+  };
+  camera: Feature<DeviceCameraStatus> & {
+    writes: Writes<DeviceCameraFacing>;
+    setImage(facing: DeviceCameraFacing, png: Blob): Promise<HubResult>;
+    clearImage(facing: DeviceCameraFacing): Promise<HubResult>;
+  };
+  accessibility: Feature<AccessibilitySnapshot>;
+  location: Feature<DeviceGeoFix | null> & {
+    canClear: boolean;
+    writes: Writes<'fix'>;
+    set(fix: DeviceGeoFix): Promise<HubResult>;
+    clear(): Promise<HubResult>;
+  };
+  permissions: PermissionsFeature;
+  /**
+   * Whether touch and keyboard input reach the device. The commands below stay
+   * on the client because they are fire-and-forget and frequent.
+   *
+   * - `ready`: no input failure is known. Input also needs a live stream.
+   * - `reconnecting`: the input channel is down or busy and retries. iOS:
+   *   serve-sim refused the input socket (too many clients, or a full input
+   *   queue), code `busy`. Android: the WebRTC input socket is down, code `network`.
+   * - `error`: serve-sim's native HID setup failed; input stays unavailable
+   *   until serve-sim restarts.
+   *
+   * `data.rejected` is the last input command the backend refused (Android);
+   * the next input clears it. `refresh()` reconnects the input channel.
+   */
+  input: Feature<InputData>;
+  sendTouch(sample: TouchSample): void;
+  sendMultiTouch(sample: MultiTouchSample): void;
+  sendKey(input: KeyboardInput): boolean;
+  sendKeyEvents?: (events: ReadonlyArray<HidKeyEvent>) => void;
+  sendScroll?: (sample: ScrollSample) => void;
+  pressButton(button: HardwareButton): void;
+  reload(): void;
+  rotate(): void;
+  screenshot(): Promise<HubResult<ScreenshotCapture>>;
+}
+
+/**
+ * The stream and input values read by DeviceScreen, flattened from
+ * `DeviceClient.stream` so a screen does not re-render on FPS changes.
+ * Full DeviceClient values remain valid DeviceScreen inputs.
+ */
+export type DeviceScreenClient = Pick<DeviceClient['stream'], 'videoKind' | 'attachVideo' | 'status'> &
+  Pick<DeviceClient, 'sendTouch' | 'sendMultiTouch' | 'sendScroll' | 'sendKey'> & {
+    /** Screen size once known; null while connecting. */
+    screen: ScreenSize | null;
+    /** The stream error message, or null. */
+    error: string | null;
+  };
 
 /** Props for the shared {@link DeviceScreen} component rendered inside PhoneFrame. */
 export interface DeviceScreenProps {
@@ -834,5 +686,5 @@ export interface DeviceScreenProps {
 
 /** The built-in screen also accepts the inputs returned by useDeviceScreenClient. */
 export interface DeviceScreenInputProps extends Omit<DeviceScreenProps, 'client'> {
-  client: DeviceScreenClient;
+  client: DeviceClient | DeviceScreenClient;
 }

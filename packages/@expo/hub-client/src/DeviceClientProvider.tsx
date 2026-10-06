@@ -29,7 +29,14 @@ export function DeviceClientProvider({ platform, options, children }: DeviceClie
   const [store] = useState(() => {
     // Hydration must start with the same idle media even when WebCodecs is browser-only.
     const serverClient: DeviceClient = platform
-      ? { ...NOOP_DEVICE_CLIENT, platform, videoKind: platform === "android" ? "canvas" : "img" }
+      ? {
+          ...NOOP_DEVICE_CLIENT,
+          platform,
+          stream: {
+            ...NOOP_DEVICE_CLIENT.stream,
+            videoKind: platform === "android" ? "canvas" : "img",
+          },
+        }
       : NOOP_DEVICE_CLIENT;
     return createDeviceClientStore(client, serverClient);
   });

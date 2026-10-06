@@ -79,7 +79,7 @@ export function PhoneFrame({
   // Prefer the live screen's aspect ratio once known, so the stream fills the
   // frame 1:1 instead of being stretched to the placeholder's body ratio. Uses
   // the orientation-corrected (display) size so a rotated device shows landscape.
-  const display = client ? displayScreen(client.screen) : null;
+  const display = client ? displayScreen(client.stream.data?.screen) : null;
   const ratio = display && display.height > 0 ? display.width / display.height : fallbackRatio;
 
   // The container's width is the phone width; `cqw` on the child resolves
@@ -96,7 +96,7 @@ export function PhoneFrame({
   // the *short* side so the corners look the same in portrait and landscape.
   const radiusCqw = (radiusFraction / Math.max(ratio, 1)) * 100;
   const borderRadius = `${radiusCqw.toFixed(3)}cqw`;
-  const live = client && client.status !== 'idle';
+  const live = client && client.stream.status !== 'unsupported';
   const overlayVisible =
     !!agentInteraction && hovered && dismissedInteractionId !== agentInteraction.id;
 
@@ -126,7 +126,7 @@ export function PhoneFrame({
   const framed = frameAsset
     ? deviceFramePresentation({
         asset: frameAsset,
-        orientation: client?.screen?.orientation,
+        orientation: client?.stream.data?.screen?.orientation,
         displayRatio: ratio,
         maxScreenShortSide: MAX_SHORT_SIDE,
       })

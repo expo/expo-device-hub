@@ -1,5 +1,5 @@
 /**
- * `DeviceClient.inputError` for the serve-sim helper's input WebSocket.
+ * The `DeviceClient.input` error for the serve-sim helper's input WebSocket.
  *
  * serve-sim refuses or drops an input socket with close code 1013 when its
  * client limit is reached or a socket's input queue is full

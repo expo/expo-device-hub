@@ -95,7 +95,7 @@ async function render(
   const img = image(network);
   function Harness() {
     client = useClient(options);
-    const { attachVideo } = client;
+    const { attachVideo } = client.stream;
     useLayoutEffect(() => attachVideo(img), [attachVideo]);
     return null;
   }
@@ -228,7 +228,7 @@ describe('useIosDeviceClient with a session token', () => {
     };
     const img = image(network);
     function Harness() {
-      const { attachVideo } = useIosDeviceClient(options);
+      const { attachVideo } = useIosDeviceClient(options).stream;
       useLayoutEffect(() => attachVideo(img), [attachVideo]);
       return null;
     }
@@ -277,7 +277,11 @@ describe('useAndroidDeviceClient with a session token', () => {
       { baseUrl: ANDROID_BASE, device: 'emulator-5554', streamMode: 'h264', token: 'tok-1' },
       network
     );
-    await act(async () => client.attachLogs());
+    // Logs and activity are opt-in; attach both so each SSE route is checked.
+    await act(async () => {
+      client.logs.attach();
+      client.activity.attach();
+    });
 
     expect(network.fetches.length).toBeGreaterThan(1);
     expect(network.fetches.filter((call) => call.authorization !== 'Bearer tok-1')).toEqual([]);
@@ -297,7 +301,7 @@ describe('useAndroidDeviceClient with a session token', () => {
       { baseUrl: ANDROID_BASE, device: 'emulator-5554', streamMode: 'h264' },
       network
     );
-    await act(async () => client.attachLogs());
+    await act(async () => client.logs.attach());
 
     expect(network.fetches.every((call) => call.authorization === null)).toBe(true);
     expect(network.sockets.every((socket) => socket.protocols === undefined)).toBe(true);

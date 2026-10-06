@@ -1,8 +1,4 @@
-import {
-  type DeviceClient,
-  type DeviceHttpCodec,
-  type DeviceStreamMode,
-} from '@expo/hub-client';
+import { type DeviceClient, type DeviceHttpCodec, type DeviceStreamMode } from '@expo/hub-client';
 import { SidebarToggle, bg } from '../primitives';
 import { AccessibilitySection } from './AccessibilitySection';
 import { CameraSection } from './CameraSection';
@@ -109,19 +105,19 @@ export function LogSidebar({
           overflowY: 'auto',
         }}>
         <CurrentAppSection client={client} />
-        {(client?.capabilities.deviceSettings ||
+        {((client && client.deviceSettings.status !== 'unsupported') ||
           client?.platform === 'android' ||
           deviceFrame ||
           (client && (onShutdown || onRemoveDevice))) && (
           <DeviceOptionsSection
             client={client}
             deviceFrame={deviceFrame}
-            showDeviceSettings={client?.capabilities.deviceSettings ?? false}
+            showDeviceSettings={(client && client.deviceSettings.status !== 'unsupported') ?? false}
             onShutdown={onShutdown}
             onRemove={onRemoveDevice}
           />
         )}
-        {client?.streamCapabilities && (
+        {client?.stream.transports && (
           <StreamOptionsSection
             client={client}
             streamMode={streamMode}
@@ -131,11 +127,17 @@ export function LogSidebar({
             onHttpCodecChange={onHttpCodecChange}
           />
         )}
-        {client?.capabilities.camera && <CameraSection client={client} />}
-        {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
-        {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
-        {client?.capabilities.permissions && <PermissionsSection client={client} />}
-        {client?.capabilities.events && <EventsSection client={client} />}
+        {client && client.camera.status !== 'unsupported' && <CameraSection client={client} />}
+        {client && client.accessibility.status !== 'unsupported' && (
+          <AccessibilitySection client={client} />
+        )}
+        {client && client.location.status !== 'unsupported' && (
+          <LocationSection key={device?.id} client={client} />
+        )}
+        {client && client.permissions.status !== 'unsupported' && (
+          <PermissionsSection client={client} />
+        )}
+        {client && client.events.status !== 'unsupported' && <EventsSection client={client} />}
         <LogsSection client={client} />
       </div>
     </aside>

@@ -3,8 +3,7 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { useAndroidDeviceClient } from '../useAndroidDevice';
 import { useIosDeviceClient } from '../useIosDevice';
-import { DeviceClientProvider } from '../DeviceClientProvider';
-import { useDeviceClient } from '../useDeviceClient';
+import { DeviceClientProvider, useDeviceClientSelector } from '../DeviceClientProvider';
 import { type DeviceClient, type DeviceConnectionOptions } from '../types';
 import { createGlobalStubs } from './test-globals';
 
@@ -36,7 +35,13 @@ const clients = {
 for (const [platform, { useClient, whenEnabled }] of Object.entries(clients)) {
   test(`${platform} client reports no permissions capability while disabled`, async () => {
     stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-    stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+    stubGlobal('window', {
+      location: { href: 'https://hub.test/' },
+      addEventListener() {},
+      removeEventListener() {},
+      setTimeout,
+      clearTimeout,
+    });
     stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
     stubGlobal('WebSocket', Socket);
     stubGlobal('fetch', async (url: string) => {
@@ -48,20 +53,25 @@ for (const [platform, { useClient, whenEnabled }] of Object.entries(clients)) {
 
     let client!: DeviceClient;
     function Harness({ enabled }: { enabled: boolean }) {
-      client = useClient({ baseUrl: 'https://hub.test', device: 'device-1', enabled, streamMode: 'mjpeg' });
+      client = useClient({
+        baseUrl: 'https://hub.test',
+        device: 'device-1',
+        enabled,
+        streamMode: 'mjpeg',
+      });
       return null;
     }
     await act(async () => {
       renderer = create(<Harness enabled={false} />);
     });
-    expect(client.capabilities.permissions).toBe(false);
-    expect(client.capabilities.accessibility).toBe(false);
+    expect(client.permissions.status !== 'unsupported').toBe(false);
+    expect(client.accessibility.status !== 'unsupported').toBe(false);
 
     await act(async () => renderer!.update(<Harness enabled />));
-    expect(client.capabilities.permissions).toBe(whenEnabled);
+    expect(client.permissions.status !== 'unsupported').toBe(whenEnabled);
 
     await act(async () => renderer!.update(<Harness enabled={false} />));
-    expect(client.capabilities.permissions).toBe(false);
+    expect(client.permissions.status !== 'unsupported').toBe(false);
   });
 }
 
@@ -93,10 +103,10 @@ test("Android stream capability subscribers follow transport changes and ignore 
         })
       : Response.json({}, { status: 404 }),
   );
-  let capabilities!: DeviceClient["streamCapabilities"];
+  let capabilities!: DeviceClient["stream"]["transports"];
   let renders = 0;
   function Features() {
-    capabilities = useDeviceClient().streamCapabilities;
+    capabilities = useDeviceClientSelector((client) => client.stream.transports);
     renders++;
     return <span>{String(capabilities?.modeAvailability.webrtc)}</span>;
   }
@@ -136,7 +146,13 @@ test("Android stream capability subscribers follow transport changes and ignore 
 
 test('Android recording metadata follows host transitions and does not leak between selected devices', async () => {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('window', {
+    location: { href: 'https://hub.test/' },
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
   stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
   stubGlobal('WebSocket', Socket);
   const pollers: (() => void)[] = [];
@@ -149,26 +165,46 @@ test('Android recording metadata follows host transitions and does not leak betw
   stubGlobal('fetch', async (url: string) => {
     const request = new URL(url);
     return request.pathname === '/api'
-      ? Response.json({ screenRecording: request.searchParams.get('device') === 'device-1' ? { status: recording } : null })
+      ? Response.json({
+          screenRecording:
+            request.searchParams.get('device') === 'device-1' ? { status: recording } : null,
+        })
       : Response.json({}, { status: 404 });
   });
   let client: DeviceClient | undefined;
   function Harness({ device }: { device: string }) {
-    client = useAndroidDeviceClient({ baseUrl: 'https://hub.test', device, enabled: true, streamMode: 'h264' });
+    client = useAndroidDeviceClient({
+      baseUrl: 'https://hub.test',
+      device,
+      enabled: true,
+      streamMode: 'h264',
+    });
     return null;
   }
-  await act(async () => { renderer = create(<Harness device="device-1" />); });
-  expect(client?.screenRecording).toBe('recording');
+  await act(async () => {
+    renderer = create(<Harness device="device-1" />);
+  });
+  expect(client?.screenRecording.data).toBe('recording');
   recording = 'complete';
-  await act(async () => { for (const poll of pollers) poll(); });
-  expect(client?.screenRecording).toBe('complete');
-  await act(async () => { renderer?.update(<Harness device="device-2" />); });
-  expect(client?.screenRecording).toBeNull();
+  await act(async () => {
+    for (const poll of pollers) poll();
+  });
+  expect(client?.screenRecording.data).toBe('complete');
+  await act(async () => {
+    renderer?.update(<Harness device="device-2" />);
+  });
+  expect(client?.screenRecording.status).toBe('unsupported');
 });
 
 test('recording stays unknown until metadata loads and resets on device changes and reactivation', async () => {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('window', {
+    location: { href: 'https://hub.test/' },
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
   stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
   stubGlobal('WebSocket', Socket);
   const pollers: (() => void)[] = [];
@@ -178,12 +214,25 @@ test('recording stays unknown until metadata loads and resets on device changes 
   });
   stubGlobal('clearInterval', () => {});
   const requests: ((response: Response) => void)[] = [];
-  stubGlobal('fetch', (url: string) => new URL(url).pathname === '/api'
-    ? new Promise<Response>((resolve) => requests.push(resolve))
-    : Promise.resolve(Response.json({}, { status: 404 })));
+  stubGlobal('fetch', (url: string) =>
+    new URL(url).pathname === '/api'
+      ? new Promise<Response>((resolve) => requests.push(resolve))
+      : Promise.resolve(Response.json({}, { status: 404 })),
+  );
   let client: DeviceClient | undefined;
-  function Harness({ device = 'device-1', enabled = true }: { device?: string; enabled?: boolean }) {
-    client = useAndroidDeviceClient({ baseUrl: 'https://hub.test', device, enabled, streamMode: 'h264' });
+  function Harness({
+    device = 'device-1',
+    enabled = true,
+  }: {
+    device?: string;
+    enabled?: boolean;
+  }) {
+    client = useAndroidDeviceClient({
+      baseUrl: 'https://hub.test',
+      device,
+      enabled,
+      streamMode: 'h264',
+    });
     return null;
   }
   async function respond(response: Response) {
@@ -191,34 +240,46 @@ test('recording stays unknown until metadata loads and resets on device changes 
     if (!resolve) throw new Error('Expected a pending recording metadata request');
     await act(async () => resolve(response));
   }
-  await act(async () => { renderer = create(<Harness />); });
-  expect(client?.screenRecording).toBe('unknown');
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  expect(client?.screenRecording.status).toBe('resolving');
   await respond(Response.json({}, { status: 503 }));
-  expect(client?.screenRecording).toBe('unknown');
-  await act(async () => { for (const poll of pollers) poll(); });
+  expect(client?.screenRecording.status).toBe('reconnecting');
+  await act(async () => {
+    for (const poll of pollers) poll();
+  });
   await respond(Response.json({ screenRecording: null }));
-  expect(client?.screenRecording).toBeNull();
+  expect(client?.screenRecording.status).toBe('unsupported');
 
   // A request for the previous device must not unlock the newly selected device.
-  await act(async () => { for (const poll of pollers) poll(); });
+  await act(async () => {
+    for (const poll of pollers) poll();
+  });
   await act(async () => renderer?.update(<Harness device="device-2" />));
-  expect(client?.screenRecording).toBe('unknown');
+  expect(client?.screenRecording.status).toBe('resolving');
   await respond(Response.json({ screenRecording: null }));
-  expect(client?.screenRecording).toBe('unknown');
+  expect(client?.screenRecording.status).toBe('resolving');
   await respond(Response.json({ screenRecording: { status: 'complete' } }));
-  expect(client?.screenRecording).toBe('complete');
+  expect(client?.screenRecording.data).toBe('complete');
 
   await act(async () => renderer?.update(<Harness device="device-2" enabled={false} />));
-  expect(client?.screenRecording).toBeNull();
+  expect(client?.screenRecording.status).toBe('unsupported');
   await act(async () => renderer?.update(<Harness device="device-2" />));
-  expect(client?.screenRecording).toBe('unknown');
+  expect(client?.screenRecording.status).toBe('resolving');
   await respond(Response.json({ screenRecording: { status: 'recording' } }));
-  expect(client?.screenRecording).toBe('recording');
+  expect(client?.screenRecording.data).toBe('recording');
 });
 
 test('Android screenshot posts to serve-emu for the selected device', async () => {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
-  stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('window', {
+    location: { href: 'https://hub.test/' },
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
   stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
   stubGlobal('WebSocket', Socket);
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
@@ -230,13 +291,25 @@ test('Android screenshot posts to serve-emu for the selected device', async () =
   });
   let client!: DeviceClient;
   function Harness() {
-    client = useAndroidDeviceClient({ baseUrl: 'https://hub.test/', device: 'emulator 5554', enabled: true, streamMode: 'h264' });
+    client = useAndroidDeviceClient({
+      baseUrl: 'https://hub.test/',
+      device: 'emulator 5554',
+      enabled: true,
+      streamMode: 'h264',
+    });
     return null;
   }
-  await act(async () => { renderer = create(<Harness />); });
-  const capture = await client.screenshot();
+  await act(async () => {
+    renderer = create(<Harness />);
+  });
+  const result = await client.screenshot();
+  if (!result.ok) throw new Error(result.error.message);
+  const capture = result.value;
   expect(requests).toEqual([
-    { url: 'https://hub.test/api/screenshot?device=emulator%205554', init: { method: 'POST', cache: 'no-store' } },
+    {
+      url: 'https://hub.test/api/screenshot?device=emulator%205554',
+      init: { method: 'POST', cache: 'no-store' },
+    },
   ]);
   expect(new Uint8Array(await capture!.blob.arrayBuffer())).toEqual(png);
   expect(capture!.artifact).toBeNull();

@@ -15,3 +15,10 @@ export function mergeAuthoritativeDeviceSetting(
   else delete next[key];
   return next;
 }
+
+/** Whether two settings snapshots hold the same keys and values. */
+export function sameDeviceSettings(a: DeviceSettings | null, b: DeviceSettings): boolean {
+  if (!a) return false;
+  const keys = Object.keys(b) as DeviceSettingKey[];
+  return Object.keys(a).length === keys.length && keys.every((key) => a[key] === b[key]);
+}

@@ -1,4 +1,5 @@
 import { afterEach, expect, spyOn, test } from "bun:test";
+import { useEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
 import { DeviceClientProvider } from "../DeviceClientProvider";
@@ -59,11 +60,17 @@ test("stale iOS activity stops rendering until a new metrics sample arrives", as
         })
       : Response.json({}, { status: 404 }),
   );
-  let activity!: DeviceClient["activity"];
+  let activity!: DeviceClient["activity"]["data"];
   let renders = 0;
   let unrelatedRenders = 0;
   function Activity() {
-    ({ activity } = useDeviceClient());
+    const { attach, detach, data } = useDeviceClient().activity;
+    activity = data;
+    // Activity is opt-in in the feature API.
+    useEffect(() => {
+      attach();
+      return detach;
+    }, [attach, detach]);
     renders++;
     return null;
   }
@@ -84,6 +91,8 @@ test("stale iOS activity stops rendering until a new metrics sample arrives", as
   });
   expect(unrelatedRenders).toBe(1);
   const metrics = sockets.find((socket) => socket.url.endsWith("/exec-ws"))!;
+  // The exec-ws handshake makes the metrics subscription live.
+  await act(async () => metrics.onmessage?.({ data: '{"ready":true}' }));
   const sample = (t: number) =>
     metrics.onmessage?.({
       data: JSON.stringify({

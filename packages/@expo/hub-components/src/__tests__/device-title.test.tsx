@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { testFeature } from '../../../hub-client/src/__tests__/feature-fixture';
+
 import { DeviceTitle } from '../dashboard/DeviceTitle';
 
 describe('device title', () => {
   test.each([
-    ['unknown', 'Checking recording status'],
+    [undefined, 'Checking recording status'],
     ['waiting', 'Starting recording'],
     ['recording', 'Recording'],
     ['finalizing', 'Finishing recording'],
@@ -13,7 +15,11 @@ describe('device title', () => {
     ['failed', 'Recording failed'],
   ] as const)('shows %s recording independently of the stream connection', (recording, label) => {
     const markup = renderToStaticMarkup(
-      <DeviceTitle device={{ id: 'emulator-5554', name: 'Pixel' }} status="reconnecting" recording={recording} />,
+      <DeviceTitle
+        device={{ id: 'emulator-5554', name: 'Pixel' }}
+        status="reconnecting"
+        recording={testFeature(recording, recording === undefined ? 'loading' : 'ready')}
+      />,
     );
     expect(markup).toContain('>Reconnecting</span>');
     expect(markup).toContain('role="status"');
@@ -22,10 +28,7 @@ describe('device title', () => {
   test('keeps the status visible when a long label needs truncating', () => {
     const name = '868BF88E-084A-4E9D-9434-C2D3C0C567F3';
     const markup = renderToStaticMarkup(
-      <DeviceTitle
-        device={{ id: '00000000-0000-0000-0000-000000000000', name }}
-        status="streaming"
-      />
+      <DeviceTitle device={{ id: '00000000-0000-0000-0000-000000000000', name }} status="ready" />,
     );
     const buttonContent = markup.slice(markup.indexOf('>') + 1, markup.lastIndexOf('</button>'));
 
@@ -42,10 +45,25 @@ describe('device title', () => {
 
   test('labels a live stream that is re-establishing its transport', () => {
     const markup = renderToStaticMarkup(
-      <DeviceTitle device={{ id: 'emulator-5554', name: 'Pixel' }} status="reconnecting" />
+      <DeviceTitle device={{ id: 'emulator-5554', name: 'Pixel' }} status="reconnecting" />,
     );
 
     expect(markup).toContain('>Reconnecting</span>');
     expect(markup).not.toContain('>Error</span>');
+  });
+  test('shows an unavailable recording status when the read failed without a phase', () => {
+    const markup = renderToStaticMarkup(
+      <DeviceTitle
+        device={{ id: 'emulator-5554', name: 'Pixel' }}
+        status="ready"
+        recording={{
+          status: 'error',
+          data: undefined,
+          error: { code: 'network', message: 'Metadata unavailable', retryable: true },
+          refresh() {},
+        }}
+      />,
+    );
+    expect(markup).toContain('>Recording status unavailable</span>');
   });
 });

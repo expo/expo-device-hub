@@ -1,3 +1,4 @@
+import { EMPTY_CLIENT, testFeature } from '../../../hub-client/src/__tests__/feature-fixture';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { type DeviceClient } from '@expo/hub-client';
@@ -55,16 +56,25 @@ const FRAME_ASSETS: DeviceFrameAssets = {
   },
 };
 
-const STREAMING_CLIENT = { status: 'streaming' } as DeviceClient;
-const LANDSCAPE_CLIENT = {
-  status: 'streaming',
-  screen: { width: 2400, height: 1080, orientation: 'landscape_left' },
-} as DeviceClient;
+const STREAMING_CLIENT: DeviceClient = {
+  ...EMPTY_CLIENT,
+  stream: { ...EMPTY_CLIENT.stream, ...testFeature({ screen: null, fps: 60 }) },
+};
+const LANDSCAPE_CLIENT: DeviceClient = {
+  ...STREAMING_CLIENT,
+  stream: {
+    ...STREAMING_CLIENT.stream,
+    ...testFeature({
+      screen: { width: 2400, height: 1080, orientation: 'landscape_left' },
+      fps: 60,
+    }),
+  },
+};
 
 describe('agent device status', () => {
   test('labels active device rows and renders the blue status badge', () => {
     const markup = renderToStaticMarkup(
-      <DeviceListItem name="iPhone 16 Pro" version="iOS 18.6" usedByAgent />
+      <DeviceListItem name="iPhone 16 Pro" version="iOS 18.6" usedByAgent />,
     );
 
     expect(markup).toContain('aria-label="iPhone 16 Pro, iOS 18.6, used by agent"');
@@ -83,7 +93,7 @@ describe('agent device status', () => {
 
   test('keeps long device rows contained and compacts agent status when needed', () => {
     const markup = renderToStaticMarkup(
-      <DeviceListItem name="Medium_Phone_API_36.1" version="Android 16.0" usedByAgent />
+      <DeviceListItem name="Medium_Phone_API_36.1" version="Android 16.0" usedByAgent />,
     );
     const buttonTag = markup.slice(0, markup.indexOf('>') + 1);
 
@@ -98,7 +108,7 @@ describe('agent device status', () => {
         version: 82,
         badge: 7,
         label: 66,
-      })
+      }),
     ).toBeTrue();
     expect(
       shouldCompactAgentDeviceStatus({
@@ -107,13 +117,13 @@ describe('agent device status', () => {
         version: 58,
         badge: 7,
         label: 66,
-      })
+      }),
     ).toBeFalse();
   });
 
   test('only reveals the phone overlay while hover state is active', () => {
     const hidden = renderToStaticMarkup(
-      <AgentDeviceOverlay visible={false} onTakeOver={() => {}} />
+      <AgentDeviceOverlay visible={false} onTakeOver={() => {}} />,
     );
     const visible = renderToStaticMarkup(<AgentDeviceOverlay visible onTakeOver={() => {}} />);
     const visibleOverlayTag = visible.slice(0, visible.indexOf('>') + 1);
@@ -133,7 +143,7 @@ describe('agent device status', () => {
     expect(visible).toContain('background-color:var(--expo-theme-button-agent-overlay-background)');
     expect(visible).toContain('font-family:inherit');
     expect(visible).toContain(
-      '<span style="font-size:12px;font-weight:500;line-height:1.6;letter-spacing:0">Take over anyway</span>'
+      '<span style="font-size:12px;font-weight:500;line-height:1.6;letter-spacing:0">Take over anyway</span>',
     );
   });
 
@@ -151,7 +161,7 @@ describe('agent device status', () => {
         device={{ ...IPHONE, deviceFrame: null }}
         DeviceScreen={() => null}
         displayScreen={() => null}
-      />
+      />,
     );
     const screenClipStart = markup.indexOf('data-testid="device-screen-clip"');
     const screenClipTag = markup.slice(screenClipStart, markup.indexOf('>', screenClipStart) + 1);
@@ -177,7 +187,7 @@ describe('agent device status', () => {
         deviceFrameAssets={FRAME_ASSETS}
         DeviceScreen={() => null}
         displayScreen={() => null}
-      />
+      />,
     );
     const screenStart = markup.indexOf('data-testid="device-screen-clip"');
     const screenTag = markup.slice(screenStart, markup.indexOf('>', screenStart) + 1);
@@ -233,13 +243,16 @@ describe('agent device status', () => {
     const markup = renderToStaticMarkup(
       <StreamPanel
         device={IPHONE}
-        client={{ ...STREAMING_CLIENT, status: 'connecting' }}
+        client={{
+          ...STREAMING_CLIENT,
+          stream: { ...STREAMING_CLIENT.stream, status: 'loading', error: null },
+        }}
         deviceFrameAssets={FRAME_ASSETS}
         DeviceScreen={({ client }) => (
-          <div data-testid="connection-state-surface" data-status={client.status} />
+          <div data-testid="connection-state-surface" data-status={client.stream.status} />
         )}
         displayScreen={() => null}
-      />
+      />,
     );
     const viewportStart = markup.indexOf('data-testid="device-frame-viewport"');
     const viewportTag = markup.slice(viewportStart, markup.indexOf('>', viewportStart) + 1);
@@ -254,7 +267,7 @@ describe('agent device status', () => {
       markup.indexOf('data-testid="device-frame-anchor"'),
     );
     expect(markup).toMatch(
-      /data-testid="device-frame-viewport"[^>]*><div data-testid="device-frame-anchor"[^>]*><div data-testid="device-screen-frame"[\s\S]*data-testid="device-frame-stream-cover"[^>]*><div data-testid="connection-state-surface" data-status="connecting"><\/div>/
+      /data-testid="device-frame-viewport"[^>]*><div data-testid="device-frame-anchor"[^>]*><div data-testid="device-screen-frame"[\s\S]*data-testid="device-frame-stream-cover"[^>]*><div data-testid="connection-state-surface" data-status="loading"><\/div>/,
     );
   });
 
@@ -266,7 +279,7 @@ describe('agent device status', () => {
         deviceFrameAssets={FRAME_ASSETS}
         DeviceScreen={() => null}
         displayScreen={(screen) => screen ?? null}
-      />
+      />,
     );
     const screenStart = markup.indexOf('data-testid="device-screen-clip"');
     const screenTag = markup.slice(screenStart, markup.indexOf('>', screenStart) + 1);
@@ -294,7 +307,7 @@ describe('agent device status', () => {
         deviceFrameAssets={FRAME_ASSETS}
         DeviceScreen={StableDeviceScreen}
         displayScreen={() => null}
-      />
+      />,
     );
     const hidden = renderToStaticMarkup(
       <PhoneFrame
@@ -304,7 +317,7 @@ describe('agent device status', () => {
         showDeviceFrame={false}
         DeviceScreen={StableDeviceScreen}
         displayScreen={() => null}
-      />
+      />,
     );
     expect(shown).toContain('data-device-frame-kind="android:pixel-10-pro"');
     expect(shown).toContain('src="/pixel.png"');
@@ -312,7 +325,7 @@ describe('agent device status', () => {
     expect(hidden).not.toContain('data-testid="device-frame-artwork"');
     for (const markup of [shown, hidden]) {
       expect(markup).toMatch(
-        /data-testid="device-frame-stream-cover"[^>]*><div data-testid="stable-device-screen"><\/div><\/div>/
+        /data-testid="device-frame-stream-cover"[^>]*><div data-testid="stable-device-screen"><\/div><\/div>/,
       );
     }
   });
