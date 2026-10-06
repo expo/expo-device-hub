@@ -3,9 +3,10 @@ import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
 import { androidStreamSettingsPatch, parseAndroidStreamSettings } from '../android-stream-settings';
 import { deviceScreenPresentsMedia } from '../DeviceScreen';
-import { useAndroidDeviceClient } from '../useAndroidDevice';
 import { useStreamSettingsResource } from '../useStreamSettingsResource';
 import { useWebRtcStream } from '../useWebRtcStream';
+import type { DeviceClient } from '../types';
+import { ClientProbe } from './client-probe';
 import { createGlobalStubs } from './test-globals';
 
 // These tests exercise hook lifecycles with controlled transport/media events.
@@ -315,10 +316,17 @@ async function androidHarness({ delaySource = false } = {}) {
     if (path === '/webrtc/offer') return Response.json({ type: 'answer', sdp: 'answer' });
     return Response.json({}, { status: 404 });
   });
-  let client!: ReturnType<typeof useAndroidDeviceClient>;
+  let client!: DeviceClient;
   function Harness({ device = 'emulator-test' }: { device?: string }) {
-    client = useAndroidDeviceClient({ baseUrl: 'https://hub.test', device, streamMode: 'webrtc' });
-    return null;
+    return (
+      <ClientProbe
+        platform="android"
+        options={{ baseUrl: 'https://hub.test', device, streamMode: 'webrtc' }}
+        onClient={(next) => {
+          client = next;
+        }}
+      />
+    );
   }
   await act(async () => {
     renderer = create(<Harness />);

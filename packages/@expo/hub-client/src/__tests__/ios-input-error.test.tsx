@@ -7,7 +7,7 @@ import {
   iosInputCloseError,
 } from '../ios-input-error';
 import { type DeviceClient } from '../types';
-import { useIosDeviceClient } from '../useIosDevice';
+import { ClientProbe } from './client-probe';
 import { createGlobalStubs } from './test-globals';
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
@@ -78,8 +78,15 @@ async function renderIosClient({ inputAdmission = false } = {}) {
 
   let client!: DeviceClient;
   function Harness() {
-    client = useIosDeviceClient({ baseUrl: '/sim', device: 'DEVICE-A', streamMode: 'mjpeg' });
-    return null;
+    return (
+      <ClientProbe
+        platform="ios"
+        options={{ baseUrl: '/sim', device: 'DEVICE-A', streamMode: 'mjpeg' }}
+        onClient={(next) => {
+          client = next;
+        }}
+      />
+    );
   }
   await act(async () => {
     renderer = create(<Harness />);

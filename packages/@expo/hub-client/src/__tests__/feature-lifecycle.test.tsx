@@ -2,11 +2,11 @@ import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import { readAndroidLocation, writeAndroidLocation } from '../android-location';
 import { FeatureSession, hubError } from '../feature-state';
-import { useAndroidDeviceClient } from '../useAndroidDevice';
 import { useAppPermissions } from '../useAppPermissions';
 import { useFeatureSession } from '../feature-state';
 import { useWebRtcStreamStats, type WebRtcStatsConnection } from '../stream-stats';
 import type { AppPermission, DeviceClient, DeviceStreamStats } from '../types';
+import { ClientProbe } from './client-probe';
 import { createGlobalStubs } from './test-globals';
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
@@ -61,9 +61,18 @@ afterEach(async () => {
   renderer = undefined;
   restoreGlobals();
 });
+let clientRenders = 0;
 function Harness({ device = 'a' }: { device?: string }) {
-  client = useAndroidDeviceClient({ baseUrl: 'https://hub.test', device, streamMode: 'h264' });
-  return null;
+  return (
+    <ClientProbe
+      platform="android"
+      options={{ baseUrl: 'https://hub.test', device, streamMode: 'h264' }}
+      onClient={(next) => {
+        client = next;
+        clientRenders++;
+      }}
+    />
+  );
 }
 async function respond(path: string, payload: unknown, status = 200) {
   const request = requests.findLast((request) => request.url.pathname === path)!;
@@ -431,11 +440,14 @@ test('an unchanged settings poll keeps the same client and feature objects', asy
   await respond('/api', {});
   await answerSettings(0);
   const before = client;
+  const rendersBefore = clientRenders;
   const start = requests.length;
   await act(async () => {
     for (const interval of intervals) if (interval.delay === 3000) interval.callback();
   });
   await answerSettings(start);
+  // The provider publishes nothing new, so its subscriber does not render.
+  expect(clientRenders).toBe(rendersBefore);
   expect(client.deviceSettings).toBe(before.deviceSettings);
   expect(client.stream.transports).toBe(before.stream.transports);
   expect(client).toBe(before);

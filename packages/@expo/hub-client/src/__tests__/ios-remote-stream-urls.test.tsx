@@ -1,8 +1,8 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import { useIosDeviceClient } from '../useIosDevice';
 import { type DeviceClient } from '../types';
+import { ClientProbe } from './client-probe';
 import { createGlobalStubs } from './test-globals';
 
 const { stubGlobal, restoreGlobals } = createGlobalStubs();
@@ -132,8 +132,15 @@ for (const { name, baseUrl, pageUrl, publicBase, advertisedBasePath } of [
 
     let client!: DeviceClient;
     function Harness() {
-      client = useIosDeviceClient({ baseUrl, device: 'DEVICE-A', streamMode: 'mjpeg' });
-      return null;
+      return (
+        <ClientProbe
+          platform="ios"
+          options={{ baseUrl, device: 'DEVICE-A', streamMode: 'mjpeg' }}
+          onClient={(next) => {
+            client = next;
+          }}
+        />
+      );
     }
     await act(async () => {
       renderer = create(<Harness />);
