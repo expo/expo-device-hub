@@ -118,10 +118,15 @@ export class FeatureRead {
       if (this.action === action) this.action = undefined;
     };
   };
-  refresh = () => {
-    if (!this.action || this.status === 'unsupported') return;
+  /** Start a new attempt with a fresh failure count, keeping the last data. */
+  restart = () => {
+    if (this.status === 'unsupported') return;
     this.failures = 0;
     this.begin();
+  };
+  refresh = () => {
+    if (!this.action || this.status === 'unsupported') return;
+    this.restart();
     this.action();
   };
 }

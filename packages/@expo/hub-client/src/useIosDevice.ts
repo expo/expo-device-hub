@@ -293,7 +293,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Feature reads and writes get a deadline; video streams and long actions do not.
   const sessionFetch = useMemo(() => withFeatureDeadline(tokenFetch), [tokenFetch]);
   const socketProtocols = useMemo(() => sessionTokenProtocols('ios', token), [token]);
-  const featureSession = useFeatureSession(`${active}\0${baseUrl}\0${targetDevice}`);
+  // A new token is a new connection: stopped reads restart and old results are ignored.
+  const featureSession = useFeatureSession(
+    `${active}\0${baseUrl}\0${targetDevice}\0${token ?? ''}`,
+  );
   const [activityEnabled, setActivityEnabled] = useState(false);
   const revisions = useFeatureRevisions(featureSession, RESTARTABLE_FEATURES);
   // `stream` binds below so it can also renegotiate WebRTC.
@@ -993,7 +996,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       setScreen(null);
       setFps(0);
     };
-  }, [streamUrl, applyStreamSrc]);
+  }, [streamUrl, applyStreamSrc, streamRevision]);
 
   // ── Helper control WebSocket (touch/buttons out, screen config in) ──
   const wsUrl = config?.wsUrl ?? null;
@@ -1196,7 +1199,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
     const featureName = (kind: 'logs' | 'events' | 'metrics') =>
       kind === 'metrics' ? 'activity' : kind;
-    for (const kind of subscriptions.values()) featureSession.read(featureName(kind)).begin();
+    // A new socket is a new attempt for every subscription it carries, even a stopped one.
+    for (const kind of subscriptions.values()) featureSession.read(featureName(kind)).restart();
     const markInterrupted = () => {
       let retry = false;
       for (const kind of subscriptions.values())

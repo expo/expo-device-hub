@@ -147,8 +147,11 @@ of `activity` changes.
 
 - Read state in your component body so it updates with the device. Data read only in an
   event handler can be out of date. Controls such as `client.rotate()` use the latest callback.
-- Pick named properties when destructuring. Spreading the client or using `{ status, ...rest }`
-  subscribes to every property. Reading `activity.samples` subscribes to the whole `activity` object.
+- Pick named properties when destructuring. Spreading the client or using `{ stream, ...rest }`
+  subscribes to every property. Reading `activity.data?.samples` subscribes to the whole
+  `activity` feature, so its status and data changes re-render the component. Each feature,
+  such as `stream`, is one property: reading `stream.status` also re-renders on FPS changes,
+  so use `useDeviceClientSelector` for a single field.
 - Keep selectors simple. Return a number, string, boolean, or an existing object. If you
   build a new object, pass a comparison function as the second argument.
 - Treat the client and its data as read-only.
@@ -385,6 +388,9 @@ This is a breaking change to the existing hooks and `DeviceClient`.
 | `screenshot(): ScreenshotCapture | null` | `screenshot(): HubResult<ScreenshotCapture>` |
 
 Touch, keyboard input, hardware buttons, reload, and rotation remain commands on the client.
+`client.input` is the feature that reports whether those commands reach the device: its
+`status` and `error` describe the input channel, `data.rejected` holds the last command the
+backend refused, and `refresh()` reconnects the input channel.
 The complete interface is in [`src/types.ts`](./src/types.ts).
 
 ## License

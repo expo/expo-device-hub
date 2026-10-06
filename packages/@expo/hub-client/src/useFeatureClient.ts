@@ -254,11 +254,13 @@ export function useFeatureClient(
   const streamData = useMemo(() => ({ screen: raw.screen, fps: raw.fps }), [raw.screen, raw.fps]);
   const streamError = useMemo(() => hubError(raw.error ?? 'Stream interrupted'), [raw.error]);
   let streamState = state('stream', true, streamData);
-  if (active && session.resolved) {
+  // Painted video is ready on its own. Android's WebSocket video does not need
+  // `/api`, so a discovery failure must not hide a stream that is playing.
+  if (active && raw.status === 'streaming')
+    streamState = { status: 'ready', data: streamData, error: null };
+  else if (active && session.resolved) {
     streamState =
-      raw.status === 'streaming'
-        ? { status: 'ready', data: streamData, error: null }
-        : raw.status === 'error' || raw.status === 'reconnecting'
+      raw.status === 'error' || raw.status === 'reconnecting'
           ? {
               status: raw.status,
               data: raw.screen ? streamData : undefined,

@@ -48,6 +48,8 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null, readSta
   const [state, setState] = useState<LocationState>(NO_LOCATION);
   const generationRef = useRef(0);
   const pendingRef = useRef(false);
+  // Bumped by each write, so a read that started earlier cannot undo it.
+  const writeVersionRef = useRef(0);
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -62,22 +64,31 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null, readSta
 
     let cancelled = false;
     let reading = false;
+    // The interval retries only until a read settles. A failed refresh after
+    // that clears this again, so `reconnecting` always has a retry behind it.
+    let settled = false;
     let controller: AbortController | null = null;
 
     const attempt = async () => {
       if (cancelled || reading || readState?.isStopped()) return;
       reading = true;
       controller = new AbortController();
+      const writeVersion = writeVersionRef.current;
       try {
         const result = await read(controller.signal);
         if (cancelled || generationRef.current !== generation) return;
         if (!result) throw new Error("Location read failed");
-        clearInterval(retry);
-        setState((current) => ({ ...current, ...result }));
+        settled = true;
+        const stale = writeVersionRef.current !== writeVersion;
+        setState((current) =>
+          stale ? { ...current, supported: result.supported } : { ...current, ...result },
+        );
         if (result.supported) readState?.ready();
         else readState?.unsupported();
       } catch (cause) {
-        if (!cancelled) readState?.fail(cause, true);
+        if (cancelled) return;
+        settled = false;
+        readState?.fail(cause, true);
       } finally {
         reading = false;
       }
@@ -87,7 +98,9 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null, readSta
       void attempt();
     });
     void attempt();
-    const retry = setInterval(() => void attempt(), READ_RETRY_MS);
+    const retry = setInterval(() => {
+      if (!settled) void attempt();
+    }, READ_RETRY_MS);
 
     return () => {
       unbind?.();
@@ -100,6 +113,7 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null, readSta
   const write = useCallback((run: () => Promise<DeviceGeoFix | null>) => {
     if (pendingRef.current) return;
     const generation = generationRef.current;
+    writeVersionRef.current++;
     pendingRef.current = true;
     setState((current) => ({ ...current, pending: true, error: null }));
     return run().then(

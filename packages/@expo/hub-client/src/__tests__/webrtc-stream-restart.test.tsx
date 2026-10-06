@@ -432,6 +432,32 @@ test('Android input refresh reconnects only the WebRTC input socket', async () =
   expect(hub.client.input.status).toBe('ready');
 });
 
+for (const feature of ['streamSettings', 'streamSource'] as const) {
+  test(`unmount settles ${feature} writes waiting for a replacement frame`, async () => {
+    const hub = await androidHarness();
+    let outcome: unknown = 'pending';
+    await act(async () => {
+      const promise =
+        feature === 'streamSettings'
+          ? hub.client.streamSettings.update({ maxDimension: 720 })
+          : hub.client.streamSource.update({ mode: 'grpc-screenshot' });
+      void promise.then((result) => {
+        outcome = result;
+      });
+    });
+    await hub.finishWrite(
+      feature === 'streamSettings'
+        ? { maxDimension: 720, h264Fps: 60, h264Bitrate: 6_000_000 }
+        : { ...hub.source, mode: 'grpc-screenshot', sessionGeneration: 2 },
+    );
+    expect(hub.client[feature].writes.pending.size).toBeGreaterThan(0);
+    await act(async () => renderer!.unmount());
+    renderer = undefined;
+    await act(async () => {});
+    expect(outcome).toMatchObject({ ok: false, error: { code: 'cancelled' } });
+  });
+}
+
 test('a failed Android WebRTC encoder write reports its cause and a field error', async () => {
   const hub = await androidHarness();
   let result!: ReturnType<typeof hub.client.streamSettings.update>;

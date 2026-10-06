@@ -41,6 +41,8 @@ export function useStreamSettingsResource({
     initialSettings,
   );
   const [streamSettingsPending, setStreamSettingsPending] = useState(false);
+  // True only while a PATCH is in flight; `streamSettingsPending` also covers the first read.
+  const [streamSettingsWriting, setStreamSettingsWriting] = useState(false);
   const requestRef = useRef(0);
   const settingsRef = useRef<DeviceStreamEncoderSettings | null>(initialSettings);
   const pendingRef = useRef(false);
@@ -52,6 +54,7 @@ export function useStreamSettingsResource({
     readControllerRef.current = null;
     writeControllerRef.current?.abort();
     writeControllerRef.current = null;
+    setStreamSettingsWriting(false);
   }, []);
 
   const requestStreamSettings = useCallback(
@@ -134,6 +137,7 @@ export function useStreamSettingsResource({
       settingsRef.current = optimistic;
       setStreamSettings(optimistic);
       setStreamSettingsPending(true);
+      setStreamSettingsWriting(true);
       // Let the device client wait for the write before replacing its transport.
       // Resolves true when applied; rejects with the cause or a cancellation.
       return fetchImpl(url, {
@@ -160,7 +164,10 @@ export function useStreamSettingsResource({
           throw cause;
         })
         .finally(() => {
-          if (writeControllerRef.current === controller) writeControllerRef.current = null;
+          if (writeControllerRef.current === controller) {
+            writeControllerRef.current = null;
+            setStreamSettingsWriting(false);
+          }
           if (!controller.signal.aborted && requestRef.current === request) {
             pendingRef.current = false;
             setStreamSettingsPending(false);
@@ -177,6 +184,7 @@ export function useStreamSettingsResource({
   return {
     streamSettings,
     streamSettingsPending,
+    streamSettingsWriting,
     updateStreamSettings,
     refreshStreamSettings,
   };

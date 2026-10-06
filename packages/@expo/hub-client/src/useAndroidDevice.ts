@@ -239,7 +239,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Feature reads and writes get a deadline; video streams and long actions do not.
   const sessionFetch = useMemo(() => withFeatureDeadline(tokenFetch), [tokenFetch]);
   const socketProtocols = useMemo(() => sessionTokenProtocols('android', token), [token]);
-  const featureSession = useFeatureSession(`${active}\0${baseUrl}\0${targetDevice}`);
+  // A new token is a new connection: stopped reads restart and old results are ignored.
+  const featureSession = useFeatureSession(
+    `${active}\0${baseUrl}\0${targetDevice}\0${token ?? ''}`,
+  );
   const [activityEnabled, setActivityEnabled] = useState(false);
   const revisions = useFeatureRevisions(featureSession, RESTARTABLE_FEATURES);
   // `stream` binds below: WebRTC renegotiates, WebSocket mode bumps this.
@@ -391,6 +394,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     () => () => {
       streamSourceControllerRef.current?.abort();
       streamSourceRefreshControllerRef.current?.abort();
+      // A write waiting for replacement video must still settle after unmount.
+      sourceCompletionRef.current?.reject({
+        code: 'cancelled',
+        message: 'The device client was closed',
+        retryable: false,
+      });
+      sourceCompletionRef.current = null;
     },
     [],
   );
@@ -624,6 +634,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const {
     streamSettings,
     streamSettingsPending,
+    streamSettingsWriting,
     updateStreamSettings: writeStreamSettings,
     refreshStreamSettings,
   } = useStreamSettingsResource({
@@ -1701,6 +1712,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
     if (!logsEnabled || !active || !baseUrl) return;
+    // Attaching again after the subscription stopped starts a new attempt.
+    featureSession.read('logs').restart();
     let cancelled = false;
     let source: EventSource | null = null;
     try {
@@ -1740,6 +1753,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   useEffect(() => {
     activityLastSampleAtRef.current = 0;
     if (!active || !baseUrl || !activityEnabled) return;
+    featureSession.read('activity').restart();
     setActivity((current) => current ?? EMPTY_ANDROID_ACTIVITY);
     let cancelled = false;
     let source: EventSource;
@@ -1822,6 +1836,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   useEffect(() => {
     if (!eventsEnabled || !active || !baseUrl) return;
+    featureSession.read('events').restart();
     let cancelled = false;
     let polling = false;
     let controller: AbortController | null = null;
@@ -2195,7 +2210,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // Show the pending change immediately without feeding it back into the
     // switch tracker, which must observe the actual interruption and recovery.
     status:
-      status === 'streaming' && (isStreamSwitchPending(streamSwitch) || streamSettingsPending)
+      // An encoder write replaces the stream; the first settings read does not.
+      status === 'streaming' && (isStreamSwitchPending(streamSwitch) || streamSettingsWriting)
         ? 'reconnecting'
         : status,
     error,
