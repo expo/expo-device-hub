@@ -37,6 +37,24 @@ jobs:
         run: |
           brew install --cask mitmproxy
           xattr -dr com.apple.quarantine "$(brew --prefix)/Caskroom/mitmproxy"
+          # Fail here, not in the capture tests, when mitmdump cannot start.
+          mitmdump=$(realpath "$(command -v mitmdump)")
+          if xattr -p com.apple.quarantine "$mitmdump" >/dev/null 2>&1; then
+            echo "::error::$mitmdump is still quarantined"
+            exit 1
+          fi
+          mitmdump --version &
+          pid=$!
+          for _ in $(seq 1 60); do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 1
+          done
+          if kill -0 "$pid" 2>/dev/null; then
+            kill -9 "$pid"
+            echo "::error::mitmdump --version did not return in 60 seconds"
+            exit 1
+          fi
+          wait "$pid"
 
       # The permissions e2e test drives the built CLI (dist/serve-sim.js), so
       # build it before running the test suite.
