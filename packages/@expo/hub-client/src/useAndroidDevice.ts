@@ -990,12 +990,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setStreamStatsEnabled,
   } = useWebRtcStream({
     statsReadState: featureSession.read('streamStats'),
-    offerUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/offer', targetDevice) : '',
-    closeUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/close', targetDevice) : '',
-    closeBeaconUrl: baseUrl
-      ? withSessionTokenQuery(deviceApiUrl(baseUrl, '/webrtc/close', targetDevice), token)
-      : '',
-    statsUrl: baseUrl ? deviceApiUrl(baseUrl, '/webrtc/stats', targetDevice) : '',
+    // An inactive hook (the other platform under DeviceClientProvider) may hold
+    // a relative serve-sim baseUrl, which deviceApiUrl cannot parse.
+    offerUrl: active && baseUrl ? deviceApiUrl(baseUrl, '/webrtc/offer', targetDevice) : '',
+    closeUrl: active && baseUrl ? deviceApiUrl(baseUrl, '/webrtc/close', targetDevice) : '',
+    closeBeaconUrl:
+      active && baseUrl
+        ? withSessionTokenQuery(deviceApiUrl(baseUrl, '/webrtc/close', targetDevice), token)
+        : '',
+    statsUrl: active && baseUrl ? deviceApiUrl(baseUrl, '/webrtc/stats', targetDevice) : '',
     enabled: active && useWebRtc,
     codec: 'h264',
     iceServers:

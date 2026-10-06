@@ -382,3 +382,30 @@ test("server rendering starts without data and without opening a connection", ()
   expect(html).toBe("<span>unsupported</span>");
   expect(requests).toHaveLength(0);
 });
+
+test("an iOS provider with a relative serve-sim baseUrl renders", async () => {
+  stubGlobal("window", {
+    location: { href: "https://hub.test/", origin: "https://hub.test" },
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout,
+    clearTimeout,
+  });
+  stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
+  stubGlobal("fetch", async () => Response.json(null));
+  let platform: DevicePlatform | undefined;
+  function Status() {
+    platform = useDeviceClientSelector((client) => client.platform);
+    return null;
+  }
+  // The disabled Android hook receives the same relative URL and must not parse it.
+  await mount(
+    <DeviceClientProvider
+      platform="ios"
+      options={{ baseUrl: "/sim", device: "DEVICE-A", streamMode: "mjpeg" }}
+    >
+      <Status />
+    </DeviceClientProvider>,
+  );
+  expect(platform).toBe("ios");
+});
