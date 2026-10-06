@@ -5,7 +5,7 @@
 **Systems:** ServeEmu
 **Author:** Imported from expo/serve-emu in #78 (original authors are in that repo)
 **Date:** 2026-09-09
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/protocol.md`; links and paths updated)
+**Revised:** 2026-10-06 (checked against the code at 5b273a8f; scrcpy pin location, stream modes, `video-session` after #239, per-entry-point `SEMU` versions, check command) · 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/protocol.md`; links and paths updated)
 **Related:** LLP 0009
 
 > File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
@@ -14,14 +14,27 @@
 
 This document is the source of truth for the binary protocols implemented by
 `serve-emu`. The vendored device server is scrcpy **4.0**, pinned by
-`scripts/fetch-scrcpy.ts`. The host parser remains compatible with the scrcpy v3
-and v4 stream layouts so that protocol changes fail explicitly instead of being
-mistaken for video data.
+`SCRCPY_VERSION` in `src/scrcpy-server.ts`. `scripts/fetch-scrcpy.ts` re-exports
+that constant and downloads the server. The host parser remains compatible with
+the scrcpy v3 and v4 stream layouts so that protocol changes fail explicitly
+instead of being mistaken for video data.
 
 The scrcpy socket protocol is an upstream implementation detail and may change
 between scrcpy releases. `SEMU` is the separate `serve-emu` WebSocket metadata
 format. Unless a field says otherwise, every multi-byte integer below is
 big-endian.
+
+`serve-emu` has two stream modes, `scrcpy` and `grpc-screenshot`
+(`STREAM_MODES` in `src/shared/api-contracts.ts`). `scrcpy` uses the transport
+below and works for emulators and physical devices. `grpc-screenshot` accepts
+only Android Emulator serials (`emulator-<port>`): it captures screenshots over
+the emulator's gRPC endpoint and encodes them on the host with FFmpeg into the
+same frame, configuration, and session packets that the scrcpy reader produces
+(see `startEmuSession()` in `src/stream-session.ts` and
+`startGrpcSession()` in `src/grpc-session.ts`; LLP 0009 covers the hardware
+encoder). Physical devices always stream over `scrcpy`. Since #239, the router
+in `src/middleware.ts` applies a configured default stream mode, such as the
+Hub's `grpc-screenshot`, only to emulators (`defaultStreamModeFor()`).
 
 ## scrcpy transport
 
@@ -42,7 +55,10 @@ drained for any device-to-host events that this package does not consume.
 When gRPC supplies video but scrcpy supplies input, the host starts the same
 device server with `video=false`, `audio=false`, and `control=true`. Only the
 control socket is connected; device, stream, frame, and dummy-byte metadata are
-disabled because no video preamble is read in this control-only mode.
+disabled because no video preamble is read in this control-only mode. `scrcpy`
+is the default input source for `grpc-screenshot` (`DEFAULT_GRPC_INPUT_SOURCE`).
+With the `grpc` input source, input goes through the emulator's gRPC endpoint
+and no scrcpy server is started.
 
 ## Video preamble
 
@@ -115,10 +131,20 @@ dimensions; in particular, a packet with bit 0 set reports a client resize.
 Codec-configuration packets set bit 62 and carry no meaningful PTS (the lower
 PTS bits are zero in the upstream v4 stream).
 
+After a session packet, `serve-emu` drops its cached configuration and holds
+every video client until the next key frame. Since #239, the router in
+`src/middleware.ts` sends clients a JSON `video-session` message only when the
+width or height changed, because a message for an unchanged size sent WebCodecs
+viewers into a key-frame reset loop [observed: `startCaptureReader` in
+`src/middleware.ts`; `.changeset/physical-android-scrcpy-default.md`]. The
+standalone server in `src/server.ts` still sends `video-session` for every
+session packet.
+
 Codec-configuration packets contain SPS/PPS data. `serve-emu` caches the latest
 configuration and prepends it to key frames so that a browser joining or
-refreshing mid-stream can initialize its decoder. Slow clients drop frames until
-the next key frame and may request a video reset.
+refreshing mid-stream can initialize its decoder. When a client falls behind,
+the server drops that client's frames until the next key frame and requests a
+video reset. A new video client also triggers a video reset.
 
 ## Control socket packets
 
@@ -139,14 +165,19 @@ boundary. HTTP/WebSocket gesture coordinates are normalized from 0 through 1,
 then converted to screen pixels before the touch packet is encoded. Home,
 Recents, and Power use inject-keycode packets; Back uses type 4. Input must stay
 on this socket rather than falling back to `adb shell input`, which adds
-significant latency.
+significant latency. The only other input path is the emulator gRPC input
+source described above.
 
 ## `SEMU` WebSocket frame metadata
 
 Plain `/ws` clients receive the raw Annex-B access unit in each binary WebSocket
 message. Clients connecting to `/ws?frame-meta=1` receive one `SEMU` header
 followed by the Annex-B access unit. There is no payload-length field because the
-WebSocket message boundary supplies it.
+WebSocket message boundary supplies it. Clients connecting with `video=0` receive
+no video; a WebRTC viewer uses such a socket for input only. JSON text messages
+on the same socket (gestures, `reset-video`, acknowledgements, and
+`video-session`) are described in the
+[package README](../packages/serve-emu/README.md#websocket-api), not here.
 
 ### v1 (16 bytes)
 
@@ -166,10 +197,16 @@ v2 keeps all v1 fields and appends:
 | --- | --- |
 | 16-23 | `u64` server send time as Unix-epoch microseconds |
 
-The server writer always emits v2. The shared browser/server parser accepts v1,
-v2, and raw Annex-B messages. Unknown magic or version values are treated as raw
-payloads. A PTS larger than JavaScript's safe integer range is exposed as
-`null`; v1 and raw messages have no server send time.
+The two server entry points write different versions. The standalone server in
+`src/server.ts`, which the `serve-emu` CLI starts, emits v2 through
+`writeFrameMetaHeader()` in `src/shared/frame-meta.ts`. The router in
+`src/middleware.ts`, which the Hub mounts, has its own writer and emits v1.
+`parseFramePacket()` in `src/shared/frame-meta.ts`, which the bundled browser UI
+uses, accepts v1, v2, and raw Annex-B messages. Unknown magic or version values
+are treated as raw payloads. A PTS larger than JavaScript's safe integer range is
+exposed as `null`; v1 and raw messages have no server send time. The separate
+`@expo/hub-client` parser (`parseFramePacket()` in
+`packages/@expo/hub-client/src/h264.ts`) accepts only v1 and raw messages.
 
 ## Golden byte sequences
 
@@ -196,7 +233,8 @@ each `SEMU` header in an actual WebSocket message.
 Treat a scrcpy server bump as a protocol change, even when upstream release
 notes do not call one out.
 
-1. Change `SCRCPY_VERSION` in `scripts/fetch-scrcpy.ts` and fetch the new server.
+1. Change `SCRCPY_VERSION` in `src/scrcpy-server.ts` and fetch the new server
+   with `scripts/fetch-scrcpy.ts`.
 2. Compare upstream `DesktopConnection`, `Streamer`, `ControlMessage`,
    `ControlMessageReader`, and server-option parsing with the pinned version.
 3. Revalidate socket order and dummy-byte behavior; the device-name and stream
@@ -206,7 +244,7 @@ notes do not call one out.
    `SEMU` tests. Update the version marker at the top of this file and any
    README version references in the same change.
 5. Run the focused parser, frame-metadata, protocol-document, and README-sync
-   tests, then run `bun run check` from the repository root.
+   tests, then run `bun run --filter serve-emu check` from the repository root.
 6. With a booted emulator or device, verify the first video frame, browser
    refresh recovery, orientation/size changes, reset-video recovery, tap,
    swipe, text, key, Back, and multiple simultaneous clients.
