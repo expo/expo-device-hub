@@ -30,8 +30,13 @@ jobs:
       # Installs the monorepo root lockfile (bun.lock); serve-sim resolves through it.
       - uses: eas/install_node_modules
 
+      # Gatekeeper has rejected the mitmproxy 12.2.3 cask as unnotarized since
+      # 2026-10-06, and a quarantined first launch never returns
+      # (mitmproxy/mitmproxy#8474), so take the cask out of quarantine.
       - name: Install mitmproxy
-        run: brew install --cask mitmproxy
+        run: |
+          brew install --cask mitmproxy
+          xattr -dr com.apple.quarantine "$(brew --prefix)/Caskroom/mitmproxy"
 
       # The permissions e2e test drives the built CLI (dist/serve-sim.js), so
       # build it before running the test suite.
