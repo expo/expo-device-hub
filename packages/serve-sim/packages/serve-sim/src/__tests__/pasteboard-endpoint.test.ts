@@ -1,9 +1,20 @@
-import { afterAll, describe, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { simMiddleware } from "../middleware";
 import { servePreview } from "../runtime";
 import { MAX_PASTEBOARD_TEXT_BYTES } from "../sim-pasteboard";
+import {
+  ensureFixtureInstalled,
+  FIXTURE_BUNDLE,
+  openAppForPasteboard,
+  PASTEBOARD_TEST_APPS,
+  pasteboardFixture,
+  pasteboardTool,
+  SAFARI_BUNDLE,
+  writeTestPasteboard,
+} from "./pasteboard-sim";
+import { e2eDevice, requireE2E } from "./e2e-preconditions";
 import { installShims, useTempStateDir } from "./helpers";
 
 const TEST_TOKEN = "test-token";
@@ -135,17 +146,19 @@ describe("/api/pasteboard", () => {
     expect(body.error).toBe("Invalid simulator device ID");
   });
 
-  test("returns JSON when the pasteboard read fails", async () => {
+  test("returns actionable JSON when no app can answer", async () => {
     const shims = installShims({ xcrun: "#!/bin/sh\nprintf 'diagnostic\\n' >&2\nexit 1\n" });
     const log = spyOn(console, "error").mockImplementation(() => {});
     try {
-      const device = "404F2659-7202-4450-8465-912BD2AB744B";
+      // No simulator has this UDID. The accessibility bridge does not go through the xcrun shim,
+      // so a booted device (such as the EAS worker's 404F2659…) would report its foreground app.
+      const device = "00000000-0000-0000-0000-000000000000";
       const res = await middleware(pasteboardRequest(`?device=${device}`));
-      expect(res?.status).toBe(500);
+      expect(res?.status).toBe(503);
       expect(res?.headers.get("access-control-allow-origin")).toBe(PREVIEW_ORIGIN);
       const body = (await res!.json()) as { ok: boolean; error: string };
-      expect(body).toEqual({ ok: false, error: "Could not access the simulator pasteboard" });
-      expect(log).toHaveBeenCalledTimes(1);
+      expect(body).toEqual({ ok: false, error: "Could not read the simulator clipboard. Open the app you copied from and retry." });
+      expect(log).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
       shims.restore();
@@ -165,16 +178,16 @@ describe("/api/pasteboard", () => {
     }
   });
 
-  test("returns 500 when diagnostics exceed the buffer with a small clipboard", async () => {
+  test("returns 503 when diagnostics exceed the buffer with a small clipboard", async () => {
     const shims = installShims({ xcrun: "#!/bin/sh\nprintf x\nhead -c 4194305 /dev/zero >&2\n" });
     const log = spyOn(console, "error").mockImplementation(() => {});
     try {
-      const device = "404F2659-7202-4450-8465-912BD2AB744B";
+      const device = "00000000-0000-0000-0000-000000000000";
       const res = await middleware(pasteboardRequest(`?device=${device}`));
-      expect(res?.status).toBe(500);
+      expect(res?.status).toBe(503);
       expect(res?.headers.get("access-control-allow-origin")).toBe(PREVIEW_ORIGIN);
-      expect(await res!.json()).toEqual({ ok: false, error: "Could not access the simulator pasteboard" });
-      expect(log).toHaveBeenCalledTimes(1);
+      expect(await res!.json()).toEqual({ ok: false, error: "Could not read the simulator clipboard. Open the app you copied from and retry." });
+      expect(log).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
       shims.restore();
@@ -275,3 +288,63 @@ describe("/api/pasteboard", () => {
     }
   }, 20_000);
 });
+
+const bootedUdid = e2eDevice();
+const endpointReady = !!(bootedUdid && pasteboardTool);
+requireE2E("pasteboard endpoint E2E", endpointReady);
+const describeWithSim = endpointReady ? describe : describe.skip;
+
+for (const app of PASTEBOARD_TEST_APPS) {
+  const run = "requireFixture" in app && !pasteboardFixture ? describe.skip : describeWithSim;
+  run(`POST /api/pasteboard from ${app.label} (${bootedUdid ?? "<skipped>"})`, () => {
+    let session: { unsubscribe: () => void } | undefined;
+
+    beforeAll(async () => {
+      if (app.bundleId === FIXTURE_BUNDLE) ensureFixtureInstalled(bootedUdid!);
+      session = await openAppForPasteboard(bootedUdid!, app.bundleId);
+    }, 60_000);
+
+    afterAll(() => {
+      session?.unsubscribe();
+    }, 60_000);
+
+    test("returns JSON text for an explicit device", async () => {
+      const probe = `serve-sim-pasteboard-probe-${app.label.replace(/\s+/g, "-")}`;
+      writeTestPasteboard(bootedUdid!, probe);
+      const res = await middleware(
+        pasteboardRequest(`?device=${encodeURIComponent(bootedUdid!)}`),
+      );
+      expect(res?.status).toBe(200);
+      expect(res?.headers.get("content-type")).toBe("application/json");
+      expect(res?.headers.get("access-control-allow-origin")).toBe(PREVIEW_ORIGIN);
+      const body = (await res!.json()) as { ok: boolean; text: string };
+      expect(body.ok).toBe(true);
+      expect(body.text).toBe(probe);
+    }, 45_000);
+
+    if (app.bundleId === SAFARI_BUNDLE) {
+      test("PUT writes text that POST reads back", async () => {
+        const probe = "café 🎉 email+tag@x.com 日本語";
+        const query = `?device=${encodeURIComponent(bootedUdid!)}`;
+        const write = await middleware(
+          pasteboardRequest(query, "PUT", JSON.stringify({ text: probe })),
+        );
+        expect(write?.status).toBe(200);
+        expect(await write!.json()).toEqual({ ok: true });
+
+        const read = await middleware(pasteboardRequest(query));
+        expect(read?.status).toBe(200);
+        expect(await read!.json()).toMatchObject({ ok: true, text: probe });
+      }, 45_000);
+
+      test("falls back to a booted simulator when no device is given", async () => {
+        const res = await middleware(pasteboardRequest());
+        expect(res?.status).toBe(200);
+        expect(res?.headers.get("content-type")).toBe("application/json");
+        const body = (await res!.json()) as { ok: boolean; text: string };
+        expect(body.ok).toBe(true);
+        expect(typeof body.text).toBe("string");
+      }, 45_000);
+    }
+  });
+}

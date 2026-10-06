@@ -121,7 +121,8 @@ if (args[3] === 'launchctl') {
   if (args[4] === 'unsetenv') fs.rmSync(file, {force: true});
 }
 ` }, async () => {
-      const result = await runCLI([UDID, "--quiet", "--port", "0"], {
+      // This bundle has no clipboard reader next to it, and its warning would reach stderr.
+      const result = await runCLI([UDID, "--quiet", "--port", "0", "--disable", "clipboard"], {
         SERVE_SIM_ADDITIONAL_DYLIBS: guard,
         SERVE_SIM_CAPTURE_CA_DIR: join(state.dir, "ca"),
       }, preload);
@@ -181,9 +182,11 @@ if (args[1] === 'list') {
 } else process.exit(1);
 ` }, async () => {
       const port = await freePortAsync();
+      // This bundle has no clipboard reader next to it, and its warning would reach stderr.
       const child = Bun.spawn([
         "node", "--unhandled-rejections=strict", "--require", preload,
         entrypoint, UDID, "--quiet", "--port", String(port), "--host", "127.0.0.1",
+        "--disable", "clipboard",
       ], {
         env: {
           ...process.env,

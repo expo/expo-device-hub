@@ -18,7 +18,7 @@ export interface ForegroundApp {
 // names match as whole bundle components (delimited by `.`), so a real app like
 // com.example.CustomerService isn't caught by the "Service" substring.
 const NON_UI_BUNDLE_RE =
-  /(^|\.)(WidgetRenderer|ExtensionHost|Service|PlaceholderApp|InCallService|CallUI|InCallUI)(\.|$)|\.extension(\.|$)|com\.apple\.(Preferences\.Cellular|purplebuddy|chrono|shuttle|usernotificationsui)/i;
+  /(^|\.)(WidgetRenderer|ExtensionHost|Service|PlaceholderApp|InCallService|CallUI|InCallUI)(\.|$)|\.extension(\.|$)|com\.apple\.(?:[^.]*ViewService$|Preferences\.Cellular|purplebuddy|chrono|shuttle|usernotificationsui)/i;
 
 /** True unless the bundle id is a non-UI helper (widget, extension, or background service). */
 export function isUserFacingBundle(bundleId: string): boolean {
@@ -26,10 +26,31 @@ export function isUserFacingBundle(bundleId: string): boolean {
 }
 
 /** Parse a SpringBoard visibility line, e.g. `[app<com.apple.mobilesafari>:43117] Setting process visibility to: Foreground`. */
-export function parseForegroundAppLogMessage(message: string): ForegroundApp | null {
-  const match = /\[app<([^>]+)>:(\d+)\] Setting process visibility to: Foreground/.exec(message);
+function parseVisibilityLogMessage(message: string): { app: ForegroundApp; foreground: boolean } | null {
+  const match = /\[app<([^>]+)>:(\d+)\] Setting process visibility to: (Foreground|Background|Unknown)/.exec(message);
   if (!match) return null;
-  return { bundleId: match[1]!, pid: parseInt(match[2]!, 10) };
+  return { app: { bundleId: match[1]!, pid: parseInt(match[2]!, 10) }, foreground: match[3] === "Foreground" };
+}
+
+/** The app a SpringBoard line brings to the foreground, or null for any other line. */
+export function parseForegroundAppLogMessage(message: string): ForegroundApp | null {
+  const change = parseVisibilityLogMessage(message);
+  return change?.foreground ? change.app : null;
+}
+
+/** The visible user app after one `log --style ndjson` line; a Background or Unknown line clears it. */
+function visibilityAfterLogLine(visible: ForegroundApp | null, line: string): ForegroundApp | null {
+  let message: string;
+  try {
+    message = (JSON.parse(line) as { eventMessage?: string }).eventMessage ?? "";
+  } catch {
+    return visible;
+  }
+  const change = parseVisibilityLogMessage(message);
+  if (!change || !isUserFacingBundle(change.app.bundleId)) return visible;
+  if (change.foreground) return change.app;
+  // SpringBoard may background an old process after its replacement becomes foreground.
+  return visible?.bundleId === change.app.bundleId && visible.pid === change.app.pid ? null : visible;
 }
 
 const LINE_BUFFER_LIMIT = 1024 * 1024; // drop a pathological unbroken line rather than grow forever
@@ -44,7 +65,7 @@ function spawnForegroundLogStream(udid: string): ChildProcess {
       "--style", "ndjson",
       "--level", "info",
       "--predicate",
-      'process == "SpringBoard" AND eventMessage CONTAINS "Setting process visibility to: Foreground"',
+      'process == "SpringBoard" AND eventMessage CONTAINS "Setting process visibility to:"',
     ],
     { stdio: ["ignore", "pipe", "ignore"] },
   );
@@ -73,13 +94,14 @@ export interface ForegroundTrackerDeps {
   restartDelayMs?: number;
 }
 
-// Tails one SpringBoard foreground feed for a udid, holding the latest user-facing app and
-// notifying listeners on change. Seeds from the AX bridge on start (a no-op unless the sim window
-// is focused) because the log feed only emits on transitions.
+// Tails one SpringBoard visibility feed for a udid, holding the latest user-facing app and
+// notifying listeners when a new one comes forward. Seeds from the AX bridge on start (a no-op
+// unless the sim window is focused) because the log feed only emits on transitions.
 class ForegroundTracker {
   private child: ChildProcess | null = null;
   private buf = "";
   private latest: ForegroundApp | null = null;
+  private heardFromLog = false;
   private stopped = false;
   private restartTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly listeners = new Set<(app: ForegroundApp) => void>();
@@ -90,7 +112,7 @@ class ForegroundTracker {
     private readonly deps: Required<ForegroundTrackerDeps>,
   ) {}
 
-  /** Latest known foreground app, or null if none has been seen yet. */
+  /** Latest known foreground app, or null when none is known or it went to the background. */
   get current(): ForegroundApp | null {
     return this.latest;
   }
@@ -114,12 +136,12 @@ class ForegroundTracker {
   start(): void {
     if (this.child) return;
     this.stopped = false;
-    // Seed from the AX bridge (a no-op unless the sim window is focused). Only apply it while we
-    // still have nothing, so a log event that arrives first isn't overwritten by the slower seed.
+    // Seed from the AX bridge (a no-op unless the sim window is focused). Only apply it while the
+    // log has said nothing, so a log event that arrives first isn't overwritten by the slower seed.
     this.deps
       .frontmostApp(this.udid)
       .then((app) => {
-        if (app && this.latest === null) this.set(app);
+        if (app && !this.heardFromLog) this.set(app);
       })
       .catch(() => {});
     this.spawn();
@@ -161,7 +183,7 @@ class ForegroundTracker {
     this.buf = "";
   }
 
-  /** Assemble log lines from a stdout chunk and adopt any foreground transitions. */
+  /** Assemble log lines from a stdout chunk and adopt any visibility transitions. */
   private consume(text: string): void {
     this.buf += text;
     let nl: number;
@@ -169,14 +191,12 @@ class ForegroundTracker {
       const line = this.buf.slice(0, nl).trim();
       this.buf = this.buf.slice(nl + 1);
       if (!line) continue;
-      let message: string;
-      try {
-        message = JSON.parse(line).eventMessage ?? "";
-      } catch {
-        continue;
-      }
-      const app = parseForegroundAppLogMessage(message);
-      if (app) this.set(app);
+      const visible = visibilityAfterLogLine(this.latest, line);
+      if (visible === this.latest) continue;
+      this.heardFromLog = true;
+      // Listeners hear only about apps coming forward; peek reports the cleared state.
+      if (visible) this.set(visible);
+      else this.latest = null;
     }
     if (this.buf.length > LINE_BUFFER_LIMIT) this.buf = "";
   }
@@ -251,3 +271,55 @@ export function createForegroundTrackerCache(deps: ForegroundTrackerDeps = {}) {
 }
 
 export const foregroundTracker = createForegroundTrackerCache();
+
+/** Recover the latest visible app when neither a live tracker nor AX can identify it. */
+export async function frontmostAppFromRecentLogs(udid: string): Promise<ForegroundApp | null> {
+  // A long-lived simulator can have more visibility history than a fixed execFile buffer.
+  // Keep only the latest parsed state while log show streams its boot-long history.
+  return new Promise((resolve) => {
+    const child = spawn("xcrun", [
+      "simctl", "spawn", udid, "log", "show", "--last", "boot", "--style", "ndjson", "--predicate",
+      'process == "SpringBoard" AND eventMessage CONTAINS "Setting process visibility to:"',
+    ], { stdio: ["ignore", "pipe", "ignore"] });
+    let visible: ForegroundApp | null = null;
+    let buffer = "";
+    let settled = false;
+    const finish = (result: ForegroundApp | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      resolve(result);
+    };
+    const timeout = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish(null);
+    }, 15_000);
+    child.stdout?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => {
+      buffer += chunk;
+      let end: number;
+      while ((end = buffer.indexOf("\n")) >= 0) {
+        visible = visibilityAfterLogLine(visible, buffer.slice(0, end));
+        buffer = buffer.slice(end + 1);
+      }
+      if (buffer.length > LINE_BUFFER_LIMIT) buffer = "";
+    });
+    child.once("error", () => finish(null));
+    child.once("close", (code) => {
+      if (buffer) visible = visibilityAfterLogLine(visible, buffer);
+      finish(code === 0 ? visible : null);
+    });
+  });
+}
+
+/** The current foreground app: live tracker, AX bridge, then recent SpringBoard history. */
+export async function frontmostAppOf(
+  udid: string,
+  deps: { viaAx?: typeof frontmostAppViaAx; fromLogs?: typeof frontmostAppFromRecentLogs } = {},
+): Promise<ForegroundApp | null> {
+  const tracked = foregroundTracker.peek(udid);
+  if (tracked) return tracked;
+  // AX can report a helper such as a ViewService, which the tracker and the history skip too.
+  const viaAx = await (deps.viaAx ?? frontmostAppViaAx)(udid);
+  return viaAx && isUserFacingBundle(viaAx.bundleId) ? viaAx : (deps.fromLogs ?? frontmostAppFromRecentLogs)(udid);
+}

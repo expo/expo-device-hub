@@ -65,10 +65,25 @@ result until another recording starts.
 `POST /api/pasteboard` reads the simulator pasteboard; `PUT /api/pasteboard` with
 `{"text": "…"}` writes it. Besides the token, both need a browser `Origin`: the
 preview's own origin or one that the CORS policy allows. A request without an
-`Origin` gets 403. Text over 4 MiB, in either direction, returns 413. The `PUT`
-body can be up to 8 MiB, to leave room for JSON escaping. Responses are not
-cached. [LLP 0010](0010-serve-sim-clipboard.explainer.md) explains the
-design.
+`Origin` gets 403. Text over 4 MiB, in either direction, returns 413. A read
+that neither `simctl pbpaste` nor the app reader can answer returns 503 with a
+message that says what to do next. The `PUT` body can be up to 8 MiB, to leave
+room for JSON escaping. Responses are not cached.
+[LLP 0010](0010-serve-sim-clipboard.explainer.md) explains the design.
+
+When `simctl pbpaste` fails, a read can ask the app reader. Before it asks, it
+grants the target app pasteboard access with `simctl privacy`. A read that
+fails after the grant also leaves it. serve-sim never undoes the grant. It is
+stored in the simulator's privacy (TCC) database. On an iOS 26.4 simulator, it
+stayed after a reboot. It also replaced a Deny that `simctl privacy revoke`
+stored. While it stayed, the app got no "Allow Paste" prompt.
+`xcrun simctl privacy <udid> reset pasteboard <bundle-id>` returns the app to
+the prompt. A later read through the app reader grants access again. Do not
+use `revoke`. On that simulator, it stored a Deny, and pasteboard reads in the
+app then got empty text with no prompt. `--disable clipboard`, or
+`clipboard: false` for `simMiddleware`, prevents the grant.
+[LLP 0010](0010-serve-sim-clipboard.explainer.md#the-pasteboard-grant-stays)
+gives the details.
 
 ## Authentication
 

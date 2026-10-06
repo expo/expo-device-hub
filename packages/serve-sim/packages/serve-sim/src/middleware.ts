@@ -71,12 +71,9 @@ import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { readRequestBodyAsync, RequestBodyTooLargeError, type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
-import {
-  MAX_PASTEBOARD_TEXT_BYTES,
-  PasteboardTooLargeError,
-  readSimPasteboardResult,
-  writeSimPasteboard,
-} from "./sim-pasteboard";
+import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardTooLargeError, writeSimPasteboard } from "./sim-pasteboard";
+import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
+import { createClipboardSession } from "./clipboard-session";
 
 /** Captured traffic is decrypted credentials and clipboard text is user data; `no-cache` would still let a cache keep a copy. */
 const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;
@@ -86,6 +83,7 @@ type SimRes = ServerResponse;
 type SimNext = (err?: unknown) => Promise<void>;
 export type SimMiddleware = WebMiddleware & {
   handleUpgrade(req: SimReq, socket: Socket, head: Buffer): void;
+  dispose(): Promise<void>;
 };
 
 // Injected at build time as a base64-encoded string via `define`
@@ -1492,6 +1490,13 @@ export interface SimMiddlewareOptions {
   /** Process-wide HTTP upstream proxy URL, optionally with Basic credentials. Unset resets new captures to direct. */
   networkCaptureProxy?: string;
   /**
+   * The clipboard reader on devices this middleware opens or starts. `true` (default) sets it up.
+   * `false` removes a reader that is already there and republishes the capability loader config.
+   * Await `dispose()` to release what either one set up. `"unmanaged"` changes nothing: serve-sim's
+   * stream helpers pass it, because they can outlive the session that owns the capability loader.
+   */
+  clipboard?: boolean | "unmanaged";
+  /**
    * The server listens on loopback only. Without the token gate, network capture is refused unless
    * this is set: anyone who can load the preview could otherwise read captured traffic. An embedder
    * that does not set it gets capture refused on an ungated preview.
@@ -1910,6 +1915,15 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     : {};
   const networkCapture = options?.networkCapture ?? false;
   captureRuntime.setUpstream(parseCaptureProxy(options?.networkCaptureProxy));
+  const clipboardOption = options?.clipboard ?? true;
+  const clipboard = clipboardOption === "unmanaged" ? null : createClipboardSession(clipboardOption);
+  const initializeClipboard = async (udid: string, rebooted = false): Promise<void> => {
+    try {
+      await clipboard?.initialize(udid, rebooted);
+    } catch (error) {
+      console.error(`[serve-sim] Could not initialize the simulator clipboard on ${udid}:`, error);
+    }
+  };
   // Every host that mounts this middleware gets the same rule, so capture never runs on an ungated
   // preview that others can reach. The refusal covers the panel, the exec socket, and the CLI.
   captureRuntime.refuseCapture(
@@ -2085,6 +2099,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base || url === base + "/") {
       const states = await readServeSimStates();
       const state = selectServeSimState(states, selectedDevice);
+      if (state) void initializeClipboard(state.device);
       let html = loadHtml();
 
       if (!state) {
@@ -2369,7 +2384,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           base,
           streamSettings,
           gridStateToken(execToken, { requirePreviewToken, loopbackOnly: options?.loopbackOnly }),
-          () => enableNetworkCaptureForStartedDevice(udid, networkCapture),
+          async () => {
+            await initializeClipboard(udid, true);
+            await enableNetworkCaptureForStartedDevice(udid, networkCapture);
+          },
         ).then((error) => {
           if (res.writableEnded || res.destroyed) return;
           if (error) {
@@ -2533,6 +2551,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     if (url === base + "/api") {
       const states = await readServeSimStates();
       const state = selectServeSimState(states, selectedDevice);
+      if (state) void initializeClipboard(state.device);
       // The web UI polls /api every ~2s, so logging every hit floods the
       // debug stream with identical lines. Only log when the selection
       // result changes.
@@ -2727,6 +2746,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           respond(413, { ok: false, error: "Simulator clipboard text is too large" });
           return;
         }
+        if (error instanceof PasteboardUnavailableError) {
+          respond(503, { ok: false, error: error.message });
+          return;
+        }
         console.error(`[serve-sim] Could not access the simulator pasteboard on ${udid}:`, error);
         respond(500, { ok: false, error: "Could not access the simulator pasteboard" });
       }
@@ -2791,6 +2814,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       const computeConfig = async (): Promise<string> => {
         const states = await readServeSimStates();
         const state = selectServeSimState(states, selectedDevice);
+        if (state) void initializeClipboard(state.device);
         const remoteState = state ? rewriteStateForRequestHost(state, hostForRequest(req), base, httpProtocolForRequest(req), proxyHelpers) : null;
         return JSON.stringify(
           remoteState
@@ -3154,6 +3178,9 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   // channel plus same-origin helper/devtools proxy sockets.
   fetchMiddleware.handleUpgrade = (req: SimReq, socket: Socket, head: Buffer) => {
     connectMiddleware.handleUpgrade?.(req, socket, head);
+  };
+  fetchMiddleware.dispose = async () => {
+    await clipboard?.dispose();
   };
   return fetchMiddleware;
 }
