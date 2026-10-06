@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createInputSocket } from "../socket/client-input";
+import { createOrderedKeyboardInput } from "../client/utils/ordered-keyboard-input";
 import { WS_REASON_INPUT_UNAVAILABLE } from "../socket/input-protocol";
 
 class FakeSocket {
@@ -55,6 +56,43 @@ function setup(requireAdmission = true) {
     get recoveries() { return recoveries; },
   };
 }
+
+test("paced keyboard input survives admission of the same transport", async () => {
+  const state = setup();
+  let resolvePasteSent!: () => void;
+  const pasteSent = new Promise<void>((resolve) => { resolvePasteSent = resolve; });
+  const keyboard = createOrderedKeyboardInput({
+    getDevice: () => "device-a",
+    getConnection: () => state.input.connection,
+    getKeyConnection: () => state.input.transport,
+    sendKey: (event) => state.input.send(0x06, event),
+    sendPaste: (_connection, message) => {
+      const sent = state.input.trySendEncoded(message);
+      if (sent) resolvePasteSent();
+      return sent;
+    },
+  });
+  const events = [
+    { type: "down" as const, usage: 4 }, { type: "up" as const, usage: 4 },
+    { type: "down" as const, usage: 5 }, { type: "up" as const, usage: 5 },
+  ];
+  try {
+    state.input.start();
+    state.sockets[0]!.open();
+    keyboard.enqueue(events);
+    state.sockets[0]!.message("admitted");
+    const paste = keyboard.paste();
+    await pasteSent;
+    keyboard.receive(state.input.connection, { requestId: 1, ok: true });
+    await paste;
+    expect(state.sockets[0]!.sent.filter((message) => new Uint8Array(message)[0] === 0x06).map((message) =>
+      JSON.parse(new TextDecoder().decode(new Uint8Array(message).subarray(1))),
+    )).toEqual(events);
+  } finally {
+    keyboard.dispose();
+    state.input.dispose();
+  }
+});
 
 test("legacy helper sends input on open without a dimension config", () => {
   const state = setup(false);
@@ -145,26 +183,36 @@ test("server admission flushes input before screen dimensions are available", ()
 
 test("queued input waits for admission and acknowledged commands never queue", async () => {
   const state = setup();
+  const paste = Uint8Array.of(0x12, 1);
   try {
     state.input.start();
     state.input.send(0x03, { type: "begin" });
     expect(state.input.trySend(0x10, { requestId: 1 })).toBe(false);
     state.sockets[0]!.open();
     expect(state.sockets[0]!.sent).toHaveLength(0);
+    expect(state.input.connection).toBeNull();
+    expect(state.input.trySendEncoded(paste)).toBe(false);
     expect(state.input.trySend(0x10, { requestId: 1 })).toBe(false);
     state.sockets[0]!.message("admitted");
+    const connection = state.input.connection;
+    expect(connection).not.toBeNull();
+    expect(state.input.trySendEncoded(paste)).toBe(true);
     expect(new Uint8Array(state.sockets[0]!.sent[0]!)[0]).toBe(0x03);
     expect(state.input.trySend(0x10, { requestId: 1 })).toBe(true);
     state.sockets[0]!.close();
+    expect(state.input.connection).toBeNull();
+    expect(state.input.trySendEncoded(paste)).toBe(false);
     state.input.send(0x04, { button: "home" });
     await Bun.sleep(20);
     state.sockets[1]!.open();
     expect(state.sockets[1]!.sent).toHaveLength(0);
     state.sockets[1]!.message("admitted");
+    expect(state.input.connection).not.toBe(connection);
     expect(new Uint8Array(state.sockets[1]!.sent[0]!)[0]).toBe(0x04);
     expect(state.sockets[1]!.sent).toHaveLength(1);
   } finally {
     state.input.dispose();
+    expect(state.input.connection).toBeNull();
   }
 });
 

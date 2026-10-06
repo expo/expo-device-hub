@@ -1,8 +1,10 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { readFileSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import { buildSimpbArtifact, writeSimPasteboard } from "../sim-pasteboard";
-import { installShims } from "./helpers";
+import { pasteTextIntoSim } from "../sim-pasteboard-paste";
+import { installShims, withShimsAsync } from "./helpers";
 
 describe("buildSimpbArtifact", () => {
   test("shares one build between concurrent callers and keeps the event loop running", async () => {
@@ -41,6 +43,38 @@ describe("buildSimpbArtifact", () => {
 });
 
 describe("writeSimPasteboard", () => {
+  test("holds the device lock through the paste shortcut", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-paste-lock-test-"));
+    const log = join(dir, "writes");
+    const quotedLog = "'" + log.replaceAll("'", "'\\''") + "'";
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let shortcutStarted!: () => void;
+    const shortcut = new Promise<void>((resolve) => { shortcutStarted = resolve; });
+    try {
+      await withShimsAsync({ xcrun: `#!/bin/sh\ncat >> ${quotedLog}\nprintf '\n' >> ${quotedLog}\n` }, async () => {
+        const udid = `PASTE-LOCK-TEST-${process.pid}`;
+        const first = pasteTextIntoSim(udid, "alpha", async () => {
+          shortcutStarted();
+          await gate;
+        });
+        await shortcut;
+        const second = writeSimPasteboard(udid, "beta");
+        try {
+          await Bun.sleep(100);
+          expect(readFileSync(log, "utf8")).toBe("alpha\n");
+        } finally {
+          release();
+        }
+        await Promise.all([first, second]);
+        expect(readFileSync(log, "utf8")).toBe("alpha\nbeta\n");
+      });
+    } finally {
+      release();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   test("reports simctl's reason when it exits without reading the text", async () => {
     const shims = installShims({
       // Close stdin and stay alive, so the write fails with EPIPE before xcrun exits.

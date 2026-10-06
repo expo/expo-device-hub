@@ -215,16 +215,21 @@ policy beyond that.
 
 ## WebSockets
 
-All of these are gated by the token, but not identically. `/exec-ws` also checks
-the `Origin` a browser sends: it accepts the preview's own origin and any origin
-named by `--cors-origin`, and closes anything else even with a valid token.
-Loopback is not implicit here. The HID and CDP sockets check the token only, so
-any origin holding it can drive them; `frame-ancestors` does not constrain a
-WebSocket.
+With `--require-token`, all of these need the token, but not identically.
+`/exec-ws` also checks the `Origin` a browser sends: it accepts the preview's
+own origin and any origin named by `--cors-origin`, and closes anything else
+even with a valid token. Loopback is not implicit here. The HID and CDP sockets
+do not check the `Origin` for a bearer token or a token subprotocol, so any
+origin holding the token can drive them. The access cookie passes only on a
+same-origin request. `frame-ancestors` does not constrain a WebSocket.
+
+Without `--require-token`, the HID and CDP sockets need neither the token nor an
+allowed `Origin`. Only the `Host` check in [Allowed hosts](#allowed-hosts)
+applies. `/exec-ws` still checks the `Origin` and needs the token.
 
 | Path | Purpose |
 | --- | --- |
-| `{helper}/ws` | HID input. Pointer and key events to the device. |
+| `{helper}/ws` | HID input. Pointer and key events, and Paste, to the device. |
 | `/exec-ws` | Scoped simulator actions. Request and response frames. |
 | `/devtools/page/{targetId}` | CDP bridge to an inspectable WebKit target. |
 

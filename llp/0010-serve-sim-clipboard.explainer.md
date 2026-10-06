@@ -32,6 +32,8 @@ The same-Host rule lets a hosted preview use its own clipboard without an extra 
 
 Responses carry `Cache-Control: no-store`, so a proxy does not keep clipboard text [observed: `src/middleware.ts`].
 
+[Paste](#paste) does not use this route. It uses the device's input socket, which LLP 0003 calls the HID socket. So the socket's rules apply ([LLP 0003](0003-serve-sim-http-api.spec.md#websockets)). With `--require-token`, the socket needs the token. A page that holds the token can paste from any origin. Without `--require-token`, the socket checks neither the token nor the `Origin`. It checks only the `Host` ([Allowed hosts](0003-serve-sim-http-api.spec.md#allowed-hosts)). `--allow-any-host-when-insecure` turns that check off [observed: `assertUpgradeAccess` in `src/session-auth.ts`, `upgradeHostAllowed` in `src/middleware.ts`]. So without `--require-token`, a page that can open the socket can paste text. That page can already send keys and taps. The socket sends no pasteboard text back [observed: the `0x12` case and every `ws.send` in `src/device-session.ts`].
+
 ## Reading when `simctl pbpaste` fails
 
 When `simctl pbpaste` fails, the read asks the foreground app instead [observed: `readPasteboardOnce` in `src/sim-pasteboard-reader.ts`]. This path is meant for headless workers, which have no GUI login session:
@@ -75,3 +77,20 @@ The cost: an app that started before the capability loader was armed has no read
 An earlier version armed the reader during a read and could restart the app. It was removed for this rule [confirmed: Gabe Debes, 2026-10-04].
 
 A read can still change the app's privacy state and the screen. The grant in step 2 changes the privacy state, and that change stays ([The pasteboard grant stays](#the-pasteboard-grant-stays)). iOS can also show a banner when the reader reads. After serve-sim's write tool, `serve-sim-pasteboard`, wrote the text, a request to the reader in Safari showed "Safari pasted from serve-sim-pasteboard" [observed: screenshot, iOS 26.4 simulator, 2026-10-12]. The help for `simctl privacy` says that some permission changes terminate a running app [observed: `xcrun simctl help privacy`, Xcode 26.4]. On iOS 26.4, the grant did not restart a running Safari [observed: Safari PID before and after `simctl privacy`, iOS 26.4 simulator, 2026-10-12]. Other runtimes were not tested.
+
+## Paste
+
+Cmd+V or Ctrl+V over the preview, and Paste from Device in the toolbar's Clipboard menu, send the browser's text to the simulator [observed: `src/client/client.tsx`, `src/client/hooks/use-clipboard-toast.tsx`].
+
+- The browser sends the text on the device's input socket, in order with key events. Keys typed after a Paste wait for its reply, so the Paste lands between the keys typed before and after it [observed: `src/client/utils/ordered-keyboard-input.ts`].
+- Paste takes its turn in the input queue that all viewers share when it arrives. In that turn, the server takes the pasteboard lock, writes the text, and sends the Command+V chord, so Paste stays in order with earlier and later input, from every viewer [observed: `src/sim-pasteboard-paste.ts`, `src/device-session.ts`]. Other input waits during the write, usually a fraction of a second. A Paste without text takes the same lock, so it cannot paste text that another viewer is writing [confirmed: Gabe Debes, 2026-10-09].
+- Before the chord, the server lifts every held Control, Shift, and Option key, also one that the pasting viewer holds, and presses it again afterwards. A held Command key stays down and serves the chord. A held V is lifted and stays up after a good paste, so no second "v" is typed [observed: `src/sim-command-shortcut.ts`, `sendPasteShortcut` and `sendCommandShortcut` in `src/device-session.ts`].
+- When the browser blocks clipboard reads, a multiline field lets the user paste the text by hand. The field takes focus when it opens. Its hint names ⌘V or Ctrl+V for a mouse or trackpad, and long-press for touch [observed: `PasteField` in `src/client/components/app-toasts.tsx`].
+- An older helper does not set `inputPaste` in its state. The preview then sends Cmd+V to it as plain keys, which paste the simulator clipboard, and hides Paste from Device [observed: `src/state.ts`, `src/client/client.tsx`].
+
+Decisions [confirmed: Gabe Debes]:
+
+- **The latest Paste action wins.** A newer Paste cancels an older one that is still waiting for the browser clipboard (2026-09-27).
+- **Cmd+V without browser text pastes the simulator clipboard.** When the browser clipboard has no plain text, for example an image, the Command+V goes to the simulator (2026-09-29).
+- **A failed Paste keeps the new text** on the simulator pasteboard. Restoring the old content would cost another read and write (2026-09-29).
+- **A stuck Command key is a separate warning.** If Command cannot be released after V was, the text may already be pasted, so Paste reports success and shows a key warning (2026-09-29).

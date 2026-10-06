@@ -8,6 +8,7 @@ declare global {
       streamUrl: string;
       wsUrl: string;
       inputAdmission?: true;
+      inputPaste?: true;
       pid: number;
       port: number;
       device: string;

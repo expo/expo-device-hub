@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ShareLinkToastContent, UploadToastContent } from "../client/components/app-toasts";
+import {
+  ClipboardToastContent,
+  pasteFieldHint,
+  ShareLinkToastContent,
+  UploadToastContent,
+} from "../client/components/app-toasts";
 
 describe("UploadToastContent", () => {
   test("renders determinate upload progress", () => {
@@ -71,5 +76,29 @@ describe("ShareLinkToastContent", () => {
     expect(html).toContain(`value="${url}"`);
     expect(html).toContain('aria-label="Share link"');
     expect(html).toContain("includes the access token");
+  });
+});
+
+describe("ClipboardToastContent", () => {
+  test("renders the message above a paste field in the paste state", () => {
+    const html = renderToStaticMarkup(
+      <ClipboardToastContent
+        toast={{ status: "paste", message: "Paste here to send it to the simulator" }}
+        onPaste={() => {}}
+      />,
+    );
+    expect(html).toContain('aria-label="Text to paste into the simulator"');
+    expect(html).toContain('data-suspend-keyboard-capture="true"');
+    expect(html).toContain("<textarea");
+    expect(html).not.toContain("<input");
+    expect(html).toContain(">Send</button>");
+    expect(html).toContain("Paste here to send it to the simulator");
+    expect(html).toContain('placeholder="Press ⌘V or Ctrl+V to paste"');
+    expect(html).not.toContain("autofocus");
+  });
+
+  test("tells touch users to long-press and desktop users to press a paste shortcut", () => {
+    expect(pasteFieldHint(true)).toBe("Long-press and paste");
+    expect(pasteFieldHint(false)).toBe("Press ⌘V or Ctrl+V to paste");
   });
 });

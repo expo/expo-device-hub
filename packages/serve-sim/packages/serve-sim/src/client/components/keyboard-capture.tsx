@@ -58,6 +58,8 @@ export function KeyboardCapture({
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           if (!openRef.current || document.activeElement === el) return;
+          // The manual clipboard fallback owns focus while the user pastes into it.
+          if (document.activeElement?.closest("[data-suspend-keyboard-capture]")) return;
           if (readNativeKeyboardRaised()) el.focus();
         });
       });

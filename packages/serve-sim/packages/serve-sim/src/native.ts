@@ -142,8 +142,8 @@ export const Orientation = {
   landscapeLeft: 4,
 } as const;
 
-function resolveAddon(): string {
-  const candidates = [
+function addonCandidates(): string[] {
+  return [
     // Beside the bun-compiled executable (dist/serve-sim → dist/native/…).
     // Arm64 macOS addon; loaded by path so it works under npx, the
     // compiled binary, and the dev server alike.
@@ -153,11 +153,18 @@ function resolveAddon(): string {
     // Dev: running from source (src/native.ts → ../dist/native/…).
     join(dirname(fileURLToPath(import.meta.url)), "..", "dist", "native", "serve-sim-native.node"),
   ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
+}
+
+/** The built native addon, or null when it is missing. */
+export function locateNativeAddon(): string | null {
+  return addonCandidates().find(existsSync) ?? null;
+}
+
+function resolveAddon(): string {
+  const addonPath = locateNativeAddon();
+  if (addonPath) return addonPath;
   throw new Error(
-    `serve-sim-native.node not found. Looked in:\n  ${candidates.join("\n  ")}\n` +
+    `serve-sim-native.node not found. Looked in:\n  ${addonCandidates().join("\n  ")}\n` +
       "Run `bun run build.ts` to build the native addon.",
   );
 }
@@ -260,6 +267,12 @@ export class NativeHid {
 
   key(type: KeyType, usage: number): Promise<void> {
     return this.guard("key", () => this.handle.key(type, usage), undefined);
+  }
+
+  /** Clipboard shortcuts need a failed keypress to reach their acknowledgement path. */
+  keyChecked(type: KeyType, usage: number): Promise<void> {
+    if (this.inputUnavailable) return Promise.reject(new Error("Simulator input is unavailable"));
+    return Promise.resolve().then(() => this.handle.key(type, usage));
   }
 
   /** anchorX/anchorY default to screen center when omitted. */
