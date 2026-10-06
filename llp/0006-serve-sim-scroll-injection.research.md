@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo)
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/scroll-injection-devicehub.md`; links and paths updated)
+**Revised:** 2026-10-06 (checked against the code at 5b273a8f; separated Apple's scroll mechanism from serve-sim's touch-drag scroll, marked the pointer-service plan as not shipped, measured that each wheel message is now its own drag, removed stale code names and a private link) · 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/scroll-injection-devicehub.md`; links and paths updated)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -13,12 +13,18 @@
 > (`/Applications/Xcode-beta.app/Contents/SharedFrameworks/SimulatorKit.framework/Versions/A/SimulatorKit`)
 > using Hopper. Addresses below are file offsets in that binary (Xcode 26 beta).
 >
-> **Status:** findings from static analysis; the "Validation" section tracks what
-> has been confirmed against a running simulator.
+> **Status:** the component map, lifecycle, and message layouts come from static
+> analysis. The [Validation log](#validation-log) records behavioral results from a
+> running simulator. [Resolution: touch-drag scroll (shipped)](#resolution-touch-drag-scroll-shipped)
+> describes what serve-sim ships.
 
 ## TL;DR
 
-Scrolling an iPhone simulator is **not** a synthetic touch digitizer pan. It is a
+In this document, "Device Hub" is Apple's `DeviceHub.app` in Xcode, not Expo
+Device Hub [observed: `resolveSimulatorHost` in `src/simulator-host.ts`].
+
+**Apple's mechanism.** In Simulator.app and Device Hub, scrolling an iPhone
+simulator is **not** a synthetic touch digitizer pan. It is a
 **host-HID capture** mechanism: SimulatorKit creates a virtual *indirect pointer*
 (trackpad) HID service on the guest, taps the Mac's real mouse/trackpad at the
 IOKit HID level, and replays each captured `IOHIDEventRef` into the guest as an
@@ -28,6 +34,12 @@ scroll on the device.
 The class that owns all of this is **`SimHIDCaptureManager`** (source file
 `SimHIDCaptureManager.m`). Device Hub itself contains **zero** scroll code — it
 drives `SimDisplayView` / `SimHIDCaptureManager` in SimulatorKit.
+
+**What serve-sim does.** serve-sim cannot use Apple's mechanism, because it needs
+private Apple entitlements (see [Why the pointer path is infeasible for
+serve-sim](#why-the-pointer-path-is-infeasible-for-serve-sim-definitive)). Instead,
+serve-sim turns each browser wheel event into a touch drag on the digitizer (see
+[Resolution: touch-drag scroll (shipped)](#resolution-touch-drag-scroll-shipped)).
 
 ## The two input planes
 
@@ -39,8 +51,9 @@ confuse them:
 | **Touch digitizer** | clicking/dragging in the canvas (NSEvent) | `_touch_event` | taps, swipes, synthetic pans |
 | **Pointer / HID capture** | "Capture pointer" mode, real trackpad/mouse | `_pointer_event`, scroll, trackpad-digitizer | cursor, scroll, magic-mouse |
 
-serve-sim today only uses the **touch digitizer** plane. Scroll lives entirely in
-the **pointer/HID-capture** plane.
+Of these two planes, serve-sim uses only the **touch digitizer** plane, for scroll
+too (see [Resolution](#resolution-touch-drag-scroll-shipped)). Apple's native
+scroll lives entirely in the **pointer/HID-capture** plane.
 
 ## Component map (all in SimulatorKit)
 
@@ -207,6 +220,12 @@ sending a sequence (began → changed×N → ended) if iOS requires it.
 
 ## Implications for serve-sim
 
+> **Not shipped.** This was the plan before the validation below. Each variant of
+> it was built and failed on iOS 27.0, and the capture path needs private Apple
+> entitlements (see [Validation log](#validation-log)). serve-sim ships a
+> touch-drag scroll instead: see
+> [Resolution: touch-drag scroll (shipped)](#resolution-touch-drag-scroll-shipped).
+
 To inject scroll headlessly (no physical trackpad), replicate the capture path's
 *output* rather than its input:
 
@@ -221,12 +240,19 @@ To inject scroll headlessly (no physical trackpad), replicate the capture path's
      the 352-byte layout including `phase` and `momentum` for inertial scroll.
 3. Tear down with `IndigoHIDMessageToRemovePointerService` on session end.
 
-⚠️ See `[[project-hid-injection-broken-xcode26]]`: touch/button HID delivery is
-currently being ignored by the iOS 26.5 simulator. The pointer/scroll plane uses
-the *same* `SimDeviceLegacyHIDClient` transport, so it may hit the same wall —
-**this needs the e2e check below before we invest in an implementation.**
+⚠️ When this plan was written, touch/button HID delivery was being ignored by the
+iOS 26.5 simulator (the note that recorded this is not in this repository). The
+pointer/scroll plane uses the *same* `SimDeviceLegacyHIDClient` transport, so it
+might hit the same wall. The e2e check below settled this: taps and drags work on
+iOS 27.0, and only scroll failed.
 
 ## Validation log
+
+> This log is a historical record. Some code that it describes as present is not
+> in this repository now: the synthetic `IndigoHIDMessageForScrollEvent` scroll in
+> `HIDInjector.swift`, and the `--capture-scroll` diagnostic. The
+> [Resolution](#resolution-touch-drag-scroll-shipped) at the end describes what
+> ships.
 
 Environment: iPhone 17 Pro, **iOS 27.0**, Xcode 26.6 (17F109). Server:
 `node dist/serve-sim.js --port 3399` (local build). Driven via agent-browser +
@@ -308,8 +334,8 @@ com.apple.private.tcc.allow → kTCCServiceListenEvent, kTCCServicePostEvent
 com.apple.private.CoreSimulator.client
 ```
 
-This was proven empirically: a `--capture-scroll` diagnostic (see
-`CaptureScroll.swift`) started a real `SimHIDCaptureManager` session in our own
+This was proven empirically: a `--capture-scroll` diagnostic (`CaptureScroll.swift`,
+which is not in this repository) started a real `SimHIDCaptureManager` session in our own
 helper and hooked `sendWithMessage:`. It successfully sent the **create-pointer
 (`0x35`)** and **create-mouse (`0x36`)** service messages, but received **zero**
 HID events during a real trackpad scroll — without `…hid.client.event-filter`,
@@ -324,25 +350,43 @@ and an unprivileged helper can neither capture nor synthesize them.
 
 `HIDInjector.sendScroll` translates the wheel delta into a **touch drag** on the
 digitizer (`IndigoHIDMessageForMouseNSEvent`, target `0x32`) — the same path
-taps/swipes use, which *is* honored on iOS 27. A wheel burst becomes one
-continuous drag (begin → moves → end on idle), re-anchoring to center near the
-edges so long scrolls aren't capped. **Verified bidirectional** on iPhone 17 Pro
-/ iOS 27.0: a wheel-down burst scrolled Settings from "Apple Account…StandBy" to
-"Siri…Developer", and wheel-up returned to the top — driven through the real
-browser → WS `0x0b` → helper pipeline.
+taps/swipes use, which *is* honored on iOS 27. On foldables the same drag goes out
+as Universal HID touch reports to service `0x100` + display ID [observed:
+`rawSendTouch` in `Sources/SimNative/HIDInjector.swift`;
+`Sources/StreamingPolicy/HIDTargetPolicy.swift`]. A wheel burst becomes one
+continuous drag (begin → moves → end on idle), re-anchoring near the edges (to the
+cursor anchor, see below) so long scrolls aren't capped. **Verified bidirectional**
+on iPhone 17 Pro / iOS 27.0: a wheel-down burst scrolled Settings from "Apple
+Account…StandBy" to "Siri…Developer", and wheel-up returned to the top — driven
+through the real browser → WS `0x0b` → helper pipeline.
+
+**Changed since `67ce70fd` (measured 2026-10-06).** That commit
+(expo/serve-sim#198) puts each `0x0b` message in a per-socket input queue that
+runs one operation at a time and waits for each to finish [observed:
+`queueInputOperation` and `drainInputOperations` in `src/device-session.ts`].
+`sendScroll` waits 20 ms after `begin` and then 100 ms of idle time before it
+sends `end` [observed: `HIDInjector.beginDrag` and `HIDInjector.sendScroll`].
+So each wheel message is now its own drag, not one continuous drag per burst,
+and a burst is replayed at about one message per 130 ms. At `5b273a8f`, on an
+iPhone 17 / iOS 27.0 simulator, 10 wheel messages sent within 181 ms ran over
+1.17 s, and 60 messages sent within 1.07 s ran over 7.75 s (start times of the
+`scroll` entries in `/api/event-log`). The resulting scroll in an app was not
+observed, because touch input did not reach apps on the test machine.
 
 This is also the *correct* model for a touchscreen device: there is no hardware
 scroll wheel; scrolling is a finger drag.
 
 **Cursor-anchored.** The drag begins under the pointer (the wheel event's cursor
-position, sent as normalized `x`/`y` in `ScrollEventPayload` and rotated to raw
-device orientation alongside the delta), so iOS hit-tests the view beneath the
+position, sent as normalized `x`/`y` in the `0x0b` JSON payload `{dx, dy, x, y}`
+and rotated to raw device orientation alongside the delta [observed: `sendScroll`
+in `src/client/simulator/simulator-view.tsx`]), so iOS hit-tests the view beneath the
 cursor — e.g. scrolling over Apple Maps' bottom sheet pans the sheet, while
 scrolling over the map pans the map. Verified: a wheel over the map region
 (anchor y≈0.25) panned San Francisco → Pigeon Point; a wheel over the sheet
 (anchor y≈0.78) left the map untouched. Edge re-anchoring returns to the cursor
 anchor (not center) so long scrolls keep hit-testing the same view.
 
-The `--capture-scroll <udid> [seconds]` subcommand is retained as a diagnostic
-(useful if run from a binary that ever gains the HID entitlements).
-```
+The `--capture-scroll <udid> [seconds]` diagnostic is not in this repository: no
+code in its history defines it [observed: `git log -S capture-scroll` and
+`git log -S CaptureScroll` find only the commits that added and moved this
+document].
