@@ -12,7 +12,7 @@ class Socket {
   readyState = 0;
   sent: object[] = [];
   onopen?: () => void;
-  onclose?: () => void;
+  onclose?: (event: Pick<CloseEvent, 'code' | 'reason'>) => void;
   onmessage?: (event: { data: string | ArrayBuffer }) => void;
   constructor(readonly url: string) {
     Socket.instances.push(this);
@@ -32,9 +32,9 @@ class Socket {
     this.readyState = 1;
     this.onopen?.();
   }
-  close() {
+  close(code = 1000, reason = '') {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code, reason });
   }
   receive(data: object) {
     this.onmessage?.({ data: JSON.stringify(data) });
@@ -406,6 +406,33 @@ test('a working config subscription keeps helper reconnects off discovery and pr
   expect(hub.offeredCodecs).toEqual(offers);
   expect(hub.discoveryCount).toBe(1);
   expect(channel.socket.readyState).toBe(1);
+});
+
+test('config updates retain an input rejection until the reconnected helper admits input', async () => {
+  const hub = await controlledClient({}, true);
+  const config = preview('http', { inputAdmission: true });
+  await hub.resolveResponse(0, Response.json(config));
+  const channel = await configChannel();
+  const helper = Socket.instances.find((socket) => socket.url.includes('/helper/ws'))!;
+  const rejection = 'Input client limit reached';
+  await act(async () => helper.close(1013, rejection));
+  expect(hub.client.inputError).toBe(rejection);
+  await channel.push(config);
+  expect(hub.client.inputError).toBe(rejection);
+  expect(hub.client.streamCapabilities?.modeAvailability).toEqual({
+    mjpeg: true,
+    h264: true,
+    webrtc: false,
+  });
+  await hub.fireTimer(1500);
+  const reconnected = Socket.instances.at(-1)!;
+  await act(async () => reconnected.open());
+  expect(hub.client.inputError).toBe(rejection);
+  await act(async () =>
+    reconnected.onmessage?.({ data: new Uint8Array([0x83]).buffer }),
+  );
+  expect(hub.client.inputError).toBeNull();
+  expect(hub.discoveryCount).toBe(1);
 });
 
 test('exec-ws recovery replaces rotated credentials without resetting the viewer codec', async () => {
