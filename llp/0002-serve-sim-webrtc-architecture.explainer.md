@@ -5,12 +5,12 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/webrtc-architecture.md`; links and paths updated)
-**Related:** LLP 0001
+**Revised:** 2026-10-06 (checked against the code at 5b273a8f; added the `--transport webrtc` lock, HTTP fallback, stall recovery, panel feeds, input-socket cap, and token gate; corrected the H.264 level rationale for the shared encoder) · 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/webrtc-architecture.md`; links and paths updated)
+**Related:** LLP 0001, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
-This document describes the current implementation and the planned direction as of September 2026.
+This document describes the current implementation and the planned direction as of October 2026.
 
 ## Scope
 
@@ -21,9 +21,12 @@ This document describes the current implementation and the planned direction as 
 - MJPEG, AVCC/H.264, and WebRTC video delivery.
 - HID input, screen metadata, accessibility, DevTools, and simulator tools.
 
-The deployment environment is trusted. Authentication and authorization are
-outside this design. Recording is independent of the WebRTC transport and
-consumes owned captured frames alongside it. The capture and recording paths
+The deployment environment is trusted. The WebRTC design adds no authentication
+or authorization of its own. The optional `--require-token` gate covers the
+signaling routes like every other preview route; see
+[HTTP API](0003-serve-sim-http-api.spec.md#authentication) [observed: request
+gate in `simMiddleware`, `src/middleware.ts`]. Recording is independent of the
+WebRTC transport and consumes owned captured frames alongside it. The capture and recording paths
 are documented in [Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md).
 
 ## Decisions
@@ -31,7 +34,10 @@ are documented in [Video pipeline and recording](0001-serve-sim-video-pipeline.e
 1. WebRTC carries video only.
 2. The existing helper WebSocket is the canonical input and metadata channel.
 3. HTTP video remains available for compatibility, automation, and multiple
-   viewers.
+   viewers, unless the server starts with `--transport webrtc`. That flag locks
+   the preview to WebRTC, and the MJPEG and AVCC endpoints then answer
+   `409 stream_transport_locked` [observed: `DeviceSession.sendTransportLocked`,
+   `src/device-session.ts`].
 4. Multiple WebRTC viewers can share one simulator capture session.
 5. SDP offer setup is serialized, but established peer sessions coexist.
 6. All transports reuse the same SimulatorKit IOSurface capture session.
@@ -67,7 +73,7 @@ simMiddleware / serve-sim CLI
   +-- preview config: preferred transport, codec, ICE servers
   +-- /helper/<udid>/stream.mjpeg
   +-- /helper/<udid>/stream.avcc
-  +-- /helper/<udid>/webrtc/offer + /close
+  +-- /helper/<udid>/webrtc/offer + /close + /stats
   +-- /helper/<udid>/ws
           |
           v
@@ -103,6 +109,12 @@ The browser has three rendering paths:
 | MJPEG | `/stream.mjpeg` | `<img>` | WebSocket |
 | AVCC | `/stream.avcc` | WebCodecs + `<canvas>` | WebSocket |
 | WebRTC | `/webrtc/offer` + RTP | `<video>` | WebSocket |
+
+Foldable devices that report a hinge angle also serve fixed-panel feeds under
+`/helper/<udid>/panel/<screenId>/`, for screen IDs 1 and 3. Each panel feed
+opens its own capture session and serves the MJPEG, AVCC, and WebRTC endpoints,
+but carries no input [observed: `DeviceSession.handlePanel`,
+`src/panel-route.ts`].
 
 ### Capture and frame flow
 
@@ -167,10 +179,17 @@ a frame while no peer is active exits before conversion or encoding.
 
 1. The browser creates a receive-only video transceiver and gathers ICE.
 2. It POSTs an SDP offer, session ID, codec preference, and ICE configuration. For
-   H.264 the posted offer has its `profile-level-id` level byte raised to 5.2; the
-   browser's own local description is left as built. Browsers advertise Level 3.1
-   whatever they can decode, and libwebrtc builds its encoder from the level in this
-   offer, producing no frames at all past that level's frame size. This is SDP
+   H.264 the posted offer has its `profile-level-id` level byte raised to 5.2 on every
+   payload that allows level asymmetry; the browser's own local description is left as
+   built [observed: `raiseH264OfferLevel`, `src/client/webrtc-sdp-level.ts`]. Browsers
+   advertise Level 3.1 whatever they can decode, and native bounds the H.264 encode size
+   by the level in this offer (see [Current constraints](#current-constraints))
+   [observed: `H264LevelPolicy.negotiatedLevel`, `WebRTCPublisher.refreshEncodeCanvas`],
+   because an encoder pushed past that level's frame size produces no frames at all
+   [observed: comments on `H264LevelPolicy` and `StreamEncodePolicy.encodeMaxLongEdge`].
+   The shared H.264 encoder itself does not read the offer's level: it opens a
+   VideoToolbox session with an automatic level [observed: `SharedWebRTCEncoder.init`,
+   `H264Encoder.swift`]. This is SDP
    munging, not negotiation: `level-asymmetry-allowed=1` lets the two directions
    differ, it does not license sending above what the peer said it decodes. It rests on
    measurement — Chrome and Safari both decode a 1206x2622 stream while advertising 3.1 —
@@ -197,17 +216,36 @@ time and can miss a slow TURN candidate.
 
 Codec fallback and transport recovery are distinct:
 
-- A connected peer that exposes a video track but cannot decode its first frame
-  advances the codec ladder.
+- A connected peer that exposes a video track but has not decoded its first frame
+  within 4 seconds advances the codec ladder. If frames are arriving, it first gets
+  one more 4-second window. If the sender's `/webrtc/stats` shows it encoding, the
+  failure counts as a transport failure instead [observed: first-frame watchdog in
+  `src/client/hooks/use-webrtc-stream.ts`, `webRtcFailureDisposition`].
+- After the first frame, eight 1-second polls in which frames arrive but none
+  decode count as a decode stall. The first stall reconnects with the same codec;
+  another stall within 30 seconds advances the ladder. A stall with no arriving
+  frames is a transport failure [observed: `src/client/webrtc-playback-stall.ts`,
+  `playbackStallAction` in `src/client/webrtc-failure-policy.ts`].
 - Signaling, ICE, connection, and track-ending failures retry the same codec with
   bounded exponential backoff.
 - A busy response waits for the current offer negotiation to finish. Every retry
   gets a fresh HTTP signaling timeout.
-- An explicit signaling rejection is terminal and is shown to the user.
+- An explicit signaling rejection is terminal. In a session locked to WebRTC, a
+  404, 408, 425, 429, or 5xx response, or a busy response that outlasts its
+  retries, is retried as a transport failure instead [observed:
+  `offerFailureIsTransient`, `useWebRtcStream`].
 
 The current codec ladder is H.264 -> VP8 -> VP9 when H.264 was requested, and
 VP9 -> VP8 when VP9 was requested. Native can also prefer VP8 when its H.264
-runtime probe fails.
+runtime probe fails, or when the offer's lowest H.264 level cannot fit the shared
+canvas [observed: `applyVideoCodecPreference`, `WebRTCPublisher.shouldPreferVP8`].
+
+A terminal failure or an exhausted ladder switches the preview to HTTP video. A
+session locked to WebRTC has no HTTP to switch to. It shows a terminal failure to
+the user, and it restarts an exhausted ladder after a backoff that starts at 2
+seconds and doubles up to 30 seconds [observed: `handleWebRtcFailure` in
+`src/client/client.tsx`, `createLadderBackoff` in
+`src/client/webrtc-codec-fallback.ts`].
 
 ## WebSocket control decision
 
@@ -229,8 +267,12 @@ A data channel should only be reconsidered if measured WebSocket latency is a
 material problem and WebRTC can replace the entire helper control socket. A
 partial migration is not worth the extra lifecycle and ordering complexity.
 
-Every viewer owns a WebSocket, and all sockets have equal control access. Input
-is dispatched in arrival order with no exclusive-controller lease. Messages are
+Every viewer owns a WebSocket. The server admits up to eight input sockets per
+simulator and closes any further socket with code 1013 [observed:
+`MAX_HID_SOCKETS`, `DeviceSession.attachHidSocket`]. Admitted sockets have equal
+control access, with no exclusive-controller lease. Ordered input, such as
+touches, is queued per socket and drained one operation at a time, taking turns
+between sockets [observed: `DeviceSession.drainInputOperations`]. Messages are
 ordered within one viewer's socket; operations from different viewers can
 interleave, so two people dragging at exactly the same time still contend for
 the simulator's single synthetic touch surface.
@@ -240,7 +282,9 @@ the simulator's single synthetic touch surface.
 - H.264 capture and encoding are shared across viewers, but outgoing bandwidth
   still grows with the number of peers. VP8 fallback retains per-peer encoders.
 - There is no configured WebRTC peer limit or cross-viewer control arbitration.
-- No automatic fallback from unreachable WebRTC media to HTTP video.
+- No automatic fallback from unreachable WebRTC media to HTTP video: transport
+  failures retry WebRTC. Only a terminal failure or an exhausted codec ladder
+  switches to HTTP; see [Failure policy](#failure-policy).
 - H.264 encode size is bounded by the negotiated level's frame size. A peer that
   advertises Level 3.1 is scaled to fit, and an explicit `--max-dimension` is clamped the
   same way, because exceeding the level yields no picture rather than a bigger one.
@@ -353,7 +397,8 @@ to HTTP when the network cannot establish WebRTC media.
 
 - Keep WebSocket as the sole control path.
 - Separate external input from external MJPEG frame routing.
-- Restrict codec fallback to connected first-frame decode failures.
+- Restrict codec fallback to decode failures on a connected peer: no first
+  frame, or a decode stall that a same-codec reconnect did not fix.
 - Retry transport failures with the same codec.
 - Give every busy-retry offer a full signaling deadline.
 - Release established sessions with an unload-safe close beacon.
@@ -393,7 +438,8 @@ The stable transport should be exercised against:
 - Viewers negotiating different codecs against the shared frame source.
 - Two simulators software-encoding concurrently.
 - External simulator shutdown while multiple viewers are connected.
-- HTTP and WebRTC viewers running side by side.
+- HTTP and WebRTC viewers running side by side (not possible under
+  `--transport webrtc`).
 
 The useful operational signals are negotiated codec, candidate-pair type, RTT,
 packet loss, actual bitrate, encoded/sent/dropped frames, encode duration, and
