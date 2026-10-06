@@ -274,6 +274,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [webRtcVideoReady, setWebRtcVideoReady] = useState(false);
   const [webRtcInputReady, setWebRtcInputReady] = useState(false);
   const [webRtcInputError, setWebRtcInputError] = useState<string | null>(null);
+  // The last input command serve-emu refused (`{ ok: false, error }`). Input is
+  // sent without acks, so the next input clears it; a repeat failure sets it again.
+  const [inputCommandError, setInputCommandError] = useState<string | null>(null);
+  const inputCommandErrorRef = useRef<string | null>(null);
+  const reportInputCommandError = useCallback((message: string | null) => {
+    if (inputCommandErrorRef.current === message) return;
+    inputCommandErrorRef.current = message;
+    setInputCommandError(message);
+  }, []);
   // Whether this device's WebRTC stream has been live, so a later gap counts as
   // a reconnect (last frame kept) rather than the initial connect.
   const [webRtcWasLive, setWebRtcWasLive] = useState(false);
@@ -287,6 +296,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setWebRtcVideoReady(false);
     setWebRtcInputReady(false);
     setWebRtcInputError(null);
+    inputCommandErrorRef.current = null;
+    setInputCommandError(null);
     setWebRtcWasLive(false);
     setWebRtcGraceExpired(false);
   }
@@ -402,9 +413,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const send = useCallback((message: Record<string, unknown>): boolean => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+    // Keyframe requests are not input, so they leave a refused-input report alone.
+    if (message.type !== 'reset-video') reportInputCommandError(null);
     ws.send(JSON.stringify({ ack: false, ...message }));
     return true;
-  }, []);
+  }, [reportInputCommandError]);
 
   const sendTouch = useCallback(
     (sample: TouchSample) => {
@@ -1529,7 +1542,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             const msg = JSON.parse(event.data) as {
               type?: string;
               size?: { width: number; height: number };
+              ok?: boolean;
+              error?: string;
             };
+            // Input shares this socket in WebSocket mode.
+            if (msg.ok === false && msg.error) reportInputCommandError(msg.error);
             if (
               msg.type === 'video-session' &&
               msg.size &&
@@ -1649,7 +1666,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         if (cancelled || typeof event.data !== 'string') return;
         try {
           const message = JSON.parse(event.data) as { ok?: boolean; error?: string };
-          if (message.ok === false && message.error) setError(message.error);
+          if (message.ok === false && message.error) reportInputCommandError(message.error);
         } catch {}
       };
     }
@@ -1665,7 +1682,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (wsRef.current === ws) wsRef.current = null;
       setWebRtcInputReady(false);
     };
-  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols]);
+  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols, reportInputCommandError]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
@@ -2151,8 +2168,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         ? 'reconnecting'
         : status,
     error,
-    // Only WebRTC sends input on its own socket; otherwise input shares the video socket and `error`.
-    inputError: webRtcInputError,
+    // A down WebRTC input socket outranks one refused command.
+    inputError: webRtcInputError ?? inputCommandError,
     screen,
     fps,
     devices,

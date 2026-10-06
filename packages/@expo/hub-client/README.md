@@ -361,7 +361,7 @@ This is a breaking change to the existing hooks and `DeviceClient`.
 | --- | --- |
 | `client.status`, `error`, `screen`, `fps` | `client.stream.status`, `.error`, `.data?.screen`, `.data?.fps` |
 | `useDeviceScreenClient().status` `'streaming'` | Same flat `status`, `screen`, `error`; `status` uses feature states, so `'ready'` replaces `'streaming'` |
-| `inputError` | Unchanged: `client.inputError` |
+| `inputError` | `client.inputError`; Android now also reports a refused input command here instead of in `error` |
 | `client.capabilities.camera` | `client.camera.status !== 'unsupported'` for visibility; check `ready` before editing |
 | `client.deviceSettings` | `client.deviceSettings.data?.values` |
 | `setDeviceSetting(key, value)` | `deviceSettings.set(key, value)` |

@@ -114,6 +114,11 @@ test("Android metrics and FPS leave screens and controls quiet while handlers us
     fps = useDeviceClientSelector((client) => client.stream.data?.fps ?? 0);
     return null;
   }
+  let inputError = null as string | null;
+  function InputError() {
+    inputError = useDeviceClientSelector((client) => client.inputError);
+    return null;
+  }
   function Controls() {
     const client = useDeviceClient();
     onRotate = () => client.rotate();
@@ -171,6 +176,7 @@ test("Android metrics and FPS leave screens and controls quiet while handlers us
         <Screen />
         <Metrics />
         <Fps />
+        <InputError />
         <Controls />
         <Features />
         <EmptyControls />
@@ -238,4 +244,16 @@ test("Android metrics and FPS leave screens and controls quiet while handlers us
   expect(controlRenders).toBe(initialControlRenders);
   await act(async () => onRotate());
   expect(rotations).toEqual([{ device: "emulator-5554", orientation: "portrait" }]);
+
+  // A refused input command is an input error, not a stream error.
+  await act(async () =>
+    socket.onmessage?.({ data: JSON.stringify({ ok: false, error: "Input failed" }) }),
+  );
+  expect(inputError).toBe("Input failed");
+  expect(client.status).toBe("ready");
+  expect(client.error).toBeNull();
+  expect(screenRenders).toBe(initialRenders + 1);
+  // Input is sent without acks, so the next input clears the report.
+  await act(async () => client.sendTouch({ phase: "begin", x: 0.5, y: 0.5 }));
+  expect(inputError).toBeNull();
 });

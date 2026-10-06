@@ -452,3 +452,45 @@ test('an unchanged settings poll keeps the same client and feature objects', asy
   expect(client.stream.transports).toBe(before.stream.transports);
   expect(client).toBe(before);
 });
+
+test('a refused input command on the WebSocket video socket reports inputError', async () => {
+  const sockets: Array<{
+    url: string;
+    readyState: number;
+    sent: string[];
+    onmessage?: (event: { data: unknown }) => void;
+  }> = [];
+  stubGlobal(
+    'WebSocket',
+    class {
+      static OPEN = 1;
+      readyState = 1;
+      sent: string[] = [];
+      binaryType = 'blob';
+      onmessage?: (event: { data: unknown }) => void;
+      constructor(readonly url: string) {
+        sockets.push(this);
+      }
+      send(data: string) {
+        this.sent.push(data);
+      }
+      close() {}
+      addEventListener() {}
+      removeEventListener() {}
+    },
+  );
+  // The WebSocket video path decodes with WebCodecs.
+  stubGlobal('VideoDecoder', class {});
+  stubGlobal('EncodedVideoChunk', class {});
+  await mount();
+  const video = sockets.find((socket) => socket.url.includes('/ws'))!;
+  expect(video).toBeDefined();
+  await act(async () =>
+    video.onmessage?.({ data: JSON.stringify({ ok: false, error: 'Tap failed' }) }),
+  );
+  expect(client.inputError).toBe('Tap failed');
+  expect(client.stream.error).toBeNull();
+  await act(async () => client.pressButton('home'));
+  expect(video.sent.some((data) => data.includes('"ack":false'))).toBe(true);
+  expect(client.inputError).toBeNull();
+});

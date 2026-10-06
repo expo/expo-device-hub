@@ -689,7 +689,9 @@ export interface DeviceClient {
    * Why touch and keyboard input cannot reach the device while video can,
    * or null. Cleared when the input channel works again. iOS: serve-sim
    * refused the input socket (too many clients, or a full input queue) or its
-   * native HID setup failed. Android: the WebRTC input socket is down.
+   * native HID setup failed. Android: the WebRTC input socket is down, or
+   * serve-emu refused the last input command; that report clears when the
+   * next input is sent.
    */
   inputError: string | null;
   sendTouch(sample: TouchSample): void;
