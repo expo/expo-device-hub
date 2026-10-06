@@ -91,6 +91,7 @@ export function releaseSessionSync(
   udid: string,
   ownerPid: number,
   onRelease: (capability: RecordedCapability) => void,
+  lockTimeoutMs?: number,
 ): void {
   withLaunchStateLockSync(udid, () => {
     const previousStartup = managedStartupDylibs(udid);
@@ -98,7 +99,7 @@ export function releaseSessionSync(
     if (!othersRemain) removeCapabilityLoaderSync(udid);
     else removeReleasedStartupSync(udid, previousStartup);
     armedHere.delete(udid);
-  });
+  }, lockTimeoutMs);
 }
 
 export async function releaseSession(

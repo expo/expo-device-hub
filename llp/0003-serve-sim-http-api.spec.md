@@ -65,10 +65,11 @@ result until another recording starts.
 `POST /api/pasteboard` reads the simulator pasteboard; `PUT /api/pasteboard` with
 `{"text": "…"}` writes it. Besides the token, both need a browser `Origin`: the
 preview's own origin or one that the CORS policy allows. A request without an
-`Origin` gets 403. Text over 4 MiB, in either direction, returns 413. The `PUT`
-body can be up to 8 MiB, to leave room for JSON escaping. Responses are not
-cached. [LLP 0010](0010-serve-sim-clipboard.explainer.md) explains the
-design.
+`Origin` gets 403. Text over 4 MiB, in either direction, returns 413. A read
+that neither `simctl pbpaste` nor the app reader can answer returns 503 with a
+message that says what to do next. The `PUT` body can be up to 8 MiB, to leave
+room for JSON escaping. Responses are not cached.
+[LLP 0010](0010-serve-sim-clipboard.explainer.md) explains the design.
 
 ## Authentication
 

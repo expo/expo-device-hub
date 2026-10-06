@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { simctl, simctlRaw } from "../simctl";
-import { PasteboardTooLargeError, readSimPasteboardResult } from "../sim-pasteboard";
+import { PasteboardTooLargeError } from "../sim-pasteboard";
+import { PasteboardUnavailableError, readSimPasteboardResult } from "../sim-pasteboard-reader";
 import { withShimsAsync } from "./helpers";
 
 describe("simctl", () => {
@@ -34,7 +35,7 @@ describe("simctl", () => {
       const error = await readSimPasteboardResult("DEVICE").catch((error: unknown) => error);
       expect(error).toBeInstanceOf(Error);
       expect(error).not.toBeInstanceOf(PasteboardTooLargeError);
-      expect((error as Error).message).toContain("stderr maxBuffer length exceeded");
+      expect(error).toBeInstanceOf(PasteboardUnavailableError);
     });
   });
 

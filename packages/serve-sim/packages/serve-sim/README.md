@@ -155,6 +155,11 @@ Options:
                       Argument passed to the app when it launches (repeatable)
       --open-url <url>
                       URL to open in the app after it launches
+      --enable <capability>
+                      Turn on a capability that is off by default (repeatable)
+      --disable <capability>
+                      Turn off a capability that is on by default (repeatable).
+                      Capabilities: clipboard (on), networkCapture (off)
       --list [device] List running streams
       --kill [device] Kill running stream(s)
 
@@ -424,6 +429,8 @@ server.onUpgrade((request, socket) => {
 ```
 
 The middleware reads the helper's state from `$TMPDIR/serve-sim/` and points the browser at the helper's stream, interaction WebSocket, and WebKit DevTools endpoints. By default those URLs target the helper's own port directly (the helper answers loopback origins), so a plain `app.use(...)` mount works without touching your server's WebSocket handling.
+
+Opening a device sets up its clipboard reader through the capability loader, in the process that mounts the middleware. Set `clipboard: false` to remove that reader instead, or `clipboard: "unmanaged"` to leave it to the serve-sim session that owns the device. Await `middleware.dispose()` when the host server closes, to release the clipboard setup it owns. Clipboard reads never restart an app; an app already running before setup may need an explicit restart.
 
 ### Single-port / remote proxying
 
