@@ -74,7 +74,7 @@ export interface BackendDeviceClient {
   clearEvents: () => void;
 
   /** Live iOS app activity, or null before the first endpoint/config resolution. */
-  activity: DeviceActivity | null;
+  activity: BackendActivity | null;
 
   /** Backend-supported simulator/device options and their current values. */
   deviceSettings: DeviceSettings | null;
@@ -302,4 +302,9 @@ export interface DeviceCapabilities {
   location: DeviceLocationCapabilities;
   /** Foreground-app permissions that the backend can list and change. */
   permissions: boolean;
+}
+
+/** Activity as the adapters track it; `errored` drives their silence watchdog only. */
+export interface BackendActivity extends DeviceActivity {
+  errored: boolean;
 }

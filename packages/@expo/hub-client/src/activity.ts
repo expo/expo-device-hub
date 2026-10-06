@@ -1,7 +1,5 @@
-import {
-  type DeviceActivity,
-  type DeviceActivitySample,
-} from './types';
+import type { BackendActivity } from './backend-client';
+import { type DeviceActivitySample } from './types';
 
 export const MAX_ACTIVITY_SAMPLES = 60;
 
@@ -47,9 +45,9 @@ export function parseActivityHostCores(value: unknown): number | null {
 
 /** Append a sample, resetting history only when one real foreground app replaces another. */
 export function appendActivitySample(
-  activity: DeviceActivity,
+  activity: BackendActivity,
   sample: DeviceActivitySample,
-): DeviceActivity {
+): BackendActivity {
   const previousBundle = [...activity.samples]
     .reverse()
     .find((entry) => entry.bundleId !== null)?.bundleId;

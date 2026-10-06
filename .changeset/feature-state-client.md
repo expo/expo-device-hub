@@ -11,4 +11,5 @@ feature states, so `ready` replaces `streaming`. An iOS `DeviceClientProvider` w
 `baseUrl` no longer fails to render. `client.input` is a feature: its status and error describe
 the input channel, and `data.rejected` reports a refused command (Android) until the next input.
 Remove the `ConnectionStatus`, `DeviceCapabilities`, `DeviceStreamSettingCapabilities`,
-`DeviceLocationCapabilities`, and `DeviceAppearance` types.
+`DeviceLocationCapabilities`, and `DeviceAppearance` types, and `DeviceActivity.errored`; activity
+failures are on `client.activity.status` and `error`.

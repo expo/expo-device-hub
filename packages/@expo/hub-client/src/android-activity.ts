@@ -1,9 +1,10 @@
 import { parseActivityHostCores, parseActivitySample } from "./activity";
-import { type DeviceActivity, type DeviceActivitySample } from "./types";
+import type { BackendActivity } from "./backend-client";
+import { type DeviceActivitySample } from "./types";
 
 export const ANDROID_ACTIVITY_STALE_MS = 8000;
 
-export const EMPTY_ANDROID_ACTIVITY: DeviceActivity = {
+export const EMPTY_ANDROID_ACTIVITY: BackendActivity = {
   hostCores: null,
   samples: [],
   errored: false,
@@ -42,9 +43,9 @@ export type AndroidActivityClock = {
  * never fires. Report that as errored rather than waiting forever.
  */
 export function nextAndroidActivityAfterSilence(
-  activity: DeviceActivity,
+  activity: BackendActivity,
   clock: AndroidActivityClock,
-): DeviceActivity | null {
+): BackendActivity | null {
   const since = clock.lastSampleAt > 0 ? clock.lastSampleAt : clock.openedAt;
   if (clock.now - since <= ANDROID_ACTIVITY_STALE_MS) return null;
   if (clock.lastSampleAt > 0) return activity.stale ? null : { ...activity, stale: true };

@@ -10,6 +10,7 @@ import {
 } from './feature-state';
 import { useFeatureClient } from './useFeatureClient';
 import type {
+  BackendActivity,
   BackendDeviceClient,
   ConnectionStatus,
   DeviceCapabilities,
@@ -103,7 +104,6 @@ import {
   type DeviceConnectionOptions,
   type DeviceEvent,
   type DeviceGrpcImageMode,
-  type DeviceActivity,
   type DeviceGrpcEncoder,
   type DeviceInputSource,
   type DeviceLog,
@@ -272,7 +272,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [streamSwitch, setStreamSwitch] = useState<StreamSwitchState>(IDLE_STREAM_SWITCH);
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
-  const [activity, setActivity] = useState<DeviceActivity | null>(null);
+  const [activity, setActivity] = useState<BackendActivity | null>(null);
   const activityLastSampleAtRef = useRef(0);
   const [serverStreamSettings, setServerStreamSettings] = useState<ServeEmuStreamSettings | null>(
     null,

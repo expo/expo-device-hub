@@ -137,7 +137,6 @@ export interface DeviceActivitySample {
 export interface DeviceActivity {
   hostCores: number | null;
   samples: readonly DeviceActivitySample[];
-  errored: boolean;
   stale: boolean;
 }
 
@@ -620,7 +619,7 @@ export interface DeviceClient {
   foregroundApp: Feature<ForegroundApp | null>;
   logs: Feature<readonly DeviceLog[]> & Attachable & { clear(): void };
   events: Feature<readonly DeviceEvent[]> & Attachable & { clear(): void };
-  activity: Feature<Omit<DeviceActivity, 'errored'>> & Attachable;
+  activity: Feature<DeviceActivity> & Attachable;
   deviceSettings: DeviceSettingsFeature;
   keyboard: Feature<{ hardwareConnected: boolean }> & {
     writes: Writes<'hardwareConnected'>;

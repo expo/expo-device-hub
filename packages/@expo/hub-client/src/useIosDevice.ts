@@ -7,6 +7,7 @@ import {
 } from './feature-state';
 import { useFeatureClient } from './useFeatureClient';
 import type {
+  BackendActivity,
   BackendDeviceClient,
   ConnectionStatus,
   DeviceCapabilities,
@@ -73,7 +74,6 @@ import { clearIosLocation, setIosLocation } from './ios-location';
 import { fetchScreenshot } from './screenshot';
 import { hidUsageForCode } from './keyboard';
 import {
-  type DeviceActivity,
   type DeviceClient,
   type DeviceConnectionOptions,
   type DeviceLog,
@@ -316,7 +316,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [eventLogState, setEventLogState] = useState(createIosEventLogState);
   const events = eventLogState.events;
   const [eventsEnabled, setEventsEnabled] = useState(false);
-  const [activity, setActivity] = useState<DeviceActivity | null>(null);
+  const [activity, setActivity] = useState<BackendActivity | null>(null);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   // The credentials above follow the options at once, but a new config waits for `/api`. Until
   // it arrives, the old config is not used, so its URLs never get another connection's token.
