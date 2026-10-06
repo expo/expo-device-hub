@@ -25,6 +25,7 @@ server's selected device.
 | `/api` | Current device and stream state, including `execToken`. |
 | `/api/screenshot` | `POST`. A still PNG. |
 | `/api/apps/icon?bundleId=<id>` | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
+| `/api/pasteboard` | `POST` reads the simulator pasteboard as `{ok, text}`; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard). |
 | `/helper/<udid>/recording/video` | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token. |
 | `/api/events`, `/api/event-log`, `/api/event-log/events` | Device events and the recorded log. |
 | `/metrics` | CPU, memory and network samples, one per second. |
@@ -58,6 +59,16 @@ recording; an existing `recording.mp4` or `session.json` is preserved. A
 `DELETE` that arrives before its `POST` cancels that recording ID for two
 minutes. Repeating `DELETE` during or after finalization returns the same
 result until another recording starts.
+
+## Pasteboard
+
+`POST /api/pasteboard` reads the simulator pasteboard; `PUT /api/pasteboard` with
+`{"text": "…"}` writes it. Besides the token, both need a browser `Origin`: the
+preview's own origin or one that the CORS policy allows. A request without an
+`Origin` gets 403. Text over 4 MiB, in either direction, returns 413. The `PUT`
+body can be up to 8 MiB, to leave room for JSON escaping. Responses are not
+cached. [LLP 0010](0010-serve-sim-clipboard.explainer.md) explains the
+design.
 
 ## Authentication
 
