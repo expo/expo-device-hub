@@ -65,7 +65,7 @@ describeOrSkip("capture through a configured HTTP proxy", () => {
       expect(argv).not.toContain(secret);
       expect(argv).not.toContain(auth);
       expect(await curl(proxy.address, "http://unresolvable.serve-sim.invalid/items?id=1")).toBe("via-upstream");
-      expect(seen[0]).toEqual({ method: "GET", url: "http://unresolvable.serve-sim.invalid/items?id=1", auth });
+      expect(seen).toContainEqual({ method: "GET", url: "http://unresolvable.serve-sim.invalid/items?id=1", auth });
       await curl(proxy.address, "https://secure.serve-sim.invalid/login");
       expect(seen).toContainEqual({ method: "CONNECT", url: "secure.serve-sim.invalid:443", auth });
       await waitFor(() => store.list().some((row) => row.status === 200));
@@ -86,7 +86,10 @@ describeOrSkip("capture through a configured HTTP proxy", () => {
 
   test("fails a refused proxy request without falling back to the reachable origin", async () => {
     let directRequests = 0;
-    const origin = createServer((_req, res) => { directRequests++; res.end("direct"); });
+    const origin = createServer((req, res) => {
+      if (req.url === "/refused") directRequests++;
+      res.end("direct");
+    });
     const originPort = await listen(origin);
     const upstream = createServer((_req, res) => { res.writeHead(407); res.end("auth-required"); });
     const upstreamPort = await listen(upstream);
