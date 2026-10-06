@@ -5,18 +5,35 @@
 **Systems:** ServeEmu
 **Author:** Krystof Woldrich
 **Date:** 2026-09-10
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/hardware-encoder-spike.md`; links and paths updated)
+**Revised:** 2026-10-06 (checked against the code at 5b273a8f; added the outcome note, resolved the reference to an unpublished plan, named the encoder fields) · 2026-10-02 (moved into the LLP corpus from `packages/serve-emu/packages/serve-emu/docs/hardware-encoder-spike.md`; links and paths updated)
 **Related:** LLP 0008
 
 > File paths such as `src/…` are relative to `packages/serve-emu/packages/serve-emu`, unless the text gives a path from the repository root.
 
+> **Outcome (checked 2026-10-06 against 5b273a8f).** The spike shipped as an
+> opt-in hardware encoder for the emulator-only `grpc-screenshot` stream mode;
+> scrcpy streams are encoded on the device and do not use it. #94 added the
+> strict resolver, probes, and backend arguments in `src/h264-encoder.ts`. #95
+> added the `software`/`hardware` selection to the serve-emu CLI (`--encoder`),
+> `/api/stream-mode`, and the bundled UI. #96 added the Device Hub controls,
+> released in `expo-device-hub` 0.10.0. Software (`libx264`) is still the default
+> (`DEFAULT_GRPC_ENCODER`). The VideoToolbox arguments below match
+> `ffmpegEncoderArgs()`. On 2026-10-06, an agent ran the real-hardware test and
+> its companion test on Apple M2, macOS 26.6.2, FFmpeg 8.1.2; both passed with
+> `h264_videotoolbox`. NVENC and VAAPI still have only the unit coverage
+> described under "Other hosts"; that run did not exercise them on Linux
+> hardware. The rest of this document is the spike record from 2026-09-10.
+
 Validated on 2026-09-10 on macOS 26.6.2, Apple M4 Pro, Homebrew ffmpeg 9.0.1.
-The plan's older M2 / ffmpeg 8.1.2 environment description does not describe this host.
+The spike's implementation plan, which is not in this repository, described an
+older M2 / ffmpeg 8.1.2 environment; that description does not apply to these
+results.
 
 ## VideoToolbox results
 
 The final encoder command uses the existing RGB/PNG input and crop/rotation filters,
-then the following output arguments (shown for a 30 fps, 1 Mbps stream):
+then the following output arguments (shown for a 30 fps, 1 Mbps stream with a
+one-second keyframe interval):
 
 ```sh
 -pix_fmt nv12 -c:v h264_videotoolbox -allow_sw 0 -realtime 1 \
@@ -98,8 +115,9 @@ then view the emulator through Device Hub. Use the same device, image mode,
 resolution, FPS cap, bitrate, power mode and motion window for each encoder.
 Record the host, FFmpeg and emulator versions with the results.
 
-Confirm the active encoder in the device's API diagnostics and the running
-FFmpeg command. For VideoToolbox, require `-c:v h264_videotoolbox -allow_sw 0`.
+Confirm the active encoder in the device's API diagnostics (`encoderName` in
+`GET /api/stream-mode` or `/health`) and the running FFmpeg command. For
+VideoToolbox, require `-c:v h264_videotoolbox -allow_sw 0`.
 Compare FFmpeg CPU-time deltas over equal wall-clock windows alongside source
 throughput and dropped-frame deltas; a configured FPS cap is not a measured rate.
 Repeat with WebSocket and WebRTC, and check switching, refresh and a new viewer.
