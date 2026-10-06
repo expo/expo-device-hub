@@ -22,8 +22,9 @@ export type DeviceTitleProps = {
   recording?: DeviceClient['screenRecording'];
 };
 
-const RECORDING_LABELS: Record<ScreenRecordingPhase | 'checking', string> = {
+const RECORDING_LABELS: Record<ScreenRecordingPhase | 'checking' | 'unavailable', string> = {
   checking: 'Checking recording status',
+  unavailable: 'Recording status unavailable',
   waiting: 'Starting recording',
   recording: 'Recording',
   finalizing: 'Finishing recording',
@@ -85,9 +86,11 @@ export const DEVICE_TITLE_HEIGHT = BUTTON_HEIGHTS[DEVICE_TITLE_SIZE];
 
 /** Compact stream-status pill that toggles between a device's name and identifier. */
 export function DeviceTitle({ device, status, recording }: DeviceTitleProps) {
-  // A recording feature without a phase yet is still being checked.
+  // Without a phase, the status is still being checked unless the read failed.
   const recordingLabel =
-    !recording || recording.status === 'unsupported' ? null : (recording.data ?? 'checking');
+    !recording || recording.status === 'unsupported'
+      ? null
+      : (recording.data ?? (recording.status === 'error' ? 'unavailable' : 'checking'));
   const [revealedId, setRevealedId] = useState<string | null>(null);
   const showingId = revealedId === device.id;
   const label = showingId ? device.id : device.name;

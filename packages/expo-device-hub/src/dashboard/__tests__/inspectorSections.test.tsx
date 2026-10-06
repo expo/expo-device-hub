@@ -141,7 +141,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     foregroundApp: { ...EMPTY_CLIENT.foregroundApp, ...testFeature(null) },
     activity: {
       ...EMPTY_CLIENT.activity,
-      ...testFeature({ hostCores: ios ? 8 : 4, samples: [], errored: false, stale: false }),
+      ...testFeature({ hostCores: ios ? 8 : 4, samples: [], stale: false }),
     },
     streamStats: { ...EMPTY_CLIENT.streamStats, ...testFeature(undefined) },
     logs: { ...EMPTY_CLIENT.logs, ...testFeature([]), enabled: false },

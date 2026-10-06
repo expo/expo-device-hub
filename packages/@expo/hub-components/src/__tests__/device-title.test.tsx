@@ -51,4 +51,19 @@ describe('device title', () => {
     expect(markup).toContain('>Reconnecting</span>');
     expect(markup).not.toContain('>Error</span>');
   });
+  test('shows an unavailable recording status when the read failed without a phase', () => {
+    const markup = renderToStaticMarkup(
+      <DeviceTitle
+        device={{ id: 'emulator-5554', name: 'Pixel' }}
+        status="ready"
+        recording={{
+          status: 'error',
+          data: undefined,
+          error: { code: 'network', message: 'Metadata unavailable', retryable: true },
+          refresh() {},
+        }}
+      />,
+    );
+    expect(markup).toContain('>Recording status unavailable</span>');
+  });
 });
