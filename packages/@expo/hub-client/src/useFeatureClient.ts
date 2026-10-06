@@ -76,15 +76,20 @@ export function useFeatureClient(
       if (!o.active) return Promise.resolve(failure('unsupported', 'No device selected'));
       if (!o.session.resolved)
         return Promise.resolve(failure('busy', 'Device configuration is still loading', true));
+      // Camera and location match the support rules their feature state uses.
       const support =
         name === 'keyboard'
           ? r.platform === 'ios'
           : name === 'streamSource'
             ? !!o.updateSource
-            : name in r.capabilities
-              ? r.capabilities[name as keyof typeof r.capabilities]
-              : true;
-      if (!support && name !== 'camera' && name !== 'location')
+            : name === 'camera'
+              ? r.platform === 'android'
+              : name === 'location'
+                ? r.platform === 'android' || !!r.capabilities.location
+                : name in r.capabilities
+                  ? r.capabilities[name as keyof typeof r.capabilities]
+                  : true;
+      if (!support)
         return Promise.resolve(failure('unsupported', 'This feature is unavailable'));
       if (
         (name === 'streamSettings' || name === 'streamSource') &&
@@ -246,6 +251,7 @@ export function useFeatureClient(
   };
   const writes = <K extends string>(name: string) => session.getWrites(name) as Writes<K>;
   const streamData = useMemo(() => ({ screen: raw.screen, fps: raw.fps }), [raw.screen, raw.fps]);
+  const streamError = useMemo(() => hubError(raw.error ?? 'Stream interrupted'), [raw.error]);
   let streamState = state('stream', true, streamData);
   if (active && session.resolved) {
     streamState =
@@ -255,7 +261,7 @@ export function useFeatureClient(
           ? {
               status: raw.status,
               data: raw.screen ? streamData : undefined,
-              error: hubError(raw.error ?? 'Stream interrupted'),
+              error: streamError,
             }
           : { status: 'loading', data: undefined, error: null };
   }
@@ -426,33 +432,64 @@ export function useFeatureClient(
       reset: actions.resetPermissions,
     },
   );
-  return {
-    platform: raw.platform,
-    stream,
-    streamSettings,
-    streamSource,
-    streamStats,
-    screenRecording,
-    devices,
-    foregroundApp,
-    logs,
-    events,
-    activity,
-    deviceSettings,
-    keyboard,
-    camera,
-    accessibility,
-    location,
-    permissions,
-    inputError: raw.inputError,
-    sendTouch: raw.sendTouch,
-    sendMultiTouch: raw.sendMultiTouch ?? noop,
-    sendKey: raw.sendKey,
-    sendKeyEvents: raw.sendKeyEvents,
-    sendScroll: raw.sendScroll,
-    pressButton: raw.pressButton,
-    reload: raw.reload,
-    rotate: raw.rotate,
-    screenshot: actions.screenshot,
-  };
+  return useMemo(
+    (): DeviceClient => ({
+      platform: raw.platform,
+      stream,
+      streamSettings,
+      streamSource,
+      streamStats,
+      screenRecording,
+      devices,
+      foregroundApp,
+      logs,
+      events,
+      activity,
+      deviceSettings,
+      keyboard,
+      camera,
+      accessibility,
+      location,
+      permissions,
+      inputError: raw.inputError,
+      sendTouch: raw.sendTouch,
+      sendMultiTouch: raw.sendMultiTouch ?? noop,
+      sendKey: raw.sendKey,
+      sendKeyEvents: raw.sendKeyEvents,
+      sendScroll: raw.sendScroll,
+      pressButton: raw.pressButton,
+      reload: raw.reload,
+      rotate: raw.rotate,
+      screenshot: actions.screenshot,
+    }),
+    [
+      raw.platform,
+      stream,
+      streamSettings,
+      streamSource,
+      streamStats,
+      screenRecording,
+      devices,
+      foregroundApp,
+      logs,
+      events,
+      activity,
+      deviceSettings,
+      keyboard,
+      camera,
+      accessibility,
+      location,
+      permissions,
+      raw.inputError,
+      raw.sendTouch,
+      raw.sendMultiTouch,
+      raw.sendKey,
+      raw.sendKeyEvents,
+      raw.sendScroll,
+      raw.pressButton,
+      raw.reload,
+      raw.rotate,
+      actions.screenshot,
+    ],
+  );
 }

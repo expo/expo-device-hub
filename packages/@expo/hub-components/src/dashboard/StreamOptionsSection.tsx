@@ -179,7 +179,7 @@ export function StreamOptionsSection({
   const inputSourceOptions = GRPC_INPUT_SOURCE_OPTIONS.filter((option) =>
     streamSource?.availableInputSources.includes(option.value),
   );
-  const settingsReady = client.streamSettings.data !== null;
+  const settingsReady = client.streamSettings.data !== undefined;
   const settingsDisabled =
     recordingControlsLocked ||
     !settingsReady ||
@@ -255,9 +255,9 @@ export function StreamOptionsSection({
 
   return (
     <CollapsibleSection title="Stream options" open={open} onOpenChange={setOpen}>
-      {client && <FeatureNotice feature={client.streamSettings} />}
-      {client && <FeatureNotice feature={client.streamSource} />}
-      {client && <FeatureNotice feature={client.streamStats} />}
+      <FeatureNotice feature={client.streamSettings} />
+      <FeatureNotice feature={client.streamSource} />
+      <FeatureNotice feature={client.streamStats} />
       {streamSource && sourceOptions.length > 1 && (
         <>
           <SidebarRow label="Source">

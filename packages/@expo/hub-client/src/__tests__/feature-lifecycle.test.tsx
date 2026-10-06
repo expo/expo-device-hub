@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, expect, spyOn, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
-import { FeatureSession } from '../feature-state';
+import { readAndroidLocation, writeAndroidLocation } from '../android-location';
+import { FeatureSession, hubError } from '../feature-state';
 import { useAndroidDeviceClient } from '../useAndroidDevice';
 import { useAppPermissions } from '../useAppPermissions';
 import { useFeatureSession } from '../feature-state';
@@ -291,4 +292,151 @@ test('telemetry retains history on detach but clears it when its device changes'
   expect(stats!.samples).toHaveLength(1);
   await act(async () => renderer!.update(<StatsHarness device="b" enabled />));
   expect(stats!.samples).toHaveLength(1);
+});
+
+test('one failing or missing Android setting route does not disable the other settings', async () => {
+  const pending = new Set<(typeof requests)[number]>();
+  const answer = async () => {
+    const open = requests.filter(
+      (request) => request.url.pathname !== '/api' && !pending.has(request),
+    );
+    await act(async () => {
+      for (const request of open) {
+        pending.add(request);
+        const path = request.url.pathname;
+        if (path === '/api/font-scale') request.resolve(Response.json({}, { status: 502 }));
+        else if (path === '/api/high-text-contrast')
+          request.resolve(Response.json({}, { status: 404 }));
+        else
+          request.resolve(
+            Response.json({
+              ok: true,
+              night: 'no',
+              network: { enabled: true },
+              displayDensity: { scale: 1 },
+              reduceMotion: { enabled: false },
+              fontWeight: { enabled: false },
+              softwareKeyboard: { enabled: true, hardwareKeyboard: false },
+            }),
+          );
+      }
+    });
+  };
+  await mount();
+  await respond('/api', {});
+  await answer();
+  expect(client.deviceSettings.status).toBe('ready');
+  expect(client.deviceSettings.data?.values.network).toBe('on');
+  expect(client.deviceSettings.data?.values['increase-contrast']).toBeUndefined();
+  // More failures than the automatic retry limit still leave the feature usable.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    await act(async () => client.deviceSettings.refresh());
+    await answer();
+  }
+  expect(client.deviceSettings.status).toBe('ready');
+  expect(client.deviceSettings.data?.values['reduce-motion']).toBe('off');
+});
+
+const SETTING_PAYLOADS: Record<string, object> = {
+  '/api/uimode': { night: 'no' },
+  '/api/network': { network: { enabled: true } },
+  '/api/font-scale': { fontScale: { scale: 1 } },
+  '/api/display-density': { displayDensity: { scale: 1 } },
+  '/api/reduce-motion': { reduceMotion: { enabled: false } },
+  '/api/font-weight': { fontWeight: { enabled: false } },
+  '/api/high-text-contrast': { highTextContrast: { enabled: false } },
+  '/api/software-keyboard': { softwareKeyboard: { enabled: true, hardwareKeyboard: false } },
+};
+
+test('a poll that started before a setting write cannot hide the written value', async () => {
+  const intervals: Array<{ callback(): void; delay: number }> = [];
+  stubGlobal('setInterval', (callback: () => void, delay: number) => {
+    intervals.push({ callback, delay });
+    return intervals.length;
+  });
+  stubGlobal('clearInterval', () => {});
+  await mount();
+  await respond('/api', {});
+  await act(async () => {
+    for (const request of requests)
+      if (request.url.pathname in SETTING_PAYLOADS)
+        request.resolve(Response.json({ ok: true, ...SETTING_PAYLOADS[request.url.pathname] }));
+  });
+  expect(client.deviceSettings.status).toBe('ready');
+  const start = requests.length;
+  await act(async () => {
+    for (const interval of intervals) if (interval.delay === 3000) interval.callback();
+  });
+  const polls = requests.slice(start).filter((request) => request.url.pathname in SETTING_PAYLOADS);
+  expect(polls.some((request) => request.url.pathname === '/api/high-text-contrast')).toBe(true);
+  let write!: ReturnType<DeviceClient['deviceSettings']['set']>;
+  await act(async () => {
+    write = client.deviceSettings.set('increase-contrast', 'on');
+  });
+  const post = requests.findLast(
+    (request) => request.init?.method === 'POST' && request.url.pathname === '/api/high-text-contrast',
+  )!;
+  await act(async () => post.resolve(Response.json({ ok: true, highTextContrast: { enabled: true } })));
+  expect(await write).toMatchObject({ ok: true });
+  // The older poll now reports the route as missing.
+  await act(async () => {
+    for (const poll of polls)
+      poll.resolve(
+        poll.url.pathname === '/api/high-text-contrast'
+          ? Response.json({}, { status: 404 })
+          : Response.json({ ok: true, ...SETTING_PAYLOADS[poll.url.pathname] }),
+      );
+  });
+  expect(client.deviceSettings.data?.values['increase-contrast']).toBe('on');
+});
+
+test('Android location failures keep their HTTP and response error codes', async () => {
+  const url = 'https://hub.test/api/location';
+  const fix = { latitude: 1, longitude: 2 };
+  const write = (response: Response) =>
+    new FeatureSession().write('location', ['fix'], () =>
+      writeAndroidLocation(async () => response, url, fix),
+    );
+  expect(await write(Response.json({}, { status: 401 }))).toMatchObject({
+    ok: false,
+    error: { code: 'auth', retryable: false },
+  });
+  expect(await write(Response.json({ ok: false, error: 'No GPS' }))).toMatchObject({
+    ok: false,
+    error: { code: 'rejected', message: 'No GPS', retryable: false },
+  });
+  const read = readAndroidLocation(async () => Response.json({}), url, undefined, true);
+  await expect(read).rejects.toBeDefined();
+  expect(hubError(await read.catch((cause: unknown) => cause))).toMatchObject({
+    code: 'invalid-response',
+    retryable: false,
+  });
+});
+
+test('an unchanged settings poll keeps the same client and feature objects', async () => {
+  const intervals: Array<{ callback(): void; delay: number }> = [];
+  stubGlobal('setInterval', (callback: () => void, delay: number) => {
+    intervals.push({ callback, delay });
+    return intervals.length;
+  });
+  stubGlobal('clearInterval', () => {});
+  const answerSettings = async (from: number) => {
+    await act(async () => {
+      for (const request of requests.slice(from))
+        if (request.url.pathname in SETTING_PAYLOADS)
+          request.resolve(Response.json({ ok: true, ...SETTING_PAYLOADS[request.url.pathname] }));
+    });
+  };
+  await mount();
+  await respond('/api', {});
+  await answerSettings(0);
+  const before = client;
+  const start = requests.length;
+  await act(async () => {
+    for (const interval of intervals) if (interval.delay === 3000) interval.callback();
+  });
+  await answerSettings(start);
+  expect(client.deviceSettings).toBe(before.deviceSettings);
+  expect(client.stream.transports).toBe(before.stream.transports);
+  expect(client).toBe(before);
 });

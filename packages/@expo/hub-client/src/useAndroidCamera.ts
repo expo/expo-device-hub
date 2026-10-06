@@ -1,4 +1,4 @@
-import { checkResponse, withFeatureDeadline, type FeatureRead } from "./feature-state";
+import { checkResponse, httpError, invalidResponse, withFeatureDeadline, type FeatureRead } from "./feature-state";
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { deviceApiUrl } from "./android-api-url";
@@ -91,7 +91,7 @@ export function useAndroidCamera({
             .catch(() => null);
           if (!tracker.isCurrent(request) || scopeRef.current !== scope) return;
           applyStatus(refreshed);
-          throw new Error(androidCameraErrorMessage(response.status, payload));
+          throw httpError(response.status, androidCameraErrorMessage(response.status, payload));
         })
         .catch((cause) => {
           if (!tracker.isCurrent(request) || scopeRef.current !== scope) return;
@@ -152,7 +152,7 @@ export function useAndroidCamera({
         }
         checkResponse(response);
         const read = parseAndroidCameraStatus(await response.json(), imageUrl);
-        if (!read) throw new Error("Invalid camera response");
+        if (!read) throw invalidResponse("Invalid camera response");
         if (cancelled || scopeRef.current !== scope) return;
         const heldFacings = staleCameraFacings(
           pendingAtStart,

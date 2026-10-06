@@ -1,4 +1,4 @@
-import type { FeatureRead } from './feature-state';
+import { httpError, type FeatureRead } from './feature-state';
 import { useEffect, useRef, useState } from 'react';
 
 import { type SessionFetch } from './session-token';
@@ -420,7 +420,7 @@ async function requestWebRtcServerStats(
   const response = await fetchImpl(url, { cache: 'no-store', signal });
   if (!response.ok) {
     await response.body?.cancel();
-    throw new Error(`WebRTC server statistics unavailable (${response.status})`);
+    throw httpError(response.status, `WebRTC server statistics unavailable (${response.status})`);
   }
   return readWebRtcServerStats(await response.json(), sessionId);
 }
@@ -461,8 +461,9 @@ export function useWebRtcStreamStats(
     }
 
     setStats((current) => current ?? emptyStats());
-    let serverHealthy = false;
-    let clientHealthy = false;
+    // `readState` follows the local peer samples, which carry the charts.
+    // Server samples are optional: a failing `/webrtc/stats` only marks the
+    // server half stale and never stops client sampling.
     const pollingStartedAt = Date.now();
     let stopped = false;
     let clientPolling = false;
@@ -478,7 +479,7 @@ export function useWebRtcStreamStats(
     let serverController: AbortController | null = null;
 
     const sampleServer = async () => {
-      if (serverPolling || stopped || readState?.isStopped()) return;
+      if (serverPolling || stopped) return;
       serverPolling = true;
       serverController = new AbortController();
       const controller = serverController;
@@ -498,8 +499,6 @@ export function useWebRtcStreamStats(
         const encoder = next.encoder ? { ...next.encoder, ...publisher } : null;
         serverStats = { ...next, encoder };
         lastServerSampleAt = Date.now();
-        serverHealthy = true;
-        if (clientHealthy) readState?.ready();
         setStats((current) =>
           current
             ? {
@@ -510,9 +509,8 @@ export function useWebRtcStreamStats(
               }
             : current,
         );
-      } catch (cause) {
-        serverHealthy = false;
-        if (!stopped) readState?.fail(cause, true);
+      } catch {
+        // serverStale reports the gap once it outlives STALE_AFTER_MS.
       } finally {
         window.clearTimeout(timeout);
         if (serverController === controller) serverController = null;
@@ -533,8 +531,7 @@ export function useWebRtcStreamStats(
         const client = describeWebRtcClientCounters(previousRef.current, counters);
         previousRef.current = counters;
         lastClientSampleAtRef.current = atMs;
-        clientHealthy = true;
-        if (serverHealthy) readState?.ready();
+        readState?.ready();
         const next: DeviceStreamStatsSample = {
           atMs,
           serverFps: serverStats.serverFps,
@@ -549,7 +546,6 @@ export function useWebRtcStreamStats(
           };
         });
       } catch (cause) {
-        clientHealthy = false;
         if (!stopped) readState?.fail(cause, true);
       } finally {
         clientPolling = false;

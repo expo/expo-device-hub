@@ -28,6 +28,10 @@ function latestSample(samples: readonly DeviceActivitySample[]) {
  * line while data is missing or paused, then one sparkline card per metric.
  * Rendered inside the Current app section; {@link ActivitySection} wraps it
  * in its own collapsible section for standalone use.
+ *
+ * Mount at most one per client: it owns `client.activity` attach/detach, and
+ * those are idempotent rather than counted, so unmounting one instance stops
+ * the data for every other instance.
  */
 export function ActivityCharts({
   client,

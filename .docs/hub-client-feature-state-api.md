@@ -17,7 +17,8 @@ The public contract is in [`types.ts`](../packages/@expo/hub-client/src/types.ts
 - Keep prior data during refresh or failure of the same resource. Changing device or app
   invalidates affected data, pending writes, and late responses.
 - Subscription intent is `enabled`, independent of status. Logs, events, activity, and
-  telemetry are opt-in. Attach/detach are idempotent and have one owner per client feature.
+  telemetry are opt-in. Attach/detach are idempotent, not reference-counted, and have one owner
+  per client feature.
 - Keep reads and writes independent: write errors do not turn an otherwise readable feature
   into a failed read. Writes return `HubResult`; overlapping operations report `busy`.
 - Location stores its nullable fix directly in `data`, without a redundant `fix` wrapper.
@@ -47,8 +48,13 @@ The public contract is in [`types.ts`](../packages/@expo/hub-client/src/types.ts
 
 `unsupported` requires known absence, not a transient failure. Polls and subscription
 retries stop after three consecutive reported failures or immediately for a non-retryable
-error; explicit refresh starts another attempt. Transport-specific video recovery retains
-its existing fallback and reconnect policies.
+error; explicit refresh starts another attempt. Discovery and the Android `/api` poll are
+the exception: they have no other recovery path, so they keep retrying (with backoff for
+iOS discovery) and show non-retryable errors such as auth as `error` until a retry
+succeeds. Each feature's refresh restarts only the transport that serves it; iOS logs,
+events, and activity share one exec-ws socket and restart together. Error codes come from
+the HTTP status or the error type, not from message text. Transport-specific video recovery
+retains its existing fallback and reconnect policies.
 
 ## Verification
 

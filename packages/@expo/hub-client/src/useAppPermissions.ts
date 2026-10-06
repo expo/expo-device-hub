@@ -1,4 +1,4 @@
-import type { FeatureRead } from "./feature-state";
+import { HubRequestError, type FeatureRead } from "./feature-state";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
@@ -91,7 +91,9 @@ export function useAppPermissions({
       const tracker = trackerRef.current;
       const pending = tracker.pending;
       if (ids.some((id) => pending.has(id)))
-        return Promise.reject(new Error("An update is already in progress"));
+        return Promise.reject(
+          new HubRequestError("An update is already in progress", undefined, "busy"),
+        );
       const tokens = ids.flatMap((id) => {
         const token = tracker.start(id);
         return token ? [token] : [];

@@ -1,32 +1,63 @@
-import { useEffect, useMemo, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { FeatureState, HubError, HubResult, Writes } from './types';
+
+/** A request failure that carries its HTTP status or an explicit error code. */
+export class HubRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status?: number,
+    readonly code?: HubError['code'],
+  ) {
+    super(message);
+    this.name = 'HubRequestError';
+  }
+}
+export const httpError = (status: number, message = `Request failed (${status})`) =>
+  new HubRequestError(message, status);
+export const invalidResponse = (message: string) =>
+  new HubRequestError(message, undefined, 'invalid-response');
+
+function statusCode(status: number): HubError['code'] {
+  if (status === 401 || status === 403) return 'auth';
+  if (status === 404 || status === 405 || status === 501) return 'unsupported';
+  if (status === 408 || status === 504) return 'timeout';
+  if (status === 409 || status === 423) return 'busy';
+  if (status === 429 || status >= 500) return 'network';
+  return 'rejected';
+}
+const RETRYABLE = new Set<HubError['code']>(['network', 'timeout', 'busy']);
 
 export function hubError(cause: unknown): HubError {
   if (
     cause &&
     typeof cause === 'object' &&
+    !(cause instanceof Error) &&
     'code' in cause &&
     'retryable' in cause &&
     'message' in cause
   )
     return cause as HubError;
   const message = cause instanceof Error ? cause.message : String(cause || 'Request failed');
-  const code = /401|403|unauthori|forbidden/i.test(message)
-    ? 'auth'
-    : /timeout|timed out/i.test(message)
-      ? 'timeout'
-      : /invalid|parse|JSON/i.test(message)
-        ? 'invalid-response'
-        : 'network';
-  return { code, message, retryable: code === 'network' || code === 'timeout' };
+  const name = cause instanceof Error || cause instanceof DOMException ? cause.name : '';
+  let code: HubError['code'];
+  if (cause instanceof HubRequestError && (cause.code || cause.status !== undefined))
+    code = cause.code ?? statusCode(cause.status!);
+  else if (name === 'TimeoutError') code = 'timeout';
+  else if (name === 'AbortError') code = 'cancelled';
+  else if (name === 'SyntaxError') code = 'invalid-response';
+  // exec-ws and EventSource report no status; their messages are our own text.
+  else if (/unauthori|forbidden/i.test(message)) code = 'auth';
+  else if (/timeout|timed out/i.test(message)) code = 'timeout';
+  else code = 'network';
+  return { code, message, retryable: RETRYABLE.has(code) };
 }
 export const failure = (
   code: HubError['code'],
   message: string,
   retryable = false,
 ): HubResult<never> => ({ ok: false, error: { code, message, retryable } });
-export function checkResponse(response: Response): Response {
-  if (!response.ok) throw new Error(`Request failed (${response.status})`);
+export function checkResponse(response: Response, message?: string): Response {
+  if (!response.ok) throw httpError(response.status, message && `${message} (${response.status})`);
   return response;
 }
 
@@ -41,40 +72,45 @@ export class FeatureRead {
   isStopped() {
     return this.status === 'error' || this.status === 'unsupported';
   }
+  /** Notifies only on a visible change, so steady polls do not re-render. */
+  private set(status: FeatureState<unknown>['status'], error: HubError | null, loaded: boolean) {
+    const same =
+      this.status === status &&
+      this.loaded === loaded &&
+      (this.error === error ||
+        (!!this.error &&
+          !!error &&
+          this.error.code === error.code &&
+          this.error.message === error.message &&
+          this.error.retryable === error.retryable));
+    this.status = status;
+    this.error = same ? this.error : error;
+    this.loaded = loaded;
+    if (!same) this.notify();
+  }
   reset = () => {
-    this.loaded = false;
     this.failures = 0;
-    this.begin();
+    this.set('loading', null, false);
   };
-  idle = () => {
-    this.status = 'idle';
-    this.error = null;
-    this.notify();
-  };
-  begin = () => {
-    this.status = 'loading';
-    this.error = null;
-    this.notify();
-  };
+  idle = () => this.set('idle', null, this.loaded);
+  begin = () => this.set('loading', null, this.loaded);
   ready = () => {
-    this.status = 'ready';
-    this.error = null;
-    this.loaded = true;
     this.failures = 0;
-    this.notify();
+    this.set('ready', null, true);
   };
-  unsupported = () => {
-    this.status = 'unsupported';
-    this.error = null;
-    this.loaded = false;
-    this.notify();
-  };
-  fail = (cause: unknown, automatic = false): boolean => {
-    this.error = hubError(cause);
-    this.status =
-      automatic && this.error.retryable && ++this.failures < 3 ? 'reconnecting' : 'error';
-    this.notify();
-    return this.status === 'reconnecting';
+  unsupported = () => this.set('unsupported', null, false);
+  /**
+   * Records a failure and returns whether the caller should retry. `automatic`
+   * retries stop after 3 retryable failures. `'always'` is for reads that must
+   * recover without the UI: the caller retries every time, and a non-retryable
+   * error (such as auth) still shows as `error` until a retry succeeds.
+   */
+  fail = (cause: unknown, automatic: boolean | 'always' = false): boolean => {
+    const error = hubError(cause);
+    const reconnecting =
+      error.retryable && (automatic === 'always' || (automatic && ++this.failures < 3));
+    this.set(reconnecting ? 'reconnecting' : 'error', error, this.loaded);
+    return reconnecting || automatic === 'always';
   };
   bind = (action: () => void) => {
     this.action = action;
@@ -118,8 +154,10 @@ export class FeatureSession {
     return read;
   };
   resolve = () => {
+    const changed = !this.resolved;
     this.resolved = true;
     this.read('config').ready();
+    if (changed) this.notify();
   };
   getWrites = (key: string): Writes<string> => {
     let writes = this.writes.get(key);
@@ -162,9 +200,11 @@ export class FeatureSession {
     const current = this.getWrites(name);
     const pending = new Set(current.pending);
     const nextErrors = new Map(current.errors);
+    // A busy or cancelled write changed nothing, so it is not a field error.
+    const error = 'error' in result ? result.error : null;
     for (const key of keys) {
       pending.delete(key);
-      if (!result.ok) nextErrors.set(key, result.error);
+      if (error && error.code !== 'busy' && error.code !== 'cancelled') nextErrors.set(key, error);
     }
     this.writes.set(name, { pending, errors: nextErrors });
     this.notify();
@@ -177,6 +217,28 @@ export function useFeatureSession(scope: string): FeatureSession {
   useEffect(() => () => session.invalidate(), [session]);
   useSyncExternalStore(session.subscribe, session.snapshot, session.snapshot);
   return session;
+}
+
+/**
+ * One restart counter per feature, so a Retry on one feature restarts only the
+ * transport that serves it. `names` must be a stable (module-level) array.
+ */
+export function useFeatureRevisions<K extends string>(
+  session: FeatureSession,
+  names: readonly K[],
+): Record<K, number> {
+  const [revisions, setRevisions] = useState(
+    () => Object.fromEntries(names.map((name) => [name, 0])) as Record<K, number>,
+  );
+  useEffect(() => {
+    const cleanups = names.map((name) =>
+      session
+        .read(name)
+        .bind(() => setRevisions((current) => ({ ...current, [name]: current[name] + 1 }))),
+    );
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [session, names]);
+  return revisions;
 }
 
 type FetchFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;

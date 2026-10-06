@@ -1,4 +1,13 @@
-import { checkResponse, useFeatureSession, withFeatureDeadline } from './feature-state';
+import {
+  checkResponse,
+  HubRequestError,
+  hubError,
+  httpError,
+  invalidResponse,
+  useFeatureRevisions,
+  useFeatureSession,
+  withFeatureDeadline,
+} from './feature-state';
 import { useFeatureClient } from './useFeatureClient';
 import type { BackendDeviceClient } from './backend-client';
 /**
@@ -53,7 +62,7 @@ import {
 import { androidStreamSettingsPatch, parseAndroidStreamSettings } from './android-stream-settings';
 import { androidStreamSourceErrorMessage, parseAndroidStreamSource } from './android-stream-source';
 import { androidTouchMessage } from './android-touch';
-import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
+import { mergeAuthoritativeDeviceSetting, sameDeviceSettings } from './device-setting-writes';
 import { buildCodecString, isWebCodecsSupported, parseFramePacket, scanAU } from './h264';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { androidMessageForKeyboardInput } from './keyboard';
@@ -84,7 +93,6 @@ import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
   type ConnectionStatus,
-  type DeviceAppearance,
   type DeviceClient,
   type DeviceCapabilities,
   type ScreenshotCapture,
@@ -98,8 +106,8 @@ import {
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
-  type DeviceStreamEncoderSettings,
   type DeviceStreamCapabilities,
+  type DeviceStreamEncoderSettings,
   type DeviceStreamSettingCapabilities,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
@@ -120,6 +128,7 @@ const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
+const RESTARTABLE_FEATURES = ['logs', 'events', 'activity', 'foregroundApp'] as const;
 
 const noop = () => {};
 const ANDROID_STREAM_CODECS = ['h264'] as const;
@@ -228,14 +237,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const socketProtocols = useMemo(() => sessionTokenProtocols('android', token), [token]);
   const featureSession = useFeatureSession(`${active}\0${baseUrl}\0${targetDevice}`);
   const [activityEnabled, setActivityEnabled] = useState(false);
-  const [subscriptionRevision, setSubscriptionRevision] = useState(0);
-  useEffect(() => {
-    const refresh = () => setSubscriptionRevision((value) => value + 1);
-    const cleanups = ['logs', 'events', 'activity', 'foregroundApp', 'stream'].map((name) =>
-      featureSession.read(name).bind(refresh),
-    );
-    return () => cleanups.forEach((cleanup) => cleanup());
-  }, [featureSession]);
+  const revisions = useFeatureRevisions(featureSession, RESTARTABLE_FEATURES);
+  // `stream` binds below: WebRTC renegotiates, WebSocket mode bumps this.
+  const [streamRevision, setStreamRevision] = useState(0);
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -247,8 +251,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [events, setEvents] = useState<DeviceEvent[]>([]);
   const [eventsEnabled, setEventsEnabled] = useState(false);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
-  // The device's system dark/light setting. null until `/api/uimode` reports it.
-  const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
   const [displayWidthDp, setDisplayWidthDp] = useState<number | null>(null);
   const [hardwareKeyboardConnected, setHardwareKeyboardConnected] = useState<boolean | null>(null);
@@ -489,7 +491,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
       setDeviceSettingsPending(tracker.pending);
       setDeviceSettings((current) => ({ ...(current ?? {}), [key]: value }));
-      if (key === 'appearance') setAppearanceState(value as DeviceAppearance);
 
       return sessionFetch(url, {
         method: 'POST',
@@ -497,20 +498,19 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         body: JSON.stringify(requestOptions.body),
       })
         .then(async (response) => {
-          if (!response.ok) throw new Error(`Device option update failed (${response.status})`);
+          checkResponse(response, 'Device option update failed');
           const payload: unknown = await response.json();
           const authoritative = parseAndroidDeviceSetting(settingKey, payload);
-          if (authoritative === null) throw new Error('Device option update was rejected');
+          if (authoritative === null) throw invalidResponse('Device option update was rejected');
           if (!tracker.isCurrent(request) || deviceScopeRef.current !== scope) return;
           setDeviceSettings((current) => ({ ...(current ?? {}), [key]: authoritative }));
-          if (key === 'appearance') setAppearanceState(authoritative as DeviceAppearance);
         })
         .catch(async (cause) => {
           if (!tracker.isCurrent(request) || deviceScopeRef.current !== scope) return;
           let authoritative: string | null = null;
           try {
             const response = await sessionFetch(url, { cache: 'no-store' });
-            if (!response.ok) throw new Error('Device option refresh failed');
+            checkResponse(response, 'Device option refresh failed');
             authoritative = parseAndroidDeviceSetting(settingKey, await response.json());
           } catch {
             // Restore the last rendered value if both write and refresh fail.
@@ -524,11 +524,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
               authoritative === null ? {} : { [key]: authoritative },
             ),
           );
-          if (key === 'appearance') {
-            setAppearanceState(
-              authoritative === 'light' || authoritative === 'dark' ? authoritative : null,
-            );
-          }
           throw cause;
         })
         .finally(() => {
@@ -536,11 +531,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         });
     },
     [baseUrl, deviceScope, deviceSettings, targetDevice, sessionFetch],
-  );
-
-  const setAppearance = useCallback(
-    (mode: DeviceAppearance) => setDeviceSetting('appearance', mode),
-    [setDeviceSetting],
   );
 
   const { camera, cameraSupported, cameraPending, cameraError, setCameraImage, clearCameraImage } =
@@ -648,9 +638,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           cache: 'no-store',
           signal: controller.signal,
         });
-        if (!response.ok) throw new Error(`Stream source request failed (${response.status})`);
+        checkResponse(response, 'Stream source request failed');
         const next = parseAndroidStreamSource(await response.json());
-        if (!next) throw new Error('Stream source request returned an invalid response');
+        if (!next) throw invalidResponse('Stream source request returned an invalid response');
         if (!controller.signal.aborted && streamSourceRequestRef.current === request) {
           featureSession.read('streamSource').ready();
           streamSourceRef.current = next;
@@ -722,10 +712,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             try {
               payload = await response.json();
             } catch {}
-            throw new Error(androidStreamSourceErrorMessage(response.status, payload));
+            throw httpError(
+              response.status,
+              androidStreamSourceErrorMessage(response.status, payload),
+            );
           }
           const next = parseAndroidStreamSource(await response.json());
-          if (!next) throw new Error('Stream mode update returned an invalid response');
+          if (!next) throw invalidResponse('Stream mode update returned an invalid response');
           if (streamSourceRequestRef.current === request) {
             setStreamSourceError(null);
             // serve-emu answers after it has published the replacement session
@@ -923,7 +916,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     const url = deviceApiUrl(baseUrl, '/api', targetDevice);
 
     const refresh = async () => {
-      if (cancelled || polling || featureSession.read('config').isStopped()) return;
+      if (cancelled || polling) return;
       polling = true;
       controller = new AbortController();
       try {
@@ -952,9 +945,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           );
         }
       } catch (cause) {
+        // The interval keeps polling: discovery, screen size, and transport
+        // metadata have no other refresh path, so this read never stops.
         if (!cancelled) {
-          featureSession.read('config').fail(cause, true);
-          featureSession.read('screenRecording').fail(cause, true);
+          featureSession.read('config').fail(cause, 'always');
+          featureSession.read('screenRecording').fail(cause, 'always');
         }
       } finally {
         polling = false;
@@ -1037,7 +1032,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     () =>
       featureSession.read('stream').bind(() => {
         if (useWebRtc) restartWebRtc();
-        else setSubscriptionRevision((value) => value + 1);
+        else setStreamRevision((value) => value + 1);
       }),
     [featureSession, useWebRtc, restartWebRtc],
   );
@@ -1050,17 +1045,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   const updateStreamSettings = useCallback(
     (patch: Partial<DeviceStreamEncoderSettings>) => {
-      if (streamSourceLoadingRef.current || isStreamSwitchPending(streamSwitchRef.current)) return;
+      if (streamSourceLoadingRef.current || isStreamSwitchPending(streamSwitchRef.current))
+        throw new HubRequestError('A stream update is already in progress', undefined, 'busy');
       const write = writeStreamSettings(patch);
-      if (!write || !useWebRtc) return write;
+      if (!useWebRtc) return write;
       const request = ++streamSourceRequestRef.current;
       dispatchStreamSwitch({ type: 'request-start', live: streamLiveRef.current });
       return write
         .then(async (updated) => {
-          if (streamSourceRequestRef.current !== request) return;
+          if (streamSourceRequestRef.current !== request)
+            throw new HubRequestError(
+              'A newer stream update replaced this one',
+              undefined,
+              'cancelled',
+            );
           if (!updated) {
             dispatchStreamSwitch({ type: 'request-failure' });
-            return;
+            return false;
           }
           // Resolution changes replace the encoder without closing the input
           // socket. A new peer avoids waiting on the old decoder's video state.
@@ -1073,7 +1074,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           return true;
         })
         .catch((cause) => {
-          dispatchStreamSwitch({ type: 'request-failure' });
+          // A superseded write (another request or another device) must not
+          // clear the switch state that the newer request owns.
+          if (streamSourceRequestRef.current === request)
+            dispatchStreamSwitch({ type: 'request-failure' });
           throw cause;
         });
     },
@@ -1565,7 +1569,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // Reconnect only when the target device or server changes — not on every
     // status/fps/screen state update this effect writes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, baseUrl, targetDevice, waitingForWebRtcMetadata, useWebRtc, socketProtocols]);
+  }, [
+    active,
+    baseUrl,
+    targetDevice,
+    waitingForWebRtcMetadata,
+    useWebRtc,
+    socketProtocols,
+    streamRevision,
+  ]);
 
   // ── WebRTC input WebSocket ──
   // Video travels over the peer connection, but low-latency JSON input and
@@ -1650,7 +1662,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (wsRef.current === ws) wsRef.current = null;
       setWebRtcInputReady(false);
     };
-  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols, subscriptionRevision]);
+  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
@@ -1688,7 +1700,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       cancelled = true;
       source?.close();
     };
-  }, [logsEnabled, active, baseUrl, targetDevice, token, subscriptionRevision, featureSession]);
+  }, [logsEnabled, active, baseUrl, targetDevice, token, revisions.logs, featureSession]);
 
   // ── Activity metrics (SSE) ──
   useEffect(() => {
@@ -1762,7 +1774,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     targetDevice,
     token,
     activityEnabled,
-    subscriptionRevision,
+    revisions.activity,
     featureSession,
   ]);
 
@@ -1793,7 +1805,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         checkResponse(response);
         const snapshot = (await response.json()) as { events?: AndroidSessionEvent[] };
         if (cancelled) return;
-        if (!Array.isArray(snapshot.events)) throw new Error('Invalid events response');
+        if (!Array.isArray(snapshot.events)) throw invalidResponse('Invalid events response');
         featureSession.read('events').ready();
         const snapshotEvents = snapshot.events;
         eventCursorRef.current = mergeAndroidEventSnapshotCursor(
@@ -1828,7 +1840,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     baseUrl,
     targetDevice,
     sessionFetch,
-    subscriptionRevision,
+    revisions.events,
     featureSession,
   ]);
 
@@ -1847,7 +1859,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         .then((r) => checkResponse(r).json())
         .then((data: { devices?: Array<Record<string, unknown>>; defaultSerial?: string }) => {
           if (cancelled) return;
-          if (!Array.isArray(data.devices)) throw new Error('Invalid device list');
+          if (!Array.isArray(data.devices)) throw invalidResponse('Invalid device list');
           featureSession.read('devices').ready();
           const streamed = targetDevice ?? data.defaultSerial ?? null;
           setDevices(
@@ -1903,7 +1915,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           };
         };
         if (cancelled) return;
-        if (!data.ok) throw new Error('Invalid foreground app response');
+        if (!data.ok) throw invalidResponse('Invalid foreground app response');
         featureSession.read('foregroundApp').ready();
         if (!data.app?.packageName) {
           setForegroundApp(null);
@@ -1934,7 +1946,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       cancelled = true;
       clearInterval(timer);
     };
-  }, [active, baseUrl, targetDevice, sessionFetch, subscriptionRevision, featureSession]);
+  }, [active, baseUrl, targetDevice, sessionFetch, revisions.foregroundApp, featureSession]);
 
   const foregroundAppId = foregroundApp?.id ?? null;
   useEffect(() => {
@@ -1962,7 +1974,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     for (const key of ANDROID_DEVICE_SETTING_KEYS) deviceSettingVersionsRef.current[key]++;
     setDeviceSettingsPending(new Set());
     setDeviceSettings(null);
-    setAppearanceState(null);
     setDisplayWidthDp(null);
     setHardwareKeyboardConnected(null);
     if (!active || !baseUrl) {
@@ -2017,31 +2028,26 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           );
         return;
       }
-      const failedRead = results.find((result) => !result.handled);
-      if (failedRead) featureSession.read('deviceSettings').fail(failedRead.cause, true);
-      else featureSession.read('deviceSettings').ready();
+      // Each key has its own route. One failing key keeps its last value (or
+      // hides, when the route is missing) instead of disabling every option.
+      featureSession.read('deviceSettings').ready();
       setDeviceSettings((current) => {
         const next = { ...(current ?? {}) };
         for (const result of results) {
-          if (!result.handled) continue;
+          // A write that started or finished during this read owns the value.
           if (result.pendingAtStart) continue;
           if (deviceSettingVersionsRef.current[result.key] !== result.version) continue;
           if (tracker.pending.has(result.key)) continue;
+          if (!result.handled) {
+            if (hubError(result.cause).code === 'unsupported') delete next[result.key];
+            continue;
+          }
           if (result.value === null) delete next[result.key];
           else next[result.key] = result.value;
         }
-        return next;
+        // An unchanged poll keeps the same object, so the client does not re-render.
+        return sameDeviceSettings(current, next) ? current : next;
       });
-      const appearanceResult = results.find((result) => result.key === 'appearance');
-      if (
-        appearanceResult?.handled &&
-        !appearanceResult.pendingAtStart &&
-        deviceSettingVersionsRef.current.appearance === appearanceResult.version &&
-        !tracker.pending.has('appearance') &&
-        (appearanceResult.value === 'light' || appearanceResult.value === 'dark')
-      ) {
-        setAppearanceState(appearanceResult.value);
-      }
       const displaySizeResult = results.find((result) => result.key === 'display-size');
       if (
         displaySizeResult &&
@@ -2207,8 +2213,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     reload,
     rotate,
     screenshot,
-    appearance,
-    setAppearance,
     hardwareKeyboardConnected,
     setHardwareKeyboardConnected: noop,
     toggleSoftwareKeyboard: noop,
@@ -2220,7 +2224,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setActivityEnabled,
     updateSource: async (patch) => {
       const previous = streamSourceRef.current;
-      if (!previous) throw new Error('Capture source is not loaded');
+      if (!previous)
+        throw new HubRequestError('Capture source is not loaded', undefined, 'busy');
       await putStreamMode({ mode: patch.mode ?? previous.mode, ...patch });
     },
     permissionsAppId: appPermissions.permissionsAppId,

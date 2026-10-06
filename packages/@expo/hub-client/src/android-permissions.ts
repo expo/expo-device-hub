@@ -1,4 +1,5 @@
 import { deviceApiUrl } from "./android-api-url";
+import { httpError } from "./feature-state";
 import {
   asRecord,
   errorMessage,
@@ -48,7 +49,10 @@ export function androidPermissionsBackend(
     });
     if (response.ok) return;
     const payload: unknown = await response.json().catch(() => null);
-    throw new Error(`${errorMessage(payload, "Permission update failed")} (${response.status})`);
+    throw httpError(
+      response.status,
+      `${errorMessage(payload, "Permission update failed")} (${response.status})`,
+    );
   };
   return {
     list,

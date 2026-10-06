@@ -24,11 +24,10 @@ export function PermissionsSection({
   defaultOpen?: boolean;
 }) {
   const [open, setOpen] = useState(defaultOpen);
-  const permissions = client.permissions.data?.items ?? null;
+  const permissions = client.permissions.data?.items ?? [];
   const permissionsPending = client.permissions.writes.pending;
   const permissionsError =
     client.permissions.error?.message ?? [...client.permissions.writes.errors.values()][0]?.message;
-  const refreshPermissions = client.permissions.refresh;
   const appId = client.permissions.data?.appId ?? null;
 
   return (
@@ -36,16 +35,6 @@ export function PermissionsSection({
       <FeatureNotice feature={client.permissions} />
       {client.permissions.data === undefined ? null : appId === null ? (
         <SectionNote>No app is in the foreground.</SectionNote>
-      ) : permissions === null ? (
-        permissionsError ? (
-          <div style={{ padding: "0 0 12px" }}>
-            <Button theme="secondary" size="xs" onClick={refreshPermissions}>
-              Retry
-            </Button>
-          </div>
-        ) : (
-          <SectionNote>Reading permissions…</SectionNote>
-        )
       ) : permissions.length === 0 ? (
         <SectionNote>This app declares no runtime permissions.</SectionNote>
       ) : (

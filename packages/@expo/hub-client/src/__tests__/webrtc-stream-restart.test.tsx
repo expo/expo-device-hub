@@ -194,7 +194,12 @@ for (const outcome of ['success', 'failure', 'superseded'] as const) {
       finishWrite(
         Response.json({ maxDimension: 720 }, { status: outcome === 'failure' ? 503 : 200 }),
       );
-      expect(await write).toBe(outcome === 'success');
+      if (outcome === 'success') expect(await write).toBe(true);
+      // The caller gets the real cause, so the feature write is not `ok`.
+      else
+        await expect(write).rejects.toMatchObject(
+          outcome === 'failure' ? { status: 503 } : { code: 'cancelled' },
+        );
     });
     expect(settings!.streamSettingsPending).toBe(false);
     expect(settings!.streamSettings?.maxDimension ?? null).toBe(
@@ -377,6 +382,74 @@ test('attaching and remounting the Android video keeps one control socket and us
   expect(Peer.instances).toHaveLength(2);
   expect(hub.captures).toEqual([remounted]);
   expect(hub.client.stream.status).toBe('reconnecting');
+});
+
+test('Android Retry on logs restarts only the log subscription', async () => {
+  class LogEvents {
+    static instances: LogEvents[] = [];
+    onopen?: () => void;
+    onerror?: () => void;
+    closed = false;
+    constructor(readonly url: string) {
+      LogEvents.instances.push(this);
+    }
+    addEventListener() {}
+    close() {
+      this.closed = true;
+    }
+  }
+  stubGlobal('EventSource', LogEvents);
+  const hub = await androidHarness();
+  await act(async () => hub.client.logs.attach());
+  expect(LogEvents.instances).toHaveLength(1);
+  await act(async () => hub.client.logs.refresh());
+  expect(LogEvents.instances).toHaveLength(2);
+  expect(LogEvents.instances[0]!.closed).toBe(true);
+  // The WebRTC input socket and peer are untouched.
+  expect(ControlSocket.instances).toHaveLength(1);
+  expect(ControlSocket.instances[0]!.closeCount).toBe(0);
+  expect(Peer.instances).toHaveLength(1);
+  expect(hub.client.stream.status).toBe('ready');
+});
+
+test('a failed Android WebRTC encoder write reports its cause and a field error', async () => {
+  const hub = await androidHarness();
+  let result!: ReturnType<typeof hub.client.streamSettings.update>;
+  await act(async () => {
+    result = hub.client.streamSettings.update({ maxDimension: 720 });
+  });
+  await hub.finishWrite({}, 503);
+  expect(await result).toMatchObject({ ok: false, error: { code: 'network', retryable: true } });
+  expect(hub.client.streamSettings.writes.errors.get('maxDimension')?.code).toBe('network');
+  expect(Peer.instances).toHaveLength(1);
+});
+
+test('a cancelled encoder write from the previous device keeps the new write waiting for video', async () => {
+  const hub = await androidHarness();
+  let oldWrite!: ReturnType<typeof hub.client.streamSettings.update>;
+  await act(async () => {
+    oldWrite = hub.client.streamSettings.update({ maxDimension: 720 });
+  });
+  const oldRequest = hub.writes[0]!;
+  await hub.changeDevice();
+  await act(async () => ControlSocket.instances.at(-1)!.open());
+  await hub.paintReplacement();
+  expect(hub.client.stream.status).toBe('ready');
+  let nextSettled = false;
+  let nextWrite!: ReturnType<typeof hub.client.streamSettings.update>;
+  await act(async () => {
+    nextWrite = hub.client.streamSettings.update({ maxDimension: 960 });
+    void nextWrite.then(() => {
+      nextSettled = true;
+    });
+  });
+  await act(async () => oldRequest.finish(Response.json({ maxDimension: 720 })));
+  expect(await oldWrite).toMatchObject({ ok: false, error: { code: 'cancelled' } });
+  await hub.finishWrite({ maxDimension: 960 });
+  // The new write settles only after its replacement video renders.
+  expect(nextSettled).toBe(false);
+  await hub.paintReplacement();
+  expect(await nextWrite).toMatchObject({ ok: true });
 });
 
 test('Android settings wait for fresh video, preserve the poster past grace, and still time out', async () => {

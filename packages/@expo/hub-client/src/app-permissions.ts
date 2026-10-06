@@ -1,3 +1,4 @@
+import { httpError, invalidResponse } from "./feature-state";
 import { type AppPermission, type AppPermissionAction } from "./types";
 
 export interface PermissionsBackend {
@@ -34,7 +35,8 @@ export async function readPermissions(
   const payload: unknown = await response.json().catch(() => null);
   const permissions = response.ok ? parse(payload) : null;
   if (permissions) return permissions;
-  throw new Error(errorMessage(payload, fallback));
+  const message = errorMessage(payload, fallback);
+  throw response.ok ? invalidResponse(message) : httpError(response.status, message);
 }
 
 export type PermissionWriteVersions = Readonly<Record<string, number>>;

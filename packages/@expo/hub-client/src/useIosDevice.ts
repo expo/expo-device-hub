@@ -1,4 +1,10 @@
-import { checkResponse, useFeatureSession, withFeatureDeadline } from './feature-state';
+import {
+  checkResponse,
+  invalidResponse,
+  useFeatureRevisions,
+  useFeatureSession,
+  withFeatureDeadline,
+} from './feature-state';
 import { useFeatureClient } from './useFeatureClient';
 import type { BackendDeviceClient } from './backend-client';
 /**
@@ -64,7 +70,6 @@ import { hidUsageForCode } from './keyboard';
 import {
   type ConnectionStatus,
   type DeviceActivity,
-  type DeviceAppearance,
   type DeviceClient,
   type DeviceCapabilities,
   type DeviceConnectionOptions,
@@ -112,6 +117,8 @@ const RECONNECT_MS = 1500;
 // a refused socket at once. On a server without an admission frame, an open
 // socket that outlives this was admitted.
 const INPUT_ADMISSION_MS = 1000;
+const DISCOVERY_MAX_BACKOFF_MS = 15_000;
+const RESTARTABLE_FEATURES = ['logs', 'events', 'activity', 'foregroundApp'] as const;
 const ACTIVITY_STALE_MS = 8000;
 const noop = () => {};
 
@@ -285,14 +292,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const socketProtocols = useMemo(() => sessionTokenProtocols('ios', token), [token]);
   const featureSession = useFeatureSession(`${active}\0${baseUrl}\0${targetDevice}`);
   const [activityEnabled, setActivityEnabled] = useState(false);
-  const [subscriptionRevision, setSubscriptionRevision] = useState(0);
-  useEffect(() => {
-    const refresh = () => setSubscriptionRevision((value) => value + 1);
-    const cleanups = ['logs', 'events', 'activity', 'foregroundApp', 'stream'].map((name) =>
-      featureSession.read(name).bind(refresh),
-    );
-    return () => cleanups.forEach((cleanup) => cleanup());
-  }, [featureSession]);
+  const revisions = useFeatureRevisions(featureSession, RESTARTABLE_FEATURES);
+  // `stream` binds below so it can also renegotiate WebRTC.
+  const [streamRevision, setStreamRevision] = useState(0);
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -321,8 +323,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     active && baseUrl && resolvedConfig?.key === connectionKey(baseUrl, targetDevice, token)
       ? resolvedConfig.config
       : null;
-  // The simulator's system dark/light setting. null until read.
-  const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
   const [deviceSettingsPending, setDeviceSettingsPending] = useState<ReadonlySet<DeviceSettingKey>>(
     () => new Set(),
@@ -566,9 +566,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!request) return;
       setDeviceSettingsPending(tracker.pending);
       setDeviceSettings((current) => ({ ...(current ?? {}), [key]: value }));
-      if (key === 'appearance' && (value === 'light' || value === 'dark')) {
-        setAppearanceState(value);
-      }
       const previous = deviceSettings?.[key];
       return hostUiRequest(execWsUrl, execToken, { device, option: key, value }, socketProtocols)
         .catch(async (cause) => {
@@ -585,12 +582,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
             setDeviceSettings((current) =>
               mergeAuthoritativeDeviceSetting(current, key, authoritative),
             );
-            if (key === 'appearance') {
-              const nextAppearance = authoritative.appearance;
-              if (nextAppearance === 'light' || nextAppearance === 'dark') {
-                setAppearanceState(nextAppearance);
-              }
-            }
           } catch {
             if (tracker.isCurrent(request) && deviceSettingConfigRef.current === c) {
               setDeviceSettings((current) =>
@@ -609,11 +600,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         });
     },
     [config, deviceSettings, socketProtocols],
-  );
-
-  const setAppearance = useCallback(
-    (mode: DeviceAppearance) => setDeviceSetting('appearance', mode),
-    [setDeviceSetting],
   );
 
   const setWebRtcCodec = useCallback((codec: DeviceWebRtcCodec) => {
@@ -648,6 +634,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
     let cancelled = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
+    // Discovery is the only way to reach the device, so it never gives up.
+    // Failures back off; the user can still Retry at once.
+    let failureDelay = RECONNECT_MS;
     setLogs([]);
     setActivity(null);
     setForegroundApp(null);
@@ -735,14 +724,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           startRequested = true;
           void startIosHelper(targetDevice, baseUrl, tokenFetch).catch(() => {});
         }
+        failureDelay = RECONNECT_MS;
         if (!cancelled) pollTimer = setTimeout(resolve, RECONNECT_MS);
       } catch (cause) {
-        if (!cancelled && featureSession.read('config').fail(cause, true))
-          pollTimer = setTimeout(resolve, RECONNECT_MS);
+        if (cancelled) return;
+        featureSession.read('config').fail(cause, 'always');
+        pollTimer = setTimeout(resolve, failureDelay);
+        failureDelay = Math.min(failureDelay * 2, DISCOVERY_MAX_BACKOFF_MS);
       }
     };
     const unbind = featureSession.read('config').bind(() => {
       if (pollTimer) clearTimeout(pollTimer);
+      failureDelay = RECONNECT_MS;
       void resolve();
     });
     void resolve();
@@ -799,7 +792,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useEffect(
     () =>
       featureSession.read('stream').bind(() => {
-        setSubscriptionRevision((value) => value + 1);
+        setStreamRevision((value) => value + 1);
         restartWebRtcStream();
       }),
     [featureSession, restartWebRtcStream],
@@ -908,7 +901,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   }, [useAvcc, config?.url]);
 
   useAvccStream({
-    revision: subscriptionRevision,
+    revision: streamRevision,
     url: config?.url ?? '',
     enabled: active && useAvcc && !!config,
     canvasRef,
@@ -1316,7 +1309,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     eventsEnabled,
     activityEnabled,
     featureSession,
-    subscriptionRevision,
+    // Logs, events, and activity share one exec-ws socket.
+    revisions.logs,
+    revisions.events,
+    revisions.activity,
     execWsUrl,
     execToken,
     logsPath,
@@ -1332,7 +1328,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     deviceSettingWriteTrackerRef.current.reset();
     setDeviceSettingsPending(new Set());
     if (!execWsUrl || !execToken || !deviceUdid) {
-      setAppearanceState(null);
       setDeviceSettings(null);
       return;
     }
@@ -1347,9 +1342,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           }
           setDeviceSettings(next);
           featureSession.read('deviceSettings').ready();
-          if (next.appearance === 'light' || next.appearance === 'dark') {
-            setAppearanceState(next.appearance);
-          }
           // The helper socket's open handler usually settles this first (it
           // disconnects the hardware keyboard); only fill in an unknown.
           const keyboardValue = res.status?.[UI_OPTION_HARDWARE_KEYBOARD];
@@ -1442,7 +1434,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       cancelled = true;
       source?.close();
     };
-  }, [appStateUrl, subscriptionRevision, featureSession, config]);
+  }, [appStateUrl, revisions.foregroundApp, featureSession, config]);
 
   // ── Foreground app details (name, versions, icon) — introspected from the
   //    app bundle on the host over exec-ws whenever the foreground bundle id
@@ -1501,7 +1493,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         .then((r) => checkResponse(r).json())
         .then((data: { devices?: Array<Record<string, unknown>> }) => {
           if (cancelled) return;
-          if (!Array.isArray(data.devices)) throw new Error('Invalid device list');
+          if (!Array.isArray(data.devices)) throw invalidResponse('Invalid device list');
           featureSession.read('devices').ready();
           setDevices(
             data.devices.map((d) => ({
@@ -1615,8 +1607,6 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     reload,
     rotate,
     screenshot,
-    appearance,
-    setAppearance,
     hardwareKeyboardConnected,
     setHardwareKeyboardConnected,
     toggleSoftwareKeyboard,

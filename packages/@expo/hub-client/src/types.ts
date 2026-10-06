@@ -605,7 +605,10 @@ export interface Writes<K extends string> {
   pending: ReadonlySet<K>;
   errors: ReadonlyMap<K, HubError>;
 }
-/** One shared subscription per client. Attach/detach are idempotent. */
+/**
+ * One shared subscription per client. Attach/detach are idempotent, not
+ * reference-counted: one detach stops the data for every consumer.
+ */
 export interface Attachable {
   enabled: boolean;
   attach(): void;

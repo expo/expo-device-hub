@@ -5,7 +5,6 @@ import type {
   AppPermissionAction,
   ConnectionStatus,
   DeviceActivity,
-  DeviceAppearance,
   DeviceCameraFacing,
   DeviceCameraStatus,
   DeviceCapabilities,
@@ -143,7 +142,8 @@ export interface BackendDeviceClient {
   streamSettings: DeviceStreamEncoderSettings | null;
   streamSettingsPending: boolean;
   /** Patch one or more runtime encoder values. */
-  updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => void;
+  /** Resolves true when applied and false when nothing was sent; rejects with the cause. */
+  updateStreamSettings: (patch: Partial<DeviceStreamEncoderSettings>) => Promise<boolean>;
   /** Active Android capture source; null when the backend does not expose source switching. */
   streamSource: DeviceStreamSourceStatus | null;
   /**
@@ -236,19 +236,6 @@ export interface BackendDeviceClient {
    * a file download).
    */
   screenshot: () => Promise<ScreenshotCapture | null>;
-
-  /**
-   * Current device system appearance (dark/light), or `null` while unknown or on
-   * a backend that can't report it (e.g. a bare serve-sim helper with no
-   * middleware). Read once the connection resolves; updated by {@link setAppearance}.
-   */
-  appearance: DeviceAppearance | null;
-  /**
-   * Set the device's system appearance. serve-sim runs `simctl ui <udid>
-   * appearance <mode>` (over the middleware exec-ws); serve-emu posts `uimode
-   * night yes|no`. No-op on a backend that can't set it.
-   */
-  setAppearance: (mode: DeviceAppearance) => void;
 
   /**
    * Whether Simulator currently treats the Mac keyboard as connected to the

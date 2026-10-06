@@ -1,10 +1,13 @@
 import { fetchFeature as fetch } from './feature-state';
-import type { FeatureRead } from './feature-state';
+import { checkResponse, HubRequestError, invalidResponse, type FeatureRead } from './feature-state';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { type SessionFetch } from './session-token';
 import { DEFAULT_DEVICE_STREAM_SETTINGS, sameDeviceStreamSettings } from './stream-settings';
 import { type DeviceStreamEncoderSettings } from './types';
+
+const superseded = () =>
+  new HubRequestError('A newer stream update replaced this one', undefined, 'cancelled');
 
 type StreamSettingsParser = (
   value: unknown,
@@ -60,12 +63,12 @@ export function useStreamSettingsResource({
       readControllerRef.current = controller;
       try {
         const response = await fetchImpl(url, { cache: 'no-store', signal: controller.signal });
-        if (!response.ok) throw new Error(`Stream settings request failed (${response.status})`);
+        checkResponse(response, 'Stream settings request failed');
         const next = parse(
           await response.json(),
           settingsRef.current ?? DEFAULT_DEVICE_STREAM_SETTINGS,
         );
-        if (!next) throw new Error('Stream settings request returned an invalid response');
+        if (!next) throw invalidResponse('Stream settings request returned an invalid response');
         if (!controller.signal.aborted && requestRef.current === request) {
           readState?.ready();
           settingsRef.current = next;
@@ -121,7 +124,7 @@ export function useStreamSettingsResource({
         };
       const previous = settingsRef.current ?? DEFAULT_DEVICE_STREAM_SETTINGS;
       const optimistic = parse({ ...previous, ...requestPatch }, previous);
-      if (!optimistic) return;
+      if (!optimistic) return Promise.resolve(false);
       readControllerRef.current?.abort();
       readControllerRef.current = null;
       const request = ++requestRef.current;
@@ -132,6 +135,7 @@ export function useStreamSettingsResource({
       setStreamSettings(optimistic);
       setStreamSettingsPending(true);
       // Let the device client wait for the write before replacing its transport.
+      // Resolves true when applied; rejects with the cause or a cancellation.
       return fetchImpl(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -139,22 +143,21 @@ export function useStreamSettingsResource({
         signal: controller.signal,
       })
         .then(async (response) => {
-          if (!response.ok) throw new Error(`Stream settings update failed (${response.status})`);
+          checkResponse(response, 'Stream settings update failed');
           const next = parse(await response.json(), optimistic);
-          if (!next) throw new Error('Stream settings update returned an invalid response');
+          if (!next) throw invalidResponse('Stream settings update returned an invalid response');
           if (!controller.signal.aborted && requestRef.current === request) {
             settingsRef.current = next;
             setStreamSettings(next);
             return true;
           }
-          return false;
+          throw superseded();
         })
-        .catch(() => {
-          if (!controller.signal.aborted && requestRef.current === request) {
-            settingsRef.current = previous;
-            setStreamSettings(previous);
-          }
-          return false;
+        .catch((cause: unknown) => {
+          if (controller.signal.aborted || requestRef.current !== request) throw superseded();
+          settingsRef.current = previous;
+          setStreamSettings(previous);
+          throw cause;
         })
         .finally(() => {
           if (writeControllerRef.current === controller) writeControllerRef.current = null;

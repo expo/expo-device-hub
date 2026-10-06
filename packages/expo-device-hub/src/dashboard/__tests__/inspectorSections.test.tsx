@@ -76,7 +76,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       status: 'unsupported',
       data: undefined,
       error: null,
-      writes: { ...EMPTY_CLIENT.location.writes, pending: new Set(false ? ['fix' as const] : []) },
+      writes: { ...EMPTY_CLIENT.location.writes, pending: new Set<'fix'>() },
     },
     permissions: {
       ...EMPTY_CLIENT.permissions,
@@ -110,7 +110,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       ),
       writes: {
         ...EMPTY_CLIENT.streamSettings.writes,
-        pending: new Set(false ? ['maxDimension' as const] : []),
+        pending: new Set<'maxDimension'>(),
       },
     },
     streamSource: {
@@ -132,7 +132,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
       ),
       writes: {
         ...EMPTY_CLIENT.streamSource.writes,
-        pending: new Set(false ? ['mode' as const] : []),
+        pending: new Set<'mode'>(),
       },
     },
     keyboard: { ...EMPTY_CLIENT.keyboard, ...testFeature({ hardwareConnected: ios }) },
@@ -575,7 +575,7 @@ test('disables the Android capture source select while replacement is pending', 
       ...inspectorClient('android').streamSource,
       writes: {
         ...inspectorClient('android').streamSource.writes,
-        pending: new Set(true ? ['mode' as const] : []),
+        pending: new Set(['mode' as const]),
       },
     },
   } satisfies DeviceClient;
@@ -606,7 +606,7 @@ test('disables every gRPC capture control while replacement is pending', () => {
       }),
       writes: {
         ...inspectorClient('android').streamSource.writes,
-        pending: new Set(true ? ['mode' as const] : []),
+        pending: new Set(['mode' as const]),
       },
     },
   } satisfies DeviceClient;
@@ -679,7 +679,7 @@ test('disables Android encoder controls while a stream restart is pending', () =
       ...inspectorClient('android').streamSettings,
       writes: {
         ...inspectorClient('android').streamSettings.writes,
-        pending: new Set(true ? ['maxDimension' as const] : []),
+        pending: new Set(['maxDimension' as const]),
       },
     },
   } satisfies DeviceClient;
