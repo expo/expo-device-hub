@@ -318,4 +318,15 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     await typeKeys("w");
     await waitFor(() => lastText(start), "zqX!w");
   }, 90_000);
+
+  // The stream cancels mousedown, so without its own focus handling the button would keep the keys.
+  test("one click on the stream takes the keyboard back from a toolbar button", async () => {
+    await load(simUrl);
+    const start = await launchTextField();
+    await clickOnce(await waitForElement(TOOLS_BUTTON));
+    expect(await cdp.evaluate<boolean>(`document.activeElement === ${TOOLS_BUTTON}`)).toBe(true);
+    await clickOnce(await waitForStream());
+    await typeKeys("zq");
+    await waitFor(() => lastText(start), "zq");
+  }, 90_000);
 });

@@ -25,7 +25,7 @@ type ParsedWebSocketFrame = {
   consumed: number;
 };
 
-export function parseWebSocketFrame(buffer: Buffer): ParsedWebSocketFrame | null {
+export function parseWebSocketFrame(buffer: Buffer, maxPayloadBytes = Number.MAX_SAFE_INTEGER): ParsedWebSocketFrame | null {
   if (buffer.length < 2) return null;
   const opcode = buffer[0]! & 0x0f;
   const masked = (buffer[1]! & 0x80) !== 0;
@@ -44,6 +44,7 @@ export function parseWebSocketFrame(buffer: Buffer): ParsedWebSocketFrame | null
     length = Number(bigLength);
     offset += 8;
   }
+  if (length > maxPayloadBytes) throw new Error("WebSocket frame too large");
   const maskOffset = offset;
   if (masked) offset += 4;
   if (buffer.length < offset + length) return null;

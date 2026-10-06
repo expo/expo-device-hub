@@ -1,3 +1,4 @@
+import { EXEC_WS_MAX_MESSAGE_BYTES } from "./control-utils";
 import type { Socket } from "net";
 import type { HidSocket } from "../device-session";
 import { HID_HEARTBEAT, createSocketHeartbeat } from "./heartbeat";
@@ -126,7 +127,7 @@ export function rawHidSocket(
     for (;;) {
       let frame;
       try {
-        frame = parseWebSocketFrame(buffered);
+        frame = parseWebSocketFrame(buffered, EXEC_WS_MAX_MESSAGE_BYTES);
       } catch {
         shutdown();
         return;
