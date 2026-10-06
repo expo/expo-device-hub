@@ -1,6 +1,5 @@
 #import "CoreDeviceShim.h"
 #import <Foundation/Foundation.h>
-#import <dlfcn.h>
 
 struct PoseDataWords { uint64_t first, second; };
 struct PoseMetadataResponse { void *metadata; uintptr_t state; };
@@ -24,7 +23,10 @@ bool SSCoreDeviceTableModeAvailable(void) {
     dispatch_once(&once, ^{
         if (!SSCoreDeviceInitialize()) return;
         bool found = true;
-#define RESOLVE(variable, symbol) do { variable = (typeof(variable))dlsym(RTLD_DEFAULT, symbol); found &= variable != NULL; } while (0)
+        // SimulatorKit can load these dependencies in a local dyld scope before
+        // capture starts. Resolve through CoreDevice's handle so discovery does
+        // not depend on whether capture or HID initialized the frameworks first.
+#define RESOLVE(variable, symbol) do { variable = (typeof(variable))SSCoreDeviceSymbol(symbol); found &= variable != NULL; } while (0)
         RESOLVE(initButton, "$s19CoreDeviceUtilities18CustomButtonReportV5usage4downAC12UniversalHID8HIDUsageV_SbtcfC");
         RESOLVE(buttonReport, "$s19CoreDeviceUtilities18CustomButtonReportV6report12UniversalHID9HIDReportVvg");
         RESOLVE(customService, "$s10CoreDevice12HIDServiceIDV0aB9UtilitiesE9avpCustomACvgZ");

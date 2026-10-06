@@ -1,8 +1,15 @@
 import { expect, test } from "bun:test";
+import { runChildSuite } from "./fixtures/run-child-suite";
 
 // Opt in with a booted iPhone Duo. This changes the device's physical pose and
 // restores the repository's standard Tent verification pose when it finishes.
 const device = process.env.SERVE_SIM_DUO_E2E_DEVICE;
+
+test.skipIf(!device)("Tent remains available when capture initializes before HID", async () => {
+  const { exitCode, output } = await runChildSuite("duo-capture-first.child.ts", { timeoutMs: 20_000 });
+  expect(output).toContain("1 pass");
+  expect(exitCode, output).toBe(0);
+}, 25_000);
 
 test.skipIf(!device)("physical orientation switches surfaces without moving the hinge", async () => {
   const { NativeHid } = await import("../native");
