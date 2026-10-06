@@ -59,11 +59,21 @@ afterEach(async () => {
   restoreGlobals();
 });
 let clientRenders = 0;
-function Harness({ device = 'a', token = 'old-token' }: { device?: string; token?: string }) {
+function Harness({
+  device = 'a',
+  token = 'old-token',
+  enabled = true,
+  streamMode = 'h264',
+}: {
+  device?: string;
+  token?: string;
+  enabled?: boolean;
+  streamMode?: 'h264' | 'webrtc';
+}) {
   return (
     <ClientProbe
       platform="android"
-      options={{ baseUrl: 'https://hub.test', device, token, streamMode: 'h264' }}
+      options={{ baseUrl: 'https://hub.test', device, token, enabled, streamMode }}
       onClient={(next) => {
         client = next;
         clientRenders++;
@@ -386,5 +396,35 @@ test('an abandoned switch to another device keeps the current stream data', asyn
   expect(attempted).toBe(true);
   await act(async () => renderer!.update(tree('a')));
   expect(client.stream.data?.screen).toEqual({ width: 360, height: 720 });
+});
+
+// Fifth review round: playback belongs to one session and one transport.
+
+for (const change of ['enabled', 'device', 'token'] as const) {
+  test(`returning to the same connection after a ${change} toggle does not reuse old playback`, async () => {
+    await videoWithoutDiscovery();
+    await act(async () =>
+      renderer!.update(
+        <Harness
+          enabled={change !== 'enabled'}
+          device={change === 'device' ? 'b' : 'a'}
+          token={change === 'token' ? 'other-token' : 'old-token'}
+        />,
+      ),
+    );
+    await act(async () => renderer!.update(<Harness />));
+    await respond('/api', {}, 401);
+    expect(client.stream.error?.code).toBe('auth');
+    expect(client.input.error?.code).toBe('auth');
+  });
+}
+
+test('selecting WebRTC after WebSocket video played reports the discovery auth error', async () => {
+  await videoWithoutDiscovery();
+  await act(async () => renderer!.update(<Harness streamMode="webrtc" />));
+  await act(async () => client.stream.refresh());
+  await respond('/api', {}, 401);
+  expect(client.stream.error?.code).toBe('auth');
+  expect(client.input.error?.code).toBe('auth');
 });
 

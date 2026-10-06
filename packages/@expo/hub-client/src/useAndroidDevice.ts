@@ -6,11 +6,13 @@ import {
   invalidResponse,
   useFeatureRevisions,
   useFeatureSession,
+  type FeatureSession,
   withFeatureDeadline,
 } from './feature-state';
 import { useFeatureClient } from './useFeatureClient';
 import type {
   BackendActivity,
+  DeviceScreenRecordingStatus,
   BackendDeviceClient,
   ConnectionStatus,
   DeviceCapabilities,
@@ -100,7 +102,6 @@ import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
   type DeviceClient,
   type ScreenshotCapture,
-  type DeviceScreenRecordingStatus,
   type DeviceConnectionOptions,
   type DeviceEvent,
   type DeviceGrpcImageMode,
@@ -319,10 +320,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const deviceSettingWriteTrackerRef = useRef(new KeyedWriteTracker<DeviceSettingKey>());
   const deviceSettingVersionsRef = useRef(createAndroidDeviceSettingVersions());
   const deviceScope = `${active ? 'active' : 'inactive'}\0${baseUrl ?? ''}\0${targetDevice ?? ''}`;
-  // The connection a WebSocket frame was painted for. Set by the transport effect
-  // that painted it, so a previous device's or token's video never counts here.
-  const connectionKey = `${deviceScope}\0${token ?? ''}`;
-  const [playedConnection, setPlayedConnection] = useState<string | null>(null);
+  // The feature session a WebSocket frame was painted for. The transport effect
+  // that painted it sets this, so video from an earlier session (another device
+  // or token, or before a disable) never counts, even if the target is the same again.
+  const [playedSession, setPlayedSession] = useState<FeatureSession | null>(null);
   const [recordingSnapshot, setRecordingSnapshot] = useState<{
     scope: string;
     status: DeviceScreenRecordingStatus | null;
@@ -1268,7 +1269,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   // ── H.264 video + input WebSocket (with reconnect) ──
   useEffect(() => {
-    const playedKey = connectionKey;
+    const paintedSession = featureSession;
     if (!active || !baseUrl) {
       setStatus('idle');
       return;
@@ -1341,7 +1342,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (cancelled || painted) return;
       painted = true;
       clearGraceTimer();
-      setPlayedConnection(playedKey);
+      setPlayedSession(paintedSession);
       setStatus('streaming');
       setError(null);
     };
@@ -1620,7 +1621,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamRevision,
     // Input shares this socket in WebSocket mode.
     revisions.input,
-    connectionKey,
+    featureSession,
   ]);
 
   // ── WebRTC input WebSocket ──
@@ -2224,7 +2225,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     error,
     input,
     inputRejected,
-    streamEstablished: playedConnection === connectionKey,
+    // Only WebSocket video plays without `/api`; WebRTC needs discovery.
+    streamEstablished:
+      playedSession === featureSession && !useWebRtc && !waitingForWebRtcMetadata,
     screen,
     fps,
     devices,
