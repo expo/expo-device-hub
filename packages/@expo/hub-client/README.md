@@ -364,7 +364,6 @@ This is a breaking change to the existing hooks and `DeviceClient`.
 | --- | --- |
 | `client.status`, `error`, `screen`, `fps` | `client.stream.status`, `.error`, `.data?.screen`, `.data?.fps` |
 | `useDeviceScreenClient().status` `'streaming'` | Same flat `status`, `screen`, `error`; `status` uses feature states, so `'ready'` replaces `'streaming'` |
-| `inputError` | `client.input`: `status` and `error` for the input channel, `data.rejected` for a refused command, `refresh()` to reconnect |
 | `ConnectionStatus`, `DeviceCapabilities`, `DeviceStreamSettingCapabilities`, `DeviceLocationCapabilities`, `DeviceAppearance` types | Removed; use feature `status` values and `status !== 'unsupported'` |
 | `client.capabilities.camera` | `client.camera.status !== 'unsupported'` for visibility; check `ready` before editing |
 | `client.deviceSettings` | `client.deviceSettings.data?.values` |

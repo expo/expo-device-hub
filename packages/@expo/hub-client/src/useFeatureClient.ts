@@ -65,6 +65,13 @@ export function useFeatureClient(
         (name === 'streamStats' && !current.statsEnabled)
       )
         return;
+      // The stream and input own a transport that can work without discovery,
+      // so their refresh restarts that transport and retries discovery as well.
+      if (name === 'stream' || name === 'input') {
+        o.session.read(name).refresh();
+        if (!o.session.resolved) o.session.read('config').refresh();
+        return;
+      }
       o.session.read(o.session.resolved ? name : 'config').refresh();
     };
     const write = (
@@ -253,14 +260,20 @@ export function useFeatureClient(
   const writes = <K extends string>(name: string) => session.getWrites(name) as Writes<K>;
   const streamData = useMemo(() => ({ screen: raw.screen, fps: raw.fps }), [raw.screen, raw.fps]);
   const streamError = useMemo(() => hubError(raw.error ?? 'Stream interrupted'), [raw.error]);
+  // Android's WebSocket video and input do not need `/api`. Once video has
+  // played for this session, the stream and input follow their transport even
+  // while discovery fails, instead of showing the discovery state.
+  const establishedRef = useRef({ session, established: false });
+  if (establishedRef.current.session !== session)
+    establishedRef.current = { session, established: false };
+  if (active && raw.status === 'streaming') establishedRef.current.established = true;
+  const transportLive = active && (session.resolved || establishedRef.current.established);
   let streamState = state('stream', true, streamData);
-  // Painted video is ready on its own. Android's WebSocket video does not need
-  // `/api`, so a discovery failure must not hide a stream that is playing.
-  if (active && raw.status === 'streaming')
-    streamState = { status: 'ready', data: streamData, error: null };
-  else if (active && session.resolved) {
+  if (transportLive) {
     streamState =
-      raw.status === 'error' || raw.status === 'reconnecting'
+      raw.status === 'streaming'
+        ? { status: 'ready', data: streamData, error: null }
+        : raw.status === 'error' || raw.status === 'reconnecting'
           ? {
               status: raw.status,
               data: raw.screen ? streamData : undefined,
@@ -415,7 +428,7 @@ export function useFeatureClient(
   );
   const inputData = useMemo(() => ({ rejected: raw.inputRejected }), [raw.inputRejected]);
   let inputState = state('input', true, inputData);
-  if (active && session.resolved)
+  if (transportLive)
     inputState =
       raw.input.status === 'ready'
         ? { status: 'ready', data: inputData, error: null }

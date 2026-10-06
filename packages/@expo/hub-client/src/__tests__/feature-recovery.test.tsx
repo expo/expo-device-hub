@@ -193,3 +193,114 @@ test('an iOS token change reports an auth failure from rediscovery', async () =>
   expect(client.stream.status).toBe('error');
   expect(client.stream.error?.code).toBe('auth');
 });
+
+// Third review round: transport state that works without discovery.
+
+test('a retry started during a location write cannot overwrite its successful result', async () => {
+  const intervals = new Map<number, () => void>();
+  let id = 0;
+  stubGlobal('setInterval', (callback: () => void) => { intervals.set(++id, callback); return id; });
+  stubGlobal('clearInterval', (key: number) => { intervals.delete(key); });
+  await mount();
+  await respond('/api', {});
+  await respond('/api/location', { emulator: true, location: { latitude: 1, longitude: 2 } });
+  await act(async () => client.location.refresh());
+  await respond('/api/location', {}, 503);
+  expect(client.location.status).toBe('reconnecting');
+  let write!: ReturnType<DeviceClient['location']['set']>;
+  await act(async () => { write = client.location.set({ latitude: 3, longitude: 4 }); });
+  const writeRequest = requests.findLast(r => r.url.pathname === '/api/location' && r.init?.method === 'POST')!;
+  expect(writeRequest).toBeDefined();
+  const reads = () => requests.filter((r) => r.url.pathname === '/api/location' && !r.init?.method);
+  const readsBefore = reads().length;
+  // The retry that is due during the write waits for it.
+  await act(async () => { for (const callback of intervals.values()) callback(); });
+  expect(reads()).toHaveLength(readsBefore);
+  await act(async () => writeRequest.resolve(Response.json({ ok: true, location: { latitude: 3, longitude: 4 } })));
+  expect(await write).toMatchObject({ ok: true });
+  expect(client.location.data).toEqual({ latitude: 3, longitude: 4 });
+  // Then the deferred read runs, and it can only see the state after the write.
+  expect(reads()).toHaveLength(readsBefore + 1);
+  await act(async () => reads().at(-1)!.resolve(Response.json({ emulator: true, location: { latitude: 3, longitude: 4 } })));
+  expect(client.location.status).toBe('ready');
+  expect(client.location.data).toEqual({ latitude: 3, longitude: 4 });
+});
+
+async function videoWithoutDiscovery() {
+  const sockets: Array<{ onmessage?: (event: {data: unknown}) => void; onclose?: (event: {code: number}) => void }> = [];
+  stubGlobal('WebSocket', class {
+    static OPEN = 1; readyState = 1;
+    onmessage?: (event: { data: unknown }) => void;
+    onclose?: (event: { code: number }) => void;
+    constructor() { sockets.push(this); }
+    send() {} close() {} addEventListener() {} removeEventListener() {}
+  });
+  stubGlobal('VideoDecoder', class {
+    state = 'unconfigured'; decodeQueueSize = 0;
+    constructor(readonly init: { output(frame: unknown): void }) {}
+    configure() { this.state = 'configured'; }
+    decode() { this.init.output({ displayWidth: 360, displayHeight: 720, close() {} }); }
+    close() { this.state = 'closed'; }
+  });
+  stubGlobal('EncodedVideoChunk', class {});
+  await mount();
+  const canvas = { tagName: 'CANVAS', width: 0, height: 0, getContext: () => ({ drawImage() {} }) };
+  await act(async () => client.stream.attachVideo(canvas as unknown as HTMLCanvasElement));
+  await respond('/api', {}, 503);
+  await act(async () => sockets[0].onmessage?.({ data: new Uint8Array([0,0,1,0x67,0x42,0xe0,0x1e,0,0,1,0x65,1]).buffer }));
+  expect(client.stream.status).toBe('ready');
+  return sockets;
+}
+
+test('input rejection is visible when video is live but discovery fails', async () => {
+  const sockets = await videoWithoutDiscovery();
+  await act(async () => sockets[0].onmessage?.({ data: JSON.stringify({ ok: false, error: 'Tap refused' }) }));
+  expect(client.input.data?.rejected?.message).toBe('Tap refused');
+});
+
+test('a previously playing stream retains data after a drop while discovery fails', async () => {
+  const sockets = await videoWithoutDiscovery();
+  await act(async () => sockets[0].onclose?.({ code: 1006 }));
+  expect(client.stream.status).toBe('reconnecting');
+  expect(client.stream.data?.screen).toEqual({ width: 360, height: 720 });
+});
+
+test('stream refresh reconnects a live transport even before discovery succeeds', async () => {
+  const sockets = await videoWithoutDiscovery();
+  const before = sockets.length;
+  await act(async () => client.stream.refresh());
+  expect(sockets.length).toBe(before + 1);
+});
+
+test('WebSocket encoder pending state covers the write, not the initial read', async () => {
+  const sockets = await videoWithoutDiscovery();
+  // Retry discovery explicitly; the earlier request already failed.
+  await act(async () => client.streamSettings.refresh());
+  await respond('/api', {});
+  expect(client.stream.status).toBe('ready');
+  await respond('/api/stream-settings', { maxDimension: 1280, h264Fps: 60, h264Bitrate: 6000000 });
+  await respond('/api/stream-mode', {
+    mode: 'scrcpy', availableModes: ['scrcpy'], grpcImageMode: 'png', encoder: 'software', inputSource: 'scrcpy',
+  });
+  let write!: ReturnType<DeviceClient['streamSettings']['update']>;
+  await act(async () => { write = client.streamSettings.update({ maxDimension: 720 }); });
+  expect(client.stream.status).toBe('reconnecting');
+  expect(client.streamSettings.writes.pending.has('maxDimension')).toBe(true);
+  await respond('/api/stream-settings', {}, 503);
+  expect(await write).toMatchObject({ ok: false });
+  expect(client.stream.status).toBe('ready');
+  expect(client.streamSettings.data?.maxDimension).toBe(1280);
+  expect(sockets).toHaveLength(1);
+});
+
+test('input is unsupported when inactive and resolving before discovery', async () => {
+  await act(async () => {
+    renderer = create(<ClientProbe platform="android" options={{ baseUrl: 'https://hub.test', device: 'a', streamMode: 'h264', enabled: false }} onClient={next => { client = next; }} />);
+  });
+  expect(client.input.status).toBe('unsupported');
+  expect(client.input.data).toBeUndefined();
+  expect(requests).toHaveLength(0);
+  await act(async () => renderer!.update(<Harness />));
+  expect(client.input.status).toBe('resolving');
+  expect(client.input.data).toBeUndefined();
+});

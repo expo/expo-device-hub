@@ -50,6 +50,8 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null, readSta
   const pendingRef = useRef(false);
   // Bumped by each write, so a read that started earlier cannot undo it.
   const writeVersionRef = useRef(0);
+  // A read that was due while a write was in flight runs when the write settles.
+  const deferredReadRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -71,6 +73,10 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null, readSta
 
     const attempt = async () => {
       if (cancelled || reading || readState?.isStopped()) return;
+      if (pendingRef.current) {
+        deferredReadRef.current = () => void attempt();
+        return;
+      }
       reading = true;
       controller = new AbortController();
       const writeVersion = writeVersionRef.current;
@@ -104,6 +110,7 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null, readSta
 
     return () => {
       unbind?.();
+      deferredReadRef.current = null;
       cancelled = true;
       clearInterval(retry);
       controller?.abort();
@@ -116,16 +123,23 @@ export function useDeviceLocation(backend: DeviceLocationBackend | null, readSta
     writeVersionRef.current++;
     pendingRef.current = true;
     setState((current) => ({ ...current, pending: true, error: null }));
+    const runDeferredRead = () => {
+      const read = deferredReadRef.current;
+      deferredReadRef.current = null;
+      read?.();
+    };
     return run().then(
       (location) => {
         if (generationRef.current !== generation) return;
         pendingRef.current = false;
         setState((current) => ({ ...current, location, pending: false }));
+        runDeferredRead();
       },
       (reason: unknown) => {
         if (generationRef.current !== generation) return;
         pendingRef.current = false;
         setState((current) => ({ ...current, pending: false, error: writeFailureMessage(reason) }));
+        runDeferredRead();
         throw reason;
       },
     );
