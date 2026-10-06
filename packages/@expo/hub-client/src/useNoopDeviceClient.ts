@@ -55,7 +55,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
     clear: unavailable,
   },
   permissions: { ...feature(), writes: writes(), set: unavailable, reset: unavailable },
-  inputError: null,
+  input: feature(),
   sendTouch: noop,
   sendMultiTouch: noop,
   sendKey: () => false,

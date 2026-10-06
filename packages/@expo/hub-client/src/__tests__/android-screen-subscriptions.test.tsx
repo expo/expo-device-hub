@@ -114,9 +114,15 @@ test("Android metrics and FPS leave screens and controls quiet while handlers us
     fps = useDeviceClientSelector((client) => client.stream.data?.fps ?? 0);
     return null;
   }
-  let inputError = null as string | null;
+  let rejected = null as DeviceClient["input"]["data"] extends infer D
+    ? D extends { rejected: infer R }
+      ? R
+      : never
+    : never;
+  let inputStatus = "";
   function InputError() {
-    inputError = useDeviceClientSelector((client) => client.inputError);
+    rejected = useDeviceClientSelector((client) => client.input.data?.rejected ?? null);
+    inputStatus = useDeviceClientSelector((client) => client.input.status);
     return null;
   }
   function Controls() {
@@ -245,15 +251,16 @@ test("Android metrics and FPS leave screens and controls quiet while handlers us
   await act(async () => onRotate());
   expect(rotations).toEqual([{ device: "emulator-5554", orientation: "portrait" }]);
 
-  // A refused input command is an input error, not a stream error.
+  // A refused input command is reported on the input feature, not the stream.
   await act(async () =>
     socket.onmessage?.({ data: JSON.stringify({ ok: false, error: "Input failed" }) }),
   );
-  expect(inputError).toBe("Input failed");
+  expect(rejected).toMatchObject({ code: "rejected", message: "Input failed", retryable: false });
+  expect(inputStatus).toBe("ready");
   expect(client.status).toBe("ready");
   expect(client.error).toBeNull();
   expect(screenRenders).toBe(initialRenders + 1);
   // Input is sent without acks, so the next input clears the report.
   await act(async () => client.sendTouch({ phase: "begin", x: 0.5, y: 0.5 }));
-  expect(inputError).toBeNull();
+  expect(rejected).toBeNull();
 });

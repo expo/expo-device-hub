@@ -51,7 +51,7 @@ test("an unchanged client does not restart effects or render memoized children",
   let detachments = 0;
   const Child = memo(function Child({ client }: { client: DeviceClient }) {
     childRenders++;
-    return <span>{client.inputError}</span>;
+    return <span>{client.platform}</span>;
   });
   function Parent({ label }: { label: string }) {
     const client = useDeviceClient();
@@ -79,7 +79,7 @@ test("an unchanged client does not restart effects or render memoized children",
   expect(childRenders).toBe(1);
   expect(attachments).toBe(1);
   expect(detachments).toBe(0);
-  await act(async () => store.publish({ ...store.getSnapshot(), inputError: "Input busy" }));
+  await act(async () => store.publish({ ...store.getSnapshot(), platform: "android" }));
   expect(childRenders).toBe(2);
   expect(attachments).toBe(2);
   expect(detachments).toBe(1);
@@ -90,12 +90,12 @@ test("destructured controls ignore unread updates and receive status and callbac
   const renders = { controls: 0, fps: 0, unused: 0 };
   let controls!: Pick<
     DeviceClient,
-    "inputError" | "screenshot" | "rotate" | "pressButton" | "reload"
+    "platform" | "screenshot" | "rotate" | "pressButton" | "reload"
   >;
   let fps = 0;
   function Controls() {
-    const { inputError, screenshot, rotate, pressButton, reload } = useDeviceClient();
-    controls = { inputError, screenshot, rotate, pressButton, reload };
+    const { platform, screenshot, rotate, pressButton, reload } = useDeviceClient();
+    controls = { platform, screenshot, rotate, pressButton, reload };
     renders.controls++;
     return null;
   }
@@ -131,9 +131,9 @@ test("destructured controls ignore unread updates and receive status and callbac
   await act(async () => store.publish(withFps(store.getSnapshot(), 30)));
   expect(renders).toEqual({ ...initial, fps: initial.fps + 1 });
   expect(fps).toBe(30);
-  await act(async () => store.publish({ ...store.getSnapshot(), inputError: "Input busy" }));
+  await act(async () => store.publish({ ...store.getSnapshot(), platform: "android" }));
   expect(renders).toEqual({ ...initial, controls: initial.controls + 1, fps: initial.fps + 1 });
-  expect(controls.inputError).toBe("Input busy");
+  expect(controls.platform).toBe("android");
   const rotate = () => {};
   await act(async () => store.publish({ ...store.getSnapshot(), rotate }));
   expect(renders).toEqual({ ...initial, controls: initial.controls + 2, fps: initial.fps + 1 });
@@ -281,7 +281,7 @@ for (const initiallyPresent of [false, true]) {
       store.publish(initial);
     }
     let readData!: () => {
-      inputError: DeviceClient["inputError"];
+      platform: DeviceClient["platform"];
       label?: string;
       presence: boolean[];
     };
@@ -289,7 +289,7 @@ for (const initiallyPresent of [false, true]) {
     function Controls() {
       const client = useDeviceClient() as ClientWithLabel;
       readData = () => ({
-        inputError: client.inputError,
+        platform: client.platform,
         label: client.label,
         presence: presenceChecks.map(({ has }) => has(client, "label")),
       });
@@ -302,13 +302,13 @@ for (const initiallyPresent of [false, true]) {
       </DeviceClientStoreContext.Provider>,
     );
     const initial = renders;
-    const next: ClientWithLabel = { ...store.getSnapshot(), inputError: "Input busy" };
+    const next: ClientWithLabel = { ...store.getSnapshot(), platform: "android" };
     if (initiallyPresent) delete next.label;
     else next.label = "new";
     await act(async () => store.publish(next));
     expect(renders).toBe(initial);
     expect(readData()).toEqual({
-      inputError: null,
+      platform: "ios",
       label: initiallyPresent ? "initial" : undefined,
       presence: presenceChecks.map(() => initiallyPresent),
     });
@@ -350,11 +350,11 @@ test("own-property checks track changes even while the property remains inherite
 
 test("a newly read property has its current value after ignored updates", async () => {
   const store = createDeviceClientStore();
-  let selected!: DeviceClient["inputError"] | number | undefined;
+  let selected!: DeviceClient["platform"] | number | undefined;
   let renders = 0;
   function Selected({ field }: { field: "status" | "fps" }) {
     const client = useDeviceClient();
-    selected = field === "fps" ? client.stream.data?.fps : client.inputError;
+    selected = field === "fps" ? client.stream.data?.fps : client.platform;
     renders++;
     return null;
   }
@@ -376,7 +376,7 @@ test("a newly read property has its current value after ignored updates", async 
   expect(selected).toBe(90);
   // Previously read fields remain tracked for this provider, even after a conditional read changes.
   const beforeStatusChange = renders;
-  await act(async () => store.publish({ ...store.getSnapshot(), inputError: "Input busy" }));
+  await act(async () => store.publish({ ...store.getSnapshot(), platform: "android" }));
   expect(renders).toBe(beforeStatusChange + 1);
 });
 
@@ -444,11 +444,11 @@ test("provider changes reset tracking and unsubscribe from the previous session"
   const first = createDeviceClientStore();
   const second = createDeviceClientStore();
   second.publish(withFps(second.getSnapshot(), 24));
-  let selected!: DeviceClient["inputError"] | number | undefined;
+  let selected!: DeviceClient["platform"] | number | undefined;
   let renders = 0;
   function Selected({ field }: { field: "status" | "fps" }) {
     const client = useDeviceClient();
-    selected = field === "fps" ? client.stream.data?.fps : client.inputError;
+    selected = field === "fps" ? client.stream.data?.fps : client.platform;
     renders++;
     return null;
   }
@@ -461,8 +461,8 @@ test("provider changes reset tracking and unsubscribe from the previous session"
   await act(async () => renderer!.update(tree(second, "fps")));
   expect(selected).toBe(24);
   const beforeUpdates = renders;
-  await act(async () => first.publish({ ...first.getSnapshot(), inputError: "Input busy" }));
-  await act(async () => second.publish({ ...second.getSnapshot(), inputError: "Input lost" }));
+  await act(async () => first.publish({ ...first.getSnapshot(), platform: "android" }));
+  await act(async () => second.publish({ ...second.getSnapshot(), platform: "android" }));
   expect(renders).toBe(beforeUpdates);
   await act(async () => second.publish(withFps(second.getSnapshot(), 48)));
   expect(selected).toBe(48);
@@ -470,7 +470,7 @@ test("provider changes reset tracking and unsubscribe from the previous session"
   await act(async () => renderer!.unmount());
   renderer = undefined;
   const beforeUnmountedUpdates = renders;
-  first.publish({ ...first.getSnapshot(), inputError: "Input lost" });
+  first.publish({ ...first.getSnapshot(), platform: "android" });
   second.publish(withFps(second.getSnapshot(), 60));
   expect(renders).toBe(beforeUnmountedUpdates);
 });
@@ -501,15 +501,15 @@ test("a tracked update before subscription is attached is still displayed", asyn
 for (const mode of ["spread", "rest"] as const) {
   test(`${mode} subscribes to all properties, including optional properties added later`, async () => {
     const store = createDeviceClientStore();
-    let copy!: Omit<DeviceClient, "inputError">;
+    let copy!: Omit<DeviceClient, "platform">;
     let renders = 0;
     function AllProperties() {
       const client = useDeviceClient();
       if (mode === "spread") {
         copy = { ...client };
       } else {
-        const { inputError, ...rest } = client;
-        void inputError;
+        const { platform, ...rest } = client;
+        void platform;
         copy = rest;
       }
       renders++;

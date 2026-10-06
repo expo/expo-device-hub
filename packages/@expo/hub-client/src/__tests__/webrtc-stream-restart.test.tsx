@@ -420,6 +420,18 @@ test('Android Retry on logs restarts only the log subscription', async () => {
   expect(hub.client.stream.status).toBe('ready');
 });
 
+test('Android input refresh reconnects only the WebRTC input socket', async () => {
+  const hub = await androidHarness();
+  await act(async () => ControlSocket.instances[0]!.serverClose(1006));
+  expect(hub.client.input.status).toBe('reconnecting');
+  expect(hub.client.input.error).toMatchObject({ code: 'network', retryable: true });
+  await act(async () => hub.client.input.refresh());
+  expect(ControlSocket.instances.length).toBeGreaterThan(1);
+  expect(Peer.instances).toHaveLength(1);
+  await act(async () => ControlSocket.instances.at(-1)!.open());
+  expect(hub.client.input.status).toBe('ready');
+});
+
 test('a failed Android WebRTC encoder write reports its cause and a field error', async () => {
   const hub = await androidHarness();
   let result!: ReturnType<typeof hub.client.streamSettings.update>;

@@ -453,7 +453,7 @@ test('an unchanged settings poll keeps the same client and feature objects', asy
   expect(client).toBe(before);
 });
 
-test('a refused input command on the WebSocket video socket reports inputError', async () => {
+test('a refused input command on the WebSocket video socket is reported on the input feature', async () => {
   const sockets: Array<{
     url: string;
     readyState: number;
@@ -483,14 +483,15 @@ test('a refused input command on the WebSocket video socket reports inputError',
   stubGlobal('VideoDecoder', class {});
   stubGlobal('EncodedVideoChunk', class {});
   await mount();
+  await respond('/api', {});
   const video = sockets.find((socket) => socket.url.includes('/ws'))!;
   expect(video).toBeDefined();
   await act(async () =>
     video.onmessage?.({ data: JSON.stringify({ ok: false, error: 'Tap failed' }) }),
   );
-  expect(client.inputError).toBe('Tap failed');
+  expect(client.input.data?.rejected?.message).toBe('Tap failed');
   expect(client.stream.error).toBeNull();
   await act(async () => client.pressButton('home'));
   expect(video.sent.some((data) => data.includes('"ack":false'))).toBe(true);
-  expect(client.inputError).toBeNull();
+  expect(client.input.data?.rejected).toBeNull();
 });

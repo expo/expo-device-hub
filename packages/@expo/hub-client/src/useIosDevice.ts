@@ -6,7 +6,12 @@ import {
   withFeatureDeadline,
 } from './feature-state';
 import { useFeatureClient } from './useFeatureClient';
-import type { BackendDeviceClient } from './backend-client';
+import type {
+  BackendDeviceClient,
+  ConnectionStatus,
+  DeviceCapabilities,
+  DeviceStreamSettingCapabilities,
+} from './backend-client';
 /**
  * serve-sim (iOS) implementation of the {@link DeviceClient} interface.
  *
@@ -68,17 +73,14 @@ import { clearIosLocation, setIosLocation } from './ios-location';
 import { fetchScreenshot } from './screenshot';
 import { hidUsageForCode } from './keyboard';
 import {
-  type ConnectionStatus,
   type DeviceActivity,
   type DeviceClient,
-  type DeviceCapabilities,
   type DeviceConnectionOptions,
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
-  type DeviceStreamSettingCapabilities,
   type DeviceWebRtcCodec,
   type DeviceOrientation,
   type ForegroundApp,
@@ -118,7 +120,8 @@ const RECONNECT_MS = 1500;
 // socket that outlives this was admitted.
 const INPUT_ADMISSION_MS = 1000;
 const DISCOVERY_MAX_BACKOFF_MS = 15_000;
-const RESTARTABLE_FEATURES = ['logs', 'events', 'activity', 'foregroundApp'] as const;
+const RESTARTABLE_FEATURES = ['logs', 'events', 'activity', 'foregroundApp', 'input'] as const;
+const IOS_INPUT_READY = { status: 'ready', error: null } as const;
 const ACTIVITY_STALE_MS = 8000;
 const noop = () => {};
 
@@ -1096,7 +1099,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       pendingWsRef.current = [];
       setHardwareKeyboardConnectedState(null);
     };
-  }, [wsUrl, inputAdmission, sendWs, socketProtocols, featureSession]);
+  }, [wsUrl, inputAdmission, sendWs, socketProtocols, featureSession, revisions.input]);
 
   // ── Long-lived middleware SSE routes multiplexed over one authenticated
   //    exec-ws, matching serve-sim's browser client. Keeping logs, events, and
@@ -1543,11 +1546,25 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     ],
   );
 
+  const input = useMemo<BackendDeviceClient['input']>(
+    () =>
+      inputUnavailable
+        ? {
+            status: 'error',
+            error: { code: 'rejected', message: IOS_INPUT_UNAVAILABLE_MESSAGE, retryable: false },
+          }
+        : inputSocketError
+          ? { status: 'reconnecting', error: { code: 'busy', message: inputSocketError, retryable: true } }
+          : IOS_INPUT_READY,
+    [inputUnavailable, inputSocketError],
+  );
+
   const backend: BackendDeviceClient = {
     platform: 'ios',
     status,
     error,
-    inputError: inputUnavailable ? IOS_INPUT_UNAVAILABLE_MESSAGE : inputSocketError,
+    input,
+    inputRejected: null,
     screen,
     fps,
     devices,

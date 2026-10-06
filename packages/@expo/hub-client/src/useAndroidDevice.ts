@@ -9,7 +9,12 @@ import {
   withFeatureDeadline,
 } from './feature-state';
 import { useFeatureClient } from './useFeatureClient';
-import type { BackendDeviceClient } from './backend-client';
+import type {
+  BackendDeviceClient,
+  ConnectionStatus,
+  DeviceCapabilities,
+  DeviceStreamSettingCapabilities,
+} from './backend-client';
 /**
  * serve-emu (Android) implementation of the {@link DeviceClient} interface.
  *
@@ -92,9 +97,7 @@ import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from 
 import { type WebRtcIceServer, useWebRtcStream } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
-  type ConnectionStatus,
   type DeviceClient,
-  type DeviceCapabilities,
   type ScreenshotCapture,
   type DeviceScreenRecordingStatus,
   type DeviceConnectionOptions,
@@ -108,11 +111,11 @@ import {
   type DeviceSettings,
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
-  type DeviceStreamSettingCapabilities,
   type DeviceStreamSource,
   type DeviceStreamSourceStatus,
   type ForegroundApp,
   type HardwareButton,
+  type HubError,
   type KeyboardInput,
   type MultiTouchSample,
   type RunningDevice,
@@ -128,7 +131,8 @@ const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
-const RESTARTABLE_FEATURES = ['logs', 'events', 'activity', 'foregroundApp'] as const;
+const RESTARTABLE_FEATURES = ['logs', 'events', 'activity', 'foregroundApp', 'input'] as const;
+const ANDROID_INPUT_READY = { status: 'ready', error: null } as const;
 
 const noop = () => {};
 const ANDROID_STREAM_CODECS = ['h264'] as const;
@@ -1597,6 +1601,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     useWebRtc,
     socketProtocols,
     streamRevision,
+    // Input shares this socket in WebSocket mode.
+    revisions.input,
   ]);
 
   // ── WebRTC input WebSocket ──
@@ -1682,7 +1688,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (wsRef.current === ws) wsRef.current = null;
       setWebRtcInputReady(false);
     };
-  }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols, reportInputCommandError]);
+  }, [
+    active,
+    baseUrl,
+    targetDevice,
+    useWebRtc,
+    socketProtocols,
+    reportInputCommandError,
+    revisions.input,
+  ]);
 
   // ── Logcat (SSE, best-effort) — off by default; opt-in via attach ──
   useEffect(() => {
@@ -2158,6 +2172,23 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     setScreen(null);
   }, [featureSession]);
 
+  // Only WebRTC sends input on its own socket; otherwise input shares the video socket.
+  const input = useMemo<BackendDeviceClient['input']>(
+    () =>
+      webRtcInputError
+        ? {
+            status: 'reconnecting',
+            error: { code: 'network', message: webRtcInputError, retryable: true },
+          }
+        : ANDROID_INPUT_READY,
+    [webRtcInputError],
+  );
+  const inputRejected = useMemo<HubError | null>(
+    () =>
+      inputCommandError ? { code: 'rejected', message: inputCommandError, retryable: false } : null,
+    [inputCommandError],
+  );
+
   const backend: BackendDeviceClient = {
     platform: 'android',
     // The transport can stay live while the server stages new stream settings.
@@ -2168,8 +2199,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         ? 'reconnecting'
         : status,
     error,
-    // A down WebRTC input socket outranks one refused command.
-    inputError: webRtcInputError ?? inputCommandError,
+    input,
+    inputRejected,
     screen,
     fps,
     devices,

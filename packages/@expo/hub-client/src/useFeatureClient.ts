@@ -126,6 +126,7 @@ export function useFeatureClient(
           'accessibility',
           'location',
           'permissions',
+          'input',
         ].map((name) => [name, refresh(name)]),
       ),
       setSetting: ((key, value) =>
@@ -410,6 +411,16 @@ export function useFeatureClient(
       clear: actions.clearLocation,
     },
   );
+  const inputData = useMemo(() => ({ rejected: raw.inputRejected }), [raw.inputRejected]);
+  let inputState = state('input', true, inputData);
+  if (active && session.resolved)
+    inputState =
+      raw.input.status === 'ready'
+        ? { status: 'ready', data: inputData, error: null }
+        : ({ status: raw.input.status, data: inputData, error: raw.input.error } as FeatureState<
+            typeof inputData
+          >);
+  const input = useFeature(inputState, { refresh: actions.refresh.input });
   const permissionsData = useMemo(
     () => ({
       appId: options.permissionsAppId ?? raw.foregroundApp?.id ?? null,
@@ -451,7 +462,7 @@ export function useFeatureClient(
       accessibility,
       location,
       permissions,
-      inputError: raw.inputError,
+      input,
       sendTouch: raw.sendTouch,
       sendMultiTouch: raw.sendMultiTouch ?? noop,
       sendKey: raw.sendKey,
@@ -480,7 +491,7 @@ export function useFeatureClient(
       accessibility,
       location,
       permissions,
-      raw.inputError,
+      input,
       raw.sendTouch,
       raw.sendMultiTouch,
       raw.sendKey,

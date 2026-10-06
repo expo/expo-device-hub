@@ -1,7 +1,8 @@
 import type { FeatureRead } from "./feature-state";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { type DeviceGeoFix, type DeviceLocationCapabilities } from "./types";
+import { type DeviceLocationCapabilities } from "./backend-client";
+import { type DeviceGeoFix } from "./types";
 
 /** What a backend reports about its simulated-location support and its remembered fix. */
 export interface DeviceLocationRead {

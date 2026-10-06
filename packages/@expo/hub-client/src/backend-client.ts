@@ -3,11 +3,9 @@ import type {
   AccessibilitySnapshot,
   AppPermission,
   AppPermissionAction,
-  ConnectionStatus,
   DeviceActivity,
   DeviceCameraFacing,
   DeviceCameraStatus,
-  DeviceCapabilities,
   DeviceEvent,
   DeviceGeoFix,
   DeviceGrpcEncoder,
@@ -27,6 +25,7 @@ import type {
   ForegroundApp,
   HardwareButton,
   HidKeyEvent,
+  HubError,
   KeyboardInput,
   MultiTouchSample,
   RunningDevice,
@@ -190,8 +189,10 @@ export interface BackendDeviceClient {
   attachVideo: (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => void;
 
   /** Forward a normalized touch/drag to the device. */
-  /** See `DeviceClient.inputError`. */
-  inputError: string | null;
+  /** Input channel health; `useFeatureClient` turns it into `DeviceClient.input`. */
+  input: { status: 'ready' | 'reconnecting' | 'error'; error: HubError | null };
+  /** The last input command the backend refused, or null. The next input clears it. */
+  inputRejected: HubError | null;
   sendTouch: (sample: TouchSample) => void;
   /** Forward a two-finger pinch/pan. Absent only on the no-op client. */
   sendMultiTouch?: (sample: MultiTouchSample) => void;
@@ -251,4 +252,49 @@ export interface BackendDeviceClient {
   setHardwareKeyboardConnected: (connected: boolean) => void;
   /** Toggle the iOS on-screen software keyboard without changing the hardware connection. */
   toggleSoftwareKeyboard: () => void;
+}
+
+// Legacy flat-client shapes, now internal to the backend adapters.
+
+/**
+ * Lifecycle of a single connection:
+ *   idle         — nothing to connect to (no base URL / disabled)
+ *   connecting   — socket opening, no frames yet
+ *   reconnecting — a stream that was live lost its transport and is being
+ *                  re-established; the last frame stays on screen meanwhile
+ *                  (for example while serve-emu swaps the Android capture
+ *                  source). Becomes `error` only when the outage outlives the
+ *                  reconnect grace period. Android only.
+ *   streaming    — frames are flowing
+ *   error        — connection failed or dropped
+ */
+export type ConnectionStatus = 'idle' | 'connecting' | 'reconnecting' | 'streaming' | 'error';
+
+/** Runtime encoder values the active backend can change without restarting the Hub. */
+export type DeviceStreamSettingCapabilities =
+  | false
+  | Readonly<Partial<Record<keyof DeviceStreamEncoderSettings, true>>>;
+
+/**
+ * Location control the backend offers. `false` hides the section. Every backend that
+ * offers it can set a fix; `clear` marks one that can also remove it (serve-sim only —
+ * `adb emu geo fix` has no inverse).
+ */
+export type DeviceLocationCapabilities = false | Readonly<{ clear?: true }>;
+
+/** Explicit backend feature flags used to omit unsupported inspector sections and controls. */
+export interface DeviceCapabilities {
+  deviceSettings: boolean;
+  activity: boolean;
+  events: boolean;
+  /** Host-fed emulator camera images that the backend can read and replace. */
+  camera: boolean;
+  /** An accessibility tree of the current screen that the backend can read on demand. */
+  accessibility: boolean;
+  /** Runtime encoder settings that can be read and patched. */
+  streamSettings: DeviceStreamSettingCapabilities;
+  /** Simulated-location control, and whether the fix can also be removed. */
+  location: DeviceLocationCapabilities;
+  /** Foreground-app permissions that the backend can list and change. */
+  permissions: boolean;
 }

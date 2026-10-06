@@ -24,19 +24,6 @@ export type DevicePlatform = 'ios' | 'android';
 /** Viewer-selected transport for the active device stream. */
 export type DeviceStreamMode = 'mjpeg' | 'h264' | 'webrtc';
 
-/**
- * Lifecycle of a single connection:
- *   idle         — nothing to connect to (no base URL / disabled)
- *   connecting   — socket opening, no frames yet
- *   reconnecting — a stream that was live lost its transport and is being
- *                  re-established; the last frame stays on screen meanwhile
- *                  (for example while serve-emu swaps the Android capture
- *                  source). Becomes `error` only when the outage outlives the
- *                  reconnect grace period. Android only.
- *   streaming    — frames are flowing
- *   error        — connection failed or dropped
- */
-export type ConnectionStatus = 'idle' | 'connecting' | 'reconnecting' | 'streaming' | 'error';
 
 /** Device orientation, as reported by serve-sim's stream config. */
 export type DeviceOrientation =
@@ -203,23 +190,11 @@ export interface DeviceStreamSourceStatus {
   sessionGeneration: number;
 }
 
-/** Runtime encoder values the active backend can change without restarting the Hub. */
-export type DeviceStreamSettingCapabilities =
-  | false
-  | Readonly<Partial<Record<keyof DeviceStreamEncoderSettings, true>>>;
-
 /** A WGS84 coordinate the Hub asks a device to report. */
 export interface DeviceGeoFix {
   latitude: number;
   longitude: number;
 }
-
-/**
- * Location control the backend offers. `false` hides the section. Every backend that
- * offers it can set a fix; `clear` marks one that can also remove it (serve-sim only —
- * `adb emu geo fix` has no inverse).
- */
-export type DeviceLocationCapabilities = false | Readonly<{ clear?: true }>;
 
 /** One WebRTC telemetry sample, normally collected once per second. */
 export interface DeviceStreamStatsSample {
@@ -354,23 +329,6 @@ export interface AccessibilitySnapshot {
   nodes: readonly AccessibilityNode[];
 }
 
-/** Explicit backend feature flags used to omit unsupported inspector sections and controls. */
-export interface DeviceCapabilities {
-  deviceSettings: boolean;
-  activity: boolean;
-  events: boolean;
-  /** Host-fed emulator camera images that the backend can read and replace. */
-  camera: boolean;
-  /** An accessibility tree of the current screen that the backend can read on demand. */
-  accessibility: boolean;
-  /** Runtime encoder settings that can be read and patched. */
-  streamSettings: DeviceStreamSettingCapabilities;
-  /** Simulated-location control, and whether the fix can also be removed. */
-  location: DeviceLocationCapabilities;
-  /** Foreground-app permissions that the backend can list and change. */
-  permissions: boolean;
-}
-
 /** How the device answers one permission of the foreground app. */
 export type AppPermissionState = 'granted' | 'denied' | 'limited' | 'undetermined';
 
@@ -422,13 +380,6 @@ export type HardwareButton =
   | 'appSwitcher'
   /** Dismisses the on-screen keyboard. Not a physical button; grouped here because it presses one key. */
   | 'hideKeyboard';
-
-/**
- * Device system appearance. Binary on purpose — the Hub exposes a plain
- * light/dark toggle with no "auto", even where the backend supports one
- * (serve-emu's `uimode night auto`).
- */
-export type DeviceAppearance = 'light' | 'dark';
 
 /** One normalized (0..1) touch sample. The hook maps it to the wire protocol. */
 export interface TouchSample {
@@ -630,6 +581,10 @@ export type StreamSourcePatch = Partial<
   Pick<DeviceStreamSourceStatus, 'mode' | 'grpcImageMode' | 'encoder' | 'inputSource'>
 >;
 export type ScreenRecordingPhase = Exclude<DeviceScreenRecordingStatus, 'unknown'>;
+export interface InputData {
+  /** The last input command the backend refused, or null. The next input clears it. */
+  rejected: HubError | null;
+}
 export type DeviceSettingsFeature = Feature<DeviceSettingsData> & {
   writes: Writes<DeviceSettingKey>;
   set(key: DeviceSettingKey, value: string): Promise<HubResult>;
@@ -686,14 +641,20 @@ export interface DeviceClient {
   };
   permissions: PermissionsFeature;
   /**
-   * Why touch and keyboard input cannot reach the device while video can,
-   * or null. Cleared when the input channel works again. iOS: serve-sim
-   * refused the input socket (too many clients, or a full input queue) or its
-   * native HID setup failed. Android: the WebRTC input socket is down, or
-   * serve-emu refused the last input command; that report clears when the
-   * next input is sent.
+   * Whether touch and keyboard input reach the device. The commands below stay
+   * on the client because they are fire-and-forget and frequent.
+   *
+   * - `ready`: no input failure is known. Input also needs a live stream.
+   * - `reconnecting`: the input channel is down or busy and retries. iOS:
+   *   serve-sim refused the input socket (too many clients, or a full input
+   *   queue), code `busy`. Android: the WebRTC input socket is down, code `network`.
+   * - `error`: serve-sim's native HID setup failed; input stays unavailable
+   *   until serve-sim restarts.
+   *
+   * `data.rejected` is the last input command the backend refused (Android);
+   * the next input clears it. `refresh()` reconnects the input channel.
    */
-  inputError: string | null;
+  input: Feature<InputData>;
   sendTouch(sample: TouchSample): void;
   sendMultiTouch(sample: MultiTouchSample): void;
   sendKey(input: KeyboardInput): boolean;
