@@ -33,11 +33,17 @@ export function parseCaptureProxy(value: string | undefined): CaptureUpstream | 
   }
 }
 
+export class OwnProxyPortError extends Error {
+  constructor() {
+    super("The network capture upstream proxy uses the capture proxy's own port. Choose another port.");
+  }
+}
+
 export function assertNotOwnProxy(upstream: CaptureUpstream | null, ownPort: number): void {
   if (!upstream) return;
   const url = new URL(upstream.url);
   const host = url.hostname.replace(/^\[(.*)\]$/, "$1");
   if (Number(url.port || 80) === ownPort && (isIP(host) !== 0 || /^(?:.+\.)?localhost\.?$/.test(host))) {
-    throw new Error("The network capture upstream proxy uses the capture proxy's own port. Choose another port.");
+    throw new OwnProxyPortError();
   }
 }

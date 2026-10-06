@@ -1479,7 +1479,7 @@ export interface SimMiddlewareOptions {
   allowAnyHostWhenInsecure?: boolean;
   /** Enable capture for devices started through this middleware. */
   networkCapture?: boolean;
-  /** HTTP upstream proxy URL for capture, optionally with Basic credentials. Unset uses direct connections. */
+  /** Process-wide HTTP upstream proxy URL, optionally with Basic credentials. Unset resets new captures to direct. */
   networkCaptureProxy?: string;
   /**
    * The server listens on loopback only. Without the token gate, network capture is refused unless
@@ -1899,7 +1899,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
     ? { "Content-Security-Policy": frameAncestorsPolicy(frameAncestors) }
     : {};
   const networkCapture = options?.networkCapture ?? false;
-  if (options?.networkCaptureProxy !== undefined) captureRuntime.setUpstream(parseCaptureProxy(options.networkCaptureProxy));
+  captureRuntime.setUpstream(parseCaptureProxy(options?.networkCaptureProxy));
   // Every host that mounts this middleware gets the same rule, so capture never runs on an ungated
   // preview that others can reach. The refusal covers the panel, the exec socket, and the CLI.
   captureRuntime.refuseCapture(

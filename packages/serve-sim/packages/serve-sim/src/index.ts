@@ -1799,6 +1799,7 @@ async function serve(
     requireToken?: boolean;
     quiet?: boolean;
     networkCapture?: boolean;
+    networkCaptureProxy?: string;
   } = {},
 ) {
   const quiet = !!options.quiet;
@@ -1846,6 +1847,7 @@ async function serve(
       shareUrl: options.shareUrl,
       allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
       networkCapture: !!options.networkCapture,
+      networkCaptureProxy: options.networkCaptureProxy,
       loopbackOnly: isLoopbackHost(host),
       execToken: previewToken,
       requirePreviewToken,
@@ -2521,6 +2523,7 @@ Examples:
         requireToken: !!opts.requireToken,
         quiet: !!opts.quiet,
         networkCapture: !!opts.networkCapture,
+        networkCaptureProxy: opts.networkCaptureProxy,
         networkCaptureFields: opts.networkCaptureField,
       });
     }

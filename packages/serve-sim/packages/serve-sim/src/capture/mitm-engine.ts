@@ -19,7 +19,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
 import type { CaptureStore } from "./store";
-import { assertNotOwnProxy, type CaptureUpstream } from "./upstream";
+import { assertNotOwnProxy, OwnProxyPortError, type CaptureUpstream } from "./upstream";
 import { dirnameOf } from "../runtime";
 import { withStateLockSync } from "../state-lock";
 import { DEFAULT_CAPTURE_FIELDS, type CaptureField } from "./fields";
@@ -300,6 +300,7 @@ export function parseMitmPids(psOutput: string, marker: string, selfPid: number)
 
 export interface MitmProxyDeps {
   upstream?: CaptureUpstream | null;
+  allocatePort?: () => Promise<number>;
   fields?: readonly CaptureField[];
   onUnexpectedExit?: (reason: string) => void;
   onOversizedControlBody?: (info: OversizedControlBodyInfo) => void;
@@ -365,7 +366,7 @@ async function startMitmProxyAttempt(
   fields: readonly CaptureField[],
   upstream: CaptureUpstream | null,
 ): Promise<CaptureProxy> {
-  const proxyPort = await freePort();
+  const proxyPort = await (deps.allocatePort ?? freePort)();
   assertNotOwnProxy(upstream, proxyPort);
   const confdir = mkdtempSync(join(tmpdir(), CONFDIR_PREFIX));
   const caFile = join(confdir, "mitmproxy-ca-cert.pem");
@@ -561,7 +562,7 @@ export async function startMitmProxy(
       return await startMitmProxyAttempt(store, deps, mitmdump, addon, fields, upstream);
     } catch (error) {
       lastError = error;
-      if (!addressAlreadyInUse(error) && !(error instanceof CaRaceLostError)) throw error;
+      if (!addressAlreadyInUse(error) && !(error instanceof CaRaceLostError) && !(error instanceof OwnProxyPortError)) throw error;
     }
   }
   throw lastError;

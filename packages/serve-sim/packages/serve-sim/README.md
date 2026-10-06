@@ -115,11 +115,10 @@ Options:
   -q, --quiet         JSON-only output
       --no-preview    Skip the web UI; stream in foreground only
       --network-capture
-
-      --network-capture-proxy <url>
-          Forward captured traffic through an HTTP proxy (default: direct)
                       Record HTTP(S) for selected devices, including already booted ones
                       (requires mitmproxy; see Network capture below)
+      --network-capture-proxy <url>
+                      Forward captured traffic through an HTTP proxy (default: direct)
       --network-capture-field <field>
                       What to keep beyond metadata: header | query |
                       request-body | response-body (repeatable or
@@ -340,6 +339,11 @@ Captured requests go direct unless `--network-capture-proxy http://host:port` na
 proxy. Basic proxy authentication is supported with
 `--network-capture-proxy http://user:password@host:port`. Set `none` to send captured traffic direct.
 macOS proxy settings, PAC files, and auto-discovery are not read.
+
+Embedded middleware mounts share one capture runtime and upstream policy per process. Creating a
+mount sets that policy for new capture sessions; omitting `networkCaptureProxy` resets it to direct.
+Existing sessions keep their upstream until capture is restarted. Use separate processes when
+mounts need different proxies.
 
 ## Connectors
 

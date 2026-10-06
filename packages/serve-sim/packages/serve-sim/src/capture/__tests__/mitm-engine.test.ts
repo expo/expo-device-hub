@@ -255,6 +255,59 @@ setInterval(() => {}, 1000);
   }
 });
 
+test("proxy startup chooses another listener port when an upstream uses the selected port", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "serve-sim-mitm-own-port-"));
+  const executable = join(dir, "mitmdump");
+  const launched = join(dir, "launched");
+  writeFileSync(executable, `#!/usr/bin/env bun
+import { appendFileSync, writeFileSync } from "node:fs";
+appendFileSync(${JSON.stringify(launched)}, process.argv[process.argv.indexOf("--listen-port") + 1] + "\\n");
+const confdir = process.argv.find((arg) => arg.startsWith("confdir="))?.slice("confdir=".length);
+writeFileSync(confdir + "/mitmproxy-ca-cert.pem", "test-ca");
+await fetch(process.env.SERVE_SIM_CAPTURE_CONTROL_URL + "/ready", {
+  method: "POST",
+  headers: { "x-serve-sim-capture-token": process.env.SERVE_SIM_CAPTURE_CONTROL_TOKEN },
+  body: "{}",
+});
+setInterval(() => {}, 1000);
+`);
+  chmodSync(executable, 0o755);
+  const previous = { executable: process.env.SERVE_SIM_MITMDUMP, caDir: process.env.SERVE_SIM_CAPTURE_CA_DIR };
+  process.env.SERVE_SIM_MITMDUMP = executable;
+  process.env.SERVE_SIM_CAPTURE_CA_DIR = join(dir, "ca");
+  try {
+    // The conservative guard covers local aliases and remote IPs. All can use another listener port.
+    for (const host of ["localhost", "127.0.0.1", "[::1]", "192.0.2.10"]) {
+      let allocations = 0;
+      const proxy = await startMitmProxy(new CaptureStore(), {
+        upstream: { url: `http://${host}:54321/` },
+        allocatePort: async () => ++allocations === 1 ? 54321 : 54322,
+      });
+      try {
+        expect(allocations).toBe(2);
+        expect(proxy.address).toBe("127.0.0.1:54322");
+      } finally {
+        await proxy.close();
+      }
+    }
+    expect(readFileSync(launched, "utf8").trim().split("\n")).toEqual(Array(4).fill("54322"));
+    let allocations = 0;
+    await expect(startMitmProxy(new CaptureStore(), {
+      upstream: { url: "http://127.0.0.1:54321/" },
+      allocatePort: async () => { allocations++; return 54321; },
+    })).rejects.toThrow("own port");
+    expect(allocations).toBe(3);
+    // Colliding candidates never start a child process.
+    expect(readFileSync(launched, "utf8").trim().split("\n")).toHaveLength(4);
+  } finally {
+    if (previous.executable === undefined) delete process.env.SERVE_SIM_MITMDUMP;
+    else process.env.SERVE_SIM_MITMDUMP = previous.executable;
+    if (previous.caDir === undefined) delete process.env.SERVE_SIM_CAPTURE_CA_DIR;
+    else process.env.SERVE_SIM_CAPTURE_CA_DIR = previous.caDir;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("keeps one CA per user, so every capture start trusts the same certificate", async () => {
   const dir = mkdtempSync(join(tmpdir(), "serve-sim-mitm-ca-"));
   const executable = join(dir, "mitmdump");
