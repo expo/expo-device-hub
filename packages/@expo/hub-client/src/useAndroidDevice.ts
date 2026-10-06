@@ -319,6 +319,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const deviceSettingWriteTrackerRef = useRef(new KeyedWriteTracker<DeviceSettingKey>());
   const deviceSettingVersionsRef = useRef(createAndroidDeviceSettingVersions());
   const deviceScope = `${active ? 'active' : 'inactive'}\0${baseUrl ?? ''}\0${targetDevice ?? ''}`;
+  // The connection a WebSocket frame was painted for. Set by the transport effect
+  // that painted it, so a previous device's or token's video never counts here.
+  const connectionKey = `${deviceScope}\0${token ?? ''}`;
+  const [playedConnection, setPlayedConnection] = useState<string | null>(null);
   const [recordingSnapshot, setRecordingSnapshot] = useState<{
     scope: string;
     status: DeviceScreenRecordingStatus | null;
@@ -1264,6 +1268,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
   // ── H.264 video + input WebSocket (with reconnect) ──
   useEffect(() => {
+    const playedKey = connectionKey;
     if (!active || !baseUrl) {
       setStatus('idle');
       return;
@@ -1336,6 +1341,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       if (cancelled || painted) return;
       painted = true;
       clearGraceTimer();
+      setPlayedConnection(playedKey);
       setStatus('streaming');
       setError(null);
     };
@@ -1614,6 +1620,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamRevision,
     // Input shares this socket in WebSocket mode.
     revisions.input,
+    connectionKey,
   ]);
 
   // ── WebRTC input WebSocket ──
@@ -2217,6 +2224,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     error,
     input,
     inputRejected,
+    streamEstablished: playedConnection === connectionKey,
     screen,
     fps,
     devices,

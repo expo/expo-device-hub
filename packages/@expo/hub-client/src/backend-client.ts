@@ -193,6 +193,11 @@ export interface BackendDeviceClient {
   input: { status: 'ready' | 'reconnecting' | 'error'; error: HubError | null };
   /** The last input command the backend refused, or null. The next input clears it. */
   inputRejected: HubError | null;
+  /**
+   * True once this connection (device and token) painted video without needing
+   * discovery. The stream and input then follow their transport while `/api` fails.
+   */
+  streamEstablished: boolean;
   sendTouch: (sample: TouchSample) => void;
   /** Forward a two-finger pinch/pan. Absent only on the no-op client. */
   sendMultiTouch?: (sample: MultiTouchSample) => void;

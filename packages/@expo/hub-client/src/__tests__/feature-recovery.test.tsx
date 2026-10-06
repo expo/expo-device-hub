@@ -1,5 +1,6 @@
 // Recovery paths found in the second review round, exercised through DeviceClientProvider.
 import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { startTransition, Suspense, type ReactElement } from 'react';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 import type { DeviceClient } from '../types';
 import { ClientProbe } from './client-probe';
@@ -75,9 +76,9 @@ async function respond(path: string, payload: unknown, status = 200) {
   expect(request).toBeDefined();
   await act(async () => request.resolve(Response.json(payload, { status })));
 }
-async function mount() {
+async function mount(tree: ReactElement = <Harness />) {
   await act(async () => {
-    renderer = create(<Harness />);
+    renderer = create(tree);
   });
 }
 
@@ -226,7 +227,7 @@ test('a retry started during a location write cannot overwrite its successful re
   expect(client.location.data).toEqual({ latitude: 3, longitude: 4 });
 });
 
-async function videoWithoutDiscovery() {
+async function videoWithoutDiscovery(tree?: ReactElement) {
   const sockets: Array<{ onmessage?: (event: {data: unknown}) => void; onclose?: (event: {code: number}) => void }> = [];
   stubGlobal('WebSocket', class {
     static OPEN = 1; readyState = 1;
@@ -243,7 +244,7 @@ async function videoWithoutDiscovery() {
     close() { this.state = 'closed'; }
   });
   stubGlobal('EncodedVideoChunk', class {});
-  await mount();
+  await mount(tree);
   const canvas = { tagName: 'CANVAS', width: 0, height: 0, getContext: () => ({ drawImage() {} }) };
   await act(async () => client.stream.attachVideo(canvas as unknown as HTMLCanvasElement));
   await respond('/api', {}, 503);
@@ -304,3 +305,86 @@ test('input is unsupported when inactive and resolving before discovery', async 
   expect(client.input.status).toBe('resolving');
   expect(client.input.data).toBeUndefined();
 });
+
+// Fourth review round: transport state belongs to one connection.
+
+for (const kind of ['device', 'token'] as const) {
+  test(`after Android video played, a ${kind} change reports the new discovery auth error`, async () => {
+    await videoWithoutDiscovery();
+    await act(async () =>
+      renderer!.update(
+        <Harness
+          device={kind === 'device' ? 'b' : 'a'}
+          token={kind === 'token' ? 'new-token' : 'old-token'}
+        />,
+      ),
+    );
+    await respond('/api', {}, 401);
+    expect(client.stream.error?.code).toBe('auth');
+    expect(client.input.error?.code).toBe('auth');
+  });
+}
+
+test('after iOS video played, a token change reports the new discovery auth error', async () => {
+  const callbacks = new Map<number, () => void>();
+  let id = 0;
+  stubGlobal('setInterval', (callback: () => void, delay: number) => {
+    if (delay === 400) callbacks.set(++id, callback);
+    return id;
+  });
+  stubGlobal('clearInterval', (key: number) => callbacks.delete(key));
+  const tree = (token: string) => (
+    <ClientProbe
+      platform="ios"
+      options={{ baseUrl: 'https://hub.test', device: 'a', streamMode: 'mjpeg', token }}
+      onClient={(next) => {
+        client = next;
+      }}
+    />
+  );
+  await mount(tree('first'));
+  await respond('/api', {
+    device: 'a',
+    url: 'https://hub.test/helper/a',
+    streamUrl: 'https://hub.test/helper/a/stream.mjpeg',
+  });
+  const img = {
+    src: '',
+    naturalWidth: 360,
+    naturalHeight: 720,
+    addEventListener() {},
+    removeEventListener() {},
+    removeAttribute() {},
+  };
+  await act(async () => client.stream.attachVideo(img as unknown as HTMLImageElement));
+  await act(async () => {
+    for (const callback of callbacks.values()) callback();
+  });
+  expect(client.stream.status).toBe('ready');
+  await act(async () => renderer!.update(tree('second')));
+  await respond('/api', {}, 401);
+  expect(client.stream.error?.code).toBe('auth');
+  expect(client.input.error?.code).toBe('auth');
+});
+
+test('an abandoned switch to another device keeps the current stream data', async () => {
+  let attempted = false;
+  function Block(): never {
+    attempted = true;
+    throw new Promise<void>(() => {});
+  }
+  const tree = (device: string, suspend = false) => (
+    <Suspense fallback={null}>
+      <Harness device={device} />
+      {suspend ? <Block /> : null}
+    </Suspense>
+  );
+  const sockets = await videoWithoutDiscovery(tree('a'));
+  await act(async () => sockets[0].onclose?.({ code: 1006 }));
+  expect(client.stream.data?.screen).toEqual({ width: 360, height: 720 });
+  await act(async () => startTransition(() => renderer!.update(tree('b', true))));
+  expect(attempted).toBe(true);
+  await act(async () => renderer!.update(tree('a')));
+  expect(client.stream.data?.screen).toEqual({ width: 360, height: 720 });
+});
+

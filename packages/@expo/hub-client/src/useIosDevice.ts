@@ -1569,6 +1569,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     error,
     input,
     inputRejected: null,
+    // iOS video needs discovery, so it never plays before the session resolves.
+    streamEstablished: false,
     screen,
     fps,
     devices,

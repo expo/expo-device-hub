@@ -260,14 +260,10 @@ export function useFeatureClient(
   const writes = <K extends string>(name: string) => session.getWrites(name) as Writes<K>;
   const streamData = useMemo(() => ({ screen: raw.screen, fps: raw.fps }), [raw.screen, raw.fps]);
   const streamError = useMemo(() => hubError(raw.error ?? 'Stream interrupted'), [raw.error]);
-  // Android's WebSocket video and input do not need `/api`. Once video has
-  // played for this session, the stream and input follow their transport even
-  // while discovery fails, instead of showing the discovery state.
-  const establishedRef = useRef({ session, established: false });
-  if (establishedRef.current.session !== session)
-    establishedRef.current = { session, established: false };
-  if (active && raw.status === 'streaming') establishedRef.current.established = true;
-  const transportLive = active && (session.resolved || establishedRef.current.established);
+  // Android's WebSocket video and input do not need `/api`. Once this
+  // connection has painted video, the stream and input follow their transport
+  // even while discovery fails, instead of showing the discovery state.
+  const transportLive = active && (session.resolved || raw.streamEstablished);
   let streamState = state('stream', true, streamData);
   if (transportLive) {
     streamState =
