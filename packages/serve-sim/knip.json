@@ -13,6 +13,7 @@
         "node-swift"
       ],
       "ignoreBinaries": [
+        "mkfifo",
         "Sources/ServeSimCapabilityLoader/tests/run.sh",
         "sips"
       ],
