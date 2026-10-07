@@ -221,7 +221,8 @@ export async function startMitmControl(options: {
     flowIds.delete(flow);
     forget(evictedFlows, flow);
   });
-  const fields = captureFieldSet(options.fields);
+  // @ref LLP 0005#what-is-recorded — changeable while the session runs; a record keeps the fields in force when it finishes
+  let fields = captureFieldSet(options.fields);
   let announceReady = () => {};
   const ready = new Promise<void>((resolve) => {
     announceReady = resolve;
@@ -304,5 +305,8 @@ export async function startMitmControl(options: {
     ready,
     /** Responses whose request had already left the store's list. */
     lateResponses: () => lateResponses,
+    setFields(next: readonly CaptureField[]): void {
+      fields = captureFieldSet(next);
+    },
   };
 }

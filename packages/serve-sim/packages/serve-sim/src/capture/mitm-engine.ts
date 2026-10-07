@@ -124,6 +124,8 @@ export interface CaptureProxy {
   /** Port file for the injected library; lives in the session confdir. */
   portFile: string;
   caPem: () => Promise<string>;
+  /** Change what the running proxy keeps; takes effect for the next flow the addon reports. */
+  setFields: (fields: readonly CaptureField[]) => void;
   close: () => Promise<void>;
 }
 
@@ -366,6 +368,7 @@ async function startMitmProxyAttempt(
   const confdir = mkdtempSync(join(tmpdir(), CONFDIR_PREFIX));
   const caFile = join(confdir, "mitmproxy-ca-cert.pem");
   const portFile = join(confdir, "proxy-port");
+  const { path: fieldsFile, write: writeFields } = captureFieldsFile(confdir);
   const token = randomBytes(16).toString("hex");
   let control: Awaited<ReturnType<typeof startMitmControl>>;
   try {
@@ -384,6 +387,7 @@ async function startMitmProxyAttempt(
   try {
     seedCaInto(confdir);
     writeFileSync(portFile, String(proxyPort));
+    writeFields(fields);
     child = spawn(
       mitmdump,
       [
@@ -406,6 +410,7 @@ async function startMitmProxyAttempt(
           SERVE_SIM_CAPTURE_CONTROL_URL: `http://127.0.0.1:${control.port}`,
           SERVE_SIM_CAPTURE_CONTROL_TOKEN: token,
           SERVE_SIM_CAPTURE_FIELDS: fields.join(","),
+          [CAPTURE_FIELDS_FILE_ENV]: fieldsFile,
           [MAX_CONTROL_BODY_BYTES_ENV]: String(maxControlBodyBytes()),
         },
       },
@@ -511,6 +516,10 @@ async function startMitmProxyAttempt(
         address: `127.0.0.1:${proxyPort}`,
         portFile,
         caPem: async () => readFileSync(caFile, "utf8"),
+        setFields: (next) => {
+          writeFields(next);
+          control.setFields(next);
+        },
         close,
       };
     }
@@ -524,6 +533,24 @@ async function startMitmProxyAttempt(
   throw new Error(
     `The capture proxy did not start within ${STARTUP_TIMEOUT_MS / 1000}s. ${stalled}\n${output.trim()}`,
   );
+}
+
+export const CAPTURE_FIELDS_FILE_ENV = "SERVE_SIM_CAPTURE_FIELDS_FILE";
+
+/**
+ * The session's fields file in its private confdir. The addon re-reads it when it changes, so the
+ * session's fields can change without a restart; each write renames a new owner-only file into place.
+ */
+export function captureFieldsFile(confdir: string): { path: string; write: (fields: readonly CaptureField[]) => void } {
+  const path = join(confdir, "capture-fields");
+  return {
+    path,
+    write(fields) {
+      const temp = `${path}.${randomBytes(4).toString("hex")}.tmp`;
+      writeFileSync(temp, fields.join(","), { mode: 0o600 });
+      renameSync(temp, path);
+    },
+  };
 }
 
 function addressAlreadyInUse(error: unknown): boolean {

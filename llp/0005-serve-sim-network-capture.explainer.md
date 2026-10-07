@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/network-capture-security.md`; links and paths updated)
+**Revised:** 2026-10-06 (the Network panel chooses the capture fields, also during a capture); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/network-capture-security.md`; links and paths updated)
 **Related:** LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -59,6 +59,13 @@ For example:
 ```bash
 serve-sim <udid> --network-capture --network-capture-field header,request-body
 ```
+
+These flags set the default. The Network requests panel can change the fields for a device, including fields
+the flags left off: while capture is off, the choice applies to the next start; while capture is on, it
+applies at once, without restarting the proxy: headers and bodies to requests that finish after the
+change, and query values to requests that start after it. Requests
+already recorded keep what they were recorded with. The panel's capture actions need the session token
+and a same-origin request, like every capture action.
 
 Each body preview is capped at 512 KiB. The in-memory store retains at most 500 requests and allows
 16 MiB for stored headers and bodies. Full transfer sizes are recorded even when previews are truncated
