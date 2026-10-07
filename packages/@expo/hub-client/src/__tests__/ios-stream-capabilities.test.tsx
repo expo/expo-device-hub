@@ -145,7 +145,8 @@ async function controlledClient(
   const discoveries: Array<(response: Response) => void> = [];
   const requests: string[] = [];
   const offeredCodecs: string[] = [];
-  stubGlobal('fetch', async (url: string, init?: RequestInit) => {
+  stubGlobal('fetch', async (input: string | URL, init?: RequestInit) => {
+    const url = String(input);
     requests.push(url);
     if (/\/api$/.test(new URL(url).pathname) && !url.includes('/grid/')) {
       return new Promise<Response>((resolve) => discoveries.push(resolve));
