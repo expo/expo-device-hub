@@ -9,7 +9,7 @@
 
 ## Summary
 
-`@expo/hub-client` has its own copies of serve-sim's browser input socket and exec-ws control client. It does not import serve-sim's client code, so a fix there does not reach the Hub or the Expo website by itself [observed: `input-socket.ts` and `exec-ws.ts` import nothing outside `@expo/hub-client`; LLP 0000 [constraint 2](0000-expo-device-hub.explainer.md#constraints-you-must-not-simplify-away)].
+`@expo/hub-client` has its own copies of serve-sim's browser input socket and exec-ws control client. It does not import serve-sim's client code, so a fix there does not reach the Hub or the Expo website by itself [observed: `input-socket.ts` and `control-socket.ts` import nothing outside `@expo/hub-client`; LLP 0000 [constraint 2](0000-expo-device-hub.explainer.md#constraints-you-must-not-simplify-away)].
 
 This document explains how the iOS client sends input and shares its control channel, and which serve-sim client rule each part copies. The routes and their authentication are in [LLP 0003](0003-serve-sim-http-api.spec.md#websockets).
 
@@ -40,6 +40,16 @@ The iOS adapter uses the admission socket [observed: `createInputSocket` call in
 - Fresh input waits through initial discovery and temporary null configs for the same helper. The hook transfers unsent messages without resetting their 1.5 s age or 32-message bound; a requested device, server, token, or known helper identity change discards them [observed: `pendingInputRef` in `useIosDevice.ts`; `takePending` in `input-socket.ts`].
 - When the helper is replaced at the same URL (new `pid` or exec token), queued input is dropped. Input belongs to the helper that was running when the user acted [confirmed] (Gabe Debes, 2026-10-07).
 - After a disconnect, the adapter waits for the reconnect (1.5 s). If exec-ws has not delivered a config by then, it runs HTTP discovery to recover rotated credentials.
+
+## Control channel pool
+
+`createControlSocket` owns one exec-ws connection for one client identity (URL and token), never for the whole module [observed: `control-socket.ts`].
+
+- At most 8 requests are in flight. serve-sim serves 8 action requests per control connection [observed: `MAX_ACTIONS_IN_FLIGHT_PER_SOCKET` in `socket/server-control.ts`].
+- A health probe runs every 5 s, and a probe without a reply in 5 s closes the connection. A connection attempt also stops after 5 s.
+- Each subscription retries by itself after the server ends it. One ended subscription does not close the others.
+
+serve-sim's client uses the same 5 s connect timeout and 2 s stream retry [observed: `socket/client-control.ts`].
 
 ## Open questions
 
