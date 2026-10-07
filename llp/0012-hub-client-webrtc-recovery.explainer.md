@@ -84,6 +84,10 @@ Hidden tabs slow timers and pause video, so the client does not judge a stream w
 
 serve-sim's client pauses diagnosis, keeps a used grace, and checks the sender in the same way. HubClient also sends the session token with the sender request and reads only its own session [observed: `hooks/use-webrtc-stream.ts`; `requestWebRtcServerStats` in `stream-stats.ts`].
 
+## H.264 offer level
+
+Chrome offers H.264 level 3.1 by default, which is too low for large simulator screens. iOS offers raise the asymmetric `profile-level-id` to level 5.2 when it is lower. Android offers are unchanged [observed: `webrtc-sdp-level.ts`, `raiseH264Level` in `useIosDevice.ts`]. The level policy is in [LLP 0002](0002-serve-sim-webrtc-architecture.explainer.md#signaling-lifecycle), and serve-sim's client sends the same level [observed: `webrtc-sdp-level.ts`].
+
 ## Open questions
 
 None at this time.
