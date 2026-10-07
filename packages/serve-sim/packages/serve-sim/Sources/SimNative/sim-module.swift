@@ -264,7 +264,7 @@ private func u32(_ v: Int) -> UInt32 {
         if let display = dimensions.display {
             // The screen-ID Indigo target is for integrated digitizers. Keep
             // external/scene displays on the existing input fallback.
-            if display.screenType == 0 { result["screenId"] = Int(display.screenID) }
+            if let screenID = display.integratedScreenID { result["screenId"] = Int(screenID) }
             if let orientation = display.orientation { result["orientation"] = orientation }
             if let chromeIdentifier = display.chromeIdentifier { result["chromeIdentifier"] = chromeIdentifier }
         }

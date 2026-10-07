@@ -20,6 +20,13 @@ struct CapturedScreenInfo {
     let width: Int
     let height: Int
     var display: SimDisplayMetadata?
+
+    var recordingDeviceState: RecordingDeviceState {
+        RecordingDeviceState(
+            width: width, height: height,
+            orientation: display?.orientation, screenId: display?.integratedScreenID
+        )
+    }
 }
 
 /// Headless simulator frame capture via direct IOSurface access.
@@ -42,7 +49,7 @@ actor FrameCapture {
     private var pollGrid: PollDeadlineGrid?
     /// Each frame carries the viewer canvas computed on this actor, so the engine
     /// never has to hop back here on the frame path.
-    private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?) -> Void)?
+    private var onFrame: ((CVPixelBuffer, CMTime, Dimensions?, CapturedScreenInfo) -> Void)?
     private var webRTCCanvasCache: Dimensions?
     private var screenObservers: [UUID: @Sendable () -> Void] = [:]
     private var frameCount: UInt64 = 0
@@ -89,6 +96,7 @@ actor FrameCapture {
     private var screenMetadata: [ObjectIdentifier: SimDisplayMetadata] = [:]
     private var fixedScreenID: UInt32?
     private var deviceUDID: String?
+    private(set) var isFoldable = false
     private var authoritativeDisplay: CoreDeviceDisplayState?
     private var displayInfoTask: Task<Void, Never>?
     private var displayRefreshTask: Task<Void, Never>?
@@ -101,7 +109,7 @@ actor FrameCapture {
     private var ioClient: NSObject?
 
     func start(deviceUDID: String, screenID: UInt32? = nil,
-               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void) async throws {
+               onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?, CapturedScreenInfo) -> Void) async throws {
         self.onFrame = onFrame
         self.deviceUDID = deviceUDID
         fixedScreenID = screenID
@@ -121,7 +129,9 @@ actor FrameCapture {
 
         // Drop this device's CoreDevice capabilities from the previous boot
         // before HID or display election asks for capabilities from this boot.
-        if SimulatorDisplayProfile.read(from: device).resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
+        let displayProfile = SimulatorDisplayProfile.read(from: device)
+        isFoldable = displayProfile.isFoldable
+        if displayProfile.resetsBootBoundStateOnCapture(fixedScreenID: screenID) {
             await CoreDeviceBridge.shared.resetForNewCapture(udid: deviceUDID)
             guard generation == captureGeneration else { throw CancellationError() }
         }
@@ -530,7 +540,8 @@ actor FrameCapture {
         }
         frameCount += 1
         if force { idleFrameCount += 1 } else { screenFrameCount += 1 }
-        onFrame?(copy, timestamp, webRTCEncodeCanvasSize())
+        onFrame?(copy, timestamp, webRTCEncodeCanvasSize(),
+                 CapturedScreenInfo(width: w, height: h, display: display))
     }
 
     /// Snapshotting straight to the delivery size avoids moving the whole framebuffer through
@@ -624,6 +635,7 @@ actor FrameCapture {
         displayRefreshRequested = false
         screenObservers.removeAll()
         deviceUDID = nil
+        isFoldable = false
         authoritativeDisplay = nil
         displayConfigurationReady = false
         surfacePollTimer?.cancel()
