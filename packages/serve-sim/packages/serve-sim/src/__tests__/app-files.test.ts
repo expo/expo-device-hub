@@ -107,7 +107,10 @@ describe("app data files", () => {
   it("bounds reads and refuses special files without blocking", async () => {
     const path = join(root, "Documents/large");
     writeFileSync(path, "");
-    truncateSync(path, 8 * 1024 * 1024 + 1);
+    truncateSync(path, 10 * 1024 * 1024);
+    const atLimit = await act("app.file.read", { relativePath: "Documents/large" });
+    expect(Buffer.from(atLimit.stdout, "base64").length).toBe(10 * 1024 * 1024);
+    truncateSync(path, 10 * 1024 * 1024 + 1);
     expect((await act("app.file.read", { relativePath: "Documents/large" })).exitCode).toBe(1);
     expect((await act("app.file.read", { relativePath: "Documents" })).exitCode).toBe(1);
     execFileSync("mkfifo", [join(root, "Documents/pipe")]);
