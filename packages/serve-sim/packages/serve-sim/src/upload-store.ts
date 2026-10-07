@@ -30,6 +30,12 @@ export function stagedUploadPath(uploadId: string): string {
   return join(UPLOAD_DIR, uploadId);
 }
 
+/** Hold the staging queue while a reader captures bytes, excluding reset, prune and removal. */
+// @ref LLP 0003#uploading-an-app-fixture — resets, pruning and removals wait while a copy reads its source
+export function readStagedUploadAsync<T>(uploadId: string, read: (path: string) => Promise<T>): Promise<T> {
+  return queueUploadAsync(() => read(stagedUploadPath(uploadId)));
+}
+
 export async function appendUploadChunkAsync(p: {
   uploadId: string;
   data: string;
@@ -58,8 +64,10 @@ export async function appendUploadChunkAsync(p: {
 }
 
 export async function removeUploadAsync(uploadId: string): Promise<HostActionResult> {
-  await rm(stagedUploadPath(uploadId), { force: true });
-  return ok();
+  return queueUploadAsync(async () => {
+    await rm(stagedUploadPath(uploadId), { force: true });
+    return ok();
+  });
 }
 
 /** Staged beside the uploads so the prune reclaims it if the caller dies before its own cleanup. */
