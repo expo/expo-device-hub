@@ -66,7 +66,7 @@ export async function pruneStaleEntriesAsync(dir: string, maxAgeMs: number): Pro
 }
 
 /** Child output is useful, but a stack trace prints the operator's checkout. Keep the message. */
-function redactHostPaths(text: string): string {
+export function redactHostPaths(text: string): string {
   if (!text) return text;
   return text.split(homedir()).join("~").replace(/\/(?:private\/)?var\/folders\/\S+/g, "<tmp>");
 }

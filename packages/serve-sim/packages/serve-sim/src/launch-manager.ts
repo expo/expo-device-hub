@@ -412,26 +412,58 @@ export async function launchApp(
     bundleId,
     launchArgs = [],
     restart = false,
-  }: { bundleId: string; launchArgs?: string[]; restart?: boolean },
+    openUrl,
+  }: { bundleId: string; launchArgs?: string[]; restart?: boolean; openUrl?: string },
 ): Promise<void> {
   await withLaunchStateLock(udid, async () => {
     const previous = readLaunchState(udid);
     const state: LaunchState = { ...previous, bundleId, launchArgs, capabilities: previous?.capabilities ?? {} };
-    if (Object.keys(state.capabilities).length > 0) await publishLaunchState(udid, state);
-    else {
-      writeLaunchState(udid, state);
-      commitCapabilityConfig(udid, renderCapabilityConfig(state));
+    let previousConfig: string | undefined;
+    try { previousConfig = readFileSync(capabilityConfigPath(udid), "utf8"); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+    const hasCapabilities = Object.keys(state.capabilities).length > 0;
+    if (hasCapabilities) validateStartupDylibs(startupDylibs(state.capabilities));
+    const previousEnvironment = hasCapabilities ? await snapshotCapabilityLaunch(udid) : undefined;
+    const wasArmed = armedHere.has(udid);
+    try {
+      if (hasCapabilities) await publishLaunchState(udid, state);
+      else {
+        commitCapabilityConfig(udid, renderCapabilityConfig(state));
+        writeLaunchState(udid, state);
+      }
+      // @ref LLP 0003#launching-an-installed-app — set up before the app stops; a failed launch restores the previous state
+      if (restart) await terminateForRelaunch(udid, bundleId);
+      await simctl(["launch", udid, bundleId, ...launchArgs]);
+    } catch (error) {
+      try {
+        if (previous) writeLaunchState(udid, previous);
+        else clearLaunchState(udid);
+        if (previousEnvironment) {
+          await restoreCapabilityLaunch(udid, previousEnvironment, startupDylibs(state.capabilities));
+          if (!wasArmed) armedHere.delete(udid);
+        } else if (previousConfig === undefined) rmSync(capabilityConfigPath(udid), { force: true });
+        else commitCapabilityConfig(udid, previousConfig);
+      } catch (rollbackError) {
+        throw new CapabilityRollbackError([error, rollbackError], "Could not restore the previous app launch state.");
+      }
+      throw error;
     }
-    if (restart) {
-      await terminateForRelaunch(udid, bundleId);
-    }
-    await simctl(["launch", udid, bundleId, ...launchArgs]);
+    // Keep scheme approval and delivery in the same device lock as launch.
+    if (openUrl) await openUrlInAppUnlocked(udid, bundleId, openUrl);
   });
 }
 
-export async function openUrlInApp(udid: string, bundleId: string, openUrl: string): Promise<void> {
+async function openUrlInAppUnlocked(udid: string, bundleId: string, openUrl: string): Promise<void> {
   await preapproveUrlSchemeAsync(udid, bundleId, openUrl);
   await simctl(["openurl", udid, openUrl]);
+}
+
+export async function openUrlInApp(udid: string, bundleId: string, openUrl: string): Promise<void> {
+  await withLaunchStateLock(udid, () => openUrlInAppUnlocked(udid, bundleId, openUrl));
+}
+
+export async function stopApp(udid: string, bundleId: string): Promise<void> {
+  await withLaunchStateLock(udid, () => simctl(["terminate", udid, bundleId]));
 }
 
 type ConfigureOptions = {
