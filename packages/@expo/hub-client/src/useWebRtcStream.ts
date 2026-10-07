@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { startPlaybackStallWatchdog } from './playback-stall-watchdog';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { readStatsBeforeDeadline } from './bounded-webrtc-stats';
 
 import {
@@ -13,7 +14,7 @@ import {
   WebRtcSignalingTimeoutError,
 } from './webrtc-negotiation';
 import { type SessionFetch } from './session-token';
-import { useWebRtcStreamStats, type WebRtcStatsConnection } from './stream-stats';
+import { useWebRtcStreamStats, type SubscribeClientStats, type WebRtcStatsConnection } from './stream-stats';
 
 export type WebRtcIceServer = {
   urls: string[];
@@ -106,8 +107,8 @@ export async function videoRtpArriving(pc: RTCPeerConnection | null): Promise<bo
     let arriving = false;
     (await readStatsBeforeDeadline(pc))?.forEach((entry) => {
       if (entry.type !== 'inbound-rtp') return;
-      const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number };
-      if (video.kind !== 'video') return;
+      const video = entry as RTCInboundRtpStreamStats & { framesReceived?: number; mediaType?: string };
+      if (video.kind !== 'video' && video.mediaType !== 'video') return;
       if ((video.framesReceived ?? 0) > 0) arriving = true;
     });
     return arriving;
@@ -137,7 +138,9 @@ export function useWebRtcStream({
   iceTransportPolicy = 'all',
   sendIceServersInOffer = true,
   allowCodecFallback = true,
+  expectContinuousFrames = true,
   onKeyframeNeeded,
+  onBeforeDisconnect,
   fetchImpl = fetch,
   transportLocked = false,
 }: {
@@ -153,7 +156,11 @@ export function useWebRtcStream({
   iceTransportPolicy?: RTCIceTransportPolicy;
   sendIceServersInOffer?: boolean;
   allowCodecFallback?: boolean;
+  /** False for sources that emit frames only when the display changes. */
+  expectContinuousFrames?: boolean;
   onKeyframeNeeded?: () => void;
+  /** Preserve the displayed frame before a retry or cleanup closes its peer. */
+  onBeforeDisconnect?: () => void;
   /** Sends a gated backend's session token; plain `fetch` by default. */
   fetchImpl?: SessionFetch;
   transportLocked?: boolean;
@@ -168,12 +175,24 @@ export function useWebRtcStream({
   const firstFrameDecodedRef = useRef(false);
   const presentedFramesRef = useRef(0);
   const transportRetryAttemptRef = useRef(0);
+  const stallReconnectAtRef = useRef<number | null>(null);
+  const beforeDisconnectRef = useRef(onBeforeDisconnect);
+  // A media node remount changes the capture target, not the negotiated peer.
+  useLayoutEffect(() => {
+    beforeDisconnectRef.current = onBeforeDisconnect;
+  }, [onBeforeDisconnect]);
+  const statsListenersRef = useRef(new Set<(report: RTCStatsReport, at: number) => void>());
+  const subscribeStats = useCallback<SubscribeClientStats>((listener) => {
+    statsListenersRef.current.add(listener);
+    return () => { statsListenersRef.current.delete(listener); };
+  }, []);
   const streamStats = useWebRtcStreamStats(
     statsConnection,
     statsUrl,
     presentedFramesRef,
     streamStatsEnabled,
     fetchImpl,
+    subscribeStats,
   );
 
   const markFrameDecoded = useCallback((presentedFrameDelta = 1) => {
@@ -198,6 +217,7 @@ export function useWebRtcStream({
 
   useEffect(() => {
     transportRetryAttemptRef.current = 0;
+    stallReconnectAtRef.current = null;
   }, [
     enabled,
     offerUrl,
@@ -208,6 +228,7 @@ export function useWebRtcStream({
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    expectContinuousFrames,
     transportLocked,
   ]);
 
@@ -224,6 +245,7 @@ export function useWebRtcStream({
 
     let stopped = false;
     let peer: RTCPeerConnection | null = null;
+    let peerClosed = false;
     let retryTimer: number | undefined;
     let disconnectedTimer: number | undefined;
     let closePromise: Promise<void> | null = null;
@@ -276,6 +298,15 @@ export function useWebRtcStream({
     const closePeer = () => {
       clearFirstFrameTimeout();
       clearDisconnectedTimer();
+      if (peerClosed) return;
+      peerClosed = true;
+      if (peer) {
+        try {
+          beforeDisconnectRef.current?.();
+        } catch {
+          // Snapshot failures must not retain the peer or its server session.
+        }
+      }
       setStream(null);
       setStatsConnection((current) =>
         current?.sessionId === sessionId ? null : current,
@@ -358,6 +389,18 @@ export function useWebRtcStream({
         });
       }, FIRST_FRAME_TIMEOUT_MS);
     };
+
+    const readable = () => !stopped && !failing && peer !== null && !document.hidden;
+    const stall = startPlaybackStallWatchdog({
+      peer: () => peer,
+      readable,
+      judgeable: () => readable() && peer?.connectionState === 'connected' && firstFrameDecodedRef.current,
+      publish: (report, at) => { for (const listener of statsListenersRef.current) listener(report, at); },
+      reconnectedAt: stallReconnectAtRef,
+      failCodec: () => allowCodecFallback ? failCodec() : retryTransport('WebRTC playback stalled.'),
+      retryTransport,
+      expectContinuousFrames,
+    });
 
     const waitForIce = (connection: RTCPeerConnection) =>
       new Promise<void>((resolve) => {
@@ -481,18 +524,13 @@ export function useWebRtcStream({
 
     return () => {
       stopped = true;
+      stall.stop();
       window.removeEventListener('pagehide', releaseOnPageHide);
       window.removeEventListener('beforeunload', releaseOnPageHide);
       lifecycleController.abort();
       if (retryTimer !== undefined) window.clearTimeout(retryTimer);
-      clearFirstFrameTimeout();
-      clearDisconnectedTimer();
+      closePeer();
       void closeRemoteSession(true);
-      setStream(null);
-      setStatsConnection((current) =>
-        current?.sessionId === sessionId ? null : current,
-      );
-      peer?.close();
     };
   }, [
     enabled,
@@ -504,11 +542,12 @@ export function useWebRtcStream({
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    expectContinuousFrames,
     onKeyframeNeeded,
     retryGeneration,
     fetchImpl,
     transportLocked,
   ]);
 
-  return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };
+  return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled, subscribeStats };
 }
