@@ -457,6 +457,7 @@ describe("serve-sim-backed actions", () => {
       ["colorFilter", "color-filter", "grayscale"],
       ["textSize", "text-size", "extra-large"],
       ["showBorders", "show-borders", "on"],
+      ["timeZone", "time-zone", "Asia/Tokyo"],
     ] as const;
     for (const [name, option, value] of settings) {
       expect(await argv(`${name}.get`, { udid: UDID })).toEqual([

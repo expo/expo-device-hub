@@ -66,14 +66,20 @@ test("a boot-session timeout leaves the setting unchanged and releases its lock"
   expect(keyboardUpdates).toBe(1);
 });
 
-test.each(["appearance", "reduce-motion"])("bounds the %s read", async (option) => {
+test.each(["appearance", "reduce-motion", "time-zone"])("bounds the %s read", async (option) => {
   await expect(getUiOption("FAKE-DEVICE", option)).rejects.toThrow("did not finish within 30 s");
   expect(timeouts).toEqual([30_000]);
 });
 
-test.each(["appearance", "reduce-motion"])("bounds the %s write", async (option) => {
-  await expect(
-    setUiOption("FAKE-DEVICE", option, option === "appearance" ? "dark" : "on"),
-  ).rejects.toThrow("did not finish within 30 s");
+const WRITES: Record<string, string> = {
+  appearance: "dark",
+  "reduce-motion": "on",
+  "time-zone": "UTC",
+};
+
+test.each(Object.keys(WRITES))("bounds the %s write", async (option) => {
+  await expect(setUiOption("FAKE-DEVICE", option, WRITES[option]!)).rejects.toThrow(
+    "did not finish within 30 s",
+  );
   expect(timeouts).toEqual([30_000]);
 });

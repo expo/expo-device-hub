@@ -588,9 +588,11 @@ barrier reports failure instead of success for input still waiting in the queue.
 Each simulator setting in the sidebar has a read action and a write action on
 `/exec-ws`: `<setting>.get` with `{udid}` and `<setting>.set` with `{udid, value}`,
 for `hardwareKeyboard`, `reduceMotion`, `increaseContrast`, `reduceTransparency`,
-`voiceover`, `liquidGlass`, `colorFilter`, `textSize` and `showBorders`. Values are
+`voiceover`, `liquidGlass`, `colorFilter`, `textSize`, `showBorders` and `timeZone`. Values are
 the canonical values of `serve-sim ui` (`UI_OPTIONS` in `src/ui-settings.ts`),
-plus `increment` and `decrement` for `textSize`; aliases are refused. `settings.status` returns every setting as JSON.
+plus `increment` and `decrement` for `textSize`; aliases are refused. `timeZone` takes
+`host` or an IANA name such as `Europe/Berlin`; the name ICU resolves it to is set, because
+the canonical name depends on the ICU version. `settings.status` returns every setting as JSON.
 
 - `softwareKeyboard.toggle`: `{udid}`. Shows or hides the on-screen keyboard, like ⌘K.
 - `memoryWarning`: `{udid}`. Sends a memory warning to the device.
