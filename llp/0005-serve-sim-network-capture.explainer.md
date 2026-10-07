@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-06 (Codex, directed by Gabe Debes: explicit upstream routing, credential transport, shared runtime policy, and self-proxy retries)
+**Revised:** 2026-10-06 (Gabe Debes: explicit upstream routing, credential transport, shared runtime policy, and self-proxy retries)
 **Related:** LLP 0003, LLP 0007
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
