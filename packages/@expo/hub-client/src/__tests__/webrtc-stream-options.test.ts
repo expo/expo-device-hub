@@ -105,3 +105,11 @@ describe('WebRTC stream options', () => {
     expect(shouldFallbackCodecAfterFirstFrameTimeout(true, 'failed')).toBe(false);
   });
 });
+
+ test('raises iOS asymmetric H.264 offers while preserving Android and other codecs', () => {
+  const sdp = 'a=fmtp:102 level-asymmetry-allowed=1;profile-level-id=42e01f';
+  const options = { description: {type: 'offer' as const, sdp}, sessionId: 'A', codec: 'h264' as const, iceServers: [] };
+  expect(buildWebRtcOfferPayload(options).sdp).toBe(sdp);
+  expect(buildWebRtcOfferPayload({...options, raiseH264Level: true}).sdp).toContain('42e034');
+  expect(buildWebRtcOfferPayload({...options, codec: 'vp8', raiseH264Level: true}).sdp).toBe(sdp);
+ });

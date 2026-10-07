@@ -1,3 +1,4 @@
+import { raiseH264OfferLevel } from './webrtc-sdp-level';
 import { startPlaybackStallWatchdog } from './playback-stall-watchdog';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { readStatsBeforeDeadline } from './bounded-webrtc-stats';
@@ -70,16 +71,18 @@ export function buildWebRtcOfferPayload({
   codec,
   iceServers,
   sendIceServersInOffer = true,
+  raiseH264Level = false,
 }: {
   description: RTCSessionDescriptionInit;
   sessionId: string;
   codec: WebRtcCodec;
   iceServers: WebRtcIceServer[];
   sendIceServersInOffer?: boolean;
+  raiseH264Level?: boolean;
 }): Record<string, unknown> {
   return {
     type: description.type,
-    sdp: description.sdp,
+    sdp: raiseH264Level && codec === 'h264' && description.sdp ? raiseH264OfferLevel(description.sdp) : description.sdp,
     sessionId,
     codec,
     ...(sendIceServersInOffer ? { iceServers } : {}),
@@ -143,6 +146,7 @@ export function useWebRtcStream({
   onBeforeDisconnect,
   fetchImpl = fetch,
   transportLocked = false,
+  raiseH264Level = false,
 }: {
   offerUrl: string;
   closeUrl: string;
@@ -164,6 +168,8 @@ export function useWebRtcStream({
   /** Sends a gated backend's session token; plain `fetch` by default. */
   fetchImpl?: SessionFetch;
   transportLocked?: boolean;
+  /** serve-sim accepts asymmetric H.264 levels beyond Chrome's default 3.1. */
+  raiseH264Level?: boolean;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -231,6 +237,7 @@ export function useWebRtcStream({
     allowCodecFallback,
     expectContinuousFrames,
     transportLocked,
+    raiseH264Level,
   ]);
 
   useEffect(() => {
@@ -507,6 +514,7 @@ export function useWebRtcStream({
               codec,
               iceServers: servers,
               sendIceServersInOffer,
+              raiseH264Level,
             }),
           ),
         });
@@ -569,6 +577,7 @@ export function useWebRtcStream({
     retryGeneration,
     fetchImpl,
     transportLocked,
+    raiseH264Level,
   ]);
 
   return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled, subscribeStats };

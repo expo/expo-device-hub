@@ -914,6 +914,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     iceServers: config?.webRtcIceServers,
     fetchImpl: videoFetch,
     transportLocked: streamTransportLocked,
+    raiseH264Level: true,
   });
   const handledWebRtcFailureRef = useRef<string | null>(null);
   const ladderBackoffRef = useRef(createLadderBackoff());
