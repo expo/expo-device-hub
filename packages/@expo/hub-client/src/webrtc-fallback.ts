@@ -13,6 +13,7 @@ export type WebRtcStreamFailure = WebRtcFailureReason & { sessionId: string };
 
 export type WebRtcFallbackDecision =
   | { type: 'retry-codec'; codec: WebRtcCodec }
+  | { type: 'restart-ladder'; codec: WebRtcCodec }
   | { type: 'switch-to-http' };
 
 const FALLBACK_ATTEMPTS: Record<WebRtcCodec, readonly WebRtcCodec[]> = {
@@ -35,13 +36,28 @@ export function webRtcFallbackDecision(
   requested: WebRtcCodec,
   current: WebRtcCodec,
   failure: WebRtcFailureReason,
+  transportLocked = false,
 ): WebRtcFallbackDecision | null {
-  if (failure.kind === 'permanent') return { type: 'switch-to-http' };
+  if (failure.kind === 'permanent') return transportLocked ? null : { type: 'switch-to-http' };
   if (failure.codec !== current) return null;
   const nextCodec = nextWebRtcFallbackCodec(requested, current);
   return nextCodec && nextCodec !== current
     ? { type: 'retry-codec', codec: nextCodec }
-    : { type: 'switch-to-http' };
+    : transportLocked ? { type: 'restart-ladder', codec: requested } : { type: 'switch-to-http' };
+}
+
+// @ref LLP 0012#locked-transport — a locked session restarts the ladder; it has no HTTP stream
+/** Codec walks from a persistent outage retain their backoff until the stream settles. */
+export function createLadderBackoff() {
+  let attempt = 0;
+  let lastFailureAt: number | null = null;
+  return {
+    noteFailure(now: number) {
+      if (lastFailureAt !== null && now - lastFailureAt >= 90_000) attempt = 0;
+      lastFailureAt = now;
+    },
+    takeRestartDelayMs() { return Math.min(2_000 * 2 ** Math.min(attempt++, 4), 30_000); },
+  };
 }
 
 export type WebRtcFailureEvent =

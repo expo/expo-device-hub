@@ -84,8 +84,8 @@ export function buildWebRtcOfferPayload({
   };
 }
 
-export function isRetryableWebRtcOfferStatus(status: number): boolean {
-  return status === 408 || status === 425 || status === 429 || status >= 500;
+export function isRetryableWebRtcOfferStatus(status: number, transportLocked = false): boolean {
+  return (transportLocked && status === 404) || status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
 export function shouldFallbackCodecAfterFirstFrameTimeout(
@@ -138,6 +138,7 @@ export function useWebRtcStream({
   allowCodecFallback = true,
   onKeyframeNeeded,
   fetchImpl = fetch,
+  transportLocked = false,
 }: {
   offerUrl: string;
   closeUrl: string;
@@ -154,6 +155,7 @@ export function useWebRtcStream({
   onKeyframeNeeded?: () => void;
   /** Sends a gated backend's session token; plain `fetch` by default. */
   fetchImpl?: SessionFetch;
+  transportLocked?: boolean;
 }) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [failure, setFailure] = useState<WebRtcStreamFailure | null>(null);
@@ -205,6 +207,7 @@ export function useWebRtcStream({
     iceTransportPolicy,
     sendIceServersInOffer,
     allowCodecFallback,
+    transportLocked,
   ]);
 
   useEffect(() => {
@@ -447,7 +450,7 @@ export function useWebRtcStream({
           const status = response.status;
           await response.body?.cancel();
           const message = `WebRTC offer failed: HTTP ${status}.`;
-          if (isRetryableWebRtcOfferStatus(status)) retryTransport(message);
+          if (isRetryableWebRtcOfferStatus(status, transportLocked)) retryTransport(message);
           else failPermanently(message);
           return;
         }
@@ -503,6 +506,7 @@ export function useWebRtcStream({
     onKeyframeNeeded,
     retryGeneration,
     fetchImpl,
+    transportLocked,
   ]);
 
   return { stream, failure, error, markFrameDecoded, restart, streamStats, setStreamStatsEnabled };
