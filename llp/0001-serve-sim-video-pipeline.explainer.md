@@ -192,6 +192,41 @@ directory contains `recording.mp4` and `session.json`. The manifest keeps the
 record-sim upload contract: `firstFrameWallClock` with `unixMs` and `iso8601`,
 `width`, `height`, and `recording`.
 
+### Saved MP4 layout contract
+
+The writer sets `AVAssetWriter.shouldOptimizeForNetworkUse` to `true`. In the
+finalized `recording.mp4`, the `moov` index precedes the `mdat` media data, so
+progressive loading can read track metadata before the media payload. The writer
+still receives compressed H.264 samples with `outputSettings: nil`; this layout
+setting does not alter the recording encoder's bitrate, cadence, or keyframe
+configuration [observed: `Sources/SimNative/NativeVideoRecorder.swift`,
+`openWriter` and compression-session configuration].
+
+`NativeVideoRecorderTests.testHardwareRecordingRepeatsOwnedFrameAndWritesNativeCanvas`
+parses the finalized file's top-level boxes and requires `moov` before `mdat`.
+It also checks the native canvas, track frame rate, and duration [observed:
+`Tests/SimNativeTests/NativeVideoRecorderTests.swift`]. This is a saved-file
+contract; it does not establish fewer capture or browser playback drops.
+
+Fast-start adds work during `finishWriting` that grows with the saved file. On an
+M5 Pro with internal SSD and passthrough H.264, Szymon measured about 2.7 seconds
+for 2 GB and 6 seconds for 8 GB, compared with 0.01–0.04 seconds without the flag
+[confirmed: Szymon (`szdziedzic`), 2026-10-08,
+[PR #251 review](https://github.com/expo/expo-device-hub/pull/251#discussion_r4221158869)].
+
+The recorder's 60-second deadline covers encoder flushing. After MP4 writer
+finalization starts, that deadline cannot call `cancelWriting`; the recorder
+awaits the writer's completion callback. `finalizeMs` measures elapsed monotonic
+time from starting writer finalization to its callback, excluding encoder flush
+and manifest writing, and appears in the completion log [observed:
+`Sources/SimNative/NativeVideoRecorder.swift`, `finish` and `finishOnQueue`;
+`Sources/SimNative/CaptureEngine.swift`, `stopRecording`].
+
+This recorder deadline is separate from the CLI's existing 65-second wait for a
+helper with a known active recording. If that outer wait expires, the CLI can
+still force-kill the helper and interrupt its writer [observed:
+`src/stop-process.ts`, `recordingShutdownGraceMs` and `stopProcess`].
+
 ## Control and shutdown
 
 Start serve-sim for the device, then run:
