@@ -65,6 +65,9 @@ export interface CaptureCounts {
   stallSumMs: number | null;
   pollTicks: number | null;
   pollLateSumMs: number | null;
+  surfaceLosses?: number | null;
+  surfaceLostMs?: number | null;
+  rewires?: number | null;
 }
 
 /// What is known about the encoder behind the live sessions. `hardware: false` means a CPU
@@ -254,5 +257,8 @@ function readCaptureCounts(raw: unknown): CaptureCounts | null {
     stallSumMs: maybeNumber(raw.stallSumMs),
     pollTicks: maybeNumber(raw.pollTicks),
     pollLateSumMs: maybeNumber(raw.pollLateSumMs),
+    surfaceLosses: maybeNumber(raw.surfaceLosses),
+    surfaceLostMs: maybeNumber(raw.surfaceLostMs),
+    rewires: maybeNumber(raw.rewires),
   };
 }

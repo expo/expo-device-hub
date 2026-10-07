@@ -62,7 +62,8 @@ actor FrameCapture {
     private var surfacePollTimer: DispatchSourceTimer?
     private var lastCaptureTime: ContinuousClock.Instant = .now
     private var lastSeeds: [ObjectIdentifier: UInt32] = [:]
-    private var lastRewireAttempt: ContinuousClock.Instant = .now
+    private let nowNanoseconds: @Sendable () -> UInt64
+    private var surfaceWatch: FramebufferSurfaceWatch
     /// Interval at which the surface poll re-emits the current frame even when
     /// the simulator isn't rendering anything new. This is load-bearing for two
     /// consumers:
@@ -74,10 +75,7 @@ actor FrameCapture {
     ///    idle sim never gets a cached frame to show.
     /// Re-emitting at ~5 fps fixes both without meaningful CPU cost.
     private static let idleInterval: ContinuousClock.Duration = .milliseconds(200)
-    private static let rewireInterval: ContinuousClock.Duration = .seconds(1)
-    /// The surfaces-changed callback is the primary invalidation. Some virtualized
-    /// runtimes deliver it unreliably, so re-pick on a slow timer as well.
-    private static let pickRevalidateInterval: ContinuousClock.Duration = .seconds(1)
+    private static let surfaceRevalidationIntervalNs: UInt64 = 1_000_000_000
     /// A gap this long is a visible hitch rather than ordinary jitter.
     private static let stallThresholdNanoseconds: UInt64 = 100_000_000
 
@@ -97,8 +95,13 @@ actor FrameCapture {
     private var captureGeneration: UInt64 = 0
     private var capturedDisplay: SimDisplayMetadata?
     private var bestSurfaceKey: ObjectIdentifier?
-    private var lastPickAttempt: ContinuousClock.Instant?
+    private var lastLiveRevalidationNs: UInt64?
     private var ioClient: NSObject?
+
+    init(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
+        self.nowNanoseconds = nowNanoseconds
+        surfaceWatch = FramebufferSurfaceWatch(startNanoseconds: nowNanoseconds())
+    }
 
     func start(deviceUDID: String, screenID: UInt32? = nil,
                onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void) async throws {
@@ -106,6 +109,8 @@ actor FrameCapture {
         self.deviceUDID = deviceUDID
         fixedScreenID = screenID
         displayConfigurationReady = false
+        lastLiveRevalidationNs = nil
+        surfaceWatch = FramebufferSurfaceWatch(startNanoseconds: nowNanoseconds())
         captureGeneration &+= 1
         let generation = captureGeneration
 
@@ -187,10 +192,11 @@ actor FrameCapture {
             throw error
         }
 
-        if let (_, surface) = pickBestSurface() {
-            capturedWidth = IOSurfaceGetWidth(surface)
-            capturedHeight = IOSurfaceGetHeight(surface)
-            print("[capture] Framebuffer: \(capturedWidth)x\(capturedHeight) (direct IOSurface, zero-copy)")
+        lastLiveRevalidationNs = nil
+        if let (_, surface) = currentSurface() {
+            let width = IOSurfaceGetWidth(surface)
+            let height = IOSurfaceGetHeight(surface)
+            print("[capture] Framebuffer: \(width)x\(height) (direct IOSurface, zero-copy)")
         }
 
         captureFrame()
@@ -223,26 +229,45 @@ actor FrameCapture {
         return candidates
     }
 
-    private func surface(for descriptor: NSObject) -> IOSurface? {
+    private func surface(for descriptor: NSObject, live: Bool = false) -> IOSurface? {
         let key = ObjectIdentifier(descriptor)
-        if let surface = framebufferSurfaces[key] {
-            return surface
-        }
+        guard live else { return framebufferSurfaces[key] }
 
         let surfaceSelector = NSSelectorFromString("framebufferSurface")
-        guard let surfaceObject = descriptor.perform(surfaceSelector)?.takeUnretainedValue() else {
-            return nil
+        var reported: IOSurface?
+        if let surfaceObject = descriptor.perform(surfaceSelector)?.takeUnretainedValue() {
+            reported = unsafeBitCast(surfaceObject, to: IOSurface.self)
         }
-        let surface = unsafeBitCast(surfaceObject, to: IOSurface.self)
-        framebufferSurfaces[key] = surface
-        return surface
+        let maskedSelector = NSSelectorFromString("maskedFramebufferSurface")
+        if reported == nil, descriptor.responds(to: maskedSelector),
+           let surfaceObject = descriptor.perform(maskedSelector)?.takeUnretainedValue() {
+            reported = unsafeBitCast(surfaceObject, to: IOSurface.self)
+        }
+        updateCachedSurface(reported, for: key)
+        return framebufferSurfaces[key]
+    }
+
+    private func updateCachedSurface(_ surface: IOSurface?, for key: ObjectIdentifier) {
+        switch CachedSurfaceRevalidation.decide(
+            cachedID: framebufferSurfaces[key].map(IOSurfaceGetID), liveID: surface.map(IOSurfaceGetID)
+        ) {
+        case .keep:
+            return
+        case .replace:
+            framebufferSurfaces[key] = surface
+        case .drop:
+            framebufferSurfaces.removeValue(forKey: key)
+        }
+        // A new surface may have a seed equal to the old one, and another size.
+        lastSeeds.removeValue(forKey: key)
+        webRTCCanvasCache = nil
     }
 
     /// Fixed feeds select only their panel. Main capture prefers the
     /// authoritative active panel and retains its legacy largest-area fallback.
-    private func pickBestSurface() -> (key: ObjectIdentifier, surface: IOSurface)? {
+    private func pickBestSurface(live: Bool) -> (key: ObjectIdentifier, surface: IOSurface)? {
         let surfaces = descriptors.compactMap { descriptor -> (key: ObjectIdentifier, surface: IOSurface)? in
-            guard let surface = surface(for: descriptor) else { return nil }
+            guard let surface = surface(for: descriptor, live: live) else { return nil }
             return (ObjectIdentifier(descriptor), surface)
         }
         let candidates = surfaces.map { key, surface in
@@ -314,26 +339,24 @@ actor FrameCapture {
         captureFrame(force: true)
     }
 
-    /// The winning descriptor for as long as it stays valid. Re-ranking every frame costs a size
-    /// query per descriptor, and a callback that clears a descriptor's cached surface sends the
-    /// next rank back through the private surface API, which is slowest while the compositor is
-    /// mid-swap.
-    private func currentSurface() -> (key: ObjectIdentifier, surface: IOSurface)? {
-        let now = ContinuousClock.now
-        if let last = lastPickAttempt, (now - last) < Self.pickRevalidateInterval,
-           let key = bestSurfaceKey, let surface = framebufferSurfaces[key] {
+    /// Callback changes re-rank cached surfaces. Live reads use an independent
+    /// one-second cadence so callback bursts cannot delay or multiply them.
+    private func currentSurface(allowLiveRevalidation: Bool = true) -> (key: ObjectIdentifier, surface: IOSurface)? {
+        let nowNs = nowNanoseconds()
+        let live = allowLiveRevalidation && (lastLiveRevalidationNs.map {
+            nowNs >= $0 && nowNs - $0 >= Self.surfaceRevalidationIntervalNs
+        } ?? true)
+        if !live, let key = bestSurfaceKey, let surface = framebufferSurfaces[key] {
             return (key, surface)
         }
-        lastPickAttempt = now
-        let best = pickBestSurface()
+        if live { lastLiveRevalidationNs = nowNs }
+        let best = pickBestSurface(live: live)
         bestSurfaceKey = best?.key
         return best
     }
 
     private func invalidatePick() {
         bestSurfaceKey = nil
-        lastPickAttempt = nil
-        // Every surface, descriptor, or display change comes through here.
         webRTCCanvasCache = nil
     }
 
@@ -358,7 +381,7 @@ actor FrameCapture {
             guard let self, let descriptor else { return }
             self.assumeIsolated {
                 $0.updateSurface(for: descriptor, unmasked: unmasked, masked: masked)
-                $0.captureFrame()
+                $0.captureFrame(allowLiveRevalidation: false)
             }
         }
         let propertiesChangedCallback: ScreenPropertiesChangedCallback = { [weak self, weak descriptor] properties in
@@ -427,33 +450,30 @@ actor FrameCapture {
     }
 
     private func onSurfacePollTick() {
+        let nowNs = nowNanoseconds()
         let now = ContinuousClock.now
         let idleRefreshDue = (now - self.lastCaptureTime) >= Self.idleInterval
         self.captureFrame(force: idleRefreshDue)
-        // Self-heal: if we've never captured a frame, the cached descriptor
-        // is likely stale. Re-wire the pipeline periodically
-        // until frames start flowing.
-        if self.frameCount == 0, (now - self.lastRewireAttempt) >= Self.rewireInterval {
-            self.lastRewireAttempt = now
-            do {
-                try self.wireUpFramebuffer()
-            } catch {
-                // Swallow — we'll try again on a later tick.
-            }
+        guard let lastLiveRevalidationNs else { return }
+        // A cached miss cannot establish that the surface is still missing.
+        let healthCheckNs = min(nowNs, lastLiveRevalidationNs)
+        guard case .rewire(let lossStarted) = surfaceWatch.tick(atNanoseconds: healthCheckNs, capturedAnyFrame: frameCount > 0)
+        else { return }
+        if lossStarted {
+            print("[capture] No framebuffer surface for \(Self.seconds(surfaceWatch.currentLossNanoseconds(atNanoseconds: nowNs))); re-wiring the display pipeline")
+        }
+        do {
+            try wireUpFramebuffer()
+        } catch {
+            // Retry on the next eligible tick.
         }
     }
 
     // MARK: - Frame capture
 
     private func updateSurface(for descriptor: NSObject, unmasked: IOSurface?, masked: IOSurface?) {
-        let key = ObjectIdentifier(descriptor)
         invalidatePick()
-        guard let surface = unmasked ?? masked else {
-            framebufferSurfaces.removeValue(forKey: key)
-            lastSeeds.removeValue(forKey: key)
-            return
-        }
-        framebufferSurfaces[key] = surface
+        updateCachedSurface(unmasked ?? masked, for: ObjectIdentifier(descriptor))
     }
 
     func pickTimings() -> (count: UInt64, sumNs: UInt64, maxNs: UInt64) {
@@ -464,7 +484,7 @@ actor FrameCapture {
         (screen: screenFrameCount, idle: idleFrameCount)
     }
 
-    private func captureFrame(force: Bool = false) {
+    private func captureFrame(force: Bool = false, allowLiveRevalidation: Bool = true) {
         guard displayConfigurationReady else { return }
         let entryNs = DispatchTime.now().uptimeNanoseconds
         if captureLastEntryNs > 0 {
@@ -478,12 +498,15 @@ actor FrameCapture {
         }
         captureLastEntryNs = entryNs
         let pickStartNs = DispatchTime.now().uptimeNanoseconds
-        let picked = currentSurface()
+        let picked = currentSurface(allowLiveRevalidation: allowLiveRevalidation)
         let pickNs = DispatchTime.now().uptimeNanoseconds - pickStartNs
         pickCount += 1
         pickSumNs += pickNs
         if pickNs > pickMaxNs { pickMaxNs = pickNs }
         guard let (key, surface) = picked else { return }
+        if let lostNs = surfaceWatch.surfaceFound(atNanoseconds: nowNanoseconds()) {
+            print("[capture] Framebuffer surface is back after \(Self.seconds(lostNs))")
+        }
         let display = screenMetadata[key]?.applying(authoritativeDisplay)
         let displayChanged = capturedDisplay != display
 
@@ -551,6 +574,47 @@ actor FrameCapture {
             cpuFallbacks: photocopier.cpuFallbacks,
             poolDrops: photocopier.poolDrops
         )
+    }
+
+    func installDescriptorsForTesting(
+        _ installed: [(descriptor: NSObject, metadata: SimDisplayMetadata?)],
+        io: NSObject? = nil,
+        onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void
+    ) {
+        ioClient = io
+        self.onFrame = onFrame
+        descriptors = installed.map(\.descriptor)
+        screenMetadata = Dictionary(uniqueKeysWithValues: installed.compactMap { entry in
+            entry.metadata.map { (ObjectIdentifier(entry.descriptor), $0) }
+        })
+        framebufferSurfaces.removeAll()
+        lastSeeds.removeAll()
+        lastLiveRevalidationNs = nil
+        invalidatePick()
+        displayConfigurationReady = true
+    }
+
+    func captureFrameForTesting(force: Bool) {
+        captureFrame(force: force)
+    }
+
+    func surfaceChangedForTesting(descriptor: NSObject, masked: IOSurface?) {
+        updateSurface(for: descriptor, unmasked: nil, masked: masked)
+        captureFrame(allowLiveRevalidation: false)
+    }
+
+    func pollSurfaceForTesting() {
+        onSurfacePollTick()
+    }
+
+    func surfaceLossTimings() -> (losses: UInt64, lostNs: UInt64, rewires: UInt64) {
+        (losses: surfaceWatch.losses,
+         lostNs: surfaceWatch.lostNanoseconds(atNanoseconds: nowNanoseconds()),
+         rewires: surfaceWatch.rewires)
+    }
+
+    private static func seconds(_ nanoseconds: UInt64) -> String {
+        String(format: "%.1f s", Double(nanoseconds) / 1_000_000_000)
     }
 
     func pollTimings() -> (ticks: UInt64, lateSumNs: UInt64) {
@@ -638,6 +702,7 @@ actor FrameCapture {
         framebufferSurfaces.removeAll()
         screenMetadata.removeAll()
         capturedDisplay = nil
+        lastLiveRevalidationNs = nil
         invalidatePick()
         photocopier.reset()
         ioClient = nil
