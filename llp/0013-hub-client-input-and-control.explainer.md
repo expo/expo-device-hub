@@ -50,6 +50,13 @@ The iOS adapter uses the admission socket [observed: `createInputSocket` call in
 
 serve-sim's client uses the same 5 s connect timeout and 2 s stream retry [observed: `socket/client-control.ts`].
 
+## Shared iOS control channel
+
+Settings, host actions, logs, events, activity metrics and config updates share one control channel [observed: `useIosDevice.ts`].
+
+- The channel is keyed on the middleware's exec-ws URL and token, not on the device config. A helper can report a `null` config while it restarts, and the config subscription must stay open for its replacement.
+- The channel retries after 1.5 s. When the config subscription ends, HTTP discovery runs at that time to recover rotated credentials.
+
 ## Open questions
 
 None at this time.
