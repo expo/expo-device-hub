@@ -826,6 +826,7 @@ export type DeviceScreenClient = Pick<
   | 'screen'
   | 'status'
   | 'error'
+  | 'inputError'
 >;
 
 /** Props for the shared {@link DeviceScreen} component rendered inside PhoneFrame. */
