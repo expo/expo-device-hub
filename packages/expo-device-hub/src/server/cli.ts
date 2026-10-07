@@ -9,6 +9,7 @@ import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } f
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { startupMessage } from './cli/startup';
 import { staticFileHandler } from './cli/static-files';
+import { handleAndroidRecordingStop } from './eas-endpoints';
 import {
   encodeStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
@@ -107,6 +108,10 @@ async function main(): Promise<void> {
   // @ts-ignore — built sibling of this bundle (dist/server/index.mjs), kept external at build time
   const hubServer = (await import('./index.mjs')) as HubServerModule;
   const handler = hubServer.default;
+  const recordingStop = {
+    recordingControlToken: process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN,
+    finishAndroidRecording: hubServer.finishAndroidScreenRecording,
+  };
   // The server read it at import. The processes it starts later have no use for it.
   delete process.env[SESSION_TOKEN_ENV];
 
@@ -115,7 +120,9 @@ async function main(): Promise<void> {
   const server = createServer(async (req, res) => {
     try {
       const request = toFetchRequest(req);
-      const response = await handler(request);
+      // Before the session gate: EAS stops the recording with its own token.
+      const response =
+        (await handleAndroidRecordingStop(request, recordingStop)) ?? (await handler(request));
       if (response) {
         writeFetchResponse(response, res);
         return;

@@ -25,7 +25,7 @@ import { configureClientShell } from './client-shell';
 import { argentInteractionWebSocketHandler } from './argent-interaction-websocket';
 import { deviceListWebSocketHandler, refreshDeviceList } from './device-list-websocket';
 import { type HubDeviceList, listDevices } from './devices';
-import { ANDROID_RECORDING_STOP_ROUTE, handleEasEndpoint, READY_ROUTE } from './eas-endpoints';
+import { handleEasEndpoint, READY_ROUTE } from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
 import {
@@ -34,7 +34,6 @@ import {
   emuCameraFeeds,
   emuWebSocketHandler,
   handleEmuRequest,
-  finishAndroidScreenRecording,
 } from './serve-emu';
 import { SIM_PREFIX, SIM_TOKEN_SUBPROTOCOL_PREFIX, handleSimRequest, simWebSocketHandler } from './serve-sim';
 import {
@@ -47,7 +46,12 @@ import { FRAME_ANCESTORS, SESSION_TOKEN } from './session-token';
 import { SERVER_HIDE_SIDEBAR } from './sidebar';
 import { listNewDeviceOptions } from './sim-options';
 import { SERVER_TRANSPORT } from './transport';
-export { startAndroidScreenRecording, shutdownAndroid } from './serve-emu';
+// For the standalone CLI, which alone records. See handleAndroidRecordingStop.
+export {
+  finishAndroidScreenRecording,
+  shutdownAndroid,
+  startAndroidScreenRecording,
+} from './serve-emu';
 
 const DEVICES_ROUTE = '/api/devices';
 const SHUTDOWN_DEVICE_ROUTE = '/api/devices/shutdown';
@@ -59,8 +63,8 @@ const DEVICES_WEBSOCKET_ROUTE = '/api/devices/ws';
 const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = '/api/argent-interactions/ws';
 
 // Under a session token every route needs it, so a new route is gated by default. A liveness
-// probe cannot carry a token, and EAS stops a recording with its own token instead.
-const UNGATED_ROUTES = new Set([READY_ROUTE, ANDROID_RECORDING_STOP_ROUTE]);
+// probe cannot carry a token.
+const UNGATED_ROUTES = new Set([READY_ROUTE]);
 // serve-sim never takes the token from a capture URL, and takes recording control only with a
 // bearer. The Hub keeps both rules, so its own cookie and query token do not widen them.
 const SIM_CAPTURE_PREFIX = `${SIM_PREFIX}/network-capture`;
@@ -179,11 +183,9 @@ export default async function handler(request: Request): Promise<Response | null
 async function routeRequest(request: Request): Promise<Response | null> {
   const { pathname, searchParams } = new URL(request.url);
 
-  const easResponse = await handleEasEndpoint(request, {
+  const easResponse = handleEasEndpoint(request, {
     mountPath: MOUNT_PATH,
     serveSimPrefix: SIM_PREFIX,
-    recordingControlToken: process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN,
-    finishAndroidRecording: finishAndroidScreenRecording,
   });
   if (easResponse) return easResponse;
 

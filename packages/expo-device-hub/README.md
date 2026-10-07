@@ -86,7 +86,8 @@ Only the Hub itself may frame a gated page. To let another site embed it, pass
 
 Recording is opt-in and starts with the Hub, even when no browser viewer is connected.
 It records one booted Android emulator without audio. There are no recording controls
-in the Hub UI.
+in the Hub UI. Only the standalone CLI records. The Hub as an Expo DevTools plugin does not,
+because Expo CLI exits without waiting for the recording to finish.
 
 From a built checkout, with `adb`, `ffmpeg`, and `ffprobe` on your path, run this from
 the repository root. Choose a fresh output directory and boot exactly one emulator first.

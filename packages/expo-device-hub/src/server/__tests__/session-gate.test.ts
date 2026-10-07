@@ -162,14 +162,14 @@ describe('the Hub under a session token', () => {
     expect((await request('/readyz'))?.status).toBe(200);
   });
 
-  // EAS stops the recording with its own token, which is not the session token.
-  test('leaves the recording stop to its own token', async () => {
+  // Only the standalone CLI records, and it routes the stop before this gate.
+  test('gates the recording stop route like any path it does not route', async () => {
     const response = await request('/_eas/android-recording/stop', {
       method: 'POST',
       headers: { Authorization: 'Bearer recording-token' },
     });
 
-    expect(response?.status).not.toBe(401);
+    expect(response?.status).toBe(401);
   });
 
   test('answers its own routes for the cookie it handed out', async () => {

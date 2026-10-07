@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 
-import { handleEasEndpoint } from '../eas-endpoints';
+import { handleAndroidRecordingStop, handleEasEndpoint } from '../eas-endpoints';
 
 const options = {
   mountPath: '/_expo/plugins/expo-device-hub',
@@ -36,15 +36,14 @@ describe('EAS endpoints', () => {
 
   test('closes the recording stop route without a matching token', async () => {
     const finishAndroidRecording = async () => ({ recorded: true }) as const;
-    expect((await handleEasEndpoint(stopRequest('secret'), options))?.status).toBe(401);
-    const wrong = await handleEasEndpoint(stopRequest('wrong'), {
-      ...options,
+    const closed = await handleAndroidRecordingStop(stopRequest('secret'), { finishAndroidRecording });
+    expect(closed?.status).toBe(401);
+    const wrong = await handleAndroidRecordingStop(stopRequest('wrong'), {
       recordingControlToken: 'secret',
       finishAndroidRecording,
     });
     expect(wrong?.status).toBe(401);
-    const get = await handleEasEndpoint(stopRequest('secret', 'GET'), {
-      ...options,
+    const get = await handleAndroidRecordingStop(stopRequest('secret', 'GET'), {
       recordingControlToken: 'secret',
       finishAndroidRecording,
     });
@@ -52,22 +51,19 @@ describe('EAS endpoints', () => {
   });
 
   test('reports whether the stop request published a recording', async () => {
-    const stopped = await handleEasEndpoint(stopRequest('secret'), {
-      ...options,
+    const stopped = await handleAndroidRecordingStop(stopRequest('secret'), {
       recordingControlToken: 'secret',
       finishAndroidRecording: async () => ({ recorded: true }),
     });
     expect(stopped?.status).toBe(200);
     expect(await stopped?.json()).toEqual({ ok: true });
-    const skipped = await handleEasEndpoint(stopRequest('secret'), {
-      ...options,
+    const skipped = await handleAndroidRecordingStop(stopRequest('secret'), {
       recordingControlToken: 'secret',
       finishAndroidRecording: async () => ({ recorded: false, reason: 'found 0 emulators' }),
     });
     expect(skipped?.status).toBe(409);
     expect(await skipped?.json()).toEqual({ ok: false, error: 'found 0 emulators' });
-    const failed = await handleEasEndpoint(stopRequest('secret'), {
-      ...options,
+    const failed = await handleAndroidRecordingStop(stopRequest('secret'), {
       recordingControlToken: 'secret',
       finishAndroidRecording: async () => {
         throw new Error('mux failure');
@@ -78,5 +74,12 @@ describe('EAS endpoints', () => {
 
   test('leaves unrelated routes unhandled', () => {
     expect(handleEasEndpoint(new Request('http://localhost/other'), options)).toBeNull();
+    expect(handleEasEndpoint(stopRequest('secret'), options)).toBeNull();
+    expect(
+      handleAndroidRecordingStop(new Request('http://localhost/readyz'), {
+        recordingControlToken: 'secret',
+        finishAndroidRecording: async () => ({ recorded: true }),
+      })
+    ).toBeNull();
   });
 });
