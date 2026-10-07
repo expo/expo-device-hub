@@ -42,6 +42,54 @@ without an app launch flag; continuing could attempt installation or advertise a
 server against a device that is not ready [observed: `src/index.ts` `ensureBooted`;
 `src/device.ts` `BOOT_TIMEOUT_MS`].
 
+## Additional boot dylibs
+
+`SERVE_SIM_ADDITIONAL_DYLIBS` is a colon-separated list of caller-owned dylib paths,
+such as build-tools' egress guard. The environment variable extends the existing
+loader insertion [confirmed: Gabe Debes, 2026-10-07].
+
+Entries retain their path characters, including whitespace; only empty entries
+are discarded. Cleanup preserves explicitly requested caller paths even when
+they overlap a managed startup image or share the capability loader's filename
+[observed: `src/additional-dylibs.ts`, `src/simctl.ts`, `src/launch-manager.ts`
+`withoutOurs` and `removeReleasedStartupSync`].
+
+The host passes these paths through `SIMCTL_CHILD_DYLD_INSERT_LIBRARIES` for boot
+and `bootstatus -b`, preserving any existing child insert and including the capability
+loader, its config path, and the built network-capture startup image. This applies
+to foreground startup, sidebar startup, and capture reboot. After boot, loader
+arming and explicit capability/camera launches retain the additional paths
+[observed: `src/additional-dylibs.ts`, `src/simctl.ts`, `src/index.ts`,
+`src/middleware.ts`, `src/launch-manager.ts`].
+
+Boot-time insertion also needs the loader and capture startup image: a launchd boot
+insert can remain inherited by apps instead of the later `launchctl` value. The
+capture image consults the capability config before activating, so inserting it does
+not enable capture by itself. Supplying the image at boot preserves capture of pre-main
+requests when capture is enabled before app launch [observed: `src/additional-dylibs.ts`,
+`Sources/ServeSimCapabilityLoader/startup-capability.h`, local Simulator app image and
+startup-request readback, 2026-10-07].
+
+Capability liveness reads the runtime `launchctl getenv` values first, then uses
+`simctl getenv <udid> <variable>` when they are empty. A cold boot with
+`SERVE_SIM_ADDITIONAL_DYLIBS` set can keep
+the config and inserts inherited by fresh processes while both `launchctl` values
+are empty; treating those empty values as lost injection incorrectly marks capture
+failed. An unavailable fallback counts as not armed, so a shutdown during the
+probe still contributes to capture's consecutive misses. Runtime values remain
+preferred: on a normal session, `simctl getenv` can truncate the insert even though
+`launchctl` and fresh processes have the full list
+[observed: `src/launch-manager.ts` `isCapabilityArmed`; isolated Tart iOS 26.4 runs
+`run-guarded-x4bh4Q` and `run-normal-SbDfWN`, native process environment/image
+readback and capture stream, 2026-10-07].
+
+For insertion into processes started during boot, the caller must start with a
+shut-down simulator. An already-running process does not receive new images.
+These paths remain outside capability ownership, so session cleanup preserves them;
+shutting down the simulator clears the boot environment. This interface supplies
+libraries, not proof that they loaded or that an egress policy is effective
+[observed: `src/launch-manager.ts` insertion and cleanup; dyld loads inserts at exec].
+
 ## Startup order
 
 The foreground CLI finishes these operations before entering preview serving or

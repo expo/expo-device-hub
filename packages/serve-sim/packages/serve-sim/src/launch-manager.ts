@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, rmSync, unlinkSync } from "fs";
-import { basename, join } from "path";
+import { basename } from "path";
 import {
   capabilitiesToApply,
   capabilityDefinition,
@@ -15,6 +15,7 @@ import {
 } from "./capability-resources";
 import {
   capabilityConfigPath,
+  capabilityLoaderPath,
   managedStartupDylibs,
   writeManagedStartupDylibs,
   commitCapabilityConfig,
@@ -36,8 +37,8 @@ import {
   LOCK_POLL_MS,
 } from "./launch-state-lock";
 import { isDeviceNotBooted } from "./device";
-import { dirnameOf } from "./runtime";
 import { simctl, simctlSync } from "./simctl";
+import { additionalDylibs } from "./additional-dylibs";
 
 export {
   type Capability,
@@ -50,6 +51,8 @@ export {
   formatCapabilityConfig,
   renderCapabilityConfig,
   capabilityConfigPath,
+  capabilityLoaderDir,
+  capabilityLoaderPath,
 } from "./capability-config";
 export { waitForLaunchUpdates } from "./launch-state-lock";
 
@@ -134,10 +137,6 @@ export async function stopLaunchSession(
   await releaseSession(udid, ownerPid, onRelease);
 }
 
-export function capabilityLoaderDir(): string {
-  return join(dirnameOf(import.meta.url), "..", "dist", "capability-loader");
-}
-
 /**
  * `SIMCTL_CHILD_*` variables reach the app simctl launches. The insert has to
  * carry the capability dylib itself, so a swizzle is in place before the app's
@@ -150,7 +149,7 @@ export function childLaunchEnv(
   capabilityEnv: Record<string, string>,
 ): Record<string, string> {
   return {
-    SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: [dylib, capabilityLoaderPath()].join(":"),
+    SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: [...new Set([dylib, capabilityLoaderPath(), ...additionalDylibs()])].join(":"),
     ...Object.fromEntries(
       Object.entries(capabilityEnv).map(([key, value]) => [`SIMCTL_CHILD_${key}`, value]),
     ),
@@ -172,14 +171,16 @@ function isCapabilityLoaderPath(path: string): boolean {
 }
 
 function withoutOurs(current: string, startupDylibs: string[] = []): string[] {
+  const caller = new Set(additionalDylibs());
   return current
     .split(":")
-    .map((entry) => entry.trim())
-    .filter((entry) => entry !== "" && !isCapabilityLoaderPath(entry) && !startupDylibs.includes(entry));
+    .filter((entry) => entry !== "" && (
+      caller.has(entry) || (!isCapabilityLoaderPath(entry) && !startupDylibs.includes(entry))
+    ));
 }
 
 async function readInsert(udid: string): Promise<string> {
-  return (await simctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000)).trim();
+  return simctl(["spawn", udid, "launchctl", "getenv", INSERT], 15_000);
 }
 
 function startupDylibs(capabilities: Record<string, Capability>): string[] {
@@ -196,7 +197,7 @@ async function armInsert(
 ): Promise<void> {
   const desired = startupDylibs(capabilities);
   const retained = withoutOurs(await readInsert(udid), previousStartup);
-  const next = [...new Set([...retained, dylib, ...desired])].join(":");
+  const next = [...new Set([...retained, dylib, ...desired, ...additionalDylibs()])].join(":");
   writeManagedStartupDylibs(udid, [...previousStartup, ...desired]);
   await simctl(["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)], 15_000);
   await simctl(["spawn", udid, "launchctl", "setenv", INSERT, next], 15_000);
@@ -296,15 +297,12 @@ function removeReleasedStartupSync(udid: string, previousStartup: string[]): voi
   const desired = startupDylibs(readLaunchState(udid)?.capabilities ?? {});
   const removed = previousStartup.filter((path) => !desired.includes(path));
   if (removed.length === 0) return;
-  const current = simctlSync(["spawn", udid, "launchctl", "getenv", INSERT], 15_000).trim();
-  const next = current.split(":").filter((path) => !removed.includes(path)).join(":");
+  const current = simctlSync(["spawn", udid, "launchctl", "getenv", INSERT], 15_000);
+  const caller = new Set(additionalDylibs());
+  const next = current.split(":").filter((path) => caller.has(path) || !removed.includes(path)).join(":");
   simctlSync(next ? ["spawn", udid, "launchctl", "setenv", INSERT, next]
     : ["spawn", udid, "launchctl", "unsetenv", INSERT], 15_000);
   writeManagedStartupDylibs(udid, desired);
-}
-
-export function capabilityLoaderPath(): string {
-  return join(capabilityLoaderDir(), CAPABILITY_LOADER_NAME);
 }
 
 /** Arm the loader and republish the recorded capabilities; rejects if publication fails. */
@@ -371,8 +369,9 @@ export async function disarmStaleCapabilityLoader(udid: string): Promise<void> {
     );
     return;
   }
-  const entries = current.split(":").map((entry) => entry.trim());
-  const ours = entries.find(isCapabilityLoaderPath);
+  const entries = current.split(":");
+  const caller = new Set(additionalDylibs());
+  const ours = entries.find((path) => isCapabilityLoaderPath(path) && !caller.has(path));
   if (ours && !existsSync(ours)) {
     await removeCapabilityLoader(udid);
     return;
@@ -383,8 +382,8 @@ export async function disarmStaleCapabilityLoader(udid: string): Promise<void> {
   // Decided under the device lock: a session that is arming holds it from its insert until its
   // state is written, so it is never mistaken for an abandoned one.
   await withLaunchStateLock(udid, async () => {
-    const inserted = (await readInsert(udid)).split(":").map((entry) => entry.trim());
-    const ourInserts = inserted.some(isCapabilityLoaderPath)
+    const inserted = (await readInsert(udid)).split(":");
+    const ourInserts = inserted.some((path) => isCapabilityLoaderPath(path) && !caller.has(path))
       || managedStartupDylibs(udid).some((path) => inserted.includes(path));
     if (!ourInserts) return;
     const state = readLaunchState(udid);
@@ -749,7 +748,10 @@ export async function isCapabilityArmed(
     return false;
   }
   const configPath = capabilityConfigPath(udid);
-  if ((await read(["spawn", udid, "launchctl", "getenv", CONFIG_VAR])).trim() !== configPath) return false;
+  // @ref LLP 0011#additional-boot-dylibs — Boot inheritance can survive an empty launchctl environment.
+  const configEnv = (await read(["spawn", udid, "launchctl", "getenv", CONFIG_VAR])).trim()
+    || (await read(["getenv", udid, CONFIG_VAR]).catch(() => "")).trim();
+  if (configEnv !== configPath) return false;
   let config: string;
   try {
     config = readFileSync(configPath, "utf8");
@@ -760,7 +762,9 @@ export async function isCapabilityArmed(
   const lines = renderCapabilityConfig({ launchArgs: [], capabilities: { [name]: capability } }).trimEnd().split("\n");
   const configuredLines = new Set(config.split("\n"));
   if (!lines.every((line) => configuredLines.has(line))) return false;
-  const inserts = (await read(["spawn", udid, "launchctl", "getenv", INSERT])).trim().split(":");
+  const insertEnv = await read(["spawn", udid, "launchctl", "getenv", INSERT])
+    || await read(["getenv", udid, INSERT]).catch(() => "");
+  const inserts = insertEnv.split(":");
   const needsStartupInsert = capability.loadPhase === "startup" || capability.loadPhase === "startupAndDeferred";
   return inserts.includes(capabilityLoaderPath()) && (!needsStartupInsert || inserts.includes(capability.dylib));
 }

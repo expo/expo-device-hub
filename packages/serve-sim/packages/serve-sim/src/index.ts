@@ -29,6 +29,7 @@ import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
 import { runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
+import { additionalDylibs, simulatorBootEnv } from "./additional-dylibs";
 import {
   assertKnownCapabilities,
   missingCapabilities,
@@ -340,7 +341,7 @@ function isProcessAlive(pid: number): boolean {
 function bootDevice(udid: string): void {
   if (!isDeviceBooted(udid)) {
     try {
-      execSync(`xcrun simctl boot ${udid}`, { encoding: "utf-8", stdio: "pipe" });
+      execFileSync("xcrun", ["simctl", "boot", udid], { encoding: "utf-8", stdio: "pipe", env: simulatorBootEnv(udid) });
     } catch (err: any) {
       const msg = (err.stderr ?? err.message ?? "").toLowerCase();
       if (!msg.includes("booted") && !msg.includes("current state")) {
@@ -1666,7 +1667,7 @@ Examples:
 
   const env = {
     ...process.env,
-    SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: dylib,
+    SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: [...new Set([dylib, ...additionalDylibs()])].join(":"),
     SIMCTL_CHILD_SIMCAM_SHM_NAME: shmName,
     ...(mirror !== "auto" ? { SIMCTL_CHILD_SIMCAM_MIRROR_MODE: mirror } : {}),
   };
