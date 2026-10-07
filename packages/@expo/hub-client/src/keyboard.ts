@@ -152,3 +152,12 @@ export function androidMessageForKeyboardInput(
   if (input.key.length === 1) return { type: 'text', text: input.key };
   return null;
 }
+
+// @ref LLP 0013#keyboard-input — serve-sim types shifted characters through the software keyboard
+/** Match serve-sim's shifted-character fallback when the software keyboard owns input. */
+export function iosMessageForKeyboardInput(input: KeyboardInput) {
+  const usage = hidUsageForCode(input.code);
+  if (usage === null) return null;
+  const shifted = input.phase === 'down' && input.shiftKey && !input.metaKey && !input.ctrlKey && !input.altKey && input.key.length === 1 && input.key !== ' ';
+  return {type: input.phase, usage, ...(shifted ? {key: input.key, shifted: true} : {})};
+}
