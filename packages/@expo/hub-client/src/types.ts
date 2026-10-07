@@ -737,6 +737,8 @@ export interface DeviceClient {
   sendTouch: (sample: TouchSample) => void;
   /** Forward a two-finger pinch/pan. Absent only on the no-op client. */
   sendMultiTouch?: (sample: MultiTouchSample) => void;
+  /** Discard queued input after its browser interaction loses ownership. */
+  cancelInput?: () => void;
   /**
    * Forward a physical browser-keyboard event to the device. Returns true when
    * the event was accepted, allowing {@link DeviceScreen} to suppress the
@@ -818,6 +820,7 @@ export type DeviceScreenClient = Pick<
   | 'attachVideo'
   | 'sendTouch'
   | 'sendMultiTouch'
+  | 'cancelInput'
   | 'sendScroll'
   | 'sendKey'
   | 'screen'
