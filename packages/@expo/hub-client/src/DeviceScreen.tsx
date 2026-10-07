@@ -135,6 +135,8 @@ export function DeviceScreen({
     screen,
     status,
     error,
+    // @ref LLP 0013#input-feedback — input errors overlay live video; they never replace it
+    inputError,
   } = client;
   const canMulti = !!sendMultiTouch;
 
@@ -461,6 +463,12 @@ export function DeviceScreen({
         onPointerCancel={onPointerUp}
         onContextMenu={(event) => event.preventDefault()}
       />
+
+      {inputError && (
+        <div role="status" aria-live="polite" style={{position:'absolute', bottom:0, left:0, right:0, padding:12, backgroundColor:'rgba(0, 0, 0, 0.75)', color:'#fca5a5', fontSize:13, pointerEvents:'none'}}>
+          {inputError}
+        </div>
+      )}
 
       {/* Two-finger indicator dots. */}
       {fingers && (

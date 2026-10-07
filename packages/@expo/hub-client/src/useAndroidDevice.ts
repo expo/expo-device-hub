@@ -271,7 +271,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     useState<ServeEmuStreamSettings | null>(null);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
   const [webRtcVideoReady, setWebRtcVideoReady] = useState(false);
-  const [webRtcInputReady, setWebRtcInputReady] = useState(false);
   const [webRtcInputError, setWebRtcInputError] = useState<string | null>(null);
   // Whether this device's WebRTC stream has been live, so a later gap counts as
   // a reconnect (last frame kept) rather than the initial connect.
@@ -284,7 +283,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // are still true in this render and must never read as "reconnecting".
     setWebRtcDeviceKey(deviceKey);
     setWebRtcVideoReady(false);
-    setWebRtcInputReady(false);
     setWebRtcInputError(null);
     setWebRtcWasLive(false);
     setWebRtcGraceExpired(false);
@@ -1011,13 +1009,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     [dispatchStreamSwitch, useWebRtc, writeStreamSettings],
   );
 
-  const webRtcLive =
-    useWebRtc &&
-    !webRtcError &&
-    !webRtcInputError &&
-    !!webRtcStream &&
-    webRtcVideoReady &&
-    webRtcInputReady;
+  const webRtcLive = useWebRtc && !webRtcError && !!webRtcStream && webRtcVideoReady;
 
   useEffect(() => {
     if (!useWebRtc) {
@@ -1038,7 +1030,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   useEffect(() => {
     if (!useWebRtc) {
       setWebRtcVideoReady(false);
-      setWebRtcInputReady(false);
       setWebRtcInputError(null);
       return;
     }
@@ -1508,7 +1499,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // keyframe requests retain serve-emu's scrcpy control WebSocket.
   useEffect(() => {
     if (!active || !baseUrl || !useWebRtc) {
-      setWebRtcInputReady(false);
       setWebRtcInputError(null);
       return;
     }
@@ -1520,12 +1510,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     // control channel (capture-source switch) is retried almost immediately.
     let opened = false;
     const inputUrl = androidWsUrlFor(baseUrl, targetDevice, false);
-    setWebRtcInputReady(false);
     setWebRtcInputError(null);
 
     const retryInput = (message: string, code: number, wasHealthy: boolean) => {
       if (cancelled) return;
-      setWebRtcInputReady(false);
       setWebRtcInputError(message);
       const schedule = scheduleReconnect({ code, wasHealthy, currentDelay: reconnectDelay });
       reconnectDelay = schedule.nextDelay;
@@ -1546,7 +1534,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         if (cancelled) return;
         opened = true;
         reconnectDelay = RECONNECT_BASE_DELAY_MS;
-        setWebRtcInputReady(true);
         setWebRtcInputError(null);
         ws.send(JSON.stringify({ type: 'reset-video', ack: false }));
       };
@@ -1584,7 +1571,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         ws?.close();
       } catch {}
       if (wsRef.current === ws) wsRef.current = null;
-      setWebRtcInputReady(false);
     };
   }, [active, baseUrl, targetDevice, useWebRtc, socketProtocols]);
 
