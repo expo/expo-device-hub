@@ -44,6 +44,12 @@ serve-sim locks a WebRTC server to WebRTC and refuses its HTTP streams with `409
 
 serve-sim's client restarts the ladder with the same backoff, and it also counts every codec failure [observed: `hooks/use-ladder-restart.ts`, `client.tsx`].
 
+## Bounded stats reads
+
+`getStats()` can fail to return, and the browser cannot cancel it. The client shares one read per peer and stops waiting after 2 s; a timed-out read counts as "no data" [observed: `readStatsBeforeDeadline` in `bounded-webrtc-stats.ts`]. Without this, one stuck read blocked the first-frame check, and each new poll added another stuck read.
+
+serve-sim's client bounds its reads the same way [observed: `readStatsBeforeDeadline` in `hooks/playback-stall-watchdog.ts`].
+
 ## Open questions
 
 None at this time.

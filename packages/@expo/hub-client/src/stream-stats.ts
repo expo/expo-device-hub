@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { readStatsBeforeDeadline } from './bounded-webrtc-stats';
 
 import { type SessionFetch } from './session-token';
 import {
@@ -512,11 +513,11 @@ export function useWebRtcStreamStats(
     const sampleClient = async () => {
       if (clientPolling || stopped) return;
       clientPolling = true;
-      const atMs = Date.now();
-      const presentedFrameCount = presentedFrames.current;
       try {
-        const report = await connection.peerConnection.getStats();
-        if (stopped) return;
+        const report = await readStatsBeforeDeadline(connection.peerConnection);
+        if (stopped || report === null) return;
+        const atMs = Date.now();
+        const presentedFrameCount = presentedFrames.current;
         const counters = readWebRtcClientCounters(report, atMs, presentedFrameCount);
         if (counters === null) return;
         const client = describeWebRtcClientCounters(previousRef.current, counters);
