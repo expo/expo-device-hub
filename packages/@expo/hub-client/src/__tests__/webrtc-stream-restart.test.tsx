@@ -68,6 +68,7 @@ afterEach(async () => {
 test('closes with the plain URL, and puts the token URL only on the unload beacon', async () => {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
   stubGlobal('RTCPeerConnection', Peer);
   stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
   const beaconUrls: string[] = [];
@@ -124,6 +125,7 @@ test('a known server restart replaces a still-connected peer without waiting for
     setTimeout,
     clearTimeout,
   });
+  stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
   stubGlobal('RTCPeerConnection', Peer);
   stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
   const requests: string[] = [];

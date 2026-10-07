@@ -14,7 +14,7 @@ import {
   WebRtcSignalingTimeoutError,
 } from './webrtc-negotiation';
 import { type SessionFetch } from './session-token';
-import { useWebRtcStreamStats, type SubscribeClientStats, type WebRtcStatsConnection } from './stream-stats';
+import { requestWebRtcServerStats, useWebRtcStreamStats, type SubscribeClientStats, type WebRtcStatsConnection } from './stream-stats';
 
 export type WebRtcIceServer = {
   urls: string[];
@@ -223,6 +223,7 @@ export function useWebRtcStream({
     offerUrl,
     closeUrl,
     closeBeaconUrl,
+    statsUrl,
     codec,
     iceServers,
     iceTransportPolicy,
@@ -256,6 +257,7 @@ export function useWebRtcStream({
     // is not mistaken for a broken codec (serve-sim #161). Bounded: an
     // undecodable stream still falls back.
     let firstFrameGraceUsed = false;
+    let firstFrameGeneration = 0;
     const lifecycleController = new AbortController();
     const sessionId = createSessionId();
     const servers = iceServers?.length ? iceServers : DEFAULT_ICE_SERVERS;
@@ -284,6 +286,7 @@ export function useWebRtcStream({
     window.addEventListener('beforeunload', releaseOnPageHide);
 
     const clearFirstFrameTimeout = () => {
+      firstFrameGeneration += 1;
       if (firstFrameTimeoutRef.current === undefined) return;
       window.clearTimeout(firstFrameTimeoutRef.current);
       firstFrameTimeoutRef.current = undefined;
@@ -358,7 +361,7 @@ export function useWebRtcStream({
 
     const armFirstFrameTimeout = () => {
       if (
-        stopped ||
+        stopped || failing || document.hidden ||
         firstFrameDecodedRef.current ||
         !trackReceived ||
         !connectionReady ||
@@ -369,13 +372,23 @@ export function useWebRtcStream({
       firstFrameTimeoutRef.current = window.setTimeout(() => {
         firstFrameTimeoutRef.current = undefined;
         if (stopped || firstFrameDecodedRef.current) return;
-        const state = peer?.connectionState ?? 'closed';
-        void videoRtpArriving(peer).then((mediaArriving) => {
-          if (stopped || firstFrameDecodedRef.current || firstFrameTimeoutRef.current !== undefined) {
-            return;
+        const reading = firstFrameGeneration;
+        void (async () => {
+          const mediaArriving = await videoRtpArriving(peer);
+          if (stopped || failing || firstFrameDecodedRef.current || reading !== firstFrameGeneration) return;
+          // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — an encoding sender blames the transport, not the codec
+          let senderEncoding: boolean | null = null;
+          if (!mediaArriving && statsUrl) {
+            try {
+              const sender = await requestWebRtcServerStats(statsUrl, sessionId, AbortSignal.any([lifecycleController.signal, AbortSignal.timeout(2_000)]), fetchImpl);
+              const encoded = sender.encoder?.framesEncoded;
+              senderEncoding = typeof encoded === 'number' ? encoded > 0 : null;
+            } catch {}
           }
+          if (stopped || failing || document.hidden || firstFrameDecodedRef.current || reading !== firstFrameGeneration) return;
+          const state = peer?.connectionState ?? 'closed';
           const disposition = webRtcFailureDisposition('first-frame-timeout', state, {
-            mediaArriving,
+            mediaArriving, senderEncoding,
           });
           if (disposition === 'wait' && !firstFrameGraceUsed) {
             firstFrameGraceUsed = true;
@@ -386,7 +399,7 @@ export function useWebRtcStream({
           } else {
             retryTransport('WebRTC did not establish a video path.');
           }
-        });
+        })();
       }, FIRST_FRAME_TIMEOUT_MS);
     };
 
@@ -401,6 +414,13 @@ export function useWebRtcStream({
       retryTransport,
       expectContinuousFrames,
     });
+
+    // Like serve-sim, a used grace stays used across tab switches.
+    const onVisibilityChange = () => {
+      clearFirstFrameTimeout();
+      if (!document.hidden) armFirstFrameTimeout();
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
 
     const waitForIce = (connection: RTCPeerConnection) =>
       new Promise<void>((resolve) => {
@@ -525,6 +545,7 @@ export function useWebRtcStream({
     return () => {
       stopped = true;
       stall.stop();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       window.removeEventListener('pagehide', releaseOnPageHide);
       window.removeEventListener('beforeunload', releaseOnPageHide);
       lifecycleController.abort();
@@ -537,6 +558,7 @@ export function useWebRtcStream({
     offerUrl,
     closeUrl,
     closeBeaconUrl,
+    statsUrl,
     codec,
     iceServers,
     iceTransportPolicy,

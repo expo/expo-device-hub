@@ -409,7 +409,7 @@ export function appendStreamStatsSample(
   return [...samples, sample].slice(-HISTORY_LIMIT);
 }
 
-async function requestWebRtcServerStats(
+export async function requestWebRtcServerStats(
   statsUrl: string,
   sessionId: string,
   signal: AbortSignal,
