@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/api.md`; links and paths updated)
+**Revised:** 2026-10-06 (raw HID close-delivery and cleanup contract)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -208,3 +208,20 @@ the DevTools bridge come from `GET /devtools`, which returns a
 
 The CDP bridge forwards frames verbatim in both directions. The token
 subprotocol is not forwarded upstream, so the credential stops at serve-sim.
+
+### Raw HID close contract
+
+The raw HID adapter releases session capacity exactly once, stops its heartbeat,
+and discards buffered and subsequent input before ending the transport. It
+queues the close frame through `socket.end(...)`, allowing previously queued
+output and the close code/reason to flush instead of destroying TCP immediately
+[observed: `src/socket/server-input.ts`, `rawHidSocket`].
+
+If TCP has not closed, an unreferenced timer schedules destruction after
+1,000 ms; actual TCP close cancels that timer. This is bounded best-effort
+cleanup, not a guarantee that the peer receives the frame or that a busy event
+loop runs the timer at an exact deadline [observed: `rawHidSocket.shutdown`
+and its socket `close` listener]. The close-delivery tests cover immediate
+capacity release, idempotent close, discarded input, cleanup of an unresponsive
+peer, and receipt of the 1013 refusal code/reason over a real Node socket with
+concurrent input [observed: `src/__tests__/raw-hid-socket.test.ts`].

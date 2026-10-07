@@ -96,15 +96,21 @@ export function rawHidSocket(
   let closed = false;
   let stopHeartbeat = () => {};
   let receivedPong = () => {};
+  let forceClose: ReturnType<typeof setTimeout> | undefined;
 
   const fireClose = () => {
     if (closed) return;
     closed = true;
+    buffered = Buffer.alloc(0);
     stopHeartbeat();
     for (const cb of closeCbs) cb();
   };
   const shutdown = (code?: number, reason = "") => {
+    if (closed) return;
     fireClose();
+    // @ref LLP 0003#raw-hid-close-contract — flush close frames without retaining input capacity.
+    forceClose = setTimeout(() => socket.destroy(), 1_000);
+    forceClose.unref?.();
     const payload = code === undefined ? Buffer.alloc(0) : Buffer.alloc(2 + Buffer.byteLength(reason));
     if (code !== undefined) {
       payload.writeUInt16BE(code);
@@ -112,7 +118,6 @@ export function rawHidSocket(
     }
     try {
       socket.end(websocketFrame(0x8, payload));
-      socket.destroySoon();
     } catch { socket.destroy(); }
   };
 
@@ -137,8 +142,16 @@ export function rawHidSocket(
     }
   };
 
-  socket.on("data", (chunk: Buffer) => { buffered = Buffer.concat([buffered, chunk]); drain(); });
-  socket.on("close", fireClose);
+  socket.on("data", (chunk: Buffer) => {
+    if (closed) return;
+    buffered = Buffer.concat([buffered, chunk]);
+    drain();
+  });
+  socket.on("close", () => {
+    clearTimeout(forceClose);
+    forceClose = undefined;
+    fireClose();
+  });
   socket.on("error", fireClose);
   if (head.length) drain();
   if (!closed) {
