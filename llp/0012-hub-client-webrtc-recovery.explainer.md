@@ -33,6 +33,17 @@ HubClient must recover from WebRTC failures the same way as the serve-sim browse
 
 serve-sim's client uses the same 2 s close deadline and the same busy rule [observed: `webrtc-negotiation.ts`].
 
+## Locked transport
+
+serve-sim locks a WebRTC server to WebRTC and refuses its HTTP streams with `409 stream_transport_locked` (LLP 0002). The iOS client treats a session whose `/api` advertises `streamSettings.transport: "webrtc"` as locked [observed: `transportLocked` in `useIosDevice.ts`].
+
+- A locked session never uses an HTTP stream [observed: `iosStreamCapabilities` in `useIosDevice.ts`].
+- When the codec ladder is exhausted, the client shows the error "No supported WebRTC codec…" and also starts the ladder again from the requested codec. The wait starts at 2 s, doubles up to 30 s, and resets after 90 s without a codec failure. Every codec failure counts, not only an exhausted ladder [observed: `createLadderBackoff` in `webrtc-fallback.ts`, the failure effect in `useIosDevice.ts`].
+- A `404` from `/webrtc/offer` is retried as temporary on a locked session, because the session has no other transport [observed: `isRetryableWebRtcOfferStatus` in `useWebRtcStream.ts`].
+- Choosing a codec again resets the backoff [observed: `setWebRtcCodec` in `useIosDevice.ts`].
+
+serve-sim's client restarts the ladder with the same backoff, and it also counts every codec failure [observed: `hooks/use-ladder-restart.ts`, `client.tsx`].
+
 ## Open questions
 
 None at this time.

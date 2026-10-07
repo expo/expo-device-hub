@@ -10,6 +10,11 @@ import {
 } from '../useWebRtcStream';
 
 describe('WebRTC stream options', () => {
+  test('a locked helper can retry a transient missing offer route', () => {
+    expect(isRetryableWebRtcOfferStatus(404, true)).toBe(true);
+    expect(isRetryableWebRtcOfferStatus(404, false)).toBe(false);
+    expect(isRetryableWebRtcOfferStatus(401, true)).toBe(false);
+  });
   test('prefers H.264 packetization-mode=1 before other H.264 formats', () => {
     const vp8 = { mimeType: 'video/VP8' };
     const h264Mode0 = {
