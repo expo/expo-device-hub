@@ -186,8 +186,8 @@ function DuoPanelStream({
     onStatusChange(screenId, { streaming, error: webRtcError, failure: webRtcFailure });
   }, [screenId, streaming, webRtcError, webRtcFailure, onStatusChange]);
   useEffect(() => {
-    // Codec verdicts are only meaningful for the shown panel; transport and
-    // permanent failures of either panel still drive the shared fallback.
+    // Codec verdicts are only meaningful for the shown panel; permanent
+    // failures of either panel still reach the shared codec policy.
     if (mode !== 'webrtc' || !webRtcFailure) return;
     if (active || webRtcFailure.kind !== 'codec') feedsRef.current.onWebRtcFailure(webRtcFailure);
   }, [mode, webRtcFailure, active]);

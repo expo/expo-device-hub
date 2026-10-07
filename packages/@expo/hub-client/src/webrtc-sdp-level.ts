@@ -19,7 +19,8 @@ const ASYMMETRIC_FMTP_LINE = /^a=fmtp:[^\r\n]*\blevel-asymmetry-allowed=1\b[^\r\
 /// the answer to the 3.1 its own offer still says.
 ///
 /// Rests on measurement, not the spec, and the ladder is no safety net: a decoder that limps
-/// rather than stops never trips it. See docs/webrtc-architecture.md and `H264LevelPolicy.swift`.
+/// rather than stops never trips it. See `H264LevelPolicy.swift`.
+/// @ref LLP 0002#signaling-lifecycle — WebRTC architecture and H.264 level policy
 export function raiseH264OfferLevel(sdp: string, levelIdc: number = H264_SEND_LEVEL_IDC): string {
   if (!Number.isInteger(levelIdc) || levelIdc <= 0 || levelIdc > 0xff) return sdp;
   const raised = levelIdc.toString(16).padStart(2, "0");
