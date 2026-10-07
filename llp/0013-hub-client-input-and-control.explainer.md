@@ -57,6 +57,10 @@ Settings, host actions, logs, events, activity metrics and config updates share 
 - The channel is keyed on the middleware's exec-ws URL and token, not on the device config. A helper can report a `null` config while it restarts, and the config subscription must stay open for its replacement.
 - The channel retries after 1.5 s. When the config subscription ends, HTTP discovery runs at that time to recover rotated credentials.
 
+## Keyboard input
+
+When the shift key makes a printable character, the client sends the character with `shifted: true`, in addition to the HID usage. serve-sim then types it through the software keyboard [observed: `iosMessageForKeyboardInput` in `keyboard.ts`; serve-sim `client/client.tsx`].
+
 ## Open questions
 
 None at this time.

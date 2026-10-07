@@ -170,6 +170,10 @@ export function DeviceScreen({
     code: event.code,
     key: event.key,
     repeat: event.repeat,
+    shiftKey: event.shiftKey,
+    metaKey: event.metaKey,
+    ctrlKey: event.ctrlKey,
+    altKey: event.altKey,
   });
 
   const onKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
