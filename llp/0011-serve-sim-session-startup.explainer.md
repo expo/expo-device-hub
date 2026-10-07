@@ -9,16 +9,27 @@
 
 ## Scope
 
-The foreground CLI can boot a simulator, launch an installed app with arguments,
-and open a deep link before starting the preview server. serve-sim owns these
-simulator operations
+The foreground CLI can boot a simulator, install a local `.app`, launch an installed
+app with arguments, and open a deep link before starting the preview server. The caller
+downloads the app and supplies its path; serve-sim owns the simulator operations
 [observed: `src/index.ts` CLI action and `src/launch-app.ts`]. Paths in this document
 are relative to `packages/serve-sim/packages/serve-sim`.
 
 ## Validate before touching a device
 
-`--launch-arg` and `--open-url` require a launch identifier. Startup launch
-and capability flags are rejected with `--detach`, because the detached
+`--install-app-path` requires an existing `.app` directory. The CLI reads
+`CFBundleIdentifier` from `Info.plist` with `plutil`, supporting XML and binary
+plists, and requires a non-empty string before resolving or booting a device
+[observed: `src/index.ts` install-flag validation].
+
+Installation and launch are independent: a caller can install one app and launch
+another, or install without requesting a launch. The installed app's identifier
+does not need to match `--launch-app-identifier`
+[confirmed: Gabe Debes, 2026-10-07; observed: `src/index.ts` startup app operations].
+
+Without `--install-app-path`, the startup launch uses an app already installed.
+`--launch-arg` and `--open-url` require a launch identifier. Startup installation,
+launch and capability flags are rejected with `--detach`, because the detached
 helper only streams and cannot own the foreground session's capability teardown
 [observed: `src/index.ts` flag validation; LLP 0007, Lifecycle].
 
@@ -27,8 +38,8 @@ helper only streams and cannot own the foreground session's capability teardown
 The simulator's `Booted` state does not mean its services have finished starting.
 `ensureBooted` requests boot when needed, then always awaits `simctl bootstatus -b`
 with the shared 120-second `BOOT_TIMEOUT_MS`. A failed wait stops startup, even
-without an app launch flag; continuing could attempt launch or advertise a server
-against a device that is not ready [observed: `src/index.ts` `ensureBooted`;
+without an app launch flag; continuing could attempt installation or advertise a
+server against a device that is not ready [observed: `src/index.ts` `ensureBooted`;
 `src/device.ts` `BOOT_TIMEOUT_MS`].
 
 ## Startup order
@@ -40,10 +51,10 @@ foreground streaming [observed: `src/index.ts` CLI action]:
 2. Await boot completion for every target and clean up stale loader state.
 3. Arm the session's capability loader, except in re-executed stream helpers.
 4. Attempt requested network capture startup.
-5. For each target device, except in stream helpers: with a launch identifier,
-   apply launch capabilities, restart the app with its arguments, then open the
-   optional URL. Without a launch identifier, apply requested/default capabilities
-   instead.
+5. For each target device, except in stream helpers: install the supplied `.app`
+   if present. With a launch identifier, apply launch capabilities, restart the
+   specified app with its arguments, then open the optional URL. Without a launch
+   identifier, apply requested/default capabilities instead.
 6. Enter the selected run mode. Preview startup binds the HTTP server and prints
    its ready output only after the requested app operations have succeeded.
 
@@ -62,15 +73,17 @@ capability stops startup. Readiness therefore does not guarantee that every
 requested capability was enabled [observed: `src/launch-manager.ts`
 `applyDefaultCapabilities`; `src/launch-app.ts`; `src/index.ts` `missingCapabilities` check].
 
-`launchAppAsync` awaits launch before opening the URL. These are successful
+Installation uses the same invocation builder as the authenticated `app.install`
+action. `launchAppAsync` awaits launch before opening the URL. These are successful
 simctl operations, not proof that the app rendered its UI or handled the deep link
-[observed: `src/launch-app.ts`].
+[observed: `src/host-actions-utils.ts` `installAppInvocation`; `src/launch-app.ts`].
 
 ## Failure and teardown
 
-Failed boot, launch or `simctl openurl` stops startup with exit code 1,
-without publishing preview readiness. Under `--quiet`, those failures emit a JSON
-`{ "error": "…" }` line on stdout; normal mode uses stderr.
+Failed boot, install, launch or `simctl openurl` stops startup with exit code 1,
+without publishing preview readiness. Under `--quiet`, those failures and
+install-flag validation failures emit a JSON `{ "error": "…" }` line on stdout;
+normal mode uses stderr.
 Other flag-validation and capability diagnostics may still use stderr
 [observed: `src/index.ts` `printStartupError` and its callers].
 

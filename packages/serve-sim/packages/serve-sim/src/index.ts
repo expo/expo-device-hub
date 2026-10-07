@@ -3,10 +3,10 @@ import { captureRuntime } from "./capture/runtime";
 import { rebootedWithCaptureSince } from "./capture/reboot";
 import { Command, InvalidArgumentError } from "commander";
 import { execFileSync, execSync, spawn as nodeSpawn, type ChildProcess } from "child_process";
-import { existsSync, mkdirSync, openSync, closeSync, readSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, statSync, mkdirSync, openSync, closeSync, readSync, readFileSync, unlinkSync, writeFileSync } from "fs";
 import { createHash, randomBytes } from "crypto";
 import { networkInterfaces } from "os";
-import { join, resolve } from "path";
+import { extname, join, resolve } from "path";
 import WebSocket from "ws";
 import {
   stateDir,
@@ -50,6 +50,7 @@ import { killOwnListeners } from "./ports";
 import { BOOT_TIMEOUT_MS, findBootedDevice, resolveDevice } from "./device";
 import { openSimulatorHost } from "./simulator-host";
 import { simctl } from "./simctl";
+import { installAppInvocation, runInvocation } from "./host-actions-utils";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
@@ -2048,9 +2049,10 @@ program
       "Requires mitmproxy. Relaunch apps after enabling so they pick up the proxy.",
   )
   .option("--transport <http|webrtc>", "Stream transport", "http")
+  .option("--install-app-path <path>", "Install this .app after boot, before any requested app launch.")
   .option(
     "--launch-app-identifier <id>",
-    "Bundle identifier of an installed app to launch once the simulator boots",
+    "Bundle identifier of the app to launch once the simulator boots",
   )
   .option(
     "--launch-arg <arg>",
@@ -2270,6 +2272,28 @@ Examples:
       console.error("--launch-app-identifier needs an app bundle identifier, such as host.exp.Exponent.");
       process.exit(1);
     }
+    const installAppPath = opts.installAppPath === undefined ? undefined : resolve(opts.installAppPath);
+    if (installAppPath) {
+      try {
+        if (extname(installAppPath) !== ".app" || !statSync(installAppPath).isDirectory()) {
+          throw new Error("expected a .app directory");
+        }
+      } catch {
+        printStartupError(`--install-app-path needs an existing .app directory: ${installAppPath}`, !!opts.quiet);
+        process.exit(1);
+      }
+      const info = await runInvocation({
+        file: "plutil",
+        args: ["-extract", "CFBundleIdentifier", "raw", "-expect", "string", "-o", "-", join(installAppPath, "Info.plist")],
+      });
+      if (info.exitCode !== 0 || !info.stdout.trim()) {
+        printStartupError(
+          `Could not read CFBundleIdentifier from ${installAppPath}/Info.plist: ${info.stderr.trim() || "expected a non-empty string"}`,
+          !!opts.quiet,
+        );
+        process.exit(1);
+      }
+    }
     const launchArgs: string[] = opts.launchArg ?? [];
     const openUrl: string | undefined = opts.openUrl;
     if (!bundleId && (launchArgs.length > 0 || openUrl)) {
@@ -2292,6 +2316,7 @@ Examples:
     // run mode starts. Otherwise follow and detach pick their own target, as
     // they did before this flag existed.
     const launchesBeforeStreaming =
+      Boolean(installAppPath) ||
       Boolean(bundleId) ||
       capabilities.enable.length > 0 ||
       capabilities.disable.length > 0 ||
@@ -2347,6 +2372,7 @@ Examples:
     }
     if (opts.detach) {
       const unsupported = [
+        ...(installAppPath ? ["--install-app-path"] : []),
         ...(bundleId ? ["--launch-app-identifier"] : []),
         ...(launchArgs.length > 0 ? ["--launch-arg"] : []),
         ...(openUrl ? ["--open-url"] : []),
@@ -2419,6 +2445,13 @@ Examples:
         if (sessionStopping) return;
         for (const udid of launchesBeforeStreaming && !isStreamHelper ? targets : []) {
           if (sessionStopping) return;
+          if (installAppPath) {
+            const result = await runInvocation(installAppInvocation(udid, installAppPath));
+            if (result.exitCode !== 0) {
+              throw new Error(`Could not install ${installAppPath} on ${udid}: ${result.stderr.trim() || `simctl exited ${result.exitCode}`}`);
+            }
+            if (sessionStopping) return;
+          }
           if (bundleId) {
             await launchAppAsync(udid, { bundleId, launchArgs, openUrl, capabilities });
           } else {

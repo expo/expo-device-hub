@@ -10,13 +10,39 @@ const CLI = join(import.meta.dir, "../../dist/serve-sim.js");
 
 requireE2E("launch flags", existsSync(CLI));
 
-async function runCli(args: string[]): Promise<{ code: number; stderr: string }> {
+async function runCli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
   const proc = Bun.spawn(["node", CLI, ...args], { stdout: "pipe", stderr: "pipe" });
-  const stderr = await new Response(proc.stderr).text();
-  return { code: await proc.exited, stderr };
+  const [stdout, stderr] = await Promise.all([
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return { code: await proc.exited, stdout, stderr };
 }
 
 describe.skipIf(!existsSync(CLI))("launch flags", () => {
+  test("validates the installation path without a launch identifier", async () => {
+    const { code, stderr } = await runCli(["--install-app-path", CLI]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("--install-app-path needs an existing .app directory");
+  });
+
+  test("rejects an installation path that is not an app directory", async () => {
+    const { code, stderr } = await runCli([
+      "--install-app-path", CLI, "--launch-app-identifier", "dev.example.app",
+    ]);
+    expect(code).toBe(1);
+    expect(stderr).toContain("--install-app-path needs an existing .app directory");
+  });
+
+  test.each([
+    [["--install-app-path", CLI], "--install-app-path needs an existing .app directory"],
+    [["--install-app-path", CLI, "--launch-app-identifier", "dev.example.app"], "--install-app-path needs an existing .app directory"],
+  ])("quiet installation validation reports JSON for %j", async (args, diagnostic) => {
+    const { code, stdout } = await runCli(["--quiet", ...args]);
+    expect(code).toBe(1);
+    expect(JSON.parse(stdout)).toEqual({ error: expect.stringContaining(diagnostic) });
+  });
+
   test("rejects an empty app identifier", async () => {
     const { code, stderr } = await runCli(["--launch-app-identifier", ""]);
     expect(code).toBe(1);
