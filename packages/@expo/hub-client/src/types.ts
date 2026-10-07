@@ -832,8 +832,9 @@ export interface DeviceScreenProps {
   squircle?: boolean;
   /**
    * Capture mouse-wheel / trackpad scrolling over the screen and forward it to
-   * the device as a native scroll. When `false`, wheel events are left to the
-   * page. Has no effect on backends without `sendScroll`. Defaults to `true`.
+   * the device through `sendScroll` (serve-sim injects it as touch drags). When
+   * `false`, wheel events are left to the page. Has no effect on backends
+   * without `sendScroll`. Defaults to `true`.
    */
   captureScroll?: boolean;
 }
