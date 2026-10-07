@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/video-pipeline.md`; links and paths updated)
+**Revised:** 2026-10-06 (recording keyframe settings, source pauses and verification contract)
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -142,6 +142,24 @@ the simulator has no new image. Thus 60 output samples per second is a target,
 not a promise of 60 distinct rendered frames. The recorder bounds pending
 frames, pixel buffers, and writer work, and counts coalesced ticks, drops,
 repeats, backpressure, and encode time. Overloaded hosts can miss the target.
+
+### Keyframe contract
+
+The recording encoder sets `kVTCompressionPropertyKey_MaxKeyFrameInterval`
+to 60 submitted frames and `kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration`
+to 1.0 second of presentation time. A source pause can leave a larger gap
+between recorded keyframes; the first resumed sample is a keyframe
+[observed: `Sources/SimNative/NativeVideoRecorder.swift` compression-session
+configuration; `Tests/SimNativeTests/NativeVideoRecorderKeyframeTests.swift`].
+The continuous-output test checks keyframe PTS gaps at most `1.0 + 1.5 / 60`
+seconds, allowing encoder timing tolerance. The pause test requires the first
+sample after a gap longer than one second to be a keyframe [observed:
+`NativeVideoRecorderKeyframeTests.testKeyframesAreAtMostOneSecondApart` and
+`testFirstSampleAfterAPauseLongerThanASecondIsAKeyframe`]. Shorter keyframe
+intervals can reduce decoding work when seeking; they do not determine seek
+precision [observed: [HTML seeking algorithm](https://html.spec.whatwg.org/multipage/media.html#seeking)].
+
+### Output files
 
 Compressed H.264 samples go to `AVAssetWriterInput` with `outputSettings: nil`,
 so the MP4 writer does not encode again. On successful finalization the output
