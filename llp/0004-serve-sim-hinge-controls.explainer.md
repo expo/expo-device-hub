@@ -3,9 +3,9 @@
 **Type:** Explainer
 **Status:** Active
 **Systems:** ServeSim, Hub
-**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich
+**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -37,12 +37,13 @@ The Table Mode toggle controls the simulator's persistent table state. Tent
 enables it automatically; the other presets disable it.
 
 Confirmed hinge angles, named poses, and Table Mode values reflect successful
-commands in the current serve-sim session. serve-sim does not monitor the live
+commands, plus the state that serve-sim reads and restores at startup (see
+[Hinge state at startup](#hinge-state-at-startup)). serve-sim does not monitor the live
 hinge sensor for changes made externally in Device Hub. The streamed display
 and its orientation still follow native display readback.
 
 Table Mode eligibility requires a known physical orientation, established by
-choosing a preset. An independent rotation invalidates that knowledge because
+choosing a preset or restored at startup from the saved state. An independent rotation invalidates that knowledge because
 its screen orientation can differ from physical orientation. Choose a preset
 again to restore Table Mode eligibility after rotating. Angle adjustments keep
 the known physical orientation and update eligibility for the new angle.
@@ -127,6 +128,34 @@ The existing CLI uses degrees and keeps its three angle aliases:
 The CLI also accepts an angle, such as `serve-sim hinge 120 -d <udid>`. A command
 waits for an acknowledgement and reports failures instead of assuming that
 writing to the input socket changed the device.
+
+Run `serve-sim hinge` without a position to print the server's confirmed hinge
+state as JSON: angle, pose, physical orientation, Table Mode, and whether Table
+Mode is available. It does not move the device. Unknown fields are left out.
+
+## Hinge state at startup
+
+Before serve-sim reports hinge support, it reads the native hinge angle, so the
+angle is correct even if the device was folded before serve-sim started.
+CoreDevice reports the live angle, but not the physical orientation or Table
+Mode [observed: no Table Mode getter in Xcode 27.1 beta's CoreDevice; a probe of
+`OrientationControl.currentDeviceOrientation()` crashed serve-sim before it
+returned, #139].
+
+serve-sim therefore saves the last confirmed pose, physical orientation, and
+Table Mode for each device in its state folder (`hinge-<UDID>.json`). At startup
+it restores them only when the saved angle matches the native angle. A different
+angle means the hinge moved while serve-sim was stopped, so the saved fields
+stay unknown. The limit is that a change made outside serve-sim at the same
+angle cannot be detected; choose a pose again to update the saved state
+[confirmed: Gabe Debes, 2026-09-24].
+
+Manual angle changes and rotation clear the selected pose, including after a
+restart.
+
+A Table Mode or physical-orientation command that arrives before the startup
+read first reads native state and the saved record, so its save keeps the saved
+orientation.
 
 ## APIs inside an iOS app
 
