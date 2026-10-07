@@ -27,6 +27,7 @@ import { isSimctlTimeout } from "./simctl";
 import { CA_DEBUG_FLAGS } from "./ca-debug";
 import { HINGE_POSITIONS, isHingeAngle } from "./hinge-angle";
 import { UI_OPTIONS } from "./ui-settings";
+import { normalizeTimeZone } from "./time-zone";
 import { TouchCoordinate, TouchGesture } from "./touch-gesture";
 import { MAX_PASTEBOARD_TEXT_BYTES, writeSimPasteboard } from "./sim-pasteboard";
 import { cleanupWarningOf } from "./sim-pasteboard-copy";
@@ -110,7 +111,7 @@ const ClipboardText = z
 
 function UiSetting(option: string) {
   const spec = UI_OPTIONS[option];
-  if (!spec) throw new Error(`Unknown simulator setting ${option}.`);
+  if (!spec?.values) throw new Error(`Unknown simulator setting ${option}.`);
   return z.object({ udid: Device, value: z.enum([...spec.values, ...(spec.extraValues ?? [])]) });
 }
 
@@ -180,6 +181,19 @@ const ACTION_SCHEMAS = {
   "showBorders.set": UiSetting("show-borders").meta({
     description: "Show or hide button borders.",
   }),
+  "timeZone.get": z
+    .object({ udid: Device })
+    .meta({ description: "Read the time zone, or host for the Mac's zone." }),
+  "timeZone.set": z
+    .object({
+      udid: Device,
+      value: z
+        .string()
+        .max(64)
+        // The canonical name depends on the ICU version: Node resolves Asia/Kolkata to Asia/Calcutta.
+        .refine((zone) => normalizeTimeZone(zone) !== null, "must be host or an IANA zone name"),
+    })
+    .meta({ description: "Set the time zone: host, or an IANA name such as Europe/Berlin." }),
   "settings.status": z
     .object({ udid: Device })
     .meta({ description: "Read every simulator setting." }),
@@ -585,6 +599,10 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
       return uiGet("show-borders", parseParams(action, raw));
     case "showBorders.set":
       return uiSet("show-borders", parseParams(action, raw));
+    case "timeZone.get":
+      return uiGet("time-zone", parseParams(action, raw));
+    case "timeZone.set":
+      return uiSet("time-zone", parseParams(action, raw));
     case "settings.status": {
       const p = parseParams(action, raw);
       return serveSim(["ui", "status", "--json", "-d", p.udid]);
