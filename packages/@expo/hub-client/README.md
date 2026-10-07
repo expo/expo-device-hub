@@ -95,6 +95,8 @@ Use `useDeviceScreenClient` with `DeviceScreen`. It follows screen and input cha
 without updating for metrics or logs.
 `DeviceScreen` fills its parent, so give the parent a size and `position: relative`.
 `displayScreen` gives you the screen size after accounting for rotation.
+`DeviceScreen` forwards mouse-wheel and trackpad scrolling to the device when the backend
+supports it (iOS today). Pass `captureScroll={false}` to leave wheel events to the page.
 
 ```tsx
 import { DeviceScreen, displayScreen, useDeviceScreenClient } from '@expo/hub-client';

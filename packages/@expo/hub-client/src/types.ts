@@ -830,6 +830,12 @@ export interface DeviceScreenProps {
   borderRadius?: CSSProperties['borderRadius'];
   /** Apply the iOS `corner-shape: squircle`. */
   squircle?: boolean;
+  /**
+   * Capture mouse-wheel / trackpad scrolling over the screen and forward it to
+   * the device as a native scroll. When `false`, wheel events are left to the
+   * page. Has no effect on backends without `sendScroll`. Defaults to `true`.
+   */
+  captureScroll?: boolean;
 }
 
 /** The built-in screen also accepts the inputs returned by useDeviceScreenClient. */

@@ -112,15 +112,16 @@ export function deviceScreenMediaStyle(rotation: number): CSSProperties {
  * `client.sendTouch`; two-finger pinch/pan (real touch, or Alt-drag with a
  * mouse) goes through `client.sendMultiTouch` when the backend supports it, and
  * mouse-wheel / trackpad scrolling goes through `client.sendScroll` as a native
- * scroll when the backend supports it. When the stream is rotated for a
- * non-portrait device, only the video element is CSS-rotated — the input
- * overlay stays display-aligned.
+ * scroll when the backend supports it and `captureScroll` is not `false`. When
+ * the stream is rotated for a non-portrait device, only the video element is
+ * CSS-rotated — the input overlay stays display-aligned.
  */
 export function DeviceScreen({
   client,
   borderRadius,
   squircle,
   agentInteraction,
+  captureScroll = true,
 }: DeviceScreenInputProps) {
   const {
     videoKind,
@@ -349,10 +350,11 @@ export function DeviceScreen({
   // native scroll (see `client.sendScroll`) so iOS pans content exactly as it
   // would for a physical wheel. A non-passive listener, because React's
   // `onWheel` cannot preventDefault the page scroll. Never fights an
-  // in-progress drag on the same surface.
+  // in-progress drag on the same surface. With `captureScroll={false}` no
+  // listener is attached, so the wheel scrolls the page as usual.
   useEffect(() => {
     const el = surfaceRef.current;
-    if (!el || !sendScroll) return;
+    if (!el || !sendScroll || !captureScroll) return;
     const onWheel = (event: WheelEvent) => {
       if (modeRef.current !== 'none') return;
       const rect = el.getBoundingClientRect();
@@ -375,7 +377,7 @@ export function DeviceScreen({
     };
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [sendScroll]);
+  }, [sendScroll, captureScroll]);
 
   // ── display geometry (rotation for non-portrait devices) ──
   const geometry = streamGeometry(screen);
