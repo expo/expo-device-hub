@@ -124,6 +124,12 @@ describe("simctl-backed actions", () => {
     ]);
   });
 
+  it("selects the app data container explicitly", async () => {
+    expect(await argv("app.container", { udid: UDID, bundleId: BUNDLE, type: "data" })).toEqual([
+      "xcrun", "simctl", "get_app_container", UDID, BUNDLE, "data",
+    ]);
+  });
+
   it("builds app install and media add from a path", async () => {
     expect(await argv("app.install", { udid: UDID, path: CONFINED })).toEqual([
       "xcrun", "simctl", "install", UDID, CONFINED,

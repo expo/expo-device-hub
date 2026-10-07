@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (added installed-app launch and control actions; raw HID close-delivery and cleanup contract)
+**Revised:** 2026-10-06 (added installed-app launch, control and data-file actions; raw HID close-delivery and cleanup contract)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -252,3 +252,24 @@ opens after the app is running, so a failed `openUrl` keeps the new launch.
 
 Both actions require a specific Simulator UDID and use the authenticated
 `/exec-ws` channel.
+
+### App data files
+
+- `app.container`: `{udid, bundleId, type?: "app" | "data"}`. Returns the
+  container path. The default remains `"app"`; select `"data"` for writable app storage.
+- `app.file.list`: `{udid, bundleId, relativePath?}`. Returns a JSON array of
+  entry names and types. Omit the path for the container root. Limited to 1000 entries.
+- `app.file.read`: `{udid, bundleId, relativePath}`. Returns file bytes as base64,
+  limited to 8 MiB per regular file.
+- `app.file.remove`: `{udid, bundleId, relativePath}`. Deletes one regular file,
+  never a directory.
+
+These API actions use the authenticated `/exec-ws` channel and require a specific
+Simulator UDID. Paths are relative to the selected app's **data** container;
+traversal and symlinks encountered during path checks, including in the container
+root or its ancestors, are refused. Keep the app
+stopped and prevent other tools from changing its directories during an operation.
+Requests are serialized with app controls on the same device; another device can
+proceed independently. The preview UI has no storage editor. These actions are
+currently iOS Simulator only; serve-emu does not expose equivalent file actions.
+Android parity remains outside this serve-sim rollout.
