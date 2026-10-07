@@ -1,4 +1,4 @@
-import { type ComponentType } from 'react';
+import { type ComponentType, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   type AgentInteraction,
@@ -63,6 +63,20 @@ export function StreamPanel({
   deviceFrameAssets?: DeviceFrameAssets;
 }) {
   const captureScreenshot = useScreenshotToast(client, device.name);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const [controlsHeight, setControlsHeight] = useState(STREAM_CONTROLS_HEIGHT);
+
+  useLayoutEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    // Include wrapped errors in the space reserved below the frame. Observe
+    // width changes too, since resizing a sidebar can add another text line.
+    const measure = () => setControlsHeight(Math.ceil(controls.getBoundingClientRect().height));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, [client.hinge?.error]);
 
   return (
     <section
@@ -88,7 +102,7 @@ export function StreamPanel({
           boxSizing: 'border-box',
           // Container-query units resolve against the content box, so this
           // padding keeps the frame clear of the title above and toolbar below.
-          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${STREAM_CONTROLS_HEIGHT + CONTROLS_GAP}px`,
+          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${controlsHeight + CONTROLS_GAP}px`,
           containerType: 'size',
           display: 'flex',
           alignItems: 'center',
@@ -124,6 +138,7 @@ export function StreamPanel({
             <DeviceTitle key={device.id} device={device} status={client.status} recording={client.screenRecording} />
           </div>
           <div
+            ref={controlsRef}
             style={{
               position: 'absolute',
               left: '50%',
