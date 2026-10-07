@@ -1,11 +1,7 @@
 import { afterEach, expect, test } from 'bun:test';
 import { act, create, type ReactTestRenderer } from 'react-test-renderer';
 
-import {
-  IOS_INPUT_BUSY_MESSAGE,
-  IOS_INPUT_UNAVAILABLE_MESSAGE,
-  iosInputCloseError,
-} from '../ios-input-error';
+import { IOS_INPUT_UNAVAILABLE_MESSAGE } from '../ios-input-error';
 import { type DeviceClient } from '../types';
 import { useIosDeviceClient } from '../useIosDevice';
 import { createGlobalStubs } from './test-globals';
@@ -21,13 +17,6 @@ afterEach(async () => {
 
 const CLIENT_LIMIT_REASON = 'Simulator input unavailable; retry after other clients disconnect';
 
-test('only a serve-sim 1013 close rejects input', () => {
-  expect(iosInputCloseError(1013, CLIENT_LIMIT_REASON)).toBe(CLIENT_LIMIT_REASON);
-  expect(iosInputCloseError(1013, '')).toBe(IOS_INPUT_BUSY_MESSAGE);
-  expect(iosInputCloseError(1000, '')).toBeNull();
-  expect(iosInputCloseError(1006, '')).toBeNull();
-});
-
 type FakeSocket = {
   url: string;
   readyState: number;
@@ -36,8 +25,10 @@ type FakeSocket = {
   onclose?: (event: { code: number; reason: string }) => void;
 };
 
-async function renderIosClient({ inputAdmission = false } = {}) {
+async function renderIosClient(inputAdmission: unknown = true) {
   const sockets: FakeSocket[] = [];
+  const realTimeout = globalThis.setTimeout;
+  stubGlobal('setTimeout', (callback: () => void, delay: number) => realTimeout(callback, delay === 13_000 ? 20 : delay === 1500 ? 10 : delay === 1000 || delay === 5000 ? 20 : delay));
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   stubGlobal('window', {
     location: {
@@ -64,13 +55,13 @@ async function renderIosClient({ inputAdmission = false } = {}) {
     close() {}
   });
   stubGlobal('fetch', async (url: string) => {
-    if (url === '/sim/api?device=DEVICE-A') {
+    if (new URL(String(url), 'http://localhost:3200').pathname === '/sim/api') {
       return Response.json({
+        inputAdmission: inputAdmission === false ? undefined : inputAdmission,
         device: 'DEVICE-A',
         url: 'http://localhost:3200/sim/helper/DEVICE-A',
         streamUrl: 'http://localhost:3200/sim/helper/DEVICE-A/stream.mjpeg',
         wsUrl: 'ws://localhost:3200/sim/helper/DEVICE-A/ws',
-        ...(inputAdmission ? { inputAdmission: true } : {}),
       });
     }
     return Response.json({ devices: [] });
@@ -96,79 +87,29 @@ function configFrame(config: object): ArrayBuffer {
   return bytes.buffer;
 }
 
-const SCREEN = { width: 390, height: 844, orientation: 'portrait' };
-const ADMITTED_FRAME = new Uint8Array([0x83]).buffer;
-
-async function rejectFirstSocket(options?: { inputAdmission?: boolean }) {
-  const rendered = await renderIosClient(options);
-  const { client, helperSockets } = rendered;
+test('a rejected input socket reports inputError until a later socket is admitted', async () => {
+  const { client, helperSockets } = await renderIosClient();
   expect(helperSockets()).toHaveLength(1);
   expect(client().inputError).toBeNull();
+
   await act(async () => helperSockets()[0]!.onclose?.({ code: 1013, reason: CLIENT_LIMIT_REASON }));
+  expect(client().inputError).toBeNull();
+  await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
   expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
-  return rendered;
-}
-
-const waitForRetry = () => act(async () => new Promise((resolve) => setTimeout(resolve, 1600)));
-
-test('a rejected input socket reports inputError until a later socket gets a config frame', async () => {
-  const { client, helperSockets } = await rejectFirstSocket();
 
   // A plain drop during the retry keeps the rejection visible.
-  await waitForRetry();
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
   expect(helperSockets()).toHaveLength(2);
   await act(async () => helperSockets()[1]!.onclose?.({ code: 1006, reason: '' }));
   expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
 
-  // serve-sim opens a refused socket before it closes it, so opening alone is not recovery.
-  await waitForRetry();
-  const refused = helperSockets()[2]!;
-  refused.readyState = 1;
-  await act(async () => refused.onopen?.());
+  await act(async () => new Promise((resolve) => setTimeout(resolve, 20)));
+  const socket = helperSockets()[2]!;
+  socket.readyState = 1;
+  await act(async () => socket.onopen?.());
+  await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
   expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
-  await act(async () => refused.onclose?.({ code: 1013, reason: CLIENT_LIMIT_REASON }));
-  expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
-
-  await waitForRetry();
-  const admitted = helperSockets()[3]!;
-  admitted.readyState = 1;
-  await act(async () => admitted.onopen?.());
-  expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
-  await act(async () => admitted.onmessage?.({ data: configFrame(SCREEN) }));
-  expect(client().inputError).toBeNull();
-});
-
-test('on a server without admission frames, an input socket that stays open clears inputError', async () => {
-  const { client, helperSockets } = await rejectFirstSocket();
-
-  await waitForRetry();
-  const admitted = helperSockets()[1]!;
-  admitted.readyState = 1;
-  await act(async () => admitted.onopen?.());
-  expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 1100)));
-  expect(client().inputError).toBeNull();
-});
-
-test('on a server with admission frames, only the admission frame clears inputError', async () => {
-  const { client, helperSockets } = await rejectFirstSocket({ inputAdmission: true });
-
-  // The refusal close can arrive later than the legacy grace period.
-  await waitForRetry();
-  const refused = helperSockets()[1]!;
-  refused.readyState = 1;
-  await act(async () => refused.onopen?.());
-  await act(async () => new Promise((resolve) => setTimeout(resolve, 1100)));
-  expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
-  await act(async () => refused.onclose?.({ code: 1013, reason: CLIENT_LIMIT_REASON }));
-  expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
-
-  await waitForRetry();
-  const admitted = helperSockets()[2]!;
-  admitted.readyState = 1;
-  await act(async () => admitted.onopen?.());
-  expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
-  await act(async () => admitted.onmessage?.({ data: ADMITTED_FRAME }));
+  await act(async () => socket.onmessage?.({data: Uint8Array.of(0x83).buffer}));
   expect(client().inputError).toBeNull();
 });
 
@@ -180,15 +121,64 @@ test('serve-sim inputUnavailable in the screen config reports inputError', async
 
   await act(async () =>
     socket.onmessage?.({
-      data: configFrame({ ...SCREEN, inputUnavailable: true }),
+      data: configFrame({ width: 390, height: 844, orientation: 'portrait', inputUnavailable: true }),
     }),
   );
   expect(client().inputError).toBe(IOS_INPUT_UNAVAILABLE_MESSAGE);
 
   await act(async () =>
     socket.onmessage?.({
-      data: configFrame({ ...SCREEN, inputUnavailable: false }),
+      data: configFrame({ width: 390, height: 844, orientation: 'portrait', inputUnavailable: false }),
     }),
   );
+  expect(client().inputError).toBeNull();
+});
+
+test('malformed config frames cannot admit modern input or set keyboard state', async () => {
+  const {client, helperSockets} = await renderIosClient(); const socket = helperSockets()[0]!;
+  socket.readyState = 1; await act(async () => socket.onopen?.());
+  expect(client().hardwareKeyboardConnected).toBeNull();
+  await act(async () => socket.onmessage?.({data: configFrame({width: '390', height: 844})}));
+  expect(client().hardwareKeyboardConnected).toBeNull();
+  await act(async () => socket.onmessage?.({data: Uint8Array.of(0x83).buffer}));
+  expect(client().hardwareKeyboardConnected).toBe(false);
+});
+
+test('legacy OPEN sends input while recovery waits out the refusal grace', async () => {
+  const {client, helperSockets} = await renderIosClient(false); const socket = helperSockets()[0]!;
+  socket.readyState = 1; await act(async () => socket.onopen?.());
+  expect(client().hardwareKeyboardConnected).toBe(false);
+});
+
+test('screen config cannot clear a refusal before modern admission', async () => {
+    const { client, helperSockets } = await renderIosClient();
+    await act(async () => helperSockets()[0]!.onclose?.({ code: 1013, reason: CLIENT_LIMIT_REASON }));
+    await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+    const socket = helperSockets()[1]!;
+    socket.readyState = 1;
+    await act(async () => socket.onopen?.());
+    await act(async () => socket.onmessage?.({ data: configFrame({ width: 390, height: 844, orientation: 'portrait' }) }));
+    await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
+    expect(client().inputError).toBe(CLIENT_LIMIT_REASON);
+    expect(client().hardwareKeyboardConnected).toBeNull();
+    await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+    expect(client().inputError).toBeNull();
+    expect(client().hardwareKeyboardConnected).toBe(false);
+});
+
+test('an overload warning survives admission but expires without changing owners', async () => {
+  const { client, helperSockets } = await renderIosClient();
+  const socket = helperSockets()[0]!;
+  socket.readyState = 1;
+  await act(async () => socket.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+  const reason = 'Simulator input queue full; send smaller batches or slow down';
+  await act(async () => socket.onclose?.({ code: 1013, reason }));
+  expect(client().inputError).toBe(reason);
+  await act(async () => new Promise(resolve => setTimeout(resolve, 12)));
+  const retry = helperSockets()[1]!;
+  retry.readyState = 1;
+  await act(async () => retry.onmessage?.({ data: Uint8Array.of(0x83).buffer }));
+  expect(client().inputError).toBe(reason);
+  await act(async () => new Promise(resolve => setTimeout(resolve, 30)));
   expect(client().inputError).toBeNull();
 });

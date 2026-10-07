@@ -30,6 +30,16 @@ An open input socket is not yet admitted. A helper that advertises `inputAdmissi
 
 serve-sim's client uses the same rules and numbers [observed: `socket/client-input.ts`].
 
+## iOS input adapter
+
+The iOS adapter uses the admission socket [observed: `createInputSocket` call in `useIosDevice.ts`]:
+
+- After admission, it turns off the Simulator's hardware keyboard, so that iOS shows its software keyboard.
+- A refusal notice clears when a socket is admitted. A config update for the same helper does not clear it. A replaced helper (new `pid` or exec token) gets a new input socket, which clears the notice and starts a new refusal grace.
+- A lost-input notice expires 5 s after the refusal, also when a socket is admitted sooner, because admission cannot bring back lost commands.
+- When the helper is replaced at the same URL (new `pid` or exec token), queued input is dropped. Input belongs to the helper that was running when the user acted [confirmed] (Gabe Debes, 2026-10-07).
+- After a disconnect, the adapter waits for the reconnect (1.5 s). If exec-ws has not delivered a config by then, it runs HTTP discovery to recover rotated credentials.
+
 ## Open questions
 
 None at this time.
