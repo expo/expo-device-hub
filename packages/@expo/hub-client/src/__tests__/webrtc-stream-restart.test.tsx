@@ -6,6 +6,7 @@ import { deviceScreenPresentsMedia } from '../DeviceScreen';
 import { useAndroidDeviceClient } from '../useAndroidDevice';
 import { useStreamSettingsResource } from '../useStreamSettingsResource';
 import { useWebRtcStream } from '../useWebRtcStream';
+import { PLAYBACK_STALL_POLLS, PLAYBACK_STALL_POLL_MS } from '../webrtc-playback-stall';
 import { createGlobalStubs } from './test-globals';
 
 // These tests exercise hook lifecycles with controlled transport/media events.
@@ -19,6 +20,9 @@ class Peer {
   connectionState = 'connected';
   localDescription = { type: 'offer', sdp: 'offer' };
   closeCount = 0;
+  beforeClose?: () => void;
+  receivedTrack?: { onended?: () => void };
+  receivedFrames = 0;
   ontrack?: (event: { streams: object[]; track: object }) => void;
 
   constructor() {
@@ -32,11 +36,20 @@ class Peer {
   }
   async setLocalDescription() {}
   async setRemoteDescription() {}
+  async getStats() {
+    this.receivedFrames += 100;
+    return new Map([['video', {
+      id: 'video', type: 'inbound-rtp', kind: 'video',
+      framesReceived: this.receivedFrames, framesDecoded: 10,
+    }]]);
+  }
   close() {
+    this.beforeClose?.();
     this.closeCount++;
   }
   receive(stream: object) {
-    this.ontrack?.({ streams: [stream], track: {} });
+    this.receivedTrack = {};
+    this.ontrack?.({ streams: [stream], track: this.receivedTrack });
   }
 }
 
@@ -243,9 +256,15 @@ class Video extends EventTarget {
   }
 }
 
-async function androidHarness({ delaySource = false } = {}) {
+async function androidHarness({
+  delaySource = false,
+  captureThrows = false,
+  canvasContextUnavailable = false,
+  canvasImage = 'data:image/png;base64,last-frame',
+} = {}) {
   stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   const timers = new Map<number, { callback: () => void; delay: number }>();
+  const intervals = new Map<number, { callback: () => void; delay: number }>();
   let timerId = 0;
   const schedule = (callback: () => void, delay: number) => {
     timers.set(++timerId, { callback, delay });
@@ -256,6 +275,11 @@ async function androidHarness({ delaySource = false } = {}) {
   };
   stubGlobal('setTimeout', schedule);
   stubGlobal('clearTimeout', cancel);
+  stubGlobal('setInterval', (callback: () => void, delay: number) => {
+    intervals.set(++timerId, { callback, delay });
+    return timerId;
+  });
+  stubGlobal('clearInterval', (id: number) => intervals.delete(id));
   stubGlobal('window', {
     addEventListener() {},
     removeEventListener() {},
@@ -268,8 +292,13 @@ async function androidHarness({ delaySource = false } = {}) {
     addEventListener() {},
     removeEventListener() {},
     createElement: () => ({
-      getContext: () => ({ drawImage: (video: Video) => captures.push(video) }),
-      toDataURL: () => 'data:image/png;base64,last-frame',
+      getContext: () => canvasContextUnavailable
+        ? null
+        : { drawImage: (video: Video) => captures.push(video) },
+      toDataURL: () => {
+        if (captureThrows) throw new Error('Canvas snapshot failed');
+        return canvasImage;
+      },
     }),
   });
   stubGlobal('RTCPeerConnection', Peer);
@@ -285,12 +314,14 @@ async function androidHarness({ delaySource = false } = {}) {
     sessionGeneration: 1,
   };
   const writes: { path: string; body: unknown; finish: (response: Response) => void }[] = [];
+  const closedSessions: string[] = [];
   let finishSource!: (response: Response) => void;
   const sourceRead = new Promise<Response>((resolve) => {
     finishSource = resolve;
   });
   stubGlobal('fetch', async (url: string, init?: RequestInit) => {
     const path = new URL(url).pathname;
+    if (path === '/webrtc/close') closedSessions.push(String(init?.body));
     if (init?.method === 'PATCH' || init?.method === 'PUT') {
       return new Promise<Response>((finish) => {
         writes.push({ path, body: JSON.parse(String(init.body)), finish });
@@ -334,6 +365,7 @@ async function androidHarness({ delaySource = false } = {}) {
     video,
     captures,
     writes,
+    closedSessions,
     source,
     attach,
     finishSource: async () => {
@@ -345,6 +377,16 @@ async function androidHarness({ delaySource = false } = {}) {
     changeDevice: async () => {
       await act(async () => renderer!.update(<Harness device="another-emulator" />));
     },
+    stallPlayback: async () => {
+      for (let sample = 0; sample <= PLAYBACK_STALL_POLLS; sample++) {
+        await act(async () => {
+          for (const interval of intervals.values()) {
+            if (interval.delay === PLAYBACK_STALL_POLL_MS) interval.callback();
+          }
+          for (let turn = 0; turn < 20; turn++) await Promise.resolve();
+        });
+      }
+    },
     fireTimer: async (delay: number) => {
       const matching = [...timers].filter(([, timer]) => timer.delay === delay);
       expect(matching.length).toBeGreaterThan(0);
@@ -355,12 +397,142 @@ async function androidHarness({ delaySource = false } = {}) {
         }
       });
     },
-    paintReplacement: async () => {
+    paintReplacement: async (target = video) => {
       await act(async () => Peer.instances.at(-1)!.receive({ id: 'replacement' }));
-      await act(async () => video.paint());
+      await act(async () => target.paint());
     },
   };
 }
+
+test('Android automatic stall recovery captures before closing and keeps its poster until fresh paint', async () => {
+  const hub = await androidHarness();
+  const peer = Peer.instances[0]!;
+  const postersAtClose: string[] = [];
+  peer.beforeClose = () => postersAtClose.push(hub.video.poster);
+  await hub.stallPlayback();
+  expect(peer.closeCount).toBe(1);
+  expect(hub.captures).toEqual([hub.video]);
+  expect(postersAtClose).toEqual(['data:image/png;base64,last-frame']);
+  expect(hub.video.poster).toContain('data:image/png');
+  await hub.fireTimer(500);
+  expect(Peer.instances).toHaveLength(2);
+  expect(peer.closeCount).toBe(1);
+  expect(hub.captures).toEqual([hub.video]);
+  expect(hub.video.poster).toContain('data:image/png');
+  await hub.paintReplacement();
+  expect(hub.client.status).toBe('streaming');
+  expect(hub.video.poster).toBe('');
+});
+
+test('repeated Android restarts keep a saved poster without capturing a detached stream', async () => {
+  const hub = await androidHarness();
+  await act(async () => hub.client.updateStreamSettings({ maxDimension: 720 }));
+  await hub.finishWrite({ maxDimension: 720 });
+  const retainedPoster = hub.video.poster;
+  expect(retainedPoster).toContain('data:image/png');
+  expect(hub.captures).toEqual([hub.video]);
+  await act(async () => ControlSocket.instances[0]!.serverClose(1012));
+  expect(Peer.instances).toHaveLength(3);
+  expect(hub.captures).toEqual([hub.video]);
+  expect(hub.video.poster).toBe(retainedPoster);
+});
+
+test('a retry before replacement paint detaches that stream while retaining the original poster', async () => {
+  const hub = await androidHarness();
+  await hub.stallPlayback();
+  const retainedPoster = hub.video.poster;
+  await hub.fireTimer(500);
+  const replacementPeer = Peer.instances[1]!;
+  await act(async () => replacementPeer.receive({ id: 'not-yet-painted' }));
+  expect(hub.video.srcObject).toEqual({ id: 'not-yet-painted' });
+  await act(async () => replacementPeer.receivedTrack!.onended!());
+  expect(replacementPeer.closeCount).toBe(1);
+  expect(hub.video.srcObject).toBeNull();
+  expect(hub.captures).toEqual([hub.video]);
+  expect(hub.video.poster).toBe(retainedPoster);
+});
+
+test('automatic Android recovery captures the remounted video without replacing its peer or control socket early', async () => {
+  const hub = await androidHarness();
+  const remounted = new Video();
+  await hub.attach(remounted);
+  await act(async () => remounted.paint());
+  expect(Peer.instances).toHaveLength(1);
+  expect(ControlSocket.instances).toHaveLength(1);
+  await hub.stallPlayback();
+  expect(hub.captures).toEqual([remounted]);
+  expect(hub.video.poster).toBe('');
+  expect(remounted.poster).toContain('data:image/png');
+  await hub.fireTimer(500);
+  await hub.paintReplacement(remounted);
+  expect(remounted.poster).toBe('');
+  expect(hub.client.status).toBe('streaming');
+});
+
+for (const failure of ['throws', 'no-context', 'no-dimensions', 'empty-image'] as const) {
+  test(`Android snapshot ${failure} keeps the old attachment while releasing the peer and session`, async () => {
+    const hub = await androidHarness({
+      captureThrows: failure === 'throws',
+      canvasContextUnavailable: failure === 'no-context',
+      canvasImage: failure === 'empty-image' ? 'data:,' : undefined,
+    });
+    if (failure === 'no-dimensions') hub.video.videoWidth = 0;
+    const peer = Peer.instances[0]!;
+    const previousStream = hub.video.srcObject;
+    await hub.stallPlayback();
+    expect(hub.video.srcObject).toBe(previousStream);
+    expect(hub.video.poster).toBe('');
+    expect(peer.closeCount).toBe(1);
+    expect(hub.closedSessions).toHaveLength(1);
+    await hub.fireTimer(500);
+    expect(Peer.instances).toHaveLength(2);
+    expect(peer.closeCount).toBe(1);
+    expect(hub.closedSessions).toHaveLength(1);
+    expect(hub.video.srcObject).toBe(previousStream);
+    await hub.paintReplacement();
+    expect(hub.video.srcObject).not.toBe(previousStream);
+    expect(hub.client.status).toBe('streaming');
+  });
+}
+
+test('peer cleanup uses the latest pre-disconnect callback without restarting for callback changes', async () => {
+  stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
+  stubGlobal('window', { addEventListener() {}, removeEventListener() {}, setTimeout, clearTimeout });
+  stubGlobal('document', { hidden: false, addEventListener() {}, removeEventListener() {} });
+  stubGlobal('RTCPeerConnection', Peer);
+  stubGlobal('RTCRtpReceiver', { getCapabilities: () => null });
+  stubGlobal('fetch', async () => Response.json({ type: 'answer', sdp: 'answer' }));
+  const disconnects: string[] = [];
+  let client!: ReturnType<typeof useWebRtcStream>;
+  function Harness({ beforeDisconnect }: { beforeDisconnect: () => void }) {
+    client = useWebRtcStream({
+      offerUrl: 'https://hub.test/webrtc/offer', closeUrl: 'https://hub.test/webrtc/close',
+      enabled: true, codec: 'h264', onBeforeDisconnect: beforeDisconnect,
+    });
+    return null;
+  }
+  await act(async () => { renderer = create(<Harness beforeDisconnect={() => disconnects.push('old')} />); });
+  const peer = Peer.instances[0]!;
+  await act(async () => renderer!.update(<Harness beforeDisconnect={() => {
+    expect(peer.closeCount).toBe(0);
+    disconnects.push('latest');
+  }} />));
+  expect(Peer.instances).toHaveLength(1);
+  expect(disconnects).toEqual([]);
+  await act(async () => client.restart());
+  expect(Peer.instances).toHaveLength(2);
+  expect(peer.closeCount).toBe(1);
+  expect(disconnects).toEqual(['latest']);
+  await act(async () => renderer!.update(<Harness beforeDisconnect={() => {
+    disconnects.push('unmount');
+    throw new Error('Snapshot failed');
+  }} />));
+  const replacementPeer = Peer.instances[1]!;
+  await act(async () => renderer!.unmount());
+  renderer = undefined;
+  expect(replacementPeer.closeCount).toBe(1);
+  expect(disconnects).toEqual(['latest', 'unmount']);
+});
 
 test('attaching and remounting the Android video keeps one control socket and uses the latest node', async () => {
   const hub = await androidHarness();
@@ -456,6 +628,10 @@ for (const outcome of ['failure', 'superseded'] as const) {
     await act(async () => hub.client.updateStreamSettings({ maxDimension: 720 }));
     if (outcome === 'superseded') await hub.changeDevice();
     const peersBeforeResponse = Peer.instances.length;
+    if (outcome === 'superseded') {
+      expect(hub.video.srcObject).toBeNull();
+      expect(hub.video.poster).toBe('');
+    }
     await hub.finishWrite({ maxDimension: 720 }, outcome === 'failure' ? 503 : 200);
     expect(Peer.instances).toHaveLength(peersBeforeResponse);
     expect(hub.captures).toHaveLength(0);

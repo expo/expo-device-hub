@@ -264,6 +264,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [serverStreamSettings, setServerStreamSettings] =
     useState<ServeEmuStreamSettings | null>(null);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
+  const webRtcVideoOwnerRef = useRef<{
+    video: HTMLVideoElement;
+    stream: MediaStream;
+    scope: string;
+  } | null>(null);
   const [webRtcVideoReady, setWebRtcVideoReady] = useState(false);
   const [webRtcInputReady, setWebRtcInputReady] = useState(false);
   const [webRtcInputError, setWebRtcInputError] = useState<string | null>(null);
@@ -925,6 +930,39 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const requestWebRtcKeyframe = useCallback(() => {
     send({ type: 'reset-video' });
   }, [send]);
+  const preserveWebRtcFrame = useCallback(() => {
+    const video = webRtcVideoElement;
+    const owner = webRtcVideoOwnerRef.current;
+    // A device handoff must not copy the previous device's frame into its new
+    // surface. Only detach the stream this hook attached to this video node.
+    if (
+      !video || !video.srcObject || owner?.video !== video ||
+      owner.stream !== video.srcObject || owner.scope !== deviceScope
+    ) return;
+    // Keep an existing poster until fresh video paints, but still detach a
+    // replacement stream that failed before its first paint.
+    if (
+      !video.poster && video.readyState >= 2 &&
+      video.videoWidth > 0 && video.videoHeight > 0
+    ) {
+      try {
+        const snapshot = document.createElement('canvas');
+        snapshot.width = video.videoWidth;
+        snapshot.height = video.videoHeight;
+        const context = snapshot.getContext('2d');
+        if (context) {
+          context.drawImage(video, 0, 0);
+          const poster = snapshot.toDataURL('image/png');
+          // Empty canvas serialization returns data:, rather than an image.
+          if (poster && poster !== 'data:,') video.poster = poster;
+        }
+      } catch {
+        // Canvas capture is best effort; peer teardown still proceeds.
+      }
+    }
+    // Without a poster, keep the browser's existing frame attachment as a fallback.
+    if (video.poster) video.srcObject = null;
+  }, [deviceScope, webRtcVideoElement]);
   const {
     stream: webRtcStream,
     error: webRtcError,
@@ -951,27 +989,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         : 'all',
     sendIceServersInOffer: false,
     allowCodecFallback: false,
+    expectContinuousFrames: false,
     onKeyframeNeeded: requestWebRtcKeyframe,
+    onBeforeDisconnect: preserveWebRtcFrame,
     fetchImpl: sessionFetch,
   });
 
   const restartWebRtc = useCallback(() => {
-    const video = webRtcVideoElement;
-    // Closing the peer or replacing srcObject can clear the decoded frame.
-    // Capture it before either happens and show it until fresh video arrives.
-    if (video && video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0) {
-      const snapshot = document.createElement('canvas');
-      snapshot.width = video.videoWidth;
-      snapshot.height = video.videoHeight;
-      const context = snapshot.getContext('2d');
-      if (context) {
-        context.drawImage(video, 0, 0);
-        video.poster = snapshot.toDataURL('image/png');
-      }
-      video.srcObject = null;
-    }
+    preserveWebRtcFrame();
     restartWebRtcStream();
-  }, [restartWebRtcStream, webRtcVideoElement]);
+  }, [preserveWebRtcFrame, restartWebRtcStream]);
 
   // Media remounts update the restart target without replacing the input socket.
   const restartWebRtcRef = useRef(restartWebRtc);
@@ -1120,6 +1147,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     const onLoadedData = () => markFrame(0);
 
     video.srcObject = webRtcStream;
+    webRtcVideoOwnerRef.current = { video, stream: webRtcStream, scope: deviceScopeRef.current };
     setWebRtcVideoReady(false);
     if (typeof video.requestVideoFrameCallback === 'function') {
       frameCallback = video.requestVideoFrameCallback(onVideoFrame);

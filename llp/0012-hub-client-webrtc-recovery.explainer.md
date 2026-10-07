@@ -63,6 +63,17 @@ Stall detection follows the active video report, so an old report with a high fr
 
 These rules and numbers are the same as in serve-sim's client, with one difference in report selection. When no report advances, HubClient keeps the pinned report once it has an earlier poll to compare with. serve-sim then switches to the report with the highest lifetime frame total, which can be an old, idle report, and that switch resets the stall count [observed: `selectInboundReport` in both `webrtc-playback-stall.ts` files; `webrtc-failure-policy.ts`].
 
+## Playback watchdog
+
+One poll per peer reads stats once a second. The watchdog and the stats panel share that read, and a slow read skips a tick instead of queueing behind it [observed: `startPlaybackStallWatchdog` in `playback-stall-watchdog.ts`, `exclusive-poll.ts`].
+
+- The watchdog judges only a connected peer that has shown a frame, in a visible tab.
+- It resets on `visibilitychange`, and after a poll gap longer than 8 s, because sleep does not always send `visibilitychange`.
+- An idle Android stream may send no frames. serve-emu's scrcpy source repeats no frames by default, while its gRPC screenshot source repeats the last frame every 500 ms. The Android adapter sets `expectContinuousFrames: false`, so an idle stream is not a stall with either source [observed: `useAndroidDevice.ts`; `SCRCPY_DEFAULTS.repeatFrameMs` in serve-emu `scrcpy.ts`, `DEFAULT_IDLE_REPEAT_MS` in `grpc-session.ts`].
+- During automatic recovery, Android keeps the last frame as a poster, but only on the video element that the adapter attached [observed: `preserveWebRtcFrame` in `useAndroidDevice.ts`].
+
+serve-sim's client has the same watchdog [observed: `hooks/playback-stall-watchdog.ts`].
+
 ## Open questions
 
 None at this time.
