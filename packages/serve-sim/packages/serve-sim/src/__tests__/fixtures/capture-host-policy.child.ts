@@ -22,7 +22,7 @@ test("recreating middleware without an upstream restores direct egress for new c
       upstreams.push(deps.upstream);
       return {
         address: "127.0.0.1:9999", portFile: "/tmp/fake-proxy-port",
-        caPem: async () => "test-ca", close: async () => {},
+        caPem: async () => "test-ca", setFields: () => {}, close: async () => {},
       };
     },
     trustCa: async () => {},

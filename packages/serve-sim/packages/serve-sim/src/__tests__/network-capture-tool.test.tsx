@@ -15,6 +15,11 @@ import {
   captureStatusLabel,
   captureControl,
   RelaunchHint,
+  CaptureFieldsMenu,
+  NetworkCaptureTool,
+  CaptureFieldsWarning,
+  chosenFieldsFor,
+  toggleField,
   visibleChangeError,
   formatMs,
   groupByDomain,
@@ -407,9 +412,8 @@ test("body previews report UTF-8 bytes instead of UTF-16 length", () => {
 });
 
 describe("RelaunchHint", () => {
-  test("asks to relaunch open apps once capture is on, and stays quiet while it is off", () => {
-    expect(renderToStaticMarkup(<RelaunchHint capturing />)).toContain("Relaunch apps that were already open");
-    expect(renderToStaticMarkup(<RelaunchHint capturing={false} />)).toBe("");
+  test("asks to relaunch apps that were already open; the panel mounts it only while capturing", () => {
+    expect(renderToStaticMarkup(<RelaunchHint />)).toContain("Relaunch apps that were already open");
   });
 });
 
@@ -433,5 +437,47 @@ describe("visibleChangeError", () => {
     );
     expect(visibleChangeError("Requests could not be cleared.", null)).toBe("Requests could not be cleared.");
     expect(visibleChangeError(null, failed(reason))).toBeNull();
+  });
+});
+
+describe("capture field toggles", () => {
+  test("switches one field and keeps the proxy's order", () => {
+    expect(toggleField([], "response-body")).toEqual(["response-body"]);
+    expect(toggleField(["response-body"], "header")).toEqual(["header", "response-body"]);
+    expect(toggleField(["header", "response-body"], "header")).toEqual(["response-body"]);
+  });
+
+  test("applies a pick only to the simulator it was made for", () => {
+    const choice = { udid: UDID, fields: ["header" as const] };
+    expect(chosenFieldsFor(choice, UDID)).toEqual(["header"]);
+    expect(chosenFieldsFor(choice, "OTHER-UDID")).toBeNull();
+    expect(chosenFieldsFor(null, UDID)).toBeNull();
+  });
+
+  test("offers the fields menu before capture starts, when no filter row shows", () => {
+    const html = renderToStaticMarkup(<NetworkCaptureTool udid={UDID} captureEndpoint={`/network-capture?device=${UDID}`} />);
+    expect(html).toContain('aria-label="What capture keeps"');
+    expect(html).not.toContain("Filter requests");
+  });
+
+  test("puts the fields behind one gear button", () => {
+    const html = renderToStaticMarkup(
+      <CaptureFieldsMenu fields={["query"]} disabled={false} busy={false} onChange={() => {}} />,
+    );
+    expect(html).toContain('aria-label="What capture keeps"');
+    expect(html).toContain('aria-haspopup="listbox"');
+    // serve-sim avoids low-opacity icons.
+    expect(html).toContain("text-[#8e8e93]");
+    expect(html).not.toContain("text-white/60");
+  });
+
+  test("warns only while headers or bodies are kept", () => {
+    expect(renderToStaticMarkup(<CaptureFieldsWarning fields={["query"]} />)).toBe("");
+    const warning = renderToStaticMarkup(<CaptureFieldsWarning fields={["response-body"]} />);
+    // An icon with the warning as its label and tooltip, not a line of text in the layout.
+    expect(warning).toContain('role="img"');
+    // Reachable by keyboard, so the tooltip opens on focus as well as on hover.
+    expect(warning).toContain('tabindex="0"');
+    expect(warning).toContain('aria-label="Headers and bodies can hold credentials and cookies, and are kept in the recording."');
   });
 });

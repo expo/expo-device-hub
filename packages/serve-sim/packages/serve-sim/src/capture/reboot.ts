@@ -5,6 +5,7 @@ import { bootDevice, shutdownDevice } from "../device";
 import { devicesArmedHere, rearmCapabilityLoader } from "../launch-manager";
 import { stateDir } from "../state";
 import { CaptureEnableError, captureRuntime, type CaptureRuntime } from "./runtime";
+import { type CaptureField } from "./fields";
 import { type CaptureMeta } from "./store";
 
 export interface RebootDeps {
@@ -16,9 +17,14 @@ export interface RebootDeps {
   rearm?: (udid: string) => Promise<void>;
 }
 
-type InFlight = { enabled: boolean; promise: Promise<CaptureMeta> };
+type InFlight = { request: string; promise: Promise<CaptureMeta> };
 const inFlight = new Map<string, InFlight>();
-const latestIntent = new Map<string, boolean>();
+const latestRequest = new Map<string, string>();
+
+/** Two reboots with the same key end in the same state, so one can join the other. */
+function rebootRequestKey(enabled: boolean, fields: readonly CaptureField[]): string {
+  return enabled ? `on:${[...fields].sort().join(",")}` : "off";
+}
 
 type RebootRecord = { pid: number; endedAt?: number };
 
@@ -72,17 +78,22 @@ export async function rebootWithCapture(
   udid: string,
   enabled: boolean,
   deps: RebootDeps = {},
+  /** What the new session keeps instead of the server's default; only used when enabling. */
+  fields?: readonly CaptureField[],
 ): Promise<CaptureMeta> {
   const runtime = deps.runtime ?? captureRuntime;
-  latestIntent.set(udid, enabled);
-  // Serialize per device. Same intent joins; opposite intent waits, then runs unless a newer
-  // request asked for the other state while it waited.
+  // Resolved now, so an omitted list and the same list given explicitly share one reboot.
+  const sessionFields = fields ?? runtime.defaultFields();
+  const request = rebootRequestKey(enabled, sessionFields);
+  latestRequest.set(udid, request);
+  // Serialize per device. The same state and fields join; anything else waits, then runs unless a
+  // newer request asked for something else while it waited.
   for (;;) {
     const running = inFlight.get(udid);
     if (!running) break;
-    if (running.enabled === enabled) return running.promise;
+    if (running.request === request) return running.promise;
     await running.promise.catch(() => {});
-    if (latestIntent.get(udid) !== enabled) return runtime.metaFor(udid);
+    if (latestRequest.get(udid) !== request) return runtime.metaFor(udid);
   }
 
   // Loaded when a reboot runs: the CLI imports this module at startup, and the device session
@@ -105,7 +116,7 @@ export async function rebootWithCapture(
       await rearm(udid);
       if (!enabled) return runtime.metaFor(udid);
       try {
-        return await runtime.enableForDevice(udid);
+        return await runtime.enableForDevice(udid, sessionFields);
       } catch (error) {
         if (error instanceof CaptureEnableError) return error.meta;
         throw error;
@@ -114,7 +125,7 @@ export async function rebootWithCapture(
       runtime.setDeviceCaptureEnabled(udid, enabled);
     }
   })();
-  const entry: InFlight = { enabled, promise: attempt };
+  const entry: InFlight = { request, promise: attempt };
   inFlight.set(udid, entry);
   writeRebootRecord(udid, { pid: process.pid });
   try {

@@ -1,5 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createServer, type Server } from "node:http";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
 
@@ -114,4 +116,32 @@ describe("forwardAddonDiagnostics", () => {
     const stderr = await runWithControl((res) => res.writeHead(200, { "content-type": "application/json" }).end('{"ok":true}'), 2);
     expect(stderr).not.toContain("[servesim-capture]");
   }, 20_000);
+});
+
+(hasPython ? describe : describe.skip)("addon fields", () => {
+  test("re-reads the fields file when it changes, and keeps the last fields when it cannot", () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-addon-fields-"));
+    const file = join(dir, "capture-fields");
+    try {
+      writeFileSync(file, "");
+      const script = [
+        "import importlib.util, os, time",
+        `spec = importlib.util.spec_from_file_location("addon", ${JSON.stringify(ADDON)})`,
+        "addon = importlib.util.module_from_spec(spec); spec.loader.exec_module(addon)",
+        "print('start', addon._want('header'), addon._want('response-body'))",
+        `open(${JSON.stringify(file)}, 'w').write('header,response-body')`,
+        "print('changed', addon._want('header'), addon._want('response-body'))",
+        `os.remove(${JSON.stringify(file)})`,
+        "print('missing', addon._want('header'))",
+      ].join("\n");
+      const result = spawnSync("python3", ["-c", script], {
+        encoding: "utf8",
+        env: { ...process.env, SERVE_SIM_CAPTURE_FIELDS: "", SERVE_SIM_CAPTURE_FIELDS_FILE: file },
+      });
+      expect(result.stderr).toBe("");
+      expect(result.stdout.trim().split("\n")).toEqual(["start False False", "changed True True", "missing True"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
