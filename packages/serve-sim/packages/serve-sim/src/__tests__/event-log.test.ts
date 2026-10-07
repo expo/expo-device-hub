@@ -16,6 +16,14 @@ beforeEach(() => {
 });
 
 describe("eventLogEventForAction", () => {
+  test("records app control outcomes without arguments or deep-link secrets", () => {
+    for (const action of ["app.launch", "app.stop", "app.openUrl"]) {
+      const event = eventLogEventForAction(action, { udid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", launchArgs: ["secret"], url: "app://secret" }, { exitCode: 1 });
+      expect(event).toMatchObject({ device: "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE", kind: "app", action: action.slice(4), status: "error" });
+      expect(JSON.stringify(event)).not.toContain("secret");
+    }
+  });
+
   test("records an install", () => {
     expect(eventLogEventForAction("app.install", { udid: "DEVICE-A" }, { exitCode: 0 })).toMatchObject(
       { device: "DEVICE-A", kind: "app", action: "install", summary: "Install app" },
