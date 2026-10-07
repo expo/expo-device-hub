@@ -248,9 +248,9 @@ capture session are ready. Both endpoints return JSON and disable caching.
 
 ### Launching an app
 
-`--launch-app-identifier <bundle-id>` launches an app that is already installed on the
-simulator, before the stream starts. Install it yourself first (`xcrun simctl install`);
-`serve-sim` only launches.
+`--launch-app-identifier <bundle-id>` waits for Simulator boot to finish, then launches
+an already-installed app before the preview becomes ready. Install the app beforehand
+(`xcrun simctl install`). Startup fails if boot, launch or opening the URL fails.
 
 ```sh
 serve-sim --launch-app-identifier host.exp.Exponent \
@@ -265,6 +265,9 @@ Simulator does not ask for confirmation. This matters for `exp://` deep links on
 Launching from `serve-sim` rather than beforehand matters because a second `simctl launch`
 on a running app is a no-op: it neither restarts the app nor applies new arguments. Owning
 the launch is what lets `serve-sim` attach to the process from the start.
+
+See [session startup](https://github.com/expo/expo-device-hub/blob/main/llp/0011-serve-sim-session-startup.explainer.md)
+for the startup order, readiness boundary, and teardown ownership.
 
 ### Camera
 

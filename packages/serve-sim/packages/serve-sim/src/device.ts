@@ -3,7 +3,7 @@ import { execSync } from "child_process";
 import { simctl } from "./simctl";
 
 const SHUTDOWN_TIMEOUT_MS = 60_000;
-const BOOT_TIMEOUT_MS = 120_000;
+export const BOOT_TIMEOUT_MS = 120_000;
 
 /**
  * UDID of a booted simulator, or null if none is booted. Prefers an iOS device

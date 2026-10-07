@@ -47,8 +47,9 @@ import {
 } from "./launch-manager";
 import { parseCaptureFields } from "./capture/fields";
 import { killOwnListeners } from "./ports";
-import { findBootedDevice, resolveDevice } from "./device";
+import { BOOT_TIMEOUT_MS, findBootedDevice, resolveDevice } from "./device";
 import { openSimulatorHost } from "./simulator-host";
+import { simctl } from "./simctl";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
@@ -374,19 +375,14 @@ async function findAvailablePort(start: number): Promise<number> {
 
 async function ensureBooted(udid: string): Promise<void> {
   bootDevice(udid);
-  // `simctl bootstatus -b` blocks until the device's services are actually ready
-  // (not just flipped to "Booted"). Much more reliable than polling `simctl list`.
+  // @ref LLP 0011#boot-is-a-readiness-barrier — Booted can still be starting services; a failed wait stops startup.
   try {
-    execSync(`xcrun simctl bootstatus ${udid} -b`, {
-      encoding: "utf-8",
-      stdio: "pipe",
-      timeout: 60_000,
-    });
-  } catch (err: any) {
-    if (!isDeviceBooted(udid)) {
-      console.error(`Device ${udid} failed to reach booted state: ${err.stderr || err.message}`);
-      process.exit(1);
-    }
+    await simctl(["bootstatus", udid, "-b"], BOOT_TIMEOUT_MS);
+  } catch (error) {
+    const detail = (error as { killed?: boolean }).killed
+      ? `boot did not finish within ${BOOT_TIMEOUT_MS / 1000}s`
+      : `boot did not finish: ${error instanceof Error ? error.message : String(error)}`;
+    throw new Error(`Simulator ${udid} ${detail}`, { cause: error });
   }
 
   // Only clean up a capability loader an earlier session left behind. Arming belongs to
@@ -1772,6 +1768,11 @@ async function startNetworkCapture(
   }));
 }
 
+function printStartupError(message: string, quiet: boolean): void {
+  if (quiet) console.log(JSON.stringify({ error: message }));
+  else console.error(message);
+}
+
 async function serve(
   servePort: number,
   devices: string[],
@@ -1791,10 +1792,8 @@ async function serve(
   } = {},
 ) {
   const quiet = !!options.quiet;
-  // Under --quiet the caller parses stdout, so a failure must be a JSON line there, not bare stderr.
   const failStartup = (message: string): never => {
-    if (quiet) console.log(JSON.stringify({ error: message }));
-    else console.error(message);
+    printStartupError(message, quiet);
     process.exit(1);
   };
   // Boot the target simulators; the preview server streams them in-process
@@ -2372,6 +2371,7 @@ Examples:
       })();
       return captureStopping;
     };
+    // @ref LLP 0011#startup-order — boot and requested app startup precede preview readiness.
     if (!opts.detach) {
       try {
         targets = resolveTargetDevices(devices);
@@ -2435,7 +2435,8 @@ Examples:
           }
         }
       } catch (error) {
-        console.error(error instanceof Error ? error.message : error);
+        if (sessionStopping) return;
+        printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
         await stopNetworkCapture();
         process.exit(1);
       }

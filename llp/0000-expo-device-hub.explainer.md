@@ -109,6 +109,7 @@ The packages are tightly coupled, so one corpus at the repo root covers all of t
 | serve-sim network capture and redaction | [LLP 0005](0005-serve-sim-network-capture.explainer.md) |
 | How Simulator.app forwards scroll (reverse-engineered) | [LLP 0006](0006-serve-sim-scroll-injection.research.md) |
 | serve-sim capability loader | [LLP 0007](0007-serve-sim-capability-loader.explainer.md) |
+| serve-sim CLI startup and app readiness | [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft) |
 | serve-emu scrcpy framing, control packets, `SEMU` metadata | [LLP 0008](0008-serve-emu-protocol.spec.md) |
 | serve-emu hardware H.264 encoder spike | [LLP 0009](0009-serve-emu-hardware-encoder-spike.research.md) |
 | Hub UI rules and tokens | `packages/expo-device-hub/AGENTS.md` |
