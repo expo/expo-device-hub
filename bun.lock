@@ -151,6 +151,13 @@
         "typescript": "~6.0.3",
       },
     },
+    "packages/expo-emulator-capture": {
+      "name": "expo-emulator-capture",
+      "version": "0.0.0",
+      "bin": {
+        "emulator-capture": "src/cli.mjs",
+      },
+    },
     "packages/serve-emu/packages/serve-emu": {
       "name": "serve-emu",
       "version": "0.0.5",
@@ -1444,6 +1451,8 @@
     "expo-constants": ["expo-constants@57.0.5", "", { "dependencies": { "@expo/env": "~2.4.2" }, "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-HVxPZc1uBdqrlcmNvdyO3L107vt/gsCRNGvXrYXWjZqmz1XOvGeUCR7S3MG4wUj4cQw4/WMCp+fcoDIhynJ80A=="],
 
     "expo-device-hub": ["expo-device-hub@workspace:packages/expo-device-hub"],
+
+    "expo-emulator-capture": ["expo-emulator-capture@workspace:packages/expo-emulator-capture"],
 
     "expo-file-system": ["expo-file-system@57.0.1", "", { "peerDependencies": { "expo": "*", "react-native": "*" } }, "sha512-w7/ERvQFrGP2apTO9lDtZ+O6JQIhfakL7+Xqzh+rfMO9B4LB4qwrz+YvLgir8KFRVX64JHBnRuYBVLY1oQZcqw=="],
 
