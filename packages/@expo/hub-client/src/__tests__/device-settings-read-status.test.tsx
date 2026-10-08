@@ -786,6 +786,67 @@ test("iOS: settings polls and visibility refreshes pause until the control socke
   expect(mounted.client().deviceSettings?.appearance).toBe("light");
 }, 15000);
 
+test("iOS: healthy log subscription changes pause polls until replacement authentication", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0);
+  const cached = mounted.client().deviceSettings;
+  for (const changeLogs of [mounted.client().attachLogs, mounted.client().detachLogs]) {
+    server.state.authReady = false;
+    const initialAuth = server.state.authRequests;
+    await act(async () => changeLogs());
+    await waitFor(() => server.state.authRequests > initialAuth);
+    const replacementAuth = server.state.authRequests;
+    const reads = server.reads.length;
+    await act(async () => { server.setHidden(true); server.setHidden(false); await Bun.sleep(8500); });
+    expect(server.state.authRequests).toBe(replacementAuth);
+    expect(server.reads).toHaveLength(reads);
+    expect(mounted.client().deviceSettings).toBe(cached);
+    expect(mounted.client().deviceSettingsStatus).toBe("ready");
+    await act(async () => server.authenticate());
+    await waitFor(() => server.reads.length === reads + 1);
+    expect(mounted.client().deviceSettings).toBe(cached);
+    expect(mounted.client().deviceSettingsStatus).toBe("ready");
+  }
+}, 25000);
+
+test("iOS: replacement authentication refreshes immediately during settings retry backoff", async () => {
+  const server = settingsServer();
+  server.state.mode = "error";
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "error" && server.controls.size > 0);
+  await waitFor(() => server.reads.length === 3, 6500);
+  server.state.authReady = false;
+  const initialAuth = server.state.authRequests;
+  await act(async () => mounted.client().attachLogs());
+  await waitFor(() => server.state.authRequests > initialAuth);
+  server.state.mode = "ready";
+  await act(async () => server.authenticate());
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  expect(server.reads).toHaveLength(4);
+}, 10000);
+
+test("iOS: healthy control replacement discards an active settings reply before authentication", async () => {
+  const server = settingsServer();
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => server.reads.length === 1 && server.controls.size > 0);
+  server.state.authReady = false;
+  const initialAuth = server.state.authRequests;
+  await act(async () => mounted.client().attachLogs());
+  await waitFor(() => server.state.authRequests > initialAuth);
+  await act(async () => server.reply("DEVICE-1", "ready"));
+  expect(mounted.client().deviceSettingsStatus).toBe("loading");
+  expect(mounted.client().deviceSettings).toBeNull();
+  expect(mounted.client().appearance).toBeNull();
+  server.state.night = "no";
+  server.state.mode = "ready";
+  await act(async () => server.authenticate());
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  expect(mounted.client().deviceSettings?.appearance).toBe("light");
+  expect(server.reads).toHaveLength(2);
+});
+
 test("iOS: a reconnect read cannot overwrite a newer completed setting write", async () => {
   const server = settingsServer();
   server.state.mode = "ready";
