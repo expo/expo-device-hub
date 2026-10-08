@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo)
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/scroll-injection-devicehub.md`; links and paths updated)
+**Revised:** 2026-10-08 (idle touch-up scheduling and touch handoff)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -345,4 +345,13 @@ anchor (not center) so long scrolls keep hit-testing the same view.
 
 The `--capture-scroll <udid> [seconds]` subcommand is retained as a diagnostic
 (useful if run from a binary that ever gains the HID entitlements).
-```
+
+**Idle scheduling and touch handoff.** [observed: `HIDInjector.sendScroll`,
+`ScrollGestureIdle`] Scroll injection returns after movement; a cancellable
+task lifts the finger after 100 ms of idle. The serial input queue must not
+await that idle interval. A generation check on the HID actor prevents an
+expired callback from lifting a newer gesture, and explicit touch, multi-touch,
+or swipe-home input first ends the scrolling drag. [observed: `DeviceScreen`,
+`SimulatorView`] Browser wheel bursts send the first delta immediately and
+accumulate subsequent deltas once per display frame; starting a touch cancels
+buffered wheel input.

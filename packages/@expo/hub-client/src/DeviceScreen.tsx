@@ -9,7 +9,7 @@ import {
 } from 'react';
 
 import { streamGeometry } from './orientation';
-import { wheelDeltaToPixels } from './scroll-wheel';
+import { createFrameScrollSender, wheelDeltaToPixels } from './scroll-wheel';
 import { AgentInteractionIndicator } from './AgentInteractionIndicator';
 import { TouchIndicator } from './TouchIndicator';
 import {
@@ -136,6 +136,7 @@ export function DeviceScreen({
   const canMulti = !!sendMultiTouch;
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
+  const scrollSenderRef = useRef<ReturnType<typeof createFrameScrollSender> | null>(null);
 
   // A focused device surface owns physical keyboard input. Track held keys so
   // modifiers never remain stuck in the simulator if focus/window visibility is
@@ -247,6 +248,7 @@ export function DeviceScreen({
     if (event.pointerType === 'mouse' && event.button !== 0) return;
     const p = pointFrom(event.clientX, event.clientY);
     if (!p) return;
+    scrollSenderRef.current?.cancel();
     event.preventDefault();
     surfaceRef.current?.focus({ preventScroll: true });
     try {
@@ -346,13 +348,15 @@ export function DeviceScreen({
   };
 
   // Scroll-to-pan: wheel/trackpad scrolling over the device is forwarded as a
-  // native scroll (see `client.sendScroll`) so iOS pans content exactly as it
-  // would for a physical wheel. A non-passive listener, because React's
+  // scroll (see `client.sendScroll`). Start immediately, then combine wheel
+  // deltas once per frame. A non-passive listener, because React's
   // `onWheel` cannot preventDefault the page scroll. Never fights an
   // in-progress drag on the same surface.
   useEffect(() => {
     const el = surfaceRef.current;
     if (!el || !sendScroll) return;
+    const sender = createFrameScrollSender(sendScroll);
+    scrollSenderRef.current = sender;
     const onWheel = (event: WheelEvent) => {
       if (modeRef.current !== 'none') return;
       const rect = el.getBoundingClientRect();
@@ -364,7 +368,7 @@ export function DeviceScreen({
       // delta as a fraction of the rendered display so the server can rescale
       // to device pixels. Browser wheel deltas already reflect the natural-
       // scroll setting, so the sign passes straight through.
-      sendScroll({
+      sender.send({
         dx: dxPx / rect.width,
         dy: dyPx / rect.height,
         x: clamp01((event.clientX - rect.left) / rect.width),
@@ -374,7 +378,11 @@ export function DeviceScreen({
       event.stopPropagation();
     };
     el.addEventListener('wheel', onWheel, { passive: false });
-    return () => el.removeEventListener('wheel', onWheel);
+    return () => {
+      el.removeEventListener('wheel', onWheel);
+      sender.cancel();
+      scrollSenderRef.current = null;
+    };
   }, [sendScroll]);
 
   // ── display geometry (rotation for non-portrait devices) ──
