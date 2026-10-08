@@ -1841,7 +1841,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     let cancelled = false;
     let polling = false;
-    let hasSuccessfulRead = false;
+    let hasReadAppearance = false;
     let controllers: AbortController[] = [];
     const scope = deviceScope;
 
@@ -1891,7 +1891,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         settleRead('error');
         return;
       }
-      hasSuccessfulRead = true;
       setDeviceSettings((current) => {
         // Keep tracked settings subscribers quiet when an accepted poll changes nothing.
         let next = current ?? {};
@@ -1914,10 +1913,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         appearanceResult?.handled &&
         !appearanceResult.pendingAtStart &&
         deviceSettingVersionsRef.current.appearance === appearanceResult.version &&
-        !tracker.pending.has('appearance') &&
-        (appearanceResult.value === 'light' || appearanceResult.value === 'dark')
+        !tracker.pending.has('appearance')
       ) {
-        setAppearanceState(appearanceResult.value);
+        hasReadAppearance = true;
+        if (appearanceResult.value === 'light' || appearanceResult.value === 'dark') {
+          setAppearanceState(appearanceResult.value);
+        }
       }
       const displaySizeResult = results.find((result) => result.key === 'display-size');
       if (
@@ -1955,11 +1956,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       .catch(() => {});
     const timer = setInterval(
       // TODO: unify these per-setting HTTP reads with iOS's bulk settings/refresh contract when
-      // serve-emu exposes it. Preserve the existing external-change polling until then. Retry all
-      // keys until the first successful read so the one-shot appearance value can recover too.
+      // serve-emu exposes it. Preserve the existing external-change polling until then. Retry
+      // Appearance until its own read succeeds, even when other controls are already ready.
       () =>
         void poll(
-          hasSuccessfulRead ? ANDROID_POLLED_DEVICE_SETTING_KEYS : ANDROID_DEVICE_SETTING_KEYS,
+          hasReadAppearance ? ANDROID_POLLED_DEVICE_SETTING_KEYS : ANDROID_DEVICE_SETTING_KEYS,
         ),
       DEVICE_SETTINGS_POLL_MS,
     );
