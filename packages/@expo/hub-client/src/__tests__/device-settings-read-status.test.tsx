@@ -15,7 +15,7 @@ import { useDeviceClient } from "../useDeviceClient";
 import { useIosDeviceClient } from "../useIosDevice";
 import { createGlobalStubs } from "./test-globals";
 
-type ReadMode = "hold" | "ready" | "empty" | "error" | "malformed" | "partial";
+type ReadMode = "hold" | "ready" | "empty" | "error" | "malformed" | "partial" | "appearance-error";
 type SocketData = { path: string; token: string | null };
 type ReadRequest = {
   path: string;
@@ -92,7 +92,11 @@ function settingsServer() {
             device,
             token,
             reply(mode) {
-              if (mode === "error" || (mode === "partial" && settingPath !== "/api/uimode")) {
+              if (
+                mode === "error" ||
+                (mode === "partial" && settingPath !== "/api/uimode") ||
+                (mode === "appearance-error" && settingPath === "/api/uimode")
+              ) {
                 resolve(Response.json({ error: "Settings unavailable" }, { status: 503 }));
               } else {
                 resolve(
@@ -317,6 +321,30 @@ test("Android: a later poll recovers all initial values after a failed first rea
   expect(mounted.client().deviceSettings?.appearance).toBe("dark");
   expect(mounted.client().deviceSettings?.["text-size"]).toBe("medium");
 });
+
+test("Android: Appearance recovers after a partial read and stops retrying after success", async () => {
+  const server = settingsServer();
+  server.state.mode = "appearance-error";
+  const mounted = await mountClient("android", server.baseUrl("android"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  expect(mounted.client().deviceSettings?.appearance).toBeUndefined();
+  expect(mounted.client().deviceSettings?.network).toBe("on");
+
+  server.state.mode = "ready";
+  server.state.fontScale = 1.3;
+  await waitFor(() => mounted.client().deviceSettings?.["text-size"] === "extra-large", 4000);
+  expect(mounted.client().deviceSettings?.appearance).toBe("dark");
+  expect(mounted.client().appearance).toBe("dark");
+  const appearanceReads = () => server.reads.filter((read) => read.path === "/api/uimode").length;
+  expect(appearanceReads()).toBe(2);
+
+  server.state.fontScale = 1.15;
+  await waitFor(() => mounted.client().deviceSettings?.["text-size"] === "large", 4000);
+  expect(appearanceReads()).toBe(2);
+  expect(mounted.client().deviceSettings?.appearance).toBe("dark");
+  const firstReady = mounted.committed.indexOf("ready");
+  expect(mounted.committed.slice(firstReady).every((status) => status === "ready")).toBe(true);
+}, 9000);
 
 test("Android: unchanged polls preserve settings references for tracked and selector subscribers", async () => {
   const server = settingsServer();
