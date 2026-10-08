@@ -27,11 +27,11 @@ requireE2E("hardware keyboard shift", ready);
 const describeWithSim = ready ? describe : describe.skip;
 
 function cli(...args: string[]): string {
-  return execFileSync("node", [CLI_PATH, ...args], { encoding: "utf8", timeout: 15_000 });
+  return execFileSync("node", [CLI_PATH, ...args], { env: { ...process.env }, encoding: "utf8", timeout: 15_000 });
 }
 
 function simctl(...args: string[]): string {
-  return execFileSync("xcrun", ["simctl", ...args], { encoding: "utf8", stdio: "pipe", timeout: 30_000 });
+  return execFileSync("xcrun", ["simctl", ...args], { env: { ...process.env }, encoding: "utf8", stdio: "pipe", timeout: 30_000 });
 }
 
 describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<skipped>"})`, () => {
@@ -165,6 +165,7 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
   async function startPreview(): Promise<ServeSimDeviceState> {
     const port = await freePortAsync();
     const detach = spawnSync("node", [CLI_PATH, "--detach", "-p", String(port), udid!], {
+      env: { ...process.env },
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "inherit"],
       timeout: 120_000,
@@ -172,7 +173,10 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
     if (detach.status !== 0 || !detach.stdout) {
       throw new Error(`serve-sim --detach failed (exit=${detach.status} signal=${detach.signal})\nstdout: ${detach.stdout}`);
     }
-    return parseDetachState<ServeSimDeviceState>(detach.stdout);
+    const preview = parseDetachState<ServeSimDeviceState>(detach.stdout);
+    const saved = JSON.parse(readFileSync(join(tempState.dir, `server-${udid}.json`), "utf8")) as ServeSimDeviceState;
+    expect(saved.wsUrl).toBe(preview.wsUrl);
+    return preview;
   }
 
   beforeAll(async () => {
@@ -322,6 +326,7 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
   test("tap reports a full input connection pool", async () => {
     for (let index = 0; index < 8; index++) await openSocket();
     const result = spawnSync("node", [CLI_PATH, "tap", "0.5", "0.5", "-d", udid!], {
+      env: { ...process.env },
       encoding: "utf8",
       timeout: 10_000,
     });

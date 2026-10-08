@@ -39,6 +39,7 @@ interface SimHIDHandle {
   buttonHid(page: number, usage: number, phase: ButtonPhase): Promise<void>;
   key(type: KeyType, usage: number): Promise<void>;
   scroll(dx: number, dy: number, anchorX: number, anchorY: number, w: number, hh: number): Promise<void>;
+  cancelScroll(): Promise<void>;
   digitalCrown(delta: number): Promise<void>;
   orientation(orientation: number): Promise<boolean>;
   memoryWarning(): Promise<void>;
@@ -264,6 +265,10 @@ export class NativeHid {
   /** anchorX/anchorY default to screen center when omitted. */
   scroll(dx: number, dy: number, w: number, h: number, anchorX?: number, anchorY?: number): Promise<void> {
     return this.guard("scroll", () => this.handle.scroll(dx, dy, anchorX ?? NaN, anchorY ?? NaN, w, h), undefined);
+  }
+
+  cancelScroll(): Promise<void> {
+    return this.guard("cancelScroll", () => this.handle.cancelScroll(), undefined);
   }
 
   digitalCrown(delta: number): Promise<void> {

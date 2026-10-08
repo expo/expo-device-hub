@@ -181,7 +181,21 @@ describe("capture counts", () => {
       stallSumMs: null,
       pollTicks: null,
       pollLateSumMs: null,
+      surfaceLosses: null,
+      surfaceLostMs: null,
+      rewires: null,
     });
+  });
+
+  test("keeps the surface loss counters, which tell a lost display pipeline from a static screen", () => {
+    const stats = readSenderStats({
+      sessions: [],
+      capture: { screenFrames: 900, idleFrames: 40, surfaceLosses: 1, surfaceLostMs: 1860000, rewires: 1860 },
+    });
+
+    expect(stats.capture?.surfaceLosses).toBe(1);
+    expect(stats.capture?.surfaceLostMs).toBe(1860000);
+    expect(stats.capture?.rewires).toBe(1860);
   });
 
   test("reports null rather than zeros when the counts are absent", () => {

@@ -137,6 +137,117 @@ static void RequestIfAsked(void) {
 
 @end
 
+// The wheel handoff E2E observes UIKit selection and release, not HID acknowledgements.
+@interface FixtureScrollWindow : UIWindow
+@property(nonatomic, strong) NSMutableSet<UITouch *> *contacts;
+@property(nonatomic) NSUInteger began;
+@property(nonatomic) NSUInteger ended;
+@property(nonatomic) NSUInteger cancelled;
+@end
+
+@interface FixtureScrollController : UITableViewController
+@property(nonatomic, strong) NSTimer *stateTimer;
+@property(nonatomic, strong) NSDictionary *lastState;
+- (void)recordState;
+@end
+
+static void RecordScroll(NSString *kind, NSDictionary *data) {
+  NSData *json = [NSJSONSerialization dataWithJSONObject:data options:0 error:NULL];
+  Record(kind, [[NSString alloc] initWithData:json encoding:NSUTF8StringEncoding]);
+}
+
+@implementation FixtureScrollWindow
+
+- (void)sendEvent:(UIEvent *)event {
+  if (event.type == UIEventTypeTouches) {
+    if (!self.contacts) self.contacts = [NSMutableSet set];
+    FixtureScrollController *controller = (FixtureScrollController *)self.rootViewController;
+    for (UITouch *touch in event.allTouches) {
+      NSString *phase;
+      switch (touch.phase) {
+      case UITouchPhaseBegan:
+        phase = @"began";
+        if (![self.contacts containsObject:touch]) self.began++;
+        [self.contacts addObject:touch];
+        break;
+      case UITouchPhaseMoved: phase = @"moved"; break;
+      case UITouchPhaseEnded:
+        phase = @"ended";
+        if ([self.contacts containsObject:touch]) self.ended++;
+        [self.contacts removeObject:touch];
+        break;
+      case UITouchPhaseCancelled:
+        phase = @"cancelled";
+        if ([self.contacts containsObject:touch]) self.cancelled++;
+        [self.contacts removeObject:touch];
+        break;
+      default: continue;
+      }
+      CGPoint point = [touch locationInView:self];
+      NSIndexPath *row = [controller.tableView indexPathForRowAtPoint:[touch locationInView:controller.tableView]];
+      RecordScroll(@"scroll-touch", @{@"phase": phase, @"mono": @(NSProcessInfo.processInfo.systemUptime),
+        @"x": @(point.x / self.bounds.size.width), @"y": @(point.y / self.bounds.size.height),
+        @"row": row ? @(row.row) : NSNull.null});
+    }
+  }
+  [super sendEvent:event];
+  [(FixtureScrollController *)self.rootViewController recordState];
+}
+
+@end
+
+@implementation FixtureScrollController
+
+- (void)viewDidLoad {
+  [super viewDidLoad];
+  self.tableView.rowHeight = 90;
+  [self.tableView registerClass:UITableViewCell.class forCellReuseIdentifier:@"row"];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+  [super viewDidAppear:animated];
+  Record(@"scroll-ready", @"");
+  [self recordState];
+  [self.stateTimer invalidate];
+  __weak FixtureScrollController *weakSelf = self;
+  self.stateTimer = [NSTimer scheduledTimerWithTimeInterval:0.025 repeats:YES block:^(__unused NSTimer *timer) {
+    [weakSelf recordState];
+  }];
+}
+
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return 200; }
+
+- (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
+  UITableViewCell *cell = [tableView dequeueReusableCellWithIdentifier:@"row" forIndexPath:indexPath];
+  cell.textLabel.text = [NSString stringWithFormat:@"Row %ld", (long)indexPath.row];
+  return cell;
+}
+
+- (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+  Record(@"scroll-row", [NSString stringWithFormat:@"%ld", (long)indexPath.row]);
+  [tableView deselectRowAtIndexPath:indexPath animated:NO];
+}
+
+- (void)scrollViewWillBeginDragging:(UIScrollView *)scrollView {
+  Record(@"scroll-pan", @"");
+  [self recordState];
+}
+
+- (void)recordState {
+  FixtureScrollWindow *window = (FixtureScrollWindow *)self.view.window;
+  NSDictionary *state = @{@"offset": @(self.tableView.contentOffset.y), @"contacts": @(window.contacts.count),
+    @"tracking": @(self.tableView.tracking), @"dragging": @(self.tableView.dragging),
+    @"decelerating": @(self.tableView.decelerating), @"pan": @(self.tableView.panGestureRecognizer.state),
+    @"began": @(window.began), @"ended": @(window.ended), @"cancelled": @(window.cancelled)};
+  if ([state isEqualToDictionary:self.lastState]) return;
+  self.lastState = state;
+  RecordScroll(@"scroll-state", state);
+}
+
+- (void)dealloc { [self.stateTimer invalidate]; }
+
+@end
+
 @interface FixtureSceneDelegate : UIResponder <UIWindowSceneDelegate>
 @property(nonatomic, strong) UIWindow *window;
 @end
@@ -146,11 +257,18 @@ static void RequestIfAsked(void) {
 - (void)scene:(UIScene *)scene
     willConnectToSession:(UISceneSession *)session
                  options:(UISceneConnectionOptions *)connectionOptions {
-  self.window = [[UIWindow alloc] initWithWindowScene:(UIWindowScene *)scene];
+  NSArray<NSString *> *arguments = NSProcessInfo.processInfo.arguments;
+  BOOL scrollTest = [arguments containsObject:@"--scroll-test"]
+      && ![arguments containsObject:@"--keyboard-test"]
+      && ![arguments containsObject:@"--input-test"];
+  self.window = [[(scrollTest ? FixtureScrollWindow.class : UIWindow.class) alloc]
+      initWithWindowScene:(UIWindowScene *)scene];
   if ([NSProcessInfo.processInfo.arguments containsObject:@"--keyboard-test"]) {
     self.window.rootViewController = [[FixtureKeyboardController alloc] init];
   } else if ([NSProcessInfo.processInfo.arguments containsObject:@"--input-test"]) {
     self.window.rootViewController = [[FixtureInputController alloc] init];
+  } else if (scrollTest) {
+    self.window.rootViewController = [[FixtureScrollController alloc] init];
   } else {
     self.window.rootViewController = [[UIViewController alloc] init];
   }

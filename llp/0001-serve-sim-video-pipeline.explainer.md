@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/video-pipeline.md`; links and paths updated)
+**Revised:** 2026-10-08
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -55,6 +55,31 @@ recording-plus-WebRTC path uses the accelerated transfer. Neither a
 `CVPixelBuffer` wrapper nor a GPU transfer guarantees that the simulator is
 never delayed by a surface fence. Direct copy and viewer-scale latencies still
 need separate measurements.
+
+## Capture recovery
+
+Callback changes re-rank cached surfaces. Capture reads each descriptor's live
+surface, including the masked-surface fallback, once per second independently
+of those callbacks. Wiring a new descriptor set performs an initial live read.
+A surface that changes without a callback is discovered at the next live read.
+Replacing or dropping a cached surface clears its seed and canvas caches, so a
+replacement with the same seed still reaches capture. [observed:
+`Sources/SimNative/FrameCapture.swift`, `currentSurface()`, `updateCachedSurface(_:for:)`]
+
+Before the first frame, capture retries framebuffer wiring once per second.
+Afterward, a live read confirming at least one second without a selected surface
+starts recovery; retries continue once per second until a surface returns.
+Cached misses between live reads do not advance recovery. Unchanged pixels on
+a static screen do not trigger recovery while its surface is available.
+Capture logs the start and end of a loss. [observed: `Sources/SimNative/FrameCapture.swift`;
+`Sources/StreamingPolicy/FramebufferSurfaceWatch.swift`]
+
+`/webrtc/stats` reports `surfaceLosses`, cumulative `surfaceLostMs`
+(in milliseconds, including an ongoing loss), and `rewires` under `capture`. Loss counters cover
+losses after the first frame; rewires count attempts, including startup retries.
+These counters reset when capture starts. [observed:
+`Sources/StreamingPolicy/FramebufferSurfaceWatch.swift`;
+`Sources/SimNative/CaptureEngine.swift`]
 
 ## WebRTC viewers
 
@@ -142,6 +167,24 @@ the simulator has no new image. Thus 60 output samples per second is a target,
 not a promise of 60 distinct rendered frames. The recorder bounds pending
 frames, pixel buffers, and writer work, and counts coalesced ticks, drops,
 repeats, backpressure, and encode time. Overloaded hosts can miss the target.
+
+### Keyframe contract
+
+The recording encoder sets `kVTCompressionPropertyKey_MaxKeyFrameInterval`
+to 60 submitted frames and `kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration`
+to 1.0 second of presentation time. A source pause can leave a larger gap
+between recorded keyframes; the first resumed sample is a keyframe
+[observed: `Sources/SimNative/NativeVideoRecorder.swift` compression-session
+configuration; `Tests/SimNativeTests/NativeVideoRecorderKeyframeTests.swift`].
+The continuous-output test checks keyframe PTS gaps at most `1.0 + 1.5 / 60`
+seconds, allowing encoder timing tolerance. The pause test requires the first
+sample after a gap longer than one second to be a keyframe [observed:
+`NativeVideoRecorderKeyframeTests.testKeyframesAreAtMostOneSecondApart` and
+`testFirstSampleAfterAPauseLongerThanASecondIsAKeyframe`]. Shorter keyframe
+intervals can reduce decoding work when seeking; they do not determine seek
+precision [observed: [HTML seeking algorithm](https://html.spec.whatwg.org/multipage/media.html#seeking)].
+
+### Output files
 
 Compressed H.264 samples go to `AVAssetWriterInput` with `outputSettings: nil`,
 so the MP4 writer does not encode again. On successful finalization the output
