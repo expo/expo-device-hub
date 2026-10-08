@@ -66,7 +66,7 @@ describe("screen config state", () => {
 
   test("retains hinge state when decoded media reports only dimensions", () => {
     expect(resolveScreenConfigUpdate(
-      { width: 2007, height: 2853, orientation: "landscape_left", hingeAngle: 0 },
+      { width: 2007, height: 2853, orientation: "landscape_left", hingeAngle: 0, physicalOrientation: "portrait" },
       { width: 900, height: 1280 },
       "media",
     )?.config).toEqual({
@@ -74,6 +74,7 @@ describe("screen config state", () => {
       height: 1280,
       orientation: "landscape_left",
       hingeAngle: 0,
+      physicalOrientation: "portrait",
     });
   });
 
@@ -107,6 +108,27 @@ describe("screen config state", () => {
       { width: 2007, height: 2853, hingeAngle: 90, tableMode: true, physicalOrientation: "facedown" },
       "reported",
     )?.config.physicalOrientation).toBe("facedown");
+  });
+
+  test("clears physical orientation when the server no longer reports it", () => {
+    const current = { width: 2007, height: 2853, hingeAngle: 90, physicalOrientation: "portrait" as const };
+    const config = { width: 2007, height: 2853, hingeAngle: 90 };
+    expect(resolveScreenConfigUpdate(current, config, "reported")?.config).not.toHaveProperty("physicalOrientation");
+    expect(resolveScreenConfigUpdate(current, config, "external")?.config).not.toHaveProperty("physicalOrientation");
+  });
+
+  test("clears prior hinge state when a new server reports only screen geometry", () => {
+    const current = {
+      width: 2007, height: 2853, supportsHingeAngle: true, supportsPhysicalOrientation: true,
+      hingeAngle: 90, hingePose: "book" as const, physicalOrientation: "portrait" as const,
+      tableMode: true, tableModeAvailable: true,
+    };
+    const config = { width: 2007, height: 2853 };
+    for (const source of ["reported", "external"] as const) {
+      expect(resolveScreenConfigUpdate(current, config, source)?.config).toEqual(config);
+    }
+    expect(resolveScreenConfigUpdate(current, { width: 900, height: 1280 }, "media")?.config)
+      .toMatchObject({ hingePose: "book", tableMode: true, physicalOrientation: "portrait" });
   });
 
   test("reports a display switch even when both screens have the same dimensions", () => {
