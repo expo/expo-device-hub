@@ -1,5 +1,14 @@
 # expo-device-hub
 
+## 0.15.2
+
+### Patch Changes
+
+- 4822dc0: Keep the Node server running when middleware rejects a POST and cancels its unread body. Return the rejection response and drain the remaining upload without closing the response socket.
+- b2f5247: Release held Android touches when a preview tab disconnects, without lifting another viewer's touches.
+- f78dec6: Internal change: session tokens must not be empty and can now contain only letters, digits, and `-._~`. Other tokens are refused, and the CLI tools throw an error.
+- 5f863e0: Run `avdmanager` and `sdkmanager` on Windows, where they ship as `.bat` wrappers.
+
 ## 0.15.1
 
 ### Patch Changes
