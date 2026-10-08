@@ -2,10 +2,10 @@
 
 **Type:** Research
 **Status:** Active
-**Systems:** ServeSim
+**Systems:** ServeSim, HubClient
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo)
 **Date:** 2026-09-23
-**Revised:** 2026-10-08 (idle touch-up scheduling and touch handoff)
+**Revised:** 2026-10-08 (browser wheel coalescing)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -346,12 +346,9 @@ anchor (not center) so long scrolls keep hit-testing the same view.
 The `--capture-scroll <udid> [seconds]` subcommand is retained as a diagnostic
 (useful if run from a binary that ever gains the HID entitlements).
 
-**Idle scheduling and touch handoff.** [observed: `HIDInjector.sendScroll`,
-`ScrollGestureIdle`] Scroll injection returns after movement; a cancellable
-task lifts the finger after 100 ms of idle. The serial input queue must not
-await that idle interval. A generation check on the HID actor prevents an
-expired callback from lifting a newer gesture, and explicit touch, multi-touch,
-or swipe-home input first ends the scrolling drag. [observed: `DeviceScreen`,
-`SimulatorView`] Browser wheel bursts send the first delta immediately and
-accumulate subsequent deltas once per display frame; starting a touch cancels
-buffered wheel input.
+**Browser wheel coalescing.** [observed: `DeviceScreen`, `SimulatorView`, and
+their `scroll-wheel.ts` helpers] Both previews send the first wheel delta
+immediately, then sum subsequent deltas on each axis once per display frame.
+Starting a touch or cleaning up the preview cancels buffered wheel input.
+This reduces outgoing input messages without delaying the start of scrolling;
+the native receiver still controls HID delivery and scroll gesture release.

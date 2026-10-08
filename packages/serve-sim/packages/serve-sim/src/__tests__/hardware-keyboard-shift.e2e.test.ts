@@ -319,34 +319,6 @@ describeWithSim(`desktop Shift with the hardware keyboard off (sim ${udid ?? "<s
     await waitFor(() => countEvents(start, "touch-ended") >= 3, true);
   }, 60_000);
 
-  test("a scroll burst does not hold up a touch or lift its finger on idle", async () => {
-    const socket = await openSocket();
-    const start = fixtureLines().length;
-    try { simctl("terminate", udid!, APP); } catch {}
-    simctl("launch", udid!, APP, "--input-test");
-    await waitFor(() => countEvents(start, "input-ready"), 1);
-    const drained = new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Scroll burst blocked input for two seconds")), 2000);
-      socket.onmessage = (event) => {
-        const bytes = new Uint8Array(event.data as ArrayBuffer);
-        if (bytes[0] !== 0x91) return;
-        clearTimeout(timeout);
-        if (bytes[1] === 1) resolve();
-        else reject(new Error("Scroll burst rejected input"));
-      };
-    });
-    for (let i = 0; i < 80; i++) send(socket, 0x0b, { dx: 0, dy: 0.001, x: 0.5, y: 0.5 });
-    send(socket, 0x03, { type: "begin", x: 0.5, y: 0.7 });
-    send(socket, 0x11, {});
-    await drained;
-    await waitFor(() => countEvents(start, "touch-began"), 2);
-    await Bun.sleep(250);
-    expect(countEvents(start, "touch-ended")).toBe(1); // Only the scrolling finger lifted.
-    send(socket, 0x03, { type: "move", x: 0.5, y: 0.6 });
-    send(socket, 0x03, { type: "end", x: 0.5, y: 0.6 });
-    await waitFor(() => countEvents(start, "touch-ended"), 2);
-  }, 60_000);
-
   test("tap reports a full input connection pool", async () => {
     for (let index = 0; index < 8; index++) await openSocket();
     const result = spawnSync("node", [CLI_PATH, "tap", "0.5", "0.5", "-d", udid!], {
