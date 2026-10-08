@@ -110,7 +110,7 @@ import {
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
-const DEVICE_SETTINGS_POLL_MS = 5000;
+const DEVICE_SETTINGS_POLL_MS = 8000;
 const DEVICE_SETTINGS_RETRY_MAX_MS = 30_000;
 // serve-sim accepts the upgrade before it admits an input socket, then closes
 // a refused socket at once. On a server without an admission frame, an open
