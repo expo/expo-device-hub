@@ -107,6 +107,8 @@ Android currently polls separate HTTP endpoints to follow external settings chan
 while iOS has a bulk settings request. This transport difference is marked for unification
 in the Android hook. Until the first successful read, Android retries the full settings
 list so a later poll can recover an initial `'error'`, including one-shot appearance.
+Unchanged Android polls preserve the `deviceSettings` reference, so consumers subscribed
+only to settings do not rerender. Changed values and removed keys still notify them.
 
 The read status is independent of video and app activity. Use
 `capabilities.deviceSettings` to determine support, and `deviceSettingsPending` to disable

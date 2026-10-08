@@ -1893,12 +1893,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
       hasSuccessfulRead = true;
       setDeviceSettings((current) => {
-        const next = { ...(current ?? {}) };
+        // Keep tracked settings subscribers quiet when an accepted poll changes nothing.
+        let next = current ?? {};
         for (const result of results) {
           if (!result.handled) continue;
           if (result.pendingAtStart) continue;
           if (deviceSettingVersionsRef.current[result.key] !== result.version) continue;
           if (tracker.pending.has(result.key)) continue;
+          if (result.value === null && !Object.hasOwn(next, result.key)) continue;
+          if (result.value !== null && next[result.key] === result.value) continue;
+          if (next === current) next = { ...next };
           if (result.value === null) delete next[result.key];
           else next[result.key] = result.value;
         }
