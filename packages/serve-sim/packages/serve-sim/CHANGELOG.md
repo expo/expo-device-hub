@@ -1,5 +1,15 @@
 # @expo/serve-sim
 
+## 0.6.2
+
+### Patch Changes
+
+- 19801ba: Recover simulator capture after framebuffer loss or silent surface swaps, with recovery logs and stats.
+- 0a1c7a9: Deliver input rejection codes and reasons reliably before closing the underlying connection, while bounding cleanup for unresponsive clients.
+- 20931f1: Optimize session recording MP4s for network playback so players can load the recording index before downloading the media. Keep the encoder-flush timeout from cancelling MP4 finalization, and report its duration in the recording log. Recording bitrate and resolution are unchanged.
+- dcc46a5: Session recordings now request keyframes every 60 submitted frames or one second of recording time, instead of 120 frames, reducing decoding work when seeking. Source pauses can leave longer gaps; the first resumed frame is a keyframe. A still screen records about 8 MB a minute instead of 4.6; with motion, recordings grow by about 10%.
+- c8a9613: Reduce input delays after wheel scrolling by pacing accumulated scroll movement without waiting for the gesture idle timeout on each input message.
+
 ## 0.6.1
 
 ### Patch Changes
