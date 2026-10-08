@@ -56,8 +56,12 @@ function settingsServer() {
     aborted: 0,
     fontScale: 1,
     night: "yes",
+    iosSettings: {} as DeviceSettings,
+    authReady: true,
+    authRequests: 0,
   };
   const controls = new Set<ServerWebSocket<SocketData>>();
+  const pendingAuth = new Set<ServerWebSocket<SocketData>>();
   let replyDiscovery: (() => void) | undefined;
   const reads: ReadRequest[] = [];
   const pending: ReadRequest[] = [];
@@ -149,7 +153,9 @@ function settingsServer() {
           ui?: { device: string; option?: string };
         };
         if (message.token) {
-          socket.send(JSON.stringify({ ready: true }));
+          state.authRequests++;
+          if (state.authReady) socket.send(JSON.stringify({ ready: true }));
+          else pendingAuth.add(socket);
         } else if (message.sub != null) {
           controls.add(socket);
         } else if (message.ui && message.id != null) {
@@ -172,6 +178,7 @@ function settingsServer() {
                           id: message.id,
                           status: mode === "empty" ? {} : {
                             appearance: state.night === "yes" ? "dark" : "light",
+                            ...state.iosSettings,
                           },
                         },
                 ),
@@ -182,6 +189,7 @@ function settingsServer() {
       },
       close(socket) {
         controls.delete(socket);
+        pendingAuth.delete(socket);
       },
     },
   });
@@ -199,11 +207,21 @@ function settingsServer() {
     setTimeout,
     clearTimeout,
   });
-  stubGlobal("document", { hidden: false, addEventListener() {}, removeEventListener() {} });
+  const pageDocument = Object.assign(new EventTarget(), { hidden: false });
+  stubGlobal("document", pageDocument);
   return {
     state,
     reads,
     controls,
+    setHidden(hidden: boolean) {
+      pageDocument.hidden = hidden;
+      pageDocument.dispatchEvent(new Event("visibilitychange"));
+    },
+    authenticate() {
+      state.authReady = true;
+      for (const socket of pendingAuth) socket.send(JSON.stringify({ ready: true }));
+      pendingAuth.clear();
+    },
     baseUrl: (platform: DevicePlatform) => `${page.origin}/${platform}`,
     hasAllReads(platform: DevicePlatform, device = "DEVICE-1", token?: string) {
       const matching = reads.filter(
@@ -611,6 +629,148 @@ for (const replyTiming of ["before reconnect", "after reconnect", "after repeate
     expect(server.reads).toHaveLength(2);
   }, 9000);
 }
+
+test("iOS: external settings changes update subscribers, while unchanged polls stay quiet", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  server.state.iosSettings = { "reduce-motion": "off" };
+  let status!: DeviceSettingsStatus;
+  let settings: DeviceSettings | null = null;
+  let selected: DeviceSettings | null = null;
+  const currentSettings = () => settings;
+  const selectedSettings = () => selected;
+  const renders = { status: 0, values: 0, selected: 0 };
+  function Status() {
+    status = useDeviceClient().deviceSettingsStatus;
+    renders.status++;
+    return null;
+  }
+  function Values() {
+    settings = useDeviceClient().deviceSettings;
+    renders.values++;
+    return null;
+  }
+  function Selected() {
+    selected = useDeviceClientSelector((client) => client.deviceSettings);
+    renders.selected++;
+    return null;
+  }
+  await act(async () => {
+    renderer = create(
+      <DeviceClientProvider platform="ios" options={{ baseUrl: server.baseUrl("ios"), streamMode: "mjpeg" }}>
+        <Status /><Values /><Selected />
+      </DeviceClientProvider>,
+    );
+  });
+  await waitFor(() => status === "ready");
+  const before = { ...renders };
+  server.state.night = "no";
+  server.state.iosSettings["reduce-motion"] = "on";
+  await waitFor(() => currentSettings()?.appearance === "light", 6500);
+  expect(currentSettings()?.["reduce-motion"]).toBe("on");
+  expect(selectedSettings()).toBe(currentSettings());
+  expect(renders).toEqual({ status: before.status, values: before.values + 1, selected: before.selected + 1 });
+  const cached = currentSettings();
+  const afterChange = { ...renders };
+  const reads = server.reads.length;
+  await waitFor(() => server.reads.length > reads, 6500);
+  await act(async () => { await Bun.sleep(30); });
+  expect(currentSettings()).toBe(cached);
+  expect(selectedSettings()).toBe(cached);
+  expect(renders).toEqual(afterChange);
+}, 16000);
+
+test("iOS: hidden tabs pause settings polls, resume immediately, and remove polling on disable", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  server.setHidden(true);
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().capabilities.deviceSettings);
+  await act(async () => { await Bun.sleep(50); });
+  expect(server.reads).toHaveLength(0);
+  await act(async () => server.setHidden(false));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  const reads = server.reads.length;
+  await act(async () => server.setHidden(true));
+  server.state.night = "no";
+  await act(async () => { await Bun.sleep(5500); });
+  expect(server.reads).toHaveLength(reads);
+  await act(async () => server.setHidden(false));
+  await waitFor(() => mounted.client().deviceSettings?.appearance === "light");
+  await mounted.update({ enabled: false });
+  const disabledReads = server.reads.length;
+  await act(async () => { server.setHidden(true); server.setHidden(false); await Bun.sleep(5500); });
+  expect(mounted.client().deviceSettingsStatus).toBe("idle");
+  expect(server.reads).toHaveLength(disabledReads);
+}, 16000);
+
+test("iOS: settings polls wait for an active read and leave a full interval after it settles", async () => {
+  const server = settingsServer();
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => server.reads.length === 1);
+  await act(async () => { await Bun.sleep(3000); });
+  expect(server.reads).toHaveLength(1);
+  server.state.mode = "ready";
+  await act(async () => server.reply("DEVICE-1", "ready"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  await act(async () => { await Bun.sleep(2500); });
+  expect(server.reads).toHaveLength(1);
+  await waitFor(() => server.reads.length === 2, 4000);
+}, 12000);
+
+test("iOS: a settings poll cannot overwrite a newer completed sidebar write", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  server.state.mode = "hold";
+  await waitFor(() => server.reads.length === 2, 6500);
+  await act(async () => mounted.client().setDeviceSetting("appearance", "light"));
+  await waitFor(() => !mounted.client().deviceSettingsPending.has("appearance"));
+  await act(async () => server.reply("DEVICE-1", "ready"));
+  expect(mounted.client().deviceSettings?.appearance).toBe("light");
+  expect(mounted.client().appearance).toBe("light");
+  expect(mounted.client().deviceSettingsStatus).toBe("ready");
+}, 9000);
+
+test("iOS: failed periodic reads retain cached values and recover without loading flicker", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  const cached = mounted.client().deviceSettings;
+  const before = mounted.committed.length;
+  server.state.mode = "error";
+  await waitFor(() => mounted.client().deviceSettingsStatus === "error", 6500);
+  expect(mounted.client().deviceSettings).toBe(cached);
+  server.state.mode = "ready";
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready", 4000);
+  expect(mounted.client().deviceSettings).toBe(cached);
+  expect(mounted.committed.slice(before)).not.toContain("loading");
+}, 12000);
+
+test("iOS: settings polls and visibility refreshes pause until the control socket authenticates again", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0);
+  server.state.authReady = false;
+  await act(async () => { for (const socket of server.controls) socket.close(); });
+  await waitFor(() => mounted.client().deviceSettingsStatus === "error");
+  const initialAuth = server.state.authRequests;
+  await waitFor(() => server.state.authRequests > initialAuth, 4000);
+  const firstReconnectAuth = server.state.authRequests;
+  await act(async () => mounted.client().attachLogs());
+  await waitFor(() => server.state.authRequests > firstReconnectAuth);
+  const reconnectAuth = server.state.authRequests;
+  await act(async () => { server.setHidden(true); server.setHidden(false); await Bun.sleep(5500); });
+  expect(server.state.authRequests).toBe(reconnectAuth);
+  expect(server.reads).toHaveLength(1);
+  server.state.night = "no";
+  await act(async () => server.authenticate());
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  expect(mounted.client().deviceSettings?.appearance).toBe("light");
+}, 12000);
 
 test("iOS: a reconnect read cannot overwrite a newer completed setting write", async () => {
   const server = settingsServer();
