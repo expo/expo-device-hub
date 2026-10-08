@@ -112,6 +112,16 @@ function DeviceSettingsSummary() {
 Failed refreshes report `'error'` and retain cached values. Use `'ready'` to enable
 controls; recovery restores it without showing the initial loading state again.
 
+Settings also follow changes made inside the device. Visible iOS previews read a
+bulk snapshot five seconds after each successful read, with no overlapping reads.
+Polling pauses while the browser tab is hidden or the control connection is
+interrupted, and refreshes on return. Android continues its existing periodic reads.
+Failed iOS reads retry with increasing delays, capped at 30 seconds; returning to
+the tab or reconnecting refreshes immediately and resets the retry delay.
+`DeviceClientProvider` shares one polling loop across its consumers. Unchanged
+values preserve their references and do not re-render settings subscribers; reads
+that started before a sidebar write cannot overwrite that write.
+
 ### Show the screen
 
 Use `useDeviceScreenClient` with `DeviceScreen`. It follows screen and input changes

@@ -155,6 +155,12 @@ The serve-sim side tracks the [`@expo/serve-sim`](packages/serve-sim) web client
 than shell commands. The client is written against the server in
 [`packages/serve-sim`](packages/serve-sim), in this monorepo.
 
+Device settings track changes made inside the device as well as through the sidebar.
+iOS refreshes a bulk snapshot five seconds after each successful read, pauses while
+the browser tab is hidden or the control connection is interrupted, and refreshes
+on return. `DeviceClientProvider` shares that polling across its consumers; unchanged
+values retain their references so settings subscribers do not re-render.
+
 It lives in its own package (rather than inside the plugin) so the **Expo dashboard
 website** can consume the exact same code to mirror devices in the browser. It is published
 to npm as [`@expo/hub-client`](https://www.npmjs.com/package/@expo/hub-client); see the
