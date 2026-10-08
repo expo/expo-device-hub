@@ -13,7 +13,8 @@
         "node-swift"
       ],
       "ignoreBinaries": [
-        "Sources/ServeSimCapabilityLoader/tests/run.sh"
+        "Sources/ServeSimCapabilityLoader/tests/run.sh",
+        "sips"
       ],
       "entry": [
         "src/index.ts",

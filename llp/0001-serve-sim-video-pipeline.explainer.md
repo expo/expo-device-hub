@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-06 (recording keyframe settings, source pauses and verification contract)
+**Revised:** 2026-10-08
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -55,6 +55,31 @@ recording-plus-WebRTC path uses the accelerated transfer. Neither a
 `CVPixelBuffer` wrapper nor a GPU transfer guarantees that the simulator is
 never delayed by a surface fence. Direct copy and viewer-scale latencies still
 need separate measurements.
+
+## Capture recovery
+
+Callback changes re-rank cached surfaces. Capture reads each descriptor's live
+surface, including the masked-surface fallback, once per second independently
+of those callbacks. Wiring a new descriptor set performs an initial live read.
+A surface that changes without a callback is discovered at the next live read.
+Replacing or dropping a cached surface clears its seed and canvas caches, so a
+replacement with the same seed still reaches capture. [observed:
+`Sources/SimNative/FrameCapture.swift`, `currentSurface()`, `updateCachedSurface(_:for:)`]
+
+Before the first frame, capture retries framebuffer wiring once per second.
+Afterward, a live read confirming at least one second without a selected surface
+starts recovery; retries continue once per second until a surface returns.
+Cached misses between live reads do not advance recovery. Unchanged pixels on
+a static screen do not trigger recovery while its surface is available.
+Capture logs the start and end of a loss. [observed: `Sources/SimNative/FrameCapture.swift`;
+`Sources/StreamingPolicy/FramebufferSurfaceWatch.swift`]
+
+`/webrtc/stats` reports `surfaceLosses`, cumulative `surfaceLostMs`
+(in milliseconds, including an ongoing loss), and `rewires` under `capture`. Loss counters cover
+losses after the first frame; rewires count attempts, including startup retries.
+These counters reset when capture starts. [observed:
+`Sources/StreamingPolicy/FramebufferSurfaceWatch.swift`;
+`Sources/SimNative/CaptureEngine.swift`]
 
 ## WebRTC viewers
 
