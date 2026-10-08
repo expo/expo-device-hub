@@ -221,6 +221,12 @@ export interface DeviceGeoFix {
  */
 export type DeviceLocationCapabilities = false | Readonly<{ clear?: true }>;
 
+/** Text Paste into and Copy from the device app. `false` hides clipboard controls. */
+export type DeviceClipboardCapabilities = false | Readonly<{ paste: boolean; copy: boolean }>;
+
+/** The clipboard action whose result the client shows. */
+export type DeviceClipboardAction = 'paste' | 'copy';
+
 /** One WebRTC telemetry sample, normally collected once per second. */
 export interface DeviceStreamStatsSample {
   atMs: number;
@@ -369,6 +375,8 @@ export interface DeviceCapabilities {
   location: DeviceLocationCapabilities;
   /** Foreground-app permissions that the backend can list and change. */
   permissions: boolean;
+  /** Text clipboard actions, in order with keyboard input. */
+  clipboard: DeviceClipboardCapabilities;
 }
 
 /** How the device answers one permission of the foreground app. */
@@ -681,6 +689,39 @@ export interface DeviceClient {
   /** Read the list again, for example when the section opens. */
   refreshPermissions: () => void;
 
+  /**
+   * Paste text into the focused field of the device app. Keys typed after the call wait until the
+   * text lands. Without `text`, the device pastes its own clipboard, as Command+V does. Rejects
+   * unless `capabilities.clipboard` has `paste`. The client never reads the browser clipboard; the
+   * caller passes its text.
+   */
+  pasteText: (text?: string) => Promise<void>;
+  /**
+   * Press Command+C on the device after all earlier input, and resolve to the text that the app
+   * copied. Rejects when the app copies no new text, and unless `capabilities.clipboard` has
+   * `copy`. The client never writes the browser clipboard.
+   */
+  copyText: () => Promise<string>;
+  /**
+   * Counts the clipboard actions that started. It changes when a Paste or Copy starts, also when
+   * `clipboardPending` keeps its value, so the host page can tell a new action from the previous one.
+   */
+  clipboardActionId: number;
+  /** The latest clipboard action while it is in flight, or null. */
+  clipboardPending: DeviceClipboardAction | null;
+  /**
+   * Why the latest clipboard action failed, cleared when the next one starts. The client and
+   * `DeviceScreen` do not show it, and `DeviceScreen` ignores the rejection of its Command+V paste.
+   * The host page must show it.
+   */
+  clipboardError: string | null;
+  /**
+   * A key that can still be held on the device after the latest Paste or Copy, cleared when the
+   * next one starts. A failed action can also set it. After a good action the text was moved, so
+   * this is not an error. The client and `DeviceScreen` do not show it; the host page must show it.
+   */
+  clipboardWarning: string | null;
+
   /** Backend-supported viewer transport and codec choices; null hides stream controls. */
   streamCapabilities: DeviceStreamCapabilities | null;
   /** Runtime encoder settings, available when `capabilities.streamSettings` lists any keys. */
@@ -823,6 +864,8 @@ export type DeviceScreenClient = Pick<
   | 'cancelInput'
   | 'sendScroll'
   | 'sendKey'
+  | 'pasteText'
+  | 'capabilities'
   | 'screen'
   | 'status'
   | 'error'

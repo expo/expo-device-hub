@@ -1,4 +1,5 @@
 import {
+  type ClipboardEvent as ReactClipboardEvent,
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent,
@@ -21,6 +22,9 @@ import {
 } from './types';
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));
+
+const isPasteShortcut = (event: ReactKeyboardEvent) =>
+  event.code === 'KeyV' && (event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey;
 
 type Point = { x: number; y: number };
 
@@ -131,6 +135,8 @@ export function DeviceScreen({
     sendMultiTouch,
     sendScroll,
     sendKey,
+    pasteText,
+    capabilities,
     cancelInput,
     screen,
     status,
@@ -139,6 +145,7 @@ export function DeviceScreen({
     inputError,
   } = client;
   const canMulti = !!sendMultiTouch;
+  const canPaste = capabilities.clipboard !== false && capabilities.clipboard.paste;
 
   const surfaceRef = useRef<HTMLDivElement | null>(null);
 
@@ -152,6 +159,13 @@ export function DeviceScreen({
     }
     pressedKeysRef.current.clear();
   }, [sendKey]);
+
+  // @ref LLP 0013#clipboard — Cmd+V sends the browser's paste text; without text the device pastes its own clipboard
+  // True from a Cmd+V keydown, whose V the device never gets, until its paste event or V keyup.
+  const pasteShortcutRef = useRef(false);
+  const paste = (text?: string) => {
+    void pasteText(text).catch(() => {});
+  };
 
   const keyboardInputFrom = (
     event: ReactKeyboardEvent<HTMLDivElement>,
@@ -177,6 +191,21 @@ export function DeviceScreen({
       return;
     }
     if (event.nativeEvent.isComposing) return;
+    if (canPaste && event.code === 'KeyV') {
+      if (pasteShortcutRef.current) {
+        // An auto-repeat still belongs to the shortcut. A new press means its keyup was lost.
+        if (event.repeat) {
+          event.preventDefault();
+          return;
+        }
+        pasteShortcutRef.current = false;
+      }
+      if (isPasteShortcut(event)) {
+        // Keep the default action, so that the browser fires `paste` with its clipboard text.
+        if (!event.repeat) pasteShortcutRef.current = true;
+        return;
+      }
+    }
     const input = keyboardInputFrom(event, 'down');
     if (!sendKey(input)) return;
     event.preventDefault();
@@ -185,9 +214,27 @@ export function DeviceScreen({
 
   const onKeyUp = (event: ReactKeyboardEvent<HTMLDivElement>) => {
     const keyId = event.code || event.key;
+    if (canPaste && event.code === 'KeyV' && !pressedKeysRef.current.has(keyId)) {
+      event.preventDefault();
+      // No paste event came before the keyup, so the device pastes its own clipboard.
+      if (pasteShortcutRef.current) paste();
+      pasteShortcutRef.current = false;
+      return;
+    }
     const wasPressed = pressedKeysRef.current.delete(keyId);
     const handled = sendKey(keyboardInputFrom(event, 'up'));
     if (wasPressed || handled) event.preventDefault();
+  };
+
+  const onPaste = (event: ReactClipboardEvent<HTMLDivElement>) => {
+    if (!canPaste) return;
+    const shortcut = pasteShortcutRef.current;
+    pasteShortcutRef.current = false;
+    // Reading the event's data needs no clipboard permission.
+    const text = event.clipboardData?.getData('text/plain') ?? '';
+    if (!text && !shortcut) return;
+    event.preventDefault();
+    paste(text || undefined);
   };
 
   // ── pointer state ──
@@ -260,6 +307,7 @@ export function DeviceScreen({
     setFingers(null);
   }, [sendTouch, sendMultiTouch, altSecondFinger]);
   const cancelBrowserInput = useCallback(() => {
+    pasteShortcutRef.current = false;
     // Retire unfinished queued gestures before their synthetic end can complete them.
     cancelInput?.();
     releasePressedKeys();
@@ -444,6 +492,7 @@ export function DeviceScreen({
         onBlur={cancelBrowserInput}
         onKeyDown={onKeyDown}
         onKeyUp={onKeyUp}
+        onPaste={onPaste}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
