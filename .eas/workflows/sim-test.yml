@@ -22,7 +22,7 @@ defaults:
 jobs:
   sim-test:
     name: Build and test serve-sim
-    runs_on: macos-medium
+    runs_on: macos-large
     image: latest
     steps:
       - uses: eas/checkout
