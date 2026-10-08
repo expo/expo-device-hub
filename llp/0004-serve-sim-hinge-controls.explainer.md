@@ -3,9 +3,9 @@
 **Type:** Explainer
 **Status:** Active
 **Systems:** ServeSim, Hub
-**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich
+**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-07 (hinge-state recording and document history updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -37,9 +37,10 @@ The Table Mode toggle controls the simulator's persistent table state. Tent
 enables it automatically; the other presets disable it.
 
 Confirmed hinge angles, named poses, and Table Mode values reflect successful
-commands in the current serve-sim session. serve-sim does not monitor the live
-hinge sensor for changes made externally in Device Hub. The streamed display
-and its orientation still follow native display readback.
+commands in the current serve-sim session. The preview does not continuously
+follow external hinge changes. Recording performs bounded hinge-angle readback;
+see [confirmed hinge state](#confirmed-hinge-state). The streamed display and
+its orientation still follow native display readback.
 
 Table Mode eligibility requires a known physical orientation, established by
 choosing a preset. An independent rotation invalidates that knowledge because
@@ -127,6 +128,32 @@ The existing CLI uses degrees and keeps its three angle aliases:
 The CLI also accepts an angle, such as `serve-sim hinge 120 -d <udid>`. A command
 waits for an acknowledgement and reports failures instead of assuming that
 writing to the input socket changed the device.
+
+## Confirmed hinge state
+
+`CoreDeviceBridge` caches the angle, physical orientation, and Table Mode for a
+simulator boot. Successful commands establish individual fields; an unavailable
+angle read retains those fields. Reads from an earlier boot or before a newer
+cache update cannot overwrite the newer state.
+
+Direct physical, Table Mode, and screen-rotation commands reconcile the angle
+before sending. If that read is unavailable, freshly successful fields survive
+the first recovered read. A changed angle invalidates older pose fields because
+serve-sim cannot read physical orientation or Table Mode independently. A valid
+read or a successful angle write establishes a new baseline and expires that
+protection. Slider and preset commands avoid an extra preread, but preserve a
+successful Table Mode release if a later step fails.
+
+Recording samples the command cache separately from native motion support.
+When motion readback is supported, it also reads the angle with a one-second
+pause between reads. Those tasks stop with recording. Ordinary iPhones skip
+this path before querying the private motion bridge. Brief external angle
+changes can be missed; external pose or Table Mode changes at an unchanged
+angle remain unobservable. See
+[recording metadata](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata).
+
+[observed: `Sources/SimNative/CoreDeviceBridge.swift`, `Sources/SimNative/HIDInjector.swift`,
+`Sources/SimNative/CaptureEngine.swift`; `Tests/SimNativeTests/CoreDeviceBridgeTests.swift`]
 
 ## APIs inside an iOS app
 
@@ -272,6 +299,8 @@ A session recording follows that same active display. It uses a fixed canvas
 large enough for both native panels, with even dimensions for H.264; the
 smaller panel is letterboxed during fold/unfold. See
 [Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md).
+The manifest records that active panel and any known hinge state; see
+[confirmed hinge state](#confirmed-hinge-state) for readback limits.
 
 The 3D preview retains one model while the active stream changes between the
 cover and inner displays. Pointer input is projected onto the visible active

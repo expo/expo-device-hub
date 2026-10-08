@@ -10,6 +10,8 @@ struct SimDisplayMetadata: Equatable {
     let chromeIdentifier: String?
     let screenType: UInt64?
 
+    var integratedScreenID: UInt32? { screenType == 0 ? screenID : nil }
+
     func applying(_ current: CoreDeviceDisplayState?) -> Self {
         guard let current, current.screenID == screenID,
               let orientation = current.orientation else { return self }
