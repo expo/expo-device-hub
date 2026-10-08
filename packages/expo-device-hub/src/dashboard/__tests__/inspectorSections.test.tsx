@@ -1334,6 +1334,30 @@ test('styles sidebar action buttons like the select pills', () => {
   }
 });
 
+test('disables unavailable device settings while retaining values and the viewer-local frame control', () => {
+  for (const platform of ['ios', 'android'] as const) {
+    for (const status of ['idle', 'loading', 'error', 'ready'] as const) {
+      const client = { ...inspectorClient(platform), deviceSettingsStatus: status };
+      const html = renderToStaticMarkup(
+        <LogSidebar
+          client={client}
+          device={device(platform, platform === 'ios' ? 'ios:iphone-17-pro' : 'android:pixel-10-pro')}
+          showDeviceFrame
+          onShowDeviceFrameChange={() => {}}
+        />,
+      );
+      const appearance = selectMarkup(html, 'Appearance');
+      expect(appearance).toContain('Light');
+      expect(appearance.includes('disabled=""')).toBe(status !== 'ready');
+      const otherControl = platform === 'ios'
+        ? switchMarkup(html, 'Reduce motion')
+        : selectMarkup(html, 'Network');
+      expect(otherControl.includes('disabled=""')).toBe(status !== 'ready');
+      expect(switchMarkup(html, 'Show device frame')).not.toContain('disabled=""');
+    }
+  }
+});
+
 test('disables only the pending Android device setting', () => {
   const client = {
     ...inspectorClient('android'),

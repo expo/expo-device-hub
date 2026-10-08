@@ -168,7 +168,12 @@ function settingsServer() {
                     ? { id: message.id, error: "Settings unavailable" }
                     : mode === "malformed"
                       ? { id: message.id, ok: true }
-                      : { id: message.id, status: mode === "empty" ? {} : { appearance: "dark" } },
+                      : {
+                          id: message.id,
+                          status: mode === "empty" ? {} : {
+                            appearance: state.night === "yes" ? "dark" : "light",
+                          },
+                        },
                 ),
               );
             },
@@ -576,6 +581,36 @@ test("iOS: control reconnects retain settings references and render availability
   expect(selectedSettings()).toBe(cached);
   expect(renders).toEqual({ ...before, status: before.status + 2 });
 }, 9000);
+
+for (const replyTiming of ["before reconnect", "after reconnect", "after repeated reconnects"] as const) {
+  test(`iOS: an interrupted active read is discarded ${replyTiming} and followed by a fresh read`, async () => {
+    const server = settingsServer();
+    const mounted = await mountClient("ios", server.baseUrl("ios"));
+    await waitFor(() => server.reads.length === 1 && server.controls.size > 0);
+    await act(async () => { for (const socket of server.controls) socket.close(); });
+    await waitFor(() => mounted.client().deviceSettingsStatus === "error");
+    if (replyTiming !== "before reconnect") {
+      await waitFor(() => server.controls.size > 0, 4000);
+    }
+    if (replyTiming === "after repeated reconnects") {
+      await act(async () => { for (const socket of server.controls) socket.close(); });
+      await waitFor(() => server.controls.size === 0);
+      await waitFor(() => server.controls.size > 0, 4000);
+    }
+
+    await act(async () => server.reply("DEVICE-1", "ready"));
+    expect(mounted.client().deviceSettingsStatus).toBe("error");
+    expect(mounted.client().deviceSettings).toBeNull();
+    expect(mounted.client().appearance).toBeNull();
+    await waitFor(() => server.reads.length === 2, 4000);
+    server.state.night = "no";
+    await act(async () => server.reply("DEVICE-1", "ready"));
+    await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+    expect(mounted.client().deviceSettings?.appearance).toBe("light");
+    expect(mounted.client().appearance).toBe("light");
+    expect(server.reads).toHaveLength(2);
+  }, 9000);
+}
 
 test("iOS: a reconnect read cannot overwrite a newer completed setting write", async () => {
   const server = settingsServer();
