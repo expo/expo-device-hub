@@ -135,7 +135,9 @@ final class NativeVideoRecorder: @unchecked Sendable {
                 (kVTCompressionPropertyKey_AllowFrameReordering, kCFBooleanFalse! as Any),
                 (kVTCompressionPropertyKey_AverageBitRate, NSNumber(value: max(1, bitrate)) as Any),
                 (kVTCompressionPropertyKey_ExpectedFrameRate, NSNumber(value: 60) as Any),
-                (kVTCompressionPropertyKey_MaxKeyFrameInterval, NSNumber(value: 120) as Any),
+                // @ref LLP 0001#keyframe-contract — limit keyframe spacing by submitted frames and media time.
+                (kVTCompressionPropertyKey_MaxKeyFrameInterval, NSNumber(value: 60) as Any),
+                (kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, NSNumber(value: 1.0) as Any),
             ] {
                 let result = VTSessionSetProperty(created, key: key, value: value as CFTypeRef)
                 guard result == noErr else {
