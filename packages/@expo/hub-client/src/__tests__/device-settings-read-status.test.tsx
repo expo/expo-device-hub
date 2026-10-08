@@ -50,7 +50,15 @@ afterEach(async () => {
 // Exercise the real fetch/WebSocket paths. Only the browser globals needed to mount the hooks
 // are supplied here; neither DeviceClient nor its request helpers are replaced.
 function settingsServer() {
-  const state = { mode: "hold" as ReadMode, aborted: 0, fontScale: 1, night: "yes" };
+  const state = {
+    mode: "hold" as ReadMode,
+    discovery: "ready" as "ready" | "hold" | "error",
+    aborted: 0,
+    fontScale: 1,
+    night: "yes",
+  };
+  const controls = new Set<ServerWebSocket<SocketData>>();
+  let replyDiscovery: (() => void) | undefined;
   const reads: ReadRequest[] = [];
   const pending: ReadRequest[] = [];
   const register = (read: ReadRequest) => {
@@ -74,13 +82,20 @@ function settingsServer() {
         return new Response(null, { status: 400 });
       }
       if (url.pathname === "/ios/api") {
-        return Response.json({
+        const response = () => Response.json({
           url: `${url.origin}/ios/helper/${device}`,
           device,
           basePath: "/ios",
           proxyHelpers: true,
           execToken: "exec-token",
         });
+        if (state.discovery === "error") return new Response(null, { status: 503 });
+        if (state.discovery === "hold") {
+          return new Promise<Response>((resolve) => {
+            replyDiscovery = () => resolve(response());
+          });
+        }
+        return response();
       }
       if (url.pathname === "/android/api") return Response.json({ screenRecording: null });
       const settingPath = url.pathname.replace(/^\/android/, "");
@@ -130,10 +145,13 @@ function settingsServer() {
         const message = JSON.parse(String(data)) as {
           token?: string;
           id?: number;
+          sub?: number;
           ui?: { device: string; option?: string };
         };
         if (message.token) {
           socket.send(JSON.stringify({ ready: true }));
+        } else if (message.sub != null) {
+          controls.add(socket);
         } else if (message.ui && message.id != null) {
           if (message.ui.option) {
             socket.send(JSON.stringify({ id: message.id, ok: true }));
@@ -157,9 +175,13 @@ function settingsServer() {
           });
         }
       },
+      close(socket) {
+        controls.delete(socket);
+      },
     },
   });
   stopServer = () => {
+    replyDiscovery?.();
     for (const read of pending.splice(0)) read.reply("error");
     server.stop(true);
   };
@@ -176,6 +198,7 @@ function settingsServer() {
   return {
     state,
     reads,
+    controls,
     baseUrl: (platform: DevicePlatform) => `${page.origin}/${platform}`,
     hasAllReads(platform: DevicePlatform, device = "DEVICE-1", token?: string) {
       const matching = reads.filter(
@@ -430,7 +453,7 @@ test("Android: unchanged polls preserve settings references for tracked and sele
   });
 }, 16000);
 
-test("Android: background polls update values without rerendering status-only subscribers and retain them on failure", async () => {
+test("Android: availability changes only on failure and recovery, retaining cached settings", async () => {
   const server = settingsServer();
   server.state.mode = "ready";
   let status!: DeviceSettingsStatus;
@@ -469,7 +492,104 @@ test("Android: background polls update values without rerendering status-only su
   await act(async () => {
     await Bun.sleep(30);
   });
-  expect(status).toBe("ready");
+  expect(status).toBe("error");
   expect(currentSettings()?.["text-size"]).toBe("extra-large");
-  expect(renders).toBe(before);
-}, 10000);
+  expect(renders).toBe(before + 1);
+  const cached = currentSettings();
+  const failedReads = server.reads.length;
+  await waitFor(() => server.reads.length > failedReads, 4000);
+  await act(async () => { await Bun.sleep(30); });
+  expect(renders).toBe(before + 1);
+  server.state.mode = "ready";
+  await waitFor(() => status === "ready", 4000);
+  expect(currentSettings()).toBe(cached);
+  expect(renders).toBe(before + 2);
+}, 16000);
+
+test("iOS: settings report loading during discovery and recover after discovery fails", async () => {
+  const server = settingsServer();
+  server.state.discovery = "hold";
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  expect(mounted.client().capabilities.deviceSettings).toBe(false);
+  expect(mounted.client().deviceSettingsStatus).toBe("loading");
+  await waitFor(() => mounted.client().deviceSettingsStatus === "error", 4000);
+  server.state.discovery = "ready";
+  server.state.mode = "ready";
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready", 4000);
+}, 9000);
+
+test("iOS: an initial settings failure retries without returning to loading", async () => {
+  const server = settingsServer();
+  server.state.mode = "error";
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "error");
+  const firstError = mounted.committed.length;
+  server.state.mode = "ready";
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready", 4000);
+  expect(mounted.committed.slice(firstError)).not.toContain("loading");
+});
+
+test("iOS: control reconnects retain settings references and render availability only on transitions", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  let status!: DeviceSettingsStatus;
+  let settings: DeviceSettings | null = null;
+  let selected: DeviceSettings | null = null;
+  const currentSettings = () => settings;
+  const selectedSettings = () => selected;
+  const renders = { status: 0, values: 0, selected: 0 };
+  function Status() {
+    status = useDeviceClient().deviceSettingsStatus;
+    renders.status++;
+    return null;
+  }
+  function Values() {
+    settings = useDeviceClient().deviceSettings;
+    renders.values++;
+    return null;
+  }
+  function Selected() {
+    selected = useDeviceClientSelector((client) => client.deviceSettings);
+    renders.selected++;
+    return null;
+  }
+  await act(async () => {
+    renderer = create(
+      <DeviceClientProvider platform="ios" options={{ baseUrl: server.baseUrl("ios"), streamMode: "mjpeg" }}>
+        <Status /><Values /><Selected />
+      </DeviceClientProvider>,
+    );
+  });
+  await waitFor(() => status === "ready" && server.controls.size > 0);
+  const cached = currentSettings();
+  const before = { ...renders };
+  server.state.mode = "error";
+  await act(async () => { for (const socket of server.controls) socket.close(); });
+  await waitFor(() => status === "error");
+  await waitFor(() => server.reads.length > 1, 4000);
+  expect(currentSettings()).toBe(cached);
+  expect(selectedSettings()).toBe(cached);
+  expect(renders).toEqual({ ...before, status: before.status + 1 });
+  server.state.mode = "ready";
+  await waitFor(() => status === "ready", 4000);
+  expect(currentSettings()).toBe(cached);
+  expect(selectedSettings()).toBe(cached);
+  expect(renders).toEqual({ ...before, status: before.status + 2 });
+}, 9000);
+
+test("iOS: a reconnect read cannot overwrite a newer completed setting write", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0);
+  const initialReads = server.reads.length;
+  server.state.mode = "hold";
+  await act(async () => { for (const socket of server.controls) socket.close(); });
+  await waitFor(() => server.reads.length > initialReads, 4000);
+  await act(async () => mounted.client().setDeviceSetting("appearance", "light"));
+  await waitFor(() => !mounted.client().deviceSettingsPending.has("appearance"));
+  await act(async () => server.reply("DEVICE-1", "ready"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  expect(mounted.client().deviceSettings?.appearance).toBe("light");
+  expect(mounted.client().appearance).toBe("light");
+});
