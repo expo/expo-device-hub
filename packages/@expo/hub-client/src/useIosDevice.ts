@@ -1429,6 +1429,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
       configUpdatesReadyRef.current = false;
+      // Pause reads until the replacement control socket authenticates.
+      deviceSettingsReadRef.current?.invalidate();
       if (retryTimer) clearTimeout(retryTimer);
       try {
         ws?.close();
