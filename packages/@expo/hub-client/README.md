@@ -91,29 +91,24 @@ Status can be `'idle'`, `'connecting'`, `'streaming'` or `'error'`. Android also
 
 ### Read device settings
 
-Read `deviceSettingsStatus` alongside `deviceSettings` to distinguish the initial
-settings request from a failed read:
+`deviceSettingsStatus` tracks the initial settings read on both platforms, independently
+of app activity. Reads time out after five seconds; `'ready'` can include empty settings.
 
-- `'idle'`: no active settings endpoint is available yet.
-- `'loading'`: the initial read for this device and connection is pending.
-- `'ready'`: a read completed, including an empty response with no usable controls.
-- `'error'`: the initial read failed or timed out.
+```tsx
+import { useDeviceClient } from '@expo/hub-client';
 
-Both backends use the same settings-read status lifecycle and bound reads to five seconds.
-A different device or connection configuration starts a fresh read. Once a read succeeds,
-a failed background refresh keeps the last successful values and `'ready'` status.
+function DeviceSettingsSummary() {
+  const { deviceSettingsStatus, deviceSettings } = useDeviceClient();
+  if (deviceSettingsStatus === 'idle') return null;
+  if (deviceSettingsStatus === 'loading') return <span>Loading settings…</span>;
+  if (deviceSettingsStatus === 'error') return <span>Settings unavailable</span>;
 
-Android currently polls separate HTTP endpoints to follow external settings changes,
-while iOS has a bulk settings request. This transport difference is marked for unification
-in the Android hook. Until the first successful read, Android retries the full settings
-list so a later poll can recover an initial `'error'`, including one-shot appearance.
-Unchanged Android polls preserve the `deviceSettings` reference, so consumers subscribed
-only to settings do not rerender. Changed values and removed keys still notify them.
+  return <span>Appearance: {deviceSettings?.appearance ?? 'Unavailable'}</span>;
+}
+```
 
-The read status is independent of video and app activity. Use
-`capabilities.deviceSettings` to determine support, and `deviceSettingsPending` to disable
-individual controls while writes are in progress. The consuming component decides how
-to render loading and unavailable states.
+Successful settings stay available during refresh failures. Unchanged Android polls
+preserve the settings reference, so settings-only subscribers do not rerender.
 
 ### Show the screen
 
