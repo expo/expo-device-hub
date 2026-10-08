@@ -338,6 +338,8 @@ Requires [mitmproxy](https://mitmproxy.org/) on the host. Relaunch apps after en
 Captured requests go direct unless `--network-capture-proxy http://host:port` names an upstream HTTP
 proxy. Basic proxy authentication is supported with
 `--network-capture-proxy http://user:password@host:port`. Set `none` to send captured traffic direct.
+Configured upstreams require the preview server, so `--detach` and `--no-preview` are rejected.
+Omitting the option or using `none` remains allowed in those modes.
 macOS proxy settings, PAC files, and auto-discovery are not read.
 
 Embedded middleware mounts share one capture runtime and upstream policy per process. Creating a

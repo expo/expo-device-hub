@@ -60,6 +60,32 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
     }
   });
 
+  test.each(["--detach", "--no-preview"])("rejects configured upstreams with %s without exposing credentials", async (mode) => {
+    for (const proxy of ["http://proxy:8899", "http://user:cli-secret@proxy:8899"]) {
+      const { code, stderr } = await runCli(["--network-capture-proxy", proxy, mode]);
+      expect(code).toBe(1);
+      expect(stderr).toContain("--network-capture-proxy needs the preview server");
+      expect(stderr).not.toContain("cli-secret");
+    }
+  });
+
+  test.each(["--detach", "--no-preview"])("quiet upstream rejection reports JSON with %s", async (mode) => {
+    const { code, stdout, stderr } = await runCli(["--quiet", "--network-capture-proxy", "http://user:cli-secret@proxy:8899", mode]);
+    expect(code).toBe(1);
+    expect(JSON.parse(stdout)).toEqual({ error: expect.stringContaining("--network-capture-proxy needs the preview server") });
+    expect(stdout + stderr).not.toContain("cli-secret");
+  });
+
+  test.each(["--detach", "--no-preview"])("allows omitted or explicitly direct upstream with %s", async (mode) => {
+    for (const proxyArgs of [[], ["--network-capture-proxy", "none"]]) {
+      // This later validation stops before device selection and proves the upstream check allowed it.
+      const { code, stderr } = await runCli([...proxyArgs, mode, "--require-token"]);
+      expect(code).toBe(1);
+      expect(stderr).toContain("--require-token needs the preview server");
+      expect(stderr).not.toContain("--network-capture-proxy needs");
+    }
+  });
+
   test("rejects an empty app identifier", async () => {
     const { code, stderr } = await runCli(["--launch-app-identifier", ""]);
     expect(code).toBe(1);

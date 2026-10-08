@@ -46,6 +46,13 @@ All captured destinations use the configured proxy, so it must also be able to r
 destinations the app uses [observed: `src/capture/upstream.ts` `parseCaptureProxy`;
 `src/capture/mitm-engine.ts` `startMitmProxyAttempt`].
 
+A configured upstream requires the preview server. The CLI rejects it with
+`--detach` or `--no-preview` before device operations because those modes re-execute
+stream helpers without the upstream option; a later capture there would go direct.
+Omitting the option or using `none` remains allowed in those modes. Credentials
+are not copied into helper arguments [confirmed: Gabe Debes, 2026-10-08;
+observed: `src/index.ts` CLI validation; `src/stream-runtime-args.ts` `streamHelperArgs`].
+
 mitmproxy uses absolute-form requests for plain HTTP and CONNECT for HTTPS. An upstream connection
 or authentication failure fails the captured request; it does not fall back to direct traffic
 [observed: `src/capture/__tests__/upstream-mitmdump.test.ts`].

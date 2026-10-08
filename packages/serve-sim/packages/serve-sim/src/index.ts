@@ -2229,9 +2229,16 @@ Examples:
       process.exit(1);
     }
     try {
-      captureRuntime.setUpstream(parseCaptureProxy(opts.networkCaptureProxy));
+      const upstream = parseCaptureProxy(opts.networkCaptureProxy);
+      if (upstream !== null && (opts.detach || opts.preview === false)) {
+        throw new Error(
+          "--network-capture-proxy needs the preview server, so drop --detach/--no-preview. " +
+            "Their stream helpers would capture without it.",
+        );
+      }
+      captureRuntime.setUpstream(upstream);
     } catch (error) {
-      console.error(error instanceof Error ? error.message : String(error));
+      printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
       process.exit(1);
     }
     if (opts.transport !== "http" && opts.transport !== "webrtc") {
