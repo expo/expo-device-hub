@@ -2357,7 +2357,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           gridStateToken(execToken, { requirePreviewToken, loopbackOnly: options?.loopbackOnly }),
           () => enableNetworkCaptureForStartedDevice(udid, networkCapture),
         ).then((error) => {
-          if (res.writableEnded) return;
+          if (res.writableEnded || res.destroyed) return;
           if (error) {
             res.writeHead(500, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: false, error }));
@@ -2365,6 +2365,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
             res.writeHead(200, { "Content-Type": "application/json" });
             res.end(JSON.stringify({ ok: true }));
           }
+        }).catch((error: unknown) => {
+          if (res.writableEnded || res.destroyed) return;
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, error: error instanceof Error ? error.message : String(error) }));
         });
       });
       return;

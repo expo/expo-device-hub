@@ -57,6 +57,11 @@ CLI action, `src/middleware.ts` `simMiddleware`]. Cleanup uses the unvalidated p
 so a caller file removed after startup cannot prevent managed-library teardown
 [observed: `src/launch-manager.ts` cleanup calls to `additionalDylibs`].
 
+If a caller file disappears before a later grid start or between boot and bootstatus,
+the start route returns a JSON error with HTTP 500 and leaves the preview process alive
+[observed: `src/middleware.ts` grid start rejection handler;
+`src/__tests__/grid-start-dylibs.test.ts` Node regressions].
+
 Entries retain their path characters, including whitespace; only empty entries
 are discarded. Cleanup preserves explicitly requested caller paths even when
 they overlap a managed startup image or share the capability loader's filename
