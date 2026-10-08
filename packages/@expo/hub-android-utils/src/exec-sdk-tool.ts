@@ -33,10 +33,13 @@ export function isBatchFile(toolPath: string): boolean {
  * which re-expand their arguments with delayed expansion on) from acting on
  * `%`, `!`, `^`, `"` and line breaks, and no package, device profile or AVD
  * name contains them, so arguments with those are rejected instead of escaped.
+ * A trailing `\` is rejected too: quoted, it becomes `"x\"`, which `cmd.exe`
+ * reads as intended but `java.exe` behind the wrapper reads as a literal quote,
+ * so the arguments after it would split in the wrong places.
  */
 export function buildBatchCommand(toolPath: string, args: string[]): string {
   for (const arg of args) {
-    if (/[%!^"\r\n]/.test(arg)) {
+    if (/[%!^"\r\n]|\\$/.test(arg)) {
       throw new Error(`[android-utils] Refusing to pass ${JSON.stringify(arg)} to cmd.exe.`);
     }
   }
