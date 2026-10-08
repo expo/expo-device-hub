@@ -107,8 +107,7 @@ function DeviceSettingsSummary() {
 }
 ```
 
-Successful settings stay available during refresh failures. Unchanged Android polls
-preserve the settings reference, so settings-only subscribers do not rerender.
+Successful settings stay available during refresh failures.
 
 ### Show the screen
 
