@@ -749,6 +749,20 @@ test("iOS: failed periodic reads retain cached values and recover without loadin
   expect(mounted.committed.slice(before)).not.toContain("loading");
 }, 12000);
 
+test("iOS: repeated settings failures back off and visibility restores a prompt refresh", async () => {
+  const server = settingsServer();
+  server.state.mode = "error";
+  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "error");
+  await waitFor(() => server.reads.length >= 2, 4000);
+  await act(async () => { await Bun.sleep(2200); });
+  expect(server.reads).toHaveLength(2);
+  server.state.mode = "ready";
+  await act(async () => { server.setHidden(true); server.setHidden(false); });
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  expect(server.reads).toHaveLength(3);
+}, 9000);
+
 test("iOS: settings polls and visibility refreshes pause until the control socket authenticates again", async () => {
   const server = settingsServer();
   server.state.mode = "ready";
