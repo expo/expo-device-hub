@@ -29,7 +29,9 @@ if (existsSync(join(dir, "error"))) {
   process.exit(1);
 }
 if (args.length === 7) writeFileSync(join(dir, "night"), args[6]);
-else console.log("Night mode: " + readFileSync(join(dir, "night"), "utf8"));
+else console.log(existsSync(join(dir, "output"))
+  ? readFileSync(join(dir, "output"), "utf8")
+  : "Night mode: " + readFileSync(join(dir, "night"), "utf8"));
 `,
         { mode: 0o755 },
       );
@@ -90,7 +92,7 @@ else console.log("Night mode: " + readFileSync(join(dir, "night"), "utf8"));
   afterEach(async () => {
     await app?.stop();
     await Promise.all(
-      ["night", "commands", "started", "hold", "error"].map((name) =>
+      ["night", "commands", "started", "hold", "error", "output"].map((name) =>
         rm(join(dir, name), { force: true }),
       ),
     );
@@ -131,6 +133,25 @@ else console.log("Night mode: " + readFileSync(join(dir, "night"), "utf8"));
       ["-s", "emulator-test", "shell", "cmd", "uimode", "night"],
     ]);
   });
+
+  test.each(["GET", "POST"])(
+    "%s rejects unreadable night mode output and recovers",
+    async (method) => {
+      await writeFile(join(dir, "output"), "Unexpected ADB output");
+      const response = await request(method, method === "POST" ? { night: "yes" } : undefined);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        ok: false,
+        error: "Could not parse uimode output: Unexpected ADB output",
+      });
+
+      await rm(join(dir, "output"));
+      expect(await (await request()).json()).toEqual({
+        ok: true,
+        night: method === "POST" ? "yes" : "no",
+      });
+    },
+  );
 
   test("rejects invalid modes before invoking ADB", async () => {
     for (const body of [{ night: "dark" }, { night: true }, {}, null, ["yes"]]) {

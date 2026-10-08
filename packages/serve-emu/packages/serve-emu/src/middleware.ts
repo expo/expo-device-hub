@@ -289,11 +289,15 @@ function combineAbortSignals(
 const middlewareFailure = (error: string, status: number): Response =>
   Response.json({ ok: false, error }, { status });
 
-const uiModeResponse = ({ mode }: NightModeStatus): Response =>
-  Response.json({
+const uiModeResponse = ({ mode, raw }: NightModeStatus): Response => {
+  if (mode === "unknown") {
+    return middlewareFailure(`Could not parse uimode output: ${raw}`, 400);
+  }
+  return Response.json({
     ok: true,
     night: mode === "dark" ? "yes" : mode === "light" ? "no" : mode,
   });
+};
 
 const middlewareRequestFailure = (error: unknown): Response =>
   error instanceof HttpBodyError
