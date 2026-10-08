@@ -49,6 +49,7 @@ import {
 import { useArgentInteractions } from './dashboard/useArgentInteraction';
 import { useNewDeviceOptions } from './dashboard/useNewDeviceOptions';
 import { SidebarOverlay } from './dashboard/SidebarOverlay';
+import { RightSidebar } from './dashboard/RightSidebar';
 import { useSidebarLayout } from './dashboard/useSidebarLayout';
 import {
   androidStreamModeAvailability,
@@ -397,11 +398,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           }
         />
       )}
-      <AnimatedDockedSidebar
-        side="right"
+      <RightSidebar
         width={logsWidth}
-        open={sidebars.rightDocked}
-        sidebarOpen={sidebars.rightOpen}
+        open={sidebars.rightOpen}
+        overlay={sidebars.containerWidth < logsWidth + MIN_STREAM_WIDTH}
+        topmost={sidebars.lastOpened === 'right' || !sidebars.leftOverlay}
+        onDismiss={sidebars.closeRight}
         resizing={resizing}>
         <LogSidebar
           device={selected}
@@ -418,7 +420,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
-      </AnimatedDockedSidebar>
+      </RightSidebar>
 
       <SidebarOverlay
         side="left"
@@ -440,29 +442,6 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onToggle={sidebars.closeLeft}
           platform={platform}
           width={sidebarWidth}
-        />
-      </SidebarOverlay>
-
-      <SidebarOverlay
-        side="right"
-        open={sidebars.rightOverlay}
-        sidebarOpen={sidebars.rightOpen}
-        topmost={sidebars.lastOpened === 'right' || !sidebars.leftOverlay}
-        onDismiss={sidebars.closeRight}>
-        <LogSidebar
-          device={selected}
-          client={client}
-          showDeviceFrame={showDeviceFrame}
-          onShowDeviceFrameChange={setShowDeviceFrame}
-          streamMode={streamMode}
-          httpCodec={httpCodec}
-          streamModeAvailability={selectedStreamModeAvailability}
-          onStreamModeChange={handleStreamModeChange}
-          onHttpCodecChange={setHttpCodec}
-          onShutdown={selected ? () => handleShutdown(selected) : undefined}
-          onRemove={selected ? () => handleRemove(selected) : undefined}
-          onToggle={sidebars.closeRight}
-          width={logsWidth}
         />
       </SidebarOverlay>
 
