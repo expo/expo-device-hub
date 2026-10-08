@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-06 (checked against the code at 5b273a8f; added the 3D per-panel feeds, the Cache screen on fold and Preview size rows, and the one-shot hinge readback; removed a local Xcode path) · 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -15,7 +15,7 @@ orientation. Three shortcuts below the phone select Fully folded, Partially open
 and Fully open. At the top of **Simulator** settings in the Tools sidebar, the
 Fold pose dropdown offers those same options plus Laptop and Tent. Hinge angle
 and Table Mode follow as standard settings rows, with the decimal angle input
-beside the slider. Partially open uses Device Hub's Book pose.
+beside the slider. Partially open uses the Book pose of Xcode's Device Hub.
 Both control locations share the same pending and confirmed state.
 
 | Pose | Hinge angle |
@@ -39,18 +39,30 @@ enables it automatically; the other presets disable it.
 Confirmed hinge angles, named poses, and Table Mode values reflect successful
 commands in the current serve-sim session. serve-sim does not monitor the live
 hinge sensor for changes made externally in Device Hub. The streamed display
-and its orientation still follow native display readback.
+and its orientation still follow native display readback. serve-sim reads the
+live hinge angle once in two cases only: a face-down request before this
+session has confirmed an angle, and recovery after a failed hinge command. The
+recovery also restores the last successful native sends for Table Mode and
+physical orientation [observed: `queueHingeControl` in `src/device-session.ts`;
+`CoreDeviceBridge.hingeState` in `Sources/SimNative/CoreDeviceBridge.swift`].
 
 Table Mode eligibility requires a known physical orientation, established by
-choosing a preset. An independent rotation invalidates that knowledge because
-its screen orientation can differ from physical orientation. Choose a preset
+choosing a preset or by the `physical` command below [observed:
+`queueHingeControl` in `src/device-session.ts`]. An independent rotation
+invalidates that knowledge because its screen orientation can differ from
+physical orientation. Choose a preset
 again to restore Table Mode eligibility after rotating. Angle adjustments keep
 the known physical orientation and update eligibility for the new angle.
 
 Duo defaults to **3D**. The **Preview mode** selector in Simulator settings
 switches between 2D and 3D and remembers the choice in the browser. The 3D view
-loads Apple's `V68.usdz` from a local Xcode installation, with the live stream
-on its cover or inner display. Folding, unfolding, and
+loads Apple's `V68.usdz` from a local Xcode installation, with a live feed for
+each display on its cover and inner screens. In 3D, two more rows follow:
+**Cache screen on fold** (off by default) and **Preview size** (Keep same size
+or Fill available space; Fill by default). The browser remembers both
+[observed: `HingeSettings` in `src/client/components/simulator-settings-tool.tsx`;
+`serve-sim:duo-cache-screen-on-fold` and `serve-sim:duo-preview-size` in
+`src/client/client.tsx`]. Folding, unfolding, and
 switching poses animate continuously, including when a new preset interrupts a
 transition. Closed presents the cover straight toward the viewer, and Open
 presents the inner display straight toward the viewer. The view uses native
@@ -77,10 +89,12 @@ apply an additional correction from app orientation or the model's viewing angle
 Stream orientation updates affect the live display, independently of the saved
 model view. Rotate controls turn that view immediately without waiting for a frame.
 Native frames fill their corresponding panels without changing aspect ratio;
-touch coordinates use the inverse of the same mapping. The inactive display
-keeps its last decoded frame while the simulator switches between cover and inner
-screens. As soon as a pose requests the other display, updates to the departing
-panel stop so its shutdown frames cannot replace that cached image.
+touch coordinates use the inverse of the same mapping. By default, both panels
+follow their live feeds. With **Cache screen on fold** on, the inactive display
+keeps its last visible frame while the simulator switches between cover and
+inner screens. As soon as a pose requests the other display, updates to the
+departing panel stop so its shutdown frames cannot replace that cached image
+[observed: `updateScreen` and `uploadScreen` in `src/client/simulator/duo-scene.ts`].
 
 Like the 2D DeviceKit artwork, the model and textures stay in the host's Xcode
 installation. No model, converted copy, or offline model-editing tools are
@@ -208,10 +222,11 @@ sliders. This is a Device Hub setting; serve-sim sends the requested angle
 directly and does not depend on either preference.
 
 The pose values, Table Mode availability, and preference strings above come
-from the installed Xcode 27.1 beta binary:
+from the installed Xcode 27.1 beta binary, at this path relative to the Xcode
+app bundle:
 
 ```text
-/Applications/Xcode-27.1.0-Beta.app/Contents/SharedFrameworks/DeviceKit.framework/Versions/A/PlugIns/CoreDevicePopDeviceKitExtension.devicekitplugin/Contents/MacOS/CoreDevicePopDeviceKitExtension
+Contents/SharedFrameworks/DeviceKit.framework/Versions/A/PlugIns/CoreDevicePopDeviceKitExtension.devicekitplugin/Contents/MacOS/CoreDevicePopDeviceKitExtension
 ```
 
 The hidden `HingeStatePoster` wallpaper visualizes the hinge with a circular
@@ -267,15 +282,23 @@ remain allocated, so choosing the largest surface can stream an inactive panel.
 Legacy `SimScreenProperties.backlight` was also observed to retain stale values
 after a fold. CoreDevice's display information supplies the authoritative active
 display and orientation; capture and touch routing must follow the same display.
+The largest surface remains only a fallback for when that information or its
+surface is unavailable [observed: `FramebufferSelectionPolicy` in
+`Sources/StreamingPolicy/FramebufferSelectionPolicy.swift`].
 
 A session recording follows that same active display. It uses a fixed canvas
 large enough for both native panels, with even dimensions for H.264; the
 smaller panel is letterboxed during fold/unfold. See
-[Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md).
+[Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md#session-recording).
 
-The 3D preview retains one model while the active stream changes between the
-cover and inner displays. Pointer input is projected onto the visible active
-display and mapped back to its streamed coordinates.
+The 3D preview does not use that single stream. It opens one fixed-panel feed
+for each display, `panel/1` for the cover and `panel/3` for the inner display.
+A fixed-panel capture never substitutes the other panel, and the feeds do not
+change input state [observed: `duoPanelUrl` in
+`src/client/components/duo-panel-streams.tsx`; `handlePanel` in
+`src/device-session.ts`]. The 3D preview retains one model while the active
+display changes between the cover and inner panels. Pointer input is projected
+onto the visible active display and mapped back to its streamed coordinates.
 
 In the flat framed view used for AX inspection, the closed screen uses
 DeviceKit's `phone15` frame; half-folded and fully open use the same `phone14`
