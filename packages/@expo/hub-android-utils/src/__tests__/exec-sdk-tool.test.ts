@@ -47,6 +47,14 @@ describe("buildBatchCommand", () => {
     }
   });
 
+  test("rejects arguments ending in a backslash, which would escape the closing quote", () => {
+    // Quoted, this becomes `"…x86_64\"`: Java reads `\"` as a literal quote and
+    // splits the following arguments in the wrong places.
+    for (const arg of ["system-images;android-34;x86_64\\", "pixel 6\\\\", "a\\"]) {
+      expect(() => buildBatchCommand("tool.bat", ["create", arg])).toThrow("Refusing");
+    }
+  });
+
   test("still runs a tool under a home folder named with those characters", () => {
     expect(buildBatchCommand("C:\\Users\\a^b\\sdk\\avdmanager.bat", ["list", "avd"])).toBe(
       '"C:\\Users\\a^b\\sdk\\avdmanager.bat" list avd',
