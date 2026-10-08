@@ -6,6 +6,8 @@ import {
 import { SidebarToggle, bg } from '../primitives';
 import { AccessibilitySection } from './AccessibilitySection';
 import { CameraSection } from './CameraSection';
+import { ClipboardSection } from './ClipboardSection';
+import { type ClipboardRequest } from './ClipboardToast';
 import { PermissionsSection } from './PermissionsSection';
 import { SIDEBAR_SECTION_INSET } from './CollapsibleSection';
 import { CurrentAppSection } from './CurrentAppSection';
@@ -42,6 +44,10 @@ export type LogSidebarProps = {
   onShutdown?: () => void;
   /** Remove/delete the selected device on the host. Ignored for physical devices. */
   onRemove?: () => void;
+  /** A toolbar Paste or Copy that the browser clipboard stopped, for the Clipboard section to finish. */
+  clipboardRequest?: ClipboardRequest | null;
+  /** The Clipboard section took over `clipboardRequest`. */
+  onClipboardRequestHandled?: () => void;
   /** Column width in px, driven by the resize handle. Defaults to 400. */
   width?: number;
 };
@@ -63,6 +69,8 @@ export function LogSidebar({
   onHttpCodecChange,
   onShutdown,
   onRemove,
+  clipboardRequest,
+  onClipboardRequestHandled,
   width = 400,
 }: LogSidebarProps) {
   const deviceFrame = device
@@ -135,6 +143,14 @@ export function LogSidebar({
         {client?.capabilities.accessibility && <AccessibilitySection client={client} />}
         {client?.capabilities.location && <LocationSection key={device?.id} client={client} />}
         {client?.capabilities.permissions && <PermissionsSection client={client} />}
+        {client?.capabilities.clipboard && (
+          <ClipboardSection
+            key={`clipboard:${device?.id}`}
+            client={client}
+            request={clipboardRequest}
+            onRequestHandled={onClipboardRequestHandled}
+          />
+        )}
         {client?.capabilities.events && <EventsSection client={client} />}
         <LogsSection client={client} />
       </div>

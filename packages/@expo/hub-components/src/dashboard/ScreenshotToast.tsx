@@ -44,13 +44,13 @@ function download(url: string, filename: string): void {
   a.remove();
 }
 
-const TOASTER_ID = 'hub-screenshot';
+export const DEVICE_TOASTER_ID = 'hub-device';
 
-/** Where the screenshot toasts render: the bottom-right corner of the viewport, clear of the toolbar. */
+/** Where the screenshot and clipboard toasts render: the bottom-right corner of the viewport, clear of the toolbar. */
 export function ScreenshotToaster() {
   return (
     <Toaster
-      id={TOASTER_ID}
+      id={DEVICE_TOASTER_ID}
       position="bottom-right"
       offset={16}
       gap={8}
@@ -58,7 +58,7 @@ export function ScreenshotToaster() {
       // Sonner's default Alt+T moves focus to the toasts, which would steal keys from the device.
       // No key has the code ' ', so this disables the hotkey and keeps the region label clean.
       hotkey={[' ']}
-      containerAriaLabel="Screenshot notifications"
+      containerAriaLabel="Device notifications"
     />
   );
 }
@@ -86,7 +86,7 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
     if (inFlight.current) return;
     inFlight.current = true;
     const id = sonnerToast.custom(() => <ScreenshotToast toast={{ phase: 'capturing' }} />, {
-      toasterId: TOASTER_ID,
+      toasterId: DEVICE_TOASTER_ID,
       duration: Infinity,
     });
     open.current.set(id, null);
@@ -101,7 +101,7 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
       if (!shot) {
         sonnerToast.custom(() => <ScreenshotToast toast={{ phase: 'capture-failed' }} />, {
           id,
-          toasterId: TOASTER_ID,
+          toasterId: DEVICE_TOASTER_ID,
           duration: FAILED_DISMISS_MS,
           onDismiss: close,
           onAutoClose: close,
@@ -123,7 +123,7 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
               onFocusChange={(focused) => show(focused ? Infinity : dismissMs)}
             />
           ),
-          { id, toasterId: TOASTER_ID, duration, onDismiss: close, onAutoClose: close },
+          { id, toasterId: DEVICE_TOASTER_ID, duration, onDismiss: close, onAutoClose: close },
         );
       show(dismissMs);
     } finally {
@@ -132,7 +132,7 @@ export function useScreenshotToast(client: DeviceClient, deviceName: string) {
   }, [client, deviceName]);
 }
 
-const PILL_STYLE = {
+export const TOAST_PILL_STYLE = {
   display: 'flex',
   alignItems: 'center',
   gap: 12,
@@ -201,7 +201,7 @@ export function ScreenshotToast({
 
   if (toast.phase !== 'saved') {
     return (
-      <div data-testid="screenshot-toast" style={PILL_STYLE}>
+      <div data-testid="screenshot-toast" style={TOAST_PILL_STYLE}>
         {body}
       </div>
     );
@@ -223,7 +223,7 @@ export function ScreenshotToast({
         onFocusChange?.(false);
       }}
       style={{
-        ...PILL_STYLE,
+        ...TOAST_PILL_STYLE,
         backgroundColor: hovered ? bg.hover : bg.default,
         boxShadow: focused ? `0 0 0 2px ${border.secondary}, ${shadow.lg}` : shadow.lg,
         outline: 'none',

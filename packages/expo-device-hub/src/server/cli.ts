@@ -172,9 +172,14 @@ async function main(): Promise<void> {
         for (const client of wss.clients) client.close(1001, 'Server stopping');
       }
       const deadline = setTimeout(() => process.exit(1), 60_000);
-      shutdownTask = hubServer.shutdownAndroid().then(
-        () => { clearTimeout(deadline); process.exit(0); },
-        (error) => { console.error('Android recording shutdown failed:', error); clearTimeout(deadline); process.exit(1); },
+      shutdownTask = Promise.allSettled([hubServer.shutdownAndroid(), hubServer.shutdownServeSim()]).then(
+        ([android, serveSim]) => {
+          if (android.status === 'rejected') console.error('Android recording shutdown failed:', android.reason);
+          // serve-sim's exit listener retries the release; a deleted simulator also fails here.
+          if (serveSim.status === 'rejected') console.error('serve-sim shutdown failed:', serveSim.reason);
+          clearTimeout(deadline);
+          process.exit(android.status === 'rejected' ? 1 : 0);
+        },
       );
     });
   }

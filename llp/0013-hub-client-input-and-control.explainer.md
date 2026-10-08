@@ -2,7 +2,7 @@
 
 **Type:** Explainer
 **Status:** Draft
-**Systems:** HubClient
+**Systems:** HubClient, HubComponents, Hub
 **Author:** Gabe Debes
 **Date:** 2026-10-06
 **Related:** LLP 0000, LLP 0003
@@ -91,6 +91,41 @@ The iOS client pastes text into the device and copies text from it with the serv
 - A failed Copy shows serve-sim's `error` text. The client has fixed texts only for a reply without one [observed: `COPY_FAILURES` in `ios-clipboard.ts`].
 - `DeviceScreen` handles Command+V and Control+V when `capabilities.clipboard.paste` is set. It does not send the V key, so the browser fires a `paste` event. Its text needs no clipboard permission, and `DeviceScreen` pastes it. When the event has no text, or no `paste` event comes before the V key goes up, `DeviceScreen` sends a Paste without text, and the device pastes its own clipboard. serve-sim's client does the same [observed: `DeviceScreen.tsx`; serve-sim `client/client.tsx`, `client/utils/keyboard-paste-gate.ts`]. Command+C stays keys.
 - Paste and Copy need the hardware keyboard, because serve-sim presses Command+V and Command+C. A touch client turns it off (see the iOS input adapter), so on a touch client the chords do not reach the app, as in serve-sim's own touch client.
+
+### Dashboard
+
+The Hub dashboard reads and writes the browser clipboard for HubClient. Paths in this part are relative to `packages/@expo/hub-components/src/dashboard`.
+
+- The toolbar under the device has Copy from Simulator and Paste from Device, in that order, after Save, Theme, Home and Reload and before Rotate. serve-sim's preview has the same two actions, with the same labels and order, in a Clipboard menu after Home and Screenshot and before Rotate. The dashboard toolbar has no menus, so they are two buttons. Each one shows only when `capabilities.clipboard` has it, so a device with Copy and no Paste shows Copy from Simulator alone. serve-sim shows its Clipboard menu only when the helper supports Paste [observed: `StreamControls.tsx`; serve-sim `client/client.tsx`].
+- Paste from Device reads the browser clipboard with `navigator.clipboard.readText()` and calls `pasteText(text)`. The latest Paste wins: each newer Paste cancels an older toolbar Paste. An older Paste that still reads the browser clipboard never pastes late, and an older Paste in flight shows no result. A newer Paste of another caller, such as the Clipboard section, also removes the older Paste's toast. The hook sees each new Paste from `clipboardActionId`, also while `clipboardPending` stays `paste`. serve-sim's preview has the same rule [observed: `useClipboardToast` in `ClipboardToast.tsx`; serve-sim `client/hooks/use-clipboard-toast.tsx`].
+- Copy from Simulator calls `copyText()` and writes the text with `navigator.clipboard.writeText()`. Empty text clears the browser clipboard.
+- When the browser does not read or write its clipboard (no API, permission denied, or page not focused), the dashboard opens the inspector's Clipboard section. There the user pastes into a text field, or copies the text from a read-only field. The section's Copy button first tries `navigator.clipboard.writeText()`, then selects the field and runs `document.execCommand('copy')`, as serve-sim's copy fallback (`copyTextViaSelection`). Only when both fail does it say "Copy failed. Press Command+C or Ctrl+C to copy the selected text", with the text still selected. The section needs no clipboard permission [observed: `copyFieldSelection` in `browserClipboard.ts`; serve-sim `client/utils/share-link.ts`]. It takes the place of serve-sim's paste field and Copy button in a toast, and uses their labels: Send for the paste field, and Copy for the copied text [observed: `ClipboardSection.tsx`; `onClipboardFallback` in `packages/expo-device-hub/src/Dashboard.tsx`; serve-sim `client/components/app-toasts.tsx`].
+- The toasts use serve-sim's texts and statuses [observed: `CLIPBOARD_TEXT` in `ClipboardToast.tsx`; serve-sim `client/hooks/use-clipboard-toast.tsx`]:
+
+  | Step | Status | Text |
+  | --- | --- | --- |
+  | Paste in flight, after the browser clipboard is read, or a Command+V paste with text | pending | Pasting into the simulator… |
+  | Paste done | success | Pasted into simulator |
+  | Browser clipboard empty | success | Device clipboard is empty |
+  | Browser clipboard not readable | info | Paste in the Clipboard section to send it to the simulator |
+  | Copy in flight | pending | Reading simulator clipboard… |
+  | Copy done | success | Copied from simulator, or Simulator clipboard is empty |
+  | Empty Copy, browser clipboard not writable | error | Simulator clipboard is empty. The browser clipboard still has older text |
+  | Copy, browser clipboard not writable | manual | Ready — one click to copy in the Clipboard section |
+  | Paste or Copy failed | error | The client's error |
+  | Key that serve-sim could not release | error | The client's `clipboardWarning`, in a toast of its own |
+
+  The toast icon has the color of serve-sim's status dot: info for pending and info, success, warning for manual, and danger for error. A result shows for 3 s, as in serve-sim. Manual shows for 12 s, as serve-sim's manual toast does. The info toast that points to the Clipboard section also shows for 12 s. It takes the place of serve-sim's paste-field toast, which stays until the user acts. Only the two texts that point to the Clipboard section are not serve-sim's own.
+- A toolbar action reports its result from its own call, because only the call knows the browser step and keeps its result after a newer action replaces the fields. `StreamPanel` gives `DeviceScreen` the hook's `pasteText`, so a Command+V paste also reports from its own call. As serve-sim's `pasteText`, a Command+V paste with text shows Pasting into the simulator… and then Pasted into simulator. A Command+V without text, where the device pastes its own clipboard, shows only its error, as serve-sim's fallback does [observed: `useClipboardToast`, `StreamPanel.tsx`; serve-sim `client/client.tsx`].
+- A Paste that a replaced helper interrupts fails (see Clipboard above), so a Command+V paste shows an error toast, not a success [observed: `useClipboardToast`; `clipboardIdentity` in `useIosDevice.ts`].
+- The Clipboard section shows the result of its own Paste and Copy in its notes, and no toast shows it, so each error shows once. From the client fields, the toasts show only `clipboardWarning`, for every action [observed: `useClipboardToast`, `ClipboardSection.tsx`].
+- The Clipboard section keeps the state of its Paste and its Copy apart: a Copy during a Paste keeps Send disabled and Pasting into the simulator… shown. The section shows the same texts as the toasts for its own Paste and Copy. When `hardwareKeyboardConnected` is false, it also says that Paste and Copy need the hardware keyboard. serve-sim has no such note, so the toasts do not show it [observed: `HARDWARE_KEYBOARD_NOTE` in `ClipboardToast.tsx`, `ClipboardSection.tsx`].
+
+### Hub shutdown
+
+- On `SIGINT` and `SIGTERM`, the `expo-device-hub` CLI stops Android recording and calls serve-sim's `dispose()` at the same time. It exits after both, within its 60 s shutdown deadline [observed: `shutdownServeSim` in `packages/expo-device-hub/src/server/serve-sim.ts`, `packages/expo-device-hub/src/server/cli.ts`].
+- `dispose()` first waits for a clipboard setup that is still running, then releases what the preview set up. So a device does not keep the capability loader after the CLI stops. A failed release is logged and does not change the exit code: serve-sim's own `exit` listener tries again (LLP 0010, on the clipboard stack), and a deleted simulator also fails here with nothing left to release. Only a failed Android stop exits 1. A vendored serve-sim without `dispose()` sets nothing up, and the call does nothing.
+- Under `expo start`, the host owns the signals and exits at once, so nothing calls `dispose()`. Only serve-sim's `exit` listener runs, and a setup that is still running at that moment is not released.
 
 ## Open questions
 

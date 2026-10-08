@@ -6,8 +6,10 @@ import {
   NO_HARDWARE_KEYBOARD_DESCRIPTION,
   ONSCREEN_KEYBOARD_DESCRIPTION,
 } from '@expo/hub-components';
+import { isValidElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
+import { ClipboardSection } from '../../../../@expo/hub-components/src/dashboard/ClipboardSection';
 import { LocationSection } from '../../../../@expo/hub-components/src/dashboard/LocationSection';
 import { LogSidebar } from '../../../../@expo/hub-components/src/dashboard/LogSidebar';
 import { PermissionsSection } from '../../../../@expo/hub-components/src/dashboard/PermissionsSection';
@@ -1450,6 +1452,58 @@ test('shows the Permissions section only when the client can change permissions'
     'Revoke:disabled',
     'Reset all:disabled',
   ]);
+});
+
+test('shows the Clipboard section only when the client can paste or copy', () => {
+  const ios = inspectorClient('ios');
+  const client = {
+    ...ios,
+    capabilities: { ...ios.capabilities, permissions: true, clipboard: { paste: true, copy: true } },
+  } satisfies DeviceClient;
+  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+
+  expect(sectionExpanded(html, 'Clipboard')).toBe(false);
+  const index = html.indexOf('<section aria-label="Clipboard"');
+  expect(index).toBeGreaterThan(html.indexOf('<section aria-label="Permissions"'));
+  expect(index).toBeLessThan(html.indexOf('<section aria-label="Events"'));
+  for (const unsupported of [
+    ios,
+    { ...ios, capabilities: { ...ios.capabilities, clipboard: { paste: false, copy: false } } },
+    inspectorClient('android'),
+  ] satisfies DeviceClient[]) {
+    expect(renderToStaticMarkup(<LogSidebar client={unsupported} />)).not.toContain(
+      'aria-label="Clipboard"',
+    );
+  }
+
+  // Sibling sections keyed by the device need distinct keys, or React repeats them on update.
+  const tree = LogSidebar({
+    client: { ...client, capabilities: { ...client.capabilities, location: {} } },
+    device: device('ios', 'ios:iphone-17-pro'),
+  });
+  const duplicateKeys: string[] = [];
+  const visit = (node: unknown) => {
+    if (Array.isArray(node)) {
+      const keys = node.flatMap((child) =>
+        isValidElement(child) && child.key !== null ? [child.key] : [],
+      );
+      duplicateKeys.push(...keys.filter((key, index) => keys.indexOf(key) !== index));
+      node.forEach(visit);
+    } else if (isValidElement<{ children?: unknown }>(node)) {
+      visit(node.props.children);
+    }
+  };
+  visit(tree);
+  expect(duplicateKeys).toEqual([]);
+
+  const copyOnly = renderToStaticMarkup(
+    <ClipboardSection
+      client={{ ...ios, capabilities: { ...ios.capabilities, clipboard: { paste: false, copy: true } } }}
+      defaultOpen
+    />,
+  );
+  expect(copyOnly).toContain('>Copy from Simulator</span>');
+  expect(copyOnly).not.toContain('>Send</span>');
 });
 
 test('keeps the frame option disabled with an explanation for unsupported devices', () => {

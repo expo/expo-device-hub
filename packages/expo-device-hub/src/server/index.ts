@@ -48,6 +48,7 @@ import { SERVER_HIDE_SIDEBAR } from './sidebar';
 import { listNewDeviceOptions } from './sim-options';
 import { SERVER_TRANSPORT } from './transport';
 export { startAndroidScreenRecording, shutdownAndroid } from './serve-emu';
+export { shutdownServeSim } from './serve-sim';
 
 const DEVICES_ROUTE = '/api/devices';
 const SHUTDOWN_DEVICE_ROUTE = '/api/devices/shutdown';
