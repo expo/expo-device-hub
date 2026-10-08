@@ -377,9 +377,14 @@ export function DeviceScreen({
       event.preventDefault();
       event.stopPropagation();
     };
+    const onVisibilityChange = () => {
+      if (document.hidden) sender.cancel();
+    };
     el.addEventListener('wheel', onWheel, { passive: false });
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       el.removeEventListener('wheel', onWheel);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       sender.cancel();
       scrollSenderRef.current = null;
     };

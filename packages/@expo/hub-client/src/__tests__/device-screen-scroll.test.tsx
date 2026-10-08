@@ -3,6 +3,7 @@ import { Window } from "happy-dom";
 import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 
+import { SimulatorView } from "../../../../serve-sim/packages/serve-sim/src/client/simulator/simulator-view";
 import { DeviceScreen } from "../DeviceScreen";
 import { type ScrollSample } from "../types";
 import { NOOP_DEVICE_CLIENT } from "../useNoopDeviceClient";
@@ -102,3 +103,49 @@ test("unmount cancels pending wheel frames", async () => {
   frame();
   expect(scrolls).toHaveLength(1);
 });
+
+for (const preview of ["embedded", "standalone"] as const) {
+  test(`${preview}: hiding cancels buffered scrolling and return starts a fresh burst`, async () => {
+    if (preview === "standalone") {
+      await act(async () => root.render(
+        <SimulatorView
+          url="http://unused.invalid"
+          streamMode="mjpeg"
+          subscribeFrame={() => () => {}}
+          onStreamTouch={() => {}}
+          onStreamScroll={(sample) => scrolls.push(sample)}
+          hideControls
+        />,
+      ));
+      surface = [...dom.document.querySelectorAll("div")].find(
+        (element) => element.style.touchAction === "none",
+      ) as unknown as HTMLDivElement;
+      surface.parentElement!.getBoundingClientRect = () =>
+        ({ left: 0, top: 0, width: 100, height: 200 }) as DOMRect;
+    }
+    const visibility = (hidden: boolean) => {
+      Object.defineProperty(dom.document, "hidden", { value: hidden, configurable: true });
+      dom.document.dispatchEvent(new dom.Event("visibilitychange"));
+    };
+    wheel(0, 2);
+    wheel(0, 4);
+    visibility(false);
+    frame();
+    expect(scrolls).toHaveLength(2); // A visible notification preserves the queued delta.
+
+    wheel(0, 6);
+    visibility(true);
+    // Background tabs suspend animation frames until the page is visible again.
+    visibility(false);
+    frame();
+    expect(scrolls).toHaveLength(2);
+
+    wheel(0, 8);
+    expect(scrolls).toHaveLength(3);
+    expect(scrolls[2]?.dy).toBeCloseTo(0.04);
+    wheel(0, 10);
+    frame();
+    expect(scrolls).toHaveLength(4);
+    expect(scrolls[3]?.dy).toBeCloseTo(0.05);
+  });
+}

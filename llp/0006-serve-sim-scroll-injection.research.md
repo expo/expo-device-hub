@@ -349,7 +349,9 @@ The `--capture-scroll <udid> [seconds]` subcommand is retained as a diagnostic
 **Browser wheel coalescing.** [observed: `DeviceScreen`, `SimulatorView`, and
 their `scroll-wheel.ts` helpers] Both previews send the first wheel delta
 immediately, then sum subsequent deltas on each axis once per display frame.
-Starting a touch or cleaning up the preview cancels buffered wheel input.
+Starting a touch, hiding the page, or cleaning up the preview cancels buffered
+wheel input. Visibility loss clears the pending frame before background frame
+suspension can replay old scrolling on return; a new burst still starts immediately.
 This reduces outgoing input messages without delaying the start of scrolling;
 the native receiver still controls HID delivery and scroll gesture release.
 
