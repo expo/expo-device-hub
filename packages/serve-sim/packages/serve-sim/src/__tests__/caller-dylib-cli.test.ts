@@ -38,7 +38,8 @@ async function runCLI(args: string[], env: Record<string, string | undefined>, p
 }
 
 test.each([
-  ["relative", false], ["relative", true], ["missing", false], ["missing", true],
+  ["relative", false], ["relative", "before"], ["relative", "after"],
+  ["missing", false], ["missing", "before"], ["missing", "after"],
 ] as const)("camera injection rejects a %s caller dylib before resolving a device (quiet=%s)", async (kind, quiet) => {
   const state = useTempStateDir();
   const log = join(state.dir, "calls.jsonl");
@@ -49,7 +50,11 @@ require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process
 process.exit(1);
 ` }, async () => {
       // A device name forces resolution; the refusing shim prevents helper startup on old code.
-      const result = await runCLI(["camera", "dev.example.app", "-d", "Caller validation test", ...(quiet ? ["--quiet"] : [])], {
+      const result = await runCLI([
+        ...(quiet === "before" ? ["--quiet"] : []),
+        "camera", "dev.example.app", "-d", "Caller validation test",
+        ...(quiet === "after" ? ["--quiet"] : []),
+      ], {
         SERVE_SIM_ADDITIONAL_DYLIBS: guard,
       });
       expect(result.exitCode).toBe(1);
