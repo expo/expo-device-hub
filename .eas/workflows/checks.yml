@@ -8,7 +8,7 @@ on:
     labels: [eas-approved]
 
 concurrency:
-  cancel_in_progress: true
+  cancel_in_progress: ${{ github.event_name != 'pull_request' }}
   group: ${{ workflow.filename }}-${{ github.ref }}
 
 defaults:
