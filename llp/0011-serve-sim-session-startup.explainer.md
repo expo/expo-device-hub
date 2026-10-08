@@ -53,7 +53,13 @@ existing regular file before device operations. Boot environment construction ch
 the same rule. `--quiet` CLI failures use the startup JSON error format. This checks
 paths, not Mach-O compatibility or whether the file remains available afterward
 [observed: `src/additional-dylibs.ts` `validatedAdditionalDylibs`, `src/index.ts`
-CLI action, `src/middleware.ts` `simMiddleware`]. Cleanup uses the unvalidated parser,
+CLI action and camera injection, `src/middleware.ts` `simMiddleware`]. Camera status,
+source switching, and cleanup remain available when a caller file disappears.
+The camera command forwards the global quiet option into its dedicated parser.
+Preview middleware construction failures also use the startup error handler, so a
+file removed during the boot wait produces one JSON error under `--quiet`
+[observed: `src/index.ts` `camera` and `serve`;
+`src/__tests__/caller-dylib-cli.test.ts` Node regressions]. Cleanup uses the unvalidated parser,
 so a caller file removed after startup cannot prevent managed-library teardown
 [observed: `src/launch-manager.ts` cleanup calls to `additionalDylibs`].
 
