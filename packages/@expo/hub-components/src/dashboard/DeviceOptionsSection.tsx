@@ -127,6 +127,7 @@ export function DeviceOptionsSection({
   const displaySizeDescriptionId = useId();
   const onscreenKeyboardDescriptionId = useId();
   const settings = client?.deviceSettings ?? null;
+  const settingsAvailable = client?.deviceSettingsStatus === 'ready';
   const noHardwareKeyboard = client?.hardwareKeyboardConnected === false;
   const pending = client?.deviceSettingsPending ?? EMPTY_PENDING_SETTINGS;
   const platform = client?.platform;
@@ -142,11 +143,11 @@ export function DeviceOptionsSection({
   }
 
   function disabled(key: DeviceSettingKey) {
-    return settings === null || pending.has(key);
+    return !settingsAvailable || settings === null || pending.has(key);
   }
 
   function setValue(key: DeviceSettingKey, nextValue: string) {
-    if (settings !== null && !pending.has(key)) client?.setDeviceSetting(key, nextValue);
+    if (!disabled(key)) client?.setDeviceSetting(key, nextValue);
   }
 
   function settingSelect(key: DeviceSettingKey, label: string, options: SelectOption[]) {

@@ -321,7 +321,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const deviceSettingsScope = active ? JSON.stringify([baseUrl, targetDevice, token]) : null;
   const { deviceSettingsStatus, resetRead, settleRead } =
     useDeviceSettingsReadStatus(deviceSettingsScope);
-  const refreshDeviceSettingsRef = useRef<(() => void) | null>(null);
+  const deviceSettingsReadRef = useRef<{
+    invalidate: () => void;
+    refresh: () => void;
+  } | null>(null);
   const deviceSettingVersionsRef = useRef(new Map<DeviceSettingKey, number>());
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
@@ -1299,6 +1302,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
     const markInterrupted = () => {
       reconnecting = true;
+      deviceSettingsReadRef.current?.invalidate();
       settleRead('error');
       if (metricsPath) {
         setActivity((current) => (current ? { ...current, errored: true } : current));
@@ -1385,7 +1389,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (msg.ready) {
           if (reconnecting) {
             reconnecting = false;
-            refreshDeviceSettingsRef.current?.();
+            deviceSettingsReadRef.current?.refresh();
           }
           for (const [sub, path] of paths) {
             ws?.send(JSON.stringify({ sub, path }));
@@ -1464,9 +1468,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     }
     let cancelled = false;
     let reading = false;
+    let revision = 0;
+    let refreshQueued = false;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const invalidate = () => {
+      revision++;
+      refreshQueued = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+    };
     const refresh = async () => {
-      if (cancelled || reading) return;
+      if (cancelled) return;
+      const readRevision = ++revision;
+      if (reading) {
+        refreshQueued = true;
+        return;
+      }
+      refreshQueued = false;
       if (retryTimer) clearTimeout(retryTimer);
       retryTimer = null;
       reading = true;
@@ -1474,7 +1492,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const pendingAtStart = tracker.pending;
       try {
         const res = await hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols);
-        if (cancelled) return;
+        // A response from before an interruption cannot restore availability.
+        if (cancelled || readRevision !== revision) return;
         if (!res.status || typeof res.status !== 'object' || Array.isArray(res.status)) {
           throw new Error('Simulator settings request returned an invalid status');
         }
@@ -1509,20 +1528,22 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           setHardwareKeyboardConnectedState((prev) => prev ?? keyboardValue === 'on');
         }
       } catch {
-        if (!cancelled) {
+        if (!cancelled && readRevision === revision) {
           settleRead('error');
           retryTimer = setTimeout(() => void refresh(), RECONNECT_MS);
         }
       } finally {
         reading = false;
+        // Coalesce reconnects during a read into one fresh follow-up request.
+        if (!cancelled && refreshQueued) void refresh();
       }
     };
-    refreshDeviceSettingsRef.current = () => void refresh();
+    deviceSettingsReadRef.current = { invalidate, refresh: () => void refresh() };
     void refresh();
     return () => {
       cancelled = true;
       if (retryTimer) clearTimeout(retryTimer);
-      refreshDeviceSettingsRef.current = null;
+      deviceSettingsReadRef.current = null;
     };
   }, [execWsUrl, execToken, deviceUdid, socketProtocols, resetRead, settleRead]);
 
