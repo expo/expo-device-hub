@@ -100,6 +100,7 @@ import {
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
+  type DeviceSettingsStatus,
   type DeviceStreamEncoderSettings,
   type DeviceStreamCapabilities,
   type DeviceStreamSettingCapabilities,
@@ -122,6 +123,8 @@ const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
+// Match serve-sim's UI request deadline so an unreachable endpoint cannot hold the initial read.
+const DEVICE_SETTINGS_READ_TIMEOUT_MS = 5000;
 
 const noop = () => {};
 const ANDROID_STREAM_CODECS = ['h264'] as const;
@@ -1817,12 +1820,29 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // ── Device options (best-effort) ──
   // Keep Hub in sync with changes made on-device or through serve-emu's own UI.
   // Polling also makes network's aggregate wifi/data state authoritative.
+  const deviceSettingsScope =
+    active && baseUrl ? JSON.stringify([baseUrl, targetDevice, token]) : null;
+  const [deviceSettingsRead, setDeviceSettingsRead] = useState<{
+    scope: string | null;
+    status: DeviceSettingsStatus;
+  }>({ scope: null, status: 'idle' });
+  const deviceSettingsStatus =
+    deviceSettingsRead.scope === deviceSettingsScope
+      ? deviceSettingsRead.status
+      : deviceSettingsScope
+        ? 'loading'
+        : 'idle';
+
   useEffect(() => {
     const tracker = deviceSettingWriteTrackerRef.current;
     tracker.reset();
     for (const key of ANDROID_DEVICE_SETTING_KEYS) deviceSettingVersionsRef.current[key]++;
     setDeviceSettingsPending(new Set());
     setDeviceSettings(null);
+    setDeviceSettingsRead({
+      scope: deviceSettingsScope,
+      status: deviceSettingsScope ? 'loading' : 'idle',
+    });
     setAppearanceState(null);
     setDisplayWidthDp(null);
     setHardwareKeyboardConnected(null);
@@ -1832,6 +1852,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     let cancelled = false;
     let polling = false;
+    let hasSettings = false;
     let controllers: AbortController[] = [];
     const scope = deviceScope;
 
@@ -1849,7 +1870,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           try {
             const response = await sessionFetch(
               deviceApiUrl(baseUrl, androidDeviceSettingPathFor(key), targetDevice),
-              { cache: 'no-store', signal: controller.signal },
+              {
+                cache: 'no-store',
+                signal: AbortSignal.any([
+                  controller.signal,
+                  AbortSignal.timeout(DEVICE_SETTINGS_READ_TIMEOUT_MS),
+                ]),
+              },
             );
             if (!response.ok) return { key, version, pendingAtStart, handled: false as const };
             const payload: unknown = await response.json();
@@ -1868,7 +1895,17 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       );
       polling = false;
       if (cancelled || deviceScopeRef.current !== scope) return;
-      if (!results.some((result) => result.handled)) return;
+      if (!results.some((result) => result.handled)) {
+        if (!hasSettings) {
+          setDeviceSettingsRead((current) =>
+            current.scope === deviceSettingsScope && current.status === 'error'
+              ? current
+              : { scope: deviceSettingsScope, status: 'error' },
+          );
+        }
+        return;
+      }
+      hasSettings = true;
       setDeviceSettings((current) => {
         const next = { ...(current ?? {}) };
         for (const result of results) {
@@ -1881,6 +1918,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         }
         return next;
       });
+      setDeviceSettingsRead((current) =>
+        current.scope === deviceSettingsScope && current.status === 'ready'
+          ? current
+          : { scope: deviceSettingsScope, status: 'ready' },
+      );
       const appearanceResult = results.find((result) => result.key === 'appearance');
       if (
         appearanceResult?.handled &&
@@ -1935,7 +1977,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       for (const controller of controllers) controller.abort();
       tracker.reset();
     };
-  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch]);
+  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch, deviceSettingsScope]);
 
   const webRtcAvailable = serverStreamSettings?.transport === 'webrtc';
   const streamCapabilities = useMemo<DeviceStreamCapabilities>(
@@ -1989,6 +2031,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     clearEvents,
     activity,
     deviceSettings,
+    deviceSettingsStatus,
     deviceSettingsPending,
     setDeviceSetting,
     displayWidthDp,

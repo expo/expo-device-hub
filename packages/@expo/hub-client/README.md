@@ -89,6 +89,26 @@ Status and control changes update this component. FPS, metrics, and log changes 
 Status can be `'idle'`, `'connecting'`, `'streaming'` or `'error'`. Android also reports
 `'reconnecting'` while restoring a stream. Read `error` for the last failure message.
 
+### Read device settings
+
+Read `deviceSettingsStatus` alongside `deviceSettings` to distinguish the initial
+settings request from a failed read:
+
+- `'idle'`: no active settings endpoint is available yet.
+- `'loading'`: the initial read for this device and connection is pending.
+- `'ready'`: a read completed, including an empty response with no usable controls.
+- `'error'`: the initial read failed or timed out.
+
+Both backends bound settings reads to five seconds. A different device or connection
+configuration starts a fresh read. Android's background polling keeps the last successful
+values and leaves the status at `'ready'` during transient failures; a later successful
+poll also recovers an initial `'error'`.
+
+The read status is independent of video and app activity. Use
+`capabilities.deviceSettings` to determine support, and `deviceSettingsPending` to disable
+individual controls while writes are in progress. The consuming component decides how
+to render loading and unavailable states.
+
 ### Show the screen
 
 Use `useDeviceScreenClient` with `DeviceScreen`. It follows screen and input changes

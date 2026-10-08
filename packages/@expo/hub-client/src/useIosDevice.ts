@@ -64,6 +64,7 @@ import {
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
+  type DeviceSettingsStatus,
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
   type DeviceStreamSettingCapabilities,
@@ -1433,12 +1434,31 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Simulator settings (best-effort) — one status request hydrates every
   //    device-options control, including the appearance used by the toolbar. ──
+  const deviceSettingsScope =
+    execWsUrl && execToken && deviceUdid
+      ? JSON.stringify([execWsUrl, execToken, deviceUdid, socketProtocols])
+      : null;
+  const [deviceSettingsRead, setDeviceSettingsRead] = useState<{
+    scope: string | null;
+    status: DeviceSettingsStatus;
+  }>({ scope: null, status: 'idle' });
+  const deviceSettingsStatus =
+    deviceSettingsRead.scope === deviceSettingsScope
+      ? deviceSettingsRead.status
+      : deviceSettingsScope
+        ? 'loading'
+        : 'idle';
+
   useEffect(() => {
     deviceSettingWriteTrackerRef.current.reset();
     setDeviceSettingsPending(new Set());
+    setDeviceSettingsRead({
+      scope: deviceSettingsScope,
+      status: deviceSettingsScope ? 'loading' : 'idle',
+    });
+    setAppearanceState(null);
+    setDeviceSettings(null);
     if (!execWsUrl || !execToken || !deviceUdid) {
-      setAppearanceState(null);
-      setDeviceSettings(null);
       return;
     }
     let cancelled = false;
@@ -1450,6 +1470,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (typeof value === 'string') next[key as DeviceSettingKey] = value;
         }
         setDeviceSettings(next);
+        setDeviceSettingsRead({ scope: deviceSettingsScope, status: 'ready' });
         if (next.appearance === 'light' || next.appearance === 'dark') {
           setAppearanceState(next.appearance);
         }
@@ -1461,12 +1482,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
       })
       .catch(() => {
-        /* unreachable / unsupported — leave unknown */
+        if (!cancelled) {
+          setDeviceSettingsRead({ scope: deviceSettingsScope, status: 'error' });
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [execWsUrl, execToken, deviceUdid, socketProtocols]);
+  }, [execWsUrl, execToken, deviceUdid, socketProtocols, deviceSettingsScope]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
@@ -1641,6 +1664,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     clearEvents,
     activity,
     deviceSettings,
+    deviceSettingsStatus,
     deviceSettingsPending,
     setDeviceSetting,
     displayWidthDp: null,
