@@ -7,6 +7,7 @@ import {
   getFontScale,
   getHighTextContrast,
   getNetworkStatus,
+  getNightMode,
   getReduceMotion,
   getSoftwareKeyboard,
   getUserRotation,
@@ -18,10 +19,12 @@ import {
   setFontScale,
   setHighTextContrast,
   setNetworkEnabled,
+  setNightMode,
   setReduceMotion,
   setSoftwareKeyboard,
   setUserRotation,
   type OrientationMode,
+  type NightModeStatus,
 } from "./adb.ts";
 import { screenshotResponse } from "./screenshot-response.ts";
 import { ClientTouchState, replayTouchInput } from "./client-touch-state.ts";
@@ -58,7 +61,6 @@ import {
   startEmulator,
   stopEmulator,
 } from "./emulator.ts";
-import { getNightMode, isNightMode, setNightMode } from "./ui-mode.ts";
 import { DeviceSessionState } from "./device-session-state.ts";
 import { ScreenRecording, ScreenRecordingConflictError, type RecordingOptions } from "./screen-recording.ts";
 import { parseGesture, type Gesture, type Screen } from "./input.ts";
@@ -286,6 +288,12 @@ function combineAbortSignals(
 
 const middlewareFailure = (error: string, status: number): Response =>
   Response.json({ ok: false, error }, { status });
+
+const uiModeResponse = ({ mode }: NightModeStatus): Response =>
+  Response.json({
+    ok: true,
+    night: mode === "dark" ? "yes" : mode === "light" ? "no" : mode,
+  });
 
 const middlewareRequestFailure = (error: unknown): Response =>
   error instanceof HttpBodyError
@@ -1678,7 +1686,7 @@ async function createAppInternal(
     if (url.pathname === "/api/uimode") {
       if (req.method === "GET") {
         try {
-          return Response.json({ ok: true, night: getNightMode(opts.serial) });
+          return uiModeResponse(await getNightMode(opts.serial));
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -1693,10 +1701,11 @@ async function createAppInternal(
             typeof payload === "object" && payload !== null && !Array.isArray(payload)
               ? (payload as Record<string, unknown>).night
               : undefined;
-          if (!isNightMode(night)) {
+          if (night !== "yes" && night !== "no" && night !== "auto") {
             throw new Error('night must be one of "yes", "no", or "auto"');
           }
-          return Response.json({ ok: true, night: setNightMode(opts.serial, night) });
+          const mode = night === "yes" ? "dark" : night === "no" ? "light" : "auto";
+          return uiModeResponse(await setNightMode(opts.serial, mode));
         } catch (err) {
           return Response.json(
             { ok: false, error: err instanceof Error ? err.message : String(err) },

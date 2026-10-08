@@ -75,8 +75,6 @@ function onOffForEnabledBody(value: unknown): string | null {
 
 interface AndroidDeviceSettingSpec {
   path: AndroidDeviceSettingPath;
-  /** Whether the 3s poll refreshes this key. */
-  polled: boolean;
   /** Hub value to request body, or null when the value is not writable. */
   encode: (value: string) => Record<string, unknown> | null;
   /** Server payload to Hub value, or null when it cannot be read. */
@@ -86,7 +84,6 @@ interface AndroidDeviceSettingSpec {
 const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSettingSpec> = {
   appearance: {
     path: '/api/uimode',
-    polled: false,
     encode: (value) =>
       value === 'light' || value === 'dark' ? { night: value === 'dark' ? 'yes' : 'no' } : null,
     decode: (data) => {
@@ -97,7 +94,6 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
   },
   network: {
     path: '/api/network',
-    polled: true,
     encode: enabledBodyForOnOff,
     decode: (data) => {
       const network = asRecord(data.network);
@@ -109,7 +105,6 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
   },
   'text-size': {
     path: '/api/font-scale',
-    polled: true,
     encode: (value) => {
       const scale = androidScaleForSizeStep(value);
       return scale === null ? null : { scale };
@@ -121,7 +116,6 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
   },
   'display-size': {
     path: '/api/display-density',
-    polled: true,
     encode: (value) => {
       const scale = androidScaleForSizeStep(value);
       return scale === null ? null : { scale };
@@ -133,25 +127,21 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
   },
   'reduce-motion': {
     path: '/api/reduce-motion',
-    polled: true,
     encode: enabledBodyForOnOff,
     decode: (data) => onOffForEnabledBody(data.reduceMotion),
   },
   'bold-text': {
     path: '/api/font-weight',
-    polled: true,
     encode: enabledBodyForOnOff,
     decode: (data) => onOffForEnabledBody(data.fontWeight),
   },
   'increase-contrast': {
     path: '/api/high-text-contrast',
-    polled: true,
     encode: enabledBodyForOnOff,
     decode: (data) => onOffForEnabledBody(data.highTextContrast),
   },
   'onscreen-keyboard': {
     path: '/api/software-keyboard',
-    polled: true,
     encode: enabledBodyForOnOff,
     decode: (data) => onOffForEnabledBody(data.softwareKeyboard),
   },
@@ -160,9 +150,6 @@ const ANDROID_DEVICE_SETTINGS: Record<AndroidDeviceSettingKey, AndroidDeviceSett
 export const ANDROID_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] = Object.keys(
   ANDROID_DEVICE_SETTINGS,
 ) as AndroidDeviceSettingKey[];
-
-export const ANDROID_POLLED_DEVICE_SETTING_KEYS: readonly AndroidDeviceSettingKey[] =
-  ANDROID_DEVICE_SETTING_KEYS.filter((key) => ANDROID_DEVICE_SETTINGS[key].polled);
 
 export function createAndroidDeviceSettingVersions(): Record<AndroidDeviceSettingKey, number> {
   return Object.fromEntries(ANDROID_DEVICE_SETTING_KEYS.map((key) => [key, 0])) as Record<
