@@ -39,7 +39,12 @@ describe("resolveSdkRoot", () => {
 
 describe("avdmanagerPath", () => {
   test("appends the cmdline-tools binary subpath", () => {
-    expect(avdmanagerPath("/sdk")).toBe("/sdk/cmdline-tools/latest/bin/avdmanager");
+    expect(avdmanagerPath("/sdk", "darwin")).toBe("/sdk/cmdline-tools/latest/bin/avdmanager");
+  });
+
+  test("targets the .bat wrapper on Windows", () => {
+    expect(avdmanagerPath("/sdk", "win32")).toEndWith("avdmanager.bat");
+    expect(avdmanagerPath("/sdk", "linux")).toEndWith("avdmanager");
   });
 });
 
@@ -53,7 +58,14 @@ describe("resolveAvdmanagerPath", () => {
 
 describe("sdkmanagerPath", () => {
   test("appends the cmdline-tools binary subpath", () => {
-    expect(sdkmanagerPath("/sdk")).toBe("/sdk/cmdline-tools/latest/bin/sdkmanager");
+    expect(sdkmanagerPath("/sdk", "darwin")).toBe("/sdk/cmdline-tools/latest/bin/sdkmanager");
+  });
+
+  test("targets the .bat wrapper on Windows", () => {
+    expect(sdkmanagerPath("/sdk", "win32")).toEndWith("sdkmanager.bat");
+    expect(resolveSdkmanagerPath({ ANDROID_HOME: "/sdk" }, HOME, "win32")).toEndWith(
+      "sdkmanager.bat",
+    );
   });
 });
 
