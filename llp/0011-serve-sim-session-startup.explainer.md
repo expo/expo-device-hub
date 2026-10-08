@@ -48,6 +48,15 @@ server against a device that is not ready [observed: `src/index.ts` `ensureBoote
 such as build-tools' egress guard. The environment variable extends the existing
 loader insertion [confirmed: Gabe Debes, 2026-10-07].
 
+CLI and middleware startup validate each caller entry as an absolute path to an
+existing regular file before device operations. Boot environment construction checks
+the same rule. `--quiet` CLI failures use the startup JSON error format. This checks
+paths, not Mach-O compatibility or whether the file remains available afterward
+[observed: `src/additional-dylibs.ts` `validatedAdditionalDylibs`, `src/index.ts`
+CLI action, `src/middleware.ts` `simMiddleware`]. Cleanup uses the unvalidated parser,
+so a caller file removed after startup cannot prevent managed-library teardown
+[observed: `src/launch-manager.ts` cleanup calls to `additionalDylibs`].
+
 Entries retain their path characters, including whitespace; only empty entries
 are discarded. Cleanup preserves explicitly requested caller paths even when
 they overlap a managed startup image or share the capability loader's filename

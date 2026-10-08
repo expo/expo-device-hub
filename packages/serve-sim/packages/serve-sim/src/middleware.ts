@@ -1,6 +1,6 @@
 import { openSseStream } from "./sse-stream";
 import { execFile, execSync } from "child_process";
-import { simulatorBootEnv } from "./additional-dylibs";
+import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
 import { createReadStream, readdirSync, readFileSync, existsSync, unlinkSync, watch, type FSWatcher } from "fs";
 import { readFile, unlink } from "fs/promises";
 import { tmpdir } from "os";
@@ -1857,6 +1857,7 @@ export async function handleCaptureEntriesRequest(
 }
 
 export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
+  validatedAdditionalDylibs();
   const streamSettings = options?.streamSettings ?? httpStreamSettingsFromLegacyCodec(options?.codec);
   const base = (options?.basePath ?? "/.sim").replace(/\/+$/, "");
   const helperPrefix = helperProxyPrefix(base);

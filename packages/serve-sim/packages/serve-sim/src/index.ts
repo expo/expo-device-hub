@@ -29,7 +29,7 @@ import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
 import { runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
-import { additionalDylibs, simulatorBootEnv } from "./additional-dylibs";
+import { additionalDylibs, simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
 import {
   assertKnownCapabilities,
   missingCapabilities,
@@ -2202,6 +2202,12 @@ Examples:
     if (opts.kill !== undefined) {
       await killStreams(typeof opts.kill === "string" ? opts.kill : undefined);
       return;
+    }
+    try {
+      validatedAdditionalDylibs();
+    } catch (error) {
+      printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+      process.exit(1);
     }
     if (opts.transport !== "http" && opts.transport !== "webrtc") {
       console.error("--transport must be one of: http, webrtc.");

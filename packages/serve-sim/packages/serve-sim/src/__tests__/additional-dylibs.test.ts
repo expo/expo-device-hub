@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import { bootDevice } from "../device";
 import { armCapabilityLoader, capabilityLoaderPath, childLaunchEnv, releaseSession, releaseSessionSync, removeCapabilityLoader, disarmStaleCapabilityLoader, capabilityConfigPath } from "../launch-manager";
 import { writeManagedStartupDylibs, managedStartupDylibs } from "../capability-config";
 import { writeLaunchState } from "../launch-state";
-import { additionalDylibs } from "../additional-dylibs";
-import { startDeviceInProcess } from "../middleware";
+import { additionalDylibs, simulatorBootEnv } from "../additional-dylibs";
+import { simMiddleware, startDeviceInProcess } from "../middleware";
 import { simctl, simctlSync } from "../simctl";
 import { locateProxyDylib } from "../capture/device";
 import { freePortAsync, useTempStateDir, withShimsAsync } from "./helpers";
@@ -21,6 +21,52 @@ afterEach(() => {
 });
 
 describe("additional simulator dylibs", () => {
+  test.each(["relative", "missing", "directory", "broken symlink"])("rejects a %s caller path before boot", (kind) => {
+    const state = useTempStateDir();
+    try {
+      const path = kind === "relative" ? "guard.dylib" : join(state.dir, "guard.dylib");
+      if (kind === "directory") mkdirSync(path);
+      if (kind === "broken symlink") symlinkSync(join(state.dir, "missing.dylib"), path);
+      process.env.SERVE_SIM_ADDITIONAL_DYLIBS = path;
+      expect(() => simulatorBootEnv(UDID)).toThrow("SERVE_SIM_ADDITIONAL_DYLIBS needs absolute paths to existing dylibs");
+      expect(() => simMiddleware()).toThrow("SERVE_SIM_ADDITIONAL_DYLIBS needs absolute paths to existing dylibs");
+      expect(additionalDylibs()).toEqual([path]); // Cleanup parsing does not require the file.
+    } finally {
+      state.restore();
+    }
+  });
+
+  test.each([false, true])("CLI rejects missing caller dylibs without any simctl call (quiet=%s)", async (quiet) => {
+    const state = useTempStateDir();
+    const log = join(state.dir, "calls.jsonl");
+    process.env.SERVE_SIM_ADDITIONAL_DYLIBS = join(state.dir, "missing.dylib");
+    try {
+      await withShimsAsync({ xcrun: `#!/usr/bin/env node
+require('node:fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+process.exit(1);
+` }, async () => {
+        const child = Bun.spawn(["bun", join(import.meta.dir, "../index.ts"), UDID, ...(quiet ? ["--quiet"] : [])], {
+          env: { ...process.env, DEVELOPER_DIR: state.dir }, stdout: "pipe", stderr: "pipe",
+        });
+        const timeout = setTimeout(() => child.kill(), 5_000);
+        try {
+          const [stdout, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()]);
+          expect(await child.exited).toBe(1);
+          const diagnostic = "SERVE_SIM_ADDITIONAL_DYLIBS needs absolute paths to existing dylibs";
+          if (quiet) expect(JSON.parse(stdout)).toEqual({ error: expect.stringContaining(diagnostic) });
+          else expect(stderr).toContain(diagnostic);
+          expect(existsSync(log)).toBe(false);
+        } finally {
+          clearTimeout(timeout);
+          child.kill();
+          await child.exited;
+        }
+      });
+    } finally {
+      state.restore();
+    }
+  });
+
   test("preserve whitespace in caller paths through parsing and getenv readback", async () => {
     const value = "/guard.dylib : /other.dylib ";
     process.env.SERVE_SIM_ADDITIONAL_DYLIBS = `${value}::/guard.dylib `;
@@ -117,7 +163,9 @@ console.log(${JSON.stringify(`${caller}:${capabilityLoaderPath()}`)});
   test("reach foreground CLI boot before the boot wait", async () => {
     const state = useTempStateDir();
     const log = join(state.dir, "cli.jsonl");
-    process.env.SERVE_SIM_ADDITIONAL_DYLIBS = "/guard.dylib";
+    const guard = join(state.dir, "guard.dylib");
+    writeFileSync(guard, "");
+    process.env.SERVE_SIM_ADDITIONAL_DYLIBS = guard;
     try {
       await withShimsAsync({ xcrun: `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -143,7 +191,7 @@ if (args[1] === 'bootstatus') process.exit(1);
       const boot = calls.filter(call => ["boot", "bootstatus"].includes(call.args[1]));
       expect(boot.map(call => call.args[1])).toEqual(["boot", "bootstatus"]);
       expect(boot.map(call => call.insert)).toEqual([
-        `${bootInsert}:/guard.dylib`, `${bootInsert}:/guard.dylib`,
+        `${bootInsert}:${guard}`, `${bootInsert}:${guard}`,
       ]);
     } finally {
       state.restore();
@@ -153,7 +201,9 @@ if (args[1] === 'bootstatus') process.exit(1);
   test("reach boot and bootstatus through device and middleware startup", async () => {
     const state = useTempStateDir();
     const log = join(state.dir, "calls.jsonl");
-    process.env.SERVE_SIM_ADDITIONAL_DYLIBS = "/guard.dylib:/other guard.dylib";
+    const caller = [join(state.dir, "guard.dylib"), join(state.dir, "other guard.dylib ")];
+    for (const path of caller) writeFileSync(path, "");
+    process.env.SERVE_SIM_ADDITIONAL_DYLIBS = caller.join(":");
     try {
       await withShimsAsync({ xcrun: `#!/usr/bin/env node
 const fs = require('node:fs');
@@ -166,7 +216,7 @@ fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({args: process.argv.sli
       const calls = readFileSync(log, "utf8").trim().split("\n").map(line => JSON.parse(line));
       expect(calls.slice(0, 4).map(call => call.args[1])).toEqual(["boot", "bootstatus", "boot", "bootstatus"]);
       for (const call of calls.slice(0, 4)) {
-        expect(call.insert).toBe(`${bootInsert}:/guard.dylib:/other guard.dylib`);
+        expect(call.insert).toBe(`${bootInsert}:${caller.join(":")}`);
       }
       expect(calls[4].insert).toBeUndefined();
     } finally {

@@ -256,6 +256,10 @@ Set `SERVE_SIM_ADDITIONAL_DYLIBS` to a colon-separated list of absolute dylib pa
 SERVE_SIM_ADDITIONAL_DYLIBS=/path/to/egress-guard.dylib serve-sim <udid>
 ```
 
+Startup rejects relative, missing, or non-file paths before device operations.
+Paths retain whitespace. This validates file existence, not library compatibility;
+the caller must keep the libraries available for the session.
+
 The libraries are passed into Simulator boot and added alongside the capability
 loader for subsequent app launches. To affect processes started during boot, start
 with a shut-down simulator. Already-running processes keep their current images.
