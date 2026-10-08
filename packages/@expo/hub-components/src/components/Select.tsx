@@ -22,6 +22,7 @@ export type SelectOption<Value extends string = string> = {
   value: Value;
   label: string;
   disabled?: boolean;
+  shortcut?: string;
 };
 
 export type SelectProps<Value extends string> = {
@@ -32,6 +33,8 @@ export type SelectProps<Value extends string> = {
   disabled?: boolean;
   disabledReason?: string;
   onChange: (value: Value) => void;
+  /** Re-apply an already selected action, without changing ordinary select behavior. */
+  onReselect?: (value: Value) => void;
 };
 
 const ITEM_HEIGHT = 28;
@@ -77,12 +80,17 @@ export function Select<Value extends string>({
   disabled = false,
   disabledReason,
   onChange,
+  onReselect,
 }: SelectProps<Value>) {
   const [open, setOpen] = useState(false);
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
   const selectedLabel = options.find((option) => option.value === value)?.label ?? value;
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const pointerType = useRef('touch');
+  const reselect = (option: SelectOption<Value>) => {
+    if (!disabled && !option.disabled && option.value === value) onReselect?.(option.value);
+  };
   const registration = useRef<SelectRegistration>({
     trigger: null,
     disabled,
@@ -202,6 +210,27 @@ export function Select<Value extends string>({
                 value={option.value}
                 textValue={option.label}
                 disabled={option.disabled}
+                onPointerDown={(event) => {
+                  pointerType.current = event.pointerType;
+                }}
+                onPointerMove={(event) => {
+                  pointerType.current = event.pointerType;
+                }}
+                onPointerUp={() => {
+                  if (pointerType.current === 'mouse') reselect(option);
+                }}
+                onClick={() => {
+                  if (pointerType.current !== 'mouse') reselect(option);
+                }}
+                onKeyDown={(event) => {
+                  if (
+                    event.target === event.currentTarget &&
+                    !event.repeat &&
+                    (event.key === 'Enter' || event.key === ' ')
+                  ) {
+                    reselect(option);
+                  }
+                }}
                 className="data-[highlighted]:bg-hover data-[state=checked]:bg-element"
                 style={{
                   display: 'flex',
@@ -219,9 +248,15 @@ export function Select<Value extends string>({
                   opacity: option.disabled ? 0.5 : 1,
                   userSelect: 'none',
                   whiteSpace: 'nowrap',
-                }}
-              >
+                }}>
                 <ItemText>{option.label}</ItemText>
+                {option.shortcut && (
+                  <span
+                    aria-label={`Shortcut ${option.shortcut}`}
+                    style={{ ...textSize.xs, color: text.tertiary }}>
+                    {option.shortcut}
+                  </span>
+                )}
                 <span
                   aria-hidden="true"
                   style={{

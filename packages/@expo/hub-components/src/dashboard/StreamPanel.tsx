@@ -1,16 +1,17 @@
-import { type ComponentType } from 'react';
+import { type ComponentType, useLayoutEffect, useRef, useState } from 'react';
 
 import {
   type AgentInteraction,
   type DeviceClient,
   type DeviceScreenProps,
+  type FoldableDeviceScreenProps,
   type ScreenSize,
 } from '@expo/hub-client';
-import { bg, border } from '../primitives';
+import { bg, border, text, textSize } from '../primitives';
 import { type Device } from './data';
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
 import { type DeviceFrameAssets } from './deviceFrame';
-import { PhoneFrame } from './PhoneFrame';
+import { PhoneFrame, type PhoneFrameFoldPreview } from './PhoneFrame';
 import { ScreenshotToaster, useScreenshotToast } from './ScreenshotToast';
 import { STREAM_CONTROLS_HEIGHT, StreamControls } from './StreamControls';
 
@@ -34,6 +35,8 @@ export function StreamPanel({
   client,
   agentInteraction,
   DeviceScreen,
+  FoldableDeviceScreen,
+  foldPreview,
   displayScreen,
   framed = true,
   showDeviceFrame = true,
@@ -44,6 +47,9 @@ export function StreamPanel({
   agentInteraction?: AgentInteraction | null;
   /** Live-stream renderer, injected from `@expo/hub-client` by the consumer. */
   DeviceScreen: ComponentType<DeviceScreenProps>;
+  /** iPhone Duo 3D renderer, injected from `@expo/hub-client`; without it the Duo stays flat. */
+  FoldableDeviceScreen?: ComponentType<FoldableDeviceScreenProps>;
+  foldPreview?: PhoneFrameFoldPreview;
   /** Orientation-corrected screen sizer, injected from `@expo/hub-client`. */
   displayScreen: (screen?: ScreenSize | null) => ScreenSize | null;
   /**
@@ -57,6 +63,20 @@ export function StreamPanel({
   deviceFrameAssets?: DeviceFrameAssets;
 }) {
   const captureScreenshot = useScreenshotToast(client, device.name);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  const [controlsHeight, setControlsHeight] = useState(STREAM_CONTROLS_HEIGHT);
+
+  useLayoutEffect(() => {
+    const controls = controlsRef.current;
+    if (!controls) return;
+    // Include wrapped errors in the space reserved below the frame. Observe
+    // width changes too, since resizing a sidebar can add another text line.
+    const measure = () => setControlsHeight(Math.ceil(controls.getBoundingClientRect().height));
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(controls);
+    return () => observer.disconnect();
+  }, [client.hinge?.error]);
 
   return (
     <section
@@ -82,7 +102,7 @@ export function StreamPanel({
           boxSizing: 'border-box',
           // Container-query units resolve against the content box, so this
           // padding keeps the frame clear of the title above and toolbar below.
-          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${STREAM_CONTROLS_HEIGHT + CONTROLS_GAP}px`,
+          padding: `${DEVICE_TITLE_HEIGHT + TITLE_GAP}px 0 ${controlsHeight + CONTROLS_GAP}px`,
           containerType: 'size',
           display: 'flex',
           alignItems: 'center',
@@ -96,6 +116,8 @@ export function StreamPanel({
             client={client}
             agentInteraction={agentInteraction}
             DeviceScreen={DeviceScreen}
+            FoldableDeviceScreen={FoldableDeviceScreen}
+            foldPreview={foldPreview}
             displayScreen={displayScreen}
             showDeviceFrame={showDeviceFrame}
             deviceFrameAssets={deviceFrameAssets}
@@ -116,6 +138,7 @@ export function StreamPanel({
             <DeviceTitle key={device.id} device={device} status={client.status} recording={client.screenRecording} />
           </div>
           <div
+            ref={controlsRef}
             style={{
               position: 'absolute',
               left: '50%',
@@ -134,6 +157,19 @@ export function StreamPanel({
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}
             />
+            {client.hinge?.error && (
+              <div
+                role="alert"
+                style={{
+                  ...textSize.xs,
+                  color: text.danger,
+                  textAlign: 'center',
+                  maxWidth: 'min(280px, 100cqw)',
+                  margin: '8px auto 0',
+                }}>
+                {client.hinge.error}
+              </div>
+            )}
           </div>
         </div>
       </div>

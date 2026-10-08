@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { type SessionFetch } from './session-token';
+import { readStatsBeforeDeadline } from './webrtc-playback-watchdog';
 import {
   type DeviceStreamCaptureStats,
   type DeviceStreamEncoderStats,
@@ -515,7 +516,8 @@ export function useWebRtcStreamStats(
       const atMs = Date.now();
       const presentedFrameCount = presentedFrames.current;
       try {
-        const report = await connection.peerConnection.getStats();
+        const report = await readStatsBeforeDeadline(connection.peerConnection, POLL_MS * 2);
+        if (report === null) return;
         if (stopped) return;
         const counters = readWebRtcClientCounters(report, atMs, presentedFrameCount);
         if (counters === null) return;

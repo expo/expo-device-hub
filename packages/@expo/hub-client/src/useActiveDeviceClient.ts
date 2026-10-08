@@ -14,6 +14,8 @@ export interface ActiveDeviceTarget {
   device?: string | null;
   /** Explicit consumer-owned stream selection. */
   streamMode: DeviceConnectionOptions['streamMode'];
+  /** iPhone Duo renderer the consumer shows; see {@link DeviceConnectionOptions.duoPreview}. */
+  duoPreview?: DeviceConnectionOptions['duoPreview'];
 }
 
 export interface ActiveDeviceClientOptions {
@@ -40,6 +42,7 @@ export function useActiveDeviceClient(
     baseUrl: iosActive ? endpointFor('ios', hubBase) : null,
     device: iosActive ? target?.device ?? null : null,
     streamMode: target?.streamMode as DeviceConnectionOptions['streamMode'],
+    duoPreview: target?.duoPreview,
     token,
   });
   const android = useAndroidDeviceClient({

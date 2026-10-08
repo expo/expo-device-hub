@@ -36,10 +36,14 @@ any orientation restrictions imposed by the foreground app.
 The Table Mode toggle controls the simulator's persistent table state. Tent
 enables it automatically; the other presets disable it.
 
-Confirmed hinge angles, named poses, and Table Mode values reflect successful
-commands in the current serve-sim session. serve-sim does not monitor the live
-hinge sensor for changes made externally in Device Hub. The streamed display
-and its orientation still follow native display readback.
+After capture starts, serve-sim reads the native hinge state in the background.
+An initial 0° or 180° selects Closed or Open; a partial angle is Custom because
+angle alone cannot distinguish Laptop from Book. An unavailable read stays
+unknown. A command queued during startup supersedes that initial snapshot.
+Thereafter, confirmed hinge angles, named poses, and Table Mode values reflect
+successful commands in the current serve-sim session. serve-sim does not
+continuously monitor the live hinge sensor for external changes. The streamed
+display and its orientation still follow native display readback.
 
 Table Mode eligibility requires a known physical orientation, established by
 choosing a preset. An independent rotation invalidates that knowledge because
@@ -280,6 +284,11 @@ display and mapped back to its streamed coordinates.
 In the flat framed view used for AX inspection, the closed screen uses
 DeviceKit's `phone15` frame; half-folded and fully open use the same `phone14`
 inner-display frame. The frame and hardware buttons rotate around the stream.
+When a hinge command switches panels, the departing panel keeps its last
+geometry until native readback identifies the destination panel. The new panel
+ID, dimensions, orientation, and glass corners are then published together.
+Failed commands release this hold; a two-second limit lets native geometry
+recover even if the expected display election never arrives.
 The inner frame's button PDFs declare `/Rotate 270`; both asset dimensions and
 PNG conversion must apply that page rotation.
 

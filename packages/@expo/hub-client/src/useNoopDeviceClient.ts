@@ -10,6 +10,8 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   error: null,
   inputError: null,
   screen: null,
+  hinge: null,
+  displayCorners: null,
   fps: 0,
   devices: [],
   logs: [],

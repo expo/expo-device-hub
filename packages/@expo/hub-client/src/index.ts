@@ -16,6 +16,17 @@ export * from './types';
 export { resolveDeviceStreamMode } from './stream-mode';
 export { areRecordingControlsLocked } from './screen-recording';
 export { DeviceScreen } from './DeviceScreen';
+export { FoldableDeviceScreen, type FoldableDeviceScreenProps } from './duo/FoldableDeviceScreen';
+export {
+  HINGE_POSES,
+  hingeControlState,
+  isHingeControlCommand,
+  isTableModeAvailable,
+  type HingeControlCommand,
+  type HingeControlState,
+  type HingePhysicalOrientation,
+  type HingePose,
+} from './hinge-control';
 export {
   DeviceClientProvider,
   useDeviceClientSelector,

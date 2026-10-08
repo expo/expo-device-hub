@@ -5,9 +5,7 @@
 
 export type WebRtcCodec = 'h264' | 'vp8' | 'vp9';
 
-export type WebRtcFailureReason =
-  | { kind: 'permanent' }
-  | { kind: 'codec'; codec: WebRtcCodec };
+export type WebRtcFailureReason = { kind: 'permanent' } | { kind: 'codec'; codec: WebRtcCodec };
 
 export type WebRtcStreamFailure = WebRtcFailureReason & { sessionId: string };
 
@@ -46,6 +44,7 @@ export function webRtcFallbackDecision(
 
 export type WebRtcFailureEvent =
   | 'first-frame-timeout'
+  | 'playback-stall'
   | 'connection-failed'
   | 'signaling-failed';
 
@@ -70,6 +69,20 @@ export function webRtcFailureDisposition(
   connectionState: RTCPeerConnectionState,
   progress: WebRtcMediaProgress = { mediaArriving: false },
 ): WebRtcFailureDisposition {
-  if (event !== 'first-frame-timeout' || connectionState !== 'connected') return 'transport';
-  return progress.mediaArriving ? 'wait' : 'codec';
+  if (connectionState !== 'connected') return 'transport';
+  if (event === 'playback-stall') return progress.mediaArriving ? 'codec' : 'transport';
+  if (event === 'first-frame-timeout') return progress.mediaArriving ? 'wait' : 'codec';
+  return 'transport';
+}
+
+/** A codec earns one reconnect before a second stall within 30 seconds demotes it. */
+export function playbackStallAction(
+  disposition: WebRtcFailureDisposition,
+  msSinceCodecReconnect: number | null,
+): 'retry-transport' | 'fail-codec' | 'none' {
+  if (disposition === 'transport') return 'retry-transport';
+  if (disposition !== 'codec') return 'none';
+  return msSinceCodecReconnect !== null && msSinceCodecReconnect < 30_000
+    ? 'fail-codec'
+    : 'retry-transport';
 }

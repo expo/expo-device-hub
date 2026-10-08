@@ -86,7 +86,12 @@ export { EventsSection } from './dashboard/EventsSection';
 export { LogsSection } from './dashboard/LogsSection';
 export { CollapsibleSection } from './dashboard/CollapsibleSection';
 export { KeyboardSection } from './dashboard/KeyboardSection';
-export { PhoneFrame } from './dashboard/PhoneFrame';
+export { PhoneFrame, type PhoneFrameFoldPreview } from './dashboard/PhoneFrame';
+export {
+  deviceScreenClipPath,
+  deviceScreenCornersClipPath,
+  type ScreenCornerRadiiCqw,
+} from './dashboard/deviceScreenClipPath';
 export {
   deviceFrameLayout,
   deviceFrameRotation,
@@ -100,6 +105,12 @@ export { LogControls } from './dashboard/LogControls';
 export { LogList } from './dashboard/LogList';
 export { LogRow } from './dashboard/LogRow';
 export { StreamControls } from './dashboard/StreamControls';
+export {
+  FoldSettings,
+  MODEL_UNAVAILABLE_DESCRIPTION,
+  type FoldPreviewOption,
+} from './dashboard/FoldSettings';
+export { FOLD_POSE_OPTIONS, selectedFoldPose } from './dashboard/foldPoses';
 export {
   StreamSection,
   type StreamModeAvailability,

@@ -1,4 +1,4 @@
-import { type DeviceStreamMode } from '@expo/hub-client';
+import { type DeviceStreamMode, type DuoPreviewMode } from '@expo/hub-client';
 import { type Device, type StreamModeAvailability } from '@expo/hub-components';
 import { create } from 'zustand';
 
@@ -8,6 +8,18 @@ import { browserStreamModeAvailability, resolveStreamMode } from './streamMode';
 
 export const DEFAULT_SIDEBAR_WIDTH = 400;
 export const HIDE_UNSUPPORTED_DEVICES_STORAGE_KEY = 'expo-device-hub.hideUnsupportedDevices';
+export const DUO_PREVIEW_MODE_STORAGE_KEY = 'expo-device-hub.duoPreviewMode';
+export const DUO_CACHE_SCREEN_ON_FOLD_STORAGE_KEY = 'expo-device-hub.duoCacheScreenOnFold';
+export const DUO_PREVIEW_SIZE_STORAGE_KEY = 'expo-device-hub.duoPreviewSize';
+
+export type DuoPreviewSize = 'physical' | 'fill';
+
+/** How the viewer draws an iPhone Duo; remembered per browser like serve-sim's settings. */
+export type DuoPreviewPreferences = {
+  mode: DuoPreviewMode;
+  cacheScreenOnFold: boolean;
+  sizeMode: DuoPreviewSize;
+};
 
 export type SidebarPreference = 'auto' | 'open' | 'hidden';
 export type SidebarSide = 'left' | 'right';
@@ -21,6 +33,7 @@ type DashboardStoreValues = {
   lastOpenedSidebar: SidebarSide;
   hideUnsupportedDevices: boolean;
   showDeviceFrame: boolean;
+  duoPreview: DuoPreviewPreferences;
 };
 
 export type DashboardStore = DashboardStoreValues & {
@@ -34,6 +47,7 @@ export type DashboardStore = DashboardStoreValues & {
   closeSidebar: (side: SidebarSide) => void;
   setHideUnsupportedDevices: (hide: boolean) => void;
   setShowDeviceFrame: (show: boolean) => void;
+  setDuoPreview: (patch: Partial<DuoPreviewPreferences>) => void;
 };
 
 type ReadableStorage = Pick<Storage, 'getItem'>;
@@ -56,6 +70,48 @@ export function persistHideUnsupportedDevicesDefault(storage: WritableStorage): 
     }
   } catch {
     // Storage can be unavailable in restricted browser contexts; retain the in-memory default.
+  }
+}
+
+/** serve-sim's defaults: the Duo opens in 3D, panels stay live while folding, and the model fills its stage. */
+export const DEFAULT_DUO_PREVIEW: DuoPreviewPreferences = {
+  mode: '3d',
+  cacheScreenOnFold: false,
+  sizeMode: 'fill',
+};
+
+/** Missing or malformed values fall back to the defaults; only `2d` opts out of the model. */
+export function readDuoPreview(storage: ReadableStorage): DuoPreviewPreferences {
+  try {
+    return {
+      mode: storage.getItem(DUO_PREVIEW_MODE_STORAGE_KEY) === '2d' ? '2d' : '3d',
+      cacheScreenOnFold: storage.getItem(DUO_CACHE_SCREEN_ON_FOLD_STORAGE_KEY) === 'true',
+      sizeMode: storage.getItem(DUO_PREVIEW_SIZE_STORAGE_KEY) === 'physical' ? 'physical' : 'fill',
+    };
+  } catch {
+    return DEFAULT_DUO_PREVIEW;
+  }
+}
+
+/** Writes only the changed choices, like serve-sim, so two open tabs do not undo each other's other choices. */
+export function persistDuoPreview(storage: WritableStorage, patch: Partial<DuoPreviewPreferences>): void {
+  try {
+    if (patch.mode !== undefined) storage.setItem(DUO_PREVIEW_MODE_STORAGE_KEY, patch.mode);
+    if (patch.cacheScreenOnFold !== undefined) {
+      storage.setItem(DUO_CACHE_SCREEN_ON_FOLD_STORAGE_KEY, String(patch.cacheScreenOnFold));
+    }
+    if (patch.sizeMode !== undefined) storage.setItem(DUO_PREVIEW_SIZE_STORAGE_KEY, patch.sizeMode);
+  } catch {
+    // Storage can be unavailable in restricted browser contexts; keep the in-memory choice.
+  }
+}
+
+function initialDuoPreview(): DuoPreviewPreferences {
+  if (typeof window === 'undefined') return DEFAULT_DUO_PREVIEW;
+  try {
+    return readDuoPreview(window.localStorage);
+  } catch {
+    return DEFAULT_DUO_PREVIEW;
   }
 }
 
@@ -82,6 +138,7 @@ function defaultDashboardStoreValues(): DashboardStoreValues {
     lastOpenedSidebar: 'right',
     hideUnsupportedDevices: initialHideUnsupportedDevices(),
     showDeviceFrame: true,
+    duoPreview: initialDuoPreview(),
   };
 }
 
@@ -127,6 +184,18 @@ export function createDashboardStore(initialState: Partial<DashboardStoreValues>
       })),
     setHideUnsupportedDevices: (hideUnsupportedDevices) => set({ hideUnsupportedDevices }),
     setShowDeviceFrame: (showDeviceFrame) => set({ showDeviceFrame }),
+    setDuoPreview: (patch) =>
+      set((state) => {
+        const duoPreview = { ...state.duoPreview, ...patch };
+        if (typeof window !== 'undefined') {
+          try {
+            persistDuoPreview(window.localStorage, patch);
+          } catch {
+            // Keep the in-memory choice without storage.
+          }
+        }
+        return { duoPreview };
+      }),
   }));
 }
 

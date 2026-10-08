@@ -4,6 +4,7 @@ import '@expo/hub-components/theme.css';
 import '../global.css';
 import {
   DeviceScreen,
+  FoldableDeviceScreen,
   displayScreen,
   useActiveDeviceClient,
   type DeviceHttpCodec,
@@ -23,6 +24,7 @@ import {
   type AddDeviceTarget,
   type Device,
   type DeviceFrameAssets,
+  type FoldPreviewOption,
 } from '@expo/hub-components';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -140,6 +142,11 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
   const chooseStreamMode = useDashboardStore((state) => state.chooseStreamMode);
   const showDeviceFrame = useDashboardStore((state) => state.showDeviceFrame);
   const setShowDeviceFrame = useDashboardStore((state) => state.setShowDeviceFrame);
+  const duoPreview = useDashboardStore((state) => state.duoPreview);
+  const setDuoPreview = useDashboardStore((state) => state.setDuoPreview);
+  // Xcode's model failed to load (or WebGL did) for this device; show the flat
+  // screen until the viewer picks 3D again, as serve-sim does.
+  const [duoModelUnavailableFor, setDuoModelUnavailableFor] = useState<string | null>(null);
   const [httpCodec, setHttpCodec] = useState<DeviceHttpCodec>(() =>
     streamMode === 'mjpeg' ? 'mjpeg' : streamMode === 'h264' ? 'h264' : 'auto'
   );
@@ -282,15 +289,38 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     chooseStreamMode(mode, selectedStreamModeAvailability);
   };
 
+  const duoModelUnavailable = !!selected && duoModelUnavailableFor === selected.id;
+  // Like serve-sim, switching devices retries the model.
+  const selectedDeviceId = selected?.id ?? null;
+  useEffect(() => setDuoModelUnavailableFor(null), [selectedDeviceId]);
   // One shared connection to the serve-sim/serve-emu server, wired to the
   // selected device. Null until the user picks one, so nothing connects (or
-  // boots) on load.
+  // boots) on load. An iPhone Duo streams both panels only while its 3D model
+  // is actually shown.
   const client = useActiveDeviceClient(
     connectionStatus === 'connected' && selected
-      ? { platform: selected.platform, device: selected.id, streamMode }
+      ? {
+          platform: selected.platform,
+          device: selected.id,
+          streamMode,
+          duoPreview: duoPreview.mode === '3d' && !duoModelUnavailable ? '3d' : '2d',
+        }
       : null,
     basePath()
   );
+  const foldPreview: FoldPreviewOption = {
+    mode: duoPreview.mode,
+    onModeChange: (mode) => {
+      setDuoPreview({ mode });
+      // Selecting 3D retries loading the model.
+      setDuoModelUnavailableFor(null);
+    },
+    unavailable: duoModelUnavailable,
+    cacheScreenOnFold: duoPreview.cacheScreenOnFold,
+    onCacheScreenOnFoldChange: (cacheScreenOnFold) => setDuoPreview({ cacheScreenOnFold }),
+    sizeMode: duoPreview.sizeMode,
+    onSizeModeChange: (sizeMode) => setDuoPreview({ sizeMode }),
+  };
   const agentInteractions = useArgentInteractions();
   const agentInteraction = selected ? agentInteractions[selected.id] ?? null : null;
   const agentDeviceIds = Object.keys(agentInteractions);
@@ -365,6 +395,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           client={client}
           agentInteraction={agentInteraction}
           DeviceScreen={DeviceScreen}
+          FoldableDeviceScreen={FoldableDeviceScreen}
+          foldPreview={{
+            cacheScreenOnFold: duoPreview.cacheScreenOnFold,
+            sizeMode: duoPreview.sizeMode,
+            onUnavailable: () => setDuoModelUnavailableFor(selected.id),
+          }}
           displayScreen={displayScreen}
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           showDeviceFrame={showDeviceFrame}
@@ -408,6 +444,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           client={client}
           showDeviceFrame={showDeviceFrame}
           onShowDeviceFrameChange={setShowDeviceFrame}
+          foldPreview={foldPreview}
           streamMode={streamMode}
           httpCodec={httpCodec}
           streamModeAvailability={selectedStreamModeAvailability}
@@ -454,6 +491,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           client={client}
           showDeviceFrame={showDeviceFrame}
           onShowDeviceFrameChange={setShowDeviceFrame}
+          foldPreview={foldPreview}
           streamMode={streamMode}
           httpCodec={httpCodec}
           streamModeAvailability={selectedStreamModeAvailability}
