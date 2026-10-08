@@ -352,3 +352,11 @@ immediately, then sum subsequent deltas on each axis once per display frame.
 Starting a touch or cleaning up the preview cancels buffered wheel input.
 This reduces outgoing input messages without delaying the start of scrolling;
 the native receiver still controls HID delivery and scroll gesture release.
+
+**Receiver requirement.** [observed: `HIDInjector.sendScroll`, `ScrollDragStep`]
+A receiver that applies only one clamped finger movement per wheel message
+discards distance beyond the screen edge. Combining deltas can increase that
+loss, so browser coalescing must be paired with a receiver that buffers and
+drains excess distance across edge reanchors. The native distance buffer in
+[PR #250](https://github.com/expo/expo-device-hub/pull/250) supplies that behavior;
+target simulator hosts need that implementation before coalescing is deployed.
