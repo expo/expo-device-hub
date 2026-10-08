@@ -99,10 +99,14 @@ settings request from a failed read:
 - `'ready'`: a read completed, including an empty response with no usable controls.
 - `'error'`: the initial read failed or timed out.
 
-Both backends bound settings reads to five seconds. A different device or connection
-configuration starts a fresh read. Android's background polling keeps the last successful
-values and leaves the status at `'ready'` during transient failures; a later successful
-poll also recovers an initial `'error'`.
+Both backends use the same settings-read status lifecycle and bound reads to five seconds.
+A different device or connection configuration starts a fresh read. Once a read succeeds,
+a failed background refresh keeps the last successful values and `'ready'` status.
+
+Android currently polls separate HTTP endpoints to follow external settings changes,
+while iOS has a bulk settings request. This transport difference is marked for unification
+in the Android hook. Until the first successful read, Android retries the full settings
+list so a later poll can recover an initial `'error'`, including one-shot appearance.
 
 The read status is independent of video and app activity. Use
 `capabilities.deviceSettings` to determine support, and `deviceSettingsPending` to disable

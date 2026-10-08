@@ -18,6 +18,7 @@ import { createGlobalStubs } from "./test-globals";
 type ReadMode = "hold" | "ready" | "empty" | "error" | "malformed" | "partial";
 type SocketData = { path: string; token: string | null };
 type ReadRequest = {
+  path: string;
   device: string;
   token: string | null;
   reply: (mode: Exclude<ReadMode, "hold">) => void;
@@ -87,6 +88,7 @@ function settingsServer() {
         request.signal.addEventListener("abort", () => state.aborted++, { once: true });
         return new Promise<Response>((resolve) =>
           register({
+            path: settingPath,
             device,
             token,
             reply(mode) {
@@ -132,6 +134,7 @@ function settingsServer() {
             return;
           }
           register({
+            path: "/ios/exec-ws",
             device: message.ui.device,
             token: socket.data.token,
             reply(mode) {
@@ -168,6 +171,15 @@ function settingsServer() {
     state,
     reads,
     baseUrl: (platform: DevicePlatform) => `${page.origin}/${platform}`,
+    hasAllReads(platform: DevicePlatform, device = "DEVICE-1", token?: string) {
+      const matching = reads.filter(
+        (read) => read.device === device && (token == null || read.token === token),
+      );
+      return (
+        new Set(matching.map((read) => read.path)).size >=
+        (platform === "android" ? Object.keys(ANDROID_RESPONSES).length : 1)
+      );
+    },
     reply(device: string, mode: Exclude<ReadMode, "hold">, token?: string) {
       for (let i = pending.length - 1; i >= 0; i--) {
         const read = pending[i]!;
@@ -218,7 +230,7 @@ for (const platform of ["ios", "android"] as const) {
     expect(mounted.client().deviceSettingsStatus).toBe("idle");
     expect(server.reads).toHaveLength(0);
     await mounted.update({ enabled: true });
-    await waitFor(() => server.reads.length > 0);
+    await waitFor(() => server.hasAllReads(platform));
     expect(mounted.client().deviceSettingsStatus).toBe("loading");
     expect(mounted.client().deviceSettings).toBeNull();
     await act(async () => server.reply("DEVICE-1", "ready"));
@@ -261,9 +273,9 @@ for (const platform of ["ios", "android"] as const) {
   test(`${platform}: old device replies cannot settle the newly selected device`, async () => {
     const server = settingsServer();
     const mounted = await mountClient(platform, server.baseUrl(platform));
-    await waitFor(() => server.reads.some((read) => read.device === "DEVICE-1"));
+    await waitFor(() => server.hasAllReads(platform));
     await mounted.update({ device: "DEVICE-2" });
-    await waitFor(() => server.reads.some((read) => read.device === "DEVICE-2"));
+    await waitFor(() => server.hasAllReads(platform, "DEVICE-2"));
     await act(async () => server.reply("DEVICE-1", "error"));
     expect(mounted.client().deviceSettingsStatus).toBe("loading");
     await act(async () => server.reply("DEVICE-2", "ready"));
@@ -280,7 +292,7 @@ for (const platform of ["ios", "android"] as const) {
     mounted.committed.length = 0;
     await mounted.update({ token: "token-b" });
     expect(mounted.committed[0]).not.toBe("ready");
-    await waitFor(() => server.reads.some((read) => read.token === "token-b"));
+    await waitFor(() => server.hasAllReads(platform, "DEVICE-1", "token-b"));
     expect(mounted.client().deviceSettingsStatus).toBe("loading");
     await act(async () => server.reply("DEVICE-1", "ready", "token-b"));
     await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
@@ -311,6 +323,7 @@ test("Android: background polls update values without rerendering status-only su
   server.state.mode = "ready";
   let status!: DeviceSettingsStatus;
   let settings: DeviceSettings | null = null;
+  const currentSettings = () => settings;
   let renders = 0;
   function Status() {
     status = useDeviceClient().deviceSettingsStatus;
@@ -335,7 +348,7 @@ test("Android: background polls update values without rerendering status-only su
   await waitFor(() => status === "ready");
   const before = renders;
   server.state.fontScale = 1.3;
-  await waitFor(() => settings?.["text-size"] === "extra-large", 4000);
+  await waitFor(() => currentSettings()?.["text-size"] === "extra-large", 4000);
   expect(status).toBe("ready");
   expect(renders).toBe(before);
   const initialReads = server.reads.length;
@@ -345,6 +358,6 @@ test("Android: background polls update values without rerendering status-only su
     await Bun.sleep(30);
   });
   expect(status).toBe("ready");
-  expect(settings?.["text-size"]).toBe("extra-large");
+  expect(currentSettings()?.["text-size"]).toBe("extra-large");
   expect(renders).toBe(before);
 }, 10000);

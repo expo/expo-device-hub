@@ -79,6 +79,7 @@ import { useAndroidCamera } from './useAndroidCamera';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useAppPermissions } from './useAppPermissions';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
+import { useDeviceSettingsReadStatus } from './useDeviceSettingsReadStatus';
 import { parseScreenRecordingStatus } from './screen-recording';
 import { fetchScreenshot } from './screenshot';
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
@@ -100,7 +101,6 @@ import {
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
-  type DeviceSettingsStatus,
   type DeviceStreamEncoderSettings,
   type DeviceStreamCapabilities,
   type DeviceStreamSettingCapabilities,
@@ -1822,16 +1822,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // Polling also makes network's aggregate wifi/data state authoritative.
   const deviceSettingsScope =
     active && baseUrl ? JSON.stringify([baseUrl, targetDevice, token]) : null;
-  const [deviceSettingsRead, setDeviceSettingsRead] = useState<{
-    scope: string | null;
-    status: DeviceSettingsStatus;
-  }>({ scope: null, status: 'idle' });
-  const deviceSettingsStatus =
-    deviceSettingsRead.scope === deviceSettingsScope
-      ? deviceSettingsRead.status
-      : deviceSettingsScope
-        ? 'loading'
-        : 'idle';
+  const { deviceSettingsStatus, resetRead, settleRead } =
+    useDeviceSettingsReadStatus(deviceSettingsScope);
 
   useEffect(() => {
     const tracker = deviceSettingWriteTrackerRef.current;
@@ -1839,10 +1831,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     for (const key of ANDROID_DEVICE_SETTING_KEYS) deviceSettingVersionsRef.current[key]++;
     setDeviceSettingsPending(new Set());
     setDeviceSettings(null);
-    setDeviceSettingsRead({
-      scope: deviceSettingsScope,
-      status: deviceSettingsScope ? 'loading' : 'idle',
-    });
+    resetRead();
     setAppearanceState(null);
     setDisplayWidthDp(null);
     setHardwareKeyboardConnected(null);
@@ -1852,7 +1841,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     let cancelled = false;
     let polling = false;
-    let hasSettings = false;
+    let hasSuccessfulRead = false;
     let controllers: AbortController[] = [];
     const scope = deviceScope;
 
@@ -1880,6 +1869,9 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
             );
             if (!response.ok) return { key, version, pendingAtStart, handled: false as const };
             const payload: unknown = await response.json();
+            if (!payload || typeof payload !== 'object' || !('ok' in payload) || payload.ok !== true) {
+              return { key, version, pendingAtStart, handled: false as const };
+            }
             return {
               key,
               version,
@@ -1896,16 +1888,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       polling = false;
       if (cancelled || deviceScopeRef.current !== scope) return;
       if (!results.some((result) => result.handled)) {
-        if (!hasSettings) {
-          setDeviceSettingsRead((current) =>
-            current.scope === deviceSettingsScope && current.status === 'error'
-              ? current
-              : { scope: deviceSettingsScope, status: 'error' },
-          );
-        }
+        settleRead('error');
         return;
       }
-      hasSettings = true;
+      hasSuccessfulRead = true;
       setDeviceSettings((current) => {
         const next = { ...(current ?? {}) };
         for (const result of results) {
@@ -1918,11 +1904,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         }
         return next;
       });
-      setDeviceSettingsRead((current) =>
-        current.scope === deviceSettingsScope && current.status === 'ready'
-          ? current
-          : { scope: deviceSettingsScope, status: 'ready' },
-      );
+      settleRead('ready');
       const appearanceResult = results.find((result) => result.key === 'appearance');
       if (
         appearanceResult?.handled &&
@@ -1968,7 +1950,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       })
       .catch(() => {});
     const timer = setInterval(
-      () => void poll(ANDROID_POLLED_DEVICE_SETTING_KEYS),
+      // TODO: unify these per-setting HTTP reads with iOS's bulk settings/refresh contract when
+      // serve-emu exposes it. Preserve the existing external-change polling until then. Retry all
+      // keys until the first successful read so the one-shot appearance value can recover too.
+      () =>
+        void poll(
+          hasSuccessfulRead ? ANDROID_POLLED_DEVICE_SETTING_KEYS : ANDROID_DEVICE_SETTING_KEYS,
+        ),
       DEVICE_SETTINGS_POLL_MS,
     );
     return () => {
@@ -1977,7 +1965,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       for (const controller of controllers) controller.abort();
       tracker.reset();
     };
-  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch, deviceSettingsScope]);
+  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch, resetRead, settleRead]);
 
   const webRtcAvailable = serverStreamSettings?.transport === 'webrtc';
   const streamCapabilities = useMemo<DeviceStreamCapabilities>(

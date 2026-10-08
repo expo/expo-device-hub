@@ -64,7 +64,6 @@ import {
   type DeviceLog,
   type DeviceSettingKey,
   type DeviceSettings,
-  type DeviceSettingsStatus,
   type DeviceStreamCapabilities,
   type DeviceStreamEncoderSettings,
   type DeviceStreamSettingCapabilities,
@@ -96,6 +95,7 @@ import { useAppPermissions } from './useAppPermissions';
 import { useAvccStream } from './useAvccStream';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
+import { useDeviceSettingsReadStatus } from './useDeviceSettingsReadStatus';
 import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
@@ -1438,24 +1438,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     execWsUrl && execToken && deviceUdid
       ? JSON.stringify([execWsUrl, execToken, deviceUdid, socketProtocols])
       : null;
-  const [deviceSettingsRead, setDeviceSettingsRead] = useState<{
-    scope: string | null;
-    status: DeviceSettingsStatus;
-  }>({ scope: null, status: 'idle' });
-  const deviceSettingsStatus =
-    deviceSettingsRead.scope === deviceSettingsScope
-      ? deviceSettingsRead.status
-      : deviceSettingsScope
-        ? 'loading'
-        : 'idle';
+  const { deviceSettingsStatus, resetRead, settleRead } =
+    useDeviceSettingsReadStatus(deviceSettingsScope);
 
   useEffect(() => {
     deviceSettingWriteTrackerRef.current.reset();
     setDeviceSettingsPending(new Set());
-    setDeviceSettingsRead({
-      scope: deviceSettingsScope,
-      status: deviceSettingsScope ? 'loading' : 'idle',
-    });
+    resetRead();
     setAppearanceState(null);
     setDeviceSettings(null);
     if (!execWsUrl || !execToken || !deviceUdid) {
@@ -1465,12 +1454,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols)
       .then((res) => {
         if (cancelled) return;
+        if (!res.status || typeof res.status !== 'object' || Array.isArray(res.status)) {
+          throw new Error('Simulator settings request returned an invalid status');
+        }
         const next: DeviceSettings = {};
-        for (const [key, value] of Object.entries(res.status ?? {})) {
+        for (const [key, value] of Object.entries(res.status)) {
           if (typeof value === 'string') next[key as DeviceSettingKey] = value;
         }
         setDeviceSettings(next);
-        setDeviceSettingsRead({ scope: deviceSettingsScope, status: 'ready' });
+        settleRead('ready');
         if (next.appearance === 'light' || next.appearance === 'dark') {
           setAppearanceState(next.appearance);
         }
@@ -1483,13 +1475,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       })
       .catch(() => {
         if (!cancelled) {
-          setDeviceSettingsRead({ scope: deviceSettingsScope, status: 'error' });
+          settleRead('error');
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [execWsUrl, execToken, deviceUdid, socketProtocols, deviceSettingsScope]);
+  }, [execWsUrl, execToken, deviceUdid, socketProtocols, resetRead, settleRead]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
