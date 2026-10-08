@@ -3,7 +3,7 @@ import { type ServerWebSocket } from "bun";
 import { useLayoutEffect } from "react";
 import { act, create, type ReactTestRenderer } from "react-test-renderer";
 
-import { DeviceClientProvider } from "../DeviceClientProvider";
+import { DeviceClientProvider, useDeviceClientSelector } from "../DeviceClientProvider";
 import {
   type DeviceClient,
   type DevicePlatform,
@@ -317,6 +317,86 @@ test("Android: a later poll recovers all initial values after a failed first rea
   expect(mounted.client().deviceSettings?.appearance).toBe("dark");
   expect(mounted.client().deviceSettings?.["text-size"]).toBe("medium");
 });
+
+test("Android: unchanged polls preserve settings references for tracked and selector subscribers", async () => {
+  const server = settingsServer();
+  server.state.mode = "ready";
+  const values = {
+    tracked: null as DeviceSettings | null,
+    selected: null as DeviceSettings | null,
+  };
+  const renders = { tracked: 0, selected: 0 };
+  function Tracked() {
+    values.tracked = useDeviceClient().deviceSettings;
+    renders.tracked++;
+    return null;
+  }
+  function Selected() {
+    values.selected = useDeviceClientSelector((client) => client.deviceSettings);
+    renders.selected++;
+    return null;
+  }
+  await act(async () => {
+    renderer = create(
+      <DeviceClientProvider
+        platform="android"
+        options={{ baseUrl: server.baseUrl("android"), device: "DEVICE-1", streamMode: "mjpeg" }}
+      >
+        <Tracked />
+        <Selected />
+      </DeviceClientProvider>,
+    );
+  });
+  await waitFor(() => values.tracked?.["text-size"] === "medium");
+  const initialSettings = values.tracked;
+  const initialRenders = { ...renders };
+  async function nextPoll(mode: Exclude<ReadMode, "hold">) {
+    server.state.mode = "hold";
+    const start = server.reads.length;
+    const paths = Object.keys(ANDROID_RESPONSES).filter((path) => path !== "/api/uimode");
+    await waitFor(
+      () => paths.every((path) => server.reads.slice(start).some((read) => read.path === path)),
+      4000,
+    );
+    await act(async () => {
+      server.reply("DEVICE-1", mode);
+      await Bun.sleep(30);
+    });
+  }
+
+  await nextPoll("ready");
+  expect(values.tracked).toBe(initialSettings);
+  expect(values.selected).toBe(initialSettings);
+  expect(renders).toEqual(initialRenders);
+
+  server.state.fontScale = 1.3;
+  await nextPoll("ready");
+  await waitFor(() => values.tracked?.["text-size"] === "extra-large");
+  expect(values.tracked).not.toBe(initialSettings);
+  expect(values.selected).toBe(values.tracked);
+  expect(renders).toEqual({
+    tracked: initialRenders.tracked + 1,
+    selected: initialRenders.selected + 1,
+  });
+
+  await nextPoll("empty");
+  await waitFor(() => values.tracked?.["text-size"] === undefined);
+  expect(values.tracked).toEqual({ appearance: "dark" });
+  expect(values.selected).toBe(values.tracked);
+  expect(renders).toEqual({
+    tracked: initialRenders.tracked + 2,
+    selected: initialRenders.selected + 2,
+  });
+
+  const afterRemoval = values.tracked;
+  await nextPoll("empty");
+  expect(values.tracked).toBe(afterRemoval);
+  expect(values.selected).toBe(afterRemoval);
+  expect(renders).toEqual({
+    tracked: initialRenders.tracked + 2,
+    selected: initialRenders.selected + 2,
+  });
+}, 16000);
 
 test("Android: background polls update values without rerendering status-only subscribers and retain them on failure", async () => {
   const server = settingsServer();
