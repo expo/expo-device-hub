@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "expo-device-hub",
-    "slug": "expo-device-hub",
-    "owner": "expo",
+    "name": "expo-device-hub-ci",
+    "slug": "expo-device-hub-ci",
+    "owner": "expo-ci",
     "extra": {
       "eas": {
-        "projectId": "05537bfc-41b0-49c3-bab5-a308bf2392bf"
+        "projectId": "5f09c479-b52c-4a29-8d00-4735342ca930"
       }
     }
   }
