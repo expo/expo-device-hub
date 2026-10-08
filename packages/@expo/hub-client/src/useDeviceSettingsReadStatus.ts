@@ -4,7 +4,7 @@ import { type DeviceSettingsStatus } from "./types";
 
 type ReadState = { scope: string | null; status: DeviceSettingsStatus };
 
-/** Shared initial-read lifecycle; a failed background refresh keeps usable settings ready. */
+/** Settings availability; refreshes keep their settled status until a result changes it. */
 export function useDeviceSettingsReadStatus(scope: string | null) {
   const [read, setRead] = useState<ReadState>({ scope: null, status: "idle" });
   const resetRead = useCallback(() => {
@@ -14,8 +14,7 @@ export function useDeviceSettingsReadStatus(scope: string | null) {
     (result: "ready" | "error") => {
       setRead((current) => {
         if (scope === null || current.scope !== scope) return current;
-        const status = result === "ready" || current.status === "ready" ? "ready" : "error";
-        return current.status === status ? current : { scope, status };
+        return current.status === result ? current : { scope, status: result };
       });
     },
     [scope],

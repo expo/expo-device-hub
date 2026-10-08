@@ -91,8 +91,10 @@ Status can be `'idle'`, `'connecting'`, `'streaming'` or `'error'`. Android also
 
 ### Read device settings
 
-`deviceSettingsStatus` tracks the initial settings read on both platforms, independently
-of app activity. Reads time out after five seconds; `'ready'` can include empty settings.
+`deviceSettingsStatus` reports settings availability on both platforms, independently
+of video and app activity. It is `'idle'` while disabled, `'loading'` during discovery
+and the first read, then `'ready'` or `'error'`. Settings reads time out after five
+seconds; `'ready'` can include empty settings.
 
 ```tsx
 import { useDeviceClient } from '@expo/hub-client';
@@ -107,7 +109,8 @@ function DeviceSettingsSummary() {
 }
 ```
 
-Successful settings stay available during refresh failures.
+Failed refreshes report `'error'` and retain cached values. Use `'ready'` to enable
+controls; recovery restores it without showing the initial loading state again.
 
 ### Show the screen
 
