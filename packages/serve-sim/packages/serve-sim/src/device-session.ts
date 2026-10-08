@@ -294,6 +294,7 @@ export class DeviceSession {
   private readonly cancelledBeforeStart = new Map<string, number>();
   private recordingFailure?: Error;
   private inputQueueDraining = false;
+  private scrollOwner?: HidSocket;
   private readonly activeTouches = new WeakMap<HidSocket, () => Promise<void>>();
   private readonly activeMultiTouches = new WeakMap<HidSocket, () => Promise<void>>();
   private readonly activeHidKeyUsages = new WeakMap<HidSocket, Set<number>>();
@@ -1163,6 +1164,11 @@ export class DeviceSession {
         if (m) {
           const operation = this.queueInputOperation(ws, async () => {
             this.recordTouchEvent(m);
+            if (m.type === "begin" && this.scrollOwner) {
+              await this.hid.cancelScroll();
+              this.scrollOwner = undefined;
+              if (this.phase !== "running" || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return;
+            }
             await this.hid.touch(m.type as "begin" | "move" | "end", m.x, m.y, W, H, m.edge ?? 0);
             if (m.type === "end") this.activeTouches.delete(ws);
             else this.activeTouches.set(ws, () => this.hid.touch("end", m.x, m.y, W, H, m.edge ?? 0));
@@ -1187,6 +1193,11 @@ export class DeviceSession {
         if (m) {
           const operation = this.queueInputOperation(ws, async () => {
             this.recordHidEvent(tag, m);
+            if (m.type === "begin" && this.scrollOwner) {
+              await this.hid.cancelScroll();
+              this.scrollOwner = undefined;
+              if (this.phase !== "running" || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return;
+            }
             await this.hid.multiTouch(m.type as "begin" | "move" | "end", m.x1, m.y1, m.x2, m.y2, W, H);
             if (m.type === "end") this.activeMultiTouches.delete(ws);
             else this.activeMultiTouches.set(ws, () => this.hid.multiTouch("end", m.x1, m.y1, m.x2, m.y2, W, H));
@@ -1276,7 +1287,17 @@ export class DeviceSession {
         if (m) {
           const operation = this.queueInputOperation(ws, async () => {
             this.recordHidEvent(tag, m);
-            await this.hid.scroll(m.dx * W, m.dy * H, W, H, m.x, m.y);
+            const dx = m.dx * W;
+            const dy = m.dy * H;
+            if (Number.isFinite(dx) && Number.isFinite(dy) && (dx !== 0 || dy !== 0) && W > 0 && H > 0) {
+              if (this.scrollOwner && this.scrollOwner !== ws) {
+                await this.hid.cancelScroll();
+                this.scrollOwner = undefined;
+              }
+              if (this.phase !== "running" || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return;
+              this.scrollOwner = ws;
+            }
+            await this.hid.scroll(dx, dy, W, H, m.x, m.y);
           });
           if (operation) await operation;
         }
@@ -1494,6 +1515,10 @@ export class DeviceSession {
     const queue = this.inputOperationQueues.get(ws) ?? [];
     queue.push({
       run: async () => {
+        if (this.scrollOwner === ws) {
+          await this.hid.cancelScroll();
+          this.scrollOwner = undefined;
+        }
         for (const touches of [this.activeTouches, this.activeMultiTouches]) {
           const release = touches.get(ws);
           touches.delete(ws);

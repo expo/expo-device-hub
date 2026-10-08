@@ -79,6 +79,10 @@ private func u32(_ v: Int) -> UInt32 {
         }
     }
 
+    @NodeMethod func cancelScroll() async throws {
+        try await setup.run { await injector.cancelScroll() }
+    }
+
     @NodeMethod func digitalCrown(_ delta: Double) async throws {
         try await setup.run { await injector.sendDigitalCrown(delta: delta) }
     }

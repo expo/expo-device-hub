@@ -25,6 +25,10 @@ let touchError: Error | undefined;
 const inputCalls: string[] = [];
 const keyEvents: { type: string; usage: number }[] = [];
 const touchEvents: { kind: string; args: unknown[] }[] = [];
+const scrollEvents: unknown[][] = [];
+const scrollOperations: string[] = [];
+let scrollGate: Promise<void> | undefined;
+let cancelScrollGate: Promise<void> | undefined;
 const axCharacters: string[] = [];
 let axFailures = 0;
 let axDelay = 0;
@@ -61,7 +65,18 @@ const addon = {
       inputCalls.push("key");
       keyEvents.push({ type, usage });
     }
-    async scroll() { inputCalls.push("scroll"); }
+    async scroll(...args: unknown[]) {
+      inputCalls.push("scroll");
+      scrollEvents.push(args);
+      scrollOperations.push("scroll");
+      await scrollGate;
+    }
+    async cancelScroll() {
+      inputCalls.push("cancelScroll");
+      scrollOperations.push("cancel-start");
+      await cancelScrollGate;
+      scrollOperations.push("cancel-end");
+    }
     async digitalCrown() { inputCalls.push("digitalCrown"); }
     async orientation() { inputCalls.push("orientation"); return true; }
     async supportsHingeAngle() { inputCalls.push("supportsHingeAngle"); return hingeSupported; }
@@ -119,6 +134,7 @@ const inputCommands: Array<{
   { name: "buttonHid", call: (hid) => hid.buttonHid(0x0c, 0xe9) },
   { name: "key", call: (hid) => hid.key("down", 4) },
   { name: "scroll", call: (hid) => hid.scroll(0, 100, 1398, 2034) },
+  { name: "cancelScroll", call: (hid) => hid.cancelScroll() },
   { name: "digitalCrown", call: (hid) => hid.digitalCrown(1) },
   { name: "orientation", call: (hid) => hid.orientation(4), result: true },
   { name: "supportsHingeAngle", call: (hid) => hid.supportsHingeAngle(), result: true },
@@ -201,6 +217,10 @@ beforeEach(() => {
   axCharacters.length = 0;
   axFailures = 0;
   touchEvents.length = 0;
+  scrollEvents.length = 0;
+  scrollOperations.length = 0;
+  scrollGate = undefined;
+  cancelScrollGate = undefined;
   axDelay = 0;
   axGate = undefined;
   hardwareKeyboard = "on";
@@ -908,6 +928,221 @@ describe("shifted keyboard routing", () => {
     } finally {
       for (const client of clients) client.terminate();
       await waitUntil(() => (session as unknown as { admittedHidSockets: Set<unknown> }).admittedHidSockets.size === 0);
+    }
+  });
+});
+
+describe("wheel ownership", () => {
+  const sendTo = (socket: WebSocket, tag: number, payload: object) => socket.send(Buffer.concat([
+    Buffer.from([tag]), Buffer.from(JSON.stringify(payload)),
+  ]));
+  const wheel = (socket: WebSocket, dy = 0.1) => sendTo(socket, 0x0b, { dx: 0, dy });
+  const state = () => session as unknown as {
+    admittedHidSockets: Set<unknown>;
+    hidSockets: Set<unknown>;
+    inFlightOrderedMessages: WeakMap<object, number>;
+    inputQueueDraining: boolean;
+  };
+  const waitForCleanup = (remaining: number) => waitUntil(() =>
+    state().admittedHidSockets.size === remaining && !state().inputQueueDraining);
+  const connect = async (url: string) => {
+    const client = new WebSocket(url.replace("http:", "ws:"));
+    await new Promise<void>((resolve, reject) => {
+      client.once("open", resolve);
+      client.once("error", reject);
+    });
+    return client;
+  };
+
+  test.each(["disconnect", "overload", "shutdown"])("cancels the owner's wheel on %s and discards queued wheels", async (cause) => {
+    await start({ width: 1170, height: 2532 });
+    let releaseScroll!: () => void;
+    scrollGate = new Promise<void>((resolve) => { releaseScroll = resolve; });
+    wheel(ws!);
+    await waitUntil(() => scrollEvents.length === 1);
+    try {
+      if (cause === "shutdown") session!.close();
+      else if (cause === "disconnect") ws!.terminate();
+      else {
+        const closed = new Promise<number>((resolve) => ws!.once("close", resolve));
+        for (let index = 0; index < 1030; index++) wheel(ws!);
+        expect(await closed).toBe(1013);
+      }
+      await waitUntil(() => state().hidSockets.size === 0);
+    } finally {
+      scrollGate = undefined;
+      releaseScroll();
+    }
+    await waitForCleanup(0);
+    expect(scrollEvents).toHaveLength(1);
+    expect(scrollOperations).toEqual(["scroll", "cancel-start", "cancel-end"]);
+  });
+
+  test("awaits cancellation before handing the wheel to another viewer and ignores the old viewer's cleanup", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const second = await connect(url);
+    let releaseCancel!: () => void;
+    try {
+      wheel(ws!);
+      await waitUntil(() => scrollEvents.length === 1);
+      cancelScrollGate = new Promise<void>((resolve) => { releaseCancel = resolve; });
+      wheel(second, 0.2);
+      await waitUntil(() => scrollOperations.includes("cancel-start"));
+      expect(scrollEvents).toHaveLength(1);
+      cancelScrollGate = undefined;
+      releaseCancel();
+      await waitUntil(() => scrollEvents.length === 2);
+      ws!.terminate();
+      await waitForCleanup(1);
+      expect(scrollOperations).toEqual(["scroll", "cancel-start", "cancel-end", "scroll"]);
+      wheel(second, 0.3);
+      await waitUntil(() => scrollEvents.length === 3);
+      expect(inputCalls.filter((call) => call === "cancelScroll")).toHaveLength(1);
+    } finally {
+      cancelScrollGate = undefined;
+      releaseCancel?.();
+      second.terminate();
+    }
+    await waitForCleanup(0);
+    expect(inputCalls.filter((call) => call === "cancelScroll")).toHaveLength(2);
+  });
+
+  test("a viewer that closes during preemption cannot start its delayed wheel", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const second = await connect(url);
+    let releaseCancel!: () => void;
+    try {
+      wheel(ws!);
+      await waitUntil(() => scrollEvents.length === 1);
+      cancelScrollGate = new Promise<void>((resolve) => { releaseCancel = resolve; });
+      wheel(second, 0.2);
+      await waitUntil(() => scrollOperations.includes("cancel-start"));
+      second.terminate();
+      await waitUntil(() => state().hidSockets.size === 1);
+      cancelScrollGate = undefined;
+      releaseCancel();
+      await waitForCleanup(1);
+      expect(scrollEvents).toHaveLength(1);
+      expect(scrollOperations).toEqual(["scroll", "cancel-start", "cancel-end"]);
+      wheel(ws!, 0.3);
+      await waitUntil(() => scrollEvents.length === 2);
+      expect(inputCalls.filter((call) => call === "cancelScroll")).toHaveLength(1);
+    } finally {
+      cancelScrollGate = undefined;
+      releaseCancel?.();
+      second.terminate();
+    }
+  });
+
+  test("a wheel delayed by capture startup cannot take ownership after its viewer disconnects", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const firstSocket = [...state().hidSockets][0] as object;
+    const second = await connect(url);
+    let releaseCapture!: () => void;
+    (session as unknown as { captureStart: Promise<void> }).captureStart = new Promise<void>((resolve) => {
+      releaseCapture = resolve;
+    });
+    try {
+      wheel(ws!);
+      await waitUntil(() => state().inFlightOrderedMessages.get(firstSocket) === 1);
+      ws!.terminate();
+      await waitUntil(() => state().hidSockets.size === 1);
+      wheel(second, 0.2);
+      releaseCapture();
+      await waitUntil(() => scrollEvents.length === 1);
+      await waitForCleanup(1);
+      expect(scrollEvents[0]![1]).toBe(0.2 * 2532);
+      expect(inputCalls).not.toContain("cancelScroll");
+    } finally {
+      releaseCapture();
+      second.terminate();
+    }
+  });
+
+  test("a malformed direct begin still cancels the outstanding wheel before its viewer disconnects", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const second = await connect(url);
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      wheel(ws!);
+      await waitUntil(() => scrollEvents.length === 1);
+      touchError = new Error("Could not convert parameter 1 to type Double");
+      sendTo(second, 0x03, { type: "begin", y: 0.5 });
+      await waitUntil(() => errorLog!.mock.calls.length === 1);
+      ws!.terminate();
+      await waitForCleanup(1);
+      expect(inputCalls.filter((call) => ["scroll", "cancelScroll", "touch"].includes(call)))
+        .toEqual(["scroll", "cancelScroll", "touch"]);
+      expect(scrollOperations).toEqual(["scroll", "cancel-start", "cancel-end"]);
+    } finally {
+      touchError = undefined;
+      second.terminate();
+    }
+  });
+
+  test.each([0x03, 0x05])("a direct touch that disconnects during wheel cancellation cannot start later (tag %s)", async (tag) => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const second = await connect(url);
+    let releaseCancel!: () => void;
+    try {
+      wheel(ws!);
+      await waitUntil(() => scrollEvents.length === 1);
+      cancelScrollGate = new Promise<void>((resolve) => { releaseCancel = resolve; });
+      sendTo(second, tag, { type: "begin", x: 0.5, y: 0.5, x1: 0.2, y1: 0.2, x2: 0.8, y2: 0.8 });
+      await waitUntil(() => scrollOperations.includes("cancel-start"));
+      second.terminate();
+      await waitUntil(() => state().hidSockets.size === 1);
+      cancelScrollGate = undefined;
+      releaseCancel();
+      await waitForCleanup(1);
+      expect(touchEvents).toEqual([]);
+      expect(scrollOperations).toEqual(["scroll", "cancel-start", "cancel-end"]);
+    } finally {
+      cancelScrollGate = undefined;
+      releaseCancel?.();
+      second.terminate();
+    }
+  });
+
+  test("same-viewer wheels accumulate while zero and invalid wheels from another viewer leave ownership intact", async () => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const second = await connect(url);
+    try {
+      wheel(ws!);
+      wheel(ws!, 0.2);
+      await waitUntil(() => scrollEvents.length === 2);
+      wheel(second, 0);
+      wheel(second, 1e308);
+      await waitUntil(() => scrollEvents.length === 4);
+      expect(inputCalls).not.toContain("cancelScroll");
+      second.terminate();
+      await waitForCleanup(1);
+      expect(inputCalls).not.toContain("cancelScroll");
+      ws!.terminate();
+      await waitForCleanup(0);
+      expect(inputCalls.filter((call) => call === "cancelScroll")).toHaveLength(1);
+    } finally {
+      second.terminate();
+    }
+  });
+
+  test.each([0x03, 0x05])("a direct touch begin preempts wheel ownership before its old viewer disconnects (tag %s)", async (tag) => {
+    const { url } = await start({ width: 1170, height: 2532 });
+    const second = await connect(url);
+    try {
+      wheel(ws!);
+      await waitUntil(() => scrollEvents.length === 1);
+      sendTo(second, tag, { type: "begin", x: 0.5, y: 0.5, x1: 0.2, y1: 0.2, x2: 0.8, y2: 0.8 });
+      await waitUntil(() => touchEvents.length === 1);
+      ws!.terminate();
+      await waitForCleanup(1);
+      expect(inputCalls.filter((call) => call === "cancelScroll")).toHaveLength(1);
+      expect(touchEvents.map((event) => event.args[0])).toEqual(["begin"]);
+      sendTo(second, tag, { type: "end", x: 0.5, y: 0.5, x1: 0.2, y1: 0.2, x2: 0.8, y2: 0.8 });
+      await waitUntil(() => touchEvents.length === 2);
+      expect(touchEvents.map((event) => event.args[0])).toEqual(["begin", "end"]);
+    } finally {
+      second.terminate();
     }
   });
 });

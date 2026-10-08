@@ -199,6 +199,7 @@ actor HIDInjector {
     /// Keep panel metadata aligned with capture and select the transport’s service.
     /// Existing gestures retain their target until their corresponding touch-up.
     func setScreen(screenID: UInt32?) {
+        if scrollIdle.selectScreen(screenID) { finishInterruptedScroll(wasActive: true) }
         selectedScreenID = screenID
         touchTarget.setScreen(screenID, universalHID: isFoldable)
         multiTouchTarget.setScreen(screenID, universalHID: isFoldable)
@@ -262,11 +263,13 @@ actor HIDInjector {
     }
 
     func sendTouch(type: String, x: Double, y: Double, screenWidth: Int, screenHeight: Int, edge: UInt32 = 0) {
+        if type == "begin" { interruptScroll() }
         hidLog("[hid] Sending \(type) at (\(String(format:"%.3f",x)),\(String(format:"%.3f",y)))\(edge > 0 ? " edge=\(edge)" : "")")
         rawSendTouch(type: type, x: x, y: y, edge: edge)
     }
 
     func sendMultiTouch(type: String, x1: Double, y1: Double, x2: Double, y2: Double, screenWidth: Int, screenHeight: Int) {
+        if type == "begin" { interruptScroll() }
         guard let target = multiTouchTarget.target(for: type) else { return }
         if isFoldable {
             sendUniversalTouches(target: target, type: type,
@@ -407,13 +410,108 @@ actor HIDInjector {
     private static let scrollDragGain: Double = 1.0
     private static let scrollEdgeMargin: Double = 0.08   // re-anchor inside this margin
     private static let scrollGestureIdle: TimeInterval = 0.1
+    private static let scrollMoveInterval: Duration = .milliseconds(20)
 
-    private var scrollDragActive = false
-    private var scrollFingerX = 0.5
-    private var scrollFingerY = 0.5
-    private var scrollAnchorX = 0.5   // where the gesture (re)starts — under the cursor
-    private var scrollAnchorY = 0.5
-    private var scrollEndWork: DispatchWorkItem?
+    private var scrollIdle = ScrollGestureIdle()
+    private var scrollDrag: ScrollDragBuffer?
+    private var scrollLastMove: ContinuousClock.Instant?
+    private var scrollMoveTask: Task<Void, Never>?
+    private var scrollEndTask: Task<Void, Never>?
+
+    func cancelScroll() {
+        interruptScroll()
+    }
+
+    private func interruptScroll() {
+        finishInterruptedScroll(wasActive: scrollIdle.interrupt())
+    }
+
+    private func finishInterruptedScroll(wasActive: Bool) {
+        scrollEndTask?.cancel()
+        scrollEndTask = nil
+        scrollMoveTask?.cancel()
+        scrollMoveTask = nil
+        if wasActive, let drag = scrollDrag {
+            // Keep the final movement alive for one pacing interval so UIKit
+            // can commit the pan before a new touch releases this contact.
+            if let lastMove = scrollLastMove {
+                let remaining = Self.scrollMoveInterval - lastMove.duration(to: .now)
+                if remaining > .zero {
+                    usleep(UInt32(remaining.components.attoseconds / 1_000_000_000_000))
+                }
+            }
+            rawSendTouch(type: "end", x: drag.x, y: drag.y)
+        }
+        scrollDrag = nil
+        scrollLastMove = nil
+    }
+
+    private func endScrollIfIdle(_ generation: UInt64) {
+        guard scrollIdle.isCurrent(generation) else { return }
+        guard scrollDrag?.hasPendingMovement != true else {
+            scheduleScrollEnd()
+            return
+        }
+        _ = scrollIdle.expire(generation)
+        scrollEndTask = nil
+        scrollMoveTask?.cancel()
+        scrollMoveTask = nil
+        if let drag = scrollDrag { rawSendTouch(type: "end", x: drag.x, y: drag.y) }
+        scrollDrag = nil
+        scrollLastMove = nil
+    }
+
+    private func scheduleScrollEnd() {
+        scrollEndTask?.cancel()
+        let generation = scrollIdle.extend()
+        scrollEndTask = Task {
+            do {
+                try await Task.sleep(for: .seconds(Self.scrollGestureIdle))
+            } catch {
+                return
+            }
+            endScrollIfIdle(generation)
+        }
+    }
+
+    private func scheduleScrollMoves() {
+        guard scrollMoveTask == nil, scrollDrag?.hasPendingMovement == true else { return }
+        let gesture = scrollIdle.gestureGeneration
+        scrollMoveTask = Task {
+            let elapsed = scrollLastMove?.duration(to: .now) ?? Self.scrollMoveInterval
+            do {
+                try await Task.sleep(for: max(.zero, Self.scrollMoveInterval - elapsed))
+            } catch {
+                return
+            }
+            while scrollIdle.isCurrentGesture(gesture) {
+                guard let previous = scrollDrag else { return }
+                var drag = previous
+                guard let step = drag.nextMove() else {
+                    scrollDrag = drag
+                    scrollMoveTask = nil
+                    return
+                }
+                if step.shouldReanchor {
+                    rawSendTouch(type: "end", x: previous.x, y: previous.y)
+                    beginDrag(x: drag.anchorX, y: drag.anchorY)
+                }
+                scrollDrag = drag
+                rawSendTouch(type: "move", x: step.x, y: step.y)
+                scrollLastMove = .now
+                scheduleScrollEnd()
+                guard drag.hasPendingMovement else {
+                    scrollMoveTask = nil
+                    return
+                }
+                do {
+                    try await Task.sleep(for: Self.scrollMoveInterval)
+                } catch {
+                    return
+                }
+            }
+        }
+    }
 
     private func clampFinger(_ v: Double) -> Double {
         min(max(v, HIDInjector.scrollEdgeMargin), 1 - HIDInjector.scrollEdgeMargin)
@@ -434,7 +532,7 @@ actor HIDInjector {
     ///   - dy: Vertical scroll delta in device pixels (positive = content down).
     ///   - anchorX/anchorY: Normalized (0–1) cursor position to begin the drag
     ///     under, so iOS pans the view beneath the pointer. Nil = screen center.
-    func sendScroll(dx: Double, dy: Double, anchorX: Double?, anchorY: Double?, screenWidth: Int, screenHeight: Int) async {
+    func sendScroll(dx: Double, dy: Double, anchorX: Double?, anchorY: Double?, screenWidth: Int, screenHeight: Int) {
         guard dx.isFinite, dy.isFinite, (dx != 0 || dy != 0), screenWidth > 0, screenHeight > 0 else { return }
 
         // Finger moves opposite to content: scrolling content down = swipe up.
@@ -442,48 +540,26 @@ actor HIDInjector {
         let stepY = -(dy / Double(screenHeight)) * HIDInjector.scrollDragGain
         let aX = clampFinger(anchorX.flatMap { $0.isFinite ? $0 : nil } ?? 0.5)
         let aY = clampFinger(anchorY.flatMap { $0.isFinite ? $0 : nil } ?? 0.5)
-        let step = ScrollDragStep(
-            x: scrollDragActive ? scrollFingerX : aX,
-            y: scrollDragActive ? scrollFingerY : aY,
-            anchorX: scrollDragActive ? scrollAnchorX : aX,
-            anchorY: scrollDragActive ? scrollAnchorY : aY,
-            dx: stepX, dy: stepY, margin: Self.scrollEdgeMargin
-        )
-        guard step.moves else { return }
-
-        if !scrollDragActive {
-            // Anchor a fresh gesture under the cursor so iOS hit-tests the
-            // right scroll view (e.g. a bottom sheet vs. the map behind it).
-            scrollAnchorX = aX
-            scrollAnchorY = aY
-            scrollFingerX = aX
-            scrollFingerY = aY
-            beginDrag(x: scrollFingerX, y: scrollFingerY)
-            scrollDragActive = true
-        } else if step.shouldReanchor {
-            // Lift only after reaching an edge. An oversized first wheel delta
-            // must move before lifting, or iOS interprets the gesture as a tap.
-            rawSendTouch(type: "end", x: scrollFingerX, y: scrollFingerY)
-            scrollFingerX = scrollAnchorX
-            scrollFingerY = scrollAnchorY
-            beginDrag(x: scrollFingerX, y: scrollFingerY)
+        if var drag = scrollDrag {
+            drag.add(dx: stepX, dy: stepY)
+            scrollDrag = drag
+        } else {
+            var drag = ScrollDragBuffer(anchorX: aX, anchorY: aY, margin: Self.scrollEdgeMargin,
+                                        minimumTravelX: 1 / Double(screenWidth),
+                                        minimumTravelY: 1 / Double(screenHeight))
+            drag.add(dx: stepX, dy: stepY)
+            guard let step = drag.nextMove() else { return }
+            beginDrag(x: aX, y: aY)
+            scrollDrag = drag
+            rawSendTouch(type: "move", x: step.x, y: step.y)
+            scrollLastMove = .now
         }
 
-        scrollFingerX = step.x
-        scrollFingerY = step.y
-        rawSendTouch(type: "move", x: scrollFingerX, y: scrollFingerY)
-
-        // End the drag shortly after the wheel goes idle.
-        scrollEndWork?.cancel()
-        let work = DispatchWorkItem { [self] in
-            guard scrollDragActive else { return }
-            rawSendTouch(type: "end", x: scrollFingerX, y: scrollFingerY)
-            scrollDragActive = false
-        }
-        scrollEndWork = work
-
-        try? await Task.sleep(for: .seconds(HIDInjector.scrollGestureIdle))
-        work.perform()
+        // UIKit can consume a burst as one batch even when every HID report
+        // arrives. Pace emitted movement while accumulating deltas, including
+        // the remainder beyond an edge. Neither timer holds the JS input queue.
+        scheduleScrollEnd()
+        scheduleScrollMoves()
     }
 
     /// Press an arbitrary hardware button identified by its HID (page, usage),
@@ -520,6 +596,7 @@ actor HIDInjector {
 
         switch button {
         case "home":
+            interruptScroll()
             // Xcode 26+ silently drops the Indigo HID home-button press, so the
             // press is delivered but never reaches SpringBoard. Relaunching
             // SpringBoard foregrounds the home screen reliably on every Xcode
@@ -533,6 +610,7 @@ actor HIDInjector {
             sendSwipeHome()
 
         case "app_switcher":
+            interruptScroll()
             if buttonFunc != nil {
                 // Double home press with delay for app switcher
                 sendHIDButton(eventSource: Self.buttonSourceHome, direction: Self.buttonDown)
@@ -663,6 +741,7 @@ actor HIDInjector {
     /// Uses IndigoHIDEdge.bottom to flag touches as system edge gestures,
     /// which iOS interprets as the home indicator swipe.
     private func sendSwipeHome() {
+        interruptScroll()
         let xPos = 0.5
         let yStart = 0.95
         let yEnd = 0.35

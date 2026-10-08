@@ -3,9 +3,13 @@
 **Type:** Research
 **Status:** Active
 **Systems:** ServeSim
-**Author:** Imported from expo/serve-sim in #79 (original authors are in that repo)
+**Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/scroll-injection-devicehub.md`; links and paths updated)
+**Revised:** 2026-10-07 (updated paced wheel delivery, edge handling, and scroll-to-touch handoff for PR #250)
+
+The SimulatorKit research was imported from [expo/serve-sim](https://github.com/expo/serve-sim)
+in [PR #79](https://github.com/expo/expo-device-hub/pull/79) and moved into the LLP corpus
+in [PR #245](https://github.com/expo/expo-device-hub/pull/245).
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -325,9 +329,9 @@ and an unprivileged helper can neither capture nor synthesize them.
 `HIDInjector.sendScroll` translates the wheel delta into a **touch drag** on the
 digitizer (`IndigoHIDMessageForMouseNSEvent`, target `0x32`) — the same path
 taps/swipes use, which *is* honored on iOS 27. A wheel burst becomes one
-continuous drag (begin → moves → end on idle), re-anchoring to center near the
-edges so long scrolls aren't capped. **Verified bidirectional** on iPhone 17 Pro
-/ iOS 27.0: a wheel-down burst scrolled Settings from "Apple Account…StandBy" to
+continuous drag (begin → moves → end on idle), re-anchoring to the cursor
+anchor near the edges when sufficient travel remains. **Verified bidirectional**
+on iPhone 17 Pro / iOS 27.0: a wheel-down burst scrolled Settings from "Apple Account…StandBy" to
 "Siri…Developer", and wheel-up returned to the top — driven through the real
 browser → WS `0x0b` → helper pipeline.
 
@@ -345,4 +349,31 @@ anchor (not center) so long scrolls keep hit-testing the same view.
 
 The `--capture-scroll <udid> [seconds]` subcommand is retained as a diagnostic
 (useful if run from a binary that ever gains the HID entitlements).
-```
+
+### Paced wheel delivery
+
+Wheel input accumulates in `ScrollDragBuffer`; native moves are emitted at a
+20 ms interval, and a 100 ms idle timer releases the drag once pending movement
+has drained. Input handling does not wait for idle release on each wheel
+message. Cancellation clears pending moves and both timers before a new touch
+or navigation takes over. If the final move is less than 20 ms old, interruption
+keeps the contact down for the remainder of that interval before sending
+touch-up. This synchronous wait prevents another input operation from taking
+over while the old contact is still down; it is report spacing, not a UIKit
+acknowledgement [observed: `HIDInjector.sendScroll`,
+`scheduleScrollMoves`, `endScrollIfIdle`, `finishInterruptedScroll`, and
+`src/device-session.ts`].
+
+Pending movement is bounded to four display lengths per axis and sixteen move
+reports per drain. Before emitting a move, the buffer ignores an axis whose
+current position and cursor anchor lack enough outward travel to drain its
+remaining distance within that report budget (or have less than one pixel of
+travel). Useful movement on the other axis is preserved. The anchor stays under
+the pointer rather than moving inward into another view [observed:
+`Sources/StreamingPolicy/ScrollDragBuffer.swift`, `HIDInjector.sendScroll`, and
+`ScrollDragBufferTests`]. This avoids repeatedly lifting and restarting tiny
+near-edge drags; the targeted local Simulator check in PR #250 observed row
+selections from those gestures before the guard, and none afterwards [observed:
+PR #250 local near-edge UIKit journals, 2026-10-05]. It does not establish
+hosted functional acceptance; full scrolling and Home-navigation acceptance
+remain separate gates.
