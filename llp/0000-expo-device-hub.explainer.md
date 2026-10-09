@@ -2,7 +2,7 @@
 
 **Type:** Explainer
 **Status:** Active
-**Systems:** Hub, HubClient, HubComponents, AppleUtils, AndroidUtils, ServeSim, ServeEmu, Example, Release, LLP
+**Systems:** Hub, HubClient, HubComponents, AppleUtils, AndroidUtils, ServeSim, ServeEmu, Example, CI, Release, LLP
 **Role:** Root
 **Author:** Claude Code (Claude Opus 5.5), directed by Krystof Woldrich
 **Date:** 2026-10-02
@@ -81,7 +81,7 @@ Each item names the code that depends on it. Do not "clean up" this code without
 4. <a id="emu-input-path"></a>**serve-emu writes input directly to the scrcpy control socket.** Do not use `adb shell input`; it is too slow for agent workflows [observed: `packages/serve-emu/AGENTS.md` "Runtime Assumptions"].
 5. <a id="emu-auth"></a>**serve-emu binds to loopback by default.** A non-loopback bind requires a token unless `--unsafe-no-auth` is passed. The token gate runs before routing, so new routes are covered. Never put the token in `/health`, `/api`, error bodies, or reconnect URLs [observed: `packages/serve-emu/AGENTS.md` "Server and API Guidance"].
 6. <a id="emu-protocol"></a>**[LLP 0008](0008-serve-emu-protocol.spec.md) is the source of truth for scrcpy framing.** The scrcpy server version is pinned in `scripts/fetch-scrcpy.ts`. Change the pin, the reference, and the parser fixtures together [observed: `packages/serve-emu/AGENTS.md` "scrcpy Protocol Notes"].
-7. <a id="sim-test-isolation"></a>**serve-sim tests never touch another session's simulator.** `bun run test` puts an `xcrun` shim on `PATH` that refuses `simctl`. `bun run test:e2e` requires `SERVE_SIM_TEST_UDID` and a private state directory. This is because other agents may keep simulators running on the same machine [observed: `packages/serve-sim/AGENTS.md` "Commands"].
+7. <a id="sim-test-isolation"></a>**serve-sim tests never touch another session's simulator.** `bun run test` puts an `xcrun` shim on `PATH` that refuses `simctl`. `bun run test:e2e` requires `SERVE_SIM_TEST_UDID` and a private state directory. This is because other agents may keep simulators running on the same machine [observed: `packages/serve-sim/AGENTS.md` "Commands"]. CI runs the unit files in two isolated shards before it boots its own simulator, then runs the simulator files one at a time [observed: `scripts/ci/serve-sim-tests.ts`, `.eas/workflows/sim-test.yml`].
 8. <a id="sim-proxy-upgrades"></a>**With `proxyHelpers`, WebSocket upgrades must reach the serve-sim middleware.** If they do not, the page still shows video over HTTP, but simulator input and DevTools stop working [observed: `packages/serve-sim/packages/serve-sim/README.md` "proxyHelpers"]. In the Hub, `simWebSocketHandler` does this.
 9. <a id="native-reload"></a>**The serve-sim N-API addon loads once per process.** After a native rebuild, restart any running serve-sim process before you test [observed: `packages/serve-sim/AGENTS.md` "Native build notes"].
 10. <a id="same-behavior"></a>**A new feature behaves the same on iOS and Android.** Design it for both servers and give it the same behavior on both, even where the wire protocols differ today. A feature that works one way on serve-sim and another way on serve-emu works against the protocol unification [confirmed] (Krystof Woldrich, 2026-10-02).
