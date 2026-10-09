@@ -3,4 +3,4 @@
 'expo-device-hub': patch
 ---
 
-Report current device-settings availability independently of video, retain cached settings on failure, and recover iOS controls after connection interruptions. Discard interrupted reads, coalesce reconnect refreshes, and disable unavailable settings in the Hub dashboard.
+`deviceSettingsStatus` now reports iOS discovery, connection loss, and recovery, so consumers no longer need the video status. Failed refreshes report `'error'` and keep cached settings. The Hub dashboard disables unavailable settings.

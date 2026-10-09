@@ -15,6 +15,7 @@ import {
   StreamOptionsSection,
 } from '../../../../@expo/hub-components/src/dashboard/StreamOptionsSection';
 import { StreamStatistics } from '../../../../@expo/hub-components/src/dashboard/StreamStatistics';
+import { StreamPanel } from '../../../../@expo/hub-components/src/dashboard/StreamPanel';
 
 function inspectorClient(platform: DevicePlatform): DeviceClient {
   const ios = platform === 'ios';
@@ -1334,10 +1335,27 @@ test('styles sidebar action buttons like the select pills', () => {
   }
 });
 
-test('disables unavailable device settings while retaining values and the viewer-local frame control', () => {
+function themeButtonMarkup(client: DeviceClient) {
+  const html = renderToStaticMarkup(
+    <StreamPanel
+      device={device(client.platform, null)}
+      client={client}
+      DeviceScreen={() => null}
+      displayScreen={(screen) => screen ?? null}
+    />,
+  );
+  return html.match(/<button[^>]*aria-label="Theme"[^>]*>/)?.[0];
+}
+
+test('keeps toolbar and sidebar appearance availability aligned without locking the viewer-local frame control', () => {
   for (const platform of ['ios', 'android'] as const) {
     for (const status of ['idle', 'loading', 'error', 'ready'] as const) {
-      const client = { ...inspectorClient(platform), deviceSettingsStatus: status };
+      const base = inspectorClient(platform);
+      const client = {
+        ...base,
+        deviceSettings: { ...base.deviceSettings, appearance: 'dark' },
+        deviceSettingsStatus: status,
+      };
       const html = renderToStaticMarkup(
         <LogSidebar
           client={client}
@@ -1347,8 +1365,11 @@ test('disables unavailable device settings while retaining values and the viewer
         />,
       );
       const appearance = selectMarkup(html, 'Appearance');
-      expect(appearance).toContain('Light');
+      expect(appearance).toContain('Dark');
       expect(appearance.includes('disabled=""')).toBe(status !== 'ready');
+      const theme = themeButtonMarkup(client);
+      expect(theme).toContain('aria-checked="true"');
+      expect(theme?.includes('disabled=""')).toBe(status !== 'ready');
       const otherControl = platform === 'ios'
         ? switchMarkup(html, 'Reduce motion')
         : selectMarkup(html, 'Network');
@@ -1368,18 +1389,29 @@ test('disables only the pending Android device setting', () => {
   expect(selectMarkup(html, 'Network')).toContain('disabled=""');
   expect(selectMarkup(html, 'Appearance')).not.toContain('disabled=""');
   expect(selectMarkup(html, 'Text size')).not.toContain('disabled=""');
+  expect(themeButtonMarkup(client)).not.toContain('disabled=""');
 });
 
 test('disables only the device setting with an in-flight update', () => {
-  const client = {
-    ...inspectorClient('ios'),
-    deviceSettingsPending: new Set(['appearance'] as const),
-  };
-  const html = renderToStaticMarkup(<LogSidebar client={client} />);
+  for (const platform of ['ios', 'android'] as const) {
+    const client = {
+      ...inspectorClient(platform),
+      deviceSettingsPending: new Set(['appearance'] as const),
+    };
+    const html = renderToStaticMarkup(<LogSidebar client={client} />);
 
-  expect(selectMarkup(html, 'Appearance')).toContain('disabled=""');
-  expect(selectMarkup(html, 'Liquid glass')).not.toContain('disabled=""');
-  expect(switchMarkup(html, 'Reduce motion')).not.toContain('disabled=""');
+    expect(selectMarkup(html, 'Appearance')).toContain('disabled=""');
+    expect(themeButtonMarkup(client)).toContain('disabled=""');
+    expect(selectMarkup(html, platform === 'ios' ? 'Liquid glass' : 'Network')).not.toContain('disabled=""');
+  }
+});
+
+test('disables the toolbar Theme button for missing or unsupported settings', () => {
+  for (const platform of ['ios', 'android'] as const) {
+    for (const deviceSettings of [null, {}, { appearance: 'unsupported' }]) {
+      expect(themeButtonMarkup({ ...inspectorClient(platform), deviceSettings })).toContain('disabled=""');
+    }
+  }
 });
 
 test('shows an enabled viewer-local frame switch for exact device profiles', () => {
