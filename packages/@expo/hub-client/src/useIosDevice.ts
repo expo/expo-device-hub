@@ -82,6 +82,7 @@ import {
   type ScrollSample,
   type TouchSample,
 } from './types';
+import { listenForInputCancellation } from './input-cancellation';
 import { NO_PENDING_CAMERA_WRITES } from './device-camera';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from './ios-input-error';
@@ -105,8 +106,7 @@ import {
   webRtcFallbackDecision,
 } from './webrtc-fallback';
 import { createInputSocket } from './input-socket';
-import { WS_MSG_CONFIG } from './input-protocol';
-import { WS_REASON_INPUT_UNAVAILABLE } from './input-protocol';
+import { WS_MSG_CONFIG, WS_REASON_INPUT_UNAVAILABLE } from './input-protocol';
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
@@ -462,9 +462,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
   const sendWs = useCallback((tag: number, payload: object) => {
-    if (!deviceSettingConfigRef.current) return;
+    if (!config || config !== deviceSettingConfigRef.current) return;
     inputSocketRef.current?.send(tag, payload);
-  }, []);
+  }, [config]);
 
   const sendTouch = useCallback((sample: TouchSample) => {
     const orientation = streamGeometry(screenRef.current).inputOrientation;
@@ -528,7 +528,20 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       createPacedKeySender((event) => sendWs(WS_MSG_KEY, { type: event.type, usage: event.usage })),
     [sendWs],
   );
-  useEffect(() => () => keySender.dispose(), [keySender]);
+  const cancelInput = useCallback(() => {
+    const releases = keySender.cancel();
+    if (!config || config !== deviceSettingConfigRef.current) return;
+    const socket = inputSocketRef.current;
+    socket?.discardQueued(WS_MSG_KEY);
+    socket?.discardQueued(WS_MSG_SCROLL);
+    socket?.discardUnfinishedGestures(WS_MSG_TOUCH);
+    socket?.discardUnfinishedGestures(WS_MSG_MULTI_TOUCH);
+    for (const event of releases) socket?.trySend(WS_MSG_KEY, event);
+  }, [config, keySender]);
+  useEffect(() => {
+    const stopListening = listenForInputCancellation(cancelInput);
+    return () => { stopListening(); keySender.dispose(); };
+  }, [cancelInput, keySender]);
   const sendKeyEvents = useCallback(
     (events: ReadonlyArray<HidKeyEvent>) => keySender.enqueue(events),
     [keySender],
@@ -1695,6 +1708,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     attachVideo,
     sendTouch,
     sendMultiTouch,
+    cancelInput,
     sendKey,
     sendKeyEvents,
     sendScroll,

@@ -117,6 +117,28 @@ export function createInputSocket(
       // New helpers require admission; legacy helpers keep their prior open behavior.
       pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload);
     },
+    // @ref LLP 0013#input-ownership — complete gestures stay queued; a held touch is released
+    discardUnfinishedGestures(tag: number) {
+      // Keep complete begin/end pairs in their original order and with their original TTL.
+      const completed = new Set<QueuedWsMessage>();
+      let gesture: QueuedWsMessage[] = [];
+      for (const message of pendingMessages) {
+        if (message.tag !== tag) continue;
+        const phase = (message.payload as { type?: string }).type;
+        if (phase === "begin") gesture = [message];
+        else if (gesture.length) {
+          gesture.push(message);
+          if (phase === "end") {
+            for (const entry of gesture) completed.add(entry);
+            gesture = [];
+          }
+        }
+      }
+      pendingMessages = pendingMessages.filter(message => message.tag !== tag || completed.has(message));
+    },
+    discardQueued(tag: number) {
+      pendingMessages = pendingMessages.filter(message => message.tag !== tag);
+    },
     trySend(tag: number, payload: object) {
       return admitted && trySendWsMessage(socket, tag, payload);
     },
