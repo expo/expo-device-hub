@@ -3,7 +3,13 @@ import { mkdtempSync, readFileSync, rmSync, statSync, existsSync, readdirSync } 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { clearHubState, hubStateFile, localHubUrl, writeHubState } from '../cli/state-file';
+import {
+  clearHubState,
+  hubStateFile,
+  localHubUrl,
+  publishHubState,
+  writeHubState,
+} from '../cli/state-file';
 
 const directories: string[] = [];
 function stateEnv(): Record<string, string | undefined> {
@@ -49,6 +55,22 @@ describe('the CLI state file', () => {
     expect(existsSync(file)).toBe(false);
     // Clearing a missing file is not an error.
     clearHubState(3400, 4242, env);
+  });
+
+  // The CLI withdraws the record when shutdown starts, and again at exit as a fallback.
+  test("withdraws a published record once, and leaves a newer Hub's record in place", () => {
+    const env = stateEnv();
+    const withdraw = publishHubState({ pid: 4242, port: 3400, url: 'http://127.0.0.1:3400' }, env);
+    const file = hubStateFile(3400, env);
+    expect(existsSync(file)).toBe(true);
+
+    withdraw();
+    expect(existsSync(file)).toBe(false);
+
+    // A Hub that started on the same port in the meantime keeps its record.
+    writeHubState({ pid: 5151, port: 3400, url: 'http://127.0.0.1:3400' }, env);
+    withdraw();
+    expect(existsSync(file)).toBe(true);
   });
 
   test('names a URL that answers on this machine', () => {

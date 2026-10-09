@@ -51,3 +51,17 @@ export function clearHubState(port: number, ownerPid: number, env: Env = process
     if (state.pid === ownerPid) unlinkSync(file);
   } catch {}
 }
+
+/**
+ * Writes the Hub's record and returns a function that removes it once. The CLI removes it when
+ * shutdown starts, before the Hub stops accepting connections, and again at exit as a fallback.
+ */
+export function publishHubState(state: HubState, env: Env = process.env): () => void {
+  writeHubState(state, env);
+  let withdrawn = false;
+  return () => {
+    if (withdrawn) return;
+    withdrawn = true;
+    clearHubState(state.port, state.pid, env);
+  };
+}
