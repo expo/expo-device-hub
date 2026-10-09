@@ -229,6 +229,19 @@ still force-kill the helper and interrupt its writer [observed:
 
 ## Control and shutdown
 
+The in-process preview server reports a recording-shutdown error after 65 seconds,
+including its PID. It keeps the writer, output and existing device state alive;
+it does not exit or tear down capture while recording finalization is pending.
+If finalization later completes, ordinary cleanup runs and the process exits with
+status 1 because the deadline expired. If it never completes, the process stays
+alive for recovery; this deadline reports the stall rather than cancelling the
+writer. The parent/helper force-kill policy above is separate [observed:
+`src/shutdown-budget.ts`, `runRecordingShutdown`; `src/index.ts`, `serve` shutdown].
+Once the in-process server installs its recording-aware signal handler, the
+earlier startup handler defers cleanup to it, so capture and capabilities stay
+active until recording finalization completes [observed: `src/index.ts`,
+foreground startup and `serve` signal handlers].
+
 Start serve-sim for the device, then run:
 
 ```sh
