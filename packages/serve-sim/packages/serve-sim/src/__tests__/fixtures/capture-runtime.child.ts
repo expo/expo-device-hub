@@ -1087,7 +1087,8 @@ if (name === 'DYLD_INSERT_LIBRARIES' && command !== 'getenv' && fs.existsSync(fa
 if (command === 'getenv') process.stdout.write(env[name] || '');
 if (command === 'setenv') env[name] = value;
 if (command === 'unsetenv') delete env[name];
-fs.writeFileSync(path, JSON.stringify(env));
+// Reads run in parallel, so only a write rewrites the file a concurrent read may be parsing.
+if (command !== 'getenv') fs.writeFileSync(path, JSON.stringify(env));
 ` });
   });
 
