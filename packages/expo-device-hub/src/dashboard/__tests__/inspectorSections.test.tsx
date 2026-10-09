@@ -51,6 +51,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
           voiceover: 'off',
         }
       : { appearance: 'light', network: 'on', 'text-size': 'medium' },
+    deviceSettingsStatus: 'ready',
     deviceSettingsPending: new Set(),
     setDeviceSetting: () => {},
     displayWidthDp: null,

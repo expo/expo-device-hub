@@ -112,6 +112,9 @@ export type DeviceSettingKey =
 /** Current backend-reported values. Missing keys are unavailable; `unsupported` keys are hidden. */
 export type DeviceSettings = Partial<Record<DeviceSettingKey, string>>;
 
+/** Initial settings read for the selected device, independent of app activity and writes. */
+export type DeviceSettingsStatus = 'idle' | 'loading' | 'ready' | 'error';
+
 /** Which emulator camera a feed drives. */
 export type DeviceCameraFacing = 'back' | 'front';
 
@@ -620,6 +623,8 @@ export interface DeviceClient {
 
   /** Backend-supported simulator/device options and their current values. */
   deviceSettings: DeviceSettings | null;
+  /** `idle` without a settings endpoint; otherwise the initial read's loading or settled state. */
+  deviceSettingsStatus: DeviceSettingsStatus;
   /** Options currently being changed. Writes to other options remain available. */
   deviceSettingsPending: ReadonlySet<DeviceSettingKey>;
   /** Change one simulator/device option. Unsupported keys are ignored by each backend. */

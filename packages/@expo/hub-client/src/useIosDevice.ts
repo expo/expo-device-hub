@@ -95,6 +95,7 @@ import { useAppPermissions } from './useAppPermissions';
 import { useAvccStream } from './useAvccStream';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
+import { useDeviceSettingsReadStatus } from './useDeviceSettingsReadStatus';
 import { useWebRtcStream, type WebRtcIceServer } from './useWebRtcStream';
 import { presentedVideoFrameDelta } from './video-frame-metadata';
 import {
@@ -1433,23 +1434,35 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // ── Simulator settings (best-effort) — one status request hydrates every
   //    device-options control, including the appearance used by the toolbar. ──
+  const deviceSettingsScope =
+    execWsUrl && execToken && deviceUdid
+      ? JSON.stringify([execWsUrl, execToken, deviceUdid, socketProtocols])
+      : null;
+  const { deviceSettingsStatus, resetRead, settleRead } =
+    useDeviceSettingsReadStatus(deviceSettingsScope);
+
   useEffect(() => {
     deviceSettingWriteTrackerRef.current.reset();
     setDeviceSettingsPending(new Set());
+    resetRead();
+    setAppearanceState(null);
+    setDeviceSettings(null);
     if (!execWsUrl || !execToken || !deviceUdid) {
-      setAppearanceState(null);
-      setDeviceSettings(null);
       return;
     }
     let cancelled = false;
     hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols)
       .then((res) => {
         if (cancelled) return;
+        if (!res.status || typeof res.status !== 'object' || Array.isArray(res.status)) {
+          throw new Error('Simulator settings request returned an invalid status');
+        }
         const next: DeviceSettings = {};
-        for (const [key, value] of Object.entries(res.status ?? {})) {
+        for (const [key, value] of Object.entries(res.status)) {
           if (typeof value === 'string') next[key as DeviceSettingKey] = value;
         }
         setDeviceSettings(next);
+        settleRead('ready');
         if (next.appearance === 'light' || next.appearance === 'dark') {
           setAppearanceState(next.appearance);
         }
@@ -1461,12 +1474,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
       })
       .catch(() => {
-        /* unreachable / unsupported — leave unknown */
+        if (!cancelled) {
+          settleRead('error');
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [execWsUrl, execToken, deviceUdid, socketProtocols]);
+  }, [execWsUrl, execToken, deviceUdid, socketProtocols, resetRead, settleRead]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
@@ -1641,6 +1656,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     clearEvents,
     activity,
     deviceSettings,
+    deviceSettingsStatus,
     deviceSettingsPending,
     setDeviceSetting,
     displayWidthDp: null,

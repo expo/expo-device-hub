@@ -79,6 +79,7 @@ import { useAndroidCamera } from './useAndroidCamera';
 import { type DeviceLocationBackend, useDeviceLocation } from './useDeviceLocation';
 import { useAppPermissions } from './useAppPermissions';
 import { useStreamSettingsResource } from './useStreamSettingsResource';
+import { useDeviceSettingsReadStatus } from './useDeviceSettingsReadStatus';
 import { parseScreenRecordingStatus } from './screen-recording';
 import { fetchScreenshot } from './screenshot';
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
@@ -122,6 +123,8 @@ const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
 const DEVICE_SETTINGS_POLL_MS = 3000;
+// Match serve-sim's UI request deadline so an unreachable endpoint cannot hold the initial read.
+const DEVICE_SETTINGS_READ_TIMEOUT_MS = 5000;
 
 const noop = () => {};
 const ANDROID_STREAM_CODECS = ['h264'] as const;
@@ -1817,12 +1820,18 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // ── Device options (best-effort) ──
   // Keep Hub in sync with changes made on-device or through serve-emu's own UI.
   // Polling also makes network's aggregate wifi/data state authoritative.
+  const deviceSettingsScope =
+    active && baseUrl ? JSON.stringify([baseUrl, targetDevice, token]) : null;
+  const { deviceSettingsStatus, resetRead, settleRead } =
+    useDeviceSettingsReadStatus(deviceSettingsScope);
+
   useEffect(() => {
     const tracker = deviceSettingWriteTrackerRef.current;
     tracker.reset();
     for (const key of ANDROID_DEVICE_SETTING_KEYS) deviceSettingVersionsRef.current[key]++;
     setDeviceSettingsPending(new Set());
     setDeviceSettings(null);
+    resetRead();
     setAppearanceState(null);
     setDisplayWidthDp(null);
     setHardwareKeyboardConnected(null);
@@ -1832,6 +1841,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     let cancelled = false;
     let polling = false;
+    let hasReadAppearance = false;
     let controllers: AbortController[] = [];
     const scope = deviceScope;
 
@@ -1849,10 +1859,19 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           try {
             const response = await sessionFetch(
               deviceApiUrl(baseUrl, androidDeviceSettingPathFor(key), targetDevice),
-              { cache: 'no-store', signal: controller.signal },
+              {
+                cache: 'no-store',
+                signal: AbortSignal.any([
+                  controller.signal,
+                  AbortSignal.timeout(DEVICE_SETTINGS_READ_TIMEOUT_MS),
+                ]),
+              },
             );
             if (!response.ok) return { key, version, pendingAtStart, handled: false as const };
             const payload: unknown = await response.json();
+            if (!payload || typeof payload !== 'object' || !('ok' in payload) || payload.ok !== true) {
+              return { key, version, pendingAtStart, handled: false as const };
+            }
             return {
               key,
               version,
@@ -1868,28 +1887,38 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       );
       polling = false;
       if (cancelled || deviceScopeRef.current !== scope) return;
-      if (!results.some((result) => result.handled)) return;
+      if (!results.some((result) => result.handled)) {
+        settleRead('error');
+        return;
+      }
       setDeviceSettings((current) => {
-        const next = { ...(current ?? {}) };
+        // Keep tracked settings subscribers quiet when an accepted poll changes nothing.
+        let next = current ?? {};
         for (const result of results) {
           if (!result.handled) continue;
           if (result.pendingAtStart) continue;
           if (deviceSettingVersionsRef.current[result.key] !== result.version) continue;
           if (tracker.pending.has(result.key)) continue;
+          if (result.value === null && !Object.hasOwn(next, result.key)) continue;
+          if (result.value !== null && next[result.key] === result.value) continue;
+          if (next === current) next = { ...next };
           if (result.value === null) delete next[result.key];
           else next[result.key] = result.value;
         }
         return next;
       });
+      settleRead('ready');
       const appearanceResult = results.find((result) => result.key === 'appearance');
       if (
         appearanceResult?.handled &&
         !appearanceResult.pendingAtStart &&
         deviceSettingVersionsRef.current.appearance === appearanceResult.version &&
-        !tracker.pending.has('appearance') &&
-        (appearanceResult.value === 'light' || appearanceResult.value === 'dark')
+        !tracker.pending.has('appearance')
       ) {
-        setAppearanceState(appearanceResult.value);
+        hasReadAppearance = true;
+        if (appearanceResult.value === 'light' || appearanceResult.value === 'dark') {
+          setAppearanceState(appearanceResult.value);
+        }
       }
       const displaySizeResult = results.find((result) => result.key === 'display-size');
       if (
@@ -1926,7 +1955,13 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       })
       .catch(() => {});
     const timer = setInterval(
-      () => void poll(ANDROID_POLLED_DEVICE_SETTING_KEYS),
+      // TODO: unify these per-setting HTTP reads with iOS's bulk settings/refresh contract when
+      // serve-emu exposes it. Preserve the existing external-change polling until then. Retry
+      // Appearance until its own read succeeds, even when other controls are already ready.
+      () =>
+        void poll(
+          hasReadAppearance ? ANDROID_POLLED_DEVICE_SETTING_KEYS : ANDROID_DEVICE_SETTING_KEYS,
+        ),
       DEVICE_SETTINGS_POLL_MS,
     );
     return () => {
@@ -1935,7 +1970,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       for (const controller of controllers) controller.abort();
       tracker.reset();
     };
-  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch]);
+  }, [active, baseUrl, deviceScope, targetDevice, sessionFetch, resetRead, settleRead]);
 
   const webRtcAvailable = serverStreamSettings?.transport === 'webrtc';
   const streamCapabilities = useMemo<DeviceStreamCapabilities>(
@@ -1989,6 +2024,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     clearEvents,
     activity,
     deviceSettings,
+    deviceSettingsStatus,
     deviceSettingsPending,
     setDeviceSetting,
     displayWidthDp,

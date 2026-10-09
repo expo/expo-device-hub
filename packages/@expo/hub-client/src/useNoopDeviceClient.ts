@@ -24,6 +24,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   clearEvents: () => {},
   activity: null,
   deviceSettings: null,
+  deviceSettingsStatus: 'idle',
   deviceSettingsPending: new Set(),
   setDeviceSetting: () => {},
   displayWidthDp: null,
