@@ -27,7 +27,7 @@ type FakeSocket = {
   onclose?: (event: { code: number; reason: string }) => void;
 };
 
-async function renderIosClient(inputAdmission: unknown = true, { renderScreen = false } = {}) {
+async function renderIosClient(inputAdmission: unknown = true, { renderScreen = false, coarsePointer = true } = {}) {
   const sockets: FakeSocket[] = [];
   const listeners = new Map<string, Set<() => void>>();
   const addListener = (name: string, callback: () => void) => {
@@ -49,6 +49,11 @@ async function renderIosClient(inputAdmission: unknown = true, { renderScreen = 
     removeEventListener: removeListener,
     setTimeout,
     clearTimeout,
+    matchMedia: (query: string) => ({
+      matches: coarsePointer && query === '(pointer: coarse)',
+      addEventListener() {},
+      removeEventListener() {},
+    }),
   });
   stubGlobal('document', { hidden: false, addEventListener: addListener, removeEventListener: removeListener });
   stubGlobal('WebSocket', class {
@@ -160,6 +165,14 @@ test('malformed config frames cannot admit modern input or set keyboard state', 
   expect(client().hardwareKeyboardConnected).toBeNull();
   await act(async () => socket.onmessage?.({data: Uint8Array.of(0x83).buffer}));
   expect(client().hardwareKeyboardConnected).toBe(false);
+});
+
+test('a desktop client keeps the hardware keyboard that Command shortcuts need', async () => {
+  const {client, helperSockets} = await renderIosClient(true, { coarsePointer: false }); const socket = helperSockets()[0]!;
+  socket.readyState = 1; await act(async () => socket.onopen?.());
+  await act(async () => socket.onmessage?.({data: Uint8Array.of(0x83).buffer}));
+  expect(socket.sent.map((data) => new Uint8Array(data)[0])).not.toContain(0x0e);
+  expect(client().hardwareKeyboardConnected).toBeNull();
 });
 
 test('legacy OPEN sends input while recovery waits out the refusal grace', async () => {

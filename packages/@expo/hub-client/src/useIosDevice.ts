@@ -61,6 +61,7 @@ import {
   type DeviceAppearance,
   type DeviceClient,
   type DeviceCapabilities,
+  type DeviceClipboardAction,
   type DeviceConnectionOptions,
   type DeviceLog,
   type DeviceSettingKey,
@@ -83,10 +84,17 @@ import {
 } from './types';
 import { listenForInputCancellation } from './input-cancellation';
 import { NO_PENDING_CAMERA_WRITES } from './device-camera';
+import { ClipboardActionError } from './device-clipboard';
 import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { IOS_INPUT_UNAVAILABLE_MESSAGE } from './ios-input-error';
 import { KeyedWriteTracker } from './keyed-write-tracker';
-import { createPacedKeySender } from './paced-key-sender';
+import { copySimulatorText } from './ios-clipboard';
+import {
+  createOrderedKeyboardInput,
+  INPUT_DISCONNECTED_MESSAGE,
+  type KeyMessage,
+  type OrderedKeyboardInput,
+} from './ordered-keyboard-input';
 import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
@@ -130,6 +138,15 @@ const HID_USAGE_R = 0x15; // 'r'
 
 // The simulator-settings option behind `hardwareKeyboardConnected`.
 const UI_OPTION_HARDWARE_KEYBOARD = 'hardware-keyboard';
+
+type ClipboardState = {
+  /** Counts the actions that started. */
+  actionId: number;
+  pending: DeviceClipboardAction | null;
+  error: string | null;
+  warning: string | null;
+};
+const IDLE_CLIPBOARD: ClipboardState = { actionId: 0, pending: null, error: null, warning: null };
 
 const PLACEHOLDER_DEVICES: RunningDevice[] = [
   { id: 'ios', name: 'iPhone Simulator', platform: 'ios', current: true },
@@ -229,6 +246,10 @@ interface ResolvedConfig {
   wsUrl: string;
   /** The helper sends `WS_MSG_INPUT_ADMITTED` to an admitted input socket. */
   inputAdmission: boolean;
+  /** The helper answers `WS_MSG_PASTE`; an older one drops it. */
+  inputPaste: boolean;
+  /** The helper answers `WS_MSG_INPUT_BARRIER` by request ID; an older one only without one. */
+  inputCopy: boolean;
   device: string | null;
   pid: number | null;
   /** Middleware exec-ws URL used for logs, events, metrics, and UI requests. */
@@ -261,6 +282,8 @@ interface PreviewApi {
   streamUrl?: string;
   wsUrl?: string;
   inputAdmission?: boolean;
+  inputPaste?: boolean;
+  inputCopy?: boolean;
   device?: string;
   pid?: number;
   basePath?: string;
@@ -376,6 +399,17 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const inputSocketRef = useRef<ReturnType<typeof createInputSocket> | null>(null);
+  const keyboardInputRef = useRef<OrderedKeyboardInput | null>(null);
+  const [clipboardState, setClipboardState] = useState(IDLE_CLIPBOARD);
+  const clipboardGenerationRef = useRef(0);
+  // @ref LLP 0013#clipboard — another device or server clears the state; a replaced helper fails the action
+  // The results of another device or server no longer show. A new helper for the same device does
+  // not clear them, so a request that its input socket dropped ends in `clipboardError`.
+  const clipboardIdentity = active && baseUrl ? connectionKey(baseUrl, targetDevice, token) : null;
+  useEffect(() => {
+    clipboardGenerationRef.current++;
+    setClipboardState((state) => ({ ...IDLE_CLIPBOARD, actionId: state.actionId }));
+  }, [clipboardIdentity]);
   // Monotonic log id source, persisted across log-stream reconnects so ids stay
   // unique even though lines are kept (the stream effect may re-run).
   const logSeqRef = useRef(0);
@@ -490,40 +524,91 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     [sendWs],
   );
 
+  // Keyboard input shares one ordered queue per input socket with clipboard requests.
+  const keyboardInput = useCallback(() =>
+    config && config === deviceSettingConfigRef.current ? keyboardInputRef.current : null, [config]);
+
   const sendKey = useCallback(
     (input: KeyboardInput): boolean => {
       const message = iosMessageForKeyboardInput(input);
       if (!message) return false;
-      sendWs(WS_MSG_KEY, message);
+      keyboardInput()?.send(message);
       return true;
     },
-    [sendWs],
+    [keyboardInput],
   );
 
-  // Pre-mapped key events (phone-keyboard capture) are paced a few ms apart so
-  // iOS doesn't coalesce a pasted string into a couple of lost keystrokes.
-  const keySender = useMemo(
-    () =>
-      createPacedKeySender((event) => sendWs(WS_MSG_KEY, { type: event.type, usage: event.usage })),
-    [sendWs],
-  );
   const cancelInput = useCallback(() => {
-    const releases = keySender.cancel();
-    if (!config || config !== deviceSettingConfigRef.current) return;
+    const keyboard = keyboardInput();
+    if (!keyboard) return;
     const socket = inputSocketRef.current;
     socket?.discardQueued(WS_MSG_KEY);
     socket?.discardQueued(WS_MSG_SCROLL);
     socket?.discardUnfinishedGestures(WS_MSG_TOUCH);
     socket?.discardUnfinishedGestures(WS_MSG_MULTI_TOUCH);
-    for (const event of releases) socket?.trySend(WS_MSG_KEY, event);
-  }, [config, keySender]);
-  useEffect(() => {
-    const stopListening = listenForInputCancellation(cancelInput);
-    return () => { stopListening(); keySender.dispose(); };
-  }, [cancelInput, keySender]);
+    keyboard.cancelKeys((event) => socket?.trySend(WS_MSG_KEY, event));
+  }, [keyboardInput]);
+  useEffect(() => listenForInputCancellation(cancelInput), [cancelInput]);
+  // Pre-mapped key events (phone-keyboard capture) are paced a few ms apart so
+  // iOS doesn't coalesce a pasted string into a couple of lost keystrokes.
   const sendKeyEvents = useCallback(
-    (events: ReadonlyArray<HidKeyEvent>) => keySender.enqueue(events),
-    [keySender],
+    (events: ReadonlyArray<HidKeyEvent>) => keyboardInput()?.enqueue(events),
+    [keyboardInput],
+  );
+
+  // @ref LLP 0013#clipboard — pending, error and warning follow the latest action; each call keeps its own result
+  const runClipboardAction = useCallback(
+    async <T>(
+      kind: DeviceClipboardAction,
+      action: () => Promise<{ value: T; warning?: string }>,
+    ): Promise<T> => {
+      const generation = ++clipboardGenerationRef.current;
+      setClipboardState((state) => ({ actionId: state.actionId + 1, pending: kind, error: null, warning: null }));
+      const settle = (next: Omit<ClipboardState, 'actionId'>) => {
+        if (generation === clipboardGenerationRef.current) {
+          setClipboardState((state) => ({ ...next, actionId: state.actionId }));
+        }
+      };
+      try {
+        const { value, warning } = await action();
+        settle({ pending: null, error: null, warning: warning ?? null });
+        return value;
+      } catch (error) {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        // A failed action can still leave a key held, as a failed Copy in serve-sim does.
+        const warning = failure instanceof ClipboardActionError ? failure.cleanupWarning ?? null : null;
+        settle({ pending: null, error: failure.message, warning });
+        throw failure;
+      }
+    },
+    [],
+  );
+
+  const pasteText = useCallback(
+    (text?: string) =>
+      runClipboardAction('paste', async () => {
+        if (!config?.inputPaste) throw new Error('Paste is not available on this simulator.');
+        const keyboard = keyboardInput();
+        if (!keyboard) throw new Error(INPUT_DISCONNECTED_MESSAGE);
+        const { cleanupWarning } = await keyboard.paste(text);
+        return { value: undefined, warning: cleanupWarning };
+      }),
+    [config, keyboardInput, runClipboardAction],
+  );
+
+  const copyText = useCallback(
+    () =>
+      runClipboardAction('copy', async () => {
+        const c = config;
+        if (!baseUrl || !c?.inputCopy) throw new Error('Copy is not available on this simulator.');
+        const keyboard = keyboardInput();
+        if (!keyboard) throw new Error(INPUT_DISCONNECTED_MESSAGE);
+        const { text, cleanupWarning } = await keyboard.readAfterInput((signal) =>
+          copySimulatorText(baseUrl, c.device ?? targetDevice, c.execToken, sessionFetch, signal),
+        );
+        return { value: text, warning: cleanupWarning };
+      }),
+    [baseUrl, config, keyboardInput, runClipboardAction, sessionFetch, targetDevice],
   );
 
   // Connect/disconnect the Mac keyboard from the guest through serve-sim's
@@ -708,6 +793,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         streamUrl: withSessionTokenQuery(c.streamUrl ?? `${c.url}/stream.mjpeg`, token),
         wsUrl: toQueryStyleHelperWsUrl(c.wsUrl ?? `${toWs(c.url!)}/ws`),
         inputAdmission: c.inputAdmission === true,
+        inputPaste: c.inputPaste === true,
+        inputCopy: c.inputCopy === true,
         device: c.device ?? null,
         pid: c.pid ?? null,
         configEventsPath: `${basePath}/api/events${targetDevice ? `?device=${encodeURIComponent(targetDevice)}` : ''}`,
@@ -1094,12 +1181,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // @ref LLP 0013#ios-input-adapter — refusals clear only on admission; rediscovery waits for the reconnect
     const input = createInputSocket(wsUrl, {
       onAdmitted() {
+        // As in serve-sim, only a touch client disconnects the hardware keyboard so its phone keyboard
+        // shows. Desktop keeps it: iOS ignores Command+V and Command+C without it.
+        if (typeof window === 'undefined' || window.matchMedia?.('(pointer: coarse)').matches !== true) return;
         // The helper restores its host keyboard connection after the last owner leaves.
         input.send(WS_MSG_HARDWARE_KEYBOARD, { enabled: false });
         setHardwareKeyboardConnectedState(false);
       },
       onMessage(data) {
-        if (!(data instanceof ArrayBuffer)) return false;
+        if (!(data instanceof ArrayBuffer) || keyboard.receive(data)) return false;
         const bytes = new Uint8Array(data);
         if (bytes[0] !== WS_MSG_CONFIG) return false;
         try {
@@ -1112,6 +1202,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         } catch { return false; }
       },
       onDisconnect() {
+        keyboard.cancel();
         setHardwareKeyboardConnectedState(null);
         // Normally exec-ws pushes replacement config by the reconnect. HTTP discovery
         // recovers rotated credentials or a proxy that cannot upgrade WebSockets.
@@ -1132,13 +1223,20 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       },
       onRecovered() { setInputSocketError(null); },
     }, { requireAdmission: requireInputAdmission, reconnectDelayMs: RECONNECT_MS, openSocket: (address) => new WebSocket(address, socketProtocols) });
+    const keyboard = createOrderedKeyboardInput({
+      sendKey: (message: KeyMessage) => input.send(WS_MSG_KEY, message),
+      trySendFrame: (frame) => input.trySendEncoded(frame),
+    });
     inputSocketRef.current = input;
+    keyboardInputRef.current = keyboard;
     input.start();
     return () => {
       clearTimeout(noticeTimer);
       clearTimeout(refreshTimer);
+      keyboard.dispose();
       input.dispose();
       if (inputSocketRef.current === input) inputSocketRef.current = null;
+      if (keyboardInputRef.current === keyboard) keyboardInputRef.current = null;
       setHardwareKeyboardConnectedState(null);
     };
   }, [wsUrl, requireInputAdmission, controlDevice, socketProtocols, videoSessionKey]);
@@ -1469,6 +1567,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const eventsAvailable = !!eventsPath;
   const accessibilityAvailable = accessibilityLoader !== null;
   const streamSettingsAvailable = !!streamSettingsUrl;
+  const clipboardPaste = config?.inputPaste ?? false;
+  const clipboardCopy = config?.inputCopy ?? false;
   const capabilities = useMemo<DeviceCapabilities>(
     () => ({
       deviceSettings: deviceSettingsAvailable,
@@ -1479,6 +1579,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       streamSettings: streamSettingsAvailable ? IOS_STREAM_SETTING_CAPABILITIES : false,
       location: locationCapabilities,
       permissions: false,
+      clipboard:
+        clipboardPaste || clipboardCopy ? { paste: clipboardPaste, copy: clipboardCopy } : false,
     }),
     [
       deviceSettingsAvailable,
@@ -1487,6 +1589,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       accessibilityAvailable,
       streamSettingsAvailable,
       locationCapabilities,
+      clipboardPaste,
+      clipboardCopy,
     ],
   );
 
@@ -1525,6 +1629,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     setLocation,
     clearLocation,
     ...appPermissions,
+    pasteText,
+    copyText,
+    clipboardActionId: clipboardState.actionId,
+    clipboardPending: clipboardState.pending,
+    clipboardError: clipboardState.error,
+    clipboardWarning: clipboardState.warning,
     streamCapabilities,
     screenRecording: null,
     streamSettings,

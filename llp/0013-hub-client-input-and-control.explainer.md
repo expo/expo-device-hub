@@ -34,7 +34,7 @@ serve-sim's client uses the same rules and numbers [observed: `socket/client-inp
 
 The iOS adapter uses the admission socket [observed: `createInputSocket` call in `useIosDevice.ts`]:
 
-- After admission, it turns off the Simulator's hardware keyboard, so that iOS shows its software keyboard.
+- After admission, a touch client (coarse pointer) turns off the Simulator's hardware keyboard, so that iOS shows its software keyboard. A desktop client keeps it, as serve-sim's own client does, because iOS ignores Command+V and Command+C without a hardware keyboard [observed: `onAdmitted` in `useIosDevice.ts`; serve-sim `client/client.tsx`] [confirmed: Gabe Debes, 2026-10-08].
 - A refusal notice clears when a socket is admitted. A config update for the same helper does not clear it. A replaced helper (new `pid` or exec token) gets a new input socket, which clears the notice and starts a new refusal grace.
 - A lost-input notice expires 5 s after the refusal, also when a socket is admitted sooner, because admission cannot bring back lost commands.
 - When the helper is replaced at the same URL (new `pid` or exec token), queued input is dropped. Input belongs to the helper that was running when the user acted [confirmed] (Gabe Debes, 2026-10-07).
@@ -72,6 +72,25 @@ When a browser interaction loses focus, or the client changes device, queued inp
 ## Input feedback
 
 `DeviceScreen` shows `inputError` as a status line over the video. The video stays visible, because video and input use different connections [observed: `DeviceScreen.tsx`].
+
+## Clipboard
+
+The iOS client pastes text into the device and copies text from it with the serve-sim clipboard protocol (LLP 0010, on the clipboard stack). HubClient moves only text. It does not read or write the browser clipboard; the page that calls `pasteText` and `copyText` does that [observed: `ordered-keyboard-input.ts`, `ios-clipboard.ts`].
+
+- The client uses Paste only when the helper sets `inputPaste: true` in `/api`, and Copy only when it sets `inputCopy: true`. An older helper does not answer the `0x12` paste request, or a `0x11` barrier with a request ID [observed: `capabilities.clipboard` in `useIosDevice.ts`; serve-sim `src/state.ts`]. An action that the helper does not offer fails as not available before the client looks at the input socket, so it never reports a disconnect [observed: `pasteText`, `copyText` in `useIosDevice.ts`].
+- Paste sends `0x12` with a request ID and the text on the input socket. Keys typed after it wait for the `0x92` reply with the same request ID, so the text lands between the keys typed before and after it. Touches do not wait. serve-sim's client does the same [observed: `createOrderedKeyboardInput`; serve-sim `client/utils/ordered-keyboard-input.ts`].
+- Copy waits in the same queue. It sends a `0x11` barrier with a request ID, and after the `0x91` reply it calls `POST /api/pasteboard?copy=1`. Keys typed during Copy wait for it, so they cannot change the selection before the server presses Command+C [observed: `readAfterInput`, `copySimulatorText`].
+- The Copy route accepts only a bearer token and a browser Origin, not the session cookie. So the client sends the exec token from `/api` as a bearer [observed: serve-sim `src/middleware.ts` on the clipboard stack].
+- The client sends `0x12` and `0x11` only on an admitted socket, and never sends them again on a new socket. A disconnect, a device change or a replaced helper fails every request that has no reply, and drops the keys that wait behind it. A request without a reply also fails after 150 s, as in serve-sim.
+- serve-sim closes an input socket that sends a frame larger than 4 MiB, so the client refuses a larger Paste before it sends it.
+- When focus loss cancels input, key presses that wait behind a Paste or Copy are dropped. Key releases stay, because their keys can already be down on the device.
+- `clipboardPending`, `clipboardError` and `clipboardWarning` show the latest action only. An older action that ends later does not change them, but its own call still resolves or rejects. `clipboardActionId` changes each time an action starts, so the page sees a new Paste also while an older Paste keeps `clipboardPending` at `paste`.
+- HubClient shows no clipboard result. `DeviceScreen` ignores the rejection of its Command+V paste. The host page must show `clipboardError` and `clipboardWarning`, or pass `DeviceScreen` a `pasteText` that reports its own result [observed: `DeviceScreen.tsx`; `DeviceClient` in `types.ts`].
+- A disconnect or a replaced helper for the same device ends an action that has no reply with `clipboardError`, so a Paste that the device maybe did not get never looks like a success. serve-sim's client also rejects such a request as disconnected [observed: `clipboardIdentity` in `useIosDevice.ts`; serve-sim `client/utils/ordered-keyboard-input.ts`]. A change of device, server or token clears the three fields instead, because the result belongs to the previous device.
+- A key that serve-sim could not release after a good Paste or Copy is a warning in `clipboardWarning`, not an error, because the text already moved. This copies serve-sim's rule in LLP 0010. A failed Copy can also carry the warning (`cleanupWarning` in serve-sim's 413, 503, 504 or 500 reply), and the client then sets both `clipboardError` and `clipboardWarning`. serve-sim's failed Paste reply has no warning today; the client keeps one if it comes [observed: `ClipboardActionError` in `device-clipboard.ts`, `ios-clipboard.ts`, `ordered-keyboard-input.ts`].
+- A failed Copy shows serve-sim's `error` text. The client has fixed texts only for a reply without one [observed: `COPY_FAILURES` in `ios-clipboard.ts`].
+- `DeviceScreen` handles Command+V and Control+V when `capabilities.clipboard.paste` is set. It does not send the V key, so the browser fires a `paste` event. Its text needs no clipboard permission, and `DeviceScreen` pastes it. When the event has no text, or no `paste` event comes before the V key goes up, `DeviceScreen` sends a Paste without text, and the device pastes its own clipboard. serve-sim's client does the same [observed: `DeviceScreen.tsx`; serve-sim `client/client.tsx`, `client/utils/keyboard-paste-gate.ts`]. Command+C stays keys.
+- Paste and Copy need the hardware keyboard, because serve-sim presses Command+V and Command+C. A touch client turns it off (see the iOS input adapter), so on a touch client the chords do not reach the app, as in serve-sim's own touch client.
 
 ## Open questions
 

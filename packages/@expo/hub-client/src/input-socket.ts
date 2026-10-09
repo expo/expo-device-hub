@@ -1,4 +1,4 @@
-import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage } from "./ws-send-queue";
+import { flushWsMessageQueue, sendOrQueueWsMessage, trySendEncodedWsMessage, trySendWsMessage, type QueuedWsMessage } from "./ws-send-queue";
 import { WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 type InputSocketHandlers = {
@@ -141,6 +141,9 @@ export function createInputSocket(
     },
     trySend(tag: number, payload: object) {
       return admitted && trySendWsMessage(socket, tag, payload);
+    },
+    trySendEncoded(message: Uint8Array<ArrayBuffer>) {
+      return admitted && trySendEncodedWsMessage(socket, message);
     },
     start: connect,
     dispose() {

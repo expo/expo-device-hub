@@ -37,9 +37,16 @@ export function trySendWsMessage(
   tag: number,
   payload: object,
 ): boolean {
+  return trySendEncodedWsMessage(ws, encodeWsMessage(tag, payload));
+}
+
+export function trySendEncodedWsMessage(
+  ws: WsSendTarget | null | undefined,
+  message: Uint8Array<ArrayBuffer>,
+): boolean {
   if (ws?.readyState !== WS_OPEN_READY_STATE) return false;
   try {
-    ws.send(encodeWsMessage(tag, payload).buffer);
+    ws.send(message.buffer);
     return true;
   } catch {
     return false;
