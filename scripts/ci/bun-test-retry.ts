@@ -2,7 +2,7 @@
 // Runs `bun test`, then reruns only the files with failed tests once.
 //
 //   bun scripts/ci/bun-test-retry.ts [--before-retry=<script>] -- <bun test args>
-//   bun scripts/ci/bun-test-retry.ts --workspaces
+//   bun scripts/ci/bun-test-retry.ts --workspaces [--skip=<package>...]
 //
 // Failed files come from Bun's JUnit report. A failure that the report does
 // not attribute to a file (for example a file that fails to load) is not
@@ -107,13 +107,14 @@ export async function testWithRetry(args: string[], options: Options = {}): Prom
   return (await run(["bun", "test", ...junit(join(reports, "retry.xml")), ...flags, ...paths], options)).code;
 }
 
-async function testWorkspaces(): Promise<number> {
+async function testWorkspaces(skipped: string[]): Promise<number> {
   const root = process.cwd();
   const patterns: string[] = (await Bun.file("package.json").json()).workspaces.packages;
   const dirs: string[] = [];
   for (const pattern of patterns) {
     for await (const manifest of new Glob(`${pattern}/package.json`).scan(root)) {
-      if ((await Bun.file(manifest).json()).scripts?.test === "bun test") {
+      const pkg = await Bun.file(manifest).json();
+      if (pkg.scripts?.test === "bun test" && !skipped.includes(pkg.name)) {
         dirs.push(join(root, manifest, ".."));
       }
     }
@@ -125,7 +126,8 @@ async function testWorkspaces(): Promise<number> {
 if (import.meta.main) {
   const argv = process.argv.slice(2);
   if (argv[0] === "--workspaces") {
-    process.exit(await testWorkspaces());
+    const skipped = argv.filter((arg) => arg.startsWith("--skip=")).map((arg) => arg.slice("--skip=".length));
+    process.exit(await testWorkspaces(skipped));
   }
   const separator = argv.indexOf("--");
   const options = separator === -1 ? argv : argv.slice(0, separator);

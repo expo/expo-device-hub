@@ -85,6 +85,7 @@
     "lint": "cd ../.. && oxlint",
     "typecheck": "tsc --noEmit -p ../../tsconfig.json",
     "test:capability-loader": "Sources/ServeSimCapabilityLoader/tests/run.sh",
+    "test:middleware-startup": "bash scripts/test/middleware-startup.sh",
     "tart": "bun scripts/tart/cli.ts",
     "tart-test": "bun scripts/tart/cli.ts test",
     "tart-dev": "bun scripts/tart/cli.ts dev"
