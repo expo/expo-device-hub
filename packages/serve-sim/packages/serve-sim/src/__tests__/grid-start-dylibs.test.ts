@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
@@ -6,17 +7,23 @@ import { useTempStateDir, withShimsAsync } from "./helpers";
 
 const bundleDir = mkdtempSync(join(tmpdir(), "serve-sim-grid-start-node-"));
 let entrypoint: string;
-beforeAll(async () => {
+beforeAll(() => {
   // Exercise the current source under Node's production unhandled-rejection semantics.
-  const build = await Bun.build({
-    entrypoints: [join(import.meta.dir, "fixtures/grid-start-dylibs.child.ts")],
-    outdir: bundleDir,
-    naming: "[name].mjs",
-    target: "node",
+  // Keep the fixture build independent of earlier tests in this Bun process.
+  entrypoint = join(bundleDir, "grid-start-dylibs.child.mjs");
+  const build = spawnSync(process.execPath, [
+    "build",
+    join(import.meta.dir, "fixtures/grid-start-dylibs.child.ts"),
+    "--target=node",
+    "--format=esm",
+    "--outfile", entrypoint,
+  ], {
+    encoding: "utf8",
+    timeout: 10_000,
   });
-  if (!build.success) throw new AggregateError(build.logs, "Grid fixture build failed");
-  entrypoint = build.outputs[0]!.path;
-});
+  if (build.error) throw build.error;
+  if (build.status !== 0) throw new Error("Grid fixture build failed:\n" + build.stderr);
+}, 15_000);
 afterAll(() => rmSync(bundleDir, { recursive: true, force: true }));
 
 test.each(["before boot", "before bootstatus"])("grid start reports a caller dylib removed %s without crashing Node", async (timing) => {
