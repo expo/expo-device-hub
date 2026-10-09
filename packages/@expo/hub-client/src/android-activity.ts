@@ -24,7 +24,10 @@ export function parseAndroidActivityFrame(
   } catch {
     return null;
   }
-  if (eventType === "meta") return { kind: "meta", hostCores: parseActivityHostCores(payload) };
+  if (eventType === "meta") {
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    return { kind: "meta", hostCores: parseActivityHostCores(payload) };
+  }
   if (eventType !== "message") return null;
   const sample = parseActivitySample(payload);
   return sample ? { kind: "sample", sample } : null;

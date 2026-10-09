@@ -20,8 +20,10 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 
 import { type AccessibilityLoader, loadAndroidAccessibility } from './accessibility';
 import { appendActivitySample } from './activity';
+import { useActivityStatus } from './useActivityStatus';
 import {
   EMPTY_ANDROID_ACTIVITY,
+  ANDROID_ACTIVITY_STALE_MS,
   nextAndroidActivityAfterSilence,
   parseAndroidActivityFrame,
 } from './android-activity';
@@ -262,6 +264,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // The foreground app, polled from `/api/foreground`. null until the first read.
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
   const [activity, setActivity] = useState<DeviceActivity | null>(null);
+  const activityScope = active ? JSON.stringify([baseUrl, targetDevice, token]) : null;
+  const { activityStatus, setActivityStatus } = useActivityStatus(activityScope);
   const activityLastSampleAtRef = useRef(0);
   const [serverStreamSettings, setServerStreamSettings] =
     useState<ServeEmuStreamSettings | null>(null);
@@ -1613,21 +1617,27 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       return;
     }
     setActivity(EMPTY_ANDROID_ACTIVITY);
+    let cancelled = false;
     let source: EventSource;
     try {
       source = new EventSource(
         withSessionTokenQuery(deviceApiUrl(baseUrl, '/api/metrics', targetDevice), token),
       );
     } catch {
+      setActivityStatus('error');
       setActivity({ ...EMPTY_ANDROID_ACTIVITY, errored: true });
       return;
     }
     const onFrame = (event: Event) => {
+      if (cancelled) return;
       const frame = parseAndroidActivityFrame(event.type, String((event as MessageEvent).data));
       if (!frame) return;
+      setActivityStatus('ready');
       if (frame.kind === 'meta') {
         setActivity((current) =>
-          current ? { ...current, hostCores: frame.hostCores, errored: false } : current,
+          current && (current.hostCores !== frame.hostCores || current.errored)
+            ? { ...current, hostCores: frame.hostCores, errored: false }
+            : current,
         );
         return;
       }
@@ -1636,9 +1646,22 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
     source.addEventListener('meta', onFrame);
     source.addEventListener('message', onFrame);
-    source.onerror = () => setActivity((current) => (current ? { ...current, errored: true } : current));
+    source.onerror = () => {
+      if (cancelled) return;
+      setActivityStatus('error');
+      setActivity((current) =>
+        current && !current.errored ? { ...current, errored: true } : current,
+      );
+    };
     const openedAt = Date.now();
     const watchdog = setInterval(() => {
+      if (cancelled) return;
+      if (
+        activityLastSampleAtRef.current === 0 &&
+        Date.now() - openedAt > ANDROID_ACTIVITY_STALE_MS
+      ) {
+        setActivityStatus('error');
+      }
       setActivity((current) => {
         if (!current) return current;
         const clock = {
@@ -1650,10 +1673,11 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       });
     }, 1000);
     return () => {
+      cancelled = true;
       clearInterval(watchdog);
       source.close();
     };
-  }, [active, baseUrl, targetDevice, token]);
+  }, [active, baseUrl, targetDevice, token, setActivityStatus]);
 
   // ── Recorded input/session events (polling, best-effort) ──
   // serve-emu records Hub-originated touches, keyboard input, hardware buttons,
@@ -2044,6 +2068,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     detachEvents,
     clearEvents,
     activity,
+    activityStatus,
     deviceSettings,
     deviceSettingsStatus,
     deviceSettingsPending,

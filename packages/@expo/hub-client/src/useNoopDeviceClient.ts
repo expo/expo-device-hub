@@ -23,6 +23,7 @@ export const NOOP_DEVICE_CLIENT: DeviceClient = {
   detachEvents: () => {},
   clearEvents: () => {},
   activity: null,
+  activityStatus: 'idle',
   deviceSettings: null,
   deviceSettingsStatus: 'idle',
   deviceSettingsPending: new Set(),

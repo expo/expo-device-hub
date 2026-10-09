@@ -33,6 +33,7 @@ import {
   parseActivityHostCores,
   parseActivitySample,
 } from './activity';
+import { useActivityStatus } from './useActivityStatus';
 import { type AccessibilityLoader, loadIosAccessibility } from './accessibility';
 import { isAvccSupported } from './avcc';
 import {
@@ -320,9 +321,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const active = enabled && !!baseUrl;
   const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
   const socketProtocols = useMemo(() => sessionTokenProtocols('ios', token), [token]);
-  const deviceSettingsScope = active ? JSON.stringify([baseUrl, targetDevice, token]) : null;
+  const connectionScope = active ? JSON.stringify([baseUrl, targetDevice, token]) : null;
   const { deviceSettingsStatus, resetRead, settleRead } =
-    useDeviceSettingsReadStatus(deviceSettingsScope);
+    useDeviceSettingsReadStatus(connectionScope);
   const deviceSettingsReadRef = useRef<{
     invalidate: () => void;
     resume: () => void;
@@ -344,6 +345,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const events = eventLogState.events;
   const [eventsEnabled, setEventsEnabled] = useState(false);
   const [activity, setActivity] = useState<DeviceActivity | null>(null);
+  const [activityDiscoveryError, setActivityDiscoveryError] = useState<string | null>(null);
   const [devices, setDevices] = useState<RunningDevice[]>(PLACEHOLDER_DEVICES);
   // The credentials above follow the options at once, but a new config waits for `/api`. Until
   // it arrives, the old config is not used, so its URLs never get another connection's token.
@@ -354,10 +356,22 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     middleware: Pick<ResolvedConfig, 'execWsUrl' | 'execToken' | 'configEventsPath'>;
   } | null>(null);
   const connection =
-    active && baseUrl && resolvedConfig?.key === connectionKey(baseUrl, targetDevice, token)
-      ? resolvedConfig
-      : null;
+    resolvedConfig?.key === connectionScope ? resolvedConfig : null;
   const config = connection?.config ?? null;
+  const activityScope = active
+    ? JSON.stringify([
+        baseUrl,
+        targetDevice,
+        token,
+        config?.url,
+        config?.device,
+        config?.pid,
+        config?.metricsPath,
+        config?.execWsUrl,
+        config?.execToken,
+      ])
+    : null;
+  const { activityStatus, setActivityStatus } = useActivityStatus(activityScope);
   const refreshConfigRef = useRef<(() => void) | null>(null);
   const applyPreviewConfigRef = useRef<((value: PreviewApi | null) => void) | null>(null);
   const configUpdatesReadyRef = useRef(false);
@@ -804,6 +818,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         const value = (await res.json()) as PreviewApi | null;
         // A pushed update is newer than an HTTP request that was already in flight.
         if (cancelled || requestRevision !== revision) return;
+        setActivityDiscoveryError(null);
         applyConfig(value);
         if (!(value?.url && value.device) && targetDevice && !startRequested) {
           startRequested = true;
@@ -812,7 +827,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       } catch {
         // A failed background refresh must not tear down a working video stream.
         if (!cancelled && requestRevision === revision) {
-          if (!current) settleRead('error');
+          if (!current) {
+            settleRead('error');
+            setActivityDiscoveryError(connectionKey(baseUrl, targetDevice, token));
+          }
           pollTimer = setTimeout(resolve, RECONNECT_MS);
         }
       } finally {
@@ -1272,7 +1290,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
     }, 1000);
     return () => clearInterval(watchdog);
-  }, [metricsPath]);
+  }, [metricsPath, activityScope]);
 
   useEffect(() => {
     if (!execWsUrl || !execToken) return;
@@ -1295,6 +1313,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       paths.set(3, metricsPath);
     }
     if (subscriptions.size === 0) return;
+    if (metricsPath) setActivityStatus('loading');
 
     let cancelled = false;
     let ws: WebSocket | null = null;
@@ -1304,7 +1323,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       deviceSettingsReadRef.current?.invalidate();
       settleRead('error');
       if (metricsPath) {
-        setActivity((current) => (current ? { ...current, errored: true } : current));
+        setActivityStatus('error');
+        setActivity((current) =>
+          current && !current.errored ? { ...current, errored: true } : current,
+        );
       }
     };
 
@@ -1343,14 +1365,19 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       try {
         const payload = JSON.parse(block.data) as unknown;
         if (block.event === 'meta') {
+          if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return;
           const hostCores = parseActivityHostCores(payload);
+          setActivityStatus('ready');
           setActivity((current) =>
-            current ? { ...current, hostCores, errored: false } : current,
+            current && (current.hostCores !== hostCores || current.errored)
+              ? { ...current, hostCores, errored: false }
+              : current,
           );
           return;
         }
         const sample = parseActivitySample(payload);
         if (!sample) return;
+        setActivityStatus('ready');
         activityLastSampleAtRef.current = Date.now();
         setActivity((current) =>
           appendActivitySample(
@@ -1376,9 +1403,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }, RECONNECT_MS);
         return;
       }
-      ws.onopen = () => ws?.send(JSON.stringify({ token: execToken }));
+      const socket = ws;
+      ws.onopen = () => {
+        if (!cancelled && ws === socket) socket.send(JSON.stringify({ token: execToken }));
+      };
       ws.onmessage = (event) => {
-        if (cancelled) return;
+        if (cancelled || ws !== socket) return;
         let msg: { ready?: boolean; sub?: number; data?: string; end?: boolean };
         try {
           msg = JSON.parse(String(event.data));
@@ -1408,7 +1438,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
       };
       ws.onclose = () => {
-        if (!cancelled) {
+        if (!cancelled && ws === socket) {
+          ws = null;
           configUpdatesReadyRef.current = false;
           markInterrupted();
           retryTimer = setTimeout(() => {
@@ -1419,6 +1450,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
       };
       ws.onerror = () => {
+        if (cancelled || ws !== socket) return;
         try {
           ws?.close();
         } catch {}
@@ -1448,6 +1480,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     deviceUdid,
     socketProtocols,
     settleRead,
+    setActivityStatus,
   ]);
 
   // Bulk reads hydrate the controls and track changes made inside the simulator.
@@ -1752,6 +1785,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     detachEvents,
     clearEvents,
     activity,
+    activityStatus:
+      !active || (config && !metricsPath)
+        ? 'idle'
+        : (!config && activityDiscoveryError === connectionScope) ||
+            (metricsPath && (!execWsUrl || !execToken))
+          ? 'error'
+          : activityStatus,
     deviceSettings,
     deviceSettingsStatus,
     deviceSettingsPending,
