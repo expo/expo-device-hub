@@ -175,7 +175,7 @@ Data-bearing requests without a valid token get `401`; WebSocket upgrades and st
 
 **Token handling.** The token is never included in `/health`, `/api` responses, error payloads, or reconnect URLs — only in the one-time startup line. Rotate it by restarting with a new `--token` (or letting a fresh one be generated); existing cookies stop working immediately. When exposing beyond your machine, prefer an SSH tunnel or an authenticating reverse proxy over a raw `0.0.0.0` bind.
 
-**Embedding the router.** `createRouter({ sessionToken })` gates the embedded router the same way. Every request needs the token before it is routed, so a new route is gated by default. The WebRTC preflights, `OPTIONS` on `/webrtc/stats`, `/webrtc/offer`, and `/webrtc/close`, are the only exception: a browser cannot attach the token to a preflight, and they return no live state. The router answers the signaling preflights without starting a device. WebSocket upgrades do not reach `handleRequest`, so the transport calls `router.authorizeUpgrade(request)` before it starts a device for a socket. It also passes the upgrade as `request` to `router.attachWebSocket`, which closes a socket without the token with code `1008`. Without `sessionToken`, the router stays open.
+**Embedding the router.** `createRouter({ sessionToken })` gates the embedded router the same way. Every request needs the token before it is routed, so a new route is gated by default. Preflights (`OPTIONS`) are the only exception: a browser cannot attach the token to a preflight, and they return no live state. The router answers them without starting a device. WebSocket upgrades do not reach `handleRequest`, so the transport calls `router.authorizeUpgrade(request)` before it starts a device for a socket. It also passes the upgrade as `request` to `router.attachWebSocket`, which closes a socket without the token with code `1008`. Without `sessionToken`, the router stays open.
 
 - HTTP requests send `Authorization: Bearer <token>`, or `?token=<token>` when the caller cannot set a header, such as `EventSource`.
 - WebSocket upgrades send the bearer header or the `serve-emu.token.<token>` subprotocol. They never take `?token=`, because proxy and tunnel access logs record query strings.
@@ -183,6 +183,8 @@ Data-bearing requests without a valid token get `401`; WebSocket upgrades and st
 - A request without the token gets `401` with `{ "ok": false, "error": { "code": "unauthorized", ... } }`. The response never echoes a presented value. For an origin in `allowedOrigins`, it carries CORS headers, so that page can read the refusal.
 
 The router sets no cookie. A host that serves a browser UI, such as Expo Device Hub, owns the browser session and forwards the token as a bearer header.
+
+**Cross-origin pages.** Every router response carries `Vary: Origin`. It also carries `Access-Control-Allow-Origin` for an origin in `allowedOrigins`, and for a loopback page that calls a loopback router, so that page can read every route, as with serve-sim. Only the router's own origin and an origin in `allowedOrigins` can send an HTTP request that changes state. Other pages get `403`. The router does not check the `Origin` of a WebSocket upgrade, so a page on any origin can open the input socket and send touch and key input. With `sessionToken`, the socket still needs the token. An entry in `allowedOrigins` is an origin, `*` for any origin, or a subdomain wildcard such as `https://*.expo.dev`, which matches as in serve-sim's `--cors-origin`.
 
 ## Smooth Emulator Playback
 

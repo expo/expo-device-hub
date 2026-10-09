@@ -143,8 +143,8 @@ function isSimRecordingControl(pathname: string): boolean {
  */
 function gateRequest(request: Request, pathname: string): Request | Response {
   if (!SESSION_TOKEN || UNGATED_ROUTES.has(pathname)) return request;
-  // A preflight cannot carry the token. Each backend answers or refuses one in its own gate, and
-  // routes none: serve-sim answers every preflight, serve-emu only its WebRTC ones.
+  // A preflight cannot carry the token. Each backend answers or refuses every preflight in its own
+  // gate, and routes none.
   if (request.method === 'OPTIONS' && (isSimPath(pathname) || isEmuPath(pathname))) return request;
   const refused = authorizeRequest(request, SESSION_TOKEN, {
     mountPath: MOUNT_PATH,
