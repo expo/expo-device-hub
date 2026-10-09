@@ -1,6 +1,6 @@
 {
   "name": "expo-device-hub",
-  "version": "0.15.2",
+  "version": "0.15.3",
   "description": "Expo DevTools plugin for managing iOS simulators and Android emulators.",
   "keywords": [
     "expo",

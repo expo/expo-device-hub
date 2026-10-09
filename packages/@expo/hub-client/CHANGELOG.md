@@ -1,5 +1,18 @@
 # @expo/hub-client
 
+## 1.5.0
+
+### Minor Changes
+
+- 16edd92: Add `DeviceClient.deviceSettingsStatus` to distinguish loading, ready, and failed settings reads on iOS and Android.
+
+### Patch Changes
+
+- 16a6fed: Read and update Android appearance asynchronously, and keep device controls in sync with appearance changes made on the device.
+- c731773: `deviceSettingsStatus` now reports iOS discovery, connection loss, and recovery, so consumers no longer need the video status. Failed refreshes report `'error'` and keep cached settings. The Hub dashboard disables unavailable settings.
+- d3db352: Keep device settings in sync every five seconds while the browser tab is visible.
+- dd19174: Combine browser wheel deltas per display frame after sending the first event immediately, and cancel buffered scrolling when touch input starts, the page becomes hidden, or the preview is cleaned up. Requires a simulator host that buffers excess wheel distance across screen-edge reanchors.
+
 ## 1.4.0
 
 ### Minor Changes
