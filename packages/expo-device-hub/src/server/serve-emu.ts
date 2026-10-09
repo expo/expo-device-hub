@@ -14,6 +14,7 @@ import { recordingLimitsFromEnv } from './recording-limits';
 import {
   readStandaloneServeEmuOptions,
   SERVE_EMU_OPTIONS_ENV,
+  serveEmuAllowsOrigin,
   serveEmuWebSocketOptions,
 } from './serve-emu-options';
 import { SESSION_TOKEN } from './session-token';
@@ -31,6 +32,10 @@ const router = createRouter({
   // The Hub's gate runs first and passes an authorized request on with the token as a bearer.
   ...(SESSION_TOKEN ? { sessionToken: SESSION_TOKEN } : {}),
 });
+
+/** Whether serve-emu lets a page on `origin` read its response to `request`. */
+export const emuAllowsOrigin = (origin: URL, request: Request): boolean =>
+  serveEmuAllowsOrigin(serveEmuOptions.allowedOrigins ?? [], origin, request);
 
 export const emuCameraFeeds: EmulatorCameraFeeds = {
   launchArgs: cameraLaunchArgs,
