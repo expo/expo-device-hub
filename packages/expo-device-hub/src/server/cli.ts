@@ -8,6 +8,7 @@ import { URL } from 'node:url';
 import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } from './cli/node-fetch-server';
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { startupMessage } from './cli/startup';
+import { clearHubState, localHubUrl, writeHubState } from './cli/state-file';
 import { staticFileHandler } from './cli/static-files';
 import {
   encodeStandaloneServeEmuOptions,
@@ -203,10 +204,20 @@ async function main(): Promise<void> {
     }
   }
 
+  const { port } = server.address() as AddressInfo;
+  // Before any request is handled, so a process that waits for /readyz finds the token.
+  writeHubState({
+    pid: process.pid,
+    port,
+    url: localHubUrl(options.host, port),
+    ...(sessionToken ? { token: sessionToken } : {}),
+  });
+  process.once('exit', () => clearHubState(port, process.pid));
+
   console.log(
     startupMessage({
       host: options.host,
-      port: (server.address() as AddressInfo).port,
+      port,
       lanAddress: lanAddress(),
       sessionToken,
       ignoredFrameAncestors: sessionToken ? [] : options.frameAncestors,
