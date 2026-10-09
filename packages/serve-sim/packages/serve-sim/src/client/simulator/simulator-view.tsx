@@ -16,7 +16,7 @@ import {
   streamDisplayGeometry,
 } from "./orientation.js";
 import { digitalCrownDeltaFromWheel } from "./digital-crown.js";
-import { wheelDeltaToPixels } from "./scroll-wheel.js";
+import { createFrameScrollSender, wheelDeltaToPixels } from "./scroll-wheel.js";
 import {
   resolveScreenConfigUpdate,
   type ScreenConfigSource,
@@ -773,6 +773,7 @@ export function SimulatorView({
   // Single-touch indicator: rendered via ref + direct DOM manipulation for perf
   const touchIndicatorRef = useRef<HTMLDivElement | null>(null);
   const touchActiveRef = useRef(false);
+  const scrollSenderRef = useRef<ReturnType<typeof createFrameScrollSender> | null>(null);
   const rafIdRef = useRef<number>(0);
 
   const showTouchIndicator = useCallback((x: number, y: number) => {
@@ -810,8 +811,8 @@ export function SimulatorView({
   }, []);
 
   // Scroll-to-pan: mouse-wheel/trackpad scrolling over the device is forwarded
-  // as a native scroll event so iOS pans content exactly as it would for a
-  // physical scroll wheel — no synthesized finger drag.
+  // as a scroll event. The first delta is immediate; later deltas are combined
+  // once per display frame.
   const handleScrollWheel = useCallback(
     (event: globalThis.WheelEvent) => {
       // Don't fight an in-progress pointer/touch drag on the same surface.
@@ -829,15 +830,19 @@ export function SimulatorView({
       // rescale to the device's pixel dimensions. Browser wheel deltas already
       // reflect the user's natural-scroll setting, so the sign passes straight
       // through to match a real scroll wheel.
-      sendScroll(dxPx / rect.width, dyPx / rect.height, anchorX, anchorY);
+      scrollSenderRef.current?.send({
+        dx: dxPx / rect.width, dy: dyPx / rect.height, x: anchorX, y: anchorY,
+      });
       return true;
     },
-    [getInputRect, sendScroll],
+    [getInputRect],
   );
 
   useEffect(() => {
     const el = inputLayerRef.current;
     if (!el) return;
+    const sender = createFrameScrollSender(({ dx, dy, x, y }) => sendScroll(dx, dy, x, y));
+    scrollSenderRef.current = sender;
 
     const onWheel = (event: globalThis.WheelEvent) => {
       const handled = enableDigitalCrown
@@ -848,9 +853,18 @@ export function SimulatorView({
       event.stopPropagation();
     };
 
+    const onVisibilityChange = () => {
+      if (document.hidden) sender.cancel();
+    };
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [enableDigitalCrown, handleDigitalCrownWheelDelta, handleScrollWheel]);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      sender.cancel();
+      scrollSenderRef.current = null;
+    };
+  }, [enableDigitalCrown, handleDigitalCrownWheelDelta, handleScrollWheel, sendScroll]);
 
   const lastHomeClickRef = useRef(0);
   const homeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1025,6 +1039,7 @@ export function SimulatorView({
             touchAction: "none",
           }}
           onMouseDown={(e) => {
+            scrollSenderRef.current?.cancel();
             e.preventDefault();
             window.focus();
             const rect = getInputRect();
@@ -1165,6 +1180,7 @@ export function SimulatorView({
             setFingerIndicators(null);
           }}
           onTouchStart={(e) => {
+            scrollSenderRef.current?.cancel();
             e.preventDefault();
             const rect = getInputRect();
             if (!rect) return;

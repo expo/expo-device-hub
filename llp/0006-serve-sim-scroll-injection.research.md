@@ -2,10 +2,10 @@
 
 **Type:** Research
 **Status:** Active
-**Systems:** ServeSim
+**Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-07 (updated paced wheel delivery, edge handling, and scroll-to-touch handoff for PR #250)
+**Revised:** 2026-10-08 (paced wheel delivery, edge handling, scroll-to-touch handoff, and browser wheel coalescing)
 
 The SimulatorKit research was imported from [expo/serve-sim](https://github.com/expo/serve-sim)
 in [PR #79](https://github.com/expo/expo-device-hub/pull/79) and moved into the LLP corpus
@@ -377,3 +377,22 @@ selections from those gestures before the guard, and none afterwards [observed:
 PR #250 local near-edge UIKit journals, 2026-10-05]. It does not establish
 hosted functional acceptance; full scrolling and Home-navigation acceptance
 remain separate gates.
+
+### Browser wheel coalescing
+
+[observed: `DeviceScreen`, `SimulatorView`, and their `scroll-wheel.ts` helpers]
+Both previews send the first wheel delta immediately, then sum subsequent
+deltas on each axis once per display frame. Starting a touch, hiding the page,
+or cleaning up the preview cancels buffered wheel input. Visibility loss clears
+the pending frame before background frame suspension can replay old scrolling
+on return; a new burst still starts immediately. This reduces outgoing input
+messages without delaying the start of scrolling; the native receiver still
+controls HID delivery and scroll gesture release.
+
+**Receiver requirement.** [observed: `HIDInjector.sendScroll`, `ScrollDragStep`]
+A receiver that applies only one clamped finger movement per wheel message
+discards distance beyond the screen edge. Combining deltas can increase that
+loss, so browser coalescing must be paired with a receiver that buffers and
+drains excess distance across edge reanchors. The native distance buffer in
+[PR #250](https://github.com/expo/expo-device-hub/pull/250) supplies that behavior;
+target simulator hosts need that implementation before coalescing is deployed.
