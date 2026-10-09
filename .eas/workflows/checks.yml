@@ -23,6 +23,31 @@ jobs:
     steps:
       - uses: eas/checkout
 
+      # iOS-only PRs skip Android unit tests; Android-only PRs skip Apple ones.
+      # Any other change, and every main push, runs both.
+      - id: platforms
+        name: Select platform tests
+        run: |
+          ios=true
+          android=true
+          BASE="${{ github.event.pull_request.base.sha || '' }}"
+          if [ -n "$BASE" ]; then
+            git fetch --depth=1 --no-tags origin "$BASE"
+            # --no-renames lists both paths of a file moved between platforms.
+            changed="$(git diff --name-only --no-renames "$BASE" HEAD)"
+            if [ -n "$changed" ]; then
+              grep -qvE '^packages/(serve-sim|@expo/hub-apple-utils)/' <<<"$changed" || android=false
+              grep -qvE '^packages/(serve-emu|@expo/hub-android-utils)/' <<<"$changed" || ios=false
+              # A serve-emu test checks this file against its own copy.
+              if grep -qx 'packages/serve-sim/packages/serve-sim/src/screenshot-artifacts.ts' <<<"$changed"; then
+                android=true
+              fi
+            fi
+          fi
+          echo "ios=$ios android=$android"
+          set-output ios "$ios"
+          set-output android "$android"
+
       # Runs on the clean checkout, before any build: ref-check also scans
       # git-ignored output such as packages/expo-device-hub/vendor/.
       - name: LLP references
@@ -38,6 +63,11 @@ jobs:
       - name: Build packages (excluding serve-sim)
         run: bun run build --filter='!@expo/serve-sim' --only
 
+      # The Android Hub imports serve-sim's middleware, and Android recording
+      # does not run for serve-sim-only changes. Check that it starts on Node.
+      - name: Serve-sim middleware startup on Node
+        run: bun run --filter '@expo/serve-sim' test:middleware-startup
+
       # --only skips the native serve-sim build; its typecheck only needs sources.
       - name: Typecheck
         run: bunx turbo run typecheck --only
@@ -46,12 +76,22 @@ jobs:
         run: bun test ./scripts/ci
 
       - name: Test
-        run: bun scripts/ci/bun-test-retry.ts --workspaces
+        run: |
+          args=()
+          if [ "${{ steps.platforms.outputs.android }}" != true ]; then
+            args+=(--skip=serve-emu --skip=@expo/hub-android-utils)
+          fi
+          if [ "${{ steps.platforms.outputs.ios }}" != true ]; then
+            args+=(--skip=@expo/hub-apple-utils)
+          fi
+          exec bun scripts/ci/bun-test-retry.ts --workspaces "${args[@]}"
 
       - name: Serve-emu critical coverage
+        if: ${{ steps.platforms.outputs.android == 'true' }}
         run: bun run --filter serve-emu coverage
 
       - name: Serve-emu documentation and package checks
+        if: ${{ steps.platforms.outputs.android == 'true' }}
         run: |
           bun run --filter serve-emu docs:check
           bun run --filter serve-emu test:package

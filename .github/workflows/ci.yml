@@ -2,6 +2,13 @@ name: CI
 
 on:
   pull_request:
+    # iOS-only and docs-only changes do not affect Android recording.
+    paths-ignore:
+      - packages/serve-sim/**
+      - packages/@expo/hub-apple-utils/**
+      - .changeset/**
+      - llp/**
+      - "**/*.md"
   push:
     branches: [main]
 
