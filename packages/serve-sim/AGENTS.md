@@ -20,12 +20,13 @@
 
 Run these from the repo root. CI runs the same underlying steps: `bun run
 lint` and `bun run typecheck` in `.eas/workflows/checks.yml`, and the same
-`bun test` command with `SERVE_SIM_E2E_REQUIRED=1` in `.eas/workflows/sim-test.yml`,
-through `scripts/ci/bun-test-retry.ts`, which reboots the pinned simulator and
-reruns only the failed test files once. CI runs on a fresh worker with one
-simulator of its own, so it needs neither the device pin nor the private
-state directory that `test:e2e` adds for shared machines. A green local run
-predicts a green PR.
+`bun test` suite in `.eas/workflows/sim-test.yml` through
+`scripts/ci/serve-sim-tests.ts`: two isolated unit shards before the
+simulator boots, then every simulator file with `SERVE_SIM_E2E_REQUIRED=1`.
+Failed files rerun once; before the simulator rerun, CI reboots its pinned
+simulator. CI runs on a fresh worker with one simulator of its own, so it
+needs neither the device pin nor the private state directory that `test:e2e`
+adds for shared machines. A green local run predicts a green PR.
 
 - `bun run check` — lint, typecheck, and knip. Run before every commit.
 - `bun run build` — full build: bundled JS, compiled CLI, native helpers, and

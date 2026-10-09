@@ -76,13 +76,17 @@ jobs:
           name: serve-sim-npm-package
           path: packages/serve-sim/packages/serve-sim/release/serve-sim.tgz
 
+      - name: Run two isolated unit shards
+        working_directory: packages/serve-sim
+        run: bun ../../scripts/ci/serve-sim-tests.ts unit
+
       - name: Install Chrome for Testing
         run: bunx @puppeteer/browsers@3.2.3 install chrome@154.0.8037.57 --path "$HOME/.cache/chrome-for-testing" --format '{{path}}' > /tmp/chrome-path
 
       - name: Start iOS Simulator
         uses: eas/start_ios_simulator
 
-      - name: Run serve-sim tests
+      - name: Run sequential simulator tests
         # An unmet precondition fails instead of skipping; see e2e-preconditions.ts.
         # Runs from the serve-sim tree root so the attribution test finds its NOTICE.
         env:
@@ -92,6 +96,4 @@ jobs:
           export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
           SERVE_SIM_TEST_UDID="$(bash packages/serve-sim/scripts/test/select-ci-simulator.sh)"
           export SERVE_SIM_TEST_UDID
-          exec bun ../../scripts/ci/bun-test-retry.ts \
-            --before-retry=packages/serve-sim/scripts/test/reboot-ci.sh \
-            -- --max-concurrency=1 packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/
+          exec bun ../../scripts/ci/serve-sim-tests.ts simulator

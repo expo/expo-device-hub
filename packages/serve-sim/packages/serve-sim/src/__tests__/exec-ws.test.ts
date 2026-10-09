@@ -11,14 +11,13 @@ import { servePreview, type PreviewServer } from "../runtime";
 // `upgrade` but never flushes raw handshake bytes, which is why the channel
 // is built on `ws` (Bun substitutes its native implementation).
 
-const PORT = 3461;
 const TOKEN = "exec-ws-test-token";
 
 let server: PreviewServer;
 
 beforeAll(async () => {
   const middleware = simMiddleware({ basePath: "/", execToken: TOKEN, device: "DEVICE-A" });
-  server = await servePreview({ port: PORT, middleware, host: "127.0.0.1" });
+  server = await servePreview({ port: 0, middleware, host: "127.0.0.1" });
 });
 
 afterAll(() => {
@@ -43,7 +42,7 @@ function connect(token: string): Promise<{
   closed: Promise<void>;
 }> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(`ws://127.0.0.1:${PORT}/exec-ws`, [`serve-sim.token.${token}`]);
+    const ws = new WebSocket(`ws://127.0.0.1:${server.port}/exec-ws`, [`serve-sim.token.${token}`]);
     const queue: Reply[] = [];
     const waiters: Array<(r: Reply) => void> = [];
     let closeResolve: () => void;
@@ -158,7 +157,7 @@ describe("exec-ws control channel", () => {
       summary: "Button volume-up",
     });
 
-    const res = await fetch(`http://127.0.0.1:${PORT}/api/event-log?device=DEVICE-B`);
+    const res = await fetch(`http://127.0.0.1:${server.port}/api/event-log?device=DEVICE-B`);
     expect(res.status).toBe(200);
     const payload = await res.json() as { events: Array<{ msg: string; summary: string }> };
     expect(payload.events.map((event) => event.msg)).toEqual(["Button volume-up"]);
@@ -180,7 +179,7 @@ describe("exec-ws control channel", () => {
       summary: "Button volume-up",
     });
 
-    const res = await fetch(`http://127.0.0.1:${PORT}/api/event-log`);
+    const res = await fetch(`http://127.0.0.1:${server.port}/api/event-log`);
     expect(res.status).toBe(200);
     const payload = await res.json() as { events: Array<{ summary: string }> };
     expect(payload.events.map((event) => event.summary)).toEqual([

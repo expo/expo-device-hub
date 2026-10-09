@@ -35,15 +35,16 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 
 interface Options {
   cwd?: string;
+  env?: Record<string, string | undefined>;
   beforeRetry?: string;
   timeoutMs?: number;
 }
 
 async function run(
   cmd: string[],
-  { cwd, timeoutMs = ATTEMPT_TIMEOUT_MS }: Options,
+  { cwd, env, timeoutMs = ATTEMPT_TIMEOUT_MS }: Options,
 ): Promise<{ code: number; stderr: string }> {
-  const child = Bun.spawn(cmd, { cwd, stdio: ["ignore", "inherit", "pipe"] });
+  const child = Bun.spawn(cmd, { cwd, env, stdio: ["ignore", "inherit", "pipe"] });
   running.add(child);
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -102,7 +103,8 @@ export async function testWithRetry(args: string[], options: Options = {}): Prom
   console.log(`Retrying ${files.length} failed file(s): ${files.join(" ")}`);
   if (options.beforeRetry && (await run(["bash", options.beforeRetry], options)).code !== 0) return code;
 
-  const flags = args.filter((arg) => arg.startsWith("-"));
+  // A shard of the few failed files could select none of them.
+  const flags = args.filter((arg) => arg.startsWith("-") && !arg.startsWith("--shard="));
   const paths = files.map((file) => `./${file}`);
   return (await run(["bun", "test", ...junit(join(reports, "retry.xml")), ...flags, ...paths], options)).code;
 }
