@@ -1,5 +1,15 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmdirSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -76,18 +86,18 @@ describe('the CLI state file', () => {
   test('retries a withdrawal that failed', () => {
     const env = stateEnv();
     const withdraw = publishHubState({ pid: 4242, port: 3400, url: 'http://127.0.0.1:3400' }, env);
-    const directory = env.EXPO_DEVICE_HUB_STATE_DIR!;
+    const file = hubStateFile(3400, env);
 
-    chmodSync(directory, 0o000);
-    try {
-      withdraw();
-    } finally {
-      chmodSync(directory, 0o700);
-    }
-    expect(existsSync(hubStateFile(3400, env))).toBe(true);
+    // A directory in place of the record makes the removal fail, even for root.
+    renameSync(file, `${file}.aside`);
+    mkdirSync(file);
+    withdraw();
+    rmdirSync(file);
+    renameSync(`${file}.aside`, file);
+    expect(existsSync(file)).toBe(true);
 
     withdraw();
-    expect(existsSync(hubStateFile(3400, env))).toBe(false);
+    expect(existsSync(file)).toBe(false);
   });
 
   test('names a URL that answers on this machine', () => {
