@@ -13,6 +13,7 @@ function selectDeviceScreenClient(client: DeviceClient): DeviceScreenClient {
     screen,
     status,
     error,
+    inputError,
   } = client;
   return {
     videoKind,
@@ -25,6 +26,7 @@ function selectDeviceScreenClient(client: DeviceClient): DeviceScreenClient {
     screen,
     status,
     error,
+    inputError,
   } satisfies DeviceScreenClient & Record<keyof DeviceScreenClient, unknown>;
 }
 
