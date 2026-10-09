@@ -17,9 +17,11 @@ class ControlSocket {
   readyState = 1;
   sent: ArrayBuffer[] = [];
   onmessage?: (event: { data: ArrayBuffer }) => void;
+  onopen?: () => void;
 
   constructor() {
     ControlSocket.instances.push(this);
+    queueMicrotask(() => this.onopen?.());
   }
   send(data: ArrayBuffer) {
     this.sent.push(data);
