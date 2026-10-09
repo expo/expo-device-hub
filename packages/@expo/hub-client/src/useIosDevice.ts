@@ -1319,15 +1319,21 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const buffers = new Map<number, string>();
+    const subscriptionRetries = new Map<number, ReturnType<typeof setTimeout>>();
+    const clearSubscriptionRetries = () => {
+      for (const timer of subscriptionRetries.values()) clearTimeout(timer);
+      subscriptionRetries.clear();
+    };
+    const markMetricsInterrupted = () => {
+      setActivityStatus('error');
+      setActivity((current) =>
+        current && !current.errored ? { ...current, errored: true } : current,
+      );
+    };
     const markInterrupted = () => {
       deviceSettingsReadRef.current?.invalidate();
       settleRead('error');
-      if (metricsPath) {
-        setActivityStatus('error');
-        setActivity((current) =>
-          current && !current.errored ? { ...current, errored: true } : current,
-        );
-      }
+      if (metricsPath) markMetricsInterrupted();
     };
 
     const emit = (kind: 'logs' | 'events' | 'metrics' | 'config', block: ParsedSseBlock) => {
@@ -1390,6 +1396,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
     const connect = () => {
       if (cancelled) return;
+      clearSubscriptionRetries();
       buffers.clear();
       try {
         ws = new WebSocket(execWsUrl, socketProtocols);
@@ -1404,6 +1411,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         return;
       }
       const socket = ws;
+      let authenticated = false;
       ws.onopen = () => {
         if (!cancelled && ws === socket) socket.send(JSON.stringify({ token: execToken }));
       };
@@ -1416,6 +1424,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           return;
         }
         if (msg.ready) {
+          if (authenticated) return;
+          authenticated = true;
           deviceSettingsReadRef.current?.resume();
           for (const [sub, path] of paths) {
             ws?.send(JSON.stringify({ sub, path }));
@@ -1424,8 +1434,25 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
         if (typeof msg.sub !== 'number' || !subscriptions.has(msg.sub)) return;
         if (msg.end) {
-          markInterrupted();
-          ws?.close();
+          const sub = msg.sub;
+          if (subscriptionRetries.has(sub)) return;
+          buffers.delete(sub);
+          if (subscriptions.get(sub) === 'metrics') markMetricsInterrupted();
+          if (subscriptions.get(sub) === 'config') {
+            configUpdatesReadyRef.current = false;
+            refreshConfigRef.current?.();
+          }
+          // An upstream stream ending does not invalidate this authenticated
+          // socket or unrelated settings reads. Retry only that subscription.
+          subscriptionRetries.set(
+            sub,
+            setTimeout(() => {
+              subscriptionRetries.delete(sub);
+              if (!cancelled && ws === socket) {
+                socket.send(JSON.stringify({ sub, path: paths.get(sub) }));
+              }
+            }, RECONNECT_MS),
+          );
           return;
         }
         if (typeof msg.data === 'string') {
@@ -1440,6 +1467,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       ws.onclose = () => {
         if (!cancelled && ws === socket) {
           ws = null;
+          clearSubscriptionRetries();
           configUpdatesReadyRef.current = false;
           markInterrupted();
           retryTimer = setTimeout(() => {
@@ -1464,6 +1492,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       // Pause reads until the replacement control socket authenticates.
       deviceSettingsReadRef.current?.invalidate();
       if (retryTimer) clearTimeout(retryTimer);
+      clearSubscriptionRetries();
       try {
         ws?.close();
       } catch {}

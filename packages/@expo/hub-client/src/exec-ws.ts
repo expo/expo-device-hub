@@ -68,6 +68,7 @@ function execWsRequest(
       return;
     }
     let settled = false;
+    let sent = false;
     let timer: ReturnType<typeof setTimeout>;
     const finish = (run: () => void) => {
       if (settled) return;
@@ -81,6 +82,7 @@ function execWsRequest(
     timer = setTimeout(() => finish(() => reject(new Error('exec-ws timeout'))), timeoutMs);
     ws.onopen = () => ws.send(JSON.stringify({ token: execToken }));
     ws.onmessage = (event) => {
+      if (settled) return;
       let msg: ExecReply;
       try {
         msg = JSON.parse(String(event.data));
@@ -88,7 +90,10 @@ function execWsRequest(
         return;
       }
       if (msg.ready) {
-        ws.send(JSON.stringify({ id: 1, ...body }));
+        if (!sent) {
+          sent = true;
+          ws.send(JSON.stringify({ id: 1, ...body }));
+        }
         return;
       }
       if (msg.id === 1) {

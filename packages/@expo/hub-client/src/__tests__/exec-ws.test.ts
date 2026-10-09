@@ -98,6 +98,26 @@ describe('runHostAction', () => {
 });
 
 describe('hostUiRequest', () => {
+  test('sends a setting once despite repeated or late authentication frames', async () => {
+    installFakeWebSocket();
+    const pending = hostUiRequest('ws://hub/exec-ws', 'secret', {
+      device: 'UDID',
+      option: 'liquid-glass',
+      value: 'clear',
+    });
+    const { ws, request } = await handshake('secret');
+    ws.reply({ ready: true });
+    expect(ws.sent).toHaveLength(2);
+    expect(request).toEqual({
+      id: 1,
+      ui: { device: 'UDID', option: 'liquid-glass', value: 'clear' },
+    });
+    ws.reply({ id: 1, ok: true });
+    expect(await pending).toEqual({ ok: true });
+    ws.reply({ ready: true });
+    expect(ws.sent).toHaveLength(2);
+  });
+
   test('reads the simulator settings status', async () => {
     installFakeWebSocket();
     const pending = hostUiRequest('ws://hub/exec-ws', 'secret', { device: 'UDID' });
