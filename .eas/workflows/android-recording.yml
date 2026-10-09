@@ -1,0 +1,64 @@
+name: Android recording
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+  pull_request_labeled:
+    labels: [eas-approved]
+
+concurrency:
+  cancel_in_progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ workflow.filename }}-${{ github.ref }}
+
+defaults:
+  tools:
+    node: 24
+    bun: 1.3.14
+
+# One job per former GitHub Actions matrix entry (source, stop, limit).
+# The shared steps live in .eas/functions/verify-android-recording.
+jobs:
+  grpc-screenshot-normal:
+    name: Android recording (grpc-screenshot, normal)
+    runs_on: linux-medium-nested-virtualization
+    steps:
+      - uses: eas/checkout
+      - uses: ./.eas/functions/verify-android-recording
+        with:
+          source: grpc-screenshot
+          stop: endpoint
+          limit: normal
+
+  scrcpy-normal:
+    name: Android recording (scrcpy, normal)
+    runs_on: linux-medium-nested-virtualization
+    steps:
+      - uses: eas/checkout
+      - uses: ./.eas/functions/verify-android-recording
+        with:
+          source: scrcpy
+          stop: signal
+          limit: normal
+
+  grpc-screenshot-duration:
+    name: Android recording (grpc-screenshot, duration)
+    runs_on: linux-medium-nested-virtualization
+    steps:
+      - uses: eas/checkout
+      - uses: ./.eas/functions/verify-android-recording
+        with:
+          source: grpc-screenshot
+          stop: endpoint
+          limit: duration
+
+  scrcpy-bytes:
+    name: Android recording (scrcpy, bytes)
+    runs_on: linux-medium-nested-virtualization
+    steps:
+      - uses: eas/checkout
+      - uses: ./.eas/functions/verify-android-recording
+        with:
+          source: scrcpy
+          stop: signal
+          limit: bytes
