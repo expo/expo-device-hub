@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync, statSync, existsSync, readdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -58,7 +58,7 @@ describe('the CLI state file', () => {
   });
 
   // The CLI withdraws the record when shutdown starts, and again at exit as a fallback.
-  test("withdraws a published record once, and leaves a newer Hub's record in place", () => {
+  test("withdraws a published record, and leaves a newer Hub's record in place", () => {
     const env = stateEnv();
     const withdraw = publishHubState({ pid: 4242, port: 3400, url: 'http://127.0.0.1:3400' }, env);
     const file = hubStateFile(3400, env);
@@ -71,6 +71,23 @@ describe('the CLI state file', () => {
     writeHubState({ pid: 5151, port: 3400, url: 'http://127.0.0.1:3400' }, env);
     withdraw();
     expect(existsSync(file)).toBe(true);
+  });
+
+  test('retries a withdrawal that failed', () => {
+    const env = stateEnv();
+    const withdraw = publishHubState({ pid: 4242, port: 3400, url: 'http://127.0.0.1:3400' }, env);
+    const directory = env.EXPO_DEVICE_HUB_STATE_DIR!;
+
+    chmodSync(directory, 0o000);
+    try {
+      withdraw();
+    } finally {
+      chmodSync(directory, 0o700);
+    }
+    expect(existsSync(hubStateFile(3400, env))).toBe(true);
+
+    withdraw();
+    expect(existsSync(hubStateFile(3400, env))).toBe(false);
   });
 
   test('names a URL that answers on this machine', () => {

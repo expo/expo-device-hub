@@ -53,15 +53,11 @@ export function clearHubState(port: number, ownerPid: number, env: Env = process
 }
 
 /**
- * Writes the Hub's record and returns a function that removes it once. The CLI removes it when
- * shutdown starts, before the Hub stops accepting connections, and again at exit as a fallback.
+ * Writes the Hub's record and returns a function that removes it. The CLI removes it when shutdown
+ * starts, before the Hub stops accepting connections, and again at exit, which retries a removal
+ * that failed. Each call is safe to repeat, and keeps a newer Hub's record.
  */
 export function publishHubState(state: HubState, env: Env = process.env): () => void {
   writeHubState(state, env);
-  let withdrawn = false;
-  return () => {
-    if (withdrawn) return;
-    withdrawn = true;
-    clearHubState(state.port, state.pid, env);
-  };
+  return () => clearHubState(state.port, state.pid, env);
 }
