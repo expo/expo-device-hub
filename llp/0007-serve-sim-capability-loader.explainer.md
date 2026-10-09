@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/Sources/ServeSimCapabilityLoader/DESIGN.md`; links and paths updated)
+**Revised:** 2026-10-06 (linked the startup readiness explainer)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -154,6 +154,9 @@ something that reliably removes it:
   (`null`) outlives the command that created it; a record owned by a session is
   released when that session exits, including its host helper. The insert is
   removed only when no live session or capability needs it.
+
+For the CLI's boot/launch ordering and readiness boundary, see
+[LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft).
 
 ## Not there yet
 
