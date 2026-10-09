@@ -1,0 +1,53 @@
+name: Verify Android recording
+description: Builds the recording test runtime, starts an emulator, and runs the recording verifier.
+inputs:
+  - name: source
+    allowed_values: [grpc-screenshot, scrcpy]
+    required: true
+  - name: stop
+    allowed_values: [endpoint, signal]
+    required: true
+  - name: limit
+    allowed_values: [normal, duration, bytes]
+    required: true
+runs:
+  steps:
+    - name: Install dependencies
+      run: |
+        bun install --frozen-lockfile
+        sudo apt-get update
+        sudo apt-get install -y ffmpeg
+
+    - name: Build recording test runtime
+      run: |
+        bun run --filter '@expo/hub-android-utils' --filter '@expo/hub-apple-utils' build
+        bun run --filter serve-emu build
+        bun packages/serve-emu/packages/serve-emu/scripts/fetch-scrcpy.ts
+        # Hub imports the iOS middleware on Android too. Only its JS is needed here.
+        bun build packages/serve-sim/packages/serve-sim/src/middleware.ts --target node --format esm --external ws --outdir packages/serve-sim/packages/serve-sim/dist
+        bun run --filter expo-device-hub build:vendor
+        bun run --filter expo-device-hub build:server
+
+    - name: Start Android emulator
+      uses: eas/start_android_emulator
+      with:
+        system_image_package: system-images;android-35;google_apis;x86_64
+
+    # Records the exit code so the diagnostics upload below always runs.
+    - name: Verify recording on an emulator
+      id: verify
+      run: |
+        set +e
+        bun packages/expo-device-hub/scripts/verify-android-recording.ts ${{ inputs.source }} ${{ inputs.stop }} ${{ inputs.limit }}
+        set-output exit_code "$?"
+
+    - name: Upload recordings and diagnostics
+      uses: eas/upload_artifact
+      with:
+        type: other
+        name: android-recording-${{ inputs.source }}-${{ inputs.limit }}
+        path: /tmp/android-recording-smoke-*
+        ignore_error: true
+
+    - name: Report result
+      run: exit ${{ steps.verify.outputs.exit_code }}
