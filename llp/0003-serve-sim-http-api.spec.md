@@ -206,6 +206,16 @@ WebSocket.
 the DevTools bridge come from `GET /devtools`, which returns a
 `webSocketDebuggerUrl` per target.
 
+### CLI input admission
+
+Helpers advertise `inputAdmission: true` in their state record and send the
+single-byte `0x83` frame after reserving an input slot. The CLI's short input
+commands wait for that frame before sending. A full pool closes with `1013`,
+which fails the command even if the refusal arrives after the transport opens.
+A connection that never admits input fails after ten seconds. Older helpers
+without the state flag retain their open-based behavior [observed:
+`src/socket/cli-input.ts`, `src/index.ts`, `src/state.ts`].
+
 The CDP bridge forwards frames verbatim in both directions. The token
 subprotocol is not forwarded upstream, so the credential stops at serve-sim.
 

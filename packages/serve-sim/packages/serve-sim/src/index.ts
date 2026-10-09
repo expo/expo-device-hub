@@ -8,6 +8,7 @@ import { createHash, randomBytes } from "crypto";
 import { networkInterfaces } from "os";
 import { join, resolve } from "path";
 import WebSocket from "ws";
+import { onCliInputReady } from "./socket/cli-input";
 import {
   stateDir,
   stateFileForDevice,
@@ -248,11 +249,6 @@ function openHelperSocket(state: ServerState): WebSocket {
   );
 }
 
-function reportInputSocketClose(ws: WebSocket, reject: (error: Error) => void): void {
-  ws.on("close", (code, reason) => {
-    if (code === 1013) reject(new Error(`Simulator input rejected: ${reason.toString() || "server busy"}. Try again shortly.`));
-  });
-}
 
 function clearState(udid?: string) {
   if (udid) {
@@ -857,17 +853,16 @@ async function gesture(jsonStr: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
-    ws.onopen = () => {
+    onCliInputReady(ws, state.inputAdmission === true, () => {
       const json = new TextEncoder().encode(JSON.stringify(touch));
       const msg = new Uint8Array(1 + json.length);
       msg[0] = 0x03;
       msg.set(json, 1);
       ws.send(msg);
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
 
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
@@ -892,7 +887,6 @@ async function tap(xArg: string, yArg: string, deviceArg?: string) {
   }
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
     const send = (type: "begin" | "end") => {
       const json = new TextEncoder().encode(JSON.stringify({ type, x, y }));
@@ -901,13 +895,13 @@ async function tap(xArg: string, yArg: string, deviceArg?: string) {
       msg.set(json, 1);
       ws.send(msg);
     };
-    ws.onopen = () => {
+    onCliInputReady(ws, state.inputAdmission === true, () => {
       send("begin");
       setTimeout(() => {
         send("end");
         setTimeout(() => { ws.close(); resolve(); }, 50);
       }, 40);
-    };
+    }, reject);
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
       reject(new Error("WebSocket connection failed"));
@@ -1001,17 +995,16 @@ async function rotate(orientation: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
-    ws.onopen = () => {
+    onCliInputReady(ws, state.inputAdmission === true, () => {
       const json = new TextEncoder().encode(JSON.stringify({ orientation }));
       const msg = new Uint8Array(1 + json.length);
       msg[0] = 0x07;
       msg.set(json, 1);
       ws.send(msg);
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
 
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
@@ -1045,17 +1038,16 @@ async function button(buttonName = "home", deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(state);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
 
-    ws.onopen = () => {
+    onCliInputReady(ws, state.inputAdmission === true, () => {
       const json = new TextEncoder().encode(JSON.stringify(payload));
       const msg = new Uint8Array(1 + json.length);
       msg[0] = 0x04;
       msg.set(json, 1);
       ws.send(msg);
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
 
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", state.wsUrl);
@@ -1095,16 +1087,15 @@ async function caDebug(option: string, stateRaw: string, deviceArg?: string) {
 
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(stateFile);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
-    ws.onopen = () => {
+    onCliInputReady(ws, stateFile.inputAdmission === true, () => {
       const json = new TextEncoder().encode(JSON.stringify({ option: resolved, enabled }));
       const msg = new Uint8Array(1 + json.length);
       msg[0] = 0x08;
       msg.set(json, 1);
       ws.send(msg);
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", stateFile.wsUrl);
       reject(new Error("WebSocket connection failed"));
@@ -1121,12 +1112,11 @@ async function memoryWarning(deviceArg?: string) {
   }
   return new Promise<void>((resolve, reject) => {
     const ws = openHelperSocket(stateFile);
-    reportInputSocketClose(ws, reject);
     ws.binaryType = "arraybuffer";
-    ws.onopen = () => {
+    onCliInputReady(ws, stateFile.inputAdmission === true, () => {
       ws.send(new Uint8Array([0x09]));
       setTimeout(() => { ws.close(); resolve(); }, 50);
-    };
+    }, reject);
     ws.onerror = () => {
       console.error("Failed to connect to serve-sim server at", stateFile.wsUrl);
       reject(new Error("WebSocket connection failed"));
