@@ -11,6 +11,14 @@ import {
 } from '../useWebRtcStream';
 
 describe('WebRTC stream options', () => {
+  test('recognizes legacy mediaType-only video before first paint', async () => {
+    const report = new Map([['video', {
+      type: 'inbound-rtp', mediaType: 'video', framesReceived: 10,
+    }]]) as unknown as RTCStatsReport;
+    const peer = { getStats: async () => report } as RTCPeerConnection;
+    expect(await videoRtpArriving(peer)).toBe(true);
+  });
+
   test('first-frame diagnosis finishes even when the browser stats read hangs', async () => {
     const peer = { getStats: () => new Promise<RTCStatsReport>(() => {}) } as RTCPeerConnection;
     let timer: ReturnType<typeof setTimeout>;
