@@ -16,7 +16,16 @@ import { useIosDeviceClient } from "../useIosDevice";
 import { createGlobalStubs } from "./test-globals";
 
 type ReadMode = "hold" | "ready" | "empty" | "error" | "malformed" | "partial" | "appearance-error";
-type SocketData = { path: string; token: string | null };
+type SocketData = { path: string; token: string | null; streams: Map<number, number> };
+
+// Clients choose subscription ids; the fake names each stream by its path.
+const STREAM_KINDS: Array<[string, number]> = [
+  ["/ios/logs", 1],
+  ["/ios/events", 2],
+  ["/ios/metrics", 3],
+  ["/ios/api/events", 4],
+];
+const streamKind = (path: string) => STREAM_KINDS.find(([prefix]) => path.startsWith(prefix))?.[1];
 type ReadRequest = {
   path: string;
   device: string;
@@ -69,7 +78,8 @@ function settingsServer() {
   const subscriptions: number[] = [];
   const controls = new Set<ServerWebSocket<SocketData>>();
   const pendingAuth = new Set<ServerWebSocket<SocketData>>();
-  const activeSocketReads = new Set<ServerWebSocket<SocketData>>();
+  // A shared control socket carries many reads; each is active until answered or its socket closes.
+  const activeSocketReads = new Map<object, ServerWebSocket<SocketData>>();
   let activeHttpReads = 0;
   const socketStarts: string[] = [];
   stubGlobal("WebSocket", class extends WebSocket {
@@ -123,7 +133,7 @@ function settingsServer() {
         const socketToken = protocol?.startsWith("serve-sim.token.")
           ? protocol.slice("serve-sim.token.".length)
           : null;
-        if (server.upgrade(request, { data: { path: url.pathname, token: socketToken } })) return;
+        if (server.upgrade(request, { data: { path: url.pathname, token: socketToken, streams: new Map() } })) return;
         return new Response(null, { status: 400 });
       }
       if (url.pathname === "/ios/api") {
@@ -200,19 +210,26 @@ function settingsServer() {
           token?: string;
           id?: number;
           sub?: number;
+          path?: string;
           ui?: { device: string; option?: string; value?: string };
         };
         if (message.token) {
           state.authRequests++;
           if (state.authReady) socket.send(JSON.stringify({ ready: true }));
           else pendingAuth.add(socket);
-        } else if (message.sub != null) {
+        } else if (message.id != null && !message.ui) {
+          // serve-sim answers id-only health probes before host action dispatch.
+          socket.send(JSON.stringify({ id: message.id, error: "unsupported request" }));
+        } else if (message.sub != null && message.path != null) {
+          const kind = streamKind(message.path);
+          if (kind == null) return;
           controls.add(socket);
-          subscriptions.push(message.sub);
-          if (state.endedSubscriptions.has(message.sub)) {
+          socket.data.streams.set(kind, message.sub);
+          subscriptions.push(kind);
+          if (state.endedSubscriptions.has(kind)) {
             socket.send(JSON.stringify({ sub: message.sub, end: true }));
-          } else if (message.sub === 3) {
-            socket.send(JSON.stringify({ sub: 3, data: 'event: meta\ndata: {"hostCores":4}\n\n' }));
+          } else if (kind === 3) {
+            socket.send(JSON.stringify({ sub: message.sub, data: 'event: meta\ndata: {"hostCores":4}\n\n' }));
           }
         } else if (message.ui && message.id != null) {
           if (message.ui.option) {
@@ -223,12 +240,14 @@ function settingsServer() {
             socket.send(JSON.stringify({ id: message.id, ok: true }));
             return;
           }
-          activeSocketReads.add(socket);
+          const read = {};
+          activeSocketReads.set(read, socket);
           register({
             path: "/ios/exec-ws",
             device: message.ui.device,
             token: socket.data.token,
             reply(mode) {
+              activeSocketReads.delete(read);
               socket.send(
                 JSON.stringify(
                   mode === "error"
@@ -249,7 +268,9 @@ function settingsServer() {
         }
       },
       close(socket) {
-        activeSocketReads.delete(socket);
+        for (const [read, owner] of activeSocketReads) {
+          if (owner === socket) activeSocketReads.delete(read);
+        }
         controls.delete(socket);
         pendingAuth.delete(socket);
       },
@@ -334,14 +355,16 @@ for (const sub of [1, 2, 3, 4]) {
     const subscriptions = server.subscriptions.length;
     server.state.endedSubscriptions.add(sub);
     await act(async () => {
-      for (const socket of server.controls) socket.send(JSON.stringify({ sub, end: true }));
+      for (const socket of server.controls) {
+        socket.send(JSON.stringify({ sub: socket.data.streams.get(sub), end: true }));
+      }
       await yieldIO();
     });
+    if (sub === 3) await waitFor(() => mounted.client().activityStatus === "error");
     expect(mounted.client().deviceSettingsStatus).toBe("ready");
     expect(mounted.client().deviceSettings).toBe(cached);
     expect(mounted.client().activityStatus).toBe(sub === 3 ? "error" : "ready");
-    await advanceTime(1500);
-    await waitFor(() => server.subscriptions.length > subscriptions);
+    await advanceUntil(() => server.subscriptions.length > subscriptions, 1500);
     expect(server.subscriptions.slice(subscriptions)).toEqual([sub]);
     const initialReads = server.reads.length;
     await advanceTime(5000);
@@ -352,7 +375,8 @@ for (const sub of [1, 2, 3, 4]) {
     expect(server.writes.filter((write) => write.option === "liquid-glass")).toEqual([
       { device: "DEVICE-1", option: "liquid-glass", value: "clear" },
     ]);
-    expect(server.state.authRequests - authRequests).toBe(server.reads.length - initialReads);
+    // Reads share the authenticated control socket instead of authenticating per read.
+    expect(server.state.authRequests).toBe(authRequests);
     // An actual transport failure still requires authentication and a fresh read.
     const readsBeforeDisconnect = server.reads.length;
     server.state.endedSubscriptions.delete(sub);
@@ -370,8 +394,9 @@ for (const sub of [1, 2, 3, 4]) {
 }
 
 // setImmediate yields to real network I/O without advancing the fake clock.
+// macOS loopback WebSockets can need more than a few turns per frame.
 async function yieldIO() {
-  for (let turn = 0; turn < 4; turn++) {
+  for (let turn = 0; turn < 40; turn++) {
     await new Promise<void>((resolve) => setImmediate(resolve));
   }
 }
@@ -381,6 +406,12 @@ async function advanceTime(ms: number) {
     jest.advanceTimersByTime(ms);
     await yieldIO();
   });
+}
+
+// Close and end frames cross real I/O, so a retry timer can start after the first step.
+async function advanceUntil(check: () => boolean, ms: number, steps = 4) {
+  for (let step = 0; step < steps && !check(); step++) await advanceTime(ms);
+  await waitFor(check);
 }
 
 // Bun also freezes monotonic clocks; bound I/O settling by event-loop turns.
@@ -757,31 +788,33 @@ for (const replyTiming of ["before reconnect", "after reconnect", "after repeate
     const server = settingsServer();
     const mounted = await mountClient("ios", server.baseUrl("ios"));
     await waitFor(() => server.reads.length === 1 && server.controls.size > 0);
+    const interrupted = server.reads[0]!;
     await act(async () => { for (const socket of server.controls) socket.close(); });
     await waitFor(() => mounted.client().deviceSettingsStatus === "error");
     if (replyTiming !== "before reconnect") {
-      await advanceTime(1500);
-      await waitFor(() => server.controls.size > 0);
+      await advanceUntil(() => server.controls.size > 0, 1500);
     }
     if (replyTiming === "after repeated reconnects") {
       await act(async () => { for (const socket of server.controls) socket.close(); });
       await waitFor(() => server.controls.size === 0);
-      await advanceTime(1500);
-      await waitFor(() => server.controls.size > 0);
+      await advanceUntil(() => server.controls.size > 0, 1500);
     }
 
-    await act(async () => server.reply("DEVICE-1", "ready"));
+    // The interrupted read shared the closed control socket, so its reply cannot arrive.
+    await act(async () => interrupted.reply("ready"));
     expect(mounted.client().deviceSettingsStatus).toBe("error");
     expect(mounted.client().deviceSettings).toBeNull();
     expect(mounted.client().appearance).toBeNull();
     if (replyTiming === "before reconnect") await advanceTime(1500);
-    await waitFor(() => server.reads.length === 2);
+    // Each authenticated replacement starts one fresh read.
+    const expectedReads = replyTiming === "after repeated reconnects" ? 3 : 2;
+    await waitFor(() => server.reads.length === expectedReads);
     server.state.night = "no";
     await act(async () => server.reply("DEVICE-1", "ready"));
     await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
     expect(mounted.client().deviceSettings?.appearance).toBe("light");
     expect(mounted.client().appearance).toBe("light");
-    expect(server.reads).toHaveLength(2);
+    expect(server.reads).toHaveLength(expectedReads);
   });
 }
 
@@ -967,42 +1000,37 @@ test("iOS: settings polls and visibility refreshes pause until the control socke
   const initialAuth = server.state.authRequests;
   await advanceTime(1500);
   await waitFor(() => server.state.authRequests > initialAuth);
-  const firstReconnectAuth = server.state.authRequests;
-  await act(async () => mounted.client().attachLogs());
-  await waitFor(() => server.state.authRequests > firstReconnectAuth);
   const reconnectAuth = server.state.authRequests;
-  await act(async () => { server.setHidden(true); server.setHidden(false); });
-  await advanceTime(5500);
+  // A subscription change joins the pending replacement instead of opening another socket.
+  await act(async () => mounted.client().attachLogs());
   expect(server.state.authRequests).toBe(reconnectAuth);
+  expect(server.execConnections()).toBe(2);
+  await act(async () => { server.setHidden(true); server.setHidden(false); });
+  await advanceTime(4500);
   expect(server.reads).toHaveLength(1);
+  expect(mounted.client().deviceSettingsStatus).toBe("error");
   server.state.night = "no";
   await act(async () => server.authenticate());
   await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
   expect(mounted.client().deviceSettings?.appearance).toBe("light");
 });
 
-test("iOS: healthy log subscription changes pause polls until replacement authentication", async () => {
+test("iOS: log subscription changes keep the authenticated control socket and its polls", async () => {
   const server = settingsServer();
   server.state.mode = "ready";
   const mounted = await mountClient("ios", server.baseUrl("ios"));
   await waitFor(() => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0);
   const cached = mounted.client().deviceSettings;
+  const connections = server.execConnections();
   for (const changeLogs of [mounted.client().attachLogs, mounted.client().detachLogs]) {
-    server.state.authReady = false;
-    const initialAuth = server.state.authRequests;
-    await act(async () => changeLogs());
-    await waitFor(() => server.state.authRequests > initialAuth);
-    const replacementAuth = server.state.authRequests;
+    const auth = server.state.authRequests;
     const reads = server.reads.length;
-    await act(async () => { server.setHidden(true); server.setHidden(false); });
-    await advanceTime(5500);
-    expect(server.state.authRequests).toBe(replacementAuth);
-    expect(server.reads).toHaveLength(reads);
-    expect(mounted.client().deviceSettings).toBe(cached);
-    expect(mounted.client().deviceSettingsStatus).toBe("ready");
-    await act(async () => server.authenticate());
+    await act(async () => changeLogs());
+    await advanceTime(5000);
     await waitFor(() => server.reads.length === reads + 1);
     await server.settleReads();
+    expect(server.state.authRequests).toBe(auth);
+    expect(server.execConnections()).toBe(connections);
     expect(mounted.client().deviceSettings).toBe(cached);
     expect(mounted.client().deviceSettingsStatus).toBe("ready");
   }
@@ -1021,32 +1049,28 @@ test("iOS: replacement authentication refreshes immediately during settings retr
   await server.settleReads();
   server.state.authReady = false;
   const initialAuth = server.state.authRequests;
-  await act(async () => mounted.client().attachLogs());
-  await waitFor(() => server.state.authRequests > initialAuth);
+  await act(async () => { for (const socket of server.controls) socket.close(); });
+  await advanceUntil(() => server.state.authRequests > initialAuth, 1500);
   server.state.mode = "ready";
   await act(async () => server.authenticate());
   await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
   expect(server.reads).toHaveLength(4);
 });
 
-test("iOS: healthy control replacement discards an active settings reply before authentication", async () => {
+test("iOS: subscription changes do not interrupt an active settings read", async () => {
   const server = settingsServer();
+  server.state.streams = true;
   const mounted = await mountClient("ios", server.baseUrl("ios"));
   await waitFor(() => server.reads.length === 1 && server.controls.size > 0);
-  server.state.authReady = false;
-  const initialAuth = server.state.authRequests;
+  const auth = server.state.authRequests;
   await act(async () => mounted.client().attachLogs());
-  await waitFor(() => server.state.authRequests > initialAuth);
-  await act(async () => server.reply("DEVICE-1", "ready"));
-  expect(mounted.client().deviceSettingsStatus).toBe("loading");
-  expect(mounted.client().deviceSettings).toBeNull();
-  expect(mounted.client().appearance).toBeNull();
+  await waitFor(() => server.subscriptions.includes(1));
   server.state.night = "no";
-  server.state.mode = "ready";
-  await act(async () => server.authenticate());
+  await act(async () => server.reply("DEVICE-1", "ready"));
   await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
   expect(mounted.client().deviceSettings?.appearance).toBe("light");
-  expect(server.reads).toHaveLength(2);
+  expect(server.state.authRequests).toBe(auth);
+  expect(server.reads).toHaveLength(1);
 });
 
 test("iOS: a reconnect read cannot overwrite a newer completed setting write", async () => {

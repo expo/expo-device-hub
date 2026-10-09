@@ -1,3 +1,4 @@
+import { createControlSocket } from './control-socket';
 /**
  * serve-sim (iOS) implementation of the {@link DeviceClient} interface.
  *
@@ -316,15 +317,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const connectionScope = active ? JSON.stringify([baseUrl, targetDevice, token]) : null;
   const { deviceSettingsStatus, resetRead, settleRead } =
     useDeviceSettingsReadStatus(connectionScope);
-  const deviceSettingsReadRef = useRef<{
-    invalidate: () => void;
-    resume: () => void;
-  } | null>(null);
   const deviceSettingVersionsRef = useRef(new Map<DeviceSettingKey, number>());
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
-  // serve-sim's rejection of the input socket (close 1013), kept until a socket is admitted.
+  // A refusal stays visible until server admission confirms recovery.
   const [inputSocketError, setInputSocketError] = useState<string | null>(null);
   // serve-sim's native HID setup failed; lasts until serve-sim restarts.
   const [inputUnavailable, setInputUnavailable] = useState(false);
@@ -372,6 +369,18 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const streamMode = streamCapabilities
     ? resolveDeviceStreamMode(requestedStreamMode, streamCapabilities.modeAvailability)
     : requestedStreamMode;
+  // @ref LLP 0013#shared-ios-control-channel — one channel per exec-ws identity, so a null config keeps it open
+  // Exec-ws details outlive a null config, so its subscriptions can await a replacement helper.
+  const controlWsUrl = connection?.middleware.execWsUrl ?? null;
+  const controlToken = connection?.middleware.execToken ?? null;
+  const controlSocket = useMemo(() => controlWsUrl && controlToken
+    ? createControlSocket(controlWsUrl, controlToken, {
+        retryMs: RECONNECT_MS,
+        openSocket: address => new WebSocket(address, socketProtocols),
+      }) : null, [controlWsUrl, controlToken, socketProtocols]);
+  useEffect(() => { controlSocket?.activate(); return () => controlSocket?.dispose(); }, [controlSocket]);
+  const requestHostUi = useCallback((url: string, execToken: string, payload: Parameters<typeof hostUiRequest>[2]) =>
+    hostUiRequest(url, execToken, payload, socketProtocols, controlSocket ?? undefined), [controlSocket, socketProtocols]);
   // The simulator's system dark/light setting. null until read.
   const [appearance, setAppearanceState] = useState<DeviceAppearance | null>(null);
   const [deviceSettings, setDeviceSettings] = useState<DeviceSettings | null>(null);
@@ -534,18 +543,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (!c || !c.execWsUrl || !c.execToken || !c.device) return;
       const previous = hardwareKeyboardConnected;
       setHardwareKeyboardConnectedState(connected);
-      void hostUiRequest(
-        c.execWsUrl,
-        c.execToken,
-        {
-          device: c.device,
-          option: UI_OPTION_HARDWARE_KEYBOARD,
-          value: connected ? 'on' : 'off',
-        },
-        socketProtocols,
-      ).catch(() => setHardwareKeyboardConnectedState(previous));
+      void requestHostUi(c.execWsUrl, c.execToken, {
+        device: c.device,
+        option: UI_OPTION_HARDWARE_KEYBOARD,
+        value: connected ? 'on' : 'off',
+      }).catch(() => setHardwareKeyboardConnectedState(previous));
     },
-    [config, hardwareKeyboardConnected, socketProtocols],
+    [config, hardwareKeyboardConnected, requestHostUi],
   );
 
   const toggleSoftwareKeyboard = useCallback(() => {
@@ -610,11 +614,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (key === 'appearance' && (value === 'light' || value === 'dark')) {
         setAppearanceState(value);
       }
-      void hostUiRequest(execWsUrl, execToken, { device, option: key, value }, socketProtocols)
+      void requestHostUi(execWsUrl, execToken, {
+        device,
+        option: key,
+        value,
+      })
         .catch(async () => {
           if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
           try {
-            const result = await hostUiRequest(execWsUrl, execToken, { device }, socketProtocols);
+            const result = await requestHostUi(execWsUrl, execToken, { device });
             if (!tracker.isCurrent(request) || deviceSettingConfigRef.current !== c) return;
             const authoritative: DeviceSettings = {};
             for (const [nextKey, nextValue] of Object.entries(result.status ?? {})) {
@@ -640,7 +648,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           if (tracker.finish(request)) setDeviceSettingsPending(tracker.pending);
         });
     },
-    [config, socketProtocols],
+    [config, requestHostUi],
   );
 
   const setAppearance = useCallback(
@@ -1189,9 +1197,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     () =>
       execWsUrl && execToken
         ? (action: string, params?: Parameters<typeof runHostAction>[3]) =>
-            runHostAction(execWsUrl, execToken, action, params, socketProtocols)
+            runHostAction(execWsUrl, execToken, action, params, socketProtocols, controlSocket ?? undefined)
         : null,
-    [execWsUrl, execToken, socketProtocols],
+    [execWsUrl, execToken, socketProtocols, controlSocket],
   );
 
   const locationBackend = useMemo<DeviceLocationBackend | null>(() => {
@@ -1234,59 +1242,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => clearInterval(watchdog);
   }, [metricsPath, activityScope]);
 
-  useEffect(() => {
-    if (!execWsUrl || !execToken) return;
-    const subscriptions = new Map<number, 'logs' | 'events' | 'metrics' | 'config'>();
-    const paths = new Map<number, string>();
-    if (configEventsPath) {
-      subscriptions.set(4, 'config');
-      paths.set(4, configEventsPath);
-    }
-    if (logsEnabled && logsPath) {
-      subscriptions.set(1, 'logs');
-      paths.set(1, logsPath);
-    }
-    if (eventsEnabled && eventsPath && deviceUdid) {
-      subscriptions.set(2, 'events');
-      paths.set(2, eventsPath);
-    }
-    if (metricsPath) {
-      subscriptions.set(3, 'metrics');
-      paths.set(3, metricsPath);
-    }
-    if (subscriptions.size === 0) return;
-    if (metricsPath) setActivityStatus('loading');
-
-    let cancelled = false;
-    let ws: WebSocket | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    const buffers = new Map<number, string>();
-    const subscriptionRetries = new Map<number, ReturnType<typeof setTimeout>>();
-    const clearSubscriptionRetries = () => {
-      for (const timer of subscriptionRetries.values()) clearTimeout(timer);
-      subscriptionRetries.clear();
-    };
-    const markMetricsInterrupted = () => {
-      setActivityStatus('error');
-      setActivity((current) =>
-        current && !current.errored ? { ...current, errored: true } : current,
-      );
-    };
-    const markInterrupted = () => {
-      deviceSettingsReadRef.current?.invalidate();
-      settleRead('error');
-      if (metricsPath) markMetricsInterrupted();
-    };
-
-    const emit = (kind: 'logs' | 'events' | 'metrics' | 'config', block: ParsedSseBlock) => {
-      if (kind === 'config') {
-        try {
-          const value = JSON.parse(block.data) as PreviewApi | null;
-          applyPreviewConfigRef.current?.(value);
-          configUpdatesReadyRef.current = true;
-        } catch {}
-        return;
-      }
+  const emitControlEvent = useCallback((kind: 'logs' | 'events' | 'metrics', block: ParsedSseBlock) => {
       if (kind === 'logs') {
         let message = block.data;
         try {
@@ -1334,125 +1290,54 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           ),
         );
       } catch {}
-    };
+  }, [deviceUdid, setActivityStatus]);
 
-    const connect = () => {
-      if (cancelled) return;
-      clearSubscriptionRetries();
-      buffers.clear();
-      try {
-        ws = new WebSocket(execWsUrl, socketProtocols);
-      } catch {
-        configUpdatesReadyRef.current = false;
-        markInterrupted();
-        retryTimer = setTimeout(() => {
-          if (cancelled) return;
-          connect();
-          refreshConfigRef.current?.();
-        }, RECONNECT_MS);
-        return;
-      }
-      const socket = ws;
-      let authenticated = false;
-      ws.onopen = () => {
-        if (!cancelled && ws === socket) socket.send(JSON.stringify({ token: execToken }));
-      };
-      ws.onmessage = (event) => {
-        if (cancelled || ws !== socket) return;
-        let msg: { ready?: boolean; sub?: number; data?: string; end?: boolean };
+  const subscribeControl = useCallback((kind: 'logs' | 'events' | 'metrics', path: string) => {
+    if (!controlSocket) return;
+    let buffer = '';
+    if (kind === 'metrics') setActivityStatus('loading');
+    return controlSocket.subscribe(path, chunk => {
+      buffer = drainSseChunk(buffer, chunk, block => emitControlEvent(kind, block));
+    }, () => {
+      buffer = '';
+      if (kind !== 'metrics') return;
+      setActivityStatus('error');
+      setActivity(current => current && !current.errored ? {...current, errored: true} : current);
+    });
+  }, [controlSocket, emitControlEvent, setActivityStatus]);
+  useEffect(() => {
+    if (logsEnabled && logsPath) return subscribeControl('logs', logsPath);
+  }, [logsEnabled, logsPath, subscribeControl]);
+  useEffect(() => {
+    if (eventsEnabled && eventsPath && deviceUdid) return subscribeControl('events', eventsPath);
+  }, [eventsEnabled, eventsPath, deviceUdid, subscribeControl]);
+  useEffect(() => {
+    if (metricsPath) return subscribeControl('metrics', metricsPath);
+  }, [metricsPath, subscribeControl]);
+  useEffect(() => {
+    if (!controlSocket || !configEventsPath) return;
+    let buffer = '';
+    let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribe = controlSocket.subscribe(configEventsPath, chunk => {
+      buffer = drainSseChunk(buffer, chunk, block => {
         try {
-          msg = JSON.parse(String(event.data));
-        } catch {
-          return;
-        }
-        if (msg.ready) {
-          if (authenticated) return;
-          authenticated = true;
-          deviceSettingsReadRef.current?.resume();
-          for (const [sub, path] of paths) {
-            ws?.send(JSON.stringify({ sub, path }));
-          }
-          return;
-        }
-        if (typeof msg.sub !== 'number' || !subscriptions.has(msg.sub)) return;
-        if (msg.end) {
-          const sub = msg.sub;
-          if (subscriptionRetries.has(sub)) return;
-          buffers.delete(sub);
-          if (subscriptions.get(sub) === 'metrics') markMetricsInterrupted();
-          if (subscriptions.get(sub) === 'config') {
-            configUpdatesReadyRef.current = false;
-            refreshConfigRef.current?.();
-          }
-          // An upstream stream ending does not invalidate this authenticated
-          // socket or unrelated settings reads. Retry only that subscription.
-          subscriptionRetries.set(
-            sub,
-            setTimeout(() => {
-              subscriptionRetries.delete(sub);
-              if (!cancelled && ws === socket) {
-                socket.send(JSON.stringify({ sub, path: paths.get(sub) }));
-              }
-            }, RECONNECT_MS),
-          );
-          return;
-        }
-        if (typeof msg.data === 'string') {
-          const sub = msg.sub;
-          const kind = subscriptions.get(sub)!;
-          buffers.set(
-            sub,
-            drainSseChunk(buffers.get(sub) ?? '', msg.data, (block) => emit(kind, block)),
-          );
-        }
-      };
-      ws.onclose = () => {
-        if (!cancelled && ws === socket) {
-          ws = null;
-          clearSubscriptionRetries();
-          configUpdatesReadyRef.current = false;
-          markInterrupted();
-          retryTimer = setTimeout(() => {
-            if (cancelled) return;
-            connect();
-            refreshConfigRef.current?.();
-          }, RECONNECT_MS);
-        }
-      };
-      ws.onerror = () => {
-        if (cancelled || ws !== socket) return;
-        try {
-          ws?.close();
+          applyPreviewConfigRef.current?.(JSON.parse(block.data) as PreviewApi | null);
+          configUpdatesReadyRef.current = true;
         } catch {}
-      };
-    };
-    connect();
-
-    return () => {
-      cancelled = true;
+      });
+    }, () => {
+      buffer = '';
       configUpdatesReadyRef.current = false;
-      // Pause reads until the replacement control socket authenticates.
-      deviceSettingsReadRef.current?.invalidate();
-      if (retryTimer) clearTimeout(retryTimer);
-      clearSubscriptionRetries();
-      try {
-        ws?.close();
-      } catch {}
+      // HTTP discovery covers rotated credentials until the subscription recovers.
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(() => refreshConfigRef.current?.(), RECONNECT_MS);
+    });
+    return () => {
+      clearTimeout(refreshTimer);
+      configUpdatesReadyRef.current = false;
+      unsubscribe();
     };
-  }, [
-    logsEnabled,
-    eventsEnabled,
-    execWsUrl,
-    execToken,
-    configEventsPath,
-    logsPath,
-    eventsPath,
-    metricsPath,
-    deviceUdid,
-    socketProtocols,
-    settleRead,
-    setActivityStatus,
-  ]);
+  }, [controlSocket, configEventsPath]);
 
   // Bulk reads hydrate the controls and track changes made inside the simulator.
   // Wait between completed reads; hidden tabs and interrupted control sockets pause polling.
@@ -1506,7 +1391,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const versions = new Map(deviceSettingVersionsRef.current);
       const pendingAtStart = tracker.pending;
       try {
-        const res = await hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols);
+        const res = await requestHostUi(execWsUrl, execToken, { device: deviceUdid });
         // A response from before an interruption cannot restore availability.
         if (cancelled || readRevision !== revision) return;
         if (!res.status || typeof res.status !== 'object' || Array.isArray(res.status)) {
@@ -1565,24 +1450,32 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         void refresh();
       }
     };
-    deviceSettingsReadRef.current = {
-      invalidate,
-      resume: () => {
-        if (!interrupted) return;
-        interrupted = false;
-        retryDelay = RECONNECT_MS;
-        void refresh();
-      },
+    const resume = () => {
+      if (!interrupted) return;
+      interrupted = false;
+      retryDelay = RECONNECT_MS;
+      void refresh();
     };
     pageDocument?.addEventListener('visibilitychange', onVisibilityChange);
+    // Pause reads while the shared control channel is down and read again once
+    // it authenticates. Stream ends do not interrupt the channel.
+    const stopWatchingControl = controlSocket?.onConnectionChange((ready) => {
+      if (cancelled) return;
+      if (ready) {
+        resume();
+        return;
+      }
+      invalidate();
+      settleRead('error');
+    });
     void refresh();
     return () => {
       cancelled = true;
       clearTimer();
+      stopWatchingControl?.();
       pageDocument?.removeEventListener('visibilitychange', onVisibilityChange);
-      deviceSettingsReadRef.current = null;
     };
-  }, [execWsUrl, execToken, deviceUdid, socketProtocols, resetRead, settleRead]);
+  }, [execWsUrl, execToken, deviceUdid, controlSocket, requestHostUi, resetRead, settleRead]);
 
   // ── Runtime encoder settings (serve-sim helper GET/PATCH endpoint) ──
   const streamSettingsUrl = config?.streamSettingsUrl ?? null;
