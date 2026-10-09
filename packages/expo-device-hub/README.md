@@ -79,11 +79,6 @@ need the token. A page load without it shows a form to enter it. Scripts send
 `Authorization: Bearer <token>`. `/readyz` stays open for liveness probes. Anyone who has
 the token can control the devices, so share a link only with people who may.
 
-A program that starts the Hub can read the token from the state file, as it can from
-serve-sim's. The CLI writes `server-<port>.json` with `pid`, `port`, `url`, and `token` to
-`$TMPDIR/expo-device-hub`, or to `EXPO_DEVICE_HUB_STATE_DIR` when it is set. Only your user can
-read the file. The CLI writes it before it answers any request, and removes it when it exits.
-
 Only the Hub itself may frame a gated page. To let another site embed it, pass
 `--frame-ancestor <origin>` once for each origin, for example `https://*.expo.dev`.
 
