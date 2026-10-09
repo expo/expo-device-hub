@@ -39,6 +39,7 @@ function inspectorClient(platform: DevicePlatform): DeviceClient {
     detachEvents: () => {},
     clearEvents: () => {},
     activity: { hostCores: ios ? 8 : 4, samples: [], errored: false, stale: false },
+    activityStatus: 'ready',
     deviceSettings: ios
       ? {
           appearance: 'light',
