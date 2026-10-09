@@ -231,6 +231,89 @@ describe("createRouter with a session token", () => {
   });
 });
 
+// serve-sim's middleware does the same, so `@expo/hub-client` works from another origin on both.
+describe("createRouter CORS policy", () => {
+  test("lets an allowed origin read every route, not only WebRTC and SSE", async () => {
+    const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN]);
+
+    for (const path of ["/api/devices", `/api?device=${SERIAL}`, `/api/foreground?device=${SERIAL}`]) {
+      const allowed = await request(path, { headers: { Origin: ALLOWED_ORIGIN } });
+      expect(allowed.status).toBe(200);
+      expect(allowed.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
+      expect(allowed.headers.get("vary")).toBe("Origin");
+    }
+  });
+
+  // A cache must not replay a copy without the policy to an origin that is allowed one.
+  test("names no origin for another page, but varies every response on Origin", async () => {
+    const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN]);
+
+    const other = await request("/api/devices", { headers: { Origin: "https://elsewhere.example" } });
+    const sameOrigin = await request("/api/devices");
+
+    expect(other.headers.get("access-control-allow-origin")).toBeNull();
+    expect(other.headers.get("vary")).toBe("Origin");
+    expect(sameOrigin.headers.get("access-control-allow-origin")).toBeNull();
+    expect(sameOrigin.headers.get("vary")).toBe("Origin");
+  });
+
+  test("lets a loopback page read a loopback router without configuration", async () => {
+    const { router } = trackedRouter();
+
+    const response = await router.handleRequest(
+      new Request("http://127.0.0.1:3400/api/devices", { headers: { Origin: "http://localhost:5173" } }),
+    );
+
+    expect(response.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+  });
+
+  test("lets an allowed origin change device state and read a refused change", async () => {
+    const { router } = trackedRouter(undefined, [ALLOWED_ORIGIN]);
+    const post = (origin: string) =>
+      router.handleRequest(
+        new Request(`http://127.0.0.1:3400/api/orientation?device=${SERIAL}`, {
+          method: "POST",
+          headers: { Origin: origin, "Content-Type": "application/json" },
+          body: JSON.stringify({ orientation: "landscape" }),
+        }),
+      );
+
+    const allowed = await post(ALLOWED_ORIGIN);
+    const loopback = await post("http://localhost:5173");
+
+    expect(allowed.status).toBe(200);
+    expect(allowed.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
+    // A loopback page may read, but only a configured origin may change state.
+    expect(loopback.status).toBe(403);
+    expect(loopback.headers.get("access-control-allow-origin")).toBe("http://localhost:5173");
+  });
+
+  test("answers a preflight on any route before the token gate and without a device", async () => {
+    const { request, created } = trackedRouter(TOKEN, [ALLOWED_ORIGIN]);
+
+    for (const path of ["/api/orientation", "/api/stream-mode", "/api/devices", "/api/camera/back"]) {
+      const { path: target, ...init } = preflight(path);
+      const response = await request(target, init);
+      expect(response.status).toBe(204);
+      expect(response.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
+      expect(response.headers.get("access-control-allow-headers")).toContain("Authorization");
+      expect(response.headers.get("access-control-allow-methods")).toContain("PATCH");
+    }
+    expect(created).toEqual([]);
+  });
+
+  test("refuses a preflight from an origin it does not allow", async () => {
+    const { request, created } = trackedRouter(TOKEN, [ALLOWED_ORIGIN]);
+    const { path, ...init } = preflight("/api/orientation", "https://elsewhere.example");
+
+    const response = await request(path, init);
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(created).toEqual([]);
+  });
+});
+
 describe("authorizeUpgrade with a session token", () => {
   const { router } = trackedRouter(TOKEN);
 

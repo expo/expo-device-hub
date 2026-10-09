@@ -85,6 +85,8 @@ import {
   corsHeadersForRequest,
   isAllowedBrowserOrigin,
   isAllowedMutationOrigin,
+  ROUTER_CORS_METHODS,
+  withCorsPolicy,
   type BrowserOriginPolicy,
 } from "./origin-policy.ts";
 import {
@@ -2229,13 +2231,19 @@ function webRtcForbiddenOriginResponse(req: Request, policy: BrowserOriginPolicy
 }
 
 /**
- * The answer to an `OPTIONS /webrtc/offer` or `/webrtc/close` preflight. It
- * needs no device, so the router gives it before `ensure` and a preflight never
- * starts one. It matches what the device app answers.
+ * The answer to a preflight on any router route but `/webrtc/stats`. It needs
+ * no device, so the router gives it before `ensure` and a preflight never
+ * starts one.
  */
-function webRtcSignalingPreflightResponse(req: Request, policy: BrowserOriginPolicy): Response {
-  if (!isAllowedBrowserOrigin(req, policy)) return webRtcForbiddenOriginResponse(req, policy);
-  return new Response(null, { status: 204, headers: corsHeadersForRequest(req, policy) });
+function preflightResponse(req: Request, policy: BrowserOriginPolicy): Response {
+  const headers = corsHeadersForRequest(req, policy, ROUTER_CORS_METHODS);
+  if (!isAllowedBrowserOrigin(req, policy)) {
+    return Response.json(
+      { error: "forbidden_origin", message: "Request origin is not allowed." },
+      { status: 403, headers },
+    );
+  }
+  return new Response(null, { status: 204, headers });
 }
 
 export function createApp(
@@ -2284,8 +2292,9 @@ export type RouterDependencies = {
  * `server.ts` does not use it: it has its own routing and its own token gate.
  *
  * With a `sessionToken`, every request is refused before routing unless it
- * carries the token, so a new route is gated by default. The WebRTC preflights
- * are the only exception. A transport calls `authorizeUpgrade` before it starts
+ * carries the token, so a new route is gated by default. Preflights are the
+ * only exception. Every response names the CORS policy for `allowedOrigins`
+ * and loopback pages. A transport calls `authorizeUpgrade` before it starts
  * a device for a WebSocket, and passes the upgrade request to `attachWebSocket`,
  * which refuses a socket without the token.
  */
@@ -2912,13 +2921,13 @@ export function createRouter(
     return streamingApps[0] ?? null;
   };
 
-  const handleRequest = async (req: Request): Promise<Response> => {
+  const routeRequest = async (req: Request): Promise<Response> => {
     const url = new URL(req.url);
-    // A browser cannot attach the token to a preflight, so the WebRTC
-    // preflights skip the gate, as serve-sim's preflights do. They return no
-    // live state. The signaling ones are answered here, before `ensure`.
-    if (req.method === "OPTIONS" && (url.pathname === "/webrtc/offer" || url.pathname === "/webrtc/close")) {
-      return webRtcSignalingPreflightResponse(req, defaults);
+    // A browser cannot attach the token to a preflight, so preflights skip the
+    // gate, as serve-sim's do. They return no live state. Every route but
+    // `/webrtc/stats`, which answers its own, is answered here, before `ensure`.
+    if (req.method === "OPTIONS" && url.pathname !== "/webrtc/stats") {
+      return preflightResponse(req, defaults);
     }
     const statsPreflight = req.method === "OPTIONS" && url.pathname === "/webrtc/stats";
     if (sessionToken && !statsPreflight && !requestHasSessionToken(req, sessionToken)) {
@@ -3224,6 +3233,10 @@ export function createRouter(
     }
     return app.handleRequest(req);
   };
+
+  // @ref LLP 0003#cors — every route answers with the policy, as serve-sim's do
+  const handleRequest = async (req: Request): Promise<Response> =>
+    withCorsPolicy(req, await routeRequest(req), defaults);
 
   // Upgrades never reach `handleRequest`, so the transport checks each one
   // here before `ensure` starts its device. Always true without a token.
