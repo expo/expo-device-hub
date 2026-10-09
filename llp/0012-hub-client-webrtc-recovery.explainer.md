@@ -50,6 +50,19 @@ serve-sim's client restarts the ladder with the same backoff, and it also counts
 
 serve-sim's client bounds its reads the same way [observed: `readStatsBeforeDeadline` in `hooks/playback-stall-watchdog.ts`].
 
+## Stall policy
+
+After the first frame, a stall is 8 polls of 1 s with no new decoded frame [observed: `webrtc-playback-stall.ts`]. The client then decides what failed:
+
+- Frames arrive but do not decode: the codec failed.
+- Nothing arrives: the transport failed.
+
+The first codec stall reconnects with the same codec. A second stall within 30 s demotes the codec. A transport stall always reconnects [observed: `playbackStallAction` in `webrtc-fallback.ts`]. One stall must not demote a codec that works.
+
+Stall detection follows the active video report, so an old report with a high frame total cannot reset it [observed: `selectInboundReport` in `webrtc-playback-stall.ts`].
+
+These rules and numbers are the same as in serve-sim's client, with one difference in report selection. When no report advances, HubClient keeps the pinned report once it has an earlier poll to compare with. serve-sim then switches to the report with the highest lifetime frame total, which can be an old, idle report, and that switch resets the stall count [observed: `selectInboundReport` in both `webrtc-playback-stall.ts` files; `webrtc-failure-policy.ts`].
+
 ## Open questions
 
 None at this time.
