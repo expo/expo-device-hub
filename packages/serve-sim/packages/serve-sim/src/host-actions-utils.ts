@@ -71,6 +71,10 @@ function redactHostPaths(text: string): string {
   return text.split(homedir()).join("~").replace(/\/(?:private\/)?var\/folders\/\S+/g, "<tmp>");
 }
 
+export function installAppInvocation(udid: string, path: string): Invocation {
+  return { file: "xcrun", args: ["simctl", "install", udid, path] };
+}
+
 export function runInvocation({ file, args, timeoutMs }: Invocation): Promise<HostActionResult> {
   const deadlineMs = timeoutMs ?? actionTimeoutMs();
   return new Promise<HostActionResult>((resolve) => {

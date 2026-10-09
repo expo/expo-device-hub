@@ -144,8 +144,10 @@ Options:
                       H.264/WebRTC target bitrate
       --video-fps <fps>
                       H.264/WebRTC frame rate (1-140)
+      --install-app-path <path>
+                      Install a local .app after boot, before any requested launch
       --launch-app-identifier <id>
-                      Bundle identifier of an installed app to launch once the
+                      Bundle identifier of the app to launch once the
                       simulator boots
       --launch-arg <arg>
                       Argument passed to the app when it launches (repeatable)
@@ -246,11 +248,14 @@ Supervisors can probe `GET /healthz` to confirm that the preview server is
 listening and `GET /readyz` to wait until the selected simulator and native
 capture session are ready. Both endpoints return JSON and disable caching.
 
-### Launching an app
+### Installing and launching apps
 
 `--launch-app-identifier <bundle-id>` waits for Simulator boot to finish, then launches
-an already-installed app before the preview becomes ready. Install the app beforehand
-(`xcrun simctl install`). Startup fails if boot, launch or opening the URL fails.
+an already-installed app before the preview becomes ready. To install a downloaded
+build first, also pass `--install-app-path /path/to/Example.app`. The flags are
+independent: you can install without launching, or install one app and launch
+another already-installed app. Startup fails if boot, installation, launch or
+opening the URL fails. Without the install flag, install the app beforehand.
 
 ```sh
 serve-sim --launch-app-identifier host.exp.Exponent \

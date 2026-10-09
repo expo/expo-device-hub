@@ -5,6 +5,7 @@ import { z } from "zod";
 import {
   type HostActionResult,
   type Invocation,
+  installAppInvocation,
   ok,
   runInvocation,
 } from "./host-actions-utils";
@@ -291,7 +292,7 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     }
     case "app.install": {
       const p = parseParams(action, raw);
-      return simctl(["install", p.udid, fileSourcePath(p)]);
+      return installAppInvocation(p.udid, fileSourcePath(p));
     }
     case "media.add": {
       const p = parseParams(action, raw);

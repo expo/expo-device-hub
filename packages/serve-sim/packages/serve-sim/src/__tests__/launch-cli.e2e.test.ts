@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "child_process";
-import { existsSync, readFileSync } from "fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 
 import { freePortAsync, killHelpersForDevice } from "./helpers";
@@ -11,6 +12,7 @@ const PKG_DIR = join(import.meta.dir, "../..");
 const CLI = join(PKG_DIR, "dist/serve-sim.js");
 const FIXTURE = join(PKG_DIR, "dist/capability-loader/ServeSimLaunchFixture.app");
 const APP = "dev.expo.serve-sim.launch-fixture";
+const INSTALL_APP = "dev.expo.serve-sim.install-fixture";
 
 const udid = e2eDevice();
 const ready = udid !== null && existsSync(CLI) && existsSync(FIXTURE);
@@ -18,6 +20,7 @@ const ready = udid !== null && existsSync(CLI) && existsSync(FIXTURE);
 requireE2E("serve-sim launch flags", ready);
 
 let server: ChildProcess | undefined;
+let installFixtureDirectory: string | undefined;
 
 function simctl(args: string[]): string {
   return execFileSync("xcrun", ["simctl", ...args], {
@@ -27,9 +30,9 @@ function simctl(args: string[]): string {
   });
 }
 
-function fixtureLines(): string[] {
+function fixtureLines(bundleId = APP): string[] {
   try {
-    const container = simctl(["get_app_container", udid!, APP, "data"]).trim();
+    const container = simctl(["get_app_container", udid!, bundleId, "data"]).trim();
     return readFileSync(join(container, "Documents/launches.tsv"), "utf-8")
       .split("\n")
       .filter(Boolean);
@@ -51,7 +54,13 @@ beforeAll(() => {
   if (!ready) return;
   try { simctl(["spawn", udid!, "launchctl", "unsetenv", "DYLD_INSERT_LIBRARIES"]); } catch {}
   try { simctl(["uninstall", udid!, APP]); } catch {}
-  simctl(["install", udid!, FIXTURE]);
+  try { simctl(["uninstall", udid!, INSTALL_APP]); } catch {}
+  installFixtureDirectory = mkdtempSync(join(tmpdir(), "serve-sim-install-fixture-"));
+  const app = join(installFixtureDirectory, "Installed.app");
+  cpSync(FIXTURE, app, { recursive: true });
+  execFileSync("plutil", ["-replace", "CFBundleIdentifier", "-string", INSTALL_APP, join(app, "Info.plist")]);
+  execFileSync("plutil", ["-remove", "CFBundleURLTypes", join(app, "Info.plist")]);
+  execFileSync("codesign", ["--force", "--sign", "-", "--timestamp=none", app]);
 }, 120_000);
 
 afterAll(() => {
@@ -62,10 +71,13 @@ afterAll(() => {
   try { simctl(["spawn", udid!, "launchctl", "unsetenv", "DYLD_INSERT_LIBRARIES"]); } catch {}
   try { simctl(["terminate", udid!, APP]); } catch {}
   try { simctl(["uninstall", udid!, APP]); } catch {}
+  try { simctl(["uninstall", udid!, INSTALL_APP]); } catch {}
+  if (installFixtureDirectory) rmSync(installFixtureDirectory, { recursive: true, force: true });
 }, 120_000);
 
 describe.skipIf(!ready)("serve-sim launch flags", () => {
-  test("launches the app with its arguments and URL, then disarms on shutdown", async () => {
+  test("installs and launches the app with its arguments and URL, then disarms on shutdown", async () => {
+    expect(() => simctl(["get_app_container", udid!, APP])).toThrow();
     const port = await freePortAsync();
     server = spawn(
       "node",
@@ -74,6 +86,7 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
         udid!,
         "--port", String(port),
         "--no-preview",
+        "--install-app-path", FIXTURE,
         "--launch-app-identifier", APP,
         "--launch-arg", "-ServeSimCliFlag",
         "--launch-arg", "1",
@@ -117,6 +130,39 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
         `signal=${server?.signalCode} output:\n${output}`,
     ).toBe(true);
   }, 240_000);
+
+  test.each([undefined, APP])("installs an app independently of launch=%s", async (bundleId) => {
+    killHelpersForDevice(udid!);
+    try { simctl(["terminate", udid!, APP]); } catch {}
+    try { simctl(["uninstall", udid!, INSTALL_APP]); } catch {}
+    if (bundleId) simctl(["install", udid!, FIXTURE]);
+    const previousLaunches = fixtureLines().filter((line) => line.startsWith("launch\t")).length;
+    const port = await freePortAsync();
+    server = spawn("node", [
+      CLI, udid!, "--host", "127.0.0.1", "--port", String(port), "--quiet",
+      "--install-app-path", join(installFixtureDirectory!, "Installed.app"),
+      ...(bundleId ? ["--launch-app-identifier", bundleId, "--launch-arg", "-IndependentInstall"] : []),
+    ], { stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    let stderr = "";
+    server.stdout?.on("data", (chunk: Buffer) => (stdout += chunk.toString()));
+    server.stderr?.on("data", (chunk: Buffer) => (stderr += chunk.toString()));
+    try {
+      const readyLine = `"port":${port}`;
+      await waitFor(() => stdout.includes(readyLine) || server?.exitCode !== null, 90_000);
+      expect(stdout, `serve-sim did not become ready:\n${stderr}`).toContain(readyLine);
+      expect(simctl(["get_app_container", udid!, INSTALL_APP]).trim()).not.toBe("");
+      expect(fixtureLines(INSTALL_APP)).toEqual([]);
+      const launches = fixtureLines().filter((line) => line.startsWith("launch\t"));
+      expect(launches).toHaveLength(previousLaunches + (bundleId ? 1 : 0));
+      if (bundleId) expect(launches.at(-1)?.split("\t")[2]).toBe("-IndependentInstall");
+    } finally {
+      server.kill("SIGTERM");
+      expect(await waitFor(() => server?.exitCode !== null || server?.signalCode !== null, 30_000)).toBe(true);
+      expect(await waitFor(() => readInsert(udid!) === "", 30_000)).toBe(true);
+      try { simctl(["uninstall", udid!, INSTALL_APP]); } catch {}
+    }
+  }, 180_000);
 
   test("a launch that fails does not leave the capability loader inserted", async () => {
     const port = await freePortAsync();

@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (linked the startup readiness explainer)
+**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -144,7 +144,7 @@ something that reliably removes it:
   `SIGINT`/`SIGTERM`/`SIGHUP`. The signal handlers disarm directly, because
   spawning `simctl` from an exit handler does not always finish.
 - `--detach` never arms. The command exits once the helper is streaming, so no process
-  is left to disarm it. `--launch-app-identifier`, `--launch-arg`,
+  is left to disarm it. `--install-app-path`, `--launch-app-identifier`, `--launch-arg`,
   `--open-url`, `--enable` and `--disable` are rejected with `--detach`.
 - On startup, a capability loader left behind by an earlier session whose dylib no
   longer exists is cleaned up.
@@ -155,7 +155,7 @@ something that reliably removes it:
   released when that session exits, including its host helper. The insert is
   removed only when no live session or capability needs it.
 
-For the CLI's boot/launch ordering and readiness boundary, see
+For the CLI's boot/install/launch ordering and readiness boundary, see
 [LLP 0011](0011-serve-sim-session-startup.explainer.md) (Draft).
 
 ## Not there yet
