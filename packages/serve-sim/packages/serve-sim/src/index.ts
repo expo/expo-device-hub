@@ -47,6 +47,7 @@ import {
   waitForLaunchUpdates,
 } from "./launch-manager";
 import { parseCaptureFields } from "./capture/fields";
+import { parseCaptureProxy } from "./capture/upstream";
 import { killOwnListeners } from "./ports";
 import { BOOT_TIMEOUT_MS, findBootedDevice, resolveDevice } from "./device";
 import { openSimulatorHost } from "./simulator-host";
@@ -1798,6 +1799,7 @@ async function serve(
     requireToken?: boolean;
     quiet?: boolean;
     networkCapture?: boolean;
+    networkCaptureProxy?: string;
   } = {},
 ) {
   const quiet = !!options.quiet;
@@ -1845,6 +1847,7 @@ async function serve(
       shareUrl: options.shareUrl,
       allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
       networkCapture: !!options.networkCapture,
+      networkCaptureProxy: options.networkCaptureProxy,
       loopbackOnly: isLoopbackHost(host),
       execToken: previewToken,
       requirePreviewToken,
@@ -2061,6 +2064,10 @@ program
       "HTTPS is decrypted for the whole boot session and certificate-pinned apps will refuse to connect. " +
       "Requires mitmproxy. Relaunch apps after enabling so they pick up the proxy.",
   )
+  .option(
+    "--network-capture-proxy <url>",
+    "Forward captured traffic through one HTTP proxy (http://[user:password@]host:port), or none for direct. Defaults to direct.",
+  )
   .option("--transport <http|webrtc>", "Stream transport", "http")
   .option("--install-app-path <path>", "Install this .app after boot, before any requested app launch.")
   .option(
@@ -2217,6 +2224,19 @@ Examples:
     }
     try {
       validatedAdditionalDylibs();
+    } catch (error) {
+      printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+      process.exit(1);
+    }
+    try {
+      const upstream = parseCaptureProxy(opts.networkCaptureProxy);
+      if (upstream !== null && (opts.detach || opts.preview === false)) {
+        throw new Error(
+          "--network-capture-proxy needs the preview server, so drop --detach/--no-preview. " +
+            "Their stream helpers would capture without it.",
+        );
+      }
+      captureRuntime.setUpstream(upstream);
     } catch (error) {
       printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
       process.exit(1);
@@ -2510,6 +2530,7 @@ Examples:
         requireToken: !!opts.requireToken,
         quiet: !!opts.quiet,
         networkCapture: !!opts.networkCapture,
+        networkCaptureProxy: opts.networkCaptureProxy,
         networkCaptureFields: opts.networkCaptureField,
       });
     }

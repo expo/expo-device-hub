@@ -15,6 +15,7 @@ import {
 } from "./store";
 import { startMitmProxy, type CaptureProxy, type MitmProxyDeps } from "./mitm-engine";
 import { serveSimVersion } from "./version";
+import type { CaptureUpstream } from "./upstream";
 
 export class CaptureEnableError extends Error {
   readonly meta: CaptureMeta;
@@ -73,6 +74,7 @@ class DeviceOperationQueue {
 }
 
 export interface CaptureRuntimeOptions {
+  upstream?: CaptureUpstream | null;
   fields?: readonly CaptureField[];
   startProxy?: (store: CaptureStore, deps: MitmProxyDeps) => Promise<CaptureProxy>;
   trustCa?: (udid: string, caPem: string) => Promise<void>;
@@ -131,6 +133,7 @@ export function discardCaptureArtifactsForExit(): void {
 
 export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
   let policy: readonly CaptureField[] = options.fields ?? DEFAULT_CAPTURE_FIELDS;
+  let upstream = options.upstream;
   const startProxy =
     options.startProxy ?? ((store: CaptureStore, deps: MitmProxyDeps) => startMitmProxy(store, deps));
   const trustCa = options.trustCa ?? trustCaInSimulator;
@@ -243,6 +246,7 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     notify(udid, { type: "meta", meta });
     try {
       const proxy = await startProxy(store, {
+        upstream,
         fields: sessionFields,
         onUnexpectedExit: (reason) => {
           if (byUdid.get(udid) !== session) return;
@@ -329,6 +333,11 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       deviceCapture.set(udid, enabled);
     },
     creatorVersion,
+
+    // @ref LLP 0005#middleware-upstream-policy — Changing the default leaves active sessions on their upstream.
+    setUpstream(next: CaptureUpstream | null): void {
+      upstream = next;
+    },
 
     /** Set what every device this server enables is allowed to keep. */
     setFields(next: readonly CaptureField[]): void {
