@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 
 import {
   ANDROID_DEVICE_SETTING_KEYS,
-  ANDROID_POLLED_DEVICE_SETTING_KEYS,
   androidDeviceSettingRequest,
   androidDisplayWidthDpFromPayload,
   androidFontScaleForTextSize,
@@ -253,18 +252,9 @@ describe('Android device setting contract', () => {
 });
 
 describe('Android device setting table', () => {
-  test('derives the full and polled key lists in table order', () => {
+  test('derives the setting keys in table order', () => {
     expect(ANDROID_DEVICE_SETTING_KEYS).toEqual([
       'appearance',
-      'network',
-      'text-size',
-      'display-size',
-      'reduce-motion',
-      'bold-text',
-      'increase-contrast',
-      'onscreen-keyboard',
-    ]);
-    expect(ANDROID_POLLED_DEVICE_SETTING_KEYS).toEqual([
       'network',
       'text-size',
       'display-size',

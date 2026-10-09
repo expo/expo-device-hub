@@ -50,7 +50,7 @@ afterEach(async () => {
 // Exercise the real fetch/WebSocket paths. Only the browser globals needed to mount the hooks
 // are supplied here; neither DeviceClient nor its request helpers are replaced.
 function settingsServer() {
-  const state = { mode: "hold" as ReadMode, aborted: 0, fontScale: 1 };
+  const state = { mode: "hold" as ReadMode, aborted: 0, fontScale: 1, night: "yes" };
   const reads: ReadRequest[] = [];
   const pending: ReadRequest[] = [];
   const register = (read: ReadRequest) => {
@@ -107,7 +107,9 @@ function settingsServer() {
                         ? { ok: true }
                         : settingPath === "/api/font-scale"
                           ? { ok: true, fontScale: { scale: state.fontScale } }
-                          : ANDROID_RESPONSES[settingPath],
+                          : settingPath === "/api/uimode"
+                            ? { ok: true, night: state.night }
+                            : ANDROID_RESPONSES[settingPath],
                   ),
                 );
               }
@@ -322,7 +324,7 @@ test("Android: a later poll recovers all initial values after a failed first rea
   expect(mounted.client().deviceSettings?.["text-size"]).toBe("medium");
 });
 
-test("Android: Appearance recovers after a partial read and stops retrying after success", async () => {
+test("Android: Appearance recovers after a partial read and keeps tracking external changes", async () => {
   const server = settingsServer();
   server.state.mode = "appearance-error";
   const mounted = await mountClient("android", server.baseUrl("android"));
@@ -339,9 +341,11 @@ test("Android: Appearance recovers after a partial read and stops retrying after
   expect(appearanceReads()).toBe(2);
 
   server.state.fontScale = 1.15;
+  server.state.night = "no";
   await waitFor(() => mounted.client().deviceSettings?.["text-size"] === "large", 4000);
-  expect(appearanceReads()).toBe(2);
-  expect(mounted.client().deviceSettings?.appearance).toBe("dark");
+  expect(appearanceReads()).toBe(3);
+  expect(mounted.client().deviceSettings?.appearance).toBe("light");
+  expect(mounted.client().appearance).toBe("light");
   const firstReady = mounted.committed.indexOf("ready");
   expect(mounted.committed.slice(firstReady).every((status) => status === "ready")).toBe(true);
 }, 9000);
@@ -381,7 +385,7 @@ test("Android: unchanged polls preserve settings references for tracked and sele
   async function nextPoll(mode: Exclude<ReadMode, "hold">) {
     server.state.mode = "hold";
     const start = server.reads.length;
-    const paths = Object.keys(ANDROID_RESPONSES).filter((path) => path !== "/api/uimode");
+    const paths = Object.keys(ANDROID_RESPONSES);
     await waitFor(
       () => paths.every((path) => server.reads.slice(start).some((read) => read.path === path)),
       4000,
@@ -409,7 +413,7 @@ test("Android: unchanged polls preserve settings references for tracked and sele
 
   await nextPoll("empty");
   await waitFor(() => values.tracked?.["text-size"] === undefined);
-  expect(values.tracked).toEqual({ appearance: "dark" });
+  expect(values.tracked).toEqual({});
   expect(values.selected).toBe(values.tracked);
   expect(renders).toEqual({
     tracked: initialRenders.tracked + 2,

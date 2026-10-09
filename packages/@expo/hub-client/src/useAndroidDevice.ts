@@ -38,7 +38,6 @@ import {
 } from './android-events';
 import {
   ANDROID_DEVICE_SETTING_KEYS,
-  ANDROID_POLLED_DEVICE_SETTING_KEYS,
   type AndroidDeviceSettingKey,
   androidDeviceSettingPathFor,
   androidDeviceSettingRequest,
@@ -1841,17 +1840,16 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     let cancelled = false;
     let polling = false;
-    let hasReadAppearance = false;
     let controllers: AbortController[] = [];
     const scope = deviceScope;
 
-    const poll = async (keys: readonly AndroidDeviceSettingKey[]) => {
+    const poll = async () => {
       if (cancelled || polling) return;
       polling = true;
       const nextControllers: AbortController[] = [];
       controllers = nextControllers;
       const results = await Promise.all(
-        keys.map(async (key) => {
+        ANDROID_DEVICE_SETTING_KEYS.map(async (key) => {
           const version = deviceSettingVersionsRef.current[key];
           const pendingAtStart = tracker.pending.has(key);
           const controller = new AbortController();
@@ -1915,7 +1913,6 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         deviceSettingVersionsRef.current.appearance === appearanceResult.version &&
         !tracker.pending.has('appearance')
       ) {
-        hasReadAppearance = true;
         if (appearanceResult.value === 'light' || appearanceResult.value === 'dark') {
           setAppearanceState(appearanceResult.value);
         }
@@ -1935,10 +1932,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
     };
 
-    // Appearance keeps its historical one-shot read because the pinned
-    // serve-emu branch still implements `/api/uimode` synchronously. Network
-    // and font scale use Hub's async compatibility routes and stay live-polled.
-    void poll(ANDROID_DEVICE_SETTING_KEYS);
+    void poll();
     // Read once: an emulator's hardware keyboard does not come and go, and the
     // settings poll already spawns one adb read per key every few seconds.
     void sessionFetch(deviceApiUrl(baseUrl, '/api/software-keyboard', targetDevice), {
@@ -1956,12 +1950,8 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       .catch(() => {});
     const timer = setInterval(
       // TODO: unify these per-setting HTTP reads with iOS's bulk settings/refresh contract when
-      // serve-emu exposes it. Preserve the existing external-change polling until then. Retry
-      // Appearance until its own read succeeds, even when other controls are already ready.
-      () =>
-        void poll(
-          hasReadAppearance ? ANDROID_POLLED_DEVICE_SETTING_KEYS : ANDROID_DEVICE_SETTING_KEYS,
-        ),
+      // serve-emu exposes it. Preserve the existing external-change polling until then.
+      () => void poll(),
       DEVICE_SETTINGS_POLL_MS,
     );
     return () => {
