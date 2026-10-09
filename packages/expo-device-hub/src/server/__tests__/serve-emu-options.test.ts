@@ -34,6 +34,22 @@ describe('standaloneServeEmuOptions', () => {
     ).toEqual(expected);
   });
 
+  test('allows each --cors-origin page through the embedded server payload', () => {
+    const cli = parseCliOptions([
+      '--cors-origin',
+      'https://example.com',
+      '--cors-origin',
+      'http://localhost:5173',
+      '--cors-origin',
+      'https://*.expo.dev',
+    ]);
+    const allowedOrigins = ['https://example.com', 'http://localhost:5173', 'https://*.expo.dev'];
+    expect(standaloneServeEmuOptions(cli).allowedOrigins).toEqual(allowedOrigins);
+    expect(readStandaloneServeEmuOptions(encodeStandaloneServeEmuOptions(cli)).allowedOrigins).toEqual(
+      allowedOrigins,
+    );
+  });
+
   test('defaults Android streaming to 60 FPS using gRPC with RGB888', () => {
     expect(standaloneServeEmuOptions(parseCliOptions([]))).toEqual({
       ...DEFAULT_ANDROID_STREAM,

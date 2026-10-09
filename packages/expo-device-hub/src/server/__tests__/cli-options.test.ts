@@ -34,6 +34,7 @@ describe('parseCliOptions', () => {
       hideBootDevice: false,
       requireToken: false,
       frameAncestors: [],
+      corsOrigins: [],
       help: false,
     });
   });
@@ -231,6 +232,7 @@ describe('parseCliOptions', () => {
       '--metrics-cors-origin',
       '--require-token',
       '--frame-ancestor',
+      '--cors-origin',
     ]) {
       expect(HELP).toContain(flag);
     }
@@ -261,6 +263,64 @@ describe('parseCliOptions', () => {
         '--frame-ancestor=http://localhost:3000',
       ]).frameAncestors
     ).toEqual(['https://*.expo.dev', 'http://localhost:3000']);
+  });
+
+  test('collects every --cors-origin as an exact origin', () => {
+    expect(
+      parseCliOptions([
+        '--cors-origin',
+        'https://example.com/',
+        '--cors-origin=http://localhost:5173',
+      ]).corsOrigins
+    ).toEqual(['https://example.com', 'http://localhost:5173']);
+    expect(
+      parseCliOptions(['--cors-origin', 'HTTPS://Example.COM:443/', '--cors-origin', 'http://[::1]:5173'])
+        .corsOrigins
+    ).toEqual(['https://example.com', 'http://[::1]:5173']);
+  });
+
+  // The values serve-sim's --cors-origin matches, so the EAS worker can pass both the same list.
+  test('accepts a subdomain wildcard, as serve-sim does', () => {
+    expect(
+      parseCliOptions(['--cors-origin', 'https://*.expo.dev', '--cors-origin', 'HTTPS://*.Expo.Test:443/'])
+        .corsOrigins
+    ).toEqual(['https://*.expo.dev', 'https://*.expo.test']);
+  });
+
+  test('rejects a --cors-origin that both backends cannot match', () => {
+    for (const value of [
+      '*',
+      'file:///tmp/page.html',
+      'example.com',
+      // serve-sim ignores these wildcards: one label after the star, a star elsewhere, or no dot.
+      'https://*.com',
+      'https://a.*.expo.dev',
+      'https://*.*.expo.dev',
+      'https://*expo.dev',
+    ]) {
+      expect(() => parseCliOptions(['--cors-origin', value])).toThrow('Invalid --cors-origin');
+    }
+  });
+
+  // Dropping the rest would allow another site, or a whole site, without saying so.
+  test('rejects a --cors-origin with more than an origin', () => {
+    for (const value of [
+      'https://example.com@evil.example',
+      'https://user:secret@example.com',
+      'https://example.com/private',
+      'https://example.com/?embed=1',
+      'https://example.com/#app',
+      // The URL parser would reduce each of these to https://example.com.
+      'https://example.com/private/%2e%2e/',
+      'https://example.com/?',
+      'https://example.com/#',
+      'https://@example.com',
+      'https://example.com\\private',
+      'https://example.com/\t',
+      'https://%2A.example.com',
+    ]) {
+      expect(() => parseCliOptions(['--cors-origin', value])).toThrow('Invalid --cors-origin');
+    }
   });
 
   test('hides the device list sidebar on request', () => {
@@ -305,6 +365,7 @@ describe('parseCliOptions', () => {
       hideBootDevice: false,
       requireToken: false,
       frameAncestors: [],
+      corsOrigins: [],
       help: false,
     });
     expect(parseCliOptions(['--help'])).toEqual({ host: '127.0.0.1', help: true });
