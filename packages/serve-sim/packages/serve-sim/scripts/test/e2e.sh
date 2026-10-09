@@ -21,6 +21,11 @@ if ! xcrun simctl list devices booted -j | grep -q "\"udid\" : \"$SERVE_SIM_TEST
   exit 1
 fi
 
+# The full suite includes capture tests. Focused non-capture runs keep their own prerequisites.
+if [ $# -eq 0 ]; then
+  bun "$HERE/check-mitmproxy.ts"
+fi
+
 bash "$ROOT/packages/serve-sim/Sources/build-test-fixtures.sh" >/dev/null
 
 if [ -n "${SERVE_SIM_STATE_DIR:-}" ]; then

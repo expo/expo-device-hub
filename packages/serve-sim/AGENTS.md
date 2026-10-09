@@ -49,6 +49,16 @@ predicts a green PR.
   `SERVE_SIM_STATE_DIR` yourself to point a run at a server you started, and
   it is left alone. Example: `SERVE_SIM_TEST_UDID=<udid> bun run test:e2e --
   packages/serve-sim/src/__tests__/permissions.e2e.test.ts`.
+- The full `test:e2e` run checks mitmdump before building fixtures. CI checks
+  it before the native build. The shared probe uses capture's binary selection
+  (including `SERVE_SIM_MITMDUMP`), fails immediately if it is missing, and
+  bounds `--version` to 60 seconds. Focused runs retain their own prerequisites.
+  It runs `--version` with the runtime's subprocess timeout and inherited output,
+  stopping its launcher group on exit or cancellation. Run it alone from
+  `packages/serve-sim` with `bun packages/serve-sim/scripts/test/check-mitmproxy.ts`.
+- The host-policy fixture runs the real middleware and capture runtime with a
+  controlled proxy dependency. Refused hosts never reach it; loopback-only and
+  token-gated hosts each reach it without starting mitmproxy or a Simulator.
 - `bun run build:fixtures` — the simulator test fixtures on their own.
   `test:e2e` runs this for you.
 - The Swift `StreamingPolicyTests` are separate. Run `swift test` in
