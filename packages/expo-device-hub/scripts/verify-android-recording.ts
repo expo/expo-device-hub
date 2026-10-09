@@ -1,17 +1,18 @@
 #!/usr/bin/env bun
 /**
  * Live integration test for Android session recording, used by CI and local checks.
- * Starts the built Hub, connects and disconnects preview viewers, then verifies
- * authenticated or signal-driven shutdown and decodes the resulting MP4.
+ * Starts the built Hub and verifies authenticated or signal-driven shutdown.
+ * Normal/duration cases visit the preview and decode the MP4. Bytes mode checks
+ * file-cap failure during finalization without preview connections.
  * This tests local capture and finalization, not EAS uploads or website playback.
  *
  * Run after build:vendor and build:server with exactly one booted Android emulator
  * and adb, ffmpeg, and ffprobe on PATH:
- *   bun packages/expo-device-hub/scripts/verify-android-recording.ts [grpc-screenshot|scrcpy] [endpoint|signal]
+ *   bun packages/expo-device-hub/scripts/verify-android-recording.ts [grpc-screenshot|scrcpy] [endpoint|signal] [normal|duration|bytes]
  * Video, manifests, hub.log, and verification.json stay in the printed temp directory.
  */
 import assert from 'node:assert/strict';
-import { execFile, execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { mkdtemp, readFile, readdir, stat, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
@@ -26,6 +27,9 @@ const stopMode = process.argv[3] ?? 'endpoint';
 assert(['endpoint', 'signal'].includes(stopMode));
 const limitMode = process.argv[4] ?? 'normal';
 assert(['normal', 'duration', 'bytes'].includes(limitMode));
+// Startup writes the 28-byte ftyp box; finalization metadata exceeds this cap.
+const recordingByteLimit = 128;
+const previewVisits = limitMode === 'bytes' ? 0 : 2;
 const root = await mkdtemp(join(tmpdir(), 'android-recording-smoke-'));
 const reservation = createServer();
 await new Promise<void>(resolve => reservation.listen(0, '127.0.0.1', resolve));
@@ -56,7 +60,9 @@ const child = spawn(
       ...process.env,
       EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN: token,
       ...(limitMode === 'duration' ? { EXPO_DEVICE_HUB_RECORDING_MAX_DURATION_MS: '3000' } : {}),
-      ...(limitMode === 'bytes' ? { EXPO_DEVICE_HUB_RECORDING_MAX_BYTES: '65536' } : {}),
+      ...(limitMode === 'bytes'
+        ? { EXPO_DEVICE_HUB_RECORDING_MAX_BYTES: String(recordingByteLimit) }
+        : {}),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   }
@@ -79,23 +85,6 @@ const health = async () => {
   return await response.json();
 };
 let socket: WebSocket | undefined;
-// The byte limit trips only once fragments land, and a fragment closes at a keyframe. An
-// idle CI screen yields no frames, so bytes mode swipes the screen until the limit trips.
-let activity: ReturnType<typeof setInterval> | undefined;
-if (limitMode === 'bytes') {
-  let direction = 1;
-  let swiping = false;
-  activity = setInterval(() => {
-    if (swiping) return;
-    swiping = true;
-    const [from, to] = direction > 0 ? ['800', '200'] : ['200', '800'];
-    direction = -direction;
-    execFile('adb', ['shell', 'input', 'swipe', '270', from, '270', to, '200'], () => {
-      swiping = false;
-    });
-  }, 500);
-  activity.unref();
-}
 try {
   const deadline = Date.now() + 45_000;
   while (true) {
@@ -115,7 +104,7 @@ try {
   assert.equal(beforeViewer.clients, 0);
   if (limitMode === 'normal') assert(beforeViewer.screenRecording.frames > 0);
 
-  for (let visit = 0; visit < 2; visit++) {
+  for (let visit = 0; visit < previewVisits; visit++) {
     const viewer = new WebSocket(`${base.replace('http:', 'ws:')}/vendor/serve-emu/ws`);
     socket = viewer;
     await new Promise<void>((resolve, reject) => {
@@ -126,7 +115,7 @@ try {
           resolve();
         }
       });
-      viewer.once('error', reject);
+      viewer.on('error', reject);
     });
     await delay(1_000);
     socket.close();
@@ -149,14 +138,17 @@ try {
   } else if (limitMode === 'duration') {
     assert.equal(afterViewer.screenRecording.status, 'complete');
   } else {
-    const limitDeadline = Date.now() + 60_000;
-    let current = afterViewer;
-    while (current.screenRecording.status !== 'failed') {
-      assert(Date.now() < limitDeadline, `Byte limit not reached: ${JSON.stringify(current)}`);
-      await delay(1_000);
-      current = await health();
+    // Finalization flushes the buffered fragment. Opening a preview would restart
+    // scrcpy's encoder and can change its codec configuration before the cap trips.
+    const recording = afterViewer.screenRecording;
+    if (recording.status === 'failed') {
+      assert.equal(recording.error, 'Recording exceeded its file byte limit.');
+    } else {
+      assert.equal(recording.status, 'recording');
+      assert(recording.frames > 0, 'Byte-limit check requires a captured frame');
+      assert(Number.isFinite(Date.parse(recording.firstFrameAt)));
     }
-    clearInterval(activity);
+    assert.equal(afterViewer.videoClients, 0);
   }
 
   if (limitMode === 'normal') {
@@ -202,9 +194,10 @@ try {
     const directory = join(root, 'recordings', session.name);
     const manifest = JSON.parse(await readFile(join(directory, 'session.json'), 'utf8'));
     assert.equal(manifest.status, 'failed');
-    assert.match(manifest.error, /byte limit/);
+    assert.equal(manifest.error, 'Recording exceeded its file byte limit.');
+    assert(Number.isFinite(Date.parse(manifest.firstFrameWallClock?.iso8601)));
     const bytes = (await stat(join(directory, 'recording.mp4.partial'))).size;
-    assert(bytes <= 65536, 'Partial MP4 exceeded the byte limit');
+    assert(bytes <= recordingByteLimit, 'Partial MP4 exceeded the byte limit');
     const report = {
       source,
       stopMode,
@@ -212,7 +205,7 @@ try {
       root,
       bytes,
       status: manifest.status,
-      previewVisits: 2,
+      previewVisits,
     };
     await writeFile(join(root, 'verification.json'), JSON.stringify(report, null, 2));
     console.log(JSON.stringify(report, null, 2));
@@ -285,7 +278,6 @@ try {
     console.log(JSON.stringify(report, null, 2));
   }
 } finally {
-  clearInterval(activity);
   socket?.terminate();
   if (child.exitCode === null) {
     child.kill('SIGTERM');
