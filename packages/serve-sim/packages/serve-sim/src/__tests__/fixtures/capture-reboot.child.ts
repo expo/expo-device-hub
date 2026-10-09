@@ -20,6 +20,7 @@ function harness() {
         address: "127.0.0.1:9123",
         portFile: "/tmp/fake-confdir/proxy-port",
         caPem: async () => CA_PEM,
+        setFields: () => {},
         close: async () => void calls.push("proxy-closed"),
       } as CaptureProxy;
     },
@@ -50,6 +51,13 @@ afterAll(() => {
 });
 
 describe("rebootWithCapture", () => {
+  test("starts the new session with the fields the panel chose", async () => {
+    const { runtime, deps } = harness();
+    const meta = await rebootWithCapture(UDID, /* enabled */ true, deps, ["header", "request-body"]);
+    expect(meta.fields).toEqual(["header", "request-body"]);
+    expect(runtime.metaFor(UDID).fields).toEqual(["header", "request-body"]);
+  });
+
   test("reboots and comes back capturing", async () => {
     const { deps, calls } = harness();
 
@@ -147,6 +155,58 @@ describe("rebootWithCapture", () => {
     expect(calls.filter((call) => call === "device-shutdown")).toHaveLength(1);
     expect(calls.filter((call) => call === "device-booted")).toHaveLength(1);
     expect(a).toBe(b);
+  });
+
+  test("joins a running reboot only when it keeps the same fields, in any order", async () => {
+    const { runtime, deps, calls } = harness();
+    let releaseBoot = () => {};
+    const slowBoot = new Promise<void>((resolve) => {
+      releaseBoot = resolve;
+    });
+    const slowDeps = {
+      ...deps,
+      boot: async () => {
+        calls.push("device-booted");
+        await slowBoot;
+      },
+    };
+
+    const first = rebootWithCapture(UDID, true, slowDeps, ["header", "query"]);
+    const sameFields = rebootWithCapture(UDID, true, deps, ["query", "header"]);
+    const otherFields = rebootWithCapture(UDID, true, deps, ["response-body"]);
+    releaseBoot();
+    const [a, b, c] = await Promise.all([first, sameFields, otherFields]);
+
+    expect(a).toBe(b);
+    expect(a.fields).toEqual(["header", "query"]);
+    // Joining would report success with the first request's fields.
+    expect(c.fields).toEqual(["response-body"]);
+    expect(runtime.metaFor(UDID).fields).toEqual(["response-body"]);
+    expect(calls.filter((call) => call === "device-booted")).toHaveLength(2);
+  });
+
+  test("joins when one request names the server's default fields and the other omits them", async () => {
+    const { runtime, deps, calls } = harness();
+    runtime.setFields(["query"]);
+    let releaseBoot = () => {};
+    const slowBoot = new Promise<void>((resolve) => {
+      releaseBoot = resolve;
+    });
+
+    const implicit = rebootWithCapture(UDID, true, {
+      ...deps,
+      boot: async () => {
+        calls.push("device-booted");
+        await slowBoot;
+      },
+    });
+    const explicit = rebootWithCapture(UDID, true, deps, ["query"]);
+    releaseBoot();
+    const [a, b] = await Promise.all([implicit, explicit]);
+
+    expect(a).toBe(b);
+    expect(a.fields).toEqual(["query"]);
+    expect(calls.filter((call) => call === "device-booted")).toHaveLength(1);
   });
 
   test("does not join an opposite-intent reboot; runs after it finishes", async () => {

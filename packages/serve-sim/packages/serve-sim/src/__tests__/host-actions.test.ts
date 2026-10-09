@@ -273,12 +273,72 @@ describe("capture actions", () => {
     try {
       const result = await runHostActionAsync({ action: "capture.enable", params: { udid: UDID } }, BIN);
       expect(result.exitCode).toBe(0);
-      expect(enable).toHaveBeenCalledWith(UDID);
+      expect(enable.mock.calls[0]?.[0]).toBe(UDID);
+      expect(enable.mock.calls[0]?.[1]).toBeUndefined();
       expect(setEnabled).toHaveBeenCalledWith(UDID, true);
       expect(reboot).not.toHaveBeenCalled();
     } finally {
       enable.mockRestore();
       setEnabled.mockRestore();
+      reboot.mockRestore();
+    }
+  });
+
+  it("enables capture with the fields the panel chose", async () => {
+    const capture = await import("../capture");
+    const meta = capture.captureRuntime.metaFor(UDID);
+    const enable = spyOn(capture.captureRuntime, "enableForDevice").mockResolvedValue(meta);
+    const setEnabled = spyOn(capture.captureRuntime, "setDeviceCaptureEnabled");
+    try {
+      const result = await runHostActionAsync(
+        { action: "capture.enable", params: { udid: UDID, fields: ["header", "response-body"] } },
+        BIN,
+      );
+      expect(result.exitCode).toBe(0);
+      expect(enable).toHaveBeenCalledWith(UDID, ["header", "response-body"]);
+    } finally {
+      enable.mockRestore();
+      setEnabled.mockRestore();
+    }
+  });
+
+  it("changes a capturing device's fields, and says when capture is off", async () => {
+    const capture = await import("../capture");
+    const meta = { ...capture.captureRuntime.metaFor(UDID), fields: ["query"] };
+    const set = spyOn(capture.captureRuntime, "setFieldsForDevice").mockReturnValueOnce(meta).mockReturnValueOnce(null);
+    try {
+      const changed = await runHostActionAsync({ action: "capture.fields", params: { udid: UDID, fields: ["query"] } }, BIN);
+      expect(changed.exitCode).toBe(0);
+      expect(JSON.parse(changed.stdout).fields).toEqual(["query"]);
+      expect(set).toHaveBeenCalledWith(UDID, ["query"]);
+      const off = await runHostActionAsync({ action: "capture.fields", params: { udid: UDID, fields: [] } }, BIN);
+      expect(off.exitCode).toBe(1);
+      expect(off.stderr).toContain("not on for this device");
+    } finally {
+      set.mockRestore();
+    }
+  });
+
+  it("refuses a field list with an unknown or repeated field", async () => {
+    for (const fields of [["cookies"], ["header", "header"]]) {
+      await expect(
+        runHostActionAsync({ action: "capture.fields", params: { udid: UDID, fields } }, BIN),
+      ).rejects.toBeInstanceOf(InvalidHostActionError);
+    }
+  });
+
+  it("passes the panel's fields to a capture reboot", async () => {
+    const capture = await import("../capture");
+    const meta = capture.captureRuntime.metaFor(UDID);
+    const reboot = spyOn(capture, "rebootWithCapture").mockResolvedValue(meta);
+    try {
+      const result = await runHostActionAsync(
+        { action: "capture.reboot", params: { udid: UDID, enabled: true, fields: ["header"] } },
+        BIN,
+      );
+      expect(result.exitCode).toBe(0);
+      expect(reboot).toHaveBeenCalledWith(UDID, true, {}, ["header"]);
+    } finally {
       reboot.mockRestore();
     }
   });

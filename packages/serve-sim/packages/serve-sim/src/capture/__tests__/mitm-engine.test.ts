@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { describe, expect, test } from "bun:test";
 
 import {
+  CAPTURE_FIELDS_FILE_ENV,
+  captureFieldsFile,
   captureCaDir,
   DEFAULT_MAX_CONTROL_BODY_BYTES,
   describeFailure,
@@ -393,5 +395,23 @@ describe("sweepStaleConfdirs", () => {
 
   test("keeps every confdir when processes cannot be listed", () => {
     expect(sweep(() => null)).toEqual({ swept: 0, removed: [] });
+  });
+});
+
+describe("captureFieldsFile", () => {
+  test("writes the fields owner-only, replaces them whole, and names the variable the addon reads", () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-fields-file-"));
+    try {
+      const file = captureFieldsFile(dir);
+      file.write(["header", "response-body"]);
+      expect(readFileSync(file.path, "utf8")).toBe("header,response-body");
+      expect(statSync(file.path).mode & 0o777).toBe(0o600);
+      file.write([]);
+      expect(readFileSync(file.path, "utf8")).toBe("");
+      const addon = readFileSync(join(import.meta.dir, "..", "mitm-addon", "servesim_capture.py"), "utf8");
+      expect(addon).toContain(`os.environ.get("${CAPTURE_FIELDS_FILE_ENV}")`);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
