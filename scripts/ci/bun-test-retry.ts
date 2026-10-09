@@ -18,9 +18,11 @@ import { join } from "node:path";
 const ATTEMPT_TIMEOUT_MS = 20 * 60_000;
 // Exit code for a killed attempt, as with timeout(1).
 const TIMED_OUT = 124;
-// Bun prints a file that fails to load, and any other error outside a test,
-// under this header, and leaves it out of the JUnit report.
-const ERROR_OUTSIDE_TEST = "# Unhandled error between tests";
+// Bun leaves a file that fails to load, and any other error outside a test,
+// out of the JUnit report, and counts it as " N errors" in the summary that
+// ends its stderr. Test output always comes before that summary.
+const SUMMARY = /\n(?: \d+ [^\n]*\n)+Ran [^\n]*\n*$/;
+const SUMMARY_ERRORS = /\n \d+ errors?\n/;
 
 // Workspaces run in parallel, so forward cancellation to every running child.
 const running = new Set<Subprocess>();
@@ -86,7 +88,8 @@ export async function testWithRetry(args: string[], options: Options = {}): Prom
   if (code === 0) return 0;
   // A partial report would hide the test that hung.
   if (code === TIMED_OUT) return code;
-  if (stderr.includes(ERROR_OUTSIDE_TEST)) {
+  const summary = SUMMARY.exec(stderr)?.[0];
+  if (!summary || SUMMARY_ERRORS.test(summary)) {
     console.error("::error::bun test reported an error outside a test, such as a file that failed to load; not retrying");
     return code;
   }
