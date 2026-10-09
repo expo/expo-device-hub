@@ -318,6 +318,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const active = enabled && !!baseUrl;
   const sessionFetch = useMemo(() => sessionTokenFetch(token), [token]);
   const socketProtocols = useMemo(() => sessionTokenProtocols('ios', token), [token]);
+  const deviceSettingsScope = active ? JSON.stringify([baseUrl, targetDevice, token]) : null;
+  const { deviceSettingsStatus, resetRead, settleRead } =
+    useDeviceSettingsReadStatus(deviceSettingsScope);
+  const deviceSettingsReadRef = useRef<{
+    invalidate: () => void;
+    refresh: () => void;
+  } | null>(null);
+  const deviceSettingVersionsRef = useRef(new Map<DeviceSettingKey, number>());
 
   const [status, setStatus] = useState<ConnectionStatus>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -591,6 +599,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       const tracker = deviceSettingWriteTrackerRef.current;
       const request = tracker.start(key);
       if (!request) return;
+      deviceSettingVersionsRef.current.set(key, (deviceSettingVersionsRef.current.get(key) ?? 0) + 1);
       setDeviceSettingsPending(tracker.pending);
       setDeviceSettings((current) => ({ ...(current ?? {}), [key]: value }));
       if (key === 'appearance' && (value === 'light' || value === 'dark')) {
@@ -800,8 +809,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         }
       } catch {
         // A failed background refresh must not tear down a working video stream.
-        if (!cancelled && requestRevision === revision)
+        if (!cancelled && requestRevision === revision) {
+          if (!current) settleRead('error');
           pollTimer = setTimeout(resolve, RECONNECT_MS);
+        }
       } finally {
         inFlight = false;
       }
@@ -819,7 +830,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       if (refreshConfigRef.current === refresh) refreshConfigRef.current = null;
       if (applyPreviewConfigRef.current === applyConfig) applyPreviewConfigRef.current = null;
     };
-  }, [active, baseUrl, targetDevice, setInitialWebRtcCodec, sessionFetch, token]);
+  }, [active, baseUrl, targetDevice, setInitialWebRtcCodec, sessionFetch, token, settleRead]);
 
   // A replacement helper/session at the same URL still needs new video readers.
   const videoSessionKey = config
@@ -1287,8 +1298,12 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const buffers = new Map<number, string>();
+    let reconnecting = false;
 
     const markInterrupted = () => {
+      reconnecting = true;
+      deviceSettingsReadRef.current?.invalidate();
+      settleRead('error');
       if (metricsPath) {
         setActivity((current) => (current ? { ...current, errored: true } : current));
       }
@@ -1372,6 +1387,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           return;
         }
         if (msg.ready) {
+          if (reconnecting) {
+            reconnecting = false;
+            deviceSettingsReadRef.current?.refresh();
+          }
           for (const [sub, path] of paths) {
             ws?.send(JSON.stringify({ sub, path }));
           }
@@ -1430,30 +1449,51 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     metricsPath,
     deviceUdid,
     socketProtocols,
+    settleRead,
   ]);
 
-  // ── Simulator settings (best-effort) — one status request hydrates every
-  //    device-options control, including the appearance used by the toolbar. ──
-  const deviceSettingsScope =
-    execWsUrl && execToken && deviceUdid
-      ? JSON.stringify([execWsUrl, execToken, deviceUdid, socketProtocols])
-      : null;
-  const { deviceSettingsStatus, resetRead, settleRead } =
-    useDeviceSettingsReadStatus(deviceSettingsScope);
-
+  // One bulk read hydrates the controls. Retry failures and refresh on control reconnect;
+  // a healthy connection needs no extra polling, and video state does not gate settings.
   useEffect(() => {
-    deviceSettingWriteTrackerRef.current.reset();
+    const tracker = deviceSettingWriteTrackerRef.current;
+    tracker.reset();
+    deviceSettingVersionsRef.current.clear();
     setDeviceSettingsPending(new Set());
     resetRead();
     setAppearanceState(null);
     setDeviceSettings(null);
     if (!execWsUrl || !execToken || !deviceUdid) {
+      if (deviceUdid) settleRead('error');
       return;
     }
     let cancelled = false;
-    hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols)
-      .then((res) => {
-        if (cancelled) return;
+    let reading = false;
+    let revision = 0;
+    let refreshQueued = false;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const invalidate = () => {
+      revision++;
+      refreshQueued = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+    };
+    const refresh = async () => {
+      if (cancelled) return;
+      const readRevision = ++revision;
+      if (reading) {
+        refreshQueued = true;
+        return;
+      }
+      refreshQueued = false;
+      if (retryTimer) clearTimeout(retryTimer);
+      retryTimer = null;
+      reading = true;
+      const versions = new Map(deviceSettingVersionsRef.current);
+      const pendingAtStart = tracker.pending;
+      try {
+        const res = await hostUiRequest(execWsUrl, execToken, { device: deviceUdid }, socketProtocols);
+        // A response from before an interruption cannot restore availability.
+        if (cancelled || readRevision !== revision) return;
         if (!res.status || typeof res.status !== 'object' || Array.isArray(res.status)) {
           throw new Error('Simulator settings request returned an invalid status');
         }
@@ -1461,9 +1501,24 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         for (const [key, value] of Object.entries(res.status)) {
           if (typeof value === 'string') next[key as DeviceSettingKey] = value;
         }
-        setDeviceSettings(next);
+        const pending = tracker.pending;
+        const canApply = (key: DeviceSettingKey) =>
+          !pendingAtStart.has(key) &&
+          !pending.has(key) &&
+          deviceSettingVersionsRef.current.get(key) === versions.get(key);
+        setDeviceSettings((current) => {
+          let merged = current ?? {};
+          for (const key of new Set([...Object.keys(merged), ...Object.keys(next)])) {
+            const setting = key as DeviceSettingKey;
+            if (!canApply(setting) || merged[setting] === next[setting]) continue;
+            if (merged === current) merged = { ...merged };
+            if (next[setting] === undefined) delete merged[setting];
+            else merged[setting] = next[setting];
+          }
+          return merged;
+        });
         settleRead('ready');
-        if (next.appearance === 'light' || next.appearance === 'dark') {
+        if (canApply('appearance') && (next.appearance === 'light' || next.appearance === 'dark')) {
           setAppearanceState(next.appearance);
         }
         // The helper socket's open handler usually settles this first (it
@@ -1472,14 +1527,23 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (keyboardValue === 'on' || keyboardValue === 'off') {
           setHardwareKeyboardConnectedState((prev) => prev ?? keyboardValue === 'on');
         }
-      })
-      .catch(() => {
-        if (!cancelled) {
+      } catch {
+        if (!cancelled && readRevision === revision) {
           settleRead('error');
+          retryTimer = setTimeout(() => void refresh(), RECONNECT_MS);
         }
-      });
+      } finally {
+        reading = false;
+        // Coalesce reconnects during a read into one fresh follow-up request.
+        if (!cancelled && refreshQueued) void refresh();
+      }
+    };
+    deviceSettingsReadRef.current = { invalidate, refresh: () => void refresh() };
+    void refresh();
     return () => {
       cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+      deviceSettingsReadRef.current = null;
     };
   }, [execWsUrl, execToken, deviceUdid, socketProtocols, resetRead, settleRead]);
 

@@ -143,6 +143,8 @@ gestures — so this package hides that behind one shared contract:
 
 - `DeviceClientProvider` to share one connection, with `useDeviceClient` and
   `useDeviceClientSelector` to read state and controls,
+- `deviceSettingsStatus` to report device-options loading and availability
+  independently of video and app activity,
 - a `DeviceScreen` component that paints whichever stream is active and forwards
   pointer/gesture/keyboard/scroll-wheel input, and
 - a `KeyboardCapture` component (with `useCoarsePointer`) that lets touch clients

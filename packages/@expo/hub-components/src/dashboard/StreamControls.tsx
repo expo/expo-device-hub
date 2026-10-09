@@ -55,6 +55,7 @@ function ControlGroup({ children }: { children: ReactNode }) {
  */
 export function StreamControls({
   appearance,
+  appearanceDisabled = false,
   onToggleAppearance,
   onHome,
   onReload,
@@ -64,6 +65,8 @@ export function StreamControls({
 }: {
   /** The device's current dark/light appearance; null while unknown. */
   appearance: ColorScheme | null;
+  /** Whether appearance settings are unavailable or a change is pending. */
+  appearanceDisabled?: boolean;
   /** Flip the device's system appearance (dark ↔ light). */
   onToggleAppearance: () => void;
   /** Press the device Home button. */
@@ -77,6 +80,7 @@ export function StreamControls({
   recording?: DeviceScreenRecordingStatus | null;
 }) {
   const recordingControlsLocked = areRecordingControlsLocked(recording);
+  const themeDisabled = appearanceDisabled || appearance === null;
   return (
     <div
       role="toolbar"
@@ -93,7 +97,9 @@ export function StreamControls({
           label="Theme"
           role="switch"
           aria-checked={appearance === 'dark'}
-          onClick={onToggleAppearance}
+          disabled={themeDisabled}
+          onClick={themeDisabled ? undefined : onToggleAppearance}
+          style={themeDisabled ? { color: text.tertiary, cursor: 'not-allowed' } : undefined}
         />
         <ControlButton
           icon={<HomeIcon size={ICON_SIZE} strokeWidth={ICON_STROKE} />}

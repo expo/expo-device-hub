@@ -57,6 +57,12 @@ export function StreamPanel({
   deviceFrameAssets?: DeviceFrameAssets;
 }) {
   const captureScreenshot = useScreenshotToast(client, device.name);
+  const setting = client.deviceSettings?.appearance;
+  const appearance = setting === 'dark' || setting === 'light' ? setting : null;
+  const appearanceDisabled =
+    appearance === null ||
+    client.deviceSettingsStatus !== 'ready' ||
+    client.deviceSettingsPending.has('appearance');
 
   return (
     <section
@@ -125,10 +131,13 @@ export function StreamPanel({
             }}>
             <StreamControls
               recording={client.screenRecording}
-              appearance={client.appearance}
-              onToggleAppearance={() =>
-                client.setAppearance(client.appearance === 'dark' ? 'light' : 'dark')
-              }
+              appearance={appearance}
+              appearanceDisabled={appearanceDisabled}
+              onToggleAppearance={() => {
+                if (!appearanceDisabled) {
+                  client.setDeviceSetting('appearance', appearance === 'dark' ? 'light' : 'dark');
+                }
+              }}
               onHome={() => client.pressButton('home')}
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
