@@ -29,6 +29,7 @@ import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
 import { runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
+import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
 import {
   assertKnownCapabilities,
   missingCapabilities,
@@ -340,7 +341,7 @@ function isProcessAlive(pid: number): boolean {
 function bootDevice(udid: string): void {
   if (!isDeviceBooted(udid)) {
     try {
-      execSync(`xcrun simctl boot ${udid}`, { encoding: "utf-8", stdio: "pipe" });
+      execFileSync("xcrun", ["simctl", "boot", udid], { encoding: "utf-8", stdio: "pipe", env: simulatorBootEnv(udid) });
     } catch (err: any) {
       const msg = (err.stderr ?? err.message ?? "").toLowerCase();
       if (!msg.includes("booted") && !msg.includes("current state")) {
@@ -1391,14 +1392,13 @@ async function ensureHelperWithSource(opts: {
  * launches the app. If the helper is already running, source changes are
  * hot-swapped through its control socket without relaunching the app.
  */
-async function camera(args: string[]) {
+async function camera(args: string[], quiet = false) {
   let deviceArg: string | undefined;
   let filePath: string | undefined;
   let webcam: string | true | undefined;
   let stopWebcam = false;
   let listWebcams = false;
   let forceBuild = false;
-  let quiet = false;
   let mirror: "auto" | "on" | "off" = "auto";
   const filtered: string[] = [];
   for (let i = 0; i < args.length; i++) {
@@ -1599,6 +1599,14 @@ Examples:
     process.exit(1);
   }
 
+  let callerDylibs: string[];
+  try {
+    callerDylibs = validatedAdditionalDylibs();
+  } catch (error) {
+    printStartupError(error instanceof Error ? error.message : String(error), quiet);
+    process.exit(1);
+  }
+
   const udid = deviceArg ? resolveDevice(deviceArg) : findBootedDevice();
   if (!udid) {
     console.error("No booted simulator. Boot one or pass -d <udid|name>.");
@@ -1666,7 +1674,7 @@ Examples:
 
   const env = {
     ...process.env,
-    SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: dylib,
+    SIMCTL_CHILD_DYLD_INSERT_LIBRARIES: [...new Set([dylib, ...callerDylibs])].join(":"),
     SIMCTL_CHILD_SIMCAM_SHM_NAME: shmName,
     ...(mirror !== "auto" ? { SIMCTL_CHILD_SIMCAM_MIRROR_MODE: mirror } : {}),
   };
@@ -1825,20 +1833,25 @@ async function serve(
   // Minted here, not in the middleware, because the operator has to be told what it is.
   const requirePreviewToken = !!options.requireToken;
   const previewToken = randomBytes(32).toString("base64url");
-  const middleware = simMiddleware({
-    basePath: "/",
-    device: targetDevice,
-    streamSettings: options.stream,
-    proxyHelpers: true,
-    corsOrigins: options.corsOrigins ?? [],
-    frameAncestors: options.frameAncestors ?? [],
-    shareUrl: options.shareUrl,
-    allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
-    networkCapture: !!options.networkCapture,
-    loopbackOnly: isLoopbackHost(host),
-    execToken: previewToken,
-    requirePreviewToken,
-  });
+  let middleware: ReturnType<typeof simMiddleware>;
+  try {
+    middleware = simMiddleware({
+      basePath: "/",
+      device: targetDevice,
+      streamSettings: options.stream,
+      proxyHelpers: true,
+      corsOrigins: options.corsOrigins ?? [],
+      frameAncestors: options.frameAncestors ?? [],
+      shareUrl: options.shareUrl,
+      allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
+      networkCapture: !!options.networkCapture,
+      loopbackOnly: isLoopbackHost(host),
+      execToken: previewToken,
+      requirePreviewToken,
+    });
+  } catch (error) {
+    return failStartup(error instanceof Error ? error.message : String(error));
+  }
 
   // Try requested port; if busy and the user didn't pin it, scan forward.
   const maxScan = portExplicit ? 1 : 50;
@@ -2201,6 +2214,12 @@ Examples:
     if (opts.kill !== undefined) {
       await killStreams(typeof opts.kill === "string" ? opts.kill : undefined);
       return;
+    }
+    try {
+      validatedAdditionalDylibs();
+    } catch (error) {
+      printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
+      process.exit(1);
     }
     if (opts.transport !== "http" && opts.transport !== "webrtc") {
       console.error("--transport must be one of: http, webrtc.");
@@ -2733,7 +2752,7 @@ program
   .allowUnknownOption(true)
   .helpOption(false)
   .argument("[args...]")
-  .action((args: string[]) => camera(args));
+  .action((args: string[]) => camera(args, !!program.opts().quiet));
 
 program
   .command("permissions")

@@ -248,6 +248,25 @@ Supervisors can probe `GET /healthz` to confirm that the preview server is
 listening and `GET /readyz` to wait until the selected simulator and native
 capture session are ready. Both endpoints return JSON and disable caching.
 
+### Additional simulator dylibs
+
+Set `SERVE_SIM_ADDITIONAL_DYLIBS` to a colon-separated list of absolute dylib paths:
+
+```sh
+SERVE_SIM_ADDITIONAL_DYLIBS=/path/to/egress-guard.dylib serve-sim <udid>
+```
+
+Startup rejects relative, missing, or non-file paths before device operations.
+Paths retain whitespace. This validates file existence, not library compatibility;
+the caller must keep the libraries available for the session.
+
+The libraries are passed into Simulator boot and added alongside the capability
+loader for subsequent app launches. To affect processes started during boot, start
+with a shut-down simulator. Already-running processes keep their current images.
+The boot insert includes serve-sim's loader and inactive capture image so startup
+capabilities keep working; capture still needs to be enabled through its controls.
+The caller owns these libraries; session teardown preserves their insertion.
+
 ### Installing and launching apps
 
 `--launch-app-identifier <bundle-id>` waits for Simulator boot to finish, then launches
