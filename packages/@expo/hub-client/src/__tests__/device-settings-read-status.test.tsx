@@ -365,10 +365,10 @@ test("Android: a later poll recovers all initial values after a failed first rea
   const mounted = await mountClient("android", server.baseUrl("android"));
   await waitFor(() => mounted.client().deviceSettingsStatus === "error");
   server.state.mode = "ready";
-  await waitFor(() => mounted.client().deviceSettingsStatus === "ready", 4000);
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready", 6500);
   expect(mounted.client().deviceSettings?.appearance).toBe("dark");
   expect(mounted.client().deviceSettings?.["text-size"]).toBe("medium");
-});
+}, 8000);
 
 test("Android: Appearance recovers after a partial read and keeps tracking external changes", async () => {
   const server = settingsServer();
@@ -380,7 +380,7 @@ test("Android: Appearance recovers after a partial read and keeps tracking exter
 
   server.state.mode = "ready";
   server.state.fontScale = 1.3;
-  await waitFor(() => mounted.client().deviceSettings?.["text-size"] === "extra-large", 4000);
+  await waitFor(() => mounted.client().deviceSettings?.["text-size"] === "extra-large", 6500);
   expect(mounted.client().deviceSettings?.appearance).toBe("dark");
   expect(mounted.client().appearance).toBe("dark");
   const appearanceReads = () => server.reads.filter((read) => read.path === "/api/uimode").length;
@@ -388,13 +388,13 @@ test("Android: Appearance recovers after a partial read and keeps tracking exter
 
   server.state.fontScale = 1.15;
   server.state.night = "no";
-  await waitFor(() => mounted.client().deviceSettings?.["text-size"] === "large", 4000);
+  await waitFor(() => mounted.client().deviceSettings?.["text-size"] === "large", 6500);
   expect(appearanceReads()).toBe(3);
   expect(mounted.client().deviceSettings?.appearance).toBe("light");
   expect(mounted.client().appearance).toBe("light");
   const firstReady = mounted.committed.indexOf("ready");
   expect(mounted.committed.slice(firstReady).every((status) => status === "ready")).toBe(true);
-}, 9000);
+}, 13000);
 
 test("Android: unchanged polls preserve settings references for tracked and selector subscribers", async () => {
   const server = settingsServer();
@@ -434,7 +434,7 @@ test("Android: unchanged polls preserve settings references for tracked and sele
     const paths = Object.keys(ANDROID_RESPONSES);
     await waitFor(
       () => paths.every((path) => server.reads.slice(start).some((read) => read.path === path)),
-      4000,
+      6500,
     );
     await act(async () => {
       server.reply("DEVICE-1", mode);
@@ -474,7 +474,7 @@ test("Android: unchanged polls preserve settings references for tracked and sele
     tracked: initialRenders.tracked + 2,
     selected: initialRenders.selected + 2,
   });
-}, 16000);
+}, 25000);
 
 test("Android: availability changes only on failure and recovery, retaining cached settings", async () => {
   const server = settingsServer();
@@ -506,12 +506,12 @@ test("Android: availability changes only on failure and recovery, retaining cach
   await waitFor(() => status === "ready");
   const before = renders;
   server.state.fontScale = 1.3;
-  await waitFor(() => currentSettings()?.["text-size"] === "extra-large", 4000);
+  await waitFor(() => currentSettings()?.["text-size"] === "extra-large", 6500);
   expect(status).toBe("ready");
   expect(renders).toBe(before);
   const initialReads = server.reads.length;
   server.state.mode = "error";
-  await waitFor(() => server.reads.length > initialReads, 4000);
+  await waitFor(() => server.reads.length > initialReads, 6500);
   await act(async () => {
     await Bun.sleep(30);
   });
@@ -520,14 +520,14 @@ test("Android: availability changes only on failure and recovery, retaining cach
   expect(renders).toBe(before + 1);
   const cached = currentSettings();
   const failedReads = server.reads.length;
-  await waitFor(() => server.reads.length > failedReads, 4000);
+  await waitFor(() => server.reads.length > failedReads, 6500);
   await act(async () => { await Bun.sleep(30); });
   expect(renders).toBe(before + 1);
   server.state.mode = "ready";
-  await waitFor(() => status === "ready", 4000);
+  await waitFor(() => status === "ready", 6500);
   expect(currentSettings()).toBe(cached);
   expect(renders).toBe(before + 2);
-}, 16000);
+}, 25000);
 
 test("iOS: settings report loading during discovery and recover after discovery fails", async () => {
   const server = settingsServer();
@@ -630,7 +630,7 @@ for (const replyTiming of ["before reconnect", "after reconnect", "after repeate
   }, 9000);
 }
 
-test("iOS: external settings changes update subscribers, while unchanged polls stay quiet", async () => {
+test.each(["ios", "android"] as const)("%s: external settings changes update subscribers, while unchanged polls stay quiet", async (platform) => {
   const server = settingsServer();
   server.state.mode = "ready";
   server.state.iosSettings = { "reduce-motion": "off" };
@@ -657,7 +657,7 @@ test("iOS: external settings changes update subscribers, while unchanged polls s
   }
   await act(async () => {
     renderer = create(
-      <DeviceClientProvider platform="ios" options={{ baseUrl: server.baseUrl("ios"), streamMode: "mjpeg" }}>
+      <DeviceClientProvider platform={platform} options={{ baseUrl: server.baseUrl(platform), streamMode: "mjpeg" }}>
         <Status /><Values /><Selected />
       </DeviceClientProvider>,
     );
@@ -666,57 +666,80 @@ test("iOS: external settings changes update subscribers, while unchanged polls s
   const before = { ...renders };
   server.state.night = "no";
   server.state.iosSettings["reduce-motion"] = "on";
-  await waitFor(() => currentSettings()?.appearance === "light", 9500);
-  expect(currentSettings()?.["reduce-motion"]).toBe("on");
+  server.state.fontScale = 1.3;
+  await waitFor(() => currentSettings()?.appearance === "light", 6500);
+  expect(currentSettings()?.[platform === "ios" ? "reduce-motion" : "text-size"]).toBe(platform === "ios" ? "on" : "extra-large");
   expect(selectedSettings()).toBe(currentSettings());
   expect(renders).toEqual({ status: before.status, values: before.values + 1, selected: before.selected + 1 });
   const cached = currentSettings();
   const afterChange = { ...renders };
   const reads = server.reads.length;
-  await waitFor(() => server.reads.length > reads, 9500);
+  await waitFor(() => server.reads.length > reads, 6500);
   await act(async () => { await Bun.sleep(30); });
   expect(currentSettings()).toBe(cached);
   expect(selectedSettings()).toBe(cached);
   expect(renders).toEqual(afterChange);
 }, 22000);
 
-test("iOS: hidden tabs pause settings polls, resume immediately, and remove polling on disable", async () => {
+test.each(["ios", "android"] as const)("%s: hidden tabs pause settings polls, resume immediately, and remove polling on disable", async (platform) => {
   const server = settingsServer();
+  const readCount = () => server.reads.filter((read) => read.path === (platform === "ios" ? "/ios/exec-ws" : "/api/uimode")).length;
   server.state.mode = "ready";
   server.setHidden(true);
-  const mounted = await mountClient("ios", server.baseUrl("ios"));
+  const mounted = await mountClient(platform, server.baseUrl(platform));
   await waitFor(() => mounted.client().capabilities.deviceSettings);
   await act(async () => { await Bun.sleep(50); });
-  expect(server.reads).toHaveLength(0);
+  expect(readCount()).toBe(0);
   await act(async () => server.setHidden(false));
   await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
-  const reads = server.reads.length;
+  const reads = readCount();
   await act(async () => server.setHidden(true));
   server.state.night = "no";
-  await act(async () => { await Bun.sleep(8500); });
-  expect(server.reads).toHaveLength(reads);
+  await act(async () => { await Bun.sleep(5500); });
+  expect(readCount()).toBe(reads);
   await act(async () => server.setHidden(false));
   await waitFor(() => mounted.client().deviceSettings?.appearance === "light");
   await mounted.update({ enabled: false });
-  const disabledReads = server.reads.length;
-  await act(async () => { server.setHidden(true); server.setHidden(false); await Bun.sleep(8500); });
+  const disabledReads = readCount();
+  await act(async () => { server.setHidden(true); server.setHidden(false); await Bun.sleep(5500); });
   expect(mounted.client().deviceSettingsStatus).toBe("idle");
-  expect(server.reads).toHaveLength(disabledReads);
+  expect(readCount()).toBe(disabledReads);
 }, 22000);
 
-test("iOS: settings polls wait for an active read and leave a full interval after it settles", async () => {
+test.each(["ios", "android"] as const)("%s: settings polls wait five seconds after an active read settles", async (platform) => {
   const server = settingsServer();
-  const mounted = await mountClient("ios", server.baseUrl("ios"));
-  await waitFor(() => server.reads.length === 1);
+  const readCount = () => server.reads.filter((read) => read.path === (platform === "ios" ? "/ios/exec-ws" : "/api/uimode")).length;
+  const mounted = await mountClient(platform, server.baseUrl(platform));
+  await waitFor(() => readCount() === 1);
   await act(async () => { await Bun.sleep(3000); });
-  expect(server.reads).toHaveLength(1);
+  expect(readCount()).toBe(1);
   server.state.mode = "ready";
   await act(async () => server.reply("DEVICE-1", "ready"));
   await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
-  await act(async () => { await Bun.sleep(5500); });
-  expect(server.reads).toHaveLength(1);
-  await waitFor(() => server.reads.length === 2, 4000);
+  await act(async () => { await Bun.sleep(4200); });
+  expect(readCount()).toBe(1);
+  await waitFor(() => readCount() === 2, 1500);
 }, 15000);
+
+test("Android: visibility resumes coalesce behind an active read and discard its stale reply", async () => {
+  const server = settingsServer();
+  const mounted = await mountClient("android", server.baseUrl("android"));
+  await waitFor(() => server.hasAllReads("android"));
+  const readCount = () => server.reads.filter((read) => read.path === "/api/uimode").length;
+  await act(async () => {
+    for (let i = 0; i < 2; i++) { server.setHidden(true); server.setHidden(false); }
+  });
+  expect(readCount()).toBe(1);
+  await act(async () => server.reply("DEVICE-1", "ready"));
+  await waitFor(() => readCount() === 2);
+  expect(mounted.client().deviceSettingsStatus).toBe("loading");
+  expect(mounted.client().deviceSettings).toBeNull();
+  server.state.night = "no";
+  await act(async () => server.reply("DEVICE-1", "ready"));
+  await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+  expect(mounted.client().deviceSettings?.appearance).toBe("light");
+  expect(readCount()).toBe(2);
+});
 
 test("iOS: a settings poll cannot overwrite a newer completed sidebar write", async () => {
   const server = settingsServer();
@@ -724,7 +747,7 @@ test("iOS: a settings poll cannot overwrite a newer completed sidebar write", as
   const mounted = await mountClient("ios", server.baseUrl("ios"));
   await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
   server.state.mode = "hold";
-  await waitFor(() => server.reads.length === 2, 9500);
+  await waitFor(() => server.reads.length === 2, 6500);
   await act(async () => mounted.client().setDeviceSetting("appearance", "light"));
   await waitFor(() => !mounted.client().deviceSettingsPending.has("appearance"));
   await act(async () => server.reply("DEVICE-1", "ready"));
@@ -741,7 +764,7 @@ test("iOS: failed periodic reads retain cached values and recover without loadin
   const cached = mounted.client().deviceSettings;
   const before = mounted.committed.length;
   server.state.mode = "error";
-  await waitFor(() => mounted.client().deviceSettingsStatus === "error", 9500);
+  await waitFor(() => mounted.client().deviceSettingsStatus === "error", 6500);
   expect(mounted.client().deviceSettings).toBe(cached);
   server.state.mode = "ready";
   await waitFor(() => mounted.client().deviceSettingsStatus === "ready", 4000);
@@ -777,7 +800,7 @@ test("iOS: settings polls and visibility refreshes pause until the control socke
   await act(async () => mounted.client().attachLogs());
   await waitFor(() => server.state.authRequests > firstReconnectAuth);
   const reconnectAuth = server.state.authRequests;
-  await act(async () => { server.setHidden(true); server.setHidden(false); await Bun.sleep(8500); });
+  await act(async () => { server.setHidden(true); server.setHidden(false); await Bun.sleep(5500); });
   expect(server.state.authRequests).toBe(reconnectAuth);
   expect(server.reads).toHaveLength(1);
   server.state.night = "no";
@@ -799,7 +822,7 @@ test("iOS: healthy log subscription changes pause polls until replacement authen
     await waitFor(() => server.state.authRequests > initialAuth);
     const replacementAuth = server.state.authRequests;
     const reads = server.reads.length;
-    await act(async () => { server.setHidden(true); server.setHidden(false); await Bun.sleep(8500); });
+    await act(async () => { server.setHidden(true); server.setHidden(false); await Bun.sleep(5500); });
     expect(server.state.authRequests).toBe(replacementAuth);
     expect(server.reads).toHaveLength(reads);
     expect(mounted.client().deviceSettings).toBe(cached);
