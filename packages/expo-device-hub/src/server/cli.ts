@@ -8,6 +8,7 @@ import { URL } from 'node:url';
 import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } from './cli/node-fetch-server';
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { startupMessage } from './cli/startup';
+import { localHubUrl, publishHubState } from './cli/state-file';
 import { staticFileHandler } from './cli/static-files';
 import {
   encodeStandaloneServeEmuOptions,
@@ -164,9 +165,13 @@ async function main(): Promise<void> {
   });
 
   let shutdownTask: Promise<void> | null = null;
+  let withdrawHubState: (() => void) | null = null;
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.on(signal, () => {
       if (shutdownTask) return;
+      // Before the listener closes, so nothing finds a Hub that no longer accepts connections while
+      // the Android recording finishes.
+      withdrawHubState?.();
       server.close();
       for (const wss of webSocketRoutes.values()) {
         for (const client of wss.clients) client.close(1001, 'Server stopping');
@@ -203,10 +208,20 @@ async function main(): Promise<void> {
     }
   }
 
+  const { port } = server.address() as AddressInfo;
+  // Before any request is handled, so a process that waits for /readyz finds the token.
+  withdrawHubState = publishHubState({
+    pid: process.pid,
+    port,
+    url: localHubUrl(options.host, port),
+    ...(sessionToken ? { token: sessionToken } : {}),
+  });
+  process.once('exit', () => withdrawHubState?.());
+
   console.log(
     startupMessage({
       host: options.host,
-      port: (server.address() as AddressInfo).port,
+      port,
       lanAddress: lanAddress(),
       sessionToken,
       ignoredFrameAncestors: sessionToken ? [] : options.frameAncestors,
