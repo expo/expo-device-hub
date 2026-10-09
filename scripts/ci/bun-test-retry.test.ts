@@ -47,6 +47,15 @@ test("a file that fails to load is not retried", async () => {
   expect(runs()).toEqual(["broken.test.ts", "flaky.test.ts"]);
 });
 
+test("test output that looks like Bun's error header does not block a retry", async () => {
+  const cwd = fixture({
+    "flaky.test.ts": `test("flaky", () => { const first = !existsSync("seen"); writeFileSync("seen", ""); expect(first).toBe(false); });`,
+    "noisy.test.ts": `test("noisy", () => { console.error("# Unhandled error between tests"); console.error(" 1 error"); });`,
+  });
+  expect(await testWithRetry([], { cwd })).toBe(0);
+  expect(runs()).toEqual(["flaky.test.ts", "flaky.test.ts", "noisy.test.ts"]);
+});
+
 test("a failed before-retry script stops the retry", async () => {
   const cwd = fixture({ "hard.test.ts": `test("hard", () => expect(1).toBe(2));` });
   writeFileSync(join(cwd, "before.sh"), "exit 3");
