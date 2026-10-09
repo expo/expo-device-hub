@@ -9,6 +9,8 @@ const cookie = `${accessCookieName(TOKEN)}=${encodeURIComponent(TOKEN)}`;
 const SAME_ORIGIN = { cookie, 'sec-fetch-site': 'same-origin' };
 // The policy for the `--frame-ancestor` origin the CLI hands over below.
 const FRAME_POLICY = "frame-ancestors 'self' https://*.expo.dev";
+// The `--cors-origin` page the CLI hands over below.
+const PAGE = 'https://page.example';
 
 // What reached each vendored backend, and with which credential.
 const simRequests: Request[] = [];
@@ -85,6 +87,8 @@ process.env.EXPO_DEVICE_HUB_BASE_PATH = '';
 process.env.EXPO_DEVICE_HUB_SESSION_TOKEN = TOKEN;
 process.env.EXPO_DEVICE_HUB_FRAME_ANCESTORS = JSON.stringify(['https://*.expo.dev']);
 process.env.EXPO_DEVICE_HUB_RECORDING_CONTROL_TOKEN = 'recording-token';
+process.env.EXPO_DEVICE_HUB_SERVE_SIM_OPTIONS = JSON.stringify({ corsOrigins: [PAGE] });
+process.env.EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS = JSON.stringify({ allowedOrigins: [PAGE] });
 const server = await import('../index');
 
 afterAll(() => {
@@ -151,6 +155,50 @@ describe('the Hub under a session token', () => {
     expect(deviceListings).toBe(0);
     expect(simRequests).toEqual([]);
     expect(emuRequests).toEqual([]);
+  });
+
+  // Otherwise the page sees only a network error, as if the Hub were down.
+  test('lets a --cors-origin page read why either backend refused it', async () => {
+    for (const path of ['/vendor/serve-sim/api', '/vendor/serve-emu/api/devices']) {
+      const response = await request(path, { headers: { Origin: PAGE } });
+      expect([path, response?.status]).toEqual([path, 401]);
+      expect(response?.headers.get('access-control-allow-origin')).toBe(PAGE);
+      expect(response?.headers.get('vary')).toBe('Origin');
+    }
+  });
+
+  test('names no other origin on a refusal, and none on its own routes', async () => {
+    const other = await request('/vendor/serve-emu/api/devices', { headers: { Origin: 'https://elsewhere.example' } });
+    const own = await request('/api/devices', { headers: { Origin: PAGE } });
+
+    expect(other?.status).toBe(401);
+    expect(other?.headers.get('access-control-allow-origin')).toBeNull();
+    expect(other?.headers.get('vary')).toBe('Origin');
+    expect(own?.status).toBe(401);
+    expect(own?.headers.get('access-control-allow-origin')).toBeNull();
+  });
+
+  // serve-sim allows any loopback page; serve-emu only one that calls a Hub on a loopback host.
+  test("follows each backend's loopback rule on a refusal", async () => {
+    const headers = { Origin: 'http://localhost:5173' };
+    const allowOrigin = async (url: string) =>
+      (await server.default(new Request(url, { headers })))?.headers.get('access-control-allow-origin');
+
+    expect(await allowOrigin(`${ORIGIN}/vendor/serve-sim/api`)).toBe('http://localhost:5173');
+    expect(await allowOrigin(`${ORIGIN}/vendor/serve-emu/api/devices`)).toBeNull();
+    expect(await allowOrigin('http://127.0.0.1:3400/vendor/serve-emu/api/devices')).toBe('http://localhost:5173');
+  });
+
+  // serve-emu counts `*.localhost` as loopback; serve-sim does not.
+  test('names a *.localhost page on a serve-emu refusal only', async () => {
+    const allowOrigin = async (url: string) =>
+      (await server.default(new Request(url, { headers: { Origin: 'http://preview.localhost:5173' } })))
+        ?.headers.get('access-control-allow-origin');
+
+    expect(await allowOrigin('http://127.0.0.1:3400/vendor/serve-emu/api/devices')).toBe(
+      'http://preview.localhost:5173',
+    );
+    expect(await allowOrigin('http://127.0.0.1:3400/vendor/serve-sim/api')).toBeNull();
   });
 
   // A route the Hub does not know still falls through to static files, so it is gated too.

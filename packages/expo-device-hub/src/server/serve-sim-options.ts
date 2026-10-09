@@ -1,6 +1,7 @@
 import { type StreamSettings, type WebRtcIceServer } from '@expo/serve-sim/state';
 
 import { DEFAULT_WEBRTC_CODEC, type CliOptions } from './cli/options';
+import { originMatches } from './origin-match';
 
 export const SERVE_SIM_OPTIONS_ENV = 'EXPO_DEVICE_HUB_SERVE_SIM_OPTIONS';
 
@@ -17,6 +18,11 @@ export type StandaloneServeSimOptions = {
 function isLoopbackHost(host: string): boolean {
   const bare = host.replace(/^\[|\]$/g, '').toLowerCase();
   return bare === 'localhost' || bare === '127.0.0.1' || bare === '::1';
+}
+
+/** serve-sim's CORS rule: a page on a loopback host or on a `--cors-origin` origin. */
+export function serveSimAllowsOrigin(corsOrigins: readonly string[], origin: URL): boolean {
+  return isLoopbackHost(origin.hostname) || corsOrigins.some((allowed) => originMatches(allowed, origin));
 }
 
 function streamSettingsFor(options: CliOptions): StreamSettings | undefined {

@@ -11,6 +11,7 @@ import {
   type GrpcEncoder,
   type WebRtcIcePolicy,
 } from './cli/options';
+import { originMatches } from './origin-match';
 
 export const SERVE_EMU_OPTIONS_ENV = 'EXPO_DEVICE_HUB_SERVE_EMU_OPTIONS';
 
@@ -129,6 +130,36 @@ export function readStandaloneServeEmuOptions(
     ...(parsed as Partial<StandaloneServeEmuOptions>),
     encoder: encoder ?? DEFAULT_GRPC_ENCODER,
   };
+}
+
+// serve-emu's own loopback names, which include `*.localhost` and all of 127/8, unlike serve-sim's.
+function isServeEmuLoopbackHost(hostname: string): boolean {
+  const host = hostname.replace(/^\[|\]$/g, '').toLowerCase();
+  return (
+    host === 'localhost' ||
+    host.endsWith('.localhost') ||
+    host === '::1' ||
+    host === '0:0:0:0:0:0:0:1' ||
+    /^127(?:\.\d{1,3}){3}$/.test(host)
+  );
+}
+
+/**
+ * serve-emu's CORS rule: a `--cors-origin` page, the request's own origin, or a loopback page that
+ * calls a loopback host.
+ */
+export function serveEmuAllowsOrigin(
+  allowedOrigins: readonly string[],
+  origin: URL,
+  request: Request,
+): boolean {
+  const target = new URL(request.url);
+  return (
+    allowedOrigins.includes('*') ||
+    allowedOrigins.some((allowed) => originMatches(allowed, origin)) ||
+    origin.origin === target.origin ||
+    (isServeEmuLoopbackHost(origin.hostname) && isServeEmuLoopbackHost(target.hostname))
+  );
 }
 
 /** Parse the video-channel flags that the serve-emu router expects at upgrade time. */
