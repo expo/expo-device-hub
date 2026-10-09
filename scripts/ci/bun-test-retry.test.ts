@@ -38,6 +38,15 @@ test("a persistent failure stays red", async () => {
   expect(runs()).toEqual(["hard.test.ts", "hard.test.ts"]);
 });
 
+test("a file that fails to load is not retried", async () => {
+  const cwd = fixture({
+    "flaky.test.ts": `test("flaky", () => { const first = !existsSync("seen"); writeFileSync("seen", ""); expect(first).toBe(false); });`,
+    "broken.test.ts": `throw new Error("load");`,
+  });
+  expect(await testWithRetry([], { cwd })).not.toBe(0);
+  expect(runs()).toEqual(["broken.test.ts", "flaky.test.ts"]);
+});
+
 test("a failed before-retry script stops the retry", async () => {
   const cwd = fixture({ "hard.test.ts": `test("hard", () => expect(1).toBe(2));` });
   writeFileSync(join(cwd, "before.sh"), "exit 3");

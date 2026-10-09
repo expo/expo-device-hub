@@ -5,9 +5,10 @@
 //   bun scripts/ci/bun-test-retry.ts --workspaces
 //
 // Failed files come from Bun's JUnit report. A failure that the report does
-// not attribute to a file (for example an error between tests) is not
-// retried, and neither is an attempt that times out. Pass `bun test` flags in `--flag=value` form: the retry keeps the
-// flags and replaces the paths with the failed files.
+// not attribute to a file (for example a file that fails to load) is not
+// retried, and neither is an attempt that times out. Pass `bun test` flags in
+// `--flag=value` form: the retry keeps the flags and replaces the paths with
+// the failed files.
 
 import { Glob, type Subprocess } from "bun";
 import { mkdtemp } from "node:fs/promises";
@@ -17,6 +18,9 @@ import { join } from "node:path";
 const ATTEMPT_TIMEOUT_MS = 20 * 60_000;
 // Exit code for a killed attempt, as with timeout(1).
 const TIMED_OUT = 124;
+// Bun prints a file that fails to load, and any other error outside a test,
+// under this header, and leaves it out of the JUnit report.
+const ERROR_OUTSIDE_TEST = "# Unhandled error between tests";
 
 // Workspaces run in parallel, so forward cancellation to every running child.
 const running = new Set<Subprocess>();
@@ -33,8 +37,11 @@ interface Options {
   timeoutMs?: number;
 }
 
-async function run(cmd: string[], { cwd, timeoutMs = ATTEMPT_TIMEOUT_MS }: Options): Promise<number> {
-  const child = Bun.spawn(cmd, { cwd, stdio: ["ignore", "inherit", "inherit"] });
+async function run(
+  cmd: string[],
+  { cwd, timeoutMs = ATTEMPT_TIMEOUT_MS }: Options,
+): Promise<{ code: number; stderr: string }> {
+  const child = Bun.spawn(cmd, { cwd, stdio: ["ignore", "inherit", "pipe"] });
   running.add(child);
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -43,10 +50,17 @@ async function run(cmd: string[], { cwd, timeoutMs = ATTEMPT_TIMEOUT_MS }: Optio
     if (process.platform === "darwin") Bun.spawnSync(["sample", String(child.pid), "3", "-mayDie"]);
     child.kill("SIGKILL");
   }, timeoutMs);
+  // Pass stderr through, and keep it to find errors outside a test.
+  let stderr = "";
+  const decoder = new TextDecoder();
+  for await (const chunk of child.stderr) {
+    process.stderr.write(chunk);
+    stderr += decoder.decode(chunk, { stream: true });
+  }
   const code = await child.exited;
   clearTimeout(timer);
   running.delete(child);
-  return timedOut ? TIMED_OUT : code;
+  return { code: timedOut ? TIMED_OUT : code, stderr };
 }
 
 async function failedFiles(report: string): Promise<string[]> {
@@ -68,10 +82,14 @@ export async function testWithRetry(args: string[], options: Options = {}): Prom
   const report = join(reports, "initial.xml");
   const junit = (file: string) => ["--reporter=junit", `--reporter-outfile=${file}`];
 
-  const code = await run(["bun", "test", ...junit(report), ...args], options);
+  const { code, stderr } = await run(["bun", "test", ...junit(report), ...args], options);
   if (code === 0) return 0;
   // A partial report would hide the test that hung.
   if (code === TIMED_OUT) return code;
+  if (stderr.includes(ERROR_OUTSIDE_TEST)) {
+    console.error("::error::bun test reported an error outside a test, such as a file that failed to load; not retrying");
+    return code;
+  }
 
   const files = await failedFiles(report);
   if (files.length === 0) {
@@ -79,11 +97,11 @@ export async function testWithRetry(args: string[], options: Options = {}): Prom
     return code;
   }
   console.log(`Retrying ${files.length} failed file(s): ${files.join(" ")}`);
-  if (options.beforeRetry && (await run(["bash", options.beforeRetry], options)) !== 0) return code;
+  if (options.beforeRetry && (await run(["bash", options.beforeRetry], options)).code !== 0) return code;
 
   const flags = args.filter((arg) => arg.startsWith("-"));
   const paths = files.map((file) => `./${file}`);
-  return run(["bun", "test", ...junit(join(reports, "retry.xml")), ...flags, ...paths], options);
+  return (await run(["bun", "test", ...junit(join(reports, "retry.xml")), ...flags, ...paths], options)).code;
 }
 
 async function testWorkspaces(): Promise<number> {
