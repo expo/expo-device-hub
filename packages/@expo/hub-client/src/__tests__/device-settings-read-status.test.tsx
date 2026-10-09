@@ -62,7 +62,11 @@ function settingsServer() {
     iosSettings: {} as DeviceSettings,
     authReady: true,
     authRequests: 0,
+    streams: false,
+    endedSubscriptions: new Set<number>(),
   };
+  const writes: Array<{ device: string; option: string; value?: string }> = [];
+  const subscriptions: number[] = [];
   const controls = new Set<ServerWebSocket<SocketData>>();
   const pendingAuth = new Set<ServerWebSocket<SocketData>>();
   const activeSocketReads = new Set<ServerWebSocket<SocketData>>();
@@ -129,6 +133,11 @@ function settingsServer() {
           basePath: "/ios",
           proxyHelpers: true,
           execToken: "exec-token",
+          ...(state.streams ? {
+            metricsEndpoint: "/ios/metrics",
+            logsEndpoint: "/ios/logs",
+            eventLogEventsEndpoint: "/ios/events",
+          } : {}),
         });
         if (state.discovery === "error") return new Response(null, { status: 503 });
         if (state.discovery === "hold") {
@@ -191,7 +200,7 @@ function settingsServer() {
           token?: string;
           id?: number;
           sub?: number;
-          ui?: { device: string; option?: string };
+          ui?: { device: string; option?: string; value?: string };
         };
         if (message.token) {
           state.authRequests++;
@@ -199,8 +208,18 @@ function settingsServer() {
           else pendingAuth.add(socket);
         } else if (message.sub != null) {
           controls.add(socket);
+          subscriptions.push(message.sub);
+          if (state.endedSubscriptions.has(message.sub)) {
+            socket.send(JSON.stringify({ sub: message.sub, end: true }));
+          } else if (message.sub === 3) {
+            socket.send(JSON.stringify({ sub: 3, data: 'event: meta\ndata: {"hostCores":4}\n\n' }));
+          }
         } else if (message.ui && message.id != null) {
           if (message.ui.option) {
+            writes.push({ ...message.ui, option: message.ui.option });
+            if (message.ui.value) {
+              state.iosSettings[message.ui.option as keyof DeviceSettings] = message.ui.value;
+            }
             socket.send(JSON.stringify({ id: message.id, ok: true }));
             return;
           }
@@ -255,6 +274,8 @@ function settingsServer() {
   return {
     state,
     reads,
+    writes,
+    subscriptions,
     controls,
     execConnections: () => socketStarts.filter((path) => path === "/ios/exec-ws").length,
     async settleReads() {
@@ -289,6 +310,63 @@ function settingsServer() {
       }
     },
   };
+}
+
+for (const sub of [1, 2, 3, 4]) {
+  test(`iOS: ending subscription ${sub} retries only that stream without interrupting settings`, async () => {
+    const server = settingsServer();
+    server.state.mode = "ready";
+    server.state.streams = true;
+    server.state.iosSettings["liquid-glass"] = "tinted";
+    const mounted = await mountClient("ios", server.baseUrl("ios"));
+    await waitFor(
+      () => mounted.client().deviceSettingsStatus === "ready" && server.controls.size > 0,
+    );
+    if (sub === 1) await act(async () => mounted.client().attachLogs());
+    if (sub === 2) await act(async () => mounted.client().attachEvents());
+    await waitFor(() => server.subscriptions.includes(sub) && server.controls.size > 0);
+    await waitFor(() => mounted.client().activityStatus === "ready");
+    await act(async () => mounted.client().setDeviceSetting("liquid-glass", "clear"));
+    await waitFor(() => !mounted.client().deviceSettingsPending.has("liquid-glass"));
+    await server.settleReads();
+    const cached = mounted.client().deviceSettings;
+    const authRequests = server.state.authRequests;
+    const subscriptions = server.subscriptions.length;
+    server.state.endedSubscriptions.add(sub);
+    await act(async () => {
+      for (const socket of server.controls) socket.send(JSON.stringify({ sub, end: true }));
+      await yieldIO();
+    });
+    expect(mounted.client().deviceSettingsStatus).toBe("ready");
+    expect(mounted.client().deviceSettings).toBe(cached);
+    expect(mounted.client().activityStatus).toBe(sub === 3 ? "error" : "ready");
+    await advanceTime(1500);
+    await waitFor(() => server.subscriptions.length > subscriptions);
+    expect(server.subscriptions.slice(subscriptions)).toEqual([sub]);
+    const initialReads = server.reads.length;
+    await advanceTime(5000);
+    await waitFor(() => server.reads.length > initialReads);
+    await server.settleReads();
+    expect(mounted.client().deviceSettingsStatus).toBe("ready");
+    expect(mounted.client().deviceSettings?.["liquid-glass"]).toBe("clear");
+    expect(server.writes.filter((write) => write.option === "liquid-glass")).toEqual([
+      { device: "DEVICE-1", option: "liquid-glass", value: "clear" },
+    ]);
+    expect(server.state.authRequests - authRequests).toBe(server.reads.length - initialReads);
+    // An actual transport failure still requires authentication and a fresh read.
+    const readsBeforeDisconnect = server.reads.length;
+    server.state.endedSubscriptions.delete(sub);
+    await act(async () => {
+      for (const socket of server.controls) socket.close();
+    });
+    await waitFor(() => mounted.client().deviceSettingsStatus === "error");
+    expect(mounted.client().deviceSettings?.["liquid-glass"]).toBe("clear");
+    await advanceTime(1500);
+    await waitFor(() => mounted.client().deviceSettingsStatus === "ready");
+    await waitFor(() => mounted.client().activityStatus === "ready");
+    expect(server.reads).toHaveLength(readsBeforeDisconnect + 1);
+    expect(server.writes.filter((write) => write.option === "liquid-glass")).toHaveLength(1);
+  });
 }
 
 // setImmediate yields to real network I/O without advancing the fake clock.
