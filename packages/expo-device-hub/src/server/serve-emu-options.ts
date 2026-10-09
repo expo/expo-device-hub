@@ -43,6 +43,8 @@ export type StandaloneServeEmuOptions = {
   grpcImageMode?: GrpcImageMode;
   encoder?: GrpcEncoder;
   streamSettings: StandaloneServeEmuStreamSettings;
+  /** `--cors-origin`: pages that may call every route. A loopback page may read, but not change state. */
+  allowedOrigins?: string[];
 };
 
 function defaultServeEmuOptions(): StandaloneServeEmuOptions {
@@ -81,6 +83,9 @@ export function standaloneServeEmuOptions(options: CliOptions): StandaloneServeE
     streamMode: options.streamSource ?? DEFAULT_ANDROID_STREAM_SOURCE,
     grpcImageMode: options.grpcImageMode ?? DEFAULT_GRPC_IMAGE_MODE,
     encoder: options.encoder ?? DEFAULT_GRPC_ENCODER,
+    ...(options.corsOrigins && options.corsOrigins.length > 0
+      ? { allowedOrigins: options.corsOrigins }
+      : {}),
     streamSettings:
       options.transport === 'webrtc'
         ? {

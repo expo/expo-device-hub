@@ -82,6 +82,20 @@ the token can control the devices, so share a link only with people who may.
 Only the Hub itself may frame a gated page. To let another site embed it, pass
 `--frame-ancestor <origin>` once for each origin, for example `https://*.expo.dev`.
 
+### Allow another origin
+
+A page on another origin can show devices with `@expo/hub-client`. To let it read the Hub's
+responses and control the devices, pass `--cors-origin <origin>` once for each origin:
+
+```sh
+npx expo-device-hub --require-token --cors-origin https://example.com
+```
+
+The flag applies to iOS and Android, and takes the same values as serve-sim's `--cors-origin`:
+an `http` or `https` origin, or a subdomain wildcard such as `https://*.expo.dev`. A wildcard
+covers subdomains only, not `https://expo.dev` itself. With `--require-token`, the page also
+sends the token.
+
 ### Record an Android session
 
 Recording is opt-in and starts with the Hub, even when no browser viewer is connected.

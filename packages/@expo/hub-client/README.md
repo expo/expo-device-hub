@@ -191,15 +191,18 @@ The client sends the token as `Authorization: Bearer <token>`, as a `serve-sim.t
 WebSocket subprotocol, and as `?token=` only where a browser cannot set a header (the MJPEG
 `<img>`, `EventSource`).
 
-The token does not replace CORS, and the Hub has no option to allow other origins yet. So from
-another origin, only part of the client works today:
+The token does not replace CORS. Start the Hub with `--cors-origin` and the origin of your page,
+once for each origin:
 
-- **Android:** the H.264 stream and the input socket work from any origin. The Hub sets no
-  allowed origins for serve-emu, so the other requests fail, WebRTC included.
-- **iOS:** the client reads serve-sim's `/api` first, and serve-sim lets only loopback origins
-  read its responses. So the client works only from a loopback page, such as one on
-  `localhost`. There, logs, events, metrics, device settings, location, and app actions still
-  fail: they use serve-sim's control socket, which refuses every other origin.
+```sh
+npx expo-device-hub --require-token --cors-origin https://example.com
+```
+
+The flag applies to iOS and Android. Without it, only a page on a loopback origin, such as
+`http://localhost:5173`, can read the Hub's responses. For Android, the Hub must also listen on
+a loopback address. On that page, Android refuses HTTP requests that change device state, such
+as rotate, screenshot, and device settings. iOS refuses serve-sim's control socket, which carries
+logs, events, metrics, device settings, location, and app actions.
 
 ## Call device controls
 

@@ -2,6 +2,7 @@ import { parseArgs } from 'node:util';
 
 import { type WebRtcStreamCodec } from '@expo/serve-sim/state';
 
+import { isWildcardOrigin } from '../origin-match';
 import { parsePlatformFilter, type PlatformFilter } from '../../platform-filter';
 import {
   DEFAULT_TRANSPORT,
@@ -38,6 +39,9 @@ Options:
                              in the startup link. Use it whenever the Hub is reachable from the network.
       --frame-ancestor <origin> Allow this origin to embed the Hub in a frame (repeatable). Accepts a
                              subdomain wildcard, e.g. https://*.expo.dev. Only applies with --require-token.
+      --cors-origin <origin> Allow a page on this origin to use the iOS and Android backends with
+                             @expo/hub-client (repeatable). Accepts a subdomain wildcard, e.g.
+                             https://*.expo.dev, as serve-sim does.
       --platform <platform>  Show only iOS simulators or Android emulators (ios or android)
       --transport <transport> Preferred transport: ${TRANSPORTS.join(', ')} (default: ${DEFAULT_TRANSPORT})
       --webrtc-codec <codec> WebRTC video codec: ${WEBRTC_CODECS.join(', ')} (default: ${DEFAULT_WEBRTC_CODEC})
@@ -86,6 +90,8 @@ export type CliOptions = {
   requireToken?: boolean;
   /** Origins allowed to frame the Hub; serve-sim ignores them without `--require-token`, too. */
   frameAncestors?: string[];
+  /** Origins, or `*.` subdomain wildcards, whose pages may call serve-sim and serve-emu. */
+  corsOrigins?: string[];
   androidRecordingDirectory?: string;
   help: boolean;
 };
@@ -135,6 +141,32 @@ function parseIceUrls(
   return urls;
 }
 
+// `scheme://host[:port]` and an optional final slash, checked on the raw text: the URL parser
+// would drop `/a/..`, an empty `?` or `#`, and an empty `@` without a trace, and decode `%2A` to
+// a `*`. The host may start with serve-sim's `*.` wildcard label, and has no other `*`.
+const ORIGIN_SHAPE = /^https?:\/\/(?:\*\.)?[^/?#@\\*%\x00-\x20\x7f]+\/?$/i;
+
+/**
+ * An `http(s)` origin, or a subdomain wildcard such as `https://*.expo.dev`: the values serve-sim's
+ * `--cors-origin` matches, which both backends match the same way. Anything beyond the origin is
+ * refused, not dropped: `https://a.example@b.example` names b.example, and a path would allow the
+ * whole site without saying so. So is a wildcard that serve-sim would ignore, such as `*.com`.
+ */
+function parseCorsOrigin(value: string): string {
+  let url: URL | undefined;
+  if (ORIGIN_SHAPE.test(value)) {
+    try {
+      url = new URL(value);
+    } catch {}
+  }
+  if (!url || (url.hostname.startsWith('*') && !isWildcardOrigin(url.href))) {
+    throw new Error(
+      `Invalid --cors-origin: ${value} (expected an http(s) origin, such as https://example.com, or a subdomain wildcard, such as https://*.expo.dev)\n\n${HELP}`
+    );
+  }
+  return url.origin;
+}
+
 export function parseCliOptions(args: string[]): CliOptions {
   let values: {
     port?: string;
@@ -159,6 +191,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     'hide-boot-device': boolean;
     'require-token': boolean;
     'frame-ancestor': string[];
+    'cors-origin': string[];
     'android-recording-directory'?: string;
     help: boolean;
   };
@@ -191,6 +224,7 @@ export function parseCliOptions(args: string[]): CliOptions {
         'hide-boot-device': { type: 'boolean', default: false },
         'require-token': { type: 'boolean', default: false },
         'frame-ancestor': { type: 'string', multiple: true, default: [] },
+        'cors-origin': { type: 'string', multiple: true, default: [] },
         'android-recording-directory': { type: 'string' },
         help: { type: 'boolean', short: 'h', default: false },
       },
@@ -310,6 +344,7 @@ export function parseCliOptions(args: string[]): CliOptions {
   if (webrtcIcePolicy === 'relay' && turnUrls === undefined) {
     throw new Error(`--webrtc-ice-policy relay requires --turn-url.\n\n${HELP}`);
   }
+  const corsOrigins = values['cors-origin'].map(parseCorsOrigin);
 
   return {
     port,
@@ -334,6 +369,7 @@ export function parseCliOptions(args: string[]): CliOptions {
     hideBootDevice: values['hide-boot-device'],
     requireToken: values['require-token'],
     frameAncestors: values['frame-ancestor'],
+    corsOrigins,
     ...(androidRecordingDirectory !== undefined ? { androidRecordingDirectory } : {}),
     help: false,
   };

@@ -7,6 +7,8 @@ export const SERVE_SIM_OPTIONS_ENV = 'EXPO_DEVICE_HUB_SERVE_SIM_OPTIONS';
 export type StandaloneServeSimOptions = {
   streamSettings?: StreamSettings;
   metricsCorsOrigins?: string[];
+  /** `--cors-origin`: pages that may call serve-sim. Only these, not loopback, may use its control socket. */
+  corsOrigins?: string[];
   /** Without the session token, serve-sim allows network capture only on a loopback host. */
   loopbackOnly?: boolean;
 };
@@ -58,6 +60,9 @@ export function standaloneServeSimOptions(options: CliOptions): StandaloneServeS
     ...(streamSettings ? { streamSettings } : {}),
     ...(options.metricsCorsOrigins && options.metricsCorsOrigins.length > 0
       ? { metricsCorsOrigins: options.metricsCorsOrigins }
+      : {}),
+    ...(options.corsOrigins && options.corsOrigins.length > 0
+      ? { corsOrigins: options.corsOrigins }
       : {}),
   };
 }
