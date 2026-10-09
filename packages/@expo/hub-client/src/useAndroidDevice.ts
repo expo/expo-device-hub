@@ -121,7 +121,7 @@ const FOREGROUND_POLL_MS = 5000;
 const EVENTS_POLL_MS = 1000;
 const STREAM_METADATA_POLL_MS = 1500;
 const STREAM_OPTIONS_POLL_MS = 3000;
-const DEVICE_SETTINGS_POLL_MS = 3000;
+const DEVICE_SETTINGS_POLL_MS = 5000;
 // Match serve-sim's UI request deadline so an unreachable endpoint cannot hold the initial read.
 const DEVICE_SETTINGS_READ_TIMEOUT_MS = 5000;
 
@@ -1819,6 +1819,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   // ── Device options (best-effort) ──
   // Keep Hub in sync with changes made on-device or through serve-emu's own UI.
   // Polling also makes network's aggregate wifi/data state authoritative.
+  // TODO: Replace per-client polling with server-pushed settings changes over WebSocket.
   const deviceSettingsScope =
     active && baseUrl ? JSON.stringify([baseUrl, targetDevice, token]) : null;
   const { deviceSettingsStatus, resetRead, settleRead } =
@@ -1840,12 +1841,19 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
 
     let cancelled = false;
     let polling = false;
+    let refreshQueued = false;
+    let revision = 0;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     let controllers: AbortController[] = [];
     const scope = deviceScope;
+    const pageDocument = typeof document === 'undefined' ? null : document;
+    const isHidden = () => pageDocument?.hidden === true;
+    const clearTimer = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = null;
+    };
 
-    const poll = async () => {
-      if (cancelled || polling) return;
-      polling = true;
+    const read = async (readRevision: number) => {
       const nextControllers: AbortController[] = [];
       controllers = nextControllers;
       const results = await Promise.all(
@@ -1883,8 +1891,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
           }
         }),
       );
-      polling = false;
-      if (cancelled || deviceScopeRef.current !== scope) return;
+      if (cancelled || deviceScopeRef.current !== scope || readRevision !== revision) return;
       if (!results.some((result) => result.handled)) {
         settleRead('error');
         return;
@@ -1932,6 +1939,35 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
     };
 
+    const poll = async () => {
+      if (cancelled || isHidden()) return;
+      const readRevision = ++revision;
+      if (polling) {
+        refreshQueued = true;
+        return;
+      }
+      clearTimer();
+      refreshQueued = false;
+      polling = true;
+      try {
+        await read(readRevision);
+      } finally {
+        polling = false;
+        if (!cancelled && !isHidden()) {
+          if (refreshQueued) void poll();
+          else refreshTimer = setTimeout(() => void poll(), DEVICE_SETTINGS_POLL_MS);
+        }
+      }
+    };
+    const onVisibilityChange = () => {
+      if (isHidden()) {
+        refreshQueued = false;
+        clearTimer();
+      } else {
+        void poll();
+      }
+    };
+    pageDocument?.addEventListener('visibilitychange', onVisibilityChange);
     void poll();
     // Read once: an emulator's hardware keyboard does not come and go, and the
     // settings poll already spawns one adb read per key every few seconds.
@@ -1948,15 +1984,10 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
         }
       })
       .catch(() => {});
-    const timer = setInterval(
-      // TODO: unify these per-setting HTTP reads with iOS's bulk settings/refresh contract when
-      // serve-emu exposes it. Preserve the existing external-change polling until then.
-      () => void poll(),
-      DEVICE_SETTINGS_POLL_MS,
-    );
     return () => {
       cancelled = true;
-      clearInterval(timer);
+      clearTimer();
+      pageDocument?.removeEventListener('visibilitychange', onVisibilityChange);
       for (const controller of controllers) controller.abort();
       tracker.reset();
     };

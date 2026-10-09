@@ -110,6 +110,8 @@ import {
 
 const MAX_LOGS = 200;
 const RECONNECT_MS = 1500;
+const DEVICE_SETTINGS_POLL_MS = 5000;
+const DEVICE_SETTINGS_RETRY_MAX_MS = 30_000;
 // serve-sim accepts the upgrade before it admits an input socket, then closes
 // a refused socket at once. On a server without an admission frame, an open
 // socket that outlives this was admitted.
@@ -323,7 +325,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     useDeviceSettingsReadStatus(deviceSettingsScope);
   const deviceSettingsReadRef = useRef<{
     invalidate: () => void;
-    refresh: () => void;
+    resume: () => void;
   } | null>(null);
   const deviceSettingVersionsRef = useRef(new Map<DeviceSettingKey, number>());
 
@@ -1298,10 +1300,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     let ws: WebSocket | null = null;
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const buffers = new Map<number, string>();
-    let reconnecting = false;
-
     const markInterrupted = () => {
-      reconnecting = true;
       deviceSettingsReadRef.current?.invalidate();
       settleRead('error');
       if (metricsPath) {
@@ -1387,10 +1386,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           return;
         }
         if (msg.ready) {
-          if (reconnecting) {
-            reconnecting = false;
-            deviceSettingsReadRef.current?.refresh();
-          }
+          deviceSettingsReadRef.current?.resume();
           for (const [sub, path] of paths) {
             ws?.send(JSON.stringify({ sub, path }));
           }
@@ -1433,6 +1429,8 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     return () => {
       cancelled = true;
       configUpdatesReadyRef.current = false;
+      // Pause reads until the replacement control socket authenticates.
+      deviceSettingsReadRef.current?.invalidate();
       if (retryTimer) clearTimeout(retryTimer);
       try {
         ws?.close();
@@ -1452,8 +1450,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     settleRead,
   ]);
 
-  // One bulk read hydrates the controls. Retry failures and refresh on control reconnect;
-  // a healthy connection needs no extra polling, and video state does not gate settings.
+  // Bulk reads hydrate the controls and track changes made inside the simulator.
+  // Wait between completed reads; hidden tabs and interrupted control sockets pause polling.
+  // TODO: Replace per-client polling with server-pushed settings changes over WebSocket.
   useEffect(() => {
     const tracker = deviceSettingWriteTrackerRef.current;
     tracker.reset();
@@ -1467,26 +1466,38 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       return;
     }
     let cancelled = false;
+    let interrupted = false;
     let reading = false;
     let revision = 0;
     let refreshQueued = false;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let retryDelay = RECONNECT_MS;
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
+    const pageDocument = typeof document === 'undefined' ? null : document;
+    const isHidden = () => pageDocument?.hidden === true;
+    const clearTimer = () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = null;
+    };
+    const scheduleRefresh = (delay: number) => {
+      clearTimer();
+      if (cancelled || interrupted || isHidden()) return;
+      refreshTimer = setTimeout(() => void refresh(), delay);
+    };
     const invalidate = () => {
+      interrupted = true;
       revision++;
       refreshQueued = false;
-      if (retryTimer) clearTimeout(retryTimer);
-      retryTimer = null;
+      clearTimer();
     };
     const refresh = async () => {
-      if (cancelled) return;
+      if (cancelled || interrupted || isHidden()) return;
       const readRevision = ++revision;
       if (reading) {
         refreshQueued = true;
         return;
       }
       refreshQueued = false;
-      if (retryTimer) clearTimeout(retryTimer);
-      retryTimer = null;
+      clearTimer();
       reading = true;
       const versions = new Map(deviceSettingVersionsRef.current);
       const pendingAtStart = tracker.pending;
@@ -1527,10 +1538,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (keyboardValue === 'on' || keyboardValue === 'off') {
           setHardwareKeyboardConnectedState((prev) => prev ?? keyboardValue === 'on');
         }
+        retryDelay = RECONNECT_MS;
+        scheduleRefresh(DEVICE_SETTINGS_POLL_MS);
       } catch {
         if (!cancelled && readRevision === revision) {
           settleRead('error');
-          retryTimer = setTimeout(() => void refresh(), RECONNECT_MS);
+          scheduleRefresh(retryDelay);
+          retryDelay = Math.min(retryDelay * 2, DEVICE_SETTINGS_RETRY_MAX_MS);
         }
       } finally {
         reading = false;
@@ -1538,11 +1552,30 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (!cancelled && refreshQueued) void refresh();
       }
     };
-    deviceSettingsReadRef.current = { invalidate, refresh: () => void refresh() };
+    const onVisibilityChange = () => {
+      if (isHidden()) {
+        refreshQueued = false;
+        clearTimer();
+      } else {
+        retryDelay = RECONNECT_MS;
+        void refresh();
+      }
+    };
+    deviceSettingsReadRef.current = {
+      invalidate,
+      resume: () => {
+        if (!interrupted) return;
+        interrupted = false;
+        retryDelay = RECONNECT_MS;
+        void refresh();
+      },
+    };
+    pageDocument?.addEventListener('visibilitychange', onVisibilityChange);
     void refresh();
     return () => {
       cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
+      clearTimer();
+      pageDocument?.removeEventListener('visibilitychange', onVisibilityChange);
       deviceSettingsReadRef.current = null;
     };
   }, [execWsUrl, execToken, deviceUdid, socketProtocols, resetRead, settleRead]);
