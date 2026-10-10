@@ -28,6 +28,10 @@ import {
   type NativeUnsubscribe,
 } from "./native";
 import { isSoftwareKeyboardVisible } from "./ax";
+import { MAX_PASTEBOARD_TEXT_BYTES, withSimPasteboardLock } from "./sim-pasteboard";
+import { isLiftedModifier, KEY_V, simCommandShortcutHidEvents } from "./sim-command-shortcut";
+import { pasteTextIntoSim } from "./sim-pasteboard-paste";
+import { EXEC_WS_MAX_MESSAGE_BYTES } from "./socket/control-utils";
 import { debugKeyboard } from "./debug";
 import { isHingeAngle, type HingeAngleResult } from "./hinge-angle";
 import { validatePanelRoute } from "./panel-route";
@@ -1391,6 +1395,49 @@ export class DeviceSession {
         }
         break;
       }
+      case 0x12: {
+        // The browser refuses larger requests itself; don't parse one from a direct client.
+        const m = data.length - 1 > EXEC_WS_MAX_MESSAGE_BYTES ? null : json<{ requestId: unknown; text: unknown }>();
+        const requestId = m?.requestId;
+        let ok = false;
+        let cleanupWarning: string | null = null;
+        if (m && typeof requestId === "number" && Number.isSafeInteger(requestId) && requestId > 0 &&
+          (m.text === undefined || (typeof m.text === "string" && Buffer.byteLength(m.text, "utf8") <= MAX_PASTEBOARD_TEXT_BYTES))) {
+          const text = m.text;
+          // @ref LLP 0010#paste — Paste takes its turn in the input queue every viewer shares when it
+          // arrives, then holds the pasteboard lock through the write and the chord, so it stays in
+          // order with earlier and later input. Paste is not an ordered message, so a viewer that
+          // leaves while it waits does not hold up input cleanup.
+          const sendShortcut = async () => {
+            // A viewer that left while its write waited does not get its chord.
+            if (!this.hidSockets.has(ws) || this.detachedHidSockets.has(ws)) {
+              throw new Error("Clipboard viewer disconnected");
+            }
+            cleanupWarning = await this.sendPasteShortcut(ws);
+          };
+          try {
+            if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+            const operation = this.queueInputOperation(ws, async () => {
+              if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+              if (typeof text === "string") await pasteTextIntoSim(this.udid, text, sendShortcut);
+              else await withSimPasteboardLock(this.udid, sendShortcut);
+            });
+            if (!operation) throw new Error("Clipboard viewer disconnected");
+            await operation;
+            ok = true;
+          } catch (error) {
+            console.error(`[serve-sim] Could not paste into simulator ${this.udid}:`, error);
+          }
+        }
+        if (this.hidSockets.has(ws)) {
+          const reply = ok
+            ? { requestId, ok, ...(cleanupWarning ? { cleanupWarning } : {}) }
+            : { requestId, ok, error: "Could not paste into the simulator" };
+          try { ws.send(Buffer.concat([Buffer.from([0x92]), Buffer.from(JSON.stringify(reply))])); }
+          catch {}
+        }
+        break;
+      }
     }
   }
 
@@ -1459,27 +1506,86 @@ export class DeviceSession {
     return axTypeKeyboardCharacterAsync(this.udid, character).catch(() => false);
   }
 
-  private async updateHidKey(ws: HidSocket, type: "down" | "up", usage: number): Promise<void> {
+  /** Press Command+V for one viewer's paste; see `sendCommandShortcut`. */
+  private sendPasteShortcut(ws: HidSocket): Promise<string | null> {
+    return this.sendCommandShortcut(KEY_V, ws);
+  }
+
+  // Lift held Control, Shift, and Option, whichever viewer holds them, without changing ownership,
+  // then restore them. A held Command serves the chord. Keep a held shortcut key lifted after a
+  // successful chord so restoring it does not type the letter again.
+  private async sendCommandShortcut(shortcutKey: typeof KEY_V, ws: HidSocket): Promise<string | null> {
+    if (!this.hidSockets.has(ws)) throw new Error("Clipboard viewer disconnected");
+    const pressedAtSimulator = new Set(this.activeHidKeyUsageCounts.keys());
+    const shortcutKeyHeld = pressedAtSimulator.has(shortcutKey);
+    const liftedModifiers = new Set<number>();
+    const ownedKeysDown = new Set<number>();
+    let shortcutKeyReleased = false;
+    let cleanupFailed = false;
+    let liftedShortcutKey = false;
+    let shortcutKeyPressed = false;
+    try {
+      if (shortcutKeyHeld) {
+        await this.hid.keyChecked("up", shortcutKey);
+        liftedShortcutKey = true;
+      }
+      for (const event of simCommandShortcutHidEvents(pressedAtSimulator, shortcutKey)) {
+        if (event.type === "up") await new Promise((resolve) => setTimeout(resolve, 30));
+        if (!shortcutKeyReleased && this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+        try {
+          if (isLiftedModifier(event.usage)) {
+            await this.hid.keyChecked(event.type, event.usage);
+            if (event.type === "up") liftedModifiers.add(event.usage);
+            else liftedModifiers.delete(event.usage);
+          } else if (shortcutKeyHeld && event.usage === shortcutKey) {
+            await this.hid.keyChecked(event.type, event.usage);
+            shortcutKeyPressed = event.type === "down";
+          } else {
+            await this.updateHidKey(ws, event.type, event.usage, true);
+            if (event.type === "down") ownedKeysDown.add(event.usage);
+            else ownedKeysDown.delete(event.usage);
+          }
+        } catch (error) {
+          // The shortcut key was released, so the app may have acted already. Retry cleanup
+          // below and report any remaining held key separately from the shortcut result.
+          if (!shortcutKeyReleased) throw error;
+        }
+        if (event.type === "up" && event.usage === shortcutKey) shortcutKeyReleased = true;
+      }
+    } finally {
+      // A failed chord must not leave its own keys down or another viewer's modifier up.
+      for (const usage of ownedKeysDown) await this.updateHidKey(ws, "up", usage, true).catch(() => { cleanupFailed = true; });
+      for (const usage of liftedModifiers) await this.hid.keyChecked("down", usage).catch(() => { cleanupFailed = true; });
+      if (liftedShortcutKey && !shortcutKeyReleased && !shortcutKeyPressed) {
+        await this.hid.keyChecked("down", shortcutKey).catch(() => { cleanupFailed = true; });
+      }
+    }
+    return cleanupFailed ? "A simulator key may still be held. Release it or reconnect input." : null;
+  }
+
+  private async updateHidKey(ws: HidSocket, type: "down" | "up", usage: number, checked = false): Promise<void> {
     const socketUsages = this.activeHidKeyUsages.get(ws);
     if (!socketUsages) return;
+    const key = (phase: "down" | "up") => checked ? this.hid.keyChecked(phase, usage) : this.hid.key(phase, usage);
     const owners = this.activeHidKeyUsageCounts.get(usage) ?? 0;
     if (type === "down") {
       if (socketUsages.has(usage)) {
-        await this.hid.key("down", usage);
+        await key("down");
         return;
       }
-      if (owners === 0) await this.hid.key("down", usage);
+      if (owners === 0) await key("down");
       socketUsages.add(usage);
       this.activeHidKeyUsageCounts.set(usage, owners + 1);
       return;
     }
-    if (!socketUsages.delete(usage)) return;
+    if (!socketUsages.has(usage)) return;
     if (owners <= 1) {
+      await key("up");
       this.activeHidKeyUsageCounts.delete(usage);
-      await this.hid.key("up", usage);
     } else {
       this.activeHidKeyUsageCounts.set(usage, owners - 1);
     }
+    socketUsages.delete(usage);
   }
 
   private queueInputOperation(ws: HidSocket, run: () => Promise<void>): Promise<void> | null {

@@ -25,6 +25,11 @@
   [self.window makeKeyAndVisible];
   return YES;
 }
+
+- (void)applicationDidBecomeActive:(UIApplication *)application {
+  (void)application;
+  [self.textView becomeFirstResponder];
+}
 @end
 
 int main(int argc, char *argv[]) {

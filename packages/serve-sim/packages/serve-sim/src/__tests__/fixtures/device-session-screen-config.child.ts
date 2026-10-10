@@ -21,9 +21,15 @@ let physicalOrientationSupported = false;
 let physicalOrientationSupportGate: Promise<void> | undefined;
 let nativeHingeState: { hingeAngle?: number; physicalOrientation?: string; tableMode?: boolean } = {};
 let inputSetupError: Error | undefined;
+let failInputAfterPasteKeyUp = false;
 let touchError: Error | undefined;
 const inputCalls: string[] = [];
 const keyEvents: { type: string; usage: number }[] = [];
+const pasteWrites: string[] = [];
+const pastedTexts: string[] = [];
+let clipboardText = "";
+let pasteGate: Promise<void> | undefined;
+let pasteboardLock: Promise<unknown> = Promise.resolve();
 const touchEvents: { kind: string; args: unknown[] }[] = [];
 const scrollEvents: unknown[][] = [];
 const scrollOperations: string[] = [];
@@ -64,6 +70,12 @@ const addon = {
     async key(type: string, usage: number) {
       inputCalls.push("key");
       keyEvents.push({ type, usage });
+      if (type === "down" && usage === 0x19) pastedTexts.push(clipboardText);
+      if (type === "up" && usage === 0x19 && failInputAfterPasteKeyUp) {
+        failInputAfterPasteKeyUp = false;
+        inputSetupError = new Error("Digitizer symbols unavailable");
+        await (session as unknown as { hid: InstanceType<typeof NativeHid> }).hid.setScreen(3);
+      }
     }
     async scroll(...args: unknown[]) {
       inputCalls.push("scroll");
@@ -202,6 +214,20 @@ mock.module("../../ui-settings", () => ({
   },
 }));
 
+// Serialized like the real per-device pasteboard lock.
+mock.module("../../sim-pasteboard-paste", () => ({
+  pasteTextIntoSim: (_udid: string, text: string, sendPasteShortcut: () => Promise<unknown>) => {
+    const paste = pasteboardLock.then(async () => {
+      pasteWrites.push(text);
+      clipboardText = text;
+      await pasteGate;
+      return sendPasteShortcut();
+    });
+    pasteboardLock = paste.catch(() => {});
+    return paste;
+  },
+}));
+
 const { DeviceSession } = await import("../../device-session");
 let session: InstanceType<typeof DeviceSession> | undefined;
 let server: Server | undefined;
@@ -211,9 +237,15 @@ let errorLog: ReturnType<typeof spyOn<typeof console, "error">> | undefined;
 
 beforeEach(() => {
   inputSetupError = undefined;
+  failInputAfterPasteKeyUp = false;
   touchError = undefined;
   inputCalls.length = 0;
   keyEvents.length = 0;
+  pasteWrites.length = 0;
+  pastedTexts.length = 0;
+  clipboardText = "";
+  pasteGate = undefined;
+  pasteboardLock = Promise.resolve();
   axCharacters.length = 0;
   axFailures = 0;
   touchEvents.length = 0;
@@ -291,6 +323,7 @@ async function start(
   const admissions: Buffer[] = [];
   const hingeResults: Record<string, unknown>[] = [];
   const controlResults: Record<string, unknown>[] = [];
+  const pasteResults: Array<{ requestId: number; ok: boolean; cleanupWarning?: string }> = [];
   ws = new WebSocket(`ws://127.0.0.1:${address.port}`);
   ws.on("message", (data) => {
     const buffer = Buffer.from(data as Buffer);
@@ -298,9 +331,10 @@ async function start(
     if (buffer[0] === 0x83) admissions.push(buffer);
     if (buffer[0] === 0x90) controlResults.push(JSON.parse(buffer.subarray(1).toString()));
     if (buffer[0] === 0x8f) hingeResults.push(JSON.parse(buffer.subarray(1).toString()));
+    if (buffer[0] === 0x92) pasteResults.push(JSON.parse(buffer.subarray(1).toString()));
   });
   await new Promise<void>((resolve, reject) => { ws!.once("open", resolve); ws!.once("error", reject); });
-  return { configs, admissions, hingeResults, controlResults, url: `http://127.0.0.1:${address.port}` };
+  return { configs, admissions, hingeResults, controlResults, pasteResults, url: `http://127.0.0.1:${address.port}` };
 }
 
 afterEach(async () => {
@@ -374,6 +408,133 @@ describe("native input failure isolation", () => {
     expect(routedScreens).toEqual([1, 3]);
     expect(errorLog).toHaveBeenCalledTimes(1);
     expect(errorLog.mock.calls.flat().join(" ")).toContain("touch ignored bad input");
+  });
+});
+
+describe("clipboard paste input", () => {
+  const sendTo = (socket: WebSocket, requestId: number, text: string) => socket.send(Buffer.concat([
+    Buffer.from([0x12]), Buffer.from(JSON.stringify({ requestId, text })),
+  ]));
+
+  test("keeps each viewer's pasteboard write with its acknowledged shortcut", async () => {
+    const { url, pasteResults: replies } = await start({ width: 1170, height: 2532 });
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    second.on("message", (data) => {
+      const frame = Buffer.from(data as Buffer);
+      if (frame[0] === 0x92) replies.push(JSON.parse(frame.subarray(1).toString()));
+    });
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    let releaseFirst!: () => void;
+    pasteGate = new Promise<void>((resolve) => { releaseFirst = resolve; });
+    try {
+      sendTo(ws!, 1, "alpha");
+      await waitUntil(() => pasteWrites.length === 1);
+      sendTo(second, 2, "beta");
+      await Bun.sleep(20);
+      expect(pasteWrites).toEqual(["alpha"]);
+      releaseFirst();
+      await waitUntil(() => replies.length === 2);
+      expect(replies).toEqual([{ requestId: 1, ok: true }, { requestId: 2, ok: true }]);
+      expect(pasteWrites).toEqual(["alpha", "beta"]);
+      expect(pastedTexts).toEqual(["alpha", "beta"]);
+    } finally {
+      releaseFirst();
+      second.terminate();
+    }
+  });
+
+  test("rejects paste when native input setup has failed", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const { pasteResults: replies } = await start({ width: 1170, height: 2532 }, false, new Error("Digitizer symbols unavailable"));
+    sendTo(ws!, 1, "hello");
+    await waitUntil(() => replies.length === 1);
+    expect(replies).toMatchObject([{ requestId: 1, ok: false }]);
+    expect(pasteWrites).toEqual([]);
+    expect(pastedTexts).toEqual([]);
+  });
+
+  test("holds other viewers' input until the paste chord is done", async () => {
+    const { url, pasteResults: replies } = await start({ width: 1170, height: 2532 });
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    let release!: () => void;
+    pasteGate = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      sendTo(ws!, 1, "alpha");
+      await waitUntil(() => pasteWrites.length === 1);
+      second.send(Buffer.concat([Buffer.from([0x06]), Buffer.from(JSON.stringify({ type: "down", usage: 4 }))]));
+      await Bun.sleep(50);
+      expect(keyEvents.some((event) => event.type === "down" && event.usage === 4)).toBe(false);
+      release();
+      await waitUntil(() => replies.length === 1);
+      expect(replies).toEqual([{ requestId: 1, ok: true }]);
+      expect(pastedTexts).toEqual(["alpha"]);
+      await waitUntil(() => keyEvents.some((event) => event.type === "down" && event.usage === 4));
+    } finally {
+      release();
+      second.terminate();
+    }
+  });
+
+  test("drops the shortcut of a viewer that leaves while its pasteboard write waits", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const { url } = await start({ width: 1170, height: 2532 });
+    const second = new WebSocket(url.replace("http:", "ws:"));
+    await new Promise<void>((resolve, reject) => {
+      second.once("open", resolve);
+      second.once("error", reject);
+    });
+    let release!: () => void;
+    pasteGate = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      sendTo(second, 1, "alpha");
+      await waitUntil(() => pasteWrites.length === 1);
+      second.terminate();
+      await Bun.sleep(50);
+      ws!.send(Buffer.concat([Buffer.from([0x06]), Buffer.from(JSON.stringify({ type: "down", usage: 4 }))]));
+      release();
+      await waitUntil(() => keyEvents.some((event) => event.type === "down" && event.usage === 4));
+      await waitUntil(() => errorLog!.mock.calls.length > 0);
+      expect(pastedTexts).toEqual([]);
+    } finally {
+      release();
+    }
+  });
+
+  test("rejects paste when native input fails before the shortcut", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const { pasteResults: replies } = await start({ width: 1170, height: 2532 });
+    let release!: () => void;
+    pasteGate = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      sendTo(ws!, 1, "hello");
+      await waitUntil(() => pasteWrites.length === 1);
+      inputSetupError = new Error("Digitizer symbols unavailable");
+      await (session as unknown as { hid: InstanceType<typeof NativeHid> }).hid.setScreen(3);
+      release();
+      await waitUntil(() => replies.length === 1);
+      expect(replies).toMatchObject([{ requestId: 1, ok: false }]);
+      expect(pastedTexts).toEqual([]);
+    } finally {
+      release();
+    }
+  });
+
+  test("acknowledges paste already delivered before native input fails", async () => {
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const { pasteResults: replies } = await start({ width: 1170, height: 2532 });
+    failInputAfterPasteKeyUp = true;
+    sendTo(ws!, 1, "hello");
+    await waitUntil(() => replies.length === 1);
+    expect(replies).toMatchObject([{ requestId: 1, ok: true }]);
+    expect(replies[0]?.cleanupWarning).toContain("key may still be held");
+    expect(pastedTexts).toEqual(["hello"]);
   });
 });
 

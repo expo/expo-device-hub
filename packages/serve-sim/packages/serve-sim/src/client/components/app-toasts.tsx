@@ -1,4 +1,7 @@
+import { useEffect, useRef, useState } from "react";
 import { Toaster, toast } from "sonner";
+import type { ClipboardToast } from "../hooks/use-clipboard-toast";
+import { useCoarsePointer } from "../hooks/use-coarse-pointer";
 import type { UploadToast } from "../hooks/use-upload-toasts";
 
 const INPUT_SOCKET_ERROR_TOAST_ID = "simulator-input-error";
@@ -112,6 +115,92 @@ export function ShareLinkToastContent({ toast }: { toast: ShareLinkToast }) {
           ? "The link includes the access token. Anyone who has it can control this simulator."
           : "Anyone who can reach this address can open it."}
       </span>
+    </div>
+  );
+}
+
+export function pasteFieldHint(coarsePointer: boolean): string {
+  return coarsePointer ? "Long-press and paste" : "Press ⌘V or Ctrl+V to paste";
+}
+
+function PasteField({ message, onSubmit }: { message: string; onSubmit: (text: string) => void }) {
+  const [text, setText] = useState("");
+  const coarsePointer = useCoarsePointer();
+  const field = useRef<HTMLTextAreaElement>(null);
+  // Preact renders autoFocus as the autofocus attribute, which browsers ignore after page load.
+  useEffect(() => field.current?.focus(), []);
+  return (
+    <form
+      className="flex flex-col gap-1.5 flex-1 min-w-0"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (text) onSubmit(text);
+      }}
+    >
+      <span className="break-words whitespace-normal">{message}</span>
+      <div className="flex items-end gap-2 min-w-0">
+        {/* A textarea keeps pasted line breaks; an input would strip them. */}
+        <textarea
+          ref={field}
+          data-suspend-keyboard-capture
+          rows={2}
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              event.currentTarget.form?.requestSubmit();
+            }
+          }}
+          placeholder={pasteFieldHint(coarsePointer)}
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
+          aria-label="Text to paste into the simulator"
+          className="flex-1 min-w-0 max-h-24 resize-none px-2 py-1 rounded bg-black/40 border border-white/15 text-white/90 text-[12px] outline-none focus:border-white/35"
+        />
+        <button
+          type="submit"
+          disabled={!text}
+          className="shrink-0 px-2 py-0.5 rounded border border-white/20 text-white/90 hover:bg-white/10 disabled:opacity-40"
+        >
+          Send
+        </button>
+      </div>
+    </form>
+  );
+}
+
+export function ClipboardToastContent({
+  toast,
+  onPaste,
+}: {
+  toast: ClipboardToast;
+  onPaste?: (text: string) => void;
+}) {
+  const pending = toast.status === "pending";
+  const dotColor = pending || toast.status === "paste"
+    ? "#a5b4fc"
+    : toast.status === "success"
+      ? "#4ade80"
+      : "#f87171";
+
+  return (
+    <div
+      data-testid="clipboard-toast"
+      className={`flex w-[min(320px,calc(100vw-32px))] items-center gap-2 px-3 py-2 bg-panel border border-white/12 rounded-lg text-white/90 text-[12px] font-mono shadow-[0_8px_24px_rgba(0,0,0,0.45)] ${toast.status === "error" ? "select-text cursor-text" : "select-none cursor-default"}`}
+    >
+      <span
+        className={`size-1.5 rounded-full shrink-0 ${pending ? "animate-pulse" : ""}`}
+        style={{ background: dotColor }}
+      />
+      {toast.status === "paste" && onPaste ? (
+        <PasteField message={toast.message} onSubmit={onPaste} />
+      ) : (
+        <span className="min-w-0 flex-1 break-words whitespace-normal">
+          {toast.message}
+        </span>
+      )}
     </div>
   );
 }

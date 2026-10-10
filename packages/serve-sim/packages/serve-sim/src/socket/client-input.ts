@@ -1,4 +1,4 @@
-import { flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage } from "./send-queue";
+import { trySendEncodedWsMessage, flushWsMessageQueue, sendOrQueueWsMessage, trySendWsMessage, type QueuedWsMessage } from "./send-queue";
 import { WS_MSG_INPUT_ADMITTED, WS_REASON_INPUT_UNAVAILABLE } from "./input-protocol";
 
 type InputSocketHandlers = {
@@ -103,6 +103,11 @@ export function createInputSocket(
   };
 
   return {
+    get connection(): object | null { return admitted ? socket : null; },
+    get transport(): object | null { return socket; },
+    trySendEncoded(message: Uint8Array<ArrayBuffer>) {
+      return admitted && trySendEncodedWsMessage(socket, message);
+    },
     send(tag: number, payload: object) {
       // New helpers require admission; legacy helpers keep their prior open behavior.
       pendingMessages = sendOrQueueWsMessage(admitted ? socket : null, pendingMessages, tag, payload);
