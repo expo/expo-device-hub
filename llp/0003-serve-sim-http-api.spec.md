@@ -232,8 +232,11 @@ The standalone preview and HubClient advance Rotate from requested poses, so
 rapid clicks or an app-declined pose do not repeat the same request. They ignore
 mismatched orientation readback for up to 1,500 ms after the latest request;
 its acknowledgement releases that protection early. Only orientation changes
-update the cursor, and HubClient resets it when the helper or capture session
-changes. The displayed screen remains server-owned
+update the cursor; HubClient also reconciles a repeated changed readback that it
+deferred during the grace period once protection expires. An unchanged,
+previously reconciled pose does not reset an app-declined request. HubClient
+resets the cursor when the helper or capture session changes. The displayed
+screen remains server-owned
 [observed: `src/client/simulator/rotation-cursor.ts`, `packages/@expo/hub-client/src/rotation-cursor.ts` and `useIosDevice.ts`].
 
 HubClient advances its cursor only after the browser socket's `send` returns.
