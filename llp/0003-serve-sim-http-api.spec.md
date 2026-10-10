@@ -236,6 +236,17 @@ update the cursor, and HubClient resets it when the helper or capture session
 changes. The displayed screen remains server-owned
 [observed: `src/client/simulator/rotation-cursor.ts`, `packages/@expo/hub-client/src/rotation-cursor.ts` and `useIosDevice.ts`].
 
+HubClient advances its cursor only after the browser socket's `send` returns.
+Queued Rotate clicks resolve their next pose at delivery, in queue order;
+expired or evicted clicks never advance it. Helpers advertising `inputAdmission`
+must send `0x83` or a valid `0x82` screen config before HubClient sends input.
+A screen config that establishes admission reconciles orientation before queued
+clicks flush, while an older initial config cannot overwrite newer sent poses
+during the grace period.
+Legacy helpers retain send-on-open compatibility. Browser submission does not
+prove native delivery or app acceptance
+[observed: `packages/@expo/hub-client/src/ws-send-queue.ts`, `rotation-cursor.ts` and `useIosDevice.ts`].
+
 ### Raw HID close contract
 
 The raw HID adapter releases session capacity exactly once, stops its heartbeat,

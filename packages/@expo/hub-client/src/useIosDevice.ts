@@ -63,6 +63,7 @@ import {
   type DeviceCapabilities,
   type DeviceConnectionOptions,
   type DeviceLog,
+  type DeviceOrientation,
   type DeviceSettingKey,
   type DeviceSettings,
   type DeviceStreamCapabilities,
@@ -106,6 +107,8 @@ import {
 import {
   flushWsMessageQueue,
   type QueuedWsMessage,
+  type WsMessagePayload,
+  type WsMessageSent,
   sendOrQueueWsMessage,
   WS_OPEN_READY_STATE,
 } from './ws-send-queue';
@@ -388,6 +391,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const [foregroundApp, setForegroundApp] = useState<ForegroundApp | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
+  const admittedWsRef = useRef<WebSocket | null>(null);
   // Input that arrived while the helper socket was down; flushed on reconnect
   // (bounded, and stale entries are dropped — see `./ws-send-queue`).
   const pendingWsRef = useRef<QueuedWsMessage[]>([]);
@@ -460,8 +464,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
 
   // Every helper-socket message goes through here so a brief reconnect queues
   // input instead of dropping it (matching serve-sim's client).
-  const sendWs = useCallback((tag: number, payload: object) => {
-    pendingWsRef.current = sendOrQueueWsMessage(wsRef.current, pendingWsRef.current, tag, payload);
+  const sendWs = useCallback((tag: number, payload: WsMessagePayload, onSent?: WsMessageSent) => {
+    pendingWsRef.current = sendOrQueueWsMessage(
+      admittedWsRef.current,
+      pendingWsRef.current,
+      tag,
+      payload,
+      Date.now(),
+      onSent,
+    );
   }, []);
 
   const sendTouch = useCallback((sample: TouchSample) => {
@@ -582,12 +593,14 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   // Keep cycling from requested poses while the helper's readback is delayed
   // or an app declines a pose. Screen state still comes only from readback.
   const rotate = useCallback(() => {
-    // Preserve reconnect queuing without advancing a cursor for requests that
-    // may expire or be discarded before the socket opens.
-    const cursor = wsRef.current?.readyState === WS_OPEN_READY_STATE
-      ? rotationCursorRef.current
-      : createRotationCursor(screenRef.current?.orientation ?? 'portrait');
-    sendWs(WS_MSG_ORIENTATION, { orientation: cursor.requestNext() });
+    // Resolve each queued click in delivery order; refused, expired or evicted
+    // input must not advance the cursor.
+    sendWs(
+      WS_MSG_ORIENTATION,
+      () => ({ orientation: rotationCursorRef.current.peekNext() }),
+      (payload) =>
+        rotationCursorRef.current.recordSent((payload as { orientation: DeviceOrientation }).orientation),
+    );
   }, [sendWs]);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
@@ -1129,10 +1142,13 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     // Opening is not admission: a refused socket opens, then closes with 1013.
     // A refused socket gets no messages, so the admission frame or a screen
     // config confirms admission.
-    const admitInput = () => {
+    const admitInput = (ws: WebSocket) => {
+      if (cancelled || wsRef.current !== ws || ws.readyState !== WS_OPEN_READY_STATE) return;
       if (admissionTimer) clearTimeout(admissionTimer);
       admissionTimer = null;
-      if (!cancelled) setInputSocketError(null);
+      admittedWsRef.current = ws;
+      pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
+      setInputSocketError(null);
     };
 
     const connect = () => {
@@ -1145,14 +1161,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
       }
       ws.binaryType = 'arraybuffer';
       wsRef.current = ws;
+      admittedWsRef.current = null;
       ws.onopen = () => {
-        if (cancelled) return;
+        if (cancelled || wsRef.current !== ws) return;
         // Older servers have no admission frame and may have no screen config yet.
         if (!inputAdmission) {
-          admissionTimer = setTimeout(admitInput, INPUT_ADMISSION_MS);
+          admittedWsRef.current = ws;
+          pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
+          admissionTimer = setTimeout(() => admitInput(ws), INPUT_ADMISSION_MS);
         }
-        // Deliver whatever the user did while the socket was down.
-        pendingWsRef.current = flushWsMessageQueue(ws, pendingWsRef.current);
         // The Hub owns keyboard forwarding while this socket is active. Keep the
         // Simulator's separate host-keyboard connection off so iOS shows its
         // software keyboard while browser HID keys continue to type. serve-sim
@@ -1161,10 +1178,11 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         if (!cancelled) setHardwareKeyboardConnectedState(false);
       };
       ws.onmessage = (event) => {
+        if (cancelled || wsRef.current !== ws) return;
         if (!(event.data instanceof ArrayBuffer)) return;
         const bytes = new Uint8Array(event.data);
         if (bytes.length === 1 && bytes[0] === WS_MSG_INPUT_ADMITTED) {
-          admitInput();
+          admitInput(ws);
           return;
         }
         if (bytes.length < 1 || bytes[0] !== WS_TAG_SCREEN_CONFIG) return;
@@ -1174,7 +1192,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
           };
           if (!cancelled) setInputUnavailable(c.inputUnavailable === true);
           if (c.width > 0 && c.height > 0) {
-            admitInput();
+            // Seed from this socket's readback before replaying queued clicks.
+            rotationCursorRef.current.updateReadback(c.orientation);
+            admitInput(ws);
             hasWsConfigRef.current = true;
             setScreen((prev) =>
               prev &&
@@ -1188,8 +1208,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         } catch {}
       };
       ws.onclose = (event) => {
-        if (cancelled) return;
+        if (cancelled || wsRef.current !== ws) return;
         wsRef.current = null;
+        admittedWsRef.current = null;
         if (admissionTimer) clearTimeout(admissionTimer);
         admissionTimer = null;
         const rejection = iosInputCloseError(event.code, event.reason);
@@ -1218,6 +1239,7 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
         wsRef.current?.close();
       } catch {}
       wsRef.current = null;
+      admittedWsRef.current = null;
       // Keep fresh input across rediscovery; connection/device changes clear
       // it above, and the queue drops expired messages before delivery.
       setHardwareKeyboardConnectedState(null);
