@@ -163,6 +163,20 @@ test("iOS rotations follow external orientation again after the readback grace e
   expect(helper().rotations()).toEqual(["landscape_left", "landscape_left"]);
 });
 
+test.each([
+  [1499, "portrait_upside_down"],
+  [1500, "portrait"],
+] as const)("repeated deferred iOS readback at %i ms requests %s next", async (time, next) => {
+  const { client, helper } = await mount();
+  client().rotate();
+  now = 500;
+  await act(async () => helper().screen("landscape_right"));
+  now = time;
+  await act(async () => helper().screen("landscape_right"));
+  client().rotate();
+  expect(helper().rotations()).toEqual(["landscape_left", next]);
+});
+
 test("acknowledging the latest iOS request permits external rotation immediately", async () => {
   const { client, helper } = await mount();
   client().rotate();
@@ -173,6 +187,22 @@ test("acknowledging the latest iOS request permits external rotation immediately
   await act(async () => helper().screen("landscape_right"));
   client().rotate();
   expect(helper().rotations()).toEqual(["landscape_left", "portrait_upside_down", "portrait"]);
+});
+
+test("repeated deferred readback cannot acknowledge a newer request for the same pose", async () => {
+  const { client, helper } = await mount();
+  client().rotate();
+  now = 500;
+  await act(async () => helper().screen("landscape_right"));
+  client().rotate();
+  client().rotate();
+  now = 600;
+  await act(async () => helper().screen("landscape_right"));
+  await act(async () => helper().screen("landscape_left"));
+  client().rotate();
+  expect(helper().rotations()).toEqual([
+    "landscape_left", "portrait_upside_down", "landscape_right", "portrait",
+  ]);
 });
 
 test("a declined iOS pose still advances after a pause without new orientation readback", async () => {

@@ -16,6 +16,7 @@ export function createRotationCursor(
   let orientation =
     typeof initial === "string" && Object.hasOwn(ROTATE_LEFT_CYCLE, initial) ? initial : "portrait";
   let readback = orientation;
+  let readbackDeferred = false;
   let pending: DeviceOrientation | null = null;
   let pendingUntil = 0;
   return {
@@ -29,11 +30,16 @@ export function createRotationCursor(
     },
     updateReadback(reported?: DeviceOrientation | null): void {
       if (typeof reported !== "string" || !Object.hasOwn(ROTATE_LEFT_CYCLE, reported)) return;
-      if (reported === readback) return;
+      // A duplicate cannot acknowledge a newer request for the same pose.
+      if (reported === readback && (!readbackDeferred || now() < pendingUntil)) return;
       readback = reported;
       // Bound protection from older acknowledgements so later external changes
       // can take over even when an app never accepts the requested pose.
-      if (pending !== null && reported !== pending && now() < pendingUntil) return;
+      if (pending !== null && reported !== pending && now() < pendingUntil) {
+        readbackDeferred = true;
+        return;
+      }
+      readbackDeferred = false;
       orientation = reported;
       pending = null;
     },
