@@ -11,7 +11,7 @@
 
 ## Summary
 
-serve-sim moves text between the browser clipboard and the simulator pasteboard. This document explains how serve-sim reads and writes the simulator pasteboard, including on headless workers, how the preview's Paste and Copy use it, and why it works that way.
+serve-sim moves text between the browser clipboard and the simulator pasteboard. This document explains how serve-sim reads and writes the simulator pasteboard, including on headless workers, how the preview's Paste and Copy use it, how a framed preview asks its page for clipboard access, and why it works that way.
 
 A first implementation was rolled back because it did not work as planned on the VM. This design is the second attempt, and it is kept as simple as possible [confirmed: Gabe Debes, 2026-09-30].
 
@@ -106,3 +106,20 @@ Decisions [confirmed: Gabe Debes]:
 - **Hold the input queue through the read,** so that input from another viewer cannot change the pasteboard before the read. A slow read can delay other input (2026-09-27).
 - **The first change wins.** If another simulator process writes the pasteboard during the wait, Copy returns that text. A quiet period after the first change was rejected (2026-09-27).
 - **Copy never writes the pasteboard to detect a change.** A marker write made same-text Copy work, but it could overwrite a newer value from an app. So copying text that equals the current clipboard can time out when the app does not write again (2026-09-29).
+
+## Framed previews
+
+A page that embeds the preview in an iframe, such as the EAS simulator page, controls the frame's clipboard permissions. When a browser clipboard read fails in a frame whose policy lacks `clipboard-read`, or in a browser that has no policy API to check it, the preview asks the embedding page with `postMessage({type: "serve-sim:permission-request", permission: "clipboard-read"})` [observed: `src/client/utils/frame-permission.ts`]. A page that grants it adds `clipboard-read` to the iframe's `allow` attribute and reloads the frame [observed: the embedding test page in `src/__tests__/framed-keyboard-focus.e2e.test.ts`]. The page side is expo/universe#31463.
+
+The embedding page must:
+
+- **Accept requests only from its own preview iframe** (`event.source === iframe.contentWindow`). The request carries no data, so the preview posts it to any origin [observed: `requestFramePermission` in `src/client/utils/frame-permission.ts`, the embedding test page in `src/__tests__/framed-keyboard-focus.e2e.test.ts`].
+- **Ignore requests that it has already answered.** The preview posts again on every failed Paste while the frame policy lacks `clipboard-read`, and on every failed Paste in a browser without a policy API [observed: `src/client/hooks/use-clipboard-toast.tsx`, `src/client/utils/frame-permission.ts`].
+- **Reload the frame in the same tab.** The preview gets no reply message. It finds the grant on a later load in the same tab, through a `sessionStorage` marker that it set when it asked, and through the frame policy. A load in another tab does not have the marker [observed: `src/client/utils/frame-permission.ts`].
+
+In the preview:
+
+- The preview asks only when the browser has a `readText` function, so a browser without it does not reload for nothing [observed: `shouldAskFrameForClipboardRead` in `src/client/utils/frame-permission.ts`].
+- After the reload, the preview says "Clipboard allowed. Paste again" only if the frame policy now allows `clipboard-read`, the browser itself does not deny `clipboard-read`, and no Paste started in the meantime. A frame grant cannot lift a denial that the browser has recorded for the page [observed: `src/client/utils/frame-permission.ts`, `src/client/hooks/use-clipboard-toast.tsx`].
+- A browser without a policy API cannot show whether the page granted the permission. On the first load after a request, the preview removes the marker and says only "Paste again", after the same browser and Paste checks [observed: `takeFramePermissionGrant` in `src/client/utils/frame-permission.ts`, `src/client/hooks/use-clipboard-toast.tsx`]. That load can also come after a page that did not grant, for example when the user reloads the tab.
+- The manual paste field stays available when the page or the browser denies the read.
