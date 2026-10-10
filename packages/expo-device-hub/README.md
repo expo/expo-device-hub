@@ -76,7 +76,7 @@ Expo Device Hub ready
 Opening a link trades the token for an HttpOnly cookie and removes it from the address bar.
 After that, the dashboard, the Hub API, the iOS and Android backends, and every WebSocket
 need the token. A page load without it shows a form to enter it. Scripts send
-`Authorization: Bearer <token>`. `/readyz` stays open for liveness probes. Anyone who has
+`Authorization: Bearer <token>`. `/healthz` and `/readyz` stay open for probes. Anyone who has
 the token can control the devices, so share a link only with people who may.
 
 Only the Hub itself may frame a gated page. To let another site embed it, pass

@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 
 import type { RecordingFinish } from './android-session';
 
+export const HEALTH_ROUTE = '/healthz';
 export const READY_ROUTE = '/readyz';
 export const METRICS_ROUTE = '/metrics';
 export const ANDROID_RECORDING_STOP_ROUTE = '/_eas/android-recording/stop';
@@ -29,6 +30,11 @@ export function handleEasEndpoint(
   { mountPath, serveSimPrefix, recordingControlToken, finishAndroidRecording }: EasEndpointOptions
 ): Response | Promise<Response> | null {
   const { pathname, search } = new URL(request.url);
+
+  // serve-sim's liveness answer. The expo.dev preview page probes `/healthz` on the session host.
+  if (pathname === HEALTH_ROUTE) {
+    return jsonResponse({ status: 'ok' });
+  }
 
   if (pathname === READY_ROUTE) {
     // EAS does not currently use the device ID. A Hub can have zero to many devices
