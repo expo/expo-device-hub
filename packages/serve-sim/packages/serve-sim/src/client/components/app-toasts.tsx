@@ -181,7 +181,7 @@ export function ClipboardToastContent({
   onPaste?: (text: string) => void;
 }) {
   const pending = toast.status === "pending";
-  const dotColor = pending || toast.status === "paste"
+  const dotColor = pending || toast.status === "paste" || toast.status === "info"
     ? "#a5b4fc"
     : toast.status === "success"
       ? "#4ade80"

@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef } from "react";
 import { toast as sonnerToast } from "sonner";
 import { ClipboardToastContent } from "../components/app-toasts";
+import {
+  browserMayAllow,
+  requestFramePermission,
+  shouldAskFrameForClipboardRead,
+  takeFramePermissionGrant,
+} from "../utils/frame-permission";
 import { createLatestClipboardWriter } from "../utils/latest-clipboard-write";
 import { copyTextViaSelection } from "../utils/share-link";
 import {
@@ -11,7 +17,7 @@ import {
 } from "../utils/sim-clipboard";
 
 export type ClipboardToast = {
-  status: "pending" | "success" | "manual" | "paste" | "error";
+  status: "pending" | "success" | "manual" | "paste" | "info" | "error";
   message: string;
 };
 
@@ -139,6 +145,22 @@ export function useClipboardToast(
     [sendTextToSim],
   );
 
+  useEffect(() => {
+    // The toaster mounts after this component, so it cannot show a toast raised during mount.
+    const timer = setTimeout(() => {
+      const grant = takeFramePermissionGrant("clipboard-read");
+      if (!grant) return;
+      // A Paste, device change, or unmount during the check owns the toast from then on.
+      const generation = pasteGeneration.current;
+      void browserMayAllow("clipboard-read").then((allowed) => {
+        if (!allowed || generation !== pasteGeneration.current) return;
+        if (grant === "allowed") renderToast("success", "Clipboard allowed. Paste again", PASTE_TOAST_ID);
+        else renderToast("info", "Paste again", PASTE_TOAST_ID);
+      });
+    }, 0);
+    return () => clearTimeout(timer);
+  }, []);
+
   const pasteText = useCallback((text: string) => {
     return pasteTextForGeneration(text, ++pasteGeneration.current);
   }, [pasteTextForGeneration]);
@@ -150,6 +172,7 @@ export function useClipboardToast(
       text = await readTextFromBrowserClipboard();
     } catch {
       if (generation !== pasteGeneration.current) return;
+      if (shouldAskFrameForClipboardRead()) requestFramePermission("clipboard-read");
       renderToast("paste", "Paste here to send it to the simulator", PASTE_TOAST_ID, {
         onPaste: (pasted) => {
           if (generation === pasteGeneration.current) void pasteText(pasted);

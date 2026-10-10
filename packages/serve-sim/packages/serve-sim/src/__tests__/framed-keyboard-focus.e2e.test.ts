@@ -64,7 +64,7 @@ class Cdp {
   }
 
   async evaluate<T>(expression: string, sessionId?: string): Promise<T> {
-    const reply = await this.send("Runtime.evaluate", { expression, returnByValue: true }, sessionId);
+    const reply = await this.send("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }, sessionId);
     return (reply.result as { value: T }).value;
   }
 
@@ -76,6 +76,8 @@ class Cdp {
 const STREAM_LAYER = `[...document.querySelectorAll("div")].find((d) => d.style.touchAction === "none" && d.getBoundingClientRect().width > 100)`;
 const HARDWARE_KEYBOARD_SWITCH = `document.querySelector('[role="switch"][aria-label="Hardware Keyboard"]')`;
 const TOOLS_BUTTON = `document.querySelector('[aria-label="Open tools panel"]')`;
+const CLIPBOARD_BUTTON = `document.querySelector('[aria-label="Clipboard actions"]')`;
+const PASTE_MENU_ITEM = `[...document.querySelectorAll('[role="menuitem"]')].find((item) => item.textContent?.includes("Paste from Device"))`;
 
 describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
   let state: ServeSimDeviceState;
@@ -98,6 +100,17 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
       await Bun.sleep(100);
     }
     expect(read()).toBe(expected);
+  }
+
+  /** Reads until `done` accepts the value or the time is up, and returns the last value read. */
+  async function poll<T>(read: () => Promise<T>, done: (value: T) => boolean, timeoutMs: number): Promise<T> {
+    const deadline = Date.now() + timeoutMs;
+    let value = await read();
+    while (!done(value) && Date.now() < deadline) {
+      await Bun.sleep(100);
+      value = await read();
+    }
+    return value;
   }
 
   async function launchTextField(): Promise<number> {
@@ -173,6 +186,23 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     await cdp.send("Input.dispatchMouseEvent", { type: "mouseReleased", ...point, button: "left", buttons: 0, clickCount: 1 }, sessionId);
   }
 
+  /** The element's center once two reads agree and a hit test there reaches the element. */
+  async function waitForClickable(expression: string, sessionId: string): Promise<{ x: number; y: number }> {
+    const deadline = Date.now() + 30_000;
+    let previous: string | undefined;
+    while (Date.now() < deadline) {
+      const point = await elementCenter(expression, sessionId);
+      const current = JSON.stringify(point);
+      if (point && current === previous && await cdp.evaluate<boolean>(
+        `(() => { const hit = document.elementFromPoint(${point.x}, ${point.y}); return !!hit && !!${expression}?.contains(hit); })()`,
+        sessionId,
+      )) return point;
+      previous = current;
+      await Bun.sleep(100);
+    }
+    throw new Error(`${expression} did not settle where a click reaches it within 30s.`);
+  }
+
   async function clickHardwareKeyboard(frame: string): Promise<void> {
     const deadline = Date.now() + 30_000;
     while (Date.now() < deadline && await cdp.evaluate<boolean>(`${HARDWARE_KEYBOARD_SWITCH}.hasAttribute("disabled")`, frame)) {
@@ -182,6 +212,15 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     await cdp.evaluate(`(${HARDWARE_KEYBOARD_SWITCH}).scrollIntoView({ block: "center" })`, frame);
     await Bun.sleep(300);
     await clickOnce(await waitForElement(HARDWARE_KEYBOARD_SWITCH, frame), frame);
+  }
+
+  // Real clicks through the frame's own session, as for the switch.
+  async function pasteFromClipboardMenu(frame: string): Promise<void> {
+    expect(await poll(
+      () => cdp.evaluate<boolean>(`!!${CLIPBOARD_BUTTON} && !${CLIPBOARD_BUTTON}.disabled`, frame), Boolean, 15_000,
+    )).toBe(true);
+    await clickOnce(await waitForClickable(CLIPBOARD_BUTTON, frame), frame);
+    await clickOnce(await waitForClickable(PASTE_MENU_ITEM, frame), frame);
   }
 
   async function typeKeys(text: string): Promise<void> {
@@ -227,7 +266,22 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
       port: 0,
       hostname: "127.0.0.1",
       fetch: () => new Response(
-        `<!doctype html><body style="margin:0"><iframe src="${simUrl}" style="width:100vw;height:100vh;border:0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" allow="clipboard-write; fullscreen"></iframe></body>`,
+        `<!doctype html><body style="margin:0"><iframe src="${simUrl}" style="width:100vw;height:100vh;border:0" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" allow="clipboard-write; fullscreen"></iframe><script>
+          window.clipboardPermissionRequests = [];
+          window.clipboardPermissionGrants = [];
+          window.addEventListener("message", (event) => {
+            const iframe = document.querySelector("iframe");
+            if (event.source !== iframe.contentWindow) return;
+            if (event.data?.type === "serve-sim:permission-request") {
+              window.clipboardPermissionRequests.push(event.data.permission);
+              if (event.data.permission === "clipboard-read" && !iframe.allow.includes("clipboard-read")) {
+                iframe.allow = "clipboard-read; clipboard-write; fullscreen";
+                window.clipboardPermissionGrants.push(event.data.permission);
+                iframe.src = iframe.src;
+              }
+            }
+          });
+        </script></body>`,
         { headers: { "content-type": "text/html" } },
       ),
     });
@@ -286,6 +340,56 @@ describeWithSim(`desktop keyboard focus (sim ${udid ?? "<skipped>"})`, () => {
     await clickOnce(stream);
     await typeKeys("zq");
     await waitFor(() => lastText(start), "zq");
+  }, 90_000);
+
+  test("a framed Paste request can gain clipboard-read after the parent grants and reloads", async () => {
+    let frame = await openFramed();
+    // The browser's own clipboard grant is independent of the parent's iframe policy.
+    // Grant it here so the test isolates the parent-policy request and reload path.
+    await cdp.send("Browser.setPermission", {
+      permission: { name: "clipboard-read" },
+      setting: "granted",
+      origin: `http://127.0.0.1:${parent.port}`,
+      embeddedOrigin: new URL(simUrl).origin,
+    });
+    const allowed = () => cdp.evaluate<boolean>(
+      `document.permissionsPolicy?.allowsFeature("clipboard-read") ?? document.featurePolicy?.allowsFeature("clipboard-read") ?? false`,
+      frame,
+    );
+    expect(await allowed()).toBe(false);
+
+    await pasteFromClipboardMenu(frame);
+    expect(await poll(
+      () => cdp.evaluate<string[]>("window.clipboardPermissionRequests"), (requests) => requests.includes("clipboard-read"), 10_000,
+    )).toContain("clipboard-read");
+    expect(await cdp.evaluate<string[]>("window.clipboardPermissionGrants")).toContain("clipboard-read");
+
+    expect(await poll(() => {
+      frame = cdp.frameSessions.at(-1) ?? frame;
+      return allowed();
+    }, Boolean, 15_000)).toBe(true);
+    expect(await cdp.evaluate<string>(
+      `navigator.permissions.query({ name: "clipboard-read" }).then((permission) => permission.state)`, frame,
+    )).toBe("granted");
+    expect(await poll(
+      () => cdp.evaluate<boolean>(`document.body.innerText.includes("Clipboard allowed. Paste again")`, frame), Boolean, 10_000,
+    )).toBe(true);
+
+    const start = await launchTextField();
+    await clickOnce(await waitForStream(frame));
+    const text = "framed paste after permission";
+    expect(await cdp.evaluate<boolean>(
+      `navigator.clipboard.writeText(${JSON.stringify(text)}).then(() => true, () => false)`, frame,
+    )).toBe(true);
+    await pasteFromClipboardMenu(frame);
+    expect(await poll(
+      () => cdp.evaluate<string>(
+        `[...document.querySelectorAll('[data-testid="clipboard-toast"]')].map((toast) => toast.textContent).join(' | ')`, frame,
+      ),
+      (toasts) => toasts.includes("Pasted into simulator"),
+      8_000,
+    )).toContain("Pasted into simulator");
+    await waitFor(() => lastText(start), text);
   }, 90_000);
 
   test("the keyboard still types after switching the hardware keyboard in the tools panel", async () => {
