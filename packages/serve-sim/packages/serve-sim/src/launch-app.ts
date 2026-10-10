@@ -1,5 +1,5 @@
 import type { CapabilityOverrides } from "./capabilities";
-import { applyDefaultCapabilities, launchApp, openUrlInApp } from "./launch-manager";
+import { applyDefaultCapabilities, launchApp } from "./launch-manager";
 
 export async function launchAppAsync(
   udid: string,
@@ -16,6 +16,5 @@ export async function launchAppAsync(
   },
 ): Promise<void> {
   await applyDefaultCapabilities(udid, bundleId, capabilities);
-  await launchApp(udid, { bundleId, launchArgs, restart: true });
-  if (openUrl) await openUrlInApp(udid, bundleId, openUrl);
+  await launchApp(udid, { bundleId, launchArgs, restart: true, openUrl });
 }

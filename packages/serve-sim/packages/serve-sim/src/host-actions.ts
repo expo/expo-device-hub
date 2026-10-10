@@ -8,9 +8,11 @@ import {
   installAppInvocation,
   ok,
   runInvocation,
+  redactHostPaths,
 } from "./host-actions-utils";
 import { Argument, ConfinedPath, DESKTOP_DIR, SCREENSHOT_DIR } from "./host-paths";
 import { ScreenshotName, captureScreenshotAsync } from "./screenshot-store";
+import { launchApp, openUrlInApp, stopApp } from "./launch-manager";
 import {
   UploadChunk,
   UploadId,
@@ -114,8 +116,38 @@ const ACTION_SCHEMAS = {
   }),
   "permissions.resetAll": z.object({ udid: Device, bundleId: BundleId }),
   "app.container": z.object({ udid: Device, bundleId: BundleId }),
+  "app.stop": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId }),
+  "app.openUrl": z.object({
+    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+    bundleId: BundleId,
+    url: z.string().max(8192).url().refine((value) => !value.includes("\0"), "must not contain NUL"),
+  }),
   "app.infoPlist": z.object({ path: ConfinedPath }),
   "app.install": z.object({ udid: Device }).and(FileSource),
+  "app.launch": z.object({
+    // Launch state and locks use simctl's canonical uppercase UDID.
+    udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
+    bundleId: BundleId,
+    launchArgs: z
+      .array(
+        z
+          .string()
+          .max(8192)
+          .refine((value) => !value.includes("\0"), "must not contain NUL"),
+      )
+      .max(256)
+      .refine(
+        (args) => args.reduce((bytes, arg) => bytes + Buffer.byteLength(arg) + 1, 0) <= 128 * 1024,
+        "must total at most 128 KiB",
+      )
+      .default([]),
+    openUrl: z
+      .string()
+      .max(8192)
+      .url()
+      .refine((value) => !value.includes("\0"), "must not contain NUL")
+      .optional(),
+  }),
   "app.iconPath": z.object({ appPath: ConfinedPath, candidates: z.array(FileName).min(1).max(32) }),
   "media.add": z.object({ udid: Device }).and(FileSource),
   reveal: z.union([z.object({ path: ConfinedPath }), z.object({ screenshot: ScreenshotName })]),
@@ -143,6 +175,9 @@ type HostActionName = keyof typeof ACTION_SCHEMAS;
  * which would blow past ARG_MAX as arguments, so they are decoded and appended here instead.
  */
 const PROCEDURE_ACTIONS = [
+  "app.stop",
+  "app.openUrl",
+  "app.launch",
   "upload.append",
   "upload.remove",
   "app.iconPath",
@@ -320,6 +355,30 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
 
 async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise<HostActionResult> {
   switch (action) {
+    case "app.stop":
+    case "app.openUrl": {
+      const p = parseParams(action, raw);
+      try {
+        if ("url" in p) await openUrlInApp(p.udid, p.bundleId, p.url);
+        else await stopApp(p.udid, p.bundleId);
+        return ok();
+      } catch (error) {
+        return { stdout: "", stderr: redactHostPaths(error instanceof Error ? error.message : String(error)), exitCode: 1 };
+      }
+    }
+    case "app.launch": {
+      const { udid, bundleId, launchArgs, openUrl } = parseParams(action, raw);
+      try {
+        await launchApp(udid, { bundleId, launchArgs, restart: true, openUrl });
+        return ok();
+      } catch (error) {
+        return {
+          stdout: "",
+          stderr: redactHostPaths(error instanceof Error ? error.message : String(error)),
+          exitCode: 1,
+        };
+      }
+    }
     case "upload.append": {
       const p = parseParams(action, raw);
       return await appendUploadChunkAsync(p);

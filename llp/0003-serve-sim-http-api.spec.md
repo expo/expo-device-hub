@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (raw HID close-delivery and cleanup contract)
+**Revised:** 2026-10-06 (added installed-app launch and control actions; raw HID close-delivery and cleanup contract)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -225,3 +225,30 @@ and its socket `close` listener]. The close-delivery tests cover immediate
 capacity release, idempotent close, discarded input, cleanup of an unresponsive
 peer, and receipt of the 1013 refusal code/reason over a real Node socket with
 concurrent input [observed: `src/__tests__/raw-hid-socket.test.ts`].
+
+### Launching an installed app
+
+An authenticated `/exec-ws` client can launch an installed app with
+`{id, action: "app.launch", params: {udid, bundleId, launchArgs?, openUrl?}}`.
+Use a Simulator UDID. The action restarts the app with the supplied arguments,
+preserves the session's active capabilities, then pre-approves and opens the
+optional deep link. Pre-approval is best effort. Launch arguments are limited
+to 256 arguments of 8,192 characters each and 128 KiB total UTF-8 bytes,
+including terminators. The action replies with
+`{id, stdout, stderr, exitCode}`; invalid parameters and unsupported actions
+reply with `{id, error}`. Installation stays a separate operation. Setup finishes
+before the app stops. If the stop or the launch fails, the action restores the
+previous app target, launch settings, and capability environment. The deep link
+opens after the app is running, so a failed `openUrl` keeps the new launch.
+
+### App controls
+
+- `app.stop`: `{udid, bundleId}`. Terminates the app; returns an error if it
+  cannot be terminated, including when it is already stopped.
+- `app.openUrl`: `{udid, bundleId, url}`. Opens a deep link with best-effort
+  custom-scheme pre-approval, without first restarting the app. To launch and open
+  a link together, use `app.launch` with `openUrl`. URLs are limited to 8,192
+  characters and cannot contain NUL.
+
+Both actions require a specific Simulator UDID and use the authenticated
+`/exec-ws` channel.
