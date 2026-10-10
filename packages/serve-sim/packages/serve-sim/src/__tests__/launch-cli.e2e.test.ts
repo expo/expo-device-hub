@@ -4,6 +4,8 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
+import { readLaunchState } from "../launch-state";
+import { parseDetachState } from "./detach-state";
 import { freePortAsync, killHelpersForDevice } from "./helpers";
 import { e2eDevice, readInsert, requireE2E } from "./e2e-preconditions";
 
@@ -180,5 +182,27 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
 
     expect(result.status).toBe(1);
     expect(readInsert(udid!)).toBe("");
+  }, 240_000);
+
+  test("a detached helper does not set up the clipboard reader when its preview opens", async () => {
+    spawnSync("node", [CLI, "--kill", udid!], { stdio: "ignore", timeout: 60_000 });
+    const port = await freePortAsync();
+    const detach = spawnSync("node", [CLI, "--detach", "-p", String(port), udid!], {
+      encoding: "utf-8",
+      timeout: 180_000,
+    });
+    expect(detach.status, `serve-sim --detach failed:\n${detach.stdout}\n${detach.stderr}`).toBe(0);
+    const { url } = parseDetachState<{ url: string }>(detach.stdout);
+    try {
+      for (const path of ["/", "/api"]) {
+        expect((await fetch(new URL(path, url))).status).toBe(200);
+      }
+      // The preview starts its setup in the background; give it time to arm if it would.
+      await new Promise((r) => setTimeout(r, 3000));
+      expect(readInsert(udid!)).toBe("");
+      expect(readLaunchState(udid!)?.capabilities.clipboard).toBeUndefined();
+    } finally {
+      spawnSync("node", [CLI, "--kill", udid!], { stdio: "ignore", timeout: 60_000 });
+    }
   }, 240_000);
 });

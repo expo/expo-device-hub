@@ -33,7 +33,6 @@ import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs
 import {
   assertKnownCapabilities,
   missingCapabilities,
-  hasDefaultCapabilities,
   registerCapability,
 } from "./capabilities";
 import {
@@ -54,6 +53,7 @@ import { openSimulatorHost } from "./simulator-host";
 import { simctl } from "./simctl";
 import { installAppInvocation, runInvocation } from "./host-actions-utils";
 import { runStreamDebugLog, startStreamDebugLog } from "./stream-debug-log";
+import { clipboardCapability } from "./sim-pasteboard-reader";
 import { permissions } from "./permissions";
 import { uiSettings } from "./ui-settings";
 import { debugCli, debugHelper, debugState } from "./debug";
@@ -433,6 +433,7 @@ function disarmDevicesArmedHereAsync(): Promise<void> {
 
 // A stream helper outlives the session that spawned it, so it must not arm the
 // device: arming after its parent disarmed would leave the insert set for good.
+// Its preview middleware leaves the clipboard reader alone for the same reason.
 const STREAM_HELPER_ENV = "SERVE_SIM_STREAM_HELPER";
 
 // ─── Preview server lifecycle ───
@@ -1800,6 +1801,7 @@ async function serve(
     quiet?: boolean;
     networkCapture?: boolean;
     networkCaptureProxy?: string;
+    clipboard?: boolean | "unmanaged";
   } = {},
 ) {
   const quiet = !!options.quiet;
@@ -1848,6 +1850,7 @@ async function serve(
       allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
       networkCapture: !!options.networkCapture,
       networkCaptureProxy: options.networkCaptureProxy,
+      clipboard: options.clipboard,
       loopbackOnly: isLoopbackHost(host),
       execToken: previewToken,
       requirePreviewToken,
@@ -1971,7 +1974,13 @@ async function serve(
     }
     await runShutdownSteps({
       stopCapture: () => capture.captureRuntime.disableAll(),
-      disarm: () => disarmDevicesArmedHereAsync(),
+      disarm: async () => {
+        try {
+          await middleware.dispose();
+        } finally {
+          await disarmDevicesArmedHereAsync();
+        }
+      },
       totalMs: SHUTDOWN_TIMEOUT_MS,
       captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
     });
@@ -2351,15 +2360,7 @@ Examples:
       console.error(error instanceof Error ? error.message : error);
       process.exit(1);
     }
-    // Only take over device selection when something has to happen before the
-    // run mode starts. Otherwise follow and detach pick their own target, as
-    // they did before this flag existed.
-    const launchesBeforeStreaming =
-      Boolean(installAppPath) ||
-      Boolean(bundleId) ||
-      capabilities.enable.length > 0 ||
-      capabilities.disable.length > 0 ||
-      hasDefaultCapabilities();
+    const isStreamHelper = process.env[STREAM_HELPER_ENV] === "1";
 
     const startPort: number | undefined = opts.port;
     const streamOptionsProvided = wasProvided("transport")
@@ -2470,7 +2471,6 @@ Examples:
           await ensureBooted(udid);
           if (sessionStopping) return;
         }
-        const isStreamHelper = process.env[STREAM_HELPER_ENV] === "1";
         if (!isStreamHelper) {
           for (const udid of targets) {
             await armCapabilityLoader(udid);
@@ -2482,7 +2482,7 @@ Examples:
         (await import("./capture")).captureRuntime.refuseCapture(publicCaptureRefusal(opts.host, !!opts.requireToken));
         await startNetworkCapture(opts.networkCapture ? targets : [], opts.networkCaptureField, !!opts.quiet);
         if (sessionStopping) return;
-        for (const udid of launchesBeforeStreaming && !isStreamHelper ? targets : []) {
+        for (const udid of isStreamHelper ? [] : targets) {
           if (sessionStopping) return;
           if (installAppPath) {
             const result = await runInvocation(installAppInvocation(udid, installAppPath));
@@ -2497,19 +2497,23 @@ Examples:
             const applied = await applyDefaultCapabilities(udid, null, capabilities);
             const missing = missingCapabilities(capabilities, applied);
             if (missing.length > 0) {
-              console.error(
+              // The catch below prints this, stops capture, and disarms what this session armed.
+              throw new Error(
                 `Requested ${missing.join(", ")} but ${missing.length === 1 ? "it" : "they"} ` +
                   `did not apply on ${udid}. See the message above for why.`,
               );
-              await stopNetworkCapture();
-              process.exit(1);
             }
           }
         }
       } catch (error) {
         if (sessionStopping) return;
         printStartupError(error instanceof Error ? error.message : String(error), !!opts.quiet);
-        await stopNetworkCapture();
+        sessionStopping = true;
+        try {
+          await stopNetworkCapture();
+        } finally {
+          await disarmDevicesArmedHereAsync();
+        }
         process.exit(1);
       }
     }
@@ -2531,6 +2535,7 @@ Examples:
         quiet: !!opts.quiet,
         networkCapture: !!opts.networkCapture,
         networkCaptureProxy: opts.networkCaptureProxy,
+        clipboard: isStreamHelper ? "unmanaged" : !capabilities.disable.includes("clipboard"),
         networkCaptureFields: opts.networkCaptureField,
       });
     }
@@ -2791,6 +2796,7 @@ program
   .argument("[args...]")
   .action((args: string[]) => uiSettings(args));
 
+registerCapability(clipboardCapability);
 registerCapability(captureRuntime.capability);
 
 {

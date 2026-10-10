@@ -109,7 +109,7 @@ export async function readPasteboardText(args: string[], options: SimctlOptions 
   }
 }
 
-export async function readSimPasteboardResult(udid: string): Promise<PasteboardReadResult> {
+export async function readPasteboardViaSimctl(udid: string): Promise<PasteboardReadResult> {
   const text = await readPasteboardText(["pbpaste", udid], {
     env: { LANG: "en_US.UTF-8", LC_ALL: "en_US.UTF-8" },
   });
