@@ -9,6 +9,7 @@ declare global {
       wsUrl: string;
       inputAdmission?: true;
       inputPaste?: true;
+      inputCopy?: true;
       pid: number;
       port: number;
       device: string;

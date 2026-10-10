@@ -1,5 +1,7 @@
 #import <UIKit/UIKit.h>
 
+static NSString *const kCopyFixtureText = @"serve-sim-copy-probe";
+
 @interface AppDelegate : UIResponder <UIApplicationDelegate>
 @property (nonatomic, strong) UIWindow *window;
 @property (nonatomic, strong) UITextView *textView;
@@ -16,6 +18,7 @@
 
   UITextView *textView = [[UITextView alloc] initWithFrame:root.view.bounds];
   textView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+  textView.text = kCopyFixtureText;
   textView.editable = YES;
   textView.font = [UIFont preferredFontForTextStyle:UIFontTextStyleBody];
   [root.view addSubview:textView];
@@ -29,6 +32,7 @@
 - (void)applicationDidBecomeActive:(UIApplication *)application {
   (void)application;
   [self.textView becomeFirstResponder];
+  self.textView.selectedRange = NSMakeRange(0, self.textView.text.length);
 }
 @end
 

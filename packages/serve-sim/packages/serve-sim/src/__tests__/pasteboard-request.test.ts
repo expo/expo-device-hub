@@ -1,9 +1,11 @@
 import { describe, expect, spyOn, test } from "bun:test";
-import { mkdtempSync, promises as fs, readdirSync } from "fs";
+import { mkdtempSync, promises as fs, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { PasteboardTooLargeError } from "../sim-pasteboard";
+import { PasteboardTooLargeError, writeSimPasteboard } from "../sim-pasteboard";
 import { clipboardCapability, pasteboardTarget, requestInjectedPasteboard } from "../sim-pasteboard-reader";
+import { PasteboardCopyTimeoutError, copyFromSim, waitForPasteboardChange } from "../sim-pasteboard-copy";
+import { withShimsAsync } from "./helpers";
 
 function container(): string {
   return mkdtempSync(join(tmpdir(), "serve-sim-pasteboard-"));
@@ -206,5 +208,159 @@ describe("pasteboardTarget", () => {
   test("has nothing to ask when no app is known", () => {
     expect(pasteboardTarget(null, null)).toBeNull();
     expect(pasteboardTarget({ bundleId: "com.apple.springboard" }, null)).toBeNull();
+  });
+});
+
+describe("copyFromSim", () => {
+  test("waits for an app's delayed clipboard update and times out without one", async () => {
+    let count = 5;
+    const delayed = waitForPasteboardChange(async () => count, count, 1000);
+    setTimeout(() => { count = 6; }, 300);
+    await delayed;
+    await expect(waitForPasteboardChange(async () => count, count, 100)).rejects.toBeInstanceOf(
+      PasteboardCopyTimeoutError,
+    );
+  });
+
+  test("checks once more when a copy finishes during the final wait", async () => {
+    let count = 5;
+    const waiting = waitForPasteboardChange(async () => count, count, 100);
+    setTimeout(() => { count = 6; }, 90);
+    await waiting;
+  });
+
+  test("copy holds the device lock from the shortcut through the read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-copy-lock-test-"));
+    const board = join(dir, "pasteboard");
+    const count = join(dir, "change-count");
+    const quoted = "'" + board.replaceAll("'", "'\\''") + "'";
+    const quotedCount = "'" + count.replaceAll("'", "'\\''") + "'";
+    const xcrun = `#!/bin/sh
+if [ "$2" = get_app_container ]; then exit 1
+elif [ "$2" = install ] || [ "$2" = privacy ]; then exit 0
+elif [ "$5" = --read-text ]; then cat ${quoted}
+elif [ "$5" = --change-count ]; then cat ${quotedCount}
+else cat > ${quoted}; count=$(cat ${quotedCount} 2>/dev/null || printf 0); printf '%s' "$((count + 1))" > ${quotedCount}
+fi
+`;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    let shortcutStarted!: () => void;
+    const shortcut = new Promise<void>((resolve) => { shortcutStarted = resolve; });
+    try {
+      await withShimsAsync({ xcrun }, async () => {
+        const udid = `COPY-LOCK-TEST-${process.pid}`;
+        await writeSimPasteboard(udid, "alpha");
+        const copied = copyFromSim(udid, async () => {
+          shortcutStarted();
+          await gate;
+          writeFileSync(board, "alpha");
+          writeFileSync(count, String(Number(readFileSync(count, "utf8")) + 1));
+        });
+        await shortcut;
+        const other = writeSimPasteboard(udid, "beta");
+        try {
+          await Bun.sleep(100);
+          expect(readFileSync(board, "utf8")).toBe("alpha");
+        } finally {
+          release();
+        }
+        expect((await copied).text).toBe("alpha");
+        await other;
+        expect(readFileSync(board, "utf8")).toBe("beta");
+      });
+    } finally {
+      release();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("leaves the clipboard untouched if the baseline change count cannot be read", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-copy-baseline-test-"));
+    const board = join(dir, "pasteboard");
+    writeFileSync(board, "previous text");
+    const xcrun = `#!/bin/sh
+if [ "$2" = get_app_container ]; then exit 1
+elif [ "$2" = install ] || [ "$2" = privacy ]; then exit 0
+elif [ "$5" = --read-text ]; then cat '${board}'
+elif [ "$5" = --change-count ]; then echo 'change count unavailable' >&2; exit 1
+else cat > '${board}'
+fi
+`;
+    try {
+      await withShimsAsync({ xcrun }, async () => {
+        let pressed = false;
+        await expect(copyFromSim(`COPY-BASELINE-TEST-${process.pid}`, async () => {
+          pressed = true;
+        })).rejects.toThrow("change count unavailable");
+        expect(pressed).toBe(false);
+        expect(readFileSync(board, "utf8")).toBe("previous text");
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("reports an oversized copied value without replacing it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-copy-size-test-"));
+    const board = join(dir, "pasteboard");
+    const count = join(dir, "change-count");
+    writeFileSync(board, "before");
+    writeFileSync(count, "1");
+    const xcrun = `#!/bin/sh
+if [ "$2" = get_app_container ]; then printf '/sim/app\\n'
+elif [ "$2" = privacy ]; then exit 0
+elif [ "$5" = --read-text ]; then cat '${board}'
+elif [ "$5" = --change-count ]; then cat '${count}'
+else exit 1
+fi
+`;
+    try {
+      await withShimsAsync({ xcrun }, async () => {
+        await expect(copyFromSim(`COPY-SIZE-TEST-${process.pid}`, async () => {
+          writeFileSync(board, "x".repeat(4 * 1024 * 1024 + 1));
+          writeFileSync(count, "2");
+        })).rejects.toBeInstanceOf(PasteboardTooLargeError);
+        expect(readFileSync(board).length).toBe(4 * 1024 * 1024 + 1);
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("installs the Copy helper only when a simulator has lost it", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "serve-sim-copy-install-test-"));
+    const board = join(dir, "pasteboard");
+    const count = join(dir, "count");
+    const installed = join(dir, "installed");
+    const installs = join(dir, "installs");
+    writeFileSync(board, "copied");
+    writeFileSync(count, "0");
+    const xcrun = `#!/bin/sh
+if [ "$2" = get_app_container ]; then [ -f '${installed}' ] && printf '/sim/app\\n' || exit 1
+elif [ "$2" = install ]; then touch '${installed}'; printf 'install\\n' >> '${installs}'
+elif [ "$2" = privacy ]; then exit 0
+elif [ "$5" = --read-text ]; then cat '${board}'
+elif [ "$5" = --change-count ]; then cat '${count}'
+else cat > '${board}'; current=$(cat '${count}'); printf '%s' "$((current + 1))" > '${count}'
+fi
+`;
+    try {
+      await withShimsAsync({ xcrun }, async () => {
+        const udid = `COPY-INSTALL-TEST-${process.pid}`;
+        const copy = () => copyFromSim(udid, async () => {
+          writeFileSync(board, "copied");
+          writeFileSync(count, String(Number(readFileSync(count, "utf8")) + 1));
+        });
+        await copy();
+        await copy();
+        expect(readFileSync(installs, "utf8")).toBe("install\n");
+        rmSync(installed);
+        await copy();
+        expect(readFileSync(installs, "utf8")).toBe("install\ninstall\n");
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

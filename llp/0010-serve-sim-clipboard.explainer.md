@@ -11,7 +11,7 @@
 
 ## Summary
 
-serve-sim moves text between the browser clipboard and the simulator pasteboard. This document explains how serve-sim reads and writes the simulator pasteboard, including on headless workers, and why it works that way.
+serve-sim moves text between the browser clipboard and the simulator pasteboard. This document explains how serve-sim reads and writes the simulator pasteboard, including on headless workers, how the preview's Paste and Copy use it, and why it works that way.
 
 A first implementation was rolled back because it did not work as planned on the VM. This design is the second attempt, and it is kept as simple as possible [confirmed: Gabe Debes, 2026-09-30].
 
@@ -20,7 +20,7 @@ A first implementation was rolled back because it did not work as planned on the
 `POST /api/pasteboard` reads the simulator pasteboard as text. `PUT /api/pasteboard` with `{"text": "…"}` writes it. [LLP 0003](0003-serve-sim-http-api.spec.md#pasteboard) lists the route.
 
 - **Reads use `simctl pbpaste`.** This needs no code inside the simulator [observed: `src/sim-pasteboard.ts`].
-- **Writes use a small tool that runs inside the simulator,** `Sources/SimPasteboard`, started with `simctl spawn`. Unlike `simctl pbcopy`, it works without a GUI login session, which headless workers such as EAS do not have [observed: `Sources/SimPasteboard/sim-pasteboard.m`].
+- **Writes use a small tool that runs inside the simulator,** `Sources/SimPasteboard`, started with `simctl spawn`. Unlike `simctl pbcopy`, it works without a GUI login session, which headless workers such as EAS do not have [observed: `Sources/SimPasteboard/sim-pasteboard.m`]. The same tool can also report the pasteboard change count and read text. Its `--snapshot` mode prints an item snapshot for the E2E tests only [observed: `src/__tests__/pasteboard-tool.e2e.test.ts`, `src/__tests__/pasteboard-copy.e2e.test.ts`].
 - **One lock per simulator** serializes writes, so two writes cannot interleave. A plain read does not take the lock [observed: `withSimPasteboardLock` and `readPasteboardViaSimctl` in `src/sim-pasteboard.ts`].
 - **Text is limited to 4 MiB** in both directions. Larger text returns a JSON 413 [observed: `src/middleware.ts`, and the read limit in `readPasteboardText` in `src/sim-pasteboard.ts`]. A `PUT` body can be up to 8 MiB, because JSON escaping can double the text. The route answers a larger body with the same JSON 413 [observed: `src/middleware.ts`]. The standalone server refuses a body over 8 MiB before the route runs, with the plain-text 413 that it sends for every route [observed: `servePreview` in `src/runtime.ts`].
 
@@ -82,3 +82,27 @@ Decisions [confirmed: Gabe Debes]:
 - **Cmd+V without browser text pastes the simulator clipboard.** When the browser clipboard has no plain text, for example an image, the Command+V goes to the simulator (2026-09-29).
 - **A failed Paste keeps the new text** on the simulator pasteboard. Restoring the old content would cost another read and write (2026-09-29).
 - **A stuck Command key is a separate warning.** If Command cannot be released after V was, the text may already be pasted, so Paste reports success and shows a key warning (2026-09-29).
+
+## Copy
+
+Toolbar Copy reads the text that the simulator app copies and puts it on the browser clipboard.
+
+1. The browser waits until the server has acknowledged all of its earlier input, then calls `POST /api/pasteboard?copy=1` [observed: `src/client/utils/sim-clipboard.ts`, `src/socket/client-input-barriers.ts`].
+2. The server waits for capture start, as for all simulator input, because capture start sets up the HID target [observed: `copyPasteboard` in `src/device-session.ts`].
+3. Copy runs as one operation in the device's input queue. In that turn, the server takes the pasteboard lock, notes the change count, presses Command+C, and waits up to 5 s for the count to change. Then it reads the text [observed: `copyPasteboard` in `src/device-session.ts`, `src/sim-pasteboard-copy.ts`]. Paste uses the same order, input turn first and lock second, so a Copy and a Paste cannot wait on each other, and neither runs ahead of input that came before it [confirmed: Gabe Debes, 2026-10-09].
+4. The browser writes the text to its own clipboard. An empty result clears it. If the browser refuses the write, a manual Copy button offers the text and copies it through a text selection [observed: `src/client/hooks/use-clipboard-toast.tsx`, `copyTextViaSelection` in `src/client/utils/share-link.ts`].
+
+A 504 is a normal result: the app did not change the pasteboard, for example because nothing was selected. The server does not log it as an error [observed: `src/middleware.ts`].
+
+If the server cannot release a key that the Command+C chord pressed, the response carries a `cleanupWarning`, also with a 504 or other error. The browser shows it beside the result [observed: `copyPasteboard` in `src/device-session.ts`, `src/middleware.ts`, `src/client/hooks/use-clipboard-toast.tsx`].
+
+A helper that does not set `inputCopy` in its state acknowledges the input barrier without a request ID, so Copy would wait until it times out. The preview hides Copy for that helper [observed: `src/state.ts`, `src/client/client.tsx`].
+
+Copy reads the text through `ServeSimPasteboard.app`, the pasteboard tool installed as an app, because a read needs an installed app identity that `simctl privacy` can grant [observed: `Sources/SimPasteboard/build.sh`]. serve-sim checks for the app before each Copy, because erasing the simulator removes it [observed: `src/sim-pasteboard-copy.ts`].
+
+Decisions [confirmed: Gabe Debes]:
+
+- **Wait for a change, fail on timeout.** A fixed delay can return old text from an app that handles Command+C slowly (2026-09-27).
+- **Hold the input queue through the read,** so that input from another viewer cannot change the pasteboard before the read. A slow read can delay other input (2026-09-27).
+- **The first change wins.** If another simulator process writes the pasteboard during the wait, Copy returns that text. A quiet period after the first change was rejected (2026-09-27).
+- **Copy never writes the pasteboard to detect a change.** A marker write made same-text Copy work, but it could overwrite a newer value from an app. So copying text that equals the current clipboard can time out when the app does not write again (2026-09-29).

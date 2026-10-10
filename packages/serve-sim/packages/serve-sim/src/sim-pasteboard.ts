@@ -95,6 +95,7 @@ export async function writeSimPasteboardUnlocked(udid: string, text: string): Pr
 
 export interface PasteboardReadResult {
   text: string;
+  cleanupWarning?: string;
 }
 
 export async function readPasteboardText(args: string[], options: SimctlOptions = {}): Promise<string> {

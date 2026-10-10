@@ -15,10 +15,20 @@ type PasteInput = {
   resolve(result: PasteResult): void;
   reject(error: Error): void;
 };
+type OrderedAction = {
+  kind: "action";
+  device: string;
+  connection: object | null;
+  run(isCurrent: () => boolean): Promise<unknown>;
+  timeout?: ReturnType<typeof setTimeout>;
+  resolve(result: unknown): void;
+  reject(error: Error): void;
+};
 type Input =
   | { kind: "key"; event: KeyboardInputEvent; device: string; connection: object | null }
   | { kind: "keys"; events: readonly KeyEvent[]; device: string; connection: object | null }
-  | PasteInput;
+  | PasteInput
+  | OrderedAction;
 
 /** Keep clipboard commands and keyboard input in their invocation order. */
 export function createOrderedKeyboardInput({
@@ -53,7 +63,7 @@ export function createOrderedKeyboardInput({
     if (active?.kind === "keys" && isCurrentKey(active)) sendEvent(event);
   });
 
-  const finishInput = (input: PasteInput, settle: () => void) => {
+  const finishInput = (input: PasteInput | OrderedAction, settle: () => void) => {
     if (active !== input) return;
     clearTimeout(input.timeout);
     active = null;
@@ -76,6 +86,26 @@ export function createOrderedKeyboardInput({
           drain();
         });
         return;
+      } else if (input.kind === "action") {
+        if (!input.connection || !isCurrent(input)) {
+          input.reject(disconnected());
+        } else {
+          input.timeout = setTimeout(() => finishInput(input, () => {
+            input.reject(new Error("Simulator clipboard action timed out"));
+          }), pasteTimeoutMs);
+          void (async () => {
+            try {
+              const result = await input.run(() => active === input && isCurrent(input));
+              finishInput(input, () => {
+                if (isCurrent(input)) input.resolve(result);
+                else input.reject(disconnected());
+              });
+            } catch (error) {
+              finishInput(input, () => input.reject(error instanceof Error ? error : new Error(String(error))));
+            }
+          })();
+          return;
+        }
       } else {
         const connection = getConnection();
         if (!connection || !isCurrent(input)) {
@@ -109,7 +139,7 @@ export function createOrderedKeyboardInput({
     queue.length = 0;
     pacedKeys.dispose();
     for (const input of inputs) {
-      if (input.kind === "paste") {
+      if (input.kind === "paste" || input.kind === "action") {
         clearTimeout(input.timeout);
         input.reject(disconnected());
       }
@@ -130,6 +160,13 @@ export function createOrderedKeyboardInput({
       return new Promise((resolve, reject) => enqueue({
         kind: "paste", requestId: ++nextRequestId,
         device: getDevice(), connection: getConnection(), text, resolve, reject,
+      }));
+    },
+    run<T>(run: (isCurrent: () => boolean) => Promise<T>): Promise<T> {
+      if (disposed) return Promise.reject(disconnected());
+      return new Promise((resolve, reject) => enqueue({
+        kind: "action", run, device: getDevice(), connection: getConnection(),
+        resolve: (result) => resolve(result as T), reject,
       }));
     },
     receive(connection: object | null, value: unknown): boolean {
