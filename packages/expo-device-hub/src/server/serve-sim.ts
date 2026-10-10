@@ -35,6 +35,15 @@ const middleware = simMiddleware({
     : {}),
 });
 
+/**
+ * Waits for a clipboard setup that serve-sim's preview may still be running, then releases what it
+ * set up on the devices it opened. A vendored serve-sim without `dispose()` sets nothing up.
+ * @ref LLP 0013#hub-shutdown
+ */
+export function shutdownServeSim(): Promise<void> {
+  return (middleware as { dispose?(): Promise<void> }).dispose?.() ?? Promise.resolve();
+}
+
 const SERVE_SIM_STATE_DIR = join(tmpdir(), 'serve-sim');
 const SPAWN_RETRY_COOLDOWN_MS = 30_000;
 

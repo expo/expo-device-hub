@@ -21,6 +21,7 @@ import {
   text,
   type AddDeviceOutcome,
   type AddDeviceTarget,
+  type ClipboardRequest,
   type Device,
   type DeviceFrameAssets,
 } from '@expo/hub-components';
@@ -159,6 +160,12 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
     rightWidth: logsWidth,
     minStreamWidth: MIN_STREAM_WIDTH,
   });
+  // A toolbar Paste or Copy that the browser clipboard stopped, until the inspector takes it over.
+  const [clipboardRequest, setClipboardRequest] = useState<ClipboardRequest | null>(null);
+  const handleClipboardFallback = (request: ClipboardRequest) => {
+    setClipboardRequest(request);
+    sidebars.openRight();
+  };
 
   // Merge booted devices (from the server) with any the user added, deduped by
   // id and split back into the two sections by platform.
@@ -369,6 +376,7 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           framed={sidebars.containerWidth >= MIN_SIDEBAR_WIDTH + MIN_STREAM_WIDTH}
           showDeviceFrame={showDeviceFrame}
           deviceFrameAssets={DEVICE_FRAME_ASSETS}
+          onClipboardFallback={handleClipboardFallback}
         />
       ) : (
         <EmptyState
@@ -415,6 +423,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onHttpCodecChange={setHttpCodec}
           onShutdown={selected ? () => handleShutdown(selected) : undefined}
           onRemove={selected ? () => handleRemove(selected) : undefined}
+          clipboardRequest={clipboardRequest}
+          onClipboardRequestHandled={() => setClipboardRequest(null)}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />
@@ -461,6 +471,8 @@ export default function Dashboard(_props: { dom?: import('expo/dom').DOMProps })
           onHttpCodecChange={setHttpCodec}
           onShutdown={selected ? () => handleShutdown(selected) : undefined}
           onRemove={selected ? () => handleRemove(selected) : undefined}
+          clipboardRequest={clipboardRequest}
+          onClipboardRequestHandled={() => setClipboardRequest(null)}
           onToggle={sidebars.closeRight}
           width={logsWidth}
         />

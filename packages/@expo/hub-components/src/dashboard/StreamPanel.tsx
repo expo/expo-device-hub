@@ -9,6 +9,7 @@ import {
 import { bg, border } from '../primitives';
 import { type Device } from './data';
 import { DEVICE_TITLE_HEIGHT, DeviceTitle } from './DeviceTitle';
+import { type ClipboardRequest, useClipboardToast } from './ClipboardToast';
 import { type DeviceFrameAssets } from './deviceFrame';
 import { PhoneFrame } from './PhoneFrame';
 import { ScreenshotToaster, useScreenshotToast } from './ScreenshotToast';
@@ -38,6 +39,7 @@ export function StreamPanel({
   framed = true,
   showDeviceFrame = true,
   deviceFrameAssets,
+  onClipboardFallback,
 }: {
   device: Device;
   client: DeviceClient;
@@ -55,8 +57,13 @@ export function StreamPanel({
   showDeviceFrame?: boolean;
   /** Consumer-owned frame artwork keyed by the selected device's frame kind. */
   deviceFrameAssets?: DeviceFrameAssets;
+  /** A toolbar Paste or Copy could not use the browser clipboard. Show the inspector's Clipboard section. */
+  onClipboardFallback?: (request: ClipboardRequest) => void;
 }) {
   const captureScreenshot = useScreenshotToast(client, device.name);
+  const clipboard = useClipboardToast(client, device.id, onClipboardFallback);
+  // Command+V in the device screen reports through the clipboard toasts, as in serve-sim.
+  const screenClient: DeviceClient = { ...client, pasteText: clipboard.pasteText };
 
   return (
     <section
@@ -93,7 +100,7 @@ export function StreamPanel({
           style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
           <PhoneFrame
             device={device}
-            client={client}
+            client={screenClient}
             agentInteraction={agentInteraction}
             DeviceScreen={DeviceScreen}
             displayScreen={displayScreen}
@@ -133,6 +140,9 @@ export function StreamPanel({
               onReload={() => client.reload()}
               onRotate={() => client.rotate()}
               onSave={captureScreenshot}
+              clipboard={client.capabilities.clipboard}
+              onPaste={() => void clipboard.pasteFromDevice()}
+              onCopy={() => void clipboard.copyFromSimulator()}
             />
           </div>
         </div>

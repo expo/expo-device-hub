@@ -80,6 +80,13 @@ export {
 export { ActivityCharts, ActivitySection } from './dashboard/ActivitySection';
 export { AccessibilitySection } from './dashboard/AccessibilitySection';
 export { CameraSection } from './dashboard/CameraSection';
+export { ClipboardSection } from './dashboard/ClipboardSection';
+export {
+  ClipboardToast,
+  useClipboardToast,
+  type ClipboardRequest,
+  type ClipboardToastState,
+} from './dashboard/ClipboardToast';
 export { LocationSection } from './dashboard/LocationSection';
 export { PermissionsSection } from './dashboard/PermissionsSection';
 export { EventsSection } from './dashboard/EventsSection';
