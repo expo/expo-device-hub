@@ -15,17 +15,22 @@ export function createRotationCursor(
 ) {
   let orientation =
     typeof initial === "string" && Object.hasOwn(ROTATE_LEFT_CYCLE, initial) ? initial : "portrait";
+  let readback = orientation;
   let pending: DeviceOrientation | null = null;
   let pendingUntil = 0;
   return {
-    requestNext(): DeviceOrientation {
-      orientation = ROTATE_LEFT_CYCLE[orientation];
+    peekNext(): DeviceOrientation {
+      return ROTATE_LEFT_CYCLE[orientation];
+    },
+    recordSent(requested: DeviceOrientation): void {
+      orientation = requested;
       pending = orientation;
       pendingUntil = now() + READBACK_GRACE_MS;
-      return orientation;
     },
     updateReadback(reported?: DeviceOrientation | null): void {
       if (typeof reported !== "string" || !Object.hasOwn(ROTATE_LEFT_CYCLE, reported)) return;
+      if (reported === readback) return;
+      readback = reported;
       // Bound protection from older acknowledgements so later external changes
       // can take over even when an app never accepts the requested pose.
       if (pending !== null && reported !== pending && now() < pendingUntil) return;

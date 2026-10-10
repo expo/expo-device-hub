@@ -81,4 +81,37 @@ describe('ws send queue', () => {
 
     expect(queue.map((message) => message.payload)).toEqual([{ i: 2 }, { i: 3 }]);
   });
+
+  test('resolves lazy payloads and reports successful sends in delivery order', () => {
+    const { ws, sent } = openWs();
+    let cursor = 0;
+    const payload = () => ({ next: cursor + 1 });
+    const onSent = (message: object) => { cursor = (message as { next: number }).next; };
+    let queue = sendOrQueueWsMessage(null, [], 0x07, payload, 1000, onSent);
+    queue = sendOrQueueWsMessage(null, queue, 0x07, payload, 1000, onSent);
+    expect(cursor).toBe(0);
+    queue = sendOrQueueWsMessage(ws, queue, 0x07, payload, 1100, onSent);
+    expect(queue).toEqual([]);
+    expect(cursor).toBe(3);
+    expect(sent.map((data) => sentPayload(new Uint8Array(data)).payload)).toEqual([
+      { next: 1 }, { next: 2 }, { next: 3 },
+    ]);
+  });
+
+  test('does not resolve or report dropped lazy messages', () => {
+    const { ws } = openWs();
+    const payload = () => { throw new Error('must not resolve'); };
+    const onSent = () => { throw new Error('must not report'); };
+    const queue = sendOrQueueWsMessage(null, [], 0x07, payload, 1000, onSent);
+    expect(flushWsMessageQueue(ws, queue, 3000)).toEqual([]);
+    const evicted = enqueueWsMessage(queue, { tag: 3, payload: {}, createdAt: 1000 }, 1);
+    expect(flushWsMessageQueue(ws, evicted, 1100)).toEqual([]);
+  });
+
+  test('does not report a send that throws', () => {
+    let reported = false;
+    const ws = { readyState: 1, send() { throw new Error('closed'); } };
+    expect(() => sendOrQueueWsMessage(ws, [], 7, {}, 1000, () => { reported = true; })).toThrow('closed');
+    expect(reported).toBe(false);
+  });
 });
