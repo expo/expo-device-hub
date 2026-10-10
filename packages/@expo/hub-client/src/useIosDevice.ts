@@ -69,7 +69,6 @@ import {
   type DeviceStreamEncoderSettings,
   type DeviceStreamSettingCapabilities,
   type DeviceWebRtcCodec,
-  type DeviceOrientation,
   type ForegroundApp,
   type HardwareButton,
   type HidKeyEvent,
@@ -86,6 +85,7 @@ import { mergeAuthoritativeDeviceSetting } from './device-setting-writes';
 import { IOS_INPUT_UNAVAILABLE_MESSAGE, iosInputCloseError } from './ios-input-error';
 import { KeyedWriteTracker } from './keyed-write-tracker';
 import { createPacedKeySender } from './paced-key-sender';
+import { createRotationCursor } from './rotation-cursor';
 import { middlewareEndpointForBrowser, proxyPreviewConfigForBrowser } from './proxy-preview-config';
 import { sessionTokenFetch, sessionTokenProtocols, withSessionTokenQuery } from './session-token';
 import { type ParsedSseBlock, drainSseChunk } from './sse';
@@ -107,6 +107,7 @@ import {
   flushWsMessageQueue,
   type QueuedWsMessage,
   sendOrQueueWsMessage,
+  WS_OPEN_READY_STATE,
 } from './ws-send-queue';
 
 const MAX_LOGS = 200;
@@ -178,15 +179,6 @@ export function iosStreamCapabilities(streamSettings: unknown): DeviceStreamCapa
       : undefined;
   return transport === 'webrtc' ? IOS_WEBRTC_STREAM_CAPABILITIES : IOS_HTTP_STREAM_CAPABILITIES;
 }
-
-// The counterclockwise rotation order (matches Simulator's "Rotate Left"): each
-// press advances one step, so four presses come back around to portrait.
-const ORIENTATION_CYCLE: DeviceOrientation[] = [
-  'portrait',
-  'landscape_left',
-  'portrait_upside_down',
-  'landscape_right',
-];
 
 // iOS only has a Home button + app switcher; the rest are no-ops.
 const BUTTON_NAME: Record<HardwareButton, string | null> = {
@@ -432,6 +424,10 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   useEffect(() => {
     screenRef.current = screen;
   }, [screen]);
+  const rotationCursorRef = useRef(createRotationCursor());
+  useEffect(() => {
+    rotationCursorRef.current.updateReadback(screen?.orientation);
+  }, [screen?.orientation]);
   // Once the helper WS pushes a config, it owns dimensions+orientation.
   const hasWsConfigRef = useRef(false);
 
@@ -583,14 +579,15 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
     key('up', HID_USAGE_R);
   }, [sendWs]);
 
-  // Rotate one step counterclockwise from the last known orientation, over the
-  // helper's orientation channel (tag 0x07 → HID orientation event). The helper
-  // confirms by pushing an updated screen config, which keeps the cycle in sync.
+  // Keep cycling from requested poses while the helper's readback is delayed
+  // or an app declines a pose. Screen state still comes only from readback.
   const rotate = useCallback(() => {
-    const current = screenRef.current?.orientation ?? 'portrait';
-    const next =
-      ORIENTATION_CYCLE[(ORIENTATION_CYCLE.indexOf(current) + 1) % ORIENTATION_CYCLE.length];
-    sendWs(WS_MSG_ORIENTATION, { orientation: next });
+    // Preserve reconnect queuing without advancing a cursor for requests that
+    // may expire or be discarded before the socket opens.
+    const cursor = wsRef.current?.readyState === WS_OPEN_READY_STATE
+      ? rotationCursorRef.current
+      : createRotationCursor(screenRef.current?.orientation ?? 'portrait');
+    sendWs(WS_MSG_ORIENTATION, { orientation: cursor.requestNext() });
   }, [sendWs]);
 
   // serve-sim's middleware captures the sim via `simctl io <udid> screenshot`
@@ -1101,6 +1098,9 @@ export function useIosDeviceClient(options: DeviceConnectionOptions): DeviceClie
   const wsUrl = config?.wsUrl ?? null;
   const inputAdmission = config?.inputAdmission === true;
   const controlDevice = config?.device ?? null;
+  useEffect(() => {
+    rotationCursorRef.current = createRotationCursor(screenRef.current?.orientation ?? 'portrait');
+  }, [wsUrl, controlDevice, videoSessionKey]);
   useEffect(() => {
     pendingWsDestinationRef.current = null;
     pendingWsRef.current = [];

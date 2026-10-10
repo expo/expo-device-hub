@@ -2,7 +2,7 @@
 
 **Type:** Spec
 **Status:** Active
-**Systems:** ServeSim
+**Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
 **Revised:** 2026-10-09 (rotation readback contract)
@@ -227,6 +227,14 @@ Foldable devices retain native interface-orientation readback because their
 physical framing is controlled separately by the Duo view. That remains true
 when hinge capability discovery completes after an early rotation request
 [observed: `src/device-session.ts` `readScreenFromNative`, `src/client/client.tsx` `rotateDevice`].
+
+The standalone preview and HubClient advance Rotate from requested poses, so
+rapid clicks or an app-declined pose do not repeat the same request. They ignore
+mismatched orientation readback for up to 1,500 ms after the latest request;
+its acknowledgement releases that protection early. Only orientation changes
+update the cursor, and HubClient resets it when the helper or capture session
+changes. The displayed screen remains server-owned
+[observed: `src/client/simulator/rotation-cursor.ts`, `packages/@expo/hub-client/src/rotation-cursor.ts` and `useIosDevice.ts`].
 
 ### Raw HID close contract
 
