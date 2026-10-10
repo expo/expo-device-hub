@@ -35,6 +35,8 @@ export interface ServeSimDeviceState {
   inputAdmission?: true;
   /** This helper accepts paste requests on the input socket; older ones only take keys. */
   inputPaste?: true;
+  /** This helper acknowledges Copy's input barrier by request ID. Copy waits on an older one until it times out. */
+  inputCopy?: true;
   streamSettings?: StreamSettings;
   /** Present under `--require-token` or on a loopback host, so local subcommands can reach gated routes. */
   token?: string;
@@ -83,6 +85,7 @@ export function inProcessServeSimState(
     wsUrl: `ws://${h}:${port}${prefix}/helper/${udid}/ws`,
     inputAdmission: true,
     inputPaste: true,
+    inputCopy: true,
     ...(streamSettings ? { streamSettings } : {}),
   };
 }

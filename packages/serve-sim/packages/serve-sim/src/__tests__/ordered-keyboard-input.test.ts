@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { createOrderedKeyboardInput, type KeyboardInputEvent } from "../client/utils/ordered-keyboard-input";
+import { copySimClipboardAfterInput } from "../client/utils/sim-clipboard";
 
 function input(pasteTimeoutMs = 1000) {
   let device = "device-a";
@@ -170,4 +171,97 @@ test("disposing cancels pending and paced input permanently", async () => {
   await expect(state.keyboard.paste("new")).rejects.toThrow("disconnected");
   await Bun.sleep(25);
   expect(state.sent).toEqual([{ requestId: 1, text: "old" }]);
+});
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((accept) => { resolve = accept; });
+  return { promise, resolve };
+}
+
+test("Copy reserves its barrier and read ahead of later paste and typing", async () => {
+  const state = input();
+  const barrier = deferred<void>();
+  const read = deferred<string>();
+  const stages: string[] = [];
+  const first = state.keyboard.paste("a");
+  const copy = state.keyboard.run(async () => {
+    stages.push("barrier");
+    await barrier.promise;
+    stages.push("read");
+    return read.promise;
+  });
+  const later = state.keyboard.paste("b");
+  state.keyboard.send(down(27));
+  state.reply(1);
+  await first;
+  expect(stages).toEqual(["barrier"]);
+  expect(state.sent).toEqual([{ requestId: 1, text: "a" }]);
+  barrier.resolve();
+  await Promise.resolve();
+  expect(stages).toEqual(["barrier", "read"]);
+  expect(state.sent).toEqual([{ requestId: 1, text: "a" }]);
+  read.resolve("selection before later input");
+  expect(await copy).toBe("selection before later input");
+  expect(state.sent).toEqual([{ requestId: 1, text: "a" }, { requestId: 2, text: "b" }]);
+  state.reply(2);
+  await later;
+  expect(state.sent.at(-1)).toEqual(down(27));
+  state.keyboard.dispose();
+});
+
+test("retired Copy actions cannot run on another connection or complete a newer action", async () => {
+  const state = input();
+  const read = deferred<string>();
+  const copy = state.keyboard.run(() => read.promise).catch((error: Error) => error);
+  state.keyboard.cancel();
+  expect((await copy as Error).message).toContain("disconnected");
+  state.connection = {};
+  const first = state.keyboard.paste("new");
+  const previousConnection = state.connection;
+  let ran = false;
+  const retired = state.keyboard.run(async () => { ran = true; }).catch((error: Error) => error);
+  state.connection = {};
+  state.keyboard.receive(previousConnection, { requestId: 1, ok: true });
+  await first;
+  expect((await retired as Error).message).toContain("disconnected");
+  expect(ran).toBe(false);
+  const next = state.keyboard.paste("next");
+  read.resolve("old selection");
+  await Promise.resolve();
+  expect(state.reply(2)).toBe(true);
+  await next;
+  state.keyboard.dispose();
+});
+
+test("Copy failures and timeouts release the ordered input slot", async () => {
+  const state = input(10);
+  await expect(state.keyboard.run(() => { throw new Error("Copy refused"); })).rejects.toThrow("Copy refused");
+  const read = deferred<string>();
+  const timedOut = state.keyboard.run(() => read.promise).catch((error: Error) => error);
+  const paste = state.keyboard.paste("next");
+  expect((await timedOut as Error).message).toContain("timed out");
+  read.resolve("late selection");
+  await Promise.resolve();
+  expect(state.reply(1)).toBe(true);
+  await paste;
+  state.keyboard.dispose();
+});
+
+test("a retired Copy cannot read after its input barrier finishes late", async () => {
+  const state = input(10);
+  const barrier = deferred<void>();
+  const currentness: boolean[] = [];
+  const copy = state.keyboard.run((isCurrent) => copySimClipboardAfterInput(
+    "device-a",
+    () => barrier.promise,
+    () => { const current = isCurrent(); currentness.push(current); return current; },
+  )).catch((error: Error) => error);
+  state.keyboard.send(down(27));
+  expect((await copy as Error).message).toContain("timed out");
+  barrier.resolve();
+  await Promise.resolve();
+  expect(currentness).toEqual([false]);
+  expect(state.sent).toEqual([down(27)]);
+  state.keyboard.dispose();
 });

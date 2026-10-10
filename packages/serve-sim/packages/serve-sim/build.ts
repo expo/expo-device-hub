@@ -309,6 +309,7 @@ for (const [name, script] of [
   }
 }
 console.log("dist/simpb/serve-sim-pasteboard");
+console.log("dist/simpb/ServeSimPasteboard.app");
 console.log("dist/simpb/libSimPasteboardReader.dylib");
 
 // ─── 9. serve-sim-native.node — in-process N-API addon ───────────────────

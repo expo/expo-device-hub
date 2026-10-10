@@ -101,4 +101,19 @@ describe("ClipboardToastContent", () => {
     expect(pasteFieldHint(true)).toBe("Long-press and paste");
     expect(pasteFieldHint(false)).toBe("Press ⌘V or Ctrl+V to paste");
   });
+
+  test("shows a Copy button only in the manual state", () => {
+    const html = renderToStaticMarkup(
+      <ClipboardToastContent toast={{ status: "manual", message: "Ready — one click to copy" }} />,
+    );
+    expect(html).toContain("Ready — one click to copy");
+    expect(html).toContain(">Copy</button>");
+    for (const status of ["success", "error"] as const) {
+      const other = renderToStaticMarkup(
+        <ClipboardToastContent toast={{ status, message: "Copied from simulator" }} onCopy={() => {}} />,
+      );
+      expect(other).toContain("Copied from simulator");
+      expect(other).not.toContain(">Copy</button>");
+    }
+  });
 });

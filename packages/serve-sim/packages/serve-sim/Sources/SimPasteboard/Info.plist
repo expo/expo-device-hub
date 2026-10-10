@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>com.expo.serve-sim-pasteboard</string>
+  <key>CFBundleExecutable</key><string>serve-sim-pasteboard</string>
+  <key>CFBundleName</key><string>Serve Sim Pasteboard</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>MinimumOSVersion</key><string>15.0</string>
+</dict></plist>

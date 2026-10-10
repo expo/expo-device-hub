@@ -75,6 +75,25 @@ describe("writeSimPasteboard", () => {
     }
   });
 
+  test("asks the tool to write with --write", async () => {
+    const shims = installShims({
+      xcrun: ["#!/bin/sh", 'printf "%s\\n" "$@" > "$SERVE_SIM_SIMPB_DIR/argv"', "cat > /dev/null", ""].join("\n"),
+      "serve-sim-pasteboard": "",
+    });
+    const oldToolDir = process.env.SERVE_SIM_SIMPB_DIR;
+    process.env.SERVE_SIM_SIMPB_DIR = shims.dir;
+    try {
+      const udid = `WRITE-ARGS-TEST-${process.pid}`;
+      await writeSimPasteboard(udid, "alpha");
+      expect(readFileSync(join(shims.dir, "argv"), "utf8").trimEnd().split("\n"))
+        .toEqual(["simctl", "spawn", udid, join(shims.dir, "serve-sim-pasteboard"), "--write"]);
+    } finally {
+      if (oldToolDir === undefined) delete process.env.SERVE_SIM_SIMPB_DIR;
+      else process.env.SERVE_SIM_SIMPB_DIR = oldToolDir;
+      shims.restore();
+    }
+  });
+
   test("reports simctl's reason when it exits without reading the text", async () => {
     const shims = installShims({
       // Close stdin and stay alive, so the write fails with EPIPE before xcrun exits.

@@ -1,6 +1,7 @@
 import type { KeyEvent } from "./text-to-keys";
 
 // USB HID Usage Page 0x07 keyboard usages.
+export const KEY_C = 0x06;
 export const KEY_V = 0x19;
 const LEFT_COMMAND = 0xe3;
 const RIGHT_COMMAND = 0xe7;
@@ -13,8 +14,8 @@ export function isLiftedModifier(usage: number): boolean {
   return LIFTED_MODIFIERS.includes(usage);
 }
 
-/** Command+V for Paste. */
-export function simCommandShortcutHidEvents(pressed: ReadonlySet<number>, key: typeof KEY_V): KeyEvent[] {
+/** Command+V for Paste or Command+C for Copy. */
+export function simCommandShortcutHidEvents(pressed: ReadonlySet<number>, key: typeof KEY_C | typeof KEY_V): KeyEvent[] {
   const lifted = LIFTED_MODIFIERS.filter((usage) => pressed.has(usage));
   const events: KeyEvent[] = lifted.map((usage) => ({ type: "up", usage }));
   const commandAlreadyDown = pressed.has(LEFT_COMMAND) || pressed.has(RIGHT_COMMAND);

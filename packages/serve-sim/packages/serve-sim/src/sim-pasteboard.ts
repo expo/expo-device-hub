@@ -70,7 +70,7 @@ export function writeSimPasteboard(udid: string, text: string): Promise<void> {
 export async function writeSimPasteboardUnlocked(udid: string, text: string): Promise<void> {
   const tool = locatePasteboardTool() ?? await buildSimpbArtifact("SimPasteboard", "serve-sim-pasteboard");
   return new Promise((resolveWrite, rejectWrite) => {
-    const child = spawn("xcrun", ["simctl", "spawn", udid, tool], {
+    const child = spawn("xcrun", ["simctl", "spawn", udid, tool, "--write"], {
       stdio: ["pipe", "ignore", "pipe"],
     });
     let stderr = "";
@@ -100,6 +100,7 @@ export async function writeSimPasteboardUnlocked(udid: string, text: string): Pr
 
 export interface PasteboardReadResult {
   text: string;
+  cleanupWarning?: string;
 }
 
 export async function readPasteboardText(args: string[], options: SimctlOptions = {}): Promise<string> {

@@ -74,6 +74,7 @@ import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
 import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardTooLargeError, writeSimPasteboard } from "./sim-pasteboard";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
 import { createClipboardSession } from "./clipboard-session";
+import { PasteboardCopyTimeoutError, cleanupWarningOf } from "./sim-pasteboard-copy";
 
 /** Captured traffic is decrypted credentials and clipboard text is user data; `no-cache` would still let a cache keep a copy. */
 const NO_STORE = { "Cache-Control": "no-store, private", Pragma: "no-cache" } as const;
@@ -2739,19 +2740,34 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           return;
         }
 
-        const result = await readSimPasteboardResult(udid);
+        // Copy needs the input session to hold its turn through the clipboard read.
+        const copy = new URLSearchParams(qIndex === -1 ? "" : rawUrl.slice(qIndex + 1)).get("copy") === "1";
+        const session = copy ? peekDeviceSession(udid) : undefined;
+        if (copy && !session) {
+          respond(409, { ok: false, error: "No simulator input session for this device" });
+          return;
+        }
+        const result = session
+          ? await session.copyPasteboard()
+          : await readSimPasteboardResult(udid);
         respond(200, { ok: true, ...result });
       } catch (error) {
+        // A failed Copy can still leave Command held; the viewer shows this beside the error.
+        const cleanup = cleanupWarningOf(error);
         if (error instanceof PasteboardTooLargeError) {
-          respond(413, { ok: false, error: "Simulator clipboard text is too large" });
+          respond(413, { ok: false, error: "Simulator clipboard text is too large", ...cleanup });
           return;
         }
         if (error instanceof PasteboardUnavailableError) {
-          respond(503, { ok: false, error: error.message });
+          respond(503, { ok: false, error: error.message, ...cleanup });
+          return;
+        }
+        if (error instanceof PasteboardCopyTimeoutError) {
+          respond(504, { ok: false, error: error.message, ...cleanup });
           return;
         }
         console.error(`[serve-sim] Could not access the simulator pasteboard on ${udid}:`, error);
-        respond(500, { ok: false, error: "Could not access the simulator pasteboard" });
+        respond(500, { ok: false, error: "Could not access the simulator pasteboard", ...cleanup });
       }
       return;
     }

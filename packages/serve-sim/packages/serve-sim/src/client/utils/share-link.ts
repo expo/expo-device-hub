@@ -40,6 +40,11 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
     }
     // A denied or rejected write falls through to the legacy copy below.
   } catch {}
+  return copyTextViaSelection(text);
+}
+
+/** The legacy selection copy. It returns false instead of throwing. */
+export function copyTextViaSelection(text: string): boolean {
   try {
     const area = document.createElement("textarea");
     area.value = text;

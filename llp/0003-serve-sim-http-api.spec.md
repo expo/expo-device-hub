@@ -25,7 +25,7 @@ server's selected device.
 | `/api` | Current device and stream state, including `execToken`. |
 | `/api/screenshot` | `POST`. A still PNG. |
 | `/api/apps/icon?bundleId=<id>` | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
-| `/api/pasteboard` | `POST` reads the simulator pasteboard as `{ok, text}`; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard). |
+| `/api/pasteboard` | `POST` reads the simulator pasteboard as `{ok, text}`; `?copy=1` presses Command+C first; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard). |
 | `/helper/<udid>/recording/video` | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token. |
 | `/api/events`, `/api/event-log`, `/api/event-log/events` | Device events and the recorded log. |
 | `/metrics` | CPU, memory and network samples, one per second. |
@@ -84,6 +84,16 @@ app then got empty text with no prompt. `--disable clipboard`, or
 `clipboard: false` for `simMiddleware`, prevents the grant.
 [LLP 0010](0010-serve-sim-clipboard.explainer.md#the-pasteboard-grant-stays)
 gives the details.
+
+`POST /api/pasteboard?copy=1` is Copy: the server presses Command+C in the
+device's input queue, waits for the pasteboard to change, and returns the copied
+text. It returns 504 when the app does not change the pasteboard within 5 s, and
+409 when the device has no input session. Copy installs `ServeSimPasteboard.app`
+(`com.expo.serve-sim-pasteboard`) on the simulator when it is missing or
+differs from the copy that serve-sim ships. Each Copy grants it pasteboard
+access. The app and the grant stay after Copy, and the app shows on the Home
+screen. `--disable clipboard`, or `clipboard: false` for `simMiddleware`, does
+not prevent this.
 
 ## Authentication
 
