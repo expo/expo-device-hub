@@ -16,6 +16,7 @@ class ControlSocket {
   static instances: ControlSocket[] = [];
   readyState = 1;
   sent: ArrayBuffer[] = [];
+  onopen?: () => void;
   onmessage?: (event: { data: ArrayBuffer }) => void;
 
   constructor() {
@@ -314,6 +315,7 @@ for (const useVideoFrameCallback of [true, false]) {
     });
     expect(Peer.instances).toHaveLength(2);
     expect(ControlSocket.instances).toHaveLength(2);
+    await act(async () => ControlSocket.instances[1]!.onopen?.());
     await act(async () =>
       Peer.instances[1]!.ontrack?.({ streams: [{ id: "new-video" }], track: {} }),
     );
@@ -448,6 +450,7 @@ test("iOS AVCC resize callbacks preserve screen identity and clear stale orienta
   });
   expect(AvccDecoder.instances).toHaveLength(2);
   expect(ControlSocket.instances).toHaveLength(2);
+  await act(async () => ControlSocket.instances[1]!.onopen?.());
   const newDecoder = AvccDecoder.instances[1]!;
   // A fresh canvas makes the new helper's same-size frame call onResize.
   await act(async () => {
