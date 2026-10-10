@@ -117,6 +117,7 @@ const ACTION_SCHEMAS = {
   }),
   "permissions.resetAll": z.object({ udid: Device, bundleId: BundleId }),
   "app.container": z.object({ udid: Device, bundleId: BundleId, type: z.enum(["app", "data"]).default("app") }),
+  "app.file.upload": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath, uploadId: UploadId, overwrite: z.boolean().default(false) }),
   "app.file.read": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
   "app.file.list": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath.optional() }),
   "app.file.remove": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
@@ -179,6 +180,7 @@ type HostActionName = keyof typeof ACTION_SCHEMAS;
  * which would blow past ARG_MAX as arguments, so they are decoded and appended here instead.
  */
 const PROCEDURE_ACTIONS = [
+  "app.file.upload",
   "app.file.read",
   "app.file.list",
   "app.file.remove",
@@ -362,6 +364,7 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
 
 async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise<HostActionResult> {
   switch (action) {
+    case "app.file.upload": return runAppFileAction("upload", parseParams(action, raw));
     case "app.file.read": return runAppFileAction("read", parseParams(action, raw));
     case "app.file.list": return runAppFileAction("list", parseParams(action, raw));
     case "app.file.remove": return runAppFileAction("remove", parseParams(action, raw));

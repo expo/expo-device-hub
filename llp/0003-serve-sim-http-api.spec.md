@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (added installed-app launch, control and data-file actions; raw HID close-delivery and cleanup contract)
+**Revised:** 2026-10-06 (added installed-app launch, control, data-file and upload actions; raw HID close-delivery and cleanup contract)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -260,7 +260,7 @@ Both actions require a specific Simulator UDID and use the authenticated
 - `app.file.list`: `{udid, bundleId, relativePath?}`. Returns a JSON array of
   entry names and types. Omit the path for the container root. Limited to 1000 entries.
 - `app.file.read`: `{udid, bundleId, relativePath}`. Returns file bytes as base64,
-  limited to 8 MiB per regular file.
+  limited to 10 MiB per regular file.
 - `app.file.remove`: `{udid, bundleId, relativePath}`. Deletes one regular file,
   never a directory.
 
@@ -273,3 +273,23 @@ Requests are serialized with app controls on the same device; another device can
 proceed independently. The preview UI has no storage editor. These actions are
 currently iOS Simulator only; serve-emu does not expose equivalent file actions.
 Android parity remains outside this serve-sim rollout.
+
+### Uploading an app fixture
+
+`app.file.upload`: `{udid, bundleId, uploadId, relativePath, overwrite?}` copies a
+completed staged upload into the app's data container, creating parent directories.
+It returns JSON with `relativePath` and the copied byte count. Writes are atomic
+and refuse existing files unless `overwrite: true`. Files are limited to 10 MiB;
+staged uploads remain available until `upload.remove` or staging cleanup.
+Staging resets, pruning and removals wait while a copy reads its source bytes.
+
+Send requests sequentially: `app.stop` → `upload.append` → `app.file.upload` →
+`app.launch`, then `upload.remove` when the staged source is no longer needed.
+Finish all chunks before copying, and keep the app stopped until all related
+files are in place. Atomicity applies to each file, not a multi-file transaction.
+
+For example, seed `Documents/session.json` or an app-compatible SQLite database.
+The app must understand the format. For SQLite, stop the app and use a consistent
+checkpointed snapshot, or restore the matching database and WAL files together.
+These actions copy bytes; they do not translate JSON into AsyncStorage, import
+Keychain entries, create backend sessions, or execute uploaded JavaScript.
