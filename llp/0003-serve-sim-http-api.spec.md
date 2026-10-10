@@ -2,7 +2,7 @@
 
 **Type:** Spec
 **Status:** Active
-**Systems:** ServeSim
+**Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
 **Revised:** 2026-10-09 (rotation readback contract)
@@ -227,6 +227,28 @@ Foldable devices retain native interface-orientation readback because their
 physical framing is controlled separately by the Duo view. That remains true
 when hinge capability discovery completes after an early rotation request
 [observed: `src/device-session.ts` `readScreenFromNative`, `src/client/client.tsx` `rotateDevice`].
+
+The standalone preview and HubClient advance Rotate from requested poses, so
+rapid clicks or an app-declined pose do not repeat the same request. They ignore
+mismatched orientation readback for up to 1,500 ms after the latest request;
+its acknowledgement releases that protection early. Only orientation changes
+update the cursor; HubClient also reconciles a repeated changed readback that it
+deferred during the grace period once protection expires. An unchanged,
+previously reconciled pose does not reset an app-declined request. HubClient
+resets the cursor when the helper or capture session changes. The displayed
+screen remains server-owned
+[observed: `src/client/simulator/rotation-cursor.ts`, `packages/@expo/hub-client/src/rotation-cursor.ts` and `useIosDevice.ts`].
+
+HubClient advances its cursor only after the browser socket's `send` returns.
+Queued Rotate clicks resolve their next pose at delivery, in queue order;
+expired or evicted clicks never advance it. Helpers advertising `inputAdmission`
+must send `0x83` or a valid `0x82` screen config before HubClient sends input.
+A screen config that establishes admission reconciles orientation before queued
+clicks flush, while an older initial config cannot overwrite newer sent poses
+during the grace period.
+Legacy helpers retain send-on-open compatibility. Browser submission does not
+prove native delivery or app acceptance
+[observed: `packages/@expo/hub-client/src/ws-send-queue.ts`, `rotation-cursor.ts` and `useIosDevice.ts`].
 
 ### Raw HID close contract
 
