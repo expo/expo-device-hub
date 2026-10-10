@@ -1,7 +1,8 @@
-import { execFileSync } from "child_process";
+import { execFileSync, spawnSync } from "child_process";
 import { simctlSync } from "../simctl";
 import { existsSync } from "fs";
 import { join } from "path";
+import type { KeyEvent } from "../text-to-keys";
 import { foregroundTracker } from "../foreground-tracker";
 import {
   clearLaunchState,
@@ -14,6 +15,7 @@ import { CLIPBOARD_CAPABILITY, locatePasteboardReaderDylib, requestInjectedPaste
 
 export const SAFARI_BUNDLE = "com.apple.mobilesafari";
 export const FIXTURE_BUNDLE = "dev.expo.serve-sim.pasteboard-fixture";
+export const COPY_FIXTURE_TEXT = "serve-sim-copy-probe";
 export const PASTEBOARD_TEST_APPS = [
   { label: "Safari", bundleId: SAFARI_BUNDLE },
   { label: "user app", bundleId: FIXTURE_BUNDLE, requireFixture: true },
@@ -139,6 +141,15 @@ async function resetLaunchState(udid: string, bundleId: string): Promise<void> {
   await removeCapabilityLoader(udid);
 }
 
+export async function launchWithoutReader(
+  udid: string,
+  bundleId: string,
+): Promise<{ unsubscribe: () => void }> {
+  const subscription = foregroundTracker.subscribe(udid);
+  await resetLaunchState(udid, bundleId);
+  return finishLaunch(udid, bundleId, subscription);
+}
+
 export async function launchTrackedApp(
   udid: string,
   bundleId: string,
@@ -203,6 +214,49 @@ export async function askAppPasteboard(udid: string, bundleId: string): Promise<
   const container = simctlSync(["get_app_container", udid, bundleId, "data"]).trim();
   if (!container) return null;
   return requestInjectedPasteboard(container, 8000);
+}
+
+async function sendHidEvents(udid: string, events: KeyEvent[]): Promise<void> {
+  const { NativeHid } = await import("../native");
+  const hid = new NativeHid(udid);
+  for (const ev of events) {
+    if (ev.type === "up") await Bun.sleep(30);
+    await hid.key(ev.type, ev.usage);
+  }
+}
+
+/**
+ * After a boot, data migration can run for minutes, and WebKit misbehaves until it ends. The EAS
+ * worker waits for it before it reports the simulator ready; a later `simctl boot` does not.
+ */
+export async function waitForDataMigration(timeoutMs = 300_000): Promise<number> {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    const ps = spawnSync("ps", ["-eo", "comm"], { encoding: "utf8" });
+    if (!ps.stdout?.includes("com.apple.datamigrator")) return Date.now() - started;
+    await Bun.sleep(1000);
+  }
+  throw new Error("com.apple.datamigrator was still running");
+}
+
+// A tap gives the app's content keyboard focus, as a user's click does before a shortcut.
+export async function sendSimTap(udid: string, x: number, y: number): Promise<void> {
+  const { NativeHid } = await import("../native");
+  const hid = new NativeHid(udid);
+  await hid.touch("begin", x, y, 1, 1);
+  await Bun.sleep(60);
+  await hid.touch("end", x, y, 1, 1);
+  await Bun.sleep(300);
+}
+
+export async function sendSimSelectAllShortcut(udid: string): Promise<void> {
+  await sendHidEvents(udid, [
+    { type: "down", usage: 0xe3 },
+    { type: "down", usage: 0x04 },
+    { type: "up", usage: 0x04 },
+    { type: "up", usage: 0xe3 },
+  ]);
+  await Bun.sleep(150);
 }
 
 export const pasteboardTool = locatePasteboardTool();

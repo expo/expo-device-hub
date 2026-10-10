@@ -1,9 +1,11 @@
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { statSync, writeFileSync } from "fs";
 import { join } from "path";
+import * as deviceSessions from "../device-session";
 import { simMiddleware } from "../middleware";
 import { servePreview } from "../runtime";
 import { MAX_PASTEBOARD_TEXT_BYTES } from "../sim-pasteboard";
+import { PasteboardCopyTimeoutError, copyFromSim, withCleanupWarning } from "../sim-pasteboard-copy";
 import {
   ensureFixtureInstalled,
   FIXTURE_BUNDLE,
@@ -162,6 +164,52 @@ describe("/api/pasteboard", () => {
     } finally {
       log.mockRestore();
       shims.restore();
+    }
+  });
+
+  test("refuses a copy when the device has no input session", async () => {
+    const res = await middleware(pasteboardRequest("?device=00000000-0000-0000-0000-000000000000&copy=1"));
+    expect(res?.status).toBe(409);
+    expect(await res!.json()).toEqual({ ok: false, error: "No simulator input session for this device" });
+  });
+
+  test("returns 504 without an error log when Copy sees no pasteboard change", async () => {
+    const device = "00000000-0000-0000-0000-000000000000";
+    // The change count never moves, as when nothing is selected.
+    const shims = installShims({
+      xcrun: "#!/bin/sh\nif [ \"$2\" = get_app_container ]; then printf '/sim/app\\n'\nelif [ \"$5\" = --change-count ]; then echo 7\nfi\n",
+    });
+    const session = spyOn(deviceSessions, "peekDeviceSession").mockReturnValue({
+      copyPasteboard: () => copyFromSim(device, async () => {}),
+    } as unknown as deviceSessions.DeviceSession);
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await middleware(pasteboardRequest(`?device=${device}&copy=1`));
+      expect(res?.status).toBe(504);
+      expect(await res!.json()).toEqual({ ok: false, error: new PasteboardCopyTimeoutError().message });
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+      session.mockRestore();
+      shims.restore();
+    }
+  }, 10_000);
+
+  test("keeps Copy's key cleanup warning in the 504 body", async () => {
+    const device = "00000000-0000-0000-0000-000000000000";
+    const session = spyOn(deviceSessions, "peekDeviceSession").mockReturnValue({
+      copyPasteboard: async () => { throw withCleanupWarning(new PasteboardCopyTimeoutError(), "A key may still be held"); },
+    } as unknown as deviceSessions.DeviceSession);
+    try {
+      const res = await middleware(pasteboardRequest(`?device=${device}&copy=1`));
+      expect(res?.status).toBe(504);
+      expect(await res!.json()).toEqual({
+        ok: false,
+        error: new PasteboardCopyTimeoutError().message,
+        cleanupWarning: "A key may still be held",
+      });
+    } finally {
+      session.mockRestore();
     }
   });
 

@@ -21,3 +21,12 @@ xcrun --sdk iphonesimulator clang \
 
 echo "Built: $BIN"
 file "$BIN"
+
+# Pasteboard reads need an installed app identity so simctl can grant permission. Keep the
+# standalone binary for writes and change counts, which work without that permission.
+APP="$OUT_DIR/ServeSimPasteboard.app"
+mkdir -p "$APP"
+cp "$HERE/Info.plist" "$APP/Info.plist"
+cp "$BIN" "$APP/serve-sim-pasteboard"
+codesign --force --sign - "$APP"
+echo "Built: $APP"
