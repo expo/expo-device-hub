@@ -25,7 +25,12 @@ import { configureClientShell } from './client-shell';
 import { argentInteractionWebSocketHandler } from './argent-interaction-websocket';
 import { deviceListWebSocketHandler, refreshDeviceList } from './device-list-websocket';
 import { type HubDeviceList, listDevices } from './devices';
-import { ANDROID_RECORDING_STOP_ROUTE, handleEasEndpoint, READY_ROUTE } from './eas-endpoints';
+import {
+  ANDROID_RECORDING_STOP_ROUTE,
+  handleEasEndpoint,
+  HEALTH_ROUTE,
+  READY_ROUTE,
+} from './eas-endpoints';
 import { MOUNT_PATH } from './mount';
 import { SERVER_PLATFORM_FILTER } from './platform-filter';
 import {
@@ -58,9 +63,10 @@ const NEW_DEVICE_OPTIONS_ROUTE = '/api/new-device-options';
 const DEVICES_WEBSOCKET_ROUTE = '/api/devices/ws';
 const ARGENT_INTERACTIONS_WEBSOCKET_ROUTE = '/api/argent-interactions/ws';
 
-// Under a session token every route needs it, so a new route is gated by default. A liveness
-// probe cannot carry a token, and EAS stops a recording with its own token instead.
-const UNGATED_ROUTES = new Set([READY_ROUTE, ANDROID_RECORDING_STOP_ROUTE]);
+// Under a session token every route needs it, so a new route is gated by default. Health and
+// readiness probes cannot carry a token, as in serve-sim, and EAS stops a recording with its own
+// token instead.
+const UNGATED_ROUTES = new Set([HEALTH_ROUTE, READY_ROUTE, ANDROID_RECORDING_STOP_ROUTE]);
 // serve-sim never takes the token from a capture URL, and takes recording control only with a
 // bearer. The Hub keeps both rules, so its own cookie and query token do not widen them.
 const SIM_CAPTURE_PREFIX = `${SIM_PREFIX}/network-capture`;

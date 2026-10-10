@@ -158,7 +158,9 @@ describe('the Hub under a session token', () => {
     expect((await request('/_expo/static/js/web/index.js'))?.status).toBe(401);
   });
 
-  test('keeps the liveness probe open', async () => {
+  // The expo.dev preview page probes `/healthz` without a token, as it does serve-sim's.
+  test('keeps the health and readiness probes open', async () => {
+    expect((await request('/healthz'))?.status).toBe(200);
     expect((await request('/readyz'))?.status).toBe(200);
   });
 
