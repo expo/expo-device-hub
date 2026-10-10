@@ -1,6 +1,7 @@
 import { rm, stat } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
+import { AppRelativePath, runAppFileAction } from "./app-files";
 
 import {
   type HostActionResult,
@@ -115,7 +116,10 @@ const ACTION_SCHEMAS = {
     service: Token,
   }),
   "permissions.resetAll": z.object({ udid: Device, bundleId: BundleId }),
-  "app.container": z.object({ udid: Device, bundleId: BundleId }),
+  "app.container": z.object({ udid: Device, bundleId: BundleId, type: z.enum(["app", "data"]).default("app") }),
+  "app.file.read": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
+  "app.file.list": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath.optional() }),
+  "app.file.remove": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId, relativePath: AppRelativePath }),
   "app.stop": z.object({ udid: DeviceUdid.transform((udid) => udid.toUpperCase()), bundleId: BundleId }),
   "app.openUrl": z.object({
     udid: DeviceUdid.transform((udid) => udid.toUpperCase()),
@@ -175,6 +179,9 @@ type HostActionName = keyof typeof ACTION_SCHEMAS;
  * which would blow past ARG_MAX as arguments, so they are decoded and appended here instead.
  */
 const PROCEDURE_ACTIONS = [
+  "app.file.read",
+  "app.file.list",
+  "app.file.remove",
   "app.stop",
   "app.openUrl",
   "app.launch",
@@ -319,7 +326,7 @@ function buildInvocation(action: InvocationAction, raw: unknown, binPath: string
     }
     case "app.container": {
       const p = parseParams(action, raw);
-      return simctl(["get_app_container", p.udid, p.bundleId, "app"]);
+      return simctl(["get_app_container", p.udid, p.bundleId, p.type]);
     }
     case "app.infoPlist": {
       const p = parseParams(action, raw);
@@ -355,6 +362,9 @@ function fileSourcePath(p: { uploadId: string } | { path: string }): string {
 
 async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise<HostActionResult> {
   switch (action) {
+    case "app.file.read": return runAppFileAction("read", parseParams(action, raw));
+    case "app.file.list": return runAppFileAction("list", parseParams(action, raw));
+    case "app.file.remove": return runAppFileAction("remove", parseParams(action, raw));
     case "app.stop":
     case "app.openUrl": {
       const p = parseParams(action, raw);
