@@ -247,6 +247,7 @@ export class DeviceSession {
   private width = 0;
   private height = 0;
   private orientation = "portrait";
+  private requestedOrientation: string | undefined;
   private supportsHingeAngle?: boolean;
   private supportsPhysicalOrientation?: boolean;
   private hingeAngle?: number;
@@ -1242,6 +1243,8 @@ export class DeviceSession {
         const operation = this.hingeControlUpdate.then(async () => {
           const value = ORIENTATION_BY_NAME[m.orientation];
           if (this.phase !== "running" || value == null || !await this.hid.orientation(value)) return;
+          this.supportsHingeAngle ??= await this.hid.supportsHingeAngle();
+          if (this.phase !== "running") return;
           this.recordHidEvent(tag, m);
           if (this.supportsHingeAngle) {
             // Rotation is panel-relative; only a named pose establishes the
@@ -1252,9 +1255,13 @@ export class DeviceSession {
             // Apps may lock their interface. Keep native readback authoritative.
             await this.refreshScreenSizeFromNative();
             this.broadcastConfig();
-          } else if (m.orientation !== this.orientation) {
-            this.orientation = m.orientation;
-            this.broadcastConfig();
+          } else {
+            // @ref LLP 0003#rotation-readback — regular-device framing survives portrait-only apps
+            this.requestedOrientation = m.orientation;
+            if (m.orientation !== this.orientation) {
+              this.orientation = m.orientation;
+              this.broadcastConfig();
+            }
           }
         });
         this.hingeControlUpdate = operation.catch(() => {});
@@ -1857,8 +1864,9 @@ export class DeviceSession {
       this.height = screen.height;
       changed = true;
     }
-    if (screen.orientation !== undefined && screen.orientation !== this.orientation) {
-      this.orientation = screen.orientation;
+    const orientation = this.supportsHingeAngle ? screen.orientation : this.requestedOrientation ?? screen.orientation;
+    if (orientation !== undefined && orientation !== this.orientation) {
+      this.orientation = orientation;
       changed = true;
     }
     this.nativeScreen = screen;

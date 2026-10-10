@@ -17,6 +17,8 @@ let hingePoseDelay = 0;
 let hingePoseGate: Promise<void> | undefined;
 let hingeResult = true;
 let hingeSupported = false;
+let hingeSupportGate: Promise<void> | undefined;
+let orientationResult = true;
 let physicalOrientationSupported = false;
 let physicalOrientationSupportGate: Promise<void> | undefined;
 let nativeHingeState: { hingeAngle?: number; physicalOrientation?: string; tableMode?: boolean } = {};
@@ -78,8 +80,8 @@ const addon = {
       scrollOperations.push("cancel-end");
     }
     async digitalCrown() { inputCalls.push("digitalCrown"); }
-    async orientation() { inputCalls.push("orientation"); return true; }
-    async supportsHingeAngle() { inputCalls.push("supportsHingeAngle"); return hingeSupported; }
+    async orientation() { inputCalls.push("orientation"); return orientationResult; }
+    async supportsHingeAngle() { inputCalls.push("supportsHingeAngle"); await hingeSupportGate; return hingeSupported; }
     async supportsPhysicalOrientation() {
       inputCalls.push("supportsPhysicalOrientation");
       await physicalOrientationSupportGate;
@@ -240,6 +242,8 @@ beforeEach(() => {
   hingePoseGate = undefined;
   hingeResult = true;
   hingeSupported = true;
+  hingeSupportGate = undefined;
+  orientationResult = true;
   physicalOrientationSupported = true;
   physicalOrientationSupportGate = undefined;
 });
@@ -1304,14 +1308,61 @@ describe("native active screen config", () => {
   });
 
   test("waits for Duo's actual orientation instead of briefly rotating a locked app", async () => {
-    const { configs } = await start({ width: 1398, height: 2034, orientation: "portrait", screenId: 1 }, true);
+    const { configs, controlResults } = await start({ width: 1398, height: 2034, orientation: "portrait", screenId: 1 }, true);
     await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
-    const readsBefore = screenReads;
     ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_left" }))]));
-    await waitUntil(() => screenReads > readsBefore);
+    // Table Mode is unavailable here; its queued rejection fences rotation and prior config delivery.
+    ws!.send(Buffer.concat([Buffer.from([0x10]), Buffer.from(JSON.stringify({ requestId: 1, command: { control: "table", value: true } }))]));
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toMatchObject({ requestId: 1, ok: false });
+    expect(tableModes).toEqual([]);
     expect(configs.every((config) => config.orientation === "portrait")).toBe(true);
     screen = { ...screen, orientation: "landscape_left" };
     await waitUntil(() => configs.at(-1)?.orientation === "landscape_left");
+  });
+
+  test("keeps regular-device framing rotated when returning to portrait-only Home", async () => {
+    const { configs, controlResults } = await start({ width: 1206, height: 2622, orientation: "portrait", screenId: 1 });
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === false);
+    ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_left" }))]));
+    // The unavailable Table Mode command acknowledges completion without changing the device.
+    const fence = async (requestId: number) => {
+      ws!.send(Buffer.concat([Buffer.from([0x10]), Buffer.from(JSON.stringify({ requestId, command: { control: "table", value: true } }))]));
+      await waitUntil(() => controlResults.length === requestId);
+      expect(controlResults.at(-1)).toMatchObject({ requestId, ok: false });
+    };
+    await fence(1);
+    expect(configs.at(-1)?.orientation).toBe("landscape_left");
+    for (const orientation of ["landscape_left", "portrait"] as const) {
+      screen = { ...screen, orientation };
+      await screenChanged!();
+      await fence(controlResults.length + 1);
+      expect(configs.at(-1)?.orientation).toBe("landscape_left");
+    }
+    orientationResult = false;
+    ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_right" }))]));
+    await fence(controlResults.length + 1);
+    expect(configs.at(-1)?.orientation).toBe("landscape_left");
+    expect(tableModes).toEqual([]);
+  });
+
+  test("uses Duo readback after hinge capability resolves following an early rotation", async () => {
+    let release!: () => void;
+    hingeSupportGate = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      const { configs, controlResults } = await start({ width: 1398, height: 2034, orientation: "portrait", screenId: 1 }, true);
+      ws!.send(Buffer.concat([Buffer.from([0x07]), Buffer.from(JSON.stringify({ orientation: "landscape_left" }))]));
+      ws!.send(Buffer.concat([Buffer.from([0x10]), Buffer.from(JSON.stringify({ requestId: 1, command: { control: "table", value: true } }))]));
+      await waitUntil(() => inputCalls.includes("orientation"));
+      await screenChanged!();
+      release();
+      await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+      await waitUntil(() => controlResults.length === 1);
+      expect(configs.find((config) => config.supportsHingeAngle === true)?.orientation).toBe("portrait");
+      expect(configs.every((config) => config.orientation === "portrait")).toBe(true);
+    } finally {
+      release();
+    }
   });
 
   test("forwards hinge degrees and acknowledges native success", async () => {

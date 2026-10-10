@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (raw HID close-delivery and cleanup contract)
+**Revised:** 2026-10-09 (rotation readback contract)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -208,6 +208,25 @@ the DevTools bridge come from `GET /devtools`, which returns a
 
 The CDP bridge forwards frames verbatim in both directions. The token
 subprotocol is not forwarded upstream, so the credential stops at serve-sim.
+
+### Rotation readback
+
+The helper HID socket accepts a `0x07` frame carrying `{ orientation }`.
+Successful native delivery does not mean that the foreground app accepted the
+requested interface orientation. For regular devices, config `orientation`
+starts from native screen readback, then retains the last successfully delivered
+request as device framing. A portrait-only app such as Home therefore does not
+turn the frame back. Later native interface-orientation changes, including ones
+from Simulator.app, do not replace that framing; another helper rotation request
+does, or a new session seeds it again from native readback. This also works with
+older native APIs without orientation metadata. Native dimensions, screen routing
+and recording metadata still come from capture readback
+[observed: `src/device-session.ts` case `0x07` and `readScreenFromNative`, `Sources/SimNative/FrameCapture.swift`].
+
+Foldable devices retain native interface-orientation readback because their
+physical framing is controlled separately by the Duo view. That remains true
+when hinge capability discovery completes after an early rotation request
+[observed: `src/device-session.ts` `readScreenFromNative`, `src/client/client.tsx` `rotateDevice`].
 
 ### Raw HID close contract
 
