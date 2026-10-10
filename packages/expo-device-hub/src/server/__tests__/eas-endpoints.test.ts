@@ -8,6 +8,15 @@ const options = {
 };
 
 describe('EAS endpoints', () => {
+  // The same answer as serve-sim's `/healthz`.
+  test('reports health', async () => {
+    const response = await handleEasEndpoint(new Request('http://localhost/healthz'), options);
+
+    expect(response?.status).toBe(200);
+    expect(response?.headers.get('cache-control')).toBe('no-store');
+    expect(await response?.json()).toEqual({ status: 'ok' });
+  });
+
   test('always reports ready with the interface placeholder device ID', async () => {
     const response = await handleEasEndpoint(new Request('http://localhost/readyz'), options);
 
