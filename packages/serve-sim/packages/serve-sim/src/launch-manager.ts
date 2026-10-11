@@ -640,11 +640,16 @@ async function isRunning(udid: string, bundleId: string): Promise<boolean | null
   return out.includes(`UIKitApplication:${bundleId}`);
 }
 
+// @ref LLP 0011#startup-order — an affirmative no-process response avoids another running-state check.
 async function terminateForRelaunch(udid: string, bundleId: string): Promise<void> {
   try {
     await simctl(["terminate", udid, bundleId], TERMINATE_TIMEOUT_MS);
     return;
-  } catch {
+  } catch (error) {
+    const failure = error as { code?: number; stderr?: string; killed?: boolean; signal?: string };
+    if (failure.code === 3 && !failure.killed && !failure.signal
+      && failure.stderr?.includes("domain=NSPOSIXErrorDomain, code=3)")
+      && failure.stderr.includes("found nothing to terminate")) return;
   }
   const running = await isRunning(udid, bundleId);
   if (running === false) return;

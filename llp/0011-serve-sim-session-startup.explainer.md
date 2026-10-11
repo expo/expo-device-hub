@@ -147,6 +147,15 @@ capability stops startup. Readiness therefore does not guarantee that every
 requested capability was enabled [observed: `src/launch-manager.ts`
 `applyDefaultCapabilities`; `src/launch-app.ts`; `src/index.ts` `missingCapabilities` check].
 
+Restart first attempts `simctl terminate`. Its numeric exit code 3, together with
+`NSPOSIXErrorDomain` code 3 and `found nothing to terminate`, is treated as an
+affirmative stopped-app response when the command was neither killed nor signaled.
+Other termination failures still require a successful running-state check; an app
+that is still running or cannot be checked is not relaunched. This keeps the new
+process's arguments and capability insertion from silently becoming a no-op
+[observed: `src/launch-manager.ts` `terminateForRelaunch`; the pinned local Simulator
+trace `stack-agent-device-cold-ordinary-small-1-5447ced4`, 2026-10-11].
+
 Installation uses the same invocation builder as the authenticated `app.install`
 action. `launchAppAsync` awaits launch before opening the URL. These are successful
 simctl operations, not proof that the app rendered its UI or handled the deep link
