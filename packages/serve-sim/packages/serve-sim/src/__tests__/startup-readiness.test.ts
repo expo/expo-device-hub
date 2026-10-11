@@ -80,6 +80,12 @@ describe.each([false, true])("startup failures (quiet=%s)", (quiet) => {
         const steps = commands.map((args) => args[1])
           .filter((step) => ["bootstatus", "launch", "openurl"].includes(step!));
         expect(steps).toEqual(expectedSteps);
+        if (failedCommand === "launch" || failedCommand === "openurl") {
+          expect(commands.find((args) => args[1] === "launch")).toEqual([
+            "simctl", "launch", "--terminate-running-process", UDID, "dev.example.app",
+          ]);
+          expect(commands.some((args) => args[1] === "terminate")).toBe(false);
+        }
         if (failedCommand === "bootstatus") {
           expect(commands.some((args) => args[1] === "spawn")).toBe(false);
         }

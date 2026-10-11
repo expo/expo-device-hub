@@ -426,10 +426,8 @@ export async function launchApp(
       writeLaunchState(udid, state);
       commitCapabilityConfig(udid, renderCapabilityConfig(state));
     }
-    if (restart) {
-      await terminateForRelaunch(udid, bundleId);
-    }
-    await simctl(["launch", udid, bundleId, ...launchArgs]);
+    // @ref LLP 0011#startup-order — explicit restart is handled by the native launch command.
+    await simctl(["launch", ...(restart ? ["--terminate-running-process"] : []), udid, bundleId, ...launchArgs]);
   });
 }
 

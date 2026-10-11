@@ -114,6 +114,7 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
       ),
       `no URL recorded. serve-sim output:\n${output}`,
     ).toBe(true);
+    expect(fixtureLines().filter((line) => line.startsWith("launch\t"))).toHaveLength(1);
 
     // Whether serve-sim stays up or returns straight away depends on whether a
     // helper was already streaming this device, so only the teardown is asserted.
@@ -135,13 +136,26 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
     killHelpersForDevice(udid!);
     try { simctl(["terminate", udid!, APP]); } catch {}
     try { simctl(["uninstall", udid!, INSTALL_APP]); } catch {}
-    if (bundleId) simctl(["install", udid!, FIXTURE]);
+    let seedPID: string | undefined;
+    if (bundleId) {
+      simctl(["install", udid!, FIXTURE]);
+      const seed = simctl(["launch", "--terminate-running-process", udid!, APP, "-ExistingProcess"]);
+      seedPID = seed.trim().match(/:\s*(\d+)$/)?.[1];
+      expect(seedPID, `could not parse existing app pid: ${seed}`).toBeDefined();
+      expect(
+        await waitFor(() => fixtureLines().includes(`launch\t${seedPID}\t-ExistingProcess`), 30_000),
+        "the existing app did not record its seeded launch",
+      ).toBe(true);
+    }
     const previousLaunches = fixtureLines().filter((line) => line.startsWith("launch\t")).length;
     const port = await freePortAsync();
     server = spawn("node", [
       CLI, udid!, "--host", "127.0.0.1", "--port", String(port), "--quiet",
       "--install-app-path", join(installFixtureDirectory!, "Installed.app"),
-      ...(bundleId ? ["--launch-app-identifier", bundleId, "--launch-arg", "-IndependentInstall"] : []),
+      ...(bundleId ? [
+        "--launch-app-identifier", bundleId, "--launch-arg", "-IndependentInstall",
+        "--open-url", "serve-sim-fixture://from-restart",
+      ] : []),
     ], { stdio: ["ignore", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
@@ -153,16 +167,31 @@ describe.skipIf(!ready)("serve-sim launch flags", () => {
       expect(stdout, `serve-sim did not become ready:\n${stderr}`).toContain(readyLine);
       expect(simctl(["get_app_container", udid!, INSTALL_APP]).trim()).not.toBe("");
       expect(fixtureLines(INSTALL_APP)).toEqual([]);
-      const launches = fixtureLines().filter((line) => line.startsWith("launch\t"));
+      if (bundleId) {
+        expect(
+          await waitFor(
+            () => fixtureLines().some((line) => line.endsWith("\tserve-sim-fixture://from-restart")),
+            60_000,
+          ),
+          `no restart URL recorded. serve-sim output:\n${stdout}\n${stderr}`,
+        ).toBe(true);
+      }
+      const lines = fixtureLines();
+      const launches = lines.filter((line) => line.startsWith("launch\t"));
       expect(launches).toHaveLength(previousLaunches + (bundleId ? 1 : 0));
-      if (bundleId) expect(launches.at(-1)?.split("\t")[2]).toBe("-IndependentInstall");
+      if (bundleId) {
+        const launch = launches.at(-1)?.split("\t");
+        expect(launch?.[1]).not.toBe(seedPID);
+        expect(launch?.[2]).toBe("-IndependentInstall");
+        expect(lines).toContain(`openurl\t${launch?.[1]}\tserve-sim-fixture://from-restart`);
+      }
     } finally {
       server.kill("SIGTERM");
       expect(await waitFor(() => server?.exitCode !== null || server?.signalCode !== null, 30_000)).toBe(true);
       expect(await waitFor(() => readInsert(udid!) === "", 30_000)).toBe(true);
       try { simctl(["uninstall", udid!, INSTALL_APP]); } catch {}
     }
-  }, 180_000);
+  }, 300_000);
 
   test("a launch that fails does not leave the capability loader inserted", async () => {
     const port = await freePortAsync();

@@ -19,6 +19,7 @@ import {
   enableCapabilities,
   applyDefaultCapabilities,
   armCapabilityLoader,
+  launchApp,
   capabilityConfigPath,
   capabilityLoaderPath,
   renderCapabilityConfig,
@@ -496,12 +497,25 @@ describe("startup capability loading", () => {
         const calls = () => readFileSync(log, "utf-8").split("\n");
         expect(calls().filter((line) => /^simctl (launch|terminate) /.test(line))).toEqual([]);
         await launchAppAsync(UDID, { bundleId: "explicit.app", launchArgs: [], capabilities: { enable: ["camera"] } });
-        expect(calls().filter((line) => line.startsWith("simctl launch "))).toEqual([`simctl launch ${UDID} explicit.app`]);
-        expect(calls().filter((line) => line.startsWith("simctl terminate "))).toEqual([`simctl terminate ${UDID} explicit.app`]);
+        expect(calls().filter((line) => line.startsWith("simctl launch "))).toEqual([`simctl launch --terminate-running-process ${UDID} explicit.app`]);
+        expect(calls().filter((line) => line.startsWith("simctl terminate "))).toEqual([]);
       });
     } finally {
       clearRegisteredCapabilities();
     }
+  });
+
+  test.each([undefined, false])("launch without restart=%s keeps native launch behavior", async (restart) => {
+    const log = join(stateDir(), "simctl-plain-launch-calls");
+    writeFileSync(log, "");
+    await withShimsAsync({ xcrun: `#!/usr/bin/env node
+require('fs').appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + '\\n');
+` }, async () => {
+      await launchApp(UDID, { bundleId: "explicit.app", launchArgs: ["--flag", "literal argument"], restart });
+      expect(readFileSync(log, "utf8").trim().split("\n").map((line) => JSON.parse(line))).toEqual([
+        ["simctl", "launch", UDID, "explicit.app", "--flag", "literal argument"],
+      ]);
+    });
   });
 
   test("publishes a capability before launching so the app cannot start without it", async () => {

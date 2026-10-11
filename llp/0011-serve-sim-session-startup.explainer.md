@@ -147,9 +147,15 @@ capability stops startup. Readiness therefore does not guarantee that every
 requested capability was enabled [observed: `src/launch-manager.ts`
 `applyDefaultCapabilities`; `src/launch-app.ts`; `src/index.ts` `missingCapabilities` check].
 
-Restart first attempts `simctl terminate`. Its numeric exit code 3, together with
-`NSPOSIXErrorDomain` code 3 and `found nothing to terminate`, is treated as an
-affirmative stopped-app response when the command was neither killed nor signaled.
+Explicit `launchApp` restart passes `--terminate-running-process` to `simctl launch`
+instead of issuing a separate termination. State and capability publication remain
+inside the per-device lock before that command. The command must succeed before
+`launchAppAsync` approves or opens the URL; a failure still stops CLI startup before
+readiness [observed: `src/launch-manager.ts` `launchApp`; `src/launch-app.ts`].
+
+Capability relaunches still first attempt `simctl terminate`. Its numeric exit code 3,
+together with `NSPOSIXErrorDomain` code 3 and `found nothing to terminate`, is treated
+as an affirmative stopped-app response when the command was neither killed nor signaled.
 Other termination failures still require a successful running-state check; an app
 that is still running or cannot be checked is not relaunched. This keeps the new
 process's arguments and capability insertion from silently becoming a no-op
