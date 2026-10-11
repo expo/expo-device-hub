@@ -222,7 +222,6 @@ async function snapshotCapabilityLaunch(udid: string): Promise<CapabilityLaunchS
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const startupDylibs = managedStartupDylibs(udid);
-  // @ref LLP 0007#startup-capabilities — settle both snapshot reads before publication or lock release.
   const [configRead, insertRead] = await Promise.allSettled([
     simctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], 15_000),
     readInsert(udid),
