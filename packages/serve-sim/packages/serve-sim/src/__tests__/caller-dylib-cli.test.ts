@@ -149,7 +149,6 @@ test("plain preview initializes its exact target once and clears only stale inse
   writeFileSync(guard, "");
   writeFileSync(staleLoader, "");
   writeFileSync(environment, JSON.stringify({ DYLD_INSERT_LIBRARIES: `${retained}:${staleLoader}` }));
-  // Block the CLI's absolute GUI commands as well as shimming PATH-based xcrun.
   writeFileSync(preload, `const cp = require('node:child_process');
 const original = cp.execFileSync;
 cp.execFileSync = function(file, ...args) {

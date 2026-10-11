@@ -1807,8 +1807,6 @@ async function serve(
     printStartupError(message, quiet);
     process.exit(1);
   };
-  // @ref LLP 0011#startup-order — the sole caller resolved and booted these targets.
-  // Sessions are created lazily on the first stream request.
   const targetDevice = targetDevices[0];
 
   const capture = await import("./capture");
