@@ -234,8 +234,9 @@ actor FrameCapture {
     private func surface(for descriptor: NSObject, live: Bool = false) -> IOSurface? {
         let key = ObjectIdentifier(descriptor)
         guard live else { return framebufferSurfaces[key] }
-        // A simulator that is not booted has no surface, and every read of its
-        // descriptor leaves a ROCKit proxy behind that is never released.
+        // @ref LLP 0001#capture-recovery — a simulator that is not booted is not read; its loss keeps counting.
+        // It has no surface, and every read of its descriptor leaves a ROCKit
+        // proxy behind that is never released.
         guard isDeviceBooted() else {
             updateCachedSurface(nil, for: key)
             return nil
