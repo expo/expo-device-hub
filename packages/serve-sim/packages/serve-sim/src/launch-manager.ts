@@ -224,7 +224,6 @@ async function snapshotCapabilityLaunch(udid: string): Promise<CapabilityLaunchS
   }
   const startupDylibs = managedStartupDylibs(udid);
   const configPath = (await simctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], 15_000)).trim();
-  // @ref LLP 0007#startup-capabilities — read insert last and reuse it under the device lock.
   const insert = await readInsert(udid);
   return { config, configPath, insert, startupDylibs };
 }
