@@ -222,9 +222,14 @@ async function snapshotCapabilityLaunch(udid: string): Promise<CapabilityLaunchS
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const startupDylibs = managedStartupDylibs(udid);
-  const configPath = (await simctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], 15_000)).trim();
-  const insert = await readInsert(udid);
-  return { config, configPath, insert, startupDylibs };
+  // @ref LLP 0007#startup-capabilities — settle both snapshot reads before publication or lock release.
+  const [configRead, insertRead] = await Promise.allSettled([
+    simctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], 15_000),
+    readInsert(udid),
+  ]);
+  if (configRead.status === "rejected") throw configRead.reason;
+  if (insertRead.status === "rejected") throw insertRead.reason;
+  return { config, configPath: configRead.value.trim(), insert: insertRead.value, startupDylibs };
 }
 
 async function restoreLaunchEnvironment(udid: string, name: string, value: string): Promise<void> {

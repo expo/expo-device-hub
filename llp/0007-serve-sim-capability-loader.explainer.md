@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-11 (documented rollback snapshots and live insert reconciliation)
+**Revised:** 2026-10-11 (documented concurrent rollback reads and live insert reconciliation)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -205,8 +205,10 @@ one as a managed image. Caller paths are excluded from stale-loader detection
 `removeReleasedStartupSync`, `disarmStaleCapabilityLoader`].
 
 Publication snapshots the saved config and launchd environment under the device lock.
-It reads launchd's config path before the insert for rollback, then rereads the
-insert before composition to retain unrelated libraries added between those reads.
+It starts the config-path and insert reads together, waits for both to settle before
+publication or lock release, and reports the config-path failure first if both fail.
+It rereads the insert before composition to retain unrelated libraries added after
+the rollback snapshot.
 Cooperating publishers use the same lock; tools writing launchctl directly do not,
 so their read-modify-write updates remain non-atomic
 [observed: `src/launch-manager.ts` `snapshotCapabilityLaunch`, `publishLaunchState`,

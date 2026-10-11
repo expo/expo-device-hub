@@ -44,6 +44,31 @@ if (command === 'getenv' && name === 'DYLD_INSERT_LIBRARIES' && fs.existsSync(fa
   fs.unlinkSync(failure + '.foreign-insert');
   fs.writeFileSync(path, JSON.stringify({ ...env, [name]: env[name] + ':' + foreign }));
 }
+const readProbe = failure + '.reads';
+if (command === 'getenv' && fs.existsSync(readProbe)) {
+  const peer = name === 'SERVE_SIM_CAPABILITIES_CONFIG' ? 'DYLD_INSERT_LIBRARIES' : 'SERVE_SIM_CAPABILITIES_CONFIG';
+  fs.writeFileSync(readProbe + '.' + name + '.started', '');
+  const deadline = Date.now() + 2000;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  while (!fs.existsSync(readProbe + '.' + peer + '.started') && Date.now() < deadline) {
+    Atomics.wait(sleeper, 0, 0, 10);
+  }
+  if (!fs.existsSync(readProbe + '.' + peer + '.started')) {
+    process.stderr.write('snapshot reads did not overlap');
+    process.exit(1);
+  }
+  if (name === 'SERVE_SIM_CAPABILITIES_CONFIG') {
+    process.stderr.write('injected CONFIG read failure');
+    process.exit(1);
+  }
+  Atomics.wait(sleeper, 0, 0, 150);
+  const lock = ${JSON.stringify(join(state.dir, `launch-${UDID}.lock`))};
+  fs.writeFileSync(readProbe + '.insert-finished', fs.existsSync(lock) ? fs.readFileSync(lock, 'utf8') : 'missing');
+  if (fs.readFileSync(readProbe, 'utf8') === 'both-fail') {
+    process.stderr.write('injected INSERT read failure');
+    process.exit(1);
+  }
+}
 if (name === 'DYLD_INSERT_LIBRARIES' && command !== 'getenv' && fs.existsSync(failure)) {
   // failure + '.watch' names a file to copy, recording what a running app's loader could read then.
   if (fs.existsSync(failure + '.watch')) {
@@ -224,6 +249,31 @@ test("failed publication restores actual config and launchd values", async () =>
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(previous);
   expect(env()).toEqual(previousEnv);
   expect(managedStartupDylibs(UDID)).toEqual([previousStartup]);
+});
+
+test.each([false, true])("snapshot failure settles overlapping reads before releasing the lock (INSERT fails=%s)", async (insertFails) => {
+  const probe = `${failurePath}.reads`;
+  const finished = `${probe}.insert-finished`;
+  writeFileSync(probe, insertFails ? "both-fail" : "config-fails");
+  try {
+    const error = await enable().catch((error: unknown) => error);
+    expect(error).toBeInstanceOf(Error);
+    expect(String((error as Error).message)).toContain("injected CONFIG read failure");
+    expect(readFileSync(finished, "utf8")).toBe(String(process.pid));
+    expect(existsSync(join(state.dir, `launch-${UDID}.lock`))).toBe(false);
+    expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
+    expect(existsSync(capabilityConfigPath(UDID))).toBe(false);
+    expect(managedStartupDylibs(UDID)).toEqual([]);
+    const calls = readFileSync(callsPath, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as string[]);
+    expect(calls).toHaveLength(2);
+    expect(calls.every((args) => args[4] === "getenv")).toBe(true);
+  } finally {
+    if (existsSync(`${probe}.DYLD_INSERT_LIBRARIES.started`)) {
+      const deadline = Date.now() + 2500;
+      while (!existsSync(finished) && Date.now() < deadline) await Bun.sleep(10);
+    }
+  }
 });
 
 test("a failed publication never shows running apps its deferred load", async () => {
