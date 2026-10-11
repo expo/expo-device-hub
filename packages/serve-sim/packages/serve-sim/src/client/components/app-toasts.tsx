@@ -1,11 +1,19 @@
+import { useEffect, useRef } from "react";
 import { Toaster, toast } from "sonner";
 import type { UploadToast } from "../hooks/use-upload-toasts";
+import { installToastHoverGuard } from "../utils/toast-hover";
 
 const INPUT_SOCKET_ERROR_TOAST_ID = "simulator-input-error";
 
 export function ServeSimToaster() {
+  const ref = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (ref.current) return installToastHoverGuard(ref.current);
+  }, []);
+
   return (
     <Toaster
+      ref={ref}
       theme="dark"
       position="bottom-center"
       visibleToasts={4}
