@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { EventLogEntry } from "../../event-log";
 import { openHostEventStream } from "../../socket/client-control";
 import { simEndpoint } from "../utils/sim-endpoint";
@@ -19,36 +19,44 @@ export function EventLogTool({
   eventsEndpoint?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [events, setEvents] = useState<EventLogEntry[]>([]);
-  const [errored, setErrored] = useState(false);
   const path = useMemo(
     () => eventsEndpoint ?? `${simEndpoint("api/event-log/events")}?device=${encodeURIComponent(udid)}`,
     [eventsEndpoint, udid],
   );
+  const [view, setView] = useState({ udid, path, events: [] as EventLogEntry[], errored: false });
+  const current = useRef({ open, udid, path });
+  useLayoutEffect(() => { current.current = { open, udid, path }; }, [open, udid, path]);
+  const sameDevice = view.udid === udid && view.path === path;
+  const errored = sameDevice && view.errored;
 
   useEffect(() => {
-    setErrored(false);
-    setEvents([]);
+    if (!open) return;
+    let active = true;
+    const isCurrent = () => active && current.current.open && current.current.udid === udid && current.current.path === path;
     const stream = openHostEventStream(path);
     stream.onmessage = ({ data }) => {
+      if (!isCurrent()) return;
       try {
         const payload = JSON.parse(data) as EventLogPayload;
-        setErrored(false);
         if (Array.isArray(payload.events)) {
-          setEvents(payload.events.slice(-MAX_EVENT_LOG_ROWS));
+          setView({ udid, path, events: payload.events.slice(-MAX_EVENT_LOG_ROWS), errored: false });
         } else if (payload.event) {
-          setEvents((prev) => {
-            const next = [...prev.filter((entry) => entry.id !== payload.event!.id), payload.event!];
-            return next.slice(-MAX_EVENT_LOG_ROWS);
+          const event = payload.event;
+          setView((prev) => {
+            const previous = prev.udid === udid && prev.path === path ? prev.events : [];
+            const next = [...previous.filter((entry) => entry.id !== event.id), event];
+            return { udid, path, events: next.slice(-MAX_EVENT_LOG_ROWS), errored: false };
           });
         }
       } catch {}
     };
-    stream.onerror = () => setErrored(true);
-    return () => stream.close();
-  }, [path]);
+    stream.onerror = () => {
+      if (isCurrent()) setView((prev) => ({ udid, path, events: prev.udid === udid && prev.path === path ? prev.events : [], errored: true }));
+    };
+    return () => { active = false; stream.close(); };
+  }, [open, path, udid]);
 
-  const visibleEvents = useMemo(() => events.slice().reverse(), [events]);
+  const visibleEvents = useMemo(() => open && sameDevice ? view.events.slice().reverse() : [], [open, sameDevice, view.events]);
 
   return (
     <CollapsibleSection
@@ -62,12 +70,12 @@ export function EventLogTool({
             Event Log
           </span>
           <span className="justify-self-end rounded-md border border-white/8 bg-white/[0.04] px-1.5 py-[3px] text-[10px] font-mono text-white/60">
-            {events.length}
+            {sameDevice ? view.events.length : 0}
           </span>
         </>
       }
     >
-      {visibleEvents.length === 0 ? (
+      {open && (visibleEvents.length === 0 ? (
         <div
           role="status"
           aria-live="polite"
@@ -81,12 +89,12 @@ export function EventLogTool({
             <EventLogRow key={event.id} event={event} />
           ))}
         </div>
-      )}
+      ))}
     </CollapsibleSection>
   );
 }
 
-function EventLogRow({ event }: { event: EventLogEntry }) {
+const EventLogRow = memo(function EventLogRow({ event }: { event: EventLogEntry }) {
   const time = formatTime(event.timestamp);
   const detail = [event.source, event.kind, event.action].filter(Boolean).join(" / ");
   const message = event.msg ?? event.summary;
@@ -116,7 +124,7 @@ function EventLogRow({ event }: { event: EventLogEntry }) {
       ) : null}
     </div>
   );
-}
+});
 
 function formatTime(timestamp: string): string {
   const date = new Date(timestamp);

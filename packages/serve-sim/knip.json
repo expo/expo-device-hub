@@ -22,7 +22,7 @@
         "src/client/global.css",
         "scripts/build-trails.ts",
         "src/**/__tests__/**/*.test.{ts,tsx}",
-        "src/__tests__/fixtures/*.child.ts",
+        "src/__tests__/fixtures/*.child.{ts,tsx}",
         "scripts/tart/__tests__/*.test.ts"
       ]
     }
