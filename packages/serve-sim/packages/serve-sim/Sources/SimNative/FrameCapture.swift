@@ -234,6 +234,12 @@ actor FrameCapture {
     private func surface(for descriptor: NSObject, live: Bool = false) -> IOSurface? {
         let key = ObjectIdentifier(descriptor)
         guard live else { return framebufferSurfaces[key] }
+        // A simulator that is not booted has no surface, and every read of its
+        // descriptor leaves a ROCKit proxy behind that is never released.
+        guard isDeviceBooted() else {
+            updateCachedSurface(nil, for: key)
+            return nil
+        }
 
         let surfaceSelector = NSSelectorFromString("framebufferSurface")
         var reported: IOSurface?
@@ -459,8 +465,9 @@ actor FrameCapture {
         guard let lastLiveRevalidationNs else { return }
         // A cached miss cannot establish that the surface is still missing.
         let healthCheckNs = min(nowNs, lastLiveRevalidationNs)
-        guard case .rewire(let lossStarted) = surfaceWatch.tick(atNanoseconds: healthCheckNs, capturedAnyFrame: frameCount > 0)
-        else { return }
+        guard case .rewire(let lossStarted) = surfaceWatch.tick(
+            atNanoseconds: healthCheckNs, capturedAnyFrame: frameCount > 0, deviceBooted: isDeviceBooted()
+        ) else { return }
         if lossStarted {
             print("[capture] No framebuffer surface for \(Self.seconds(surfaceWatch.currentLossNanoseconds(atNanoseconds: nowNs))); re-wiring the display pipeline")
         }
@@ -469,6 +476,12 @@ actor FrameCapture {
         } catch {
             // Retry on the next eligible tick.
         }
+    }
+
+    /// A capture installed without a device, as tests do, counts as booted.
+    private func isDeviceBooted() -> Bool {
+        guard let device else { return true }
+        return device.value(forKey: "stateString") as? String == "Booted"
     }
 
     // MARK: - Frame capture

@@ -69,6 +69,9 @@ replacement with the same seed still reaches capture. [observed:
 Before the first frame, capture retries framebuffer wiring once per second.
 Afterward, a live read confirming at least one second without a selected surface
 starts recovery; retries continue once per second until a surface returns.
+While the simulator is not booted, capture makes neither the live read nor the
+retry; the loss still counts, and both resume at the next once-per-second check
+after it boots.
 Cached misses between live reads do not advance recovery. Unchanged pixels on
 a static screen do not trigger recovery while its surface is available.
 Capture logs the start and end of a loss. [observed: `Sources/SimNative/FrameCapture.swift`;

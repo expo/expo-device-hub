@@ -171,6 +171,7 @@ final class FrameCaptureSurfaceTests: XCTestCase {
         XCTAssertEqual(log.all.count, 1)
         let shutDown = await capture.surfaceLossTimings()
         XCTAssertEqual(shutDown.rewires, 0)
+        XCTAssertEqual(shutDown.losses, 1)
 
         // The new boot publishes new descriptors; the old one has no surface.
         descriptor.surface = nil
