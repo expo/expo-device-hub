@@ -192,11 +192,12 @@ function startupDylibs(capabilities: Record<string, Capability>): string[] {
 async function armInsert(
   udid: string,
   dylib: string,
+  insert: string,
   capabilities: Record<string, Capability> = readLaunchState(udid)?.capabilities ?? {},
   previousStartup = managedStartupDylibs(udid),
 ): Promise<void> {
   const desired = startupDylibs(capabilities);
-  const retained = withoutOurs(await readInsert(udid), previousStartup);
+  const retained = withoutOurs(insert, previousStartup);
   const next = [...new Set([...retained, dylib, ...desired, ...additionalDylibs()])].join(":");
   writeManagedStartupDylibs(udid, [...previousStartup, ...desired]);
   await simctl(["spawn", udid, "launchctl", "setenv", CONFIG_VAR, capabilityConfigPath(udid)], 15_000);
@@ -222,8 +223,9 @@ async function snapshotCapabilityLaunch(udid: string): Promise<CapabilityLaunchS
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
   }
   const startupDylibs = managedStartupDylibs(udid);
-  const insert = await readInsert(udid);
   const configPath = (await simctl(["spawn", udid, "launchctl", "getenv", CONFIG_VAR], 15_000)).trim();
+  // @ref LLP 0007#startup-capabilities — read insert last and reuse it under the device lock.
+  const insert = await readInsert(udid);
   return { config, configPath, insert, startupDylibs };
 }
 
@@ -277,7 +279,7 @@ async function publishLaunchState(udid: string, state: LaunchState): Promise<voi
 
   try {
     commitCapabilityConfig(udid, withdrawnOnly);
-    await armInsert(udid, capabilityLoaderPath(), state.capabilities, previous.startupDylibs);
+    await armInsert(udid, capabilityLoaderPath(), previous.insert, state.capabilities, previous.startupDylibs);
     if (config !== withdrawnOnly) commitCapabilityConfig(udid, config);
     writeLaunchState(udid, state);
   } catch (error) {

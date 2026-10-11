@@ -14,6 +14,7 @@ const UDID = "startup-capabilities-test";
 let state: ReturnType<typeof useTempStateDir>;
 let shims: ReturnType<typeof installShims>;
 let envPath: string;
+let callsPath: string;
 let failurePath: string;
 let shutdownPath: string;
 let dylib: string;
@@ -21,6 +22,7 @@ let dylib: string;
 beforeEach(() => {
   state = useTempStateDir();
   envPath = join(state.dir, "env.json");
+  callsPath = join(state.dir, "simctl-calls.jsonl");
   failurePath = join(state.dir, "fail-insert");
   shutdownPath = join(state.dir, "shut-down");
   dylib = join(state.dir, "startup.dylib");
@@ -28,6 +30,7 @@ beforeEach(() => {
   writeFileSync(envPath, JSON.stringify({ DYLD_INSERT_LIBRARIES: "/other.dylib" }));
   shims = installShims({ xcrun: `#!/usr/bin/env node
 const fs = require('node:fs');
+fs.appendFileSync(${JSON.stringify(callsPath)}, JSON.stringify(process.argv.slice(2)) + '\\n');
 const path = ${JSON.stringify(envPath)};
 const failure = ${JSON.stringify(failurePath)};
 if (fs.existsSync(${JSON.stringify(shutdownPath)})) {
@@ -75,6 +78,35 @@ test("startup capture uses shared inserts and capability environment", async () 
   await disableCapability(UDID, null, "capture", { relaunch: false });
   expect(env().DYLD_INSERT_LIBRARIES).not.toContain(dylib);
   expect(managedStartupDylibs(UDID)).toEqual([]);
+});
+
+test("one insert snapshot preserves caller and foreign dylibs while replacing managed startup images", async () => {
+  const previousCaller = process.env.SERVE_SIM_ADDITIONAL_DYLIBS;
+  const withdrawn = join(state.dir, "withdrawn.dylib");
+  const callerStartup = join(state.dir, "caller-startup.dylib");
+  const callerLoader = join(state.dir, "caller/libServeSimCapabilityLoader.dylib");
+  const guard = "/guard.dylib ";
+  try {
+    process.env.SERVE_SIM_ADDITIONAL_DYLIBS = [callerStartup, callerLoader, guard].join(":");
+    writeManagedStartupDylibs(UDID, [withdrawn, callerStartup]);
+    writeFileSync(envPath, JSON.stringify({
+      DYLD_INSERT_LIBRARIES: ["/other.dylib", withdrawn, callerStartup, callerLoader, guard, capabilityLoaderPath()].join(":"),
+    }));
+    await enable();
+    expect(env().DYLD_INSERT_LIBRARIES?.split(":")).toEqual([
+      "/other.dylib", callerStartup, callerLoader, guard, capabilityLoaderPath(), dylib,
+    ]);
+    expect(managedStartupDylibs(UDID)).toEqual([dylib]);
+    const reads = readFileSync(callsPath, "utf8").trim().split("\n")
+      .map((line) => JSON.parse(line) as string[]).filter((args) => args[4] === "getenv");
+    expect(reads).toEqual([
+      ["simctl", "spawn", UDID, "launchctl", "getenv", "SERVE_SIM_CAPABILITIES_CONFIG"],
+      ["simctl", "spawn", UDID, "launchctl", "getenv", "DYLD_INSERT_LIBRARIES"],
+    ]);
+  } finally {
+    if (previousCaller === undefined) delete process.env.SERVE_SIM_ADDITIONAL_DYLIBS;
+    else process.env.SERVE_SIM_ADDITIONAL_DYLIBS = previousCaller;
+  }
 });
 
 test("hybrid capture keeps its early insert and publishes a deferred load for running apps", async () => {
@@ -168,14 +200,27 @@ test("stale cleanup waits for a session that is arming instead of clearing it", 
   expect(env().DYLD_INSERT_LIBRARIES).toBe(["/other.dylib", loader].join(":"));
 });
 
-test("failed publication restores actual config and launchd values", async () => {
+test("failed publication restores actual config and launchd values from one insert snapshot", async () => {
   const previous = "# previous config retained for cleanup\n";
+  const previousStartup = join(state.dir, "previous-startup.dylib");
+  const previousEnv = {
+    DYLD_INSERT_LIBRARIES: `/other.dylib:${previousStartup}:/guard.dylib `,
+    SERVE_SIM_CAPABILITIES_CONFIG: "/previous/config.conf",
+  };
   writeFileSync(capabilityConfigPath(UDID), previous);
+  writeFileSync(envPath, JSON.stringify(previousEnv));
+  writeManagedStartupDylibs(UDID, [previousStartup]);
   writeFileSync(failurePath, "");
   await expect(enable()).rejects.toThrow();
   expect(readFileSync(capabilityConfigPath(UDID), "utf8")).toBe(previous);
-  expect(env()).toEqual({ DYLD_INSERT_LIBRARIES: "/other.dylib" });
-  expect(managedStartupDylibs(UDID)).toEqual([]);
+  expect(env()).toEqual(previousEnv);
+  expect(managedStartupDylibs(UDID)).toEqual([previousStartup]);
+  const reads = readFileSync(callsPath, "utf8").trim().split("\n")
+    .map((line) => JSON.parse(line) as string[]).filter((args) => args[4] === "getenv");
+  expect(reads).toEqual([
+    ["simctl", "spawn", UDID, "launchctl", "getenv", "SERVE_SIM_CAPABILITIES_CONFIG"],
+    ["simctl", "spawn", UDID, "launchctl", "getenv", "DYLD_INSERT_LIBRARIES"],
+  ]);
 });
 
 test("a failed publication never shows running apps its deferred load", async () => {

@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (added startup installation to the detached-mode restrictions and linked the startup explainer)
+**Revised:** 2026-10-11 (documented the shared publication and rollback insert snapshot)
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
@@ -203,6 +203,13 @@ preserves its explicitly requested paths, even when an enabled capability also r
 one as a managed image. Caller paths are excluded from stale-loader detection
 [observed: `src/launch-manager.ts` `armInsert`, `withoutOurs`,
 `removeReleasedStartupSync`, `disarmStaleCapabilityLoader`].
+
+Publication snapshots the saved config and launchd environment under the device lock.
+It reads launchd's config path before the insert, then uses that same insert value
+for composition and rollback. The lock coordinates serve-sim state writers; another
+tool writing launchctl directly does not participate
+[observed: `src/launch-manager.ts` `snapshotCapabilityLaunch`, `publishLaunchState`,
+`armInsert`, `restoreCapabilityLaunch`; `src/launch-state-lock.ts`].
 
 Capture's startup image resolves existing Objective-C runtime functions and enumerates
 session factory methods without sending Objective-C messages during initialization.
