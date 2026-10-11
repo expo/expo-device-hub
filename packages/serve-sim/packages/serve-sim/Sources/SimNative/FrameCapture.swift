@@ -97,6 +97,7 @@ actor FrameCapture {
     private var bestSurfaceKey: ObjectIdentifier?
     private var lastLiveRevalidationNs: UInt64?
     private var ioClient: NSObject?
+    private var device: NSObject?
 
     init(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }) {
         self.nowNanoseconds = nowNanoseconds
@@ -135,6 +136,7 @@ actor FrameCapture {
             throw makeError(3, "Failed to get device IO")
         }
         self.ioClient = io
+        self.device = device
 
         try wireUpFramebuffer()
         // Main capture follows authoritative display election. Independent
@@ -579,9 +581,11 @@ actor FrameCapture {
     func installDescriptorsForTesting(
         _ installed: [(descriptor: NSObject, metadata: SimDisplayMetadata?)],
         io: NSObject? = nil,
+        device: NSObject? = nil,
         onFrame: @escaping @Sendable (CVPixelBuffer, CMTime, Dimensions?) -> Void
     ) {
         ioClient = io
+        self.device = device
         self.onFrame = onFrame
         descriptors = installed.map(\.descriptor)
         screenMetadata = Dictionary(uniqueKeysWithValues: installed.compactMap { entry in
@@ -706,6 +710,7 @@ actor FrameCapture {
         invalidatePick()
         photocopier.reset()
         ioClient = nil
+        device = nil
     }
 
     private func unregisterCallbacks() {
