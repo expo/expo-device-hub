@@ -62,7 +62,6 @@ if (args[1] === 'terminate') {
 }
 ` }, async () => {
           try {
-            // Removing a deferred capability reaches the real relaunchTarget path without a native build.
             const relaunch = disableCapability(UDID, null, "probe");
             if (fixture.error) await expect(relaunch).rejects.toThrow(fixture.error);
             else await relaunch;
