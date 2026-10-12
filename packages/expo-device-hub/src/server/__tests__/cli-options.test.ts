@@ -297,6 +297,10 @@ describe('parseCliOptions', () => {
       'https://a.*.expo.dev',
       'https://*.*.expo.dev',
       'https://*expo.dev',
+      // URL turns full-width and small stars into `*`, which would make these wildcards.
+      'https://\uFF0A.example.com',
+      'https://\uFE61.example.com',
+      'https://foo\uFF0A.example.com',
     ]) {
       expect(() => parseCliOptions(['--cors-origin', value])).toThrow('Invalid --cors-origin');
     }

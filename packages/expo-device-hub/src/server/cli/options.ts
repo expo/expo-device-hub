@@ -159,7 +159,9 @@ function parseCorsOrigin(value: string): string {
       url = new URL(value);
     } catch {}
   }
-  if (!url || (url.hostname.startsWith('*') && !isWildcardOrigin(url.href))) {
+  // Check the parsed host too: URL turns full-width and small stars (U+FF0A, U+FE61) into `*`.
+  const star = url?.hostname.includes('*');
+  if (!url || (star && (!/^https?:\/\/\*\./i.test(value) || !isWildcardOrigin(url.href)))) {
     throw new Error(
       `Invalid --cors-origin: ${value} (expected an http(s) origin, such as https://example.com, or a subdomain wildcard, such as https://*.expo.dev)\n\n${HELP}`
     );
