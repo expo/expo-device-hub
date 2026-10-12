@@ -167,6 +167,35 @@ describe('the Hub under a session token', () => {
     }
   });
 
+  // A browser sends the preflight first, then the request with the token it has.
+  test('lets a --cors-origin page read every kind of token refusal after its preflight', async () => {
+    const preflight = await request('/vendor/serve-emu/api/devices', {
+      method: 'OPTIONS',
+      headers: { Origin: PAGE, 'Access-Control-Request-Headers': 'authorization' },
+    });
+    expect(preflight?.status).toBe(200);
+    emuRequests.length = 0;
+
+    const wrong = { Origin: PAGE, Authorization: 'Bearer wrong-token' };
+    const refusals: Array<[string, RequestInit]> = [
+      ['/vendor/serve-emu/api/devices', { headers: wrong }],
+      ['/vendor/serve-sim/api', { headers: wrong }],
+      ['/vendor/serve-emu/api/devices?token=wrong-token', { headers: { Origin: PAGE } }],
+      ['/vendor/serve-sim/stream.mjpeg?token=wrong-token', { headers: { Origin: PAGE } }],
+      ['/vendor/serve-emu/api/screenshot', { method: 'POST', headers: wrong }],
+      ['/vendor/serve-emu/api/devices', { headers: { ...wrong, 'sec-fetch-dest': 'document' } }],
+    ];
+    for (const [path, init] of refusals) {
+      const response = await request(path, init);
+      const body = (await response?.text()) ?? '';
+      expect([path, response?.status]).toEqual([path, 401]);
+      expect([path, response?.headers.get('access-control-allow-origin')]).toEqual([path, PAGE]);
+      expect([path, body.includes('wrong-token') || body.includes(TOKEN)]).toEqual([path, false]);
+    }
+    expect(simRequests).toEqual([]);
+    expect(emuRequests).toEqual([]);
+  });
+
   test('names no other origin on a refusal, and none on its own routes', async () => {
     const other = await request('/vendor/serve-emu/api/devices', { headers: { Origin: 'https://elsewhere.example' } });
     const own = await request('/api/devices', { headers: { Origin: PAGE } });
