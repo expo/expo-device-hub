@@ -97,6 +97,16 @@ describe("browser origin policy", () => {
     );
   });
 
+  test("refuses a request Origin of *, which no page sends", () => {
+    const policy = { allowedOrigins: ["https://*.expo.dev"] };
+    const fromStar = (method = "GET") =>
+      new Request("https://hub.example.test/api/devices", { method, headers: { Origin: "*" } });
+
+    expect(isAllowedBrowserOrigin(fromStar(), policy)).toBe(false);
+    expect(isAllowedMutationOrigin(fromStar("POST"), policy)).toBe(false);
+    expect(corsHeadersForRequest(fromStar(), policy)["Access-Control-Allow-Origin"]).toBeUndefined();
+  });
+
   test("adds the policy to a response whose headers are immutable", () => {
     const req = new Request("http://127.0.0.1:3300/api/devices", {
       headers: { Origin: "https://example.test" },

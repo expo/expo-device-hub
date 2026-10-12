@@ -33,6 +33,11 @@ function normalizedHttpOrigin(origin: string): string | null {
   }
 }
 
+/** A request's `Origin` header: a configured `*` means any origin, but no page can send one. */
+function normalizedRequestOrigin(origin: string): string | null {
+  return origin === "*" ? null : normalizedHttpOrigin(origin);
+}
+
 export function parseAllowedOrigins(value: string): string[] {
   const origins = value.split(",").map((origin) => origin.trim()).filter(Boolean);
   const normalized = origins.map(normalizedHttpOrigin);
@@ -83,7 +88,7 @@ export function isAllowedBrowserOrigin(
 ): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return true;
-  const normalizedOrigin = normalizedHttpOrigin(origin);
+  const normalizedOrigin = normalizedRequestOrigin(origin);
   if (!normalizedOrigin) return false;
 
   if (isConfiguredOrigin(normalizedOrigin, policy.allowedOrigins ?? [])) return true;
@@ -106,7 +111,7 @@ export function isAllowedMutationOrigin(
 ): boolean {
   const origin = req.headers.get("origin");
   if (!origin) return true;
-  const normalizedOrigin = normalizedHttpOrigin(origin);
+  const normalizedOrigin = normalizedRequestOrigin(origin);
   if (!normalizedOrigin) return false;
 
   return (
@@ -129,7 +134,7 @@ export function corsHeadersForRequest(
   if (!origin) return headers;
   if (!isAllowedBrowserOrigin(req, policy)) return headers;
 
-  const normalizedOrigin = normalizedHttpOrigin(origin);
+  const normalizedOrigin = normalizedRequestOrigin(origin);
   if (!normalizedOrigin) return headers;
   headers["Access-Control-Allow-Origin"] = policy.allowedOrigins?.includes("*")
     ? "*"
