@@ -11,7 +11,7 @@
 // the failed files.
 
 import { Glob, type Subprocess } from "bun";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { constants, tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -81,6 +81,14 @@ async function failedFiles(report: string): Promise<string[]> {
 
 export async function testWithRetry(args: string[], options: Options = {}): Promise<number> {
   const reports = await mkdtemp(join(tmpdir(), "bun-test-retry-"));
+  try {
+    return await testAndRetry(args, options, reports);
+  } finally {
+    await rm(reports, { recursive: true, force: true });
+  }
+}
+
+async function testAndRetry(args: string[], options: Options, reports: string): Promise<number> {
   const report = join(reports, "initial.xml");
   const junit = (file: string) => ["--reporter=junit", `--reporter-outfile=${file}`];
 

@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { testWithRetry } from "./bun-test-retry";
@@ -32,10 +32,19 @@ test("reruns only the failed file", async () => {
   expect(runs()).toEqual(["flaky.test.ts", "flaky.test.ts", "ok.test.ts"]);
 });
 
-test("a persistent failure stays red", async () => {
+test("a persistent failure stays red and leaves no reports behind", async () => {
   const cwd = fixture({ "hard.test.ts": `test("hard", () => expect(1).toBe(2));` });
-  expect(await testWithRetry([], { cwd })).not.toBe(0);
+  const tmp = mkdtempSync(join(tmpdir(), "bun-test-retry-tmp-"));
+  const previous = process.env.TMPDIR;
+  process.env.TMPDIR = tmp;
+  try {
+    expect(await testWithRetry([], { cwd })).not.toBe(0);
+  } finally {
+    process.env.TMPDIR = previous;
+  }
   expect(runs()).toEqual(["hard.test.ts", "hard.test.ts"]);
+  expect(readdirSync(tmp)).toEqual([]);
+  rmSync(tmp, { recursive: true });
 });
 
 test("a file that fails to load is not retried", async () => {
