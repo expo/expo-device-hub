@@ -91,6 +91,13 @@ describe("browser origin policy", () => {
     expect(isAllowedBrowserOrigin(fromOrigin("http://pr-12.expo.dev"), policy)).toBe(false);
     expect(isAllowedBrowserOrigin(fromOrigin("https://pr-12.expo.dev:8443"), policy)).toBe(false);
     expect(isAllowedBrowserOrigin(fromOrigin("https://evilexpo.dev"), policy)).toBe(false);
+    // Only a star spelled `*.`: URL would turn these into `*.expo.dev` and grant the whole domain.
+    for (const configured of ["https://%2A.expo.dev", "https://\uFF0A.expo.dev", "https://\uFE61.expo.dev"]) {
+      expect(isAllowedBrowserOrigin(fromOrigin("https://pr-12.expo.dev"), { allowedOrigins: [configured] })).toBe(false);
+      expect(isAllowedMutationOrigin(fromOrigin("https://pr-12.expo.dev", "POST"), { allowedOrigins: [configured] })).toBe(
+        false,
+      );
+    }
     // Two labels after the star, as in serve-sim.
     expect(isAllowedBrowserOrigin(fromOrigin("https://example.com"), { allowedOrigins: ["https://*.com"] })).toBe(
       false,

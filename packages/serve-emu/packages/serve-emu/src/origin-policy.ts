@@ -65,7 +65,9 @@ function originMatches(configured: string, origin: URL): boolean {
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
   if (parsed.origin === origin.origin) return true;
-  if (!WILDCARD_HOST.test(parsed.hostname)) return false;
+  // A wildcard must be spelled `*.` in the value itself: URL turns `%2A` and full-width or small
+  // stars into `*`, which would otherwise grant a whole domain no one named.
+  if (!/^https?:\/\/\*\./i.test(configured.trim()) || !WILDCARD_HOST.test(parsed.hostname)) return false;
   const suffix = parsed.hostname.slice(1).toLowerCase();
   const host = origin.hostname.toLowerCase();
   return (
