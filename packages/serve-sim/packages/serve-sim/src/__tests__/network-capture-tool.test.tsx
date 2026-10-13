@@ -18,7 +18,6 @@ import {
   CaptureFieldsMenu,
   NetworkCaptureTool,
   CaptureFieldsWarning,
-  chosenFieldsFor,
   toggleField,
   visibleChangeError,
   formatMs,
@@ -445,13 +444,6 @@ describe("capture field toggles", () => {
     expect(toggleField([], "response-body")).toEqual(["response-body"]);
     expect(toggleField(["response-body"], "header")).toEqual(["header", "response-body"]);
     expect(toggleField(["header", "response-body"], "header")).toEqual(["response-body"]);
-  });
-
-  test("applies a pick only to the simulator it was made for", () => {
-    const choice = { udid: UDID, fields: ["header" as const] };
-    expect(chosenFieldsFor(choice, UDID)).toEqual(["header"]);
-    expect(chosenFieldsFor(choice, "OTHER-UDID")).toBeNull();
-    expect(chosenFieldsFor(null, UDID)).toBeNull();
   });
 
   test("offers the fields menu before capture starts, when no filter row shows", () => {

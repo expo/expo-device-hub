@@ -269,6 +269,12 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
       });
       session.proxy = proxy;
       meta.proxyAddress = proxy.address;
+      // A pick made while the proxy started reaches it before any app is pointed at it. A failed
+      // write fails the start rather than run with the fields the pick replaced.
+      if (request?.fields && !sameFields(sessionFields, request.fields)) {
+        proxy.setFields(request.fields);
+        meta.fields = [...request.fields];
+      }
       if (request) assertRequested(udid, request, policy);
       await trustCa(udid, await proxy.caPem());
       if (request) assertRequested(udid, request, policy);
@@ -329,9 +335,30 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
     return operations.enqueue(udid, () => disable(udid));
   };
 
+  /**
+   * Hands `fields` to a start in flight. A proxy already up takes them now, before or while apps
+   * are pointed at it. A failed write throws, so the caller hears about it and the start keeps its
+   * old fields.
+   */
+  const takeStartingFields = (udid: string, request: EnableRequest, fields: readonly CaptureField[]): void => {
+    const session = byUdid.get(udid);
+    if (session?.proxy && session.meta.attachment === "starting" && request.session === session) {
+      session.proxy.setFields(fields);
+      session.meta.fields = [...fields];
+      session.store.publishMeta(session.meta);
+    }
+    request.fields = [...fields];
+  };
+
+  /** Null when capture is off; a start in flight takes the fields. */
   const setFieldsForDevice = (udid: string, next: readonly CaptureField[]): CaptureMeta | null => {
     const session = byUdid.get(udid);
-    if (!session?.proxy || session.meta.attachment !== "capturing") return null;
+    if (!session?.proxy || session.meta.attachment !== "capturing") {
+      const starting = enables.get(udid);
+      if (!starting || starting.failed || starting.cancelled) return null;
+      takeStartingFields(udid, starting, next);
+      return metaOf(udid);
+    }
     session.proxy.setFields(next);
     const pending = enables.get(udid);
     if (pending && !pending.failed && pending.session === session) pending.fields = [...next];
@@ -381,7 +408,14 @@ export function createCaptureRuntime(options: CaptureRuntimeOptions = {}) {
         failed: false,
         promise: Promise.resolve(notEnabledMeta(udid, policy)),
       };
-      if (fields !== undefined) request.fields = [...fields];
+      if (fields !== undefined) {
+        try {
+          // A start this joins may already have a proxy that apps can reach.
+          takeStartingFields(udid, request, fields);
+        } catch (error) {
+          return Promise.reject(error);
+        }
+      }
       const promise = operations.enqueue(udid, async () => {
         assertRequested(udid, request, policy);
         request.session = byUdid.get(udid);

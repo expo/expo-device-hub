@@ -314,6 +314,8 @@ describe("capture actions", () => {
       const off = await runHostActionAsync({ action: "capture.fields", params: { udid: UDID, fields: [] } }, BIN);
       expect(off.exitCode).toBe(1);
       expect(off.stderr).toContain("not on for this device");
+      // The meta says the device is off, so the panel keeps the pick rather than reporting a failure.
+      expect(JSON.parse(off.stdout).attachment).toBe("not-enabled");
     } finally {
       set.mockRestore();
     }

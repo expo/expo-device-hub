@@ -6,6 +6,7 @@ import {
   type CaptureAttachment,
   type CaptureMeta,
 } from "../hooks/use-capture-stream";
+import { chooseCaptureFields, useChosenCaptureFields } from "../hooks/use-capture-field-choices";
 import { CAPTURE_FIELDS, isCaptureField, type CaptureField } from "../../capture/fields";
 import { runHostAction } from "../../socket/client-control";
 import { downloadHar } from "../utils/har-download";
@@ -32,13 +33,6 @@ export {
   groupByDomain,
 } from "./network-capture-requests";
 
-type FieldChoice = { udid: string; fields: CaptureField[] } | null;
-
-/** The panel stays mounted when the simulator changes, so a pick applies only to its own device. */
-export function chosenFieldsFor(choice: FieldChoice, udid: string): CaptureField[] | null {
-  return choice?.udid === udid ? choice.fields : null;
-}
-
 export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; captureEndpoint?: string }) {
   const path = useMemo(
     () => captureEndpoint ?? `${simEndpoint("network-capture")}?device=${encodeURIComponent(udid)}`,
@@ -56,9 +50,8 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
   const [changeError, setChangeError] = useState<string | null>(null);
   const actionScope = useRef({});
   const [streamKey, setStreamKey] = useState(0);
-  // The fields last picked, used by the next enable; the server's default until then.
-  const [fieldChoice, setFieldChoice] = useState<FieldChoice>(null);
-  const chosenFields = chosenFieldsFor(fieldChoice, udid);
+  // The fields last picked for this simulator, used by the next enable; the server's default until then.
+  const chosenFields = useChosenCaptureFields(udid);
   const { meta, requests, errored, clear, setMeta } = useCaptureStream(path, streamKey);
   const capturing = meta?.attachment === "capturing";
   const shownFields = capturing ? (meta?.fields ?? []) : (chosenFields ?? meta?.fields ?? []);
@@ -98,7 +91,8 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
     setChangeError(null);
     try {
       const liveEnable = enable && meta?.attachment === "not-enabled";
-      const fields = enable && chosenFields ? { fields: chosenFields } : {};
+      // Exactly what the menu shows, so a viewer that never got a frame does not get the server's default.
+      const fields = enable ? { fields: shownFields.filter(isCaptureField) } : {};
       const result = liveEnable
         ? await runHostAction("capture.enable", { udid, ...fields })
         : await runHostAction("capture.reboot", { udid, enabled: enable, ...fields });
@@ -120,23 +114,21 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
   async function changeFields(next: CaptureField[]) {
     const scope = actionScope.current;
     setChangeError(null);
-    if (!capturing) {
-      setFieldChoice({ udid, fields: next });
-      return;
-    }
-    // Held until the reply, so a second click builds on the applied fields, not on a stale render.
+    // The server, not this panel's last frame, decides whether capture runs: the frame can be
+    // missing or stale. Held until the reply, so a second click builds on the applied fields.
     setChanging(true);
     try {
       const result = await runHostAction("capture.fields", { udid, fields: next });
       if (scope !== actionScope.current) return;
-      if (result.exitCode !== 0) {
+      const reported = captureOffMeta(result);
+      if (result.exitCode !== 0 && !reported) {
         setChangeError(result.stderr || "The capture fields could not be changed.");
         return;
       }
-      const changed = JSON.parse(result.stdout) as CaptureMeta;
-      setMeta(changed);
-      // A later restart keeps what the menu shows now, not an older pick made while capture was off.
-      setFieldChoice({ udid, fields: changed.fields.filter(isCaptureField) });
+      // Applied to a running capture, taken by one that is starting, or kept for the next enable
+      // when the server says capture is off. A later restart keeps what the menu shows now.
+      setMeta(reported ?? (JSON.parse(result.stdout) as CaptureMeta));
+      chooseCaptureFields(udid, next);
     } catch (error) {
       if (scope !== actionScope.current) return;
       setChangeError(error instanceof Error ? error.message : "The capture fields could not be changed.");
@@ -159,7 +151,7 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
   const fieldsMenu = (
     <CaptureFieldsMenu
       fields={shownFields}
-      disabled={meta?.attachment === "starting"}
+      disabled={starting}
       busy={changing}
       onChange={(next) => void changeFields(next)}
     />
@@ -337,6 +329,20 @@ export function NetworkCaptureTool({ udid, captureEndpoint }: { udid: string; ca
       </div>
     </CollapsibleSection>
   );
+}
+
+/**
+ * The meta in a `capture.fields` refusal that says capture is off. Any other failure, such as a
+ * field write that failed, carries no meta and stays an error.
+ */
+export function captureOffMeta(result: { exitCode: number; stdout: string }): CaptureMeta | null {
+  if (result.exitCode === 0 || !result.stdout) return null;
+  try {
+    const meta = JSON.parse(result.stdout) as CaptureMeta;
+    return meta.attachment === "not-enabled" || meta.attachment === "failed" ? meta : null;
+  } catch {
+    return null;
+  }
 }
 
 const FIELD_LABELS: Record<CaptureField, string> = {

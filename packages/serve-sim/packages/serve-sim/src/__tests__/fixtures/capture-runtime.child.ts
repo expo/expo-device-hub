@@ -262,6 +262,90 @@ describe("capture runtime", () => {
     await runtime.disableAll();
   });
 
+  /** A runtime whose proxy records each field write, and what it held when apps were pointed at it. */
+  function startupHarness(opts: { proxyGate?: Promise<void>; trust?: Promise<void>; failOn?: string } = {}) {
+    const applied: (readonly string[])[] = [];
+    const proxyEntered = gate();
+    let atPublish: readonly string[] | null = null;
+    const { runtime } = harness({
+      trustCa: () => opts.trust ?? Promise.resolve(),
+      inject: async () => { atPublish = applied.at(-1) ?? null; },
+      startProxy: async (_store, deps) => {
+        applied.push([...(deps.fields ?? [])]);
+        proxyEntered.release();
+        await opts.proxyGate;
+        return {
+          address: "127.0.0.1:9123", portFile: PORT_FILE, caPem: async () => CA_PEM,
+          setFields: (fields) => {
+            if (opts.failOn && fields.length === 0) throw new Error(opts.failOn);
+            applied.push([...fields]);
+          },
+          close: async () => {},
+        };
+      },
+    });
+    runtime.setFields(["response-body"]);
+    return { runtime, applied, proxyEntered, publishedWith: () => atPublish };
+  }
+
+  test("a field change while off changes nothing", () => {
+    const { runtime } = startupHarness();
+    expect(runtime.setFieldsForDevice(UDID, [])).toBeNull();
+  });
+
+  test("a field change before the proxy is up reaches it before apps are pointed at it", async () => {
+    const proxy = gate();
+    const { runtime, proxyEntered, publishedWith } = startupHarness({ proxyGate: proxy.promise });
+    const enabling = runtime.enableForDevice(UDID);
+    await proxyEntered.promise;
+    expect(runtime.setFieldsForDevice(UDID, [])).not.toBeNull();
+    proxy.release();
+    expect((await enabling).fields).toEqual([]);
+    expect(publishedWith()).toEqual([]);
+    await runtime.disableAll();
+  });
+
+  test("a field change while the proxy is up reaches it at once", async () => {
+    const trust = gate();
+    const { runtime, applied, proxyEntered, publishedWith } = startupHarness({ trust: trust.promise });
+    const enabling = runtime.enableForDevice(UDID);
+    await proxyEntered.promise;
+    await Promise.resolve();
+    expect(runtime.setFieldsForDevice(UDID, [])).not.toBeNull();
+    expect(applied.at(-1)).toEqual([]);
+    trust.release();
+    expect((await enabling).fields).toEqual([]);
+    expect(publishedWith()).toEqual([]);
+    await runtime.disableAll();
+  });
+
+  test("an enable that joins a start reaches its proxy before apps are pointed at it", async () => {
+    const trust = gate();
+    const { runtime, applied, proxyEntered, publishedWith } = startupHarness({ trust: trust.promise });
+    const first = runtime.enableForDevice(UDID);
+    await proxyEntered.promise;
+    await Promise.resolve();
+    const joined = runtime.enableForDevice(UDID, []);
+    expect(applied.at(-1)).toEqual([]);
+    trust.release();
+    await Promise.all([first, joined]);
+    expect(publishedWith()).toEqual([]);
+    expect(runtime.metaFor(UDID).fields).toEqual([]);
+    await runtime.disableAll();
+  });
+
+  test("a failed field write during startup reports an error and keeps the start's fields", async () => {
+    const trust = gate();
+    const { runtime, proxyEntered } = startupHarness({ trust: trust.promise, failOn: "ENOSPC" });
+    const enabling = runtime.enableForDevice(UDID);
+    await proxyEntered.promise;
+    await Promise.resolve();
+    expect(() => runtime.setFieldsForDevice(UDID, [])).toThrow("ENOSPC");
+    trust.release();
+    expect((await enabling).fields).toEqual(["response-body"]);
+    await runtime.disableAll();
+  });
+
   test("differing field choices do not retry a failed pending startup", async () => {
     const trust = gate();
     const { runtime, calls } = harness({

@@ -384,7 +384,12 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
       const { captureRuntime } = await import("./capture");
       const meta = captureRuntime.setFieldsForDevice(p.udid, p.fields);
       if (!meta) {
-        return { stdout: "", stderr: "Network capture is not on for this device. Enable it first.", exitCode: 1 };
+        // The device's meta tells a caller that capture is off, not that the change failed.
+        return {
+          stdout: JSON.stringify(captureRuntime.metaFor(p.udid)),
+          stderr: "Network capture is not on for this device. Enable it first.",
+          exitCode: 1,
+        };
       }
       return ok(JSON.stringify(meta));
     }
