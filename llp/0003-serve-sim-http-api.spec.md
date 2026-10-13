@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-09 (rotation readback contract; added installed-app launch, control, data-file and upload actions)
+**Revised:** 2026-10-12 (rotation readback contract; added installed-app launch, control, data-file and upload actions)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -333,6 +333,9 @@ It returns JSON with `relativePath` and the copied byte count. Writes are atomic
 and refuse existing files unless `overwrite: true`. Files are limited to 10 MiB;
 staged uploads remain available until `upload.remove` or staging cleanup.
 Staging resets, pruning and removals wait while a copy reads its source bytes.
+Each server process stages uploads in its own folder, so an upload ID names only
+uploads sent to that server. Send `upload.append` and `app.file.upload` to the same
+server. When an upload starts, the folders of servers that exited are removed.
 
 Send requests sequentially: `app.stop` → `upload.append` → `app.file.upload` →
 `app.launch`, then `upload.remove` when the staged source is no longer needed.

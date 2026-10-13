@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync, linkSync, readdirSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
 import { open } from "fs/promises";
-import { UPLOAD_DIR } from "../host-paths";
+import { UPLOAD_DIR, UPLOAD_ROOT } from "../host-paths";
 import { runHostActionAsync } from "../host-actions";
 import { UDID, installShims } from "./helpers";
 
@@ -176,6 +176,69 @@ describe("app fixture uploads", () => {
       await Promise.allSettled([copy,reset,removal]);
       prototype.read = originalRead;
       rmSync(source,{force:true});
+    }
+  });
+
+  // @ref LLP 0003#uploading-an-app-fixture — each server stages uploads in its own folder
+  it("keeps another server process from resetting the staged source during a copy", async () => {
+    const uploadId = "app-upload-two-servers.db";
+    const source = join(UPLOAD_DIR,uploadId);
+    const destination = join(root,"Documents/two-servers.db");
+    writeFileSync(source,"AAAAAAAA");
+    let release!: () => void;
+    let entered!: () => void;
+    const gate = new Promise<void>((resolve)=> { release = resolve; });
+    const ready = new Promise<void>((resolve)=> { entered = resolve; });
+    const probe = await open(source,"r");
+    const prototype = Object.getPrototypeOf(probe);
+    await probe.close();
+    const originalRead = prototype.read;
+    let gated = false;
+    prototype.read = async function (...args: unknown[]) {
+      if (!gated) { gated = true; entered(); await gate; }
+      return originalRead.apply(this,args);
+    };
+    const copy = act("app.file.upload",{uploadId,relativePath:"Documents/two-servers.db"});
+    let otherStaged = "";
+    try {
+      await Promise.race([ready, Bun.sleep(1000).then(() => { throw new Error("upload did not start its source read"); })]);
+      const store = JSON.stringify(join(import.meta.dir,"../upload-store.ts"));
+      const other = Bun.spawn([process.execPath,"-e",
+        `const { appendUploadChunkAsync } = await import(${store});
+         const result = await appendUploadChunkAsync({ uploadId: ${JSON.stringify(uploadId)}, data: ${JSON.stringify(Buffer.from("BBBBBBBB").toString("base64"))}, first: true });
+         if (result.exitCode !== 0) throw new Error(result.stderr);
+         console.log(result.stdout);`],{stdout:"pipe",stderr:"pipe"});
+      expect(await other.exited).toBe(0);
+      otherStaged = (await new Response(other.stdout).text()).trim();
+      release();
+      expect((await copy).exitCode).toBe(0);
+      expect(readFileSync(destination,"utf8")).toBe("AAAAAAAA");
+      expect(readFileSync(source,"utf8")).toBe("AAAAAAAA");
+      expect(otherStaged).not.toBe(source);
+    } finally {
+      release();
+      await Promise.allSettled([copy]);
+      prototype.read = originalRead;
+      rmSync(source,{force:true});
+      if (otherStaged && otherStaged !== source) rmSync(dirname(otherStaged),{recursive:true,force:true});
+    }
+  });
+
+  it("removes the staging folders of servers that exited and keeps folders of running ones", async () => {
+    const exited = Bun.spawn(["true"]);
+    await exited.exited;
+    const abandoned = join(UPLOAD_ROOT,`${exited.pid}-0badf00d`);
+    const running = join(UPLOAD_ROOT,`${process.ppid}-0badf00d`);
+    for (const folder of [abandoned,running]) { mkdirSync(folder,{recursive:true}); writeFileSync(join(folder,"staged.bin"),"x"); }
+    const uploadId = "app-upload-prune.bin";
+    try {
+      expect((await act("upload.append",{uploadId,data:Buffer.from("y").toString("base64"),first:true})).exitCode).toBe(0);
+      expect(readdirSync(UPLOAD_ROOT)).not.toContain(`${exited.pid}-0badf00d`);
+      expect(readFileSync(join(running,"staged.bin"),"utf8")).toBe("x");
+    } finally {
+      rmSync(abandoned,{recursive:true,force:true});
+      rmSync(running,{recursive:true,force:true});
+      rmSync(join(UPLOAD_DIR,uploadId),{force:true});
     }
   });
 

@@ -16,6 +16,7 @@ import { homedir, tmpdir } from "os";
 import { basename, join, resolve, sep } from "path";
 
 import { InvalidHostActionError, runHostActionAsync } from "../host-actions";
+import { UPLOAD_DIR } from "../host-paths";
 import { EXIT_0_SHIM, UDID, withActionTimeoutAsync, withShimsAsync } from "./helpers";
 
 const BIN = "true";
@@ -92,7 +93,7 @@ describe("what a preview link may spend on the host", () => {
   it("does not let parallel chunks overshoot the staging ceiling", async () => {
     const MAX_UPLOAD_DIR_BYTES = 2 * 1024 * 1024 * 1024;
     const chunk = 1024;
-    const dir = join(tmpdir(), "serve-sim-uploads");
+    const dir = UPLOAD_DIR;
     const filler = join(dir, "zz-toctou-filler.bin");
     const ids = Array.from({ length: 8 }, (_unused, i) => `zz-toctou-${i}.bin`);
 

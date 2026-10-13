@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { appendFile, rm, writeFile } from "fs/promises";
+import { appendFile, readdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { z } from "zod";
 
@@ -10,7 +10,7 @@ import {
   ok,
   pruneStaleEntriesAsync,
 } from "./host-actions-utils";
-import { UPLOAD_DIR } from "./host-paths";
+import { UPLOAD_DIR, UPLOAD_ROOT } from "./host-paths";
 
 // Without a ceiling a caller could fill the disk, and a closed tab never cleans up after itself.
 const MAX_UPLOAD_DIR_BYTES = 2 * 1024 * 1024 * 1024;
@@ -25,6 +25,35 @@ export const UploadId = z
 
 /** ~3MB of raw bytes, matching the client's 192KB slices with generous headroom. */
 export const UploadChunk = z.base64().min(1).max(4 * 1024 * 1024);
+
+/** The folder name UPLOAD_DIR uses: the owner's pid, then a random suffix. */
+const SERVER_FOLDER = /^(\d+)-[0-9a-f]{8}$/;
+
+function isRunning(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "EPERM";
+  }
+}
+
+/** Removes folders of servers that exited, and old files that earlier versions staged in the root. */
+async function pruneAbandonedStagingAsync(): Promise<void> {
+  let entries: string[];
+  try {
+    entries = await readdir(UPLOAD_ROOT);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const full = join(UPLOAD_ROOT, entry);
+    if (full === UPLOAD_DIR) continue;
+    const owner = SERVER_FOLDER.exec(entry);
+    if (owner && !isRunning(Number(owner[1]))) await rm(full, { recursive: true, force: true }).catch(() => {});
+  }
+  await pruneStaleEntriesAsync(UPLOAD_ROOT, MAX_UPLOAD_AGE_MS, (entry) => !SERVER_FOLDER.test(entry));
+}
 
 export function stagedUploadPath(uploadId: string): string {
   return join(UPLOAD_DIR, uploadId);
@@ -45,6 +74,7 @@ export async function appendUploadChunkAsync(p: {
   const chunk = Buffer.from(p.data, "base64");
   return await queueUploadAsync(async () => {
     await ensurePrivateDirAsync(UPLOAD_DIR);
+    if (p.first === true) await pruneAbandonedStagingAsync();
     // Every chunk: appendFile creates the file too, so omitting `first` would skip the ceiling.
     const held = await pruneStaleEntriesAsync(UPLOAD_DIR, MAX_UPLOAD_AGE_MS);
     if (held + chunk.length > MAX_UPLOAD_DIR_BYTES) {
