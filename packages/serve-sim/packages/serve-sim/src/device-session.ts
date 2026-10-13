@@ -1445,8 +1445,9 @@ export class DeviceSession {
   private queueHingeControl(command: HingeControlCommand): Promise<boolean> {
     const operation = this.hingeControlUpdate.then(async () => {
       if (this.phase !== "running") return false;
-      if ((command.control === "table" || command.control === "physical") && !this.hingeControlled && this.hingeAngle === undefined) {
-        // Seed before the first save so an early command keeps the saved pose.
+      if (!this.hingeControlled && this.hingeAngle === undefined) {
+        // Seed before the first save so an early command keeps the saved
+        // orientation, even when the command fails.
         const state = await this.hid.hingeState();
         if (this.phase !== "running") return false;
         this.applyNativeHingeState(state);

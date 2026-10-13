@@ -153,9 +153,9 @@ angle cannot be detected; choose a pose again to update the saved state
 Manual angle changes and rotation clear the selected pose, including after a
 restart.
 
-A Table Mode or physical-orientation command that arrives before the startup
-read first reads native state and the saved record, so its save keeps the saved
-orientation.
+A hinge command that arrives before the startup read first reads native state
+and the saved record, so its save keeps the saved orientation. This includes a
+pose command that fails.
 
 ## APIs inside an iOS app
 

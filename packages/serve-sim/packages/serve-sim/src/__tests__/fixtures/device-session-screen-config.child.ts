@@ -1562,6 +1562,54 @@ describe("physical hinge controls", () => {
     expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
   });
 
+  test("keeps the saved orientation through an angle command sent before discovery", async () => {
+    let release!: () => void;
+    const { controlResults, configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
+    send(1, { control: "angle", value: 90 });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, physicalOrientation: "portrait", tableMode: false });
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: null, physicalOrientation: "portrait", tableModeAvailable: true });
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+  });
+
+  test("keeps the saved orientation through a failed pose command sent before discovery", async () => {
+    let release!: () => void;
+    const { controlResults, configs } = await start(
+      { width: 2007, height: 2853 },
+      true,
+      undefined,
+      true,
+      new Promise<void>((resolve) => { release = resolve; }),
+    );
+    writeSavedHingeState(UDID, { hingeAngle: 90, hingePose: "book", physicalOrientation: "portrait", tableMode: false });
+    nativeHingeState = { hingeAngle: 90 };
+    hingeResult = false;
+    send(1, { control: "pose", value: "laptop" });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toMatchObject({ requestId: 1, ok: false });
+    expect(readSavedHingeState(UDID, 90)).toEqual({ hingePose: null, physicalOrientation: "portrait" });
+    hingeResult = true;
+    release();
+    await waitUntil(() => configs.at(-1)?.supportsHingeAngle === true);
+    expect(configs.at(-1)).toMatchObject({ hingeAngle: 90, hingePose: null, physicalOrientation: "portrait", tableModeAvailable: true });
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+  });
+
   test("does not restore a physical orientation that a startup rotation cleared", async () => {
     let release!: () => void;
     const { controlResults, configs } = await start(
