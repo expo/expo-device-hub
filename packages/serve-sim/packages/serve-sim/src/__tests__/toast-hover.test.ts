@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { installToastHoverGuard } from "../client/utils/toast-hover";
 
-function pointer(type: string, pointerType: string): Event {
-  return Object.assign(new Event(type), { pointerType });
+function pointer(type: string, pointerType: string, buttons = 0): Event {
+  return Object.assign(new Event(type), { pointerType, buttons });
 }
 
 function hoverIsBlocked(target: EventTarget, type: string): boolean {
@@ -55,6 +55,36 @@ describe("toast hover", () => {
     const cleanup = installToastHoverGuard(target);
     target.dispatchEvent(pointer("pointerdown", "touch"));
     target.dispatchEvent(pointer("pointermove", "mouse"));
+    expect(hoverIsBlocked(target, "mousemove")).toBe(false);
+    cleanup();
+  });
+
+  test("pen contact blocks compatibility hover after release", () => {
+    const target = new EventTarget();
+    const cleanup = installToastHoverGuard(target);
+    target.dispatchEvent(pointer("pointerover", "pen", 1));
+    expect(hoverIsBlocked(target, "mouseenter")).toBe(true);
+    target.dispatchEvent(pointer("pointerdown", "pen", 1));
+    target.dispatchEvent(pointer("pointermove", "pen", 1));
+    target.dispatchEvent(pointer("pointerup", "pen"));
+    for (const event of ["mouseover", "mouseenter", "mousemove"]) {
+      expect(hoverIsBlocked(target, event)).toBe(true);
+    }
+    for (const event of ["click", "mouseleave", "dragstart", "dragend"]) {
+      expect(hoverIsBlocked(target, event)).toBe(false);
+    }
+    cleanup();
+  });
+
+  test("pen hover still works before and after contact", () => {
+    const target = new EventTarget();
+    const cleanup = installToastHoverGuard(target);
+    target.dispatchEvent(pointer("pointerover", "pen"));
+    expect(hoverIsBlocked(target, "mouseenter")).toBe(false);
+    target.dispatchEvent(pointer("pointerdown", "pen", 1));
+    expect(hoverIsBlocked(target, "mouseenter")).toBe(true);
+    target.dispatchEvent(pointer("pointerup", "pen"));
+    target.dispatchEvent(pointer("pointermove", "pen"));
     expect(hoverIsBlocked(target, "mousemove")).toBe(false);
     cleanup();
   });
