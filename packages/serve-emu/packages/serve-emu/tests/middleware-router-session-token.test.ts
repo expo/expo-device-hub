@@ -12,7 +12,12 @@ const TOKEN = "router-session-token";
 const SERIAL = "emulator-5554";
 const ALLOWED_ORIGIN = "https://dashboard.example";
 
-function trackedRouter(sessionToken?: string, allowedOrigins?: string[]) {
+function trackedRouter(
+  sessionToken?: string,
+  allowedOrigins?: string[],
+  appResponse: (request: Request) => Response = (request) =>
+    Response.json({ ok: true, path: new URL(request.url).pathname }),
+) {
   const created: string[] = [];
   const launched: string[] = [];
   const attached: string[] = [];
@@ -31,8 +36,7 @@ function trackedRouter(sessionToken?: string, allowedOrigins?: string[]) {
         isStreaming: () => true,
         health: () => ({ status: "streaming" }),
         webRtcStats: () => null,
-        handleRequest: async (request: Request) =>
-          Response.json({ ok: true, path: new URL(request.url).pathname }),
+        handleRequest: async (request: Request) => appResponse(request),
         attachWebSocket: () => {
           attached.push(serial);
         },
@@ -300,6 +304,68 @@ describe("createRouter CORS policy", () => {
       expect(response.headers.get("access-control-allow-methods")).toContain("PATCH");
     }
     expect(created).toEqual([]);
+  });
+
+  test("keeps the policy on an error a device route returns", async () => {
+    const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN], (req) =>
+      new URL(req.url).pathname === "/api/missing"
+        ? Response.json({ ok: false, error: "not found" }, { status: 404 })
+        : Response.json({ ok: false, error: "capture failed" }, { status: 500 }),
+    );
+
+    for (const [path, status] of [["/api/missing", 404], ["/api/foreground", 500]] as const) {
+      const response = await request(`${path}?device=${SERIAL}`, { headers: { Origin: ALLOWED_ORIGIN } });
+      expect([path, response.status]).toEqual([path, status]);
+      expect(response.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
+      expect(response.headers.get("vary")).toBe("Origin");
+    }
+  });
+
+  // The policy wraps the response, so the events must still arrive one by one and stop with the page.
+  test("streams events through the policy and stops when the page cancels", async () => {
+    let cancelled = false;
+    let push!: (chunk: string) => void;
+    const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN], () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          start(controller) {
+            push = (chunk) => controller.enqueue(new TextEncoder().encode(chunk));
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { headers: { "Content-Type": "text/event-stream" } },
+      ),
+    );
+
+    const response = await request(`/api/events?device=${SERIAL}`, { headers: { Origin: ALLOWED_ORIGIN } });
+    expect(response.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    const reader = response.body!.getReader();
+    push("data: first\n\n");
+    expect(new TextDecoder().decode((await reader.read()).value)).toBe("data: first\n\n");
+    await reader.cancel();
+    expect(cancelled).toBe(true);
+  });
+
+  test("keeps a screenshot's artifact headers readable for an allowed origin", async () => {
+    const { request } = trackedRouter(undefined, [ALLOWED_ORIGIN], () =>
+      new Response(new Uint8Array([137, 80, 78, 71]), {
+        headers: {
+          "Content-Type": "image/png",
+          "X-Expo-Screenshot-Artifact": "saved",
+          "Access-Control-Expose-Headers": "X-Expo-Screenshot-Artifact",
+        },
+      }),
+    );
+
+    const response = await request(`/api/screenshot?device=${SERIAL}`, { method: "POST", headers: { Origin: ALLOWED_ORIGIN } });
+
+    expect(response.headers.get("access-control-allow-origin")).toBe(ALLOWED_ORIGIN);
+    expect(response.headers.get("access-control-expose-headers")).toBe("X-Expo-Screenshot-Artifact");
+    expect(response.headers.get("x-expo-screenshot-artifact")).toBe("saved");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([137, 80, 78, 71]));
   });
 
   test("refuses a preflight from an origin it does not allow", async () => {
