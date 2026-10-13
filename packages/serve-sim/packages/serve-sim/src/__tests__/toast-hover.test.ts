@@ -89,6 +89,46 @@ describe("toast hover", () => {
     cleanup();
   });
 
+  test("touch and pen transitions allow leave without a new hover destination", () => {
+    for (const pointerType of ["touch", "pen"]) {
+      const target = new EventTarget();
+      const cleanup = installToastHoverGuard(target);
+      target.dispatchEvent(pointer("pointerdown", pointerType, 1));
+      target.dispatchEvent(pointer("pointerout", pointerType));
+      const destination = new EventTarget();
+      const event = new Event("mouseout");
+      Object.defineProperty(event, "relatedTarget", { configurable: true, get: () => destination });
+      Object.defineProperty(event, "toElement", { configurable: true, get: () => destination });
+      let left = false;
+      target.addEventListener("mouseout", (event) => { left = !event.cancelBubble; });
+      target.dispatchEvent(event);
+      expect(left).toBe(true);
+      expect((event as MouseEvent).relatedTarget).toBeNull();
+      expect((event as Event & { toElement: EventTarget | null }).toElement).toBeNull();
+      cleanup();
+    }
+  });
+
+  test("mouse transitions and transitions after cleanup keep their destination", () => {
+    const target = new EventTarget();
+    const cleanup = installToastHoverGuard(target);
+    const destination = new EventTarget();
+    const event = () => Object.assign(new Event("mouseout"), { relatedTarget: destination });
+    const mouse = event();
+    target.dispatchEvent(mouse);
+    expect(mouse.relatedTarget).toBe(destination);
+    target.dispatchEvent(pointer("pointerdown", "touch"));
+    target.dispatchEvent(pointer("pointerout", "mouse"));
+    const resumedMouse = event();
+    target.dispatchEvent(resumedMouse);
+    expect(resumedMouse.relatedTarget).toBe(destination);
+    target.dispatchEvent(pointer("pointerdown", "touch"));
+    cleanup();
+    const unmounted = event();
+    target.dispatchEvent(unmounted);
+    expect(unmounted.relatedTarget).toBe(destination);
+  });
+
   test("unmount removes the guard", () => {
     const target = new EventTarget();
     const cleanup = installToastHoverGuard(target);
