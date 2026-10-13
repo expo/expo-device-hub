@@ -90,8 +90,8 @@ jobs:
         working_directory: packages/serve-sim
         run: |
           export SERVE_SIM_CHROME="$(cat /tmp/chrome-path)"
-          SERVE_SIM_TEST_UDID="$(bash packages/serve-sim/scripts/test/select-ci-simulator.sh)"
+          SERVE_SIM_TEST_UDID="$(bun packages/serve-sim/scripts/test/select-ci-simulator.ts)"
           export SERVE_SIM_TEST_UDID
           exec bun ../../scripts/ci/bun-test-retry.ts \
-            --before-retry=packages/serve-sim/scripts/test/reboot-ci.sh \
+            --before-retry=packages/serve-sim/scripts/test/reboot-ci.ts \
             -- --max-concurrency=1 packages/serve-sim/src/ packages/serve-sim/scripts/tart/__tests__/

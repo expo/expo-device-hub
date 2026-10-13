@@ -67,8 +67,8 @@ test("test output that looks like Bun's error header does not block a retry", as
 
 test("a failed before-retry script stops the retry", async () => {
   const cwd = fixture({ "hard.test.ts": `test("hard", () => expect(1).toBe(2));` });
-  writeFileSync(join(cwd, "before.sh"), "exit 3");
-  expect(await testWithRetry([], { cwd, beforeRetry: "before.sh" })).not.toBe(0);
+  writeFileSync(join(cwd, "before.ts"), "process.exit(3);");
+  expect(await testWithRetry([], { cwd, beforeRetry: "before.ts" })).not.toBe(0);
   expect(runs()).toEqual(["hard.test.ts"]);
 });
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Runs `bun test`, then reruns only the files with failed tests once.
 //
-//   bun scripts/ci/bun-test-retry.ts [--before-retry=<script>] -- <bun test args>
+//   bun scripts/ci/bun-test-retry.ts [--before-retry=<script.ts>] -- <bun test args>
 //   bun scripts/ci/bun-test-retry.ts --workspaces
 //
 // Failed files come from Bun's JUnit report. A failure that the report does
@@ -108,7 +108,7 @@ async function testAndRetry(args: string[], options: Options, reports: string): 
     return code;
   }
   console.log(`Retrying ${files.length} failed file(s): ${files.join(" ")}`);
-  if (options.beforeRetry && (await run(["bash", options.beforeRetry], options)).code !== 0) return code;
+  if (options.beforeRetry && (await run(["bun", options.beforeRetry], options)).code !== 0) return code;
 
   const flags = args.filter((arg) => arg.startsWith("-"));
   const paths = files.map((file) => `./${file}`);
