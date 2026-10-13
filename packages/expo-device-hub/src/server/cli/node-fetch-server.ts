@@ -92,6 +92,18 @@ export function toFetchRequest(request: IncomingMessage): Request {
   } as RequestInit);
 }
 
+/**
+ * Discards an upload that no handler read, such as one the token gate refused. The bridge pauses an
+ * upload when its queue fills, so without this a large refused POST would never finish arriving,
+ * and the next request on the same keep-alive connection would wait forever. A body that was
+ * forwarded or read is left alone.
+ */
+export function discardUnreadBody(request: Request): void {
+  if (request.body && !request.bodyUsed && !request.body.locked) {
+    void request.body.cancel().catch(() => {});
+  }
+}
+
 /** The upgrade Request shape the Expo CLI hands plugin `webSocketHandlers`. */
 export function toUpgradeRequest(request: IncomingMessage, route: string): Request {
   const url = new URL(request.url ?? '/', requestOrigin(request));

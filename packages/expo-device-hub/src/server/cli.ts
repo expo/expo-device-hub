@@ -5,7 +5,13 @@ import { networkInterfaces } from 'node:os';
 import { WebSocketServer } from 'ws';
 import { URL } from 'node:url';
 
-import { requestOrigin, toFetchRequest, toUpgradeRequest, writeFetchResponse } from './cli/node-fetch-server';
+import {
+  discardUnreadBody,
+  requestOrigin,
+  toFetchRequest,
+  toUpgradeRequest,
+  writeFetchResponse,
+} from './cli/node-fetch-server';
 import { DEFAULT_PORT, HELP, parseCliOptions, type CliOptions } from './cli/options';
 import { startupMessage } from './cli/startup';
 import { localHubUrl, publishHubState } from './cli/state-file';
@@ -117,6 +123,7 @@ async function main(): Promise<void> {
     try {
       const request = toFetchRequest(req);
       const response = await handler(request);
+      discardUnreadBody(request);
       if (response) {
         writeFetchResponse(response, res);
         return;
