@@ -85,7 +85,9 @@ export async function appendUploadChunkAsync(p: {
   return await queueUploadAsync(async () => {
     await ensurePrivateDirAsync(UPLOAD_DIR);
     // Every chunk: appendFile creates the file too, so omitting `first` would skip the ceiling.
-    // The ceiling covers every server's folder; only writes within this process are serialized.
+    // The ceiling covers every server's folder; only writes within this process are serialized, so
+    // servers that append at the same moment can each pass it by one chunk. A cross-process lock
+    // would leave a stale lock behind a crashed server, which costs more than a few MiB of overshoot.
     const held = await pruneStagingAsync();
     if (held + chunk.length > MAX_UPLOAD_DIR_BYTES) {
       return {

@@ -335,7 +335,8 @@ staged uploads remain available until `upload.remove` or staging cleanup.
 Within a server, staging resets, pruning and removals wait while a copy reads its
 source bytes. Each server process stages uploads in its own folder, so an upload ID
 names only uploads sent to that server. Send `upload.append` and `app.file.upload`
-to the same server. The staging size limit counts the folders of all servers. Each
+to the same server. The staging size limit counts the folders of all servers; two
+servers that upload at the same time can each pass it by one chunk. Each
 upload chunk removes the folders of servers that exited, and uploads older than six
 hours in any folder. A copy that already opened its source still reads all of it.
 
