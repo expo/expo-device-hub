@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import {
   androidExecutable,
@@ -7,11 +7,12 @@ import {
   type AndroidSdkRoot,
 } from "./android-sdk";
 
-const AVDMANAGER_SUBPATH = "cmdline-tools/latest/bin/avdmanager";
-const SDKMANAGER_SUBPATH = "cmdline-tools/latest/bin/sdkmanager";
+const CMDLINE_TOOLS = "cmdline-tools";
 
 /** Test seams for the file system checks behind the `resolve*` functions. */
-export type SdkFileSystem = Pick<AndroidSdkLookup, "existsSync" | "realpathSync">;
+export type SdkFileSystem = Pick<AndroidSdkLookup, "existsSync" | "realpathSync"> & {
+  readdirSync?: (path: string) => string[];
+};
 
 /**
  * The device list polls every 500 ms and resolves two tools each time. The
@@ -42,7 +43,7 @@ export function resolveSdkRoot(
   platform: NodeJS.Platform = process.platform,
   fileSystem: SdkFileSystem = {},
 ): string {
-  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => root);
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => [root]);
 }
 
 /**
@@ -55,18 +56,21 @@ export function avdmanagerPath(
   sdkRoot: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  return join(sdkRoot, cmdlineTool(AVDMANAGER_SUBPATH, platform));
+  return cmdlineToolPath(sdkRoot, "latest", "avdmanager", platform);
 }
 
-/** Resolve the `avdmanager` path directly from the environment. */
+/**
+ * Resolve the `avdmanager` path directly from the environment, with the
+ * search order of {@link cmdlineToolPaths}.
+ */
 export function resolveAvdmanagerPath(
   env: NodeJS.ProcessEnv,
   homeDir: string,
   platform: NodeJS.Platform = process.platform,
   fileSystem: SdkFileSystem = {},
 ): string {
-  return resolveInSdk(env, homeDir, platform, fileSystem, (root) =>
-    avdmanagerPath(root, platform),
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root, list) =>
+    cmdlineToolPaths(root, "avdmanager", platform, list),
   );
 }
 
@@ -75,18 +79,21 @@ export function sdkmanagerPath(
   sdkRoot: string,
   platform: NodeJS.Platform = process.platform,
 ): string {
-  return join(sdkRoot, cmdlineTool(SDKMANAGER_SUBPATH, platform));
+  return cmdlineToolPath(sdkRoot, "latest", "sdkmanager", platform);
 }
 
-/** Resolve the `sdkmanager` path directly from the environment. */
+/**
+ * Resolve the `sdkmanager` path directly from the environment, with the
+ * search order of {@link cmdlineToolPaths}.
+ */
 export function resolveSdkmanagerPath(
   env: NodeJS.ProcessEnv,
   homeDir: string,
   platform: NodeJS.Platform = process.platform,
   fileSystem: SdkFileSystem = {},
 ): string {
-  return resolveInSdk(env, homeDir, platform, fileSystem, (root) =>
-    sdkmanagerPath(root, platform),
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root, list) =>
+    cmdlineToolPaths(root, "sdkmanager", platform, list),
   );
 }
 
@@ -102,7 +109,9 @@ export function resolveEmulatorPath(
   platform: NodeJS.Platform = process.platform,
   fileSystem: SdkFileSystem = {},
 ): string {
-  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => emulatorPath(root, platform));
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => [
+    emulatorPath(root, platform),
+  ]);
 }
 
 /** Build the absolute path to the `adb` binary inside an SDK root. */
@@ -117,26 +126,79 @@ export function resolveAdbPath(
   platform: NodeJS.Platform = process.platform,
   fileSystem: SdkFileSystem = {},
 ): string {
-  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => adbPath(root, platform));
+  return resolveInSdk(env, homeDir, platform, fileSystem, (root) => [adbPath(root, platform)]);
 }
 
 /**
- * Return `toolPath` in the first SDK root where it exists, or in the first
- * root when it exists in none. Each tool looks on its own, because a partial
- * SDK in `ANDROID_HOME` may lack a tool that Android Studio's SDK has.
+ * Return the first of `toolPaths` that exists, trying the SDK roots in order,
+ * or the first path in the first root when none exists. Each tool looks on its
+ * own, because a partial SDK in `ANDROID_HOME` may lack a tool that Android
+ * Studio's SDK has.
  */
 function resolveInSdk(
   env: NodeJS.ProcessEnv,
   homeDir: string,
   platform: NodeJS.Platform,
-  { existsSync: exists = existsSync, realpathSync }: SdkFileSystem,
-  toolPath: (sdkRoot: string) => string,
+  { existsSync: exists = existsSync, realpathSync, readdirSync: list = listDirectory }: SdkFileSystem,
+  toolPaths: (sdkRoot: string, list: (path: string) => string[]) => Iterable<string>,
 ): string {
-  const paths = sdkRoots(env, homeDir, platform, { existsSync: exists, realpathSync }).map((root) =>
-    toolPath(root.path),
-  );
+  const roots = sdkRoots(env, homeDir, platform, { existsSync: exists, realpathSync });
+  for (const root of roots) {
+    for (const path of toolPaths(root.path, list)) {
+      if (exists(path)) return path;
+    }
+  }
   // androidSdkRoots always ends with the platform's default folder.
-  return paths.find((path) => exists(path)) ?? paths[0]!;
+  const [fallback] = toolPaths(roots[0]!.path, list);
+  return fallback!;
+}
+
+/**
+ * The places a command-line tool may sit in one SDK root, in search order:
+ * `cmdline-tools/latest/bin`, which Android Studio installs, then each
+ * numbered `cmdline-tools/<version>/bin`, newest first. The old `tools/bin`
+ * layout is left out on purpose until someone reports that they need it.
+ */
+function* cmdlineToolPaths(
+  sdkRoot: string,
+  tool: string,
+  platform: NodeJS.Platform,
+  list: (path: string) => string[],
+): Generator<string> {
+  yield cmdlineToolPath(sdkRoot, "latest", tool, platform);
+  const versions = list(join(sdkRoot, CMDLINE_TOOLS))
+    .filter((name) => /^\d+(\.\d+)*$/.test(name))
+    .sort(compareVersions)
+    .reverse();
+  for (const version of versions) yield cmdlineToolPath(sdkRoot, version, tool, platform);
+}
+
+function cmdlineToolPath(
+  sdkRoot: string,
+  version: string,
+  tool: string,
+  platform: NodeJS.Platform,
+): string {
+  return join(sdkRoot, CMDLINE_TOOLS, version, "bin", platform === "win32" ? `${tool}.bat` : tool);
+}
+
+/** Order version folder names such as `9.0` and `19.0` by number, oldest first. */
+function compareVersions(a: string, b: string): number {
+  const left = a.split(".").map(Number);
+  const right = b.split(".").map(Number);
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    const diff = (left[index] ?? 0) - (right[index] ?? 0);
+    if (diff) return diff;
+  }
+  return 0;
+}
+
+function listDirectory(path: string): string[] {
+  try {
+    return readdirSync(path);
+  } catch {
+    return [];
+  }
 }
 
 function sdkRoots(
@@ -164,8 +226,4 @@ function sdkRoots(
     };
   }
   return sdkRootsCache.roots;
-}
-
-function cmdlineTool(subpath: string, platform: NodeJS.Platform): string {
-  return platform === "win32" ? `${subpath}.bat` : subpath;
 }
