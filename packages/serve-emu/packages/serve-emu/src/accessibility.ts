@@ -1,3 +1,4 @@
+import { adbCommand } from "./adb-command.ts";
 import { readEffectiveDisplaySize } from "./adb.ts";
 import { execText } from "./exec.ts";
 import type {
@@ -179,7 +180,7 @@ async function dumpXml(serial: string, signal?: AbortSignal): Promise<string> {
   const path = `/sdcard/window-${Date.now()}.xml`;
   let lastError = "uiautomator dump failed";
   for (let attempt = 1; attempt <= DUMP_ATTEMPTS; attempt++) {
-    const dump = await execText("adb", ["-s", serial, "shell", "uiautomator", "dump", path], {
+    const dump = await execText(adbCommand(), ["-s", serial, "shell", "uiautomator", "dump", path], {
       timeout: 8_000,
       signal,
       lane: "interactive",
@@ -195,14 +196,14 @@ async function dumpXml(serial: string, signal?: AbortSignal): Promise<string> {
       await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
       continue;
     }
-    const result = await execText("adb", ["-s", serial, "shell", "cat", path], {
+    const result = await execText(adbCommand(), ["-s", serial, "shell", "cat", path], {
       maxBuffer: 16 * 1024 * 1024,
       timeout: 8_000,
       signal,
       lane: "interactive",
     });
     throwIfAborted();
-    void execText("adb", ["-s", serial, "shell", "rm", path], { timeout: 2_000 });
+    void execText(adbCommand(), ["-s", serial, "shell", "rm", path], { timeout: 2_000 });
     if (result.status === 0 && !result.error) return result.stdout;
     lastError = (
       result.stderr ||
@@ -212,7 +213,7 @@ async function dumpXml(serial: string, signal?: AbortSignal): Promise<string> {
     ).trim();
     await new Promise((resolve) => setTimeout(resolve, 150 * attempt));
   }
-  void execText("adb", ["-s", serial, "shell", "rm", path], { timeout: 2_000 });
+  void execText(adbCommand(), ["-s", serial, "shell", "rm", path], { timeout: 2_000 });
   throw new Error(lastError);
 }
 

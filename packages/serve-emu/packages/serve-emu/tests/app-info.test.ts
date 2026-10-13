@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { adbCommand } from "../src/adb-command.ts";
 import { getForegroundApp } from "../src/app-info.ts";
 import type { execText } from "../src/exec.ts";
 
@@ -30,7 +31,7 @@ describe("getForegroundApp", () => {
   test("reads the focused component, package metadata, and first process id", async () => {
     const calls: Array<{ args: string[]; timeout: number | undefined }> = [];
     const runExec = (async (command, args, options) => {
-      expect(command).toBe("adb");
+      expect(command).toBe(adbCommand());
       calls.push({ args, timeout: options?.timeout });
       switch (shellCommand(args)) {
         case "dumpsys window":

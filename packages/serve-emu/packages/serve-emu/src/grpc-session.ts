@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { adbCommand } from "./adb-command.ts";
 import {
   ControlInputQueue,
   ControlInputRejectedError,
@@ -552,7 +553,7 @@ async function runPowerCommand(
   signal: AbortSignal,
 ): Promise<void> {
   const result = await execText(
-    "adb",
+    adbCommand(),
     ["-s", serial, "shell", "cmd", "power", action],
     { timeout: 5_000, signal, lane: "interactive" },
   );
@@ -566,7 +567,7 @@ async function isDeviceAwake(
   signal: AbortSignal,
 ): Promise<boolean> {
   const result = await execText(
-    "adb",
+    adbCommand(),
     ["-s", serial, "shell", "dumpsys", "power"],
     { timeout: 5_000, signal, lane: "interactive" },
   );
@@ -1613,7 +1614,7 @@ export class GrpcEncoderLifecycle<T extends ClosableEncoder> {
 const defaultReadDisplaySizeSignal: NonNullable<
   GrpcSessionDependencies["readDisplaySizeSignal"]
 > = async (serial, signal) => {
-  const result = await execText("adb", ["-s", serial, "shell", "wm", "size"], {
+  const result = await execText(adbCommand(), ["-s", serial, "shell", "wm", "size"], {
     timeout: 5_000,
     maxBuffer: MAX_DISPLAY_SIZE_OUTPUT_BYTES + 1,
     signal,

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { adbCommand } from "../src/adb-command.ts";
 import { setEmulatorLocationAsync } from "../src/location.ts";
 import type { execText } from "../src/exec.ts";
 
@@ -35,7 +36,7 @@ describe("setEmulatorLocationAsync", () => {
 
     expect(calls).toEqual([
       {
-        cmd: "adb",
+        cmd: adbCommand(),
         args: [
           "-s",
           "emulator-5554",

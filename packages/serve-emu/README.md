@@ -53,9 +53,10 @@ Planned:
 ## Requirements
 
 - Bun 1.3.13+
-- `adb` on PATH from Android platform-tools
-- Android SDK Build-Tools for app icons (`aapt2`). serve-emu looks for the SDK in
-  `ANDROID_HOME`, then `ANDROID_SDK_ROOT`, then the SDK that holds `adb` or `emulator`
+- `adb` from Android platform-tools. serve-emu runs the `adb` in the Android SDK, or the
+  one on PATH when no SDK has it
+- Android SDK Build-Tools for app icons (`aapt2`). For both tools, serve-emu looks for the
+  SDK in `ANDROID_HOME`, then `ANDROID_SDK_ROOT`, then the SDK that holds `adb` or `emulator`
   on PATH, then Android Studio's default folder (`~/Library/Android/sdk` on macOS,
   `~/Android/Sdk` or `~/Android/sdk` on Linux, `%LOCALAPPDATA%\Android\Sdk` on Windows)
 - A booted device/emulator from `adb devices`, or an AVD name passed with `--avd`

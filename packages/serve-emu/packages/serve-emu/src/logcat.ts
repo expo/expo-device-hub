@@ -4,6 +4,7 @@ import {
 } from "node:child_process";
 import type { Readable } from "node:stream";
 import { StringDecoder } from "node:string_decoder";
+import { adbCommand } from "./adb-command.ts";
 
 export const DEFAULT_MAX_LOGCAT_SUBSCRIBERS = 8;
 export const DEFAULT_LOGCAT_BATCH_INTERVAL_MS = 75;
@@ -156,7 +157,7 @@ async function resolvePackagePids(
 
     try {
       child = spawn(
-        "adb",
+        adbCommand(),
         ["-s", serial, "shell", "pidof", packageName],
         { stdio: ["ignore", "pipe", "pipe"] },
       );
@@ -185,7 +186,7 @@ async function resolvePackagePids(
 function spawnLogcat(serial: string): LogcatChild {
   // Start at the live edge so reconnects do not replay the device ring buffer.
   return spawn(
-    "adb",
+    adbCommand(),
     ["-s", serial, "logcat", "-T", "1", "-v", "threadtime"],
     { stdio: ["ignore", "pipe", "pipe"] },
   );

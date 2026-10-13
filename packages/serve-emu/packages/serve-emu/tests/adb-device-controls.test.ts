@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { spawn } from "node:child_process";
+import { adbCommand } from "../src/adb-command.ts";
 import {
   getFontWeight,
   getDisplayDensity,
@@ -75,9 +76,9 @@ unauthorized-1 unauthorized
     ]);
     await expect(pickDevice(undefined, runExec)).resolves.toBe("emulator-5554");
     expect(calls).toEqual([
-      { command: "adb", args: ["devices"], timeout: 2_000 },
-      { command: "adb", args: ["devices"], timeout: 2_000 },
-      { command: "adb", args: ["devices"], timeout: 2_000 },
+      { command: adbCommand(), args: ["devices"], timeout: 2_000 },
+      { command: adbCommand(), args: ["devices"], timeout: 2_000 },
+      { command: adbCommand(), args: ["devices"], timeout: 2_000 },
     ]);
   });
 
@@ -137,7 +138,7 @@ describe("ADB screenshot and shell commands", () => {
     await expect(screencapPng("device-1", runExec)).resolves.toEqual(png);
     expect(calls).toEqual([
       [
-        "adb",
+        adbCommand(),
         ["-s", "device-1", "exec-out", "screencap", "-p"],
         { maxBuffer: 64 * 1024 * 1024, timeout: 8_000 },
       ],
@@ -168,7 +169,7 @@ describe("ADB screenshot and shell commands", () => {
     }) as typeof execText;
     await shell("device-1", ["logcat", "-d"], runExec);
     expect(textCalls).toEqual([
-      ["adb", ["-s", "device-1", "shell", "logcat", "-d"], { timeout: 5_000 }],
+      [adbCommand(), ["-s", "device-1", "shell", "logcat", "-d"], { timeout: 5_000 }],
     ]);
 
     const child = { pid: 1234 };
@@ -179,7 +180,7 @@ describe("ADB screenshot and shell commands", () => {
     }) as unknown as typeof spawn;
     expect(shellSpawn("device-1", ["logcat"], runSpawn) as unknown).toBe(child);
     expect(spawnCalls).toEqual([
-      ["adb", ["-s", "device-1", "shell", "logcat"]],
+      [adbCommand(), ["-s", "device-1", "shell", "logcat"]],
     ]);
   });
 });

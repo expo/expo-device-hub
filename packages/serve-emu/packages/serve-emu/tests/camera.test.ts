@@ -9,6 +9,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { adbCommand } from "../src/adb-command.ts";
 import {
   assertCameraImage,
   assertCameraSupported,
@@ -57,7 +58,7 @@ function fakeConsole(serial: string, reply: ConsoleReply) {
   const runExec = (async (command, args) => {
     const line = [command, ...(args as string[])].join(" ");
     calls.push(line);
-    if (line !== `adb -s ${serial} emu avd path`) {
+    if (line !== `${adbCommand()} -s ${serial} emu avd path`) {
       throw new Error(`unexpected command: ${line}`);
     }
     return reply;
@@ -343,7 +344,7 @@ describe("readCameraWiring", () => {
     );
 
     expect(await readCameraWiring(serial, runExec)).toBe(true);
-    expect(calls).toEqual([`adb -s ${serial} emu avd path`]);
+    expect(calls).toEqual([`${adbCommand()} -s ${serial} emu avd path`]);
     await expect(
       readCameraStatus(serial, (target) => readCameraWiring(target, runExec)),
     ).resolves.toMatchObject({ wiredAtLaunch: true });

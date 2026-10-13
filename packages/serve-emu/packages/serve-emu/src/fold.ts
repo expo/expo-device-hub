@@ -1,4 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
+import { adbCommand } from "./adb-command.ts";
 import { isEmulatorSerial } from "./device-capabilities.ts";
 import { execText } from "./exec.ts";
 import type { FoldPosture, FoldStatus } from "./shared/api-contracts.ts";
@@ -20,7 +21,7 @@ export async function getFoldStatus(
 ): Promise<FoldStatus> {
   if (!isEmulatorSerial(serial)) return UNSUPPORTED;
 
-  const sensor = await runExec("adb", ["-s", serial, "emu", "sensor", "get", "hinge-angle0"], {
+  const sensor = await runExec(adbCommand(), ["-s", serial, "emu", "sensor", "get", "hinge-angle0"], {
     timeout: 5_000,
     lane: "interactive",
   });
@@ -38,7 +39,7 @@ export async function getFoldStatus(
   }
 
   const state = await runExec(
-    "adb",
+    adbCommand(),
     ["-s", serial, "shell", "cmd", "device_state", "base-state"],
     { timeout: 5_000, lane: "interactive" },
   );
@@ -64,7 +65,7 @@ export async function setFoldPosture(
   if (!current.supported) throw new Error("Selected emulator does not support folding");
 
   const command = posture === "closed" ? "fold" : "unfold";
-  const result = await runExec("adb", ["-s", serial, "emu", command], {
+  const result = await runExec(adbCommand(), ["-s", serial, "emu", command], {
     timeout: 5_000,
     lane: "interactive",
   });

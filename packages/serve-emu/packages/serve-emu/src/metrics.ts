@@ -1,3 +1,4 @@
+import { adbCommand } from "./adb-command.ts";
 import { execText } from "./exec.ts";
 import {
   FOREGROUND_ACTIVITY_GREP,
@@ -367,7 +368,7 @@ export class MetricsSampler {
   async #probe(): Promise<MetricsProbe | null> {
     try {
       const result = await this.#runExec(
-        "adb",
+        adbCommand(),
         ["-s", this.serial, "shell", METRICS_PROBE_SCRIPT],
         { timeout: METRICS_PROBE_TIMEOUT_MS, lane: "background" },
       );

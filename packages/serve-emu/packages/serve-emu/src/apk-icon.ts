@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 
+import { adbCommand } from "./adb-command.ts";
 import {
   ANDROID_SDK_HINT,
   androidExecutable,
@@ -246,7 +247,7 @@ function execDetail(stderr: string, result: { error: Error | null }): string {
 }
 
 async function adbText(serial: string, args: string[], timeout: number): Promise<string> {
-  const result = await execText("adb", ["-s", serial, ...args], {
+  const result = await execText(adbCommand(), ["-s", serial, ...args], {
     timeout,
     lane: "background",
   });

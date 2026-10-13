@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { adbCommand } from "../src/adb-command.ts";
 import {
   AppManagementError,
   importMediaFile,
@@ -55,7 +56,7 @@ describe("staged app management uploads", () => {
     ).toEqual({ ok: true, output: "Success" });
     expect(calls).toEqual([
       {
-        cmd: "adb",
+        cmd: adbCommand(),
         args: [
           "-s",
           "device-a",

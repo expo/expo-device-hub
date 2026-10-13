@@ -1,3 +1,4 @@
+import { adbCommand } from "./adb-command.ts";
 import { execText } from "./exec.ts";
 import {
   type ForegroundComponent,
@@ -14,7 +15,7 @@ async function adbShell(
   timeout = 4_000,
   runExec: typeof execText = execText,
 ): Promise<string> {
-  const result = await runExec("adb", ["-s", serial, "shell", ...args], { timeout });
+  const result = await runExec(adbCommand(), ["-s", serial, "shell", ...args], { timeout });
   if (result.status !== 0 || result.error) {
     throw new Error(
       (
