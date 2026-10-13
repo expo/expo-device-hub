@@ -415,6 +415,53 @@ test("serves viewer-scoped WebRTC statistics from createApp.handleRequest", asyn
   }
 });
 
+// As serve-sim's `--transport webrtc` refuses its HTTP streams.
+test("with a WebRTC transport, refuses WebSocket video and keeps WebSocket input", async () => {
+  const clock = new ManualAppClock();
+  const { session } = fakeScrcpySession(1);
+  const app = await createApp(
+    {
+      serial: session.serial,
+      streamSettings: {
+        transport: "webrtc",
+        codec: "h264",
+        iceServers: [],
+        iceTransportPolicy: "all",
+      },
+    },
+    {
+      startSession: async () => adaptScrcpySession(session),
+      createWebRtcPublisher: async () => fakeWebRtcPublisher(),
+      clock,
+    },
+  );
+  const attach = (video: boolean) => {
+    const closed: Array<[number | undefined, string | undefined]> = [];
+    app.attachWebSocket(
+      {
+        bufferedAmount: 0,
+        send: () => {},
+        close: (code, reason) => void closed.push([code, reason]),
+        onMessage: () => {},
+        onClose: () => {},
+      },
+      { frameMeta: false, video },
+    );
+    return closed;
+  };
+
+  try {
+    expect(attach(true)).toEqual([[1008, "stream_transport_locked"]]);
+    expect(attach(false)).toEqual([]);
+    const api = await app.handleRequest(new Request("http://middleware.test/api"));
+    expect(await api.json()).toMatchObject({
+      viewerTransports: { default: "webrtc", available: ["webrtc"] },
+    });
+  } finally {
+    await app.stop();
+  }
+});
+
 test("uses the 30 FPS middleware default when maxFps is omitted", async () => {
   const { session } = fakeScrcpySession(0);
   let openedMaxFps: number | undefined;

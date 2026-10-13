@@ -3,6 +3,7 @@ import {
   parseIceUrlList,
   redactedStreamSettings,
   viewerTransportsFor,
+  webSocketVideoAllowed,
 } from "../src/stream-settings.ts";
 
 describe("stream settings", () => {
@@ -80,9 +81,10 @@ describe("stream settings", () => {
       ],
       iceTransportPolicy: "relay" as const,
     };
+    // WebRTC is the only video transport then, as with serve-sim's `--transport webrtc`.
     expect(viewerTransportsFor(configured, "h264")).toEqual({
       default: "webrtc",
-      available: ["websocket", "webrtc"],
+      available: ["webrtc"],
       webrtc: configured,
     });
     expect(viewerTransportsFor(configured, "av1")).toEqual({
@@ -90,5 +92,20 @@ describe("stream settings", () => {
       available: ["websocket"],
       webrtc: null,
     });
+  });
+});
+
+describe("webSocketVideoAllowed", () => {
+  test("refuses WebSocket video only when WebRTC is configured and possible", () => {
+    const webrtc = {
+      transport: "webrtc" as const,
+      codec: "h264" as const,
+      iceServers: [],
+      iceTransportPolicy: "all" as const,
+    };
+    expect(webSocketVideoAllowed({ transport: "websocket" }, "h264")).toBe(true);
+    expect(webSocketVideoAllowed(webrtc, "h264")).toBe(false);
+    // Without H.264 there is no WebRTC, so the WebSocket keeps the video.
+    expect(webSocketVideoAllowed(webrtc, "av1")).toBe(true);
   });
 });
