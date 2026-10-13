@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "bun:test";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, writeFileSync, linkSync, readdirSync } from "fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync, linkSync, readdirSync } from "fs";
 import { dirname, join } from "path";
 import { open } from "fs/promises";
 import { UPLOAD_DIR, UPLOAD_ROOT } from "../host-paths";
@@ -237,6 +237,42 @@ describe("app fixture uploads", () => {
       expect(readFileSync(join(running,"staged.bin"),"utf8")).toBe("x");
     } finally {
       rmSync(abandoned,{recursive:true,force:true});
+      rmSync(running,{recursive:true,force:true});
+      rmSync(join(UPLOAD_DIR,uploadId),{force:true});
+    }
+  });
+
+  it("removes expired uploads from a running server's folder", async () => {
+    const running = join(UPLOAD_ROOT,`${process.ppid}-0badf00e`);
+    mkdirSync(running,{recursive:true});
+    const expired = join(running,"expired.bin");
+    const fresh = join(running,"fresh.bin");
+    writeFileSync(expired,"old");
+    writeFileSync(fresh,"new");
+    const sevenHoursAgo = new Date(Date.now() - 7 * 60 * 60 * 1000);
+    utimesSync(expired,sevenHoursAgo,sevenHoursAgo);
+    const uploadId = "app-upload-expired.bin";
+    try {
+      expect((await act("upload.append",{uploadId,data:Buffer.from("y").toString("base64"),first:true})).exitCode).toBe(0);
+      expect(readdirSync(running)).toEqual(["fresh.bin"]);
+    } finally {
+      rmSync(running,{recursive:true,force:true});
+      rmSync(join(UPLOAD_DIR,uploadId),{force:true});
+    }
+  });
+
+  it("counts every server's folder against the staging ceiling", async () => {
+    const running = join(UPLOAD_ROOT,`${process.ppid}-0badf00f`);
+    mkdirSync(running,{recursive:true});
+    const filler = join(running,"filler.bin");
+    writeFileSync(filler,"");
+    truncateSync(filler,2 * 1024 * 1024 * 1024);
+    const uploadId = "app-upload-ceiling.bin";
+    try {
+      const result = await act("upload.append",{uploadId,data:Buffer.from("y").toString("base64"),first:true});
+      expect(result.exitCode).toBe(1);
+      expect(result.stderr).toContain("staging area is full");
+    } finally {
       rmSync(running,{recursive:true,force:true});
       rmSync(join(UPLOAD_DIR,uploadId),{force:true});
     }

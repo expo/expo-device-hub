@@ -332,10 +332,12 @@ completed staged upload into the app's data container, creating parent directori
 It returns JSON with `relativePath` and the copied byte count. Writes are atomic
 and refuse existing files unless `overwrite: true`. Files are limited to 10 MiB;
 staged uploads remain available until `upload.remove` or staging cleanup.
-Staging resets, pruning and removals wait while a copy reads its source bytes.
-Each server process stages uploads in its own folder, so an upload ID names only
-uploads sent to that server. Send `upload.append` and `app.file.upload` to the same
-server. When an upload starts, the folders of servers that exited are removed.
+Within a server, staging resets, pruning and removals wait while a copy reads its
+source bytes. Each server process stages uploads in its own folder, so an upload ID
+names only uploads sent to that server. Send `upload.append` and `app.file.upload`
+to the same server. The staging size limit counts the folders of all servers. Each
+upload chunk removes the folders of servers that exited, and uploads older than six
+hours in any folder. A copy that already opened its source still reads all of it.
 
 Send requests sequentially: `app.stop` → `upload.append` → `app.file.upload` →
 `app.launch`, then `upload.remove` when the staged source is no longer needed.
