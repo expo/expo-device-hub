@@ -80,3 +80,12 @@ test("hang", () => new Promise(() => {}), 60_000);`,
   expect(await testWithRetry([], { cwd, timeoutMs: 3_000 })).toBe(124);
   expect(runs()).toEqual(["hang.test.ts"]);
 }, 10_000);
+
+test("a process that a test leaks with stderr open does not hold the run", async () => {
+  const cwd = fixture({
+    "leak.test.ts": `test("leak", () => { Bun.spawn(["sleep", "30"], { stdio: ["ignore", "ignore", "inherit"] }).unref(); });`,
+  });
+  const started = Date.now();
+  expect(await testWithRetry([], { cwd })).toBe(0);
+  expect(Date.now() - started).toBeLessThan(10_000);
+}, 20_000);

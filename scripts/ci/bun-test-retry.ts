@@ -18,6 +18,8 @@ import { join } from "node:path";
 const ATTEMPT_TIMEOUT_MS = 20 * 60_000;
 // Exit code for a killed attempt, as with timeout(1).
 const TIMED_OUT = 124;
+// After the test process exits, a process it leaked can still hold stderr open.
+const STDERR_GRACE_MS = 2_000;
 // Bun leaves a file that fails to load, and any other error outside a test,
 // out of the JUnit report, and counts it as " N errors" in the summary that
 // ends its stderr. Test output always comes before that summary.
@@ -49,20 +51,31 @@ async function run(
   const timer = setTimeout(() => {
     timedOut = true;
     console.error(`::error::${cmd.join(" ")} ran for ${timeoutMs / 60_000} minutes; killing it`);
-    if (process.platform === "darwin") Bun.spawnSync(["sample", String(child.pid), "3", "-mayDie"]);
+    if (process.platform === "darwin") printSample(child.pid);
     child.kill("SIGKILL");
   }, timeoutMs);
   // Pass stderr through, and keep it to find errors outside a test.
   let stderr = "";
   const decoder = new TextDecoder();
-  for await (const chunk of child.stderr) {
-    process.stderr.write(chunk);
-    stderr += decoder.decode(chunk, { stream: true });
-  }
+  const reader = child.stderr.getReader();
+  const drained = (async () => {
+    for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+      process.stderr.write(chunk.value);
+      stderr += decoder.decode(chunk.value, { stream: true });
+    }
+  })();
   const code = await child.exited;
   clearTimeout(timer);
+  await Promise.race([drained, Bun.sleep(STDERR_GRACE_MS)]);
+  await reader.cancel().catch(() => {});
   running.delete(child);
   return { code: timedOut ? TIMED_OUT : code, stderr };
+}
+
+// Prints the stack part of a macOS `sample` report into the log.
+function printSample(pid: number) {
+  const report = Bun.spawnSync(["sample", String(pid), "3", "-mayDie"]).stdout.toString();
+  console.error(report.split("\nBinary Images:")[0]!.split("\n").slice(0, 80).join("\n"));
 }
 
 async function failedFiles(report: string): Promise<string[]> {
@@ -137,6 +150,6 @@ if (import.meta.main) {
   }
   const separator = argv.indexOf("--");
   const options = separator === -1 ? argv : argv.slice(0, separator);
-  const beforeRetry = options.find((o) => o.startsWith("--before-retry="))?.split("=")[1];
+  const beforeRetry = options.find((o) => o.startsWith("--before-retry="))?.slice("--before-retry=".length);
   process.exit(await testWithRetry(separator === -1 ? [] : argv.slice(separator + 1), { beforeRetry }));
 }
