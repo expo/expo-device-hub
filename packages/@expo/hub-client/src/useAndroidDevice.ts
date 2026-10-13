@@ -270,6 +270,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
   const [serverStreamSettings, setServerStreamSettings] =
     useState<ServeEmuStreamSettings | null>(null);
   const [webRtcVideoElement, setWebRtcVideoElement] = useState<HTMLVideoElement | null>(null);
+  const attachedVideoRef = useRef<HTMLVideoElement | null>(null);
   const webRtcVideoOwnerRef = useRef<{
     video: HTMLVideoElement;
     stream: MediaStream;
@@ -373,6 +374,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     (el: HTMLCanvasElement | HTMLImageElement | HTMLVideoElement | null) => {
       canvasRef.current = el?.tagName === 'CANVAS' ? (el as HTMLCanvasElement) : null;
       const video = el?.tagName === 'VIDEO' ? (el as HTMLVideoElement) : null;
+      attachedVideoRef.current = video;
       setWebRtcVideoElement((current) => (current === video ? current : video));
     },
     [],
@@ -1095,6 +1097,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     streamSwitch.phase,
   ]);
 
+  // @ref LLP 0012#hidden-tabs-and-startup-diagnosis — resume only the owned surface
   // Attach the negotiated MediaStream to DeviceScreen's current <video> node.
   // The node is stateful (rather than only a ref) so a remount reattaches the
   // stream and frame observer even when the MediaStream itself is unchanged.
@@ -1136,6 +1139,7 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       }
     };
     const onVideoFrame: VideoFrameRequestCallback = (_now, metadata) => {
+      if (stopped) return;
       const presentedFrameDelta = presentedVideoFrameDelta(
         previousPresentedFrames,
         metadata.presentedFrames,
@@ -1151,6 +1155,15 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
     };
     const onTimeUpdate = () => markFrame();
     const onLoadedData = () => markFrame(0);
+    const onVisibilityChange = () => {
+      const owner = webRtcVideoOwnerRef.current;
+      if (
+        stopped || document.hidden || attachedVideoRef.current !== video ||
+        owner?.video !== video || owner.stream !== webRtcStream ||
+        owner.scope !== deviceScopeRef.current || !video.paused
+      ) return;
+      void video.play().catch(() => {});
+    };
 
     video.srcObject = webRtcStream;
     webRtcVideoOwnerRef.current = { video, stream: webRtcStream, scope: deviceScopeRef.current };
@@ -1161,10 +1174,12 @@ export function useAndroidDeviceClient(options: DeviceConnectionOptions): Device
       video.addEventListener('timeupdate', onTimeUpdate);
     }
     video.addEventListener('loadeddata', onLoadedData, { once: true });
+    document.addEventListener('visibilitychange', onVisibilityChange);
     void video.play().catch(() => {});
 
     return () => {
       stopped = true;
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       video.removeEventListener('loadeddata', onLoadedData);
       video.removeEventListener('timeupdate', onTimeUpdate);
       if (frameCallback && typeof video.cancelVideoFrameCallback === 'function') {
