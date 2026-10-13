@@ -72,10 +72,17 @@ function settingsServer() {
   const activeSocketReads = new Set<ServerWebSocket<SocketData>>();
   let activeHttpReads = 0;
   const socketStarts: string[] = [];
+  // Server-side sends and closes reach the client after a variable number of
+  // event-loop turns. Record client delivery so tests wait for it before the
+  // fake clock advances past a retry timer the client has not yet scheduled.
+  const clientMessages: string[] = [];
+  let clientCloses = 0;
   stubGlobal("WebSocket", class extends WebSocket {
     constructor(...args: ConstructorParameters<typeof WebSocket>) {
       super(...args);
       socketStarts.push(new URL(this.url).pathname);
+      this.addEventListener("message", (event) => clientMessages.push(String(event.data)));
+      this.addEventListener("close", () => clientCloses++);
     }
   });
   const realFetch = globalThis.fetch;
@@ -277,6 +284,9 @@ function settingsServer() {
     writes,
     subscriptions,
     controls,
+    clientReceived: (message: object) =>
+      clientMessages.filter((data) => data === JSON.stringify(message)).length,
+    clientCloses: () => clientCloses,
     execConnections: () => socketStarts.filter((path) => path === "/ios/exec-ws").length,
     async settleReads() {
       await waitFor(() => activeHttpReads === 0 && activeSocketReads.size === 0);
@@ -333,10 +343,11 @@ for (const sub of [1, 2, 3, 4]) {
     const authRequests = server.state.authRequests;
     const subscriptions = server.subscriptions.length;
     server.state.endedSubscriptions.add(sub);
+    const ends = server.clientReceived({ sub, end: true });
     await act(async () => {
       for (const socket of server.controls) socket.send(JSON.stringify({ sub, end: true }));
-      await yieldIO();
     });
+    await waitFor(() => server.clientReceived({ sub, end: true }) > ends);
     expect(mounted.client().deviceSettingsStatus).toBe("ready");
     expect(mounted.client().deviceSettings).toBe(cached);
     expect(mounted.client().activityStatus).toBe(sub === 3 ? "error" : "ready");
@@ -764,8 +775,9 @@ for (const replyTiming of ["before reconnect", "after reconnect", "after repeate
       await waitFor(() => server.controls.size > 0);
     }
     if (replyTiming === "after repeated reconnects") {
+      const closes = server.clientCloses();
       await act(async () => { for (const socket of server.controls) socket.close(); });
-      await waitFor(() => server.controls.size === 0);
+      await waitFor(() => server.controls.size === 0 && server.clientCloses() > closes);
       await advanceTime(1500);
       await waitFor(() => server.controls.size > 0);
     }
