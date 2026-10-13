@@ -3,6 +3,19 @@ import { EventEmitter } from 'node:events';
 
 import { accessCookieName } from '../session-auth';
 
+// The real device servers answer each preflight. Loaded through a variable, so the Hub's type check
+// does not compile their sources, which use another `tsconfig`.
+const EMU_SOURCE = '../../../../serve-emu/packages/serve-emu/src/middleware.ts';
+const SIM_SOURCE = '../../../../serve-sim/packages/serve-sim/src/middleware.ts';
+const { createRouter: realEmuRouter } = (await import(EMU_SOURCE)) as {
+  createRouter: (options: { allowedOrigins?: string[] }) => { handleRequest(request: Request): Promise<Response> };
+};
+const { simMiddleware: realSimMiddleware } = (await import(SIM_SOURCE)) as {
+  simMiddleware: (options: { basePath: string; corsOrigins?: string[] }) => (
+    request: Request,
+  ) => Promise<Response | undefined>;
+};
+
 const TOKEN = 'hub-gate-token';
 const ORIGIN = 'http://192.168.1.20:3400';
 const cookie = `${accessCookieName(TOKEN)}=${encodeURIComponent(TOKEN)}`;
@@ -25,9 +38,16 @@ let deviceListings = 0;
 mock.module('../../../vendor/serve-sim/dist/middleware.js', () => ({
   simMiddleware: (options: Record<string, unknown>) => {
     simOptions = options;
+    // The real middleware answers each preflight, so a test sees what a browser gets before it sends
+    // the request itself.
+    const preflight = realSimMiddleware({
+      basePath: options.basePath as string,
+      corsOrigins: options.corsOrigins as string[],
+    });
     return Object.assign(
       async (request: Request) => {
         simRequests.push(request);
+        if (request.method === 'OPTIONS') return preflight(request);
         // serve-sim names its own frame policy on its pages.
         if (new URL(request.url).pathname.endsWith('/framed')) {
           return new Response('sim', { headers: { 'Content-Security-Policy': "frame-ancestors 'self' https://a.dev" } });
@@ -51,9 +71,12 @@ mock.module('../../../vendor/serve-emu/dist/middleware.js', () => ({
   SESSION_TOKEN_SUBPROTOCOL_PREFIX: 'serve-emu.token.',
   createRouter: (options: Record<string, unknown>) => {
     emuOptions = options;
+    // The real router answers each preflight, before its token gate and without a device.
+    const preflight = realEmuRouter({ allowedOrigins: options.allowedOrigins as string[] });
     return {
       handleRequest: async (request: Request) => {
         emuRequests.push(request);
+        if (request.method === 'OPTIONS') return preflight.handleRequest(request);
         // A redirect's headers are immutable.
         if (new URL(request.url).pathname === '/moved') return Response.redirect('http://emu.test/', 302);
         return new Response('emu');
@@ -169,11 +192,21 @@ describe('the Hub under a session token', () => {
 
   // A browser sends the preflight first, then the request with the token it has.
   test('lets a --cors-origin page read every kind of token refusal after its preflight', async () => {
-    const preflight = await request('/vendor/serve-emu/api/devices', {
-      method: 'OPTIONS',
-      headers: { Origin: PAGE, 'Access-Control-Request-Headers': 'authorization' },
-    });
-    expect(preflight?.status).toBe(200);
+    // Each backend's real preflight lets the page send the token header at all.
+    for (const path of ['/vendor/serve-emu/api/devices', '/vendor/serve-sim/api']) {
+      const preflight = await request(path, {
+        method: 'OPTIONS',
+        headers: {
+          Origin: PAGE,
+          'Access-Control-Request-Method': 'GET',
+          'Access-Control-Request-Headers': 'authorization',
+        },
+      });
+      expect([path, preflight?.status]).toEqual([path, 204]);
+      expect([path, preflight?.headers.get('access-control-allow-origin')]).toEqual([path, PAGE]);
+      expect(preflight?.headers.get('access-control-allow-headers')).toContain('Authorization');
+    }
+    simRequests.length = 0;
     emuRequests.length = 0;
 
     const wrong = { Origin: PAGE, Authorization: 'Bearer wrong-token' };
@@ -283,8 +316,8 @@ describe('the Hub under a session token', () => {
 
   // A preflight cannot carry the token. Each backend answers or refuses one before its own gate.
   test('passes a backend preflight through without a credential, and refuses one for the Hub', async () => {
-    expect((await request('/vendor/serve-sim/api', { method: 'OPTIONS' }))?.status).toBe(200);
-    expect((await request('/vendor/serve-emu/webrtc/stats', { method: 'OPTIONS' }))?.status).toBe(200);
+    expect((await request('/vendor/serve-sim/api', { method: 'OPTIONS' }))?.status).toBe(204);
+    expect((await request('/vendor/serve-emu/webrtc/stats', { method: 'OPTIONS' }))?.status).toBe(204);
 
     expect(simRequests.map((r) => r.headers.get('authorization'))).toEqual([null]);
     expect(emuRequests.map((r) => r.headers.get('authorization'))).toEqual([null]);
