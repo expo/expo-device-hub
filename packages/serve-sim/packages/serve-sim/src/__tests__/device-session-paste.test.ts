@@ -388,14 +388,16 @@ describe("copy shortcut", () => {
 });
 
 describe("copyPasteboard", () => {
-  async function withPasteboard(text: string, readDelay: string, run: (udid: string, board: string, markCopy: (call: KeyCall) => void, shortcutDone: Promise<void>) => Promise<void>) {
+  async function withPasteboard(text: string, readDelay: string, run: (udid: string, board: string, markCopy: (call: KeyCall) => void, shortcutDone: Promise<void>, helperChecks: string) => Promise<void>) {
     const dir = mkdtempSync(join(tmpdir(), "serve-sim-copy-turn-test-"));
     const board = join(dir, "pasteboard");
     const changeCount = join(dir, "change-count");
+    const helperChecks = join(dir, "helper-checks");
+    writeFileSync(helperChecks, "");
     writeFileSync(board, text);
     writeFileSync(changeCount, "0");
     const xcrun = `#!/bin/sh
-if [ "$2" = get_app_container ]; then exit 1
+if [ "$2" = get_app_container ]; then printf 'check\n' >> '${helperChecks}'; exit 1
 elif [ "$2" = install ] || [ "$2" = privacy ]; then exit 0
 elif [ "$5" = --read-text ]; then sleep ${readDelay}; cat '${board}'
 elif [ "$5" = --change-count ]; then cat '${changeCount}'
@@ -412,7 +414,7 @@ fi
       }
     };
     try {
-      await withShimsAsync({ xcrun }, () => run(`COPY-TURN-TEST-${process.pid}-${Math.random()}`, board, markCopy, shortcutDone));
+      await withShimsAsync({ xcrun }, () => run(`COPY-TURN-TEST-${process.pid}-${Math.random()}`, board, markCopy, shortcutDone, helperChecks));
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -431,6 +433,36 @@ fi
       expect(result.text).toBe("copied");
       expect((result as { cleanupWarning?: string }).cleanupWarning).toContain("key may still be held");
       expect(commandReleases).toBe(2);
+    });
+  });
+
+  test("serializes helper installation behind another server's pasteboard lock", async () => {
+    await withPasteboard("copied", "0", async (udid, _board, markCopy, _shortcutDone, helperChecks) => {
+      let acquired!: () => void;
+      let release!: () => void;
+      const locked = new Promise<void>((resolve) => { acquired = resolve; });
+      const holder = withSimPasteboardLock(udid, async () => {
+        acquired();
+        await new Promise<void>((resolve) => { release = resolve; });
+      });
+      await locked;
+      let admitted!: () => void;
+      const inputTurn = new Promise<void>((resolve) => { admitted = resolve; });
+      const copy = copyFromSim(udid, async () => { markCopy(["up", KeyC]); }, async (run) => {
+        admitted();
+        return run();
+      });
+      let checksWhileLocked: string;
+      try {
+        await inputTurn;
+        checksWhileLocked = readFileSync(helperChecks, "utf8");
+      } finally {
+        release();
+        await holder;
+      }
+      expect((await copy).text).toBe("copied");
+      expect(checksWhileLocked!).toBe("");
+      expect(readFileSync(helperChecks, "utf8")).toBe("check\n");
     });
   });
 

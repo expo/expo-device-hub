@@ -39,18 +39,6 @@ async function sameFile(left: string, right: string): Promise<boolean> {
   return !!a && !!b && a.equals(b);
 }
 
-// Copies on one device share the check in progress, so two Copies do not both replace the app.
-const appToolsInFlight = new Map<string, Promise<string>>();
-
-function pasteboardAppTool(udid: string): Promise<string> {
-  let tool = appToolsInFlight.get(udid);
-  if (!tool) {
-    tool = installedPasteboardAppTool(udid).finally(() => appToolsInFlight.delete(udid));
-    appToolsInFlight.set(udid, tool);
-  }
-  return tool;
-}
-
 async function installedPasteboardAppTool(udid: string): Promise<string> {
   const app = locateSimpbArtifact("ServeSimPasteboard.app") ??
     await buildSimpbArtifact("SimPasteboard", "ServeSimPasteboard.app");
@@ -95,8 +83,9 @@ export async function copyFromSim(
   sendCopyShortcut: () => Promise<void>,
   inInputTurn: (copy: () => Promise<string>) => Promise<string> = (copy) => copy(),
 ): Promise<PasteboardReadResult> {
-  const appTool = await pasteboardAppTool(udid);
   const text = await inInputTurn(() => withSimPasteboardLock(udid, async () => {
+    // @ref LLP 0010#copy — replacing the helper must not interrupt another server's read.
+    const appTool = await installedPasteboardAppTool(udid);
     // Native apps may write concurrently. Copy does not mutate the shared pasteboard itself.
     // @ref LLP 0010#copy — why Copy waits for the first change and may time out on the same text
     const before = await pasteboardChangeCount(udid);
