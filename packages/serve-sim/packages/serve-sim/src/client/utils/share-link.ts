@@ -55,6 +55,8 @@ export function copyTextViaSelection(text: string): boolean {
     area.style.opacity = "0";
     document.body.appendChild(area);
     try {
+      // @ref LLP 0010#copy — selecting an unfocused textarea can leave the old clipboard intact.
+      area.focus({ preventScroll: true });
       area.select();
       area.setSelectionRange(0, text.length);
       return document.execCommand("copy");

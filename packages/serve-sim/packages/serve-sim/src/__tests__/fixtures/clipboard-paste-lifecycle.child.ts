@@ -123,7 +123,7 @@ test("denied browser writes offer manual Copy, and a throwing fallback reports f
   Object.defineProperty(globalThis, "document", {
     value: {
       createElement: () => ({
-        style: {}, setAttribute() {}, select() {}, setSelectionRange() {},
+        style: {}, setAttribute() {}, focus() {}, select() {}, setSelectionRange() {},
         remove() { removed = true; },
       }),
       body: { appendChild() {} },
