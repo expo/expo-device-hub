@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-13 (rotation readback and app actions; clipboard; preview sharing)
+**Revised:** 2026-10-13 (rotation readback and app actions; clipboard; server-wide and per-page preview sharing)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -104,6 +104,11 @@ preview's Share button. The setting survives device changes and an empty device
 state. It does not change authentication or prevent an authorized viewer from
 sharing a token manually [observed: `src/index.ts`, `src/middleware.ts`,
 `src/client/components/share-session-button.tsx`, `src/client/client.tsx`].
+
+An embedder can instead add `?disableShare=1` to one preview page's URL to hide
+Share only on that page. Other values or an absent parameter leave Share enabled
+unless the server disabled it; `disableShare=0` cannot override the server setting
+[observed: `src/client/components/share-session-button.tsx`].
 
 ## Authentication
 
