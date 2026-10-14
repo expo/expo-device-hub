@@ -1,0 +1,89 @@
+name: Build release packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      canary:
+        type: boolean
+        description: Version the packages as a canary prerelease before building
+        default: false
+      release_branch:
+        type: string
+        description: Dedicated release/ branch for tested stable version changes
+        required: true
+
+defaults:
+  tools:
+    node: 24
+    bun: 1.3.14
+
+jobs:
+  package:
+    name: Build, test, and pack npm packages
+    runs_on: macos-medium
+    image: latest
+    steps:
+      - uses: eas/checkout
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Verify pending changesets
+        run: |
+          if [ "${{ inputs.canary }}" != "true" ]; then
+            ./scripts/verify-pending-changesets.ts
+          fi
+
+      - name: Apply version bump & generate changelog
+        run: bun run changeset:version
+
+      - name: Apply canary version
+        run: |
+          if [ "${{ inputs.canary }}" = "true" ]; then
+            ./scripts/apply-canary-version.ts
+          fi
+
+      - name: Summarize versions
+        run: ./scripts/summarize-versions.ts
+
+      # Stage only versioning changes, before build/test outputs can alter the tree.
+      - name: Stage version changes
+        run: |
+          if [ "${{ inputs.canary }}" != "true" ]; then
+            git add -A
+          fi
+
+      - name: Build packages
+        run: bun run build
+
+      - name: Test
+        run: bun run test
+
+      - name: Pack packages
+        run: |
+          if [ "${{ inputs.canary }}" = "true" ]; then
+            ./scripts/pack-packages.ts release-artifacts --canary
+          else
+            ./scripts/pack-packages.ts release-artifacts
+          fi
+
+      - name: Commit & push tested version changes
+        env:
+          RELEASE_BRANCH: ${{ inputs.release_branch }}
+        run: |
+          if [ "${{ inputs.canary }}" != "true" ]; then
+            git config user.name "expo[bot]"
+            git config user.email "102182381+expo[bot]@users.noreply.github.com"
+            bun scripts/commit-release.ts
+            git rev-parse HEAD > release-artifacts/release-commit.txt
+          fi
+
+      - name: Archive npm packages
+        run: tar -czf npm-packages.tgz -C release-artifacts .
+
+      - name: Upload npm packages
+        uses: eas/upload_artifact
+        with:
+          type: other
+          name: npm-packages
+          path: npm-packages.tgz

@@ -1,11 +1,10 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun";
-import { mkdir } from "node:fs/promises";
 import { getPublicPackages } from "./lib/public-packages.ts";
+import { readTarballs } from "./lib/tarballs.ts";
 
-const artifactsDir = `${process.cwd()}/release-artifacts`;
-await mkdir(artifactsDir, { recursive: true });
+const dir = process.argv[2] ?? "release-artifacts";
 
 function changelogSection(changelog: string, version: string): string {
   const lines = changelog.split("\n");
@@ -18,15 +17,20 @@ function changelogSection(changelog: string, version: string): string {
       break;
     }
   }
-  return lines.slice(start + 1, end).join("\n").trim();
+  return lines
+    .slice(start + 1, end)
+    .join("\n")
+    .trim();
 }
 
-for (const pkg of await getPublicPackages()) {
-  const tag = `${pkg.name}@${pkg.version}`;
+const packages = await getPublicPackages();
 
-  // Only release packages tagged in this run (changeset publish creates the tag).
+for (const { name, version, path } of await readTarballs(dir)) {
+  const tag = `${name}@${version}`;
+
   const tagged =
-    (await $`git rev-parse -q --verify refs/tags/${tag}`.nothrow().quiet()).exitCode === 0;
+    (await $`git rev-parse -q --verify refs/tags/${tag}`.nothrow().quiet())
+      .exitCode === 0;
   if (!tagged) {
     console.log(`- ${tag}: no tag (not published this run) — skipping`);
     continue;
@@ -40,15 +44,13 @@ for (const pkg of await getPublicPackages()) {
   }
 
   let notes = `Release ${tag}`;
-  const changelog = Bun.file(`${pkg.dir}/CHANGELOG.md`);
-  if (await changelog.exists()) {
-    const section = changelogSection(await changelog.text(), pkg.version);
+  const dir = packages.find((pkg) => pkg.name === name)?.dir;
+  const changelog = Bun.file(`${dir}/CHANGELOG.md`);
+  if (dir && (await changelog.exists())) {
+    const section = changelogSection(await changelog.text(), version);
     if (section) notes = section;
   }
 
-  const packOutput = await $`npm pack --pack-destination ${artifactsDir} --json`.cwd(pkg.dir).text();
-  const tarball = `${artifactsDir}/${JSON.parse(packOutput)[0].filename}`;
-
-  console.log(`- ${tag}: creating GitHub release with ${JSON.parse(packOutput)[0].filename}`);
-  await $`gh release create ${tag} ${tarball} --verify-tag --title ${tag} --notes ${notes}`;
+  console.log(`- ${tag}: creating GitHub release with ${path}`);
+  await $`gh release create ${tag} ${path} --verify-tag --title ${tag} --notes ${notes}`;
 }
