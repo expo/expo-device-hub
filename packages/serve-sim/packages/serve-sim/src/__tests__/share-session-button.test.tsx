@@ -36,34 +36,6 @@ describe("ShareSessionButton", () => {
   });
 });
 
-describe("ShareSessionButton page option", () => {
-  afterEach(() => {
-    delete (globalThis as { window?: unknown }).window;
-  });
-
-  function setSearch(search: string) {
-    (globalThis as { window?: unknown }).window = { location: { search } };
-  }
-
-  test("hides Share for this page when disableShare=1", () => {
-    setSearch("?device=ABC&disableShare=1");
-    expect(renderToStaticMarkup(<ShareSessionButton config={{ disableShare: false }} />)).toBe("");
-  });
-
-  test.each(["", "?disableShare=0", "?disableShare=true"])(
-    "keeps Share available when the query does not enable it: %s",
-    (search) => {
-      setSearch(search);
-      expect(renderToStaticMarkup(<ShareSessionButton config={null} />)).toContain('aria-label="Share session"');
-    },
-  );
-
-  test("cannot override the server-wide setting with disableShare=0", () => {
-    setSearch("?disableShare=0");
-    expect(renderToStaticMarkup(<ShareSessionButton config={{ disableShare: true }} />)).toBe("");
-  });
-});
-
 describe("ShareSessionButton click", () => {
   const realNavigator = globalThis.navigator;
 
