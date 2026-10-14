@@ -28,7 +28,7 @@ import { logBufferCache } from "./log-buffer";
 import { crashRuntime } from "./crash/runtime";
 import { dirnameOf, sleepSync, isPortFree, servePreview } from "./runtime";
 import { isLoopbackHost } from "./middleware-utils";
-import { runShutdownSteps } from "./shutdown-budget";
+import { runRecordingShutdown, runShutdownSteps } from "./shutdown-budget";
 import { launchAppAsync } from "./launch-app";
 import { simulatorBootEnv, validatedAdditionalDylibs } from "./additional-dylibs";
 import {
@@ -80,6 +80,7 @@ import { captureHarPaths, followCaptureHar } from "./capture";
 
 // Budget for capture teardown and capability disarming together.
 const SHUTDOWN_TIMEOUT_MS = 20_000;
+const RECORDING_SHUTDOWN_TIMEOUT_MS = 65_000;
 const CAPTURE_SHUTDOWN_SHARE_MS = 12_000;
 
 // `import.meta.dir` is Bun-only; resolve once via fileURLToPath so the bundled
@@ -408,6 +409,7 @@ function disarmDevicesArmedHere(): void {
 }
 
 let sessionStopping = false;
+let previewShutdownReady = false;
 let releasingDevices: Promise<void> | undefined;
 
 function disarmDevicesArmedHereAsync(): Promise<void> {
@@ -1811,8 +1813,10 @@ async function serve(
   // as well as for --network-capture.
   capture.captureRuntime.refuseCapture(publicCaptureRefusal(host, !!options.requireToken));
   await startNetworkCapture(options.networkCapture ? targetDevices : [], options.networkCaptureFields, quiet);
+  if (sessionStopping) return;
 
   const { simMiddleware } = await import("./middleware");
+  if (sessionStopping) return;
   // Standalone serve-sim owns its HTTP server and wires WebSocket upgrades, so
   // it can route helper/DevTools sockets through the single preview port.
   // Minted here, not in the middleware, because the operator has to be told what it is.
@@ -1850,6 +1854,7 @@ async function serve(
     const p = servePort + i;
     try {
       await bindPreviewServer(p, middleware, host);
+      if (sessionStopping) return;
       boundPort = p;
       bound = true;
       break;
@@ -1942,36 +1947,49 @@ async function serve(
     shuttingDown = true;
     sessionStopping = true;
     const recordingErrors: string[] = [];
-    const recordingsFinished = await finishDeviceRecordingsForShutdown(
-      error => recordingErrors.push(String(error))
-    );
-    if (!recordingsFinished) {
-      try {
-        writeFileSync(recordingShutdownFailureFile(process.pid), JSON.stringify({
-          pid: process.pid, errors: recordingErrors,
-        }), { mode: 0o600 });
-      } catch (error) {
-        console.error(`Could not report recording shutdown failure: ${String(error)}`);
-      }
-    }
-    await runShutdownSteps({
-      stopCapture: () => capture.captureRuntime.disableAll(),
-      disarm: async () => {
-        try {
-          await middleware.dispose();
-        } finally {
-          await disarmDevicesArmedHereAsync();
-        }
+    await runRecordingShutdown({
+      finishRecordings: () => finishDeviceRecordingsForShutdown(
+        error => recordingErrors.push(String(error))
+      ),
+      timeoutMs: RECORDING_SHUTDOWN_TIMEOUT_MS,
+      onTimeout: () => {
+        const error = `Recording shutdown exceeded ${RECORDING_SHUTDOWN_TIMEOUT_MS / 1000} seconds. ` +
+          `PID ${process.pid} and its state remain alive to preserve the output; ` +
+          "shutdown will finish when recording finalization completes.";
+        recordingErrors.push(error);
+        console.error(error);
       },
-      totalMs: SHUTDOWN_TIMEOUT_MS,
-      captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
+      completeShutdown: async recordingsFinished => {
+        if (!recordingsFinished) {
+          try {
+            writeFileSync(recordingShutdownFailureFile(process.pid), JSON.stringify({
+              pid: process.pid, errors: recordingErrors,
+            }), { mode: 0o600 });
+          } catch (error) {
+            console.error(`Could not report recording shutdown failure: ${String(error)}`);
+          }
+        }
+        await runShutdownSteps({
+          stopCapture: () => capture.captureRuntime.disableAll(),
+          disarm: async () => {
+            try {
+              await middleware.dispose();
+            } finally {
+              await disarmDevicesArmedHereAsync();
+            }
+          },
+          totalMs: SHUTDOWN_TIMEOUT_MS,
+          captureShareMs: CAPTURE_SHUTDOWN_SHARE_MS,
+        });
+        clearAll();
+        process.exit(recordingsFinished ? 0 : 1);
+      },
     });
-    clearAll();
-    process.exit(recordingsFinished ? 0 : 1);
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
   process.on("SIGHUP", shutdown);
+  previewShutdownReady = true;
   await new Promise(() => {});
 }
 
@@ -2436,6 +2454,8 @@ Examples:
           for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
             process.on(signal, async () => {
               sessionStopping = true;
+              // The in-process server must finish recordings before capture/capability teardown.
+              if (opts.preview !== false && previewShutdownReady) return;
               // A failed capture teardown must not keep the devices armed.
               try {
                 await stopNetworkCapture();
@@ -2445,7 +2465,7 @@ Examples:
                 );
               }
               await disarmDevicesArmedHereAsync();
-              if (process.listenerCount(signal) > 1) return;
+              if (opts.preview === false && process.listenerCount(signal) > 1) return;
               process.exit(0);
             });
           }

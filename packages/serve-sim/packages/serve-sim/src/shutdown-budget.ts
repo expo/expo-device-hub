@@ -1,3 +1,29 @@
+export async function runRecordingShutdown(steps: {
+  finishRecordings: () => Promise<boolean>;
+  completeShutdown: (success: boolean) => Promise<void>;
+  onTimeout: () => void;
+  timeoutMs: number;
+}): Promise<void> {
+  // @ref LLP 0001#control-and-shutdown — report deadline expiry without interrupting an MP4 writer.
+  let expired = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const completed = steps.finishRecordings().then(success => {
+    clearTimeout(timer);
+    return steps.completeShutdown(success && !expired);
+  });
+  try {
+    await Promise.race([completed, new Promise<void>(resolve => {
+      timer = setTimeout(() => {
+        expired = true;
+        steps.onTimeout();
+        resolve();
+      }, steps.timeoutMs);
+    })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Run shutdown's two steps inside one time budget. Capture teardown gets at most `captureShareMs`,
  * so disarming the devices always starts, even when a capture step stalls, and gets the rest.
