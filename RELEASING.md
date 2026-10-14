@@ -50,7 +50,7 @@ before it commits the version bump or publishes packages.
 The release job runs on Ubuntu, but `@expo/serve-sim` builds native macOS binaries. So the
 workflow first dispatches `.eas/workflows/build-release-cache.yml` on EAS for the same commit
 and waits for it. That macOS job applies the same version steps, runs `bun run build`, and
-writes the Turborepo remote cache (`turbo.exp.host`) with the `TURBO_TOKEN` from the
+writes the Turborepo remote cache (`turbo.exp.host`, team `expo-device-hub`) with the `TURBO_TOKEN` from the
 production EAS environment. The release job then reads the cache with the public `readonly`
 token, so its build is a cache hit. Both jobs use one canary id (`CANARY_ID`), because package
 versions are Turborepo inputs. If the serve-sim build is not a cache hit, the release fails at
