@@ -54,7 +54,7 @@ writes the Turborepo remote cache (`turbo.exp.host`, team `expo-device-hub`) wit
 production EAS environment. The release job then reads the cache with the public `readonly`
 token, so its build is a cache hit. Both jobs use one canary id (`CANARY_ID`), because package
 versions are Turborepo inputs. If the serve-sim build is not a cache hit, the release fails at
-**Build packages**. The dispatch uses the `EXPO_DEV_EXPO_GITHUB_ROBOT_ACCESS_TOKEN` repository
+**Build packages**. The dispatch uses the `EXPO_CI_ROBOT_ACCESS_TOKEN` repository
 secret.
 
 Every push to `main` also runs the workflow as a canary release, so `@canary` always tracks the
