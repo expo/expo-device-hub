@@ -205,7 +205,6 @@ See [API](https://github.com/expo/expo-device-hub/blob/main/llp/0003-serve-sim-h
 WebSocket endpoints.
 
 Add `?disableShare=1` to a preview page URL to hide Share on that page only, such as an iframe. Omit it (or use `disableShare=0`) to keep Share available. The server-wide `--disable-share` option takes precedence.
-The CLI option requires the foreground preview and cannot be combined with `--detach` or `--no-preview`.
 
 ### Recording video
 

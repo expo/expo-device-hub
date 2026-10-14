@@ -2393,13 +2393,6 @@ Examples:
       );
       process.exit(1);
     }
-    if (opts.disableShare && (opts.detach || opts.preview === false)) {
-      printStartupError(
-        "--disable-share needs the foreground preview, so drop --detach/--no-preview.",
-        !!opts.quiet,
-      );
-      process.exit(1);
-    }
     if (opts.detach) {
       const unsupported = [
         ...(installAppPath ? ["--install-app-path"] : []),
