@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-13 (native recording observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -137,10 +137,10 @@ Mode is available. It does not move the device. Unknown fields are left out.
 
 Before serve-sim reports hinge support, it reads the native hinge angle, so the
 angle is correct even if the device was folded before serve-sim started.
-CoreDevice reports the live angle, but not the physical orientation or Table
-Mode [observed: no Table Mode getter in Xcode 27.1 beta's CoreDevice; a probe of
-`OrientationControl.currentDeviceOrientation()` crashed serve-sim before it
-returned, #139].
+The command-state lookup reads the native angle and uses saved physical orientation
+and Table Mode. During #139, an orientation probe crashed before returning;
+recording now uses a separate native observation path described below
+[observed: `src/device-session.ts` `hydrateHingeState` and `applyNativeHingeState`, #139].
 
 serve-sim therefore saves the last confirmed pose, physical orientation, and
 Table Mode for each device in its state folder (`hinge-<UDID>.json`). At startup
@@ -156,6 +156,33 @@ restart.
 A hinge command that arrives before the startup read first reads native state
 and the saved record, so its save keeps the saved orientation. This includes a
 pose command that fails.
+
+## Confirmed hinge state
+
+Recording observes native pose separately from the successful-command cache and
+saved startup state. It opens the hinge stream with requested 100 ms updates and
+a one-degree threshold, plus a generic motion stream for physical orientation
+and tabletop activity. Neither requested cadence nor injected update frequency
+changes the saved timeline's four-per-second pose limit. Geometry boundaries
+retain their first written frame. Ordinary iPhones skip the private motion path.
+
+The first recording listener starts observation; the last cancels and awaits
+teardown. Boot and connection identities reject callbacks from old producers;
+independent native timestamp watermarks reject history and out-of-order angle,
+motion and orientation-query samples. A failure clears observed fields and
+retries after one second while recording remains active. A stationary device's
+Table activity can be unknown until a fresh motion event arrives.
+
+Apple's native tabletop value zero (`Ambiguous`) records `tableMode: false`;
+recognized values 1–10 record `true`. Missing or unrecognized values are absent.
+This reports observed activity, not whether the Table Mode control is enabled.
+See [recording metadata](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata)
+for the format and video-clock contract.
+
+[observed: `Sources/SimNative/CoreDeviceBridge.swift`,
+`Sources/SimNative/CoreDeviceHingeReadback.swift`,
+`Sources/SimNative/CoreDeviceState.swift`, `Sources/SimNative/CoreDeviceStateReadback.swift`,
+`Sources/SimNative/CaptureEngine.swift`; `Tests/SimNativeTests/DeviceStateSubscriptionTests.swift`]
 
 ## APIs inside an iOS app
 

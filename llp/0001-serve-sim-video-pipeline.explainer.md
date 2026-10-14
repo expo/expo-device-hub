@@ -5,7 +5,7 @@
 **Systems:** ServeSim
 **Author:** Gabe Debes
 **Date:** 2026-09-29
-**Revised:** 2026-10-13 (recording reboot recovery)
+**Revised:** 2026-10-14 (observed device state and recording geometry; recording reboot recovery)
 **Related:** LLP 0002, LLP 0003
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -194,6 +194,91 @@ so the MP4 writer does not encode again. On successful finalization the output
 directory contains `recording.mp4` and `session.json`. The manifest keeps the
 record-sim upload contract: `firstFrameWallClock` with `unixMs` and `iso8601`,
 `width`, `height`, and `recording`.
+
+### Device-state metadata
+
+An optional `deviceStates` timeline describes the recorded device:
+
+```json
+{
+  "deviceStates": [
+    {
+      "timeMs": 0,
+      "state": { "width": 2007, "height": 2853, "orientation": "landscape_left", "screen": "inner", "contentRect": { "x": 0, "y": 0, "width": 2007, "height": 2853 }, "hingeAngle": 180, "physicalOrientation": "portrait", "tableMode": false }
+    },
+    {
+      "timeMs": 2400,
+      "state": { "width": 1398, "height": 2034, "orientation": "landscape_left", "screen": "outer", "contentRect": { "x": 24, "y": 0, "width": 1960, "height": 2854 }, "hingeAngle": 80, "physicalOrientation": "facedown", "tableMode": true }
+    }
+  ]
+}
+```
+
+Each event is the full known device state of a submitted video frame, committed
+to the timeline only after that frame is successfully appended to the MP4.
+The first event has `timeMs: 0`; subsequent times use the video's presentation
+clock relative to its first frame. Unchanged states are omitted. Geometry
+changes (`screen`, `width`, `height`, `orientation`, and `contentRect`) keep the
+timestamp of their first written frame. Pose-only changes are coalesced with
+250 ms between normal updates. On stop, the final written state is retained;
+coalescing cannot move an earlier geometry boundary. A clip shorter than
+250 ms retains both its initial and final state when they differ. Every
+timestamp identifies an actual written frame.
+An event's `width` and `height` describe the active source panel; the manifest's
+top-level dimensions describe the fixed recording canvas. `contentRect` gives
+the source picture's bounds in encoded pixels, measured from the canvas's top
+left. It excludes letterbox borders and whole pixels added for even dimensions.
+The encoder preparation supplies this rectangle with the submitted frame;
+metadata is never committed for an unwritten frame.
+
+`orientation` comes from native screen metadata and uses `portrait`,
+`portrait_upside_down`, `landscape_left`, or `landscape_right`. On Duo,
+`hingeAngle` is in degrees from 0 (closed) to 180 (open). `screen` is `inner` or
+`outer`, derived from the captured integrated display's DeviceKit identity in a
+two-panel profile. Ordinary devices, external displays, and unknown or
+contradictory identities omit it. Recording metadata identifies panels only by
+`screen`; numeric screen IDs stay in live capture and input routing. Decoders
+ignore unknown keys such as a numeric `screenId` and accept manifests without
+semantic screen names or content rectangles.
+`physicalOrientation` describes the device pose,
+using `portrait`, `pud`, `landscape-left`, `landscape-right`, `faceup`, or
+`facedown`; `tableMode` describes observed tabletop activity. Apple's native
+tabletop pose value zero (`Ambiguous`) records `false`; recognized values 1–10
+record `true`. Missing, malformed, or unrecognized values are omitted. This
+Boolean does not report whether the Table Mode control was enabled. Screen
+orientation and physical orientation can differ when an app locks its interface.
+
+Unknown fields are omitted rather than inferred. Recording keeps a native
+observer per device. It opens a hinge stream configured for
+100 ms updates and a one-degree change threshold, plus a generic motion stream
+for physical orientation and tabletop activity. The generic stream has no
+interval setting. Recording consumes only these observations, independently of
+the successful-command cache. Ordinary iPhones omit Duo fields.
+
+Native sample timestamps reject history from before the current native connection
+and out-of-order observations. Angle, motion, and orientation-query timestamps
+have separate watermarks. A fresh orientation query initializes a stationary
+device while the motion stream buffers updates; historical tabletop snapshots
+remain unknown until a fresh native event arrives. Treat each saved event as a
+complete snapshot: absent optional fields are unknown. See
+[confirmed hinge state](0004-serve-sim-hinge-controls.explainer.md#confirmed-hinge-state)
+for command and observation lifetimes. External pose changes at an unchanged
+angle update the same observer. The native update interval is a request, not a strict
+callback throttle; the saved timeline limits pose-only changes to four per second.
+If the stream fails, observed fields clear, the observer logs the failure, and
+it retries after one second while recording remains active.
+
+[observed: `Sources/SimNative/FrameCapture.swift`,
+`Sources/SimNative/NativeFrameMailbox.swift`, `Sources/SimNative/CaptureEngine.swift`,
+`Sources/SimNative/NativeVideoRecorder.swift`, `Sources/SimNative/PixelBufferLetterboxer.swift`,
+`Sources/SimNative/CoreDeviceState.swift`, `Sources/SimNative/CoreDeviceStateReadback.swift`,
+`Sources/SimNative/CoreDeviceBridge.swift`;
+`Sources/StreamingPolicy/RecordingManifest.swift`,
+`Sources/StreamingPolicy/RecordingDeviceStateTimeline.swift`,
+`Sources/StreamingPolicy/SimulatorDisplayProfile.swift`;
+`Tests/SimNativeTests/RecordingContentRectTests.swift`,
+`Tests/SimNativeTests/DeviceStateSubscriptionTests.swift`,
+`Tests/StreamingPolicyTests/RecordingDeviceStateTimelineTests.swift`]
 
 ### Saved MP4 layout contract
 

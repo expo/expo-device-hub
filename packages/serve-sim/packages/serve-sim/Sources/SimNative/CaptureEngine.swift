@@ -127,6 +127,7 @@ actor CaptureEngine {
     private var recordingFinalizing = false
     private var recordingFinishTask: Task<NativeRecordingResult, Error>?
     private var recordingAvailability = RecordingAvailability()
+    private var recordingStateUnsubscribe: (@Sendable () async -> Void)?
     private var lastViewerCanvasSequence: UInt64?
     private var frameContinuation: AsyncStream<Frame>.Continuation?
     private var cancelledWebRTCSessionIds = Set<String>()
@@ -158,8 +159,11 @@ actor CaptureEngine {
             await refreshSnapshotSize()
             let nativeFrameMailbox = self.nativeFrameMailbox
             let generation = captureGeneration
-            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas in
-                nativeFrameMailbox.publish(pixelBuffer, timestamp: timestamp, wallClock: Date())
+            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixelBuffer, timestamp, canvas, screen in
+                nativeFrameMailbox.publish(
+                    pixelBuffer, timestamp: timestamp, wallClock: Date(),
+                    deviceState: screen.recordingDeviceState
+                )
                 frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas, captureGeneration: generation))
             }
         } catch {
@@ -259,6 +263,7 @@ actor CaptureEngine {
     }
 
     func stopNativeFrameDelivery() async {
+        await stopRecordingStateUpdates()
         nativeFrameDeliveryGeneration &+= 1
         nativeFrameDeliveryPending = false
         nativeFrameMailbox.setActive(false)
@@ -469,8 +474,9 @@ actor CaptureEngine {
         defer { readinessMailbox.setActive(false) }
         mailbox.setActive(nativeFrameDeliveryActive)
         do {
-            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixels, timestamp, canvas in
-                mailbox.publish(pixels, timestamp: timestamp, wallClock: Date())
+            try await frameCapture.start(deviceUDID: deviceUDID, screenID: screenID) { pixels, timestamp, canvas, screen in
+                mailbox.publish(pixels, timestamp: timestamp, wallClock: Date(),
+                                deviceState: screen.recordingDeviceState)
                 readinessMailbox.publish(pixels, timestamp: timestamp, wallClock: Date())
                 continuation?.yield(Frame(pixelBuffer: pixels, timestamp: timestamp, canvas: canvas, captureGeneration: generation))
             }
@@ -507,6 +513,7 @@ actor CaptureEngine {
             }
         }
         recording = nil
+        await stopRecordingStateUpdates()
         nativeFrameDeliveryGeneration &+= 1
         nativeFrameDeliveryPending = false
         nativeFrameDeliveryActive = false
@@ -539,6 +546,10 @@ actor CaptureEngine {
             throw recordingError(14, "Capture stopped before recording could start; restart the session and retry")
         }
         do {
+            await startRecordingStateUpdates()
+            guard phase == .running else {
+                throw recordingError(14, "Capture stopped before recording could start; restart the session and retry")
+            }
             let recorder = try NativeVideoRecorder(
                 mailbox: delivery.mailbox, canvas: delivery.canvas,
                 outputDirectory: outputDirectory
@@ -551,7 +562,28 @@ actor CaptureEngine {
         }
     }
 
+    private func startRecordingStateUpdates() async {
+        guard await frameCapture.isFoldable, phase == .running else { return }
+        let udid = deviceUDID
+        let mailbox = nativeFrameMailbox
+        let bridge = CoreDeviceBridge.shared
+        let generation = nativeFrameDeliveryGeneration
+        // @ref LLP 0001#device-state-metadata — recording consumes only independently observed motion state
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { state in mailbox.updateHingeState(state) }
+        guard phase == .running, generation == nativeFrameDeliveryGeneration else { await unsubscribe(); return }
+        recordingStateUnsubscribe = unsubscribe
+    }
+
+    private func stopRecordingStateUpdates() async {
+        let unsubscribe = recordingStateUnsubscribe
+        recordingStateUnsubscribe = nil
+        await unsubscribe?()
+    }
+
     func stopRecording() async throws -> String {
+        guard !recordingFinalizing else {
+            throw recordingError(16, "A recording is already stopping; wait for it to finish")
+        }
         guard let recording else {
             throw recordingError(15, "No recording is active; start recording before stopping it")
         }

@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-14 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission)
+**Revised:** 2026-10-14 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission; device-state recording manifest)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -45,8 +45,13 @@ Use `serve-sim record-video --udid <udid> --output <empty-dir>` against a
 running session. The CLI owns and renews the recording lease;
 SIGINT stops it and waits for `recording.mp4` and `session.json`. The server
 also attempts to finalize active recordings during shutdown. One recording may
-run per device. The manifest retains the record-sim upload schema. See
-[Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md) for frame handling and limits.
+run per device. The manifest retains the required record-sim upload fields and
+may include a `deviceStates` timeline. Older manifests without that field remain
+valid [observed: `Sources/StreamingPolicy/RecordingManifest.swift`]. See
+[device-state metadata](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata)
+for the timeline contract, and
+[Video pipeline and recording](0001-serve-sim-video-pipeline.explainer.md)
+for frame handling and limits.
 
 To control recording directly, `POST` a JSON body such as
 `{"start":true,"output":"/path/to/empty-dir","recordingId":"client-id"}`.

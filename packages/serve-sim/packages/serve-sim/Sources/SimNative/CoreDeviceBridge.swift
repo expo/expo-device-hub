@@ -8,19 +8,43 @@ import StreamingPolicy
 actor CoreDeviceBridge {
     static let shared = CoreDeviceBridge()
 
-    enum BridgeError: Error { case unavailable, deviceUnavailable, initializationTimedOut, resetDuringLookup }
+    enum BridgeError: Error { case unavailable, deviceUnavailable, initializationTimedOut, resetDuringLookup, observationEnded }
 
     private var manager: CoreDeviceManagerObject?
     private let managerReadiness = SharedReadiness()
     private var capabilities = BootBoundCache<String, String, CoreDeviceCapabilityObject>()
     private var hingeSupport: [String: Bool] = [:]
     private var hingeResetGenerations: [String: UInt64] = [:]
-    struct HingeState {
+    struct HingeState: Equatable, Sendable {
         var angle: Double?
         var orientation: String?
         var tableMode: Bool?
     }
     private var hingeStates: [String: HingeState] = [:]
+    typealias DeviceStateConsumer = @Sendable (String, @escaping @Sendable (DeviceStateUpdate) async -> Void) async throws -> Bool
+    private struct DeviceStateToken: Equatable {
+        let generation: UInt64
+        let id = UUID()
+    }
+    private final class DeviceStateObservation {
+        var token: DeviceStateToken?
+        var connection: UUID?
+        var task: Task<Void, Never>?
+        var listeners: [UUID: @Sendable (HingeState) -> Void] = [:]
+    }
+    private var deviceStateObservations: [String: DeviceStateObservation] = [:]
+    private var observedDeviceStates: [String: ObservedDeviceState] = [:]
+    private let deviceStateConsumer: DeviceStateConsumer?
+    let hingeClock: @Sendable () -> Double
+    private let reconnectDelay: Duration
+
+    init(deviceStateConsumer: DeviceStateConsumer? = nil,
+         hingeClock: @escaping @Sendable () -> Double = { ProcessInfo.processInfo.systemUptime },
+         reconnectDelay: Duration = .seconds(1)) {
+        self.deviceStateConsumer = deviceStateConsumer
+        self.hingeClock = hingeClock
+        self.reconnectDelay = reconnectDelay
+    }
 
     /// CoreDevice's capability objects belong to a simulator boot. A new capture
     /// session must not reuse them after that device boots again in the same
@@ -34,6 +58,11 @@ actor CoreDeviceBridge {
         hingeResetGenerations[udid, default: 0] &+= 1
         hingeSupport.removeValue(forKey: udid)
         hingeStates.removeValue(forKey: udid)
+        observedDeviceStates[udid] = ObservedDeviceState()
+        publishObservedDeviceState(udid: udid)
+        if let observation = deviceStateObservations[udid], !observation.listeners.isEmpty {
+            startDeviceStateObservation(udid: udid, observation: observation)
+        }
     }
 
     func hingeState(udid: String) async -> HingeState {
@@ -54,6 +83,103 @@ actor CoreDeviceBridge {
         // If readback is unavailable, retain the last individually successful
         // sends, including the portion of a preset applied before its failure.
         return hingeStates[udid] ?? HingeState()
+    }
+
+    func observedDeviceState(udid: String) -> HingeState {
+        observedDeviceStates[udid]?.state ?? HingeState()
+    }
+
+    func subscribeDeviceState(udid: String, onChange: @escaping @Sendable (HingeState) -> Void) async -> @Sendable () async -> Void {
+        while let previous = deviceStateObservations[udid], previous.listeners.isEmpty {
+            await previous.task?.value
+            if deviceStateObservations[udid] === previous { deviceStateObservations.removeValue(forKey: udid) }
+        }
+        guard !Task.isCancelled else { return {} }
+        let id = UUID()
+        let observation = deviceStateObservations[udid] ?? DeviceStateObservation()
+        let starts = observation.listeners.isEmpty
+        observation.listeners[id] = onChange
+        deviceStateObservations[udid] = observation
+        if observedDeviceStates[udid] == nil {
+            observedDeviceStates[udid] = ObservedDeviceState()
+        }
+        if starts { startDeviceStateObservation(udid: udid, observation: observation) }
+        onChange(observedDeviceState(udid: udid))
+        return { await self.removeDeviceStateListener(udid: udid, id: id) }
+    }
+
+    private func startDeviceStateObservation(udid: String, observation: DeviceStateObservation) {
+        let previous = observation.task
+        previous?.cancel()
+        let token = DeviceStateToken(generation: hingeResetGenerations[udid, default: 0])
+        observation.token = token
+        observation.connection = nil
+        observation.task = Task {
+            await previous?.value
+            guard !Task.isCancelled else { return }
+            await self.runDeviceStateObservation(udid: udid, token: token)
+        }
+    }
+
+    private func removeDeviceStateListener(udid: String, id: UUID) async {
+        guard let observation = deviceStateObservations[udid], observation.listeners.removeValue(forKey: id) != nil,
+              observation.listeners.isEmpty else { return }
+        observation.token = nil
+        observation.connection = nil
+        observation.task?.cancel()
+        clearObservedDeviceState(udid: udid)
+        await observation.task?.value
+        if deviceStateObservations[udid] === observation { deviceStateObservations.removeValue(forKey: udid) }
+    }
+
+    private func runDeviceStateObservation(udid: String, token: DeviceStateToken) async {
+        defer { if deviceStateObservations[udid]?.token == token { deviceStateObservations[udid]?.token = nil } }
+        while !Task.isCancelled, deviceStateObservations[udid]?.token == token {
+            let startedAt = hingeClock()
+            let connection = UUID()
+            deviceStateObservations[udid]?.connection = connection
+            do {
+                let receive: @Sendable (DeviceStateUpdate) async -> Void = { update in
+                    await self.applyObservedDeviceState(udid: udid, update: update, token: token,
+                                                       connection: connection, startedAt: startedAt)
+                }
+                let supported: Bool
+                if let deviceStateConsumer { supported = try await deviceStateConsumer(udid, receive) }
+                else { supported = try await consumeDeviceStateUpdates(udid: udid, onUpdate: receive) }
+                guard supported else { return }
+                throw BridgeError.observationEnded
+            } catch {
+                guard !Task.isCancelled, deviceStateObservations[udid]?.token == token else { return }
+                deviceStateObservations[udid]?.connection = nil
+                clearObservedDeviceState(udid: udid)
+                for symbol in ["$s10CoreDevice23MonitorMotionCapabilityVN", "$s10CoreDevice28OrientationControlCapabilityVN"] {
+                    capabilities.removeValue(forKey: "\(udid):\(symbol)")
+                }
+                fputs("[hid] Device state observation unavailable: \(error); reconnecting in \(reconnectDelay)\n", stderr)
+                do { try await Task.sleep(for: reconnectDelay) }
+                catch { return }
+            }
+        }
+    }
+
+    private func applyObservedDeviceState(udid: String, update: DeviceStateUpdate, token: DeviceStateToken,
+                                          connection: UUID, startedAt: Double) {
+        guard !Task.isCancelled, let observation = deviceStateObservations[udid],
+              observation.token == token, observation.connection == connection,
+              hingeResetGenerations[udid, default: 0] == token.generation else { return }
+        let previous = observedDeviceStates[udid]?.state
+        observedDeviceStates[udid]?.apply(update, since: startedAt)
+        if observedDeviceStates[udid]?.state != previous { publishObservedDeviceState(udid: udid) }
+    }
+
+    private func clearObservedDeviceState(udid: String) {
+        if observedDeviceStates[udid]?.clear() == true { publishObservedDeviceState(udid: udid) }
+    }
+
+    private func publishObservedDeviceState(udid: String) {
+        guard let observation = deviceStateObservations[udid] else { return }
+        let state = observedDeviceState(udid: udid)
+        for listener in observation.listeners.values { listener(state) }
     }
 
     func remoteDevice(udid: String) async throws -> CoreDeviceRemoteDevice {
@@ -292,7 +418,7 @@ actor CoreDeviceBridge {
 
 }
 
-private struct CoreDeviceCallFailed: Error {}
+struct CoreDeviceCallFailed: Error {}
 
 // These types supply the Swift calling convention only. Objects and protocol
 // metadata always come from CoreDevice; no instance of a substitute is made.
