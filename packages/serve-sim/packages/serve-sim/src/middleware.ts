@@ -942,6 +942,7 @@ export function previewConfigForState(
   proxyHelpers = false,
   requirePreviewToken = false,
   shareUrl?: string,
+  disableShare = false,
 ): ServeSimState & {
   basePath: string;
   logsEndpoint: string;
@@ -973,6 +974,7 @@ export function previewConfigForState(
   proxyHelpers?: boolean;
   requireToken?: boolean;
   shareUrl?: string;
+  disableShare?: boolean;
 } {
   const gridApiBase = (base === "" ? "" : base) + "/grid/api";
   const legacyCodec = typeof streamSettingsOrCodec === "string" ? streamSettingsOrCodec : undefined;
@@ -1012,6 +1014,7 @@ export function previewConfigForState(
     ...(proxyHelpers ? { proxyHelpers: true } : {}),
     ...(requirePreviewToken ? { requireToken: true } : {}),
     ...(shareUrl ? { shareUrl } : {}),
+    ...(disableShare ? { disableShare: true } : {}),
   };
 }
 
@@ -1479,6 +1482,8 @@ export interface SimMiddlewareOptions {
   frameAncestors?: string[];
   /** Public page the Share button copies instead of this preview's address. */
   shareUrl?: string;
+  /** Hide the Share button without hiding the other preview controls. */
+  disableShare?: boolean;
   /**
    * Without the token gate, the preview answers only for `localhost` and IP addresses; other `Host`
    * headers get 403, which stops DNS rebinding from reading the session token. Set this to answer
@@ -1902,6 +1907,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
   const corsOrigins = [...(options?.corsOrigins ?? [])];
   const frameAncestors = options?.frameAncestors ?? [];
   const shareUrl = options?.shareUrl;
+  const disableShare = !!options?.disableShare;
   const allowAnyHostWhenInsecure = options?.allowAnyHostWhenInsecure ?? false;
   // Under the token gate a rebinding page has no cookie and cannot read the token, so only an
   // ungated preview needs its Host checked.
@@ -2111,6 +2117,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
           basePath: base,
           execToken,
           ...(shareUrl ? { shareUrl } : {}),
+          ...(disableShare ? { disableShare: true } : {}),
         });
         html = html.replace(
           "<!--__SIM_PREVIEW_CONFIG__-->",
@@ -2121,7 +2128,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       if (state) {
         const remoteState = rewriteStateForRequestHost(state, hostForRequest(req), base, httpProtocolForRequest(req), proxyHelpers);
         const config = JSON.stringify(
-          previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl),
+          previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl, disableShare),
         );
         const configScript = `<script>window.__SIM_PREVIEW__=${config}</script>`;
         html = html.replace("<!--__SIM_PREVIEW_CONFIG__-->", configScript);
@@ -2576,7 +2583,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       res.end(
         JSON.stringify(
           remoteState
-            ? previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl)
+            ? previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl, disableShare)
             : null,
         ),
       );
@@ -2838,7 +2845,7 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
         const remoteState = state ? rewriteStateForRequestHost(state, hostForRequest(req), base, httpProtocolForRequest(req), proxyHelpers) : null;
         return JSON.stringify(
           remoteState
-            ? previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl)
+            ? previewConfigForState(remoteState, base, execToken, streamSettings, proxyHelpers, requirePreviewToken, shareUrl, disableShare)
             : null,
         );
       };

@@ -47,6 +47,8 @@ declare global {
       requireToken?: boolean;
       /** Public page Share copies when `--share-url` is set. */
       shareUrl?: string;
+      /** Hide the Share button when `--disable-share` is set. */
+      disableShare?: boolean;
       streamSettings?: StreamSettings;
       /**
        * Set when the server routes helper stream/control + DevTools sockets

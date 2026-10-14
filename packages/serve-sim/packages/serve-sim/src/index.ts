@@ -1789,6 +1789,7 @@ async function serve(
     corsOrigins?: string[];
     frameAncestors?: string[];
     shareUrl?: string;
+    disableShare?: boolean;
     allowAnyHostWhenInsecure?: boolean;
     debugStreamPath?: string;
     requireToken?: boolean;
@@ -1827,6 +1828,7 @@ async function serve(
       corsOrigins: options.corsOrigins ?? [],
       frameAncestors: options.frameAncestors ?? [],
       shareUrl: options.shareUrl,
+      disableShare: options.disableShare,
       allowAnyHostWhenInsecure: options.allowAnyHostWhenInsecure ?? false,
       networkCapture: !!options.networkCapture,
       networkCaptureProxy: options.networkCaptureProxy,
@@ -2171,6 +2173,7 @@ program
     "URL the Share button copies, instead of this preview's address.",
     parseShareUrl,
   )
+  .option("--disable-share", "Hide the Share button in the preview UI.")
   .option(
     "--cors-origin <origin>",
     "Allow this origin to read the preview cross-origin and open its control socket " +
@@ -2509,6 +2512,7 @@ Examples:
         corsOrigins: opts.corsOrigin,
         frameAncestors: opts.frameAncestor,
         shareUrl: opts.shareUrl,
+        disableShare: !!opts.disableShare,
         allowAnyHostWhenInsecure: !!opts.allowAnyHostWhenInsecure,
         debugStreamPath,
         requireToken: !!opts.requireToken,

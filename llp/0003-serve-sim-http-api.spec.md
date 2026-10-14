@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-12 (rotation readback contract; added installed-app launch, control, data-file and upload actions)
+**Revised:** 2026-10-13 (rotation readback and app actions; clipboard; preview sharing)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -96,6 +96,14 @@ differs from the copy that serve-sim ships. Each Copy grants it pasteboard
 access. The app and the grant stay after Copy, and the app shows on the Home
 screen. `--disable clipboard`, or `clipboard: false` for `simMiddleware`, does
 not prevent this.
+
+## Preview sharing
+
+`--disable-share` (or the middleware's `disableShare: true`) hides only the
+preview's Share button. The setting survives device changes and an empty device
+state. It does not change authentication or prevent an authorized viewer from
+sharing a token manually [observed: `src/index.ts`, `src/middleware.ts`,
+`src/client/components/share-session-button.tsx`, `src/client/client.tsx`].
 
 ## Authentication
 
