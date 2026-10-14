@@ -120,10 +120,10 @@ async function main(): Promise<void> {
   const serveStaticFile = staticFileHandler(new URL('../client/', import.meta.url));
 
   const server = createServer(async (req, res) => {
+    let request: Request | undefined;
     try {
-      const request = toFetchRequest(req);
+      request = toFetchRequest(req);
       const response = await handler(request);
-      discardUnreadBody(request);
       if (response) {
         writeFetchResponse(response, res);
         return;
@@ -140,6 +140,9 @@ async function main(): Promise<void> {
       } else {
         writeFetchResponse(new Response('Internal Server Error', { status: 500 }), res);
       }
+    } finally {
+      // An answer or a failure that left the upload unread would pause the connection.
+      if (request) discardUnreadBody(request);
     }
   });
 
