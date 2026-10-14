@@ -5,18 +5,23 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-12 (rotation readback contract; added installed-app launch, control, data-file and upload actions)
-**Related:** LLP 0001, LLP 0002
+**Revised:** 2026-10-14 (checked against the code at 8edb2dea; added the missing helper, crash, network capture, DevTools frontend and model routes; the device fallback; the token checks that apply without `--require-token`; the bearer rule for recording status; the recording lease) · 2026-10-12 (rotation readback contract; added installed-app launch, control, data-file and upload actions)
+**Related:** LLP 0001, LLP 0002, LLP 0004, LLP 0005, LLP 0010
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
 
 Paths are relative to the mount point, which is `/` for a standalone
-`serve-sim` and the `basePath` middleware option when embedded.
+`serve-sim` and the `basePath` middleware option when embedded (default `/.sim`).
 
 ## Routes
 
-All are `GET` unless marked. `device` takes a simulator udid and defaults to the
-server's selected device.
+All are `GET` unless marked. `?device=<udid>` selects a simulator. Without it, a
+route uses the middleware's `device` option, which a standalone `serve-sim` sets
+to its first target device, and otherwise the first registered simulator.
+When neither is set, `/api/screenshot` and `/api/pasteboard` use the first
+booted simulator instead.
+`/api/event-log` and its stream use only `?device=`; without it, they show the
+events of every device. A `/helper/<udid>/…` route takes the udid from its path.
 
 | Path | What it is |
 | --- | --- |
@@ -26,18 +31,27 @@ server's selected device.
 | `/api/screenshot` | `POST`. A still PNG. |
 | `/api/apps/icon?bundleId=<id>` | An installed app's icon, `{ok, bundleId, icon: {mimeType, data} \| null}`, the same shape as serve-emu's route, with `bundleId` in place of `packageName`. `icon` is null when the app has its icon only in `Assets.car`. 404 when the app is not installed, 503 when `simctl` cannot answer (retry). |
 | `/api/pasteboard` | `POST` reads the simulator pasteboard as `{ok, text}`; `?copy=1` presses Command+C first; `PUT` with `{"text": …}` writes it. See [Pasteboard](#pasteboard). |
-| `/helper/<udid>/recording/video` | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID; when `--require-token` is set, they also require its bearer token. |
+| `/helper/<udid>/…` | The device's stream and control routes, served in-process: `stream.mjpeg`, `stream.avcc`, `stream-settings` (`PATCH` with a JSON body changes the encoder settings), `config`, `health`, `ax`, `foreground`, `camera/status`, `webrtc/offer` and `webrtc/close` (`POST`), `webrtc/stats`, and the stream and WebRTC routes for one display under `panel/<1\|3>/`. |
+| `/helper/<udid>/recording/video` | `GET` reports whether a recording is active; `POST` starts, `PUT` renews, and `DELETE` finalizes a native-size H.264 recording. Mutations require a recording ID. When `--require-token` is set, every method, `GET` included, requires the bearer token. |
 | `/api/events`, `/api/event-log`, `/api/event-log/events` | Device events and the recorded log. |
 | `/metrics` | CPU, memory and network samples, one per second. |
 | `/logs`, `/ax`, `/appstate` | Device log, accessibility tree, foreground app. |
-| `/grid/api`, `/grid/api/catalog`, `/grid/api/status`, `/grid/api/status/events`, `/grid/api/memory` | Grid state, bootable device types, status and host headroom. |
+| `/crashes`, `/crashes/<id>` | Crash reports with their collection status; one crash with one occurrence and its `.ips` report. |
+| `/network-capture`, `/network-capture/<id>`, `/network-capture.har`, `/network-capture.ndjson` | Captured traffic: the live stream, one request's stored headers and bodies, the session as HAR, and its entries as NDJSON. `GET` and `HEAD` only; see [Authentication](#authentication) and [LLP 0005](0005-serve-sim-network-capture.explainer.md). |
+| `/grid/api`, `/grid/api/catalog`, `/grid/api/status`, `/grid/api/status/events`, `/grid/api/memory` | Grid state, the simulator catalog, status and host headroom. `/grid/api` and `/grid/api/catalog` take `limit` and `offset`. |
 | `/grid/api/start`, `/grid/api/shutdown` | `POST`. Boot or shut a device down. |
 | `/grid/api/devicekit-chrome`, `/grid/api/device-placeholder-asset` | Static artwork for the grid UI. |
+| `/grid/api/devicekit-model` | The iPhone Duo 3D model (USDZ) from the installed Xcode; see [LLP 0004](0004-serve-sim-hinge-controls.explainer.md). |
 | `/devtools` | Inspectable WebKit targets, each with a `webSocketDebuggerUrl`. |
 | `/devtools/highlight`, `/devtools/release` | `POST`. Highlight a node, release the inspector. |
+| `/devtools-frontend/…` | A same-origin proxy for the Chrome DevTools frontend, pinned to one revision. |
 
-`/metrics`, `/logs`, `/ax`, `/appstate`, `/api/events` and `/grid/api/status/events`
-are server-sent event streams; the rest return JSON.
+`/metrics`, `/ax`, `/appstate`, `/api/events`, `/api/event-log/events`,
+`/grid/api/status/events` and `/network-capture` are server-sent event streams.
+`/logs` is one too, unless the request accepts `application/json` or passes
+`?snapshot`. `/crashes` is JSON unless the request accepts `text/event-stream`.
+The exec channel can carry these streams for the preview. Most other routes
+return JSON.
 
 ## Recording video
 
@@ -50,9 +64,11 @@ run per device. The manifest retains the record-sim upload schema. See
 
 To control recording directly, `POST` a JSON body such as
 `{"start":true,"output":"/path/to/empty-dir","recordingId":"client-id"}`.
+`recordingId` is 1 to 128 letters, digits, `-`, or `_`.
 The server accepts the JSON body even with `Content-Type: text/plain`.
 Send `x-recording-id: client-id` on `PUT` to renew the lease and on `DELETE`
-to finalize; `DELETE` returns the manifest path. `GET` returns
+to finalize; `DELETE` returns the manifest path. The lease lasts 20 seconds;
+when it expires, the server finalizes the recording. `GET` returns
 `{"active":true}` while recording is starting, active, or finishing, and
 `{"active":false}` otherwise. Use a new empty output directory for each
 recording; an existing `recording.mp4` or `session.json` is preserved. A
@@ -63,7 +79,7 @@ result until another recording starts.
 ## Pasteboard
 
 `POST /api/pasteboard` reads the simulator pasteboard; `PUT /api/pasteboard` with
-`{"text": "…"}` writes it. Besides the token, both need a browser `Origin`: the
+`{"text": "…"}` writes it. Besides the bearer token, both need a browser `Origin`: the
 preview's own origin or one that the CORS policy allows. A request without an
 `Origin` gets 403. Text over 4 MiB, in either direction, returns 413. A read
 that neither `simctl pbpaste` nor the app reader can answer returns 503 with a
@@ -107,13 +123,21 @@ including a cross-origin web page using a simple POST, can choose a recording
 output directory that the server process can write.
 Use `--require-token` when that access should be restricted.
 
-With it, the server mints one session token at startup, prints it, and writes it
+Three parts of the server check the token even without the flag. The exec channel requires it
+at its handshake or in its first frame (see [WebSockets](#websockets)); the
+preview page has it. `/api/pasteboard` always requires the bearer token (see
+[Pasteboard](#pasteboard)). The network capture routes always require the bearer token
+or, under `--require-token`, the cookie. They never accept `?token=`, answer
+only same-origin requests, and accept only `GET` and `HEAD`. See
+[LLP 0005](0005-serve-sim-network-capture.explainer.md#remote-and-hosted-use).
+
+With `--require-token`, the server mints one session token at startup, prints it, and writes it
 to the device's state file. Every route is gated as a whole rather than per
 route, so a new route is protected by default. `/healthz` and `/readyz` are the
 exceptions, because a liveness probe cannot carry a credential.
 
-Recording control requires the bearer token when the preview is gated; its
-cookie and query-token forms do not authorize `POST`, `PUT`, or `DELETE`.
+Recording control, including its `GET` status, requires the bearer token when
+the preview is gated; the cookie and query-token forms do not authorize it.
 
 There are three ways to present the token, and which one you use depends on what
 the client is.
@@ -125,14 +149,15 @@ Authorization: Bearer <token>
 ```
 
 A request that is not a document navigation may also present `?token=`
-directly, and is answered rather than redirected.
+directly, and is answered rather than redirected. The network capture routes,
+`/api/pasteboard`, and recording control are the exceptions.
 
 **The cookie, for a page the server itself served.** A document navigation
 carrying `?token=` is answered with a 302 that sets the cookie and drops the
 token from the URL, so it does not linger in the address bar or in history. The
 cookie is named `serve_sim_access_<suffix>`, where the suffix is the first eight
 hex characters of the token's SHA-256, so several previews can share one browser
-profile. Over https a framed preview gets `SameSite=None; Secure; Partitioned` instead,
+profile. Over https, as `X-Forwarded-Proto` reports it, a framed preview gets `SameSite=None; Secure; Partitioned` instead,
 and is accepted only for a same-origin request or a navigation. Plain http falls
 back to `Lax`, since the other attributes require `Secure`.
 
@@ -214,12 +239,13 @@ can read the status rather than reporting an opaque network error.
 Every gated HTML response carries `Content-Security-Policy: frame-ancestors`,
 naming `'self'` plus any origins passed with `--frame-ancestor`. That covers the
 proxied DevTools frontend as well as the preview page, since both sit behind the
-same cookie.
+same cookie. Without `--require-token`, no response carries this policy.
 
 A value may be a plain origin, `https://expo.dev`, or carry one leading wildcard
 label, `https://*.expo.dev`, which is useful for naming deploy previews. A bare
-`https://*` is refused, as is a wildcard over a single-label host such as
-`https://*.com`, and anything that is not an origin. A registry suffix still
+`https://*` is dropped from the policy without an error, as is a wildcard over a
+single-label host such as `https://*.com`, and anything that is not an http or
+https URL. A URL with a path adds only its origin. A registry suffix still
 passes: `https://*.github.io` and `https://*.co.uk` would hand framing to every
 site hosted there, so a wildcard is only as narrow as the host you name. Who may
 frame is the caller's decision; the server only refuses shapes that widen the
@@ -237,17 +263,21 @@ same-origin request. `frame-ancestors` does not constrain a WebSocket.
 
 Without `--require-token`, the HID and CDP sockets need neither the token nor an
 allowed `Origin`. Only the `Host` check in [Allowed hosts](#allowed-hosts)
-applies. `/exec-ws` still checks the `Origin` and needs the token.
+applies. `/exec-ws` still checks the `Origin` and needs the token, and it closes a
+socket that does not present the token within 10 seconds.
 
 | Path | Purpose |
 | --- | --- |
 | `{helper}/ws` | HID input. Pointer and key events, and Paste, to the device. |
-| `/exec-ws` | Scoped simulator actions. Request and response frames. |
+| `/exec-ws` | Scoped simulator actions, simulator-settings requests, and subscriptions to the server-sent event routes. Request and response frames. |
 | `/devtools/page/{targetId}` | CDP bridge to an inspectable WebKit target. |
 
-`{helper}` is the helper proxy prefix under the mount point. The target ids for
+`{helper}` is the helper proxy prefix under the mount point, `/helper/<udid>`. The target ids for
 the DevTools bridge come from `GET /devtools`, which returns a
 `webSocketDebuggerUrl` per target.
+
+The CDP bridge forwards frames verbatim in both directions. The token
+subprotocol is not forwarded upstream, so the credential stops at serve-sim.
 
 ### CLI input admission
 
@@ -258,9 +288,6 @@ which fails the command even if the refusal arrives after the transport opens.
 A connection that never admits input fails after ten seconds. Older helpers
 without the state flag retain their open-based behavior [observed:
 `src/socket/cli-input.ts`, `src/index.ts`, `src/state.ts`].
-
-The CDP bridge forwards frames verbatim in both directions. The token
-subprotocol is not forwarded upstream, so the credential stops at serve-sim.
 
 ### Rotation readback
 
