@@ -2,7 +2,7 @@ type ShareLocation = Pick<Location, "origin" | "pathname" | "search">;
 
 export type ShareConfig = Pick<
   NonNullable<Window["__SIM_PREVIEW__"]>,
-  "requireToken" | "execToken" | "shareUrl"
+  "requireToken" | "execToken" | "shareUrl" | "disableShare"
 >;
 
 function sessionToken(config: ShareConfig | null | undefined): string | undefined {

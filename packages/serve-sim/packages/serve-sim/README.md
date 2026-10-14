@@ -81,6 +81,7 @@ controls and the simulator APIs behind them.
 ```
 serve-sim [device...]                 Start preview server (default: localhost:3200)
 serve-sim --no-preview [device...]    Stream in foreground without a preview server
+serve-sim --disable-share [device...] Hide only the preview's Share button
 serve-sim gesture '<json>' [-d udid]  Send a touch gesture
 serve-sim button [name] [-d udid]     Send a button press (default: home)
 serve-sim type <text> [-d udid]       Type text via the simulator keyboard

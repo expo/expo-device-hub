@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-12 (rotation readback contract; added installed-app launch, control, data-file and upload actions)
+**Revised:** 2026-10-13 (added the preview sharing option)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -58,6 +58,14 @@ recording; an existing `recording.mp4` or `session.json` is preserved. A
 `DELETE` that arrives before its `POST` cancels that recording ID for two
 minutes. Repeating `DELETE` during or after finalization returns the same
 result until another recording starts.
+
+## Preview sharing
+
+`--disable-share` (or the middleware's `disableShare: true`) hides only the
+preview's Share button. The setting survives device changes and an empty device
+state. It does not change authentication or prevent an authorized viewer from
+sharing a token manually [observed: `src/index.ts`, `src/middleware.ts`,
+`src/client/components/share-session-button.tsx`, `src/client/client.tsx`].
 
 ## Authentication
 
