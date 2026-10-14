@@ -6,6 +6,17 @@ import { tmpdir } from "node:os";
 import { createServer } from "node:http";
 
 const mode = process.env.LEASE_LOSS_CASE;
+const fetchOriginal = globalThis.fetch;
+if (mode === "definitive-body-error") {
+  globalThis.fetch = (async (...args: Parameters<typeof fetch>) => {
+    const response = await fetchOriginal(...args);
+    if (response.status !== 409) return response;
+    await response.body?.cancel();
+    return new Response(new ReadableStream({
+      start(controller) { controller.error(new Error("Lost response body transport")); },
+    }), { status: 409 });
+  }) as typeof fetch;
+}
 const directory = mkdtempSync(join(tmpdir(), "record-video-lease-loss-"));
 const udid = "owned-lease-loss-test";
 process.env.SERVE_SIM_STATE_DIR = directory;
@@ -38,10 +49,13 @@ let id = "";
 let firstFailureAt = 0;
 let firstDeleteAt = 0;
 let lease: ReturnType<typeof setTimeout> | undefined;
-const save = () => { mkdirSync(output, { recursive: true }); writeFileSync(manifest, "{}"); };
+const save = () => { mkdirSync(output, { recursive: true }); writeFileSync(manifest, JSON.stringify(mode?.endsWith("failed") ? { status: "failed", error: "Hardware encoder failed", recording: "recording.mp4" } : {})); };
 const renew = () => {
   if (lease) clearTimeout(lease);
-  lease = setTimeout(save, 20_000);
+  lease = setTimeout(() => {
+    if (mode === "stop-missed-lease") setTimeout(save, 90_000);
+    else save();
+  }, mode === "stop-missed-lease" || mode === "stop-rejected" ? 180_000 : 20_000);
 };
 const server = createServer(async (req, res) => {
   if (req.method === "POST") {
@@ -53,21 +67,40 @@ const server = createServer(async (req, res) => {
   if (req.headers["x-recording-id"] !== id) throw new Error("wrong recording owner");
   if (req.method === "PUT") {
     puts++;
-    if (puts === 1) {
+    if (puts === 1 || (mode === "transport" && puts === 2)) {
       firstFailureAt = Date.now();
-      if (mode === "host-exit") {
+      if (mode === "stop-missed-lease" || mode === "stop-rejected") {
+        renew(); res.end("{}");
+        timeout(() => process.emit("SIGINT"), 10);
+        return;
+      }
+      if (mode?.startsWith("host-exit")) {
         save(); hostExited = true; res.destroy(); server.closeAllConnections(); server.close(); return;
       }
-      if (mode === "signal") timeout(() => process.emit("SIGINT"), 10);
-      res.writeHead(500); res.end("one transient heartbeat failure"); return;
+      if (mode === "signal" || mode === "pending-stop" || mode === "ambiguous-stop-failed") timeout(() => process.emit("SIGINT"), 10);
+      if (mode === "pending-stop") return;
+      if (mode === "transient" || mode === "transport") timeout(() => process.emit("SIGINT"), 150);
+      if (mode === "transport") { res.destroy(); return; }
+      if (mode === "definitive-body-error" || mode === "definitive-body-pending") {
+        timeout(() => process.emit("SIGINT"), 200);
+        res.writeHead(409);
+        res.flushHeaders();
+        if (mode === "definitive-body-error") res.end("heartbeat failure");
+        return;
+      }
+      res.writeHead(mode === "definitive" ? 409 : 500); res.end("heartbeat failure"); return;
     }
     renew(); res.end("{}"); return;
   }
   if (req.method === "DELETE") {
     deletes++;
     firstDeleteAt ||= Date.now();
+    if (mode === "stop-missed-lease") { res.destroy(); return; }
+    if (mode === "stop-rejected") { res.writeHead(500); res.end("confirmed native stop error"); return; }
     if (lease) clearTimeout(lease);
-    save(); res.end(JSON.stringify({ manifest })); return;
+    save();
+    if (mode === "ambiguous-stop-failed") { res.destroy(); return; }
+    res.end(JSON.stringify({ manifest })); return;
   }
   res.writeHead(405); res.end();
 });
@@ -87,6 +120,7 @@ finally {
   }));
   if (lease) clearTimeout(lease);
   server.closeAllConnections(); server.close();
+  globalThis.fetch = fetchOriginal;
   Date.now = now; globalThis.setTimeout = timeout; globalThis.setInterval = interval; process.kill = kill;
   rmSync(directory, { recursive: true, force: true });
 }

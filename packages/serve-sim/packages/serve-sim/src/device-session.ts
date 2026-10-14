@@ -1,3 +1,4 @@
+import { RECORDING_LEASE_MS } from "./recording-timeouts";
 /**
  * In-process device session — the replacement for the spawned serve-sim-bin
  * helper. One session per booted simulator owns a NativeCapture + NativeHid and
@@ -89,7 +90,6 @@ const MJPEG_TRAILER = Buffer.from("\r\n", "ascii");
 const TOUCH_TAP_MAX_DISTANCE = 0.004;
 const MAX_HID_SOCKETS = 8;
 const MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET = 1024;
-const RECORDING_LEASE_MS = 20_000;
 const INVALID_RECORDING_ID_CHAR = /[^A-Za-z0-9_-]/;
 
 class RecordingStartCancelled extends Error {}

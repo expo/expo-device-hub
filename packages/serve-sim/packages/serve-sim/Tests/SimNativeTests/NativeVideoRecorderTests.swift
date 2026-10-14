@@ -88,9 +88,10 @@ final class NativeVideoRecorderTests: XCTestCase {
         }
         let tracks = try await AVURLAsset(url: mp4).loadTracks(withMediaType: .video)
         XCTAssertFalse(tracks.isEmpty)
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: directory.appendingPathComponent("session.json").path
-        ))
+        let partial = try XCTUnwrap(JSONSerialization.jsonObject(with:
+            Data(contentsOf: directory.appendingPathComponent("session.json"))) as? [String: Any])
+        XCTAssertEqual(partial["status"] as? String, "failed")
+        XCTAssertNotNil(partial["error"])
     }
 
     func testEncoderFlushStillTimesOutBeforeWriterFinalization() async throws {
@@ -381,6 +382,14 @@ final class NativeVideoRecorderTests: XCTestCase {
     }
 
     func testTransferFailureKeepsPlayableFramesAlreadyWritten() async throws {
+        try await transferFailureKeepsPlayableFrames(manifestFails: false)
+    }
+
+    func testManifestFailurePreservesTransferErrorAndBlocksEncoderReuse() async throws {
+        try await transferFailureKeepsPlayableFrames(manifestFails: true)
+    }
+
+    private func transferFailureKeepsPlayableFrames(manifestFails: Bool) async throws {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("serve-sim-recorder-partial-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -402,19 +411,79 @@ final class NativeVideoRecorderTests: XCTestCase {
         mailbox.publish(try XCTUnwrap(bad), timestamp: CMTime(value: 1, timescale: 1), wallClock: Date())
         try await Task.sleep(for: .milliseconds(100))
         do {
-            _ = try await recorder.finish()
+            _ = try await recorder.finish(finishWriting: { writer, completion in
+                writer.finishWriting {
+                    if manifestFails {
+                        try! FileManager.default.createDirectory(
+                            at: directory.appendingPathComponent("session.json"),
+                            withIntermediateDirectories: true
+                        )
+                    }
+                    completion()
+                }
+            })
             XCTFail("A transfer failure must still be reported")
         } catch {
             let failure = error as NSError
             XCTAssertEqual(failure.domain, "serve-sim-recording")
             XCTAssertEqual(failure.code, 7)
+            var availability = RecordingAvailability()
+            availability.finalizationFailed(failure)
+            XCTAssertThrowsError(try availability.checkStart())
+            if manifestFails {
+                XCTAssertEqual((failure.userInfo[NSUnderlyingErrorKey] as? NSError)?.code, 17)
+            }
             let mp4 = directory.appendingPathComponent("recording.mp4")
             XCTAssertTrue(failure.localizedDescription.contains(mp4.path))
             let tracks = try await AVURLAsset(url: mp4).loadTracks(withMediaType: .video)
             XCTAssertFalse(tracks.isEmpty)
         }
-        XCTAssertFalse(FileManager.default.fileExists(
-            atPath: directory.appendingPathComponent("session.json").path
-        ))
+        if manifestFails { return }
+        let partial = try XCTUnwrap(JSONSerialization.jsonObject(with:
+            Data(contentsOf: directory.appendingPathComponent("session.json"))) as? [String: Any])
+        XCTAssertEqual(partial["status"] as? String, "failed")
+        XCTAssertNotNil(partial["error"])
     }
+    func testReturnedFlushFailurePreservesManifestAndPlayableVideo() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("serve-sim-flush-failure-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mailbox = NativeFrameMailbox()
+        mailbox.setActive(true)
+        var frame: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 120, 240,
+            kCVPixelFormatType_32BGRA, nil, &frame), kCVReturnSuccess)
+        mailbox.publish(try XCTUnwrap(frame), timestamp: .zero, wallClock: Date())
+        let recorder = try NativeVideoRecorder(mailbox: mailbox,
+            canvas: Dimensions(width: 120, height: 240), outputDirectory: directory.path,
+            bitrate: 2_000_000)
+        recorder.start()
+        try await Task.sleep(for: .milliseconds(350))
+        do {
+            _ = try await recorder.finish(completeFrames: { session in
+                _ = VTCompressionSessionCompleteFrames(session, untilPresentationTimeStamp: .invalid)
+                return -19092
+            })
+            XCTFail("Returned flush failure must remain an error")
+        } catch { XCTAssertEqual((error as NSError).code, 16) }
+        let partial = try JSONDecoder().decode(RecordingManifest.self,
+            from: Data(contentsOf: directory.appendingPathComponent("session.json")))
+        XCTAssertEqual(partial.status, "failed")
+        XCTAssertTrue(partial.error?.contains("-19092") == true)
+        let tracks = try await AVURLAsset(url: directory.appendingPathComponent("recording.mp4"))
+            .loadTracks(withMediaType: .video)
+        XCTAssertFalse(tracks.isEmpty)
+        let original = try Data(contentsOf: directory.appendingPathComponent("recording.mp4"))
+        let next = try NativeVideoRecorder(mailbox: mailbox,
+            canvas: Dimensions(width: 120, height: 240),
+            outputDirectory: directory.appendingPathComponent("continuation").path, bitrate: 2_000_000)
+        next.start()
+        try await Task.sleep(for: .milliseconds(250))
+        let result = try await next.finish()
+        let completed = try JSONDecoder().decode(RecordingManifest.self,
+            from: Data(contentsOf: URL(fileURLWithPath: result.manifestPath)))
+        XCTAssertNil(completed.status)
+        XCTAssertEqual(try Data(contentsOf: directory.appendingPathComponent("recording.mp4")), original)
+    }
+
 }

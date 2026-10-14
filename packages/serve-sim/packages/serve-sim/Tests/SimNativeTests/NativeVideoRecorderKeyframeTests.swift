@@ -15,7 +15,7 @@ final class NativeVideoRecorderKeyframeTests: XCTestCase {
     }
 
     /// Records while `drive` runs, then returns each sample's time and whether it is a keyframe.
-    private func record(_ drive: (NativeFrameMailbox, CVPixelBuffer) async throws -> Void) async throws -> [(seconds: Double, key: Bool)] {
+    private func record(nowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds }, _ drive: (NativeFrameMailbox, CVPixelBuffer) async throws -> Void) async throws -> [(seconds: Double, key: Bool)] {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("serve-sim-recorder-keyframes-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -24,7 +24,7 @@ final class NativeVideoRecorderKeyframeTests: XCTestCase {
         let pixels = try frame()
         mailbox.publish(pixels, timestamp: CMTime(value: 1, timescale: 60), wallClock: Date())
         let recorder = try NativeVideoRecorder(mailbox: mailbox, canvas: Dimensions(width: 120, height: 240),
-                                               outputDirectory: directory.path, bitrate: 2_000_000)
+                                               outputDirectory: directory.path, bitrate: 2_000_000, nowNanoseconds: nowNanoseconds)
         recorder.start()
         try await drive(mailbox, pixels)
         _ = try await recorder.finish()
@@ -60,6 +60,29 @@ final class NativeVideoRecorderKeyframeTests: XCTestCase {
         XCTAssertEqual(decoder.status, .completed)
         XCTAssertGreaterThan(decodedCount, 10)
         return samples
+    }
+
+    private final class StallClock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var offset: UInt64 = 0
+        func now() -> UInt64 {
+            lock.lock(); defer { lock.unlock() }
+            return DispatchTime.now().uptimeNanoseconds + offset
+        }
+        func stall() { lock.lock(); offset += 1_200_000_000; lock.unlock() }
+    }
+
+    func testTimerStallKeepsPTSAndResumesWithADecodableKeyframe() async throws {
+        let clock = StallClock()
+        let samples = try await record(nowNanoseconds: { clock.now() }) { _, _ in
+            try await Task.sleep(for: .milliseconds(300))
+            clock.stall()
+            try await Task.sleep(for: .milliseconds(400))
+        }
+        let pairs = Array(zip(samples, samples.dropFirst()))
+        XCTAssertTrue(pairs.allSatisfy { $1.seconds > $0.seconds })
+        let resumed = try XCTUnwrap(pairs.first { $1.seconds - $0.seconds > 1.0 }?.1)
+        XCTAssertTrue(resumed.key)
     }
 
     func testKeyframesAreAtMostOneSecondApart() async throws {

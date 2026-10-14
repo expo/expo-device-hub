@@ -288,7 +288,7 @@ on SIGTERM, SIGINT, or SIGHUP before the process exits. The CLI also waits for
 the manifest when the server stops during recording, including when a heartbeat
 loses its connection before the CLI receives a stop signal. A saved manifest
 without a requested stop is accepted only after the server exits; a lost lease
-while the server stays alive remains an error. A failed heartbeat first stops
+while the server stays alive remains an error. A definitively lost lease first stops
 renewals and attempts an owned DELETE, so renewals cannot prevent finalization
 while the CLI waits for the manifest [observed: `src/index.ts`, `recordVideo`]. If a
 start request times out, the CLI cancels that recording ID so a late server
@@ -296,8 +296,9 @@ start cannot leave an active recording. A finalization failure makes shutdown
 exit unsuccessfully after teardown. After an encoder or frame-transfer failure,
 the recorder tries to finalize any frames already written. If the writer completes,
 the error includes the path to a playable partial `recording.mp4`. No success
-manifest is written, and that session cannot start another recording until
-serve-sim restarts.
+manifest is written. Encoder or frame-transfer errors keep recording startup
+blocked until serve-sim restarts, except for the completed flush failure
+explicitly described under [Recording stall recovery](#recording-stall-recovery).
 The foreground CLI gives a helper with a known active recording up to 65 seconds
 to finalize after SIGTERM. Without a known active recording, it force-kills an
 unresponsive helper after 500 ms. A stream-settings change uses the same
@@ -355,6 +356,49 @@ there is no success manifest or silent replacement. Process replacement cannot
 append to an already finalized MP4; callers must preserve that artifact and
 start a separate recording if they require further footage [observed:
 `NativeVideoRecorder.swift`, `src/stop-process.ts`].
+
+### Recording stall recovery
+
+The client sends one owned heartbeat at a time, every five seconds when none is
+pending, with a 120-second request timeout. The server lease lasts 180 seconds.
+A transport error or server 5xx response does not establish loss of ownership;
+the client retries while its host process remains alive. Request-timeout and rate-limit responses also retry. A definitive 4xx
+response, host exit, or explicit stop ends the recording. A definitive response
+ends the lease as soon as its status arrives, even if its body stalls or fails.
+Stop aborts the pending
+heartbeat and uses the existing owned finalization path. A crashed client can
+therefore retain its recording resources for up to three minutes. An ambiguous
+owned DELETE waits up to 300 seconds for its manifest: the full 180-second
+lease plus the existing 120-second finalization allowance. Confirmed server
+errors still fail immediately. These budgets share pure constants so lease
+and CLI reconciliation cannot drift. Workers must cover this longer wait
+before deploying the longer lease [observed:
+`src/index.ts`, `recordVideo`; `src/device-session.ts`, `refreshRecordingLease`;
+`src/recording-timeouts.ts`].
+
+If writer finalization completes after an encoder error, the playable MP4 gets
+an atomic manifest with `status: failed` and `error`; the native operation still
+throws its original error. The CLI also rejects a failed manifest when it
+reconciles host exit or a lost stop response; a saved partial file does not
+turn a native failure into success [observed: `src/index.ts`, `recordVideo`].
+If failed-manifest publication also fails, that
+secondary error is retained as the underlying error; the original native error
+code still controls whether recording reuse is safe. A returned encoder-flush error permits a fresh
+compression session only after the old session was invalidated. A flush timeout
+or transfer/encode error still blocks reuse when native work may be outstanding. Earlier recording failures remain visible at
+shutdown even after a later segment succeeds
+[observed: `NativeVideoRecorder.swift`, `finishOnQueue`, `writeManifest`;
+`CaptureEngine.swift`, `RecordingAvailability`].
+
+The build-tools follow-up preserves an early finalized file and starts a new
+recording while the EAS session is live. This is a fallback because the original
+writer has already finalized; it cannot be appended safely. Artifacts retain
+first-frame wall-clock timestamps and carry `logicalRecordingId` and
+`segmentIndex` to identify ordered segments of one recording. A failed fallback
+is reported explicitly instead of treating the saved prefix as full-session
+success. This requires a separate build-tools deployment; local serve-sim
+validation alone does not establish worker behavior [observed: isolated
+build-tools `IosSimulatorRecordingUtils.ts`, `deviceRunSessionScreenRecordings.ts`].
 
 ## Performance and validation
 

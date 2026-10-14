@@ -19,13 +19,17 @@ public struct RecordingManifest: Codable, Equatable {
     }
 
     public let interruptions: [Interruption]?
+    public let status: String?
+    public let error: String?
     public let firstFrameWallClock: FirstFrameWallClock
     public let width: Int
     public let height: Int
     public let recording: String
 
-    public init(firstFrame: Date, width: Int, height: Int, interruptions: [Interruption] = []) {
+    public init(firstFrame: Date, width: Int, height: Int, interruptions: [Interruption] = [], error: String? = nil) {
         self.interruptions = interruptions.isEmpty ? nil : interruptions
+        self.status = error == nil ? nil : "failed"
+        self.error = error
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         firstFrameWallClock = FirstFrameWallClock(

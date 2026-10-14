@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { RECORDING_FINALIZATION_WAIT_MS, RECORDING_RECONCILIATION_WAIT_MS } from "./recording-timeouts";
 import { captureRuntime } from "./capture/runtime";
 import { rebootedWithCaptureSince } from "./capture/reboot";
 import { Command, InvalidArgumentError } from "commander";
@@ -2589,6 +2590,8 @@ async function recordVideo(udid: string, output: string): Promise<void> {
   };
   const keepAlive = setInterval(() => {}, 60_000);
   let heartbeat: ReturnType<typeof setInterval> | undefined;
+  let heartbeatInFlight = false;
+  const heartbeatAbort = new AbortController();
   let recordingStopStarted = false;
   let rejectLease: (error: Error) => void = () => {};
   const lostLease = new Promise<never>((_, reject) => { rejectLease = reject; });
@@ -2628,14 +2631,23 @@ async function recordVideo(udid: string, output: string): Promise<void> {
     recordingStarted = true;
     console.error("serve-sim:recording-started");
     heartbeat = setInterval(() => {
-      if (recordingStopStarted) return;
-      void fetch(url, { method: "PUT", headers, signal: AbortSignal.timeout(10_000) })
+      if (recordingStopStarted || heartbeatInFlight) return;
+      heartbeatInFlight = true;
+      // @ref LLP 0001#recording-stall-recovery — a transient control timeout does not prove ownership was lost.
+      void fetch(url, { method: "PUT", headers, signal: AbortSignal.any([AbortSignal.timeout(120_000), heartbeatAbort.signal]) })
         .then(async response => {
-          if (!response.ok && !recordingStopStarted) rejectLease(new Error(`Recording lease was lost (${response.status}): ${await response.text()}`));
+          if (!response.ok && response.status < 500 && response.status !== 408 && response.status !== 429 && !recordingStopStarted) {
+            // The status establishes loss of ownership even if its body stalls or fails.
+            rejectLease(new Error(`Recording lease was lost (${response.status})`));
+          }
+          await response.body?.cancel();
         })
-        .catch(error => {
-          if (!recordingStopStarted) rejectLease(error instanceof Error ? error : new Error(String(error)));
-        });
+        .catch(async error => {
+          if (!recordingStopStarted && await waitForServerExit(state.pid, 0)) {
+            rejectLease(error instanceof Error ? error : new Error(String(error)));
+          }
+        })
+        .finally(() => { heartbeatInFlight = false; });
     }, 5_000);
     let leaseError: unknown;
     try {
@@ -2644,6 +2656,7 @@ async function recordVideo(udid: string, output: string): Promise<void> {
       leaseError = error;
     }
     recordingStopStarted = true;
+    heartbeatAbort.abort();
     clearInterval(heartbeat);
     heartbeat = undefined;
     let stopError: unknown;
@@ -2675,8 +2688,15 @@ async function recordVideo(udid: string, output: string): Promise<void> {
       stopError = error;
     }
     if (stopError && !stopRequestAmbiguous) throw stopError;
-    if (!await waitForRecordingManifest(manifestPath, 120_000)) {
+    const manifestWaitMs = stopRequestAmbiguous
+      ? RECORDING_RECONCILIATION_WAIT_MS : RECORDING_FINALIZATION_WAIT_MS;
+    if (!await waitForRecordingManifest(manifestPath, manifestWaitMs)) {
       throw stopError ?? new Error("Recording stopped without a session.json manifest; inspect the serve-sim session log and retry.");
+    }
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { status?: string; error?: string };
+    if (manifest.status === "failed") {
+      recordingFinalized = true;
+      throw new Error(`Recording finalized a partial MP4: ${manifest.error ?? "native recording failed"}. Saved manifest: ${manifestPath}`);
     }
     if (stopError && !stopRequested && !await waitForServerExit(state.pid, 5_000)) {
       if (!stopRequested) {
@@ -2687,6 +2707,7 @@ async function recordVideo(udid: string, output: string): Promise<void> {
     console.log(manifestPath);
   } finally {
     recordingStopStarted = true;
+    heartbeatAbort.abort();
     if (heartbeat) clearInterval(heartbeat);
     if (!finished && !startupCancellationDelivered && !recordingFinalized) {
       try {

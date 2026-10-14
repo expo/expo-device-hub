@@ -43,7 +43,9 @@ struct RecordingAvailability {
 
     mutating func finalizationFailed(_ error: Error) {
         let failure = error as NSError
-        unavailable = failure.domain != "serve-sim-recording" || ![13, 17].contains(failure.code)
+        // A returned flush failure has completed teardown and invalidated its session.
+        // A flush timeout may still have native work outstanding and remains blocked.
+        unavailable = failure.domain != "serve-sim-recording" || ![13, 16, 17].contains(failure.code)
     }
 
     func checkStart() throws {
