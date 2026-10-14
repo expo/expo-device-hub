@@ -38,7 +38,9 @@ const stop = (pid: number, signal: NodeJS.Signals) => {
 async function run(cmd: string[], env: Record<string, string | undefined> = process.env): Promise<number> {
   const child = Bun.spawn(cmd, { env, detached: true, stdio: ["ignore", "inherit", "inherit"] });
   groups.add(child.pid);
+  let timedOut = false;
   const timer = setTimeout(() => {
+    timedOut = true;
     console.error(`::error::${cmd.join(" ")} ran for 20 minutes; sampling and stopping it`);
     for (const pid of Bun.spawnSync(["pgrep", "-g", String(child.pid)]).stdout.toString().split("\n").filter(Boolean)) {
       const report = Bun.spawnSync(["sample", pid, "3", "-mayDie"]).stdout.toString();
@@ -54,7 +56,8 @@ async function run(cmd: string[], env: Record<string, string | undefined> = proc
   clearTimeout(kill);
   stop(child.pid, "SIGKILL");
   groups.delete(child.pid);
-  return code;
+  // A timed-out run fails even if the script exits 0 while it is stopped.
+  return timedOut ? 124 : code;
 }
 
 async function simulatorFiles(): Promise<string[]> {
