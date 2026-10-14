@@ -29,7 +29,7 @@ import {
   type NativeUnsubscribe,
 } from "./native";
 import { isSoftwareKeyboardVisible } from "./ax";
-import { MAX_PASTEBOARD_TEXT_BYTES, withSimPasteboardLock } from "./sim-pasteboard";
+import { INPUT_PASTEBOARD_LOCK_TIMEOUT_MS, MAX_PASTEBOARD_TEXT_BYTES, PasteboardBusyError, withSimPasteboardLock } from "./sim-pasteboard";
 import { isLiftedModifier, KEY_V, simCommandShortcutHidEvents } from "./sim-command-shortcut";
 import { pasteTextIntoSim } from "./sim-pasteboard-paste";
 import { EXEC_WS_MAX_MESSAGE_BYTES } from "./socket/control-utils";
@@ -73,6 +73,8 @@ export interface HidSocket {
 }
 
 type InputOperation = {
+  sequence: number;
+  priorityCleanup?: boolean;
   run: () => Promise<void>;
   resolve: () => void;
   reject: (error: unknown) => void;
@@ -286,6 +288,8 @@ export class DeviceSession {
   private softwareKeyboardSyncPending = false;
   private softwareKeyboardPendingVisible: boolean | undefined;
   private readonly inputOperationQueues = new Map<HidSocket, InputOperation[]>();
+  private inputOperationSequence = 0;
+  private readonly clipboardInputBarriers = new Set<number>();
   private readonly scheduledInputSockets = new Set<HidSocket>();
   private readonly inputSocketOrder: HidSocket[] = [];
   private readonly inputStateWaiters = new Set<() => void>();
@@ -1420,6 +1424,7 @@ export class DeviceSession {
         const requestId = m?.requestId;
         let ok = false;
         let cleanupWarning: string | null = null;
+        let pasteError = "Could not paste into the simulator";
         if (m && typeof requestId === "number" && Number.isSafeInteger(requestId) && requestId > 0 &&
           (m.text === undefined || (typeof m.text === "string" && Buffer.byteLength(m.text, "utf8") <= MAX_PASTEBOARD_TEXT_BYTES))) {
           const text = m.text;
@@ -1427,31 +1432,35 @@ export class DeviceSession {
           // arrives, then holds the pasteboard lock through the write and the chord, so it stays in
           // order with earlier and later input. Paste is not an ordered message, so a viewer that
           // leaves while it waits does not hold up input cleanup.
-          const sendShortcut = async () => {
+          const assertViewer = () => {
             // A viewer that left while its write waited does not get its chord.
             if (!this.hidSockets.has(ws) || this.detachedHidSockets.has(ws)) {
               throw new Error("Clipboard viewer disconnected");
             }
+          };
+          const sendShortcut = async () => {
+            assertViewer();
             cleanupWarning = await this.sendPasteShortcut(ws);
           };
           try {
             if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
             const operation = this.queueInputOperation(ws, async () => {
               if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
-              if (typeof text === "string") await pasteTextIntoSim(this.udid, text, sendShortcut);
-              else await withSimPasteboardLock(this.udid, sendShortcut);
-            });
+              if (typeof text === "string") await pasteTextIntoSim(this.udid, text, sendShortcut, assertViewer);
+              else await withSimPasteboardLock(this.udid, sendShortcut, INPUT_PASTEBOARD_LOCK_TIMEOUT_MS);
+            }, { clipboard: true });
             if (!operation) throw new Error("Clipboard viewer disconnected");
             await operation;
             ok = true;
           } catch (error) {
+            if (error instanceof PasteboardBusyError) pasteError = error.message;
             console.error(`[serve-sim] Could not paste into simulator ${this.udid}:`, error);
           }
         }
         if (this.hidSockets.has(ws)) {
           const reply = ok
             ? { requestId, ok, ...(cleanupWarning ? { cleanupWarning } : {}) }
-            : { requestId, ok, error: "Could not paste into the simulator" };
+            : { requestId, ok, error: pasteError };
           try { ws.send(Buffer.concat([Buffer.from([0x92]), Buffer.from(JSON.stringify(reply))])); }
           catch {}
         }
@@ -1659,15 +1668,17 @@ export class DeviceSession {
     socketUsages.delete(usage);
   }
 
-  private queueInputOperation(ws: HidSocket, run: () => Promise<void>): Promise<void> | null {
+  private queueInputOperation(ws: HidSocket, run: () => Promise<void>, options: { clipboard?: boolean } = {}): Promise<void> | null {
     if (this.phase !== "running" || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return null;
     const queue = this.inputOperationQueues.get(ws) ?? [];
     if (queue.length >= MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET) {
       this.overloadHidSocket(ws);
       return null;
     }
+    const sequence = ++this.inputOperationSequence;
+    if (options.clipboard) this.clipboardInputBarriers.add(sequence);
     const result = new Promise<void>((resolve, reject) => {
-      queue.push({ run, resolve, reject });
+      queue.push({ sequence, run, resolve, reject });
     });
     this.inputOperationQueues.set(ws, queue);
     this.scheduleInputSocket(ws);
@@ -1684,13 +1695,18 @@ export class DeviceSession {
 
   private discardQueuedInput(ws: HidSocket): void {
     const queue = this.inputOperationQueues.get(ws) ?? [];
-    for (const operation of queue.splice(0)) operation.resolve();
+    for (const operation of queue.splice(0)) {
+      this.clipboardInputBarriers.delete(operation.sequence);
+      operation.resolve();
+    }
     this.inputOperationQueues.set(ws, queue);
   }
 
   private queueInputCleanup(ws: HidSocket, priority = false): void {
     const queue = this.inputOperationQueues.get(ws) ?? [];
     queue.push({
+      sequence: ++this.inputOperationSequence,
+      priorityCleanup: priority,
       run: async () => {
         if (this.scrollOwner === ws) {
           await this.hid.cancelScroll();
@@ -1768,6 +1784,17 @@ export class DeviceSession {
             await this.waitForInputStateChange();
             continue;
           }
+        } else {
+          const barrier = this.clipboardInputBarriers.values().next().value;
+          if (barrier !== undefined) {
+            // @ref LLP 0010#paste — round-robin input may not overtake a clipboard barrier.
+            index = this.inputSocketOrder.findIndex((socket) => {
+              const next = this.inputOperationQueues.get(socket)?.[0];
+              return next && (next.priorityCleanup || next.sequence < barrier);
+            });
+            if (index < 0) index = this.inputSocketOrder.findIndex((socket) =>
+              this.inputOperationQueues.get(socket)?.[0]?.sequence === barrier);
+          }
         }
         const ws = this.inputSocketOrder.splice(index, 1)[0]!;
         const queue = this.inputOperationQueues.get(ws);
@@ -1782,6 +1809,8 @@ export class DeviceSession {
           operation.resolve();
         } catch (error) {
           operation.reject(error);
+        } finally {
+          this.clipboardInputBarriers.delete(operation.sequence);
         }
         if (queue.length > 0) {
           this.inputSocketOrder.push(ws);

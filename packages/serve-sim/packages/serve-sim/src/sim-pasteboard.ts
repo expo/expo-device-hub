@@ -10,9 +10,14 @@ import { withStateLock } from "./state-lock";
 const __dirname = dirnameOf(import.meta.url);
 const execFileAsync = promisify(execFile);
 const PASTEBOARD_LOCK_TIMEOUT_MS = 90_000;
+export const INPUT_PASTEBOARD_LOCK_TIMEOUT_MS = 1_000;
 export const MAX_PASTEBOARD_TEXT_BYTES = 4 * 1024 * 1024;
 
 export class PasteboardTooLargeError extends Error {}
+
+export class PasteboardBusyError extends Error {
+  constructor() { super("Simulator clipboard is busy. Try again."); }
+}
 
 export function locatePasteboardTool(): string | null {
   return locateSimpbArtifact("serve-sim-pasteboard");
@@ -48,12 +53,12 @@ export async function buildSimpbArtifact(source: string, artifact: string): Prom
   return output;
 }
 
-export function withSimPasteboardLock<T>(udid: string, run: () => Promise<T>): Promise<T> {
+export function withSimPasteboardLock<T>(udid: string, run: () => Promise<T>, timeoutMs = PASTEBOARD_LOCK_TIMEOUT_MS): Promise<T> {
   const path = join(tmpdir(), "serve-sim-pasteboard-locks", `${udid}.lock`);
   return withStateLock(
     path,
-    PASTEBOARD_LOCK_TIMEOUT_MS,
-    () => new Error(`Timed out waiting for the simulator pasteboard on ${udid}`),
+    timeoutMs,
+    () => new PasteboardBusyError(),
     run,
   );
 }
