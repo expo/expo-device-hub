@@ -9,6 +9,7 @@ on:
       - "**"
       - "!packages/serve-sim/**"
       - "!packages/@expo/hub-apple-utils/**"
+      - "!scripts/ci/serve-sim-tests.ts"
       - "!.changeset/**"
       - "!llp/**"
       - "!*.md"

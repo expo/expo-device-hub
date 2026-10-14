@@ -18,14 +18,13 @@
 
 ## Commands
 
-Run these from the repo root. CI runs the same underlying steps: `bun run
-lint` and `bun run typecheck` in `.eas/workflows/checks.yml`, and the same
-`bun test` command with `SERVE_SIM_E2E_REQUIRED=1` and `--retry=1` (a failed
-test runs once more; a failed `beforeAll` does not) inside a timeout wrapper
-in `.eas/workflows/sim-test.yml`. CI runs on a fresh worker with one
-simulator of its own, so it needs neither the device pin nor the private
-state directory that `test:e2e` adds for shared machines. A green local run
-predicts a green PR.
+Run these from the repo root. CI runs the same commands: `bun run lint` and
+`bun run typecheck` in `.eas/workflows/checks.yml`, and in
+`.eas/workflows/sim-test.yml`, through `scripts/ci/serve-sim-tests.ts`,
+`bun run test` in two parallel shards before the simulator boots, then
+`bun run test:e2e` with every simulator file on the worker's simulator. Both
+pass `--retry=1`, so a failed test runs once more; a failed `beforeAll` and a
+file that fails to load stay red. A green local run predicts a green PR.
 
 - `bun run check` — lint, typecheck, and knip. Run before every commit.
 - `bun run build` — full build: bundled JS, compiled CLI, native helpers, and
@@ -35,8 +34,11 @@ predicts a green PR.
   puts an `xcrun` shim first on `PATH` that refuses `simctl`, so no test can
   find another session's server or touch a booted simulator, even on a
   machine where other agents keep simulators running. Simulator-backed
-  suites skip deterministically. Pass paths to narrow it:
-  `bun run test -- packages/serve-sim/src/__tests__/ports.test.ts`.
+  suites skip deterministically. `TMPDIR` is private to the run too. Pass
+  paths to narrow it:
+  `bun run test -- packages/serve-sim/src/__tests__/ports.test.ts`. Flags
+  alone, such as `bun run test -- --shard=1/2`, keep the whole suite.
+  `--shard` needs Bun 1.3.13 or later; older Bun ignores it and runs every file.
 - `bun run test:e2e` — the simulator-backed run. It requires
   `SERVE_SIM_TEST_UDID`, the UDID of a simulator you booted for this run, so
   it never drives a device that belongs to another session, and a private
