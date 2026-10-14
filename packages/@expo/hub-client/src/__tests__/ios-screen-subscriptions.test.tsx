@@ -18,7 +18,6 @@ class ControlSocket {
   sent: ArrayBuffer[] = [];
   onopen?: () => void;
   onmessage?: (event: { data: ArrayBuffer }) => void;
-  onopen?: () => void;
 
   constructor() {
     ControlSocket.instances.push(this);
