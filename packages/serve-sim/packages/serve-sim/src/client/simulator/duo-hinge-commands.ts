@@ -7,7 +7,6 @@ export interface DuoHingeCommands {
   coverDepartures: number;
   innerDepartures: number;
 }
-
 export function recordDuoHingeCommand(
   previous: DuoHingeCommands,
   command: HingeControlCommand,

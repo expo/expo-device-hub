@@ -28,6 +28,7 @@ interface SimHIDHandle {
   setScreen(screenId: number): Promise<void>;
   supportsHingeAngle(): Promise<boolean>;
   hingeState(): Promise<NativeHingeState>;
+  hingeControlEligibility(): Promise<NativeHingeState>;
   setHingeAngle(angle: number): Promise<boolean>;
   setHingePose(pose: string): Promise<boolean>;
   supportsPhysicalOrientation(): Promise<boolean>;
@@ -65,6 +66,7 @@ interface SimCaptureHandle {
   webRTCSenderStats(sessionId: string): Promise<string>;
   screenSize(): Promise<NativeScreenInfo>;
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe>;
+  subscribeDeviceState(onSnapshot: (json: string) => Promise<void>): Promise<NativeUnsubscribe>;
   stop(): Promise<void>;
   subscribe(codec: number, onFrame: RawFrameCallback): Promise<NativeUnsubscribe>;
 }
@@ -119,6 +121,12 @@ export type NativeHingeState = {
   hingeAngle?: number;
   tableMode?: boolean;
   physicalOrientation?: HingePhysicalOrientation;
+};
+
+export type NativeDeviceStateSnapshot = {
+  generation: number;
+  revision: number;
+  state: NativeHingeState;
 };
 
 export type NativeScreenInfo = {
@@ -253,6 +261,10 @@ export class NativeHid {
 
   hingeState(): Promise<NativeHingeState> {
     return this.guard("hingeState", () => this.handle.hingeState(), {});
+  }
+
+  async hingeControlEligibility(): Promise<NativeHingeState> {
+    return (await this.guard("hingeControlEligibility", () => this.handle.hingeControlEligibility(), {})) ?? {};
   }
 
   multiTouch(type: TouchType, x1: number, y1: number, x2: number, y2: number, w: number, h: number): Promise<void> {
@@ -400,6 +412,18 @@ export class NativeCapture {
 
   screenSize(): Promise<NativeScreenInfo> {
     return this.handle.screenSize();
+  }
+
+  async subscribeDeviceState(onSnapshot: (snapshot: NativeDeviceStateSnapshot) => Promise<void>): Promise<NativeUnsubscribe> {
+    let active = true;
+    const unsubscribe = await this.handle.subscribeDeviceState(async (json) => {
+      if (active) await onSnapshot(JSON.parse(json) as NativeDeviceStateSnapshot);
+    });
+    return async () => {
+      if (!active) return;
+      active = false;
+      await unsubscribe();
+    };
   }
 
   subscribeScreenChanges(onChange: () => Promise<void>): Promise<NativeUnsubscribe> {

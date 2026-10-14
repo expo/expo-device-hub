@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { createServer, type Server } from "http";
 import { WebSocket, WebSocketServer } from "ws";
-import type { NativeScreenInfo, MjpegFrame } from "../../native";
+import type { NativeScreenInfo, NativeHingeState, NativeDeviceStateSnapshot, MjpegFrame } from "../../native";
 import { readSavedHingeState, writeSavedHingeState } from "../../hinge-saved-state";
 import { UDID, useTempStateDir } from "../helpers";
 
@@ -12,6 +12,14 @@ let screen: NativeScreenInfo;
 let screenReads = 0;
 let mjpeg: ((frame: MjpegFrame) => Promise<void>) | undefined;
 let screenChanged: (() => Promise<void>) | undefined;
+let deviceStateChanged: ((snapshot: NativeDeviceStateSnapshot) => Promise<void>) | undefined;
+let deviceStateSubscriptionGate: Promise<void> | undefined;
+let deviceStateUnsubscribeGate: Promise<void> | undefined;
+let deviceStateUnsubscribes = 0;
+let deviceStateDetachError: Error | undefined;
+let captureStartError: Error | undefined;
+let captureStops = 0;
+let screenUnsubscribes = 0;
 let screenReadGate: Promise<void> | undefined;
 const routedScreens: number[] = [];
 const hingeAngles: number[] = [];
@@ -27,6 +35,10 @@ let orientationResult = true;
 let physicalOrientationSupported = false;
 let physicalOrientationSupportGate: Promise<void> | undefined;
 let nativeHingeState: { hingeAngle?: number; physicalOrientation?: string; tableMode?: boolean } = {};
+let nativeHingeEligibility: NativeHingeState | null = {};
+let hingeEligibilityReads = 0;
+let hingeEligibilityError: Error | undefined;
+let hingeEligibilityGate: Promise<void> | undefined;
 let inputSetupError: Error | undefined;
 let failInputAfterPasteKeyUp = false;
 let touchError: Error | undefined;
@@ -114,6 +126,12 @@ const addon = {
     async softwareKeyboard() { inputCalls.push("softwareKeyboard"); }
     async caDebug() { inputCalls.push("caDebug"); return true; }
     async hingeState() { return { ...nativeHingeState }; }
+    async hingeControlEligibility() {
+      hingeEligibilityReads++;
+      await hingeEligibilityGate;
+      if (hingeEligibilityError) throw hingeEligibilityError;
+      return nativeHingeEligibility === null ? null : { ...nativeHingeEligibility };
+    }
     async setTableMode(enabled: boolean) { inputCalls.push("setTableMode"); tableModes.push(enabled); return hingeResult; }
     async setHingePose(pose: string) {
       inputCalls.push("setHingePose");
@@ -169,12 +187,22 @@ const inputCommands: Array<{
 
 mock.module("../../native", () => ({
   NativeCapture: class {
-    async start() {}
-    async stop() {}
+    async start() { if (captureStartError) throw captureStartError; }
+    async stop() { captureStops++; }
     async screenSize() { screenReads++; const value = { ...screen }; await screenReadGate; return value; }
     async subscribeScreenChanges(callback: typeof screenChanged) {
       screenChanged = callback;
-      return async () => { screenChanged = undefined; };
+      return async () => { screenUnsubscribes++; screenChanged = undefined; };
+    }
+    async subscribeDeviceState(callback: typeof deviceStateChanged) {
+      deviceStateChanged = callback;
+      await deviceStateSubscriptionGate;
+      return async () => {
+        deviceStateUnsubscribes++;
+        deviceStateChanged = undefined;
+        await deviceStateUnsubscribeGate;
+        if (deviceStateDetachError) throw deviceStateDetachError;
+      };
     }
     async subscribeMjpeg(callback: typeof mjpeg) { mjpeg = callback; return async () => {}; }
   },
@@ -243,6 +271,13 @@ let ws: WebSocket | undefined;
 let errorLog: ReturnType<typeof spyOn<typeof console, "error">> | undefined;
 
 beforeEach(() => {
+  deviceStateChanged = undefined;
+  deviceStateSubscriptionGate = undefined;
+  deviceStateUnsubscribeGate = undefined;
+  deviceStateUnsubscribes = 0;
+  deviceStateDetachError = captureStartError = undefined;
+  captureStops = 0;
+  screenUnsubscribes = 0;
   writeSavedHingeState(UDID, {});
   inputSetupError = undefined;
   failInputAfterPasteKeyUp = false;
@@ -284,7 +319,516 @@ beforeEach(() => {
   orientationResult = true;
   physicalOrientationSupported = true;
   physicalOrientationSupportGate = undefined;
+  nativeHingeEligibility = {};
+  hingeEligibilityReads = 0;
+  hingeEligibilityError = undefined;
+  hingeEligibilityGate = undefined;
 });
+
+describe("native device state", () => {
+  const send = (requestId: number, command: unknown) => ws!.send(Buffer.concat([
+    Buffer.from([0x10]), Buffer.from(JSON.stringify({ requestId, command })),
+  ]));
+  test("an acknowledged angle allows consecutive Table Mode before native observation catches up", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 0, physicalOrientation: "portrait", tableMode: false,
+    } });
+    send(1, { control: "angle", value: 90 });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    nativeHingeEligibility = { hingeAngle: 90, physicalOrientation: "portrait" };
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+    expect(tableModes).toEqual([true]);
+    expect(session!.screenConfig().observedDeviceState).toEqual({
+      hingeAngle: 0, physicalOrientation: "portrait", tableMode: false,
+    });
+  });
+
+  test("an acknowledged preset allows consecutive face-down before native observation catches up", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 180, physicalOrientation: "portrait", tableMode: false,
+    } });
+    send(1, { control: "pose", value: "book" });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    nativeHingeEligibility = { hingeAngle: 90, physicalOrientation: "portrait" };
+    send(2, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+    expect(physicalOrientations).toEqual(["facedown"]);
+    expect(session!.screenConfig().observedDeviceState).toEqual({
+      hingeAngle: 180, physicalOrientation: "portrait", tableMode: false,
+    });
+  });
+
+  test("a successful preset replaces stale orientation for consecutive Table Mode eligibility", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 90, physicalOrientation: "faceup", tableMode: false,
+    } });
+    send(1, { control: "pose", value: "book" });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    nativeHingeEligibility = { hingeAngle: 90, physicalOrientation: "portrait" };
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+    expect(tableModes).toEqual([true]);
+    expect(session!.screenConfig().observedDeviceState?.physicalOrientation).toBe("faceup");
+  });
+
+  test("acknowledged face-up blocks consecutive Table Mode despite an old eligible observation", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 90, physicalOrientation: "portrait", tableMode: false,
+    } });
+    send(1, { control: "physical", value: "faceup" });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    nativeHingeEligibility = { hingeAngle: 90, physicalOrientation: "faceup" };
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]?.ok).toBe(false);
+    expect(tableModes).toEqual([]);
+    expect(session!.screenConfig().observedDeviceState?.physicalOrientation).toBe("portrait");
+  });
+
+  test("an acknowledged closed angle blocks consecutive controls despite an old eligible observation", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 90, physicalOrientation: "portrait", tableMode: false,
+    } });
+    send(1, { control: "angle", value: 0 });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    nativeHingeEligibility = { hingeAngle: 0, physicalOrientation: "portrait" };
+    send(2, { control: "table", value: true });
+    send(3, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 3);
+    expect(controlResults.map(({ requestId, ok }) => ({ requestId, ok }))).toEqual([
+      { requestId: 1, ok: true }, { requestId: 2, ok: false }, { requestId: 3, ok: false },
+    ]);
+    expect(tableModes).toEqual([]);
+    expect(physicalOrientations).toEqual([]);
+    expect(session!.screenConfig().observedDeviceState?.hingeAngle).toBe(90);
+  });
+
+  test("an angle command does not refill physical orientation omitted by native observation", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    send(1, { control: "pose", value: "book" });
+    await waitUntil(() => controlResults.length === 1);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {} });
+    send(2, { control: "angle", value: 90 });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+    nativeHingeEligibility = { hingeAngle: 90 };
+    send(3, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 3);
+    expect(controlResults[2]?.ok).toBe(false);
+    expect(tableModes).toEqual([]);
+    expect(session!.screenConfig().observedDeviceState).toEqual({
+      hingeAngle: undefined, physicalOrientation: undefined, tableMode: undefined,
+    });
+  });
+
+  test("native eligibility becoming unknown after an acknowledged control fails closed", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 0, physicalOrientation: "portrait", tableMode: false,
+    } });
+    send(1, { control: "pose", value: "book" });
+    await waitUntil(() => controlResults.length === 1);
+    await deviceStateChanged!({ generation: 1, revision: 2, state: {} });
+    nativeHingeEligibility = {};
+    send(2, { control: "table", value: true });
+    send(3, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 3);
+    expect(controlResults.map(({ requestId, ok }) => ({ requestId, ok }))).toEqual([
+      { requestId: 1, ok: true }, { requestId: 2, ok: false }, { requestId: 3, ok: false },
+    ]);
+    expect(tableModes).toEqual([]);
+    expect(physicalOrientations).toEqual([]);
+    expect(session!.screenConfig().observedDeviceState).toEqual({
+      hingeAngle: undefined, physicalOrientation: undefined, tableMode: undefined,
+    });
+  });
+
+  test("fresh external native eligibility during a successful preset owns the next command", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 90, physicalOrientation: "portrait", tableMode: false,
+    } });
+    let release!: () => void;
+    hingePoseGate = new Promise<void>((resolve) => { release = resolve; });
+    send(1, { control: "pose", value: "book" });
+    await waitUntil(() => hingePoses.length === 1);
+    await deviceStateChanged!({ generation: 1, revision: 2, state: {
+      hingeAngle: 180, physicalOrientation: "faceup", tableMode: false,
+    } });
+    nativeHingeEligibility = { hingeAngle: 180, physicalOrientation: "faceup" };
+    release();
+    await waitUntil(() => controlResults.length === 1);
+    send(2, { control: "table", value: true });
+    send(3, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 3);
+    expect(controlResults.map(({ requestId, ok }) => ({ requestId, ok }))).toEqual([
+      { requestId: 1, ok: true }, { requestId: 2, ok: false }, { requestId: 3, ok: false },
+    ]);
+    expect(tableModes).toEqual([]);
+    expect(physicalOrientations).toEqual([]);
+    expect(session!.screenConfig()).toMatchObject({ hingeAngle: 90, physicalOrientation: "portrait",
+      observedDeviceState: { hingeAngle: 180, physicalOrientation: "faceup", tableMode: false } });
+  });
+
+  for (const result of ["unknown", "null", "error"] as const) {
+    test(`native eligibility ${result} rejects dependent controls without cached fallback`, async () => {
+      const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+      send(1, { control: "pose", value: "book" });
+      await waitUntil(() => controlResults.length === 1);
+      await deviceStateChanged!({ generation: 1, revision: 1, state: {
+        hingeAngle: 90, physicalOrientation: "portrait", tableMode: false,
+      } });
+      nativeHingeState = { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false };
+      nativeHingeEligibility = result === "null" ? null : {};
+      if (result === "error") {
+        hingeEligibilityError = new Error("Native eligibility unavailable");
+        errorLog = spyOn(console, "error").mockImplementation(() => {});
+      }
+      send(2, { control: "table", value: true });
+      send(3, { control: "physical", value: "facedown" });
+      await waitUntil(() => controlResults.length === 3);
+      expect(controlResults.map(({ requestId, ok }) => ({ requestId, ok }))).toEqual([
+        { requestId: 1, ok: true }, { requestId: 2, ok: false }, { requestId: 3, ok: false },
+      ]);
+      expect(tableModes).toEqual([]);
+      expect(physicalOrientations).toEqual([]);
+      expect(hingeEligibilityReads).toBe(2);
+      expect(session!.screenConfig()).toMatchObject({ hingeAngle: 90, physicalOrientation: "portrait",
+        observedDeviceState: { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false } });
+    });
+  }
+
+  test("only dependent controls query native eligibility, leaving angle updates on their direct path", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 0, physicalOrientation: "portrait", tableMode: false,
+    } });
+    send(1, { control: "angle", value: 30 });
+    send(2, { control: "pose", value: "book" });
+    send(3, { control: "physical", value: "faceup" });
+    send(4, { control: "table", value: false });
+    await waitUntil(() => controlResults.length === 4);
+    expect(controlResults.map(({ ok }) => ok)).toEqual([true, true, true, true]);
+    expect(hingeEligibilityReads).toBe(0);
+    nativeHingeEligibility = { hingeAngle: 90, physicalOrientation: "portrait" };
+    send(5, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 5);
+    expect(controlResults[4]?.ok).toBe(true);
+    expect(hingeEligibilityReads).toBe(1);
+    send(6, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 6);
+    expect(controlResults[5]?.ok).toBe(true);
+    expect(hingeEligibilityReads).toBe(2);
+  });
+
+  test("closing while native eligibility is pending prevents the dependent input", async () => {
+    await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 90, physicalOrientation: "portrait", tableMode: false,
+    } });
+    nativeHingeEligibility = { hingeAngle: 90, physicalOrientation: "portrait" };
+    let release!: () => void;
+    hingeEligibilityGate = new Promise<void>((resolve) => { release = resolve; });
+    send(1, { control: "table", value: true });
+    try {
+      await waitUntil(() => hingeEligibilityReads === 1);
+      session!.close();
+    } finally {
+      release();
+    }
+    await Bun.sleep(20);
+    expect(tableModes).toEqual([]);
+  });
+
+  test("enables Table Mode from external native pose while retaining cached command state", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    send(1, { control: "pose", value: "closed" });
+    await waitUntil(() => controlResults.length === 1);
+    const saved = readSavedHingeState(UDID, 0);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 90, physicalOrientation: "portrait", tableMode: false,
+    } });
+    nativeHingeEligibility = { hingeAngle: 90, physicalOrientation: "portrait" };
+    expect(session!.screenConfig().hingeAngle).toBe(0);
+    expect(readSavedHingeState(UDID, 0)).toEqual(saved);
+    send(2, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults[1]).toEqual({ requestId: 2, ok: true });
+    expect(tableModes).toEqual([true]);
+    expect(session!.screenConfig()).toMatchObject({ hingeAngle: 0, tableMode: true,
+      observedDeviceState: { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false } });
+  });
+
+  test("native Table Mode eligibility works before any command or saved physical state", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 90, physicalOrientation: "portrait", tableMode: false,
+    } });
+    nativeHingeEligibility = { hingeAngle: 90, physicalOrientation: "portrait" };
+    expect(session!.screenConfig().hingeAngle).toBeUndefined();
+    expect(readSavedHingeState(UDID, 90)).toBeNull();
+    send(1, { control: "table", value: true });
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]).toEqual({ requestId: 1, ok: true });
+    expect(tableModes).toEqual([true]);
+    expect(session!.screenConfig().hingeAngle).toBeUndefined();
+  });
+
+  test("rejects enabling Table Mode when native pose is ineligible or unknown despite eligible cache", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    send(1, { control: "pose", value: "book" });
+    await waitUntil(() => controlResults.length === 1);
+    for (const [revision, state] of [
+      [1, { hingeAngle: 0, physicalOrientation: "portrait", tableMode: false }],
+      [2, { hingeAngle: 90, physicalOrientation: "faceup", tableMode: false }],
+      [3, {}],
+    ] as const) {
+      await deviceStateChanged!({ generation: 1, revision, state });
+      nativeHingeEligibility = state;
+      send(revision + 1, { control: "table", value: true });
+      await waitUntil(() => controlResults.length === revision + 1);
+      expect(controlResults.at(-1)?.ok).toBe(false);
+    }
+    expect(tableModes).toEqual([]);
+    expect(session!.screenConfig()).toMatchObject({ hingeAngle: 90, physicalOrientation: "portrait" });
+    send(5, { control: "table", value: false });
+    await waitUntil(() => controlResults.length === 5);
+    expect(controlResults.at(-1)?.ok).toBe(true);
+    expect(tableModes).toEqual([false]);
+  });
+
+  test("face-down validation follows observed angle and never falls back from an unknown snapshot", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    send(1, { control: "pose", value: "closed" });
+    await waitUntil(() => controlResults.length === 1);
+    await deviceStateChanged!({ generation: 1, revision: 1, state: { hingeAngle: 90 } });
+    nativeHingeEligibility = { hingeAngle: 90 };
+    send(2, { control: "physical", value: "facedown" });
+    await waitUntil(() => controlResults.length === 2);
+    expect(controlResults.at(-1)?.ok).toBe(true);
+    expect(physicalOrientations).toEqual(["facedown"]);
+    send(3, { control: "pose", value: "book" });
+    await waitUntil(() => controlResults.length === 3);
+    nativeHingeState = { hingeAngle: 90 };
+    for (const [revision, state] of [[2, { hingeAngle: 180 }], [3, {}]] as const) {
+      await deviceStateChanged!({ generation: 1, revision, state });
+      nativeHingeEligibility = state;
+      send(revision + 2, { control: "physical", value: "facedown" });
+      await waitUntil(() => controlResults.length === revision + 2);
+      expect(controlResults.at(-1)?.ok).toBe(false);
+    }
+    expect(physicalOrientations).toEqual(["facedown"]);
+    expect(session!.screenConfig().hingeAngle).toBe(90);
+  });
+
+  test("broadcasts external motion without changing screen geometry or sending controls", async () => {
+    const { configs } = await start({ width: 2007, height: 2853 }, true);
+    expect(deviceStateChanged).toBeFunction();
+    await deviceStateChanged!({ generation: 1, revision: 1, state: {
+      hingeAngle: 45.25, physicalOrientation: "landscape-left", tableMode: true,
+    } });
+    await waitUntil(() => (configs.at(-1)?.observedDeviceState as NativeHingeState | undefined)?.hingeAngle === 45.25);
+    expect(configs.at(-1)).toMatchObject({ width: 2007, height: 2853,
+      observedDeviceState: { hingeAngle: 45.25, physicalOrientation: "landscape-left", tableMode: true } });
+    expect(session!.screenConfig().hingeAngle).toBeUndefined();
+    expect(hingeAngles).toEqual([]);
+    expect(hingePoses).toEqual([]);
+  });
+
+  test("rejects old revisions and generations and clears unknown motion fields", async () => {
+    const { configs } = await start({ width: 2007, height: 2853 }, true);
+    expect(deviceStateChanged).toBeFunction();
+    await deviceStateChanged!({ generation: 1, revision: 2, state: {
+      hingeAngle: 90, physicalOrientation: "portrait", tableMode: false,
+    } });
+    await deviceStateChanged!({ generation: 1, revision: 1, state: { hingeAngle: 180 } });
+    await deviceStateChanged!({ generation: 1, revision: 2, state: { hingeAngle: 60 } });
+    expect(session!.screenConfig().observedDeviceState?.hingeAngle).toBe(90);
+    await deviceStateChanged!({ generation: 2, revision: 0, state: {} });
+    await deviceStateChanged!({ generation: 1, revision: 3, state: { hingeAngle: 180 } });
+    await waitUntil(() => Object.keys((configs.at(-1)?.observedDeviceState as NativeHingeState | undefined) ?? {}).length === 0);
+    expect(session!.screenConfig().observedDeviceState).toEqual({ hingeAngle: undefined, physicalOrientation: undefined, tableMode: undefined });
+  });
+
+  test("a delayed successful command cannot overwrite a newer native observation", async () => {
+    const { controlResults } = await start({ width: 2007, height: 2853 }, true);
+    expect(deviceStateChanged).toBeFunction();
+    await deviceStateChanged!({ generation: 1, revision: 1, state: { hingeAngle: 90 } });
+    let release!: () => void;
+    hingePoseGate = new Promise<void>((resolve) => { release = resolve; });
+    ws!.send(Buffer.concat([Buffer.from([0x10]), Buffer.from(JSON.stringify({ requestId: 1, command: { control: "pose", value: "book" } }))]));
+    await waitUntil(() => hingePoses.length === 1);
+    await deviceStateChanged!({ generation: 1, revision: 2, state: {
+      hingeAngle: 60, physicalOrientation: "landscape-right", tableMode: true,
+    } });
+    release();
+    await waitUntil(() => controlResults.length === 1);
+    expect(controlResults[0]?.ok).toBe(true);
+    expect(session!.screenConfig()).toMatchObject({
+      hingeAngle: 90, hingePose: "book",
+      observedDeviceState: { hingeAngle: 60, physicalOrientation: "landscape-right", tableMode: true },
+    });
+  });
+
+  test("pending observation allows screen routing, HID and live frames", async () => {
+    const subscription = deferred();
+    deviceStateSubscriptionGate = subscription.promise;
+    const controller = new AbortController();
+    try {
+      const { url } = await start({ width: 1398, height: 2034, screenId: 3 });
+      ws!.send(Buffer.concat([Buffer.from([0x04]), Buffer.from('{"button":"home"}')]));
+      const streaming = fetch(url, { signal: controller.signal });
+      await waitUntil(() => inputCalls.includes("button") && mjpeg !== undefined);
+      expect(routedScreens).toEqual([3]);
+      expect(session!.screenConfig()).toMatchObject({ width: 1398, height: 2034, screenId: 3 });
+      const frame = { width: 1398, height: 2034, data: Buffer.from([255, 216, 42, 255, 217]) };
+      await mjpeg!(frame);
+      const response = await streaming;
+      const chunk = await response.body!.getReader().read();
+      expect(Buffer.from(chunk.value!)).toEqual(Buffer.concat([
+        Buffer.from(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.data.length}\r\n\r\n`),
+        frame.data, Buffer.from("\r\n"),
+      ]));
+      expect(deviceStateUnsubscribes).toBe(0);
+    } finally { controller.abort(); subscription.resolve(); }
+  });
+
+  test("rejected optional observation preserves capture startup", async () => {
+    const subscription = deferred();
+    deviceStateSubscriptionGate = subscription.promise;
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    const starting = start({ width: 1398, height: 2034, screenId: 3 });
+    await waitUntil(() => deviceStateChanged !== undefined);
+    subscription.reject(new Error("pose transport unavailable"));
+    await starting;
+    expect(routedScreens).toEqual([3]);
+    expect(session!.screenConfig()).toMatchObject({ width: 1398, height: 2034 });
+  });
+
+  test("close stops capture before registration resolves and ignores late callbacks", async () => {
+    const subscription = deferred();
+    deviceStateSubscriptionGate = subscription.promise;
+    try {
+      await start({ width: 2007, height: 2853 }, true);
+      const lateCallback = deviceStateChanged!;
+      session!.close();
+      await waitUntil(() => captureStops === 1);
+      const closedConfig = session!.screenConfig();
+      await lateCallback({ generation: 1, revision: 1, state: { hingeAngle: 90 } });
+      expect(session!.screenConfig()).toEqual(closedConfig);
+      expect(deviceStateUnsubscribes).toBe(0);
+      subscription.resolve();
+      await waitUntil(() => deviceStateUnsubscribes === 1);
+      await lateCallback({ generation: 1, revision: 2, state: { hingeAngle: 180 } });
+      expect(session!.screenConfig()).toEqual(closedConfig);
+      session!.close();
+      expect(screenUnsubscribes).toBe(1);
+      expect(deviceStateUnsubscribes).toBe(1);
+      expect(captureStops).toBe(1);
+    } finally { subscription.resolve(); }
+  });
+
+  test("late observer failures are handled after capture stops", async () => {
+    const subscription = deferred();
+    deviceStateSubscriptionGate = subscription.promise;
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    await start({ width: 2007, height: 2853 }, true);
+    session!.close();
+    await waitUntil(() => captureStops === 1);
+    subscription.reject(new Error("late observation failure"));
+    await waitUntil(() => errorLog!.mock.calls.length === 1);
+    expect(deviceStateUnsubscribes).toBe(0);
+    expect(captureStops).toBe(1);
+  });
+
+  test("callbacks before registration resolves update the running session", async () => {
+    const subscription = deferred();
+    deviceStateSubscriptionGate = subscription.promise;
+    try {
+      const starting = start({ width: 1398, height: 2034, screenId: 3 });
+      await waitUntil(() => deviceStateChanged !== undefined);
+      await deviceStateChanged!({ generation: 1, revision: 1, state: { hingeAngle: 45 } });
+      expect(session!.screenConfig().observedDeviceState).toMatchObject({ hingeAngle: 45 });
+      await starting;
+      expect(routedScreens).toEqual([3]);
+      expect(deviceStateUnsubscribes).toBe(0);
+    } finally { subscription.resolve(); }
+  });
+
+  test("rejected late detachment is caught after capture stops", async () => {
+    const subscription = deferred();
+    deviceStateSubscriptionGate = subscription.promise;
+    errorLog = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await start({ width: 2007, height: 2853 }, true);
+      session!.close();
+      await waitUntil(() => captureStops === 1);
+      deviceStateDetachError = new Error("late observer cleanup failed");
+      subscription.resolve();
+      await waitUntil(() => deviceStateUnsubscribes === 1 && errorLog!.mock.calls.length === 1);
+      expect(errorLog.mock.calls[0]!.join(" ")).toContain("late observer cleanup failed");
+      expect(captureStops).toBe(1);
+    } finally { subscription.resolve(); }
+  });
+
+  test("capture setup itself remains a startup prerequisite", async () => {
+    captureStartError = new Error("capture unavailable");
+    session = new DeviceSession(UDID);
+    await expect(session.start()).rejects.toThrow("capture unavailable");
+    expect(deviceStateChanged).toBeUndefined();
+    expect(routedScreens).toEqual([]);
+  });
+
+  test("waits for native state subscription cleanup before stopping capture", async () => {
+    await start({ width: 2007, height: 2853 }, true);
+    let release!: () => void;
+    deviceStateUnsubscribeGate = new Promise<void>((resolve) => { release = resolve; });
+    session!.close();
+    expect(deviceStateUnsubscribes).toBe(1);
+    await Bun.sleep(20);
+    expect(captureStops).toBe(0);
+    release();
+    await waitUntil(() => captureStops === 1);
+  });
+
+  test("close is idempotent and ignores callbacks already queued for delivery", async () => {
+    await start({ width: 2007, height: 2853 }, true);
+    expect(deviceStateChanged).toBeFunction();
+    const lateCallback = deviceStateChanged!;
+    await lateCallback({ generation: 1, revision: 1, state: { hingeAngle: 60 } });
+    expect(session!.screenConfig().observedDeviceState).toMatchObject({ hingeAngle: 60 });
+    const config = session!.screenConfig();
+    session!.close();
+    session!.close();
+    await lateCallback({ generation: 1, revision: 99, state: { hingeAngle: 180 } });
+    await waitUntil(() => captureStops === 1);
+    expect(screenUnsubscribes).toBe(1);
+    expect(deviceStateUnsubscribes).toBe(1);
+    expect(captureStops).toBe(1);
+    expect(session!.screenConfig()).toEqual(config);
+  });
+});
+
+function deferred() {
+  let resolve!: () => void;
+  let reject!: (reason: Error) => void;
+  const promise = new Promise<void>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
 
 async function waitUntil(predicate: () => boolean): Promise<void> {
   const deadline = Date.now() + 1500;

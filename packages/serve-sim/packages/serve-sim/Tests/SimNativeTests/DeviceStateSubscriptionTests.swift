@@ -10,17 +10,17 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         let secondUpdated = expectation(description: "second subscriber")
         let source = DeviceStateProducerProbe(onConnect: { _ in connected.fulfill() })
         let bridge = makeBridge(source)
-        let first = await bridge.subscribeDeviceState(udid: udid) { state in
-            if state.angle == 90 { firstUpdated.fulfill() }
+        let first = await bridge.subscribeDeviceState(udid: udid) { snapshot in
+            if snapshot.state.angle == 90 { firstUpdated.fulfill() }
         }
         await fulfillment(of: [connected], timeout: 2)
-        let second = await bridge.subscribeDeviceState(udid: udid) { state in
-            if state.angle == 90 { secondUpdated.fulfill() }
+        let second = await bridge.subscribeDeviceState(udid: udid) { snapshot in
+            if snapshot.state.angle == 90 { secondUpdated.fulfill() }
         }
         await source.yield(0, .angle(.init(angle: 90, timestamp: 11)))
         await fulfillment(of: [firstUpdated, secondUpdated], timeout: 2)
         let observed = await bridge.observedDeviceState(udid: udid)
-        XCTAssertEqual(observed, .init(angle: 90))
+        XCTAssertEqual(observed.state, .init(angle: 90))
         await first()
         let endedBeforeLast = await source.endedConnections
         XCTAssertTrue(endedBeforeLast.isEmpty)
@@ -70,10 +70,11 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         await fulfillment(of: [newConnected], timeout: 2)
         await source.inject(0, .angle(.init(angle: 180, timestamp: 999)))
         let reset = await bridge.observedDeviceState(udid: udid)
-        XCTAssertEqual(reset, .init())
+        XCTAssertEqual(reset.generation, 1)
+        XCTAssertEqual(reset.state, .init())
         await source.inject(1, .angle(.init(angle: 45, timestamp: 12)))
         let current = await bridge.observedDeviceState(udid: udid)
-        XCTAssertEqual(current, .init(angle: 45))
+        XCTAssertEqual(current.state, .init(angle: 45))
         let maximum = await source.maximumActiveConnections
         XCTAssertEqual(maximum, 1)
         await unsubscribe()
@@ -94,10 +95,10 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         await source.inject(0, .angle(.init(angle: 180, timestamp: 999)))
         await source.inject(1, .angle(.init(angle: 180, timestamp: 11)))
         let unknown = await bridge.observedDeviceState(udid: udid)
-        XCTAssertEqual(unknown, .init())
+        XCTAssertEqual(unknown.state, .init())
         await source.inject(1, .angle(.init(angle: 45, timestamp: 13)))
         let fresh = await bridge.observedDeviceState(udid: udid)
-        XCTAssertEqual(fresh, .init(angle: 45))
+        XCTAssertEqual(fresh.state, .init(angle: 45))
         await unsubscribe()
     }
 
@@ -124,9 +125,8 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         let backingOff = expectation(description: "known state cleared before backoff")
         let source = DeviceStateProducerProbe(onConnect: { _ in connected.fulfill() })
         let bridge = makeBridge(source, reconnectDelay: .seconds(60))
-        let received = ObservedStateProbe()
-        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { state in
-            if received.clearedAfterKnown(state) { backingOff.fulfill() }
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { snapshot in
+            if snapshot.revision > 0 && snapshot.state == .init() { backingOff.fulfill() }
         }
         await fulfillment(of: [connected], timeout: 2)
         await source.inject(0, .angle(.init(angle: 90, timestamp: 11)))
@@ -156,7 +156,8 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         await source.inject(0, .angle(.init(angle: 180, timestamp: 999)))
         await source.inject(1, .angle(.init(angle: 45, timestamp: 11)))
         let current = await bridge.observedDeviceState(udid: udid)
-        XCTAssertEqual(current.angle, 45)
+        XCTAssertEqual(current.generation, 1)
+        XCTAssertEqual(current.state.angle, 45)
         await unsubscribe()
         let count = await source.connectionCount
         XCTAssertEqual(count, 2)
@@ -173,7 +174,7 @@ final class DeviceStateSubscriptionTests: XCTestCase {
             await source.inject(0, .angle(.init(angle: 90, timestamp: 11)))
         }.value
         let observed = await bridge.observedDeviceState(udid: udid)
-        XCTAssertEqual(observed, .init())
+        XCTAssertEqual(observed.state, .init())
         await unsubscribe()
     }
 
@@ -184,7 +185,116 @@ final class DeviceStateSubscriptionTests: XCTestCase {
         let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
         await fulfillment(of: [unsupported], timeout: 2)
         let current = await bridge.observedDeviceState(udid: udid)
-        XCTAssertEqual(current, .init())
+        XCTAssertEqual(current.state, .init())
+        await unsubscribe()
+    }
+
+    func testEligibilityGetterDoesNotStartObservationOrChangeItsSnapshot() async {
+        let bridge = CoreDeviceBridge(deviceStateConsumer: { _, _ in
+            XCTFail("Eligibility lookup must not open a monitor")
+            return false
+        })
+        let initial = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(initial, .init())
+        await bridge.recordHingeControl(udid: udid, angle: 90, orientation: "portrait", sentAt: 20, generation: 0)
+        let eligible = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(eligible, .init(angle: 90, orientation: "portrait"))
+        let observed = await bridge.observedDeviceState(udid: udid)
+        XCTAssertEqual(observed.state, .init())
+        XCTAssertEqual(observed.revision, 0)
+    }
+
+    func testEligibilityUsesSourceTimeWithoutChangingObservedValues() async {
+        let connected = expectation(description: "producer")
+        let source = DeviceStateProducerProbe(onConnect: { _ in connected.fulfill() })
+        let bridge = makeBridge(source)
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [connected], timeout: 2)
+        await source.inject(0, .angle(.init(angle: 0, timestamp: 11)))
+        await bridge.recordHingeControl(udid: udid, angle: 90, sentAt: 20, generation: 0)
+        await source.inject(0, .angle(.init(angle: 40, timestamp: 19)))
+        let eligible = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(eligible.angle, 90)
+        let observed = await bridge.observedDeviceState(udid: udid)
+        XCTAssertEqual(observed.state.angle, 40)
+        await source.inject(0, .angle(.init(angle: 40, timestamp: 21)))
+        let afterFreshSample = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(afterFreshSample.angle, 40)
+        await unsubscribe()
+    }
+
+    func testRejectedOrientationReadStillMakesOverlappingControlUncertain() async throws {
+        let connected = expectation(description: "producer")
+        let source = DeviceStateProducerProbe(onConnect: { _ in connected.fulfill() })
+        let bridge = makeBridge(source)
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [connected], timeout: 2)
+        await source.inject(0, .angle(.init(angle: 90, timestamp: 10.5)))
+        await bridge.recordHingeControl(udid: udid, orientation: "portrait", sentAt: 11, generation: 0)
+        let afterCommand = await bridge.observedDeviceState(udid: udid)
+        XCTAssertEqual(afterCommand.state, .init(angle: 90))
+        let portrait = try JSONDecoder().decode(DeviceMotionSample.self, from: Data(
+            #"{"timestamp":11.5,"properties":{"propertyA":{"int":1},"propertyC":{"int":0}}}"#.utf8
+        ))
+        await source.inject(0, .motion(portrait))
+        let beforeRead = await bridge.observedDeviceState(udid: udid)
+        XCTAssertEqual(beforeRead.state, .init(angle: 90, orientation: "portrait", tableMode: false))
+        await source.inject(0, .orientation(.init(orientation: "faceup", timestamp: 10, readCompletedAt: 13)))
+        let afterRead = await bridge.observedDeviceState(udid: udid)
+        XCTAssertEqual(afterRead, beforeRead, "An old query start must not overwrite newer sensor state")
+        let uncertain = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(uncertain, .init(angle: 90, tableMode: false))
+        let faceup = try JSONDecoder().decode(DeviceMotionSample.self, from: Data(
+            #"{"timestamp":14,"properties":{"propertyA":{"int":5},"propertyC":{"int":0}}}"#.utf8
+        ))
+        await source.inject(0, .motion(faceup))
+        let fresh = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(fresh, .init(angle: 90, orientation: "faceup", tableMode: false))
+        let observed = await bridge.observedDeviceState(udid: udid)
+        XCTAssertEqual(observed.state, fresh)
+        await unsubscribe()
+    }
+
+    func testObservationLossAndLastUnsubscribeDiscardAdmissionOverrides() async {
+        let connected = expectation(description: "initial producer")
+        let recovered = expectation(description: "producer after loss")
+        let source = DeviceStateProducerProbe(onConnect: { index in
+            (index == 0 ? connected : recovered).fulfill()
+        })
+        let bridge = makeBridge(source)
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [connected], timeout: 2)
+        await bridge.recordHingeControl(udid: udid, angle: 90, orientation: "portrait", sentAt: 20, generation: 0)
+        await source.finish(0)
+        await fulfillment(of: [recovered], timeout: 2)
+        let afterLoss = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(afterLoss, .init())
+        await bridge.recordHingeControl(udid: udid, angle: 45, sentAt: 30, generation: 0)
+        let afterNewCommand = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(afterNewCommand.angle, 45)
+        await unsubscribe()
+        let afterUnsubscribe = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(afterUnsubscribe, .init())
+    }
+
+    func testBootResetDiscardsOverridesAndRejectsOldCommandConfirmation() async {
+        let connected = expectation(description: "old boot")
+        let replacement = expectation(description: "new boot")
+        let source = DeviceStateProducerProbe(onConnect: { index in
+            (index == 0 ? connected : replacement).fulfill()
+        })
+        let bridge = makeBridge(source)
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { _ in }
+        await fulfillment(of: [connected], timeout: 2)
+        await bridge.recordHingeControl(udid: udid, angle: 90, orientation: "portrait", sentAt: 20, generation: 0)
+        await bridge.resetForNewCapture(udid: udid)
+        await fulfillment(of: [replacement], timeout: 2)
+        await bridge.recordHingeControl(udid: udid, angle: 180, sentAt: 21, generation: 0)
+        let afterReset = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(afterReset, .init())
+        await bridge.recordHingeControl(udid: udid, angle: 45, sentAt: 22, generation: 1)
+        let current = await bridge.hingeControlEligibility(udid: udid)
+        XCTAssertEqual(current.angle, 45)
         await unsubscribe()
     }
 
@@ -249,15 +359,3 @@ private actor DeviceStateProducerProbe {
 }
 
 private enum ProducerError: Error { case disconnected }
-
-private final class ObservedStateProbe: @unchecked Sendable {
-    private let lock = NSLock()
-    private var known = false
-
-    func clearedAfterKnown(_ state: CoreDeviceBridge.HingeState) -> Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        if state != .init() { known = true; return false }
-        return known
-    }
-}

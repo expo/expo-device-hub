@@ -2,7 +2,7 @@ import { expect, mock, test } from "bun:test";
 import type { Scene } from "three";
 import type { DuoSceneState } from "../../client/simulator/duo-scene";
 import { HINGE_POSES } from "../../hinge-control";
-import { duoPresetView, duoRotateView } from "../../client/simulator/duo-view";
+import { duoInitialView, duoObservedView, duoPresetView, duoRotateView } from "../../client/simulator/duo-view";
 
 // The real scene chooses and uploads its textures. Only browser/GPU plumbing
 // is replaced; frame content and individual texture writes remain observable.
@@ -109,6 +109,7 @@ mock.module("../../client/simulator/duo-model", () => ({
   },
 }));
 const { createDuoScene } = await import("../../client/simulator/duo-scene");
+const pendingCommands = { pending: true, coverDepartures: 0, innerDepartures: 0 };
 
 function setup(dual: boolean, cacheScreenOnFold?: boolean) {
   const host = new TestHost();
@@ -214,6 +215,114 @@ test("Rotate and repeated preset commands adjust the view without waiting for na
   }
 });
 
+test.each(["laptop", "tent"] as const)("late native %s discovery replaces startup framing but preserves local intent", async (pose) => {
+  const rig = setup(true);
+  const angle = pose === "laptop" ? 90 : 80;
+  const startup = duoInitialView(angle, undefined, { screenId: 3, width: 2007, height: 2853, orientation: "portrait" });
+  const settle = () => { for (let frame = 0; frame < 120; frame++) rig.tick(); };
+  try {
+    await rig.loaded;
+    rig.setState({ angle, pose: undefined, physicalPose: undefined, view: startup });
+    settle();
+    const initial = rig.rotation();
+    const nativeView = duoObservedView(startup, pose, false);
+    rig.setState({ pose, physicalPose: pose, view: nativeView });
+    settle();
+    const nativeRotation = rig.rotation();
+    expect(nativeRotation.angleTo(initial)).toBeGreaterThan(0.1);
+    rig.setState({ view: duoPresetView(pose) });
+    settle();
+    expect(rig.rotation().angleTo(nativeRotation)).toBeLessThan(1e-6);
+    const chosen = duoRotateView(duoPresetView(pose), 1);
+    rig.setState({ view: chosen, pose: null, physicalPose: null });
+    settle();
+    const chosenRotation = rig.rotation();
+    rig.setState({ view: duoObservedView(chosen, pose, true), pose, physicalPose: pose });
+    settle();
+    expect(rig.rotation().angleTo(chosenRotation)).toBeLessThan(1e-6);
+  } finally { rig.dispose(); }
+});
+
+test.each([false, undefined])("external Table Mode %s restores native inner-panel input after Tent", async (tableMode) => {
+  const rig = setup(true, true);
+  const commands = { pending: false, coverDepartures: 0, innerDepartures: 0 };
+  const settle = () => { for (let frame = 0; frame < 120; frame++) rig.tick(); };
+  try {
+    await rig.loaded;
+    rig.inner.pixel = 180;
+    rig.setState({
+      angle: 80, pose: null, physicalPose: "tent", view: duoPresetView("tent"), faceDown: true,
+      hingeCommands: commands,
+      streamConfig: { screenId: 1, width: 1398, height: 2034, orientation: "portrait", hingeAngle: 80, physicalOrientation: "facedown", tableMode: true },
+    });
+    settle();
+    expect(rig.tap(1)).toBe(1);
+    const framing = rig.rotation();
+    rig.setState({
+      faceDown: false,
+      streamConfig: { screenId: 3, width: 2007, height: 2853, orientation: "portrait", hingeAngle: 80, physicalOrientation: "facedown", tableMode },
+    });
+    settle();
+    expect(rig.host.dataset.screenId).toBe("3");
+    expect(rig.tap(3)).toBe(1);
+    expect(rig.tap(1)).toBe(0);
+    expect(rig.rotation().angleTo(framing)).toBeLessThan(1e-6);
+  } finally { rig.dispose(); }
+});
+
+test("a pending Tent preview yields to the native panel at final queue drain", async () => {
+  const rig = setup(true, true);
+  const commands = { pending: false, coverDepartures: 0, innerDepartures: 0 };
+  const config = { screenId: 3, width: 2007, height: 2853, orientation: "portrait" as const, hingeAngle: 90, physicalOrientation: "portrait" as const, tableMode: false };
+  const settle = () => { for (let frame = 0; frame < 120; frame++) rig.tick(); };
+  try {
+    await rig.loaded;
+    rig.inner.pixel = 180;
+    rig.setState({ angle: 90, pose: null, hingeCommands: commands, streamConfig: config });
+    settle();
+    expect(rig.tap(3)).toBe(1);
+    rig.setState({ angle: 80, pose: "tent", physicalPose: "tent", view: duoPresetView("tent"), hingeCommands: { ...commands, pending: true } });
+    settle();
+    expect(rig.host.dataset.screenId).toBe("1");
+    expect(rig.tap(3)).toBe(0);
+    expect(rig.tap(1)).toBe(0);
+    const framing = rig.rotation();
+    rig.setState({ angle: 80.25, pose: null, hingeCommands: commands, streamConfig: { ...config, hingeAngle: 80.25, physicalOrientation: "facedown" } });
+    settle();
+    expect(rig.host.dataset.screenId).toBe("3");
+    expect(rig.tap(3)).toBe(1);
+    expect(rig.rotation().angleTo(framing)).toBeLessThan(1e-6);
+  } finally { rig.dispose(); }
+});
+
+test("acknowledgement before readback retains visual preview while native routing owns input", async () => {
+  const rig = setup(true, true);
+  const commands = { pending: false, coverDepartures: 0, innerDepartures: 0 };
+  const open = { screenId: 3, width: 2007, height: 2853, orientation: "portrait" as const, hingeAngle: 180 };
+  const settle = () => { for (let frame = 0; frame < 120; frame++) rig.tick(); };
+  try {
+    await rig.loaded;
+    rig.inner.pixel = 180;
+    rig.setState({ angle: 180, pose: "open", view: duoPresetView("open"), hingeCommands: commands, streamConfig: open });
+    settle();
+    const openFraming = rig.rotation();
+    rig.setState({ angle: 0, pose: "closed", view: duoPresetView("closed"), hingeCommands: { ...commands, pending: true } });
+    settle();
+    const closedFraming = rig.rotation();
+    expect(rig.host.dataset.screenId).toBe("1");
+    rig.setState({ hingeCommands: commands });
+    settle();
+    expect(rig.host.dataset.screenId).toBe("3");
+    expect(rig.tap(1)).toBe(0);
+    expect(rig.rotation().angleTo(closedFraming)).toBeLessThan(1e-6);
+    rig.setState({ angle: 0.6, pose: null, streamConfig: { screenId: 1, width: 1398, height: 2034, orientation: "portrait", hingeAngle: 0.6 } });
+    settle();
+    expect(rig.host.dataset.screenId).toBe("1");
+    expect(rig.tap(1)).toBe(1);
+    expect(rig.rotation().angleTo(openFraming)).toBeGreaterThan(1);
+  } finally { rig.dispose(); }
+});
+
 test("a manual hinge edit cancels an unfinished preset's pending orientation change", async () => {
   const rig = setup(true);
   const settle = () => { for (let frame = 0; frame < 120; frame++) rig.tick(); };
@@ -240,7 +349,7 @@ test("inner frames appear before active metadata and provisional black cannot ov
     test.tick();
     expect(test.coverTexture.pixel).toBe(70);
     const coverDraws = test.coverTexture.draws;
-    test.setState({ angle: 180, pose: "open" });
+    test.setState({ angle: 180, pose: "open", hingeCommands: pendingCommands });
     test.cover.pixel = 0;
     test.tick();
     expect(test.innerTexture.draws).toBe(0);
@@ -417,7 +526,7 @@ test("the single-stream fallback still requires matching active display metadata
   try {
     test.tick();
     expect(test.coverTexture.pixel).toBe(70);
-    test.setState({ angle: 180, pose: "open" });
+    test.setState({ angle: 180, pose: "open", hingeCommands: pendingCommands });
     test.tick();
     expect(test.innerTexture.draws).toBe(0);
     expect(test.host.dataset.screenId).toBe("1");
@@ -428,7 +537,7 @@ test("panel caching follows the native 54/55 boundary before display metadata ca
   const test = setup(true, true);
   try {
     test.tick();
-    test.setState({ angle: 54, pose: "open" });
+    test.setState({ angle: 54, pose: "open", hingeCommands: pendingCommands });
     test.cover.pixel = 100;
     test.inner.pixel = 180;
     test.tick();
@@ -467,7 +576,7 @@ test("rapid reopening retains its cached screen while matching metadata belongs 
     expect(test.innerTexture.pixel).toBe(180);
 
     // Close and reopen before the main metadata ever leaves screen 3.
-    test.setState({ angle: 0, pose: "closed" });
+    test.setState({ angle: 0, pose: "closed", hingeCommands: pendingCommands });
     test.inner.pixel = 0;
     test.tick();
     test.setState({ angle: 180, pose: "open" });
@@ -516,7 +625,7 @@ test("panel caching defaults off and both panels show their live frames includin
     expect(test.coverTexture.pixel).toBe(70);
     expect(test.innerTexture.pixel).toBe(180);
 
-    test.setState({ angle: 180, pose: "open" });
+    test.setState({ angle: 180, pose: "open", hingeCommands: pendingCommands });
     test.cover.pixel = 0;
     test.inner.pixel = 0;
     test.tick();
@@ -561,7 +670,7 @@ test("turning caching off clears a retained hidden panel even before its source 
     test.setState({ cacheScreenOnFold: true });
     test.cover.pixel = 100;
     test.tick();
-    test.setState({ angle: 180, pose: "open" });
+    test.setState({ angle: 180, pose: "open", hingeCommands: pendingCommands });
     test.cover.pixel = 0;
     test.tick();
     expect(test.coverTexture.pixel).toBe(100);

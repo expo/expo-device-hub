@@ -5,7 +5,7 @@
 **Systems:** ServeSim, Hub
 **Author:** Imported from expo/serve-sim in #79 (original authors are in that repo); later edits by Szymon Dziedzic, Krystof Woldrich, Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-13 (native recording observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
+**Revised:** 2026-10-13 (native recording and live preview observations); 2026-10-06 (hinge state at startup and the `serve-sim hinge` read, #139); 2026-10-02 (moved into the LLP corpus from `packages/serve-sim/packages/serve-sim/docs/hinge-controls.md`; links and paths updated)
 **Related:** LLP 0001
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -34,19 +34,47 @@ after applying the new orientation. Frames still follow the active display and
 any orientation restrictions imposed by the foreground app.
 
 The Table Mode toggle controls the simulator's persistent table state. Tent
-enables it automatically; the other presets disable it.
+enables it automatically; the other presets disable it. Its checked state uses
+the acknowledged control setting, independently of observed tabletop activity.
 
-Confirmed hinge angles, named poses, and Table Mode values reflect successful
-commands, plus the state that serve-sim reads and restores at startup (see
-[Hinge state at startup](#hinge-state-at-startup)). serve-sim does not monitor the live
-hinge sensor for changes made externally in Device Hub. The streamed display
-and its orientation still follow native display readback.
+## Live pose observation
 
-Table Mode eligibility requires a known physical orientation, established by
-choosing a preset or restored at startup from the saved state. An independent rotation invalidates that knowledge because
-its screen orientation can differ from physical orientation. Choose a preset
-again to restore Table Mode eligibility after rotating. Angle adjustments keep
-the known physical orientation and update eligibility for the new angle.
+The live preview uses native observations independently of the successful-command
+cache and saved startup state. Screen config retains its command fields for the
+CLI and existing clients; the additional `observedDeviceState` object is a full
+native snapshot for preview. Once present, omitted fields are unknown and never
+fall back to saved commands. Table Mode eligibility uses physical orientation,
+independently of an app's screen rotation. Before enabling Table Mode or turning
+face-down, a native getter reconciles angle and physical orientation with their latest
+successful control sends. A command's value remains eligible until that field has a newer source
+sample, including an unknown sample; unrelated fields and delayed delivery do not
+revoke it. Observation loss and capture reset clear these temporary values. The
+getter reads actor-local state without sensor queries or additional polling. Initial
+orientation readback has no source timestamp, so its start/end times bound the read.
+If an orientation send overlaps that interval, eligibility stays unknown until a
+source sample or another orientation send is strictly after the read ends; buffered
+samples inside the interval cannot resolve it. These eligibility values never
+become live-preview or recording observations.
+
+Pose subscription setup is optional to video startup. Slow or failed registration
+does not block screen/input readiness or capture shutdown; registration completing
+after close immediately detaches its listener. Device classification is retained
+across reboot so a delayed Duo subscription still attaches its live observer.
+
+Local controls preview their requested pose while pending. After acknowledgement,
+the preview stays until native state matches or 500 ms elapses. Native display ID
+owns panel and input routing as soon as the command queue drains. Late native
+Laptop/Tent state initializes camera framing unless a local control already chose
+it. An externally observed preset uses physical preset framing independently of
+app rotation and supersedes a saved face-down view. A failed or interrupted
+control batch discards queued preset framing while preserving valid camera
+rotations, including rotations made while that batch was pending. Unknown native
+fields alone do not invalidate the previous camera or release saved face-down
+framing. Each successful preset becomes the recovery baseline for later commands;
+rotations made after that preset was queued remain part of the view.
+[observed: `src/device-session.ts` `applyDeviceState`, `screenConfig`;
+`src/client/simulator/screen-config-state.ts` `previewScreenConfig`;
+`src/client/hooks/use-duo-framing.ts` `useDuoFraming`]
 
 Duo defaults to **3D**. The **Preview mode** selector in Simulator settings
 switches between 2D and 3D and remembers the choice in the browser. The 3D view
@@ -159,30 +187,32 @@ pose command that fails.
 
 ## Confirmed hinge state
 
-Recording observes native pose separately from the successful-command cache and
+Recording and live preview observe native pose separately from the successful-command cache and
 saved startup state. It opens the hinge stream with requested 100 ms updates and
 a one-degree threshold, plus a generic motion stream for physical orientation
 and tabletop activity. Neither requested cadence nor injected update frequency
 changes the saved timeline's four-per-second pose limit. Geometry boundaries
 retain their first written frame. Ordinary iPhones skip the private motion path.
 
-The first recording listener starts observation; the last cancels and awaits
+The first listener starts observation; the last cancels and awaits
 teardown. Boot and connection identities reject callbacks from old producers;
 independent native timestamp watermarks reject history and out-of-order angle,
 motion and orientation-query samples. A failure clears observed fields and
-retries after one second while recording remains active. A stationary device's
+retries after one second while a recording or live preview remains active. A stationary device's
 Table activity can be unknown until a fresh motion event arrives.
 
 Apple's native tabletop value zero (`Ambiguous`) records `tableMode: false`;
 recognized values 1–10 record `true`. Missing or unrecognized values are absent.
 This reports observed activity, not whether the Table Mode control is enabled.
 See [recording metadata](0001-serve-sim-video-pipeline.explainer.md#device-state-metadata)
-for the format and video-clock contract.
+for the format and video-clock contract. Live notifications keep one dispatch in
+flight and one latest full snapshot pending, independently of video backpressure.
 
 [observed: `Sources/SimNative/CoreDeviceBridge.swift`,
 `Sources/SimNative/CoreDeviceHingeReadback.swift`,
 `Sources/SimNative/CoreDeviceState.swift`, `Sources/SimNative/CoreDeviceStateReadback.swift`,
-`Sources/SimNative/CaptureEngine.swift`; `Tests/SimNativeTests/DeviceStateSubscriptionTests.swift`]
+`Sources/SimNative/CaptureEngine.swift`, `Sources/SimNative/DeviceStateDelivery.swift`,
+`Sources/SimNative/sim-module.swift`; `Tests/SimNativeTests/DeviceStateSubscriptionTests.swift`]
 
 ## APIs inside an iOS app
 

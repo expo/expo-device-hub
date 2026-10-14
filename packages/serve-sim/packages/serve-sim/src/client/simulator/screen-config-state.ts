@@ -1,4 +1,5 @@
 import type { StreamConfig } from "../types.js";
+import { isTableModeAvailable, observedHingePose } from "../../hinge-control";
 
 export type ScreenConfigSource = "external" | "media" | "reported";
 
@@ -14,7 +15,11 @@ export function screenConfigsEqual(a: StreamConfig | null, b: StreamConfig): boo
     a.supportsPhysicalOrientation === b.supportsPhysicalOrientation && a.hingePose === b.hingePose &&
     a.physicalOrientation === b.physicalOrientation &&
     a.tableMode === b.tableMode && a.tableModeAvailable === b.tableModeAvailable &&
-    a.inputUnavailable === b.inputUnavailable;
+    a.inputUnavailable === b.inputUnavailable &&
+    (a.observedDeviceState === undefined) === (b.observedDeviceState === undefined) &&
+    a.observedDeviceState?.hingeAngle === b.observedDeviceState?.hingeAngle &&
+    a.observedDeviceState?.physicalOrientation === b.observedDeviceState?.physicalOrientation &&
+    a.observedDeviceState?.tableMode === b.observedDeviceState?.tableMode;
 }
 
 export function resolveScreenConfigUpdate(
@@ -31,6 +36,7 @@ export function resolveScreenConfigUpdate(
     next.hingeAngle = prev.hingeAngle;
   }
   if (source !== "media") {
+    if (config.observedDeviceState === undefined) delete next.observedDeviceState;
     if (config.hingeAngle === undefined) delete next.hingeAngle;
     if (config.hingePose === undefined) delete next.hingePose;
     if (config.physicalOrientation === undefined) delete next.physicalOrientation;
@@ -45,5 +51,19 @@ export function resolveScreenConfigUpdate(
   return {
     config: next,
     notifyParent: source !== "external",
+  };
+}
+
+/** Native snapshots own preview pose; omitted fields clear saved command state. */
+export function previewScreenConfig(config: StreamConfig): StreamConfig {
+  if (config.observedDeviceState === undefined) return config;
+  const { hingeAngle, physicalOrientation, tableMode } = config.observedDeviceState;
+  return {
+    ...config,
+    hingeAngle,
+    physicalOrientation,
+    tableMode,
+    hingePose: observedHingePose(hingeAngle, physicalOrientation, tableMode),
+    tableModeAvailable: isTableModeAvailable(hingeAngle, physicalOrientation),
   };
 }

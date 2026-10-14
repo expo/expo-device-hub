@@ -248,8 +248,8 @@ record `true`. Missing, malformed, or unrecognized values are omitted. This
 Boolean does not report whether the Table Mode control was enabled. Screen
 orientation and physical orientation can differ when an app locks its interface.
 
-Unknown fields are omitted rather than inferred. Recording keeps a native
-observer per device. It opens a hinge stream configured for
+Unknown fields are omitted rather than inferred. Recording and live previews
+share one native observer per device. It keeps a hinge stream configured for
 100 ms updates and a one-degree change threshold, plus a generic motion stream
 for physical orientation and tabletop activity. The generic stream has no
 interval setting. Recording consumes only these observations, independently of
@@ -266,13 +266,16 @@ for command and observation lifetimes. External pose changes at an unchanged
 angle update the same observer. The native update interval is a request, not a strict
 callback throttle; the saved timeline limits pose-only changes to four per second.
 If the stream fails, observed fields clear, the observer logs the failure, and
-it retries after one second while recording remains active.
+it retries after one second while a recording or live-preview listener remains.
+Live notifications keep one dispatch in flight and replace a waiting snapshot
+with the latest full state. They use a separate queue from video callbacks, so
+video backpressure cannot discard the final pose update.
 
 [observed: `Sources/SimNative/FrameCapture.swift`,
 `Sources/SimNative/NativeFrameMailbox.swift`, `Sources/SimNative/CaptureEngine.swift`,
 `Sources/SimNative/NativeVideoRecorder.swift`, `Sources/SimNative/PixelBufferLetterboxer.swift`,
 `Sources/SimNative/CoreDeviceState.swift`, `Sources/SimNative/CoreDeviceStateReadback.swift`,
-`Sources/SimNative/CoreDeviceBridge.swift`;
+`Sources/SimNative/DeviceStateDelivery.swift`, `Sources/SimNative/sim-module.swift`;
 `Sources/StreamingPolicy/RecordingManifest.swift`,
 `Sources/StreamingPolicy/RecordingDeviceStateTimeline.swift`,
 `Sources/StreamingPolicy/SimulatorDisplayProfile.swift`;

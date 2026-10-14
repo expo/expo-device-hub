@@ -68,12 +68,14 @@ extension CoreDeviceBridge {
         let timestamp = hingeClock()
         try await read(result, capability.storage.load(fromByteOffset: 24, as: UnsafeRawPointer.self),
                        capability.storage.load(fromByteOffset: 32, as: UnsafeRawPointer.self), capability.storage)
+        let readCompletedAt = hingeClock()
         defer { SSCoreDeviceDestroyValue(result, metadata) }
         try Task.checkCancellation()
         func decode<T: Encodable>(_: T.Type) throws -> PhysicalOrientationSample {
             let value = result.assumingMemoryBound(to: T.self).pointee
             let info = try JSONDecoder().decode(OrientationReadback.self, from: JSONEncoder().encode(value))
-            return .init(orientation: ObservedPhysicalOrientation.name(info.currentDeviceOrientation), timestamp: timestamp)
+            return .init(orientation: ObservedPhysicalOrientation.name(info.currentDeviceOrientation),
+                         timestamp: timestamp, readCompletedAt: readCompletedAt)
         }
         return try _openExistential(type, do: decode)
     }

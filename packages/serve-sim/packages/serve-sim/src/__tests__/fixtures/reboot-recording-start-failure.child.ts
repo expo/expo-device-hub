@@ -18,6 +18,7 @@ class Capture {
   async suspendForReboot() { suspends++; }
   async resumeAfterReboot() {}
   async subscribeScreenChanges() { return async () => {}; }
+  async subscribeDeviceState() { return async () => {}; }
   async screenSize() { return { width: 120, height: 240, screenId: 0 }; }
   async startRecording() {
     recordingEntered();

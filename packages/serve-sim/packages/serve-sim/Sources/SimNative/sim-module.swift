@@ -104,7 +104,14 @@ private func u32(_ v: Int) -> UInt32 {
     }
 
     @NodeMethod func hingeState() async -> [String: any NodePropertyConvertible] {
-        let state = await CoreDeviceBridge.shared.hingeState(udid: udid)
+        hingeStateProperties(await CoreDeviceBridge.shared.hingeState(udid: udid))
+    }
+
+    @NodeMethod func hingeControlEligibility() async -> [String: any NodePropertyConvertible] {
+        hingeStateProperties(await CoreDeviceBridge.shared.hingeControlEligibility(udid: udid))
+    }
+
+    private func hingeStateProperties(_ state: CoreDeviceBridge.HingeState) -> [String: any NodePropertyConvertible] {
         var result: [String: any NodePropertyConvertible] = [:]
         if let angle = state.angle { result["hingeAngle"] = angle }
         if let tableMode = state.tableMode { result["tableMode"] = tableMode }
@@ -292,6 +299,23 @@ private func u32(_ v: Int) -> UInt32 {
                 }
             }
         }
+        return try NodeFunction { await unsubscribe() }
+    }
+
+    @NodeMethod func subscribeDeviceState(_ onChange: NodeFunction) async throws -> NodeFunction {
+        // The producer bounds dispatch to one in flight and one latest snapshot.
+        let stateQueue = try NodeAsyncQueue(label: "simCapture.deviceState")
+        let delivery = DeviceStateDelivery { snapshot, delivery in
+            guard let data = try? JSONEncoder().encode(snapshot) else { return }
+            let json = String(decoding: data, as: UTF8.self)
+            try? await stateQueue.run { () async throws -> Void in
+                guard delivery.isActive, !Task.isCancelled else { return }
+                _ = try? onChange.call([json]).as(NodePromise.self)?.catch(NodeFunction { (_: AnyNodeValue) in undefined })
+            }
+        }
+        let unsubscribe = await engine.subscribeDeviceState({ delivery.submit($0) }, onDetach: {
+            await delivery.cancel()?.value
+        })
         return try NodeFunction { await unsubscribe() }
     }
 

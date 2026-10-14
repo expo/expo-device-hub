@@ -7,7 +7,7 @@ import { stateDir } from "../state";
 import { parseDetachState } from "./detach-state";
 import { freePortAsync, useTempStateDir } from "./helpers";
 import { sendKeyEventsToWs } from "../text-to-keys";
-import { restoreHingeState, selectHingeControl, selectPose } from "./duo-hinge-helpers";
+import { restoreHingeState, selectHingeControl, selectPose, waitForHingeConfig } from "./duo-hinge-helpers";
 import type { ServeSimDeviceState } from "../state";
 import type { StreamConfig } from "../client/types";
 
@@ -190,18 +190,28 @@ describeWithSim(`serve-sim type e2e (booted sim ${bootedUdid ?? "<skipped>"})`, 
   test.skipIf(!testDuo)("typing cleanup restores pose and table mode", async () => {
     const initial = await screenConfig();
     try {
-      for (const pose of ["book", "tent", "open"] as const) {
+      for (const [pose, expected] of [
+        ["book", { hingeAngle: 90, physicalOrientation: "portrait", tableMode: false }],
+        ["tent", { hingeAngle: 80, physicalOrientation: "facedown", tableMode: true }],
+        ["open", { hingeAngle: 180, physicalOrientation: "portrait", tableMode: false }],
+      ] as const) {
         await selectPose(state, pose);
+        await waitForHingeConfig(state, expected);
         // Table Mode can also be set without a named pose.
-        if (pose === "open") await selectHingeControl(state, { control: "table", value: true });
+        if (pose === "open") {
+          await selectHingeControl(state, { control: "table", value: true });
+          await waitForHingeConfig(state, { tableMode: true });
+        }
         const original = await screenConfig();
         await selectHingeControl(state, { control: "angle", value: 0 });
+        await waitForHingeConfig(state, { hingeAngle: 0, tableMode: false });
         await restoreHingeState(state, original);
-        expect(await screenConfig()).toMatchObject({
+        const restored = await waitForHingeConfig(state, {
           hingeAngle: original.hingeAngle,
-          hingePose: original.hingePose,
           tableMode: original.tableMode,
         });
+        expect(restored.tableMode).toBe(original.tableMode);
+        expect(Math.abs(restored.hingeAngle! - original.hingeAngle!)).toBeLessThanOrEqual(1);
       }
     } finally {
       await restoreHingeState(state, initial);

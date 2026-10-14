@@ -15,12 +15,16 @@ actor CoreDeviceBridge {
     private var capabilities = BootBoundCache<String, String, CoreDeviceCapabilityObject>()
     private var hingeSupport: [String: Bool] = [:]
     private var hingeResetGenerations: [String: UInt64] = [:]
-    struct HingeState: Equatable, Sendable {
+    struct HingeState: Codable, Equatable, Sendable {
         var angle: Double?
         var orientation: String?
         var tableMode: Bool?
+        private enum CodingKeys: String, CodingKey {
+            case angle = "hingeAngle", orientation = "physicalOrientation", tableMode
+        }
     }
     private var hingeStates: [String: HingeState] = [:]
+    private var hingeControlEligibility: [String: HingeControlEligibility] = [:]
     typealias DeviceStateConsumer = @Sendable (String, @escaping @Sendable (DeviceStateUpdate) async -> Void) async throws -> Bool
     private struct DeviceStateToken: Equatable {
         let generation: UInt64
@@ -30,7 +34,7 @@ actor CoreDeviceBridge {
         var token: DeviceStateToken?
         var connection: UUID?
         var task: Task<Void, Never>?
-        var listeners: [UUID: @Sendable (HingeState) -> Void] = [:]
+        var listeners: [UUID: @Sendable (DeviceStateSnapshot) -> Void] = [:]
     }
     private var deviceStateObservations: [String: DeviceStateObservation] = [:]
     private var observedDeviceStates: [String: ObservedDeviceState] = [:]
@@ -58,7 +62,8 @@ actor CoreDeviceBridge {
         hingeResetGenerations[udid, default: 0] &+= 1
         hingeSupport.removeValue(forKey: udid)
         hingeStates.removeValue(forKey: udid)
-        observedDeviceStates[udid] = ObservedDeviceState()
+        hingeControlEligibility.removeValue(forKey: udid)
+        observedDeviceStates[udid] = ObservedDeviceState(generation: hingeResetGenerations[udid, default: 0])
         publishObservedDeviceState(udid: udid)
         if let observation = deviceStateObservations[udid], !observation.listeners.isEmpty {
             startDeviceStateObservation(udid: udid, observation: observation)
@@ -85,11 +90,25 @@ actor CoreDeviceBridge {
         return hingeStates[udid] ?? HingeState()
     }
 
-    func observedDeviceState(udid: String) -> HingeState {
-        observedDeviceStates[udid]?.state ?? HingeState()
+    func observedDeviceState(udid: String) -> DeviceStateSnapshot {
+        observedDeviceStates[udid]?.snapshot ?? DeviceStateSnapshot(
+            generation: hingeResetGenerations[udid, default: 0], revision: 0, state: HingeState()
+        )
     }
 
-    func subscribeDeviceState(udid: String, onChange: @escaping @Sendable (HingeState) -> Void) async -> @Sendable () async -> Void {
+    func hingeControlEligibility(udid: String) -> HingeState {
+        let observed = observedDeviceStates[udid] ?? ObservedDeviceState(generation: hingeResetGenerations[udid, default: 0])
+        return hingeControlEligibility[udid, default: HingeControlEligibility()].state(observed: observed)
+    }
+
+    func recordHingeControl(udid: String, angle: Double? = nil, orientation: String? = nil,
+                            sentAt: Double, generation: UInt64) {
+        guard hingeResetGenerations[udid, default: 0] == generation else { return }
+        if let angle { hingeControlEligibility[udid, default: HingeControlEligibility()].angle = (angle, sentAt) }
+        if let orientation { hingeControlEligibility[udid, default: HingeControlEligibility()].orientation = (orientation, sentAt) }
+    }
+
+    func subscribeDeviceState(udid: String, onChange: @escaping @Sendable (DeviceStateSnapshot) -> Void) async -> @Sendable () async -> Void {
         while let previous = deviceStateObservations[udid], previous.listeners.isEmpty {
             await previous.task?.value
             if deviceStateObservations[udid] === previous { deviceStateObservations.removeValue(forKey: udid) }
@@ -101,7 +120,7 @@ actor CoreDeviceBridge {
         observation.listeners[id] = onChange
         deviceStateObservations[udid] = observation
         if observedDeviceStates[udid] == nil {
-            observedDeviceStates[udid] = ObservedDeviceState()
+            observedDeviceStates[udid] = ObservedDeviceState(generation: hingeResetGenerations[udid, default: 0])
         }
         if starts { startDeviceStateObservation(udid: udid, observation: observation) }
         onChange(observedDeviceState(udid: udid))
@@ -167,19 +186,23 @@ actor CoreDeviceBridge {
         guard !Task.isCancelled, let observation = deviceStateObservations[udid],
               observation.token == token, observation.connection == connection,
               hingeResetGenerations[udid, default: 0] == token.generation else { return }
-        let previous = observedDeviceStates[udid]?.state
+        if case .orientation(let sample) = update {
+            hingeControlEligibility[udid]?.recordOrientationRead(sample, since: startedAt)
+        }
+        let oldRevision = observedDeviceStates[udid]?.revision
         observedDeviceStates[udid]?.apply(update, since: startedAt)
-        if observedDeviceStates[udid]?.state != previous { publishObservedDeviceState(udid: udid) }
+        if observedDeviceStates[udid]?.revision != oldRevision { publishObservedDeviceState(udid: udid) }
     }
 
     private func clearObservedDeviceState(udid: String) {
+        hingeControlEligibility.removeValue(forKey: udid)
         if observedDeviceStates[udid]?.clear() == true { publishObservedDeviceState(udid: udid) }
     }
 
     private func publishObservedDeviceState(udid: String) {
         guard let observation = deviceStateObservations[udid] else { return }
-        let state = observedDeviceState(udid: udid)
-        for listener in observation.listeners.values { listener(state) }
+        let snapshot = observedDeviceState(udid: udid)
+        for listener in observation.listeners.values { listener(snapshot) }
     }
 
     func remoteDevice(udid: String) async throws -> CoreDeviceRemoteDevice {
@@ -257,7 +280,9 @@ actor CoreDeviceBridge {
         guard let rawData = SSCoreDeviceHingeData(angle) else { return false }
         let data = Unmanaged<NSData>.fromOpaque(rawData).takeRetainedValue() as Data
         let generation = hingeResetGenerations[udid, default: 0]
-        let sent = await sendControl(udid: udid, data: data)
+        let sent = await sendControl(udid: udid, data: data) { sentAt in
+            self.recordHingeControl(udid: udid, angle: angle, sentAt: sentAt, generation: generation)
+        }
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
         if sent { hingeStates[udid, default: HingeState()].angle = angle }
         return sent
@@ -334,7 +359,9 @@ actor CoreDeviceBridge {
         guard let rawData = value.withCString({ SSCoreDeviceOrientationData($0) }) else { return false }
         let data = Unmanaged<NSData>.fromOpaque(rawData).takeRetainedValue() as Data
         let generation = hingeResetGenerations[udid, default: 0]
-        let sent = await sendControl(udid: udid, data: data)
+        let sent = await sendControl(udid: udid, data: data) { sentAt in
+            self.recordHingeControl(udid: udid, orientation: value, sentAt: sentAt, generation: generation)
+        }
         guard hingeResetGenerations[udid, default: 0] == generation else { return false }
         if sent { hingeStates[udid, default: HingeState()].orientation = value }
         return sent
@@ -347,7 +374,7 @@ actor CoreDeviceBridge {
         return await setPhysicalOrientation(udid: udid, value: value)
     }
 
-    private func sendControl(udid: String, data: Data) async -> Bool {
+    private func sendControl(udid: String, data: Data, onSent: (Double) -> Void) async -> Bool {
         do {
             let capability = try await capability(
                 udid: udid,
@@ -355,9 +382,11 @@ actor CoreDeviceBridge {
                 witnessSymbol: "$s10CoreDevice26VendorDefinedHIDCapabilityVAA0B10CapabilityAAWP"
             )
             let words = unsafeBitCast(data, to: (UInt64, UInt64).self)
+            let sentAt = hingeClock()
             let sent = withExtendedLifetime(data) {
                 SSCoreDeviceSendControl(capability.storage, words.0, words.1)
             }
+            if sent { onSent(sentAt) }
             if !sent { capabilities.removeValue(forKey: "\(udid):$s10CoreDevice26VendorDefinedHIDCapabilityVN") }
             return sent
         } catch {

@@ -3,7 +3,7 @@ import XCTest
 
 final class ObservedDeviceStateTests: XCTestCase {
     func testHistoricalInitialSamplesRemainUnknownUntilFreshNativeStateArrives() throws {
-        var observed = ObservedDeviceState()
+        var observed = ObservedDeviceState(generation: 2)
         XCTAssertFalse(observed.apply(.angle(.init(angle: 90, timestamp: 99)), since: 100))
         XCTAssertFalse(observed.apply(.motion(try motion(99, orientation: 6, tabletop: 7)), since: 100))
         XCTAssertEqual(observed.state, .init())
@@ -13,7 +13,7 @@ final class ObservedDeviceStateTests: XCTestCase {
     }
 
     func testMotionAndAngleUseIndependentWatermarksAndAngleDoesNotEraseObservedPose() throws {
-        var observed = ObservedDeviceState()
+        var observed = ObservedDeviceState(generation: 1)
         XCTAssertTrue(observed.apply(.angle(.init(angle: 90, timestamp: 120)), since: 100))
         XCTAssertTrue(observed.apply(.motion(try motion(110, orientation: 6, tabletop: 7)), since: 100))
         XCTAssertTrue(observed.apply(.angle(.init(angle: 45, timestamp: 121)), since: 100))
@@ -22,7 +22,7 @@ final class ObservedDeviceStateTests: XCTestCase {
     }
 
     func testFreshInvalidFieldsClearPreviouslyKnownState() throws {
-        var observed = ObservedDeviceState()
+        var observed = ObservedDeviceState(generation: 1)
         observed.apply(.angle(.init(angle: 90, timestamp: 101)), since: 100)
         observed.apply(.motion(try motion(102, orientation: 1, tabletop: 3)), since: 100)
         observed.apply(.angle(.init(angle: 90, timestamp: 103, isAngleValid: false)), since: 100)
@@ -33,7 +33,7 @@ final class ObservedDeviceStateTests: XCTestCase {
     }
 
     func testNativeTabletopCodesAndPhysicalOrientationAreValidatedIndependently() throws {
-        var observed = ObservedDeviceState()
+        var observed = ObservedDeviceState(generation: 1)
         for code in 0...10 {
             observed.apply(.motion(try motion(Double(code + 101), orientation: 0, tabletop: code)), since: 100)
             XCTAssertEqual(observed.state.tableMode, code != 0)
@@ -50,7 +50,7 @@ final class ObservedDeviceStateTests: XCTestCase {
     }
 
     func testOrientationBootstrapCannotOverwriteANewerStreamEventOrInventTableState() throws {
-        var observed = ObservedDeviceState()
+        var observed = ObservedDeviceState(generation: 1)
         observed.apply(.orientation(.init(orientation: "facedown", timestamp: 101)), since: 100)
         XCTAssertEqual(observed.state, .init(orientation: "facedown"))
         observed.apply(.motion(try motion(103, orientation: 3, tabletop: 5)), since: 100)
@@ -59,10 +59,23 @@ final class ObservedDeviceStateTests: XCTestCase {
     }
 
     func testOlderBufferedMotionCanEstablishTableStateWithoutUndoingTheFreshGetter() throws {
-        var observed = ObservedDeviceState()
+        var observed = ObservedDeviceState(generation: 1)
         observed.apply(.orientation(.init(orientation: "facedown", timestamp: 103)), since: 100)
         observed.apply(.motion(try motion(102, orientation: 1, tabletop: 3)), since: 100)
         XCTAssertEqual(observed.state, .init(orientation: "facedown", tableMode: true))
+    }
+
+    func testFullSnapshotOmitsUnknownFieldsAndUsesNativeCallbackKeys() throws {
+        var observed = ObservedDeviceState(generation: 3)
+        observed.apply(.angle(.init(angle: 90, timestamp: 101)), since: 100)
+        let data = try JSONEncoder().encode(observed.snapshot)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let state = try XCTUnwrap(json["state"] as? [String: Any])
+        XCTAssertEqual(state["hingeAngle"] as? Double, 90)
+        XCTAssertNil(state["physicalOrientation"])
+        XCTAssertNil(state["tableMode"])
+        XCTAssertEqual(json["generation"] as? Int, 3)
+        XCTAssertEqual(json["revision"] as? Int, 1)
     }
 
     private func motion(_ timestamp: Double, orientation: Int, tabletop: Int) throws -> DeviceMotionSample {

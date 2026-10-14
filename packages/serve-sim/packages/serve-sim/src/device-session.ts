@@ -26,6 +26,7 @@ import {
   axTypeKeyboardCharacterAsync,
   type MjpegFrame,
   type NativeHingeState,
+  type NativeDeviceStateSnapshot,
   type NativeScreenInfo,
   type NativeUnsubscribe,
 } from "./native";
@@ -274,6 +275,9 @@ export class DeviceSession {
   private screenRefresh?: Promise<boolean>;
   private screenRefreshRequested = false;
   private unsubscribeScreenChanges?: NativeUnsubscribe;
+  private unsubscribeDeviceState?: NativeUnsubscribe;
+  private deviceStateVersion?: { generation: number; revision: number };
+  private observedDeviceState?: NativeHingeState;
   private screenRefreshTimer?: ReturnType<typeof setTimeout>;
 
   private latestJpegBuffer: Buffer | null = null;
@@ -350,6 +354,14 @@ export class DeviceSession {
       });
       if (this.phase !== "running") { await unsubscribe(); return; }
       this.unsubscribeScreenChanges = unsubscribe;
+      void this.capture.subscribeDeviceState(async (snapshot) => {
+        this.applyDeviceState(snapshot);
+      }).then(async (unsubscribeDeviceState) => {
+        if (this.phase !== "running") { await unsubscribeDeviceState(); return; }
+        this.unsubscribeDeviceState = unsubscribeDeviceState;
+      }).catch((error) => {
+        console.error(`[capture] Device state observation unavailable: ${error}`);
+      });
       if (await this.refreshScreenSizeFromNative()) this.broadcastConfig();
       this.scheduleScreenRefresh();
       // Discover fold controls without delaying the first frame or inventing
@@ -411,8 +423,10 @@ export class DeviceSession {
     this.recordingLease = undefined;
     clearTimeout(this.screenRefreshTimer);
     this.screenRefreshTimer = undefined;
-    void this.unsubscribeScreenChanges?.().catch(() => {});
+    const screenChangesDetached = this.unsubscribeScreenChanges?.().catch(() => {});
     this.unsubscribeScreenChanges = undefined;
+    const deviceStateDetached = this.unsubscribeDeviceState?.().catch(() => {});
+    this.unsubscribeDeviceState = undefined;
     this.queueInputCleanup(this.serverInput, true);
     for (const ws of this.admittedHidSockets) {
       this.discardQueuedInput(ws);
@@ -423,6 +437,8 @@ export class DeviceSession {
     for (const res of this.panelRequests) res.destroy();
     for (const panel of this.panels.values()) this.stopPanel(panel);
     trackClosedSessionStop((async () => {
+      await this.captureStart?.catch(() => {});
+      await Promise.all([screenChangesDetached, deviceStateDetached]);
       let recordingError: unknown = this.recordingFailure;
       try {
         await this.recordingStart;
@@ -1612,18 +1628,24 @@ export class DeviceSession {
         if (!this.canRunInputControl(generation)) return false;
         this.applyNativeHingeState(state);
       }
-      if (command.control === "table" && command.value && !isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation)) return false;
       if (command.control === "physical" && this.supportsPhysicalOrientation === false) return false;
-      if (command.control === "physical" && command.value === "facedown") {
-        if (this.hingeAngle === undefined) {
-          // Confirmed angles come from this session's commands. Read the live
-          // hinge once so a device that was already half open can turn over.
-          const { hingeAngle } = await this.hid.hingeState();
-          if (!this.canRunInputControl(generation)) return false;
-          this.hingeAngle = hingeAngle;
-        }
-        if (!(this.hingeAngle !== undefined && this.hingeAngle > 0 && this.hingeAngle < 180)) return false;
+      if (command.control === "physical" && command.value === "facedown" &&
+          this.observedDeviceState === undefined && this.hingeAngle === undefined) {
+        const state = await this.hid.hingeState();
+        if (!this.canRunInputControl(generation)) return false;
+        if (this.observedDeviceState === undefined) this.hingeAngle = state.hingeAngle;
       }
+      const needsPose = (command.control === "table" && command.value) ||
+        (command.control === "physical" && command.value === "facedown");
+      // @ref LLP 0004#live-pose-observation — eligibility orders native samples against successful sends
+      const eligibility = needsPose && this.observedDeviceState !== undefined
+        ? await this.hid.hingeControlEligibility()
+        : { hingeAngle: this.hingeAngle, physicalOrientation: this.hingePhysicalOrientation };
+      if (!this.canRunInputControl(generation)) return false;
+      if (command.control === "table" && command.value &&
+          !isTableModeAvailable(eligibility.hingeAngle, eligibility.physicalOrientation)) return false;
+      if (command.control === "physical" && command.value === "facedown" &&
+          !(eligibility.hingeAngle !== undefined && eligibility.hingeAngle > 0 && eligibility.hingeAngle < 180)) return false;
       this.hingeControlled = true;
       const ok = command.control === "pose" ? await this.hid.setHingePose(command.value)
         : command.control === "physical" ? await this.hid.setPhysicalOrientation(command.value)
@@ -2147,6 +2169,22 @@ export class DeviceSession {
 
   // ── Config ───────────────────────────────────────────────────────────────
 
+  private applyDeviceState(snapshot: NativeDeviceStateSnapshot): void {
+    if (this.phase !== "running" || !Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0 ||
+        !Number.isSafeInteger(snapshot.revision) || snapshot.revision < 0 || !snapshot.state) return;
+    const previous = this.deviceStateVersion;
+    if (previous && (snapshot.generation < previous.generation ||
+        (snapshot.generation === previous.generation && snapshot.revision <= previous.revision))) return;
+    this.deviceStateVersion = { generation: snapshot.generation, revision: snapshot.revision };
+    const previousState = this.observedDeviceState;
+    const { hingeAngle, physicalOrientation, tableMode } = snapshot.state;
+    this.observedDeviceState = { hingeAngle, physicalOrientation, tableMode };
+    if (!previousState || previousState.hingeAngle !== hingeAngle ||
+        previousState.physicalOrientation !== physicalOrientation || previousState.tableMode !== tableMode) {
+      this.broadcastConfig();
+    }
+  }
+
   screenConfig(): {
     width: number;
     height: number;
@@ -2160,6 +2198,7 @@ export class DeviceSession {
     physicalOrientation?: HingePhysicalOrientation;
     tableMode?: boolean;
     tableModeAvailable?: boolean;
+    observedDeviceState?: NativeHingeState;
   } {
     return {
       width: this.width,
@@ -2173,6 +2212,7 @@ export class DeviceSession {
       ...(this.supportsHingeAngle ? { hingePose: this.hingePose, tableModeAvailable: isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation) } : {}),
       ...(this.supportsHingeAngle && this.hingePhysicalOrientation !== undefined ? { physicalOrientation: this.hingePhysicalOrientation } : {}),
       ...(this.tableMode !== undefined ? { tableMode: this.tableMode } : {}),
+      ...(this.observedDeviceState !== undefined ? { observedDeviceState: this.observedDeviceState } : {}),
     };
   }
 

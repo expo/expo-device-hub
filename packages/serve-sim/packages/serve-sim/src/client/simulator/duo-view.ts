@@ -30,6 +30,11 @@ export function duoPresetView(pose: HingePose): DuoView {
   return captureView(duoPose(angle, pose, undefined, undefined, 0), pose);
 }
 
+/** Complete native pose discovery while preserving a locally chosen view. */
+export function duoObservedView(current: DuoView | null, pose: HingePose, localIntent: boolean): DuoView {
+  return localIntent && current ? current : duoPresetView(pose);
+}
+
 /** The view saved before another client turned the device face down. */
 export type DuoFaceDownFraming = { saved: DuoView | null; held: boolean };
 

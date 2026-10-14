@@ -255,14 +255,26 @@ describe("iPhone Duo intended display during native handoff", () => {
 
   test("a remembered preset is dropped when another client turns the device over", () => {
     // Tent turned face up must stop selecting the cover.
-    expect(duoPhysicalPoseChanged("tent", "faceup")).toBe(true);
-    expect(duoPhysicalPoseChanged("book", "facedown")).toBe(true);
+    expect(duoPhysicalPoseChanged("tent", "facedown", "faceup")).toBe(true);
+    expect(duoPhysicalPoseChanged("book", "portrait", "facedown")).toBe(true);
+    expect(duoPhysicalPoseChanged("tent", undefined, "faceup")).toBe(true);
     // Hinge edits keep the preset's physical orientation, such as Laptop on a table.
-    expect(duoPhysicalPoseChanged("laptop", "landscape-left")).toBe(false);
-    expect(duoPhysicalPoseChanged("tent", "facedown")).toBe(false);
-    // Rotation leaves the physical orientation unknown.
-    expect(duoPhysicalPoseChanged("tent", undefined)).toBe(false);
-    expect(duoPhysicalPoseChanged(null, "faceup")).toBe(false);
+    expect(duoPhysicalPoseChanged("laptop", "portrait", "landscape-left")).toBe(false);
+    expect(duoPhysicalPoseChanged("tent", "landscape-left", "facedown")).toBe(false);
+    // An unknown orientation and a preset without one are not turns.
+    expect(duoPhysicalPoseChanged("tent", "facedown", undefined)).toBe(false);
+    expect(duoPhysicalPoseChanged(null, "portrait", "faceup")).toBe(false);
+  });
+
+  test("a stale observation is not a turn when a local preset is acknowledged before native observation", () => {
+    // Book was observed when Tent was requested. The unchanged observation
+    // after the acknowledgement must not discard Tent's framing.
+    expect(duoPhysicalPoseChanged("tent", "portrait", "portrait")).toBe(false);
+    expect(duoPhysicalPoseChanged("tent", "faceup", "faceup")).toBe(false);
+    expect(duoPhysicalPoseChanged("laptop", "portrait", "portrait")).toBe(false);
+    expect(duoPhysicalPoseChanged("book", "facedown", "facedown")).toBe(false);
+    expect(duoPhysicalPoseChanged("laptop", "portrait", "landscape-left")).toBe(false);
+    expect(duoPhysicalPoseChanged("laptop", "landscape-left", "portrait")).toBe(true);
   });
 
   test("uses the native active panel until the hinge angle is known", () => {

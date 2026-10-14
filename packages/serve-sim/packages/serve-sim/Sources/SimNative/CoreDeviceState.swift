@@ -1,5 +1,11 @@
 import Foundation
 
+struct DeviceStateSnapshot: Codable, Equatable, Sendable {
+    let generation: UInt64
+    let revision: UInt64
+    let state: CoreDeviceBridge.HingeState
+}
+
 struct DeviceMotionSample: Decodable, Sendable {
     struct Property: Decodable, Sendable {
         let int: Int?
@@ -22,6 +28,13 @@ enum DeviceStateUpdate: Sendable {
 struct PhysicalOrientationSample: Sendable {
     let orientation: String?
     let timestamp: Double
+    let readCompletedAt: Double?
+
+    init(orientation: String?, timestamp: Double, readCompletedAt: Double? = nil) {
+        self.orientation = orientation
+        self.timestamp = timestamp
+        self.readCompletedAt = readCompletedAt
+    }
 }
 
 enum ObservedPhysicalOrientation {
@@ -39,13 +52,20 @@ enum ObservedPhysicalOrientation {
 }
 
 struct ObservedDeviceState {
+    let generation: UInt64
+    private(set) var revision: UInt64 = 0
     private(set) var state = CoreDeviceBridge.HingeState()
-    private var angleTimestamp: Double?
+    private(set) var angleTimestamp: Double?
     private var motionTimestamp: Double?
-    private var orientationTimestamp: Double?
+    private(set) var orientationTimestamp: Double?
+
+    init(generation: UInt64) { self.generation = generation }
+
+    var snapshot: DeviceStateSnapshot { .init(generation: generation, revision: revision, state: state) }
 
     @discardableResult
     mutating func apply(_ update: DeviceStateUpdate, since startedAt: Double) -> Bool {
+        let previous = state
         switch update {
         case .angle(let sample):
             guard fresh(sample.timestamp, since: startedAt, after: angleTimestamp) else { return false }
@@ -67,6 +87,7 @@ struct ObservedDeviceState {
             orientationTimestamp = sample.timestamp
             state.orientation = sample.orientation
         }
+        if state != previous { revision &+= 1 }
         return true
     }
 
@@ -78,6 +99,36 @@ struct ObservedDeviceState {
     mutating func clear() -> Bool {
         guard state != CoreDeviceBridge.HingeState() else { return false }
         state = CoreDeviceBridge.HingeState()
+        revision &+= 1
         return true
+    }
+}
+
+// @ref LLP 0004#live-pose-observation — admission fences do not replace preview or recording observations
+struct HingeControlEligibility {
+    var angle: (value: Double, sentAt: Double)?
+    var orientation: (value: String, sentAt: Double)?
+    private var orientationUncertainUntil: Double?
+
+    mutating func recordOrientationRead(_ sample: PhysicalOrientationSample, since startedAt: Double) {
+        guard let orientation, let end = sample.readCompletedAt,
+              sample.timestamp.isFinite, end.isFinite,
+              sample.timestamp >= startedAt, end >= sample.timestamp,
+              sample.timestamp <= orientation.sentAt, orientation.sentAt <= end else { return }
+        orientationUncertainUntil = max(orientationUncertainUntil ?? -.infinity, end)
+    }
+
+    func state(observed: ObservedDeviceState) -> CoreDeviceBridge.HingeState {
+        var state = observed.state
+        if let angle, (observed.angleTimestamp ?? -.infinity) <= angle.sentAt { state.angle = angle.value }
+        if let orientation {
+            if let end = orientationUncertainUntil, orientation.sentAt <= end,
+               (observed.orientationTimestamp ?? -.infinity) <= end {
+                state.orientation = nil
+            } else if (observed.orientationTimestamp ?? -.infinity) <= orientation.sentAt {
+                state.orientation = orientation.value
+            }
+        }
+        return state
     }
 }

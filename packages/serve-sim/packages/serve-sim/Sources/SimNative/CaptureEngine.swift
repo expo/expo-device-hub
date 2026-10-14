@@ -121,6 +121,8 @@ actor CaptureEngine {
     /// The shared H.264 canvas the publisher encodes at, as last reported.
     private var viewerCanvas = Dimensions(width: 0, height: 0)
     private var rebootSuspended = false
+    // The device trait survives reboot while FrameCapture's boot-bound state is cleared.
+    private var isFoldable = false
     private var captureGeneration: UInt64 = 0
     private var recording: NativeVideoRecorder?
     private var recordingStarting = false
@@ -128,6 +130,7 @@ actor CaptureEngine {
     private var recordingFinishTask: Task<NativeRecordingResult, Error>?
     private var recordingAvailability = RecordingAvailability()
     private var recordingStateUnsubscribe: (@Sendable () async -> Void)?
+    private var deviceStateSubscriptions: [UUID: @Sendable () async -> Void] = [:]
     private var lastViewerCanvasSequence: UInt64?
     private var frameContinuation: AsyncStream<Frame>.Continuation?
     private var cancelledWebRTCSessionIds = Set<String>()
@@ -166,6 +169,7 @@ actor CaptureEngine {
                 )
                 frameContinuation.yield(Frame(pixelBuffer: pixelBuffer, timestamp: timestamp, canvas: canvas, captureGeneration: generation))
             }
+            isFoldable = await frameCapture.isFoldable
         } catch {
             frameContinuation.finish()
             self.frameContinuation = nil
@@ -499,6 +503,30 @@ actor CaptureEngine {
         }
     }
 
+    func subscribeDeviceState(_ callback: @escaping @Sendable (DeviceStateSnapshot) -> Void,
+                              onDetach: @escaping @Sendable () async -> Void = {}) async -> @Sendable () async -> Void {
+        guard phase == .running else { await onDetach(); return {} }
+        let id = UUID()
+        let unsubscribe: @Sendable () async -> Void
+        if isFoldable {
+            let removeListener = await CoreDeviceBridge.shared.subscribeDeviceState(udid: deviceUDID, onChange: callback)
+            unsubscribe = { await onDetach(); await removeListener() }
+        } else {
+            callback(await CoreDeviceBridge.shared.observedDeviceState(udid: deviceUDID))
+            unsubscribe = onDetach
+        }
+        guard phase == .running else {
+            await unsubscribe()
+            return {}
+        }
+        deviceStateSubscriptions[id] = unsubscribe
+        return { await self.removeDeviceStateSubscription(id) }
+    }
+
+    private func removeDeviceStateSubscription(_ id: UUID) async {
+        if let unsubscribe = deviceStateSubscriptions.removeValue(forKey: id) { await unsubscribe() }
+    }
+
     func stop() async throws {
         if phase == .stopped { return }
         phase = .stopped
@@ -514,6 +542,9 @@ actor CaptureEngine {
         }
         recording = nil
         await stopRecordingStateUpdates()
+        let subscriptions = Array(deviceStateSubscriptions.values)
+        deviceStateSubscriptions.removeAll()
+        for unsubscribe in subscriptions { await unsubscribe() }
         nativeFrameDeliveryGeneration &+= 1
         nativeFrameDeliveryPending = false
         nativeFrameDeliveryActive = false
@@ -569,7 +600,7 @@ actor CaptureEngine {
         let bridge = CoreDeviceBridge.shared
         let generation = nativeFrameDeliveryGeneration
         // @ref LLP 0001#device-state-metadata — recording consumes only independently observed motion state
-        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { state in mailbox.updateHingeState(state) }
+        let unsubscribe = await bridge.subscribeDeviceState(udid: udid) { snapshot in mailbox.updateHingeState(snapshot.state) }
         guard phase == .running, generation == nativeFrameDeliveryGeneration else { await unsubscribe(); return }
         recordingStateUnsubscribe = unsubscribe
     }
