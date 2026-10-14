@@ -165,7 +165,8 @@ const relayResult = await Bun.build({
   minify: true,
   outdir: distDir,
   naming: "simstream-relay.js",
-  external: ["net"],
+  // node-datachannel is a native addon (simstream's WebRTC transport); ws as in the bundles above.
+  external: ["net", "http", "ws", "node-datachannel"],
 });
 if (!relayResult.success) {
   console.error("Simstream relay build failed:");

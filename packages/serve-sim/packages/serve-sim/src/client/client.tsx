@@ -64,6 +64,7 @@ import { useMediaDrop } from "./hooks/use-media-drop";
 import { useMjpegStream } from "./hooks/use-mjpeg-stream";
 import { useAvccStream } from "./hooks/use-avcc-stream";
 import { useWebRtcStream } from "./hooks/use-webrtc-stream";
+import { useSimstreamRtpStream } from "./simulator/use-simstream-rtp-stream";
 import { useResizableWidth } from "./hooks/use-resizable-width";
 import { useScreenshotToast } from "./hooks/use-screenshot-toast";
 import { useSimulatorResize } from "./hooks/use-simulator-resize";
@@ -727,6 +728,13 @@ function AppWithConfig({
   );
   const useMjpegHttp = streamSettings.httpCodec === "mjpeg";
   const useSimstreamVideo = !useWebRtcVideo && streamSettings.httpCodec === "simstream" && avcc.supported && !forceMjpeg;
+  // simstream over a WebRTC video track plays in the simulator's <video>, like serve-sim's WebRTC.
+  const useSimstreamRtp = useSimstreamVideo && streamSettings.simstreamTransport === "rtp";
+  const simstreamRtp = useSimstreamRtpStream({
+    url: config.url,
+    enabled: useSimstreamRtp && !useDuoPanelFeeds,
+    iceServers: streamSettings.iceServers,
+  });
   const useAvccVideo =
     !useWebRtcVideo &&
     !useMjpegHttp &&
@@ -1635,10 +1643,10 @@ function AppWithConfig({
                 onStreamButton={onStreamButton}
                 onStreamDigitalCrown={onStreamDigitalCrown}
                 onStreamScroll={onStreamScroll}
-                streamMode={useWebRtcVideo ? "webrtc" : useSimstreamVideo ? "simstream" : useAvccVideo ? "avcc" : "mjpeg"}
-                webRtcStream={webrtc.stream}
-                onWebRtcFrame={webrtc.markFrameDecoded}
-                streamError={useWebRtcVideo ? webrtc.error ?? lockedWebRtcError : null}
+                streamMode={useWebRtcVideo || useSimstreamRtp ? "webrtc" : useSimstreamVideo ? "simstream" : useAvccVideo ? "avcc" : "mjpeg"}
+                webRtcStream={useSimstreamRtp ? simstreamRtp.stream : webrtc.stream}
+                onWebRtcFrame={useSimstreamRtp ? undefined : webrtc.markFrameDecoded}
+                streamError={useWebRtcVideo ? webrtc.error ?? lockedWebRtcError : useSimstreamRtp ? simstreamRtp.error : null}
                 onAvccError={() => dispatchAvccFallback("error")}
                 onAvccDecodedFrame={() => dispatchAvccFallback("decoded-frame")}
                 subscribeFrame={useAvccVideo ? undefined : mjpeg.subscribeFrame}
@@ -1891,8 +1899,8 @@ function AppWithConfig({
         streamSettings={streamSettings}
         onStreamPlaybackSettingsChange={streamSettingsState.updatePlayback}
         onStreamEncoderSettingsChange={streamSettingsState.updateEncoder}
-        activeCodec={useWebRtcVideo ? `webrtc/${effectiveWebRtcCodec}` : useSimstreamVideo ? "simstream/h264" : useAvccVideo ? "h264" : "mjpeg"}
-        peerConnection={useDuoPanelFeeds ? duoPanelPeer?.peerConnection ?? null : webrtc.peerConnection}
+        activeCodec={useWebRtcVideo ? `webrtc/${effectiveWebRtcCodec}` : useSimstreamRtp ? "simstream/h264 (RTP)" : useSimstreamVideo ? "simstream/h264" : useAvccVideo ? "h264" : "mjpeg"}
+        peerConnection={useDuoPanelFeeds ? duoPanelPeer?.peerConnection ?? null : useSimstreamRtp ? simstreamRtp.peerConnection : webrtc.peerConnection}
         webrtcSessionId={useDuoPanelFeeds ? duoPanelPeer?.sessionId ?? null : webrtc.sessionId}
         webrtcStatsUrl={useDuoPanelFeeds && duoPanelPeer ? duoPanelPeer.statsUrl : webrtcStatsUrlFrom(config)}
         avccSupported={avcc.supported}

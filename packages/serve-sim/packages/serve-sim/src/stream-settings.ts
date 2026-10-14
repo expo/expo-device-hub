@@ -1,4 +1,6 @@
 export type HttpStreamCodec = "auto" | "mjpeg" | "h264" | "simstream";
+/** How the simstream engine's video reaches the viewer: its WebSocket, or a WebRTC video track (RTP). */
+export type SimstreamTransport = "websocket" | "rtp";
 export type WebRtcStreamCodec = "vp8" | "vp9" | "h264";
 export type WebRtcIceServer = { urls: string[]; username?: string; credential?: string };
 
@@ -6,13 +8,14 @@ export const MAX_MJPEG_STREAM_FPS = 120;
 export const MAX_VIDEO_STREAM_FPS = 140;
 
 export type StreamSettings = (
-  | { transport: "http"; codec?: HttpStreamCodec }
+  | { transport: "http"; codec?: HttpStreamCodec; iceServers?: WebRtcIceServer[] }
   | { transport: "webrtc"; codec: WebRtcStreamCodec; iceServers?: WebRtcIceServer[] }
 ) & Partial<StreamEncoderSettings>;
 
 export interface StreamPlaybackSettings {
   transport: "http" | "webrtc";
   httpCodec: HttpStreamCodec;
+  simstreamTransport: SimstreamTransport;
   webRtcCodec: WebRtcStreamCodec;
   iceServers?: WebRtcIceServer[];
 }
@@ -40,6 +43,7 @@ export const DEFAULT_STREAM_ENCODER_SETTINGS: StreamEncoderSettings = {
 export const DEFAULT_STREAM_CONTROL_SETTINGS: StreamControlSettings = {
   transport: "http",
   httpCodec: "auto",
+  simstreamTransport: "websocket",
   webRtcCodec: "h264",
   ...DEFAULT_STREAM_ENCODER_SETTINGS,
 };
@@ -142,6 +146,9 @@ export function normalizeStreamControlSettings(
     httpCodec: input.httpCodec === "auto" || input.httpCodec === "mjpeg" || input.httpCodec === "h264" || input.httpCodec === "simstream"
       ? input.httpCodec
       : fallback.httpCodec,
+    simstreamTransport: input.simstreamTransport === "websocket" || input.simstreamTransport === "rtp"
+      ? input.simstreamTransport
+      : fallback.simstreamTransport,
     webRtcCodec: input.webRtcCodec === "vp8" || input.webRtcCodec === "vp9" || input.webRtcCodec === "h264"
       ? input.webRtcCodec
       : fallback.webRtcCodec,
@@ -222,6 +229,7 @@ export function streamControlSettingsFrom(
   return normalizeStreamControlSettings({
     transport: "http",
     httpCodec: settings?.codec ?? "auto",
+    iceServers: settings?.iceServers,
     ...encoderSettings,
   });
 }

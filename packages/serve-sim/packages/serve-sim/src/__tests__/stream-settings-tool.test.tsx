@@ -6,6 +6,7 @@ describe("StreamSettingsTool", () => {
   const settings = {
     transport: "http" as const,
     httpCodec: "h264" as const,
+    simstreamTransport: "websocket" as const,
     webRtcCodec: "h264" as const,
     mjpegFps: 24,
     mjpegQuality: 0.8,
@@ -13,6 +14,22 @@ describe("StreamSettingsTool", () => {
     h264Bitrate: 8_000_000,
     h264Fps: 24,
   };
+
+  test("offers simstream's transports only while simstream is the codec", () => {
+    const render = (httpCodec: "h264" | "simstream") => renderToStaticMarkup(
+      <StreamSettingsTool
+        settings={{ ...settings, httpCodec, simstreamTransport: "rtp" }}
+        onPlaybackSettingsChange={() => {}}
+        onEncoderSettingsChange={() => {}}
+        activeCodec="simstream/h264 (RTP)"
+        peerConnection={null}
+        avccSupported
+      />,
+    );
+    expect(render("h264")).not.toContain("simstream transport");
+    expect(render("simstream")).toContain("simstream transport");
+    expect(render("simstream")).toContain('<span class="block truncate">WebRTC (RTP)</span>');
+  });
 
   test("represents custom runtime encoder values instead of selecting a preset", () => {
     const html = renderToStaticMarkup(

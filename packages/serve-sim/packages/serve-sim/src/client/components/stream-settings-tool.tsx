@@ -10,6 +10,7 @@ import { maxDimensionOptions } from "../utils/stream-max-dimension-options";
 import { streamFpsOptions } from "../utils/stream-fps-options";
 import type {
   HttpStreamCodec,
+  SimstreamTransport,
   StreamControlSettings,
   StreamEncoderSettings,
   StreamPlaybackSettings,
@@ -27,6 +28,11 @@ const HTTP_CODEC_OPTIONS = [
   { value: "auto", label: "Auto" },
   { value: "h264", label: "H.264" },
   { value: "mjpeg", label: "MJPEG" },
+  { value: "simstream", label: "simstream" },
+];
+const SIMSTREAM_TRANSPORT_OPTIONS = [
+  { value: "websocket", label: "WebSocket" },
+  { value: "rtp", label: "WebRTC (RTP)" },
 ];
 const WEBRTC_CODEC_OPTIONS = [
   { value: "h264", label: "H.264" },
@@ -172,6 +178,17 @@ export function StreamSettingsTool({
               options={HTTP_CODEC_OPTIONS}
               disabled={!httpActive || !avccSupported}
               onChange={(v) => onPlaybackSettingsChange({ httpCodec: v as HttpStreamCodec })}
+            />
+          </SettingRow>
+        )}
+        {!transportLocked && settings.httpCodec === "simstream" && (
+          <SettingRow icon={<Video className={iconClass} />} label="simstream transport">
+            <SettingSelect
+              label="simstream transport"
+              value={settings.simstreamTransport}
+              options={SIMSTREAM_TRANSPORT_OPTIONS}
+              disabled={!httpActive}
+              onChange={(v) => onPlaybackSettingsChange({ simstreamTransport: v as SimstreamTransport })}
             />
           </SettingRow>
         )}

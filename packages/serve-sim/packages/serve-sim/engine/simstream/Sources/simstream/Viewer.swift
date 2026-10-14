@@ -222,8 +222,13 @@ final class Viewer {
         self.fps = fps
         self.measureQuality = measureQuality
         encodeQueue = DispatchQueue(label: "simstream.encode.\(id)", qos: .userInteractive)
-        congestion = CongestionController(start: min(maxBitrate, 8_000_000),
-                                          min: min(maxBitrate, 1_000_000), max: maxBitrate)
+        // SIMSTREAM_FIXED_BITRATE (bps) pins the bitrate, taking congestion control out of a measurement.
+        if let fixed = ProcessInfo.processInfo.environment["SIMSTREAM_FIXED_BITRATE"].flatMap({ Int($0) }) {
+            congestion = CongestionController(start: fixed, min: fixed, max: fixed)
+        } else {
+            congestion = CongestionController(start: min(maxBitrate, 8_000_000),
+                                              min: min(maxBitrate, 1_000_000), max: maxBitrate)
+        }
         encoder = try VideoEncoder(codec: .h264, width: width, height: height, fps: fps, bitrate: congestion.bitrate)
         attach(encoder)
     }
