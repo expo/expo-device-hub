@@ -85,6 +85,7 @@ export function startPlaybackStallWatchdog({
   readable,
   judgeable,
   publish,
+  capturePaused,
   reconnectedAt,
   failCodec,
   retryTransport,
@@ -95,6 +96,7 @@ export function startPlaybackStallWatchdog({
   /// Whether a frozen decoder would mean anything yet. The panel is fed either way.
   judgeable: () => boolean;
   publish: (report: RTCStatsReport, at: number) => void;
+  capturePaused?: () => Promise<boolean>;
   /// When this codec was last reconnected for a stall.
   reconnectedAt: { current: number | null };
   failCodec: () => void;
@@ -154,6 +156,11 @@ export function startPlaybackStallWatchdog({
     });
     state = next.stalled ? initialPlaybackStallState : next.state;
     if (!next.stalled) return;
+    if (capturePaused) {
+      const paused = await capturePaused();
+      if (reading !== generation || peer() !== pc || !judgeable()) return;
+      if (paused) { invalidate(); return; }
+    }
     const disposition = webRtcFailureDisposition("playback-stall", pc.connectionState, {
       mediaArriving: next.mediaArriving,
     });

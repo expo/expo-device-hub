@@ -93,6 +93,7 @@ const RECORDING_LEASE_MS = 20_000;
 const INVALID_RECORDING_ID_CHAR = /[^A-Za-z0-9_-]/;
 
 class RecordingStartCancelled extends Error {}
+class RecordingStartRebooting extends RecordingStartCancelled {}
 
 type TouchGestureLog = {
   eventId?: number;
@@ -249,7 +250,10 @@ export class DeviceSession {
   private readonly capture: NativeCapture;
   private readonly panels = new Map<number, PanelCapture>();
   private readonly panelRequests = new Set<ServerResponse>();
-  private readonly hid: NativeHid;
+  private hid: NativeHid;
+  private routedHid?: NativeHid;
+  private inputGeneration = 0;
+  private rebootSuspended = false;
   private captureStart?: Promise<void>;
   private phase: "unstarted" | "running" | "stopped" = "unstarted";
 
@@ -279,6 +283,7 @@ export class DeviceSession {
   private readonly detachedHidSockets = new WeakSet<HidSocket>();
   private readonly cleanedUpHidSockets = new WeakSet<HidSocket>();
   private readonly inFlightHidMessages = new WeakMap<HidSocket, number>();
+  private inFlightHidMessageCount = 0;
   private readonly inFlightOrderedMessages = new WeakMap<HidSocket, number>();
   private readonly pendingOrderedMessages = new WeakMap<HidSocket, Set<Promise<void>>>();
   private touchGestureLog?: TouchGestureLog;
@@ -349,21 +354,54 @@ export class DeviceSession {
       this.scheduleScreenRefresh();
       // Discover fold controls without delaying the first frame or inventing
       // an initial angle when CoreDevice has not reported one.
-      void Promise.all([
-        this.hid.supportsHingeAngle(),
-        this.hid.supportsPhysicalOrientation(),
-      ]).then(([supportsHingeAngle, supportsPhysicalOrientation]) => {
-        if (this.phase !== "running") return;
-        this.supportsPhysicalOrientation = supportsPhysicalOrientation;
-        if (supportsHingeAngle) {
-          this.hydrateHingeState();
-          return;
-        }
-        this.supportsHingeAngle = false;
-        this.broadcastConfig();
-      });
+      void this.discoverHingeCapabilities().catch(() => {});
     });
     return this.captureStart;
+  }
+
+  async suspendForReboot(): Promise<void> {
+    this.rebootSuspended = true;
+    this.inputGeneration++;
+    this.softwareKeyboardPendingVisible = undefined;
+    await this.captureStart;
+    // A failed recording POST reports its own error and owns no lease to preserve.
+    // It must settle before suspend, but its failure must not strand reboot input.
+    await this.recordingStart?.catch(() => {});
+    // Disconnect input before replacing HID, including clients that are awaiting admission.
+    this.discardQueuedInput(this.serverInput);
+    this.queueInputCleanup(this.serverInput, true);
+    const sockets = [...this.hidSockets];
+    for (const ws of sockets) {
+      this.discardQueuedInput(ws);
+      this.detachHidSocket(ws);
+      this.finishDetachedHidSocket(ws);
+      ws.close();
+    }
+    while (this.inputQueueDraining || this.inFlightHidMessageCount > 0) {
+      await this.waitForInputStateChange();
+    }
+    await this.hingeControlUpdate;
+    await this.softwareKeyboardSync;
+    for (const panel of this.panels.values()) this.stopPanel(panel);
+    this.latestJpegBuffer = null;
+    this.latestJpegLength = 0;
+    await this.capture.suspendForReboot();
+  }
+
+  async resumeAfterReboot(): Promise<void> {
+    if (this.phase !== "running" || !this.rebootSuspended) return;
+    await this.capture.resumeAfterReboot();
+    if (this.phase !== "running") return;
+    this.hid = new NativeHid(this.udid);
+    this.softwareKeyboardHidden = false;
+    await this.refreshScreenSizeFromNative();
+    if (this.phase !== "running") return;
+    this.hingeControlled = false;
+    this.hingeRotated = false;
+    await this.discoverHingeCapabilities(true);
+    if (this.phase !== "running") return;
+    this.rebootSuspended = false;
+    this.broadcastConfig();
   }
 
   close(): void {
@@ -446,6 +484,10 @@ export class DeviceSession {
       return;
     }
     if (req.method === "POST") {
+      if (this.rebootSuspended) {
+        this.sendJson(res, 503, { error: "capture_rebooting", message: "Wait for boot and fresh capture before starting a recording" });
+        return;
+      }
       try {
         const body = parseJsonBody(await readRequestBody(req, 16_384), "invalid_recording_request");
         if (recordingsShuttingDown) {
@@ -476,6 +518,7 @@ export class DeviceSession {
         this.recordingStartCancelled = false;
         this.cancelledRecordingStart = undefined;
         const starting = this.waitForCapture().then(async () => {
+          if (this.rebootSuspended) throw new RecordingStartRebooting("Capture is rebooting");
           if (this.recordingStartCancelled) {
             this.cancelledRecordingStart = { id: recordingId };
             throw new RecordingStartCancelled("Recording start was cancelled");
@@ -495,8 +538,8 @@ export class DeviceSession {
         this.lastFailedRecording = undefined;
         this.sendJson(res, 200, { recording: true });
       } catch (error) {
-        const status = error instanceof WebRtcSignalingError ? error.status : 500;
-        const code = error instanceof WebRtcSignalingError ? error.code : "recording_start_failed";
+        const status = error instanceof RecordingStartRebooting ? 503 : error instanceof WebRtcSignalingError ? error.status : 500;
+        const code = error instanceof RecordingStartRebooting ? "capture_rebooting" : error instanceof WebRtcSignalingError ? error.code : "recording_start_failed";
         this.sendJson(res, status, { error: code, message: String(error) });
       } finally {
         this.recordingStart = undefined;
@@ -1098,7 +1141,7 @@ export class DeviceSession {
   // ── HID WebSocket ────────────────────────────────────────────────────────
 
   attachHidSocket(ws: HidSocket): void {
-    if (this.phase !== "running" || this.hidSockets.size >= MAX_HID_SOCKETS) {
+    if (this.phase !== "running" || this.rebootSuspended || this.hidSockets.size >= MAX_HID_SOCKETS) {
       ws.close(1013, WS_REASON_INPUT_UNAVAILABLE);
       return;
     }
@@ -1109,7 +1152,7 @@ export class DeviceSession {
     this.activeHidKeyUsages.set(ws, new Set());
     this.axHandledKeyUsages.set(ws, new Set());
     ws.on("message", (data: Buffer) => {
-      if (this.phase !== "running" || this.detachedHidSockets.has(ws)) return;
+      if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws)) return;
       const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
       const isOrderedMessage = buffer[0] === 0x03 || buffer[0] === 0x05 ||
         buffer[0] === 0x06 || buffer[0] === 0x0b || buffer[0] === 0x0e;
@@ -1119,6 +1162,7 @@ export class DeviceSession {
         return;
       }
       this.inFlightHidMessages.set(ws, inFlight + 1);
+      this.inFlightHidMessageCount++;
       if (isOrderedMessage) {
         this.inFlightOrderedMessages.set(ws, (this.inFlightOrderedMessages.get(ws) ?? 0) + 1);
       }
@@ -1132,6 +1176,7 @@ export class DeviceSession {
         .finally(() => {
           const remaining = (this.inFlightHidMessages.get(ws) ?? 1) - 1;
           this.inFlightHidMessages.set(ws, remaining);
+          this.inFlightHidMessageCount--;
           if (isOrderedMessage) {
             const remainingOrdered = (this.inFlightOrderedMessages.get(ws) ?? 1) - 1;
             this.inFlightOrderedMessages.set(ws, remainingOrdered);
@@ -1173,6 +1218,7 @@ export class DeviceSession {
 
   private async handleHidMessage(data: Buffer, ws: HidSocket, priorOrderedMessages?: Promise<void>[]): Promise<void> {
     if (data.length < 1) return;
+    const generation = this.inputGeneration;
     try {
       // Capture startup identifies the active display and configures HID's
       // target before the first gesture can be delivered.
@@ -1180,7 +1226,7 @@ export class DeviceSession {
     } catch {
       return;
     }
-    if (this.phase !== "running") return;
+    if (!this.canRunInputControl(generation)) return;
     const tag = data[0];
     const body = data.length > 1 ? data.subarray(1) : null;
     const json = <T>(): T | null => {
@@ -1218,9 +1264,9 @@ export class DeviceSession {
         if (!m) break;
         this.recordHidEvent(tag, m);
         if (m.page != null && m.usage != null) {
-          this.hid.buttonHid(m.page, m.usage, (m.phase as "down" | "up" | "press") ?? "press");
+          await this.hid.buttonHid(m.page, m.usage, (m.phase as "down" | "up" | "press") ?? "press");
         } else {
-          this.hid.button(m.button);
+          await this.hid.button(m.button);
         }
         break;
       }
@@ -1263,7 +1309,7 @@ export class DeviceSession {
                 return;
               }
             }
-            if (this.phase !== "running" || this.detachedHidSockets.has(ws)) return;
+            if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws)) return;
             if (m.type === "up" && axHandledKeyUsages.delete(m.usage)) return;
             if (m.type === "down") axHandledKeyUsages.delete(m.usage);
             if (m.type === "down" || m.type === "up") await this.updateHidKey(ws, m.type, m.usage);
@@ -1275,13 +1321,15 @@ export class DeviceSession {
       case 0x07: {
         const m = json<{ orientation: string }>();
         if (!m) break;
+        const generation = this.inputGeneration;
         const operation = this.hingeControlUpdate.then(async () => {
           const value = ORIENTATION_BY_NAME[m.orientation];
-          if (this.phase !== "running" || value == null || !await this.hid.orientation(value)) return;
+          if (!this.canRunInputControl(generation) || value == null || !await this.hid.orientation(value)) return;
+          if (!this.canRunInputControl(generation)) return;
           this.hingeRotated = true;
           // Only startup hydration advertises hinge support, after it reads the angle.
           const supportsHingeAngle = this.supportsHingeAngle ?? await this.hid.supportsHingeAngle();
-          if (this.phase !== "running") return;
+          if (!this.canRunInputControl(generation)) return;
           this.recordHidEvent(tag, m);
           if (supportsHingeAngle) {
             // Rotation is panel-relative; only a named pose establishes the
@@ -1311,19 +1359,19 @@ export class DeviceSession {
         const m = json<{ option: string; enabled: boolean }>();
         if (m) {
           this.recordHidEvent(tag, m);
-          this.hid.caDebug(m.option, m.enabled);
+          await this.hid.caDebug(m.option, m.enabled);
         }
         break;
       }
       case 0x09:
         this.recordHidEvent(tag, {});
-        this.hid.memoryWarning();
+        await this.hid.memoryWarning();
         break;
       case 0x0a: {
         const m = json<{ delta: number }>();
         if (m) {
           this.recordHidEvent(tag, m);
-          this.hid.digitalCrown(m.delta);
+          await this.hid.digitalCrown(m.delta);
         }
         break;
       }
@@ -1351,7 +1399,7 @@ export class DeviceSession {
       }
       case 0x0c:
         this.recordHidEvent(tag, {});
-        this.hid.softwareKeyboard();
+        await this.hid.softwareKeyboard();
         break;
       case 0x0d: {
         const m = json<{ visible: boolean }>();
@@ -1492,13 +1540,36 @@ export class DeviceSession {
     }
   }
 
+  private async discoverHingeCapabilities(refreshState = false): Promise<void> {
+    const generation = this.inputGeneration;
+    const hid = this.hid;
+    await Promise.all([
+      hid.supportsHingeAngle(),
+      hid.supportsPhysicalOrientation(),
+    ]).then(async ([supportsHingeAngle, supportsPhysicalOrientation]) => {
+      if (!this.canReadHingeState(generation, refreshState)) return;
+      this.supportsPhysicalOrientation = supportsPhysicalOrientation;
+      if (supportsHingeAngle) {
+        await this.hydrateHingeState(refreshState);
+        return;
+      }
+      this.supportsHingeAngle = false;
+      this.broadcastConfig();
+    });
+  }
+
   /** Seed the hinge from native before advertising it, so clients never see support without state. */
-  private hydrateHingeState(): void {
+  private hydrateHingeState(refreshState = false): Promise<void> {
+    const generation = this.inputGeneration;
     const operation = this.hingeControlUpdate.then(async () => {
-      if (!this.hingeControlled || this.hingeAngle === undefined) {
+      if (!this.canReadHingeState(generation, refreshState)) return;
+      if (refreshState || !this.hingeControlled || this.hingeAngle === undefined) {
         const state = await this.hid.hingeState();
-        if (this.phase !== "running") return;
-        if (this.hingeControlled) {
+        if (!this.canReadHingeState(generation, refreshState)) return;
+        if (refreshState) {
+          this.applyNativeHingeState(state);
+          if (state.hingeAngle !== undefined) this.saveHingeState();
+        } else if (this.hingeControlled) {
           this.hingeAngle = state.hingeAngle;
           this.saveHingeState();
         } else {
@@ -1509,6 +1580,7 @@ export class DeviceSession {
       this.broadcastConfig();
     });
     this.hingeControlUpdate = operation.catch(() => {});
+    return operation;
   }
 
   private applyNativeHingeState(state: NativeHingeState): void {
@@ -1520,15 +1592,24 @@ export class DeviceSession {
     if (this.hingeRotated) this.saveHingeState();
   }
 
+  private canReadHingeState(generation: number, restoring: boolean): boolean {
+    return this.phase === "running" && generation === this.inputGeneration && (!this.rebootSuspended || restoring);
+  }
+
+  private canRunInputControl(generation: number): boolean {
+    return this.phase === "running" && !this.rebootSuspended && generation === this.inputGeneration;
+  }
+
   /** Keep pose sequences ordered across sliders, presets, and legacy CLI clients. */
   private queueHingeControl(command: HingeControlCommand): Promise<boolean> {
+    const generation = this.inputGeneration;
     const operation = this.hingeControlUpdate.then(async () => {
-      if (this.phase !== "running") return false;
+      if (!this.canRunInputControl(generation)) return false;
       if (!this.hingeControlled && this.hingeAngle === undefined) {
         // Seed before the first save so an early command keeps the saved
         // orientation, even when the command fails.
         const state = await this.hid.hingeState();
-        if (this.phase !== "running") return false;
+        if (!this.canRunInputControl(generation)) return false;
         this.applyNativeHingeState(state);
       }
       if (command.control === "table" && command.value && !isTableModeAvailable(this.hingeAngle, this.hingePhysicalOrientation)) return false;
@@ -1538,7 +1619,7 @@ export class DeviceSession {
           // Confirmed angles come from this session's commands. Read the live
           // hinge once so a device that was already half open can turn over.
           const { hingeAngle } = await this.hid.hingeState();
-          if (this.phase !== "running") return false;
+          if (!this.canRunInputControl(generation)) return false;
           this.hingeAngle = hingeAngle;
         }
         if (!(this.hingeAngle !== undefined && this.hingeAngle > 0 && this.hingeAngle < 180)) return false;
@@ -1548,6 +1629,7 @@ export class DeviceSession {
         : command.control === "physical" ? await this.hid.setPhysicalOrientation(command.value)
         : command.control === "table" ? await this.hid.setTableMode(command.value)
         : await this.hid.setHingeAngle(command.value);
+      if (!this.canRunInputControl(generation)) return false;
       if (ok) {
         const state = hingeControlState(command);
         this.supportsHingeAngle = true;
@@ -1563,7 +1645,7 @@ export class DeviceSession {
         // panel. Recover actual state before the failure ack permits a retry.
         this.hingePose = null;
         const recovered = await this.hid.hingeState();
-        if (this.phase !== "running") return false;
+        if (!this.canRunInputControl(generation)) return false;
         this.hingeAngle = recovered.hingeAngle ?? this.hingeAngle;
         this.tableMode = recovered.tableMode;
         this.hingePhysicalOrientation = recovered.physicalOrientation ?? this.hingePhysicalOrientation;
@@ -1575,7 +1657,7 @@ export class DeviceSession {
         });
         try { await this.refreshScreenSizeFromNative(); }
         catch { /* Preserve the last readable screen through a transient failure. */ }
-        if (this.phase !== "running") return false;
+        if (!this.canRunInputControl(generation)) return false;
         this.broadcastConfig();
       }
       return ok;
@@ -1597,8 +1679,9 @@ export class DeviceSession {
     this.softwareKeyboardPendingVisible = visible;
     if (this.softwareKeyboardSyncPending) return;
     this.softwareKeyboardSyncPending = true;
+    const generation = this.inputGeneration;
     this.softwareKeyboardSync = this.softwareKeyboardSync
-      .then(() => this.drainSoftwareKeyboardSync())
+      .then(() => this.drainSoftwareKeyboardSync(generation))
       .finally(() => {
         this.softwareKeyboardSyncPending = false;
       });
@@ -1618,7 +1701,7 @@ export class DeviceSession {
   async copyPasteboard(): Promise<PasteboardReadResult> {
     // Capture startup configures HID's target, as for viewer input.
     await this.waitForCapture();
-    if (this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
+    if (this.rebootSuspended || this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
     let cleanupWarning: string | null = null;
     let copied: PasteboardReadResult;
     try {
@@ -1731,7 +1814,7 @@ export class DeviceSession {
   }
 
   private queueInputOperation(ws: HidSocket, run: () => Promise<void>, options: { clipboard?: boolean } = {}): Promise<void> | null {
-    if (this.phase !== "running" || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return null;
+    if (this.phase !== "running" || this.rebootSuspended || this.detachedHidSockets.has(ws) || this.overloadedHidSockets.has(ws)) return null;
     const queue = this.inputOperationQueues.get(ws) ?? [];
     if (queue.length >= MAX_PENDING_INPUT_OPERATIONS_PER_SOCKET) {
       if (ws !== this.serverInput) this.overloadHidSocket(ws);
@@ -1908,27 +1991,31 @@ export class DeviceSession {
       }
     } finally {
       this.inputQueueDraining = false;
+      this.notifyInputStateChanged();
       if (this.inputSocketOrder.length > 0) void this.drainInputOperations();
     }
   }
 
-  private async drainSoftwareKeyboardSync(): Promise<void> {
-    while (this.softwareKeyboardPendingVisible !== undefined) {
+  private async drainSoftwareKeyboardSync(generation: number): Promise<void> {
+    while (this.canRunInputControl(generation) && this.softwareKeyboardPendingVisible !== undefined) {
       const visible = this.softwareKeyboardPendingVisible;
       this.softwareKeyboardPendingVisible = undefined;
-      await this.setSoftwareKeyboardVisible(visible);
+      await this.setSoftwareKeyboardVisible(visible, generation);
     }
   }
 
-  private async setSoftwareKeyboardVisible(visible: boolean): Promise<void> {
+  private async setSoftwareKeyboardVisible(visible: boolean, generation: number): Promise<void> {
+    if (!this.canRunInputControl(generation)) return;
+    const hid = this.hid;
     if (visible) {
       debugKeyboard("show requested, hidden=%s", this.softwareKeyboardHidden);
       if (!this.softwareKeyboardHidden) return;
       this.softwareKeyboardHidden = false;
-      this.hid.softwareKeyboard();
+      await hid.softwareKeyboard();
       return;
     }
     const keyboardVisible = await isSoftwareKeyboardVisible(this.udid);
+    if (!this.canRunInputControl(generation)) return;
     debugKeyboard(
       "hide requested, keyboard=%s hidden=%s",
       keyboardVisible,
@@ -1936,7 +2023,7 @@ export class DeviceSession {
     );
     if (this.softwareKeyboardHidden || !keyboardVisible) return;
     this.softwareKeyboardHidden = true;
-    this.hid.softwareKeyboard();
+    await hid.softwareKeyboard();
   }
 
   private recordTouchEvent(payload: { type: string; x: number; y: number; edge?: number }): void {
@@ -2111,13 +2198,15 @@ export class DeviceSession {
   }
 
   private async readScreenFromNative(): Promise<boolean> {
+    const hid = this.hid;
     const screen = await this.capture.screenSize();
-    if (this.phase !== "running") return false;
+    if (this.phase !== "running" || hid !== this.hid) return false;
     const previous = this.nativeScreen;
     let changed = false;
-    if (!previous || screen.screenId !== previous.screenId) {
-      await this.hid.setScreen(screen.screenId ?? 0);
-      if (this.phase !== "running") return false;
+    if (this.routedHid !== hid || !previous || screen.screenId !== previous.screenId) {
+      await hid.setScreen(screen.screenId ?? 0);
+      if (this.phase !== "running" || hid !== this.hid) return false;
+      this.routedHid = hid;
       changed = true;
     }
     // Encoders can publish smaller frames than the native framebuffer. Only a
@@ -2234,6 +2323,14 @@ export function getDeviceSession(udid: string, initialStreamSettings?: StreamSet
     }
   }
   return session;
+}
+
+export async function suspendDeviceSessionForReboot(udid: string): Promise<void> {
+  await sessions.get(udid)?.suspendForReboot();
+}
+
+export async function resumeDeviceSessionAfterReboot(udid: string): Promise<void> {
+  await sessions.get(udid)?.resumeAfterReboot();
 }
 
 export function closeDeviceSession(udid: string): void {

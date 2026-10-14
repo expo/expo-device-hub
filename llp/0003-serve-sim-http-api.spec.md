@@ -5,7 +5,7 @@
 **Systems:** ServeSim, HubClient
 **Author:** Gabe Debes
 **Date:** 2026-09-23
-**Revised:** 2026-10-13 (rotation readback and app actions; clipboard; server-wide preview sharing)
+**Revised:** 2026-10-14 (rotation readback and app actions; clipboard; server-wide preview sharing; capture reboot status and recording admission)
 **Related:** LLP 0001, LLP 0002
 
 > File paths such as `src/…` are relative to `packages/serve-sim/packages/serve-sim`, unless the text gives a path from the repository root.
@@ -59,6 +59,16 @@ recording; an existing `recording.mp4` or `session.json` is preserved. A
 `DELETE` that arrives before its `POST` cancels that recording ID for two
 minutes. Repeating `DELETE` during or after finalization returns the same
 result until another recording starts.
+
+### Recording reboot state
+
+During an intentional capture reboot, `/webrtc/stats` includes `capture.rebooting: true`
+until capture resumes from fresh frames. Serve-sim preview watchdogs defer failure classification
+while it is true. An absent field on older hosts does not imply a pause. New recording
+POSTs receive HTTP 503 `capture_rebooting`; an existing recording still accepts lease
+renewal and stop [observed: `Sources/SimNative/CaptureEngine.swift`, `src/device-session.ts`, and
+`src/client/hooks/use-webrtc-stream.ts`].
+
 
 ## Pasteboard
 

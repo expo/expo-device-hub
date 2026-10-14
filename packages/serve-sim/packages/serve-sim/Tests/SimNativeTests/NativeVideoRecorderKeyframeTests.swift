@@ -6,10 +6,10 @@ import XCTest
 
 /// Verifies keyframe requests during continuous output and after a source pause.
 final class NativeVideoRecorderKeyframeTests: XCTestCase {
-    private func frame() throws -> CVPixelBuffer {
+    private func frame(width: Int = 120, height: Int = 240) throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
         let attributes: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [:]]
-        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 120, 240, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, width, height, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
                                            attributes as CFDictionary, &buffer), kCVReturnSuccess)
         return try XCTUnwrap(buffer)
     }
@@ -42,7 +42,24 @@ final class NativeVideoRecorderKeyframeTests: XCTestCase {
             samples.append((CMSampleBufferGetPresentationTimeStamp(sample).seconds,
                             attachments?.first?[kCMSampleAttachmentKey_NotSync] as? Bool != true))
         }
-        return samples.sorted { $0.seconds < $1.seconds }
+        XCTAssertEqual(reader.status, .completed)
+        XCTAssertEqual(tracks.count, 1)
+        let decoder = try AVAssetReader(asset: asset)
+        let decoded = AVAssetReaderTrackOutput(track: try XCTUnwrap(tracks.first), outputSettings: [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ])
+        decoder.add(decoded)
+        XCTAssertTrue(decoder.startReading())
+        var decodedCount = 0
+        while let sample = decoded.copyNextSampleBuffer() {
+            let buffer = try XCTUnwrap(CMSampleBufferGetImageBuffer(sample))
+            XCTAssertEqual(CVPixelBufferGetWidth(buffer), 120)
+            XCTAssertEqual(CVPixelBufferGetHeight(buffer), 240)
+            decodedCount += 1
+        }
+        XCTAssertEqual(decoder.status, .completed)
+        XCTAssertGreaterThan(decodedCount, 10)
+        return samples
     }
 
     func testKeyframesAreAtMostOneSecondApart() async throws {
@@ -69,4 +86,34 @@ final class NativeVideoRecorderKeyframeTests: XCTestCase {
         let resumed = try XCTUnwrap(gaps.first?.1, "no pause in \(samples.map(\.seconds))")
         XCTAssertTrue(resumed.key, "the sample at \(resumed.seconds) s after the pause is not a keyframe")
     }
+    func testShortPauseResumesWithKeyframeAndStrictlyIncreasingPTS() async throws {
+        let samples = try await record { mailbox, pixels in
+            try await Task.sleep(for: .milliseconds(300))
+            mailbox.setActive(false)
+            try await Task.sleep(for: .milliseconds(200))
+            mailbox.setActive(true)
+            mailbox.publish(pixels, timestamp: CMTime(value: 2, timescale: 60), wallClock: Date())
+            try await Task.sleep(for: .milliseconds(300))
+        }
+        let pairs = Array(zip(samples, samples.dropFirst()))
+        XCTAssertTrue(pairs.allSatisfy { $1.seconds > $0.seconds })
+        let resumed = try XCTUnwrap(pairs.first { $1.seconds - $0.seconds > 0.15 }?.1)
+        XCTAssertTrue(resumed.key)
+    }
+
+    func testChangedSourceDimensionsResumeInTheSameH264Track() async throws {
+        let samples = try await record { mailbox, _ in
+            try await Task.sleep(for: .milliseconds(300))
+            mailbox.setActive(false)
+            try await Task.sleep(for: .milliseconds(200))
+            let changed = try frame(width: 240, height: 120)
+            mailbox.setActive(true)
+            mailbox.publish(changed, timestamp: CMTime(value: 3, timescale: 60), wallClock: Date())
+            try await Task.sleep(for: .milliseconds(500))
+        }
+        XCTAssertGreaterThan(samples.filter { $0.seconds > 0.5 }.count, 10)
+        let resumed = try XCTUnwrap(zip(samples, samples.dropFirst()).first { $1.seconds - $0.seconds > 0.15 }?.1)
+        XCTAssertTrue(resumed.key)
+    }
+
 }

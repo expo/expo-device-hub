@@ -10,8 +10,9 @@ import { type CaptureMeta } from "./store";
 
 export interface RebootDeps {
   runtime?: CaptureRuntime;
-  /** Close the device's preview session (its capture and HID) before the device shuts down. */
+  /** Suspend boot-bound capture/HID without finalizing an active recording. */
   closeSession?: (udid: string) => void | Promise<void>;
+  resumeSession?: (udid: string) => Promise<void>;
   shutdown?: (udid: string) => Promise<void>;
   boot?: (udid: string) => Promise<void>;
   rearm?: (udid: string) => Promise<void>;
@@ -98,7 +99,8 @@ export async function rebootWithCapture(
 
   // Loaded when a reboot runs: the CLI imports this module at startup, and the device session
   // loads the native capture and HID code.
-  const closeSession = deps.closeSession ?? (async (id: string) => (await import("../device-session")).closeDeviceSession(id));
+  const closeSession = deps.closeSession ?? (async (id: string) => (await import("../device-session")).suspendDeviceSessionForReboot(id));
+  const resumeSession = deps.resumeSession ?? (async (id: string) => (await import("../device-session")).resumeDeviceSessionAfterReboot(id));
   const shutdown = deps.shutdown ?? shutdownDevice;
   const boot = deps.boot ?? bootDevice;
   const rearm = deps.rearm ?? rearmCapabilities;
@@ -108,12 +110,12 @@ export async function rebootWithCapture(
     runtime.setDeviceCaptureEnabled(udid, false);
     try {
       await runtime.disableForDevice(udid);
-      // As the preview's shutdown control does: a session kept across the reboot would hold the
-      // previous boot's CoreDevice and HID state, and input (Duo taps) would stop reaching the app.
+      // @ref LLP 0001#recording-reboot-recovery — preserve the writer while replacing boot-bound capture and HID.
       await closeSession(udid);
       await shutdown(udid);
       await boot(udid);
       await rearm(udid);
+      await resumeSession(udid);
       if (!enabled) return runtime.metaFor(udid);
       try {
         return await runtime.enableForDevice(udid, sessionFields);

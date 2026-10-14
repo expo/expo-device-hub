@@ -91,12 +91,12 @@ async function senderStats(): Promise<any> {
 }
 
 /** One receive-only H.264 viewer, so the shared canvas and the resize step are live. */
-async function openViewer(): Promise<{ close: () => void } | null> {
+async function openViewer(codec: "h264" | "vp8" = "h264"): Promise<{ close: () => void } | null> {
   const werift: any = await import("werift");
   const pc = new werift.RTCPeerConnection({
     codecs: { video: [new werift.RTCRtpCodecParameters({
-      mimeType: "video/H264", clockRate: 90000, payloadType: 102,
-      parameters: "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f",
+      mimeType: codec === "h264" ? "video/H264" : "video/VP8", clockRate: 90000, payloadType: 102,
+      parameters: codec === "h264" ? "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f" : undefined,
     })] },
   });
   pc.addTransceiver("video", { direction: "recvonly" });
@@ -104,7 +104,7 @@ async function openViewer(): Promise<{ close: () => void } | null> {
   const response = await fetch(`${base}${helper}/webrtc/offer`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ type: "offer", sdp: pc.localDescription.sdp, sessionId: crypto.randomUUID(), codec: "h264" }),
+    body: JSON.stringify({ type: "offer", sdp: pc.localDescription.sdp, sessionId: crypto.randomUUID(), codec }),
   });
   if (!response.ok) throw new Error(`offer failed: ${response.status}`);
   await pc.setRemoteDescription({ type: "answer", sdp: (await response.json() as { sdp: string }).sdp });
@@ -140,7 +140,7 @@ test.skipIf(!device)("rejects recording IDs with control characters", async () =
 
 test.skipIf(!device)("records the simulator to a native-size H.264 file with a manifest", async () => {
   const { socket, config, frames } = await openInputSocket();
-  const viewer = await openViewer();
+  let viewer = await openViewer();
   const poses: Array<[ConfigFrame, number]> = [];
   try {
     expect(config.width).toBeGreaterThan(0);
@@ -168,6 +168,9 @@ test.skipIf(!device)("records the simulator to a native-size H.264 file with a m
     } else {
       await Bun.sleep(3000);
     }
+    viewer?.close();
+    viewer = await openViewer("vp8");
+    await Bun.sleep(1000);
     const elapsed = (Date.now() - startedAt) / 1000;
 
     const stopped = await recording(null);

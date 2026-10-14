@@ -226,6 +226,14 @@ private func u32(_ v: Int) -> UInt32 {
         try await engine.stop()
     }
 
+    @NodeMethod func suspendForReboot() async {
+        await engine.suspendForReboot()
+    }
+
+    @NodeMethod func resumeAfterReboot() async throws {
+        try await engine.resumeAfterReboot()
+    }
+
     @NodeMethod func startRecording(_ outputDirectory: String) async throws {
         try await engine.startRecording(outputDirectory: outputDirectory)
     }

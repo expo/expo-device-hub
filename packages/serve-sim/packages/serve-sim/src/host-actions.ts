@@ -413,8 +413,6 @@ async function runProcedureAsync(action: ProcedureAction, raw: unknown): Promise
     case "capture.reboot": {
       const p = parseParams(action, raw);
       const { rebootWithCapture } = await import("./capture");
-      const { closeDeviceSession } = await import("./device-session");
-      closeDeviceSession(p.udid);
       try {
         const meta = p.fields ? await rebootWithCapture(p.udid, p.enabled, {}, p.fields) : await rebootWithCapture(p.udid, p.enabled);
         // The device rebooted, but capture did not start: report a failed action, not a toggle.

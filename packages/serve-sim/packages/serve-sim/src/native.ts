@@ -49,6 +49,8 @@ interface SimHIDHandle {
 
 interface SimCaptureHandle {
   start(): Promise<void>;
+  suspendForReboot(): Promise<void>;
+  resumeAfterReboot(): Promise<void>;
   startRecording(outputDirectory: string): Promise<void>;
   stopRecording(): Promise<string>;
   updateStreamSettings(
@@ -333,6 +335,14 @@ export class NativeCapture {
   /** Begin capturing. Throws if the device isn't booted. */
   start(): Promise<void> {
     return this.handle.start();
+  }
+
+  suspendForReboot(): Promise<void> {
+    return this.handle.suspendForReboot();
+  }
+
+  resumeAfterReboot(): Promise<void> {
+    return this.handle.resumeAfterReboot();
   }
 
   startRecording(outputDirectory: string): Promise<void> {

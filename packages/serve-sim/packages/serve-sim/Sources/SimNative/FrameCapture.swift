@@ -697,14 +697,14 @@ actor FrameCapture {
         displayRefreshTask?.cancel()
     }
 
-    func stop() {
+    func stop(preservingObservers: Bool = false) {
         captureGeneration &+= 1
         displayInfoTask?.cancel()
         displayInfoTask = nil
         displayRefreshTask?.cancel()
         displayRefreshTask = nil
         displayRefreshRequested = false
-        screenObservers.removeAll()
+        if !preservingObservers { screenObservers.removeAll() }
         deviceUDID = nil
         authoritativeDisplay = nil
         displayConfigurationReady = false

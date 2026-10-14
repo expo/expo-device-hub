@@ -4,6 +4,8 @@ import Foundation
 import LiveKitWebRTC
 import StreamingPolicy
 
+typealias SharedWebRTCEncodeFrame = @Sendable (CVPixelBuffer, Bool, Int, Int) async -> H264Encoder.Encoded?
+
 private typealias EncoderCallback = (LKRTCEncodedImage, any LKRTCCodecSpecificInfo) -> Bool
 
 /// Per-proxy counters, so a peer that never sends video shows which step it is missing.
@@ -25,8 +27,8 @@ final class SharedWebRTCEncoderFactory: NSObject, LKRTCVideoEncoderFactory {
     private let shared: SharedWebRTCEncoder
     private let h264Allowed: () -> Bool
 
-    init(bitrate: Int, fps: Int, h264Allowed: @escaping () -> Bool) {
-        shared = SharedWebRTCEncoder(bitrate: bitrate, fps: fps)
+    init(bitrate: Int, fps: Int, h264Allowed: @escaping () -> Bool, encodeFrame: SharedWebRTCEncodeFrame? = nil) {
+        shared = SharedWebRTCEncoder(bitrate: bitrate, fps: fps, encodeFrame: encodeFrame)
         self.h264Allowed = h264Allowed
     }
 
@@ -45,6 +47,18 @@ final class SharedWebRTCEncoderFactory: NSObject, LKRTCVideoEncoderFactory {
 
     func requestIDR() {
         shared.requestIDR()
+    }
+
+    func prepareFrame(_ buffer: CVPixelBuffer) -> Bool {
+        shared.prepareFrame(buffer)
+    }
+
+    func suspendForReboot() {
+        shared.suspendForReboot()
+    }
+
+    func resumeAfterReboot() {
+        shared.resumeAfterReboot()
     }
 
     func updateFps(_ fps: Int) {
@@ -112,6 +126,7 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
     private let queue = DispatchQueue(label: "webrtc-shared-h264", qos: .userInteractive)
     private let queueKey = DispatchSpecificKey<Bool>()
     private let encoder: H264Encoder
+    private let encodeFrame: SharedWebRTCEncodeFrame
     private var policy: SharedH264Policy
     private var callbacks: [Int: (EncoderCallback, LKRTCH264PacketizationMode)] = [:]
     private var packetizationModes: [Int: LKRTCH264PacketizationMode] = [:]
@@ -123,6 +138,9 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
     private var nextPeer = 0
     private var backlog = SharedFrameBacklog()
     private var queuedFrame: QueuedFrame?
+    private var captureSuspended = false
+    private var captureEpoch: UInt64 = 0
+    private static let captureEpochKey = "expo.serve-sim.webrtc.captureEpoch" as CFString
     private var stopped = false
     private var encodedFrames: UInt64 = 0
     private var fallbacks: UInt64 = 0
@@ -137,10 +155,15 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
         peers[peer] = value
     }
 
-    init(bitrate: Int, fps: Int) {
+    init(bitrate: Int, fps: Int, encodeFrame: SharedWebRTCEncodeFrame? = nil) {
         self.fps = fps
         encoder = H264Encoder(fps: fps, bitrate: bitrate,
                               constrainedBaseline: true, dynamicBitrate: true)
+        let encoder = self.encoder
+        self.encodeFrame = encodeFrame ?? { buffer, forceIDR, bitrate, fps in
+            await encoder.update(fps: fps, bitrate: bitrate)
+            return try? await encoder.encode(buffer, forceKeyframe: forceIDR)
+        }
         policy = SharedH264Policy(defaultBitrate: bitrate)
         resolution = SharedResolutionPolicy(targetBitrate: bitrate)
         queue.setSpecific(key: queueKey, value: true)
@@ -162,6 +185,37 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
 
     func requestIDR() {
         onQueue { policy.requestIDR() }
+    }
+
+    /// Per-buffer provenance survives libwebrtc's timestamp alignment and native buffer wrapping.
+    func prepareFrame(_ buffer: CVPixelBuffer) -> Bool {
+        onQueue {
+            guard !stopped, !captureSuspended else { return false }
+            CVBufferSetAttachment(buffer, Self.captureEpochKey, NSNumber(value: captureEpoch), .shouldNotPropagate)
+            return true
+        }
+    }
+
+    // @ref LLP 0001#recording-reboot-recovery — fence old source frames and asynchronous completions.
+    func suspendForReboot() {
+        onQueue {
+            captureSuspended = true
+            captureEpoch &+= 1
+            queuedFrame = nil
+            backlog.discardQueued()
+            pending.removeAll()
+            completed.removeAll()
+            completedOrder.removeAll()
+            lastEncodedTimestamp = nil
+            lastDeliveredTimestamp.removeAll()
+        }
+    }
+
+    func resumeAfterReboot() {
+        onQueue {
+            captureSuspended = false
+            policy.requestIDR()
+        }
     }
 
     func updateFps(_ fps: Int) {
@@ -292,6 +346,9 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
             guard !stopped else { return -1 }
             stat(peer) { $0.encodeCalls &+= 1 }
             let timestamp = frame.timeStampNs
+            guard !captureSuspended,
+                  let epoch = CVBufferGetAttachment(buffer, Self.captureEpochKey, nil)?.takeUnretainedValue() as? NSNumber,
+                  epoch.uint64Value == captureEpoch else { return 0 }
             let requestedIDR = frameTypes.contains { $0.intValue == LKRTCFrameType.videoFrameKey.rawValue }
             if let cached = completed[timestamp] {
                 if requestedIDR, cached.encoded.kind != .keyframe { policy.requestIDR() }
@@ -344,8 +401,7 @@ private final class SharedWebRTCEncoder: @unchecked Sendable {
         let fps = self.fps
         Task { [weak self] in
             guard let self, !Task.isCancelled else { return }
-            await encoder.update(fps: fps, bitrate: frame.bitrate)
-            let output = try? await encoder.encode(frame.buffer, forceKeyframe: frame.forceIDR)
+            let output = await encodeFrame(frame.buffer, frame.forceIDR, frame.bitrate, fps)
             queue.async { self.complete(timestamp: timestamp, output: output) }
             // After delivery, so the frame does not wait for it. Reads can land out of order.
             let fallbacks = await encoder.lowLatencyFallbacks

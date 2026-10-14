@@ -67,6 +67,9 @@ final class NativeVideoRecorder: @unchecked Sendable {
     private var startWallClock = Date()
     private var lastTick: Int64 = -1
     private var pending = Set<Int64>()
+    private var firstWrittenPTS: CMTime?
+    private var interruptions: [RecordingManifest.Interruption] = []
+    private var interruptionIndex: Int64?
     private var lastWrittenPTS: CMTime = .negativeInfinity
     private var awaitingKeyframe = true
     private var forceIDR = true
@@ -190,6 +193,17 @@ final class NativeVideoRecorder: @unchecked Sendable {
         }
     }
 
+    func suspendForReboot() {
+        queue.async {
+            guard !self.closing else { return }
+            let index = Int64((DispatchTime.now().uptimeNanoseconds - self.startNanoseconds) / 16_666_667)
+            self.interruptionIndex = index
+            self.interruptions.append(.init(pausedAtSeconds: Double(index) / 60))
+            self.awaitingKeyframe = true
+            self.forceIDR = true
+        }
+    }
+
     private func tick() {
         guard !closing, failure == nil, let session else { return }
         let now = DispatchTime.now().uptimeNanoseconds
@@ -208,6 +222,10 @@ final class NativeVideoRecorder: @unchecked Sendable {
         guard let frame = mailbox.latest() else {
             droppedTicks &+= 1
             sourceUnavailableTicks &+= 1
+            awaitingKeyframe = true
+            forceIDR = true
+            canvasBuffer = nil
+            lastSnapshotTimestamp = nil
             return
         }
         guard pending.count < Self.maxPendingFrames else {
@@ -333,6 +351,12 @@ final class NativeVideoRecorder: @unchecked Sendable {
         guard input.append(retimed) else {
             recordFailure(writer?.error ?? Self.error(8, "Could not append the recorded H.264 frame"))
             return
+        }
+        if firstWrittenPTS == nil { firstWrittenPTS = pts }
+        if let interrupted = interruptionIndex, index > interrupted,
+           !interruptions.isEmpty {
+            interruptions[interruptions.count - 1].resumedAtSeconds = pts.seconds
+            interruptionIndex = nil
         }
         lastWrittenPTS = pts
         writtenFrames &+= 1
@@ -476,7 +500,14 @@ final class NativeVideoRecorder: @unchecked Sendable {
             }
             let manifest = RecordingManifest(
                 firstFrame: firstFrameWallClock,
-                width: canvas.width, height: canvas.height
+                width: canvas.width, height: canvas.height,
+                interruptions: interruptions.map {
+                    let entry = RecordingManifest.Interruption(
+                        pausedAtSeconds: max(0, $0.pausedAtSeconds - (firstWrittenPTS?.seconds ?? 0)),
+                        resumedAtSeconds: $0.resumedAtSeconds.map { max(0, $0 - (firstWrittenPTS?.seconds ?? 0)) }
+                    )
+                    return entry
+                }
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]

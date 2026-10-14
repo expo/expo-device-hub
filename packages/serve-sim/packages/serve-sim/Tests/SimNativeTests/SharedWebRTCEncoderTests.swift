@@ -5,11 +5,12 @@ import XCTest
 @testable import SimNative
 
 final class SharedWebRTCEncoderTests: XCTestCase {
-    private func makeFrame(_ timestampNs: Int64) -> LKRTCVideoFrame {
+    private func makeFrame(_ timestampNs: Int64, using factory: SharedWebRTCEncoderFactory) -> LKRTCVideoFrame {
         var buffer: CVPixelBuffer?
         let attributes: [String: Any] = [kCVPixelBufferIOSurfacePropertiesKey as String: [:]]
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 64, 128, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
                                            attributes as CFDictionary, &buffer), kCVReturnSuccess)
+        XCTAssertTrue(factory.prepareFrame(buffer!))
         return LKRTCVideoFrame(buffer: LKRTCCVPixelBuffer(pixelBuffer: buffer!), rotation: ._0, timeStampNs: timestampNs)
     }
 
@@ -35,7 +36,7 @@ final class SharedWebRTCEncoderTests: XCTestCase {
         let first = expectation(description: "first delivery")
         first.assertForOverFulfill = false
         proxy.setCallback { _, _ in first.fulfill(); return true }
-        XCTAssertEqual(proxy.encode(makeFrame(1_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(proxy.encode(makeFrame(1_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
         wait(for: [first], timeout: 5)
 
         // The reconfigure: release, start again, register a new callback.
@@ -44,7 +45,7 @@ final class SharedWebRTCEncoderTests: XCTestCase {
         let second = expectation(description: "delivery after reinitialize")
         second.assertForOverFulfill = false
         proxy.setCallback { _, _ in second.fulfill(); return true }
-        XCTAssertEqual(proxy.encode(makeFrame(2_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(proxy.encode(makeFrame(2_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
         wait(for: [second], timeout: 5)
 
         let stats = try XCTUnwrap(factory.peerStats().first)
@@ -96,19 +97,19 @@ final class SharedWebRTCEncoderTests: XCTestCase {
             return true
         }
 
-        XCTAssertEqual(first.encode(makeFrame(1_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
-        XCTAssertEqual(second.encode(makeFrame(1_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(first.encode(makeFrame(1_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(second.encode(makeFrame(1_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
         wait(for: [firstReceived[0], secondFirstFrame], timeout: 5)
 
-        XCTAssertEqual(first.encode(makeFrame(2_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(first.encode(makeFrame(2_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
         wait(for: [firstReceived[1]], timeout: 5)
 
-        XCTAssertEqual(second.encode(makeFrame(3_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
-        XCTAssertEqual(first.encode(makeFrame(3_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(second.encode(makeFrame(3_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(first.encode(makeFrame(3_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
         wait(for: [firstReceived[2]], timeout: 5)
         XCTAssertEqual(factory.peerStats().first { $0.peer == 2 }?.deliveries, 1)
 
-        XCTAssertEqual(first.encode(makeFrame(4_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(first.encode(makeFrame(4_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
         wait(for: [firstReceived[3], secondRecovery], timeout: 5)
         XCTAssertEqual(firstFrames[2], .videoFrameDelta)
         XCTAssertEqual(secondFrames, [.videoFrameKey, .videoFrameKey])
@@ -145,8 +146,8 @@ final class SharedWebRTCEncoderTests: XCTestCase {
 
         for n in 1...frames {
             let timestamp = Int64(n) * 1_000_000
-            XCTAssertEqual(first.encode(makeFrame(timestamp), codecSpecificInfo: nil, frameTypes: []), 0)
-            XCTAssertEqual(second.encode(makeFrame(timestamp), codecSpecificInfo: nil, frameTypes: []), 0)
+            XCTAssertEqual(first.encode(makeFrame(timestamp, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
+            XCTAssertEqual(second.encode(makeFrame(timestamp, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
             wait(for: [firstReceived[n - 1]], timeout: 5)
         }
         XCTAssertGreaterThan(rejected, 0)
@@ -161,8 +162,8 @@ final class SharedWebRTCEncoderTests: XCTestCase {
         rejecting = false
         let timestamp = Int64(frames + 1) * 1_000_000
         let keyframe = [NSNumber(value: LKRTCFrameType.videoFrameKey.rawValue)]
-        XCTAssertEqual(second.encode(makeFrame(timestamp), codecSpecificInfo: nil, frameTypes: keyframe), 0)
-        XCTAssertEqual(first.encode(makeFrame(timestamp), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(second.encode(makeFrame(timestamp, using: factory), codecSpecificInfo: nil, frameTypes: keyframe), 0)
+        XCTAssertEqual(first.encode(makeFrame(timestamp, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
         wait(for: [firstReceived[frames], secondRecovered], timeout: 5)
     }
 
@@ -185,9 +186,9 @@ final class SharedWebRTCEncoderTests: XCTestCase {
             if calls.count == 2 { started.fulfill() }
             return true
         }
-        XCTAssertEqual(proxy.encode(makeFrame(1_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(proxy.encode(makeFrame(1_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
         wait(for: [refused], timeout: 5)
-        XCTAssertEqual(proxy.encode(makeFrame(2_000_000), codecSpecificInfo: nil, frameTypes: []), 0)
+        XCTAssertEqual(proxy.encode(makeFrame(2_000_000, using: factory), codecSpecificInfo: nil, frameTypes: []), 0)
         wait(for: [started], timeout: 5)
         XCTAssertEqual(calls, [.videoFrameKey, .videoFrameKey])
     }
@@ -211,6 +212,7 @@ final class SharedWebRTCEncoderTests: XCTestCase {
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 320, 640, kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
                                            attributes as CFDictionary, &buffer), kCVReturnSuccess)
         let pixels = try XCTUnwrap(buffer)
+        XCTAssertTrue(factory.prepareFrame(pixels))
         CVPixelBufferLockBaseAddress(pixels, [])
         for plane in 0..<2 {
             memset(CVPixelBufferGetBaseAddressOfPlane(pixels, plane), 128,

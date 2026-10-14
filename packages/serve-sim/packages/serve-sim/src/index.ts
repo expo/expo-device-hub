@@ -2595,6 +2595,7 @@ async function recordVideo(udid: string, output: string): Promise<void> {
   void lostLease.catch(() => {});
   let finished = false;
   let startupCancellationDelivered = false;
+  let recordingFinalized = false;
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
   try {
@@ -2636,13 +2637,18 @@ async function recordVideo(udid: string, output: string): Promise<void> {
           if (!recordingStopStarted) rejectLease(error instanceof Error ? error : new Error(String(error)));
         });
     }, 5_000);
+    let leaseError: unknown;
+    try {
+      await Promise.race([stopping, lostLease]);
+    } catch (error) {
+      leaseError = error;
+    }
+    recordingStopStarted = true;
+    clearInterval(heartbeat);
+    heartbeat = undefined;
     let stopError: unknown;
     let stopRequestAmbiguous = false;
     try {
-      await Promise.race([stopping, lostLease]);
-      recordingStopStarted = true;
-      clearInterval(heartbeat);
-      heartbeat = undefined;
       let stop: Response;
       try {
         stop = await fetch(url, {
@@ -2660,6 +2666,11 @@ async function recordVideo(udid: string, output: string): Promise<void> {
       if (result.manifest !== manifestPath) {
         throw new Error("Recording stop returned an unexpected manifest path");
       }
+      recordingFinalized = true;
+      if (leaseError) {
+        stopError = leaseError;
+        stopRequestAmbiguous = true;
+      }
     } catch (error) {
       stopError = error;
     }
@@ -2668,14 +2679,16 @@ async function recordVideo(udid: string, output: string): Promise<void> {
       throw stopError ?? new Error("Recording stopped without a session.json manifest; inspect the serve-sim session log and retry.");
     }
     if (stopError && !stopRequested && !await waitForServerExit(state.pid, 5_000)) {
-      throw new Error(`Recording ended before a stop was requested: ${String(stopError)}. A partial video is available at ${manifestPath}.`);
+      if (!stopRequested) {
+        throw new Error(`Recording ended before a stop was requested: ${String(stopError)}. A partial video is available at ${manifestPath}.`);
+      }
     }
     finished = true;
     console.log(manifestPath);
   } finally {
     recordingStopStarted = true;
     if (heartbeat) clearInterval(heartbeat);
-    if (!finished && !startupCancellationDelivered) {
+    if (!finished && !startupCancellationDelivered && !recordingFinalized) {
       try {
         await fetch(url, { method: "DELETE", headers, signal: AbortSignal.timeout(10_000) });
       } catch {}

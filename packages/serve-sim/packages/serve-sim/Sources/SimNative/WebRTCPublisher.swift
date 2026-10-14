@@ -77,6 +77,7 @@ struct WebRTCSenderStatsPayload: Codable {
 }
 
 struct WebRTCCaptureCounts: Codable {
+    let rebooting: Bool
     let pickCount: UInt64
     let pickSumMs: Double
     let pickMaxMs: Double
@@ -225,6 +226,8 @@ final class WebRTCPublisher: @unchecked Sendable {
     private var cancelledSessionIdOrder: [String] = []
     private let frameLock = NSLock()
     private var acceptsFrames = false
+    /// Confined to queue; peer connections survive intentional capture reboots.
+    private var captureSuspended = false
     /// Guarded by `frameLock`: invalidates resize completions from a prior viewer session.
     private var frameAcceptanceGeneration: UInt64 = 0
     private var latestFrame: PendingWebRTCFrame?
@@ -828,6 +831,7 @@ final class WebRTCPublisher: @unchecked Sendable {
             let frameMode = supported ? "native CVPixelBuffer" : "I420 fallback"
             streamLog("[webrtc] Input pixel format: \(pixelFormat) cvPixelBufferSupported=\(supported); forwarding as \(frameMode)")
         }
+        if sharedH264Active, !sharedEncoderFactory.prepareFrame(scaledPixelBuffer) { return }
         let timeNs = nextFrameTimestampNs(timestampNanoseconds)
         let sourceFrame = LKRTCVideoFrame(
             buffer: LKRTCCVPixelBuffer(pixelBuffer: scaledPixelBuffer),
@@ -912,6 +916,25 @@ final class WebRTCPublisher: @unchecked Sendable {
                 "forwardedFormat=\(pixelFormatDescription(forwardedPixelFormat)) " +
                 "native=\(usedNativeFrame) conversionMs=\(String(format: "%.2f", convertDurationMs))"
             )
+        }
+    }
+
+    // @ref LLP 0001#recording-reboot-recovery — pause retained footage without closing peers.
+    func suspendForReboot() {
+        queue.sync {
+            captureSuspended = true
+            setFrameAcceptance(false)
+            pumpTimer?.cancel()
+            pumpTimer = nil
+            sharedEncoderFactory.suspendForReboot()
+        }
+    }
+
+    func resumeAfterReboot() {
+        queue.sync {
+            captureSuspended = false
+            sharedEncoderFactory.resumeAfterReboot()
+            refreshFrameAcceptance()
         }
     }
 
@@ -1069,6 +1092,10 @@ final class WebRTCPublisher: @unchecked Sendable {
     /// always cancels the previous timer, so at most one chain tick is ever
     /// pending and a replacement chain cannot race a zombie one.
     private func armFramePump(at deadline: DispatchTime, generation: UInt64) {
+        frameLock.lock()
+        let current = generation == framePumpGeneration && acceptsFrames
+        frameLock.unlock()
+        guard current else { return }
         pumpTimer?.cancel()
         let timer = DispatchSource.makeTimerSource(flags: .strict, queue: queue)
         timer.schedule(deadline: deadline, repeating: .never, leeway: .nanoseconds(0))
@@ -1102,7 +1129,7 @@ final class WebRTCPublisher: @unchecked Sendable {
     }
 
     private func refreshFrameAcceptance() {
-        setFrameAcceptance(sessions.values.contains(where: \.isConnected))
+        setFrameAcceptance(!captureSuspended && sessions.values.contains(where: \.isConnected))
     }
 
     private func createAnswer(

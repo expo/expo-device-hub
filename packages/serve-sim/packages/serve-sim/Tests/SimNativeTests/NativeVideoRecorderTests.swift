@@ -8,6 +8,23 @@ import VideoToolbox
 import StreamingPolicy
 
 final class NativeVideoRecorderTests: XCTestCase {
+    func testFinalizingDuringRebootPreservesTheOriginalFootageAndUnresumedInterruption() async throws {
+        let (recorder, mailbox, directory) = try await recordingForFinishTest()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        mailbox.setActive(false)
+        recorder.suspendForReboot()
+        try await Task.sleep(for: .milliseconds(100))
+        let result = try await recorder.finish()
+        XCTAssertGreaterThan(result.writtenFrames, 0)
+        let manifest = try JSONDecoder().decode(RecordingManifest.self,
+            from: Data(contentsOf: URL(fileURLWithPath: result.manifestPath)))
+        XCTAssertEqual(manifest.interruptions?.count, 1)
+        XCTAssertNil(manifest.interruptions?.first?.resumedAtSeconds)
+        let tracks = try await AVURLAsset(url: directory.appendingPathComponent("recording.mp4"))
+            .loadTracks(withMediaType: .video)
+        XCTAssertEqual(tracks.count, 1)
+    }
+
     func testWriterFinalizationOutlivesEncoderFlushDeadlineAndRejectsDuplicateFinish() async throws {
         let (recorder, _, directory) = try await recordingForFinishTest()
         defer { try? FileManager.default.removeItem(at: directory) }
