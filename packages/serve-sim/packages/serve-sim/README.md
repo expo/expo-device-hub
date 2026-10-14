@@ -199,6 +199,8 @@ scaling, hardware encoding, the recording contract, and measured limits.
 See [API](https://github.com/expo/expo-device-hub/blob/main/llp/0003-serve-sim-http-api.spec.md) for the HTTP routes, authentication, CORS and the
 WebSocket endpoints.
 
+Add `?disableShare=1` to a preview page URL to hide Share on that page only, such as an iframe. Omit it (or use `disableShare=0`) to keep Share available. The server-wide `--disable-share` option takes precedence.
+
 ### Recording video
 
 Start serve-sim for the simulator, then run:
