@@ -42,6 +42,11 @@ jobs:
       - name: Build packages (excluding serve-sim)
         run: bun run build --filter='!@expo/serve-sim' --only
 
+      # The Android Hub imports serve-sim's middleware, and Android recording
+      # does not run for serve-sim-only changes. Check that it starts on Node.
+      - name: Serve-sim middleware startup on Node
+        run: bun run --filter '@expo/serve-sim' test:middleware-startup
+
       # --only skips the native serve-sim build; its typecheck only needs sources.
       - name: Typecheck
         run: bunx turbo run typecheck --only
