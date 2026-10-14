@@ -105,6 +105,9 @@ state. It does not change authentication or prevent an authorized viewer from
 sharing a token manually [observed: `src/index.ts`, `src/middleware.ts`,
 `src/client/components/share-session-button.tsx`, `src/client/client.tsx`].
 
+The CLI rejects `--disable-share` with `--detach` or `--no-preview` before device
+selection; it requires the foreground preview [observed: `src/index.ts`].
+
 An embedder can instead add `?disableShare=1` to one preview page's URL to hide
 Share only on that page. Other values or an absent parameter leave Share enabled
 unless the server disabled it; `disableShare=0` cannot override the server setting

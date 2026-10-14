@@ -3,6 +3,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 
 import { requireE2E } from "./e2e-preconditions";
+import { installShims } from "./helpers";
 
 // Drives the built CLI. Every case here is rejected before a device is touched,
 // so it needs no simulator, only the built bundle.
@@ -10,8 +11,15 @@ const CLI = join(import.meta.dir, "../../dist/serve-sim.js");
 
 requireE2E("launch flags", existsSync(CLI));
 
-async function runCli(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
-  const proc = Bun.spawn(["node", CLI, ...args], { stdout: "pipe", stderr: "pipe" });
+async function runCli(
+  args: string[],
+  env?: Record<string, string>,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+  const proc = Bun.spawn(["node", CLI, ...args], {
+    env: { ...process.env, ...env },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
   const [stdout, stderr] = await Promise.all([
     new Response(proc.stdout).text(),
     new Response(proc.stderr).text(),
@@ -83,6 +91,23 @@ describe.skipIf(!existsSync(CLI))("launch flags", () => {
       expect(code).toBe(1);
       expect(stderr).toContain("--require-token needs the preview server");
       expect(stderr).not.toContain("--network-capture-proxy needs");
+    }
+  });
+
+  test.each(["--detach", "--no-preview"])("rejects --disable-share with %s before device selection", async (mode) => {
+    const shims = installShims({
+      xcrun: '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$SERVE_SIM_LAUNCH_FLAGS_TRACE"\nexit 1\n',
+    });
+    const trace = join(shims.dir, "xcrun.trace");
+    try {
+      const { code, stderr } = await runCli(["--disable-share", mode], {
+        SERVE_SIM_LAUNCH_FLAGS_TRACE: trace,
+      });
+      expect(code).toBe(1);
+      expect(stderr).toContain("--disable-share needs the foreground preview, so drop --detach/--no-preview.");
+      expect(existsSync(trace)).toBe(false);
+    } finally {
+      shims.restore();
     }
   });
 
