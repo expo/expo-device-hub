@@ -41,6 +41,8 @@ function session(failOn?: (call: KeyCall) => boolean, udid = "SESSION-TEST", onK
     detachedHidSockets: new WeakSet<object>(),
     overloadedHidSockets: new WeakSet<object>(),
     inputOperationQueues: new Map(),
+    inputOperationSequence: 0,
+    clipboardInputBarriers: new Set(),
     scheduledInputSockets: new Set<object>(),
     inputSocketOrder: [],
     inputStateWaiters: new Set(),

@@ -88,7 +88,9 @@ gives the details.
 `POST /api/pasteboard?copy=1` is Copy: the server presses Command+C in the
 device's input queue, waits for the pasteboard to change, and returns the copied
 text. It returns 504 when the app does not change the pasteboard within 5 s, and
-409 when the device has no input session. Copy installs `ServeSimPasteboard.app`
+409 when the device has no input session or another process holds the pasteboard
+lock for more than one second. A lock conflict says "Simulator clipboard is busy.
+Try again." Copy checks and installs `ServeSimPasteboard.app` under that same lock
 (`com.expo.serve-sim-pasteboard`) on the simulator when it is missing or
 differs from the copy that serve-sim ships. Each Copy grants it pasteboard
 access. The app and the grant stay after Copy, and the app shows on the Home

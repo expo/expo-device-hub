@@ -1630,7 +1630,7 @@ export class DeviceSession {
           // The session can stop while Copy waits for the lock or its turn.
           if (this.phase !== "running" || this.hid.inputUnavailable) throw new Error("Simulator input is unavailable");
           text = await copy();
-        });
+        }, { clipboard: true });
         if (!turn) throw new Error("Simulator input is unavailable");
         await turn;
         if (text === undefined) throw new Error("Simulator input is unavailable");

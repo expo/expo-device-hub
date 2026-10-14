@@ -71,7 +71,7 @@ import type { UpgradeHandlerWebSocket } from "./socket/types";
 import { UI_OPTIONS, getUiStatus, normalizeUiValue, setUiOption } from "./ui-settings";
 import { readRequestBodyAsync, RequestBodyTooLargeError, type WebMiddleware } from "./runtime-utils";
 import { connectToFetch, type ConnectMiddleware } from "./connect-to-fetch";
-import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardTooLargeError, writeSimPasteboard } from "./sim-pasteboard";
+import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardBusyError, PasteboardTooLargeError, writeSimPasteboard } from "./sim-pasteboard";
 import { PasteboardUnavailableError, readSimPasteboardResult } from "./sim-pasteboard-reader";
 import { createClipboardSession } from "./clipboard-session";
 import { PasteboardCopyTimeoutError, cleanupWarningOf } from "./sim-pasteboard-copy";
@@ -2754,6 +2754,10 @@ export function simMiddleware(options?: SimMiddlewareOptions): SimMiddleware {
       } catch (error) {
         // A failed Copy can still leave Command held; the viewer shows this beside the error.
         const cleanup = cleanupWarningOf(error);
+        if (error instanceof PasteboardBusyError) {
+          respond(409, { ok: false, error: error.message, ...cleanup });
+          return;
+        }
         if (error instanceof PasteboardTooLargeError) {
           respond(413, { ok: false, error: "Simulator clipboard text is too large", ...cleanup });
           return;

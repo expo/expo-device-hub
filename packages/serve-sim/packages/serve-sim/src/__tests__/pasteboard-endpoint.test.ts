@@ -4,7 +4,7 @@ import { join } from "path";
 import * as deviceSessions from "../device-session";
 import { simMiddleware } from "../middleware";
 import { servePreview } from "../runtime";
-import { MAX_PASTEBOARD_TEXT_BYTES } from "../sim-pasteboard";
+import { MAX_PASTEBOARD_TEXT_BYTES, PasteboardBusyError } from "../sim-pasteboard";
 import { PasteboardCopyTimeoutError, copyFromSim, withCleanupWarning } from "../sim-pasteboard-copy";
 import {
   ensureFixtureInstalled,
@@ -240,6 +240,23 @@ describe("/api/pasteboard", () => {
       });
     } finally {
       session.mockRestore();
+    }
+  });
+
+  test("returns a retryable conflict when Copy cannot acquire the pasteboard lock", async () => {
+    const device = "00000000-0000-0000-0000-000000000000";
+    const session = spyOn(deviceSessions, "peekDeviceSession").mockReturnValue({
+      copyPasteboard: async () => { throw new PasteboardBusyError(); },
+    } as unknown as deviceSessions.DeviceSession);
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const res = await middleware(pasteboardRequest(`?device=${device}&copy=1`));
+      expect(res?.status).toBe(409);
+      expect(await res!.json()).toEqual({ ok: false, error: "Simulator clipboard is busy. Try again." });
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      session.mockRestore();
+      log.mockRestore();
     }
   });
 

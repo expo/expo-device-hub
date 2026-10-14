@@ -2,7 +2,7 @@ import { readFile } from "fs/promises";
 import { join } from "path";
 import { setTimeout as sleep } from "timers/promises";
 import { simctl } from "./simctl";
-import { buildSimpbArtifact, locatePasteboardTool, locateSimpbArtifact, readPasteboardText, withSimPasteboardLock, type PasteboardReadResult } from "./sim-pasteboard";
+import { INPUT_PASTEBOARD_LOCK_TIMEOUT_MS, buildSimpbArtifact, locatePasteboardTool, locateSimpbArtifact, readPasteboardText, withSimPasteboardLock, type PasteboardReadResult } from "./sim-pasteboard";
 
 const COPY_CHANGE_TIMEOUT_MS = 5_000;
 const COPY_CHANGE_POLL_MS = 75;
@@ -92,6 +92,6 @@ export async function copyFromSim(
     await sendCopyShortcut();
     await waitForPasteboardChange(() => pasteboardChangeCount(udid), before);
     return readPasteboardText(["spawn", udid, appTool, "--read-text"], { timeout: 8_000 });
-  }));
+  }, INPUT_PASTEBOARD_LOCK_TIMEOUT_MS));
   return { text };
 }
