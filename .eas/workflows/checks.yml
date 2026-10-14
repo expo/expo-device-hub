@@ -20,6 +20,10 @@ jobs:
   check:
     name: check
     runs_on: linux-medium
+    # The production EAS environment holds a TURBO_TOKEN with write access.
+    # Only .eas/workflows/build-release-cache.yml writes the remote cache.
+    env:
+      TURBO_CACHE: local:rw,remote:r
     steps:
       - uses: eas/checkout
 
